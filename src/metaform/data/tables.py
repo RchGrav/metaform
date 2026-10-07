@@ -124,8 +124,8 @@ class Table:
         """
         if not (PHYSICAL if unowned else NAME).fullmatch(name):
             raise ValueError(f'Table {name!r}: a name is lowercase letters, digits and _, starting with a letter.')
-        from .schema import STORE_SCHEMA
-        core = re.findall(r'CREATE(?: VIRTUAL)? TABLE IF NOT EXISTS ([a-z_]+)', STORE_SCHEMA)
+        from .schema import LAYOUT_20, STORE_SCHEMA
+        core = re.findall(r'CREATE(?: VIRTUAL)? TABLE IF NOT EXISTS ([a-z_]+)', STORE_SCHEMA + LAYOUT_20)
         if name in core:
             raise ValueError(f'Table {name}: the name belongs to the chassis.')
         statements = _schema_statements(name, schema)
@@ -316,6 +316,30 @@ def extensions(db: sqlite3.Connection | None = None) -> list[tuple[str, Tables]]
                  or db is not None and module.data is not None and _recorded(db, module.id) is not None)]
 
 
+def create_missing(db: sqlite3.Connection) -> None:
+    """Every base-level table an enabled module declares that the store lacks, created, STORE-045: for a store whose
+    layout number was set back by hand, the chassis upgrade puts the modules' tables back the way it did before the
+    log, STORE-046."""
+    present = {str(row[0]) for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    for module, declared in extensions():
+        for table in declared.tables:
+            if table.place != 'metaform':
+                continue
+            name = physical(module, table)
+            if name not in present:
+                _create(db, module, table)
+                continue
+            held = {str(row[1]) for row in db.execute(f'PRAGMA table_info({_quoted(name)})')}
+            wanted = sqlite3.connect(':memory:')
+            try:
+                wanted.execute(_create_sql(module, table))
+                for row in wanted.execute(f'PRAGMA table_info({_quoted(name)})'):
+                    if str(row[1]) not in held:  # a column the layout gained since: added, empty, as a relayout did
+                        db.execute(f'ALTER TABLE {_quoted(name)} ADD COLUMN {_quoted(str(row[1]))} {row[2] or ""}')
+            finally:
+                wanted.close()
+
+
 def extension_schema() -> str:
     """SQL supplied by enabled modules, for an existing layout's compatible upgrade."""
     return '\n'.join(table.schema for _, declared in extensions() for table in declared.tables
@@ -380,8 +404,8 @@ def legacy_fold(db: sqlite3.Connection, correction: str, intake: str) -> None:
             if kind == 'layer':
                 db.execute(f'UPDATE {_quoted(physical(module, table))} SET {_quoted(column)}=? '
                            f'WHERE {_quoted(column)}=?', (intake, correction))
-    from .schema import STORE_SCHEMA
-    native = set(re.findall(r'CREATE(?: VIRTUAL)? TABLE IF NOT EXISTS ([a-z_]+)', STORE_SCHEMA))
+    from .schema import LAYOUT_20
+    native = set(re.findall(r'CREATE(?: VIRTUAL)? TABLE IF NOT EXISTS ([a-z_]+)', LAYOUT_20))
     for name, in db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchall():
         if name in native:
             continue

@@ -17,32 +17,32 @@ pytestmark = [pytest.mark.kind('fixture'), pytest.mark.req('MAP-057')]
 def mapped(store):
     layer, _, inner = small_map(store)
     element = store.element('code.timer.kitchen')
-    store.refine(element.element_id, {'name': 'Kitchen Clock'}, reason='record the project name')
-    store.refine(inner.join_id, {'ifd': 'receives'}, reason='record encounter details')
+    store.refine(element.id, {'name': 'Kitchen Clock'}, reason='record the project name')
+    store.refine(inner.id, {'ifd': 'receives'}, reason='record encounter details')
     sources = knowledge(store, 'sources')  # an element's refs are items of the sources layer, Rich 2026-10-04
-    store.add_item(sources.name, Node('element', element.element_id), 'code.timer.kitchen',
+    store.add_item(sources.name, Node('element', element.id), 'code.timer.kitchen',
                    refs=[('path', 'src/timer.c'), ('path', 'src/clock.c')])
     store.finish(sources.name)
     notes = knowledge(store, 'quality.notes')
-    store.add_item(notes.name, Node('element', element.element_id), {'guidance': ['Keep time.']},
+    store.add_item(notes.name, Node('element', element.id), {'guidance': ['Keep time.']},
                    read_first=True, always_show=True)
     store.add_property(notes.name, 'code.timer', 'timed')
     store.add_property(notes.name, 'code.timer.kitchen', 'audible')
     store.finish(notes.name)
     hidden = knowledge(store, 'hidden.notes')
-    store.add_item(hidden.name, Node('element', element.element_id), 'hidden item')
+    store.add_item(hidden.name, Node('element', element.id), 'hidden item')
     store.add_property(hidden.name, 'code.timer', 'hidden context')
     store.finish(hidden.name)
     store.hide(hidden.name)
-    ticket = store.add_work(Node('element', element.element_id), 'broken', note='Drifts.', task='Fix timing.')
-    store.plan_work(ticket.work_id, 2)
-    store.step_work(ticket.work_id, 'Measured the drift.')
-    closed = store.add_work(Node('element', element.element_id), 'missing', task='Past task.')
-    store.finish_work(closed.work_id, 'Already done.')
-    store.ask(Node('element', element.element_id), 'Which tone?', suggestions=['Bell', 'Beep'])
-    store.tell(Node('element', element.element_id), 'Check timing.')
-    answered = store.ask(Node('element', element.element_id), 'Use a bell?', suggestions=['Yes'])
-    store.reply(answered.message_id, 'Yes')
+    ticket = store.add_work(Node('element', element.id), 'broken', note='Drifts.', task='Fix timing.')
+    store.plan_work(ticket.id, 2)
+    store.step_work(ticket.id, 'Measured the drift.')
+    closed = store.add_work(Node('element', element.id), 'missing', task='Past task.')
+    store.finish_work(closed.id, 'Already done.')
+    store.ask(Node('element', element.id), 'Which tone?', suggestions=['Bell', 'Beep'])
+    store.tell(Node('element', element.id), 'Check timing.')
+    answered = store.ask(Node('element', element.id), 'Use a bell?', suggestions=['Yes'])
+    store.reply(answered.id, 'Yes')
     memory(store)
     page_note(store.project_id, 'element:code.timer.kitchen', 'A precise clock.', by='Rich')
     mem_store = Store(store.project_id, module='memory')
@@ -87,7 +87,7 @@ def test_this_reads_the_complete_element_values(mapped):
     with pytest.raises(AttributeError):
         _ = this.extra
     with pytest.raises(AttributeError):
-        _ = this.element_id
+        _ = this.id
 
 
 def test_this_is_read_only_and_missing_keys_keep_python_semantics(mapped):

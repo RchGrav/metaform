@@ -41,7 +41,7 @@ def test_a_done_ticket_in_its_own_worktree_waits_for_review_then_merges_and_is_l
     assert waiting['state'] == 'ready' and waiting['branch'].startswith('metaform/')
     assert '.worktrees' in waiting['worktree'] and (repo / '.worktrees').is_dir()
     assert not (repo / 'feature.txt').exists(), 'the agent worked in its worktree, not the project folder'
-    merged = json.loads(run('dispatch', 'merge', dispatch.work_id, '--json', cwd=repo).stdout)
+    merged = json.loads(run('dispatch', 'merge', dispatch.id, '--json', cwd=repo).stdout)
     assert merged['merged'] is True, merged
     assert (repo / 'feature.txt').read_text(encoding='utf-8') == 'changed by the fake agent\n'
     assert git(repo, 'branch', '--show-current') == 'dev'
@@ -53,10 +53,10 @@ def test_a_done_ticket_in_its_own_worktree_waits_for_review_then_merges_and_is_l
 
 def test_review_takes_the_merge_over_for_good(dispatch, repo, run):
     worked(dispatch, repo)
-    assert json.loads(run('dispatch', 'review', dispatch.work_id, '--json', cwd=repo).stdout)['state'] == 'review'
-    merged = json.loads(run('dispatch', 'merge', dispatch.work_id, '--json', cwd=repo).stdout)
+    assert json.loads(run('dispatch', 'review', dispatch.id, '--json', cwd=repo).stdout)['state'] == 'review'
+    merged = json.loads(run('dispatch', 'merge', dispatch.id, '--json', cwd=repo).stdout)
     assert merged['merged'] is False and not (repo / 'feature.txt').exists(), 'a reviewed merge never merges by itself'
-    again = run('dispatch', 'review', dispatch.work_id, cwd=repo, ok=False)
+    again = run('dispatch', 'review', dispatch.id, cwd=repo, ok=False)
     assert again.returncode != 0, 'the countdown never restarts'
 
 
@@ -70,7 +70,7 @@ def test_work_that_clashes_with_the_dev_branch_is_never_merged(dispatch, repo, r
     (repo / 'feature.txt').write_text('changed on dev meanwhile\n', encoding='utf-8')
     git(repo, 'add', '-A')
     git(repo, 'commit', '-q', '-m', 'ongoing work')
-    merged = json.loads(run('dispatch', 'merge', dispatch.work_id, '--json', cwd=repo).stdout)
+    merged = json.loads(run('dispatch', 'merge', dispatch.id, '--json', cwd=repo).stdout)
     assert merged['merged'] is False and 'conflict' in merged['why'].lower(), merged
     assert (repo / 'feature.txt').read_text(encoding='utf-8') == 'changed on dev meanwhile\n'
     assert git(repo, 'status', '--porcelain') == '', 'a refused merge leaves the dev branch untouched'
@@ -80,11 +80,11 @@ def test_the_agent_asked_to_help_works_in_the_merges_worktree_with_the_prep_prom
                                                                                   dispatch_runners):
     from metaform.modules.dispatch.tests.test_dispatch import eventually
     [waiting] = worked(dispatch, repo)
-    run('dispatch', 'review', dispatch.work_id, cwd=repo)
-    run('map', 'work', 'op=edit', f'id={dispatch.work_id}', 'agent=claude', cwd=repo)
+    run('dispatch', 'review', dispatch.id, cwd=repo)
+    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'agent=claude', cwd=repo)
     for name, value in dispatch.env('hold').items():
         monkeypatch.setenv(name, value)
-    started = json.loads(run('dispatch', 'prep', dispatch.work_id, '--json', cwd=repo).stdout)
+    started = json.loads(run('dispatch', 'prep', dispatch.id, '--json', cwd=repo).stdout)
     dispatch_runners.append((started, repo, dispatch.log))
     said = eventually(lambda: [message for message in dispatch.received('session/new')[1:]] or None)
     assert said[0]['params']['cwd'] == waiting['worktree'], 'the helping agent works in the merge\'s worktree'

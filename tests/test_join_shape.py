@@ -10,18 +10,13 @@ from __future__ import annotations
 import sqlite3
 
 import pytest
+from storekit import ops, small_map, store_file
 
-from metaform.data.schema import STORE_SCHEMA
-
-# The store's bookkeeping of a versioned row: its row, identity, layer, and the version's op, reason and evidence.
-VERSION = {'row', 'layer_id', 'op', 'reason', 'evidence'}
-COLUMNS = {
-    'elements': VERSION | {'element_id', 'address', 'name_length', 'name', 'role'},
-    'joins': VERSION | {'join_id', 'type', 'receiver', 'purpose', 'ef', 'ifd'},
-    'join_elements': {'join_row', 'position', 'element_id'},  # the elements a join holds, one row each, in order
-    'current_elements': {'element_id', 'row', 'address', 'role'},
-    'current_joins': {'join_id', 'row', 'receiver'},
-    'refs': {'ref_id', 'owner', 'owner_row', 'position', 'key', 'value'},
+# The op's own bookkeeping, beside the object's fields: how it was written, and why, LAYER-025.
+VERSION = {'mode', 'reason', 'evidence'}
+FIELDS = {
+    'element': VERSION | {'address', 'name_length', 'name', 'role'},
+    'join': VERSION | {'type', 'receiver', 'purpose', 'ef', 'ifd', 'element', 'held'},  # held: its elements, in order
 }
 ELEMENT = {'namespace_address', 'name_length', 'name', 'role'}
 JOIN = {'receiver', 'elements', 'purpose', 'ef', 'ifd'}
@@ -31,20 +26,20 @@ TICKET = {'condition', 'note'}  # a ticket written beside what was recorded, apa
 @pytest.mark.kind('fixture')
 @pytest.mark.req('STORE-009')
 @pytest.mark.req('STORE-010')
-def test_the_metaform_holds_only_the_fields_of_richs_shape():
-    db = sqlite3.connect(':memory:')
-    db.executescript(STORE_SCHEMA)
-    for table, wanted in COLUMNS.items():
-        found = {row[1] for row in db.execute(f'PRAGMA table_info({table})')}
-        assert found == wanted, f'{table}: {sorted(found ^ wanted)}'
+@pytest.mark.req('STORE-046')
+def test_the_metaform_holds_only_the_fields_of_richs_shape(home, store):
+    """Every op the base's layer writes for an element or a join carries Rich's shape and nothing more; the base
+    holds no refs, STORE-012: refs are on items and properties only."""
+    small_map(store)
+    written = ops(store_file(home, store))
+    for kind, wanted in FIELDS.items():
+        for op in (op for op in written if op['kind'] == kind):
+            assert set(op['data']) <= wanted and set(op['data']) >= wanted - VERSION, \
+                f'{kind}: {sorted(set(op["data"]) ^ wanted)}'
+    db = sqlite3.connect(store_file(home, store))
     tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    assert 'current_subtypes' not in tables
-    # Refs belong only to layer items and properties: the metaform holds none, STORE-012.
-    for owner in ('item', 'property'):
-        db.execute("INSERT INTO refs(owner, owner_row, position, key, value) VALUES (?, 1, 0, 'k', 'v')", (owner,))
-    for owner in ('element', 'join'):
-        with pytest.raises(sqlite3.IntegrityError):
-            db.execute("INSERT INTO refs(owner, owner_row, position, key, value) VALUES (?, 1, 0, 'k', 'v')", (owner,))
+    assert not {'current_subtypes', 'subtypes', 'refs', 'elements', 'joins'} & tables
+    assert not any('refs' in op['data'] for op in written if op['kind'] in ('element', 'join'))
 
 
 @pytest.mark.kind('fixture')

@@ -70,9 +70,9 @@ def ledger(home, project_folder, user_module):
 
 
 def store_file(project='proj'):
-    active = metaform_home.active_metaform(project)
+    active = metaform_home.active_base(project)
     assert active is not None
-    return metaform_home.store_path(project, active.metaform_id)
+    return metaform_home.store_path(project, active.id)
 
 
 def project_store(project='proj', module='ledger'):
@@ -262,7 +262,7 @@ def test_a_store_at_a_later_version_is_refused_and_left_unchanged(ledger, user_m
 def test_export_import_export_carries_the_module_rows_and_importing_again_adds_none(ledger, monkeypatch, tmp_path):
     fill(ledger)
     first = export_document(['proj'])
-    assert [entry['module'] for entry in first['projects'][0]['metaforms'][0]['modules']] == ['ledger']
+    assert [entry['module'] for entry in first['projects'][0]['bases'][0]['modules']] == ['ledger']
     assert [entry['module'] for entry in first['projects'][0]['modules']] == ['ledger']
     monkeypatch.setenv('METAFORM_HOME', str(tmp_path / 'other-home'))
     report = import_document(json.loads(json.dumps(first)))
@@ -278,7 +278,7 @@ def test_a_document_with_no_module_tables_has_no_modules_list(store):
     store.add_work(Node('element', 'code.anything'), 'missing', task='x')
     document = export_document(['proj'])
     assert 'modules' not in document['projects'][0]
-    assert 'modules' not in document['projects'][0]['metaforms'][0]
+    assert 'modules' not in document['projects'][0]['bases'][0]
 
 
 def test_importing_a_module_held_at_another_version_adds_nothing_of_it_and_says_so(ledger, user_module):
@@ -288,7 +288,7 @@ def test_importing_a_module_held_at_another_version_adds_nothing_of_it_and_says_
     loader.reset()
     with Store('proj', module='ledger').tables(write=False) as tx:
         tx.rows('entries', limit=0)
-    document['projects'][0]['metaforms'][0]['modules'][0]['rows']['entries'].append(
+    document['projects'][0]['bases'][0]['modules'][0]['rows']['entries'].append(
         {'entry_id': 'e9', 'who': 'eve', 'amount': None, 'paid': 0, 'detail': None})
     report = import_document(document)
     assert any('ledger' in notice['message'] and '1' in notice['message'] and '2' in notice['message']

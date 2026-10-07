@@ -26,25 +26,55 @@ def renamed(row: dict) -> dict:
     return {**row, 'type': 'purpose'} if row.get('type') == 'require' else row
 
 
+def loaded(db):
+    """The upgraded store as a process holds it: its projection of the op log, STORE-046."""
+    from metaform.data import log
+    db.row_factory = sqlite3.Row
+    return log.load(db)
+
+
 def layer_names(db) -> set[str]:
     """The layers a store holds: a layout 19 update makes the sources layer and no other, Rich 2026-10-04: "I want all
     of that fucikiong  shit gone"."""
-    return {str(row[0]) for row in db.execute('SELECT name FROM layers')}
+    return {layer.name for layer in loaded(db).layers.values()}
 
 
 def element_names(db) -> dict[str, str | None]:
     """Each current element's name: a join's or a subtype join's name is the name of the element it holds after a
     layout 19 update, Rich 2026-10-04: "the name on the join was the name for the element"."""
-    return {str(row[0]): row[1] for row in db.execute(
-        'SELECT c.element_id, e.name FROM current_elements c JOIN elements e ON e.row = c.row ORDER BY c.element_id')}
+    return {ident: version.fields.get('name') for ident, version in sorted(loaded(db).currents('element'))}
 
 
 def sources(db) -> list[tuple]:
     """The items of the sources layer, each with its node and its refs, in order."""
-    return [tuple(row) for row in db.execute(
-        "SELECT i.target_kind, i.target_id, r.key, r.value FROM current_items c JOIN items i ON i.row = c.row "
-        "JOIN layers l ON l.layer_id = i.layer_id JOIN refs r ON r.owner = 'item' AND r.owner_row = i.row "
-        "WHERE l.name = 'sources' ORDER BY i.row, r.position")]
+    base = loaded(db)
+    layer = base.layer_by_name('sources')
+    return [(version.fields['target_kind'], version.fields['target_id'], key, value)
+            for _, version in base.currents('item') if layer is not None and version.layer_id == layer.id
+            for key, value in version.refs]
+
+
+def _owner(base, version) -> str:
+    found = base.version_at(version.seq)
+    return found[0] if found else ''
+
+
+def join_versions(db, join_id: str) -> list:
+    """Every version of a join in the order written, as the rows of the joins table were."""
+    return sorted(loaded(db).versions.get(join_id, ()), key=lambda version: version.seq)
+
+
+def join_rows(db, join_id: str) -> list[dict]:
+    """A join's versions in the shape the joins table's rows had, without the row number, for comparison with rows
+    read before an upgrade."""
+    return [{'join_id': join_id, 'layer_id': v.layer_id, 'type': v.fields.get('type'), 'receiver': v.fields.get('receiver'),
+             'purpose': v.fields.get('purpose'), 'ef': v.fields.get('ef'), 'ifd': v.fields.get('ifd'),
+             'element': v.fields.get('element'), 'op': v.op, 'reason': v.reason, 'evidence': v.evidence}
+            for v in join_versions(db, join_id)]
+
+
+def without_row(row: dict) -> dict:
+    return {key: value for key, value in row.items() if key != 'row'}
 INTAKE, CORRECTION, MEMORY = 'L-intake', 'L-correction', 'L-memory'
 
 
@@ -83,18 +113,19 @@ def test_a_layout_7_store_opens_at_layout_8_with_its_corrections_folded_into_the
     layout_7_store(path)
     with open_store(path, write=False) as db:
         version = db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
-        layers = db.execute('SELECT layer_id, name, kind FROM layers ORDER BY created').fetchall()
-        versions = db.execute("SELECT row, layer_id, purpose FROM joins WHERE join_id='J1' ORDER BY row").fetchall()
-        current = db.execute("SELECT row FROM current_joins WHERE join_id='J1'").fetchone()[0]
-        elements = db.execute('SELECT element_id, row FROM current_elements ORDER BY element_id').fetchall()
+        base = loaded(db)
         tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         broken = db.execute('PRAGMA foreign_key_check').fetchall()
     assert version == SCHEMA_VERSION
-    assert [tuple(layer) for layer in layers] == [(INTAKE, 'intake', 'intake'), (MEMORY, 'memory', 'memory')]
-    assert [tuple(row) for row in versions] == [(1, INTAKE, 'the first purpose'), (2, INTAKE, 'the refined purpose')]
-    assert current == 2
-    assert [tuple(row) for row in elements] == [('E1', 1), ('E2', 2)]
-    assert 'correction_stack' not in tables
+    layers = sorted(base.layers.values(), key=lambda layer: layer.created)
+    assert [(layer.id, layer.name, layer.kind) for layer in layers] == [(INTAKE, 'base', 'base'),
+                                                                        (MEMORY, 'memory', 'memory')]
+    versions = sorted(base.versions['J1'], key=lambda version: version.seq)
+    assert [(v.layer_id, v.fields['purpose']) for v in versions] == [(INTAKE, 'the first purpose'),
+                                                                     (INTAKE, 'the refined purpose')]
+    assert base.current('J1') is versions[-1]
+    assert sorted(ident for ident, _ in base.currents('element')) == ['E1', 'E2']
+    assert not {'correction_stack', 'layers', 'joins', 'elements'} & tables
     assert broken == []
     backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))
     assert len(backups) == 1
@@ -131,10 +162,13 @@ def test_a_layout_9_store_moves_an_elements_name_and_a_joins_ifd_out_of_extra_in
     db.close()
     with open_store(path, write=False) as opened:
         assert opened.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == SCHEMA_VERSION
-        element = opened.execute("SELECT name FROM elements WHERE element_id='E1'").fetchone()
-        joined = opened.execute('SELECT ifd FROM joins WHERE row=1').fetchone()
-        layers = layer_names(opened)
-        anywhere = [row[0] for row in opened.execute('SELECT value FROM items') if 'colour' in str(row[0])]
+        base = loaded(opened)
+        element = (base.versions['E1'][0].fields['name'],)
+        joined = (min((v for held in base.versions.values() for v in held if base.kinds.get(v and held[0] and _owner(base, v)) == 'join'),
+                      key=lambda v: v.seq).fields['ifd'],)
+        layers = {layer.name for layer in base.layers.values()}
+        anywhere = [v.fields['value'] for ident, held in base.versions.items() if base.kinds[ident] == 'item'
+                    for v in held if 'colour' in str(v.fields.get('value'))]
     assert element[0] == 'kitchen timer daemon'
     assert joined[0] == 'receives'
     # What else the extra held is not kept in the store, layout 19, Rich 2026-10-04; the backup made first holds it.
@@ -194,27 +228,25 @@ def test_a_layout_10_store_opens_with_no_perspective_and_every_other_field_of_ev
     raw.close()
     with open_store(path, write=False) as db:
         version = db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
-        columns = [row[1] for row in db.execute('PRAGMA table_info(joins)')]
-        after = [dict(row) for row in db.execute('SELECT * FROM joins ORDER BY row')]
-        current = db.execute('SELECT join_id, row FROM current_joins').fetchall()
-        held = db.execute('SELECT element_id FROM join_elements WHERE join_row=3 ORDER BY position').fetchall()
+        base = loaded(db)
+        after = join_rows(db, 'J1')
+        versions = join_versions(db, 'J1')
         refs = sources(db)
         layers = layer_names(db)
         names = element_names(db)
-        broken = db.execute('PRAGMA foreign_key_check').fetchall()
     assert version == SCHEMA_VERSION
-    assert 'perspective' not in columns
+    assert all('perspective' not in v.fields for v in versions)
     # the join's name is the element's it holds, and so is the subtype join's; nothing else of them is kept
     assert names == {'E1': None, 'E2': 'engine', 'E3': 'tick'}
     assert 'intake details' not in layers
-    assert after[:1] == before  # layout 12 adds each join's newest version, its ef the old relation, MAP-020
+    assert after[:1] == [without_row(row) for row in before]  # layout 12 adds each join's newest version, MAP-020
     assert [row['ef'] for row in after[1:]] == ['runs the code each frame']  # the subtype join is gone, layout 19
     moving = ('row', 'ef', 'op', 'reason', 'evidence')
     assert {key: value for key, value in after[1].items() if key not in moving} == \
         {key: value for key, value in before[0].items() if key not in moving}
-    assert [tuple(row) for row in current] == [('J1', 3)] and [row[0] for row in held] == ['E2', 'E3']
+    assert base.current('J1').seq == versions[-1].seq and versions[-1].fields['held'] == ['E2', 'E3']
+    assert [ident for ident, _ in base.currents('join')] == ['J1']
     assert refs == [('element', 'E2', 'path', 'src/engine.c')]  # the join's refs are the element's it holds
-    assert broken == []
     backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))
     assert len(backups) == 1
     kept = sqlite3.connect(backups[0])
@@ -299,43 +331,48 @@ def test_a_layout_11_store_opens_with_ef_holding_the_old_relation_and_no_relatio
     raw.close()
     with open_store(path, write=False) as db:
         version = db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
-        columns = [row[1] for row in db.execute('PRAGMA table_info(joins)')]
-        rows = [dict(row) for row in db.execute('SELECT * FROM joins ORDER BY row')]
-        current = db.execute('SELECT join_id, row FROM current_joins').fetchall()
+        base = loaded(db)
+        rows = sorted(((ident, v) for ident in ('J1', 'J2', 'J3') for v in join_versions(db, ident)),
+                      key=lambda pair: pair[1].seq)
         refs = sources(db)
         layers = layer_names(db)
         names = element_names(db)
-        elements = db.execute('SELECT element_id, row FROM current_elements ORDER BY element_id').fetchall()
+        elements = [ident for ident, _ in base.currents('element')]
         kept = (db.execute('SELECT work_id, target_id FROM work').fetchall(),
                 db.execute('SELECT message_id, target_id FROM messages').fetchall(),
-                db.execute('SELECT item_id, target_id FROM current_items WHERE layer_id=?', (MEMORY,)).fetchall())
-        join_ids = (db.execute('SELECT join_id FROM join_ids ORDER BY join_id').fetchall(),
-                    db.execute("SELECT id FROM identities WHERE kind='join' ORDER BY id").fetchall())
-        texts = [str(value) for table, in db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-                 for row in db.execute(f'SELECT * FROM "{table}"').fetchall() for value in row if isinstance(value, str)]
-        broken = db.execute('PRAGMA foreign_key_check').fetchall()
+                [(ident, v.fields['target_id']) for ident, v in base.currents('item') if v.layer_id == MEMORY])
+        join_ids = (sorted(ident for ident, kind in base.kinds.items() if kind == 'join'),
+                    [row[0] for row in db.execute("SELECT id FROM objects WHERE kind='join' ORDER BY id")])
+        texts = [str(value) for row in db.execute('SELECT data FROM ops').fetchall() for value in row]
+        texts += [str(value) for table, in db.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                                                      "AND name NOT IN ('ops', 'snapshots')").fetchall()
+                  for row in db.execute(f'SELECT * FROM "{table}"').fetchall() for value in row if isinstance(value, str)]
     assert version == SCHEMA_VERSION
     # each element keeps its own name, and nothing else of the joins' old fields is kept, layout 19
     assert names == {'E1': 'code', 'E2': 'engine', 'E3': 'tick', 'E4': None} and 'intake details' not in layers
-    assert [[row[0] for row in held] for held in join_ids] == [['J1', 'J2', 'J3'], ['J1', 'J2', 'J3']]
+    assert list(join_ids) == [['J1', 'J2', 'J3'], ['J1', 'J2', 'J3']]
     for observation in ('One loop.', 'One loop, in engine.c.', 'One interrupt.', 'Removed.'):
         assert not any(observation in text for text in texts), observation  # kept only in the backup
-    assert 'relation' not in columns and 'observation' not in columns and 'ef' in columns and 'verb' not in columns
-    assert rows[:4] == before  # every earlier version is kept, the old ef in it; the subtype join is gone, layout 19
-    newest = {row['join_id']: row for row in rows[4:]}
+    fields = {key for _, v in rows for key in v.fields}
+    assert 'relation' not in fields and 'observation' not in fields and 'ef' in fields and 'verb' not in fields
+    as_rows = [without_row(row) for row in before]
+    shaped = [{**{key: v.fields.get(key) for key in ('type', 'receiver', 'purpose', 'ef', 'ifd', 'element')},
+               'join_id': ident, 'layer_id': v.layer_id, 'op': v.op, 'reason': v.reason, 'evidence': v.evidence}
+              for ident, v in rows]
+    assert shaped[:4] == as_rows  # every earlier version is kept, the old ef in it; the subtype join is gone, layout 19
+    newest = {row['join_id']: row for row in shaped[4:]}
     assert sorted(newest) == ['J1']  # the removed join gets no new version
     assert newest['J1']['ef'] == 'runs the code each frame'
     assert {key: value for key, value in newest['J1'].items() if key not in ('row', 'ef', 'op', 'reason', 'evidence')} \
         == {key: value for key, value in before[1].items() if key not in ('row', 'ef', 'op', 'reason', 'evidence')}
     assert (newest['J1']['op'], newest['J1']['reason']) == ('change', EF_REASON)
-    assert [tuple(row) for row in current] == [('J1', newest['J1']['row'])]
+    assert base.current('J1').seq == rows[-1][1].seq and [ident for ident, _ in base.currents('join')] == ['J1']
     # the current versions' refs, each at the element the join or subtype join held, one sources item per element
     assert refs == [('element', 'E2', 'path', 'src/engine.c'), ('element', 'E2', 'spec', 'MAP-020'),
                     ('element', 'E3', 'path', 'src/tick.c')]
-    assert [tuple(row) for row in elements] == [('E1', 1), ('E2', 2), ('E3', 3), ('E4', 4)]
+    assert elements == ['E1', 'E2', 'E3', 'E4']
     # what was at the subtype join is at the element it held, layout 19
     assert [[tuple(row) for row in table] for table in kept] == [[('W1', 'J1')], [('Q1', 'E3')], [('I1', 'J1')]]
-    assert broken == []
     backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))
     assert len(backups) == 1
     copy = sqlite3.connect(backups[0])
@@ -390,19 +427,16 @@ def test_a_layout_12_store_opens_with_every_purpose_join_still_typed_purpose_and
     db.close()
     with open_store(path, write=False) as opened:
         version = opened.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
-        after = [dict(row) for row in opened.execute('SELECT * FROM joins ORDER BY row')]
-        broken = opened.execute('PRAGMA foreign_key_check').fetchall()
+        after = join_rows(opened, 'J1')
         layers = layer_names(opened)
         names = element_names(opened)
-        held = opened.execute("SELECT e.element_id FROM join_elements e JOIN current_joins c ON c.row = e.join_row "
-                              "WHERE c.join_id='J1' ORDER BY e.position").fetchall()
-    assert version == SCHEMA_VERSION == '20'
-    assert [row[0] for row in held] == ['E2', 'E3']
+        held = loaded(opened).current('J1').fields['held']
+    assert version == SCHEMA_VERSION == '21'
+    assert held == ['E2', 'E3']
     # each element keeps its own name; the joins' verb, non_goal and the subtype join's own fields are not kept
     assert names == {'E1': 'code', 'E2': 'engine', 'E3': 'tick'} and 'intake details' not in layers
     assert [row['type'] for row in after] == ['purpose', 'purpose']  # the subtype join is gone, layout 19
-    assert after == [renamed(row) for row in before if row['parent'] is None]
-    assert broken == []
+    assert after == [without_row(renamed(row)) for row in before if row['parent'] is None]
     backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))
     assert len(backups) == 1
     copy = sqlite3.connect(backups[0])
@@ -430,9 +464,9 @@ def test_a_join_with_no_relation_keeps_its_ef_through_the_layout_12_update(home:
     db.commit()
     db.close()
     with open_store(path, write=False) as opened:
-        rows = opened.execute("SELECT row, ef FROM joins WHERE join_id='J4' ORDER BY row").fetchall()
-        current = opened.execute("SELECT row FROM current_joins WHERE join_id='J4'").fetchone()
-    assert [tuple(row) for row in rows] == [(6, 'ticks the engine')] and current[0] == 6
+        rows = [v.fields['ef'] for v in join_versions(opened, 'J4')]
+        current = loaded(opened).current('J4')
+    assert rows == ['ticks the engine'] and current is not None and current.fields['ef'] == 'ticks the engine'
 
 
 LAYOUT_13 = (Path(__file__).parent / 'fixtures' / 'store-v13.sql').read_text(encoding='utf-8')
@@ -474,7 +508,7 @@ def test_a_layout_13_store_opens_with_every_ticket_kept_and_no_glyph_column(home
         after = [dict(row) for row in opened.execute('SELECT * FROM work ORDER BY row')]
         steps = opened.execute('SELECT work_id, number, said FROM work_steps').fetchall()
         broken = opened.execute('PRAGMA foreign_key_check').fetchall()
-    assert version == SCHEMA_VERSION == '20'
+    assert version == SCHEMA_VERSION == '21'
     assert after == before
     assert [tuple(row) for row in steps] == [('W2', 1, 'Traced it.')] and broken == []
     backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))
@@ -528,7 +562,7 @@ def test_a_layout_14_store_opens_with_every_ticket_kept_and_the_glyph_column_dro
         links = opened.execute('SELECT work_id, number, target_id FROM work_links').fetchall()
         steps = opened.execute('SELECT work_id, number, said FROM work_steps').fetchall()
         broken = opened.execute('PRAGMA foreign_key_check').fetchall()
-    assert version == SCHEMA_VERSION == '20'
+    assert version == SCHEMA_VERSION == '21'
     assert 'glyph' not in columns
     assert after == [{key: value for key, value in row.items() if key != 'glyph'} for row in before]
     assert [tuple(row) for row in links] == [('W1', 0, 'E1')]
@@ -577,12 +611,14 @@ def test_a_layout_15_store_opens_with_every_item_kept_and_both_flags_false(home:
     db.close()
     with open_store(path, write=False) as opened:
         version = opened.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
-        after = [dict(row) for row in opened.execute('SELECT * FROM items ORDER BY row')]
-        current = opened.execute('SELECT item_id, row FROM current_items').fetchall()
-        broken = opened.execute('PRAGMA foreign_key_check').fetchall()
-    assert version == SCHEMA_VERSION == '20'
-    assert after == [{**row, 'read_first': 0, 'always_show': 0} for row in before]
-    assert [tuple(row) for row in current] == [('I1', 2)] and broken == []
+        base = loaded(opened)
+        versions = sorted(base.versions['I1'], key=lambda v: v.seq)
+        after = [{'item_id': 'I1', 'layer_id': v.layer_id, 'op': v.op, 'reason': v.reason, 'evidence': v.evidence,
+                  **{key: v.fields.get(key) for key in ('target_kind', 'target_id', 'value', 'link_kind', 'link_id',
+                                                        'extra', 'read_first', 'always_show')}} for v in versions]
+    assert version == SCHEMA_VERSION == '21'
+    assert after == [{**without_row(row), 'read_first': 0, 'always_show': 0} for row in before]
+    assert base.current('I1').seq == versions[-1].seq and [ident for ident, _ in base.currents('item')] == ['I1']
     backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))
     assert len(backups) == 1
 
@@ -623,13 +659,12 @@ def test_a_layout_16_store_opens_with_every_join_kept_and_naming_no_element(home
     db.close()
     with open_store(path, write=False) as opened:
         version = opened.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
-        after = [dict(row) for row in opened.execute('SELECT * FROM joins ORDER BY row')]
-        current = opened.execute('SELECT join_id, row FROM current_joins').fetchall()
-        broken = opened.execute('PRAGMA foreign_key_check').fetchall()
-    assert version == SCHEMA_VERSION == '20'
-    assert after == [renamed(row) for row in before]
+        base = loaded(opened)
+        after = join_rows(opened, 'J1')
+    assert version == SCHEMA_VERSION == '21'
+    assert after == [without_row(renamed(row)) for row in before]
     assert [row['type'] for row in after] == ['purpose', 'purpose']  # require is purpose again, Rich 2026-10-04
-    assert [tuple(row) for row in current] == [('J1', 2)] and broken == []
+    assert base.current('J1').seq == max(v.seq for v in base.versions['J1'])
     backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))
     assert len(backups) == 1
 
@@ -694,30 +729,28 @@ def test_a_layout_16_store_opens_in_richs_shape_with_nothing_it_held_lost(home: 
     elements_before = db.execute('SELECT element_id, address, name_length, name, role FROM elements ORDER BY row').fetchall()
     db.close()
     with open_store(path, write=False) as opened:
-        q = lambda sql, *args: [tuple(row) for row in opened.execute(sql, args)]
-        version = q("SELECT value FROM meta WHERE key='schema_version'")[0][0]
-        elements_after = q('SELECT element_id, address, name_length, name, role FROM elements ORDER BY row')
-        held = {join_id: [row[0] for row in q('SELECT e.element_id FROM join_elements e JOIN current_joins c '
-                                              'ON c.row = e.join_row WHERE c.join_id=? ORDER BY e.position', join_id)]
-                for join_id in ('J1', 'J3')}
-        current = q('SELECT c.join_id, j.type, j.receiver, j.purpose, j.ef, j.ifd FROM current_joins c '
-                    'JOIN joins j ON j.row = c.row ORDER BY c.join_id')
-        joins = q('SELECT join_id FROM joins ORDER BY row')
-        layer = {name: layer_id for layer_id, name in q('SELECT layer_id, name FROM layers')}
+        version = opened.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
+        base = loaded(opened)
+        elements_after = [(ident, v.fields['address'], v.fields['name_length'], v.fields['name'], v.fields['role'])
+                          for ident, v in base.currents('element')]
+        held = {join_id: list(base.current(join_id).fields['held']) for join_id in ('J1', 'J3')}
+        current = [(ident, v.fields['type'], v.fields['receiver'], v.fields['purpose'], v.fields['ef'], v.fields['ifd'])
+                   for ident, v in sorted(base.currents('join'))]
+        layer = {found.name: layer_id for layer_id, found in base.layers.items()}
         layers = layer_names(opened)
-        items = q('SELECT i.layer_id, i.target_kind, i.target_id, i.value, r.key, r.value FROM current_items c '
-                  "JOIN items i ON i.row = c.row LEFT JOIN refs r ON r.owner = 'item' AND r.owner_row = i.row "
-                  'ORDER BY i.row, r.position')
-        moved = q('SELECT target_kind, target_id FROM work UNION ALL SELECT target_kind, target_id FROM messages')
-        refs = q("SELECT owner FROM refs WHERE owner <> 'item'")
-        broken = q('PRAGMA foreign_key_check')
-    assert version == SCHEMA_VERSION == '20'
+        items = [(v.layer_id, v.fields['target_kind'], v.fields['target_id'], v.fields['value'], *(ref or (None, None)))
+                 for _, v in base.currents('item') for ref in (v.refs or [None])]
+        moved = [tuple(row) for row in opened.execute('SELECT target_kind, target_id FROM work UNION ALL '
+                                                      'SELECT target_kind, target_id FROM messages')]
+        refs = [ident for ident, held_versions in base.versions.items() if base.kinds[ident] in ('element', 'join')
+                for v in held_versions if v.refs]
+    assert version == SCHEMA_VERSION == '21'
     # J1's name is not E2's, which has its own; J3's is E4's, which had none; the rest of every element is kept
     assert elements_after == [tuple(row) if row[0] != 'E4' else (*row[:3], 'cee', row[4]) for row in elements_before]
     assert held == {'J1': ['E2', 'E3'], 'J3': ['E4']}
     assert current == [('J1', 'purpose', 'E1', 'Need b.', 'serves b', 'receives'),
                        ('J3', 'purpose', 'E1', 'Need c.', 'serves c', 'receives')]
-    assert 'J2' not in [row[0] for row in joins]  # the subtype join is gone, its element held by J1
+    assert 'J2' not in [ident for ident, _ in base.currents('join')]  # the subtype join is gone, its element held by J1
     sources = layer['sources']
     assert 'intake details' not in layers  # nothing of the old shape is kept beside the metaform
     # The current version is what moves: J1's refs from its change row, at E2, the element J1 holds.
@@ -728,7 +761,7 @@ def test_a_layout_16_store_opens_in_richs_shape_with_nothing_it_held_lost(home: 
         (sources, 'element', 'E3', '"code.loop.tick"', 'path', 'src/tick.c'),
     ]
     assert moved == [('element', 'E3'), ('element', 'E3')]
-    assert refs == [] and broken == []
+    assert refs == []  # the base holds no refs: an element's refs are items of the sources layer
     # Earlier versions' fields and refs remain in the copy kept first.
     backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob(f'*/{tmp_path.name}/main.metaform.sqlite3'))
     assert len(backups) == 1

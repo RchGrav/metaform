@@ -117,7 +117,7 @@ def test_map_element_values_pass_through_composed_calls_and_serialize_for_the_ag
     small_map(store)
     element = store.element('code.timer.kitchen')
     sources = knowledge(store, 'sources')  # an element's refs are items of the sources layer, Rich 2026-10-04
-    store.add_item(sources.name, Node('element', element.element_id), 'code.timer.kitchen',
+    store.add_item(sources.name, Node('element', element.id), 'code.timer.kitchen',
                    refs=[('path', 'src/timer.c')])
     store.finish(sources.name)
     layer = knowledge(store, 'procedures')

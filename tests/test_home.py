@@ -71,9 +71,9 @@ def test_read_only_commands_create_only_first_run_version_records(home, run, tmp
     run('list', 'projects', cwd=tmp_path)
     run('config', '--show', cwd=tmp_path)
     assert not (home / 'projects').exists()
-    with metaform_home.base() as db:
+    with metaform_home.chassis() as db:
         assert dict(db.execute('SELECT key, value FROM meta')) == {
-            'schema_version': metaform_home.BASE_SCHEMA_VERSION,
+            'schema_version': metaform_home.CHASSIS_SCHEMA_VERSION,
             'last_run_version': __version__,
         }
         assert db.execute('SELECT COUNT(*) FROM settings').fetchone()[0] == 0
@@ -144,7 +144,7 @@ def test_a_store_of_an_unknown_schema_version_is_refused_and_not_written(home, s
     layer = store.layer('notes', 'test', 'Notes.', mutable=True, hideable=True,
                         provenance={'module': 'test'})
     store.add_element(layer.name, 'code.engine')
-    path = metaform_home.store_path('proj', store.active_metaform().metaform_id)
+    path = metaform_home.store_path('proj', store.active_base().id)
     db = sqlite3.connect(path)
     db.execute("UPDATE meta SET value='999' WHERE key='schema_version'")
     db.commit()
@@ -224,35 +224,35 @@ def test_a_new_metaform_starts_empty_and_the_old_one_is_kept_whole(home, store):
     with store.atomic():
         layer = store.layer('intake-1', 'intake', 'The map.', kind='intake', mutable=False, hideable=False, provenance={'module': 'intake'}, ready=True)
         element = store.add_element(layer.name, 'code.engine', name_length=1, role='DE')
-    main = store.active_metaform()
+    main = store.active_base()
     assert main.name == 'main'
-    main_file = metaform_home.store_path('proj', main.metaform_id)
+    main_file = metaform_home.store_path('proj', main.id)
     before = main_file.read_bytes()
-    before_read = store.element(element.element_id).to_dict()
-    fresh = store.add_metaform('fresh')
-    assert store.active_metaform().metaform_id == fresh.metaform_id
-    assert store.element(element.element_id) is None
+    before_read = store.element(element.id).to_dict()
+    fresh = store.add_base('fresh')
+    assert store.active_base().id == fresh.id
+    assert store.element(element.id) is None
     assert store.has_intake() is False
     assert main_file.read_bytes() == before
-    store.activate_metaform('main')
-    assert store.element(element.element_id).to_dict() == before_read
+    store.activate_base('main')
+    assert store.element(element.id).to_dict() == before_read
     assert store.has_intake() is True
-    assert [item.name for item in store.metaforms().results] == ['main', 'fresh']
+    assert [item.name for item in store.bases().results] == ['main', 'fresh']
 
 
 @pytest.mark.req('STORE-041')
 @pytest.mark.req('BASE-044')
 def test_a_metaform_name_taken_in_the_project_is_numbered_with_a_notice(home, store):
-    store.add_metaform('fresh')
-    second = store.add_metaform('fresh')
-    third = store.add_metaform('fresh')
+    store.add_base('fresh')
+    second = store.add_base('fresh')
+    third = store.add_base('fresh')
     assert (second.name, third.name) == ('fresh-2', 'fresh-3')
     assert second.notices and 'fresh' in second.notices[0].message
-    assert [item.name for item in store.metaforms().results] == ['main', 'fresh', 'fresh-2', 'fresh-3']
+    assert [item.name for item in store.bases().results] == ['main', 'fresh', 'fresh-2', 'fresh-3']
 
 
 @pytest.mark.req('STORE-041')
 def test_every_layer_names_the_metaform_that_holds_it(store):
     layer = store.layer('notes', 'test', 'Notes.', mutable=True, hideable=True,
                         provenance={'module': 'test'})
-    assert layer.metaform_id == store.active_metaform().metaform_id
+    assert layer.base_id == store.active_base().id

@@ -116,7 +116,7 @@ def _with_work_modules(ctx: Context, found: Any) -> Any:
     BASE-035; a field the read holds already is never replaced."""
     added = work_reads(ctx.folder, found.work, project=ctx.project)
     data = cast(dict[str, Any], found.to_dict())
-    data['at'] = _with_modules(ctx, found.at, Node.of(found.work.kind, found.work.id))
+    data['at'] = _with_modules(ctx, found.at, Node.of(found.work.node_kind, found.work.node_id))
     data['linked'] = [_with_modules(ctx, read, Node.of(link.kind, link.id))
                       for link, read in zip(found.work.links, found.linked)]
     for module, value in added.items():
@@ -220,12 +220,12 @@ def history(ctx: Context) -> Any:
     return _store(ctx).history(ctx.nouns['id'], **_paging(ctx))
 
 
-def metaforms(ctx: Context) -> Any:
-    return _other_project(ctx).metaforms(**_paging(ctx))
+def bases(ctx: Context) -> Any:
+    return _other_project(ctx).bases(**_paging(ctx))
 
 
-def add_metaform(ctx: Context) -> Any:
-    return _other_project(ctx).add_metaform(ctx.nouns['name'])
+def add_base(ctx: Context) -> Any:
+    return _other_project(ctx).add_base(ctx.nouns['name'])
 
 
 def collapse(ctx: Context) -> Any:
@@ -233,7 +233,7 @@ def collapse(ctx: Context) -> Any:
 
 
 def activate(ctx: Context) -> Any:
-    return _other_project(ctx).activate_metaform(ctx.nouns['name'])
+    return _other_project(ctx).activate_base(ctx.nouns['name'])
 
 
 def search(ctx: Context) -> Any:
@@ -284,7 +284,7 @@ T = TypeVar('T')
 
 
 def critic(ctx: Context) -> str:
-    """One critic run: a new blind-spot layer, blinded by its type, and the critic prompt with the whole metaform,
+    """One critic run: a new blind-spot layer, blinded by its type, and the critic prompt with the whole base,
     LAYER-014 and LAYER-015. Fast mode, blind to the code, is the default; --critic also reads the code."""
     store = _store(ctx)
     sighted = bool(ctx.setting('critic'))
@@ -316,7 +316,7 @@ def challenges(ctx: Context) -> str:
             element = store.element(found.target.id, raw=True)
             where = f'element:{element.address}' if element is not None else where
         value = found.value if isinstance(found.value, str) else json.dumps(found.value, ensure_ascii=False)
-        lines.append(f'{found.item_id}  {found.state or "open"}  {where}  {value}')
+        lines.append(f'{found.id}  {found.state or "open"}  {where}  {value}')
     return prompt_files.required(resources.files(__name__), 'answer_challenges', layer=layer, challenges='\n'.join(lines))
 
 
@@ -460,7 +460,7 @@ def _purposes(store: Store, receiver: Any, provider: Any) -> list[Any]:
     owner = store.element(str(receiver), raw=True)
     if owner is None:
         return []
-    return [held for held in store.joins(owner.element_id, limit=0).results
+    return [held for held in store.joins(owner.id, limit=0).results
             if any(each.address == provider for each in held.elements)]
 
 
@@ -468,7 +468,7 @@ def _one(found: list[Any], what: str, notices: list[Notice], purposes: bool = Fa
     if len(found) == 1:
         return found[0]
     if not found:
-        notices.append(Notice('purpose', f'There is no {what} in the metaform; nothing was changed.'))
+        notices.append(Notice('purpose', f'There is no {what} in the base; nothing was changed.'))
     else:
         named = '; '.join(repr(item.purpose) for item in found) if purposes else str(len(found))
         notices.append(Notice('purpose', f'{len(found)} of {what} cannot be told apart by their addresses, '
@@ -486,15 +486,15 @@ def promote(ctx: Context) -> Any:
     held = _one(_purposes(store, nouns['receiver'], nouns['provider']), said, notices, purposes=True)
     if held is None:
         return Outcome(tuple(notices))
-    return store.promote_join(held.join_id, nouns['address'],
+    return store.promote_join(held.id, nouns['address'],
                               **_optional(ctx, 'name', 'name_length', 'role', 'reason'))
 
 
 def refine(ctx: Context) -> Any:
-    """Refine the metaform: one element or join changed or removed as its newest version in the metaform's own
+    """Refine the base: one element or join changed or removed as its newest version in the base's own
     layer, every earlier version kept, LAYER-025. It names what it changes by address, never by id: an element by its
     address, a join by its receiver and an element it holds, MAP-005; `elements` gives the elements a join holds. It
-    is a verb of its own, apart from knowledge, because it changes the metaform and no knowledge layer. Nothing is
+    is a verb of its own, apart from knowledge, because it changes the base and no knowledge layer. Nothing is
     refused for its content, BASE-044."""
     nouns = ctx.nouns
     if not any(name in nouns for name in NAMING):
@@ -509,16 +509,16 @@ def refine(ctx: Context) -> Any:
         said = f"the purpose of {nouns.get('receiver')} served by {nouns.get('provider')}"
         held = _one(_purposes(store, nouns.get('receiver'), nouns.get('provider')), said, notices, purposes=True)
         if held is not None:
-            thing = held.join_id
+            thing = held.id
             if 'to_receiver' in nouns:
                 changes['receiver'] = nouns['to_receiver']
     else:
         element = store.element(str(nouns['address']), raw=True)
         if element is None:
-            notices.append(Notice('address', f"{nouns['address']} is not an element of the metaform; nothing was "
+            notices.append(Notice('address', f"{nouns['address']} is not an element of the base; nothing was "
                                              'changed.'))
         else:
-            thing = element.element_id
+            thing = element.id
             if 'to_address' in nouns:
                 changes['address'] = nouns['to_address']
     named = {name: nouns[name] for name in NAMING if name in nouns}
@@ -579,7 +579,7 @@ def _knowledge(ctx: Context, op: str, notices: list[Notice]) -> Any:
         made = store.add_element(name, nouns['address'], **_optional(ctx, 'name_length', 'role'),
                                  name=nouns.get('name'))
         if 'refs' in nouns and not isinstance(made, Outcome):
-            _sources(store, made.element_id, made.address, nouns['refs'], notices)
+            _sources(store, made.id, made.address, nouns['refs'], notices)
         return made
     if op == 'add-join':
         purpose, ef = _empty(ctx, notices, 'purpose', 'ef')
@@ -623,10 +623,10 @@ def _sources(store: Store, element_id: str, address: str, refs: Any, notices: li
     held = [item for item in store.layer_items(SOURCES, Node('element', element_id), limit=0).results
             if isinstance(item, Item)]
     if held:
-        notices.extend(getattr(store.edit(held[0].item_id, {'refs': refs}), 'notices', ()))
+        notices.extend(getattr(store.edit(held[0].id, {'refs': refs}), 'notices', ()))
     else:
         notices.extend(getattr(store.add_item(SOURCES, Node('element', element_id), address, refs=refs), 'notices', ()))
-    notices.append(Notice('refs', f'The refs were written to the {SOURCES} layer at {address}; the metaform holds none.'))
+    notices.append(Notice('refs', f'The refs were written to the {SOURCES} layer at {address}; the base holds none.'))
 
 
 def _noun(name: str, help: str, kind: NounKind = 'str', schema: dict[str, Any] | None = None) -> Noun:
@@ -718,7 +718,7 @@ REFINE_NOUNS = (
     _noun('address', 'An element, by address.'),
     _noun('reason', 'Why.'),
     _noun('evidence', 'What shows it.'),
-    _noun('remove', 'Remove it from the metaform instead of changing it; its versions are kept.', 'bool'),
+    _noun('remove', 'Remove it from the base instead of changing it; its versions are kept.', 'bool'),
     _noun('to_receiver', 'A join: its new receiver, by address; it moves and stays the same join.'),
     _noun('to_address', 'An element cannot be moved: given for an element, it is not applied.'),
     *(_refined_noun(noun) for noun in KNOWLEDGE_NOUNS if noun.name in REFINE_FIELDS),
@@ -887,9 +887,9 @@ def work(ctx: Context) -> Any:
         # too large to read, MAP-049.
         found = store.work(node, nouns.get('condition'), nouns.get('open', True), **_paging(ctx), joins=True)
         if not nouns.get('hold'):  # a ticket the person holds is hidden from agents unless asked for with hold=true
-            kept = _settings(store, [record.work_id for record in found.results])
+            kept = _settings(store, [record.id for record in found.results])
             found = found._replace(results=tuple(record for record in found.results
-                                                 if not kept.get(record.work_id, {}).get('hold')))
+                                                 if not kept.get(record.id, {}).get('hold')))
         listed = plain(_glyphed(store, found))
         listed['results'] = [{name: value for name, value in row.items() if name not in UNLISTED}
                              for row in listed['results']]
@@ -903,7 +903,7 @@ def work(ctx: Context) -> Any:
             added = store.add_work(node, nouns.get('condition'),
                                    links=[_link(store, link) for link in nouns.get('links') or ()],
                                    **_optional(ctx, 'note', 'task', 'held', 'reviewed'))
-            _keep(store, added.work_id, nouns, notices)
+            _keep(store, added.id, nouns, notices)
         return _with_notices(_glyphed(store, added), notices)
     if op == 'distribute':
         return _with_notices(_glyphed(store, _distribute(store, nouns['agents'])), notices)
@@ -1042,14 +1042,14 @@ def _glyphed(store: Store, result: Any) -> Any:
     with none of these is returned as it is."""
     page = cast(Page[WorkRecord], result) if isinstance(result, Page) else None
     records = list(page.results) if page is not None else [cast(WorkRecord, result)]
-    ids = [record.work_id for record in records]
+    ids = [record.id for record in records]
     glyphs, settings = _glyphs(store, ids), _settings(store, ids)
     if not glyphs and not settings:
         return page if page is not None else records[0]
 
     def one(record: WorkRecord) -> Any:
-        kept = {**({'glyph': glyphs[record.work_id]} if record.work_id in glyphs else {}),
-                **settings.get(record.work_id, {})}
+        kept = {**({'glyph': glyphs[record.id]} if record.id in glyphs else {}),
+                **settings.get(record.id, {})}
         if not kept:
             return record
         data = record.to_dict()
@@ -1072,7 +1072,7 @@ def _distribute(store: Store, agents: Any) -> Page[WorkRecord]:
                    if not record.taken and (not record.condition or record.condition in TICKETS)]
         # the board's order: To do before Backlog, each by its place, a ticket with none after, then as written
         waiting.sort(key=lambda record: (record.held, record.position is None, record.position or 0))
-        _assign(store, {record.work_id: AGENT_GLYPHS[place % agents] for place, record in enumerate(waiting)})
+        _assign(store, {record.id: AGENT_GLYPHS[place % agents] for place, record in enumerate(waiting)})
     return Page(tuple(waiting), None)
 
 
@@ -1081,8 +1081,8 @@ def work_read(ctx: Context, record: WorkRecord) -> dict[str, Any] | None:
     it under `map` in `map work id=<id>`, BASE-035."""
     if ctx.store is None:
         return None
-    glyph = _glyphs(ctx.store, [record.work_id]).get(record.work_id)
-    kept = {**({'glyph': glyph} if glyph else {}), **_settings(ctx.store, [record.work_id]).get(record.work_id, {})}
+    glyph = _glyphs(ctx.store, [record.id]).get(record.id)
+    kept = {**({'glyph': glyph} if glyph else {}), **_settings(ctx.store, [record.id]).get(record.id, {})}
     return kept or None
 
 
@@ -1215,14 +1215,14 @@ MODULE = Module(
              nouns=(Noun('key', 'The ref key, such as path.'), Noun('value', 'The ref value.'), *PAGING)),
         Verb('history', history, 'Every version of a thing, in the order it was written.',
              nouns=(Noun('id', 'An id.'), *PAGING)),
-        Verb('metaforms', metaforms, "The project's metaforms.", nouns=(_noun('project', 'A project id.'), *PAGING)),
-        Verb('add-metaform', add_metaform, 'Start a new, empty metaform and make it active.',
-             nouns=(Noun('name', 'The metaform name.'), _noun('project', 'A project id.'))),
-        Verb('activate', activate, 'Make a metaform the active one.',
-             nouns=(Noun('name', 'The metaform name.'), _noun('project', 'A project id.'))),
-        Verb('collapse', collapse, 'Write the current map as a new metaform of one intake layer, each element and '
+        Verb('bases', bases, "The project's bases.", nouns=(_noun('project', 'A project id.'), *PAGING)),
+        Verb('add-base', add_base, 'Start a new, empty base and make it active.',
+             nouns=(Noun('name', 'The base name.'), _noun('project', 'A project id.'))),
+        Verb('activate', activate, 'Make a base the active one.',
+             nouns=(Noun('name', 'The base name.'), _noun('project', 'A project id.'))),
+        Verb('collapse', collapse, 'Write the current map as a new base of one base layer, each element and '
                                    'join once with the same ids, and make it active; the old one is kept whole.',
-             nouns=(Noun('name', 'The new metaform name.'), _noun('project', 'A project id.'))),
+             nouns=(Noun('name', 'The new base name.'), _noun('project', 'A project id.'))),
         Verb('promote', promote, 'Give a join an ordinary element by address, keeping the original join and its '
                                  'history, memories and work.',
              nouns=(_noun('receiver', 'The address of the element that holds the join.'),
@@ -1323,14 +1323,14 @@ MODULE = Module(
         Verb('knowledge', knowledge, 'Create, build, edit and finish a knowledge layer.',
              nouns=KNOWLEDGE_NOUNS,
              details='Every call names its layer with layer=. op=create makes the layer; the add, edit and remove '
-                     'operations change one object each; op=finish marks it ready. The metaform grows by the add '
+                     'operations change one object each; op=finish marks it ready. The base grows by the add '
                      'operations with layer=intake; it changes by refine.',
              examples=((('metaform map knowledge op=create layer=practices-cpp variable="C++ practice here." '
                          'mutable=true hideable=true'), 'Start a knowledge layer.'),)),
-        Verb('refine', refine, 'Refine the metaform: change or remove one of its elements or joins as a new version, '
+        Verb('refine', refine, 'Refine the base: change or remove one of its elements or joins as a new version, '
                                'keeping every earlier one.',
              nouns=REFINE_NOUNS,
-             details='The change is written in the metaform\'s own layer, never in a new one, LAYER-025; history '
+             details='The change is written in the base\'s own layer, never in a new one, LAYER-025; history '
                      'shows every version.',
              examples=((('metaform map refine id=<join id> purpose="Know when each dish is done." '
                          'reason="the old purpose named the clock"'), 'Refine one join\'s purpose.'),)),
@@ -1351,9 +1351,9 @@ MODULE = Module(
         Verb('approve', approve, 'Approve a challenge answered B, making it a plan.',
              nouns=(Noun('challenge', 'The challenge item id.'),), surfaces=('cli',)),
         Verb('critic', critic, 'Start a blind-spot critic run: a new blind-spot layer, and the critic prompt with the '
-                               'whole metaform.',
+                               'whole base.',
              switches=('critic',),
-             details='Fast mode by default: the critic reads the metaform and the specifications, not the code. '
+             details='Fast mode by default: the critic reads the base and the specifications, not the code. '
                      '--critic also lets it read the code and write tickets. Each run creates its own blind-spot '
                      'layer, with provenance role critic and blinded true unless --critic, LAYER-014.'),
         Verb('challenges', challenges, "The answer prompt with each challenge of a blind-spot layer and its state.",

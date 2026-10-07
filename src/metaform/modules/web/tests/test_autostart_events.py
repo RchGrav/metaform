@@ -33,7 +33,7 @@ def test_change_triggers_only_relevant_dispatch_checks(payload, starts, monkeypa
     scheduled = []
     monkeypatch.setattr(module.home, 'project', lambda project: SimpleNamespace(project_id=project))
     monkeypatch.setattr(server, 'schedule_dispatch', scheduled.append)
-    event = {'project': 'proj', 'metaform_id': 'main', **payload}
+    event = {'project': 'proj', 'base_id': 'main', **payload}
     assert server.changed(event) == 1
     assert scheduled == (['proj'] if starts else [])
     assert page.get_nowait() == {'topic': 'map.changed', 'payload': event}

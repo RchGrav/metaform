@@ -3,10 +3,17 @@ import os
 import sqlite3
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
 
+# The whole test process, from collection on, lives in a home of its own: nothing a test or an import does reaches
+# ~/.metaform. The `home` fixture gives each test a fresh one inside it. Found 2026-10-07: a read of the registry with
+# no METAFORM_HOME set renamed every project's registry in the live home to the branch's layout.
+if 'PYTEST_METAFORM_HOME' not in os.environ:
+    os.environ['PYTEST_METAFORM_HOME'] = tempfile.mkdtemp(prefix='metaform-tests-')
+os.environ['METAFORM_HOME'] = os.environ['PYTEST_METAFORM_HOME']
 
 @pytest.fixture
 def home(tmp_path, monkeypatch):

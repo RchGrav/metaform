@@ -115,8 +115,8 @@ def wheel(ctx: Context) -> dict[str, Any]:
                                          checks=failures.get(item.name, 'All six matrix jobs passed.')),
                         f'CI muster of {item.name}, source {snapshots[item.name]}.')
         ctx.publish('map.changed', {'project': ctx.project})
-        call(dispatch, ctx, record.work_id, str(ctx.setting('fork_agent')))
-        passed, reason = verdict(ctx, record.work_id)
+        call(dispatch, ctx, record.id, str(ctx.setting('fork_agent')))
+        passed, reason = verdict(ctx, record.id)
         reason = failures.get(item.name, reason)
         if passed and item.name not in failures:
             approved.append(item)
@@ -162,13 +162,13 @@ def upkeep(ctx: Context) -> dict[str, Any]:
         record = ticket(ctx, item, prompt('upkeep', module=str(item), current=current, latest=latest,
                                          changelog='\n\n'.join(newer)),
                         f'Template upkeep of {item.name} from {current} to {latest}.', reuse=True)
-        records.append(record.work_id)
+        records.append(record.id)
         ctx.publish('map.changed', {'project': ctx.project})
         # A caller retries an interrupted ticket but never starts another session on a taken one.
         if not record.done and not record.taken:
-            worktree = repository.update_worktree(ctx.folder, record.work_id)
-            ctx.require_store().edit_work(record.work_id, {'task': prompt(
+            worktree = repository.update_worktree(ctx.folder, record.id)
+            ctx.require_store().edit_work(record.id, {'task': prompt(
                 'upkeep', module=str(worktree / item.name), current=current, latest=latest,
                 changelog='\n\n'.join(newer))})
-            call(dispatch, ctx, record.work_id, str(ctx.setting('fork_agent')))
+            call(dispatch, ctx, record.id, str(ctx.setting('fork_agent')))
     return {'tickets': records, 'template_version': latest}

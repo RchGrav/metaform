@@ -120,7 +120,7 @@ class Element(Record):
     """An element is its address, name_length, name and role, STORE-009. `short_name` is its address read backward
     through name_length, MAP-012; `name` is the canonical name the project uses for it, Rich 2026-10-01: a name goes
     anywhere there is a namespace and name length."""
-    element_id: str
+    id: str
     address: str
     layer_id: str
     layer: str
@@ -153,7 +153,7 @@ class Held(Record):
 class Join(Record):
     """A join, Rich's shape, 2026-10-04: its type, purpose, the ef and the ifd, held by its receiver, holding the
     elements that serve its purpose. A promoted join also records its ordinary element by address, MAP-054."""
-    join_id: str
+    id: str
     layer_id: str
     layer: str
     type: str
@@ -172,7 +172,7 @@ class Join(Record):
 
 @dataclass(frozen=True)
 class Item(Record):
-    item_id: str
+    id: str
     layer_id: str
     layer: str
     target: Node
@@ -189,7 +189,7 @@ class Item(Record):
 
 @dataclass(frozen=True)
 class Property(Record):
-    property_id: str
+    id: str
     layer_id: str
     layer: str
     element_id: str
@@ -219,13 +219,13 @@ class VersionRef(Record):
     """The stored prompt version a layer was made from, STORE-044."""
     name: str
     number: int
-    version_id: str
+    id: str
 
 
 @dataclass(frozen=True)
 class Layer(Record):
-    layer_id: str
-    metaform_id: str
+    id: str
+    base_id: str
     name: str
     module: str
     variable: str
@@ -297,8 +297,8 @@ class Selection(Record):
 
 
 # The fields a small read leaves out, STORE-025: identity ids, and the ends a join names by id beside their addresses.
-ID_FIELDS = frozenset({'element_id', 'layer_id', 'join_id', 'work_id', 'item_id', 'property_id', 'target',
-                       'receiver', 'receiver_address', 'provider_address'})
+ID_FIELDS = frozenset({'id', 'element_id', 'layer_id', 'join_id', 'work_id', 'item_id', 'property_id', 'node_id',
+                       'target', 'receiver', 'receiver_address', 'provider_address'})
 
 
 def small(value: Any) -> Any:
@@ -308,7 +308,7 @@ def small(value: Any) -> Any:
         for key, item in cast(dict[str, Any], value).items():
             if key in ID_FIELDS:
                 continue
-            item = small(item)
+            item = item if key == 'link' else small(item)  # a link is a node, named by its kind and its id
             if item is None or item is False or item == '' or item == [] or item == {}:
                 continue
             kept[str(key)] = item
@@ -358,7 +358,7 @@ class Where(Record):
         if self.receives:
             data['receives'] = [self._join(plain(join), False) for join in self.receives]
         if self.work:
-            data['work'] = [{'work_id': record.work_id, **small({'condition': record.condition, 'note': record.note,
+            data['work'] = [{'id': record.id, **small({'condition': record.condition, 'note': record.note,
                                                                  'task': record.task, 'taken': record.taken,
                                                                  'taken_by': record.taken_by,
                                                                  'age_seconds': record.age_seconds})}
@@ -372,7 +372,7 @@ class Where(Record):
         if reaching:
             data['properties'] = reaching
         if self.messages:
-            data['messages'] = [{'message_id': one.message_id, **small({'kind': one.kind, 'text': one.text,
+            data['messages'] = [{'id': one.id, **small({'kind': one.kind, 'text': one.text,
                                                                        'suggestions': list(one.suggestions),
                                                                        'by': one.by})} for one in self.messages]
         return data
@@ -387,9 +387,9 @@ class Where(Record):
 
 @dataclass(frozen=True)
 class Recording(Record):
-    """The intake being recorded for a project: the metaform it goes into and its building layer, BASE-039."""
-    metaform_id: str
-    metaform: str
+    """The intake being recorded for a project: the base it goes into and its building layer, BASE-039."""
+    base_id: str
+    base: str
     active: bool
     layer: Layer
 
@@ -412,7 +412,7 @@ class GraphPage(Record):
 @dataclass(frozen=True)
 class Citation(Record):
     kind: str
-    id: str
+    object_id: str
     address: str | None
     layer: str
 
@@ -447,7 +447,7 @@ class RootEntry(Record):
 
 @dataclass(frozen=True)
 class RootElement(Record):
-    element_id: str
+    id: str
     address: str
     role: str
     short_name: str
@@ -465,7 +465,7 @@ class Roots(Record):
 class Message(Record):
     """What an agent says to the user at a node, MAP-050: a question, which waits for an answer, or a message, which
     waits to be read. It has its object's address, or its join's two ends, as a work record has."""
-    message_id: str
+    id: str
     kind: str
     node_kind: str
     node_id: str
@@ -505,7 +505,7 @@ def _age(at: str) -> int:
 
 @dataclass(frozen=True)
 class PastWork(Record):
-    """A completed ticket's reference and age; reading it by work_id retrieves its log, MAP-051."""
+    """A completed ticket's reference and age; reading it by its id retrieves its log, MAP-051."""
     work_id: str
     done: str
 
@@ -518,9 +518,9 @@ class WorkRecord(Record):
     """The condition of one object, apart from the map, STORE-042: an element with its address, or a join with its
     two ends, its receiver and an element it holds, when the object is current; open
     until `done` is set, and then kept with its resolution."""
-    work_id: str
-    kind: str
     id: str
+    node_kind: str
+    node_id: str
     address: str | None
     receiver_address: str | None
     provider_address: str | None

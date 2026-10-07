@@ -26,7 +26,7 @@ from typing import Any, TypeVar, cast
 
 from .. import changes, home, loader
 from ..errors import StoreError
-from . import history, layering, operations, promotion, reads, rows, tables, views, writes
+from . import history, layering, log, operations, promotion, reads, rows, tables, views, writes
 from .paging import LIMIT, sliced
 from .records import (
     Citation,
@@ -65,13 +65,13 @@ class Store:
     as its owner, LAYER-001.
     """
 
-    def __init__(self, project: str, *, toggled: Sequence[str] | None = None, metaform: str | None = None,
+    def __init__(self, project: str, *, toggled: Sequence[str] | None = None, base: str | None = None,
                  module: str | None = None) -> None:
         record = home.project(project)
         if record is None:
             raise StoreError(f'No project {project} is registered.', 'metaform list projects')
         self._record = record
-        self._session = Session(record.project_id, metaform)
+        self._session = Session(record.project_id, base)
         self.toggled: tuple[str, ...] = tuple(toggled or ())
         self.module = module
 
@@ -302,7 +302,7 @@ class Store:
     def _metaform_tables(self, stack: ExitStack, module: str, declared: Tables,
                          write: bool) -> tuple[sqlite3.Connection, Path, bool]:
         def path(tx: Tx) -> Path:
-            return home.store_path(self.project_id, tx.metaform_id) if tx.metaform_id else Path()
+            return home.store_path(self.project_id, tx.base_id) if tx.base_id else Path()
         if write:
             tx = stack.enter_context(self._write())
             tables.ensure(tx.db, path(tx), module, declared, 'metaform')
@@ -334,8 +334,8 @@ class Store:
             yield db
             changed = db.total_changes
         if changed:
-            active = home.active_metaform(self.project_id)
-            changes.note(self.project_id, active.metaform_id if active is not None else None, written)
+            active = home.active_base(self.project_id)
+            changes.note(self.project_id, active.id if active is not None else None, written)
 
     def _project_tables(self, stack: ExitStack, module: str, declared: Tables,
                         write: bool) -> tuple[sqlite3.Connection, Path, bool]:
@@ -395,7 +395,7 @@ class Store:
         owner = self.element(str(receiver), raw=True)
         if owner is None:
             raise StoreError(f'{receiver} is not an element of the map here.', f'metaform map where {receiver}')
-        found = [held for held in self.joins(owner.element_id, raw=True, limit=0).results
+        found = [held for held in self.joins(owner.id, raw=True, limit=0).results
                  if any(each.address == provider for each in held.elements)]
         if not found:
             raise StoreError(f'{receiver} has no purpose served by {provider}.', f'metaform map where {receiver}')
@@ -404,7 +404,7 @@ class Store:
             raise StoreError(f'{receiver} has {len(found)} purposes served by {provider}, which their addresses '
                              f'cannot tell apart, with the purposes {purposes}.', f'metaform map where {receiver}')
         if address is None:
-            return Node('join', found[0].join_id)
+            return Node('join', found[0].id)
         parts = [each for each in found[0].elements if each.address == address]
         if not parts:
             raise StoreError(f'{address} is not held by {said}.', f'metaform map where {receiver}')
@@ -521,6 +521,21 @@ class Store:
         with self._read() as tx:
             return reads.layer_graph(tx, layer)
 
+    def cypher(self, query: str) -> Any:
+        """A Cypher query over the base's graph in memory, STORE-046: every stored layer, no selection applied."""
+        with self._read() as tx:
+            return reads.cypher(tx, query)
+
+    def ops(self, after: int = 0, limit: int | None = None) -> list[dict[str, Any]]:
+        """The ops of the log past a sequence, as a page applies them, STORE-046 and VIEW-018."""
+        with self._read() as tx:
+            return log.read_ops(tx.db, after, limit)
+
+    def sequence(self) -> int:
+        """The sequence of the last op of the base, STORE-046."""
+        with self._read() as tx:
+            return tx.base.seq
+
 
     # -------------------------------------------------------------- metaforms
 
@@ -533,66 +548,66 @@ class Store:
         with self._read() as tx:
             return reads.has_intake(tx)
 
-    def metaforms(self, *, limit: int = LIMIT, after: str | None = None) -> Page[home.Metaform]:
-        return sliced(home.metaforms(self.project_id), limit, after)
+    def bases(self, *, limit: int = LIMIT, after: str | None = None) -> Page[home.Base]:
+        return sliced(home.bases(self.project_id), limit, after)
 
     def intake_recording(self) -> Page[Recording]:
         """The intake being recorded for this project, in whichever of its metaforms it is building: a page of none
         or one, BASE-039."""
-        for metaform in home.metaforms(self.project_id):
-            found = Store(self.project_id, metaform=metaform.metaform_id)
-            for layer in found.layers(kind='intake', limit=0).results:
+        for metaform in home.bases(self.project_id):
+            found = Store(self.project_id, base=metaform.id)
+            for layer in found.layers(kind='base', limit=0).results:
                 if layer.ready is None:
-                    return Page((Recording(metaform.metaform_id, metaform.name, metaform.active, layer),), None)
+                    return Page((Recording(metaform.id, metaform.name, metaform.active, layer),), None)
         return Page((), None)
 
-    def active_metaform(self) -> home.Metaform | None:
-        return home.active_metaform(self.project_id)
+    def active_base(self) -> home.Base | None:
+        return home.active_base(self.project_id)
 
-    def bound_metaform(self) -> home.Metaform | None:
+    def bound_base(self) -> home.Base | None:
         """The metaform this DAO reads, explicitly bound or currently active."""
-        bound = self._session.metaform_id
-        return home.metaform_by_id(self.project_id, bound) if bound is not None else self.active_metaform()
+        bound = self._session.base_id
+        return home.base_by_id(self.project_id, bound) if bound is not None else self.active_base()
 
-    def add_metaform(self, name: str, *, activate: bool = True) -> home.Metaform:
+    def add_base(self, name: str, *, activate: bool = True) -> home.Base:
         """A new, empty metaform; a name already used gets `-2` or the next free number, with a notice, STORE-041."""
-        made = home.add_metaform(self.project_id, name, activate=activate)
+        made = home.add_base(self.project_id, name, activate=activate)
         if made.name == name:
             return made
         notice = Notice('name', f'{self.project_id} already has a metaform named {name}; this one was named '
                                 f'{made.name}.')
         return dataclasses.replace(made, notices=(notice,))
 
-    def collapse(self, name: str) -> home.Metaform:
+    def collapse(self, name: str) -> home.Base:
         """The current functional map written as a new metaform of one intake layer and made active, LAYER-026.
 
         Element and join ids carry over; the old metaform is kept whole with its history. A taken name gets `-2`
-        with a notice, as `add_metaform` does. Knowledge, memory and tickets stay with the old metaform until D111
+        with a notice, as `add_base` does. Knowledge, memory and tickets stay with the old metaform until D111
         2 and 3 of 3 are answered, and a notice says so.
         """
         from .exchange import collapsed, export_document, import_document
-        old = self.bound_metaform()
+        old = self.bound_base()
         if old is None:
-            raise StoreError(f'{self.project_id} has no metaform to collapse.', 'metaform map metaforms')
+            raise StoreError(f'{self.project_id} has no base to collapse.', 'metaform map bases')
         document = export_document([self.project_id], metaform=old.name)
-        made = self.add_metaform(name, activate=False)
+        made = self.add_base(name, activate=False)
         try:
             import_document(collapsed(document, made.name, workflow='collapse', role='collapse',
-                                      metaform_id=made.metaform_id, created=made.created), self.project_id)
-            home.activate_metaform(self.project_id, made.name)
+                                      base_id=made.id, created=made.created), self.project_id)
+            home.activate_base(self.project_id, made.name)
         except BaseException:
-            self.withdraw_metaform(made.metaform_id)
+            self.withdraw_base(made.id)
             raise
         kept = Notice('kept', f'Knowledge and memory layers, sources and tickets stay with {old.name}; to switch '
                               f'back: metaform map activate {old.name}')
         return dataclasses.replace(made, active=True, notices=(*made.notices, kept))
 
-    def withdraw_metaform(self, metaform_id: str) -> None:
+    def withdraw_base(self, base_id: str) -> None:
         """Undo a metaform made by this operation whose first write failed, so a failed write leaves nothing."""
-        home.withdraw_metaform(self.project_id, metaform_id)
+        home.withdraw_base(self.project_id, base_id)
 
-    def activate_metaform(self, name: str) -> home.Metaform:
-        return home.activate_metaform(self.project_id, name)
+    def activate_base(self, name: str) -> home.Base:
+        return home.activate_base(self.project_id, name)
 
     def project(self) -> home.Project:
         record = home.project(self.project_id)

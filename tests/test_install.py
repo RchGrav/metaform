@@ -535,7 +535,7 @@ def test_version_probe_works_without_reading_an_incompatible_home(home, monkeypa
     from metaform import cli, harness
     from metaform import home as metaform_home
 
-    with metaform_home.base(write=True) as db:
+    with metaform_home.chassis(write=True) as db:
         db.execute("UPDATE meta SET value='999' WHERE key='schema_version'")
     before = (home / 'metaform.sqlite3').read_bytes()
     monkeypatch.setattr(harness, 'running', lambda: Path('/opt/base047-harness/codex'))

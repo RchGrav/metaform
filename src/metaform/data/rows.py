@@ -1,25 +1,26 @@
 """Row-level helpers every store operation shares, each working inside one open transaction, STORE-023.
 
-These find layers and things by reference, write the rows that come with every
+These find layers and things by reference, write the versions that come with every
 thing (its types, identity and refs), and hold the rules for what does not fit
 a write: text that is not text, an `extra` that is not an object or holds a
 list of records, a join end or an attachment that names no element. What does
 not fit is kept as given and named in a notice, BASE-044; only a reference that
-cannot be read at all raises `StoreError`, STORE-026.
+cannot be read at all raises `StoreError`, STORE-026. Everything is read from
+and written to the base's projection, STORE-046.
 """
 from __future__ import annotations
 
 import json
-import sqlite3
 from collections.abc import Iterable
 from typing import Any
 
 from ..errors import StoreError
 from ..wording import odd_refs_notice
 from . import versions
-from .ids import ADDRESS, as_list, as_object, encode_extra, encode_value, is_id, new_id, prefixes
+from .ids import ADDRESS, as_list, as_object, encode_extra, encode_value, is_id, new_id
+from .projection import Projection, Version
 from .records import Node, Notice, Ref
-from .selection import LAYER_COLUMNS, LayerRow, layer_row
+from .selection import LayerRow
 from .session import Tx
 
 EDITABLE: dict[str, tuple[str, ...]] = {
@@ -30,7 +31,7 @@ EDITABLE: dict[str, tuple[str, ...]] = {
 }
 TEXT_COLUMNS = ('purpose', 'ef', 'type', 'name', 'ifd')
 
-Row = sqlite3.Row
+Row = Version
 
 
 def refine_step(thing: str = '<id>') -> str:
@@ -110,82 +111,79 @@ def layer(tx: Tx, ref: object) -> LayerRow:
     """A layer by id or name; a reference to no layer cannot be read, STORE-013."""
     if not isinstance(ref, str) or not ref:
         raise StoreError('Every write names its layer.', 'metaform map layers')
-    column = 'layer_id' if is_id(ref) else 'name'
-    row = tx.db.execute(f'SELECT {LAYER_COLUMNS} FROM layers WHERE {column}=?', (ref,)).fetchone()
-    if row is None:
+    found = tx.base.layers.get(ref) if is_id(ref) else tx.base.layer_by_name(ref)
+    if found is None:
         raise StoreError(f'No layer {ref}.', 'metaform map layers')
-    return layer_row(row)
+    return found
 
 
 def layer_name(tx: Tx, layer_id: str) -> str:
-    row = tx.db.execute('SELECT name FROM layers WHERE layer_id=?', (layer_id,)).fetchone()
-    return str(row[0]) if row else layer_id
+    found = tx.base.layers.get(layer_id)
+    return found.name if found else layer_id
 
 
 def types(tx: Tx, address: str) -> None:
-    """The address and each of its prefixes as rows of the Type tree, root first, STORE-008."""
-    parent = None
-    for prefix in prefixes(address):
-        tx.db.execute('INSERT OR IGNORE INTO types(address, parent) VALUES (?, ?)', (prefix, parent))
-        parent = prefix
+    """The address and each of its prefixes as the Type tree, root first, STORE-008."""
+    if address not in tx.base.types:
+        tx.emit('add', 'type', address, '', {'address': address})
 
 
 def identity(tx: Tx, thing_id: str, kind: str) -> None:
-    tx.db.execute('INSERT INTO identities(id, kind) VALUES (?, ?)', (thing_id, kind))
+    tx.base.kinds.setdefault(thing_id, kind)
 
 
-def write_refs(tx: Tx, owner: str, row: int, refs: Iterable[tuple[str, str]], start: int = 0) -> None:
-    tx.db.executemany('INSERT INTO refs(owner, owner_row, position, key, value) VALUES (?, ?, ?, ?, ?)',
-                      [(owner, row, start + index, key, value) for index, (key, value) in enumerate(refs)])
+def read_refs(base: Projection, owner: str, row: int) -> tuple[Ref, ...]:
+    version = _version_at(base, row)
+    return tuple(Ref(key, value) for key, value in version.refs) if version is not None else ()
 
 
-def read_refs(db: sqlite3.Connection, owner: str, row: int) -> tuple[Ref, ...]:
-    return tuple(Ref(str(ref['key']), str(ref['value'])) for ref in db.execute(
-        'SELECT key, value FROM refs WHERE owner=? AND owner_row=? ORDER BY position', (owner, row)))
+def _version_at(base: Projection, seq: int) -> Version | None:
+    found = base.version_at(seq)
+    return None if found is None else found[1]
 
 
-def current_element(tx: Tx, ref: str) -> Row | None:
-    column = 'element_id' if is_id(ref) else 'address'
-    row: Row | None = tx.db.execute(f'SELECT element_id, row, address FROM current_elements WHERE {column}=?',
-                                    (ref,)).fetchone()
-    return row
+def version_at(tx: Tx, kind: str, seq: int) -> tuple[str, Version] | None:
+    """The thing and the version at a sequence, STORE-005."""
+    found = tx.base.version_at(seq)
+    if found is None or tx.base.kinds.get(found[0]) != kind:
+        return None
+    return found
+
+
+def current_element(tx: Tx, ref: str) -> dict[str, Any] | None:
+    """The current element by id or address: its id, row and address."""
+    element_id = ref if is_id(ref) else tx.base.element_at(ref)
+    if element_id is None:
+        return None
+    version = versions.current_version(tx.base, 'element', element_id)
+    if version is None:
+        return None
+    return {'element_id': element_id, 'row': version.seq, 'address': str(version.fields['address'])}
 
 
 def holding(tx: Tx, element_id: str) -> list[str]:
-    """The current joins that hold an element, in id order; one read on `join_elements_by_element`."""
-    return [str(row[0]) for row in tx.db.execute(
-        'SELECT DISTINCT c.join_id FROM join_elements e JOIN current_joins c ON c.row = e.join_row '
-        'WHERE e.element_id=? ORDER BY c.join_id', (element_id,))]
+    """The current joins that hold an element, in id order."""
+    return tx.base.joins_holding(element_id)
 
 
-def held_elements(db: sqlite3.Connection, join_row: int) -> list[str]:
+def held_elements(base: Projection, join_row: int) -> list[str]:
     """The ids of the elements one version of a join holds, in order."""
-    return [str(row[0]) for row in db.execute('SELECT element_id FROM join_elements WHERE join_row=? ORDER BY position',
-                                              (join_row,))]
+    version = _version_at(base, join_row)
+    return [str(each) for each in version.fields.get('held', ())] if version is not None else []
 
 
-def write_held(tx: Tx, join_row: int, element_ids: Iterable[str]) -> None:
-    """The elements one version of a join holds, in order, replacing what that version held."""
-    tx.db.execute('DELETE FROM join_elements WHERE join_row=?', (join_row,))
-    tx.db.executemany('INSERT INTO join_elements(join_row, position, element_id) VALUES (?, ?, ?)',
-                      [(join_row, index, element_id) for index, element_id in enumerate(element_ids)])
+def current_join(tx: Tx, join_id: str) -> Version | None:
+    """A join's current version."""
+    return versions.current_version(tx.base, 'join', join_id)
 
 
-def current_join(tx: Tx, join_id: str) -> Row | None:
-    """A join's current version row."""
-    row: Row | None = tx.db.execute('SELECT j.* FROM current_joins c JOIN joins j ON j.row = c.row WHERE c.join_id=?',
-                                    (join_id,)).fetchone()
-    return row
-
-
-def owner_address(tx: Tx, row: Row) -> str | None:
+def owner_address(tx: Tx, row: Version) -> str | None:
     """The address a join sits at: its receiver's, STORE-019."""
     return address_of(tx, str(row['receiver']))
 
 
 def address_of(tx: Tx, element_id: str) -> str | None:
-    row = tx.db.execute('SELECT address FROM current_elements WHERE element_id=?', (element_id,)).fetchone()
-    return None if row is None else str(row[0])
+    return tx.base.address_of(element_id)
 
 
 def node_address(tx: Tx, kind: str, thing_id: str) -> str | None:
@@ -197,30 +195,25 @@ def node_address(tx: Tx, kind: str, thing_id: str) -> str | None:
 
 
 def kind_of(tx: Tx, thing: Any) -> str:
-    """A bare id's kind, STORE-033: identities first, then properties, which have no identity row."""
+    """A bare id's kind, STORE-033, from the objects registry."""
     if not isinstance(thing, str) or not is_id(thing):
         raise StoreError(f'{thing!r} is not an id.', 'metaform map where <address>')
-    row = tx.db.execute('SELECT kind FROM identities WHERE id=?', (thing,)).fetchone()
-    if row is not None:
-        return str(row[0])
-    if tx.db.execute('SELECT 1 FROM properties WHERE property_id=? LIMIT 1', (thing,)).fetchone():
-        return 'property'
-    raise StoreError(f'No element, join, property or item has the id {thing}.', 'metaform map where <address>')
+    kind = tx.base.kinds.get(thing)
+    if kind is None:
+        raise StoreError(f'No element, join, property or item has the id {thing}.', 'metaform map where <address>')
+    return kind
 
 
-def own_row(tx: Tx, kind: str, thing: str) -> tuple[Row, LayerRow]:
-    """The row a thing was added with, and the layer that added it."""
-    spec = versions.KINDS[kind]
-    rows = tx.db.execute(f'SELECT * FROM {spec.table} WHERE {spec.id_column}=? ORDER BY row', (thing,)).fetchall()
-    added = [row for row in rows if row['op'] == 'add']
-    if not added:
+def own_row(tx: Tx, kind: str, thing: str) -> tuple[Version, LayerRow]:
+    """The version a thing was added with, and the layer that added it."""
+    own = versions.own_version(tx.base, thing)
+    if own is None or tx.base.kinds.get(thing) != kind:
         raise StoreError(f'No {kind} has the id {thing}.', 'metaform map where <address>')
-    row: Row = added[-1]
-    return row, layer(tx, str(row['layer_id']))
+    return own, layer(tx, own.layer_id)
 
 
 def target_current(tx: Tx, kind: str, thing: str) -> bool:
-    return versions.current_row(tx.db, kind, thing) is not None
+    return versions.current_row(tx.base, kind, thing) is not None
 
 
 # Elements, made where a write needs one ---------------------------------------------------------------------
@@ -231,39 +224,29 @@ def reused_element(tx: Tx, address: str) -> str | None:
     An element's identity belongs to its address: an add at an address whose element was removed, by a layer's
     own remove or by a refinement, is that element again, and everything still linked to it comes back with it.
     """
-    held = tx.db.execute('SELECT element_id FROM address_elements WHERE address=?', (address,)).fetchone()
-    if held is None:
+    held = tx.base.address_last.get(address)
+    if held is None or tx.base.is_current(held):
         return None
-    if tx.db.execute('SELECT 1 FROM current_elements WHERE element_id=?', (held[0],)).fetchone() is not None:
-        return None
-    return str(held[0])
+    return held
 
 
 def new_element(tx: Tx, found: LayerRow, address: str, *, name_length: Any = None, role: str | None = None,
                 name: str | None = None) -> str:
-    """Write a new element row in a layer, under the id the address held before when nothing holds it now.
+    """Write a new element version in a layer, under the id the address held before when nothing holds it now.
 
-    The row is the element: its address, name_length, name and role, STORE-009, Rich's shape.
+    The version is the element: its address, name_length, name and role, STORE-009, Rich's shape.
     """
     element_id = reused_element(tx, address) or new_id()
-    if tx.db.execute('SELECT 1 FROM element_ids WHERE element_id=?', (element_id,)).fetchone() is None:
-        tx.db.execute('INSERT INTO element_ids(element_id) VALUES (?)', (element_id,))
-        identity(tx, element_id, 'element')
-    types(tx, address)
-    cursor = tx.db.execute('INSERT INTO elements(element_id, layer_id, address, name_length, name, role) '
-                           'VALUES (?, ?, ?, ?, ?, ?)', (element_id, found.layer_id, address, name_length, name, role))
-    row = int(cursor.lastrowid or 0)
-    versions.hold_address(tx.db, address, element_id)
-    tx.db.execute('INSERT INTO current_elements(element_id, row, address, role) VALUES (?, ?, ?, ?)',
-                  (element_id, row, address, role))
+    tx.emit('add', 'element', element_id, found.id, {'mode': 'add', 'address': address, 'name_length': name_length,
+                                                    'name': name, 'role': role})
     return element_id
 
 
 def stub_element(tx: Tx, element_id: str | None = None) -> str:
-    """An element identity with no row, so what points at it is stored orphaned, STORE-017."""
+    """An element identity with no version, so what points at it is stored orphaned, STORE-017."""
     stub = element_id or new_id()
-    tx.db.execute('INSERT OR IGNORE INTO element_ids(element_id) VALUES (?)', (stub,))
-    tx.db.execute("INSERT OR IGNORE INTO identities(id, kind) VALUES (?, 'element')", (stub,))
+    if stub not in tx.base.kinds:  # an id is registered by its first op; a stub's is a removal of nothing
+        tx.emit('remove', 'element', stub, '', {'mode': 'place'})
     return stub
 
 
@@ -305,8 +288,9 @@ def node_at(tx: Tx, node: Any, found: LayerRow, what: str, notices: list[Notice]
                                         f'{found.name} to hold it.'))
             return 'element', new_element(tx, found, node.id)
         return 'element', element_at(tx, node.id, found, what, notices)
-    if target_current(tx, 'join', node.id) or \
-            tx.db.execute('SELECT 1 FROM joins WHERE join_id=? AND layer_id=?', (node.id, found.layer_id)).fetchone():
+    if target_current(tx, 'join', node.id) or any(
+            version.layer_id == found.id for version in tx.base.versions.get(node.id, ())
+            if tx.base.kinds.get(node.id) == 'join'):
         return 'join', node.id
     notices.append(Notice(what, f'{node} is not a current join; stored as given, orphaned.'))
     return 'join', node.id
@@ -318,21 +302,15 @@ def node_at(tx: Tx, node: Any, found: LayerRow, what: str, notices: list[Notice]
 def insert_item(tx: Tx, found: LayerRow, target_kind: str, target_id: str, value: Any, link_kind: str | None,
                 link_id: str | None, pairs: list[tuple[str, str]], extra: dict[str, Any] | None,
                 read_first: Any = False, always_show: Any = False) -> str:
-    """One item row with its identity, refs and flags, LAYER-021, current at once."""
+    """One item version with its identity, refs and flags, LAYER-021, current at once."""
     encoded = encode_value(value, f'{target_kind}:{target_id}')
     encoded_extra = encode_extra(extra, 'the item')
     item_id = new_id()
-    tx.db.execute('INSERT INTO item_ids(item_id, layer_id) VALUES (?, ?)', (item_id, found.layer_id))
-    identity(tx, item_id, 'item')
-    cursor = tx.db.execute('INSERT INTO items(item_id, layer_id, target_kind, target_id, value, link_kind, link_id, '
-                           'extra, read_first, always_show) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                           (item_id, found.layer_id, target_kind, target_id, encoded, link_kind, link_id,
-                            encoded_extra, int(bool(read_first)), int(bool(always_show))))
-    row = int(cursor.lastrowid or 0)
-    tx.db.execute('INSERT INTO current_items(item_id, row, layer_id, target_kind, target_id, link_kind, '
-                  'link_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                  (item_id, row, found.layer_id, target_kind, target_id, link_kind, link_id))
-    write_refs(tx, 'item', row, pairs)
+    tx.emit('add', 'item', item_id, found.id, {'mode': 'add', 'target_kind': target_kind, 'target_id': target_id,
+                                              'value': encoded, 'link_kind': link_kind, 'link_id': link_id,
+                                              'extra': encoded_extra, 'read_first': int(bool(read_first)),
+                                              'always_show': int(bool(always_show)),
+                                              'refs': [list(pair) for pair in pairs]})
     return item_id
 
 
@@ -340,3 +318,13 @@ def split_items(tx: Tx, found: LayerRow, kind: str, thing_id: str, split: list[t
     """The records an `extra` held, each written as its own item at the thing, STORE-004."""
     for key, record in split:
         insert_item(tx, found, kind, thing_id, {key: record}, None, None, [], None)
+
+
+def write_refs(tx: Tx, owner: str, row: int, refs: Iterable[tuple[str, str]], start: int = 0) -> None:
+    """Refs added to one version of an item or a property, in place."""
+    found = version_at(tx, owner, row)
+    if found is None:
+        return
+    ident, version = found
+    kept = list(version.refs[:start]) + [(key, value) for key, value in refs]
+    tx.emit('change', owner, ident, version.layer_id, {'mode': 'place', 'refs': [list(pair) for pair in kept]})

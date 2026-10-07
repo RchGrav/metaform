@@ -67,7 +67,7 @@ def test_the_notice_changes_nothing_the_command_prints_or_returns(under, capsys)
 @pytest.mark.parametrize('args', [('help',), ('--version',), ('provision', 'done')])
 def test_a_notice_record_read_error_uses_the_cli_error_handler(under, capsys, home, args):
     from metaform import home as metaform_home
-    with metaform_home.base(write=True) as db:
+    with metaform_home.chassis(write=True) as db:
         db.execute("UPDATE meta SET value='999' WHERE key='schema_version'")
     under(HARNESS)
     code, out, err = command(capsys, *args)
@@ -236,7 +236,7 @@ def earlier_installs(home: Path, *, recorded: bool) -> list[str]:
     from metaform import home as metaform_home
     home.mkdir()
     with sqlite3.connect(home / 'metaform.sqlite3') as db:
-        db.executescript(metaform_home.BASE_SCHEMA)
+        db.executescript(metaform_home.CHASSIS_SCHEMA)
         db.execute("INSERT INTO meta VALUES ('schema_version', '2')")
         db.execute("INSERT INTO meta VALUES ('last_run_version', '2026.9.30.2')")
         db.execute("INSERT INTO module_state VALUES ('hello', 1)")
@@ -268,7 +268,7 @@ def test_earlier_installs_are_known_after_the_home_upgrade(home, monkeypatch, re
         return binaries[command]
 
     monkeypatch.setattr(install.shutil, 'which', which)
-    with metaform_home.base(write=write) as db:
+    with metaform_home.chassis(write=write) as db:
         assert db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone() == ('3',)
         assert db.execute("SELECT value FROM meta WHERE key='last_run_version'").fetchone() == ('2026.9.30.2',)
         assert db.execute('SELECT * FROM module_state').fetchall() == [('hello', 1)]
@@ -291,7 +291,7 @@ def test_earlier_installs_are_known_after_the_home_upgrade(home, monkeypatch, re
         pytest.fail(f'upgrade repeated the binary lookup for {command}')
 
     monkeypatch.setattr(install.shutil, 'which', no_more_lookups)
-    with metaform_home.base() as db:
+    with metaform_home.chassis() as db:
         assert db.execute('SELECT COUNT(*) FROM harnesses').fetchone() == (2,)
     assert harness.notice() is None
 
@@ -311,13 +311,13 @@ def test_failed_home_upgrade_preserves_schema_and_records_for_retry(home, monkey
         return real_key(binary)
 
     monkeypatch.setattr(harness, 'key', fail_after_first)
-    with pytest.raises(OSError, match='binary lookup failed'), metaform_home.base():
+    with pytest.raises(OSError, match='binary lookup failed'), metaform_home.chassis():
         pass
     with sqlite3.connect(home / 'metaform.sqlite3') as db:
         assert list(db.iterdump()) == before
     monkeypatch.setattr(harness, 'key', real_key)
     assert harness.known(HARNESS)
-    with metaform_home.base() as db:
+    with metaform_home.chassis() as db:
         assert db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone() == ('3',)
 
 

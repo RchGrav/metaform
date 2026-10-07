@@ -43,14 +43,14 @@ def _layer_row(layer: Layer) -> list[str]:
 
 def _rows(result: Any) -> list[list[str]] | None:
     """A page of layers or of metaforms as rows, or None for any other result."""
-    from .home import Metaform
+    from .home import Base
     found = getattr(result, 'results', None)
     if not isinstance(found, tuple) or not found:
         return None
     items = cast(tuple[Any, ...], found)
     if all(isinstance(item, Layer) for item in items):
         return [_layer_row(item) for item in items]
-    if all(isinstance(item, Metaform) for item in items):
+    if all(isinstance(item, Base) for item in items):
         return [[item.name, item.created, 'active' if item.active else ''] for item in items]
     return None
 

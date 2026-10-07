@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from storekit import knowledge, memory, plans, scans, small_map
+from storekit import knowledge, memory, small_map
 
 from metaform.data import Node, Store
 
@@ -13,31 +13,33 @@ def populated(store):
     notes = knowledge(store, 'notes', tags=('practices',))
     store.add_item(notes.name, Node('element', 'code.timer.kitchen'), 'keep the loop small',
                    link=Node('element', 'code.alarm.audible'), refs=[('path', 'src/timer.c')])
-    store.add_item(notes.name, Node('join', inner.join_id), 'the tone is quiet')
+    store.add_item(notes.name, Node('join', inner.id), 'the tone is quiet')
     store.add_property(notes.name, 'code.timer.kitchen', 'C')
     store.add_element(notes.name, 'code.timer.kitchen.display')
     shown = store.add_join(notes.name, 'code.timer.kitchen.display', 'code.timer.kitchen', purpose='show time',
                           ef='reports remaining time')
     store.add_work(Node('element', 'code.timer.kitchen.display'), 'missing', note='not wired yet', task='wire it')
-    store.add_work(Node('join', shown.join_id), 'broken', task='fix the LCD')
+    store.add_work(Node('join', shown.id), 'broken', task='fix the LCD')
     store.finish(notes.name)
     store.mask('code.alarm', notes.name)
     store.select('code.alarm.audible', notes.name)
     notes_memory = memory(store)
     store.add_item(notes_memory.name, Node('element', 'code.timer.kitchen'), 'drifts under load')
-    store.refine(inner.join_id, {'ef': 'Plays a loud tone.'}, reason='louder')
+    store.refine(inner.id, {'ef': 'Plays a loud tone.'}, reason='louder')
     return layer, outer, inner
 
 
 @pytest.mark.req('STORE-005')
 @pytest.mark.req('STORE-025')
-@pytest.mark.req('STORE-033')
-def test_every_read_is_answered_through_an_index(home, store, traced):
+@pytest.mark.req('STORE-046')
+def test_every_read_is_answered_from_the_graph_in_memory(home, store, traced):
+    """A read never touches SQLite for structure: the only SQL it issues reads the ops past the sequence it applied,
+    by the primary key, and the modules' own tables, STORE-046."""
     _, _, inner = populated(store)
     kitchen = Node('element', 'code.timer.kitchen')
     reads = {
         'element': lambda: store.element('code.timer.kitchen'),
-        'element by id': lambda: store.element(store.element('code.alarm.audible').element_id),
+        'element by id': lambda: store.element(store.element('code.alarm.audible').id),
         'joins': lambda: store.joins('code.timer.kitchen').results,
         'joins provider': lambda: store.joins('code.timer.kitchen', as_='provider').results,
         'joins raw': lambda: store.joins('code.timer.kitchen', raw=True).results,
@@ -50,12 +52,12 @@ def test_every_read_is_answered_through_an_index(home, store, traced):
         'layer_items at node': lambda: store.layer_items('notes', kitchen).results,
         'node': lambda: store.node(kitchen),
         'node raw': lambda: store.node(kitchen, raw=True),
-        'node join': lambda: store.node(Node('join', inner.join_id)),
+        'node join': lambda: store.node(Node('join', inner.id)),
         'node of an element a join holds': lambda: store.node(Node('element', 'code.loop.tick')),
         'context': lambda: store.context('code.timer'),
         'links_to': lambda: store.links_to(Node('element', 'code.alarm.audible')).results,
         'citing': lambda: store.citing('path', 'src/timer.c').results,
-        'history': lambda: store.history(inner.join_id).results,
+        'history': lambda: store.history(inner.id).results,
         'graph': lambda: store.graph(limit=2),
         'layers': lambda: store.layers().results,
         'layers by tag': lambda: store.layers(tag='practices').results,
@@ -63,9 +65,6 @@ def test_every_read_is_answered_through_an_index(home, store, traced):
         'effective_selection': lambda: store.effective_selection('code.alarm.audible'),
         'search': lambda: store.search('drifts').results,
         'has_intake': lambda: store.has_intake(),
-        'metaforms': lambda: store.metaforms().results,
-        'active_metaform': lambda: store.active_metaform(),
-        'project': lambda: store.project(),
         'roots': lambda: store.roots(),
         'work': lambda: store.work().results,
         'work by condition': lambda: store.work(condition='broken').results,
@@ -76,16 +75,25 @@ def test_every_read_is_answered_through_an_index(home, store, traced):
     for name, read in reads.items():
         traced.clear()
         read()
-        issued = plans(home, store, traced)
-        assert issued, f'{name} issued no query'
-        for statement, plan_lines in issued:
-            if bad := scans(plan_lines):
-                failures.setdefault(name, []).append((statement, bad))
+        touched = [statement for statement in traced if statement.upper().startswith(('SELECT', 'WITH'))
+                   and 'sqlite_master' not in statement and 'FROM meta' not in statement]
+        structure = [statement for statement in touched if 'FROM ops' not in statement and 'FROM snapshots' not in statement
+                     and not any(own in statement for own in ('work', 'messages', 'question_work', 'work_links',
+                                                               'work_steps', 'eligible', 'glyphs', 'plans',
+                                                               'challenge_states', 'reports', 'prompt_uses',
+                                                               'prompt_versions', 'prompts', 'projects', 'bases',
+                                                               'active_bases', 'settings', 'modules', 'harnesses'))]
+        if structure:
+            failures[name] = structure
+        if not any('FROM ops' in statement and 'seq >' in statement for statement in touched):
+            failures[name] = failures.get(name, []) + ['no catch-up read of the log']
     assert failures == {}
 
 
 @pytest.mark.req('STORE-010')
-def test_the_identity_read_uses_the_provider_index_among_many_joins(home, store, traced):
+@pytest.mark.req('STORE-046')
+def test_the_identity_read_among_many_joins_answers_from_the_index_in_memory(home, store, traced):
+    import time
     layer = knowledge(store, 'many')
     with store.atomic():
         store.add_element(layer.name, 'code.target')
@@ -96,9 +104,11 @@ def test_the_identity_read_uses_the_provider_index_among_many_joins(home, store,
                            purpose='p', ef='f')
     store.finish(layer.name)
     traced.clear()
+    started = time.monotonic()
     assert len(store.identity('code.target').results) == 50
-    lines = [line for _, plan_lines in plans(home, store, traced) for line in plan_lines]
-    assert any('join_elements_by_element' in line for line in lines)
+    assert time.monotonic() - started < 2  # the index in memory, not a scan of a hundred thousand joins
+    assert not any(table in statement for statement in traced
+                   for table in ('FROM joins', 'FROM elements', 'current_joins', 'join_elements'))
 
 
 @pytest.mark.req('STORE-025')
@@ -112,13 +122,13 @@ def test_one_read_of_an_address_shows_what_relies_on_it_and_what_it_relies_on(st
     relying = {join.receiver_address: join for join in kitchen.provides}
     assert set(relying) == {'stakeholder.cook.home', 'code.timer.kitchen.display'}
     cook = relying['stakeholder.cook.home']
-    assert (cook.join_id, cook.purpose, cook.ef, cook.layer) == (
-        outer.join_id, 'Know when each dish is done.', 'Counts down and rings.', 'intake-1')
+    assert (cook.id, cook.purpose, cook.ef, cook.layer) == (
+        outer.id, 'Know when each dish is done.', 'Counts down and rings.', 'intake-1')
     assert [(held.address, held.short_name) for held in cook.elements] == [
         ('code.timer.kitchen', 'kitchen timer'), ('code.loop.tick', 'tick loop')]
     assert relying['code.timer.kitchen.display'].layer == 'notes'
-    assert [(join.join_id, [held.address for held in join.elements], join.ef, join.layer)
-            for join in kitchen.receives] == [(inner.join_id, ['code.alarm.audible'], 'Plays a loud tone.', 'intake-1')]
+    assert [(join.id, [held.address for held in join.elements], join.ef, join.layer)
+            for join in kitchen.receives] == [(inner.id, ['code.alarm.audible'], 'Plays a loud tone.', 'intake-1')]
     assert kitchen.join is None and kitchen.work == ()
     assert {group.layer: ([item.value for item in group.items], [prop.value for prop in group.properties])
             for group in kitchen.layers} == {'notes': (['keep the loop small'], ['C']),
@@ -148,14 +158,14 @@ def test_the_read_of_an_address_follows_the_reading_context(store):
 @pytest.mark.req('STORE-010')
 def test_one_join_read_by_id_gives_its_receiver_and_its_first_element_by_address(store):
     _, outer, inner = small_map(store)
-    assert store.join_ends(outer.join_id) == ('stakeholder.cook.home', 'code.timer.kitchen')
-    assert store.join_ends(inner.join_id) == ('code.timer.kitchen', 'code.alarm.audible')
-    assert store.join_ends(store.element('code.timer.kitchen').element_id) is None
+    assert store.join_ends(outer.id) == ('stakeholder.cook.home', 'code.timer.kitchen')
+    assert store.join_ends(inner.id) == ('code.timer.kitchen', 'code.alarm.audible')
+    assert store.join_ends(store.element('code.timer.kitchen').id) is None
     notes = knowledge(store, 'notes')
     added = store.add_join(notes.name, 'code.alarm.audible', 'code.loop.tick', purpose='keep time', ef='ticks')
-    assert store.join_ends(added.join_id) == ('code.alarm.audible', 'code.loop.tick')
-    assert store.remove(added.join_id).notices == ()
-    assert store.join_ends(added.join_id) is None
+    assert store.join_ends(added.id) == ('code.alarm.audible', 'code.loop.tick')
+    assert store.remove(added.id).notices == ()
+    assert store.join_ends(added.id) is None
 
 
 @pytest.mark.req('STORE-025')
@@ -187,21 +197,21 @@ def test_the_read_of_an_address_leaves_ids_and_empty_fields_out_unless_asked(sto
                                   'elements': [{'address': 'code.alarm.audible', 'short_name': 'audible alarm',
                                                 'name_length': 2, 'name': 'audible alarm', 'role': 'SE'}]}]
     assert [group['layer'] for group in small['layers']] == ['notes', 'memory']
-    alarm = store.element('code.alarm.audible').element_id
+    alarm = store.element('code.alarm.audible').id
     assert small['layers'][0]['items'] == [{'layer': 'notes', 'value': 'keep the loop small',
                                             'link': {'kind': 'element', 'id': alarm},
                                             'refs': [{'key': 'path', 'value': 'src/timer.c'}]}]
     display = store.where('code.timer.kitchen.display').to_dict()
-    assert display['work'] == [{'work_id': store.work().results[0].work_id, 'condition': 'missing',
+    assert display['work'] == [{'id': store.work().results[0].id, 'condition': 'missing',
                                 'note': 'not wired yet', 'task': 'wire it'}]
     tick = store.where('code.loop.tick').to_dict()
     assert set(tick) == {'kind', 'element', 'provides'}
     assert [join['receiver'] for join in tick['provides']] == ['stakeholder.cook.home']
     full = store.where('code.timer.kitchen', full=True).to_dict()
-    assert full['element']['element_id'] == store.element('code.timer.kitchen').element_id
-    assert [join['join_id'] for join in full['receives']] == [inner.join_id]
+    assert full['element']['id'] == store.element('code.timer.kitchen').id
+    assert [join['id'] for join in full['receives']] == [inner.id]
     assert 'held' not in full and full['work'] == []
-    assert outer.join_id in [join['join_id'] for join in full['provides']]
+    assert outer.id in [join['id'] for join in full['provides']]
 
 
 @pytest.mark.req('STORE-025')
@@ -212,7 +222,7 @@ def test_every_join_carries_the_name_of_its_layer(store):
              *store.joins('code.timer.kitchen.display').results, *store.identity('code.timer.kitchen').results,
              *store.joins('code.timer.kitchen', raw=True).results, *store.where('code.loop.tick').provides]
     assert joins
-    layer_names = {layer.layer_id: layer.name for layer in store.layers().results}
+    layer_names = {layer.id: layer.name for layer in store.layers().results}
     for join in joins:
         assert join.layer and join.layer == layer_names[join.layer_id]
     assert {join.layer for join in store.joins('code.timer.kitchen.display').results} == {'notes'}
@@ -266,7 +276,7 @@ def test_a_write_that_does_not_fit_is_stored_with_a_notice_and_text_is_never_jud
     plain = store.add_join(extra.name, 'code.timer.kitchen', 'code.alarm.audible', purpose='',
                            ef='bananas are yellow')
     assert plain.notices == ()
-    assert plain.join_id in [found.join_id for found in store.joins('code.timer.kitchen', raw=True).results]
+    assert plain.id in [found.id for found in store.joins('code.timer.kitchen', raw=True).results]
     odd = store.add_element(extra.name, 'Code..Engine')
     assert [notice.where for notice in odd.notices] == ['address'] and store.where('Code..Engine', raw=True)
     assert store.add_element(extra.name, 'media.photo.jpg').notices == ()
@@ -295,11 +305,11 @@ def test_the_graph_read_pages_each_visible_element_with_its_nearest_parent_and_t
     everything = store.graph(limit=0)
     assert [entry.element.address for entry in everything.elements] == addresses and everything.next is None
     for entry in everything.elements:
-        held = [join for join in everything.joins if join.receiver == entry.element.element_id]
-        assert [join.join_id for join in held] == [join.join_id for join in store.joins(entry.element.address).results]
+        held = [join for join in everything.joins if join.receiver == entry.element.id]
+        assert [join.id for join in held] == [join.id for join in store.joins(entry.element.address).results]
         for join in held:
             assert join.elements == next(read for read in store.joins(entry.element.address).results
-                                         if read.join_id == join.join_id).elements
+                                         if read.id == join.id).elements
     assert 'code.timer.kitchen.display' not in [e.element.address for e in store.graph(selection=['intake-1']).elements]
     secret = knowledge(store, 'secret')
     store.add_element(secret.name, 'code.timer.kitchen.secret')
@@ -307,7 +317,7 @@ def test_the_graph_read_pages_each_visible_element_with_its_nearest_parent_and_t
     store.finish(secret.name)
     store.hide(secret.name)
     assert 'code.timer.kitchen.secret' not in [entry.element.address for entry in store.graph(limit=0).elements]
-    assert hidden.join_id not in [join.join_id for join in store.graph(limit=0).joins]
+    assert hidden.id not in [join.id for join in store.graph(limit=0).joins]
     raw = store.graph(raw=True, limit=0)
     assert set(addresses) | {'code.timer.kitchen.secret'} == {entry.element.address for entry in raw.elements}
-    assert hidden.join_id in [join.join_id for join in raw.joins]
+    assert hidden.id in [join.id for join in raw.joins]

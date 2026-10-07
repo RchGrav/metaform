@@ -106,20 +106,20 @@ def finished(ctx: Any, store: Store, record: WorkRecord, folder: Path) -> dict[s
     project = Path(store.project().path)
     git(folder, 'add', '-A')
     git(folder, 'commit', '-q', '-m', f'{record.condition or "work"}: {(record.task or record.note or "")[:60]}',
-        '-m', f'Work {record.work_id}: {record.resolution or ""}')
-    branch = branch_of(record.work_id)
+        '-m', f'Work {record.id}: {record.resolution or ""}')
+    branch = branch_of(record.id)
     dev = dev_branch(project)
     if dev is None or git(project, 'rev-list', '--count', f'{dev}..{branch}').stdout.strip() in ('', '0'):
         return None
     passed, said = tests_pass(folder, str(ctx.setting('dispatch_test_command')))
     merges, why = clean_merge(project, branch) if passed else (False, said)
-    row = {'work_id': record.work_id, 'branch': branch, 'worktree': str(folder),
+    row = {'work_id': record.id, 'branch': branch, 'worktree': str(folder),
            'state': READY if passed and merges else FAILED, 'reason': '' if passed and merges else why,
            'ready': time.time(), 'deadline': time.time() + 60 * int(ctx.setting('dispatch_review_minutes')),
            'seq': time.time_ns()}
     own = Store(store.project_id, module='dispatch')
     with own.tables() as tx:
-        if tx.update('merges', {'work_id': record.work_id}, row) is None:
+        if tx.update('merges', {'work_id': record.id}, row) is None:
             tx.insert('merges', row)
     return row
 
@@ -161,7 +161,7 @@ def merge_due(ctx: Any, store: Store, work_id: str) -> dict[str, Any]:
         if done.returncode == 0:
             outcome = {'state': MERGED, 'reason': ''}
             record = store.ticket(work_id).work
-            store.add_work(Node.of(record.kind, record.id), 'enhancement',
+            store.add_work(Node.of(record.node_kind, record.node_id), 'enhancement',
                            note=f'Merged into {dev_branch(project)} without review, from {row["branch"]}, after its '
                                 f'tests passed: work {work_id}.',
                            task=f'Newly committed feature, needs testing before the next release: '

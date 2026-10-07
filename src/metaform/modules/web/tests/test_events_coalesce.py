@@ -16,13 +16,13 @@ def test_a_burst_of_agent_lines_wakes_the_page_a_few_times_and_a_map_event_arriv
     run('add', 'project', 'proj', str(folder))
     started(run)
     heard, first = events_on(web)
-    lines = {'project': 'proj', 'metaform_id': 'm', 'tables': 'dispatch', 'dispatch_tables': ['dispatch.lines']}
+    lines = {'project': 'proj', 'base_id': 'm', 'tables': 'dispatch', 'dispatch_tables': ['dispatch.lines']}
     for index in range(20):
         relay.deliver('map.changed', lines if index != 10 else {**lines, 'dispatch_tables': ['dispatch.sessions']})
         time.sleep(0.0025)
     signal = {**lines, 'signal': {'signal': 'spinning-time'}}
     relay.deliver('map.changed', signal)
-    work = {'project': 'proj', 'metaform_id': 'm', 'tables': ['work']}
+    work = {'project': 'proj', 'base_id': 'm', 'tables': ['work']}
     sent = time.monotonic()
     relay.deliver('map.changed', work)
     assert first.wait(5)

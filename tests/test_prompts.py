@@ -46,7 +46,7 @@ def test_a_layer_stays_linked_to_the_version_it_was_made_from(home):
     third = prompts.add_prompt_version('practices', 'three', 2)
     prompts.record_use(third.version_id, 'proj', 'metaform-1', 'layer-1')
     prompts.add_prompt_version('practices', 'four', 3)
-    assert [(use.project_id, use.metaform_id, use.layer_id) for use in prompts.layers_by_prompt_version(
+    assert [(use.project_id, use.base_id, use.layer_id) for use in prompts.layers_by_prompt_version(
         third.version_id)] == [('proj', 'metaform-1', 'layer-1')]
     assert prompts.use_of('proj', 'metaform-1', 'layer-1').number == 3
     assert prompts.use_of('proj', 'metaform-1', 'layer-2') is None

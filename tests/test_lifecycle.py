@@ -228,10 +228,10 @@ def test_an_import_meeting_a_metaform_another_project_owns_writes_nothing_of_it_
     document = export_document(['one'])
     listing = sorted(str(path.relative_to(home)) for path in home.rglob('*'))
     report = import_document(document, 'two')
-    assert (report['metaforms_added'], report['metaforms_skipped'], report['layers_added']) == (0, 1, 0)
+    assert (report['bases_added'], report['bases_skipped'], report['layers_added']) == (0, 1, 0)
     assert any('one' in notice['message'] for notice in report['notices'])
     assert sorted(str(path.relative_to(home)) for path in home.rglob('*')) == listing
-    assert [form.name for form in metaform_home.metaforms('two')] == []
+    assert [form.name for form in metaform_home.bases('two')] == []
 
 
 @pytest.mark.req('STORE-027')
@@ -246,7 +246,7 @@ def test_a_document_imports_into_another_registered_project_which_keeps_its_own_
     (tmp_path / 'two').mkdir()
     metaform_home.add_project('two', tmp_path / 'two')
     report = import_document(document, 'two')
-    assert (report['metaforms_added'], report['layers_added']) == (1, 1)
+    assert (report['bases_added'], report['layers_added']) == (1, 1)
     assert Store('two').layer_ref('notes').variable == 'Notes.'
     assert metaform_home.project('two').path == str(tmp_path / 'two') and metaform_home.project('one') is None
 

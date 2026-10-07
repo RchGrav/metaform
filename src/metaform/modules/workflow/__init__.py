@@ -138,9 +138,9 @@ def _call_store(store: Store, text: str) -> Store:
     accompanying = catalog.selected_layers(store, address)
     if not store.toggled or not accompanying:
         return store
-    active = store.bound_metaform()
+    active = store.bound_base()
     return Store(store.project_id, module='workflow',
-                 metaform=None if active is None else active.metaform_id,
+                 base=None if active is None else active.id,
                  toggled=list(dict.fromkeys((*store.toggled, *accompanying))))
 
 
@@ -151,7 +151,7 @@ def _token(ctx: Context) -> str:
 
 def _store(ctx: Context, word: str) -> Store:
     source = executor.view(word)['context']
-    return Store(source['project'], module='workflow', metaform=source['metaform'], toggled=source['layers'])
+    return Store(source['project'], module='workflow', base=source['metaform'], toggled=source['layers'])
 
 
 def _shown(word: str) -> dict[str, Any]:
@@ -166,10 +166,10 @@ def run(ctx: Context) -> Any:
     element = ctx.nouns.get('element')
     this = None if element is None else element_value(store, element)
     variables = _values(ctx.nouns.get('variables', {}))
-    active = store.bound_metaform()
+    active = store.bound_base()
     word = executor.start(ctx.nouns['call'], variables, this, _lookup(store), {
         'project': store.project_id, 'folder': str(ctx.folder),
-        'metaform': None if active is None else active.metaform_id, 'layers': store.toggled},
+        'metaform': None if active is None else active.id, 'layers': store.toggled},
         resolve=lambda address: element_value(store, address))
     return _shown(word)
 
@@ -189,8 +189,8 @@ def _variables(ctx: Context, word: str) -> dict[str, Any]:
 
 def _call_context(store: Store, word: str) -> dict[str, Any]:
     source = executor.view(word)['context']
-    active = store.bound_metaform()
-    return {**source, 'metaform': None if active is None else active.metaform_id, 'layers': store.toggled}
+    active = store.bound_base()
+    return {**source, 'metaform': None if active is None else active.id, 'layers': store.toggled}
 
 
 def call(ctx: Context) -> Any:

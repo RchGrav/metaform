@@ -33,10 +33,11 @@ def noted(run, folder, text):
 
 
 def heard(log):
-    """What the watcher heard since it was last asked, once."""
+    """What the watcher heard since it was last asked, once: each event's project and base. What was written, the
+    `tables` beside them, is the page's to read, VIEW-018, not what these tests count."""
     found = [json.loads(line) for line in log.read_text(encoding='utf-8').splitlines()] if log.exists() else []
     log.unlink(missing_ok=True)
-    return found
+    return [{key: value for key, value in event.items() if key in ('project', 'base_id')} for event in found]
 
 
 @pytest.fixture
@@ -60,14 +61,14 @@ def test_any_module_hears_map_changed_for_each_command_that_changed_the_map_and_
     run('map', 'roots', cwd=folder)
     assert heard(log) == []  # reading changes nothing, so nothing is announced
     noted(run, folder, 'Counts down.')
-    active = metaform_home.active_metaform('proj')
-    assert {'project': 'proj', 'metaform_id': active.metaform_id} in heard(log)  # no module asked for it
+    active = metaform_home.active_base('proj')
+    assert {'project': 'proj', 'base_id': active.id} in heard(log)  # no module asked for it
     run('map', 'knowledge', 'op=add-item', 'layer=notes', 'node=type:code.timer', 'value="Rings at zero."', cwd=folder)
-    assert heard(log) == [{'project': 'proj', 'metaform_id': active.metaform_id}]  # once for one command
-    run('add', 'metaform', 'fresh', cwd=folder)
-    assert heard(log) == [{'project': 'proj', 'metaform_id': None}]  # the project's metaforms changed
-    run('activate', 'metaform', 'main', cwd=folder)
-    assert heard(log) == [{'project': 'proj', 'metaform_id': None}]
+    assert heard(log) == [{'project': 'proj', 'base_id': active.id}]  # once for one command
+    run('add', 'base', 'fresh', cwd=folder)
+    assert heard(log) == [{'project': 'proj', 'base_id': None}]  # the project's metaforms changed
+    run('activate', 'base', 'main', cwd=folder)
+    assert heard(log) == [{'project': 'proj', 'base_id': None}]
     run('map', 'roots', cwd=folder)
     assert heard(log) == []
 
@@ -81,8 +82,8 @@ def test_clearing_a_project_is_announced_once_as_a_change_to_its_metaforms(run, 
     refused = run('clear', 'project', cwd=folder, ok=False)
     assert refused.returncode == 2 and heard(log) == []  # the caution alone changes nothing
     run('clear', 'project', '--confirm', cwd=folder)
-    assert heard(log) == [{'project': 'proj', 'metaform_id': None}]
-    assert metaform_home.metaforms('proj') == ()
+    assert heard(log) == [{'project': 'proj', 'base_id': None}]
+    assert metaform_home.bases('proj') == ()
 
 
 @pytest.mark.req('VIEW-018')
@@ -94,16 +95,16 @@ def test_a_write_to_a_modules_project_level_tables_is_announced_as_a_change_to_t
     metaform store's, once per command, and a read notes nothing."""
     folder, log = watched
     noted(run, folder, 'Counts down.')
-    active = metaform_home.active_metaform('proj')
+    active = metaform_home.active_base('proj')
     run('memory', 'create_entities', '[{"name":"tone","entityType":"behavior","observations":["Rings."]}]',
         cwd=folder)
     heard(log)
     run('memory', 'add_observations', '[{"entityName":"tone","contents":["Too quiet."]}]', cwd=folder)
-    assert heard(log) == [{'project': 'proj', 'metaform_id': active.metaform_id}]
+    assert heard(log) == [{'project': 'proj', 'base_id': active.id}]
     run('memory', 'read_graph', cwd=folder)
     run('memory', 'graph', cwd=folder)
     assert heard(log) == []
     run('memory', 'add_observations', '[{"entityName":"tone","contents":["Too quiet."]}]', cwd=folder)
     assert heard(log) == []  # an observation the entity holds is skipped, and a write that changed nothing is silent
     run('memory', 'delete_entities', '["tone"]', cwd=folder)
-    assert heard(log) == [{'project': 'proj', 'metaform_id': active.metaform_id}]
+    assert heard(log) == [{'project': 'proj', 'base_id': active.id}]

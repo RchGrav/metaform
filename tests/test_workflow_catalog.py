@@ -25,7 +25,7 @@ def test_catalog_lookup_and_node_read_follow_layer_masks(store, project_folder):
     logic = catalog.submit_logic(store, ADDRESS, 'procedures', 'review', SCRIPT)
     assert catalog.lookup(store, ADDRESS, 'review')[0] == logic
     assert catalog.workflows(store)[0]['logic'] == ['review']
-    node = Node('element', store.element(ADDRESS).element_id)
+    node = Node('element', store.element(ADDRESS).id)
     ctx = Context('workflow', project_folder, store=store)
     assert catalog.node_read(ctx, node)['logic'][0]['content'] == SCRIPT
     store.mask('workflow.quality', 'procedures')
@@ -57,7 +57,7 @@ def test_logic_attaches_to_an_element_a_join_holds_and_keeps_existing_building_l
     assert logic.content == SCRIPT
     assert [join.receiver_address for join in store.where(owner.address).provides] == ['stakeholder.cook.home']
     ctx = Context('workflow', store.project().path, store=store)
-    node = Node('element', store.element(owner.address).element_id)
+    node = Node('element', store.element(owner.address).id)
     assert catalog.node_read(ctx, node)['logic'][0]['name'] == 'improve'
 
 
@@ -88,7 +88,7 @@ def test_portable_workflow_restores_other_project_with_versions_and_provenance(s
 
 def test_resubmitting_workflow_updates_name_and_selects_its_knowledge(store):
     catalog.submit_workflow(store, ADDRESS, 'procedures', name='First name', layers=('standards',))
-    original = store.element(ADDRESS).element_id
+    original = store.element(ADDRESS).id
     layer = knowledge(store, 'standards')
     store.add_item(layer.name, Node('element', original), 'Read the standard.')
     store.finish(layer.name)
@@ -96,7 +96,7 @@ def test_resubmitting_workflow_updates_name_and_selects_its_knowledge(store):
     catalog.submit_workflow(store, ADDRESS, 'procedures', name='New name', layers=('standards',))
     _, owner = catalog.lookup(store, ADDRESS, 'review', selection=['procedures'])
     assert owner.name == 'New name'
-    assert store.element(ADDRESS).element_id == original
+    assert store.element(ADDRESS).id == original
     assert owner.items['standards'][0].value == 'Read the standard.'
     assert catalog.selected_layers(store, ADDRESS, selection=['procedures']) == ['standards']
     store.mask('workflow', 'procedures')
@@ -132,9 +132,9 @@ def test_portable_import_keeps_native_edit_after_logged_versions(store, tmp_path
 
 def test_catalog_keeps_explicit_metaform_binding_when_active_metaform_changes(store):
     catalog.submit_workflow(store, ADDRESS, 'procedures')
-    original = store.active_metaform()
-    store.add_metaform('another')
-    bound = Store(store.project_id, metaform=original.metaform_id)
+    original = store.active_base()
+    store.add_base('another')
+    bound = Store(store.project_id, base=original.id)
     saved = catalog.submit_logic(bound, ADDRESS, 'procedures', 'review', SCRIPT)
     assert catalog.lookup(bound, ADDRESS, 'review')[0] == saved
     assert catalog.workflows(store) == []

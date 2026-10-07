@@ -376,7 +376,7 @@ Each subscriber receives a copied payload and its own context built for the publ
 
 ```python
 def changed(payload, ctx):
-    ...  # payload: {'project': 'proj', 'metaform_id': '...'}
+    ...  # payload: {'project': 'proj', 'base_id': '...'}
 
 MODULE = Module(..., subscriptions=(Subscription('map.changed', changed),))
 ```

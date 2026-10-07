@@ -200,8 +200,8 @@ def test_nonce_calls_remain_bound_when_active_metaform_changes(store, project_fo
     initial = run(Context('workflow', project_folder, store=store, nouns={
         'call': 'workflow.quality.code.improve(target=this)', 'element': 'code.timer.kitchen'}))
     old_metaform = initial['context']['metaform']
-    store.add_metaform('other')
-    bound = Store('proj', module='workflow', metaform=old_metaform)
+    store.add_base('other')
+    bound = Store('proj', module='workflow', base=old_metaform)
     catalog.ensure_layer(bound, 'standards')
     catalog.submit_workflow(bound, ADDRESS, 'procedures', layers=('standards',))
     context = Context('workflow', project_folder, nouns={

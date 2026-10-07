@@ -167,10 +167,10 @@ def test_debug_and_report_are_chassis_booleans_that_follow_every_settings_rule(r
 @pytest.mark.req('LAYER-001')
 def test_an_intake_recorded_object_by_object_is_stored_whole_and_reads_back(run, project, tmp_path):
     report = submit(run, project, FIXTURE, tmp_path, extra=('model=claude', 'role=intake agent'))
-    assert (report['project'], report['metaform'], report['elements'], report['joins'], report['work']) == (
+    assert (report['project'], report['base'], report['elements'], report['joins'], report['work']) == (
         'timer', 'main', 4, 2, 0)
     assert set(notices(report)) == NAMED
-    assert report['layer'] == 'intake'  # LAYER-025: no time or random part
+    assert report['layer'] == 'base'  # LAYER-025: no time or random part
     store = Store('timer')
     assert store.has_intake()
     kitchen = store.element('code.timer.kitchen')
@@ -186,17 +186,19 @@ def test_an_intake_recorded_object_by_object_is_stored_whole_and_reads_back(run,
     assert [held.address for held in alarm_join.elements] == ['code.alarm.audible', 'code.loop.tick']
     tick = store.element('code.loop.tick')
     assert (tick.role, tick.name_length, tick.name) == ('SE', 2, 'one-second tick loop')
-    assert alarm_join.elements[1].element_id == tick.element_id  # the part is one element record
+    assert alarm_join.elements[1].element_id == tick.id  # the part is one element record
     layer = next(item for item in store.layers().results if item.name == report['layer'])
-    assert (layer.kind, layer.mutable, layer.hideable) == ('intake', False, False)
+    assert (layer.kind, layer.mutable, layer.hideable) == ('base', False, False)
     provenance = store.provenance(report['layer'])
     assert (provenance.module, provenance.workflow, provenance.model, provenance.role) == (
         'intake', 'canonical-intake', 'claude', 'intake agent')
     assert provenance.prompt is None  # the Canonical Intake's purpose never changes, so no copy is kept, STORE-016
-    document = export_document(['timer'], layers=[report['layer']])['projects'][0]['metaforms'][0]
-    assert len(document['elements']) == 4 and len(document['joins']) == 2 and len(document['join_elements']) == 3
-    assert sorted(row['type'] for row in document['joins']) == ['purpose', 'purpose']  # Rich 2026-10-04
-    assert all(set(row) & {'perspective', 'verb', 'non_goal', 'name', 'provider'} == set() for row in document['joins'])
+    document = export_document(['timer'], layers=[report['layer']])['projects'][0]['bases'][0]
+    elements = [op for op in document['ops'] if op['kind'] == 'element']
+    joins = [op for op in document['ops'] if op['kind'] == 'join']
+    assert len(elements) == 4 and len(joins) == 2 and sum(len(op['data']['held']) for op in joins) == 3
+    assert sorted(op['data']['type'] for op in joins) == ['purpose', 'purpose']  # Rich 2026-10-04
+    assert all(set(row) & {'perspective', 'verb', 'non_goal', 'name', 'provider'} == set() for row in (op['data'] for op in joins))
 
 
 @pytest.mark.req('BASE-039')
@@ -326,20 +328,20 @@ def test_refs_that_are_not_text_are_kept_in_the_extra_and_counted_in_words(run, 
 @pytest.mark.req('STORE-041')
 def test_a_second_intake_is_stored_as_a_new_active_metaform_and_the_first_is_kept(run, project, tmp_path, home):
     first = submit(run, project, FIXTURE, tmp_path)
-    main = metaform_home.active_metaform('timer')
-    before = metaform_home.store_path('timer', main.metaform_id).read_bytes()
+    main = metaform_home.active_base('timer')
+    before = metaform_home.store_path('timer', main.id).read_bytes()
     changed = copy.deepcopy(FIXTURE)
     changed['elements'][2]['namespace_address'] = 'code.alarm.visual'
     changed['elements'][1]['joins'][0]['provider'] = 'code.alarm.visual'
     second = submit(run, project, changed, tmp_path)
-    assert re.fullmatch(r'intake-\d{8}T\d{6}Z(-\d+)?', second['metaform'])
-    active = metaform_home.active_metaform('timer')
-    assert active.name == second['metaform'] and active.metaform_id != main.metaform_id
-    assert any('metaform activate metaform main' in notice['message'] for notice in second['notices'])
+    assert re.fullmatch(r'intake-\d{8}T\d{6}Z(-\d+)?', second['base'])
+    active = metaform_home.active_base('timer')
+    assert active.name == second['base'] and active.id != main.id
+    assert any('metaform map activate main' in notice['message'] for notice in second['notices'])
     store = Store('timer')
     assert store.element('code.alarm.visual') is not None and store.element('code.alarm.audible') is None
-    assert metaform_home.store_path('timer', main.metaform_id).read_bytes() == before
-    run('activate', 'metaform', 'main', cwd=project)
+    assert metaform_home.store_path('timer', main.id).read_bytes() == before
+    run('activate', 'base', 'main', cwd=project)
     assert Store('timer').element('code.alarm.audible') is not None
     assert Store('timer').layers(kind='intake').results[0].name == first['layer']
 
@@ -363,7 +365,7 @@ def test_a_report_and_feedback_are_saved_and_a_work_record_on_the_intake_is_coun
     report = submit(run, project, copy.deepcopy(FIXTURE), tmp_path,
                     extra=('report=The alarm pin is unconnected.', 'feedback=The join fields were clear.'))
     assert report['work'] == 1
-    layer_id = Store('timer').layers(kind='intake').results[0].layer_id
+    layer_id = Store('timer').layers(kind='intake').results[0].id
     folder = metaform_home.project_folder('timer') / 'reports'
     assert (folder / f'{layer_id}-report.md').read_text(encoding='utf-8') == 'The alarm pin is unconnected.'
     assert (folder / f'{layer_id}-feedback.md').read_text(encoding='utf-8') == 'The join fields were clear.'
@@ -377,7 +379,7 @@ def test_a_report_and_feedback_are_saved_and_a_work_record_on_the_intake_is_coun
     exclude = json.loads(run('map', 'work', 'condition=exclude', '--json', cwd=project).stdout)['results']
     assert [(row['address'], row['condition'], row['note']) for row in exclude] == [
         ('code.alarm.audible', 'exclude', 'alarm.c conflicts with specifications/alarm.md:12')]
-    assert json.loads(run('map', 'work', f'id={exclude[0]["work_id"]}', '--json', cwd=project).stdout)['task'] == (
+    assert json.loads(run('map', 'work', f'id={exclude[0]["id"]}', '--json', cwd=project).stdout)['task'] == (
         'review the code against the linked specification')  # a list row leaves its task out, MAP-049
     assert Store('timer').element('code.alarm.audible').open_work == ('exclude',)
 
@@ -520,7 +522,7 @@ def test_the_intake_serves_the_shipped_file_and_keeps_nothing_in_the_prompt_stor
     result = submit(run, project, FIXTURE, tmp_path)
     store = Store('timer')
     layer = store.layer_ref(result['layer'])
-    assert prompts.use_of('timer', layer.metaform_id, layer.layer_id) is None
+    assert prompts.use_of('timer', layer.base_id, layer.id) is None
     provenance = store.provenance(result['layer'])
     assert provenance.prompt_version is None and provenance.prompt is None
     assert [(prompt.name, prompt.newest) for prompt in prompts.prompts()] == [('canonical-intake', 1)]
@@ -535,7 +537,7 @@ def test_an_intake_file_is_served_as_it_is_and_links_no_version(run, home, proje
     assert run('intake', 'prompt', cwd=project).stdout.startswith('<process><target ')
     result = submit(run, project, FIXTURE, tmp_path)
     layer = Store('timer').layer_ref(result['layer'])
-    assert prompts.use_of('timer', layer.metaform_id, layer.layer_id) is None
+    assert prompts.use_of('timer', layer.base_id, layer.id) is None
     assert Store('timer').provenance(result['layer']).prompt is None
 
 
@@ -588,7 +590,7 @@ def test_recording_again_and_remove_change_a_building_intake_and_a_finished_one_
     assert [join.purpose for join in Store('timer').joins('code.a').results] == ['The better purpose.']
     # Recording after the finish starts a new intake in a new metaform; the finished one is left exactly as it was.
     later = json.loads(run('intake', 'join', 'code.a', '["code.b"]', 'purpose=Changed.', '--json', cwd=project).stdout)
-    assert any(notice['where'] == 'metaform' for notice in later['notices'])
+    assert any(notice['where'] == 'base' for notice in later['notices'])
     run('intake', 'element', 'code.a', 'role=SE', 'name=renamed', cwd=project)
     finished = Store('timer')
     assert [(join.purpose, [held.address for held in join.elements]) for join in finished.joins('code.a').results] == [
@@ -622,7 +624,7 @@ def test_the_finish_reads_a_long_report_from_a_file_or_from_standard_input_on_th
     run('intake', 'element', 'code.alarm.audible', 'role=SE', '--json', cwd=project)
     run('intake', 'finish', f'report={tmp_path / "report.md"}', 'feedback=-', '--json', cwd=project,
         input='Said on standard input.\n')
-    layer_id = Store('timer').layers(kind='intake').results[0].layer_id
+    layer_id = Store('timer').layers(kind='intake').results[0].id
     folder = metaform_home.project_folder('timer') / 'reports'
     assert (folder / f'{layer_id}-report.md').read_text(encoding='utf-8') == text
     assert (folder / f'{layer_id}-feedback.md').read_text(encoding='utf-8') == 'Said on standard input.\n'
@@ -641,7 +643,7 @@ def test_over_mcp_a_report_is_the_text_given_and_no_file_is_read(home, project, 
     anyio.run(server.run_tool, project, 'intake_start', {})
     anyio.run(server.run_tool, project, 'intake_element', {'namespace_address': 'code.alarm.audible', 'role': 'SE'})
     anyio.run(server.run_tool, project, 'intake_finish', {'report': str(secret)})
-    layer_id = Store('timer').layers(kind='intake').results[0].layer_id
+    layer_id = Store('timer').layers(kind='intake').results[0].id
     kept = (metaform_home.project_folder('timer') / 'reports' / f'{layer_id}-report.md').read_text(encoding='utf-8')
     assert kept == str(secret)
 
@@ -769,7 +771,7 @@ def test_annealing_adds_an_element_to_its_parents_join_and_the_element_stays_one
     store = Store('timer')
     [parent] = store.joins('stakeholder.operator').results
     assert [held.address for held in parent.elements] == ['code.failsafe.gateway', 'code.probe.echo']
-    assert store.element('code.probe.echo').element_id == parent.elements[1].element_id
+    assert store.element('code.probe.echo').id == parent.elements[1].element_id
 
 
 @pytest.mark.req('BASE-039')
@@ -906,10 +908,10 @@ def test_a_condition_given_with_an_element_or_a_join_is_an_open_work_record_at_i
     recorded(run, project, 'finish')
     store = Store('timer')
     [held] = store.joins('code.timer').results
-    work = {(row.kind, row.id): (row.condition, row.note, row.done) for row in store.work(open=True, limit=0).results}
+    work = {(row.node_kind, row.node_id): (row.condition, row.note, row.done) for row in store.work(open=True, limit=0).results}
     assert work == {
-        ('element', store.element('code.auth').element_id): ('broken', 'Non-debug modes are forced to debug.', None),
-        ('join', held.join_id): ('missing', 'The demo does not declare its autoap dependency.', None)}
+        ('element', store.element('code.auth').id): ('broken', 'Non-debug modes are forced to debug.', None),
+        ('join', held.id): ('missing', 'The demo does not declare its autoap dependency.', None)}
     assert Store('timer').element('code.auth').open_work == ('broken',)  # what the page draws the node from
     assert 'condition' not in Store('timer').element('code.auth').to_dict()  # apart from the map, MAP-046
     assert Store('timer').element('code.clock').open_work == ()
@@ -968,5 +970,5 @@ def test_refs_go_to_the_sources_layer_only_while_intake_sources_is_on(run, proje
     assert store.citing('path', 'timer.c').results == ()
     alarm = store.element('code.alarm.audible', raw=True)
     assert alarm is not None
-    held = store.node(Node('element', alarm.element_id), raw=True)
+    held = store.node(Node('element', alarm.id), raw=True)
     assert held is not None and [group.layer for group in held.layers if any(item.refs for item in group.items)] == []

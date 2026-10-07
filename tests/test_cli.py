@@ -409,7 +409,7 @@ def test_status_in_a_registered_project_has_the_fixed_lines(run, home, project):
     out = lines(run(cwd=project / 'src'))
     assert out[:5] == [f'Metaform {__version__}', f'Home: {home}', f'Folder: {project / "src"}',
                        f'Project: proj ({project}), inherited from {project}', f'Target: path {project}']
-    assert out[5].startswith('Metaform: ')
+    assert out[5].startswith('Base: ')
     assert out[6] == 'Projects: one registered'
     assert out[7].startswith('Modules: ') and out[-1] == 'Instructions: metaform help agents'
     assert f'Project: proj ({project}), selected here' in lines(run(cwd=project))
@@ -513,14 +513,14 @@ def test_a_modules_command_is_never_written_with_a_colon(run, toggles):
 @pytest.mark.req('CLI-009')
 def test_every_error_names_exactly_one_next_command(run):
     for args in (['frobnicate'], ['add'], ['list', 'things'], ['set', '--nope', 'x'], ['unset', 'banana'],
-                 ['help', 'nothing'], ['enable', 'ghost'], ['activate', 'metaform', 'ghost'],
+                 ['help', 'nothing'], ['enable', 'ghost'], ['activate', 'base', 'ghost'],
                  ['query', 'nothing'], ['export', 'ghost']):
         result = run(*args, ok=False)
         err = result.stderr.splitlines()
         assert result.returncode == 2, args
         assert len(err) == 2 and err[0].startswith('Error: ') and err[1].startswith('Next: '), (args, err)
     assert run('list', 'foo', ok=False).stderr.splitlines() == [
-        'Error: list needs a noun: projects, modules, metaforms, reports, backups, origins or variants.',
+        'Error: list needs a noun: projects, modules, bases, reports, backups, origins or variants.',
         'Next: metaform list projects']
 
 
@@ -566,7 +566,7 @@ def test_every_chassis_verb_runs_in_an_empty_home(run, tmp_path):
     folder.mkdir()
     for args in ((), ('help',), ('help', 'intro'), ('help', 'commands'), ('help', 'switches'), ('help', 'agents'),
                  ('list', 'projects'), ('list', 'modules'), ('config', '--show'), ('query',),
-                 ('add', 'project', 'w', str(folder)), ('list', 'metaforms', 'w'), ('export', 'w')):
+                 ('add', 'project', 'w', str(folder)), ('list', 'bases', 'w'), ('export', 'w')):
         assert run(*args, cwd=folder).returncode == 0, args
 
 
@@ -590,13 +590,13 @@ def test_add_and_list_projects(run, tmp_path):
 @pytest.mark.req('STORE-041')
 @pytest.mark.req('MAP-045')
 def test_metaforms_are_added_listed_and_activated(run, project):
-    assert lines(run('add', 'metaform', 'fresh', cwd=project)) == [
-        ('Added metaform fresh to proj; it is now active. The previous metaform main is kept. To switch back: '
-        'metaform activate metaform main')]
-    listed = lines(run('list', 'metaforms', cwd=project))
+    assert lines(run('add', 'base', 'fresh', cwd=project)) == [
+        ('Added base fresh to proj; it is now active. The previous base main is kept. To switch back: '
+        'metaform activate base main')]
+    listed = lines(run('list', 'bases', cwd=project))
     assert [line.split()[0] for line in listed] == ['main', 'fresh'] and listed[1].endswith('(active)')
-    assert lines(run('activate', 'metaform', 'main', cwd=project)) == ['Active metaform for proj: main']
-    assert run(cwd=project).stdout.count('Metaform: main, two in project') == 1
+    assert lines(run('activate', 'base', 'main', cwd=project)) == ['Active base for proj: main']
+    assert run(cwd=project).stdout.count('Base: main, two in project') == 1
 
 
 @pytest.mark.req('PROJ-025')
@@ -605,7 +605,7 @@ def test_clear_project_removes_the_metaforms_and_reports_and_keeps_registration_
         run, project, home, tmp_path):
     (project / 'notes.txt').write_text('first\n', encoding='utf-8')
     noted(run, project, 'Counts down.')
-    run('add', 'metaform', 'fresh', cwd=project)
+    run('add', 'base', 'fresh', cwd=project)
     run('feedback', 'The subtype fields did not match.', cwd=project)
     run('add', 'origin', cwd=project)
     work = tmp_path / 'work'
@@ -624,21 +624,21 @@ def test_clear_project_removes_the_metaforms_and_reports_and_keeps_registration_
     refused = run('clear', 'project', cwd=elsewhere, ok=False)
     assert refused.returncode == 2
     assert refused.stderr.splitlines() == [
-        ('Error: Clearing proj removes two metaforms, main and fresh, with their stores, and one report file. '
+        ('Error: Clearing proj removes two bases, main and fresh, with their stores, and one report file. '
          'Its registration, folder, settings, origins and variants stay.'),
         'Next: If you are sure: metaform clear project proj --confirm']
-    assert [line.split()[0] for line in lines(run('list', 'metaforms', cwd=project))] == ['main', 'fresh']
+    assert [line.split()[0] for line in lines(run('list', 'bases', cwd=project))] == ['main', 'fresh']
     assert sorted(path.name for path in (own('proj') / 'reports').iterdir()) == before['reports']
 
     said = lines(run('clear', 'project', 'proj', '--confirm', cwd=elsewhere))
-    assert said[0] == ('Cleared proj: two metaforms, main and fresh, and one report file. Its registration, folder, '
+    assert said[0] == ('Cleared proj: two bases, main and fresh, and one report file. Its registration, folder, '
                        'settings, origins and variants stay.')
     assert len(said) == 3 and said[1].startswith('Backed up as ') and said[2] == \
         'To bring it back: metaform restore project proj'  # PROJ-030
-    assert run('list', 'metaforms', cwd=project).stdout == ''
+    assert run('list', 'bases', cwd=project).stdout == ''
     assert not list(own('proj').glob('*.metaform.sqlite3'))
     assert not (own('proj') / 'reports').exists()
-    assert run(cwd=project).stdout.count('Metaform: none yet') == 1
+    assert run(cwd=project).stdout.count('Base: none yet') == 1
     assert run('list', 'origins', cwd=project).stdout == before['origins']
     assert run('list', 'variants', cwd=project).stdout == before['variants']
     assert [line.split()[0] for line in lines(run('list', 'projects'))] == ['proj']
@@ -647,7 +647,7 @@ def test_clear_project_removes_the_metaforms_and_reports_and_keeps_registration_
     assert (project / 'notes.txt').read_text(encoding='utf-8') == 'first\n'
 
     noted(run, project, 'Counts down again.')
-    listed = lines(run('list', 'metaforms', cwd=project))
+    listed = lines(run('list', 'bases', cwd=project))
     assert [line.split()[0] for line in listed] == ['main'] and listed[0].endswith('(active)')
     assert 'clear' in {line.split()[0] for line in lines(run('help', 'commands')) if line.startswith('  ')}
 
@@ -663,11 +663,11 @@ def test_remove_project_takes_an_empty_project_off_the_list_and_deletes_nothing(
 
     held = run('remove', 'project', 'proj', '--confirm', cwd=elsewhere, ok=False)
     assert held.returncode == 2 and held.stderr.splitlines() == [
-        ('Error: proj holds one metaform, main, and one report file. Only an empty project is removed; clearing it '
+        ('Error: proj holds one base, main, and one report file. Only an empty project is removed; clearing it '
          'backs it up first.'),
         'Next: metaform clear project proj --confirm']
     assert [line.split()[0] for line in lines(run('list', 'projects'))] == ['proj']
-    assert [line.split()[0] for line in lines(run('list', 'metaforms', cwd=project))] == ['main']
+    assert [line.split()[0] for line in lines(run('list', 'bases', cwd=project))] == ['main']
 
     run('clear', 'project', 'proj', '--confirm', cwd=elsewhere)
     backups = run('list', 'backups', 'proj').stdout
@@ -689,7 +689,7 @@ def test_remove_project_takes_an_empty_project_off_the_list_and_deletes_nothing(
     run('add', 'project', 'proj', str(project))
     assert run('list', 'backups', 'proj').stdout == backups
     run('restore', 'project', 'proj', cwd=project)
-    assert [line.split()[0] for line in lines(run('list', 'metaforms', cwd=project))] == ['main']
+    assert [line.split()[0] for line in lines(run('list', 'bases', cwd=project))] == ['main']
 
 
 @pytest.mark.req('PROJ-031')
@@ -710,22 +710,22 @@ def test_clear_project_names_a_file_it_could_not_remove_with_the_reason_and_what
         cleared = run('clear', 'project', '--confirm', cwd=project)
         assert stuck.is_file()
     said = lines(cleared)
-    assert said[0] == ('Cleared proj: one metaform, main, and one report file. Its registration, folder, settings, '
+    assert said[0] == ('Cleared proj: one base, main, and one report file. Its registration, folder, settings, '
                        'origins and variants stay.')
     assert said[1].startswith('Backed up as ') and said[2] == 'To bring it back: metaform restore project proj'
     assert said[3] == 'Not removed, still on disk:'
     assert said[4].startswith(f'  {stuck}: ') and len(said[4]) > len(f'  {stuck}: ')
     assert said[5:] == [('Next: Close any program that has it open, such as a running web GUI, or fix its '
                          'permissions, then run metaform clear project proj --confirm again.')]
-    assert run('list', 'metaforms', cwd=project).stdout == ''
+    assert run('list', 'bases', cwd=project).stdout == ''
     assert not list(own('proj').glob('*.metaform.sqlite3'))
 
     again = lines(run('clear', 'project', '--confirm', cwd=project))
-    assert again[0] == ('Cleared proj: no metaforms and one report file. Its registration, folder, settings, origins '
+    assert again[0] == ('Cleared proj: no bases and one report file. Its registration, folder, settings, origins '
                         'and variants stay.') and again[1].startswith('Backed up as ') and len(again) == 3
     assert not reports.exists()
     assert run('clear', 'project', cwd=project, ok=False).stderr.splitlines()[0] == (
-        'Error: Clearing proj removes no metaforms and no report files. Its registration, folder, settings, origins '
+        'Error: Clearing proj removes no bases and no report files. Its registration, folder, settings, origins '
         'and variants stay.')
 
 
@@ -1007,10 +1007,10 @@ def test_a_clear_backs_the_project_up_first_and_restore_brings_it_back_as_it_was
     cannot be made again by an intake: answers, tasks and knowledge are added to a map by hand."""
     import re
     noted(run, project, 'Counts down.')
-    run('add', 'metaform', 'fresh', cwd=project)
+    run('add', 'base', 'fresh', cwd=project)
     run('map', 'activate', 'main', cwd=project)
     run('feedback', 'The subtype fields did not match.', cwd=project)
-    before = {'metaforms': lines(run('list', 'metaforms', cwd=project)),
+    before = {'metaforms': lines(run('list', 'bases', cwd=project)),
               'memory': run('map', 'layer', 'notes', '--json', cwd=project).stdout,
               'reports': sorted(path.name for path in (own('proj') / 'reports').iterdir()),
               'stores': sorted(path.name for path in own('proj').glob('*.metaform.sqlite3'))}
@@ -1022,12 +1022,12 @@ def test_a_clear_backs_the_project_up_first_and_restore_brings_it_back_as_it_was
     assert sorted(path.name for path in (kept / 'reports').iterdir()) == before['reports']
     assert sorted(path.name for path in (kept / 'stores').glob('*.metaform.sqlite3')) == before['stores']
     listed = lines(run('list', 'backups', cwd=project))
-    assert len(listed) == 1 and listed[0].split()[0] == name and 'two metaforms' in listed[0]
-    assert run('list', 'metaforms', cwd=project).stdout == ''
+    assert len(listed) == 1 and listed[0].split()[0] == name and 'two bases' in listed[0]
+    assert run('list', 'bases', cwd=project).stdout == ''
 
     assert lines(run('restore', 'project', cwd=project)) == [
-        f'Restored proj from {name}: two metaforms, main and fresh, and one report file.']
-    assert lines(run('list', 'metaforms', cwd=project)) == before['metaforms']
+        f'Restored proj from {name}: two bases, main and fresh, and one report file.']
+    assert lines(run('list', 'bases', cwd=project)) == before['metaforms']
     assert run('map', 'layer', 'notes', '--json', cwd=project).stdout == before['memory']
     assert sorted(path.name for path in (own('proj') / 'reports').iterdir()) == before['reports']
 
@@ -1036,7 +1036,7 @@ def test_a_clear_backs_the_project_up_first_and_restore_brings_it_back_as_it_was
     later = run('map', 'layer', 'notes', '--json', cwd=project).stdout
     assert later != before['memory']
     again = lines(run('restore', 'project', 'proj', name, cwd=project))
-    assert again[0] == f'Restored proj from {name}: two metaforms, main and fresh, and one report file.'
+    assert again[0] == f'Restored proj from {name}: two bases, main and fresh, and one report file.'
     assert again[1].startswith('What it held was backed up as ') and run('map', 'layer', 'notes', '--json',
                                                                           cwd=project).stdout == before['memory']
     names = [line.split()[0] for line in lines(run('list', 'backups', cwd=project))]
@@ -1057,9 +1057,9 @@ def test_a_clear_stops_when_the_backup_cannot_be_made_and_a_project_with_nothing
     refused = run('clear', 'project', '--confirm', cwd=project, ok=False)
     assert refused.returncode == 2 and refused.stderr.startswith('Error: proj was not cleared, since it could not be '
                                                                   'backed up first: ')
-    assert [line.split()[0] for line in lines(run('list', 'metaforms', cwd=project))] == ['main']
+    assert [line.split()[0] for line in lines(run('list', 'bases', cwd=project))] == ['main']
     (home / 'backups' / 'clear').unlink()
     assert len(lines(run('clear', 'project', '--confirm', cwd=project))) == 3
     assert lines(run('clear', 'project', '--confirm', cwd=project)) == [  # nothing to remove: no backup is made
-        'Cleared proj: no metaforms and no report files. Its registration, folder, settings, origins and variants stay.']
+        'Cleared proj: no bases and no report files. Its registration, folder, settings, origins and variants stay.']
     assert len(lines(run('list', 'backups', cwd=project))) == 1

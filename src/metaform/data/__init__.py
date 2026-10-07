@@ -14,6 +14,7 @@ from .ids import as_object, new_id
 from .names import reading, roots, short_name
 from .operations import Data, Operation
 from .paging import LIMIT, paged, sliced
+from .projection import Projection
 from .records import (
     COLUMNS,
     CONDITIONS,
@@ -132,6 +133,7 @@ __all__ = [
     'Page',
     'PastWork',
     'Plan',
+    'Projection',
     'Property',
     'Provenance',
     'Record',

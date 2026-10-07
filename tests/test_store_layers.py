@@ -4,7 +4,7 @@ from __future__ import annotations
 import sqlite3
 
 import pytest
-from storekit import PROVENANCE, diff, dump, intake, knowledge, memory, small_map, store_file, values
+from storekit import PROVENANCE, diff, dump, intake, knowledge, memory, ops, small_map, store_file, values
 
 from metaform.data import Node, Store, StoreError
 
@@ -67,10 +67,10 @@ def test_items_are_read_by_layer_by_node_and_by_link(store):
     to_alarm = store.add_item(notes.name, KITCHEN, 'calls the alarm', link=Node('element', 'code.alarm.audible'))
     back = store.add_item(notes.name, Node('element', 'code.alarm.audible'), 'is called by the timer', link=KITCHEN)
     store.finish(notes.name)
-    assert {item.item_id for item in store.layer_items(notes.name).results} == {to_alarm.item_id, back.item_id}
+    assert {item.id for item in store.layer_items(notes.name).results} == {to_alarm.id, back.id}
     assert values(store.node(KITCHEN), 'notes') == ['calls the alarm']
-    assert [item.item_id for item in store.links_to(KITCHEN).results] == [back.item_id]
-    assert [item.item_id for item in store.links_to(Node('element', 'code.alarm.audible')).results] == [to_alarm.item_id]
+    assert [item.id for item in store.links_to(KITCHEN).results] == [back.id]
+    assert [item.id for item in store.links_to(Node('element', 'code.alarm.audible')).results] == [to_alarm.id]
 
 
 @pytest.mark.req('STORE-015')
@@ -92,8 +92,8 @@ def test_a_layer_has_exactly_one_provenance_record(home, store):
     for n in range(100):
         store.add_item(notes.name, KITCHEN, f'note {n}')
     assert store.provenance(notes.name) == record
-    db = sqlite3.connect(store_file(home, store))
-    assert db.execute('SELECT COUNT(*) FROM provenance WHERE layer_id=?', (notes.layer_id,)).fetchone() == (1,)
+    [made] = [op for op in ops(store_file(home, store), 'layer') if op['id'] == notes.id and op['op'] == 'add']
+    assert made['data']['provenance'] is not None  # one record of provenance, on the layer's own op
     assert (record.module, record.prompt, record.role, record.blinded) == (
         PROVENANCE['module'], PROVENANCE['prompt'], PROVENANCE['role'], False)
 
@@ -109,8 +109,8 @@ def test_a_layer_without_provenance_gets_an_empty_record_and_a_notice_except_mem
     assert (record.module, record.workflow, record.prompt, record.model, record.role) == ('test', None, None, None,
                                                                                           None)
     notes = memory(store)
-    db = sqlite3.connect(store_file(home, store))
-    assert db.execute('SELECT COUNT(*) FROM provenance WHERE layer_id=?', (notes.layer_id,)).fetchone() == (0,)
+    [made] = [op for op in ops(store_file(home, store), 'layer') if op['id'] == notes.id and op['op'] == 'add']
+    assert made['data']['provenance'] is None  # memory has no provenance
 
 
 @pytest.mark.req('LAYER-002')
@@ -126,11 +126,11 @@ def test_memory_changes_in_place_and_keeps_no_history(home, store):
     notes = memory(store)
     item = store.add_item(notes.name, KITCHEN, 'first')
     for n in range(10):
-        store.update_item(item.item_id, f'version {n}')
-    db = sqlite3.connect(store_file(home, store))
-    assert db.execute('SELECT COUNT(*) FROM items WHERE item_id=?', (item.item_id,)).fetchone() == (1,)
+        store.update_item(item.id, f'version {n}')
+    # Changed in place: one version in the history, however many times it was written, STORE-018.
+    assert len(store.history(item.id).results) == 1
     assert values(store.node(KITCHEN), 'memory') == ['version 9']
-    store.delete_item(item.item_id)
+    store.delete_item(item.id)
     assert values(store.node(KITCHEN), 'memory') == []
     assert store.search('version').results == ()
     assert store.layer_items('memory').results == ()
@@ -150,7 +150,7 @@ def test_a_mask_stops_a_layer_flowing_into_its_branch(store):
     store.mask('code.installer', practices.name)
     assert values(store.node(Node('element', 'code.installer.bash')), 'c-practices') == []
     assert values(store.node(Node('element', 'code.engine')), 'c-practices') == ['no raw pointers']
-    assert practices.layer_id not in store.effective_selection('code.installer.bash').layer_ids
+    assert practices.id not in store.effective_selection('code.installer.bash').layer_ids
 
 
 @pytest.mark.req('STORE-019')
@@ -178,11 +178,11 @@ def test_a_select_toward_the_leaves_from_a_mask_turns_the_layer_on_again_there_a
 def test_a_layer_masked_at_the_receiver_does_not_reach_its_joins(store):
     _, _outer, inner = small_map(store)
     notes = knowledge(store, 'notes')
-    store.add_item(notes.name, Node('join', inner.join_id), 'the tone is too quiet')
+    store.add_item(notes.name, Node('join', inner.id), 'the tone is too quiet')
     store.finish(notes.name)
-    assert values(store.node(Node('join', inner.join_id)), 'notes') == ['the tone is too quiet']
+    assert values(store.node(Node('join', inner.id)), 'notes') == ['the tone is too quiet']
     store.mask('code.timer.kitchen', notes.name)
-    assert values(store.node(Node('join', inner.join_id)), 'notes') == []
+    assert values(store.node(Node('join', inner.id)), 'notes') == []
 
 
 @pytest.mark.req('STORE-020')
@@ -193,8 +193,7 @@ def test_an_observation_on_a_node_with_no_memories_writes_one_item(home, store):
     before = dump(store_file(home, store))
     store.add_item(notes.name, KITCHEN, 'the timer keeps time in ticks')
     # One item: its version row and its current pointer. The full-text index is not a row.
-    assert diff(before, dump(store_file(home, store))) == {'items': (1, 0), 'current_items': (1, 0),
-                                                           'item_ids': (1, 0), 'identities': (1, 0)}
+    assert diff(before, dump(store_file(home, store))) == {'ops': (1, 0), 'objects': (1, 0)}
 
 
 @pytest.mark.req('STORE-020')
@@ -246,13 +245,12 @@ def test_a_finished_knowledge_layer_stays_editable_and_the_intake_does_not(home,
     notes = knowledge(store, 'notes')
     item = store.add_item(notes.name, KITCHEN, 'draft')
     store.finish(notes.name)
-    store.edit(item.item_id, {'value': 'final'})
+    store.edit(item.id, {'value': 'final'})
     assert values(store.node(KITCHEN), 'notes') == ['final']
-    db = sqlite3.connect(store_file(home, store))
-    assert db.execute('SELECT COUNT(*) FROM items WHERE item_id=?', (item.item_id,)).fetchone() == (1,)
+    assert len(store.history(item.id).results) == 1  # edited in place: one version, STORE-032
     kitchen = store.element('code.timer.kitchen')
     before = dump(store_file(home, store))
-    untouched = store.edit(kitchen.element_id, {'role': 'SE'})
+    untouched = store.edit(kitchen.id, {'role': 'SE'})
     assert 'metaform map refine' in untouched.notices[0].message
     assert dump(store_file(home, store)) == before
 
@@ -265,10 +263,10 @@ def test_discarding_a_layer_keeps_identity_and_type_rows(home, store):
     item = store.add_item(draft.name, Node('element', 'code.probe.echo'), 'a draft note')
     store.discard(draft.name)
     db = sqlite3.connect(store_file(home, store))
-    assert db.execute('SELECT COUNT(*) FROM element_ids WHERE element_id=?', (element.element_id,)).fetchone() == (1,)
-    assert db.execute("SELECT COUNT(*) FROM types WHERE address='code.probe.echo'").fetchone() == (1,)
-    assert db.execute('SELECT COUNT(*) FROM identities WHERE id=?', (item.item_id,)).fetchone() == (1,)
-    assert store.element(element.element_id) is None
+    registry = {row[0] for row in db.execute('SELECT id FROM objects')}
+    assert {element.id, item.id} <= registry  # identities stay in the registry, STORE-032
+    assert store.children('code.probe').results == ('code.probe.echo',)  # the Type tree keeps the address
+    assert store.element(element.id) is None
     assert store.search('draft').results == ()
     assert 'draft' not in [layer.name for layer in store.layers().results]
     assert store.discard('intake-1').notices and store.has_intake()
@@ -319,7 +317,7 @@ def test_a_property_stays_with_its_element_which_never_moves_and_an_item_never_t
     applying = [item.value for item in store.context('code.engine.game').applying]
     assert applying == ['profile before optimizing']
     assert values(store.node(Node('element', 'code.engine.game')), 'practices') == []
-    tried = store.refine(store.element('code.engine').element_id, {'address': 'code.runtime'},
+    tried = store.refine(store.element('code.engine').id, {'address': 'code.runtime'},
                          reason='It is the runtime.')
     assert [notice.where for notice in tried.notices] == ['address']
     assert [item.value for item in store.context('code.engine.game').applying] == ['profile before optimizing']
@@ -336,7 +334,7 @@ def test_tags_change_on_a_finished_layer_without_touching_it(home, store):
     before = dump(store_file(home, store))
     store.tag(notes.name, 'review')
     store.tag(notes.name, 'review')
-    assert diff(before, dump(store_file(home, store))) == {'layer_tags': (1, 0)}
+    assert diff(before, dump(store_file(home, store))) == {'ops': (1, 0)}  # tagged once, the second is no op
     listed = {layer.name: layer for layer in store.layers(tag='practices').results}
     assert set(listed) == {'notes'} and set(listed['notes'].tags) == {'practices', 'review'}
     store.untag(notes.name, 'practices')
@@ -371,10 +369,10 @@ def test_a_property_attaches_only_to_an_element_and_writes_no_join(home, store):
     before = dump(store_file(home, store))
     store.add_property(media.name, 'code.timer.kitchen', 'C')
     changed = diff(before, dump(store_file(home, store)))
-    assert 'joins' not in changed and 'current_joins' not in changed and changed['properties'] == (1, 0)
+    assert changed == {'ops': (1, 0), 'objects': (1, 0)}  # the property alone: no join, STORE-039
     at_type = store.add_property(media.name, Node('type', 'code'), 'x')
     assert at_type.notices and at_type.address == 'code' and not at_type.orphaned
-    stored = store.add_property(media.name, Node('join', outer.join_id), 'x')
+    stored = store.add_property(media.name, Node('join', outer.id), 'x')
     assert stored.notices and stored.orphaned
     assert 'joins' not in diff(before, dump(store_file(home, store)))
 
@@ -407,7 +405,7 @@ def test_a_collection_in_a_value_or_an_extra_becomes_one_item_per_member(home, s
     assert listed.notices
     values_now = [item.value for item in store.layer_items(notes.name, KITCHEN).results]
     assert values_now == ['x', {'members': {'a': 1}}, {'members': {'b': 2}}, 'one answer', 'another answer']
-    assert diff(before, dump(store_file(home, store)))['items'] == (5, 0)
+    assert diff(before, dump(store_file(home, store)))['ops'] == (5, 0)
 
 
 @pytest.mark.req('STORE-032')
@@ -428,9 +426,9 @@ def test_discarding_a_layer_keeps_an_element_another_layer_still_has_something_a
     assert [notice.where for notice in done.notices] == ['element'] and 'code' in done.notices[0].message
     assert 'second' in done.notices[0].message
     element = store.element('code', raw=True)
-    assert element is not None and (element.element_id, element.layer) == (made.element_id, 'second')
+    assert element is not None and (element.id, element.layer) == (made.element_id, 'second')
     assert [one.value for one in store.context('code.timer.kitchen').applying] == ['typed']
-    assert [one.property_id for one in store.context('code').applying] == [kept.property_id]
-    assert [item.item_id for group in store.node(Node('element', 'code'), raw=True).layers for item in group.items] \
-        == [noted.item_id]
+    assert [one.id for one in store.context('code').applying] == [kept.id]
+    assert [item.id for group in store.node(Node('element', 'code'), raw=True).layers for item in group.items] \
+        == [noted.id]
     assert store.element('code.only.first', raw=True) is None    # what nothing else holds goes with its layer

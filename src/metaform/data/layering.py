@@ -1,4 +1,4 @@
-"""Layer operations: create, finish, discard, hide, tag, select and mask, and refining the metaform, STORE-024.
+"""Layer operations: create, finish, discard, hide, tag, select and mask, and refining the base, STORE-024.
 
 Every function works inside one open write transaction. Nothing an agent sends
 is refused for its content, BASE-044: an empty variable, a missing provenance,
@@ -6,12 +6,12 @@ a taken name, a tag or source that does not fit, are stored as given or
 numbered, with a notice. An operation aimed at something that cannot change,
 such as hiding a layer that is not hideable,
 writes nothing and returns a notice saying why. A reference to no layer cannot
-be read and raises `StoreError`, STORE-026.
+be read and raises `StoreError`, STORE-026. Every change is an op on the base's
+projection, appended to the log at commit, STORE-046.
 """
 from __future__ import annotations
 
 import dataclasses
-import sqlite3
 from collections.abc import Sequence
 from typing import Any
 
@@ -20,16 +20,16 @@ from ..errors import StoreError
 from . import operations, rows, versions, views, writes
 from .ids import LAYER_NAME, TAG, is_id, new_id
 from .records import Layer, Notice, Outcome, Version
-from .selection import LAYER_COLUMNS, LayerRow, all_layers, layer_row
+from .selection import LayerRow, all_layers
 from .session import Tx
-from .versions import METAFORM_KINDS
+from .versions import BASE_KINDS
 
-KINDS = ('layer', 'intake', 'memory')
+KINDS = ('layer', 'base', 'memory')
 
 
 def _free_name(tx: Tx, name: str) -> str:
     chosen, number = name, 1
-    while tx.db.execute('SELECT 1 FROM layers WHERE name=?', (chosen,)).fetchone():
+    while tx.base.layer_by_name(chosen) is not None:
         number += 1
         chosen = f'{name}-{number}'
     return chosen
@@ -44,13 +44,14 @@ def _tags(tags: Sequence[Any], notices: list[Notice]) -> list[str]:
         if not TAG.fullmatch(tag):
             notices.append(Notice('tags', f'{tag!r} is not lowercase letters, digits, ., _ and -; it was stored as '
                                           'given.'))
-        kept.append(tag)
+        if tag not in kept:
+            kept.append(tag)
     return kept
 
 
 def _sources(tx: Tx, sources: Sequence[Any], notices: list[Notice]) -> list[str]:
     found: list[str] = []
-    by_name = {item.name: item.layer_id for item in all_layers(tx.db).values()}
+    by_name = {item.name: item.id for item in all_layers(tx.base).values()}
     for source in sources:
         name = str(source)
         if name in by_name.values():
@@ -59,7 +60,7 @@ def _sources(tx: Tx, sources: Sequence[Any], notices: list[Notice]) -> list[str]
             found.append(by_name[name])
         else:
             notices.append(Notice('sources', f'{name} is not a layer here; it was not recorded as a source.'))
-    return found
+    return [source for index, source in enumerate(found) if source not in found[:index]]
 
 
 def complete(tx: Tx, name: str, provenance: dict[str, Any], result_id: str | None = None) -> Outcome:
@@ -68,28 +69,32 @@ def complete(tx: Tx, name: str, provenance: dict[str, Any], result_id: str | Non
     What the layer holds is kept: a different value given for it is named in a notice and not stored, so the record
     of what made the layer never changes once it says something.
     """
-    row = tx.db.execute('SELECT l.layer_id, l.result_id, l.ready, p.model, p.role, p.blinded FROM layers l '
-                        'LEFT JOIN provenance p ON p.layer_id=l.layer_id WHERE l.name=?', (name,)).fetchone()
-    if row is None:
+    found = tx.base.layer_by_name(name)
+    if found is None:
         raise StoreError(f'No layer {name}.', 'metaform map layers')
     notices: list[Notice] = []
-    if row['ready'] is not None:
+    if found.ready is not None:
         return Outcome((Notice('layer', f'Layer {name} is finished; its provenance was kept as it is.'),))
+    held = dict(found.provenance or {})
     given = {'model': provenance.get('model'), 'role': provenance.get('role'), 'blinded': provenance.get('blinded'),
              'id': result_id}
+    changed: dict[str, Any] = {}
     for key, value in given.items():
         if value is None:
             continue
-        held = row['result_id' if key == 'id' else key]
+        current = found.result_id if key == 'id' else held.get(key)
         value = int(bool(value)) if key == 'blinded' else value
-        if held is None:
+        if current is None:
             if key == 'id':
-                tx.db.execute('UPDATE layers SET result_id=? WHERE layer_id=?', (value, row['layer_id']))
+                changed['result_id'] = value
             else:
-                tx.db.execute(f'UPDATE provenance SET {key}=? WHERE layer_id=?', (value, row['layer_id']))
-        elif held != value:
-            shown = (bool(held), bool(value)) if key == 'blinded' else (held, value)
+                held[key] = value
+                changed['provenance'] = held
+        elif current != value:
+            shown = (bool(current), bool(value)) if key == 'blinded' else (current, value)
             notices.append(Notice(key, f'The layer holds {key} {shown[0]}; {shown[1]} was given and was not stored.'))
+    if changed:
+        tx.emit('change', 'layer', found.id, found.id, changed)
     return Outcome(tuple(notices))
 
 
@@ -100,8 +105,10 @@ def create(tx: Tx, name: object, module: str, variable: Any, *, kind: str = 'lay
     if not isinstance(name, str) or not name or is_id(name):
         raise StoreError(f'{name!r} cannot be a layer name: it would be read as an id.',
                          'metaform map knowledge op=create layer=<name> variable=<question>')
+    if kind == 'intake':  # the layer the intake writes is the base, the change order of 2026-10-07
+        kind = 'base'
     if kind not in KINDS:
-        raise StoreError(f'{kind!r} is not a layer kind: use layer, intake or memory.',
+        raise StoreError(f'{kind!r} is not a layer kind: use layer, base or memory.',
                          'metaform help map knowledge')
     notices: list[Notice] = []
     if not LAYER_NAME.fullmatch(name):
@@ -111,12 +118,11 @@ def create(tx: Tx, name: object, module: str, variable: Any, *, kind: str = 'lay
         notices.append(Notice('variable', f'Layer {name} has no variable, the one question it answers; it was stored '
                                           'without one. Name it with metaform map knowledge op=create again under a '
                                           'new name, or tell the person who asked for the layer.'))
-    existing = tx.db.execute(f'SELECT {LAYER_COLUMNS} FROM layers WHERE name=?', (name,)).fetchone()
+    existing = tx.base.layer_by_name(name)
     if existing is not None:
-        found = layer_row(existing)
-        if (found.kind, found.module, found.variable, found.mutable, found.hideable) == (
+        if (existing.kind, existing.module, existing.variable, existing.mutable, existing.hideable) == (
                 kind, module, question, bool(mutable), bool(hideable)):
-            return views.layer(tx, found)
+            return views.layer(tx, existing)
         taken, name = name, _free_name(tx, name)
         notices.append(Notice('name', f'A layer named {taken} already exists with another declaration; this one was '
                                       f'named {name}.'))
@@ -124,26 +130,22 @@ def create(tx: Tx, name: object, module: str, variable: Any, *, kind: str = 'lay
     kept_tags = _tags(tags, notices)
     layer_id = new_id()
     stamp = home.now()
-    tx.db.execute('INSERT INTO layers(layer_id, metaform_id, name, module, variable, mutable, hideable, result_id, kind, '
-                  'created, ready) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                  (layer_id, tx.metaform_id, name, module, question, int(bool(mutable)), int(bool(hideable)),
-                   result_id, kind, stamp, stamp if (ready or kind == 'memory') else None))
+    record: dict[str, Any] | None = None
     if kind != 'memory':
         given = provenance or {}
         if not provenance:
             notices.append(Notice('provenance', f'Layer {name} was created without provenance; its record holds only '
                                                 f'the module {module}.'))
         blinded = given.get('blinded')
-        tx.db.execute('INSERT INTO provenance(layer_id, module, workflow, prompt, model, role, blinded) '
-                      'VALUES (?, ?, ?, ?, ?, ?, ?)',
-                      (layer_id, str(given.get('module') or module), given.get('workflow'), given.get('prompt'),
-                       given.get('model'), given.get('role'), None if blinded is None else int(bool(blinded))))
-    tx.db.executemany('INSERT INTO layer_fields(layer_id, position, name) VALUES (?, ?, ?)',
-                      [(layer_id, index, str(field)) for index, field in enumerate(fields)])
-    tx.db.executemany('INSERT OR IGNORE INTO layer_tags(layer_id, tag) VALUES (?, ?)',
-                      [(layer_id, tag) for tag in kept_tags])
-    tx.db.executemany('INSERT OR IGNORE INTO layer_sources(layer_id, source_layer_id) VALUES (?, ?)',
-                      [(layer_id, source) for source in source_ids])
+        record = {'module': str(given.get('module') or module), 'workflow': given.get('workflow'),
+                  'prompt': given.get('prompt'), 'model': given.get('model'), 'role': given.get('role'),
+                  'blinded': None if blinded is None else int(bool(blinded))}
+    tx.emit('add', 'layer', layer_id, layer_id, {
+        'base_id': tx.base_id or '', 'name': name, 'module': module, 'variable': question,
+        'mutable': bool(mutable), 'hideable': bool(hideable), 'result_id': result_id, 'kind': kind,
+        'created': stamp, 'ready': stamp if (ready or kind == 'memory') else None,
+        'fields': [str(field) for field in fields], 'tags': kept_tags, 'sources': source_ids,
+        'hidden': False, 'provenance': record, 'reexamine': []})
     tx.created.add(layer_id)
     return dataclasses.replace(views.layer(tx, rows.layer(tx, layer_id)), notices=tuple(notices))
 
@@ -153,74 +155,75 @@ def finish(tx: Tx, layer: str) -> Layer | Outcome:
     found = rows.layer(tx, layer)
     if found.finished:
         return Outcome((Notice('layer', f'Layer {found.name} is already finished; nothing changed.'),))
-    tx.db.execute('UPDATE layers SET ready=? WHERE layer_id=?', (home.now(), found.layer_id))
-    return views.layer(tx, rows.layer(tx, found.layer_id))
+    tx.emit('change', 'layer', found.id, found.id, {'ready': home.now()})
+    return views.layer(tx, rows.layer(tx, found.id))
 
 
 def discard(tx: Tx, layer: str) -> Outcome:
-    """Delete a knowledge layer's content and the layer; identity and type rows stay, STORE-032."""
+    """Delete a knowledge layer's content and the layer; identity and type records stay, STORE-032."""
     found = rows.layer(tx, layer)
-    # The intake layer that made the map's elements and joins is the map itself; a layer of the intake's kind that
+    base = tx.base
+    layer_id = found.id
+
+    def of_layer(kind: str) -> list[str]:
+        return [ident for ident, held in base.versions.items()
+                if base.kinds.get(ident) == kind and any(version.layer_id == layer_id for version in held)]
+
+    # The base layer that made the map's elements and joins is the map itself; a layer of the base's kind that
     # holds only items on the map's nodes, such as fields or refs, is discarded like any other.
-    if found.kind == 'intake' and any(tx.db.execute(f'SELECT 1 FROM {table} WHERE layer_id=? LIMIT 1', (found.layer_id,)).fetchone()
-                                      for table in ('elements', 'joins')):
-        return Outcome((Notice('layer', f'{found.name} is the intake layer and is never discarded; the metaform '
+    if found.kind in BASE_KINDS and (of_layer('element') or of_layer('join')):
+        return Outcome((Notice('layer', f'{found.name} is the base layer and is never discarded; the base '
                                         f'changes by refining: {rows.refine_step()}. Nothing changed.'),))
     if found.kind == 'memory':
         return Outcome((Notice('layer', f'{found.name} is memory and is never discarded; remove memories with '
                                         'metaform memory delete_entities <entityNames>. Nothing changed.'),))
-    db = tx.db
-    layer_id = found.layer_id
     notices: list[Notice] = []
     for owner in versions.ORDER:
-        spec = versions.KINDS[owner]
-        for row in db.execute(f'SELECT row, {spec.id_column} FROM {spec.table} WHERE layer_id=?',
-                              (layer_id,)).fetchall():
-            if owner == 'element':
-                heir = _heir(db, str(row[1]), layer_id)
-                if heir is not None:
-                    db.execute('UPDATE elements SET layer_id=? WHERE row=?', (heir, row[0]))
-                    address = db.execute('SELECT address FROM elements WHERE row=?', (row[0],)).fetchone()[0]
-                    notices.append(Notice('element', f'The element at {address} was made by {found.name}, and layer '
-                                                     f'{rows.layer(tx, heir).name} still holds something at it; '
-                                                     f'the element was kept and now belongs to '
-                                                     f'{rows.layer(tx, heir).name}.'))
-                    continue
-            if owner in ('item', 'property'):
-                db.execute('DELETE FROM refs WHERE owner=? AND owner_row=?', (owner, row[0]))
-            if owner == 'join':
-                db.execute('DELETE FROM join_elements WHERE join_row=?', (row[0],))
-            versions.drop_current(db, owner, 'row', row[0])
-            if owner == 'item':
-                operations.cleanup(tx, 'item', str(row[1]))
-            db.execute(f'DELETE FROM {spec.table} WHERE row=?', (row[0],))
-            if owner == 'item':
-                # item_ids names the item's layer, so it goes with the layer; identities keeps the id.
-                db.execute('DELETE FROM item_ids WHERE item_id=? AND layer_id=?', (row[1], layer_id))
-    for table in ('selections', 'hidden_layers', 'layer_tags',
-                  'layer_fields', 'provenance', 'layer_sources', 'reexamine'):
-        db.execute(f'DELETE FROM {table} WHERE layer_id=?', (layer_id,))
+        for ident in of_layer(owner):
+            held = base.versions.get(ident, [])
+            for version in [version for version in held if version.layer_id == layer_id]:
+                if owner == 'element':
+                    heir = _heir(tx, ident, layer_id)
+                    if heir is not None:
+                        tx.emit('change', 'element', ident, heir, {'mode': 'place', 'layer_id': heir})
+                        address = str(version['address'])
+                        notices.append(Notice('element', f'The element at {address} was made by {found.name}, and '
+                                                         f'layer {rows.layer(tx, heir).name} still holds something '
+                                                         f'at it; the element was kept and now belongs to '
+                                                         f'{rows.layer(tx, heir).name}.'))
+                        continue
+                if owner == 'item':
+                    operations.cleanup(tx, 'item', ident)
+                tx.emit('remove', owner, ident, layer_id, {'mode': 'place'})
     operations.cleanup(tx, 'layer', layer_id)
-    db.execute('DELETE FROM layer_sources WHERE source_layer_id=?', (layer_id,))
-    for other in all_layers(db):
-        db.execute('DELETE FROM reexamine WHERE layer_id=? AND changed_in=?', (other, layer_id))
-    db.execute('DELETE FROM layers WHERE layer_id=?', (layer_id,))
+    tx.emit('remove', 'layer', layer_id, layer_id, {})
     return Outcome(tuple(notices))
 
 
-def _heir(db: sqlite3.Connection, element_id: str, leaving: str) -> str | None:
-    """The first other layer that holds a property, an item or a join at the element, and no row of its own for it."""
-    found = db.execute(
-        'SELECT layer_id FROM ('
-        ' SELECT layer_id, 0 AS kind, row FROM properties WHERE element_id=:e'
-        " UNION ALL SELECT layer_id, 1, row FROM items WHERE (target_kind='element' AND target_id=:e)"
-        "  OR (link_kind='element' AND link_id=:e)"
-        ' UNION ALL SELECT layer_id, 2, row FROM joins WHERE receiver=:e'
-        '  OR element=(SELECT address FROM current_elements WHERE element_id=:e)'
-        '  OR row IN (SELECT join_row FROM join_elements WHERE element_id=:e)) '
-        'WHERE layer_id<>:l AND layer_id NOT IN (SELECT layer_id FROM elements WHERE element_id=:e) '
-        'ORDER BY kind, row LIMIT 1', {'e': element_id, 'l': leaving}).fetchone()
-    return None if found is None else str(found[0])
+def _heir(tx: Tx, element_id: str, leaving: str) -> str | None:
+    """The first other layer that holds a property, an item or a join at the element, and no version of its own
+    for it."""
+    base = tx.base
+    own_layers = {version.layer_id for version in base.versions.get(element_id, ())}
+    address = base.address_of(element_id)
+    candidates: list[tuple[int, int, str]] = []
+    for ident, held in base.versions.items():
+        kind = base.kinds.get(ident)
+        for version in held:
+            fields = version.fields
+            if kind == 'property' and fields.get('element_id') == element_id:
+                rank = 0
+            elif kind == 'item' and ((fields.get('target_kind') == 'element' and fields.get('target_id') == element_id)
+                                     or (fields.get('link_kind') == 'element' and fields.get('link_id') == element_id)):
+                rank = 1
+            elif kind == 'join' and (fields.get('receiver') == element_id or element_id in fields.get('held', ())
+                                     or (address is not None and fields.get('element') == address)):
+                rank = 2
+            else:
+                continue
+            if version.layer_id != leaving and version.layer_id not in own_layers:
+                candidates.append((rank, version.seq, version.layer_id))
+    return min(candidates)[2] if candidates else None
 
 
 def _held(found: LayerRow) -> Notice | None:
@@ -236,30 +239,31 @@ def hide(tx: Tx, layer: str, hidden: bool) -> Outcome:
     stop = _held(found)
     if stop is not None:
         return Outcome((stop,))
-    if hidden:
-        tx.db.execute('INSERT OR IGNORE INTO hidden_layers(layer_id) VALUES (?)', (found.layer_id,))
-    else:
-        tx.db.execute('DELETE FROM hidden_layers WHERE layer_id=?', (found.layer_id,))
+    if found.hidden != hidden:
+        tx.emit('change', 'layer', found.id, found.id, {'hidden': hidden})
     return Outcome()
 
 
 def tag(tx: Tx, layer: str, name: Any) -> Outcome:
     found = rows.layer(tx, layer)
     notices: list[Notice] = []
-    for kept in _tags([name], notices):
-        tx.db.execute('INSERT OR IGNORE INTO layer_tags(layer_id, tag) VALUES (?, ?)', (found.layer_id, kept))
+    kept = [each for each in _tags([name], notices) if each not in found.tags]
+    if kept:
+        tx.emit('change', 'layer', found.id, found.id, {'tags': [*found.tags, *kept]})
     return Outcome(tuple(notices))
 
 
 def untag(tx: Tx, layer: str, name: str) -> Outcome:
     found = rows.layer(tx, layer)
-    tx.db.execute('DELETE FROM layer_tags WHERE layer_id=? AND tag=?', (found.layer_id, name))
+    if name in found.tags:
+        tx.emit('change', 'layer', found.id, found.id, {'tags': [each for each in found.tags if each != name]})
     return Outcome()
 
 
 def reexamined(tx: Tx, layer: str) -> Outcome:
     found = rows.layer(tx, layer)
-    tx.db.execute('DELETE FROM reexamine WHERE layer_id=?', (found.layer_id,))
+    if found.reexamine:
+        tx.emit('change', 'layer', found.id, found.id, {'reexamine': []})
     return Outcome()
 
 
@@ -269,9 +273,9 @@ def selection(tx: Tx, address: str, layer: str, kind: str) -> Outcome:
     notices: list[Notice] = []
     if not rows.address_form(address):
         notices.append(Notice('address', f'{address!r} is not in the address form; the {kind} was stored as given.'))
-    rows.types(tx, address)
-    tx.db.execute('INSERT OR IGNORE INTO selections(address, layer_id, kind) VALUES (?, ?, ?)',
-                  (address, found.layer_id, kind))
+    if (address, found.id, kind) not in tx.base.selections:
+        tx.emit('add', 'selection', f'{address}|{kind}|{found.id}', found.id,
+                {'address': address, 'layer_id': found.id, 'kind': kind})
     return Outcome(tuple(notices))
 
 
@@ -279,67 +283,60 @@ def clear(tx: Tx, address: str, layer: str, kind: str) -> Outcome:
     if kind not in ('select', 'mask'):
         raise StoreError(f'{kind!r} is not select or mask.', f'metaform map clear {address} {layer} mask')
     found = rows.layer(tx, layer)
-    tx.db.execute('DELETE FROM selections WHERE address=? AND kind=? AND layer_id=?', (address, kind, found.layer_id))
+    if (address, found.id, kind) in tx.base.selections:
+        tx.emit('remove', 'selection', f'{address}|{kind}|{found.id}', found.id,
+                {'address': address, 'layer_id': found.id, 'kind': kind})
     return Outcome()
 
 
-# Refining the metaform ---------------------------------------------------------------------------------------
+# Refining the base ---------------------------------------------------------------------------------------
 
 def refine(tx: Tx, thing: str, changes: dict[str, Any] | None = None, *, remove: bool = False, reason: Any,
            evidence: Any = None) -> Version | Outcome:
-    """Write a change or removal of a thing of the metaform as its newest version, in the metaform's own intake
-    layer, LAYER-025. Every earlier version is kept.
+    """Write a change or removal of a thing of the base as its newest version, in the base's own layer,
+    LAYER-025. Every earlier version is kept.
 
     A key a refinement may not change, such as an element's address, is named in a notice and not applied; the rest
     is written, STORE-034. A join's receiver moves it, MAP-003, and `elements` gives the elements it holds; a change
     that does not name them keeps the ones it held. What a removal leaves pointing at the removed thing is orphaned
-    and named, and the layers built from the metaform are marked for re-examination, STORE-036.
+    and named, and the layers built from the base are marked for re-examination, STORE-036.
     """
     kind = rows.kind_of(tx, thing)
-    spec = versions.KINDS[kind]
     notices: list[Notice] = []
     given = {str(key): value for key, value in (changes or {}).items()}
-    current = versions.current_row(tx.db, kind, thing)
+    current = versions.current_version(tx.base, kind, thing)
     if current is None:
         writes.split_changes(kind, given, notices)
-        return Outcome((*notices, Notice('id', f'{thing} is not current in the metaform; nothing was written. See '
+        return Outcome((*notices, Notice('id', f'{thing} is not current in the base; nothing was written. See '
                                                f'metaform map history {thing}')))
-    base = tx.db.execute(f'SELECT * FROM {spec.table} WHERE row=?', (current,)).fetchone()
-    found = rows.layer(tx, str(base['layer_id']))
-    if found.kind not in METAFORM_KINDS:
-        return Outcome((Notice('id', f'{thing} belongs to the knowledge layer {found.name}, not to the metaform; a '
+    found = rows.layer(tx, current.layer_id)
+    if found.kind not in BASE_KINDS:
+        return Outcome((Notice('id', f'{thing} belongs to the knowledge layer {found.name}, not to the base; a '
                                      'knowledge layer is edited in place: metaform map knowledge '
                                      f'op=edit layer={found.name} id={thing} <field>=<value>. Nothing was '
                                      'written.'),))
     allowed = writes.split_changes(kind, given, notices)
     if not remove and given and not allowed:
         return Outcome(tuple(notices))
-    columns = {key: base[key] for key in base.keys()  # noqa: SIM118  SQLite rows iterate values; keys() returns column names
-               if key not in ('row', 'layer_id', 'op', 'reason', 'evidence')}
+    columns: dict[str, Any] = dict(current.fields)
     split: list[tuple[str, Any]] = []
-    held: list[str] | None = None
     if not remove:
-        changed, split = writes.changed_columns(tx, kind, allowed, found, notices, base)
+        changed, split = writes.changed_columns(tx, kind, allowed, found, notices, current)
         held = changed.pop(writes.HELD, None)
         columns.update(changed)
-    columns.update({'layer_id': found.layer_id, 'op': 'remove' if remove else 'change',
-                    'reason': rows.text(reason, 'reason', notices), 'evidence': rows.text(evidence, 'evidence', notices)})
-    row = _version(tx, spec.table, columns)
-    if kind == 'join':
-        rows.write_held(tx, row, held if held is not None else rows.held_elements(tx.db, current))
+        if kind == 'join':
+            columns['held'] = held if held is not None else list(current.fields.get('held', ()))
+    data: dict[str, Any] = {'mode': 'version', 'reason': rows.text(reason, 'reason', notices),
+                            'evidence': rows.text(evidence, 'evidence', notices), **columns}
+    if kind in ('item', 'property'):
+        data['refs'] = [list(pair) for pair in current.refs]
+    made = tx.emit('remove' if remove else 'change', kind, thing, found.id, data)
     if remove:
-        notices += versions.orphaned_by(tx.db, kind, thing)
-    versions.recompute(tx.db, kind, [thing])
-    versions.mark(tx.db, found.layer_id, thing)
+        notices += versions.orphaned_by(tx.base, kind, thing)
+    versions.mark(tx, found.id, thing)
     if split:
         notices.append(Notice('extra', 'A refinement keeps no list of records in its extra; those records were not '
                                        'written.'))
-    record = views.version(tx, kind, tx.db.execute(f'SELECT * FROM {spec.table} WHERE row=?', (row,)).fetchone())
+    written = next(version for version in tx.base.versions[thing] if version.seq == made.seq)
+    record = views.version(tx, kind, thing, written)
     return dataclasses.replace(record, notices=tuple(notices))
-
-
-def _version(tx: Tx, table: str, columns: dict[str, Any]) -> int:
-    names = ', '.join(columns)
-    marks = ', '.join('?' for _ in columns)
-    cursor = tx.db.execute(f'INSERT INTO {table}({names}) VALUES ({marks})', tuple(columns.values()))
-    return int(cursor.lastrowid or 0)

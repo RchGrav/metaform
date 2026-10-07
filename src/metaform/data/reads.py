@@ -1,20 +1,21 @@
-"""The read operations of STORE-025, each answered through an index inside one read transaction.
+"""The read operations of STORE-025, each answered from the base's projection inside one read transaction.
 
 Every read in context, the default, resolves the layers that reach each place
 through one `Resolver`, so select, mask, hiding and building apply on every
 path, STORE-019; `raw=True` reads every stored layer. Lists are paged, and each
-page is one index range read resumed after the last key, STORE-005.
+page resumes after the last key, STORE-005. Reads never touch SQLite for
+structure, STORE-046: the graph in memory answers them.
 """
 from __future__ import annotations
 
-import sqlite3
 from collections.abc import Callable, Sequence
 from typing import Any
 
 from ..errors import StoreError
 from . import operations, rows, versions, views
 from .ids import is_id, prefixes
-from .paging import LIMIT, paged, sliced
+from .paging import sliced
+from .projection import Version
 from .records import (
     Citation,
     ContextView,
@@ -34,21 +35,40 @@ from .records import (
     RootEntry,
     Roots,
     Selection,
-    Version,
     Where,
 )
+from .records import Version as VersionRecord
 from .selection import Resolver, all_layers
 from .session import Tx
 
-Row = sqlite3.Row
+Row = Version
+T = Any
+PUNCTUATION = '"\',.;:!?()[]{}'  # what a word is read apart from, in a search and in a value
 
 
 def resolver(tx: Tx, selection: Sequence[str] | None, toggled: Sequence[str]) -> Resolver:
-    return Resolver(tx.db, selection, toggled)
+    return Resolver(tx.base, selection, toggled)
+
+
+def _page(keyed: list[tuple[str, Any]], build: Callable[[Any], Any], limit: int, after: str | None) -> Page[Any]:
+    """One page of an ordered list, resumed after the last key, STORE-005; keys are compared as text."""
+    results: list[Any] = []
+    cursor = after
+    for index, (key, value) in enumerate(keyed):
+        if after is not None and key <= after:
+            continue
+        built = build(value)
+        cursor = key
+        if built is None:
+            continue
+        results.append(built)
+        if limit and len(results) >= limit:
+            return Page(tuple(results), cursor if index + 1 < len(keyed) else None)
+    return Page(tuple(results), None)
 
 
 def element(tx: Tx, res: Resolver | None, ref: Any) -> Element | None:
-    """One element by address or id: its address, name_length, role and short name, with its refs."""
+    """One element by address or id: its address, name_length, role and short name."""
     current = rows.current_element(tx, ref) if isinstance(ref, str) else None
     return None if current is None else views.element(tx, str(current['element_id']), res)
 
@@ -57,7 +77,7 @@ def _any_element_id(tx: Tx, ref: str) -> str | None:
     current = rows.current_element(tx, ref)
     if current is not None:
         return str(current['element_id'])
-    if is_id(ref) and tx.db.execute('SELECT 1 FROM element_ids WHERE element_id=?', (ref,)).fetchone():
+    if is_id(ref) and tx.base.kinds.get(ref) == 'element':
         return ref
     return None
 
@@ -69,17 +89,13 @@ def joins(tx: Tx, res: Resolver | None, ref: str, as_: str, limit: int, after: s
     element_id = _any_element_id(tx, ref)
     if element_id is None:
         return Page((), None)
+    ids = tx.base.joins_received(element_id) if as_ == 'receiver' else tx.base.joins_holding(element_id)
+    keyed = [(join_id, join_id) for join_id in sorted(ids)]
 
-    def fetch(cursor: str | None, count: int) -> list[Row]:
-        if as_ == 'receiver':
-            return tx.db.execute('SELECT c.join_id AS key, j.* FROM current_joins c JOIN joins j ON j.row = c.row '
-                                 'WHERE c.receiver=? AND c.join_id > ? ORDER BY c.join_id LIMIT ?',
-                                 (element_id, cursor or '', count)).fetchall()
-        return tx.db.execute('SELECT DISTINCT c.join_id AS key, j.* FROM join_elements e JOIN current_joins c '
-                             'ON c.row = e.join_row JOIN joins j ON j.row = c.row '
-                             'WHERE e.element_id=? AND c.join_id > ? ORDER BY c.join_id LIMIT ?',
-                             (element_id, cursor or '', count)).fetchall()
-    return paged(fetch, lambda row: views.visible_join(tx, row, res), limit, after)
+    def build(join_id: str) -> Join | None:
+        current = versions.current_version(tx.base, 'join', join_id)
+        return None if current is None else views.visible_join(tx, join_id, current, res)
+    return _page(keyed, build, limit, after)
 
 
 def join_ends(tx: Tx, join: str) -> tuple[str, str] | None:
@@ -94,17 +110,17 @@ def where(tx: Tx, res: Resolver, raw: bool, address: str, full: bool) -> Where |
     at it, the sources layer's refs among them. In context, the default, every part follows the reading context,
     LAYER-007."""
     context = None if raw else res
-    current = tx.db.execute('SELECT element_id FROM current_elements WHERE address=?', (address,)).fetchone()
-    if current is None:
+    element_id = tx.base.element_at(address)
+    if element_id is None:
         return None
-    found = views.element(tx, str(current[0]), context)
+    found = views.element(tx, element_id, context)
     if found is None:
         return None
-    at = node(tx, res, Node('element', found.element_id), raw)
+    at = node(tx, res, Node('element', found.id), raw)
     reaching = reaching_at(tx, res, address)
     return operations.decorate(tx, Where('element', found, None,
-                 joins(tx, context, found.element_id, 'provider', 0, None).results,
-                 joins(tx, context, found.element_id, 'receiver', 0, None).results,
+                 joins(tx, context, found.id, 'provider', 0, None).results,
+                 joins(tx, context, found.id, 'receiver', 0, None).results,
                  layers=() if at is None else at.layers, full=full, applying=reaching.applying,
                  visible=reaching.visible))
 
@@ -119,7 +135,7 @@ def node_where(tx: Tx, res: Resolver, raw: bool, target: Node) -> Where | None:
     row = rows.current_join(tx, target.id)
     if row is None:
         return None
-    holding = views.visible_join(tx, row, None if raw else res)
+    holding = views.visible_join(tx, target.id, row, None if raw else res)
     if holding is None:
         return None
     at = node(tx, res, Node('join', target.id), raw)
@@ -128,10 +144,8 @@ def node_where(tx: Tx, res: Resolver, raw: bool, target: Node) -> Where | None:
 
 def children(tx: Tx, address: str, limit: int, after: str | None) -> Page[str]:
     """The next types toward the leaves; the empty address reads the root types, which have no parent."""
-    def fetch(cursor: str | None, count: int) -> list[Row]:
-        return tx.db.execute('SELECT address AS key FROM types WHERE parent IS ? AND address > ? ORDER BY address '
-                             'LIMIT ?', (address or None, cursor or '', count)).fetchall()
-    return paged(fetch, lambda row: str(row['key']), limit, after)
+    found = sorted(child for child, parent in tx.base.types.items() if parent == (address or None))
+    return _page([(child, child) for child in found], lambda child: child, limit, after)
 
 
 def layer_items(tx: Tx, res: Resolver | None, layer: str, target: Node | None, limit: int,
@@ -142,54 +156,47 @@ def layer_items(tx: Tx, res: Resolver | None, layer: str, target: Node | None, l
     context read, only what the layer reaches at its node's address is returned, STORE-019.
     """
     found = rows.layer(tx, layer)
-    layers = all_layers(tx.db)
+    layers = all_layers(tx.base)
+    base = tx.base
 
     def shown(row: Row, kind: str) -> bool:
         if res is None:
             return True
         address = (rows.address_of(tx, str(row['element_id'])) if kind == 'property'
                    else rows.node_address(tx, str(row['target_kind']), str(row['target_id'])))
-        return address is not None and res.reaches(str(row['layer_id']), address)
+        return address is not None and res.reaches(row.layer_id, address)
 
     if target is not None:
         kind, target_id = target.kind, target.id
         if kind in ('element', 'type'):
             current = rows.current_element(tx, target.id)
             kind, target_id = 'element', (str(current['element_id']) if current else target.id)
-        items: list[Item | Property] = [views.item(tx, row, layers) for row in tx.db.execute(
-            'SELECT i.* FROM current_items c JOIN items i ON i.row = c.row '
-            'WHERE c.target_kind=? AND c.target_id=? AND c.layer_id=? ORDER BY c.row',
-            (kind, target_id, found.layer_id)) if shown(row, 'item')]
+        items: list[Item | Property] = []
+        for item_id in base.items_at(kind, target_id):
+            row = base.current(item_id)
+            if row is not None and row.layer_id == found.id and shown(row, 'item'):
+                items.append(views.item(tx, item_id, row, layers))
         if kind == 'element':
-            items += [views.prop(tx, row, layers) for row in tx.db.execute(
-                'SELECT p.* FROM current_properties c JOIN properties p ON p.row = c.row '
-                'WHERE c.element_id=? AND c.layer_id=? ORDER BY c.row', (target_id, found.layer_id))
-                if shown(row, 'property')]
+            for property_id in base.properties_of(target_id):
+                row = base.current(property_id)
+                if row is not None and row.layer_id == found.id and shown(row, 'property'):
+                    items.append(views.prop(tx, property_id, row, layers))
         return Page(tuple(items), None)
 
-    def fetch(cursor: str | None, count: int) -> list[Row]:
-        phase, _, position = (cursor or 'i:0').partition(':')
-        found_rows: list[Row] = []
-        if phase == 'i':
-            found_rows = tx.db.execute("SELECT 'i:' || c.row AS key, 'item' AS thing, i.* FROM current_items c "
-                                       'JOIN items i ON i.row = c.row WHERE c.layer_id=? AND c.row > ? '
-                                       'ORDER BY c.row LIMIT ?', (found.layer_id, int(position or 0), count)).fetchall()
-            if len(found_rows) >= count:
-                return found_rows
-            position = ''
-        element_id, _, property_id = position.partition(':')
-        found_rows += tx.db.execute("SELECT 'p:' || c.element_id || ':' || c.property_id AS key, 'property' AS thing, "
-                                    'p.* FROM current_properties c JOIN properties p ON p.row = c.row '
-                                    'WHERE c.layer_id=? AND (c.element_id, c.property_id) > (?, ?) '
-                                    'ORDER BY c.element_id, c.property_id LIMIT ?',
-                                    (found.layer_id, element_id, property_id, count - len(found_rows))).fetchall()
-        return found_rows
+    keyed: list[tuple[str, tuple[str, str, Row]]] = []
+    for item_id, row in base.currents('item'):
+        if row.layer_id == found.id:
+            keyed.append((f'i:{row.seq:012d}', ('item', item_id, row)))
+    props = [(f'p:{row["element_id"]}:{property_id}', ('property', property_id, row))
+             for property_id, row in base.currents('property') if row.layer_id == found.id]
+    keyed += sorted(props)
 
-    def build(row: Row) -> Item | Property | None:
-        if not shown(row, str(row['thing'])):
+    def build(entry: tuple[str, str, Row]) -> Item | Property | None:
+        thing, ident, row = entry
+        if not shown(row, thing):
             return None
-        return views.item(tx, row, layers) if row['thing'] == 'item' else views.prop(tx, row, layers)
-    return paged(fetch, build, limit, after)
+        return views.item(tx, ident, row, layers) if thing == 'item' else views.prop(tx, ident, row, layers)
+    return _page(keyed, build, limit, after)
 
 
 def _locate(tx: Tx, target: object, raw: bool) -> tuple[str, str | None, Callable[[Resolver], bool]] | None:
@@ -199,18 +206,19 @@ def _locate(tx: Tx, target: object, raw: bool) -> tuple[str, str | None, Callabl
     if target.kind in ('element', 'type'):
         current = rows.current_element(tx, target.id)
         if current is None:
-            if raw and is_id(target.id) and tx.db.execute('SELECT 1 FROM element_ids WHERE element_id=?',
-                                                          (target.id,)).fetchone():
+            if raw and is_id(target.id) and tx.base.kinds.get(target.id) == 'element':
                 return target.id, None, lambda res: False
             return None
         element_id, address = str(current['element_id']), str(current['address'])
-        row = tx.db.execute('SELECT layer_id FROM elements WHERE row=?', (current['row'],)).fetchone()
-        return element_id, address, lambda res: views.element_shows(res, str(row[0]), address)
+        version = tx.base.current(element_id)
+        assert version is not None
+        layer_id = version.layer_id
+        return element_id, address, lambda res: views.element_shows(res, layer_id, address)
     join_row = rows.current_join(tx, target.id)
     if join_row is None:
         return None
     address = rows.owner_address(tx, join_row)
-    return target.id, address, lambda res: views.visible_join(tx, join_row, res) is not None
+    return target.id, address, lambda res: views.visible_join(tx, target.id, join_row, res) is not None
 
 
 def node(tx: Tx, res: Resolver, target: Node, raw: bool) -> NodeView | None:
@@ -223,19 +231,21 @@ def node(tx: Tx, res: Resolver, target: Node, raw: bool) -> NodeView | None:
         return None
     kind = 'element' if target.kind == 'type' else target.kind
     groups: dict[str, tuple[list[Item], list[Property]]] = {}
-    for row in tx.db.execute('SELECT i.* FROM current_items c JOIN items i ON i.row = c.row '
-                             'WHERE c.target_kind=? AND c.target_id=? ORDER BY c.row', (kind, thing_id)):
+    for item_id in tx.base.items_at(kind, thing_id):
+        row = tx.base.current(item_id)
+        if row is None:
+            continue
         # An always_show item of a finished layer shows whether or not its layer reaches the node, LAYER-021.
-        if (raw or res.reaches(str(row['layer_id']), address)
-                or (row['always_show'] and res.layers[str(row['layer_id'])].finished)):
-            groups.setdefault(str(row['layer_id']), ([], []))[0].append(views.item(tx, row, res.layers))
+        if (raw or res.reaches(row.layer_id, address)
+                or (row['always_show'] and res.layers[row.layer_id].finished)):
+            groups.setdefault(row.layer_id, ([], []))[0].append(views.item(tx, item_id, row, res.layers))
     if kind == 'element':
-        for row in tx.db.execute('SELECT p.* FROM current_properties c JOIN properties p ON p.row = c.row '
-                                 'WHERE c.element_id=? ORDER BY c.row', (thing_id,)):
-            if raw or res.reaches(str(row['layer_id']), address):
-                groups.setdefault(str(row['layer_id']), ([], []))[1].append(views.prop(tx, row, res.layers))
+        for property_id in tx.base.properties_of(thing_id):
+            row = tx.base.current(property_id)
+            if row is not None and (raw or res.reaches(row.layer_id, address)):
+                groups.setdefault(row.layer_id, ([], []))[1].append(views.prop(tx, property_id, row, res.layers))
     ordered = [layer_id for layer_id in res.layers if layer_id in groups]
-    view = tuple(LayerGroup(layer_id, res.layers[layer_id].name, res.layers[layer_id].kind,
+    view = tuple(LayerGroup(layer_id, res.layers[layer_id].name, res.layers[layer_id].kind,  # type: ignore[arg-type]
                             tuple(groups[layer_id][0]), tuple(groups[layer_id][1])) for layer_id in ordered)
     return NodeView(Node(kind, thing_id), address, view, orphaned=address is None)
 
@@ -245,34 +255,29 @@ def context(tx: Tx, res: Resolver, address: str, limit: int, after: str | None) 
     there, STORE-035."""
     applying: list[Property] = []
     for prefix in prefixes(address):
-        found = tx.db.execute('SELECT element_id FROM current_elements WHERE address=?', (prefix,)).fetchone()
-        if found is None:
+        element_id = tx.base.element_at(prefix)
+        if element_id is None:
             continue
-        for row in tx.db.execute('SELECT p.* FROM current_properties c JOIN properties p ON p.row = c.row '
-                                 'WHERE c.element_id=? ORDER BY c.row', (found[0],)):
-            if res.reaches(str(row['layer_id']), address):
-                applying.append(views.prop(tx, row, res.layers))
+        for property_id in tx.base.properties_of(element_id):
+            row = tx.base.current(property_id)
+            if row is not None and res.reaches(row.layer_id, address):
+                applying.append(views.prop(tx, property_id, row, res.layers))
     visible: list[Property] = []
+    below = [each for each in tx.base.addresses() if each.startswith(address + '.')]
     cursor = after if after is not None else address + '.'
-    upper = address + '/'
     next_cursor: str | None = None
-    while True:
-        found_rows = tx.db.execute('SELECT element_id, address FROM current_elements WHERE address > ? AND address < ? '
-                                   'ORDER BY address LIMIT ?', (cursor, upper, LIMIT)).fetchall()
-        if not found_rows:
-            break
-        for element_id, element_address in found_rows:
-            cursor = str(element_address)
-            for row in tx.db.execute('SELECT p.* FROM current_properties c JOIN properties p ON p.row = c.row '
-                                     'WHERE c.element_id=? ORDER BY c.row', (element_id,)):
-                if res.reaches(str(row['layer_id']), str(element_address)):
-                    visible.append(views.prop(tx, row, res.layers))
-            if limit and len(visible) >= limit:
-                more = tx.db.execute('SELECT 1 FROM current_elements WHERE address > ? AND address < ? LIMIT 1',
-                                     (element_address, upper)).fetchone()
-                next_cursor = str(element_address) if more else None
-                break
-        if next_cursor is not None or (limit and len(visible) >= limit):
+    for element_address in below:
+        if element_address <= cursor:
+            continue
+        element_id = tx.base.element_at(element_address)
+        assert element_id is not None
+        for property_id in tx.base.properties_of(element_id):
+            row = tx.base.current(property_id)
+            if row is not None and res.reaches(row.layer_id, element_address):
+                visible.append(views.prop(tx, property_id, row, res.layers))
+        if limit and len(visible) >= limit:
+            more = any(each > element_address for each in below)
+            next_cursor = element_address if more else None
             break
     return ContextView(address, tuple(applying), tuple(visible), next_cursor)
 
@@ -290,61 +295,48 @@ def links_to(tx: Tx, res: Resolver, target: Node, layer: str | None, raw: bool, 
         return Page((), None)
     thing_id = located[0]
     kind = 'element' if target.kind == 'type' else target.kind
-    layer_id = rows.layer(tx, layer).layer_id if layer else None
+    layer_id = rows.layer(tx, layer).id if layer else None
+    keyed = [(item_id, item_id) for item_id in sorted(tx.base.items_linking(kind, thing_id))]
 
-    def fetch(cursor: str | None, count: int) -> list[Row]:
-        sql = ('SELECT c.item_id AS key, i.* FROM current_items c JOIN items i ON i.row = c.row '
-               'WHERE c.link_kind=? AND c.link_id=?')
-        params: list[Any] = [kind, thing_id]
-        if layer_id is not None:
-            sql += ' AND c.layer_id=?'
-            params.append(layer_id)
-        sql += ' AND c.item_id > ? ORDER BY c.item_id LIMIT ?'
-        return tx.db.execute(sql, (*params, cursor or '', count)).fetchall()
-
-    def build(row: Row) -> Item | None:
+    def build(item_id: str) -> Item | None:
+        row = tx.base.current(item_id)
+        if row is None or (layer_id is not None and row.layer_id != layer_id):
+            return None
         if not raw:
             origin = rows.node_address(tx, str(row['target_kind']), str(row['target_id']))
-            if origin is None or not res.reaches(str(row['layer_id']), origin):
+            if origin is None or not res.reaches(row.layer_id, origin):
                 return None
-        return views.item(tx, row, res.layers)
-    return paged(fetch, build, limit, after)
+        return views.item(tx, item_id, row, res.layers)
+    return _page(keyed, build, limit, after)
 
 
 def citing(tx: Tx, key: str, value: str, limit: int, after: str | None) -> Page[Citation]:
     """Every current item and property whose refs hold this key and value, the sources layer's among them, with the
     address it sits at, MAP-021."""
-    layers = all_layers(tx.db)
-    seen: set[tuple[str, str]] = set()
+    layers = all_layers(tx.base)
+    keyed: list[tuple[str, tuple[str, str, Row]]] = []
+    for owner in ('item', 'property'):
+        for ident, row in tx.base.currents(owner):
+            positions = [index for index, pair in enumerate(row.refs) if pair == (key, value)]
+            if positions:
+                keyed.append((f'{row.seq:012d}:{positions[0]:06d}', (owner, ident, row)))
+    keyed.sort()
 
-    def fetch(cursor: str | None, count: int) -> list[Row]:
-        return tx.db.execute('SELECT ref_id AS key, owner, owner_row FROM refs WHERE key=? AND value=? AND ref_id > ? '
-                             'ORDER BY ref_id LIMIT ?', (key, value, int(cursor or 0), count)).fetchall()
-
-    def build(row: Row) -> Citation | None:
-        owner = str(row['owner'])
-        spec = versions.KINDS[owner]
-        current = versions.current_of_row(tx.db, owner, int(row['owner_row']))
-        if current is None or (owner, current) in seen:
-            return None
-        seen.add((owner, current))
-        version_row = tx.db.execute(f'SELECT layer_id FROM {spec.table} WHERE row=?', (row['owner_row'],)).fetchone()
+    def build(entry: tuple[str, str, Row]) -> Citation | None:
+        owner, ident, row = entry
         if owner == 'item':
-            target = tx.db.execute('SELECT target_kind, target_id FROM items WHERE row=?', (row['owner_row'],)).fetchone()
-            address = rows.node_address(tx, str(target[0]), str(target[1]))
+            address = rows.node_address(tx, str(row['target_kind']), str(row['target_id']))
         else:
-            element = tx.db.execute('SELECT element_id FROM properties WHERE row=?', (row['owner_row'],)).fetchone()
-            address = rows.address_of(tx, str(element[0]))
-        return Citation(owner, current, address, layers[version_row[0]].name)
-    return paged(fetch, build, limit, after)
+            address = rows.address_of(tx, str(row['element_id']))
+        return Citation(owner, ident, address, layers[row.layer_id].name)
+    return _page(keyed, build, limit, after)
 
 
-def history(tx: Tx, thing: str, limit: int, after: str | None) -> Page[Version]:
-    """Every version of a thing in the order it was written: the row that added it, then each refinement."""
+def history(tx: Tx, thing: str, limit: int, after: str | None) -> Page[VersionRecord]:
+    """Every version of a thing in the order it was written: the version that added it, then each refinement."""
     kind = rows.kind_of(tx, thing)
-    spec = versions.KINDS[kind]
-    ordered = tx.db.execute(f'SELECT * FROM {spec.table} WHERE {spec.id_column}=? ORDER BY row', (thing,))
-    return sliced(tuple(views.version(tx, kind, row) for row in ordered), limit, after)
+    ordered = sorted(tx.base.versions.get(thing, ()), key=lambda version: version.seq)
+    return sliced(tuple(views.version(tx, kind, thing, row) for row in ordered), limit, after)
 
 
 def layers(tx: Tx, res: Resolver, tag: str | None, kind: str | None, module: str | None, limit: int,
@@ -352,14 +344,15 @@ def layers(tx: Tx, res: Resolver, tag: str | None, kind: str | None, module: str
     """The layers with their declaration, tags, state, hidden and toggled flags, LAYER-019."""
     chosen = list(res.layers.values())
     if tag is not None:
-        tagged = {str(row[0]) for row in tx.db.execute('SELECT layer_id FROM layer_tags WHERE tag=?', (tag,))}
-        chosen = [item for item in chosen if item.layer_id in tagged]
+        chosen = [item for item in chosen if tag in item.tags]
+    if kind == 'intake':  # the base layer's old name, LAYER-025
+        kind = 'base'
     chosen = [item for item in chosen if (kind is None or item.kind == kind) and (module is None or item.module == module)]
     return sliced(tuple(views.layer(tx, item, toggled=res.start, hidden=res.hidden) for item in chosen), limit, after)
 
 
 def provenance(tx: Tx, layer: str) -> Provenance | None:
-    return views.provenance(tx, rows.layer(tx, layer).layer_id)
+    return views.provenance(tx, rows.layer(tx, layer).id)
 
 
 def effective_selection(tx: Tx, res: Resolver, address: str) -> Selection:
@@ -374,106 +367,106 @@ def effective_selection(tx: Tx, res: Resolver, address: str) -> Selection:
 
 def search(tx: Tx, res: Resolver, text: str, layer: str | None, raw: bool, limit: int,
            after: str | None) -> Page[Item]:
-    """Items whose value holds every word of the text, STORE-020, in rank order with a stable cursor.
+    """Items whose value holds every word of the text, STORE-020, the best match first, with a stable cursor.
 
     In context an item is found only where its layer reaches the node it is attached to; a named layer narrows
-    the search and never widens it; `raw=True` finds every stored item. The cursor is the last match's rank and
-    row, so a page resumes where the previous one ended, STORE-005.
+    the search and never widens it; `raw=True` finds every stored item. The match is over the graph in memory,
+    STORE-046: every word, as a whole word or a prefix, case apart; the items with the most matches first, then the
+    older first.
     """
-    words = [word for word in str(text).split() if word]
+    words = [word.lower().strip(PUNCTUATION) for word in str(text).split()]
+    words = [word for word in words if word]
     if not words:
         return Page((), None)
-    query = ' '.join('"' + word.replace('"', '""') + '"' for word in words)
-    layer_id = rows.layer(tx, layer).layer_id if layer else None
+    layer_id = rows.layer(tx, layer).id if layer else None
+    keyed: list[tuple[str, tuple[str, Row]]] = []
+    for item_id, row in tx.base.currents('item'):
+        held = str(row['value']).lower()
+        tokens = [token.strip(PUNCTUATION) for token in held.split()]
+        hits = sum(1 for word in words if any(token == word or token.startswith(word) for token in tokens))
+        if hits < len(words):
+            continue
+        score = sum(held.count(word) for word in words)
+        keyed.append((f'{10**6 - score:07d}|{row.seq:012d}', (item_id, row)))
+    keyed.sort()
 
-    def fetch(cursor: str | None, count: int) -> list[Row]:
-        sql = ('SELECT item_text.rank AS score, item_text.rowid AS fts, i.* FROM item_text '
-               'JOIN current_items c ON c.row = item_text.rowid JOIN items i ON i.row = c.row '
-               'WHERE item_text MATCH ?')
-        params: list[Any] = [query]
-        if cursor is not None:
-            score, _, fts = cursor.partition('|')
-            sql += ' AND (item_text.rank > ? OR (item_text.rank = ? AND item_text.rowid > ?))'
-            params += [float(score), float(score), int(fts)]
-        sql += ' ORDER BY item_text.rank, item_text.rowid LIMIT ?'
-        return tx.db.execute(sql, (*params, count)).fetchall()
-
-    def build(row: Row) -> Item | None:
-        if layer_id is not None and row['layer_id'] != layer_id:
+    def build(entry: tuple[str, Row]) -> Item | None:
+        item_id, row = entry
+        if layer_id is not None and row.layer_id != layer_id:
             return None
         if not raw:
             origin = rows.node_address(tx, str(row['target_kind']), str(row['target_id']))
-            if origin is None or not res.reaches(str(row['layer_id']), origin):
+            if origin is None or not res.reaches(row.layer_id, origin):
                 return None
-        return views.item(tx, row, res.layers)
-    return paged(fetch, build, limit, after, key=lambda row: f'{float(row["score"])!r}|{row["fts"]}')
+        return views.item(tx, item_id, row, res.layers)
+    return _page(keyed, build, limit, after)
 
 
 def roots(tx: Tx, res: Resolver | None, limit: int, after: str | None) -> Roots:
     """The map's entry: the CQU and DE with the joins they receive, and every root element, one page, STORE-025.
 
-    The role is on the element, STORE-009, and its current row's role is indexed, so the entry is one read on
-    `current_elements_by_role`; a root element is one with a role. Empty until the intake has finished.
+    The role is on the element, STORE-009; a root element is one with a role. Empty until the intake has finished.
     """
     if not has_intake(tx):
         return Roots((), (), None)
     entry: list[RootEntry] = []
+    current = [(element_id, row) for element_id, row in tx.base.currents('element')]
     if after is None:
-        for element_id, _role in tx.db.execute("SELECT element_id, role FROM current_elements WHERE role IN ('CQU', 'DE') "
-                                               'ORDER BY role DESC, element_id').fetchall():
-            found = views.element(tx, str(element_id), res)
+        for element_id, _row in sorted((pair for pair in current if pair[1]['role'] in ('CQU', 'DE')),
+                                       key=lambda pair: (pair[1]['role'] != 'DE', pair[0])):
+            found = views.element(tx, element_id, res)
             if found is None:
                 continue
-            received = tx.db.execute('SELECT c.join_id AS key, j.* FROM current_joins c JOIN joins j ON j.row = c.row '
-                                     'WHERE c.receiver=? ORDER BY c.join_id', (element_id,)).fetchall()
-            held = [join for join in (views.visible_join(tx, row, res) for row in received) if join is not None]
+            held: list[Join] = []
+            for join_id in tx.base.joins_received(element_id):
+                version = versions.current_version(tx.base, 'join', join_id)
+                shown = views.visible_join(tx, join_id, version, res) if version is not None else None
+                if shown is not None:
+                    held.append(shown)
             entry.append(RootEntry(found, tuple(held)))
+    keyed = sorted((element_id, (element_id, row)) for element_id, row in current if row['role'] is not None)
 
-    def fetch(cursor: str | None, count: int) -> list[Row]:
-        return tx.db.execute('SELECT element_id AS key, role FROM current_elements WHERE element_id > ? '
-                             'AND role IS NOT NULL ORDER BY element_id LIMIT ?', (cursor or '', count)).fetchall()
-
-    def build(row: Row) -> RootElement | None:
-        found = views.element(tx, str(row['key']), res)
+    def build(pair: tuple[str, Row]) -> RootElement | None:
+        element_id, row = pair
+        found = views.element(tx, element_id, res)
         if found is None:
             return None
-        return RootElement(found.element_id, found.address, str(row['role']), found.short_name)
-    page = paged(fetch, build, limit, after)
+        return RootElement(found.id, found.address, str(row['role']), found.short_name)
+    page = _page(keyed, build, limit, after)
     return Roots(tuple(entry), page.results, page.next)
 
 
 def has_intake(tx: Tx) -> bool:
-    return tx.db.execute("SELECT 1 FROM layers WHERE kind='intake' AND ready IS NOT NULL LIMIT 1").fetchone() \
-        is not None
+    return any(layer.kind in versions.BASE_KINDS and layer.ready is not None for layer in tx.base.layers.values())
 
 
 def graph(tx: Tx, res: Resolver | None, limit: int, after: str | None) -> GraphPage:
     """A page of the map in address order, VIEW-005 and VIEW-010: each element in context, with its nearest parent
-    element in context, and each join it receives, in context, with the elements it holds. One read; every lookup by
-    index."""
-    found = tx.db.execute('SELECT element_id, address FROM current_elements WHERE address > ? ORDER BY address '
-                          'LIMIT ?', (after or '', limit + 1 if limit else -1)).fetchall()
-    more = bool(limit) and len(found) > limit
-    found = found[:limit] if limit else found
+    element in context, and each join it receives, in context, with the elements it holds."""
+    addresses = [address for address in tx.base.addresses() if after is None or address > after]
+    more = bool(limit) and len(addresses) > limit
+    found = addresses[:limit] if limit else addresses
     shown: dict[str, bool] = {}
 
     def in_context(address: str) -> bool:
         if address not in shown:
-            current = tx.db.execute('SELECT element_id FROM current_elements WHERE address=?', (address,)).fetchone()
-            shown[address] = current is not None and views.element(tx, str(current[0]), res) is not None
+            element_id = tx.base.element_at(address)
+            shown[address] = element_id is not None and views.element(tx, element_id, res) is not None
         return shown[address]
 
     elements: list[GraphElement] = []
     held: list[Join] = []
-    for row in found:
-        element_view = views.element(tx, str(row['element_id']), res)
-        shown[str(row['address'])] = element_view is not None
+    for address in found:
+        element_id = tx.base.element_at(address)
+        assert element_id is not None
+        element_view = views.element(tx, element_id, res)
+        shown[address] = element_view is not None
         if element_view is None:
             continue
         parent = next((prefix for prefix in reversed(prefixes(element_view.address)[:-1]) if in_context(prefix)), None)
         elements.append(GraphElement(element_view, parent))
-        held += joins(tx, res, element_view.element_id, 'receiver', 0, None).results
-    return GraphPage(tuple(elements), tuple(held), str(found[-1]['address']) if more else None)
+        held += joins(tx, res, element_view.id, 'receiver', 0, None).results
+    return GraphPage(tuple(elements), tuple(held), found[-1] if more else None)
 
 
 def layer_graph(tx: Tx, layer: str) -> GraphPage:
@@ -483,18 +476,23 @@ def layer_graph(tx: Tx, layer: str) -> GraphPage:
     context read: it shows what one layer wrote and reaches nothing through the selection.
     """
     found = rows.layer(tx, layer)
-    written = tx.db.execute('SELECT c.element_id, c.address FROM current_elements c JOIN elements e '
-                            'ON e.row = c.row WHERE e.layer_id=? ORDER BY c.address', (found.layer_id,)).fetchall()
-    addresses = {str(row['address']) for row in written}
+    written = sorted((str(row['address']), element_id) for element_id, row in tx.base.currents('element')
+                     if row.layer_id == found.id)
+    addresses = {address for address, _ in written}
     elements: list[GraphElement] = []
     held: list[Join] = []
-    for row in written:
-        element_view = views.element(tx, str(row['element_id']), None)
+    for _address, element_id in written:
+        element_view = views.element(tx, element_id, None)
         if element_view is None:
             continue
         parent = next((prefix for prefix in reversed(prefixes(element_view.address)[:-1]) if prefix in addresses),
                       None)
         elements.append(GraphElement(element_view, parent))
-        held += [join for join in joins(tx, None, element_view.element_id, 'receiver', 0, None).results
-                 if join.layer_id == found.layer_id]
+        held += [join for join in joins(tx, None, element_view.id, 'receiver', 0, None).results
+                 if join.layer_id == found.id]
     return GraphPage(tuple(elements), tuple(held))
+
+
+def cypher(tx: Tx, query: str) -> Any:
+    """A Cypher query over the base's graph, for agents and tools, STORE-046."""
+    return tx.base.cypher(query)

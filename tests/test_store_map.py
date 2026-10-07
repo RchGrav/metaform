@@ -6,9 +6,9 @@ import re
 import sqlite3
 
 import pytest
-from storekit import diff, dump, intake, knowledge, memory, small_map, store_file, values
+from storekit import diff, dump, intake, knowledge, memory, ops, small_map, store_file, values
 
-from metaform.data import Node
+from metaform.data import Node, Store
 
 pytestmark = pytest.mark.kind('fixture')
 
@@ -21,15 +21,15 @@ def test_adding_one_ref_to_an_item_with_a_thousand_writes_one_row(home, store):
     store.add_element(layer.name, 'code.a')
     item = store.add_item(layer.name, Node('element', 'code.a'), 'a', refs=[('path', f'file{n}.c') for n in range(1000)])
     before = dump(store_file(home, store))
-    store.add_ref(item.item_id, 'path', 'one-more.c')
-    assert diff(before, dump(store_file(home, store))) == {'refs': (1, 0)}
+    store.add_ref(item.id, 'path', 'one-more.c')
+    assert diff(before, dump(store_file(home, store))) == {'ops': (1, 0)}  # one op carries the refs, STORE-046
 
 
 @pytest.mark.req('STORE-007')
 def test_identity_ids_are_32_lowercase_hex(store):
     layer, outer, _ = small_map(store)
     element = store.element('code.timer.kitchen')
-    assert ID.match(element.element_id) and ID.match(outer.join_id) and ID.match(layer.layer_id)
+    assert ID.match(element.id) and ID.match(outer.id) and ID.match(layer.id)
 
 
 @pytest.mark.req('STORE-008')
@@ -37,8 +37,9 @@ def test_identity_ids_are_32_lowercase_hex(store):
 def test_an_address_writes_itself_and_every_prefix_as_types(home, store):
     layer = knowledge(store, 'types')
     store.add_element(layer.name, 'code.engine.game.fps')
-    db = sqlite3.connect(store_file(home, store))
-    assert set(db.execute('SELECT address, parent FROM types')) == {
+    with Store('proj')._read() as tx:  # the Type tree is read from the projection, STORE-046
+        types = dict(tx.base.types)
+    assert set(types.items()) == {
         ('code', None), ('code.engine', 'code'), ('code.engine.game', 'code.engine'),
         ('code.engine.game.fps', 'code.engine.game')}
     assert store.children('code').results == ('code.engine',)
@@ -53,7 +54,7 @@ def test_only_the_form_of_an_address_is_checked_and_a_bad_one_is_stored_with_a_n
     layer = knowledge(store, 'types')
     odd = store.add_element(layer.name, 'Code..Engine')
     assert [notice.where for notice in odd.notices] == ['address'] and 'form' in odd.notices[0].message
-    assert store.where('Code..Engine', raw=True).element.element_id == odd.element_id
+    assert store.where('Code..Engine', raw=True).element.id == odd.id
     jpg = store.add_element(layer.name, 'media.photo.jpg')
     assert jpg.address == 'media.photo.jpg' and jpg.notices == ()
 
@@ -67,11 +68,11 @@ def test_an_item_at_a_bare_type_address_makes_an_element_there_and_says_so(home,
     item = store.add_item(layer.name, Node('type', 'data.bill_of_materials'), 'A note about BOMs.')
     made = store.element('data.bill_of_materials', raw=True)
     assert made is not None and made.layer == layer.name
-    assert item.target == Node('element', made.element_id) and item.value == 'A note about BOMs.'
+    assert item.target == Node('element', made.id) and item.value == 'A note about BOMs.'
     assert [notice.where for notice in item.notices] == ['target']
     assert 'data.bill_of_materials' in item.notices[0].message
     changed = diff(before, dump(store_file(home, store)))
-    assert changed['elements'] == (1, 0) and changed['items'] == (1, 0)
+    assert changed['ops'] == (2, 0) and changed['objects'] == (2, 0)  # the element and the item, STORE-046
 
 
 @pytest.mark.req('STORE-009')
@@ -81,7 +82,7 @@ def test_a_second_element_at_a_held_address_returns_the_first(home, store):
     first = store.add_element(layer.name, 'code.engine')
     before = dump(store_file(home, store))
     second = store.add_element(layer.name, 'code.engine')
-    assert second.element_id == first.element_id and second.existing is True
+    assert second.id == first.id and second.existing is True
     assert 'elements' not in diff(before, dump(store_file(home, store)))
 
 
@@ -91,17 +92,17 @@ def test_an_element_recorded_again_at_its_address_is_the_same_element_with_its_j
     first = store.add_element(layer.name, 'code.engine')
     store.add_element(layer.name, 'code.loop.main')
     join = store.add_join(layer.name, 'code.loop.main', 'code.engine', purpose='p', ef='f')
-    store.remove(first.element_id)
+    store.remove(first.id)
     assert store.joins('code.engine', as_='provider', raw=True).results == ()
     again = store.add_element(layer.name, 'code.engine')
-    assert again.element_id == first.element_id
+    assert again.id == first.id
     store.finish(layer.name)
     # The join reads back with the element as provider again: in context, not orphaned, and by the address too.
-    served = store.joins(first.element_id, as_='provider').results
-    assert [(held.join_id, [each.address for each in held.elements], held.orphaned) for held in served] == [
-        (join.join_id, ['code.engine'], False)]
-    assert [held.join_id for held in store.joins('code.engine', as_='provider').results] == [join.join_id]
-    assert [held.join_id for held in store.joins('code.loop.main').results] == [join.join_id]
+    served = store.joins(first.id, as_='provider').results
+    assert [(held.id, [each.address for each in held.elements], held.orphaned) for held in served] == [
+        (join.id, ['code.engine'], False)]
+    assert [held.id for held in store.joins('code.engine', as_='provider').results] == [join.id]
+    assert [held.id for held in store.joins('code.loop.main').results] == [join.id]
     assert store.joins('code.engine', as_='provider', raw=True).results[0].orphaned is False
 
 
@@ -111,7 +112,7 @@ def test_an_imported_elements_identity_comes_back_when_it_is_removed_and_recorde
                                                                                          tmp_path):
     from metaform.data import Store, export_document, import_document
     small_map(store)
-    alarm = store.element('code.alarm.audible').element_id
+    alarm = store.element('code.alarm.audible').id
     notes = memory(store)
     store.add_item(notes.name, Node('element', 'code.alarm.audible'), 'alarm memory')
     document = export_document(['proj'])
@@ -121,10 +122,10 @@ def test_an_imported_elements_identity_comes_back_when_it_is_removed_and_recorde
     moved.refine(alarm, remove=True, reason='gone')
     assert moved.element('code.alarm.audible') is None
     put = moved.add_element('intake-1', 'code.alarm.audible', role='SE')
-    assert put.element_id == alarm and moved.element('code.alarm.audible').element_id == alarm
+    assert put.id == alarm and moved.element('code.alarm.audible').id == alarm
     assert values(moved.node(Node('element', 'code.alarm.audible')), 'memory') == ['alarm memory']
-    assert [held.join_id for held in moved.joins('code.timer.kitchen').results] == [
-        held.join_id for held in store.joins('code.timer.kitchen').results]
+    assert [held.id for held in moved.joins('code.timer.kitchen').results] == [
+        held.id for held in store.joins('code.timer.kitchen').results]
 
 
 @pytest.mark.req('STORE-009')
@@ -133,7 +134,7 @@ def test_an_item_attached_to_an_element_reads_back_after_it_is_removed_and_recor
     first = store.add_element(layer.name, 'code.engine')
     notes = memory(store)
     store.add_item(notes.name, Node('element', 'code.engine'), 'The engine idles at 3am.')
-    store.remove(first.element_id)
+    store.remove(first.id)
     assert store.node(Node('element', 'code.engine'), raw=True) is None
     store.add_element(layer.name, 'code.engine')
     assert values(store.node(Node('element', 'code.engine'), raw=True), 'memory') == ['The engine idles at 3am.']
@@ -151,7 +152,7 @@ def test_an_element_is_its_address_name_length_and_role(home, store):
         layer = intake(store)
         store.add_element(layer.name, 'code.timer.kitchen', name_length=2, role='DE')
     changed = diff(before, dump(store_file(home, store)))
-    assert changed['elements'] == (1, 0) and 'refs' not in changed and 'items' not in changed
+    assert changed == {'ops': (2, 0), 'objects': (1, 0)}  # the layer and the element alone: no ref, no item, STORE-046
     element = store.element('code.timer.kitchen')
     assert (element.address, element.name_length, element.role, element.short_name, element.reading) == (
         'code.timer.kitchen', 2, 'DE', 'kitchen timer', 'kitchen timer code')
@@ -159,8 +160,8 @@ def test_an_element_is_its_address_name_length_and_role(home, store):
     assert 'refs' not in element.to_dict() and 'extra' not in element.to_dict()
     # Rich, 2026-10-01: a name goes anywhere there is a namespace and name length; it is the element's own field
     assert 'descriptors' not in element.to_dict() and element.name is None
-    columns = {row[1] for row in sqlite3.connect(store_file(home, store)).execute('PRAGMA table_info(elements)')}
-    assert {'name_length', 'name', 'role'} <= columns
+    [made] = [op for op in ops(store_file(home, store), 'element') if op['id'] == element.id]
+    assert {'name_length', 'name', 'role'} <= set(made['data'])  # the element's own fields, on its op
 
 
 @pytest.mark.req('STORE-009')
@@ -207,8 +208,8 @@ def test_two_elements_may_each_receive_from_the_other(store):
     ba = store.add_join(layer.name, 'code.b', 'code.a', purpose='B needs A', ef='A serves B')
     owned = store.joins('code.a', raw=True).results
     provided = store.joins('code.a', as_='provider', raw=True).results
-    assert [join.join_id for join in owned] == [ab.join_id]
-    assert [join.join_id for join in provided] == [ba.join_id]
+    assert [join.id for join in owned] == [ab.id]
+    assert [join.id for join in provided] == [ba.id]
     assert (owned[0].purpose, provided[0].purpose) == ('A needs B', 'B needs A')
 
 
@@ -227,8 +228,8 @@ def test_refs_keep_their_order_and_are_found_by_key_and_value(store):
     held = store.layer_items(sources.name, Node('element', 'code.loop.tick')).results
     assert [ref.value for ref in held[0].refs] == ['c.c', 'a.c', 'b.c']
     cited = store.citing('path', 'a.c').results
-    assert [(hit.kind, hit.id, hit.address, hit.layer) for hit in cited] == [
-        ('item', grouped.item_id, 'code.loop.tick', 'sources')]
+    assert [(hit.kind, hit.object_id, hit.address, hit.layer) for hit in cited] == [
+        ('item', grouped.id, 'code.loop.tick', 'sources')]
 
 
 @pytest.mark.req('MAP-020')
@@ -266,7 +267,7 @@ def test_history_takes_a_bare_id_of_any_kind(store):
     notes = memory(store)
     item = store.add_item(notes.name, Node('element', 'code.timer.kitchen'), 'x')
     element = store.element('code.timer.kitchen')
-    for thing, kind in ((element.element_id, 'element'), (outer.join_id, 'join'), (item.item_id, 'item')):
+    for thing, kind in ((element.id, 'element'), (outer.id, 'join'), (item.id, 'item')):
         versions = store.history(thing).results
         assert [version.kind for version in versions] == [kind]
         assert versions[0].op == 'add'
@@ -296,13 +297,13 @@ def test_a_join_moved_to_another_receiver_keeps_its_id_and_its_memory(store):
         store.add_element(layer.name, address)
     join = store.add_join(layer.name, 'code.a', 'code.b', purpose='p', ef='f')
     notes = memory(store)
-    store.add_item(notes.name, Node('join', join.join_id), 'watch this one')
-    moved = store.edit(join.join_id, {'receiver': 'code.c'})
+    store.add_item(notes.name, Node('join', join.id), 'watch this one')
+    moved = store.edit(join.id, {'receiver': 'code.c'})
     assert moved.notices == ()
     found = store.joins('code.c', raw=True).results
-    assert [(held.join_id, held.receiver_address, held.purpose) for held in found] == [(join.join_id, 'code.c', 'p')]
+    assert [(held.id, held.receiver_address, held.purpose) for held in found] == [(join.id, 'code.c', 'p')]
     assert store.joins('code.a', raw=True).results == ()
-    assert values(store.node(Node('join', join.join_id), raw=True), 'memory') == ['watch this one']
+    assert values(store.node(Node('join', join.id), raw=True), 'memory') == ['watch this one']
 
 
 
@@ -316,18 +317,15 @@ def test_a_join_holds_its_elements_in_rows_of_their_own_and_a_joins_identity_hol
     db = sqlite3.connect(store_file(home, store))
     try:
         tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        columns = {table: [row[1] for row in db.execute(f'PRAGMA table_info({table})')]
-                   for table in ('join_ids', 'joins', 'current_elements', 'join_elements')}
         version = db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
-        kinds = {row[0] for row in db.execute('SELECT type FROM joins')}
-        held = db.execute('SELECT COUNT(*) FROM join_elements').fetchone()[0]
     finally:
         db.close()
-    assert not {'subtypes', 'subtype_ids', 'unapplied', 'current_subtypes'} & tables
-    assert columns['join_ids'] == ['join_id'] and 'parent' not in columns['joins'] and 'stack_at' not in columns['joins']
-    assert 'moved' not in columns['current_elements']
-    assert columns['join_elements'] == ['join_row', 'position', 'element_id'] and held == 3
-    assert version == '20' and kinds == {'purpose'}  # MAP-054 adds the optional promotion address.
+    assert not {'subtypes', 'subtype_ids', 'unapplied', 'current_subtypes', 'joins', 'join_elements'} & tables
+    joins = ops(store_file(home, store), 'join')
+    assert {op['data']['type'] for op in joins} == {'purpose'}  # MAP-054 adds the optional promotion address.
+    assert sum(len(op['data']['held']) for op in joins) == 3  # a join holds its elements in order, STORE-046
+    assert all(set(op['data']) >= {'type', 'receiver', 'purpose', 'ef', 'ifd', 'element', 'held'} for op in joins)
+    assert version == '21'
     assert 'correction_stack' not in tables
 
 
@@ -351,7 +349,7 @@ def test_a_join_has_no_perspective_field_anywhere_in_the_store(home, store):
     assert 'perspective' not in {field.name for field in dataclasses.fields(Join)}
     assert 'perspective' not in rows.EDITABLE['join']
     assert 'perspective' not in store.where('code.timer.kitchen', full=True).to_dict()['provides'][0]
-    refined = store.refine(outer.join_id, {'perspective': 'Encounter', 'purpose': 'Know when it is done.'}, reason='r')
+    refined = store.refine(outer.id, {'perspective': 'Encounter', 'purpose': 'Know when it is done.'}, reason='r')
     assert [notice.where for notice in refined.notices] == ['perspective']
-    kept = next(join for join in store.joins('stakeholder.cook.home').results if join.join_id == outer.join_id)
+    kept = next(join for join in store.joins('stakeholder.cook.home').results if join.id == outer.id)
     assert kept.purpose == 'Know when it is done.'

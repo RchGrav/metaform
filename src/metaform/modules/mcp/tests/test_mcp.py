@@ -319,7 +319,7 @@ def test_map_where_over_mcp_shows_what_relies_on_an_address_and_what_it_relies_o
     assert small == cli and set(small) == {'kind', 'element', 'receives'}
     assert [([held['address'] for held in join['elements']], join['ef']) for join in small['receives']] == [
         (['code.alarm.audible'], 'Plays a tone.')]
-    assert 'join_id' not in small['receives'][0] and full['receives'][0]['join_id']
+    assert 'join_id' not in small['receives'][0] and full['receives'][0]['id']
 
 
 @pytest.mark.req('STORE-028')
@@ -559,11 +559,10 @@ def test_a_tool_call_that_changes_the_map_is_announced_and_a_read_is_not(run, ho
         await called(client, 'map_layers', {})  # in the same server process: a read after a write
         return read, written, lines()
     read, written, after = session(home, mapped, call)
-    active = Store('proj').active_metaform()
+    active = Store('proj').active_base()
     assert read == []
-    assert written == [{'project': 'proj', 'metaform_id': active.metaform_id,
-                        'tables': ['current_items', 'identities', 'item_ids', 'item_text', 'item_text_data',
-                                   'item_text_docsize', 'item_text_idx', 'items', 'refs']}]  # once, for the one write
+    assert written == [{'project': 'proj', 'base_id': active.id,
+                        'tables': ['objects', 'op:item', 'ops']}]  # once, for the one write: the log and the kind of op
     assert after == written  # the notes were taken once: the read announces nothing, not the write again
 
 
@@ -606,12 +605,11 @@ def test_a_module_enabled_or_disabled_after_the_server_started_is_loaded_or_drop
         await asyncio.to_thread(run, 'disable', 'watcher')
         return off, on, await note(client, 'After the watcher is off again.')
     off, on, dropped = session(home, mapped, call)
-    active = Store('proj').active_metaform()
+    active = Store('proj').active_base()
     assert (off[0], on[0], dropped[0]) == (False, False, False)  # each of the three notes was written
     assert off[1] == []
-    assert on[1] == [{'project': 'proj', 'metaform_id': active.metaform_id, 'surface': 'mcp',
-                      'tables': ['current_items', 'identities', 'item_ids', 'item_text', 'item_text_data',
-                                 'item_text_docsize', 'item_text_idx', 'items', 'refs']}]  # heard in the server
+    assert on[1] == [{'project': 'proj', 'base_id': active.id, 'surface': 'mcp',
+                      'tables': ['objects', 'op:item', 'ops']}]  # heard in the server
     assert dropped[1] == on[1]
 
 
@@ -760,8 +758,8 @@ def test_clear_project_is_a_caution_tool_while_the_chassis_is_on_the_surface(run
     assert cleared.is_error is False
     told = json.loads(text(cleared)[-1])
     assert told.pop('backup') and told.pop('restore') == 'metaform restore project proj'  # PROJ-030
-    assert told == {'project': 'proj', 'metaforms': ['main'], 'reports': 1}
-    assert run('list', 'metaforms', cwd=mapped).stdout == ''
+    assert told == {'project': 'proj', 'bases': ['main'], 'reports': 1}
+    assert run('list', 'bases', cwd=mapped).stdout == ''
     assert not (own('proj') / 'reports').exists()
     run('set', '--modules', 'map', cwd=mapped)
 
@@ -785,11 +783,11 @@ def test_clear_project_returns_what_it_could_not_remove_with_what_to_do_and_no_e
         assert stuck.is_file()
     assert cleared.is_error is False
     result = json.loads(text(cleared)[-1])
-    assert (result['project'], result['metaforms'], result['reports']) == ('proj', ['main'], 1)
+    assert (result['project'], result['bases'], result['reports']) == ('proj', ['main'], 1)
     assert [entry['path'] for entry in result['not_removed']] == [str(stuck)] and result['not_removed'][0]['reason']
     assert [notice['where'] for notice in result['notices']] == ['not_removed']
     assert 'always ask the user if they are sure' in result['notices'][0]['message']
-    assert run('list', 'metaforms', cwd=mapped).stdout == ''
+    assert run('list', 'bases', cwd=mapped).stdout == ''
 
 
 @pytest.mark.req('BASE-035')
@@ -1149,7 +1147,7 @@ def test_a_direct_claim_over_mcp_is_honored_by_the_agent_the_client_names_at_ini
 
     from metaform.data import Node
     store = Store('proj')
-    gui = store.add_work(Node('element', 'code.timer.kitchen'), 'missing', task='GUI work').work_id
+    gui = store.add_work(Node('element', 'code.timer.kitchen'), 'missing', task='GUI work').id
     run('map', 'work', 'op=edit', f'id={gui}', 'eligible=["claude"]', cwd=mapped)
     params = StdioServerParameters(command=sys.executable, args=['-m', 'metaform', 'mcp', 'serve'], cwd=str(mapped),
                                    env={**os.environ, 'METAFORM_HOME': str(home)})

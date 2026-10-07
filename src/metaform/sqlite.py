@@ -13,13 +13,15 @@ import threading
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 from .errors import NewerStore, StoreError
 
-SCHEMA_VERSION = '20'  # the metaform store's layout; the base, history and prompt databases keep their own, STORE-029
+SCHEMA_VERSION = '21'  # the base store's layout, an op log from 21, STORE-046; the chassis, history and prompt databases keep their own, STORE-029
 BUSY_SECONDS = 30  # how long a write waits for another process's write to finish, STORE-006
 
-Upgrade = Callable[[sqlite3.Connection, Path, str], None]  # brings a file at an earlier version up to date
+Upgrade = Callable[[sqlite3.Connection, Path, str], Any]  # brings a file at an earlier version up to date; True when
+# it wrote a new file in the old one's place, so the caller connects again
 
 _WRITERS: dict[str, threading.RLock] = {}
 _WRITERS_GUARD = threading.Lock()
@@ -69,22 +71,11 @@ def opened(path: Path, schema: str, *, write: bool, version: str,
         db: sqlite3.Connection | None = None
         if write:
             path.parent.mkdir(parents=True, exist_ok=True)
-            db = connect(path)
-            try:
-                prepare(db, path, schema, create=True, version=version, upgrade=upgrade)
-            except BaseException:
-                db.close()
-                raise
+            db = _prepared(path, schema, create=True, version=version, upgrade=upgrade)
+            assert db is not None  # a write creates the file
         else:
             if _has_bytes(path):
-                db = connect(path)
-                try:
-                    if not prepare(db, path, schema, create=False, version=version, upgrade=upgrade):
-                        db.close()
-                        db = None
-                except BaseException:
-                    db.close()
-                    raise
+                db = _prepared(path, schema, create=False, version=version, upgrade=upgrade)
             if db is None:
                 db = memory(schema)
             lock.release()
@@ -96,6 +87,36 @@ def opened(path: Path, schema: str, *, write: bool, version: str,
     finally:
         if held:
             lock.release()
+
+
+class Replaced(Exception):
+    """An upgrade wrote a new file in the old one's place; the connection in hand reads the old one."""
+
+
+def _prepared(path: Path, schema: str, *, create: bool, version: str,
+              upgrade: Upgrade | None) -> sqlite3.Connection | None:
+    """A connection to the file, prepared; connected again when an upgrade replaced the file, STORE-046. None when
+    the file holds nothing committed yet and creation is not allowed."""
+    db = connect(path)
+    try:
+        if not prepare(db, path, schema, create=create, version=version, upgrade=upgrade):
+            db.close()
+            return None
+        return db
+    except Replaced:
+        db.close()
+    except BaseException:
+        db.close()
+        raise
+    db = connect(path)
+    try:
+        if not prepare(db, path, schema, create=create, version=version, upgrade=None):
+            db.close()
+            return None
+        return db
+    except BaseException:
+        db.close()
+        raise
 
 
 def _has_bytes(path: Path) -> bool:
@@ -136,7 +157,8 @@ def prepare(db: sqlite3.Connection, path: Path, schema: str, *, create: bool, ve
                              '\nCOMMIT;')
             found = _version(db)
     if found != version and upgrade is not None and found is not None and found.isdigit() and int(found) < int(version):
-        upgrade(db, path, found)
+        if upgrade(db, path, found):
+            raise Replaced
         found = _version(db)
     if found != version:
         newer = found is not None and found.isdigit() and int(found) > int(version)

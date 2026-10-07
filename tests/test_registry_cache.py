@@ -35,7 +35,7 @@ def test_external_wal_commit_is_seen_on_next_request(home):
     registry.set_module_state('hello', True)
     with registry.registry_scope():
         assert registry.module_state('hello') is True
-        with sqlite3.connect(registry.base_path()) as other:
+        with sqlite3.connect(registry.chassis_path()) as other:
             other.execute("UPDATE module_state SET enabled=0 WHERE module_id='hello'")
         assert registry.module_state('hello') is True
     with registry.registry_scope():
@@ -53,7 +53,7 @@ def test_local_write_invalidates_an_older_active_registry_scope(home):
     registry.set_module_state('hello', True)
     with registry.registry_scope():
         assert registry.module_state('hello') is True
-        with sqlite3.connect(registry.base_path()) as other:
+        with sqlite3.connect(registry.chassis_path()) as other:
             other.execute("INSERT INTO module_state VALUES ('external_registry_change', 1)")
         with registry.registry_scope(fresh=True):
             assert registry.module_state('external_registry_change') is True
@@ -78,7 +78,7 @@ def test_local_write_invalidates_an_older_concurrent_registry_scope(home):
         result = workers.submit(older_request)
         try:
             assert ready.wait(5)
-            with sqlite3.connect(registry.base_path()) as other:
+            with sqlite3.connect(registry.chassis_path()) as other:
                 other.execute("INSERT INTO module_state VALUES ('external_registry_change', 1)")
             with registry.registry_scope(fresh=True):
                 assert registry.module_state('external_registry_change') is True

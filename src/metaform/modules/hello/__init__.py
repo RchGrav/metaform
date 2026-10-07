@@ -96,7 +96,7 @@ def _names(store: Store) -> list[str]:
     if not any(layer.name == LAYER for layer in store.layers(limit=0).results):
         return []
     items = store.layer_items(LAYER, limit=0).results
-    return [str(item.value) for item in items if getattr(item, 'item_id', None)]
+    return [str(item.value) for item in items if getattr(item, 'id', None)]
 
 
 def _favorite_choices(ctx: Context) -> list[str]:
@@ -223,8 +223,8 @@ def todo(ctx: Context) -> str:
     _own_element(store)
     record = store.add_work(Node('element', HOLDER), 'missing', note='hello has more to do', task=ctx.nouns['task'])
     with store.tables() as tx:  # hello's own field on the record, in its own table, STORE-045
-        tx.insert('todos', {'work_id': record.work_id, 'greeted': len(_names(store))})
-    return f'To do: {ctx.nouns["task"]} ({record.work_id})\n'
+        tx.insert('todos', {'work_id': record.id, 'greeted': len(_names(store))})
+    return f'To do: {ctx.nouns["task"]} ({record.id})\n'
 
 
 def done(ctx: Context) -> str:
@@ -290,7 +290,7 @@ async def follow(ctx: Context) -> dict[str, Any]:
     with ctx.listen(told):
         ctx.say('Waiting for the next change to the map made in another process.')
         payload = await heard
-    ctx.say(f'{payload.get("project")} changed, metaform {payload.get("metaform_id") or "list"}.')
+    ctx.say(f'{payload.get("project")} changed, metaform {payload.get("base_id") or "list"}.')
     return {'changed': [payload]}
 
 
@@ -341,8 +341,8 @@ def report(ctx: Context) -> str:
     """save_report writes a report file in the home, on hello's layer, whose provenance then carries it, BASE-045."""
     store = ctx.require_store()
     layer = _own_element(store)
-    return save_report(store.project_id, layer.layer_id, 'report', ctx.nouns['text'], store=store,
-                       layer=layer.layer_id) + '\n'
+    return save_report(store.project_id, layer.id, 'report', ctx.nouns['text'], store=store,
+                       layer=layer.id) + '\n'
 
 
 def send_feedback(ctx: Context) -> dict[str, Any]:
@@ -421,7 +421,7 @@ def work_read(ctx: Context, record: WorkRecord) -> dict[str, int] | None:
     if ctx.store is None:
         return None
     with ctx.store.tables(write=False) as tx:
-        row = tx.get('todos', {'work_id': record.work_id})
+        row = tx.get('todos', {'work_id': record.id})
     return None if row is None else {'greeted': row['greeted']}
 
 

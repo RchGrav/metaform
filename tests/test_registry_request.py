@@ -44,7 +44,7 @@ def module(user_module):
 
 
 def disable_externally():
-    with sqlite3.connect(registry.base_path()) as connection:
+    with sqlite3.connect(registry.chassis_path()) as connection:
         connection.execute("INSERT OR REPLACE INTO module_state VALUES('request_watch', 0)")
 
 
@@ -55,7 +55,7 @@ def test_nested_request_checks_modules_once_for_many_store_reads(home, tmp_path,
         store.roots()
         with loader.request_scope():
             store.layers()
-            store.metaforms()
+            store.bases()
         store.roots()
     assert len(calls) == 1
     with loader.request_scope():

@@ -37,7 +37,7 @@ def test_mid_turn_messages_wait_in_order_and_cannot_replace_a_prompt(dispatch, r
     dispatch.start('replace', FAKE_ACP_TURN_GATES=str(gates))
     eventually(lambda: dispatch.received('session/prompt'))
     for text in ('First message', 'Second message'):
-        sent = json.loads(run('dispatch', 'message', dispatch.work_id, text, '--json', cwd=dispatch.folder).stdout)
+        sent = json.loads(run('dispatch', 'message', dispatch.id, text, '--json', cwd=dispatch.folder).stdout)
         assert sent['sent'] is True
     assert len(dispatch.received('session/prompt')) == 1, 'messages must wait for the active turn'
     for number, text in ((1, 'First message'), (2, 'Second message')):
@@ -47,7 +47,7 @@ def test_mid_turn_messages_wait_in_order_and_cannot_replace_a_prompt(dispatch, r
         assert prompts[-1]['params']['prompt'] == [{'type': 'text', 'text': text}]
         assert prompts[-1]['params']['sessionId'] == 'fake-session-1'
     if done:
-        run('map', 'work', 'op=done', f'id={dispatch.work_id}', 'resolution=Finished', cwd=dispatch.folder)
+        run('map', 'work', 'op=done', f'id={dispatch.id}', 'resolution=Finished', cwd=dispatch.folder)
     (gates / '3').touch()
     assert dispatch.process.wait(15) == 0, dispatch.process.stderr.read().decode()
     assert not dispatch.logged('replaced'), 'no adapter request was abandoned'
@@ -62,7 +62,7 @@ def test_stop_discards_messages_waiting_for_the_active_turn(dispatch, run, tmp_p
     gates.mkdir()
     dispatch.start('replace', FAKE_ACP_TURN_GATES=str(gates))
     eventually(lambda: dispatch.received('session/prompt'))
-    run('dispatch', 'message', dispatch.work_id, 'Queued message', cwd=dispatch.folder)
+    run('dispatch', 'message', dispatch.id, 'Queued message', cwd=dispatch.folder)
     assert len(dispatch.received('session/prompt')) == 1
     assert json.loads(dispatch.stop().stdout)['stopped'] is True
     assert dispatch.process.wait(15) == 0
@@ -113,7 +113,7 @@ def test_schema_change_cannot_strand_a_runner_or_its_resources(dispatch, trigger
     eventually(dispatch.questions)
     held = dispatch.session().extra
     agent_pid = dispatch.logged('pid')[0]
-    path = homes.store_path('proj', dispatch.store.active_metaform().metaform_id)
+    path = homes.store_path('proj', dispatch.store.active_base().id)
     with DataConnection(path) as db:
         db.execute("UPDATE meta SET value=? WHERE key='schema_version'", (str(int(sqlite.SCHEMA_VERSION) + 1),))
     try:
@@ -144,7 +144,7 @@ def test_schema_change_cannot_strand_a_runner_or_its_resources(dispatch, trigger
 
 def upgraded(dispatch):
     """The store at the next schema version, as a newer Metaform on disk leaves it under a runner started earlier."""
-    path = homes.store_path('proj', dispatch.store.active_metaform().metaform_id)
+    path = homes.store_path('proj', dispatch.store.active_base().id)
     with DataConnection(path) as db:
         db.execute("UPDATE meta SET value=? WHERE key='schema_version'", (str(int(sqlite.SCHEMA_VERSION) + 1),))
     return path
@@ -169,8 +169,8 @@ def test_automatic_recovery_stops_orphans_before_returning_ticket_and_preserves_
     from metaform.modules.dispatch.tests.test_dispatch import gone
 
     run('set', '--dispatch-recovery=automatic', cwd=dispatch.folder)
-    run('map', 'work', 'op=plan', f'id={dispatch.work_id}', 'steps=2', cwd=dispatch.folder)
-    run('map', 'work', 'op=step', f'id={dispatch.work_id}', 'said=Found the cause', cwd=dispatch.folder)
+    run('map', 'work', 'op=plan', f'id={dispatch.id}', 'steps=2', cwd=dispatch.folder)
+    run('map', 'work', 'op=step', f'id={dispatch.id}', 'said=Found the cause', cwd=dispatch.folder)
     dispatch.start('hold', FAKE_ACP_ORPHAN_HOLD='1')
     eventually(lambda: dispatch.logged('grandchild'))
     before = dispatch.ticket()
@@ -183,7 +183,7 @@ def test_automatic_recovery_stops_orphans_before_returning_ticket_and_preserves_
     assert shown['sessions'][0]['state'] == 'ended'
     assert dispatch.ticket().taken_by == before.taken_by
     result = json.loads(run('dispatch', 'recover', '--json', cwd=dispatch.folder).stdout)
-    assert result['released'] == [dispatch.work_id], result
+    assert result['released'] == [dispatch.id], result
     assert gone(dispatch.logged('pid') + dispatch.logged('grandchild')), 'no abandoned worker may run on a returned ticket'
     after = dispatch.ticket()
     assert after.taken is None and after.taken_by is None and not after.held and after.done is None
@@ -227,8 +227,8 @@ def test_automatic_recovery_keeps_tickets_when_safe_cleanup_cannot_be_proved(dis
         value = nonce.read(held['nonce']).value
         nonce.update(held['nonce'], value={key: value[key] for key in ('work_id', 'agent', 'session_id')})
     elif unsafe == 'changed_owner':
-        dispatch.store.move_work(dispatch.work_id, 'todo')
-        dispatch.store.take_work(dispatch.work_id, None, 'another agent')
+        dispatch.store.move_work(dispatch.id, 'todo')
+        dispatch.store.take_work(dispatch.id, None, 'another agent')
     elif unsafe == 'unknown_process':
         monkeypatch.setattr(recovery, 'identity', lambda pid: None)
     else:
@@ -242,8 +242,8 @@ def test_automatic_recovery_keeps_tickets_when_safe_cleanup_cannot_be_proved(dis
     assert alive(dispatch.logged('pid')[0]), 'uncertain or reassigned resources must not be killed'
     if unsafe != 'changed_owner':
         [deferred] = result['deferred']
-        assert deferred['work_id'] == dispatch.work_id and deferred['reason']
-        assert deferred['next'] == f'metaform map work op=move id={dispatch.work_id} column=todo'
+        assert deferred['work_id'] == dispatch.id and deferred['reason']
+        assert deferred['next'] == f'metaform map work op=move id={dispatch.id} column=todo'
 
 
 @pytest.mark.req('MAP-049')
@@ -367,10 +367,10 @@ def test_recovery_keeps_ownership_until_cleanup_finishes_without_blocking_other_
             assert dispatch.ticket().taken_by == original
             # A slow OS cleanup must not hold a project write transaction or block another ticket's progress.
             writing = workers.submit(Store('proj').add_work, dispatch.node, 'missing', task='Independent work')
-            assert writing.result(timeout=2).work_id
+            assert writing.result(timeout=2).id
         finally:
             resume.set()
-        assert recovering.result(timeout=10)['released'] == [dispatch.work_id]
+        assert recovering.result(timeout=10)['released'] == [dispatch.id]
 
 
 @pytest.mark.req('MAP-049')
@@ -388,8 +388,8 @@ def test_recovery_preserves_new_ownership_assigned_during_orphan_cleanup(dispatc
 
     def reassign(held):
         cleanup(held)
-        dispatch.store.move_work(dispatch.work_id, 'todo')
-        dispatch.store.take_work(dispatch.work_id, None, 'new owner')
+        dispatch.store.move_work(dispatch.id, 'todo')
+        dispatch.store.take_work(dispatch.id, None, 'new owner')
 
     monkeypatch.setattr(recovery, 'stop_adapter', reassign)
     result = recovery.recover(context('dispatch', dispatch.folder, project='proj'))
@@ -418,7 +418,7 @@ def test_autostart_can_select_recovered_ticket_only_after_old_workers_are_stoppe
 
     monkeypatch.setattr(module, 'start', start)
     result = module.autostart(context('dispatch', dispatch.folder, project='proj'))
-    assert selected == [dispatch.work_id] and result['started'] == [{'work_id': dispatch.work_id}]
+    assert selected == [dispatch.id] and result['started'] == [{'work_id': dispatch.id}]
 
 
 @pytest.mark.skipif(os.name == 'nt', reason='Windows ends a process without a signal it can handle')
@@ -433,7 +433,7 @@ def test_a_terminated_runner_on_a_store_upgraded_under_it_releases_through_the_c
     (newer / 'sitecustomize.py').write_text(
         'import metaform.sqlite as s\ns.SCHEMA_VERSION = str(int(s.SCHEMA_VERSION) + 1)\n', encoding='utf-8')
     started_with = (f'import metaform.sqlite as s; s.SCHEMA_VERSION = {sqlite.SCHEMA_VERSION!r}; import runpy, sys; '
-                    f"sys.argv = ['metaform', 'dispatch', 'run', {dispatch.work_id!r}, 'claude']; "
+                    f"sys.argv = ['metaform', 'dispatch', 'run', {dispatch.id!r}, 'claude']; "
                     "runpy.run_module('metaform', run_name='__main__', alter_sys=True)")
     env = dispatch.env('hold', PYTHONPATH=os.pathsep.join(filter(None, [str(newer), os.environ.get('PYTHONPATH')])))
     dispatch.process = subprocess.Popen([sys.executable, '-c', started_with], cwd=dispatch.folder, env=env,
@@ -462,7 +462,7 @@ def test_a_runner_that_cannot_release_its_ticket_says_so_and_how_to_put_it_back(
         dispatch.process.send_signal(signal.SIGTERM)
         dispatch.process.wait(20)
         said = dispatch.process.stderr.read().decode()
-        assert f'metaform map work op=move id={dispatch.work_id} column=todo' in said
+        assert f'metaform map work op=move id={dispatch.id} column=todo' in said
     finally:
         with DataConnection(path) as db:
             db.execute("UPDATE meta SET value=? WHERE key='schema_version'", (sqlite.SCHEMA_VERSION,))
@@ -551,7 +551,7 @@ def test_completed_ticket_and_runner_death_have_one_status_on_every_surface(disp
     dispatch.process.kill()
     dispatch.process.wait()
     assert shown()['state'] == 'ended'
-    run('map', 'work', 'op=done', f'id={dispatch.work_id}', 'resolution=closed elsewhere', cwd=dispatch.folder)
+    run('map', 'work', 'op=done', f'id={dispatch.id}', 'resolution=closed elsewhere', cwd=dispatch.folder)
     assert shown()['state'] == 'ended'
     assert raw['state'] == 'running'  # reads do not rewrite history
     from metaform.modules.dispatch import end_group
@@ -568,7 +568,7 @@ def test_live_runner_checks_adapter_and_completed_ticket_without_waiting_for_a_t
     assert found['session_id'] == held['session_id'] and found['state'] == 'running'
     assert found['agent_alive'] is True
     # Suppress the relay so the read itself has to see that the ticket is done.
-    dispatch.store.finish_work(dispatch.work_id, 'done without announcing')
+    dispatch.store.finish_work(dispatch.id, 'done without announcing')
     [found] = sessions(Store('proj', module='dispatch'))
     assert found['state'] == 'ended' and found['how'] == 'the ticket is done'
     assert dispatch.session().extra['state'] == 'running'
@@ -610,7 +610,7 @@ def test_an_older_runner_without_status_whose_pid_is_that_runner_reads_running_a
     from metaform.modules import dispatch as module
     from metaform.modules.dispatch.tests.test_dispatch import glyphed
 
-    run('map', 'work', 'op=edit', f'id={dispatch.work_id}', 'glyph=kite', cwd=dispatch.folder)
+    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'glyph=kite', cwd=dispatch.folder)
     [later] = glyphed(dispatch, run, ('Later', 'kite', False))
     dispatch.start('ask')
     eventually(dispatch.questions)
@@ -618,7 +618,7 @@ def test_an_older_runner_without_status_whose_pid_is_that_runner_reads_running_a
     [found] = module.sessions(Store('proj', module='dispatch'))
     assert found['state'] == 'running'
     ctx = SimpleNamespace(folder=dispatch.folder, project='proj')
-    with pytest.raises(Stop, match=dispatch.work_id):
+    with pytest.raises(Stop, match=dispatch.id):
         module.startable(ctx, dispatch.store, dispatch.store.ticket(later).work, 'claude')
     assert dispatch.session().extra['state'] == 'running'
 
@@ -638,7 +638,7 @@ def test_a_recorded_pid_that_is_not_that_runner_for_that_work_id_reads_ended(dis
     assert module.session_status(store, {**held, 'pid': other})['state'] == 'ended'
     assert module.session_status(store, {**held, 'session_id': 'another'})['state'] == 'ended', \
         'a port that answers for another session is not this session\'s runner'
-    elsewhere = dispatch.store.add_work(Node('element', 'code.engine'), 'missing', task='Another ticket').work_id
+    elsewhere = dispatch.store.add_work(Node('element', 'code.engine'), 'missing', task='Another ticket').id
     with monkeypatch.context() as older:  # a runner with no status to give
         older.setattr(module, 'tell', lambda *args, **kwargs: {'error': 'No request status.'})
         assert module.session_status(store, held)['state'] == 'running'
@@ -654,7 +654,7 @@ def test_turn_activity_waits_then_a_turn_ending_with_the_ticket_open_ends_the_se
     [question] = eventually(dispatch.questions)
     held = dispatch.session().extra
     assert tell(held, 'status')['activity'] == 'waiting'
-    run('map', 'reply', question.message_id, 'answer=Allow once', cwd=dispatch.folder)
+    run('map', 'reply', question.id, 'answer=Allow once', cwd=dispatch.folder)
     assert dispatch.process.wait(15) == 0, 'no idle session: a turn ending with the ticket open ends it'
     [shown] = sessions(Store('proj', module='dispatch'))
     assert shown['state'] == 'ended' and shown['how'] == 'the turn ended with the ticket open and no question asked'
@@ -671,17 +671,17 @@ def test_legacy_activity_uses_transcript_evidence_without_rewriting_lifecycle(di
     store = Store('proj', module='dispatch')
     held = dispatch.session().extra
     with store.tables() as tx:  # the transcript of an older runner whose turn ended
-        tx.insert('lines', {'session_id': held['session_id'], 'name': 'turn', 'work_id': dispatch.work_id,
+        tx.insert('lines', {'session_id': held['session_id'], 'name': 'turn', 'work_id': dispatch.id,
                             'kind': 'turn', 'text': 'The turn ended: end_turn.', 'seq': 900})
     [shown] = module.sessions(store)
     assert shown['state'] == 'running' and shown['activity'] == 'idle'
     assert dispatch.session().extra['state'] == 'running'
     held = dispatch.session().extra
     with store.tables() as tx:
-        tx.insert('lines', {'session_id': held['session_id'], 'name': 'later', 'work_id': dispatch.work_id,
+        tx.insert('lines', {'session_id': held['session_id'], 'name': 'later', 'work_id': dispatch.id,
                             'kind': 'agent_message_chunk', 'text': 'Resuming', 'seq': 1000})
         if tied:
-            tx.insert('lines', {'session_id': held['session_id'], 'name': 'zz-turn', 'work_id': dispatch.work_id,
+            tx.insert('lines', {'session_id': held['session_id'], 'name': 'zz-turn', 'work_id': dispatch.id,
                                 'kind': 'turn', 'text': 'The turn ended: end_turn.', 'seq': 1000})
     [shown] = module.sessions(store)
     assert shown['state'] == 'running' and shown['activity'] == 'unknown'

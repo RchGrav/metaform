@@ -136,10 +136,10 @@ def test_hand_over_finishes_an_active_call_without_repeating_its_committed_write
         async def commit(ctx):
             ticket = ctx.require_store().add_work(Node('element', 'code.alarm.audible'), 'enhancement',
                                                  task='Already committed.')
-            (ctx.folder / 'committed').write_text(ticket.work_id)
+            (ctx.folder / 'committed').write_text(ticket.id)
             while not (ctx.folder / 'finish').exists():
                 await anyio.sleep(0.01)
-            return ticket.work_id
+            return ticket.id
         MODULE = Module(id='delayed', summary='Delayed response.', purpose='A concurrent write fixture.',
                         verbs=(Verb('commit', commit, 'Commit before waiting.'),))
     ''')

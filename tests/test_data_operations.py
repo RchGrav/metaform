@@ -59,11 +59,11 @@ def test_data_callbacks_use_their_owners_tables(store, declare, callback):
     element = store.add_element(layer.name, "code.root", name_length=1, role="DE")
     if callback == "decorate":
         observed.clear()
-        assert store.element(element.element_id, raw=True).element_id == element.element_id
+        assert store.element(element.id, raw=True).id == element.id
     elif callback == "cleanup":
         store.discard(layer.name)
     else:
-        store.add_item(layer.name, Node("element", element.element_id), "An answer.")
+        store.add_item(layer.name, Node("element", element.id), "An answer.")
     assert observed == [7]
 
 
@@ -86,7 +86,7 @@ def test_read_data_operation_keeps_absent_regular_tables_absent(store, declare):
 
     declare(Data(operations={"read_count": Operation(read_count)}))
     assert store.read_count() is None
-    assert store.active_metaform() is None
+    assert store.active_base() is None
 
 
 def test_dao_follows_enablement_changed_by_another_process(store):
@@ -128,13 +128,13 @@ def test_cold_disabled_map_keeps_work_readable_without_activating_its_runtime(st
 
     small_map(store)
     created = store.add_work(Node("element", "code.timer.kitchen"), "missing", task="Recover the timer.")
-    store.take_work(created.work_id, steps=2, by="codex")
-    expected = store.step_work(created.work_id, "Located its boundary.")
+    store.take_work(created.id, steps=2, by="codex")
+    expected = store.step_work(created.id, "Located its boundary.")
     loader.set_enabled("map", False)
     loader.reset()
 
     assert loader.get("map").module is None
-    assert store.ticket(created.work_id).work == expected
+    assert store.ticket(created.id).work == expected
     assert store.work(limit=0).results == (expected,)
     assert not hasattr(store, "add_work")
     assert loader.get("map").module is None
@@ -148,5 +148,5 @@ def test_retained_reads_on_a_new_project_do_not_create_a_metaform(store):
     loader.reset()
     assert store.work(limit=0).results == ()
     assert store.messages(limit=0).results == ()
-    assert store.active_metaform() is None
+    assert store.active_base() is None
     assert loader.get("map").module is None

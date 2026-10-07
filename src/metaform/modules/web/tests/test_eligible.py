@@ -23,12 +23,12 @@ def test_task_and_card_api_keep_eligibility_with_glyph_and_board_order(run, web,
     store = Store('proj')
     node = store.element('code.alarm.audible')
     status, made = api(web, '/api/task', method='POST', headers=own_write(web), body=json.dumps({
-        'project': 'proj', 'nodes': [f'element:{node.element_id}'], 'condition': 'missing',
+        'project': 'proj', 'nodes': [f'element:{node.id}'], 'condition': 'missing',
         'task': 'Change the audible alarm', 'agent': 'codex', 'eligible': ['claude', 'gemini'],
     }))
     assert status == 200, made
-    work_id = made['results'][0]['work_id']
-    read = lambda: next(one for one in api(web, '/api/work?project=proj')[1]['results'] if one['work_id'] == work_id)
+    work_id = made['results'][0]['id']
+    read = lambda: next(one for one in api(web, '/api/work?project=proj')[1]['results'] if one['id'] == work_id)
     assert read()['map']['eligible'] == ['claude', 'gemini']
     run('map', 'work', 'op=edit', f'id={work_id}', 'glyph=kite', cwd=mapped)
     store.move_work(work_id, 'todo', position=0)
@@ -61,7 +61,7 @@ def test_task_editor_and_card_choose_multiple_agents_and_return_to_any(run, web,
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
-    page.evaluate(f'window.metaform.task({json.dumps(store.element("code.alarm.audible").element_id)})')
+    page.evaluate(f'window.metaform.task({json.dumps(store.element("code.alarm.audible").id)})')
     assert page.locator('#task .eligible summary').inner_text() == 'Eligible agents: Any agent'
     page.locator('#task .eligible summary').click()
     page.check('#task .eligible input[data-agent="claude"]')
@@ -70,7 +70,7 @@ def test_task_editor_and_card_choose_multiple_agents_and_return_to_any(run, web,
     page.select_option('#task .condition', 'enhancement')
     with page.expect_response(lambda response: '/api/task' in response.url) as saved:
         page.click('#task .put')
-    work_id = saved.value.json()['results'][0]['work_id']
+    work_id = saved.value.json()['results'][0]['id']
     page.click('#boardBtn')
     card = page.locator(f'#board .card[data-id="{work_id}"]')
     assert card.locator('.eligible summary').inner_text() == 'Eligible agents: Claude Code, Gemini CLI'
@@ -87,9 +87,9 @@ def test_start_window_skips_ineligible_first_ticket_without_losing_its_glyph(run
 
     store = Store('proj')
     for ticket in store.work(open=True, limit=0).results:
-        store.finish_work(ticket.work_id, 'fixture setup')
-    node = Node('element', store.element('code.alarm.audible').element_id)
-    first, later, any_agent = [store.add_work(node, 'missing', task=f'Eligibility queue {i}').work_id for i in range(3)]
+        store.finish_work(ticket.id, 'fixture setup')
+    node = Node('element', store.element('code.alarm.audible').id)
+    first, later, any_agent = [store.add_work(node, 'missing', task=f'Eligibility queue {i}').id for i in range(3)]
     for work_id in (first, later):
         run('map', 'work', 'op=edit', f'id={work_id}', 'glyph=kite', cwd=mapped)
     run('map', 'work', 'op=edit', f'id={first}', 'eligible=["claude"]', cwd=mapped)

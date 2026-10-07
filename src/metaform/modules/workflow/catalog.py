@@ -21,9 +21,9 @@ TABLES = Tables(version=1, tables=(
 def _owned(store: Store) -> Store:
     if store.module == 'workflow':
         return store
-    active = store.bound_metaform()
+    active = store.bound_base()
     return Store(store.project_id, module='workflow', toggled=store.toggled,
-                 metaform=None if active is None else active.metaform_id)
+                 base=None if active is None else active.id)
 
 
 def ensure_layer(store: Store, layer: str, provenance: Mapping[str, Any] | None = None) -> Layer:
@@ -40,7 +40,7 @@ def _items(store: Store, address: str, *, layer: str | None = None,
     element = store.element(address, raw=layer is not None, selection=selection)
     if element is None:
         return []
-    node = Node('element', element.element_id)
+    node = Node('element', element.id)
     if layer is not None:
         return [item for item in store.layer_items(layer, node, limit=0).results if isinstance(item, Item)]
     view = store.node(node, selection=selection)
@@ -59,7 +59,7 @@ def _typed(items: Sequence[Item], kind: str, name: str | None = None) -> list[It
 
 
 def _logic(item: Item) -> Logic:
-    return Logic('logic', item.item_id, item.value['name'], item.value['content'])
+    return Logic('logic', item.id, item.value['name'], item.value['content'])
 
 
 def _edit(store: Store, identity: str, changes: dict[str, Any]) -> None:
@@ -72,12 +72,12 @@ def _put(store: Store, address: str, layer: str, value: dict[str, Any]) -> Item:
     candidates = _typed(_items(store, address, layer=layer), value['type'], value.get('name'))
     if candidates:
         item = candidates[-1]
-        _edit(store, item.item_id, {'value': value})
-        return next(one for one in _items(store, address, layer=layer) if one.item_id == item.item_id)
+        _edit(store, item.id, {'value': value})
+        return next(one for one in _items(store, address, layer=layer) if one.id == item.id)
     element = store.element(address, raw=True)
     if element is None:
         raise KeyError(address)
-    item = store.add_item(layer, Node('element', element.element_id), value)
+    item = store.add_item(layer, Node('element', element.id), value)
     if not isinstance(item, Item):
         raise TypeError(item.to_dict())
     return item
@@ -98,7 +98,7 @@ def submit_workflow(store: Store, address: str, layer: str, name: str | None = N
             if name_length != existing.name_length:
                 changes['name_length'] = name_length
             if changes:
-                _edit(store, existing.element_id, changes)
+                _edit(store, existing.id, changes)
         _put(store, address, layer, {'type': 'workflow', 'selected_layers': list(layers)})
     return document(store, address, layer)
 
@@ -115,13 +115,13 @@ def submit_logic(store: Store, address: str, layer: str, name: str, content: str
         ensure_layer(owned, layer, provenance)
         prior = _typed(_items(owned, address, layer=layer), 'logic', name)
         item = _put(owned, address, layer, {'type': 'logic', 'name': name, 'content': content})
-        versions = _versions(owned, item.item_id)
+        versions = _versions(owned, item.id)
         with owned.tables() as tables:
             if prior and not versions:
-                tables.insert('logic_versions', {'logic_id': item.item_id, 'number': 1,
+                tables.insert('logic_versions', {'logic_id': item.id, 'number': 1,
                               'name': prior[-1].value['name'], 'content': prior[-1].value['content']})
                 versions = [{'number': 1}]
-            tables.insert('logic_versions', {'logic_id': item.item_id,
+            tables.insert('logic_versions', {'logic_id': item.id,
                           'number': len(versions) + 1, 'name': name, 'content': content})
         return _logic(item)
 
@@ -150,7 +150,7 @@ def history(store: Store, address: str, name: str, layer: str) -> list[dict[str,
     if not found:
         raise KeyError(f'{address}.{name}')
     return [{key: value for key, value in version.items() if key != 'logic_id'}
-            for version in _versions(_owned(store), found[-1].item_id)]
+            for version in _versions(_owned(store), found[-1].id)]
 
 
 def workflows(store: Store, selection: Sequence[str] | None = None) -> list[dict[str, Any]]:
@@ -200,7 +200,7 @@ def document(store: Store, address: str, layer: str) -> dict[str, Any]:
         'selected_layers': metadata[-1].value.get('selected_layers', []) if metadata else []},
         'layer': {'name': layer, 'variable': found.variable, 'provenance': provenance},
         'logic': [_logic(item).to_dict() for item in logic],
-        'versions': {item.item_id: history(store, address, item.value['name'], layer) for item in logic}}
+        'versions': {item.id: history(store, address, item.value['name'], layer) for item in logic}}
 
 
 def ingest_document(store: Store, payload: Mapping[str, Any], layer: str | None = None) -> dict[str, Any]:

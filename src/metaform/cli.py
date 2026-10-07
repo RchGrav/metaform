@@ -96,12 +96,12 @@ def status(args: list[str], folder: Path) -> None:
         line += ', selected here' if scope == home.path_key(folder) else f', inherited from {_folder_of(scope)}'
     out(line)
     out(f'Target: {record.target_type} {record.target_value}')
-    forms = home.metaforms(record.project_id)
-    active = home.active_metaform(record.project_id)
+    forms = home.bases(record.project_id)
+    active = home.active_base(record.project_id)
     if active is None:
-        out('Metaform: none yet')
+        out('Base: none yet')
     else:
-        out(f'Metaform: {active.name}' + (f', {count(len(forms))} in project' if len(forms) > 1 else ''))
+        out(f'Base: {active.name}' + (f', {count(len(forms))} in project' if len(forms) > 1 else ''))
     out(f'Projects: {count(len(home.projects()))} registered')
     found = loader.discover()
     loaded = [item for item in found if item.module is not None]
@@ -140,7 +140,7 @@ def status_lines(folder: Path, project: str | None) -> list[str]:
     return lines
 
 
-# Projects, metaforms and modules ---------------------------------------------------------
+# Projects, bases and modules ---------------------------------------------------------
 
 def _named_folder(folder: Path, path: str) -> Path:
     return (folder / path).resolve() if not Path(path).is_absolute() else Path(path).resolve()
@@ -158,13 +158,13 @@ def add(args: list[str], folder: Path) -> None:
         _, identifier, path, *target = args
         out(home.add_project(identifier, _named_folder(folder, path), *target))
         return
-    if args[:1] == ['metaform'] and len(args) in (2, 3):
+    if args[:1] == ['base'] and len(args) in (2, 3):
         project_id = _project_arg(folder, args[2] if len(args) == 3 else None)
-        previous = home.active_metaform(project_id)
-        created = home.add_metaform(project_id, args[1])
+        previous = home.active_base(project_id)
+        created = home.add_base(project_id, args[1])
         kept = previous.name if previous else 'main'
-        out(f'Added metaform {created.name} to {project_id}; it is now active. The previous metaform {kept} is kept. '
-            f'To switch back: metaform activate metaform {kept}')
+        out(f'Added base {created.name} to {project_id}; it is now active. The previous base {kept} is kept. '
+            f'To switch back: metaform activate base {kept}')
         if created.name != args[1]:
             out(f'Notice: name: {project_id} already has a metaform named {args[1]}; this one was named '
                 f'{created.name}.')
@@ -219,9 +219,9 @@ def list_(args: list[str], folder: Path) -> None:
             text = item.problem or summary or ''
             out(f'{item.id:<{width}}  {state:<5}  {item.place:<6}  {text}'.rstrip())
         return
-    if args[:1] == ['metaforms'] and len(args) in (1, 2):
+    if args[:1] == ['bases'] and len(args) in (1, 2):
         project_id = _project_arg(folder, args[1] if len(args) == 2 else None)
-        for form in home.metaforms(project_id):
+        for form in home.bases(project_id):
             out(f'{form.name}  {form.created}' + ('  (active)' if form.active else ''))
         return
     if args[:1] == ['backups'] and len(args) in (1, 2):
@@ -241,7 +241,7 @@ def list_(args: list[str], folder: Path) -> None:
             out(f'{made.variant_id}  {made.collected}  {made.source_path}  {made.workflow or "-"}')
         return
     if args != ['projects']:
-        raise Stop('list needs a noun: projects, modules, metaforms, reports, backups, origins or variants.',
+        raise Stop('list needs a noun: projects, modules, bases, reports, backups, origins or variants.',
                    'metaform list projects')
     registered = home.projects()
     if not registered:
@@ -305,14 +305,14 @@ def feedback(args: list[str], folder: Path) -> None:
 
 
 def activate(args: list[str], folder: Path) -> None:
-    if args[:1] != ['metaform'] or len(args) not in (2, 3):
-        raise Stop('activate needs: metaform <name>.', 'metaform list metaforms')
+    if args[:1] != ['base'] or len(args) not in (2, 3):
+        raise Stop('activate needs: base <name>.', 'metaform list bases')
     project_id = _project_arg(folder, args[2] if len(args) == 3 else None)
-    known = {form.name for form in home.metaforms(project_id)}
+    known = {form.name for form in home.bases(project_id)}
     if args[1] not in known:
-        raise Stop(f'No metaform {args[1]} in {project_id}.', 'metaform list metaforms')
-    home.activate_metaform(project_id, args[1])
-    out(f'Active metaform for {project_id}: {args[1]}')
+        raise Stop(f'No base {args[1]} in {project_id}.', 'metaform list bases')
+    home.activate_base(project_id, args[1])
+    out(f'Active base for {project_id}: {args[1]}')
 
 
 
@@ -634,13 +634,13 @@ def _nouns(args: list[str], allowed: tuple[str, ...], verb: str = 'export') -> t
 
 
 def export(args: list[str], folder: Path) -> None:
-    positional, named = _nouns(args, ('file', 'metaform', 'layer'))
+    positional, named = _nouns(args, ('file', 'base', 'metaform', 'layer'))  # metaform= is the base's old name
     if len(positional) > 1:
         raise Stop('export takes one project, or all.', 'metaform export --help')
     projects = positional or [_project_arg(folder, None)]
     if projects != ['all'] and home.project(projects[0]) is None:
         raise Stop(f'No project {projects[0]} is registered.', 'metaform list projects')
-    document = export_document(projects, metaform=(named.get('metaform') or [None])[0],
+    document = export_document(projects, metaform=(named.get('base') or named.get('metaform') or [None])[0],
                                layers=named.get('layer', []))
     text = json.dumps(document, ensure_ascii=False, indent=1)
     if 'file' in named:
@@ -962,7 +962,7 @@ docs.command(Command('instructions', 'Show the instructions agents read, compose
                      see_also=('help',)))
 docs.command(Command('add', 'Register a project, or start a new metaform for one.',
                      ('metaform add project <id> <path> [<target type> <target value>]',
-                      'metaform add metaform <name> [<project>]', 'metaform add origin [<project>]',
+                      'metaform add base <name> [<project>]', 'metaform add origin [<project>]',
                       ('metaform add variant <folder> [origin=<id>] [remove=true] [workflow=<text>] [prompt=<text>] '
                        '[model=<text>] [role=<text>] [module=<text>] [blinded=true|false]')),
                      description='Metaform keeps its data in the home, never in the project folder.',
@@ -970,15 +970,15 @@ docs.command(Command('add', 'Register a project, or start a new metaform for one
                              'folder itself.',
                      examples=(('metaform add project notes ~/notes', 'Register the folder ~/notes as the project notes.'),),
                      see_also=('list', 'activate')))
-docs.command(Command('list', "List registered projects, modules, a project's metaforms, or its reports.",
-                     ('metaform list projects', 'metaform list modules', 'metaform list metaforms [<project>]',
+docs.command(Command('list', "List registered projects, modules, a project's bases, or its reports.",
+                     ('metaform list projects', 'metaform list modules', 'metaform list bases [<project>]',
                       'metaform list reports [<project>] [kind=<kind>] [layer=<layer>] [--json]',
                       'metaform list backups [<project>]',
                       'metaform list origins [<project>]', 'metaform list variants [origin=<id>]'),
                      details='list modules shows each module, whether it is on, where it was found, and why it did '
                              'not load when it did not.', see_also=('add', 'enable', 'disable')))
-docs.command(Command('activate', "Make one of a project's metaforms the active one.",
-                     ('metaform activate metaform <name> [<project>]',), see_also=('add', 'list')))
+docs.command(Command('activate', "Make one of a project's bases the active one.",
+                     ('metaform activate base <name> [<project>]',), see_also=('add', 'list')))
 docs.command(Command('enable', 'Turn a module on.', ('metaform enable <module>',), see_also=('disable', 'list')))
 docs.command(Command('disable', 'Turn a module off. Its settings keep their saved values.',
                      ('metaform disable <module>',), see_also=('enable', 'list')))
@@ -1018,7 +1018,7 @@ docs.command(Command('alias', 'Give two or more modules one name at the top menu
                      examples=(('metaform alias mapping map memory', 'One name for the map and memory commands.'),),
                      see_also=('help',)))
 docs.command(Command('export', "Write a project's data to one JSON document.",
-                     ('metaform export [<project>|all] [file=<file>] [metaform=<name>] [layer=<name>]...',),
+                     ('metaform export [<project>|all] [file=<file>] [base=<name>] [layer=<name>]...',),
                      details='With no file the document goes to standard output. Everything carries its unique id.',
                      see_also=('import',)))
 docs.command(Command('import', 'Add what a JSON document holds and this home does not.',
@@ -1116,7 +1116,7 @@ docs.command(Command('feedback', 'Save feedback on the Metaform process, and a r
                      see_also=('list', 'read')))
 docs.command(Command('read', 'Read one report, feedback or shape file exactly.',
                      ('metaform read report <file name> [<project>]',), see_also=('list', 'feedback')))
-docs.command(Command('clear', "Remove a project's metaforms and reports; its registration, settings and history stay.",
+docs.command(Command('clear', "Remove a project's bases and reports; its registration, settings and history stay.",
                      ('metaform clear project [<project>] --confirm',),
                      description='Clears what Metaform inferred about the project so an intake can be taken again '
                                  'from nothing. Every metaform goes with its store, and every report, feedback and '

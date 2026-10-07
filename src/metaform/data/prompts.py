@@ -13,12 +13,13 @@ import uuid
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 
 from .. import home, sqlite
 from ..errors import StoreError
 from .records import Notice, Record
 
-PROMPT_SCHEMA_VERSION = '1'  # the prompt database's own layout, apart from the store's, STORE-029
+PROMPT_SCHEMA_VERSION = '2'  # the prompt database's own layout, apart from the store's, STORE-029
 PROMPT_SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS prompts(
@@ -40,14 +41,30 @@ CREATE TABLE IF NOT EXISTS prompt_versions(
 CREATE INDEX IF NOT EXISTS prompt_versions_by_prompt ON prompt_versions(prompt_id, number DESC);
 CREATE TABLE IF NOT EXISTS prompt_uses(
   project_id  TEXT NOT NULL,
-  metaform_id TEXT NOT NULL,
+  base_id TEXT NOT NULL,
   layer_id    TEXT NOT NULL,
   version_id  TEXT NOT NULL REFERENCES prompt_versions(version_id),
-  PRIMARY KEY(project_id, metaform_id, layer_id)
+  PRIMARY KEY(project_id, base_id, layer_id)
 );
 CREATE INDEX IF NOT EXISTS prompt_uses_by_version ON prompt_uses(version_id);
 """
 FORMATS = ('xml', 'markdown', 'text')
+
+
+def _upgrade(db: sqlite3.Connection, path: Path, found: str) -> None:
+    """Version 2 names a use's base `base_id`, the change order of 2026-10-07 item 1."""
+    if found != '1':
+        raise StoreError(f'{path} has schema version {found}; this Metaform updates only prompt version 1.',
+                         'install the Metaform release that wrote it')
+    db.execute('BEGIN IMMEDIATE')
+    try:
+        if db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone() == ('1',):
+            db.execute('ALTER TABLE prompt_uses RENAME COLUMN metaform_id TO base_id')
+            db.execute("UPDATE meta SET value=? WHERE key='schema_version'", (PROMPT_SCHEMA_VERSION,))
+        db.execute('COMMIT')
+    except BaseException:
+        db.execute('ROLLBACK')
+        raise
 
 
 @dataclass(frozen=True)
@@ -76,7 +93,7 @@ class PromptVersion(Record):
 @dataclass(frozen=True)
 class PromptUse(Record):
     project_id: str
-    metaform_id: str
+    base_id: str
     layer_id: str
     version_id: str
 
@@ -84,7 +101,7 @@ class PromptUse(Record):
 @contextmanager
 def _db(*, write: bool = False) -> Generator[sqlite3.Connection, None, None]:
     with sqlite.opened(home.home() / 'prompts.sqlite3', PROMPT_SCHEMA, write=write,
-                       version=PROMPT_SCHEMA_VERSION) as db:
+                       version=PROMPT_SCHEMA_VERSION, upgrade=_upgrade) as db:
         db.row_factory = sqlite3.Row
         db.execute('BEGIN IMMEDIATE' if write else 'BEGIN')
         try:
@@ -232,25 +249,25 @@ def prompt_versions(prompt: str) -> tuple[PromptVersion, ...]:
                                                          (record['prompt_id'],)))
 
 
-def record_use(version_id: str, project_id: str, metaform_id: str, layer_id: str) -> None:
+def record_use(version_id: str, project_id: str, base_id: str, layer_id: str) -> None:
     """Link a layer to the version it was made from; a layer is made once, so its link never changes."""
     with _db(write=True) as db:
-        db.execute('INSERT OR IGNORE INTO prompt_uses(project_id, metaform_id, layer_id, version_id) '
-                   'VALUES (?, ?, ?, ?)', (project_id, metaform_id, layer_id, version_id))
+        db.execute('INSERT OR IGNORE INTO prompt_uses(project_id, base_id, layer_id, version_id) '
+                   'VALUES (?, ?, ?, ?)', (project_id, base_id, layer_id, version_id))
 
 
 def layers_by_prompt_version(version_id: str) -> tuple[PromptUse, ...]:
     with _db() as db:
-        return tuple(PromptUse(row['project_id'], row['metaform_id'], row['layer_id'], row['version_id'])
+        return tuple(PromptUse(row['project_id'], row['base_id'], row['layer_id'], row['version_id'])
                      for row in db.execute('SELECT * FROM prompt_uses WHERE version_id=? ORDER BY project_id, '
-                                           'metaform_id, layer_id', (version_id,)))
+                                           'base_id, layer_id', (version_id,)))
 
 
-def use_of(project_id: str, metaform_id: str, layer_id: str) -> PromptVersion | None:
+def use_of(project_id: str, base_id: str, layer_id: str) -> PromptVersion | None:
     """The version a layer was made from, if it came from a stored prompt."""
     with _db() as db:
-        found = db.execute('SELECT version_id FROM prompt_uses WHERE project_id=? AND metaform_id=? AND layer_id=?',
-                           (project_id, metaform_id, layer_id)).fetchone()
+        found = db.execute('SELECT version_id FROM prompt_uses WHERE project_id=? AND base_id=? AND layer_id=?',
+                           (project_id, base_id, layer_id)).fetchone()
         if found is None:
             return None
         row = db.execute('SELECT v.*, p.name, p.format FROM prompt_versions v JOIN prompts p '

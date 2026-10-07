@@ -76,8 +76,8 @@ def test_a_listener_hears_map_changed_from_a_command_run_in_another_process(run,
         assert kept['module'] == 'watcher' and kept['pid'] == os.getpid() and kept['port'] and kept['token']
         write_note(run, folder)
         assert told.wait(LIMIT), 'the command in another process told this one'
-        active = metaform_home.active_metaform('proj')
-        assert {'project': 'proj', 'metaform_id': active.metaform_id} in heard
+        active = metaform_home.active_base('proj')
+        assert {'project': 'proj', 'base_id': active.id} in [{key: value for key, value in event.items() if key in ('project', 'base_id')} for event in heard]
     finally:
         listener.close()
     assert records(home) == [], 'closing a listener removes its record'
@@ -90,7 +90,7 @@ def test_a_listener_never_hears_its_own_process_through_the_relay(home):
     heard: list[dict] = []
     listener = relay.listen('watcher', heard.append)
     try:
-        deliveries = events.publish('map.changed', {'project': 'proj', 'metaform_id': None},
+        deliveries = events.publish('map.changed', {'project': 'proj', 'base_id': None},
                                     Context(module='chassis', folder=home, project='proj'))
         assert not any(delivery.get('pid') == os.getpid() for delivery in deliveries)
         time.sleep(0.5)  # a relayed delivery to this process would have arrived by now
@@ -109,7 +109,7 @@ def test_a_change_published_here_reaches_a_listener_in_another_process_and_is_na
     try:
         assert child.stdout is not None
         assert child.stdout.readline().strip() == 'listening'
-        payload = {'project': 'proj', 'metaform_id': 'm1'}
+        payload = {'project': 'proj', 'base_id': 'm1'}
         deliveries = events.publish('map.changed', payload, Context(module='chassis', folder=home, project='proj'))
         assert {'module': 'watcher', 'pid': child.pid, 'status': 'completed'} in deliveries
         assert child.stdout.readline().strip() == f'heard {payload!r}'
@@ -130,7 +130,7 @@ def test_publish_async_hands_the_change_to_a_listener_in_another_process(home):
     try:
         assert child.stdout is not None
         assert child.stdout.readline().strip() == 'listening'
-        payload = {'project': 'proj', 'metaform_id': None}
+        payload = {'project': 'proj', 'base_id': None}
         deliveries = asyncio.run(events.publish_async('map.changed', payload,
                                                       Context(module='chassis', folder=home, project='proj')))
         assert {'module': 'watcher', 'pid': child.pid, 'status': 'completed'} in deliveries
@@ -170,7 +170,7 @@ def test_a_record_left_by_a_process_that_ended_without_closing_is_removed_by_the
     child.kill()
     child.wait(LIMIT)
     assert len(records(home)) == 1, 'a killed process cannot close its listener'
-    deliveries = events.publish('map.changed', {'project': 'proj', 'metaform_id': None},
+    deliveries = events.publish('map.changed', {'project': 'proj', 'base_id': None},
                                 Context(module='chassis', folder=home, project='proj'))
     assert [delivery['status'] for delivery in deliveries if delivery.get('pid') == child.pid] == ['failed']
     assert records(home) == []
@@ -225,7 +225,7 @@ def test_every_recorded_listener_of_another_process_is_handed_the_change(home):
     from metaform.module import Context
     children = [listening_child(home), listening_child(home)]
     try:
-        payload = {'project': 'proj', 'metaform_id': None}
+        payload = {'project': 'proj', 'base_id': None}
         deliveries = events.publish('map.changed', payload, Context(module='chassis', folder=home, project='proj'))
         assert sorted(delivery['pid'] for delivery in deliveries if 'pid' in delivery) == sorted(
             child.pid for child in children)
@@ -272,7 +272,7 @@ def test_a_listener_that_does_not_answer_keeps_its_record_and_publish_async_neve
                 await asyncio.sleep(0.1)
                 ticks += 1
         ticking = asyncio.create_task(tick())
-        deliveries = await events.publish_async('map.changed', {'project': 'proj', 'metaform_id': None},
+        deliveries = await events.publish_async('map.changed', {'project': 'proj', 'base_id': None},
                                                 Context(module='chassis', folder=home, project='proj'))
         ticking.cancel()
         return deliveries, ticks
