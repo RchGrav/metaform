@@ -531,6 +531,15 @@ def _upgrade(db: sqlite3.Connection, path: Path, module: str, declared: Tables, 
     old = {value['name']: Table.from_dict(value) for value in recorded['tables']}
     held = {name: (table, physical(module, table)) for name, table in old.items()}  # each found table and where it is
     new = [table for table in declared.tables if table.place == place]
+    # A table declared at the other place in this version still has its rows here: dropping it would lose them, and
+    # no transplant between stores exists, so the upgrade is refused with the way out named. Found by review, 2026-10-06.
+    elsewhere = {table.name: table.place for table in declared.tables if table.place != place}
+    moved = sorted(name for name in old if name in elsewhere)
+    if moved:
+        raise StoreError(f'{module} version {declared.version} moves {", ".join(moved)} from the {place} store to the '
+                         f'{elsewhere[moved[0]]} store, and the rows here would be lost; a table keeps its place, or '
+                         f'the module\'s upgrade copies the rows itself before the table is declared elsewhere.',
+                         f'metaform disable {module}')
     for table in new:
         before = old.get(table.name)
         if before is None:

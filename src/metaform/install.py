@@ -220,7 +220,7 @@ def provision(tool: str, say: Callable[[str], None]) -> None:
     say('Next: finish the other supported features in metaform help provision, then metaform provision done')
 
 
-def _merge(path: Path, command: list[str], backup: Path | None) -> None:
+def _merge(path: Path, command: list[str], backup: Path | None, key: str = 'mcpServers') -> None:
     """Add Metaform's server to a tool's JSON config. A config that is not a JSON object is left as it is and
     refused, naming it and its backup; the merged file replaces the old one whole, so a crash never leaves half."""
     data: Any = {}
@@ -229,14 +229,14 @@ def _merge(path: Path, command: list[str], backup: Path | None) -> None:
             data = json.loads(path.read_text(encoding='utf-8'))
         except ValueError:
             data = None
-    servers = cast(dict[str, Any], data).get('mcpServers', {}) if isinstance(data, dict) else None
+    servers = cast(dict[str, Any], data).get(key, {}) if isinstance(data, dict) else None
     if not isinstance(servers, dict):
         kept = f' A copy is at {backup}.' if backup else ''
-        raise Stop(f'{path} is not a JSON object with an mcpServers object, so Metaform did not change it.{kept}',
-                   f'add "metaform": {json.dumps({"command": command[0], "args": command[1:]})} to mcpServers in '
+        raise Stop(f'{path} is not a JSON object with a {key} object, so Metaform did not change it.{kept}',
+                   f'add "metaform": {json.dumps({"command": command[0], "args": command[1:]})} to {key} in '
                    f'{path}')
     data = cast(dict[str, Any], data)
-    data['mcpServers'] = {**cast(dict[str, Any], servers), 'metaform': {'command': command[0], 'args': command[1:]}}
+    data[key] = {**cast(dict[str, Any], servers), 'metaform': {'command': command[0], 'args': command[1:]}}
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f'.{path.name}.metaform-{os.getpid()}')
     temporary.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
@@ -470,7 +470,7 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
         if command is None:
             pass  # Skills and instruction pointers remain useful through the CLI.
         elif tool.merge and config is not None:
-            _merge(config, command, backup)
+            _merge(config, command, backup, tool.key)
         else:
             removed = ''
             if tool.name in recorded and tool.remove:
@@ -501,8 +501,8 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
     failed: list[str] = []
     if command is not None:
         say('Proof:')
+        proof = probe(command, cwd=user_home())  # the same command for every tool: one start, one answer
         for tool in chosen:
-            proof = probe(command, cwd=user_home())
             if proof.ok:
                 say(f'  {tool.name}: server starts, {proof.tools} tools')
             else:

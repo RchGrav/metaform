@@ -457,7 +457,7 @@ def set_(args: list[str], folder: Path) -> None:
             raise Stop(str(error), error.next_step or ('metaform list projects' if setting.key == 'project'
                                                        else f'metaform help {setting.switch}')) from None
     before_groups = settings.value('modules', folder)
-    changes: list[tuple[str, Any, Any]] = []
+    updates: list[tuple[str, Any, Any]] = []
     glued: list[str] = []
     notices: list[tuple[str, str]] = []
     for setting, raw in pairs:
@@ -468,7 +468,7 @@ def set_(args: list[str], folder: Path) -> None:
             raise Stop(str(error), error.next_step or ('metaform list projects' if setting.key == 'project'
                                                        else f'metaform help {setting.switch}')) from None
         if old != new or settings.state(setting.key, folder) != before:
-            changes.append((setting.key, old, new))
+            updates.append((setting.key, old, new))
         if glue:
             glued.append(setting.key)
         notices += [(setting.key, message) for message in noted]
@@ -477,16 +477,16 @@ def set_(args: list[str], folder: Path) -> None:
     if quiet:
         return
     where = f' for {folder}' if named else ''
-    if not changes:
-        out(f'Success: no changes{where}')
+    if not updates:
+        out(f'Success: no updates{where}')
     else:
-        out(f'Success: updated {counted(len(changes), "key", "keys")}{where}')
-        for key, old, new in changes:
+        out(f'Success: updated {counted(len(updates), "key", "keys")}{where}')
+        for key, old, new in updates:
             out(f'  {key}: {show(key, old)} → {show(key, new)}')
     if glued:
         out('  glued: ' + ', '.join(glued))
     after_groups = settings.value('modules', folder)
-    if any(key == 'modules' for key, _, _ in changes) and after_groups and \
+    if any(key == 'modules' for key, _, _ in updates) and after_groups and \
             (not before_groups or set(after_groups) < set(before_groups)):
         out(f'Commands shown here: {", ".join(after_groups)}.')
         out('All other commands and help, including yours, are now hidden and will not run.')

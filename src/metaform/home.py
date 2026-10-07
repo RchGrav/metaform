@@ -978,10 +978,10 @@ def _copied(source: Path, target: Path) -> None:
             to.mkdir(parents=True, exist_ok=True)
         elif path.suffix == '.sqlite3':
             to.parent.mkdir(parents=True, exist_ok=True)
-            with sqlite3.connect(f'file:{path.as_posix()}?mode=ro', uri=True) as read, sqlite3.connect(to) as write:
+            # closed on the way out whatever happens; a connection's `with` only commits, it never closes
+            with closing(sqlite3.connect(f'file:{path.as_posix()}?mode=ro', uri=True)) as read, \
+                    closing(sqlite3.connect(to)) as write:
                 read.backup(write)
-            read.close()
-            write.close()
         elif not path.name.endswith(('.sqlite3-wal', '.sqlite3-shm')):
             to.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, to)
@@ -1165,10 +1165,9 @@ def _remove_files(store: Path, failed: list[tuple[str, str]]) -> None:
 def _copied_store(source: Path, target: Path) -> None:
     """A store copied through SQLite's own backup, so one another program holds open is copied as it stands."""
     target.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(f'file:{source.as_posix()}?mode=ro', uri=True) as read, sqlite3.connect(target) as write:
+    with closing(sqlite3.connect(f'file:{source.as_posix()}?mode=ro', uri=True)) as read, \
+            closing(sqlite3.connect(target)) as write:  # closed whatever happens; `with` on a connection never closes
         read.backup(write)
-    read.close()
-    write.close()
 
 
 def store_file(project_id: str, name: str) -> Path:

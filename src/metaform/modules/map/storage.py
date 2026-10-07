@@ -369,19 +369,24 @@ def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any =
         )
     del row
     moved = work_record(tx, _work_row(tx, work_id))
+    # the tickets of the same column, by id only: the column is a condition on three columns, WorkRecord.column,
+    # so the whole table need not be rebuilt as records to find them. Found by review, 2026-10-06.
+    same = {
+        "done": "done IS NOT NULL",
+        "doing": "done IS NULL AND taken IS NOT NULL",
+        "backlog": "done IS NULL AND taken IS NULL AND held=1",
+        "todo": "done IS NULL AND taken IS NULL AND held=0",
+    }[moved.column]
     others = [
-        record
-        for record in (
-            work_record(tx, other)
-            for other in tx.execute(
-                "SELECT * FROM work WHERE work_id<>? ORDER BY position IS NULL, position, row", (work_id,)
-            )
+        str(other["work_id"])
+        for other in tx.execute(
+            f"SELECT work_id FROM work WHERE work_id<>? AND {same} ORDER BY position IS NULL, position, row",
+            (work_id,),
         )
-        if record.column == moved.column
     ]
     at = len(others) if position is None else max(0, min(len(others), int(position)))
-    for place, record in enumerate([*others[:at], moved, *others[at:]]):
-        tx.execute("UPDATE work SET position=? WHERE work_id=?", (place, record.work_id))
+    for place, ident in enumerate([*others[:at], work_id, *others[at:]]):
+        tx.execute("UPDATE work SET position=? WHERE work_id=?", (place, ident))
     return work_record(tx, _work_row(tx, work_id), tuple(notices))
 
 
