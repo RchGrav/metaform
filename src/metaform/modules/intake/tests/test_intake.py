@@ -997,3 +997,35 @@ def test_the_ignore_list_follows_the_intake_and_exclude_is_not_a_condition(run, 
     answer = recorded(run, project, 'element', 'code.alarm.audible', 'role=SE', 'condition=exclude', 'note=stray')
     assert any(n['message'] == 'exclude is the ignore list: .metaform/ignore.txt' for n in answer['notices'])
     assert Store('timer').work(open=True, limit=0).results == ()
+
+
+@pytest.mark.req('BASE-039')
+@pytest.mark.req('MAP-046')
+def test_the_core_node_containment_notes_missing_and_join_refs_are_kept_as_the_intake_records_them(run, project):
+    """Rich, 2026-10-08: the served intake records a core node at the reserved address core, says what holds what in
+    the map's structure rather than in an address, keeps exclusions as notes with no condition, keeps missing apart
+    from the stage unbuilt, and gives a join refs where it needs them. Each was refused or lost by the tools before."""
+    recorded(run, project, 'start')
+    recorded(run, project, 'element', 'core', 'name=Kitchen timer')
+    recorded(run, project, 'element', 'code.timer.kitchen', 'name_length=2', 'name=Kitchen Timer', 'role=AUE',
+             'within=core')
+    recorded(run, project, 'element', 'code.alarm.audible', 'role=DE', 'within=code.timer.kitchen',
+             'note=exclude: a stray copy beside it')
+    recorded(run, project, 'element', 'downstream.cqu.cook', 'role=CQU', 'within=core')
+    recorded(run, project, 'join', 'downstream.cqu.cook', 'code.alarm.audible', 'purpose=Know when food is done',
+             'ef=Sounds an alarm', 'ifd=send', 'note=the join note', 'refs=[{"key": "path", "value": "src/alarm.c"}]')
+    recorded(run, project, 'element', 'code.display.digit', 'role=SE', 'within=code.timer.kitchen',
+             'condition=missing', 'note=no display yet')
+    recorded(run, project, 'finish', 'report=done')
+    store = Store('timer')
+    graph = store.graph()
+    parents = {entry.element.address: entry.parent for entry in graph.elements}
+    assert parents['code.timer.kitchen'] == 'core' and parents['code.alarm.audible'] == 'code.timer.kitchen'
+    assert parents['downstream.cqu.cook'] == 'core' and parents['core'] is None
+    notes = {entry.element.address: entry.element.note for entry in graph.elements}
+    assert notes['code.alarm.audible'] == 'exclude: a stray copy beside it'
+    [joined] = graph.joins
+    assert (joined.note, joined.ifd) == ('the join note', 'sends')
+    assert [(w.condition, w.note) for w in store.work(open=True, limit=0).results] == [('missing', 'no display yet')]
+    refs = [[(ref.key, ref.value) for ref in item.refs] for item in store.layer_items('sources', None, limit=0).results]
+    assert [('path', 'src/alarm.c')] in refs

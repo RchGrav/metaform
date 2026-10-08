@@ -38,6 +38,7 @@ NE: Notable Element — states an essential external demand or dependency.</role
     <name_length>name length</name_length>
     <name>name</name>
     <refs>refs</refs>
+    <within>within</within>
     <condition>condition: missing, broken</condition>
     <note>note</note>
   </element>
@@ -49,6 +50,7 @@ Join: purpose record living in the RE (see SCHEMA_JOIN).</receiver>
     <purpose>OP: Operative Purpose — the WHY; the RE's reason for the encounter.</purpose>
     <ef>EF: see {LB_EF} — the HOW; what the PE does, in active voice; recorded in the RE's join.</ef>
     <ifd>IFD: Information Flow Direction — the primary flow of information: sends (OP->EF) | receives (EF->OP) | both (equal need).</ifd>
+    <refs>refs</refs>
     <condition>condition: missing, broken</condition>
     <note>note</note>
   </join>

@@ -24,12 +24,12 @@ from .selection import LayerRow
 from .session import Tx
 
 EDITABLE: dict[str, tuple[str, ...]] = {
-    'element': ('name_length', 'name', 'role'),  # never the address: an element cannot be moved, MAP-015
-    'join': ('receiver', 'elements', 'type', 'purpose', 'ef', 'ifd', 'element'),  # receiver moves it, MAP-003; Rich's shape
+    'element': ('name_length', 'name', 'role', 'within', 'note'),  # never the address: an element cannot be moved, MAP-015
+    'join': ('receiver', 'elements', 'type', 'purpose', 'ef', 'ifd', 'element', 'note'),  # receiver moves it, MAP-003; Rich's shape
     'item': ('value', 'link', 'extra', 'read_first', 'always_show'),  # the flags, LAYER-021
     'property': ('element', 'value', 'extra'),
 }
-TEXT_COLUMNS = ('purpose', 'ef', 'type', 'name', 'ifd')
+TEXT_COLUMNS = ('purpose', 'ef', 'type', 'name', 'ifd', 'note', 'within')
 
 Row = Version
 

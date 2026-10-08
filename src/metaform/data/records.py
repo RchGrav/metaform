@@ -29,7 +29,9 @@ HELD_ROLES = ('DE', 'SE', 'NE')  # the role of an element a join holds, in Rich'
 # nothing; a record with no condition is a plain task. The intake and the person set it; agents at work do not.
 STAGES = ('unbuilt', 'under-construction', 'built')
 FAULTS = ('broken',)
-CONDITIONS = STAGES + FAULTS
+# missing is a finding, intended functionality that is absent, kept apart from the stage unbuilt, Rich 2026-10-08
+FINDINGS = ('missing',)
+CONDITIONS = STAGES + FAULTS + FINDINGS
 MESSAGES = ('question', 'message')  # what waits for the person at a node, MAP-050; never a condition
 COLUMNS = ('backlog', 'todo', 'doing', 'done')  # the board's columns, MAP-048
 
@@ -136,6 +138,8 @@ class Element(Record):
     open_work: tuple[str, ...] = ()
     notices: tuple[Notice, ...] = ()
     name: str | None = None  # the canonical name the project uses for it
+    within: str | None = None  # the address of the element that holds it, when the structure says so, Rich 2026-10-08
+    note: str | None = None  # what the recorder noted about it, kept on the element itself
 
 
 @dataclass(frozen=True)
@@ -169,6 +173,7 @@ class Join(Record):
     open_work: tuple[str, ...] = ()
     notices: tuple[Notice, ...] = ()
     element: str | None = None  # the associated element's address, MAP-054
+    note: str | None = None  # what the recorder noted about it, kept on the join itself
 
 
 @dataclass(frozen=True)

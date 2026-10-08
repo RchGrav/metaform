@@ -535,7 +535,7 @@ function look(id) {
 }
 
 /* ---------- 3D: a synaptic map, drawn as the approved prototype draws it ---------- */
-const CONDITIONS = ['unbuilt', 'under-construction', 'broken', 'question', 'message'];  // built draws nothing
+const CONDITIONS = ['missing', 'unbuilt', 'under-construction', 'broken', 'question', 'message'];  // built draws nothing
 /* The agents at work, VIEW-035: a figure for each ticket an agent works, from the moment it is taken until it is
  * closed. It materializes on the most primary node, the DE, makes its way along the map's own edges to the ticket's
  * node, goes onto it and circles it slowly, facing the way it moves, at one steady pace until the ticket is closed;
@@ -1160,7 +1160,7 @@ const T = {letters: null, strokes: null, order: LETTERS, cell: {value: new THREE
   screen: {value: new THREE.Vector2(1, 1)}, zoom: {value: 1}, light: {value: TEXT.light}, away: 0, last: 0,
   rows: new Map()};
 const writing = new Map();  // what is being written, by node id, kept while the map is drawn again
-const unbuilt = node => has(node, 'unbuilt') || has(node, 'under-construction');
+const unbuilt = node => has(node, 'missing') || has(node, 'unbuilt') || has(node, 'under-construction');  // missing is absent, so not built
 const asText = node => unbuilt(node) || writing.has(node.id);
 const FACE = '500 48px "IBM Plex Mono", ui-monospace, monospace', WIDE = 30, HIGH = 60;
 function weightOf(letter) {
@@ -1854,9 +1854,9 @@ function renderLegend() {
   const open = new Set([...S.elements.values()].flatMap(entry => entry.element.open_work || [])
     .concat(S.joins.flatMap(join => join.open_work || [])));
   for (const condition of CONDITIONS) if (open.has(condition))
-    legend.append(h('span', {style: {'--c': condition === 'unbuilt' || condition === 'under-construction' ? 'var(--text)'
+    legend.append(h('span', {style: {'--c': condition === 'missing' || condition === 'unbuilt' || condition === 'under-construction' ? 'var(--text)'
       : `var(--${condition === 'message' ? 'question' : condition})`}},
-      h('i', {class: {unbuilt: 'dot bloom', 'under-construction': 'dot bloom pulse', question: 'dot bloom pulse', message: 'dot bloom pulse'}[condition] || 'dot'}),
+      h('i', {class: {missing: 'dot bloom', unbuilt: 'dot bloom', 'under-construction': 'dot bloom pulse', question: 'dot bloom pulse', message: 'dot bloom pulse'}[condition] || 'dot'}),
       condition === 'question' || condition === 'message' ? `waiting: ${condition}` : `part: ${condition.replace('-', ' ')}`));
   const shown = G ? G.graphData().nodes.length : 0;
   $('#count').textContent = noMetaform() ? 'no metaform yet'
@@ -3250,11 +3250,11 @@ addEventListener('keydown', event => { if (event.key === 'Escape' && !$('#menu')
 /* The board, VIEW-037: the project's tickets as a classic kanban board, one column for each place a ticket can be,
  * a card for each ticket. A card dragged to a column moves its ticket there and to the place it was dropped. */
 const B = {tickets: [], off: new Set()};
-const KINDS = ['unbuilt', 'under-construction', 'broken'];
+const KINDS = ['missing', 'unbuilt', 'under-construction', 'broken'];
 const BOARD = [['backlog', 'Backlog'], ['todo', 'To do'], ['doing', 'Doing'], ['done', 'Done']];
 /* What a record's condition says about the part it is at, MAP-046: the condition belongs to the element or join, not
    to the ticket; the ticket is the work on it. A record with no condition is a plain task. */
-const CONDITION_WORDS = {unbuilt: 'not built yet', 'under-construction': 'under construction', built: 'built', broken: 'broken'};
+const CONDITION_WORDS = {missing: 'missing', unbuilt: 'not built yet', 'under-construction': 'under construction', built: 'built', broken: 'broken'};
 function conditionLabel(ticket, extra = '') {
   const condition = ticket.condition;
   const words = condition ? CONDITION_WORDS[condition] || condition : 'task';
@@ -4505,6 +4505,12 @@ function layerInView(layerId) {
   const shown = S.view === null ? layer.on : S.view.has(layer.name);
   return shown ? layer : false;
 }
+/* An element's parent: the element that holds it, when the intake recorded it, Rich 2026-10-08; otherwise the
+ * nearest address it starts with. */
+function parentOf(element) {
+  if (element.within && [...S.elements.values()].some(entry => entry.element.address === element.within)) return element.within;
+  return nearestParent(element.address);
+}
 function nearestParent(address) {
   const parts = address.split('.');
   const byAddress = new Map([...S.elements.values()].map(entry => [entry.element.address, entry.element.id]));
@@ -4539,12 +4545,13 @@ async function appliedOps() {
       const kept = S.elements.get(op.id)?.element || {};
       const element = {...kept, id: op.id, layer_id: op.layer_id, layer: layer.name,
         ...('address' in data ? {address: data.address} : {}), ...('name' in data ? {name: data.name} : {}),
-        ...('name_length' in data ? {name_length: data.name_length} : {}), ...('role' in data ? {role: data.role} : {})};
+        ...('name_length' in data ? {name_length: data.name_length} : {}), ...('role' in data ? {role: data.role} : {}),
+        ...('within' in data ? {within: data.within} : {}), ...('note' in data ? {note: data.note} : {})};
       if (!element.address) return false;
       element.reading = plainWords(element.address);
       element.short_name = shortName(element.address, element.name_length);
       element.open_work = kept.open_work || [];
-      S.elements.set(op.id, {element, parent: nearestParent(element.address)});
+      S.elements.set(op.id, {element, parent: parentOf(element)});
     } else if (op.kind === 'join') {
       S.joins = S.joins.filter(join => join.id !== op.id);
       if (gone) continue;
@@ -4577,7 +4584,7 @@ async function appliedOps() {
       S.items.set(key, {kind: op.kind, key, item, value, layer: layer.name, layerKind: layer.kind});
     }
   }
-  for (const entry of S.elements.values()) entry.parent = nearestParent(entry.element.address);
+  for (const entry of S.elements.values()) entry.parent = parentOf(entry.element);
   S.whole = {elements: S.elements, joins: S.joins};
   S.seq = ops[ops.length - 1].seq;
   draw3D();

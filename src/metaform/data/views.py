@@ -48,7 +48,7 @@ def element(tx: Tx, element_id: str, res: Resolver | None, layers: dict[str, Lay
     length = current['name_length'] if whole_number(current['name_length']) else None
     return operations.decorate(tx, Element(element_id, address, current.layer_id, known[current.layer_id].name,
                    reading(address), short_name(address, length), current['name_length'], current['role'],
-                   name=current['name']))
+                   name=current['name'], within=current['within'], note=current['note']))
 
 
 def held(tx: Tx, join_row: int) -> tuple[Held, ...]:
@@ -78,7 +78,7 @@ def join_orphaned(tx: Tx, row: Row) -> bool:
 def join(tx: Tx, join_id: str, row: Row, layers: dict[str, LayerRow], orphaned: bool = False) -> Join:
     return operations.decorate(tx, Join(join_id, row.layer_id, layers[row.layer_id].name,
                 str(row['type']), str(row['receiver']), address_of(tx, str(row['receiver'])), row['purpose'],
-                row['ef'], row['ifd'], held(tx, row.seq), None, orphaned, element=row['element']))
+                row['ef'], row['ifd'], held(tx, row.seq), None, orphaned, element=row['element'], note=row['note']))
 
 
 def visible_join(tx: Tx, join_id: str, row: Row, res: Resolver | None) -> Join | None:

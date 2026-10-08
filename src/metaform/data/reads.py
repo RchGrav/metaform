@@ -463,7 +463,8 @@ def graph(tx: Tx, res: Resolver | None, limit: int, after: str | None) -> GraphP
         shown[address] = element_view is not None
         if element_view is None:
             continue
-        parent = next((prefix for prefix in reversed(prefixes(element_view.address)[:-1]) if in_context(prefix)), None)
+        parent = element_view.within if element_view.within and in_context(element_view.within) else next(
+            (prefix for prefix in reversed(prefixes(element_view.address)[:-1]) if in_context(prefix)), None)
         elements.append(GraphElement(element_view, parent))
         held += joins(tx, res, element_view.id, 'receiver', 0, None).results
     return GraphPage(tuple(elements), tuple(held), found[-1] if more else None)
@@ -485,8 +486,8 @@ def layer_graph(tx: Tx, layer: str) -> GraphPage:
         element_view = views.element(tx, element_id, None)
         if element_view is None:
             continue
-        parent = next((prefix for prefix in reversed(prefixes(element_view.address)[:-1]) if prefix in addresses),
-                      None)
+        parent = element_view.within if element_view.within in addresses else next(
+            (prefix for prefix in reversed(prefixes(element_view.address)[:-1]) if prefix in addresses), None)
         elements.append(GraphElement(element_view, parent))
         held += [join for join in joins(tx, None, element_view.id, 'receiver', 0, None).results
                  if join.layer_id == found.id]

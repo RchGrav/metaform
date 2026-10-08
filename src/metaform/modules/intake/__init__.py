@@ -284,22 +284,23 @@ def _described(element: Element) -> bool:
     return element.role is not None or element.name_length is not None
 
 
-def _sources(ctx: Context, rec: Recording, element_id: str, address: str, refs: list[Any], notices: Notices) -> None:
-    """The refs given with an element, written as its one item of the sources layer, replacing what that item held,
+def _sources(ctx: Context, rec: Recording, kind: Literal['element', 'join'], element_id: str, address: str,
+             refs: list[Any], notices: Notices) -> None:
+    """The refs given with an element or a join, written as its one item of the sources layer, replacing what that item held,
     Rich 2026-10-04: "if you want to have refs you add a sources layer". Off with intake_sources, nothing is written."""
     if not ctx.setting('intake_sources'):
         notices.append({'where': 'refs', 'message': 'intake_sources is off, so the refs were not recorded.'})
         return
     store = rec.store
     store.layer(SOURCES, 'intake', 'refs', kind='layer', mutable=True, hideable=True, ready=True)  # read at once
-    held = [item for item in store.layer_items(SOURCES, Node('element', element_id), limit=0).results
+    held = [item for item in store.layer_items(SOURCES, Node(kind, element_id), limit=0).results
             if isinstance(item, Item)]
     if held:
         _note(notices, store.edit(held[0].id, {'refs': refs}))
         for extra in held[1:]:
             _note(notices, store.remove(extra.id))
     else:
-        _note(notices, store.add_item(SOURCES, Node('element', element_id), address, refs=refs))
+        _note(notices, store.add_item(SOURCES, Node(kind, element_id), address, refs=refs))
 
 
 def element(ctx: Context) -> Any:
@@ -310,6 +311,9 @@ def element(ctx: Context) -> Any:
     address = ctx.nouns[ADDRESS]
     given = {'name_length': _whole(ctx.nouns.get('name_length')), 'name': ctx.nouns.get('name'),
              'role': ctx.nouns.get('role')}
+    # what holds it, and a note without a condition, are kept on the element itself, Rich 2026-10-08
+    kept = {key: ctx.nouns[key] for key in ('within', 'note') if ctx.nouns.get(key)
+            and (key == 'within' or not ctx.nouns.get('condition'))}
     current = rec.store.element(address, raw=True)
     element_id: str | None
     if current is not None and current.layer_id == rec.layer.id:
@@ -324,9 +328,11 @@ def element(ctx: Context) -> Any:
         made = rec.store.add_element(rec.layer.name, address, **given)
         _note(notices, made)
         element_id = getattr(made, 'id', None)
+    if kept and element_id is not None:
+        _note(notices, rec.store.edit(element_id, kept))
     refs = _list(ctx, 'refs')
     if refs is not None and element_id is not None:
-        _sources(ctx, rec, element_id, address, refs, notices)
+        _sources(ctx, rec, 'element', element_id, address, refs, notices)
     _condition(ctx, rec, 'element', element_id, notices)
     return {ADDRESS: address, 'layer': rec.layer.name, 'notices': notices}
 
@@ -338,15 +344,9 @@ def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], t
     if ctx.nouns.get('condition') == 'exclude':  # not a judgment the intake makes: the person's ignore list
         notices.append({'where': 'condition', 'message': f'exclude is the ignore list: {home.IGNORE_FILE}'})
         return
-    if thing is None or not ctx.nouns.get('condition'):  # none or empty: no finding, MAP-046
-        if thing is not None and ctx.nouns.get('note'):
-            notices.append({'where': 'note', 'message': 'A note goes with a condition, missing or broken; '
-                                                        'without one it was not recorded.'})
+    if thing is None or not ctx.nouns.get('condition'):  # none or empty: no finding; a note is kept on the object
         return
-    # The intake says missing for intended functionality that is absent; until missing is kept apart from the
-    # stage, the record holds it as unbuilt.
-    stage = {'missing': 'unbuilt'}.get(str(ctx.nouns['condition']), str(ctx.nouns['condition']))
-    _note(notices, rec.store.add_work(Node(kind, thing), stage, note=ctx.nouns.get('note')))
+    _note(notices, rec.store.add_work(Node(kind, thing), str(ctx.nouns['condition']), note=ctx.nouns.get('note')))
 
 
 JOIN_FIELDS = ('purpose', 'ef', 'ifd')
@@ -381,8 +381,11 @@ def join(ctx: Context) -> Any:
         added = [address for address in elements if address not in holding]
         if added:
             changes['elements'] = [*holding, *added]
+        if ctx.nouns.get('note') and not ctx.nouns.get('condition'):
+            changes['note'] = ctx.nouns['note']
         if changes:
             _note(notices, rec.store.edit(held.id, changes), words)
+        _join_refs(ctx, rec, held.id, receiver, notices)
         _condition(ctx, rec, 'join', held.id, notices)
         return result
     for field in JOIN_FIELDS:
@@ -391,8 +394,20 @@ def join(ctx: Context) -> Any:
     made = rec.store.add_join(rec.layer.name, receiver, elements,
                               **{field: ctx.nouns.get(field) for field in JOIN_FIELDS})
     _note(notices, made, words)
-    _condition(ctx, rec, 'join', getattr(made, 'id', None), notices)
+    join_id = getattr(made, 'id', None)
+    if join_id is not None and ctx.nouns.get('note') and not ctx.nouns.get('condition'):
+        _note(notices, rec.store.edit(join_id, {'note': ctx.nouns['note']}))
+    if join_id is not None:
+        _join_refs(ctx, rec, join_id, receiver, notices)
+    _condition(ctx, rec, 'join', join_id, notices)
     return result
+
+
+def _join_refs(ctx: Context, rec: Recording, join_id: str, receiver: str, notices: Notices) -> None:
+    """The refs given with a join, as its item of the sources layer, the same way an element's are kept."""
+    refs = _list(ctx, 'refs')
+    if refs is not None:
+        _sources(ctx, rec, 'join', join_id, receiver, refs, notices)
 
 
 FINISHED = ('The intake is finished, so nothing was changed. The metaform changes by refining, with metaform map '
@@ -623,6 +638,7 @@ MODULE = Module(
                     Noun('name', E('name', ''), required=False),
                     Noun('role', E('role', ''), required=False, schema=ROLE),
                     Noun('refs', E('refs', ''), required=False, schema=REFS),
+                    Noun('within', E('within', ''), required=False),
                     *CONDITION)),
         Verb('join', join, "Record one join: the receiver's purpose served by the elements it holds. Recorded again "
                            'with an element it holds, the fields given replace its own and new elements are added. An '
@@ -633,6 +649,7 @@ MODULE = Module(
                     Noun('purpose', J('purpose', ''), required=False),
                     Noun('ef', J('ef', ''), required=False),
                     Noun('ifd', J('ifd', ''), required=False, schema=IFD),
+                    Noun('refs', J('refs', ''), required=False, schema=REFS),
                     *CONDITION)),
         Verb('show', show, 'The intake being recorded, whole or one receiver at a time.',
              nouns=(Noun('receiver', J('receiver', ''), required=False),)),
