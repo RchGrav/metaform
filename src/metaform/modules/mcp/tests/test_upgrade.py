@@ -50,8 +50,11 @@ def upgrade(installation, changed=True):
         db.execute("UPDATE meta SET value=? WHERE key='schema_version'", (newer,))
 
 
-REQUEST = {'command': 'work', 'arguments': {'op': 'add', 'node': 'code.alarm.audible',
-                                          'condition': '', 'task': 'One recovered write.'}}
+# One durable write an agent may make over the tool, MAP-050: a ticket is the person's to write, so the write under
+# test is a tag on the intake layer, one op in the log.
+REQUEST = {'command': 'tag', 'arguments': {'layer': 'intake', 'tag': 'recovered'}}
+WRITTEN = "SELECT count(*) FROM ops WHERE data LIKE '%recovered%'"
+
 
 
 @pytest.mark.parametrize(('changed', 'recovery'), [(True, 'relay'), (False, 'relay'), (True, 'manual')])
@@ -72,9 +75,9 @@ def test_live_connection_recovers_only_when_newer_code_is_available(run, install
             if changed and recovery == 'relay':
                 assert not result.is_error, result
                 assert not following.is_error, following
-                # Check durable rows directly: replay must create exactly one work record.
+                # Check durable rows directly: replay must write the tag exactly once.
                 with closing(sqlite.connect(database)) as db:
-                    assert db.execute('SELECT count(*) FROM work').fetchone()[0] == 1
+                    assert db.execute(WRITTEN).fetchone()[0] == 1
             else:
                 assert result.is_error and following.is_error
                 assert 'schema version' in result.content[0].text
@@ -161,8 +164,9 @@ def test_hand_over_finishes_an_active_call_without_repeating_its_committed_write
                 result = await second
                 assert not result.is_error, result
                 with closing(sqlite.connect(database)) as db:
-                    assert db.execute('SELECT count(*) FROM work').fetchone()[0] == 2
+                    assert db.execute('SELECT count(*) FROM work').fetchone()[0] == 1
                     assert db.execute("SELECT count(*) FROM work WHERE task='Already committed.'").fetchone()[0] == 1
+                    assert db.execute(WRITTEN).fetchone()[0] == 1
             finally:
                 (folder / 'finish').touch()
                 await first
@@ -182,7 +186,7 @@ def test_july_connection_and_subscription_finish_across_an_upgrade(installation)
         assert not result.get('isError'), result
         assert not client.call('map', {'command': 'work', 'arguments': {'open': True}}, limit=10).get('isError')
         with closing(sqlite.connect(database)) as db:
-            assert db.execute('SELECT count(*) FROM work').fetchone()[0] == 1
+            assert db.execute(WRITTEN).fetchone()[0] == 1
     finally:
         client.close()
 
@@ -217,15 +221,15 @@ def test_cancellation_settles_active_and_buffered_calls_before_hand_over(install
         client.open('tools/call', {'name': 'map', 'arguments': REQUEST})
         time.sleep(0.1)  # the waiting call prevents replacement while another request is buffered
         cancelled = client.open('tools/call', {'name': 'map', 'arguments': {
-            **REQUEST, 'arguments': {**REQUEST['arguments'], 'task': 'Cancelled before dispatch.'}}})
+            **REQUEST, 'arguments': {**REQUEST['arguments'], 'tag': 'cancelled'}}})
         client.notify('notifications/cancelled', {'requestId': cancelled})
         client.notify('notifications/cancelled', {'requestId': active})
         result = client.call('map', {'command': 'work', 'arguments': {'open': True}}, limit=10)
         assert not result.get('isError'), result
         assert (folder / 'settled').exists()
         with closing(sqlite.connect(database)) as db:
-            assert db.execute('SELECT count(*) FROM work').fetchone()[0] == 1
-            assert db.execute("SELECT count(*) FROM work WHERE task='Cancelled before dispatch.'").fetchone()[0] == 0
+            assert db.execute(WRITTEN).fetchone()[0] == 1
+            assert db.execute("SELECT count(*) FROM ops WHERE data LIKE '%cancelled%'").fetchone()[0] == 0
     finally:
         client.close()
 
@@ -244,6 +248,6 @@ def test_flat_project_override_recovers_the_selected_store(run, installation):
             result = await client.call_tool('map', {**REQUEST, 'project': 'proj'})
             assert not result.is_error, result
             with closing(sqlite.connect(database)) as db:
-                assert db.execute('SELECT count(*) FROM work').fetchone()[0] == 1
+                assert db.execute(WRITTEN).fetchone()[0] == 1
 
     asyncio.run(check())
