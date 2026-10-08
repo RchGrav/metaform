@@ -3227,6 +3227,9 @@ async function menu(id, x = null, y = null) {
       onclick: () => { box.hidden = true; history(id); }}, 'Work history ', h('b', {}, String(tickets.length))),
     h('button', {class: 'chat', role: 'menuitem', onclick: () => { box.hidden = true; talkAbout(nodeTalk(id), calledOf(id) || 'this node'); }},
       'Chat about this'),
+    h('button', {class: 'raise', role: 'menuitem', title: 'Say what is wrong with this part; a sentinel investigates and brings you proposals',
+      onclick: async () => { box.hidden = true; await select(id, true); const issue = $('#work .issue'); if (issue) { issue.hidden = false; issue.querySelector('textarea').focus(); } }},
+      'Raise an issue'),
     h('button', {class: 'task', role: 'menuitem', onclick: () => { box.hidden = true; giveWork(id); }}, 'Add Task'),
     h('button', {class: 'element', role: 'menuitem', onclick: () => { box.hidden = true; addElement(id); }}, 'Add Element'),
     h('button', {class: 'agent', disabled: !tickets.some(waiting), role: 'menuitem', onclick: () => { box.hidden = true;
