@@ -406,10 +406,8 @@
      part of as receiver — an ordinary join per D115 (B6), never a
      separate top-level element.
   4. LET the purpose join carry the combined encounter; optimize no
-     functionality away. Absorbed subparts do not remain as independent
-     root elements: REMOVE them, preserving their atomic realities
-     exclusively as the deeper joins inside the load-bearing parent's
-     matching purpose join.
+     functionality away. An absorbed subpart stays an element, held by
+     the parent's join; it is never removed.
   5. Δ => {Phase} := PROOF.
 
 @EXECUTE_PIPELINE (P_Proof):                                  — step 12
