@@ -6,13 +6,15 @@ METAFORM(
 
   elements := [
 
-    # The core node: the project itself. An element with a name and no
-    # namespace address. It is not a type, so it takes no part in the
-    # namespace and is never reversed or read as one. Its job is
+    # The core node: the project itself. An element with a name and the
+    # namespace address core. It is not a type, so it takes no part in the
+    # namespace and is never reversed or read as one. namespace carries
+    # only a single placeholder word "core", Its job is
     # connective: everything the intake records connects to it — the
     # AUEs, the collections, and the CQUs. In a single-artifact project
     # it holds the one AUE directly.
     ELEMENT(
+      namespace_address := core,
       name := [canonical name | project name | inferred name],
 
       elements := [
@@ -78,7 +80,7 @@ METAFORM(
 )
 
 # Notes
-+> The core node is an element with a name and no namespace address; it is not a type, and it holds the AUEs, the collections, and the CQUs.
++> The core node is an element with a name and the namespace address core; it is not a type, and it holds the AUEs, the collections, and the CQUs.
 +> The element owning a purpose join is the RE; its nested element is the PE.
 +> PE is not a role. An element may receive in one join and provide in another.
 +> purpose is the only join type.

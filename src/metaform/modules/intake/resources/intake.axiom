@@ -22,8 +22,8 @@
 # ════════════════════════════════════════════════════════════════════
 
 @LEXICON — load-bearing. Every term resolves here and nowhere else.
-  Core node := the project itself. An ELEMENT with a name and no namespace
-          address. It is not a type, so it takes no part in the namespace
+  Core node := the project itself. An ELEMENT with a name and the namespace
+          address core. It is not a type, so it takes no part in the namespace
           and is never reversed or read as one. Its job is connective:
           everything the intake records connects to it — the AUEs, the
           collections, and the CQUs. In the schema it is the single child
