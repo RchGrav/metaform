@@ -65,7 +65,6 @@ workflow agent to repair its execution instructions and restart it. Changes to t
 - `nodes`: the line before the namespace nodes in what `metaform <nonce>` prints.
 - `handed`: what `handoff id=<work id>` prints, the nonce to give the next agent.
 - `handoff`: the one prompt the agent is sent. It tells the agent its ticket is taken for it, to read it with `metaform map work id=<id>` and work it, and how to plan, report each step and close it. `metaform <nonce>` serves the same text, then the `nodes` line and the nodes.
-- `sentinel`: Rich's Function Sentinel as he wrote it, with the frame that gives it the person's report and the node, served to the agent `raise` starts, VIEW-045.
 - `talk`, `system`, `prep`: the conversation agents the person summons from the page.
 
 ## Verbs
@@ -75,7 +74,7 @@ workflow agent to repair its execution instructions and restart it. Changes to t
 - `message <id> <text>...`: accepts the text for the running agent as `session/prompt`; returns `sent: true`. During a turn, messages and question answers wait in arrival order until the turn ends. One prompt runs at a time. Stop discards the waiting prompts.
 - `stop <id>`: sends `session/cancel`, answers every waiting permission request as cancelled, closes the agent's input and ends its process group; returns `stopped: true`.
 - `handoff`: run through a nonce, `metaform <nonce>`, the hand-off prompt followed by the namespace nodes of the work, the where read of the ticket's node and of each node it links. Run as `handoff id=<work id>`, it makes a new nonce for that ticket and prints `metaform <nonce>` for the agent the work is handed to; it takes nothing. A nonce made this way is not closed by the module.
-- `raise <node> -- <text>`: the person raises an issue on a node; a held ticket holds the report and a sentinel starts on it in the chat, VIEW-045.
+- `raise <node> -- <text>`: the person raises an issue on a node; a held ticket holds the report and an agent starts on it in the chat with the workflow module's `sentinel` skill as its first turn, served whole with the report bound as its input, VIEW-045.
 - `autostart`, when enabled, starts the free glyphs in board order over the tickets that have not been tried: open, not taken, not held, with a task. A ticket an agent stopped on stays taken until the person puts it back; nothing restarts by itself. Without distributed glyphs it fills the configured agent slots.
 - `recover` applies the dead runner recovery setting and reports tickets released or deferred with their reasons. Autostart applies it before selecting tickets, including when automatic agent starts are off. Session reads preserve ownership.
 

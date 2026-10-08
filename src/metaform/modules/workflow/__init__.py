@@ -45,7 +45,7 @@ SECTIONS = ('axiom-language', 'metaform-system', 'namespace-rules', 'workflow-lo
             'delexicalization-rules')
 LIBS = ('lib_axiom', 'lib_metaform', 'lib_workflow', 'lib_quality')
 SKILLS = ('scan', 'write_workflow', 'import_workflow', 'workflow_efficiency', 'prompt_efficiency',
-          'workflow_builder', 'workflow_evaluator')
+          'workflow_builder', 'workflow_evaluator', 'sentinel')
 
 
 def _prompts() -> None:
@@ -308,6 +308,21 @@ def _assignment(word: str) -> str:
         input=prompt_files.required(PACKAGE, 'assignment_input', input=given) if given else '', nonce=word)
 
 
+def served(name: str, given: str | None = None) -> str:
+    """A skill whole, for an agent already connected over ACP: its libs, the skill and the input bound as data, with
+    no nonce, Rich 2026-10-08. Dispatch sends it as a purpose agent's first turn; nothing is redeemed."""
+    skill_name = _known(name, SKILLS, 'skill')
+    fills = _fills()
+    libs = '\n\n'.join(prompt_files.required(PACKAGE, lib_name, **fills) for lib_name in _requires(skill_name))
+    return prompt_files.required(
+        PACKAGE, 'served', libs=libs, skill=prompt_files.required(PACKAGE, skill_name),
+        input=prompt_files.required(PACKAGE, 'assignment_input', input=given) if given else '')
+
+
+def serve(ctx: Context) -> str:
+    return served(str(ctx.nouns['name']), _words(ctx.nouns.get('input')) if ctx.nouns.get('input') else None)
+
+
 def assign(ctx: Context) -> Any:
     """Run directly, a nonce whose function is this verb; reached through that nonce, the assignment, BASE-050."""
     held = nonce.reached()
@@ -394,6 +409,10 @@ MODULE = Module(
         Verb('skill', skill, "Read one skill's Axiom.", nouns=(Noun('name', 'The skill name.'),)),
         Verb('skills', skills, 'List the skills, each with what its # skill: line says and the libs its # requires: '
                                'line names.'),
+        Verb('serve', serve, 'Read one skill whole, its libs first and an input bound as data, as dispatch sends it to '
+                             'an agent it started.',
+             nouns=(Noun('name', 'The skill name.'), Noun('input', 'The input, bound as data.', required=False)),
+             surfaces=('cli',)),
         Verb('scan', scan, 'Read the scan skill with a workflow and its task bound as data.',
              nouns=(Noun('workflow', 'The workflow text or address.'),
                     Noun('task', 'write, import, workflow_efficiency or prompt_efficiency.', required=False))),

@@ -421,6 +421,15 @@ def map_work(ctx: Context, **nouns: Any) -> Any:
     return verb.run(context('map', ctx.folder, project=ctx.project, nouns=nouns))
 
 
+def workflow_skill(ctx: Context, name: str, given: str) -> str:
+    """A skill of the workflow module served whole with an input, for a purpose agent's first turn, VIEW-045."""
+    found = next((module for module in surface(ctx.folder) if module.id == 'workflow'), None)
+    if found is None:
+        raise Stop('The workflow module is not active; the sentinel is one of its skills.', 'metaform enable workflow')
+    verb = next(verb for verb in found.verbs if verb.name == 'serve')
+    return str(verb.run(context('workflow', ctx.folder, project=ctx.project, nouns={'name': name, 'input': given})))
+
+
 def release(store: Store, work_id: str, by: str, took: bool, session_id: str | None, how: str) -> None:
     """What an ending session leaves: its session row says it ended. A ticket it took and did not finish stays taken,
     with the agent's last note on it, until the person puts it back on the board: nothing restarts by itself. A

@@ -59,6 +59,7 @@ from . import (
     require_eligible,
     startable,
     ticket,
+    workflow_skill,
 )
 
 START_LIMIT = 300.0  # the one wait for the agent to start and make its session; npx may download it first
@@ -612,12 +613,11 @@ class Session:
         await self.write(take)
         if self.ending:
             return
-        if self.system and self.ctx.nouns.get('sentinel'):  # the person raised an issue: the sentinel investigates it
+        if self.system and self.ctx.nouns.get('sentinel'):  # the person raised an issue: the sentinel skill, VIEW-045
             address = str(self.ctx.nouns['sentinel'])
             record = await asyncio.to_thread(ticket, self.store, self.work_id)
-            self.turn(prompt('sentinel', report=record.note or '', node=address,
-                             read=f'`metaform map where {address}`, its refs in `metaform map node {address}`, and '
-                                  f'this ticket with `metaform map work id={self.work_id}`'))
+            given = f'node: {address}\nticket: {self.work_id}\nreport:\n{record.note or ""}'
+            self.turn(await asyncio.to_thread(workflow_skill, self.ctx, 'sentinel', given))
             return
         if self.system and self.ctx.nouns.get('talk'):  # the person clicked something to talk about: no ticket work
             about, read = await asyncio.to_thread(subject, self.store, self.work_id, str(self.ctx.nouns['talk']))
