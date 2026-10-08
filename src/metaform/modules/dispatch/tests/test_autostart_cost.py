@@ -16,8 +16,8 @@ def test_autostart_reads_work_once_and_uses_bulk_settings(dispatch, run, monkeyp
 
     run('set', '--dispatch-autostart', '--dispatch-agents=2', cwd=dispatch.folder)
     first = dispatch.id
-    second = dispatch.store.add_work(dispatch.node, 'missing', task='Second ticket').id
-    held = dispatch.store.add_work(dispatch.node, 'missing', task='Held ticket').id
+    second = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Second ticket').id
+    held = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Held ticket').id
     run('map', 'work', 'op=edit', f'id={held}', 'hold=true', cwd=dispatch.folder)
     run('map', 'work', 'op=edit', f'id={first}', 'eligible=["claude"]', 'glyph=kite', cwd=dispatch.folder)
     run('map', 'work', 'op=edit', f'id={second}', 'eligible=["gemini"]', cwd=dispatch.folder)

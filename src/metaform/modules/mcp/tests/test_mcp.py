@@ -1148,7 +1148,7 @@ def test_a_direct_claim_over_mcp_is_honored_by_the_agent_the_client_names_at_ini
 
     from metaform.data import Node
     store = Store('proj')
-    gui = store.add_work(Node('element', 'code.timer.kitchen'), 'missing', task='GUI work').id
+    gui = store.add_work(Node('element', 'code.timer.kitchen'), 'unbuilt', task='GUI work').id
     run('map', 'work', 'op=edit', f'id={gui}', 'eligible=["claude"]', cwd=mapped)
     params = StdioServerParameters(command=sys.executable, args=['-m', 'metaform', 'mcp', 'serve'], cwd=str(mapped),
                                    env={**os.environ, 'METAFORM_HOME': str(home)})

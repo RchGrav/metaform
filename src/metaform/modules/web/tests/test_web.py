@@ -4757,7 +4757,7 @@ def test_the_board_holds_the_tickets_in_four_columns_and_a_card_dragged_moves_it
     alarm = store.element('code.alarm.audible').id
     kitchen = Node('element', 'code.timer.kitchen')
     todo = store.add_work(Node('element', 'code.alarm.audible'), 'flawed', task='a quieter tone', links=[kitchen])
-    store.add_work(kitchen, 'enhancement', task='a second countdown', held=True)
+    store.add_work(kitchen, None, task='a second countdown', held=True)
     from datetime import UTC, datetime, timedelta
 
     from metaform import home
@@ -4767,7 +4767,7 @@ def test_the_board_holds_the_tickets_in_four_columns_and_a_card_dragged_moves_it
         doing = store.add_work(Node('element', 'code.alarm.audible'), 'broken', task='wire the tone')
     store.take_work(doing.id, steps=3, by='codex')
     store.step_work(doing.id, 'Traced the pin.')
-    done = store.add_work(kitchen, 'missing', task='the display')
+    done = store.add_work(kitchen, 'unbuilt', task='the display')
     store.finish_work(done.id, 'built')
     started(run)
     page, problems, _ = opened(browser, web)
@@ -4814,7 +4814,7 @@ def test_board_priority_controls_save_order_with_filters_and_after_reloading(run
     from metaform.data import Node, Store
     store = Store('proj')
     node = Node('element', 'code.alarm.audible')
-    tickets = [store.add_work(node, 'enhancement', task=f'priority {name}') for name in ('first', 'second', 'third')]
+    tickets = [store.add_work(node, None, task=f'priority {name}') for name in ('first', 'second', 'third')]
     for position, ticket in enumerate(tickets):
         store.move_work(ticket.id, 'todo', position)
     started(run)

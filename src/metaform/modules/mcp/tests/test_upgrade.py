@@ -51,7 +51,7 @@ def upgrade(installation, changed=True):
 
 
 REQUEST = {'command': 'work', 'arguments': {'op': 'add', 'node': 'code.alarm.audible',
-                                          'condition': 'enhancement', 'task': 'One recovered write.'}}
+                                          'condition': '', 'task': 'One recovered write.'}}
 
 
 @pytest.mark.parametrize(('changed', 'recovery'), [(True, 'relay'), (False, 'relay'), (True, 'manual')])
@@ -134,7 +134,7 @@ def test_hand_over_finishes_an_active_call_without_repeating_its_committed_write
         from metaform.data import Node
         SUPPORTED_OS = ('linux', 'macos', 'windows')
         async def commit(ctx):
-            ticket = ctx.require_store().add_work(Node('element', 'code.alarm.audible'), 'enhancement',
+            ticket = ctx.require_store().add_work(Node('element', 'code.alarm.audible'), None,
                                                  task='Already committed.')
             (ctx.folder / 'committed').write_text(ticket.id)
             while not (ctx.folder / 'finish').exists():

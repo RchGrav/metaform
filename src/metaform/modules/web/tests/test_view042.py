@@ -35,8 +35,8 @@ def test_autostart_clears_waiting_work_including_questioned_tickets_before_the_a
     for ticket in store.work(open=True, limit=0).results:
         store.finish_work(ticket.id, 'Existing fixture work completed.')
     node = Node('element', store.element('code.alarm.audible').id)
-    tickets = [store.add_work(node, 'missing', task=f'Complete task {n}') for n in range(3)]
-    questioned = store.add_work(node, 'missing', task='Continue independent work', held=True)
+    tickets = [store.add_work(node, 'unbuilt', task=f'Complete task {n}') for n in range(3)]
+    questioned = store.add_work(node, 'unbuilt', task='Continue independent work', held=True)
     question = store.ask(node, 'Which approach?', work=questioned.id, suggestions=['Use the existing approach'])
     started(run)
     headers = {'Content-Type': 'application/json', 'Origin': f'http://127.0.0.1:{web}'}

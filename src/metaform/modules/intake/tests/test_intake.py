@@ -357,10 +357,10 @@ def test_a_report_and_feedback_are_saved_and_a_work_record_on_the_intake_is_coun
     # The record is written while the intake is being recorded, through the map tool, never through an intake field.
     run('intake', 'start', '--json', cwd=project)
     run('intake', 'element', 'code.alarm.audible', 'role=SE', '--json', cwd=project)
-    made = json.loads(run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'condition=exclude',
+    made = json.loads(run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'condition=broken',
                           'note=alarm.c conflicts with specifications/alarm.md:12', 'task=review the code against the linked specification', '--json',
                           cwd=project).stdout)
-    assert made['condition'] == 'exclude'
+    assert made['condition'] == 'broken'
     assert made['notices'] == []
     report = submit(run, project, copy.deepcopy(FIXTURE), tmp_path,
                     extra=('report=The alarm pin is unconnected.', 'feedback=The join fields were clear.'))
@@ -376,12 +376,12 @@ def test_a_report_and_feedback_are_saved_and_a_work_record_on_the_intake_is_coun
     provenance = Store('timer').provenance(report['layer'])
     assert sorted((ref.key, ref.value) for ref in provenance.refs) == [
         ('feedback', f'{layer_id}-feedback.md'), ('report', f'{layer_id}-report.md')]
-    exclude = json.loads(run('map', 'work', 'condition=exclude', '--json', cwd=project).stdout)['results']
+    exclude = json.loads(run('map', 'work', 'condition=broken', '--json', cwd=project).stdout)['results']
     assert [(row['address'], row['condition'], row['note']) for row in exclude] == [
-        ('code.alarm.audible', 'exclude', 'alarm.c conflicts with specifications/alarm.md:12')]
+        ('code.alarm.audible', 'broken', 'alarm.c conflicts with specifications/alarm.md:12')]
     assert json.loads(run('map', 'work', f'id={exclude[0]["id"]}', '--json', cwd=project).stdout)['task'] == (
         'review the code against the linked specification')  # a list row leaves its task out, MAP-049
-    assert Store('timer').element('code.alarm.audible').open_work == ('exclude',)
+    assert Store('timer').element('code.alarm.audible').open_work == ('broken',)
 
 
 @pytest.mark.req('MAP-046')
@@ -901,7 +901,7 @@ def test_a_condition_given_with_an_element_or_a_join_is_an_open_work_record_at_i
                        'note=Non-debug modes are forced to debug.')
     run('intake', 'element', 'code.timer', 'role=DE', 'name=timer', cwd=project)
     join = recorded(run, project, 'join', 'code.timer', '["code.auth"]', 'purpose=p', 'ef=f', 'ifd=receives',
-                    'condition=missing', 'note=The demo does not declare its autoap dependency.')
+                    'condition=unbuilt', 'note=The demo does not declare its autoap dependency.')
     plain = recorded(run, project, 'element', 'code.clock', 'role=SE', 'name=clock')
     for made in (element, join, plain):
         assert made['notices'] == []
@@ -911,7 +911,7 @@ def test_a_condition_given_with_an_element_or_a_join_is_an_open_work_record_at_i
     work = {(row.node_kind, row.node_id): (row.condition, row.note, row.done) for row in store.work(open=True, limit=0).results}
     assert work == {
         ('element', store.element('code.auth').id): ('broken', 'Non-debug modes are forced to debug.', None),
-        ('join', held.id): ('missing', 'The demo does not declare its autoap dependency.', None)}
+        ('join', held.id): ('unbuilt', 'The demo does not declare its autoap dependency.', None)}
     assert Store('timer').element('code.auth').open_work == ('broken',)  # what the page draws the node from
     assert 'condition' not in Store('timer').element('code.auth').to_dict()  # apart from the map, MAP-046
     assert Store('timer').element('code.clock').open_work == ()

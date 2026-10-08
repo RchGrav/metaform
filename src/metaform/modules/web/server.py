@@ -712,7 +712,10 @@ class Handler(BaseHTTPRequestHandler):
                             and record.node_kind == target.kind and record.node_id == target.id]
                 kept = '' if condition == 'built' else condition
                 if carrying:
-                    written = [store.edit_work(record.id, {'condition': kept}) for record in carrying][0]
+                    # A record the page made to hold a state, with no task, is done once the part is built: a work
+                    # record is never erased, MAP-046, and its history says when the state was set and cleared.
+                    written = [store.finish_work(record.id, 'Built.') if not kept and not (record.task or '').strip()
+                               else store.edit_work(record.id, {'condition': kept}) for record in carrying][0]
                 elif kept:
                     written = store.add_work(target, kept, note='Set by the person on the page.')
                 else:

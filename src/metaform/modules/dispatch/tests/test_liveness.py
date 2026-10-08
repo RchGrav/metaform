@@ -371,7 +371,7 @@ def test_recovery_keeps_ownership_until_cleanup_finishes_without_blocking_other_
             assert reached.wait(5)
             assert dispatch.ticket().taken_by == original
             # A slow OS cleanup must not hold a project write transaction or block another ticket's progress.
-            writing = workers.submit(Store('proj').add_work, dispatch.node, 'missing', task='Independent work')
+            writing = workers.submit(Store('proj').add_work, dispatch.node, 'unbuilt', task='Independent work')
             assert writing.result(timeout=2).id
         finally:
             resume.set()
@@ -643,7 +643,7 @@ def test_a_recorded_pid_that_is_not_that_runner_for_that_work_id_reads_ended(dis
     assert module.session_status(store, {**held, 'pid': other})['state'] == 'ended'
     assert module.session_status(store, {**held, 'session_id': 'another'})['state'] == 'ended', \
         'a port that answers for another session is not this session\'s runner'
-    elsewhere = dispatch.store.add_work(Node('element', 'code.engine'), 'missing', task='Another ticket').id
+    elsewhere = dispatch.store.add_work(Node('element', 'code.engine'), 'unbuilt', task='Another ticket').id
     with monkeypatch.context() as older:  # a runner with no status to give
         older.setattr(module, 'tell', lambda *args, **kwargs: {'error': 'No request status.'})
         assert module.session_status(store, held)['state'] == 'running'

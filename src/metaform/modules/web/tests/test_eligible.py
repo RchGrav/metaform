@@ -23,7 +23,7 @@ def test_task_and_card_api_keep_eligibility_with_glyph_and_board_order(run, web,
     store = Store('proj')
     node = store.element('code.alarm.audible')
     status, made = api(web, '/api/task', method='POST', headers=own_write(web), body=json.dumps({
-        'project': 'proj', 'nodes': [f'element:{node.id}'], 'condition': 'missing',
+        'project': 'proj', 'nodes': [f'element:{node.id}'], 'condition': 'unbuilt',
         'task': 'Change the audible alarm', 'agent': 'codex', 'eligible': ['claude', 'gemini'],
     }))
     assert status == 200, made
@@ -67,7 +67,7 @@ def test_task_editor_and_card_choose_multiple_agents_and_return_to_any(run, web,
     page.check('#task .eligible input[data-agent="claude"]')
     page.check('#task .eligible input[data-agent="gemini"]')
     page.fill('#task .text', 'Eligibility editor proof')
-    page.select_option('#task .condition', 'enhancement')
+    page.select_option('#task .condition', 'unbuilt')
     with page.expect_response(lambda response: '/api/task' in response.url) as saved:
         page.click('#task .put')
     work_id = saved.value.json()['results'][0]['id']
@@ -89,7 +89,7 @@ def test_start_window_skips_ineligible_first_ticket_without_losing_its_glyph(run
     for ticket in store.work(open=True, limit=0).results:
         store.finish_work(ticket.id, 'fixture setup')
     node = Node('element', store.element('code.alarm.audible').id)
-    first, later, any_agent = [store.add_work(node, 'missing', task=f'Eligibility queue {i}').id for i in range(3)]
+    first, later, any_agent = [store.add_work(node, 'unbuilt', task=f'Eligibility queue {i}').id for i in range(3)]
     for work_id in (first, later):
         run('map', 'work', 'op=edit', f'id={work_id}', 'glyph=kite', cwd=mapped)
     run('map', 'work', 'op=edit', f'id={first}', 'eligible=["claude"]', cwd=mapped)

@@ -107,7 +107,7 @@ class Dispatch:
         self.store.add_element('parts', NODE)
         self.store.add_element('parts', LINKED)
         self.node = Node('element', NODE)
-        self.id = self.store.add_work(self.node, 'missing', task='Write notes.txt',
+        self.id = self.store.add_work(self.node, 'unbuilt', task='Write notes.txt',
                                            links=[Node('element', LINKED)]).id
         self.process = None
 
@@ -659,7 +659,7 @@ def glyphed(dispatch, run, *tickets):
     Distribute and `map work op=edit glyph=` set it; a glyph of None leaves the ticket with none."""
     made = []
     for task, glyph, held in tickets:
-        work_id = dispatch.store.add_work(dispatch.node, 'missing', task=task, held=held).id
+        work_id = dispatch.store.add_work(dispatch.node, 'unbuilt', task=task, held=held).id
         if glyph is not None:
             run('map', 'work', 'op=edit', f'id={work_id}', f'glyph={glyph}', cwd=dispatch.folder)
         made.append(work_id)

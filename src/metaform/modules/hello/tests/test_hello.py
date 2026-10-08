@@ -191,9 +191,9 @@ def test_todo_writes_a_work_record_on_the_modules_own_element_and_done_resolves_
     said = run('hello', 'todo', 'greet in every language', cwd=hello).stdout.strip()
     store = Store('proj')
     records = store.work(node=Node('element', 'code.module.hello')).results
-    assert [(row.condition, row.task, row.done) for row in records] == [('missing', 'greet in every language', None)]
+    assert [(row.condition, row.task, row.done) for row in records] == [('unbuilt', 'greet in every language', None)]
     assert said == f'To do: greet in every language ({records[0].id})'
-    assert store.element('code.module.hello', raw=True).open_work == ('missing',)
+    assert store.element('code.module.hello', raw=True).open_work == ('unbuilt',)
     assert 'Hello: 1 greeted, 1 to do' in run(cwd=hello).stdout.splitlines()
     run('hello', 'done', records[0].id, 'greets in Latin now', cwd=hello)
     finished = store.work(node=Node('element', 'code.module.hello')).results[0]
@@ -473,7 +473,7 @@ def test_work_read_shows_hellos_own_field_on_its_work_record_and_the_store_layou
     assert 'hello: {"greeted":2}' in run('map', 'work', f'id={work_id}', cwd=hello).stdout.splitlines()
     with Store('proj', module='hello').tables(write=False) as tx:
         assert tx.get('todos', {'work_id': work_id}) == {'work_id': work_id, 'greeted': 2}
-    other = Store('proj').add_work(Node('element', 'code.module.hello'), 'flawed', task='not hello\'s own')
+    other = Store('proj').add_work(Node('element', 'code.module.hello'), None, task='not hello\'s own')
     assert 'hello' not in json.loads(run('map', 'work', f'id={other.id}', '--json', cwd=hello).stdout)
     from metaform.modules.map import TABLES
     work_table = TABLES.table('work').schema.split('CREATE TABLE IF NOT EXISTS work(')[1].split(');')[0]

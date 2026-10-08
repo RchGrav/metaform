@@ -363,7 +363,7 @@ def test_a_map_verb_outside_a_project_names_the_way_to_register_one(run, tmp_pat
 @pytest.mark.req('STORE-025')
 @pytest.mark.req('LAYER-017')
 def test_where_is_one_read_of_an_address_small_unless_full_is_asked(run, mapped):
-    run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'condition=missing', 'note=no speaker yet',
+    run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'condition=unbuilt', 'note=no speaker yet',
         'task=wire the piezo', cwd=mapped)
     kitchen = j(run, 'where', 'code.timer.kitchen', cwd=mapped)
     assert set(kitchen) == {'kind', 'element', 'provides', 'receives'}
@@ -374,7 +374,7 @@ def test_where_is_one_read_of_an_address_small_unless_full_is_asked(run, mapped)
     assert [([held['address'] for held in join['elements']], join['ef'], join['layer'])
             for join in kitchen['receives']] == [(['code.alarm.audible'], 'Plays a tone.', 'intake-1')]
     alarm = j(run, 'where', 'code.alarm.audible', cwd=mapped)
-    assert alarm['work'] == [{'id': Store('proj').work().results[0].id, 'condition': 'missing',
+    assert alarm['work'] == [{'id': Store('proj').work().results[0].id, 'condition': 'unbuilt',
                               'note': 'no speaker yet', 'task': 'wire the piezo'}]
     assert 'element_id' not in alarm['element'] and 'join_id' not in alarm['provides'][0]
     full = j(run, 'where', 'code.alarm.audible', 'full=true', cwd=mapped)
@@ -629,8 +629,8 @@ def test_a_map_write_missing_what_its_record_cannot_be_stored_without_stops_once
         ('id', ['knowledge', 'op=remove', 'layer=notes']),
         ('address', ['refine', 'reason=r']),
         ('op', ['work', 'op=paint']),
-        ('node', ['work', 'op=add', 'condition=missing']),
-        ('id', ['work', 'op=edit', 'condition=missing']),
+        ('node', ['work', 'op=add', 'condition=unbuilt']),
+        ('id', ['work', 'op=edit', 'condition=unbuilt']),
         ('id', ['work', 'op=done']),
     ]
     for field, words in stops:
@@ -658,7 +658,7 @@ def test_the_work_list_holds_open_rows_without_their_logs_and_the_ticket_read_ho
     """A bare `map work` was 758,000 characters on a project of 220 tickets, mostly the done ones' logs."""
     store = Store('proj')
     alarm = Node('element', 'code.alarm.audible')
-    waiting = store.add_work(alarm, 'missing', task='build the driver').id
+    waiting = store.add_work(alarm, 'unbuilt', task='build the driver').id
     finished = store.add_work(alarm, 'broken', task='fix the tone').id
     j(run, 'work', 'op=take', f'id={finished}', 'steps=1', cwd=mapped)
     j(run, 'work', 'op=step', f'id={finished}', 'said=The tone is fixed.', cwd=mapped)
@@ -680,16 +680,16 @@ def test_work_records_are_added_edited_listed_and_done_through_one_verb_and_neve
     store = Store('proj')
     join = store.joins('code.timer.kitchen').results[0]
     before = json.loads(run('query', 'graph', 'limit=0', '--json', cwd=mapped).stdout)
-    added = j(run, 'work', 'op=add', 'node=code.alarm.audible', 'condition=missing', 'note=in the spec, not built',
+    added = j(run, 'work', 'op=add', 'node=code.alarm.audible', 'condition=unbuilt', 'note=in the spec, not built',
               'task=build the piezo driver', 'held=true', cwd=mapped)
     assert (added['node_kind'], added['address'], added['condition'], added['held'], added['reviewed'], added['done']) == (
-        'element', 'code.alarm.audible', 'missing', True, False, None)
+        'element', 'code.alarm.audible', 'unbuilt', True, False, None)
     on_join = j(run, 'work', 'op=add', f'node=join:{join.id}', 'condition=broken', 'task=fix the tone', cwd=mapped)
     assert (on_join['node_kind'], on_join['receiver_address'], on_join['provider_address']) == (
         'join', 'code.timer.kitchen', 'code.alarm.audible')
     listed = j(run, 'work', cwd=mapped)['results']
-    assert [(row['condition'], row['held']) for row in listed] == [('missing', True), ('broken', False)]
-    assert [row['id'] for row in j(run, 'work', 'open=true', 'condition=missing', cwd=mapped)['results']] == [added['id']]
+    assert [(row['condition'], row['held']) for row in listed] == [('unbuilt', True), ('broken', False)]
+    assert [row['id'] for row in j(run, 'work', 'open=true', 'condition=unbuilt', cwd=mapped)['results']] == [added['id']]
     # The alarm provides the join, so its ticket is listed at the alarm too, ticket dd2a9caf.
     assert [row['id'] for row in j(run, 'work', 'node=element:code.alarm.audible', cwd=mapped)['results']] == [
         added['id'], on_join['id']]
@@ -704,13 +704,13 @@ def test_work_records_are_added_edited_listed_and_done_through_one_verb_and_neve
     # Only open_work may differ between the two graphs: the conditions of the open records, on the join now.
     assert without_open_work(after) == without_open_work(before), 'a work record changed the map'
     assert open_work_in(before) == [] and open_work_in(after) == [['broken']]
-    refused = run('map', 'work', 'op=add', 'condition=missing', '--json', cwd=mapped, ok=False)
+    refused = run('map', 'work', 'op=add', 'condition=unbuilt', '--json', cwd=mapped, ok=False)
     assert refused.returncode == 2 and 'node' in refused.stderr
-    unknown = run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'condition=exclude', 'later=yes', '--json',
+    unknown = run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'condition=broken', 'later=yes', '--json',
                   cwd=mapped, ok=False)
     assert unknown.returncode == 2 and "does not take 'later=yes'" in unknown.stderr  # the chassis grammar, BASE-043
     assert j(run, 'work', 'op=done', f'id={on_join["id"]}', 'task=ignored here', cwd=mapped)['notices'][0]['where'] == 'task'
-    assert run('help', 'map', 'work', cwd=mapped).stdout.count('missing') >= 1
+    assert run('help', 'map', 'work', cwd=mapped).stdout.count('unbuilt') >= 1
 
 
 @pytest.mark.req('BASE-038')
@@ -844,7 +844,7 @@ def recorded(run, tmp_path, monkeypatch, request):
         store.add_item(sources.name, Node('element', 'code.display.digit'), 'code.display.digit',
                        refs=[('path', 'src/display.py'), ('spec', 'DISP-001')])
     store.add_work(Node('element', 'code.alarm.audible'), 'broken', note='rings too quietly')
-    store.add_work(Node('join', shown.id), 'missing', note='no blank between digits')
+    store.add_work(Node('join', shown.id), 'unbuilt', note='no blank between digits')
     return folder
 
 
@@ -887,7 +887,7 @@ def test_the_xml_document_holds_every_field_the_intake_recorded_in_the_finish_sh
     assert [(ref.get('key'), ref.get('value')) for ref in display.findall('ref')] == [
         ('path', 'src/display.py'), ('spec', 'DISP-001')]
     assert [(work.get('condition'), work.text) for work in joins['See the time left.'].findall('work')] == [
-        ('missing', 'no blank between digits')]
+        ('unbuilt', 'no blank between digits')]
     alarms = [element for element in document.iter('element') if element.get('namespace_address') == 'code.alarm.audible']
     assert len(alarms) == 2  # held by two joins; the first holds what it has, the other refers to it
     full, bare = alarms
@@ -914,18 +914,18 @@ def test_the_xml_document_is_written_to_a_file_when_one_is_named(run, recorded, 
 
 @pytest.mark.req('MAP-046')
 @pytest.mark.req('MAP-049')
-def test_an_agent_that_takes_a_task_marks_the_part_as_being_worked_on_until_it_is_done(run, mapped):
-    """Taking a task says work has started on the part: a part to be built is in progress, a broken one is being
-    fixed, and the record no longer waits to be taken. Done, the part is as any other."""
+def test_an_agent_that_takes_a_task_leaves_the_parts_state_and_the_record_no_longer_waits(run, mapped):
+    """Taking a task says an agent holds the work; the part's state is the intake's and the person's, Rich
+    2026-10-08, so it stays as it was. Done, the part is as any other."""
     store = Store('proj')
-    build = store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='build it', held=True)
+    build = store.add_work(Node('element', 'code.alarm.audible'), 'unbuilt', task='build it', held=True)
     fix = store.add_work(Node('element', 'code.timer.kitchen'), 'broken', task='fix it', held=True)
     taken = json.loads(run('map', 'work', 'op=take', f'id={build.id}', '--json', cwd=mapped).stdout)
-    assert (taken['condition'], taken['held'], bool(taken['taken'])) == ('missing', False, True)  # it keeps its kind, VIEW-035
+    assert (taken['condition'], taken['held'], bool(taken['taken'])) == ('unbuilt', False, True)
     assert json.loads(run('map', 'work', 'op=take', f'id={fix.id}', '--json', cwd=mapped).stdout)[
-        'condition'] == 'broken'  # a broken one taken keeps its kind; the viewer reads it as fixing
-    assert j(run, 'element', 'code.alarm.audible', cwd=mapped)['open_work'] == ['in-progress']
-    listed = json.loads(run('map', 'work', 'condition=in-progress', '--json', cwd=mapped).stdout)['results']
+        'condition'] == 'broken'
+    assert j(run, 'element', 'code.alarm.audible', cwd=mapped)['open_work'] == ['unbuilt']
+    listed = json.loads(run('map', 'work', 'condition=unbuilt', '--json', cwd=mapped).stdout)['results']
     assert [record['id'] for record in listed] == [build.id]
     again = run('map', 'work', 'op=take', f'id={build.id}', '--json', cwd=mapped, ok=False)
     assert again.returncode != 0 and 'already' in again.stderr + again.stdout
@@ -1073,10 +1073,10 @@ def test_an_agent_says_how_many_steps_it_plans_and_reports_each_as_it_finishes_i
     """The map shows how far a part is by the share of its steps that are done, and a share needs the whole. The count
     is a plan, and the agent changes it when the plan changes."""
     store = Store('proj')
-    task = store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='build it')
+    task = store.add_work(Node('element', 'code.alarm.audible'), 'unbuilt', task='build it')
     assert (task.steps, task.steps_done, task.said) == (None, 0, ())
     taken = j(run, 'work', 'op=take', f'id={task.id}', 'steps=3', cwd=mapped)
-    assert (taken['condition'], taken['steps'], taken['steps_done'], taken['said']) == ('missing', 3, 0, [])
+    assert (taken['condition'], taken['steps'], taken['steps_done'], taken['said']) == ('unbuilt', 3, 0, [])
     first = j(run, 'work', 'op=step', f'id={task.id}', 'said=The driver is written.', cwd=mapped)
     assert (first['steps'], first['steps_done']) == (3, 1) and said(first) == []
     assert [(one['number'], one['said']) for one in first['said']] == [(1, 'The driver is written.')]
@@ -1093,10 +1093,10 @@ def test_an_agent_says_how_many_steps_it_plans_and_reports_each_as_it_finishes_i
     read = j(run, 'work', f'id={task.id}', cwd=mapped)  # the list leaves the log out, MAP-053
     assert [one['said'] for one in read['said']] == ['The driver is written.', 'The tone is set.', 'The test passes.',
                                                      'One more than planned.']
-    plain = store.add_work(Node('element', 'code.timer.kitchen'), 'missing', task='no count')
+    plain = store.add_work(Node('element', 'code.timer.kitchen'), 'unbuilt', task='no count')
     took = j(run, 'work', 'op=take', f'id={plain.id}', cwd=mapped)
     assert (took['steps'], took['steps_done'], took['said']) == (None, 0, [])  # a task with no count has no steps
-    untaken = store.add_work(Node('element', 'code.timer.kitchen'), 'missing', task='not taken')
+    untaken = store.add_work(Node('element', 'code.timer.kitchen'), 'unbuilt', task='not taken')
     early = j(run, 'work', 'op=step', f'id={untaken.id}', 'said=Done before it was taken.', cwd=mapped)
     assert early['steps_done'] == 1 and [where for where, _ in said(early)] == ['condition']
 
@@ -1105,14 +1105,14 @@ def test_an_agent_says_how_many_steps_it_plans_and_reports_each_as_it_finishes_i
 def test_a_ticket_is_moved_across_the_board_and_links_other_nodes_for_reference(run, mapped):
     """Rich, 2026-10-01: assign and track work via Metaform like a kanban; the ticket is on the functionality it is
     assigned to, and links other nodes for reference. It keeps its kind in every column."""
-    made = json.loads(run('map', 'work', 'op=add', 'node=code.alarm.audible', 'condition=flawed', 'task=quieter tone',
+    made = json.loads(run('map', 'work', 'op=add', 'node=code.alarm.audible', 'condition=broken', 'task=quieter tone',
                           'links=["element:code.timer.kitchen"]', 'held=true', '--json', cwd=mapped).stdout)
     assert ([link['address'] for link in made['links']], made['held']) == (['code.timer.kitchen'], True)
     doing = json.loads(run('map', 'work', 'op=move', f'id={made["id"]}', 'column=doing', 'by=codex', '--json',
                            cwd=mapped).stdout)
-    assert (doing['condition'], doing['taken_by'], doing['held'], bool(doing['taken'])) == ('flawed', 'codex', False, True)
+    assert (doing['condition'], doing['taken_by'], doing['held'], bool(doing['taken'])) == ('broken', 'codex', False, True)
     done = json.loads(run('map', 'work', 'op=move', f'id={made["id"]}', 'column=done', '--json', cwd=mapped).stdout)
-    assert done['done'] and done['condition'] == 'flawed'
+    assert done['done'] and done['condition'] == 'broken'
 
 
 def glyph_of(record):
@@ -1129,17 +1129,17 @@ def test_distributing_over_n_agents_gives_the_first_n_glyphs_in_turn_to_the_tick
     from metaform.modules.map import AGENT_GLYPHS
     store = Store('proj')
     kitchen, alarm = Node('element', 'code.timer.kitchen'), Node('element', 'code.alarm.audible')
-    todo = [store.add_work(kitchen, 'missing', task=f'todo {number}') for number in range(5)]
-    backlog = [store.add_work(alarm, 'enhancement', task=f'backlog {number}', held=True) for number in range(2)]
+    todo = [store.add_work(kitchen, 'unbuilt', task=f'todo {number}') for number in range(5)]
+    backlog = [store.add_work(alarm, None, task=f'backlog {number}', held=True) for number in range(2)]
     store.move_work(todo[4].id, 'todo', position=0)                   # the board's order, not the rows'
     store.move_work(backlog[1].id, 'backlog', position=0)
     taken = store.add_work(alarm, 'broken', task='being worked')
     j(run, 'work', 'op=edit', f'id={taken.id}', 'glyph=owl', cwd=mapped)
     store.take_work(taken.id, by='claude')
-    done = store.add_work(alarm, 'flawed', task='finished')
+    done = store.add_work(alarm, None, task='finished')
     j(run, 'work', 'op=edit', f'id={done.id}', 'glyph=snail', cwd=mapped)  # outside the first three dealt
     store.finish_work(done.id, 'fixed')
-    outside = store.add_work(kitchen, 'exclude', note='vendored')
+    outside = store.add_work(kitchen, None, note='vendored')  # no task: never dealt, never started
     given = j(run, 'work', 'op=distribute', 'agents=3', cwd=mapped)['results']
     order = [todo[4], todo[0], todo[1], todo[2], todo[3], backlog[1], backlog[0]]
     assert [record['id'] for record in given] == [record.id for record in order]
@@ -1162,7 +1162,7 @@ def test_distributing_over_n_agents_gives_the_first_n_glyphs_in_turn_to_the_tick
 @pytest.mark.req('BASE-035')
 def test_a_tickets_glyph_is_set_by_edit_shown_on_its_read_and_a_name_that_is_no_glyph_is_kept_with_a_notice(run,
                                                                                                          mapped):
-    ticket = Store('proj').add_work(Node('element', 'code.timer.kitchen'), 'missing', task='a lane of its own')
+    ticket = Store('proj').add_work(Node('element', 'code.timer.kitchen'), 'unbuilt', task='a lane of its own')
     assert 'map' not in j(run, 'work', f'id={ticket.id}', cwd=mapped)   # nothing at all when it keeps none
     edited =j(run, 'work', 'op=edit', f'id={ticket.id}', 'glyph=moth', cwd=mapped)
     assert glyph_of(edited) == 'moth' and not edited.get('notices')
@@ -1183,7 +1183,7 @@ def test_a_tickets_glyph_is_set_by_edit_shown_on_its_read_and_a_name_that_is_no_
 def test_every_map_work_result_shows_the_tickets_glyph(run, mapped):
     """VIEW-040: every `map work` result shows each record's glyph under `map`, so an agent taking, planning, stepping,
     moving or finishing a ticket reads which agent's lane it is in."""
-    ticket = Store('proj').add_work(Node('element', 'code.timer.kitchen'), 'missing', task='a lane of its own')
+    ticket = Store('proj').add_work(Node('element', 'code.timer.kitchen'), 'unbuilt', task='a lane of its own')
     j(run, 'work', 'op=edit', f'id={ticket.id}', 'glyph=moth', cwd=mapped)
     for verb in (['op=take', 'by=claude'], ['op=plan', 'steps=2'], ['op=step', 'said=Traced it.'],
                  ['op=move', 'column=doing'], ['op=done', 'resolution=built']):
@@ -1193,8 +1193,8 @@ def test_every_map_work_result_shows_the_tickets_glyph(run, mapped):
 @pytest.mark.req('VIEW-040')
 def test_distributing_over_no_agents_or_more_than_there_are_glyphs_is_refused_and_changes_nothing(run, mapped):
     store = Store('proj')
-    ticket = store.add_work(Node('element', 'code.timer.kitchen'), 'missing', task='waiting')
-    lane = store.add_work(Node('element', 'code.timer.kitchen'), 'missing', task='in a lane already')
+    ticket = store.add_work(Node('element', 'code.timer.kitchen'), 'unbuilt', task='waiting')
+    lane = store.add_work(Node('element', 'code.timer.kitchen'), 'unbuilt', task='in a lane already')
     j(run, 'work', 'op=edit', f'id={lane.id}', 'glyph=moth', cwd=mapped)
     for agents in ('0', '18'):
         refused = run('map', 'work', 'op=distribute', f'agents={agents}', cwd=mapped, ok=False)
@@ -1213,8 +1213,8 @@ def test_a_tickets_glyph_is_kept_in_the_map_modules_own_table_keyed_by_the_work_
     STORE-045, and the chassis is the fixed part, BASE-046. The glyph is a row of the map module's table beside the
     map, and the work table holds no glyph column."""
     store = Store('proj')
-    ticket = store.add_work(Node('element', 'code.timer.kitchen'), 'missing', task='a lane of its own')
-    other = store.add_work(Node('element', 'code.timer.kitchen'), 'missing', task='no lane')
+    ticket = store.add_work(Node('element', 'code.timer.kitchen'), 'unbuilt', task='a lane of its own')
+    other = store.add_work(Node('element', 'code.timer.kitchen'), 'unbuilt', task='no lane')
     j(run, 'work', 'op=edit', f'id={ticket.id}', 'glyph=moth', cwd=mapped)
     with Store('proj', module='map').tables(write=False) as tx:
         assert tx.get('glyphs', {'work_id': ticket.id}) == {'work_id': ticket.id, 'glyph': 'moth'}
@@ -1269,13 +1269,13 @@ def test_map_work_with_an_id_and_no_op_reads_that_one_ticket_with_what_the_map_h
     agent had to parse the whole work list to read its ticket. The read hands it the ticket with its node's where
     read, its refs, which the sources layer holds, and its open questions, and the same for each node it links."""
     run('map', 'ask', 'code.display.digit', 'Four digits or six?', 'suggestions=["Four", "Six"]', *FORM, cwd=described)
-    made = j(run, 'work', 'op=add', 'node=code.display.digit', 'condition=flawed', 'task=dim the digits at night',
+    made = j(run, 'work', 'op=add', 'node=code.display.digit', 'condition=broken', 'task=dim the digits at night',
              'links=["element:code.timer.kitchen"]', cwd=described)
     read = run('map', 'work', f'id={made["id"]}', '--json', cwd=described)
     assert read.returncode == 0 and 'TypeError' not in read.stderr
     ticket = json.loads(read.stdout)
     assert (ticket['id'], ticket['task'], ticket['condition']) == (made['id'], 'dim the digits at night',
-                                                                       'flawed')
+                                                                       'broken')
     at = ticket['at']
     assert at['element']['address'] == 'code.display.digit'
     assert [ref for group in at['layers'] if group['layer'] == 'sources' for item in group['items']
@@ -1335,11 +1335,11 @@ def test_a_work_read_hook_that_raises_is_named_in_the_ticket_read_and_one_that_r
         MODULE = Module(id='linked', summary='x', purpose='Clashes. Details: metaform help linked.',
                         work_read=lambda ctx, record: 'replaced')
     ''')
-    made = j(run, 'work', 'op=add', 'node=code.alarm.audible', 'condition=missing', 'task=wire it', cwd=mapped)
+    made = j(run, 'work', 'op=add', 'node=code.alarm.audible', 'condition=unbuilt', 'task=wire it', cwd=mapped)
     ticket = j(run, 'work', f'id={made["id"]}', cwd=mapped)
     assert ticket['task'] == 'wire it' and ticket['at']['element']['address'] == 'code.alarm.audible'
     assert ticket['breaks'] == {'failed': f'ValueError: no field for {made["id"]}'}
-    assert ticket['zz'] == {'condition': 'missing'}, 'the read goes on past a failing hook'
+    assert ticket['zz'] == {'condition': 'unbuilt'}, 'the read goes on past a failing hook'
     assert list(ticket).index('breaks') < list(ticket).index('zz'), 'module id order'
     assert 'quiet' not in ticket
     assert ticket['linked'] == [], 'a field the read holds already is never replaced'
@@ -1347,7 +1347,7 @@ def test_a_work_read_hook_that_raises_is_named_in_the_ticket_read_and_one_that_r
 
 @pytest.mark.req('MAP-048')
 def test_map_work_reading_a_ticket_names_the_list_nouns_it_does_not_read_and_an_unknown_id(run, mapped):
-    made = j(run, 'work', 'op=add', 'node=code.alarm.audible', 'condition=missing', 'task=wire it', cwd=mapped)
+    made = j(run, 'work', 'op=add', 'node=code.alarm.audible', 'condition=unbuilt', 'task=wire it', cwd=mapped)
     read = j(run, 'work', f'id={made["id"]}', 'condition=broken', cwd=mapped)
     assert read['id'] == made['id'] and [notice['where'] for notice in read['notices']] == ['condition']
     unknown = run('map', 'work', 'id=nothing', '--json', cwd=mapped, ok=False)
@@ -1360,7 +1360,7 @@ def test_map_work_reading_a_ticket_names_the_list_nouns_it_does_not_read_and_an_
 def test_a_work_list_given_a_noun_it_does_not_read_lists_with_a_notice(run, mapped):
     """The TypeError behind `map work id=<id>`: a list read given a noun it does not read failed to add its notice
     to the page."""
-    run('map', 'work', 'op=add', 'node=code.alarm.audible', 'condition=missing', 'task=wire it', cwd=mapped)
+    run('map', 'work', 'op=add', 'node=code.alarm.audible', 'condition=unbuilt', 'task=wire it', cwd=mapped)
     listed = j(run, 'work', 'said=nothing', cwd=mapped)
     assert len(listed['results']) == 1 and [notice['where'] for notice in listed['notices']] == ['said']
 
@@ -1368,7 +1368,7 @@ def test_a_work_list_given_a_noun_it_does_not_read_lists_with_a_notice(run, mapp
 @pytest.mark.req('MAP-048')
 @pytest.mark.req('STORE-025')
 def test_map_where_shows_each_ticket_at_the_address_with_its_work_id(run, mapped):
-    made = j(run, 'work', 'op=add', 'node=code.alarm.audible', 'condition=missing', 'task=wire it', cwd=mapped)
+    made = j(run, 'work', 'op=add', 'node=code.alarm.audible', 'condition=unbuilt', 'task=wire it', cwd=mapped)
     assert [one['id'] for one in j(run, 'where', 'code.alarm.audible', cwd=mapped)['work']] == [made['id']]
     assert made['id'] in run('map', 'where', 'code.alarm.audible', cwd=mapped).stdout
 
@@ -1430,9 +1430,9 @@ def test_map_work_names_a_join_by_its_receiver_and_provider_and_an_element_it_ho
     beside = j(run, 'work', 'op=add', *display, 'node=element:code.alarm.audible', 'condition=flawed', cwd=mapped)
     assert (beside['node_kind'], beside['provider_address']) == ('join', 'code.display.digit')
     assert said(beside) == [('node', 'receiver, provider and address name the node; node was not read.')]
-    on_part = j(run, 'work', 'op=add', *named, 'address=code.alarm.audible.piezo', 'condition=missing', cwd=mapped)
+    on_part = j(run, 'work', 'op=add', *named, 'address=code.alarm.audible.piezo', 'condition=unbuilt', cwd=mapped)
     assert (on_part['node_kind'], on_part['address']) == ('element', 'code.alarm.audible.piezo')
-    elsewhere = run('map', 'work', 'op=add', *named, 'address=code.display.digit.segment', 'condition=missing',
+    elsewhere = run('map', 'work', 'op=add', *named, 'address=code.display.digit.segment', 'condition=unbuilt',
                     '--json', cwd=mapped, ok=False)
     assert elsewhere.returncode == 2 and 'code.display.digit.segment is not held by' in elsewhere.stderr
     on_element = j(run, 'work', 'op=add', 'address=code.alarm.audible', 'condition=flawed', cwd=mapped)
@@ -1453,7 +1453,7 @@ def test_map_work_names_a_join_by_its_receiver_and_provider_and_an_element_it_ho
                '"provider": "code.display.digit"}]', cwd=mapped)
     assert [(link['kind'], link['id']) for link in edited['links']] == [('element', piezo), ('join', shown.id)]
     unheld = run('map', 'work', 'op=add', 'receiver=code.timer.kitchen', 'provider=code.nosuch.node',
-                 'condition=missing', '--json', cwd=mapped, ok=False)
+                 'condition=unbuilt', '--json', cwd=mapped, ok=False)
     assert unheld.returncode == 2 and 'code.timer.kitchen has no purpose served by code.nosuch.node' in unheld.stderr
     assert len(j(run, 'work', 'limit=0', cwd=mapped)['results']) == 5
 
@@ -1471,11 +1471,11 @@ def test_map_work_at_an_element_lists_the_tickets_on_the_joins_it_receives_or_pr
         store.add_element('intake-1', 'code.display.digit', name_length=2, role='SE')
         shown = store.add_join('intake-1', 'code.timer.kitchen', 'code.display.digit', purpose='Show the time left.')
     cook = store.joins('stakeholder.cook.home').results[0]
-    on_alarm = store.add_work(Node('element', 'code.alarm.audible'), 'flawed', task='on the element').id
+    on_alarm = store.add_work(Node('element', 'code.alarm.audible'), None, task='on the element').id
     on_cook = store.add_work(Node('join', cook.id), 'broken', task='on the cook join').id
-    on_join = store.add_work(Node('join', alarm.id), 'missing', task='on the alarm join').id
-    on_part = store.add_work(Node('element', 'code.alarm.audible.piezo'), 'missing', task='on the piezo').id
-    on_display = store.add_work(Node('join', shown.id), 'flawed', task='on the display join').id
+    on_join = store.add_work(Node('join', alarm.id), 'unbuilt', task='on the alarm join').id
+    on_part = store.add_work(Node('element', 'code.alarm.audible.piezo'), 'unbuilt', task='on the piezo').id
+    on_display = store.add_work(Node('join', shown.id), None, task='on the display join').id
     finished = store.add_work(Node('join', alarm.id), 'broken', task='done already').id
     store.finish_work(finished, 'fixed')
 
@@ -1486,7 +1486,7 @@ def test_map_work_at_an_element_lists_the_tickets_on_the_joins_it_receives_or_pr
     assert listed('node=code.alarm.audible', 'open=true') == [on_alarm, on_join]
     assert listed('address=code.alarm.audible', 'open=true') == [on_alarm, on_join]
     assert listed('node=element:code.timer.kitchen', 'open=true') == [on_cook, on_join, on_display]
-    assert listed('node=element:code.timer.kitchen', 'condition=missing') == [on_join]
+    assert listed('node=element:code.timer.kitchen', 'condition=unbuilt') == [on_join]
     assert listed(f'node=join:{alarm.id}', 'open=true') == [on_join]
     # The web panel's read of one object stays that object's own records.
     assert [row.id for row in store.work(Node('element', 'code.alarm.audible'), limit=0).results] == [on_alarm]
@@ -1585,10 +1585,10 @@ def test_knowledge_add_item_takes_the_flags_and_a_task_item_adds_a_ticket_at_its
                          'value="Read the timer spec first."', 'read_first=true', 'always_show=true').stdout)
     assert (first['read_first'], first['always_show']) == (True, True)
     task = json.loads(k(run, mapped, 'op=add-item', 'layer=critic', 'node=element:code.timer.kitchen',
-                        'value="Stop the alarm after a minute."', 'task=true', 'condition=missing').stdout)
+                        'value="Stop the alarm after a minute."', 'task=true', 'condition=unbuilt').stdout)
     assert 'task' not in task and (task['read_first'], task['always_show']) == (False, False)
     tickets = j(run, 'work', 'node=element:code.timer.kitchen', 'open=true', cwd=mapped)['results']
-    assert [ticket['condition'] for ticket in tickets] == ['missing']
+    assert [ticket['condition'] for ticket in tickets] == ['unbuilt']
     assert j(run, 'work', f'id={tickets[0]["id"]}', cwd=mapped)['task'] == 'Stop the alarm after a minute.'
     told = [notice for notice in task['notices'] if notice['where'] == 'task']
     assert len(told) == 1 and tickets[0]['id'] in told[0]['message']
@@ -1613,9 +1613,9 @@ def test_any_agent_is_eligible_by_default_and_the_eligible_agents_are_kept_in_th
     """Rich, ticket bd96cbd1: any agent is eligible by default unless the user specifies otherwise, and existing
     tickets default to Any. The user's choice is one or more agent types, shown on the ticket; like the glyph it is
     the map module's own field, a row keyed by the work id, and the work table has no column for it."""
-    old = Store('proj').add_work(Node('element', 'code.timer.kitchen'), 'missing', task='written before the setting')
+    old = Store('proj').add_work(Node('element', 'code.timer.kitchen'), 'unbuilt', task='written before the setting')
     assert eligible_of(j(run, 'work', f'id={old.id}', cwd=mapped)) is None
-    made = j(run, 'work', 'op=add', 'node=code.alarm.audible', 'condition=flawed', 'task=quieter tone',
+    made = j(run, 'work', 'op=add', 'node=code.alarm.audible', 'condition=broken', 'task=quieter tone',
              'eligible=["claude"]', cwd=mapped)
     assert eligible_of(made) == ['claude']
     assert eligible_of(j(run, 'work', f'id={made["id"]}', cwd=mapped)) == ['claude']
@@ -1645,7 +1645,7 @@ def test_a_direct_claim_on_the_command_line_is_honored_by_the_agent_its_by_names
     taken by anyone, as before. A person moving the card to Doing is not an agent's claim and is not refused."""
     store = Store('proj')
     kitchen = Node('element', 'code.timer.kitchen')
-    gui = store.add_work(kitchen, 'missing', task='GUI work')
+    gui = store.add_work(kitchen, 'unbuilt', task='GUI work')
     j(run, 'work', 'op=edit', f'id={gui.id}', 'eligible=["claude"]', cwd=mapped)
     for by in ('codex 9f2c', 'someone', None):
         refused = run('map', 'work', 'op=take', f'id={gui.id}', *([f'by={by}'] if by else []), cwd=mapped,
@@ -1655,9 +1655,9 @@ def test_a_direct_claim_on_the_command_line_is_honored_by_the_agent_its_by_names
         assert store.ticket(gui.id).work.taken is None
     took = j(run, 'work', 'op=take', f'id={gui.id}', 'by=claude 41ab', cwd=mapped)
     assert took['taken_by'] == 'claude 41ab'
-    loose = store.add_work(kitchen, 'missing', task='anyone')
+    loose = store.add_work(kitchen, 'unbuilt', task='anyone')
     assert j(run, 'work', 'op=take', f'id={loose.id}', 'by=someone', cwd=mapped)['taken_by'] == 'someone'
-    person = store.add_work(kitchen, 'missing', task='the person takes it')
+    person = store.add_work(kitchen, 'unbuilt', task='the person takes it')
     j(run, 'work', 'op=edit', f'id={person.id}', 'eligible=["codex"]', cwd=mapped)
     moved = j(run, 'work', 'op=move', f'id={person.id}', 'column=doing', 'by=user', cwd=mapped)
     assert moved['taken_by'] == 'user'
