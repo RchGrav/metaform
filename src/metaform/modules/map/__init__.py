@@ -592,6 +592,9 @@ def _knowledge(ctx: Context, op: str, notices: list[Notice]) -> Any:
     if op == 'add-property':
         (value,) = _empty(ctx, notices, 'value')
         return store.add_property(name, _element(nouns['element']), value, **_optional(ctx, 'refs', 'extra'))
+    if op == 'add-item' and ctx.nouns.get('task') and ctx.surface == 'mcp':
+        raise Stop('Tickets are written by the person, or by the sentinel for them; an agent at work writes what it '
+                   'found in its own ticket\'s note.', 'metaform map work op=edit id=<your work id> note="..."')
     if op == 'add-item':
         (value,) = _empty(ctx, notices, 'value')
         link = _node(nouns['link']) if 'link' in nouns else None
@@ -846,9 +849,14 @@ def messages(ctx: Context) -> Any:
 def work(ctx: Context) -> Any:
     """The work records: the condition of an element or a join, apart from the map, MAP-046 and STORE-042.
     op=list, the default, reads them, and an id with no op reads one; add, edit, take, plan, step, move and done
-    write one each, and distribute gives the open tickets the glyphs of N agents, VIEW-040. Any agent, at any time."""
+    write one each, and distribute gives the open tickets the glyphs of N agents, VIEW-040. A ticket is written by
+    the person, or by the sentinel and the system agent for them on the command line, never by a worker over the
+    agents' tool, MAP-050, Rich 2026-10-08: work is planned before a ticket exists."""
     # An id with no op reads that one ticket with what the map holds at its node and its links, MAP-048.
     op = str(ctx.nouns.get('op', 'read' if 'id' in ctx.nouns else 'list'))
+    if op == 'add' and ctx.surface == 'mcp':
+        raise Stop('Tickets are written by the person, or by the sentinel for them; an agent at work writes what it '
+                   'found in its own ticket\'s note.', 'metaform map work op=edit id=<your work id> note="..."')
     if op not in WORK_READS or op == 'read' and 'op' in ctx.nouns:
         raise Stop(f'{op!r} is not a work operation: op=list, glyphs, add, edit, take, plan, step, move, distribute or done; '
                    'with id= and '
@@ -856,6 +864,10 @@ def work(ctx: Context) -> Any:
     _need(ctx, *WORK_NEEDS[op], verb='work')
     unread = sorted(name for name in ctx.nouns if name != 'op' and name not in WORK_READS[op])
     notices = [Notice(name, f'op={op} does not read {name}; it was ignored.') for name in unread]
+    if op == 'edit' and 'condition' in ctx.nouns and ctx.surface == 'mcp':  # the part's state is not a worker's to set
+        ctx.nouns.pop('condition')
+        notices.append(Notice('condition', 'The state of a part is set by the intake and the person, not by an agent '
+                                           'at work; it was ignored. Say what you found in the note.'))
     for name in unread:
         ctx.nouns.pop(name)
     store, nouns = _store(ctx), ctx.nouns
