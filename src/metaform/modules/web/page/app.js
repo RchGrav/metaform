@@ -4507,7 +4507,7 @@ function layerInView(layerId) {
 }
 /* An element's parent: the element that holds it, when the intake recorded it, Rich 2026-10-08; otherwise the
  * nearest address it starts with. */
-function parentOf(element) {
+function holderOf(element) {
   if (element.within && [...S.elements.values()].some(entry => entry.element.address === element.within)) return element.within;
   return nearestParent(element.address);
 }
@@ -4551,7 +4551,7 @@ async function appliedOps() {
       element.reading = plainWords(element.address);
       element.short_name = shortName(element.address, element.name_length);
       element.open_work = kept.open_work || [];
-      S.elements.set(op.id, {element, parent: parentOf(element)});
+      S.elements.set(op.id, {element, parent: holderOf(element)});
     } else if (op.kind === 'join') {
       S.joins = S.joins.filter(join => join.id !== op.id);
       if (gone) continue;
@@ -4584,7 +4584,7 @@ async function appliedOps() {
       S.items.set(key, {kind: op.kind, key, item, value, layer: layer.name, layerKind: layer.kind});
     }
   }
-  for (const entry of S.elements.values()) entry.parent = parentOf(entry.element);
+  for (const entry of S.elements.values()) entry.parent = holderOf(entry.element);
   S.whole = {elements: S.elements, joins: S.joins};
   S.seq = ops[ops.length - 1].seq;
   draw3D();
