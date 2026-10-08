@@ -38,7 +38,7 @@ SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
 SHIPS_DISABLED = False
 
-RESOURCE = resources.files(__name__) / 'resources' / 'Intake_2.1.md'  # Intake 2.1, the served intake, Rich 2026-10-03
+RESOURCE = resources.files(__name__) / 'resources' / 'intake.axiom'  # the digital typology intake, the served intake, Rich 2026-10-08
 SHAPE = resources.files(__name__) / 'resources' / 'metaform.axiom'  # the metaform's shape, Rich 2026-10-04
 VARIABLE = ('The functional map of the artifact: its elements, and each receiver\'s purpose served by a provider\'s '
             'encounter function.')
@@ -88,9 +88,13 @@ def served(ctx: Context, asked: str = '') -> str:
         text = text[:match.start()] + tag + text[match.end():]
     text = text.replace('{project_id}', record.project_id)
     # What the person asked for, a target or a task; nothing asked leaves it empty, which the intake reads as this
-    # project, BASE-039. Intake 2.1 is not XML, so it gets the words exactly as written; an XML intake file, which
-    # intake_file can name, gets them escaped as an attribute value is.
-    text = text.replace('{prompt}', _escape(asked) if source.name.lower().endswith('.xml') else asked, 1)
+    # project, BASE-039. An intake with a `{prompt}` slot gets the words there, escaped only in an XML intake file.
+    # The Axiom intake declares its prompt as a parameter and has no slot, so what was asked follows it as data,
+    # the way a skill's input is bound, and the script itself is served as written.
+    if '{prompt}' in text:
+        text = text.replace('{prompt}', _escape(asked) if source.name.lower().endswith('.xml') else asked, 1)
+    elif asked:
+        text = text.rstrip('\n') + '\n\n<<DATA: Prompt>>\n' + asked + '\n<<END DATA>>\n'
     ignored = home.ignore_patterns(record.path)
     if ignored:  # the one thing added after the intake: what it must not read, from .metaform/ignore.txt
         text = (text.rstrip('\n') + '\n\nDo not read these paths; they are not the project ('
@@ -339,7 +343,8 @@ def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], t
             notices.append({'where': 'note', 'message': 'A note goes with a condition, missing or broken; '
                                                         'without one it was not recorded.'})
         return
-    # Intake 2.1 says missing for a part that is not built yet; the record holds it as the stage unbuilt.
+    # The intake says missing for intended functionality that is absent; until missing is kept apart from the
+    # stage, the record holds it as unbuilt.
     stage = {'missing': 'unbuilt'}.get(str(ctx.nouns['condition']), str(ctx.nouns['condition']))
     _note(notices, rec.store.add_work(Node(kind, thing), stage, note=ctx.nouns.get('note')))
 

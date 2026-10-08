@@ -107,7 +107,7 @@ def test_web_ships_on_and_with_it_off_the_rest_of_metaform_works(run, module_row
     stopped = run('web', ok=False)
     assert stopped.returncode != 0 and 'Next: metaform enable web' in stopped.stderr
     assert 'Intake: none yet' in run(cwd=folder).stdout
-    served = Path(__file__).parents[2] / 'intake' / 'resources' / 'Intake_2.1.md'  # the served intake, BASE-039
+    served = Path(__file__).parents[2] / 'intake' / 'resources' / 'intake.axiom'  # the served intake, BASE-039
     assert run('intake', 'prompt', cwd=folder).stdout.startswith(served.read_text(encoding='utf-8').splitlines()[0])
     assert run('map', 'roots', cwd=folder).returncode == 0
     assert not any(line.startswith('web') for line in run('help', 'commands').stdout.splitlines())

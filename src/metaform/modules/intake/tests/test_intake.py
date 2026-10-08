@@ -14,8 +14,8 @@ from metaform.data import Node, Store, export_document
 pytestmark = pytest.mark.kind('fixture')
 
 ROOT = Path(__file__).parents[5]
-SPEC = Path(__file__).parents[1] / 'resources' / 'Intake_2.1.md'  # the served intake, Rich 2026-10-03
-RESOURCE = Path(__file__).parents[1] / 'resources' / 'Intake_2.1.md'
+SPEC = Path(__file__).parents[1] / 'resources' / 'intake.axiom'  # the served intake, Rich 2026-10-08
+RESOURCE = SPEC
 FIXTURE = json.loads((ROOT / 'tests' / 'fixtures' / 'intake_timer.json').read_text(encoding='utf-8'))
 
 
@@ -102,10 +102,11 @@ def footer(text):
 
 
 @pytest.mark.req('BASE-039')
-def test_only_intake_2_1_is_served():
-    """Rich, 2026-10-03: "We arent even using 2.0 its superceded". The module serves resources/Intake_2.1.md, the one
-    copy; Intake 2.0 and the Canonical Intake are not served."""
-    assert not RESOURCE.with_name('Canonical_Intake.xml').exists() and not RESOURCE.with_name('Intake_2.0.md').exists()
+def test_only_the_axiom_intake_is_served():
+    """Rich, 2026-10-08: the digital typology intake, compiled to Axiom, is the served intake, the one copy; the
+    intakes it supersedes are not kept beside it."""
+    assert all(not RESOURCE.with_name(name).exists()
+               for name in ('Canonical_Intake.xml', 'Intake_2.0.md', 'Intake_2.1.md', 'digital-typology.axiom'))
 
 
 @pytest.mark.req('BASE-039')
@@ -117,9 +118,10 @@ def test_prompt_serves_the_intake_with_only_its_prompt_filled(run, project):
     `{Prompt} := """{prompt}"""`, and its TARGET_RESOLUTION takes the target from it, so nothing else is filled.'''
     stored = SPEC.read_text(encoding='utf-8')
     out = run('intake', 'prompt', cwd=project).stdout
-    assert out == stored.replace('{prompt}', '', 1)  # the intake is the instruction, and nothing is served beside it
+    assert out == stored  # the intake is the instruction, and nothing is served beside it
     asked = run('intake', 'prompt', 'text=Map the timer and its alarm', cwd=project).stdout
-    assert asked == stored.replace('{prompt}', 'Map the timer and its alarm', 1)
+    # the Axiom intake has no slot: what was asked follows it as data, and the script is served as written
+    assert asked == stored.rstrip('\n') + '\n\n<<DATA: Prompt>>\nMap the timer and its alarm\n<<END DATA>>\n'
 
 
 @pytest.mark.req('BASE-039')
@@ -128,7 +130,8 @@ def test_the_prompt_is_filled_as_written_in_intake_2_1_and_escaped_only_in_an_xm
     intake_file setting can still name, gets it escaped as an XML attribute value, as its <target> is filled."""
     asked = 'fix A & B in <main> "now"'
     stored = SPEC.read_text(encoding='utf-8')
-    assert run('intake', 'prompt', f'text={asked}', cwd=project).stdout == stored.replace('{prompt}', asked, 1)
+    assert run('intake', 'prompt', f'text={asked}', cwd=project).stdout == (
+        stored.rstrip('\n') + f'\n\n<<DATA: Prompt>>\n{asked}\n<<END DATA>>\n')
     xml = tmp_path / 'own-intake.xml'
     xml.write_text('<process><prompt text="{prompt}"/></process>\n', encoding='utf-8')
     run('set', f'--intake-file={xml}', cwd=project)

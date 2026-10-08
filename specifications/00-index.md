@@ -18,7 +18,7 @@ Every design decision goes into this spec when it is decided, in the record that
 
 - `../rich/REQUIREMENTS.md` with `../rich/REQUIREMENTS-corrections.md`: the requirements drawn from Rich's design. TRACE.md maps every one of them to the records here.
 - `../rich/SETTLED.md`: design settled in conversation, now carried by the records here.
-- `../src/metaform/modules/intake/resources/Intake_2.1.md`: the current intake procedure, Intake 2.1, served by the intake module, BASE-039; this is its only copy, with its notes in `../rich/Intake_2.1_notes.md`. `../rich/Intake_2.0.md` is the previous version, not served.
+- `../src/metaform/modules/intake/resources/intake.axiom`: the current intake procedure, the digital typology intake compiled to Axiom, served by the intake module, BASE-039, with its schema `metaform.axiom` beside it. Earlier intakes are in the history.
 - `../rich/Canonical_Intake.xml`: the previous intake procedure, no longer served. `../rich/Canonical_Intake_test.xml` was identical to it until `ef` was added to the Canonical Intake, 2026-09-26. `../rich/Canonical_Intake_old.xml` is the previous version, reference only.
 - `../rich/Workflow_Root_and_Workflow_Layers.md`: Rich's design of workflows, 2026-10-03: the `workflow` root, logic requirements called by address and name, control flow, handoffs by nonce, workflow layers, ingest and authoring, and what is left to build. With it, `../rich/Metaform_Axiom-OS.md`, the Axiom compiler v1.1, and the two workflow prompts it compiled, `../rich/workflow-ingest.md` and `../rich/workflow-authoring.md`.
 - `../rich/metaprompting_element_segments_example.md`: how an address and its prefixes carry inference.
