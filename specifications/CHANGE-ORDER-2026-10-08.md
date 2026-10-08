@@ -36,7 +36,7 @@ One full intake of this project with `intake.axiom`, into a new base, compared w
 
 ### 1.3 The core node and collections on the system side (decided; waits on Rich's review of 1.2)
 
-- The base is the core node. The page draws it at the center, with the AUEs, collections and CQUs around it, instead of starting from one DE. Reads that look for the map's entry return what the core node holds.
+- The core node is an element of the map with a name and no namespace address, holding the AUEs, collections and CQUs (schema `metaform.axiom`). The store identifies an element by its address today, MAP-015, so it needs an element that has a name and no address; the intake tools need a way to record it, since `intake element` requires an address. The page draws it at the center instead of starting from one DE, and the reads that look for the map's entry return what it holds.
 - `collection` joins the roots: MAP-014 and `roots.json`. A project can hold several CQU roots, one per collection.
 - The stored `namespace-rules` section gets a new version naming `logic` and `collection`.
 
