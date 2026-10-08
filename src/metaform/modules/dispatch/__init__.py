@@ -399,6 +399,9 @@ def startable(ctx: Context, store: Store, record: WorkRecord, agent: str) -> Non
     if record.taken:
         raise Stop(f'Work {record.id} is already taken by {record.taken_by or "an agent"}.',
                    'metaform map work open=true')
+    if not (record.task or '').strip():
+        raise Stop(f'Work {record.id} has no task: nothing for an agent to do until one is written.',
+                   f'metaform map work op=edit id={record.id} task="<what it needs>"')
     glyph = glyph_of(ctx, record)
     if glyph is not None:
         occupied = next((held for held in store.work(open=True, limit=0).results
@@ -425,7 +428,7 @@ def next_ticket(ctx: Context, store: Store, glyph: str, *, agent: str | None = N
     kept = ticket_settings(ctx)
     waiting = [record for record in store.work(open=True, limit=0).results
                if not record.taken and record.condition != 'exclude' and record.id not in exclude
-               and not kept.get(record.id, {}).get('hold')]
+               and not kept.get(record.id, {}).get('hold') and (record.task or '').strip()]  # no task: nothing to do
     waiting.sort(key=lambda record: (record.held, record.position is None, record.position or 0))
     chosen = agent or ctx.nouns.get('agent') or str(ctx.setting('dispatch_agent'))
     for record in waiting:
