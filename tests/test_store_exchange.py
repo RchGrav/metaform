@@ -80,11 +80,11 @@ def test_work_records_are_carried_by_export_and_read_back_on_their_objects_after
                                                                                          tmp_path):
     _, inner = filled(store)
     tick = store.element('code.loop.tick')
-    missing = store.add_work(Node('element', 'code.alarm.audible'), 'missing', note='the pin is never released',
+    missing = store.add_work(Node('element', 'code.alarm.audible'), 'unbuilt', note='the pin is never released',
                          task='release the pin', held=True)
     broken = store.add_work(Node('join', inner.id), 'broken', task='wire the tone', reviewed=True)
-    on_tick = store.add_work(Node('element', tick.id), 'exclude')
-    done = store.finish_work(store.add_work(Node('element', 'code.timer.kitchen'), 'missing').id, 'built it')
+    on_tick = store.add_work(Node('element', tick.id), 'under-construction')
+    done = store.finish_work(store.add_work(Node('element', 'code.timer.kitchen'), 'unbuilt').id, 'built it')
     first = export_document(['proj'])
     work = next(entry for entry in first['projects'][0]['bases'][0]['extensions'] if entry['module'] == 'map')
     assert len(work['rows']['work']) == 4
@@ -92,10 +92,10 @@ def test_work_records_are_carried_by_export_and_read_back_on_their_objects_after
     import_document(json.loads(json.dumps(first)))
     assert export_document(['proj']) == first
     moved = Store('proj')
-    assert moved.element('code.alarm.audible').open_work == ('missing',)
+    assert moved.element('code.alarm.audible').open_work == ('unbuilt',)
     assert moved.element('code.timer.kitchen').open_work == ()
     assert [join.open_work for join in moved.joins('code.timer.kitchen').results] == [('broken',)]
-    assert moved.element('code.loop.tick').open_work == ('exclude',)
+    assert moved.element('code.loop.tick').open_work == ('under-construction',)
     records = {row.id: row for row in moved.work().results}
     assert set(records) == {missing.id, broken.id, on_tick.id, done.id}
     assert (records[missing.id].address, records[missing.id].note, records[missing.id].task,
@@ -221,7 +221,7 @@ def test_a_tickets_links_and_steps_and_the_messages_at_nodes_are_carried_by_expo
     you can fix them; we need a rock solid data store. A ticket's reference links and filed steps, and the questions
     and messages left at nodes, come through export and import, and importing again adds nothing twice."""
     filled(store)
-    ticket = store.add_work(Node('element', 'code.alarm.audible'), 'flawed', task='a quieter tone',
+    ticket = store.add_work(Node('element', 'code.alarm.audible'), None, task='a quieter tone',
                             links=[Node('element', 'code.timer.kitchen')])
     store.take_work(ticket.id, steps=3, by='codex')
     store.step_work(ticket.id, 'Found the gain.')

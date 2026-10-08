@@ -19,7 +19,7 @@ KITCHEN, ALARM = Node('element', 'code.timer.kitchen'), Node('element', 'code.al
 def test_a_ticket_is_one_of_four_kinds_and_keeps_its_kind_while_it_is_worked(store):
     small_map(store)
     tickets = {kind: store.add_work(KITCHEN, kind, task=f'a {kind} ticket') for kind in
-               ('missing', 'broken', 'flawed', 'enhancement')}
+               ('unbuilt', 'under-construction', 'built', 'broken')}
     assert all(not ticket.notices for ticket in tickets.values())
     for kind, ticket in tickets.items():
         taken = store.take_work(ticket.id, by='claude')
@@ -49,17 +49,10 @@ def test_a_record_with_an_empty_condition_is_taken_worked_and_says_it_waits_on_t
         store.take_work(drift.id, by='codex')
 
 
-def test_an_exclude_record_still_has_no_task_to_take(store):
-    small_map(store)
-    outside = store.add_work(KITCHEN, 'exclude', note='vendored folder')
-    with pytest.raises(StoreError, match='no task to take'):
-        store.take_work(outside.id)
-
-
 def test_a_ticket_moves_through_the_columns_of_the_board_in_order(store):
     small_map(store)
-    first = store.add_work(KITCHEN, 'enhancement', task='first', held=True)
-    second = store.add_work(KITCHEN, 'flawed', task='second')
+    first = store.add_work(KITCHEN, None, task='first', held=True)
+    second = store.add_work(KITCHEN, None, task='second')
     assert (first.column, second.column) == ('backlog', 'todo')
     moved = store.move_work(first.id, 'todo', position=0)
     assert moved.column == 'todo'
@@ -75,7 +68,7 @@ def test_a_ticket_moves_through_the_columns_of_the_board_in_order(store):
 
 def test_a_ticket_links_other_nodes_for_reference(store):
     small_map(store)
-    ticket = store.add_work(KITCHEN, 'missing', task='build the snooze', links=[ALARM])
+    ticket = store.add_work(KITCHEN, 'unbuilt', task='build the snooze', links=[ALARM])
     assert ticket.address == 'code.timer.kitchen'
     assert [link.address for link in ticket.links] == ['code.alarm.audible']
     edited = store.edit_work(ticket.id, {'links': []})
@@ -87,8 +80,8 @@ def test_a_ticket_links_other_nodes_for_reference(store):
 def test_reordering_a_ticket_preserves_its_assignment_progress_and_completion(store, column):
     from dataclasses import replace
     small_map(store)
-    first = store.add_work(KITCHEN, 'enhancement', task='first', held=column == 'backlog')
-    second = store.add_work(KITCHEN, 'flawed', task='second', held=column == 'backlog', links=[ALARM])
+    first = store.add_work(KITCHEN, None, task='first', held=column == 'backlog')
+    second = store.add_work(KITCHEN, None, task='second', held=column == 'backlog', links=[ALARM])
     if column == 'doing':
         store.take_work(first.id, by='claude')
         store.take_work(second.id, steps=3, by='codex')
@@ -167,25 +160,27 @@ def test_a_ticket_already_taken_or_done_is_not_taken_again(store):
         store.take_work(ticket.id)
 
 
-def test_the_viewer_still_reads_a_taken_missing_or_broken_ticket_as_in_progress_or_fixing(store):
+def test_taking_a_ticket_leaves_the_parts_state_as_it_was(store):
+    """Rich 2026-10-08: the state is the part's, set by the intake and the person; an agent taking the work on it
+    changes nothing on the map."""
     small_map(store)
-    built = store.add_work(KITCHEN, 'missing', task='build it')
+    built = store.add_work(KITCHEN, 'unbuilt', task='build it')
     fixed = store.add_work(ALARM, 'broken', task='fix it')
     store.take_work(built.id)
     store.take_work(fixed.id)
-    assert store.element('code.timer.kitchen').open_work == ('in-progress',)
-    assert store.element('code.alarm.audible').open_work == ('fixing',)
+    assert store.element('code.timer.kitchen').open_work == ('unbuilt',)
+    assert store.element('code.alarm.audible').open_work == ('broken',)
 
 
 @pytest.mark.req('STORE-029')
 def test_a_layout_8_store_opens_at_layout_9_with_taken_tickets_keeping_their_kind(home, store):
     small_map(store)
-    built = store.add_work(KITCHEN, 'missing', task='build it')
+    built = store.add_work(KITCHEN, 'unbuilt', task='build it')
     fixed = store.add_work(ALARM, 'broken', task='fix it')
     path = store_file(home, store)
     db = sqlite3.connect(path)
     db.executescript("""
-        UPDATE work SET condition='in-progress' WHERE condition='missing';
+        UPDATE work SET condition='in-progress' WHERE condition='unbuilt';
         UPDATE work SET condition='fixing' WHERE condition='broken';
         DROP TABLE work_links;
         UPDATE meta SET value='8' WHERE key='schema_version';
@@ -197,7 +192,7 @@ def test_a_layout_8_store_opens_at_layout_9_with_taken_tickets_keeping_their_kin
     with open_store(path, write=False) as opened:
         assert opened.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == SCHEMA_VERSION
     tickets = {ticket.id: ticket for ticket in store.work(limit=0).results}
-    assert (tickets[built.id].condition, tickets[built.id].column) == ('missing', 'doing')
+    assert (tickets[built.id].condition, tickets[built.id].column) == ('unbuilt', 'doing')
     assert (tickets[fixed.id].condition, tickets[fixed.id].column) == ('broken', 'doing')
     assert list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/*.metaform.sqlite3'))
 
@@ -207,8 +202,8 @@ def test_one_ticket_is_read_by_its_id_with_what_the_map_holds_at_its_node_and_it
     and its open questions, and the same for each node it links, so it can start without parsing the work list."""
     _, outer, _ = small_map(store)
     store.ask(KITCHEN, 'Is the snooze still wanted?', suggestions=['Yes', 'No'], by='critic')
-    ticket = store.add_work(KITCHEN, 'missing', task='build the snooze', links=[ALARM, Node('join', outer.id)])
-    store.add_work(ALARM, 'flawed', task='a ticket at the other node')
+    ticket = store.add_work(KITCHEN, 'unbuilt', task='build the snooze', links=[ALARM, Node('join', outer.id)])
+    store.add_work(ALARM, None, task='a ticket at the other node')
     read = store.ticket(ticket.id)
     assert (read.work.id, read.work.task, [link.address for link in read.work.links]) == (
         ticket.id, 'build the snooze', ['code.alarm.audible', 'stakeholder.cook.home'])
@@ -236,8 +231,8 @@ def test_reading_a_ticket_by_an_id_no_ticket_has_names_the_list(store):
 
 def test_where_shows_each_ticket_at_the_address_with_its_work_id(store):
     small_map(store)
-    first = store.add_work(KITCHEN, 'missing', task='build the snooze')
-    second = store.add_work(KITCHEN, 'flawed', task='quieter')
+    first = store.add_work(KITCHEN, 'unbuilt', task='build the snooze')
+    second = store.add_work(KITCHEN, None, task='quieter')
     assert [one['id'] for one in store.where('code.timer.kitchen').to_dict()['work']] == [first.id,
                                                                                               second.id]
 
@@ -254,7 +249,7 @@ def test_the_chassis_work_record_holds_no_glyph_and_the_store_distributes_no_wor
     from metaform.data import records
     from metaform.data.records import WorkRecord
     small_map(store)
-    ticket = store.add_work(KITCHEN, 'missing', task='a lane of its own')
+    ticket = store.add_work(KITCHEN, 'unbuilt', task='a lane of its own')
     assert 'glyph' not in {field.name for field in dataclasses.fields(WorkRecord)}
     assert [name for name in dir(store) if 'glyph' in name.lower() or 'distribut' in name.lower()] == []
     assert [name for name in dir(records) if 'glyph' in name.lower()] == []

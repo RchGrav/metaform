@@ -18,7 +18,7 @@ def populated(store):
     store.add_element(notes.name, 'code.timer.kitchen.display')
     shown = store.add_join(notes.name, 'code.timer.kitchen.display', 'code.timer.kitchen', purpose='show time',
                           ef='reports remaining time')
-    store.add_work(Node('element', 'code.timer.kitchen.display'), 'missing', note='not wired yet', task='wire it')
+    store.add_work(Node('element', 'code.timer.kitchen.display'), 'unbuilt', note='not wired yet', task='wire it')
     store.add_work(Node('join', shown.id), 'broken', task='fix the LCD')
     store.finish(notes.name)
     store.mask('code.alarm', notes.name)
@@ -135,7 +135,7 @@ def test_one_read_of_an_address_shows_what_relies_on_it_and_what_it_relies_on(st
                                              'memory': (['drifts under load'], [])}
     display = store.where('code.timer.kitchen.display')
     assert [(record.condition, record.note, record.task) for record in display.work] == [
-        ('missing', 'not wired yet', 'wire it')]
+        ('unbuilt', 'not wired yet', 'wire it')]
     assert [[held.address for held in join.elements] for join in display.receives] == [['code.timer.kitchen']]
     assert display.receives[0].open_work == ('broken',)
 
@@ -202,7 +202,7 @@ def test_the_read_of_an_address_leaves_ids_and_empty_fields_out_unless_asked(sto
                                             'link': {'kind': 'element', 'id': alarm},
                                             'refs': [{'key': 'path', 'value': 'src/timer.c'}]}]
     display = store.where('code.timer.kitchen.display').to_dict()
-    assert display['work'] == [{'id': store.work().results[0].id, 'condition': 'missing',
+    assert display['work'] == [{'id': store.work().results[0].id, 'condition': 'unbuilt',
                                 'note': 'not wired yet', 'task': 'wire it'}]
     tick = store.where('code.loop.tick').to_dict()
     assert set(tick) == {'kind', 'element', 'provides'}

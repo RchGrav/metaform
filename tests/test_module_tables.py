@@ -275,7 +275,7 @@ def test_export_import_export_carries_the_module_rows_and_importing_again_adds_n
 
 def test_a_document_with_no_module_tables_has_no_modules_list(store):
     from metaform.data import Node
-    store.add_work(Node('element', 'code.anything'), 'missing', task='x')
+    store.add_work(Node('element', 'code.anything'), 'unbuilt', task='x')
     document = export_document(['proj'])
     assert 'modules' not in document['projects'][0]
     assert 'modules' not in document['projects'][0]['bases'][0]

@@ -127,7 +127,7 @@ def test_cold_disabled_map_keeps_work_readable_without_activating_its_runtime(st
     from metaform import loader
 
     small_map(store)
-    created = store.add_work(Node("element", "code.timer.kitchen"), "missing", task="Recover the timer.")
+    created = store.add_work(Node("element", "code.timer.kitchen"), "unbuilt", task="Recover the timer.")
     store.take_work(created.id, steps=2, by="codex")
     expected = store.step_work(created.id, "Located its boundary.")
     loader.set_enabled("map", False)

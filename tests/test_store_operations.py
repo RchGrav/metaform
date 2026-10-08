@@ -46,7 +46,7 @@ def build(store) -> World:
                    ef='restarts the loop')
     challenge = store.add_item(critic.name, Node('element', 'code.watchdog'), 'Nothing recovers a hung loop.')
     store.finish(critic.name)
-    work = store.add_work(Node('element', 'code.k.a'), 'missing', task='build a')
+    work = store.add_work(Node('element', 'code.k.a'), 'unbuilt', task='build a')
     return World(outer, inner, item, prop, finished_item, memo, challenge, k_join, work)
 
 
@@ -100,7 +100,7 @@ CASES: dict[str, tuple[Callable, Callable, dict]] = {
                  {'plans': (1, 0)}),
     # A work record is one row of `work` and nothing else: no identity row, no layer row, no change to the map,
     # STORE-042; its work_id is an identity id in form and stability, STORE-007, and the `work` row is its identity.
-    'add_work': (lambda s, w: None, lambda s, w, c: s.add_work(Node('element', 'code.k.b'), 'missing', task='build b'),
+    'add_work': (lambda s, w: None, lambda s, w, c: s.add_work(Node('element', 'code.k.b'), 'unbuilt', task='build b'),
                  {'work': (1, 0)}),
     'add_work on a join': (lambda s, w: None,
                            lambda s, w, c: s.add_work(Node('join', w.k_join.id), 'broken', held=True),
@@ -306,7 +306,7 @@ NOTICES: dict[str, tuple[Callable, Callable, bool, Callable]] = {
                                              lambda s, w: s.add_work(Node('element', 'code.k.b'), 'sideways'), True,
                                              lambda s, w, got, before: got.condition == 'sideways'),
     'add_work node that names nothing': (lambda s, w: None,
-                                         lambda s, w: s.add_work(Node('element', 'code.nothing'), 'missing'), True,
+                                         lambda s, w: s.add_work(Node('element', 'code.nothing'), 'unbuilt'), True,
                                          lambda s, w, got, before: (got.node_kind, got.node_id, got.address) ==
                                          ('element', 'code.nothing', None)),
     'edit_work key not allowed': (lambda s, w: None,

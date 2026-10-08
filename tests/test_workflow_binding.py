@@ -95,7 +95,7 @@ def test_keywords_and_literal_defaults_preserve_false_zero_and_placeholder_text(
 
 
 def test_call_data_expressions_filter_tickets_and_keep_assignment_text_literal():
-    target = SimpleNamespace(work=[SimpleNamespace(condition='broken'), SimpleNamespace(condition='missing')])
+    target = SimpleNamespace(work=[SimpleNamespace(condition='broken'), SimpleNamespace(condition='unbuilt')])
     logic = Logic('logic', 'stable', 'run', '@STATE_INIT:\n {tickets} := PARAM\n {label} := PARAM\n')
     frame = prepare('workflow.repair.code.run(tickets=[t for t in this.work if t.condition == "broken"], '
                     'label="a:=b")', {}, target, lambda *_: (logic, None))

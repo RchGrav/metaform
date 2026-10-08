@@ -1427,7 +1427,7 @@ def test_map_work_names_a_join_by_its_receiver_and_provider_and_an_element_it_ho
     on_join = j(run, 'work', 'op=add', *named, 'condition=broken', 'task=fix the tone', cwd=mapped)
     assert (on_join['node_kind'], on_join['receiver_address'], on_join['provider_address']) == (
         'join', 'code.timer.kitchen', 'code.alarm.audible')
-    beside = j(run, 'work', 'op=add', *display, 'node=element:code.alarm.audible', 'condition=flawed', cwd=mapped)
+    beside = j(run, 'work', 'op=add', *display, 'node=element:code.alarm.audible', 'condition=broken', cwd=mapped)
     assert (beside['node_kind'], beside['provider_address']) == ('join', 'code.display.digit')
     assert said(beside) == [('node', 'receiver, provider and address name the node; node was not read.')]
     on_part = j(run, 'work', 'op=add', *named, 'address=code.alarm.audible.piezo', 'condition=unbuilt', cwd=mapped)
@@ -1435,14 +1435,14 @@ def test_map_work_names_a_join_by_its_receiver_and_provider_and_an_element_it_ho
     elsewhere = run('map', 'work', 'op=add', *named, 'address=code.display.digit.segment', 'condition=unbuilt',
                     '--json', cwd=mapped, ok=False)
     assert elsewhere.returncode == 2 and 'code.display.digit.segment is not held by' in elsewhere.stderr
-    on_element = j(run, 'work', 'op=add', 'address=code.alarm.audible', 'condition=flawed', cwd=mapped)
+    on_element = j(run, 'work', 'op=add', 'address=code.alarm.audible', 'condition=broken', cwd=mapped)
     assert (on_element['node_kind'], on_element['address']) == ('element', 'code.alarm.audible')
     assert [row['id'] for row in j(run, 'work', *named, cwd=mapped)['results']] == [on_join['id']]
     assert [row['id'] for row in j(run, 'work', *display, cwd=mapped)['results']] == [beside['id']]
     assert [row['id'] for row in j(run, 'work', f'node=join:{shown.id}', cwd=mapped)['results']] == [
         beside['id']]
     cook = {'receiver': 'stakeholder.cook.home', 'provider': 'code.timer.kitchen'}
-    linked = j(run, 'work', 'op=add', 'node=code.alarm.audible', 'condition=flawed',
+    linked = j(run, 'work', 'op=add', 'node=code.alarm.audible', 'condition=broken',
                f'links={json.dumps([cook, "code.timer.kitchen"])}', cwd=mapped)
     cook_id = store.joins('stakeholder.cook.home').results[0].id
     assert [(link['kind'], link['id']) for link in linked['links']] == [

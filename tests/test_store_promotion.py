@@ -18,7 +18,7 @@ def test_promotion_keeps_the_join_ends_history_and_attachments(store):
     notes = knowledge(store, 'promotion-notes')
     item = store.add_item(notes.name, Node('join', original.id), 'Keep the receiver purpose.')
     store.finish(notes.name)
-    work = store.add_work(Node('join', original.id), 'enhancement', task='Improve this purpose.')
+    work = store.add_work(Node('join', original.id), None, task='Improve this purpose.')
     question = store.ask(Node('join', original.id), 'Which delivery serves it?')
     before = store.history(original.id).to_dict()
 

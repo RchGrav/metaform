@@ -95,7 +95,7 @@ def test_unadopted_feature_tables_survive_export_with_all_modules_disabled(store
     from metaform.data import Node, Store, export_document, import_document
 
     small_map(store)
-    ticket = store.add_work(Node("element", "code.timer.kitchen"), "missing", task="Recover this task.")
+    ticket = store.add_work(Node("element", "code.timer.kitchen"), "unbuilt", task="Recover this task.")
     store.take_work(ticket.id, by="codex")
     store.step_work(ticket.id, "Observed the failure.")
     with sqlite3.connect(store_file(home.home(), store)) as db:
@@ -192,7 +192,7 @@ def test_native_old_store_upgrade_then_late_map_adoption_preserves_features(
         assert export_document(["proj"]) == document
     monkeypatch.setattr(loader, "enabled", enabled)
     ticket = store.ticket("W-old").work
-    assert ticket.condition == "missing" and ticket.taken == "2026-10-01"
+    assert ticket.condition == "unbuilt" and ticket.taken == "2026-10-01"
     assert ticket.task == "Recover historical work." and ticket.said[0].said == "Kept progress."
     store.step_work(ticket.id, "Resumed successfully.")
     assert store.ticket(ticket.id).work.steps_done == 2

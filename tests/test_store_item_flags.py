@@ -35,10 +35,10 @@ def test_an_item_keeps_its_read_first_and_always_show_flags_and_an_edit_changes_
 def test_an_item_flagged_task_adds_a_ticket_at_its_node_and_does_not_store_the_flag(home, store):
     small_map(store)
     critic = knowledge(store, 'critic')
-    item = store.add_item(critic.name, KITCHEN, 'Make the alarm stop after a minute.', task=True, condition='missing')
+    item = store.add_item(critic.name, KITCHEN, 'Make the alarm stop after a minute.', task=True, condition='unbuilt')
     assert not hasattr(item, 'task') and 'task' not in (item.extra or {})
     tickets = store.work(KITCHEN, open=True).results
-    assert [(ticket.condition, ticket.task) for ticket in tickets] == [('missing', 'Make the alarm stop after a minute.')]
+    assert [(ticket.condition, ticket.task) for ticket in tickets] == [('unbuilt', 'Make the alarm stop after a minute.')]
     told = [notice for notice in item.notices if notice.where == 'task']
     assert len(told) == 1 and tickets[0].id in told[0].message
     store.finish(critic.name)
@@ -95,7 +95,7 @@ def test_a_ticket_read_returns_the_read_first_items_of_its_node_and_its_linked_n
     store.add_item(critic.name, KITCHEN, 'A note, not read first.')
     store.add_item(critic.name, ALARM, 'Read the alarm wiring first.', read_first=True)
     store.finish(critic.name)
-    ticket = store.add_work(KITCHEN, 'missing', task='stop the alarm', links=[ALARM])
+    ticket = store.add_work(KITCHEN, 'unbuilt', task='stop the alarm', links=[ALARM])
     read = store.ticket(ticket.id)
     assert [item.value for item in read.read_first] == ['Read the timer spec first.', 'Read the alarm wiring first.']
     plain = read.to_dict()

@@ -3894,11 +3894,11 @@ def test_work_is_given_at_a_node_from_its_menu_with_nodes_linked_and_named_inlin
              for address in ('code.timer.kitchen', 'exterior.cook')}
     before = len(store.work(None, None, None, limit=0).results)
     started(run)
-    for absent in ({}, {'condition': ''}):
-        status, _ = api(web, '/api/task', method='POST', headers=own_write(web), body=json.dumps({
+    for absent in ({}, {'condition': ''}):  # a task needs no state on its part, Rich 2026-10-08: it is written plain
+        status, body = api(web, '/api/task', method='POST', headers=own_write(web), body=json.dumps({
             'project': 'proj', 'task': 'Improve the alarm.', 'nodes': [f'element:{alarm}'], **absent}))
-        assert status == 400
-    assert len(store.work(None, None, None, limit=0).results) == before
+        assert status == 200 and body['results'][0]['condition'] == ''
+    assert len(store.work(None, None, None, limit=0).results) == before + 2
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
     page.evaluate(f'window.metaform.menu("{alarm}")')
@@ -3912,7 +3912,7 @@ def test_work_is_given_at_a_node_from_its_menu_with_nodes_linked_and_named_inlin
     page.select_option('#task .condition', 'unbuilt')
     page.click('#task .put')                                          # a task with no text is not written
     page.wait_for_timeout(400)
-    assert len(Store('proj').work(None, None, None, limit=0).results) == before and page.is_visible('#task')
+    assert len(Store('proj').work(None, None, None, limit=0).results) == before + 2 and page.is_visible('#task')
     page.click('#task .text')
     page.keyboard.type('Make the tone louder when ')
     page.select_option('#task .condition', '')
@@ -4708,7 +4708,7 @@ def test_a_nodes_menu_opens_its_work_history_every_ticket_open_and_closed_with_i
     for words in ('broken', 'done', 'wire the tone', 'codex', 'Traced the pin.', 'Wired the driver.', 'wired'):
         assert words in oldest, (words, oldest)
     assert 'Work history' in page.text_content('#float .title')
-    assert page.locator('#float .ticket .age').all_inner_texts() == ['now']
+    assert page.locator('#float .ticket .age').all_inner_texts() == ['now', 'now']  # every ticket shows its age now
     assert problems == []
 
 

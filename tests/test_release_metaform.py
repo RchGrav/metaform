@@ -30,7 +30,7 @@ def test_snapshot_keeps_current_encounters_and_identities_without_working_histor
     store.add_join(notes.name, 'code.timer.kitchen', 'document.review', purpose='Read the review.', ef='records it')
     store.add_item(notes.name, Node('element', 'code.timer.kitchen'), 'private review')
     store.finish(notes.name)
-    store.add_work(Node('element', 'code.timer.kitchen'), 'missing', task='private task')
+    store.add_work(Node('element', 'code.timer.kitchen'), 'unbuilt', task='private task')
     store.ask(Node('element', 'code.timer.kitchen'), 'private question')
     original = export_document(['proj'])
     before = copy.deepcopy(original)

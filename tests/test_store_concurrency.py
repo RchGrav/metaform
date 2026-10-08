@@ -47,7 +47,7 @@ def test_concurrent_writers_leave_the_store_whole(run, home, tmp_path):
     store.layer('parts', 'test', 'The parts.', mutable=True, hideable=True, ready=True)
     for n in range(10):
         store.add_element('parts', f'code.part{n}')
-    ids = [store.add_work(Node('element', f'code.part{n % 10}'), 'missing', task=f'task {n}').id
+    ids = [store.add_work(Node('element', f'code.part{n % 10}'), 'unbuilt', task=f'task {n}').id
            for n in range(WORKERS * 3)]
     with Store('proj', module='dispatch').tables() as tx:  # the dispatch tables exist before the writers race
         tx.rows('lines', limit=1)

@@ -37,7 +37,7 @@ def mapped(store):
     ticket = store.add_work(Node('element', element.id), 'broken', note='Drifts.', task='Fix timing.')
     store.plan_work(ticket.id, 2)
     store.step_work(ticket.id, 'Measured the drift.')
-    closed = store.add_work(Node('element', element.id), 'missing', task='Past task.')
+    closed = store.add_work(Node('element', element.id), 'unbuilt', task='Past task.')
     store.finish_work(closed.id, 'Already done.')
     store.ask(Node('element', element.id), 'Which tone?', suggestions=['Bell', 'Beep'])
     store.tell(Node('element', element.id), 'Check timing.')
