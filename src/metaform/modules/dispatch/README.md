@@ -21,7 +21,7 @@ The template changelog version this module started from: the Unreleased contract
 
 - `metaform.module` for the declaration, `Context`, `Stop`, the verb context's `publish_async`, and `work_reads`, through which it reads a ticket's agent glyph as the map module shows it under `map`, BASE-035.
 - `metaform.settings` for the three start commands.
-- `metaform.data` for the work record (`ticket`, `take_work`), the questions (`ask`, `messages`), and the `dispatch` layer (`layer`, `add_item`, `edit`, `layer_items`).
+- `metaform.data` for the work record (`ticket`, `take_work`), the permission prompts as questions (`ask`, `messages`), and the `dispatch` layer (`layer`, `add_item`, `edit`, `layer_items`).
 - `metaform.events` through `ctx.publish_async('map.changed', ...)` after each write the runner makes, and `ctx.listen`, the base's listener for `map.changed` published in other processes, BASE-053.
 - `metaform.nonce` to request the agent's nonce and an agent's hand-off nonce, read it in `handoff` through `nonce.reached()`, and close a session's nonce when the session ends.
 - `metaform.prompt_files` to read its own `resources/prompts.xml`.
@@ -62,11 +62,11 @@ workflow agent to repair its execution instructions and restart it. Changes to t
 `resources/prompts.xml`:
 
 - `instructions`: `dispatch is active.`, listed under "modules available." in the instructions agents read.
-- `answered`: what the agent is sent when a question it asked itself is answered: the question's id, its text and the answer.
 - `nodes`: the line before the namespace nodes in what `metaform <nonce>` prints.
 - `handed`: what `handoff id=<work id>` prints, the nonce to give the next agent.
 - `handoff`: the one prompt the agent is sent. It tells the agent its ticket is taken for it, to read it with `metaform map work id=<id>` and work it, and how to plan, report each step and close it. `metaform <nonce>` serves the same text, then the `nodes` line and the nodes.
-- `chat`: the originating question and instructions to research it and continue the ticket once answered. A new session also receives the ticket's earlier answers.
+- `sentinel`: Rich's Function Sentinel as he wrote it, with the frame that gives it the person's report and the node, served to the agent `raise` starts, VIEW-045.
+- `talk`, `system`, `prep`: the conversation agents the person summons from the page.
 
 ## Verbs
 
@@ -75,8 +75,8 @@ workflow agent to repair its execution instructions and restart it. Changes to t
 - `message <id> <text>...`: accepts the text for the running agent as `session/prompt`; returns `sent: true`. During a turn, messages and question answers wait in arrival order until the turn ends. One prompt runs at a time. Stop discards the waiting prompts.
 - `stop <id>`: sends `session/cancel`, answers every waiting permission request as cancelled, closes the agent's input and ends its process group; returns `stopped: true`.
 - `handoff`: run through a nonce, `metaform <nonce>`, the hand-off prompt followed by the namespace nodes of the work, the where read of the ticket's node and of each node it links. Run as `handoff id=<work id>`, it makes a new nonce for that ticket and prints `metaform <nonce>` for the agent the work is handed to; it takes nothing. A nonce made this way is not closed by the module.
-- `chat <question id>` reuses the ticket's open session, or assigns a new glyph and starts a new session with the question. Its answer reaches that session as a prompt.
-- `autostart`, when enabled, starts the free glyphs in board order, including tickets with open questions. Without distributed glyphs it fills the configured agent slots.
+- `raise <node> -- <text>`: the person raises an issue on a node; a held ticket holds the report and a sentinel starts on it in the chat, VIEW-045.
+- `autostart`, when enabled, starts the free glyphs in board order over the tickets that have not been tried: open, not taken, not held, with a task. A ticket an agent stopped on stays taken until the person puts it back; nothing restarts by itself. Without distributed glyphs it fills the configured agent slots.
 - `recover` applies the dead runner recovery setting and reports tickets released or deferred with their reasons. Autostart applies it before selecting tickets, including when automatic agent starts are off. Session reads preserve ownership.
 
 `message` and `stop` with no agent running on the ticket name `metaform dispatch start <id> <agent>` as the next step.

@@ -597,6 +597,25 @@ def test_a_dispatched_agent_writes_nothing_on_the_map_and_its_session_and_transc
     dispatch.stop()
 
 
+@pytest.mark.req('VIEW-045')
+def test_raising_an_issue_holds_it_on_a_ticket_at_the_node_and_starts_the_sentinel_with_the_report(dispatch, run):
+    """Rich 2026-10-08: the person says what is wrong on a node; a sentinel starts with their words and nothing else
+    is written. The issue's ticket is held, so no worker takes it."""
+    report = 'The alarm plays twice when the timer ends.'
+    started = json.loads(run('dispatch', 'raise', NODE, '--', report, '--json', cwd=dispatch.folder,
+                             env=dispatch.env('hold')).stdout)
+    assert started['conversation'] and started['work_id'] != dispatch.id
+    issue = dispatch.store.ticket(started['work_id']).work
+    assert (issue.note, issue.held, issue.task) == (report, True, f'Issue raised by the person: {report}')
+    assert issue.taken is None and issue.condition == ''
+    [prompt] = eventually(lambda: dispatch.received('session/prompt'))
+    text = prompt['params']['prompt'][0]['text']
+    assert 'SENTINEL' in text and report in text and NODE in text
+    again = run('dispatch', 'raise', NODE, '--', 'A second one.', cwd=dispatch.folder, ok=False)
+    assert again.returncode != 0 and 'one at a time' in again.stderr + again.stdout
+    run('dispatch', 'stop', started['work_id'], cwd=dispatch.folder)
+
+
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('VIEW-035')
 def test_a_session_that_ends_without_finishing_its_ticket_leaves_it_taken_for_the_person(dispatch):

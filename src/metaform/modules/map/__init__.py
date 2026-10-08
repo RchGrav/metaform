@@ -1117,7 +1117,7 @@ WORK_NOUNS = (
     _noun('reviewed', 'add and edit: it has been checked for correctness before being fired off.', 'bool'),
     _noun('agent', 'add and edit: the agent this ticket prefers, claude, codex or gemini; the person can change it at any '
                    'time, even while an agent works on it.', schema={'type': 'string', 'enum': ['claude', 'codex', 'gemini']}),
-    _noun('hold', 'add and edit: true holds the ticket, hidden from agents, automatic starts and consensus mode until '
+    _noun('hold', 'add and edit: true holds the ticket, hidden from agents and automatic starts until '
                   'the person lets it go; list: true lists held tickets too.', 'bool'),
     _noun('glyph', 'edit: the agent glyph the ticket is assigned to; tickets with the same glyph are one agent\'s, '
                    'done one at a time.'),

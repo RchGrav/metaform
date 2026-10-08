@@ -746,8 +746,8 @@ def raise_issue(ctx: Context) -> dict[str, Any]:
 
 
 def talk(ctx: Context) -> dict[str, Any]:
-    """Talk with an agent about anything the person clicks, VIEW-042: a ticket, open or done, a node, a question, or an
-    ended agent's session. An agent at work on it is talked to directly; otherwise a conversation agent starts, told
+    """Talk with an agent about anything the person clicks, VIEW-042: a ticket, open or done, a node, or an ended
+    agent's session. An agent at work on it is talked to directly; otherwise a conversation agent starts, told
     what it is about. One summoned agent at a time: a second is refused, naming the one open."""
     store = ctx.require_store()
     given = {key: str(ctx.nouns[key]) for key in ('id', 'node', 'session') if ctx.nouns.get(key)}
@@ -884,8 +884,9 @@ MODULE = Module(
                     Noun('agent', 'claude, codex or gemini; the configured agent by default.', required=False),
                     Noun('text', 'What is wrong, in the person\'s words.', many=True)),
              examples=(('metaform dispatch raise code.alarm.audible -- "The alarm plays twice when the timer ends."',
-                        'Starts the sentinel on the alarm with that report.'),)),
-        Verb('talk', talk, 'Talk with an agent about a ticket, open or done, a node, a question or an ended agent\'s '
+                        'Starts the sentinel on the alarm with that report.'),),
+             surfaces=('cli',)),
+        Verb('talk', talk, 'Talk with an agent about a ticket, open or done, a node or an ended agent\'s '
                            'session; an agent at work on it is talked to directly.',
              nouns=(Noun('id', 'The work id of a ticket, open or done.', required=False),
                     Noun('node', 'The address of a node.', required=False),

@@ -47,7 +47,7 @@ def test_a_done_ticket_in_its_own_worktree_waits_for_review_then_merges_and_is_l
     assert git(repo, 'branch', '--show-current') == 'dev'
     logged = [record for record in dispatch.store.work(open=True, limit=0).results
               if 'needs testing before the next release' in (record.task or '')]
-    assert len(logged) == 1 and logged[0].condition == 'enhancement'
+    assert len(logged) == 1 and logged[0].condition == ''
     assert json.loads(run('dispatch', 'merges', '--json', cwd=repo).stdout)['merges'] == []
 
 

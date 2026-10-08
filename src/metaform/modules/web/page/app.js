@@ -3422,7 +3422,7 @@ function ticketControls(ticket) {
         if (await wrote('/api/dispatch-stop', {work_id: ticket.id})) await renderBoard(); else event.target.disabled = false;
       }}, 'Recall agent') : null,
     ticket.done ? null : h('button', {class: kept.hold ? 'hold on' : 'hold',
-      title: kept.hold ? 'Release it: agents and automatic starts see it again' : 'Hold it: hidden from agents, automatic starts and consensus mode',
+      title: kept.hold ? 'Release it: agents and automatic starts see it again' : 'Hold it: hidden from agents and automatic starts',
       onclick: event => change({hold: !kept.hold}, event.target)}, kept.hold ? 'Release hold' : 'Hold'));
 }
 function card(ticket, place, total) {
