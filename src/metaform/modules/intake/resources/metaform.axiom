@@ -92,3 +92,4 @@ METAFORM(
 +> upstream/downstream are project-boundary links, not join-direction namespaces.
 +> Links are not decomposed and hold no project elements beneath them.
 +> An element's refs are items of the sources layer, not fields of the metaform.
++> This structure represents its recursive, nested shape; it is not a requirement to restrain the depth to what is shown.
