@@ -212,6 +212,23 @@ async function exportAs(format, extension, type) {
 }
 $('#exportMarkdown').onclick = () => exportAs('markdown', 'md', 'text/markdown');
 $('#exportXml').onclick = () => exportAs('xml', 'xml', 'application/xml');
+/* The intake's ignore list, .metaform/ignore.txt: what is not the project, said by the person up front, so the
+ * intake never reads it and never judges it, Rich 2026-10-08. */
+$('#ignoreBtn').onclick = async event => {
+  event.stopPropagation();
+  showAdmin(false);
+  let found;
+  try { found = await read('ignore'); } catch (error) { return toast(error.message); }
+  const text = h('textarea', {class: 'ignore', rows: 8, spellcheck: 'false',
+    'aria-label': 'Intake ignores (one pattern per line, like .gitignore)'});
+  text.value = found.text || '';
+  fill($('#clearbox'), h('div', {class: 'warn'}, h('b', {}, 'Intake ignores (one pattern per line, like .gitignore)'),
+    h('span', {}, `Kept in ${found.file}. The intake never reads what these name.`), text,
+    h('button', {onclick: async () => {
+      if (await wrote('/api/ignore', {text: text.value})) { toast('Ignore list saved.'); showClear(false); }
+    }}, 'Save')));
+  showClear(true);
+};
 $('#clearBtn').onclick = async event => {
   event.stopPropagation();
   showAdmin(false);

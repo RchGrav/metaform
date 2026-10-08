@@ -28,7 +28,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from metaform import prompt_files, settings
+from metaform import home, prompt_files, settings
 from metaform.data import Element, GraphPage, Item, Join, Layer, Node, Notice, Store, StoreError
 from metaform.module import Context, Module, Noun, Resource, Status, Stop, Verb, save_report
 
@@ -91,6 +91,10 @@ def served(ctx: Context, asked: str = '') -> str:
     # project, BASE-039. Intake 2.1 is not XML, so it gets the words exactly as written; an XML intake file, which
     # intake_file can name, gets them escaped as an attribute value is.
     text = text.replace('{prompt}', _escape(asked) if source.name.lower().endswith('.xml') else asked, 1)
+    ignored = home.ignore_patterns(record.path)
+    if ignored:  # the one thing added after the intake: what it must not read, from .metaform/ignore.txt
+        text = (text.rstrip('\n') + '\n\nDo not read these paths; they are not the project ('
+                + home.IGNORE_FILE + '):\n' + '\n'.join(ignored) + '\n')
     return text
 
 
@@ -327,9 +331,12 @@ def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], t
                notices: Notices) -> None:
     """A condition given with what was recorded is an open work record at it, with its note, MAP-046: the missing,
     broken and exclude marks of the intake, apart from the map. A note alone is no finding and opens nothing."""
+    if ctx.nouns.get('condition') == 'exclude':  # not a judgment the intake makes: the person's ignore list
+        notices.append({'where': 'condition', 'message': f'exclude is the ignore list: {home.IGNORE_FILE}'})
+        return
     if thing is None or not ctx.nouns.get('condition'):  # none or empty: no finding, MAP-046
         if thing is not None and ctx.nouns.get('note'):
-            notices.append({'where': 'note', 'message': 'A note goes with a condition, missing, broken or exclude; '
+            notices.append({'where': 'note', 'message': 'A note goes with a condition, missing or broken; '
                                                         'without one it was not recorded.'})
         return
     _note(notices, rec.store.add_work(Node(kind, thing), ctx.nouns.get('condition'), note=ctx.nouns.get('note')))
@@ -575,7 +582,7 @@ def status(ctx: Context) -> Status:
 
 E, J = ELEMENT_WORDS.get, JOIN_WORDS.get
 CONDITION = (Noun('condition', E('condition', ''), required=False,
-                  schema={'type': 'string', 'enum': ['missing', 'broken', 'exclude']}),
+                  schema={'type': 'string', 'enum': ['missing', 'broken']}),
              Noun('note', E('note', ''), required=False))
 
 MODULE = Module(
