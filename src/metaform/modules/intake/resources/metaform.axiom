@@ -64,7 +64,7 @@ METAFORM(
                   elements          := [],
 
                   joins := [
-                    # One level deeper: what this PE receives, in the same JOIN form.
+                    # One level deeper: what this PE receives, in the same JOIN form, repeated at every depth.
                     JOIN(...)
                   ]
                 )
@@ -92,4 +92,4 @@ METAFORM(
 +> upstream/downstream are project-boundary links, not join-direction namespaces.
 +> Links are not decomposed and hold no project elements beneath them.
 +> An element's refs are items of the sources layer, not fields of the metaform.
-+> This structure represents its recursive, nested shape; it is not a requirement to restrain the depth to what is shown.
++> Elements and joins nest in the same form at every depth. Trace as deep as the artifact's functionality goes; a part stops being traced on its own only where its parent's purpose carries it, never at the depth this template happens to show.
