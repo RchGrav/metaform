@@ -39,7 +39,7 @@ Signals are JSON records of kind `signal` in the existing dispatch `lines` table
 with live runners. A source and signal key identify one active signal, so repeated evidence raises one event.
 Activation publishes `signal.raised`, clearing publishes `signal.cleared`, and each also publishes `map.changed`
 with the signal payload so other processes and open pages receive it through the existing relay.
-Raw prompt signals from the workflow module and consensus voters are collected through the event bus too.
+Raw prompt signals from the workflow module are collected through the event bus too.
 Crash recovery, reset and fallback session release clear permission signals after ending their session.
 
 The settings are `dispatch_spin_calls` (40 unique tool calls without a completed step), `dispatch_spin_minutes`
@@ -51,8 +51,7 @@ Elapsed time is evaluated on the next incoming session or map event, with no tim
 therefore raises its time signal when another event arrives. Permission waiting is reported separately and ends
 when its request is answered or cancelled.
 
-Session ends with unfinished work, requeues, incomplete prompts, consensus starts and consensus questions for the
-person also raise signals. Consensus hooks do not enable consensus or change ticket selection. The separate rework
+Session ends with unfinished work, requeues and incomplete prompts also raise signals. The separate rework
 counter, owned by ticket `88d5a05958c04257baf716c0272500ae`, announces `dispatch.rework-limit` with `work_id`,
 `attempts` and `limit`; dispatch records and publishes its signal. That counter is not implemented by this feature.
 Detection takes no recovery action. Under D119, the orchestrator may stop a spinning or crashed agent, ask the

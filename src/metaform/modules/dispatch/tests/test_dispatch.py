@@ -337,9 +337,10 @@ def test_a_permission_request_is_a_question_and_the_answer_from_another_process_
     run('map', 'reply', question.id, 'answer=Allow once', cwd=dispatch.folder)
     [outcome] = eventually(lambda: dispatch.logged('permission'))
     assert outcome == {'outcome': {'outcome': 'selected', 'optionId': 'allow'}}
-    assert dispatch.process.wait(15) == 0, dispatch.process.stderr.read().decode()
-    assert dispatch.session().extra['how'] == 'the turn ended with the ticket open and no question asked'
-    assert dispatch.ticket().taken is None, 'work never stops: the ticket goes back for the next agent'
+    time.sleep(2)  # the turn ends with the ticket open: the session stays, idle and reachable, and the ticket taken
+    assert dispatch.process.poll() is None and dispatch.session().extra['state'] == 'running'
+    assert dispatch.session().extra['activity'] == 'idle' and dispatch.ticket().taken, 'nothing restarts by itself'
+    dispatch.stop()
 
 
 @pytest.mark.req('QUAL-015')
@@ -398,40 +399,6 @@ def asked_by_the_agent(dispatch):
 def told(dispatch):
     """The text of each prompt the agent was sent after its first."""
     return [message['params']['prompt'][0]['text'] for message in dispatch.received('session/prompt')[1:]]
-
-
-@pytest.mark.req('BASE-052')
-@pytest.mark.req('MAP-050')
-@pytest.mark.req('QUAL-015')
-def test_a_turn_ending_with_a_question_releases_the_ticket_and_the_next_agent_is_told_the_answer(dispatch, run):
-    """An agent can end its turn with a dependency unresolved, leaving progress and answers for its successor."""
-    dispatch.store.add_element('parts', UNRELATED)
-    dispatch.start('question', FAKE_ACP_ASK_AT=UNRELATED)
-    mine = asked_by_the_agent(dispatch)
-    assert dispatch.process.wait(15) == 0, dispatch.process.stderr.read().decode()
-    assert dispatch.session().extra['how'] == 'cannot continue without an answer'
-    assert dispatch.ticket().taken is None and not dispatch.ticket().held, 'the ticket remains available in To do'
-    run('map', 'reply', mine.id, 'answer=Yes, keep it', cwd=dispatch.folder)
-    dispatch.start('ask')
-    [first, second] = eventually(lambda: dispatch.received('session/prompt')[1:] or None)[:1] + [None]
-    del second
-    text = first['params']['prompt'][0]['text']
-    assert mine.id in text and 'Yes, keep it' in text, 'the next agent on the ticket is told the answer'
-    dispatch.stop()
-
-
-@pytest.mark.req('BASE-052')
-@pytest.mark.req('MAP-050')
-def test_a_question_another_asked_that_the_agent_only_read_does_not_end_its_session(dispatch, run):
-    """Reading another agent's unlinked question does not associate it with this session or ticket."""
-    other = dispatch.store.ask(dispatch.node, 'Is the engine kept?', by='another agent')
-    time.sleep(1.1)  # the store keeps a question's time to the second
-    dispatch.start('list')
-    [listed] = eventually(lambda: dispatch.logged('listed'))
-    assert other.id in listed, 'the agent read the other question in a tool call'
-    time.sleep(1)
-    assert dispatch.process.poll() is None and dispatch.session().extra['state'] == 'running'
-    dispatch.stop()
 
 
 @pytest.mark.req('BASE-052')
@@ -556,16 +523,6 @@ def test_an_agent_makes_a_handoff_nonce_that_hands_the_next_agent_the_work_and_i
 
 
 @pytest.mark.req('BASE-052')
-@pytest.mark.req('MAP-050')
-def test_the_handoff_leads_a_dispatched_agent_to_ask_with_suggestions(dispatch, run):
-    """Questions asked without suggestions show no buttons on the web GUI, so the person cannot answer them there."""
-    made = run('dispatch', 'handoff', f'id={dispatch.id}', cwd=dispatch.folder).stdout
-    [number] = {word for word in made.replace('`', ' ').split() if len(word) == 7 and word.isdigit()}
-    assert 'metaform help map ask' in run(number, cwd=dispatch.folder).stdout
-    assert 'suggestions=' in run('help', 'map', 'ask', cwd=dispatch.folder).stdout.split('Details')[1]
-
-
-@pytest.mark.req('BASE-052')
 def test_stop_answers_a_waiting_permission_request_as_cancelled(dispatch):
     dispatch.start('ask')
     eventually(dispatch.questions)
@@ -640,15 +597,15 @@ def test_a_dispatched_agent_writes_nothing_on_the_map_and_its_session_and_transc
 
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('VIEW-035')
-def test_a_session_that_ends_without_finishing_its_ticket_releases_it(dispatch):
-    """Rich, 2026-10-03: a figure circled a node with no agent behind it, because a stopped agent left its ticket
-    taken. A session that ends with its ticket not done gives the ticket back, so it waits for the next agent."""
+def test_a_session_that_ends_without_finishing_its_ticket_leaves_it_taken_for_the_person(dispatch):
+    """Change order of 2026-10-07: a ticket an agent stopped on stays taken, with what the agent wrote on it, until
+    the person puts it back. Autostart restarted such tickets without limit, 981 sessions in a day on one ticket."""
     dispatch.start('hold')
     eventually(lambda: dispatch.logged('grandchild'))
     assert dispatch.ticket().taken
     dispatch.stop()
-    eventually(lambda: dispatch.ticket().taken is None or None)
-    assert dispatch.ticket().done is None
+    eventually(lambda: dispatch.session().extra['state'] == 'ended' or None)
+    assert dispatch.ticket().taken and dispatch.ticket().done is None, 'it waits for the person, not the next agent'
 
 
 @pytest.mark.req('BASE-052')

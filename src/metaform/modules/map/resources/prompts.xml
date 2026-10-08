@@ -41,59 +41,6 @@
 </refine>
 </commands>
 
-<!-- Shown in metaform help map ask ahead of the question form: what an agent reads before it asks a question at a
-     node, MAP-050. -->
-<question_guidance>Before you ask, look for the answer in the specifications, the code and the map, and ask only what they leave open. Ask only about a decision that cannot easily be undone. A choice that can be undone is yours: make it, write it and its reason on the ticket, and carry on.
-
-The user reads your question on the map with none of your context: say what it is about and why it needs deciding, in plain words, without your own labels or ids. Each suggested answer says what it leads to.</question_guidance>
-
-<!-- The question form an agent fills when it is blocked or stuck, as Rich wrote it; map ask serves it. -->
-<question_form>Before asking, look for the answer in the specifications, code and map.
-Work never stops for a question. Ask only about a decision that is not
-easily reversed. Make a reversible choice yourself, write the choice and
-its reason on the ticket, and carry on. Build a real fork that changes
-behavior significantly and has tradeoffs behind a setting with a sensible
-default; record the setting, its default and the reason on the ticket.
-A small choice of style or wording is reversible, not a setting.
-
-Fill every part of this form:
-
-#1 Specifications reviewed: List the specification files you read and
-explain what they leave undecided. Submit this as specs=.
-
-#2 Why this is not a configuration option: Explain why the decision is
-not easily reversed and why it cannot be handled as a behavior fork behind
-a setting with a sensible default. Submit this as not_option=.
-
-#3 Unexplained "Rich said": If an unexplained statement is the blocker,
-give its exact words and where it appears. Otherwise say "None; the
-decision and its reason are described in the question." Submit this as
-rich_said=.
-
-#4 Question and suggested answers: Write for a person who has not read
-your context. Say what you were doing, what you found, why a decision is
-needed, the choices, what each means and leads to, and which you recommend.
-Use plain words without relying on your own labels or ids. Each suggested
-answer says what it leads to; put the recommended answer first. These
-become buttons on the map. Submit the question and suggestions=, identify
-who asks with by=, and link the ticket with work=.
-
-How to submit: metaform map ask &lt;node&gt; "&lt;your question&gt;" specs="&lt;files reviewed and what remains undecided&gt;" not_option="&lt;why not easily reversed or configurable&gt;" rich_said="&lt;exact words and source, or none&gt;" suggestions='["&lt;recommended choice and its consequence&gt;", "&lt;another choice and its consequence&gt;"]' by="&lt;your agent and ticket&gt;" work=&lt;work id&gt;.
-
-Record what depends on the answer on the ticket and carry on with work
-that does not depend on it. Submitting a question does not end your turn.
-If no work remains that you can continue, end your turn with the ticket
-incomplete so the next ticket can start. If you receive the answer another
-way, record it with metaform map reply &lt;id&gt; answer="..." so the question
-closes and the node stops glowing.</question_form>
-
-<!-- Returned by map ask, as said, to the agent whose question was just recorded, telling it to carry on with work the
-     answer does not affect, MAP-050 and VIEW-042. -->
-<question_thanks>Your question is recorded at the node. Record what depends on the answer
-on the ticket and carry on with work that does not depend on it. If no
-work remains that you can continue, end your turn with the ticket incomplete
-so the next ticket can start.</question_thanks>
-
 <!-- map's instructions, read by agents while map is on, MCP-029; with the tasks setting on and an intake finished,
      its status hook adds the tasks prompt after it. -->
 <instructions>@STATE_INIT:
@@ -104,27 +51,20 @@ so the next ticket can start.</question_thanks>
 When you are assigned a task, understand the functionality you are working
 on and validate your understanding against the project specifications.
 Look for answers in the specifications, code and map before deciding.
-Work never stops for a question. Ask only about a decision that is not
-easily reversed. Make a reversible choice yourself, write the choice and
-its reason on the ticket as a step or in its note, and carry on.
-Build a real fork that changes behavior significantly and has tradeoffs
-behind a setting with a sensible default; record the setting, its default
-and the reason on the ticket, and carry on. A small choice of style or
-wording is reversible, not a setting.
-Write a question at the node it concerns with metaform map ask, filling
-the question form shown by metaform help map ask. A question stands alone:
-say what you were doing, what you found, why a decision is needed, the
-choices, what each leads to, and which you recommend, in plain words for
-a person with none of your context. Supply suggestions with the recommended
-answer first, by= identifying who asks, and work= linking the ticket.
-Record what depends on the answer on the ticket and carry on with work
-that does not depend on it. If no work remains that you can continue, end
-your turn with the ticket incomplete so the next ticket can start.
+The ticket was decided before you took it. Make every reversible choice it
+leaves open yourself, write the choice and its reason on the ticket as a
+step or in its note, and carry on. Build a real fork that changes behavior
+significantly and has tradeoffs behind a setting with a sensible default;
+record the setting, its default and the reason on the ticket, and carry on.
+A small choice of style or wording is reversible, not a setting.
+Never ask the person anything, never leave them a message, and never write
+a ticket of your own. When something the ticket does not decide stops you,
+write what you found and what it needs in the ticket's note and end your
+turn with the ticket open; the person reads it there.
 
 @CONDITION:
   ?IF ( no task is assigned ) -&gt; {State}:=IDLE
   :ELSE ?IF ( functionality or specifications are unresolved ) -&gt; {State}:=READ
-  :ELSE ?IF ( a decision not easily reversed needs an answer AND no question has been written for it ) -&gt; {State}:=ASK
   :ELSE ?IF ( an executable step remains ) -&gt; {State}:=WORK
   :ELSE -&gt; {State}:=BLOCKED
 
@@ -132,7 +72,6 @@ your turn with the ticket incomplete so the next ticket can start.
   @MATCH({State}):
     | [IDLE] -&gt; EXECUTE_PIPELINE(None)
     | [READ] -&gt; EXECUTE_PIPELINE(Read)
-    | [ASK] -&gt; EXECUTE_PIPELINE(Ask)
     | [WORK] -&gt; EXECUTE_PIPELINE(Work)
     | [BLOCKED] -&gt; EXECUTE_PIPELINE(Blocked)
 
@@ -145,29 +84,21 @@ your turn with the ticket incomplete so the next ticket can start.
   Δ(understanding) =&gt; {Functionality}; {Specifications}.
   =&gt; reevaluate state.
 
-@EXECUTE_PIPELINE(Ask):
-  ∇(metaform help map ask) =&gt; read the question form.
-  Δ({Task}, decision not easily reversed, specifications, question form) =&gt; submit metaform map ask
-  with every field of the form filled, including suggestions= with the recommended answer first, by= and work=.
-  Δ({Task}, answer dependency) =&gt; record what depends on the answer in the ticket's note.
-  =&gt; reevaluate state and carry on with the work that does not depend on the answer.
-
 @EXECUTE_PIPELINE(Work):
   YIELD to the assigned task with understanding validated.
 
 @EXECUTE_PIPELINE(Blocked):
-  YIELD with the ticket incomplete and what depends on the answer recorded, so the next ticket can start.
+  YIELD with the ticket open and what stopped you written in its note, for the person to read.
 
 @VERIFY:
   {Valid}:=(no task is assigned OR
     (functionality understood AND understanding validated against project specifications
      AND reversible choices and their reasons recorded on the ticket
      AND significant behavior forks built behind settings with sensible defaults and their reasons recorded
-     AND every question concerns a decision not easily reversed, stands alone, and has its form filled with suggestions in recommended-first order, by= and work=
-     AND work that does not depend on an answer continues
-     AND (no work can continue implies turn ended with ticket incomplete and answer dependencies recorded)))
+     AND no question, message or ticket was written for the person
+     AND (no work can continue implies turn ended with the ticket open and what stopped it in its note)))
   ?IF ({Valid}) -&gt; YIELD
-  :ELSE -&gt; CORRECT the unresolved understanding or missing message.</instructions>
+  :ELSE -&gt; CORRECT the unresolved understanding.</instructions>
 
 <!-- Served by map critic to the critic of a blind-spot challenge, LAYER-014 and LAYER-015: blind_spot_challenge as
      Rich wrote it, in the instructions tags he gave it, then critic_fast by default, or critic_critic with the critic switch. <layer/> is the blind-spot
@@ -183,15 +114,13 @@ Please do not examine the code for your report. You may have access to the proje
 
 We want you to be a fresh set of eyes looking in on the project. As you review the design, surface anything you think we are overlooking.
 
-
 MODE B: CRITIC MODE
 
 You have full access to the map, our specifications, and our code. If you are performing this challenge, we are probably in the middle of construction. Since you can see our code, examine recently completed tasks, our specifications, and anything else that helps you see the big picture.
 
-If something in the code looks wrong, write up a few tickets for us as you go. That is a big help.
+If something in the code looks wrong, say so as a blind spot on the part it concerns; the person decides what becomes work.
 
 Remember: you are looking for oversights, not work we simply haven't gotten to yet.
-
 
 BOTH MODES
 
@@ -228,10 +157,7 @@ Your blind-spot layer is <layer/>. Write each blind spot into it, attached to th
 A blind spot that proposes something new adds its element and join to the same layer with op=add-element and
 op=add-join, layer=<layer/>. When you are done: metaform map knowledge op=finish layer=<layer/>
 
-Write each ticket for the code on the element or join where it is:
-  metaform map work op=add node=element:&lt;address&gt; note="&lt;what and where&gt;" task="&lt;what it needs&gt;"
-Add condition=&lt;missing, broken, flawed, enhancement or exclude&gt; only when the part itself is in that state: missing
-means not built yet, broken means not working. A ticket on a part that exists and works carries no condition.
+What looks wrong in the code is a blind spot too, written on the part it concerns with what you saw and where. You write no tickets and set no part's state: the person reads your layer and decides what becomes work.
 
 The metaform:
 

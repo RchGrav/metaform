@@ -86,8 +86,7 @@ def _condition(value: Any, notices: list[Notice]) -> str:
         notices.append(
             Notice(
                 "condition",
-                f"A {value} is not the condition of a part; it was stored as given. Ask the "
-                "user with metaform map ask, and leave a message with metaform map tell.",
+                f"A {value} is not the condition of a part; it was stored as given.",
             )
         )
         return str(value)

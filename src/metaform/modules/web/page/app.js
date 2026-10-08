@@ -2532,29 +2532,6 @@ $('#agentCount').onchange = async event => {
     else event.target.value = AUTO.agents ?? 5;
   } finally { event.target.disabled = false; }
 };
-/* Voting results, VIEW-043: each question put to a vote, its choices with their votes, the voters' own words, and
- * what came of it; an applied answer can be reopened from here. */
-async function renderVotes() {
-  let found = [];
-  try { found = (await read('consensus-results')).results || []; } catch (error) { toast(error.message); }
-  const counted = found.reduce((all, one) => Object.assign(all, {[one.outcome]: (all[one.outcome] || 0) + 1}), {});
-  fill($('#votes .body'),
-    h('p', {class: 'summary'}, found.length ? Object.entries(counted).map(([what, n]) => `${n} ${what}`).join(' · ') : 'Nothing has been put to a vote yet.'),
-    ...found.map(one => h('div', {class: `vote-result ${one.state.toLowerCase()}`},
-      h('div', {class: 'head'}, h('span', {class: 'pill'}, one.outcome), h('small', {}, `${one.votes} vote(s)${one.rule ? ' · ' + one.rule : ''}`),
-        one.address ? h('small', {}, one.address) : null),
-      h('p', {class: 'question'}, one.question || '(the question is gone)'),
-      h('ul', {class: 'choices'}, one.choices.map(choice => h('li', {class: choice.choice === one.answer ? 'won' : ''},
-        h('b', {}, String(choice.votes)), ' ', choice.choice))),
-      one.said.length ? h('div', {class: 'said'}, one.said.map(said => h('p', {}, h('b', {}, said.kind === 'write-in' ? 'Wrote in: ' : 'Commented: '), said.text))) : null,
-      one.still_applied ? h('button', {class: 'reopen', title: 'Undo this answer: the question waits for an answer again', onclick: async event => {
-        event.target.disabled = true;
-        if (await wrote('/api/reopen', {id: one.message_id})) { toast('Reopened.'); renderVotes(); } else event.target.disabled = false;
-      }}, 'Reopen') : null)));
-}
-$('#votesBtn').onclick = async () => { showAgentMenu(false); $('#votes').hidden = false; await renderVotes(); };
-$('#votes .close').onclick = () => { $('#votes').hidden = true; };
-movable($('#votes'));
 $('#resetAgentsBtn').onclick = async event => {
   showAgentMenu(false);
   event.target.disabled = true;
@@ -2970,32 +2947,15 @@ function asked(record, metaform = S.base, full = false) {
       if ($('#qa')) $('#qa').hidden = true;
       giveWork(node, `${part.task}: ${part.text}\n\nFrom question: ${question}`);
     }}, 'Create ticket')));
-  const chat = h('button', {class: 'chat', title: 'Summon an agent to talk this question through with you', onclick: async event => {
-    event.target.disabled = true;
-    try { await questionChat(record, metaform); }
-    catch (error) { toast(error.message); }
-    finally { event.target.disabled = false; }
-  }}, 'Chat with an agent');
   const reader = full ? null : h('button', {class: 'read-full', title: 'Read the whole question in a large window', onclick: () => {
     fill($('#qa .body'), asked(record, metaform, true));
     $('#qa').hidden = false;
   }}, 'Read in full');
-  // Help me answer, VIEW-043: three agents say what it means and what they would answer; nothing changes until a click
-  const advice = record.closed ? null : h('div', {class: 'advice', 'data-id': record.id});
-  const helper = record.closed ? null : h('button', {class: 'help-answer',
-    title: 'Three agents each explain the question in plain words and say what they would answer; nothing is applied',
-    onclick: async event => {
-      event.target.disabled = true;
-      if (await wrote('/api/recommend', {id: record.id})) drawAdvice(advice, record, written);
-      else event.target.disabled = false;
-    }}, 'Help me answer');
-  if (advice) drawAdvice(advice, record, written);
   return h('div', {class: full ? 'item work question-form full' : 'item work question-form'},
     h('div', {class: 'pills'}, workPill('question'), h('span', {class: 'pill'}, record.closed ? 'answered' : 'open'),
-      record.by ? h('span', {class: 'pill'}, record.by) : null, chat, helper, reader),
+      record.by ? h('span', {class: 'pill'}, record.by) : null, reader),
     h('p', {class: 'asked'}, ...linked(question)),
     ...sections,
-    advice,
     record.closed ? h('p', {class: 'obs'}, `Answer: ${record.answer || ''}`) : [choices, h('div', {class: 'typed'}, answer, send)],
     // Answered by mistake: Reopen clears the answer and the question waits again with its suggestions, MAP-050.
     record.closed ? h('button', {class: 'reopen', onclick: async event => {
@@ -3004,38 +2964,6 @@ function asked(record, metaform = S.base, full = false) {
     }}, 'Reopen') : null);
 }
 $('#qa .close').onclick = () => { $('#qa').hidden = true; };
-/* What the helpers said about a question: its meaning in plain words, the count for each answer with the recommended
- * one first, each answer one click away, and the other helpers' readings folded below. */
-async function drawAdvice(box, record, written) {
-  box.answer = written;
-  let found;
-  try { found = await read('advice', {id: record.id}); } catch { return; }
-  const said = found.advice || [];
-  if (!said.length) {
-    fill(box, found.reading ? h('p', {class: 'reading'}, `${found.reading} agents are reading the question…`) : null);
-    return;
-  }
-  const lead = said.find(one => one.choice === found.recommendation) || said[0];
-  const answers = [...new Set(said.map(one => one.choice))]
-    .sort((a, b) => (b === found.recommendation) - (a === found.recommendation) || (found.counts[b] || 0) - (found.counts[a] || 0));
-  const pick = text => h('button', {class: text === found.recommendation ? 'suggestion recommended' : 'suggestion',
-    title: 'Answer with this', onclick: async event => {
-      const buttons = [...box.querySelectorAll('button')];
-      for (const button of buttons) button.disabled = true;
-      if (!await written(text)) for (const button of buttons) button.disabled = false;
-    }}, text);
-  fill(box, h('div', {class: 'eyebrow'}, 'What it means'), h('p', {class: 'meaning'}, lead.meaning || ''),
-    h('div', {class: 'eyebrow'}, `What ${said.length} agent${said.length === 1 ? '' : 's'} would answer`),
-    h('div', {class: 'tally'}, answers.map(text => h('div', {class: 'row'}, pick(text),
-      h('span', {class: 'count'}, String(said.filter(one => one.choice === text).length))))),
-    h('p', {class: 'reason'}, h('b', {}, 'Why: '), lead.reason || ''),
-    said.length > 1 ? h('details', {}, h('summary', {}, 'Every agent\'s reading'),
-      said.map(one => h('div', {class: 'one'}, h('p', {}, h('b', {}, `${one.choice}. `), one.meaning || ''),
-        h('p', {class: 'reason'}, one.reason || '')))) : null,
-    found.reading ? h('p', {class: 'reading'}, `${found.reading} more still reading…`) : null);
-}
-const refreshAdvice = () => document.querySelectorAll('.advice[data-id]').forEach(box =>
-  box.answer && drawAdvice(box, {id: box.dataset.id}, box.answer));
 /* The review-or-merge flow, VIEW-044: Review. while done work waits; a click takes it over for good, offers an agent's
  * help, and the help comes in a support window at the lower right. */
 const MERGE = {rows: [], chat: null, since: 0};
@@ -3364,12 +3292,8 @@ async function popRef(span, pinned) {
     : found.kind === 'message' ? [h('p', {class: 'text'}, ...linked(found.text)),
       found.choices.length ? h('ol', {}, found.choices.map(choice => h('li', {}, choice))) : null,
       found.answer ? h('p', {}, h('b', {}, 'Answer: '), found.answer) : null,
-      found.type === 'question' ? chatButton({question: found.id}, 'the question') : chatButton({node: found.address || ''}, 'its node'),
-      found.type === 'question' && !found.closed ? h('button', {class: 'help-answer', onclick: async event => {
-        event.target.disabled = true;
-        if (await wrote('/api/recommend', {id: found.id})) toast('Three agents are reading the question; their help shows on it.');
-        else event.target.disabled = false;
-      }}, 'Help me answer') : null]
+      chatButton({node: found.address || ''}, 'its node'),
+      ]
     : [h('h4', {}, found.title), h('pre', {class: 'text'}, found.text)];
   fill(POP, h('div', {class: 'eyebrow'}, kind, h('button', {class: 'close', 'aria-label': 'Close', onclick: () => { POP.hidden = true; }}, '×')), ...body);
   POP.pinned = pinned;
@@ -3680,14 +3604,6 @@ $('#autostartAgents').onchange = async () => {
   } catch (error) { if (S.project === project) { control.checked = AUTO.value; toast(error.message); } }
   finally { if (S.project === project) control.disabled = false; }
 };
-async function questionChat(record, metaform) {
-  const project = S.project;
-  const found = await wrote('/api/dispatch-chat', {id: record.id, metaform, agent: $('#dispatch select.agent').value});
-  if (!found || S.project !== project || S.base !== metaform) return;
-  if (found.conversation) DOCK.mine = found.work_id;  // Dismiss stops a conversation agent, never ticket work
-  openHelpdesk(found.work_id, `${agentName(found.agent)} on the question`,
-    found.state === 'running' ? 'It answers when its current step ends.' : STANDBY, found.session_id);
-}
 const waiting = ticket => !ticket.done && !ticket.taken && ticket.condition !== 'exclude'
   && !D.sessions.some(one => one.state === 'running'
     && (one.work_id === ticket.id || (ownGlyph(ticket) && ownGlyph(ticketOf(one.work_id)) === ownGlyph(ticket))));
@@ -4699,7 +4615,7 @@ async function agentsChanged(whole = false) {
       await settled(AGENTS.at + BATCH);
       AGENTS.again = false;
       AGENTS.at = performance.now();
-      if (AGENTS.whole) { AGENTS.whole = false; renderMerges(); refreshAdvice(); }
+      if (AGENTS.whole) { AGENTS.whole = false; renderMerges(); }
       await Promise.all([renderAgents(), MERGE.chat ? drawHelpdesk() : null]);
     } while (AGENTS.again);
   } catch (error) { toast(error.message); } finally { AGENTS.busy = false; }

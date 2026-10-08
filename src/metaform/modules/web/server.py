@@ -381,20 +381,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.dispatch_prompts(query.get('project', [''])[-1])
         if url.path == '/api/dispatch-autostart':
             return self.dispatch_autostart({'project': query.get('project', [''])[-1]})
-        if url.path == '/api/consensus-results':
-            ok, data = run_dispatch(query.get('project', [''])[-1], 'results', [])
-            return self.send(200, data if ok else {'results': []})
         if url.path == '/api/lookup':
             return self.lookup(query.get('project', [''])[-1], query.get('ref', [''])[-1])
-        if url.path == '/api/advice':  # Help me answer: what the helpers said about one question, VIEW-043; read in
-            # this process, since every question drawn asks
-            found: Any
-            try:
-                found = module_verb({'project': query.get('project', [''])[-1]}, 'dispatch', 'advice',
-                                    {'id': query.get('id', [''])[-1]})
-            except (Stop, StoreError):
-                found = {'advice': [], 'counts': {}, 'recommendation': None, 'reading': 0}
-            return self.send(200, plain(found))
         if url.path == '/api/merges':
             return self.list_merges({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/markdown':
@@ -546,12 +534,12 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/ticket': self.set_ticket, '/api/eligible': self.set_eligible, '/api/merge-review': self.review_merge,
                   '/api/merge-assist': self.assist_merge, '/api/dispatch-reset': self.reset_agents,
                   '/api/system-chat': self.system_chat, '/api/attach': self.attach, '/api/talk': self.talk,
-                  '/api/recommend': self.recommend, '/api/activate-base': self.activate_base,
+                  '/api/activate-base': self.activate_base,
                   '/api/remove-base': self.remove_base,
                   '/api/memory': self.write_memory,
                   '/api/dispatch-start': self.dispatch_start, '/api/dispatch-message': self.dispatch_message,
                   '/api/dispatch-stop': self.dispatch_stop, '/api/dispatch-prompts': self.set_dispatch_prompts,
-                  '/api/dispatch-autostart': self.set_dispatch_autostart, '/api/dispatch-chat': self.dispatch_chat}
+                  '/api/dispatch-autostart': self.set_dispatch_autostart}
         if path not in writes:
             return self.send(404, {'error': f'No such write: {path}.'})
         try:
@@ -813,12 +801,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {'kind': None, 'reason': str(error)})
         self.send(200, found or {'kind': None, 'reason': f'{ref} names nothing in this project.'})
 
-    def recommend(self, given: dict[str, Any]) -> None:
-        """Help me answer on one open question: three helpers say what it means and what they would answer."""
-        if not isinstance(given.get('id'), str) or not given['id']:
-            return self.send(400, {'error': 'Help me answer names the question id.'})
-        self.dispatched(given, 'recommend', [given['id']])
-
     def talk(self, given: dict[str, Any]) -> None:
         """Chat on anything the page shows: a ticket, open or done, a node, a question or an agent's session."""
         nouns = [f'{key}={given[key]}' for key in ('id', 'node', 'question', 'session', 'agent')
@@ -959,16 +941,6 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(work_id, str) or not work_id or not isinstance(agent, str) or not agent:
             return self.send(400, {'error': 'An agent is started on a ticket: its work id and the agent.'})
         self.dispatched(given, 'start', [work_id, agent])
-
-    def dispatch_chat(self, given: dict[str, Any]) -> None:
-        """Open a question's asking session or start a new agent on its ticket, VIEW-042."""
-        message_id = given.get('id')
-        if not isinstance(message_id, str) or not message_id:
-            return self.send(400, {'error': 'Chat names the question id.'})
-        nouns = [message_id]
-        if given.get('agent'):  # an optional noun is never placed by position, only by name
-            nouns.append(f"agent={given['agent']}")
-        self.dispatched(given, 'chat', nouns)
 
     def dispatch_autostart(self, given: dict[str, Any]) -> None:
         """Read automatic dispatch settings in the registered project's folder, VIEW-042."""

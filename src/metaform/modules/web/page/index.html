@@ -28,7 +28,6 @@
       <div class="adminbox" id="agentbox" hidden role="menu">
         <button id="promptsBtn" role="menuitem" title="How agents' permission prompts are answered: approve-all, approve-reads or ask_all">Agent prompts</button>
         <label class="agent-count" title="How many agents work at once, besides the one you summon to chat. Saved as the dispatch_agents setting">Agents at once <input id="agentCount" type="number" min="1" max="17" step="1"></label>
-        <button id="votesBtn" role="menuitem" title="How the agents voted on each question, and what came of it">Voting results</button>
         <button id="resetAgentsBtn" role="menuitem" title="After crashes: every ticket a dead agent still holds goes back on the board, and dead sessions are closed. Working agents are left alone; nothing is deleted">Reset agents</button>
       </div>
     </div>
@@ -176,10 +175,6 @@
     </form>
     <div class="calls"><button class="call" type="button">Call</button></div>
   </div>
-</div>
-<div id="votes" hidden role="dialog" aria-label="Voting results">
-  <div class="bar"><span class="title">Voting results</span><button class="close" title="Close">Close</button></div>
-  <div class="body"></div>
 </div>
 <div id="qa" hidden role="dialog" aria-label="A question, read in full">
   <div class="bar"><span class="title">Question</span><button class="close" title="Close">Close</button></div>

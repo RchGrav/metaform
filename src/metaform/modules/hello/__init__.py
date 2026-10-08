@@ -478,7 +478,7 @@ MODULE = Module(
                      'the name is not greeted.'),
         Verb('follow', follow, 'Wait for the next map change made in another process and show it. Shows ctx.listen.',
              surfaces=('cli',),
-             details='Run it in one terminal and change the map in another, such as with metaform map ask; it prints '
+             details='Run it in one terminal and change the map in another, such as with metaform map work op=add; it prints '
                      'the change and ends. A module whose process runs on, such as the web GUI\'s server, listens '
                      'the same way for as long as it runs.'),
         Verb('greet-favorite', greet_favorite, 'Greet the favorite name. Shows Stop when none is set.'),

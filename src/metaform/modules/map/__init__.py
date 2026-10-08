@@ -806,36 +806,13 @@ def _held(store: Store, nouns: dict[str, Any], notices: list[Notice]) -> Node:
     return store.purpose(receiver, nouns['provider'], nouns.get('address'))
 
 
-FORM_PARTS = (('specs', '#1 Specifications reviewed:'), ('not_option', '#2 Why this is not a configuration option:'),
-              ('rich_said', '#3 Unexplained "Rich said":'))
-
-
 def ask(ctx: Context) -> Any:
-    """Ask the user a question at a node through the question form, MAP-050: the question, then each part of the form
-    the agent filled, each under its heading so the web GUI can show it and make a ticket of it."""
+    """The person asks a question at a node, MAP-050, for the record and for the agent they talk to there. Agents do
+    not ask: the verb is the person's, on the command line and the page."""
     store, notices = _store(ctx), list[Notice]()
-    parts = [ctx.nouns['question']]
-    # The form travels with the question, MAP-050: the MCP tool's named fields carry it, and a part not filled is
-    # noted, never refused, since the form is instruction to the agent and a gate on an inference step burns tokens.
-    for noun, heading in FORM_PARTS:
-        given = ctx.nouns.get(noun)
-        if given:
-            parts.append(f'{heading}\n{given}')
-        elif noun != 'rich_said':
-            notices.append(Notice(noun, f'The question form\'s {heading[:2]} was not filled: '
-                                        f'{noun}=. metaform help map ask shows the form.'))
-    asked = store.ask(_held(store, ctx.nouns, notices), '\n\n'.join(parts), suggestions=ctx.nouns.get('suggestions'),
+    asked = store.ask(_held(store, ctx.nouns, notices), ctx.nouns['question'], suggestions=ctx.nouns.get('suggestions'),
                       by=ctx.nouns.get('by'), work=ctx.nouns.get('work'))
-    result = _with_notices(asked, notices)
-    said = prompt_files.required(resources.files(__name__), 'question_thanks')
-    return {**(result.to_dict() if hasattr(result, 'to_dict') else dict(result)), 'said': said}
-
-
-def tell(ctx: Context) -> Any:
-    """Leave the user a message at a node, which asks for nothing and waits to be read, MAP-050."""
-    store, notices = _store(ctx), list[Notice]()
-    return _with_notices(store.tell(_held(store, ctx.nouns, notices), ctx.nouns['message'], by=ctx.nouns.get('by')),
-                         notices)
+    return _with_notices(asked, notices)
 
 
 def reply(ctx: Context) -> Any:
@@ -1274,41 +1251,16 @@ MODULE = Module(
                        ('metaform map work id=<work id>', ('Read one ticket with what the map holds at its node and '
                                                            'at each node it links.')),
 )),
-        Verb('ask', ask, 'Ask the user a question at the node it concerns, with the answers you suggest.',
+        Verb('ask', ask, 'Write a question at a node, for the record: the person asks, never an agent.',
              nouns=(Noun('node', 'Where the question applies: an element, by address; with provider, the purpose '
                                  'it holds as receiver.'),
-                    Noun('question', 'The question, in plain words a person who has not read your context can answer.'),
+                    Noun('question', 'The question.'),
                     *HELD,
-                    _noun('suggestions', 'The answers you suggest, the one you recommend first, as a JSON list. The '
-                                         'user answers with one click on one of them, or types another.', 'json',
+                    _noun('suggestions', 'Possible answers, as a JSON list.', 'json',
                           {'type': 'array', 'items': {'type': 'string'}}),
-                    _noun('by', 'Who asks: your role or your name, so the user knows whose question it is.'),
-                    _noun('work', 'The ticket this question belongs to, by its work id.'),
-                    _noun('specs', 'Question form #1: the specification files you reviewed.'),
-                    _noun('not_option', 'Question form #2: in plain English, why this decision is unsuitable to be a '
-                                        'configuration option.'),
-                    _noun('rich_said', 'Question form #3: the exact words of an unexplained "Rich said..." and where '
-                                       'they are, if that is the blocker.')),
-             details=prompt_files.required(resources.files(__name__), 'question_guidance') + '\n\n' +
-                     prompt_files.required(resources.files(__name__), 'question_form'),
-             examples=((('metaform map ask code.alarm.audible "I was checking the alarm\'s stored recordings. The older '
-                         'recordings are their only copies, and the specification gives no retention rule. Keeping '
-                         'them uses storage; permanently deleting them frees storage but loses those recordings. I '
-                         'recommend keeping them while a retention rule is decided. May the existing recordings be '
-                         'permanently deleted?" specs="01-map.md, 09-viewer.md: no recording-retention decision" '
-                         'not_option="A setting can govern future retention, but it cannot restore these recordings '
-                         'after permanent deletion." rich_said="None; the decision and its reason are described in the '
-                         'question." suggestions=\'["Keep the existing recordings (recommended): preserve them and '
-                         'their storage cost", "Permit permanent deletion: free storage and lose the existing '
-                         'recordings"]\' by="builder, recording-retention review" work=<work id>'),
-                        ('Ask through the full form about permanent deletion that a setting cannot undo, '
-                         'with the recommended answer first.')),)),
-        Verb('tell', tell, 'Leave the user a message at a node, which asks for nothing and waits to be read.',
-             nouns=(Noun('node', 'Where the message applies: an element, by address; with provider, the purpose '
-                                 'it holds as receiver.'),
-                    Noun('message', 'What the user should know, in plain words.'),
-                    *HELD,
-                    _noun('by', 'Who says it: your role or your name.'))),
+                    _noun('by', 'Who asks.'),
+                    _noun('work', 'The ticket it belongs to, by its work id.')),
+             surfaces=('cli',)),
         Verb('reply', reply, 'Answer a question, or mark a message read.',
              nouns=(Noun('id', 'The id of the question or the message.'),
                     _noun('answer', 'The answer to a question.')),

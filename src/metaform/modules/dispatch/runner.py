@@ -6,9 +6,9 @@ project's folder, with the person's environment unchanged; ACP goes over its sta
 through the official SDK, `acp`. The runner listens on a loopback port for `message` and `stop`, and hears each
 `map.changed` published in another process through the base's listener, QUAL-015 and BASE-053.
 
-A question the agent asks itself, with `map ask` through the MCP server or the command line, is known by its id in
-the output of the agent's own tool call, made no earlier than that call began, so a question it only read is not
-taken for its own. When the person answers it, the agent is told the answer as a prompt.
+An agent asks the person nothing. The one thing a session puts in front of the person is a permission prompt the
+agent's own tool raised, answered on the page; a turn that ends with the ticket open leaves the session idle and
+reachable, and the ticket taken, until the person acts.
 """
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ from acp.schema import (
 )
 
 from metaform import axiom, nonce
-from metaform.data import Message, Node, Store, WorkRecord
+from metaform.data import Node, Store, WorkRecord
 from metaform.module import Context, Stop
 
 from . import (
@@ -55,7 +55,6 @@ from . import (
     group_options,
     next_ticket,
     prompt,
-    questions,
     release,
     require_eligible,
     startable,
@@ -68,7 +67,6 @@ LINE_LIMIT = 64 * 1024 * 1024  # the longest line read from the agent
 CHUNKS = ('agent_message_chunk', 'agent_thought_chunk', 'user_message_chunk')
 STREAM_EVERY = 0.4  # seconds between writes of text still being written, so the page shows it as it grows
 LINES_EVERY = 0.25  # at most one `dispatch.lines` event per this many seconds; the rows are written at once
-IDS = re.compile(r'\b[0-9a-f]{32}\b')  # a message id, as a tool call's output shows it
 TERMINATED = 'the runner was terminated'  # how a session ends on SIGTERM; its runner takes no next ticket
 RELEASE_LIMIT = 90.0  # the one wait for a new process to release: its start, and two writes that may each wait on a lock
 RELEASE = ('import json, sys; from metaform.data import Store; from metaform.modules.dispatch import release; '
@@ -216,7 +214,6 @@ class Session:
         self.conn: Any = None
         self.recorded = False  # the session's row is written
         self.took = bool(ctx.nouns.get('reservation') and record.taken_by == ctx.nouns['reservation'])
-        self.chat_question = ctx.nouns.get('question') or ('prep' if prep else None)
         self.named: set[str] = set()  # the lines kept for something, such as one tool call, changed in place
         self.lines = 0
         self.tools: dict[str, dict[str, Any]] = {}
@@ -228,9 +225,7 @@ class Session:
         self.lines_due: asyncio.TimerHandle | None = None  # the event that covers lines written since, when one waits
         self.flows = 0
         self.asked: dict[str, tuple[asyncio.Future[str | None], list[PermissionOption], str]] = {}
-        self.theirs: dict[str, Message] = {}  # linked ticket questions and questions this agent asks, answered once
         self.answers: dict[str, tuple[str | None, str | None]] = {}  # the answer revision already delivered
-        self.questions_ready = False  # startup includes existing answers in the handoff before live delivery
         self.heard = stamp()  # the last session update or prompt, the earliest a tool call first seen next began
         self.turns = 0
         self.pending: deque[str] = deque()  # prompts wait in arrival order while one turn is in flight
@@ -447,8 +442,6 @@ class Session:
                             await self.raise_signal('repeated-failure', calls=self.failed_count, tool=title)
                     else:
                         self.failed_input, self.failed_count = None, 0
-                if data.get('rawOutput') is not None or data.get('content'):
-                    await self.learn(json.dumps([data.get('rawOutput'), data.get('content')]), known['began'])
             elif kind == 'plan':
                 entries: list[Any] = data.get('entries') or []
                 said = [cast(dict[str, Any], entry) for entry in entries if isinstance(entry, dict)]
@@ -492,24 +485,9 @@ class Session:
         await self.raise_signal('permission-waiting', key=asked.id, message_id=asked.id, tool=title)
         await self.changed(tables='dispatch')
 
-    async def learn(self, output: str, began: str) -> None:
-        """The questions the agent asked itself in one tool call: each one whose id the call's output shows and that
-        was made no earlier than the call began, so a question it only read is not taken for its own."""
-        ids = set(IDS.findall(output)) - set(self.asked) - set(self.theirs)
-        if not ids:
-            return
-        found = await asyncio.to_thread(self.store.messages, None, 'question', True, limit=0)
-        for message in found.results:
-            if message.id in ids and message.created >= began:
-                self.theirs[message.id] = message
-                await self.table(lambda tx, message=message: tx.insert(
-                    'questions', {'message_id': message.id, 'work_id': self.work_id,
-                                  'session_id': self.session_id}), name='questions')
-
     async def check(self) -> None:
-        """Read questions linked to this ticket, including ones added or reopened while it runs, and deliver each
-        answer once; resolve permission requests separately and end the session once its ticket is done while no prompt
-        of its own runs, whatever turn closed it, VIEW-035."""
+        """Resolve permission requests the person answered on the page, and end the session once its ticket is done
+        while no prompt of its own runs, whatever turn closed it, VIEW-035."""
         if not self.ending and self.turns == 0 and not self.prep:
             record = await asyncio.to_thread(ticket, self.store, self.work_id)
             if record.done and not self.ending and self.turns == 0:
@@ -517,17 +495,6 @@ class Session:
                 return
         async with self.lock:
             await self.progress()
-            if self.questions_ready and not self.ending:
-                for message in await asyncio.to_thread(questions, self.store, self.work_id):
-                    if message.id in self.asked:
-                        continue  # ACP permission answers are returned through their waiting request
-                    if message.closed is None:
-                        self.answers.pop(message.id, None)
-                        self.theirs[message.id] = message
-                    elif self.answers.get(message.id) != (message.closed, message.answer):
-                        self.theirs[message.id] = message
-            if self.theirs and not self.ending:
-                await self.answered()
             if not self.asked:
                 return
             found = await asyncio.to_thread(self.store.messages, self.node, 'question', None, limit=0)
@@ -547,20 +514,6 @@ class Session:
                         waiting.set_result(chosen)
                     continue
                 await self.ask(waiting, options, title, f'The answer "{message.answer}" names none of the options. ')
-
-    async def answered(self) -> None:
-        """Each tracked question's answer, told to the ticket's current holder as a prompt, once per revision."""
-        found = await asyncio.to_thread(self.store.messages, None, 'question', False, limit=0)
-        for message in found.results:
-            asked = self.theirs.pop(message.id, None)
-            if asked is None:
-                continue
-            self.answers[message.id] = (message.closed, message.answer)
-            text = prompt('answered', message_id=message.id, question=asked.text or '',
-                          answer=message.answer or '')
-            await self.flush()
-            await self.note(None, 'answered', text)
-            self.turn(await self.checked(text))
 
     # ------------------------------------------------------------------ the session
 
@@ -671,19 +624,8 @@ class Session:
             self.turn(prompt('prep', work_id=self.work_id, branch=branch_of(self.work_id),
                              dev=dev_branch(self.store.project().path) or 'the dev branch'))
             return
-        text = prompt('handoff', work_id=self.work_id)
-        for question in await asyncio.to_thread(questions, self.store, self.work_id):
-            if question.closed is not None:
-                self.answers[question.id] = (question.closed, question.answer)
-                text += '\n\n' + prompt('answered', message_id=question.id, question=question.text or '',
-                                         answer=question.answer or '')
-            else:
-                self.theirs[question.id] = question
-                if question.id == self.chat_question:
-                    text += '\n\n' + prompt('chat', message_id=question.id, question=question.text or '')
-        text = await self.checked(text)
+        text = await self.checked(prompt('handoff', work_id=self.work_id))
         if not self.ending:
-            self.questions_ready = True
             self.turn(text)
 
     def turn(self, text: str) -> None:
@@ -726,12 +668,9 @@ class Session:
                 return
             if record.done:
                 await self.end('the ticket is done')
-            elif any(message_id != self.chat_question for message_id in self.theirs):
-                await self.end('cannot continue without an answer')
-            elif self.chat_question is None:
-                # Work never stops: a turn that ends with the ticket open and nothing asked ends the session, and the
-                # ticket goes back to the queue for the next agent.
-                await self.end('the turn ended with the ticket open and no question asked')
+            # Otherwise the agent stopped with its ticket open: the session stays, idle and reachable, and the
+            # ticket stays taken with the agent's last note, until the person talks to it, stops it or puts the
+            # ticket back. Nothing restarts by itself, change order of 2026-10-07.
 
     async def watch(self, process: asyncio.subprocess.Process) -> None:
         await self.exited.wait()
@@ -741,7 +680,7 @@ class Session:
 
     def changed_elsewhere(self, payload: dict[str, Any]) -> None:
         """map.changed from another process, handed over by the base's listener, BASE-053: a change to this project
-        may be an answer to a question, so the open questions are read, QUAL-015."""
+        may be the person's answer to a permission prompt, so they are checked."""
         if payload.get('project') == self.store.project_id and not self.ending:
             self.spawn(self.check())
 
@@ -759,8 +698,7 @@ class Session:
             if op == 'status':
                 alive = self.process is not None and self.process.returncode is None and not self.exited.is_set()
                 live = alive and not self.ending and self.failure is None
-                activity = ('waiting' if self.asked else 'working' if self.turns else
-                            'waiting' if self.theirs else 'idle') if live else 'idle'
+                activity = ('waiting' if self.asked else 'working' if self.turns else 'idle') if live else 'idle'
                 await self.reply(writer, {**said, 'state': 'running' if live else 'ended', 'agent_alive': alive,
                                           'activity': activity,
                                           'how': None if live else self.how or 'the agent is no longer running'})
