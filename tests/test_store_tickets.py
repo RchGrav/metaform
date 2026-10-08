@@ -192,7 +192,7 @@ def test_a_layout_8_store_opens_at_layout_9_with_taken_tickets_keeping_their_kin
     with open_store(path, write=False) as opened:
         assert opened.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == SCHEMA_VERSION
     tickets = {ticket.id: ticket for ticket in store.work(limit=0).results}
-    assert (tickets[built.id].condition, tickets[built.id].column) == ('unbuilt', 'doing')
+    assert (tickets[built.id].condition, tickets[built.id].column) == ('under-construction', 'doing')
     assert (tickets[fixed.id].condition, tickets[fixed.id].column) == ('broken', 'doing')
     assert list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/*.metaform.sqlite3'))
 

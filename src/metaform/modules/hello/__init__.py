@@ -221,7 +221,7 @@ def todo(ctx: Context) -> str:
     """A work record on this module's own element: missing, with the task given, MAP-046 and STORE-042."""
     store = ctx.require_store()
     _own_element(store)
-    record = store.add_work(Node('element', HOLDER), 'missing', note='hello has more to do', task=ctx.nouns['task'])
+    record = store.add_work(Node('element', HOLDER), 'unbuilt', note='hello has more to do', task=ctx.nouns['task'])
     with store.tables() as tx:  # hello's own field on the record, in its own table, STORE-045
         tx.insert('todos', {'work_id': record.id, 'greeted': len(_names(store))})
     return f'To do: {ctx.nouns["task"]} ({record.id})\n'

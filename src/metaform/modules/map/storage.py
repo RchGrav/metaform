@@ -1013,8 +1013,14 @@ def item_write(tx: Tx, target: Node, answers: list[Any], fields: dict[str, Any],
 def legacy_upgrade(db: DataConnection, found: str) -> None:
     """The map feature's historical layouts, adopted without changing ticket identities."""
     if int(found) < 10:
-        for shown, kind in (("in-progress", "missing"), ("fixing", "broken")):
+        for shown, kind in (("in-progress", "under-construction"), ("fixing", "broken")):
             db.execute("UPDATE work SET condition=?, taken=COALESCE(taken, created) WHERE condition=?", (kind, shown))
+    # A store from any chassis layout before the stages, Rich 2026-10-08, holds the old names; the module's own
+    # version 8 upgrade does not run again once the version is recorded, so the names move here as well.
+    db.execute("UPDATE work SET condition='unbuilt' WHERE condition='missing'")
+    db.execute("UPDATE work SET condition='under-construction' WHERE condition='in-progress'")
+    db.execute("UPDATE work SET condition='broken' WHERE condition='fixing'")
+    db.execute("UPDATE work SET condition='' WHERE condition IN ('flawed', 'enhancement', 'exclude')")
     moved = db.execute("SELECT 1 FROM temp.sqlite_master WHERE name='subtype_moves'").fetchone()
     if int(found) < 19 and moved is not None:
         # Layout 19, Rich 2026-10-04: a subtype join is gone and its element is held by the join; what was at the

@@ -602,7 +602,7 @@ def test_raising_an_issue_holds_it_on_a_ticket_at_the_node_and_starts_the_sentin
     """Rich 2026-10-08: the person says what is wrong on a node; a sentinel starts with their words and nothing else
     is written. The issue's ticket is held, so no worker takes it."""
     report = 'The alarm plays twice when the timer ends.'
-    started = json.loads(run('dispatch', 'raise', NODE, '--', report, '--json', cwd=dispatch.folder,
+    started = json.loads(run('dispatch', 'raise', NODE, '--json', '--', report, cwd=dispatch.folder,
                              env=dispatch.env('hold')).stdout)
     assert started['conversation'] and started['work_id'] != dispatch.id
     issue = dispatch.store.ticket(started['work_id']).work

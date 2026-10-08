@@ -192,7 +192,7 @@ def test_native_old_store_upgrade_then_late_map_adoption_preserves_features(
         assert export_document(["proj"]) == document
     monkeypatch.setattr(loader, "enabled", enabled)
     ticket = store.ticket("W-old").work
-    assert ticket.condition == "unbuilt" and ticket.taken == "2026-10-01"
+    assert ticket.condition == "under-construction" and ticket.taken == "2026-10-01"
     assert ticket.task == "Recover historical work." and ticket.said[0].said == "Kept progress."
     store.step_work(ticket.id, "Resumed successfully.")
     assert store.ticket(ticket.id).work.steps_done == 2

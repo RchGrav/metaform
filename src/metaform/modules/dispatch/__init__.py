@@ -741,8 +741,9 @@ def raise_issue(ctx: Context) -> dict[str, Any]:
     if shutil.which(argv(str(ctx.setting(f'dispatch_{agent}')))[0]) is None:  # checked before anything is written
         raise Stop(f'The start command of {agent} is not found on this system.', f'metaform set --dispatch-{agent} "<command>"')
     first = text.splitlines()[0][:120]
-    record = map_work(ctx, op='add', node=node, task=f'Issue raised by the person: {first}', note=text, held=True, hold=True)
-    return converse(ctx, store, record.id, agent, [f'sentinel={node}'])
+    made = map_work(ctx, op='add', node=node, task=f'Issue raised by the person: {first}', note=text, held=True, hold=True)
+    work_id = str(made['id'] if isinstance(made, dict) else made.id)
+    return converse(ctx, store, work_id, agent, [f'sentinel={node}'])
 
 
 def talk(ctx: Context) -> dict[str, Any]:
