@@ -142,6 +142,20 @@ def now() -> str:
     return datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
+IGNORE_FILE = '.metaform/ignore.txt'  # what the intake does not read, gitignore patterns, Rich 2026-10-08
+
+
+def ignore_patterns(project_path: Path | str) -> list[str]:
+    """The patterns in the project's `.metaform/ignore.txt`, one per line, blank lines and `#` comments left out:
+    the paths the intake never reads. Absent, none. Exclude was once a judgment the intake made on what it saw, and
+    agents acted on it; now the person says up front what is not the project, as gitignore does."""
+    try:
+        lines = (Path(project_path) / IGNORE_FILE).read_text(encoding='utf-8').splitlines()
+    except OSError:
+        return []
+    return [line.strip() for line in lines if line.strip() and not line.lstrip().startswith('#')]
+
+
 def path_key(path: Path | str) -> str:
     """The comparison key of a folder: resolved and case-folded where the system folds case."""
     return os.path.normcase(str(Path(path).expanduser().resolve()))

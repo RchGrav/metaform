@@ -347,6 +347,7 @@ pre.prompt{font:12px/1.5 var(--mono);background:var(--ground);border:1px solid v
 .btn.danger{border-color:var(--danger);color:var(--danger)}
 .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .warn{border:1px solid var(--danger);border-radius:6px;padding:12px;background:color-mix(in srgb,var(--danger) 8%,transparent);display:grid;gap:8px;font-size:13px}
+.warn textarea.ignore{background:var(--ground);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r);padding:8px;font:13px var(--mono,monospace);resize:vertical;min-height:120px}
 .warn ul{margin:0;padding-left:18px}
 main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 #stage{position:absolute;inset:0}

@@ -972,3 +972,25 @@ def test_refs_go_to_the_sources_layer_only_while_intake_sources_is_on(run, proje
     assert alarm is not None
     held = store.node(Node('element', alarm.id), raw=True)
     assert held is not None and [group.layer for group in held.layers if any(item.refs for item in group.items)] == []
+
+
+@pytest.mark.req('BASE-039')
+@pytest.mark.req('MAP-046')
+def test_the_ignore_list_follows_the_intake_and_exclude_is_not_a_condition(run, project):
+    """Rich, 2026-10-08: exclude was meant as a metaform ignore, like gitignore, not a judgment the intake makes on what
+    it sees; agents acted on exclude marks and deleted files. The person lists what is not the project in
+    .metaform/ignore.txt, the intake is served with that list after it and reads nothing it names, and a condition of
+    exclude sent to an intake tool records nothing and is answered with where the list is."""
+    plain = SPEC.read_text(encoding='utf-8').replace('{prompt}', '', 1)
+    assert run('intake', 'prompt', cwd=project).stdout == plain  # no file: the intake alone
+    (project / '.metaform').mkdir()
+    (project / '.metaform' / 'ignore.txt').write_text('# not the project\nrich/\n\n*.zip\n', encoding='utf-8')
+    assert metaform_home.ignore_patterns(project) == ['rich/', '*.zip']
+    served = run('intake', 'prompt', cwd=project).stdout
+    assert served.startswith(plain.rstrip('\n'))
+    assert served.endswith('(.metaform/ignore.txt):\nrich/\n*.zip\n')
+    assert '# not the project' not in served
+    recorded(run, project, 'start')
+    answer = recorded(run, project, 'element', 'code.alarm.audible', 'role=SE', 'condition=exclude', 'note=stray')
+    assert any(n['message'] == 'exclude is the ignore list: .metaform/ignore.txt' for n in answer['notices'])
+    assert Store('timer').work(open=True, limit=0).results == ()

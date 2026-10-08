@@ -375,6 +375,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.remove_preview(query.get('project', [''])[-1])
         if url.path == '/api/backups':
             return self.backups(query.get('project', [''])[-1])
+        if url.path == '/api/ignore':
+            return self.read_ignore(query.get('project', [''])[-1])
         if url.path == '/api/dispatch-sessions':
             return self.dispatch_sessions({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/dispatch-prompts':
@@ -535,7 +537,7 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/merge-assist': self.assist_merge, '/api/dispatch-reset': self.reset_agents,
                   '/api/system-chat': self.system_chat, '/api/attach': self.attach, '/api/talk': self.talk,
                   '/api/activate-base': self.activate_base,
-                  '/api/remove-base': self.remove_base,
+                  '/api/remove-base': self.remove_base, '/api/ignore': self.write_ignore,
                   '/api/memory': self.write_memory,
                   '/api/dispatch-start': self.dispatch_start, '/api/dispatch-message': self.dispatch_message,
                   '/api/dispatch-stop': self.dispatch_stop, '/api/dispatch-prompts': self.set_dispatch_prompts,
@@ -1073,6 +1075,32 @@ class Handler(BaseHTTPRequestHandler):
         error = next((line[len('Error: '):] for line in said if line.startswith('Error: ')), ' '.join(said))
         found = next((line[len('Next: '):] for line in said if line.startswith('Next: ')), None)
         self.send(400, {'error': error, 'next': found})
+
+    def read_ignore(self, project: str) -> None:
+        """The intake's ignore list, `.metaform/ignore.txt` in the project, as the person edits it."""
+        found = home.project(project)
+        if found is None:
+            return self.send(404, {'error': f'No project {project} is registered.', 'next': 'metaform list projects'})
+        path = Path(found.path) / home.IGNORE_FILE
+        try:
+            text = path.read_text(encoding='utf-8')
+        except OSError:
+            text = ''
+        self.send(200, {'file': home.IGNORE_FILE, 'text': text, 'patterns': home.ignore_patterns(found.path)})
+
+    def write_ignore(self, given: dict[str, Any]) -> None:
+        """Save the ignore list as typed; the intake reads it on its next prompt."""
+        found = home.project(str(given.get('project', '')))
+        if found is None:
+            return self.send(404, {'error': f'No project {given.get("project", "")} is registered.',
+                                   'next': 'metaform list projects'})
+        text = given.get('text')
+        if not isinstance(text, str):
+            return self.send(400, {'error': 'The ignore list is text, one pattern per line.'})
+        path = Path(found.path) / home.IGNORE_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text if text.endswith('\n') or not text else text + '\n', encoding='utf-8')
+        self.send(200, {'file': home.IGNORE_FILE, 'patterns': home.ignore_patterns(found.path)})
 
     def clear_project(self, given: dict[str, Any]) -> None:
         """Clear the project through the chassis's `clear_project`, as `metaform clear project --confirm` does, and
