@@ -104,6 +104,13 @@ const folderOn = () => new Set(S.layers.filter(layer => layer.on).map(layer => l
 const shownOn = () => S.view ?? folderOn();
 const same = (a, b) => a.size === b.size && [...a].every(x => b.has(x));
 
+/* The edges of the project, Rich 2026-10-08: upstream entries, what the project depends on, and downstream entries,
+ * who it serves, are records under those roots, not layers; the page lists each root beside the layers as a toggle
+ * that hides every record under it, so the product's own parts stand alone. Remembered per viewer. */
+const ROOTS = ['upstream', 'downstream'];
+const rootsOff = () => { try { return new Set(JSON.parse(localStorage.getItem('metaform.rootsOff') || '[]')); } catch { return new Set(); } };
+const rootOf = address => (address || '').split('.')[0];
+const underHiddenRoot = address => rootsOff().has(rootOf(address));
 /* The layers: a checklist opened from the header's Layers button, one row each, VIEW-007, Rich 2026-09-26. */
 function renderChips() {
   const on = shownOn();
@@ -111,6 +118,20 @@ function renderChips() {
   fill(box);
   const listed = S.layers;
   let count = 0;
+  const off = rootsOff();
+  for (const root of ROOTS) {
+    const input = h('input', {type: 'checkbox', 'data-root': root, onchange: () => {
+      const next = rootsOff();
+      input.checked ? next.delete(root) : next.add(root);
+      try { localStorage.setItem('metaform.rootsOff', JSON.stringify([...next])); } catch (error) { /* storage can be blocked; the view still changes */ }
+      renderChips();
+      draw3D(); renderLegend(); build2D();
+    }});
+    input.checked = !off.has(root);
+    box.append(h('label', {class: 'layerrow root', style: {'--c': 'var(--muted)'},
+      title: root === 'upstream' ? 'What the project depends on: records under upstream.' : 'Who the project serves: records under downstream.'},
+      input, h('i'), h('span', {class: 'name'}, root), ' ', h('span', {class: 'meta'}, 'root · records')));
+  }
   for (const layer of listed) {
     const usable = layer.ready && !layer.hidden, checked = usable && on.has(layer.name);
     if (checked) count++;
@@ -315,6 +336,7 @@ function graphData() {
   const nodes = [], links = [];
   const byAddress = new Map([...S.elements.values()].map(entry => [entry.element.address, entry.element.id]));
   for (const {element, parent} of S.elements.values()) {
+    if (underHiddenRoot(element.address)) continue;  // an edge of the project the viewer turned off
     nodes.push({id: element.id, t: 'el', name: labelOf(element), address: element.address,
       role: element.role, work: element.open_work || [], layer: element.layer});
     if (parent && byAddress.has(parent)) links.push({source: byAddress.get(parent), target: element.id, k: 'tree'});
@@ -491,7 +513,7 @@ function look(id) {
     text3d: Boolean(node?.__threeObj?.userData.written),  // until the node itself is drawn in its place
     turns: writing.get(id)?.rate ?? 0, pace: node ? paceOf(node) : null,
     text: textOf(id), signal3d: writing.get(id)?.reached ?? 0, signalColor3d: writing.get(id)?.signalColor ?? null,
-    glow2d: Boolean(box) && ['broken', 'fixing', 'exclude', 'question', 'message'].some(name => group.classList.contains('work-' + name))
+    glow2d: Boolean(box) && ['broken', 'question', 'message'].some(name => group.classList.contains('work-' + name))
       && [group, box].some(part => getComputedStyle(part).filter.includes('drop-shadow')),
     red3d: material ? '#' + material.color.getHexString() === css('--broken').toLowerCase() : false,
     material: material ? (material instanceof MeshTransmissionMaterial ? 'MeshTransmissionMaterial' : material.type) : null,
@@ -509,12 +531,11 @@ function look(id) {
     bloom2d: Boolean(box && getComputedStyle(group).filter.includes('drop-shadow')),
     color3d: material ? '#' + material.color.getHexString() : null,
     label3d: (tags.get(id)?.classes || []).filter(name => name.startsWith('work-')),
-    stroke2d: box ? toHex(getComputedStyle(box).stroke) : null,
-    exclude3d: material ? '#' + material.color.getHexString() === css('--exclude').toLowerCase() : false};
+    stroke2d: box ? toHex(getComputedStyle(box).stroke) : null};
 }
 
 /* ---------- 3D: a synaptic map, drawn as the approved prototype draws it ---------- */
-const CONDITIONS = ['missing', 'in-progress', 'broken', 'fixing', 'flawed', 'enhancement', 'exclude', 'question', 'message'];
+const CONDITIONS = ['unbuilt', 'under-construction', 'broken', 'question', 'message'];  // built draws nothing
 /* The agents at work, VIEW-035: a figure for each ticket an agent works, from the moment it is taken until it is
  * closed. It materializes on the most primary node, the DE, makes its way along the map's own edges to the ticket's
  * node, goes onto it and circles it slowly, facing the way it moves, at one steady pace until the ticket is closed;
@@ -777,10 +798,10 @@ function roam2d() {
   }
   if (ROAM2D.figures.size) ROAM2D.frame = requestAnimationFrame(roam2d);
 }
-/* A ticket's light, VIEW-035: broken flashes red, flawed yellow and enhancement green. Flashing lets the node's own
+/* A part's light, VIEW-035 and MAP-046: broken flashes red. Flashing lets the node's own
  * color show between flashes, and each step filed makes it faster: from FLASH.slow a beat while it waits, to
  * FLASH.fast as the steps planned are filed, or a little faster with each step when none were planned. */
-const LIGHTS = [['broken', '--broken'], ['fixing', '--broken'], ['flawed', '--flawed'], ['enhancement', '--enhancement']];
+const LIGHTS = [['broken', '--broken']];  // the one fault a built part can have, MAP-046
 const FLASH = {slow: 1.2, fast: 0.24, step: 0.35};
 function paceOf(node) {
   const done = S.progress?.get(node.id);
@@ -791,13 +812,11 @@ function paceOf(node) {
 const lightOf = node => LIGHTS.find(([condition]) => has(node, condition));
 const has = (node, condition) => (node.work || []).includes(condition);
 function colorOf(node) {
-  if (node.t === 'el') return has(node, 'exclude') ? css('--exclude') : node.role === 'CQU' ? css('--signal')
-    : node.role === 'DE' ? css('--de') : layerColor(node.layer);
-  if (has(node, 'exclude')) return css('--exclude');
+  if (node.t === 'el') return node.role === 'CQU' ? css('--signal') : node.role === 'DE' ? css('--de') : layerColor(node.layer);
   if (node.t === 'purpose') return css('--text');
   return layerColor(node.layer);
 }
-/* The color an object has apart from any condition, which a exclude record pulses against. */
+/* The color an object has apart from any condition. */
 const ownColor = node => colorOf({...node, work: []});
 /* A dimmed node keeps its own hue: its color with part of the background mixed in, the share set by the theme. */
 function dim(color) {
@@ -1141,7 +1160,7 @@ const T = {letters: null, strokes: null, order: LETTERS, cell: {value: new THREE
   screen: {value: new THREE.Vector2(1, 1)}, zoom: {value: 1}, light: {value: TEXT.light}, away: 0, last: 0,
   rows: new Map()};
 const writing = new Map();  // what is being written, by node id, kept while the map is drawn again
-const unbuilt = node => has(node, 'missing') || has(node, 'in-progress');
+const unbuilt = node => has(node, 'unbuilt') || has(node, 'under-construction');
 const asText = node => unbuilt(node) || writing.has(node.id);
 const FACE = '500 48px "IBM Plex Mono", ui-monospace, monospace', WIDE = 30, HIGH = 60;
 function weightOf(letter) {
@@ -1303,8 +1322,7 @@ function rows3d(data) {
   }
 }
 const WHITE = new THREE.Color(1, 1, 1);
-const SIGNALS = [['broken', '--broken'], ['fixing', '--broken'], ['flawed', '--flawed'], ['enhancement', '--enhancement'],
-  ['exclude', '--exclude'], ['question', '--question'], ['message', '--question']];
+const SIGNALS = [['broken', '--broken'], ['question', '--question'], ['message', '--question']];
 function text3d() {
   const now = performance.now() / 1000, passed = Math.min(0.1, Math.max(0, now - (T.last || now)));
   T.last = now;
@@ -1322,7 +1340,7 @@ function text3d() {
     if (!state) continue;
     shown.add(node.id);
     if (!object?.userData.written) continue;
-    const working = has(node, 'in-progress'), climbed = () => TEXT.first + (TEXT.top - TEXT.first) * Math.pow(state.level, 1.4);
+    const working = has(node, 'under-construction'), climbed = () => TEXT.first + (TEXT.top - TEXT.first) * Math.pow(state.level, 1.4);
     if (!unbuilt(node) && state.ending === null) state.ending = 0;   // it is built: the ending starts from where it is
     if (state.ending === null) {
       // Work with no phases to report climbs by itself, slowly, to a point short of the fastest; each step filed
@@ -1372,8 +1390,7 @@ function textOf(id) {
   return [...state.cells.image.data.slice(0, 64)].map(value => T.order[Math.min(61, Math.floor(value / 256 * 62))]).join('');
 }
 /* The condition of a node in 3D, MAP-046, VIEW-005 and VIEW-029: an open broken record flashes it red, steady red
- * with reduced motion; a broken part being fixed is steady red; an open exclude record pulses it between the exclude color
- * and its own, steady in the exclude color with reduced motion; an open question or message keeps its color. While it is
+ * with reduced motion; an open question or message keeps its color. While it is
  * lit the node gives off light in the color of what it signals, which the bloom spreads past its outline: a flash is
  * lit on its beat, a pulse swells for half its period and rests for the other half. The sphere takes its own material
  * first, so no other node of its color changes. Called every frame for the nodes that carry a record, and for a node
@@ -1381,10 +1398,10 @@ function textOf(id) {
 function paint3d(node) {
   const object = node.__threeObj;
   if (!object || !object.material || object.userData.written) return;  // text shows its own condition, VIEW-027
-  const light = lightOf(node), exclude = has(node, 'exclude');
+  const light = lightOf(node);
   // An open question glows in the question's color, pulsating, so it is seen with the whole map zoomed out, VIEW-021.
   const asked = has(node, 'question') || has(node, 'message');  // a message waits for the user, VIEW-030
-  if (R.nodes.has(node.id) || (!light && !exclude && !asked)) {  // a wave shows on it, or nothing to signal
+  if (R.nodes.has(node.id) || (!light && !asked)) {  // a wave shows on it, or nothing to signal
     if (object.material.userData.lit) { shine(object.material, null, 0); object.material.userData.lit = false; }
     return;
   }
@@ -1395,19 +1412,17 @@ function paint3d(node) {
   }
   const period = light ? paceOf(node) : 1;
   const beat = reduced() || (performance.now() / 1000) % period < period / 2;
-  const shown = light ? (beat ? css(light[1]) : ownColor(node)) : exclude ? (beat ? css('--exclude') : ownColor(node))
-    : colorOf(node);
-  colored(object.material, dimmed(node) && !(light || exclude) ? dim(shown) : shown);
+  const shown = light ? (beat ? css(light[1]) : ownColor(node)) : colorOf(node);
+  colored(object.material, dimmed(node) && !light ? dim(shown) : shown);
   const swell = reduced() ? 1 : Math.max(0, Math.sin(performance.now() / 1600 * 2 * Math.PI));
-  const lit = light || exclude ? (beat ? 1 : 0) : swell;
-  shine(object.material, light ? css(light[1]) : exclude ? css('--exclude') : css('--question'), lit);
+  const lit = light ? (beat ? 1 : 0) : swell;
+  shine(object.material, light ? css(light[1]) : css('--question'), lit);
   object.material.userData.lit = true;
 }
 
 /* An encounter takes its layer's color. */
 function linkColor(link) {
   if (link.k === 'tree') return css('--tree');
-  if ((link.work || []).includes('exclude')) return css('--exclude');
   return layerColor(link.layer);
 }
 let G = null;
@@ -1639,7 +1654,7 @@ function dropLabel(id) {
 function lookOf(classes, palette) {
   const is = name => classes.includes(name);
   const chosen = is('sel'), reach = is('reach');
-  const color = is('work-exclude') ? palette.exclude : is('work-broken') || is('work-fixing') ? palette.broken
+  const color = is('work-broken') ? palette.broken
     : reach ? palette.text : is('dim') ? palette.muted : chosen ? palette.signal : palette.text;
   return {size: chosen ? LABEL.chosen : LABEL.size, weight: chosen || reach ? 600 : 500, family: palette.sans, color,
     ground: palette.ground, glow: reach ? [10, 6, 3] : [6, 2]};
@@ -1839,10 +1854,10 @@ function renderLegend() {
   const open = new Set([...S.elements.values()].flatMap(entry => entry.element.open_work || [])
     .concat(S.joins.flatMap(join => join.open_work || [])));
   for (const condition of CONDITIONS) if (open.has(condition))
-    legend.append(h('span', {style: {'--c': condition === 'missing' || condition === 'in-progress' ? 'var(--text)'
-      : `var(--${condition === 'fixing' ? 'broken' : condition === 'message' ? 'question' : condition})`}},
-      h('i', {class: {missing: 'dot bloom', 'in-progress': 'dot bloom pulse', fixing: 'dot bloom pulse', question: 'dot bloom pulse', message: 'dot bloom pulse'}[condition] || 'dot'}),
-      `work: ${condition}`));
+    legend.append(h('span', {style: {'--c': condition === 'unbuilt' || condition === 'under-construction' ? 'var(--text)'
+      : `var(--${condition === 'message' ? 'question' : condition})`}},
+      h('i', {class: {unbuilt: 'dot bloom', 'under-construction': 'dot bloom pulse', question: 'dot bloom pulse', message: 'dot bloom pulse'}[condition] || 'dot'}),
+      condition === 'question' || condition === 'message' ? `waiting: ${condition}` : `part: ${condition.replace('-', ' ')}`));
   const shown = G ? G.graphData().nodes.length : 0;
   $('#count').textContent = noMetaform() ? 'no metaform yet'
     : `${S.elements.size} elements · ${S.joins.length} joins · ${shown} nodes shown` + (S.loading ? ' · loading' : '')
@@ -1866,13 +1881,14 @@ async function build2D(keep = true) {
         tertiaryColor: css('--group')}});
     mermaidReady = true;
   }
-  const keys = new Map([...S.elements.keys()].map((id, index) => [id, `n${index}`]));
+  const shown2d = [...S.elements].filter(([, {element}]) => !underHiddenRoot(element.address));
+  const keys = new Map(shown2d.map(([id], index) => [id, `n${index}`]));
   // One edge from a join's receiver to each element it holds, Rich's shape, 2026-10-04.
   const drawn = S.joins.filter(join => keys.has(join.receiver))
     .flatMap(join => join.providers.filter(id => keys.has(id)).map(provider => ({join, provider})));
   const vertical = S.elements.size > 5;
   const lines = [vertical ? 'flowchart TB' : 'flowchart LR'];
-  for (const [id, {element}] of S.elements) lines.push(`${keys.get(id)}["${plain2d(labelOf(element))}"]`);
+  for (const [id, {element}] of shown2d) lines.push(`${keys.get(id)}["${plain2d(labelOf(element))}"]`);
   drawn.forEach(({join, provider}, index) => lines.push(`${keys.get(join.receiver)} e${index}@--> ${keys.get(provider)}`));
   if (!S.elements.size || S.elements.size > MAP2D) { IN.length = 0; M.base = null; renderCrumbs(); }
   if (!S.elements.size) { fill(host, h('p', {class: 'empty', style: {padding: '16px'}}, noMetaform() ? noneYet() : 'This metaform has no elements in these layers.')); return; }
@@ -3231,12 +3247,11 @@ addEventListener('keydown', event => { if (event.key === 'Escape' && !$('#menu')
 /* The board, VIEW-037: the project's tickets as a classic kanban board, one column for each place a ticket can be,
  * a card for each ticket. A card dragged to a column moves its ticket there and to the place it was dropped. */
 const B = {tickets: [], off: new Set()};
-const KINDS = ['missing', 'broken', 'flawed', 'enhancement', 'exclude'];
+const KINDS = ['unbuilt', 'under-construction', 'broken'];
 const BOARD = [['backlog', 'Backlog'], ['todo', 'To do'], ['doing', 'Doing'], ['done', 'Done']];
 /* What a record's condition says about the part it is at, MAP-046: the condition belongs to the element or join, not
    to the ticket; the ticket is the work on it. A record with no condition is a plain task. */
-const CONDITION_WORDS = {missing: 'not built yet', broken: 'broken', flawed: 'works, not right',
-  enhancement: 'works, could be better', exclude: 'outside the artifact', 'in-progress': 'being built', fixing: 'being fixed'};
+const CONDITION_WORDS = {unbuilt: 'not built yet', 'under-construction': 'under construction', built: 'built', broken: 'broken'};
 function conditionLabel(ticket, extra = '') {
   const condition = ticket.condition;
   const words = condition ? CONDITION_WORDS[condition] || condition : 'task';
@@ -3621,7 +3636,7 @@ $('#autostartAgents').onchange = async () => {
   } catch (error) { if (S.project === project) { control.checked = AUTO.value; toast(error.message); } }
   finally { if (S.project === project) control.disabled = false; }
 };
-const waiting = ticket => !ticket.done && !ticket.taken && ticket.condition !== 'exclude'
+const waiting = ticket => !ticket.done && !ticket.taken && (ticket.task || '').trim()
   && !D.sessions.some(one => one.state === 'running'
     && (one.work_id === ticket.id || (ownGlyph(ticket) && ownGlyph(ticketOf(one.work_id)) === ownGlyph(ticket))));
 const ticketOf = workId => (S.tickets || []).find(ticket => ticket.id === workId);
@@ -4125,7 +4140,33 @@ async function renderWork(target, key, also = null) {
   } catch (error) { toast(error.message); }
   const box = $('#work');
   if (!box || S.selected !== key) return;
-  fill(box, h('div', {class: 'eyebrow'}, 'Work ', chatButton(nodeTalk(key), calledOf(key) || 'this node')),
+  const held = records.find(record => !record.done && record.condition);
+  const state = h('select', {class: 'state', title: 'The state of this part: a stage on its way to existing, or broken. Built draws nothing',
+    onchange: async event => {
+      event.target.disabled = true;
+      const written = await wrote('/api/state', {node: target, condition: event.target.value});
+      event.target.disabled = false;
+      if (written) { toast(`${calledOf(key) || 'The part'} is ${CONDITION_WORDS[event.target.value] || 'built'}.`); renderWork(target, key, also); }
+    }}, ...[['', 'state: not set'], ['unbuilt', 'unbuilt'], ['under-construction', 'under construction'], ['built', 'built'], ['broken', 'broken']]
+      .map(([value, text]) => h('option', {value, selected: (held ? held.condition : '') === value}, text)));
+  // Raise an issue, Rich 2026-10-08: the person says what is wrong in their words; a sentinel investigates and brings
+  // proposals to the chat; what they choose becomes held tickets. The only way work on an issue begins.
+  const issue = h('div', {class: 'issue', hidden: true},
+    h('textarea', {rows: 4, placeholder: 'What is wrong, what you expected, and how to make it happen.'}),
+    h('button', {class: 'send', onclick: async event => {
+      const text = issue.querySelector('textarea').value.trim();
+      if (!text) { toast('Say what is wrong.'); return; }
+      event.target.disabled = true;
+      const started = await wrote('/api/raise', {...nodeTalk(key), text});
+      event.target.disabled = false;
+      if (!started) return;
+      issue.hidden = true;
+      if (started.conversation) DOCK.mine = started.work_id;
+      openHelpdesk(started.work_id, `the sentinel on ${calledOf(key) || 'this node'}`, STANDBY, started.session_id);
+    }}, 'Send to the sentinel'));
+  const raise_ = h('button', {class: 'raise', title: 'Say what is wrong with this part; a sentinel investigates and brings you proposals',
+    onclick: () => { issue.hidden = !issue.hidden; if (!issue.hidden) issue.querySelector('textarea').focus(); }}, 'Raise an issue');
+  fill(box, h('div', {class: 'eyebrow'}, 'Work ', state, raise_, chatButton(nodeTalk(key), calledOf(key) || 'this node')), issue,
     records.map(record => h('div', {class: 'item work'},
     h('div', {class: 'pills'}, workPill(record.condition), h('span', {class: 'pill'}, record.done ? 'done' : 'open'),
       record.held ? h('span', {class: 'pill'}, 'held') : null, record.reviewed ? h('span', {class: 'pill'}, 'reviewed') : null),
@@ -4589,13 +4630,12 @@ function boardFromTickets() {
   B.tickets = S.tickets;
   drawBoard();
 }
-/* Each node's open work as the map read gives it, MAP-050: the conditions of its open tickets in row order, a taken one
- * as it reads once taken, then what waits for the person there; rebuilt from the tickets and open messages read. */
-const TAKEN = {missing: 'in-progress', broken: 'fixing'};
+/* Each node's open work as the map read gives it, MAP-050: the states its open records hold, in row order, then what
+ * waits for the person there; rebuilt from the tickets and open messages read. A plain task adds nothing. */
 function openWork() {
   const open = new Map(), add = (key, what) => open.set(key, [...(open.get(key) || []), what]);
-  for (const ticket of S.tickets || []) if (!ticket.done)
-    add(`${ticket.node_kind}:${ticket.node_id}`, ticket.taken ? TAKEN[ticket.condition] || ticket.condition : ticket.condition);
+  for (const ticket of S.tickets || []) if (!ticket.done && ticket.condition)
+    add(`${ticket.node_kind}:${ticket.node_id}`, ticket.condition);
   for (const message of Q.open) add(`${message.node_kind}:${message.node_id}`, message.kind);
   for (const entry of S.elements.values()) entry.element.open_work = open.get(`element:${entry.element.id}`) || [];
   for (const join of S.joins) join.open_work = open.get(`join:${join.id}`) || [];

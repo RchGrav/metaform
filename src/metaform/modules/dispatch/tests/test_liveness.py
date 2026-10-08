@@ -49,12 +49,17 @@ def test_mid_turn_messages_wait_in_order_and_cannot_replace_a_prompt(dispatch, r
     if done:
         run('map', 'work', 'op=done', f'id={dispatch.id}', 'resolution=Finished', cwd=dispatch.folder)
     (gates / '3').touch()
-    assert dispatch.process.wait(15) == 0, dispatch.process.stderr.read().decode()
+    if done:
+        assert dispatch.process.wait(15) == 0, dispatch.process.stderr.read().decode()
+        assert dispatch.session().extra['how'] == 'the ticket is done'
+    else:  # the turn ended with the ticket open: the session stays, idle, and the ticket stays taken
+        from metaform.modules.dispatch import tell
+        eventually(lambda: tell(dispatch.session().extra, 'status')['activity'] == 'idle' or None)
+        assert dispatch.process.poll() is None
+        assert dispatch.ticket().taken
+        dispatch.stop()
+        dispatch.process.wait(15)
     assert not dispatch.logged('replaced'), 'no adapter request was abandoned'
-    expected = 'the ticket is done' if done else 'the turn ended with the ticket open and no question asked'
-    assert dispatch.session().extra['how'] == expected
-    if not done:
-        assert dispatch.ticket().taken is None
 
 
 def test_stop_discards_messages_waiting_for_the_active_turn(dispatch, run, tmp_path):
@@ -445,7 +450,7 @@ def test_a_terminated_runner_on_a_store_upgraded_under_it_releases_through_the_c
     try:
         dispatch.process.send_signal(signal.SIGTERM)
         assert dispatch.process.wait(20) == 0, dispatch.process.stderr.read().decode()
-        assert dispatch.ticket().taken is None
+        assert dispatch.ticket().taken, 'a stopped agent\'s ticket waits for the person'
         assert dispatch.ticket().done is None
         assert dispatch.session().extra['state'] == 'ended'
     finally:
@@ -509,7 +514,7 @@ def test_termination_during_adapter_creation_waits_for_startup_resources(dispatc
             result = await asyncio.wait_for(running, 15)
             assert result['ended'] == TERMINATED
             assert held.process.returncode is not None, 'startup must not leave an adapter after cleanup'
-            assert dispatch.ticket().taken is None
+            assert dispatch.ticket().taken is None  # terminated before it took the ticket
             assert held.number is None or not nonce.read(held.number).open
             assert not held.recorded or dispatch.session().extra['state'] == 'ended'
         finally:
@@ -647,7 +652,7 @@ def test_a_recorded_pid_that_is_not_that_runner_for_that_work_id_reads_ended(dis
     dispatch.stop()
 
 
-def test_turn_activity_waits_then_a_turn_ending_with_the_ticket_open_ends_the_session(dispatch, run):
+def test_turn_activity_waits_then_a_turn_ending_with_the_ticket_open_leaves_the_session_idle(dispatch, run):
     from metaform.modules.dispatch import tell
 
     dispatch.start('ask', FAKE_ACP_HOLD_LATER='1')
@@ -655,10 +660,10 @@ def test_turn_activity_waits_then_a_turn_ending_with_the_ticket_open_ends_the_se
     held = dispatch.session().extra
     assert tell(held, 'status')['activity'] == 'waiting'
     run('map', 'reply', question.id, 'answer=Allow once', cwd=dispatch.folder)
-    assert dispatch.process.wait(15) == 0, 'no idle session: a turn ending with the ticket open ends it'
+    eventually(lambda: tell(held, 'status')['activity'] == 'idle' or None)
     [shown] = sessions(Store('proj', module='dispatch'))
-    assert shown['state'] == 'ended' and shown['how'] == 'the turn ended with the ticket open and no question asked'
-    assert not alive(held['pid']) and dispatch.ticket().taken is None
+    assert shown['state'] == 'running' and alive(held['pid']) and dispatch.ticket().taken
+    dispatch.stop()
 
 
 @pytest.mark.parametrize('tied', [False, True])

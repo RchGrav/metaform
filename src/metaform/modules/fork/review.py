@@ -47,7 +47,7 @@ def ticket(ctx: Context, module: Path, task: str, note: str, *, reuse: bool = Fa
                             if item.note == note), None)
             if current is not None:
                 return current
-        return store.add_work(Node('element', address), 'enhancement', note=note, task=task)
+        return store.add_work(Node('element', address), None, note=note, task=task)
 
 
 def verdict(ctx: Context, work_id: str) -> tuple[bool, str]:

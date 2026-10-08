@@ -45,7 +45,7 @@ from metaform import module as chassis
 from metaform.data import (
     COLUMNS,
     SCHEMA_VERSION,
-    TICKETS,
+    CONDITIONS,
     NewerStore,
     Node,
     Outcome,
@@ -530,12 +530,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(415, {'error': 'A write takes a JSON body.'})
         writes = {'/api/apply-layers': self.apply_layers,
                   '/api/save-prompt': self.save_prompt, '/api/clear-project': self.clear_project, '/api/remove-project': self.remove_project,
-                  '/api/answer': self.answer_question, '/api/reopen': self.reopen_question, '/api/read': self.read_note, '/api/task': self.give_work,
+                  '/api/answer': self.answer_question, '/api/reopen': self.reopen_question, '/api/read': self.read_note, '/api/task': self.give_work, '/api/state': self.set_state,
                   '/api/element': self.add_part, '/api/restore': self.restore,
                   '/api/note': self.add_note, '/api/move': self.move_ticket, '/api/distribute': self.distribute_tickets,
                   '/api/ticket': self.set_ticket, '/api/eligible': self.set_eligible, '/api/merge-review': self.review_merge,
                   '/api/merge-assist': self.assist_merge, '/api/dispatch-reset': self.reset_agents,
-                  '/api/system-chat': self.system_chat, '/api/attach': self.attach, '/api/talk': self.talk,
+                  '/api/system-chat': self.system_chat, '/api/attach': self.attach, '/api/talk': self.talk, '/api/raise': self.raise_issue,
                   '/api/activate-base': self.activate_base,
                   '/api/remove-base': self.remove_base, '/api/ignore': self.write_ignore,
                   '/api/memory': self.write_memory,
@@ -695,6 +695,32 @@ class Handler(BaseHTTPRequestHandler):
             return self.refuse(error, 400)
         self.send(200, plain(done))
 
+    def set_state(self, given: dict[str, Any]) -> None:
+        """The person sets a part's state on its node, MAP-046, Rich 2026-10-08: a stage or the fault, held on the
+        node's open record that carries a state, or on a new record with no task; built, or none, clears it, since
+        built marks nothing."""
+        node, condition = given.get('node'), given.get('condition') or ''
+        if not isinstance(node, str) or not node:
+            return self.send(400, {'error': 'A state is set on one node.'})
+        if condition and condition not in CONDITIONS:
+            return self.send(400, {'error': 'The part is unbuilt, under construction, built or broken.'})
+        try:
+            store = opened({'project': str(given.get('project', '')), 'base': str(given.get('base') or '')})
+            with store.atomic():
+                target = Node.parse(node)
+                carrying = [record for record in store.work(target, None, True, limit=0).results if record.condition
+                            and record.node_kind == target.kind and record.node_id == target.id]
+                kept = '' if condition == 'built' else condition
+                if carrying:
+                    written = [store.edit_work(record.id, {'condition': kept}) for record in carrying][0]
+                elif kept:
+                    written = store.add_work(target, kept, note='Set by the person on the page.')
+                else:
+                    return self.send(200, {'node': node, 'condition': ''})
+        except (Stop, StoreError) as error:
+            return self.refuse(error, 400)
+        self.send(200, {'node': node, 'condition': kept, 'work_id': written.id})
+
     def give_work(self, given: dict[str, Any]) -> None:
         """Put a task a person wrote on the node it is assigned to, the first given, as one ticket that links the other
         nodes for reference, VIEW-032, VIEW-035 and MAP-048."""
@@ -703,8 +729,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {'error': 'A task says what is to be done.'})
         if not isinstance(nodes, list) or not nodes or not all(isinstance(node, str) for node in cast(list[Any], nodes)):
             return self.send(400, {'error': 'A task is given at one node or more.'})
-        if condition and condition not in TICKETS:  # none: a task on a part that exists, MAP-046
-            return self.send(400, {'error': 'The part is missing, broken, flawed, could be better, or none of these.'})
+        if condition and condition not in CONDITIONS:  # none: a task on a part that exists, MAP-046
+            return self.send(400, {'error': 'The part is unbuilt, under construction, built or broken, or its state is not given.'})
         try:
             store = opened({'project': str(given.get('project', '')), 'base': str(given.get('base') or '')})
             with store.atomic():
@@ -803,6 +829,15 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {'kind': None, 'reason': str(error)})
         self.send(200, found or {'kind': None, 'reason': f'{ref} names nothing in this project.'})
 
+    def raise_issue(self, given: dict[str, Any]) -> None:
+        """The person raises an issue on a node: the dispatch module's raise starts the sentinel, Rich 2026-10-08."""
+        node, text = given.get('node'), given.get('text')
+        if not isinstance(node, str) or not node:
+            return self.send(400, {'error': 'An issue is raised on one node.'})
+        if not isinstance(text, str) or not text.strip():
+            return self.send(400, {'error': 'Say what is wrong, in your words.'})
+        self.dispatched(given, 'raise', [node], text.strip())
+
     def talk(self, given: dict[str, Any]) -> None:
         """Chat on anything the page shows: a ticket, open or done, a node, a question or an agent's session."""
         nouns = [f'{key}={given[key]}' for key in ('id', 'node', 'question', 'session', 'agent')
@@ -881,7 +916,7 @@ class Handler(BaseHTTPRequestHandler):
                 receiver, provider = (held, made.id) if given['receives'] == 'node' else (made.id, held)
                 joined = store.add_join(ADDITIONS, receiver, provider, purpose=given.get('purpose') or None,
                                         ef=given.get('ef') or None)
-                work = store.add_work(Node('element', made.id), 'missing', note='Added by hand in the web GUI.')
+                work = store.add_work(Node('element', made.id), 'unbuilt', note='Added by hand in the web GUI.')
                 if given.get('validate') is True:
                     work = store.edit_work(work.id, {'task': validation(made.address)})
         except (Stop, StoreError) as error:

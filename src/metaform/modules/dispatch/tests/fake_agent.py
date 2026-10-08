@@ -9,12 +9,6 @@ FAKE_ACP_MODE says what its first turn does after two message chunks and one too
   done  closes the ticket its prompt names, or else FAKE_ACP_WORK, with the real metaform command line, logs the
         ticket, and ends the turn
   hold  starts a grandchild that sleeps, logs its pid, and ends the turn only when the turn is cancelled
-  question  asks a question at FAKE_ACP_ASK_AT with the real metaform command line, as a tool call whose output is
-        what the command printed, logs what it printed, and ends the turn; its second prompt lists the questions the
-        same way, logs the list and ends
-  list  lists the questions with the real metaform command line, logs what it printed, and keeps working until cancelled
-  vote  answers each ticket of a consensus voter's queue as `id, FAKE_ACP_VOTE`, logs the ids, and ends the turn; given
-        no queue, it answers as a Help me answer helper, with FAKE_ACP_VOTE as its answer
   workflow  reads its ticket's Workflow input JSON, starts and redeems the real stored call, returns its result,
         closes the ticket with that result, and ends the turn
   replace  keeps only the latest prompt active and answers it when its numbered file in FAKE_ACP_TURN_GATES exists;
@@ -32,10 +26,6 @@ from pathlib import Path
 
 LOG = os.environ['FAKE_ACP_LOG']
 MODE = os.environ.get('FAKE_ACP_MODE', 'ask')
-# The full question form, MAP-050: map ask refuses a question without it, and this agent stands in for a real one.
-FORM = ('specs=00-index.md', 'not_option=Keeping the store is a yes or no.',
-        'rich_said=None; the decision and its reason are described in the question.',
-        'suggestions=["Keep it", "Drop it"]', 'by=fake agent')
 SESSION = 'fake-session-1'  # until session/new names it
 OUT = sys.stdout.buffer
 WRITING = threading.Lock()
@@ -91,20 +81,6 @@ def first_turn(prompt_id, text):
     update({'sessionUpdate': 'tool_call', 'toolCallId': 't1', 'title': 'Read file', 'kind': 'read',
             'status': 'pending'})
     update({'sessionUpdate': 'tool_call_update', 'toolCallId': 't1', 'status': 'completed'})
-    if MODE == 'list':
-        log({'listed': tool('t4', 'List the questions', ['map', 'messages', 'kind=question'])})
-        CANCELLED.wait()
-        send({'jsonrpc': '2.0', 'id': prompt_id, 'result': {'stopReason': 'cancelled'}})
-        return
-    if MODE == 'vote':
-        ids = re.findall(r'^id: ([0-9a-f]{32})$', text, re.MULTILINE)
-        for work in ids:
-            update({'sessionUpdate': 'agent_message_chunk',
-                    'content': {'type': 'text', 'text': f'\n{work}, {os.environ["FAKE_ACP_VOTE"]}'}})
-        if not ids:  # a helper asked to help answer one question: the three labeled parts it is read as
-            update({'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text':
-                    f'\nmeaning: The fake meaning.\nanswer: {os.environ["FAKE_ACP_VOTE"]}\nreason: The fake reason.'}})
-        log({'voted': ids})
     if MODE == 'ask':
         gate = os.environ.get('FAKE_ACP_ASK_GATE')
         while gate and not os.path.exists(gate) and not CANCELLED.wait(0.05):
@@ -156,27 +132,12 @@ def first_turn(prompt_id, text):
                         ['map', 'work', 'op=done', f'id={work}',
                          'resolution=' + json.dumps(returned['value']), '--json'])
         log({'workflow_done': json.loads(finished), 'work': work})
-    if MODE == 'question':
-        log({'asked': tool('t3', 'Ask a question', ['map', 'ask', os.environ['FAKE_ACP_ASK_AT'], 'Is the store kept?',
-                                                    *FORM])})
-        if gate := os.environ.get('FAKE_ACP_QUESTION_GATE'):
-            while not Path(gate).exists() and not CANCELLED.wait(0.05):
-                pass
-        if os.environ.get('FAKE_ACP_QUESTION_HOLD') == '1':
-            CANCELLED.wait()
-            send({'jsonrpc': '2.0', 'id': prompt_id, 'result': {'stopReason': 'cancelled'}})
-            return
     if MODE == 'hold':
         child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)'])
         log({'grandchild': child.pid})
         CANCELLED.wait()
         send({'jsonrpc': '2.0', 'id': prompt_id, 'result': {'stopReason': 'cancelled'}})
         return
-    send({'jsonrpc': '2.0', 'id': prompt_id, 'result': {'stopReason': 'end_turn'}})
-
-
-def listing_turn(prompt_id):
-    log({'listed': tool('t4', 'List the questions', ['map', 'messages', 'kind=question'])})
     send({'jsonrpc': '2.0', 'id': prompt_id, 'result': {'stopReason': 'end_turn'}})
 
 
@@ -228,8 +189,6 @@ def main():
             elif PROMPTS[0] == 1:
                 said = ' '.join(block.get('text', '') for block in message['params'].get('prompt', []))
                 threading.Thread(target=first_turn, args=(ident, said), daemon=True).start()
-            elif PROMPTS[0] == 2 and MODE == 'question':
-                threading.Thread(target=listing_turn, args=(ident,), daemon=True).start()
             elif os.environ.get('FAKE_ACP_HOLD_LATER') == '1':
                 threading.Thread(target=held_turn, args=(ident,), daemon=True).start()
             else:

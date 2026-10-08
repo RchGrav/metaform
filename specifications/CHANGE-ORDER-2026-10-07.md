@@ -128,8 +128,10 @@ This is what ends the shuddering; item 2 makes it possible and does not do it. D
 - Capture the agent's stderr into the transcript.
 - Set the model and thinking level per ticket through the adapter's session model and effort options; today
   nothing sets them. This is where Jev's choice of model per task plugs in.
-- Autostart: a ticket whose last session ended for want of an answer waits until the question is answered; it is
-  not restarted. This amends D120, which today says to restart. Ticket `cf16625a`, held.
+- **Built, 2026-10-08**, with Rich's decisions of that day: the runner keeps the session when a turn ends with the
+  ticket open, the ticket stays taken, autostart starts only untried tickets, and agents ask nothing, VIEW-042,
+  MAP-050 and BASE-052 amended. The rest of this item, worktrees, checkpoints, adapters, stderr and model per
+  ticket, is still decided and not built.
 - **Open (Rich):** a branch of an abandoned ticket, keep until removed, or remove after 30 days with the variant as
   the record. Recommended: 30 days.
 - Depends on: nothing; can start now. Item 2 does not block it.

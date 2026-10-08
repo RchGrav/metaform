@@ -226,10 +226,8 @@ def test_the_autostart_message_is_in_what_agents_read_until_the_intake_is_finish
     assert prompt('autostart') not in run('help', 'agents', cwd=folder).stdout
 
 
-# The full question form map ask refuses a question without, MAP-050.
-ASK_FORM = ('specs=09-viewer.md', 'not_option=The answer is a yes or no.',
-            'rich_said=None; the decision and its reason are described in the question.',
-            'suggestions=["Yes", "No"]', 'by=builder')
+# A question the person writes from the command line, MAP-050.
+ASK_FORM = ('suggestions=["Yes", "No"]', 'by=builder')
 PROVENANCE = {'module': 'test', 'workflow': 'fixture', 'prompt': 'Write the fixture.', 'model': 'none',
               'role': 'fixture writer', 'blinded': False}
 KNOWLEDGE = ['notes', 'extra', 'secret']
@@ -5610,9 +5608,9 @@ def test_an_agent_is_started_on_a_ticket_followed_messaged_and_stopped_from_the_
     # started from the board: a ticket not taken has the control, one taken has not
     page.click('#boardBtn')
     page.wait_for_selector(f'#board .card[data-id="{other}"]')
-    # the stopped agent gave its ticket back, so it waits for the next agent and has the control again, BASE-052
-    assert Store('proj').ticket(work).work.taken is None
-    assert page.locator(f'#board .card[data-id="{work}"] button.start').count() == 1
+    # the stopped agent's ticket stays taken for the person to put back; nothing restarts by itself
+    assert Store('proj').ticket(work).work.taken
+    assert page.locator(f'#board .card[data-id="{work}"] button.start').count() == 0
     page.click(f'#board .card[data-id="{other}"] button.start')
     page.wait_for_selector('#dispatch:not([hidden])')
     assert page.eval_on_selector_all('#dispatch .ticket', 'found => found.map(one => one.dataset.id)') == [other]

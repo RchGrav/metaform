@@ -16,8 +16,6 @@ from metaform.data import (
     CONDITIONS,
     LIMIT,
     MESSAGES,
-    TAKEN,
-    TICKETS,
     Answer,
     ChallengeState,
     Column,
@@ -334,8 +332,6 @@ def take_work(tx: Tx, work_id: str, steps: Any = None, by: Any = None) -> WorkRe
             "metaform map work open=true.",
             f"metaform map work op=plan id={work_id} steps=<n>",
         )
-    if condition and condition not in TICKETS:
-        raise StoreError(f"A {condition} has no task to take.", "metaform map work open=true")
     notices: list[Notice] = []
     tx.execute(
         "UPDATE work SET taken=?, taken_by=?, held=0, steps=COALESCE(?, steps) WHERE work_id=?",
@@ -463,11 +459,7 @@ def work(
         elif target is not None:
             where.append("target_kind=? AND target_id=?")
             params.extend(target)
-        shown = {taken: kind for kind, taken in TAKEN.items()}
-        if condition in shown:  # in-progress is a missing ticket taken, and fixing a broken one, VIEW-035
-            where.append("condition=? AND taken IS NOT NULL")
-            params.append(shown[condition])
-        elif condition is not None:
+        if condition is not None:
             where.append("condition=?")
             params.append(condition)
         if open is not None:
@@ -653,11 +645,12 @@ def report_record(tx: Tx, row: Row) -> Report:
 def open_work(tx: Tx, kind: str, thing_id: str) -> tuple[str, ...]:
     """The conditions of an object's open work records, in row order, STORE-042; one lookup on `work_by_target`."""
     conditions = tuple(
-        TAKEN.get(str(row[0]), str(row[0])) if row[1] else str(row[0])
+        str(row[0])
         for row in tx.execute(
-            "SELECT condition, taken FROM work WHERE target_kind=? AND target_id=? AND done IS NULL ORDER BY row",
+            "SELECT condition FROM work WHERE target_kind=? AND target_id=? AND done IS NULL ORDER BY row",
             (kind, thing_id),
         )
+        if row[0]
     )
     # What waits for the user at the object is open at it too: a question not answered, a message not read, MAP-050.
     waiting = tuple(
@@ -1041,8 +1034,22 @@ def legacy_fold(db: DataConnection, correction: str, intake: str) -> None:
         db.execute(f"UPDATE {table} SET layer_id=? WHERE layer_id=?", (intake, correction))
 
 
+def upgrade(tx: Any, found: int) -> None:
+    """The map's own tables brought from an earlier version of this module."""
+    if found < 8:
+        # Version 8, Rich 2026-10-08: a part's state is a stage, unbuilt, under-construction or built, or the fault
+        # broken; missing read as a verdict and was put on working parts. flawed, enhancement and exclude were kinds
+        # of ticket, never a part's state, so those records become plain tasks with their notes kept.
+        renamed = {'missing': 'unbuilt', 'in-progress': 'under-construction', 'fixing': 'broken',
+                   'flawed': '', 'enhancement': '', 'exclude': ''}
+        for row in tx.rows('work', limit=0).results:
+            if row['condition'] in renamed:
+                tx.update('work', {'row': row['row']}, {'condition': renamed[row['condition']]})
+
+
 TABLES = Tables(
-    version=7,  # 7: no foreign keys into the chassis's tables, which the op log replaced, STORE-046
+    version=8,  # 8: a part's state is a stage or the fault broken, Rich 2026-10-08; 7: no foreign keys, STORE-046
+    upgrade=upgrade,
     legacy_upgrade=legacy_upgrade,
     legacy_fold=legacy_fold,
     tables=(*FEATURE_TABLES, Table(

@@ -397,7 +397,7 @@ def next_ticket(ctx: Context, store: Store, glyph: str, *, agent: str | None = N
     its place, a ticket with none after, as Distribute deals them; an exclude record is no ticket."""
     kept = ticket_settings(ctx)
     waiting = [record for record in store.work(open=True, limit=0).results
-               if not record.taken and record.condition != 'exclude' and record.id not in exclude
+               if not record.taken and record.id not in exclude
                and not kept.get(record.id, {}).get('hold') and (record.task or '').strip()]  # no task: nothing to do
     waiting.sort(key=lambda record: (record.held, record.position is None, record.position or 0))
     chosen = agent or ctx.nouns.get('agent') or str(ctx.setting('dispatch_agent'))
@@ -501,8 +501,7 @@ def autostart(ctx: Context) -> dict[str, Any]:
     opened = store.work(open=True, limit=0).results
     open_work = [record for record in opened
                  if not kept.get(record.id, {}).get('hold')]
-    candidates = [record for record in open_work
-                  if not record.taken and record.condition != 'exclude']
+    candidates = [record for record in open_work if not record.taken and (record.task or '').strip()]
     active = [row for row in sessions(store, open_work=opened) if row['state'] == 'running']
     workers = [row for row in active if not summoned(row)]
     candidates.sort(key=lambda record: (record.held, record.position is None, record.position or 0))
@@ -686,7 +685,7 @@ def anchor(ctx: Context, store: Store, at: str | None = None) -> WorkRecord:
         node = root.address if root is not None else at  # a map with no roles yet: the node talked about holds it
         if node is None:
             raise Stop('Talking with an agent needs a map with one element at least.', 'metaform intake prompt')
-        map_work(ctx, op='add', node=node, condition='enhancement', task=SYSTEM_TASK,
+        map_work(ctx, op='add', node=node, task=SYSTEM_TASK,
                  note='Held for the person\'s conversations with agents; no agent works this ticket.', held=True, hold=True)
         found = anchored()
         if found is None:
@@ -720,6 +719,30 @@ def system(ctx: Context) -> dict[str, Any]:
     if live is not None:
         return {'state': 'running', 'work_id': held.id, 'agent': live['agent'], 'session_id': live['session_id']}
     return converse(ctx, store, held.id, str(ctx.nouns.get('agent') or 'claude'), [])
+
+
+def raise_issue(ctx: Context) -> dict[str, Any]:
+    """The person raises an issue on a node, Rich 2026-10-08: a sentinel starts on it with their words, investigates,
+    and brings proposals to the page's chat; the person chooses one or talks it through, and the chosen one becomes
+    held tickets. The issue is held on a ticket of its own at the node, so the chat has a place and the report is
+    kept; no worker takes it. One summoned agent at a time, besides the agents at work."""
+    store = ctx.require_store()
+    given: Any = ctx.nouns['text']
+    words = [str(word) for word in cast(list[Any], given)] if isinstance(given, (list, tuple)) else [str(given)]
+    text = ' '.join(words).strip()
+    if not text:
+        raise Stop('An issue says what is wrong, in the person\'s words.', 'metaform dispatch raise <node> -- "<what is wrong>"')
+    node = str(ctx.nouns['node'])
+    talking = next((row for row in sessions(store) if row['state'] == 'running' and summoned(row)), None)
+    if talking is not None:
+        raise Stop(f'A chat is already open with {talking["agent"]} on work {talking["work_id"]}; one at a time, '
+                   'besides the agents at work. Close that chat first.', f'metaform dispatch stop {talking["work_id"]}')
+    agent = str(ctx.nouns.get('agent') or ctx.setting('dispatch_agent'))
+    if shutil.which(argv(str(ctx.setting(f'dispatch_{agent}')))[0]) is None:  # checked before anything is written
+        raise Stop(f'The start command of {agent} is not found on this system.', f'metaform set --dispatch-{agent} "<command>"')
+    first = text.splitlines()[0][:120]
+    record = map_work(ctx, op='add', node=node, task=f'Issue raised by the person: {first}', note=text, held=True, hold=True)
+    return converse(ctx, store, record.id, agent, [f'sentinel={node}'])
 
 
 def talk(ctx: Context) -> dict[str, Any]:
@@ -855,6 +878,13 @@ MODULE = Module(
              nouns=(Noun('id', 'The work id of the ticket whose merge waits.'),), surfaces=('cli',)),
         Verb('system', system, 'Start the person\'s system agent to talk with, or reuse the one running.',
              nouns=(Noun('agent', 'claude, codex or gemini; claude by default.', required=False),)),
+        Verb('raise', raise_issue, 'Raise an issue on a node: a sentinel investigates it and brings proposals to the chat; '
+                                   'the person chooses one, and it becomes held tickets.',
+             nouns=(Noun('node', 'The address of the part the issue is about.'),
+                    Noun('agent', 'claude, codex or gemini; the configured agent by default.', required=False),
+                    Noun('text', 'What is wrong, in the person\'s words.', many=True)),
+             examples=(('metaform dispatch raise code.alarm.audible -- "The alarm plays twice when the timer ends."',
+                        'Starts the sentinel on the alarm with that report.'),)),
         Verb('talk', talk, 'Talk with an agent about a ticket, open or done, a node, a question or an ended agent\'s '
                            'session; an agent at work on it is talked to directly.',
              nouns=(Noun('id', 'The work id of a ticket, open or done.', required=False),
@@ -869,8 +899,10 @@ MODULE = Module(
                          kind='bool', required=False),
                     Noun('system', 'true: the person\'s system agent, a conversation with no ticket work.',
                          kind='bool', required=False),
-                    Noun('talk', 'What a conversation agent talks about: ticket:<id>, node:<address>, '
-                                 'question:<id> or thread:<session id>.', required=False),
+                    Noun('talk', 'What a conversation agent talks about: ticket:<id>, node:<address> or '
+                                 'thread:<session id>.', required=False),
+                    Noun('sentinel', 'The address of the node the person raised an issue on; the ticket holds the '
+                                     'report, and the sentinel prompt is served.', required=False),
                     Noun('reservation', 'The startup reservation made by start.', required=False)),
              switches=('dispatch_claude', 'dispatch_codex', 'dispatch_gemini'), surfaces=('cli',)),
         Verb('message', message, 'Send a person\'s message to the agent working a ticket.',

@@ -24,12 +24,13 @@ LAYER_KINDS: tuple[LayerKind, ...] = ('layer', 'intake', 'memory')
 OPS: tuple[Op, ...] = ('add', 'change', 'remove')
 ROLES = ('AUE', 'CQU', 'DE', 'SE', 'NE')  # the intake's classification of an element, MAP-017
 HELD_ROLES = ('DE', 'SE', 'NE')  # the role of an element a join holds, in Rich's shape, 2026-10-04
-# The condition a work record holds, MAP-046: three that wait for work, and the two a record takes once an agent has
-# taken its task, a part to be built being in progress and a broken one being fixed.
-CONDITIONS = ('missing', 'broken', 'flawed', 'enhancement', 'exclude')
-MESSAGES = ('question', 'message')  # what an agent says to the user at a node, MAP-050; never a condition
-TICKETS = ('missing', 'broken', 'flawed', 'enhancement')  # the kinds of ticket an agent takes, VIEW-035
-TAKEN = {'missing': 'in-progress', 'broken': 'fixing'}  # how a taken one reads in open_work, VIEW-027 and VIEW-029
+# The state of a part, held on a work record apart from the map, MAP-046, Rich 2026-10-08: a stage, where the part is
+# on its way to existing, and one fault, a built part that does not do its job. Built is the normal state and draws
+# nothing; a record with no condition is a plain task. The intake and the person set it; agents at work do not.
+STAGES = ('unbuilt', 'under-construction', 'built')
+FAULTS = ('broken',)
+CONDITIONS = STAGES + FAULTS
+MESSAGES = ('question', 'message')  # what waits for the person at a node, MAP-050; never a condition
 COLUMNS = ('backlog', 'todo', 'doing', 'done')  # the board's columns, MAP-048
 
 T = TypeVar('T')

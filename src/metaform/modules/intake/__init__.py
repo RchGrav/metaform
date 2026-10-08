@@ -339,7 +339,9 @@ def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], t
             notices.append({'where': 'note', 'message': 'A note goes with a condition, missing or broken; '
                                                         'without one it was not recorded.'})
         return
-    _note(notices, rec.store.add_work(Node(kind, thing), ctx.nouns.get('condition'), note=ctx.nouns.get('note')))
+    # Intake 2.1 says missing for a part that is not built yet; the record holds it as the stage unbuilt.
+    stage = {'missing': 'unbuilt'}.get(str(ctx.nouns['condition']), str(ctx.nouns['condition']))
+    _note(notices, rec.store.add_work(Node(kind, thing), stage, note=ctx.nouns.get('note')))
 
 
 JOIN_FIELDS = ('purpose', 'ef', 'ifd')
@@ -582,7 +584,7 @@ def status(ctx: Context) -> Status:
 
 E, J = ELEMENT_WORDS.get, JOIN_WORDS.get
 CONDITION = (Noun('condition', E('condition', ''), required=False,
-                  schema={'type': 'string', 'enum': ['missing', 'broken']}),
+                  schema={'type': 'string', 'enum': ['missing', 'broken', 'unbuilt', 'under-construction', 'built']}),
              Noun('note', E('note', ''), required=False))
 
 MODULE = Module(

@@ -10,7 +10,6 @@
   --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --cond:"IBM Plex Sans Condensed","IBM Plex Sans",system-ui,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
-  --flawed:var(--k5); --enhancement:var(--k2);  /* a ticket's light, VIEW-035, in each theme's yellow and green */
 }
 /* The themes, VIEW-023: each block defines the same colors. A role keeps its hue in every theme; its lightness is the
  * one at which it holds its contrast on that theme's background, a link as it is seen at --link-opacity. */
@@ -158,7 +157,6 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 .pills{display:flex;flex-wrap:wrap;gap:6px}
 .pill{font:500 12px var(--mono);padding:2px 8px;border-radius:var(--r);border:0;background:var(--panel-2);color:var(--muted)}
 .pill.work-broken{color:var(--broken);background:color-mix(in srgb,var(--broken) 14%,transparent)}
-.pill.work-exclude{color:var(--exclude);background:color-mix(in srgb,var(--exclude) 14%,transparent)}
 .pill.work-question,.pill.work-message{color:var(--question);background:color-mix(in srgb,var(--question) 14%,transparent)}
 .map2d .node.work-message,.map2d .cluster.work-message,.map2d path.work-message{--c:var(--question);animation:glow-pulse 1.6s ease-in-out infinite}
 .map2d .node.work-message rect,.map2d .cluster.work-message rect{stroke:var(--question)!important;stroke-width:2px}
@@ -252,7 +250,7 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 .item.work textarea.answer{width:100%;min-height:64px;margin-top:6px;box-sizing:border-box;background:var(--panel-2);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r);padding:6px;font:13px var(--sans)}
 .item.work button.answer{margin-top:6px;height:var(--ctl-sm);background:var(--question);color:var(--ground);border:0;border-radius:var(--r);padding:0 12px;cursor:pointer;font:600 12px var(--sans)}
 .item.work button.reopen{margin-top:6px;min-height:var(--ctl-sm);background:var(--panel-2);color:var(--muted);border:1px solid var(--line-2);border-radius:var(--r);padding:0 10px;cursor:pointer;font:12px var(--sans)}
-.pill.work-missing{color:var(--missing);background:color-mix(in srgb,var(--missing) 14%,transparent)}
+.pill.work-unbuilt,.pill.work-under-construction{color:var(--missing);background:color-mix(in srgb,var(--missing) 14%,transparent)}
 .pill.layer{display:inline-flex;align-items:center;gap:6px;background:none;padding:2px 0;color:var(--faint)}
 .pill.layer::before,.join .lay::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--c);flex:none}
 /* The small area above the panel and the large one change what they hold, VIEW-028. */
@@ -268,33 +266,20 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 .map2d .node{cursor:pointer}
 .map2d .node.sel rect{fill:var(--node-sel)!important;stroke:var(--signal)!important;stroke-width:2px!important}
 .map2d .node.near rect{stroke:var(--intake)!important}
-/* The condition of a node, MAP-046: an open missing record draws it ghostly, at 70% opacity; an open broken record flashes
- * its box red, steady red with reduced motion; exclude keeps its look. */
+/* The state of a part, MAP-046: unbuilt blooms, under construction pulses, built draws nothing, broken flashes red. */
 /* Not built yet, VIEW-005: a bloom around the node or the edge, which keeps its color and opacity. */
-.map2d .node.work-missing,.map2d .cluster.work-missing{filter:drop-shadow(0 0 3px var(--text)) drop-shadow(0 0 9px var(--node-line)) drop-shadow(0 0 18px var(--node-line))}
-.map2d .edgePaths path.work-missing,.map2d path.work-missing{filter:drop-shadow(0 0 3px var(--text)) drop-shadow(0 0 8px var(--edge))}
-/* Being worked on: the glow pulsates; a broken part being fixed is red. */
+.map2d .node.work-unbuilt,.map2d .cluster.work-unbuilt{filter:drop-shadow(0 0 3px var(--text)) drop-shadow(0 0 9px var(--node-line)) drop-shadow(0 0 18px var(--node-line))}
+.map2d .edgePaths path.work-unbuilt,.map2d path.work-unbuilt{filter:drop-shadow(0 0 3px var(--text)) drop-shadow(0 0 8px var(--edge))}
+/* Under construction: the glow pulsates. */
 @keyframes glow-pulse{0%,100%{filter:drop-shadow(0 0 1px var(--text)) drop-shadow(0 0 3px var(--c,var(--node-line)))}50%{filter:drop-shadow(0 0 4px var(--text)) drop-shadow(0 0 12px var(--c,var(--node-line))) drop-shadow(0 0 24px var(--c,var(--node-line)))}}
-.map2d .node.work-in-progress,.map2d .cluster.work-in-progress,.map2d path.work-in-progress{animation:glow-pulse 1.6s ease-in-out infinite}
-.map2d .node.work-fixing,.map2d .cluster.work-fixing,.map2d path.work-fixing{--c:var(--broken);animation:glow-pulse 1.6s ease-in-out infinite}
-.map2d .node.work-fixing rect,.map2d .cluster.work-fixing rect{stroke:var(--broken)!important}
-@media (prefers-reduced-motion: reduce){.map2d .work-in-progress,.map2d .work-fixing{animation:none!important;filter:drop-shadow(0 0 3px var(--text)) drop-shadow(0 0 9px var(--c,var(--node-line)))}}
+.map2d .node.work-under-construction,.map2d .cluster.work-under-construction,.map2d path.work-under-construction{animation:glow-pulse 1.6s ease-in-out infinite}
 /* A property's reach, VIEW-022: the elements it carries to, in its color. */
 .map2d .node.reach rect,.map2d .cluster.reach rect{stroke:var(--reach)!important;stroke-width:2px}
 .map2d .node.reach,.map2d .cluster.reach{filter:drop-shadow(0 0 4px var(--reach)) drop-shadow(0 0 12px var(--reach))}
 /* The box gives off light in the lit half of its flash, VIEW-029. The light is on the box and not on its group, since the group's own animation is the fade of going inside a node. */
 @keyframes flash{0%,100%{stroke:var(--node-line);fill:var(--node);filter:none}50%{stroke:var(--broken);fill:var(--node-broken);filter:drop-shadow(0 0 4px var(--broken)) drop-shadow(0 0 12px var(--broken)) drop-shadow(0 0 24px var(--broken))}}
 .map2d .node.work-broken rect,.map2d .cluster.work-broken rect{stroke:var(--broken)!important;animation:flash var(--pace,1s) ease-in-out infinite}
-/* Not broken but not right, and an enhancement, VIEW-035: the same flash in their own light, faster with each step. */
-@keyframes flash-kind{0%,100%{stroke:var(--node-line);filter:none}50%{stroke:var(--c);filter:drop-shadow(0 0 4px var(--c)) drop-shadow(0 0 12px var(--c)) drop-shadow(0 0 24px var(--c))}}
-.map2d .node.work-flawed rect,.map2d .cluster.work-flawed rect{--c:var(--flawed);stroke:var(--flawed)!important;animation:flash-kind var(--pace,1.2s) ease-in-out infinite}
-.map2d .node.work-enhancement rect,.map2d .cluster.work-enhancement rect{--c:var(--enhancement);stroke:var(--enhancement)!important;animation:flash-kind var(--pace,1.2s) ease-in-out infinite}
-@media (prefers-reduced-motion: reduce){.map2d .work-flawed rect,.map2d .work-enhancement rect{animation:none}}
 @media (prefers-reduced-motion: reduce){.map2d .node.work-broken rect,.map2d .cluster.work-broken rect{animation:none;fill:var(--node-broken)!important}}
-@keyframes pulse-exclude{0%,100%{stroke:var(--node-line);filter:none}50%{stroke:var(--exclude);filter:drop-shadow(0 0 4px var(--exclude)) drop-shadow(0 0 12px var(--exclude)) drop-shadow(0 0 24px var(--exclude))}}
-.map2d .node.work-exclude rect,.map2d .cluster.work-exclude rect{stroke:var(--exclude)!important;stroke-width:2px;animation:pulse-exclude 1s ease-in-out infinite}
-.map2d .edgePaths path.work-exclude,.map2d path.work-exclude{stroke:var(--exclude)!important;stroke-width:2px}
-@media (prefers-reduced-motion: reduce){.map2d .node.work-exclude rect,.map2d .cluster.work-exclude rect{animation:none}}
 .map2d.focused .node:not(.sel):not(.near) text,.map2d.focused .node:not(.sel):not(.near) .nodeLabel{fill:var(--muted)!important}
 .map2d .edgePaths path{stroke:var(--edge)!important;stroke-width:1.2px!important;transition:stroke .3s,opacity .3s}
 .map2d .edgePaths path.on{stroke:var(--intake)!important;stroke-width:1.8px!important}
@@ -358,8 +343,7 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 .legend i.dot.bloom{box-shadow:0 0 4px var(--c),0 0 10px var(--c)}
 @keyframes dot-pulse{0%,100%{box-shadow:0 0 1px var(--c)}50%{box-shadow:0 0 5px var(--c),0 0 12px var(--c)}}
 .legend i.dot.pulse{animation:dot-pulse 1.6s ease-in-out infinite}
-.pill.work-in-progress{color:var(--text);background:color-mix(in srgb,var(--text) 14%,transparent)}
-.pill.work-fixing{color:var(--broken);background:color-mix(in srgb,var(--broken) 14%,transparent)}
+.pill.work-under-construction{color:var(--text);background:color-mix(in srgb,var(--text) 14%,transparent)}
 #tip3d{position:absolute;pointer-events:none;z-index:2}
 #tip3d[hidden]{display:none}
 .tip3d{font:12px var(--sans);max-width:280px;background:color-mix(in srgb,var(--panel) 93%,transparent);border:1px solid var(--line-2);padding:6px 8px;border-radius:6px;color:var(--text)}
@@ -400,10 +384,7 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 #float .ticket .head{display:flex;gap:8px;align-items:center;font:12px var(--sans)}
 #float .ticket .kind{padding:1px 6px;border-radius:4px;color:var(--ground);background:var(--muted)}
 #float .ticket .kind-broken{background:var(--broken)}
-#float .ticket .kind-flawed{background:var(--k5)}
-#float .ticket .kind-enhancement{background:var(--k2)}
-#float .ticket .kind-missing{background:var(--text)}
-#float .ticket .kind-exclude{background:var(--exclude)}
+#float .ticket .kind-unbuilt,#float .ticket .kind-under-construction{background:var(--text)}
 #float .ticket .column,#float .ticket .by{color:var(--muted)}
 #float .ticket .task{margin:6px 0 2px;color:var(--text)}
 #float .ticket .note,#float .ticket .when{color:var(--muted);font-size:12px;margin:2px 0}
@@ -443,10 +424,8 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 #board .card:hover{box-shadow:0 8px 22px color-mix(in srgb,var(--ground) 70%,transparent),0 0 0 1px color-mix(in srgb,var(--c) 45%,transparent)}
 #board .card.dragging{opacity:.35;transform:scale(.98)}
 #board .card[data-kind="broken"],#board .kindtoggle[data-kind="broken"]{--c:var(--broken)}
-#board .card[data-kind="flawed"],#board .kindtoggle[data-kind="flawed"]{--c:var(--k5)}
-#board .card[data-kind="enhancement"],#board .kindtoggle[data-kind="enhancement"]{--c:var(--k2)}
-#board .card[data-kind="missing"],#board .kindtoggle[data-kind="missing"]{--c:var(--text)}
-#board .card[data-kind="exclude"],#board .kindtoggle[data-kind="exclude"]{--c:var(--exclude)}
+#board .card[data-kind="unbuilt"],#board .kindtoggle[data-kind="unbuilt"]{--c:var(--text)}
+#board .card[data-kind="under-construction"],#board .kindtoggle[data-kind="under-construction"]{--c:var(--text)}
 #board .card .top{display:flex;gap:8px;align-items:center;font:11px var(--sans);color:var(--muted)}
 #board .card .kind{color:var(--c);font-weight:700;text-transform:uppercase;letter-spacing:.06em}
 #board .card .by{color:var(--text)}
@@ -619,3 +598,10 @@ span.ref-link{color:var(--signal);text-decoration:underline dotted;cursor:pointe
 #refPop h4{margin:4px 0 6px;font-size:13px}
 #refPop .text{white-space:pre-wrap;line-height:1.45}
 #refPop pre.text{font:12px var(--mono, monospace);max-height:40vh;overflow:auto}
+
+#work select.state{font:600 11px var(--sans);margin-left:8px;padding:2px 6px;border-radius:8px;border:1px solid var(--line-2);background:var(--panel-2);color:var(--text)}
+#work button.raise{font:600 11px var(--sans);margin-left:8px;padding:2px 9px;border-radius:10px;border:1px solid var(--line-2);background:var(--panel-2);color:var(--text);cursor:pointer}
+#work button.raise:hover{border-color:var(--signal);color:var(--signal)}
+#work .issue{display:grid;gap:6px;margin:6px 0 10px}
+#work .issue textarea{width:100%;box-sizing:border-box;font:13px var(--sans);padding:6px 8px;border-radius:8px;border:1px solid var(--line-2);background:var(--panel-2);color:var(--text);resize:vertical}
+#work .issue button.send{justify-self:start;font:600 12px var(--sans);padding:4px 10px;border-radius:8px;border:1px solid var(--signal);background:var(--panel-2);color:var(--signal);cursor:pointer}

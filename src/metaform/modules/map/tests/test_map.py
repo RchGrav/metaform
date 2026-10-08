@@ -38,9 +38,8 @@ def j(run, *args, cwd):
     return json.loads(run('map', *args, '--json', cwd=cwd).stdout)
 
 
-# The parts of the question form map ask refuses a question without, MAP-050; suggestions= is given per call.
-FORM = ('specs=09-viewer.md', 'not_option=A tone is wanted or not.',
-        'rich_said=None; the decision and its reason are described in the question.', 'by=builder')
+# Who asks: map ask is the person's, on the command line; suggestions= is given per call.
+FORM = ('by=builder',)
 YES_NO = 'suggestions=["Yes", "No"]'
 
 
@@ -648,7 +647,7 @@ def test_a_map_write_missing_what_its_record_cannot_be_stored_without_stops_once
 def test_a_work_record_sent_without_a_condition_is_stored_empty_with_a_notice(run, mapped):
     added = j(run, 'work', 'op=add', 'node=element:code.alarm.audible', 'task=decide what it is', cwd=mapped)
     assert (added['condition'], added['task'], added['done']) == ('', 'decide what it is', None)
-    assert said(added) == [('condition', 'condition is missing; stored empty.')]
+    assert said(added) == []  # a plain task: no condition, no notice, MAP-046
     listed = j(run, 'work', 'node=element:code.alarm.audible', cwd=mapped)['results']
     assert [(row['id'], row['condition']) for row in listed] == [(added['id'], '')]
 
@@ -959,22 +958,19 @@ def test_an_agent_takes_a_record_with_no_condition_reports_steps_and_says_it_wai
 
 @pytest.mark.req('MAP-050')
 def test_a_question_and_a_note_are_asked_told_answered_and_read_at_the_node(run, mapped):
-    """A question comes in plain words with the answers the agent suggests, the one it recommends first, so the user
-    answers with one click. A note asks for nothing and waits to be read. Neither is the condition of a part, so
-    neither is a work record."""
+    """A question the person writes comes with the answers to pick from. A note asks for nothing and waits to be
+    read. Neither is the condition of a part, so neither is a work record."""
     asked = j(run, 'ask', 'code.alarm.audible', 'Is the quiet tone still wanted?',
               'suggestions=["Yes, keep it", "No, make it louder"]', *FORM, cwd=mapped)
-    form = ('Is the quiet tone still wanted?\n\n#1 Specifications reviewed:\n09-viewer.md\n\n'
-            '#2 Why this is not a configuration option:\nA tone is wanted or not.\n\n'
-            '#3 Unexplained "Rich said":\nNone; the decision and its reason are described in the question.')
+    form = 'Is the quiet tone still wanted?'
     assert (asked['kind'], asked['address'], asked['text'], asked['suggestions'], asked['by'], asked['closed']) == (
         'question', 'code.alarm.audible', form, ['Yes, keep it', 'No, make it louder'], 'builder', None)
-    assert said(asked) == [] and asked['said'].startswith('Your question is recorded at the node.')
+    assert said(asked) == [] and 'said' not in asked
     assert [one['text'] for one in j(run, 'messages', 'limit=0', cwd=mapped)['results']] == [form]
-    told = j(run, 'tell', 'code.alarm.audible', 'The driver is written.', cwd=mapped)
-    assert (told['kind'], told['text'], told['closed']) == ('message', 'The driver is written.', None)
+    told = Store('proj').tell(Node('element', 'code.alarm.audible'), 'The driver is written.')
+    assert (told.kind, told.text, told.closed) == ('message', 'The driver is written.', None)
     waiting = j(run, 'messages', 'open=true', cwd=mapped)['results']
-    assert [one['id'] for one in waiting] == [asked['id'], told['id']]
+    assert [one['id'] for one in waiting] == [asked['id'], told.id]
     assert [one['kind'] for one in j(run, 'messages', 'kind=question', cwd=mapped)['results']] == ['question']
     assert j(run, 'element', 'code.alarm.audible', cwd=mapped)['open_work'] == ['question', 'message']
     assert j(run, 'work', 'node=element:code.alarm.audible', cwd=mapped)['results'] == []  # no work record was made
@@ -987,12 +983,12 @@ def test_a_question_and_a_note_are_asked_told_answered_and_read_at_the_node(run,
     where = j(run, 'where', 'code.alarm.audible', cwd=mapped)
     assert [(one['kind'], one['text']) for one in where['messages']] == [('message', 'The driver is written.')]
     old = run('map', 'work', 'op=add', 'node=code.alarm.audible', 'condition=question', 'note=Old form.', '--json',
-              cwd=mapped)  # a question is no condition of a part; the agent is told how to ask
-    assert 'metaform map ask' in ' '.join(message for _, message in said(json.loads(old.stdout)))
+              cwd=mapped)  # a question is no condition of a part
+    assert 'not the condition of a part' in ' '.join(message for _, message in said(json.loads(old.stdout)))
 
-    # a bare question is recorded with a notice for each part of the form not filled, never refused, MAP-050
+    # a bare question is recorded with a notice that it has no suggestions, never refused, MAP-050
     bare = j(run, 'ask', 'code.alarm.audible', 'Which one?', cwd=mapped)
-    assert bare['text'] == 'Which one?' and {where for where, _ in said(bare)} >= {'specs', 'not_option', 'suggestions'}
+    assert bare['text'] == 'Which one?' and {where for where, _ in said(bare)} == {'suggestions'}
     assert 'Which one?' in [one['text'] for one in j(run, 'messages', 'open=true', cwd=mapped)['results']]
 
 @pytest.mark.req('MAP-050')
@@ -1000,9 +996,9 @@ def test_where_gives_each_open_message_its_id_so_it_is_answered_from_that_read(r
     """perspective-agent, 2026-10-02: where listed the open questions with no message_id, and replying took a second
     call to find it. The where read gives each one its id, and the id it gives answers the question."""
     asked = j(run, 'ask', 'code.alarm.audible', 'Is the quiet tone still wanted?', YES_NO, *FORM, cwd=mapped)
-    told = j(run, 'tell', 'code.alarm.audible', 'The driver is written.', cwd=mapped)
+    told = Store('proj').tell(Node('element', 'code.alarm.audible'), 'The driver is written.')
     where = j(run, 'where', 'code.alarm.audible', cwd=mapped)
-    assert [one.get('id') for one in where['messages']] == [asked['id'], told['id']]
+    assert [one.get('id') for one in where['messages']] == [asked['id'], told.id]
     replied = j(run, 'reply', where['messages'][0]['id'], 'answer=Yes', cwd=mapped)
     assert (replied['text'], replied['answer']) == (asked['text'], 'Yes')
 
@@ -1029,19 +1025,11 @@ def test_a_question_answered_by_mistake_is_reopened_and_waits_again_with_its_sug
     assert still['closed'] is None and [where for where, _ in said(still)] == ['id']
     assert (still['text'], still['suggestions'], still['created'], still['by']) == (
         asked['text'], asked['suggestions'], asked['created'], asked['by'])
-    told = j(run, 'tell', 'code.alarm.audible', 'The driver is written.', cwd=mapped)
-    j(run, 'reply', told['id'], cwd=mapped)
-    refused = run('map', 'reopen', told['id'], cwd=mapped, ok=False)  # only a question is reopened
+    told = Store('proj').tell(Node('element', 'code.alarm.audible'), 'The driver is written.')
+    j(run, 'reply', told.id, cwd=mapped)
+    refused = run('map', 'reopen', told.id, cwd=mapped, ok=False)  # only a question is reopened
     assert refused.returncode != 0 and 'Only a question is reopened' in refused.stderr + refused.stdout
-    assert j(run, 'messages', 'kind=message', 'open=false', cwd=mapped)['results'][0]['id'] == told['id']
-
-
-@pytest.mark.req('MAP-050')
-def test_the_agent_that_asks_is_told_how_to_record_an_answer_it_got_another_way(run, mapped):
-    """Work ca18a108, 2026-10-02: Rich answered a question through the coordinator, and the agent that asked found no
-    way to close it, so the node glowed for a settled question. map reply closes it; ask's help must say so."""
-    page = run('help', 'map', 'ask', cwd=mapped).stdout
-    assert 'metaform map reply <id> answer=' in page.split('Details')[1]
+    assert j(run, 'messages', 'kind=message', 'open=false', cwd=mapped)['results'][0]['id'] == told.id
 
 
 @pytest.mark.req('MAP-050')
@@ -1505,13 +1493,13 @@ def test_map_work_at_an_element_lists_the_tickets_on_the_joins_it_receives_or_pr
 
 
 @pytest.mark.req('MAP-005')
-def test_map_work_ask_and_tell_never_tell_an_agent_to_name_a_node_by_a_join_id(run, mapped):
+def test_map_work_never_tells_an_agent_to_name_a_node_by_a_join_id(run, mapped):
     """What an agent reads of a verb: its help on the command line and its MCP schema, which carries each noun's
     help, a required one's included."""
     from metaform.modules.map import MODULE
     from metaform.modules.mcp.server import verb_schema
     verbs = {verb.name: verb for verb in MODULE.verbs}
-    for name in ('work', 'ask', 'tell'):
+    for name in ('work',):
         assert 'join:<id>' not in run('help', 'map', name, cwd=mapped).stdout, name
         assert 'join:<id>' not in json.dumps(verb_schema(verbs[name], mapped)), name
 
@@ -1533,15 +1521,15 @@ def test_ask_and_tell_take_node_first_and_provider_beside_it_names_the_purpose_n
               YES_NO, *FORM, cwd=mapped)
     assert (asked['node_kind'], asked['node_id'], asked['receiver_address'], asked['provider_address']) == (
         'join', shown.id, 'code.timer.kitchen', 'code.display.digit')
-    told = j(run, 'tell', 'element:code.timer.kitchen', 'The piezo is quiet.', 'provider=code.alarm.audible',
-             'address=code.alarm.audible.piezo', cwd=mapped)
+    told = j(run, 'ask', 'element:code.timer.kitchen', 'Is the piezo quiet?', 'provider=code.alarm.audible',
+             'address=code.alarm.audible.piezo', YES_NO, *FORM, cwd=mapped)
     assert (told['node_kind'], told['node_id']) == ('element', piezo)
     plain = j(run, 'ask', 'code.alarm.audible', 'Louder?', YES_NO, *FORM, cwd=mapped)
     assert (plain['node_kind'], plain['address']) == ('element', 'code.alarm.audible')
-    alone = j(run, 'tell', 'code.alarm.audible', 'Quiet.', 'address=code.alarm.audible.piezo', cwd=mapped)
+    alone = j(run, 'ask', 'code.alarm.audible', 'Quiet?', 'address=code.alarm.audible.piezo', YES_NO, *FORM, cwd=mapped)
     assert (alone['node_kind'], alone['address']) == ('element', 'code.alarm.audible')
     assert said(alone) == [('address', 'address names an element a join holds only with provider; it was not read.')]
-    unheld = run('map', 'tell', 'code.timer.kitchen', 'x', 'provider=code.nosuch.node', '--json', cwd=mapped, ok=False)
+    unheld = run('map', 'ask', 'code.timer.kitchen', 'x?', 'provider=code.nosuch.node', '--json', cwd=mapped, ok=False)
     assert unheld.returncode == 2 and 'code.timer.kitchen has no purpose served by code.nosuch.node' in unheld.stderr
     assert [message['node_id'] for message in j(run, 'messages', 'limit=0', cwd=mapped)['results']] == [
         shown.id, piezo, plain['node_id'], alone['node_id']]

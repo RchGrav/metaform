@@ -18,11 +18,15 @@ def signals(dispatch, run, active=None):
     return json.loads(run(*words, cwd=dispatch.folder).stdout)['signals']
 
 
-def test_unfinished_fake_session_raises_not_smooth_and_requeue(dispatch, run):
+def test_unfinished_fake_session_raises_not_smooth_and_no_requeue(dispatch, run):
     dispatch.start('plain')
+    from metaform.modules.dispatch import tell
+    held = dispatch.session().extra
+    eventually(lambda: tell(held, 'status')['activity'] == 'idle' or None)  # the turn ended, the ticket open
+    dispatch.stop()
     assert dispatch.process.wait(15) == 0
     found = signals(dispatch, run)
-    assert {'not-smooth', 'requeue'} <= {row['signal'] for row in found}
+    assert 'not-smooth' in {row['signal'] for row in found} and 'requeue' not in {row['signal'] for row in found}
     assert all(row['work_id'] == dispatch.id for row in found)
 
 
@@ -121,22 +125,6 @@ def test_signals_verb_is_available_to_a_real_mcp_client(dispatch, home):
         assert not response.is_error
         assert 'rework-limit' in ''.join(block.text for block in response.content if hasattr(block, 'text'))
     session(home, dispatch.folder, check)
-
-
-def test_consensus_start_and_person_review_publish_once(dispatch, run):
-    from metaform.data import Store
-    from metaform.modules.dispatch.consensus import TIE_REVIEW, _round, _settle
-    own = Store('proj', module='dispatch')
-    question = dispatch.store.ask(dispatch.node, 'Which output?', suggestions=['JSON', 'Text'], work=dispatch.id)
-    with own.tables() as tx:
-        tx.insert('consensus', {'message_id': question.id, 'work_id': dispatch.id, 'state': 'OPEN',
-                                'opened': '2026-10-05T00:00:00Z', 'seq': 1})
-    first = _round(own, 1)
-    assert _round(own, 1)['round'] == first['round']
-    _settle(dispatch.store, own, dispatch.ticket(), question, TIE_REVIEW, None, 'tie', {'JSON': 2, 'Text': 2})
-    found = json.loads(run('dispatch', 'signals', '--json', cwd=dispatch.folder).stdout)['signals']
-    assert len([row for row in found if row['signal'] == 'consensus-started']) == 1
-    assert len([row for row in found if row['signal'] == 'consensus-review']) == 1
 
 
 def test_signal_events_reach_another_process_without_polling(dispatch, run):

@@ -612,6 +612,13 @@ class Session:
         await self.write(take)
         if self.ending:
             return
+        if self.system and self.ctx.nouns.get('sentinel'):  # the person raised an issue: the sentinel investigates it
+            address = str(self.ctx.nouns['sentinel'])
+            record = await asyncio.to_thread(ticket, self.store, self.work_id)
+            self.turn(prompt('sentinel', report=record.note or '', node=address,
+                             read=f'`metaform map where {address}`, its refs in `metaform map node {address}`, and '
+                                  f'this ticket with `metaform map work id={self.work_id}`'))
+            return
         if self.system and self.ctx.nouns.get('talk'):  # the person clicked something to talk about: no ticket work
             about, read = await asyncio.to_thread(subject, self.store, self.work_id, str(self.ctx.nouns['talk']))
             self.turn(prompt('talk', about=about, read=read))

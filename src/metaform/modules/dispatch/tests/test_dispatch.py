@@ -337,9 +337,11 @@ def test_a_permission_request_is_a_question_and_the_answer_from_another_process_
     run('map', 'reply', question.id, 'answer=Allow once', cwd=dispatch.folder)
     [outcome] = eventually(lambda: dispatch.logged('permission'))
     assert outcome == {'outcome': {'outcome': 'selected', 'optionId': 'allow'}}
-    time.sleep(2)  # the turn ends with the ticket open: the session stays, idle and reachable, and the ticket taken
-    assert dispatch.process.poll() is None and dispatch.session().extra['state'] == 'running'
-    assert dispatch.session().extra['activity'] == 'idle' and dispatch.ticket().taken, 'nothing restarts by itself'
+    from metaform.modules.dispatch import (
+        tell,  # the turn ends with the ticket open: the session stays, idle and reachable
+    )
+    eventually(lambda: tell(dispatch.session().extra, 'status')['activity'] == 'idle' or None)
+    assert dispatch.process.poll() is None and dispatch.ticket().taken, 'nothing restarts by itself'
     dispatch.stop()
 
 

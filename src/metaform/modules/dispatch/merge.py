@@ -161,7 +161,7 @@ def merge_due(ctx: Any, store: Store, work_id: str) -> dict[str, Any]:
         if done.returncode == 0:
             outcome = {'state': MERGED, 'reason': ''}
             record = store.ticket(work_id).work
-            store.add_work(Node.of(record.node_kind, record.node_id), 'enhancement',
+            store.add_work(Node.of(record.node_kind, record.node_id), None,
                            note=f'Merged into {dev_branch(project)} without review, from {row["branch"]}, after its '
                                 f'tests passed: work {work_id}.',
                            task=f'Newly committed feature, needs testing before the next release: '

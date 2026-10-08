@@ -21,7 +21,6 @@ from typing import Any, TypeVar, cast
 from metaform import prompt_files, settings
 from metaform.data import (
     PLACE_KINDS,
-    TICKETS,
     Item,
     Node,
     Notice,
@@ -689,8 +688,8 @@ KNOWLEDGE_NOUNS = (
     _noun('always_show', 'add-item and edit: the item is always shown.', 'bool'),
     _noun('task', 'add-item: the item is a task; it adds a ticket at its node, and the flag is not stored on the item.',
           'bool'),
-    _noun('condition', "add-item with task: the part's state, missing, broken, flawed or enhancement, only when the "
-                       "part is in that state; left out for a task on a part that exists and works."),
+    _noun('condition', "add-item with task: the part's state, unbuilt, under-construction, built or broken, only "
+                       "when the part is in that state; left out for a task on a part that exists and works."),
     _noun('owner', 'add-ref: the id of the thing the ref belongs to.'),
     _noun('key', 'add-ref: the ref key.'),
     _noun('id', 'edit and remove: the id of the thing.'),
@@ -1052,7 +1051,7 @@ def _distribute(store: Store, agents: Any) -> Page[WorkRecord]:
                    'those.', 'metaform map work op=distribute agents=<n>')
     with store.atomic():
         waiting = [record for record in store.work(open=True, limit=0).results
-                   if not record.taken and (not record.condition or record.condition in TICKETS)]
+                   if not record.taken and (record.task or '').strip()]
         # the board's order: To do before Backlog, each by its place, a ticket with none after, then as written
         waiting.sort(key=lambda record: (record.held, record.position is None, record.position or 0))
         _assign(store, {record.id: AGENT_GLYPHS[place % agents] for place, record in enumerate(waiting)})
@@ -1083,8 +1082,12 @@ WORK_NOUNS = (
     _noun('receiver', 'list, add and edit: a join, by the address of the element that holds it, with provider.'),
     _noun('provider', 'list, add and edit: a join, by the address of an element it holds, with receiver.'),
     _noun('address', 'list, add and edit: an element, by address.'),
-    _noun('condition', 'add, edit, and list as a filter: the state of the part, not the kind of ticket. Give one only when the part is in that state, and leave it out for a task on a part that exists and works: a record with no condition is a plain task and marks nothing on the map. missing, the part does not exist at all or is not built yet, and its task builds it; once built it is not missing. broken, not working, not connected or orphaned; flawed, works but is not right; enhancement, works and could be better; exclude, outside the scope or conflicting with a superseding specification, with the reason and references recorded for review. condition=none on edit clears it.',
-          schema={'type': 'string', 'enum': ['missing', 'broken', 'flawed', 'enhancement', 'exclude', 'none']}),
+    _noun('condition', 'add, edit, and list as a filter: the state of the part the record is at, never the kind of '
+                       'ticket. A stage, unbuilt, under-construction or built, says where the part is on its way to '
+                       'existing; built is the normal state and marks nothing. broken is a built part that does not '
+                       'do its job. A task on a part that exists and works carries none. The intake and the person '
+                       'set it; an agent at work leaves it alone. condition=none on edit clears it.',
+          schema={'type': 'string', 'enum': ['unbuilt', 'under-construction', 'built', 'broken', 'none']}),
     _noun('links', 'add and edit: other nodes the task links for reference, a list of element addresses, and of '
                    'objects of receiver and provider, with address for a part inside, each naming a purpose.',
           'json', {'type': 'array', 'items': {'anyOf': [
@@ -1227,13 +1230,11 @@ MODULE = Module(
                            'on the board, or mark it done.',
              nouns=WORK_NOUNS,
              details='A work record is attached to one element or join and never changes the map. Its '
-                     'condition is the state of that part, not the kind of ticket: most tasks carry none. Give '
-                     'missing only when the part does not exist at all or is not built yet; its task builds it, and '
-                     'once built it is not missing. A part that exists but is wrong is not missing: broken (not '
-                     'working, not connected, orphaned), flawed (works but is not right), enhancement (works, could '
-                     'be better), or exclude (outside the scope, or conflicting with a superseding specification). '
-                     'A task on a part that exists and works has no condition and marks nothing on the map. Its '
-                     'note says what and where, its task what it needs. '
+                     'condition is the state of that part, never the kind of ticket: most tasks carry none. A '
+                     'stage, unbuilt, under-construction or built, says where the part is on its way to existing; '
+                     'built marks nothing. broken is a built part that does not do its job. The intake and the '
+                     'person set it; an agent at work leaves it alone. Its note says what and where, its task what '
+                     'it needs. '
                      'exclude records material outside the intake scope or code conflicting with a superseding '
                      'specification. The note links the affected material and the specification or scope reason '
                      'for review. Unrelated folders are excluded from functional capture; a proposed gitignore '
@@ -1243,11 +1244,11 @@ MODULE = Module(
                      'when it opens it. It is '
                      'open until op=done records its resolution, which is kept beside it. Any agent writes one at any '
                      'time, the intake agent as it maps, a critic with its findings, held=true until agents take it.',
-             examples=(('metaform map work op=add node=element:code.alarm.audible condition=missing task="build it"',
-                        'Record that the alarm does not exist yet.'),
+             examples=(('metaform map work op=add node=element:code.alarm.audible condition=unbuilt task="build it"',
+                        'Record that the alarm is not built yet, with the task that builds it.'),
                        ('metaform map work op=edit id=<work id> node=code.alarm.audible',
                         'Move a ticket to the alarm, keeping its progress and reference links.'),
-                       ('metaform map work condition=broken open=true', 'List the open broken records.'),
+                       ('metaform map work condition=broken open=true', 'List the parts recorded broken, with their open tasks.'),
                        ('metaform map work id=<work id>', ('Read one ticket with what the map holds at its node and '
                                                            'at each node it links.')),
 )),
