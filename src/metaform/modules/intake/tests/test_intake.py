@@ -475,7 +475,9 @@ def test_an_intake_started_and_not_finished_is_named_in_the_instructions(run, pr
     run('intake', 'finish', cwd=project)
     shown = agents()
     assert line not in shown and notice not in shown
-    run('intake', 'start', cwd=project)  # a second intake, in a new metaform, while the first is finished
+    run('intake', 'start', cwd=project)  # on a finished map start opens nothing: a verify pass writes onto it
+    assert line not in agents()
+    run('intake', 'element', 'code.display.digit', 'role=SE', 'name=digit', cwd=project)  # new shape: a new intake
     assert line in agents()
 
 
@@ -1103,3 +1105,23 @@ def test_the_procedures_marks_are_taken_as_written(run, project):
     recorded(run, project, 'element', 'code.display.digit', 'role=SE', 'condition=UNVERIFIED')  # read again later
     assert sorted((w.address, w.condition) for w in Store('timer').work(open=True, limit=0).results) == \
         [('code.alarm.audible', 'trouble'), ('code.display.digit', 'unverified')]  # the last condition replaces
+
+
+@pytest.mark.req('BASE-039')
+def test_a_verify_pass_writes_conditions_and_refs_onto_the_finished_map_without_a_new_base(run, project):
+    """The intake's verification phase reads each part's source and records what it found on the map it verifies;
+    conditions and refs are kept apart from the map's shape, so a finished map takes them without a new intake."""
+    recorded(run, project, 'start')
+    recorded(run, project, 'element', 'code.timer.kitchen', 'role=DE', 'name=timer', 'condition=UNVERIFIED')
+    recorded(run, project, 'element', 'code.alarm.audible', 'role=SE', 'name=alarm')
+    recorded(run, project, 'join', 'code.timer.kitchen', '["code.alarm.audible"]', 'purpose=p', 'ef=f', 'ifd=receives')
+    recorded(run, project, 'finish', 'report=done')
+    recorded(run, project, 'start')
+    recorded(run, project, 'element', 'code.timer.kitchen', 'condition=OK', 'refs=[{"key": "read", "value": "t.c#L1"}]')
+    recorded(run, project, 'join', 'code.timer.kitchen', '["code.alarm.audible"]', 'condition=BKN', 'note=never fires')
+    shown = recorded(run, project, 'show')
+    by = {entry['namespace_address']: entry for entry in shown['elements']}
+    assert (by['code.timer.kitchen']['condition'], by['code.timer.kitchen']['refs']) == \
+        ('ok', [{'key': 'read', 'value': 't.c#L1'}])
+    assert [(held['condition'], held['note']) for held in shown['joins']] == [('trouble', 'never fires')]
+    assert [base['name'] for base in json.loads(run('map', 'bases', '--json', cwd=project).stdout)['results']] == ['main']

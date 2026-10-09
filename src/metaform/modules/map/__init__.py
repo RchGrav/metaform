@@ -1125,7 +1125,7 @@ WORK_NOUNS = (
                        'existing; built is the normal state and marks nothing. broken is a built part that does not '
                        'do its job. A task on a part that exists and works carries none. The intake and the person '
                        'set it; an agent at work leaves it alone. condition=none on edit clears it.',
-          schema={'type': 'string', 'enum': ['missing', 'unbuilt', 'under-construction', 'built', 'broken', 'none']}),
+          schema={'type': 'string', 'enum': ['missing', 'unbuilt', 'under-construction', 'built', 'broken', 'trouble', 'ok', 'unverified', 'none']}),
     _noun('kind', 'add, edit, and list as a filter: what sort of work the ticket is, never the state of the part: '
                   'broken, a fix for a part that does not do its job; flawed, a part that works but is not right; '
                   'enhancement, a part that works and could be better; or none for a plain task. kind=none on edit '

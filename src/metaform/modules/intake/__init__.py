@@ -254,6 +254,22 @@ def _open(ctx: Context, store: Store, notices: Notices) -> Recording:
     return Recording(target, layer, name, is_active)
 
 
+def _active_map(store: Store) -> Recording | None:
+    """The active metaform's finished intake, when nothing is being recorded: what a verification pass writes to.
+    Conditions are work records and refs are items of the sources layer, both kept apart from the map's shape, so they
+    are written onto the finished map without opening a new intake."""
+    if _building(store) is not None or not store.has_intake():
+        return None
+    active = store.active_base()
+    base = next((layer for layer in store.layers(limit=0).results if layer.kind in ('base', 'intake')), None)
+    if active is None or base is None:
+        return None
+    return Recording(store, base, active.name, True)
+
+
+SHAPE_FIELDS = ('name_length', 'name', 'role', 'within')  # an element's fields that are its shape
+
+
 def _recording(ctx: Context, notices: Notices) -> Recording:
     """The intake being recorded; a record sent before any start starts one, and says so."""
     store = ctx.require_store()
@@ -277,6 +293,12 @@ def start(ctx: Context) -> Any:
                                                       'resumes it. intake show reads back what it holds.'})
         # What the layer lacks of its provenance is filled in; what it holds is kept, LAYER-010.
         _note(notices, found.store.complete(found.layer.name, {name: ctx.nouns.get(name) for name in ('model', 'role')}))
+    elif (mapped := _active_map(store)) is not None:
+        notices.append({'where': 'intake', 'message': f'The active metaform {mapped.metaform} has a finished intake. '
+                        'Conditions, their notes and refs recorded on its elements and joins are written onto it. '
+                        'Recording a new element or join, or changing a field of one, starts a new intake in a new '
+                        'base, kept apart until it finishes.'})
+        return {'layer': mapped.layer.name, 'project': store.project_id, 'base': mapped.metaform, 'notices': notices}
     else:
         found = _open(ctx, store, notices)
     return {'layer': found.layer.name, 'project': store.project_id, 'base': found.metaform, 'notices': notices}
@@ -333,8 +355,20 @@ def element(ctx: Context) -> Any:
     is its namespace_address, name_length, name and role; its refs go in the sources layer."""
     _checked_condition(ctx)
     notices: Notices = []
-    rec = _recording(ctx, notices)
     address = ctx.nouns[ADDRESS]
+    mapped = _active_map(ctx.require_store())
+    current_map = mapped.store.element(address, raw=True) if mapped is not None else None
+    if mapped is not None and current_map is not None and all(
+            ctx.nouns.get(key) is None or ctx.nouns.get(key) == getattr(current_map, key) for key in SHAPE_FIELDS):
+        refs = _list(ctx, 'refs')
+        if refs is not None:
+            _sources(ctx, mapped, 'element', current_map.id, address, refs, notices)
+        _condition(ctx, mapped, 'element', current_map.id, notices)
+        if ctx.nouns.get('note') and not ctx.nouns.get('condition'):
+            notices.append({'where': 'note', 'message': 'On a finished map a note is kept with a condition; this one '
+                                                        'was not kept.'})
+        return {ADDRESS: address, 'layer': mapped.layer.name, 'base': mapped.metaform, 'notices': notices}
+    rec = _recording(ctx, notices)
     given = {'name_length': _whole(ctx.nouns.get('name_length')), 'name': ctx.nouns.get('name'),
              'role': ctx.nouns.get('role')}
     # what holds it, and a note without a condition, are kept on the element itself
@@ -389,9 +423,19 @@ def join(ctx: Context) -> Any:
     the elements given that it does not hold are added to it."""
     _checked_condition(ctx)
     notices: Notices = []
-    rec = _recording(ctx, notices)
     receiver = ctx.nouns['receiver']
     elements = _list(ctx, 'elements') or []
+    mapped = _active_map(ctx.require_store())
+    if mapped is not None and elements:
+        held_map = _joins_holding(mapped.store, mapped.layer, receiver, elements)
+        if len(held_map) == 1 and all(ctx.nouns.get(key) is None or ctx.nouns.get(key) == getattr(held_map[0], key)
+                                      for key in JOIN_FIELDS) and \
+                set(elements) <= {each.address for each in held_map[0].elements}:
+            _join_refs(ctx, mapped, held_map[0].id, receiver, notices)
+            _condition(ctx, mapped, 'join', held_map[0].id, notices)
+            return {'receiver': receiver, 'elements': elements, 'layer': mapped.layer.name, 'base': mapped.metaform,
+                    'notices': notices}
+    rec = _recording(ctx, notices)
     result = {'receiver': receiver, 'elements': elements, 'layer': rec.layer.name, 'notices': notices}
     if not elements:
         notices.append({'where': 'elements', 'message': 'elements is missing; a join holds the elements that serve '
@@ -531,13 +575,16 @@ def show(ctx: Context) -> Any:
     correct before finishing, without reading the whole map at once."""
     store = ctx.require_store()
     found = _building(store)
+    notices: Notices = []
+    if found is None and (found := _active_map(store)) is not None:
+        notices.append({'where': 'intake', 'message': f'No intake is being recorded; this is the active metaform '
+                                                      f'{found.metaform}, whose intake is finished.'})
     if found is None:
         return {'layer': None, 'project': store.project_id, 'base': None, 'elements': [], 'joins': [],
                 'root': None, 'disconnected': [], 'undescribed': [],
                 'notices': [{'where': 'intake', 'message': NOTHING}]}
     elements, joins = _recorded(found.store, found.layer)
     receiver = ctx.nouns.get('receiver')
-    notices: Notices = []
     if receiver:
         joins = [held for held in joins if held.receiver_address == receiver]
         named = {receiver, *(each.address for held in joins for each in held.elements)}
