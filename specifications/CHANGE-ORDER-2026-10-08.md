@@ -19,7 +19,7 @@ Status of each item: **done** (committed on `main`), **decided** (agreed, not bu
 
 ## Lane 1: the intake
 
-### 1.1 Close the intake tool gaps (decided)
+### 1.1 Close the intake tool gaps (done, 2026-10-08)
 
 The served intake names these as bindings B1 to B6. Close the ones that lose what the agent records:
 - **Notes without a condition are kept** (B4), on the element or join itself, as a versioned field, so exclude notes and other notes survive. Today they are discarded with a notice that pushes agents to invent a condition.
@@ -118,8 +118,8 @@ Module, prompt and published layer ids under the domain root, so authors cannot 
 ## Small, any time
 
 - **Cypher for agents.** Done 2026-10-08: `map cypher`, over the layers in view or the ones named, STORE-046.
-- **The board drag test,** which fails under the browser driver; confirm whether it predates 2026-10-08 and fix it.
-- **The ten baseline test failures** (build, provision, TUI, first working test, memory count, module data source).
+- **The board drag test,** which fails under the browser driver; confirm whether it predates 2026-10-08 and fix it. Still open: browser tests now run only with `pytest -m browser`.
+- **The ten baseline test failures** (build, provision, TUI, first working test, memory count, module data source). Done 2026-10-09: the default run passes with none.
 - **Regenerate the MCP server dump** after lanes 1 to 3.
 
 ## Order and overlap
