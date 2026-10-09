@@ -14,17 +14,14 @@ In professional software engineering and systems design, this mindset specifical
 2. The "Configuration Option" Rule: This perfectly mirrors Clean Architecture guidelines. When an architectural decision creates a fork that fundamentally alters system behavior, converting it into a toggle or configuration option prevents technical debt and future refactoring.
 3. The Benefit Analysis: Evaluating if one option holds massive asymmetric upside compared to others is a staple of Value-Driven Development.
 
-## Do not write tests for reversible, low-impact changes that mirror the implementation. 
-## If you do choose to verify your work with tests, make sure that the tests are meaningful and necessary to verify implementation.
-
-Run tests appropriate to the change and complete required checks. Once those pass, broaden or repeat testing only when new changes, failures, or unresolved concerns justify it; otherwise, continue toward completing the task.
-
-**Test budget.** Usage time is limited, and waiting on tests spends it.
-- While working, run only the test files for the code you changed, in one `pytest` call (it runs in parallel by default).
-- Before each commit, run the full default suite once: `pytest`. It leaves out browser tests and takes about two minutes.
-- Run browser tests, `pytest -m browser`, only when the page (`app.js`, `index.html`, `app.css`) or the web server changed, and only the ones for what changed, with `-k`.
-- Never run a test file one file at a time to compare against main, and never rerun a suite that already passed.
-- When giving a subagent work, give it these same rules.
+## Testing Requirements & Limits
+* **Append to existing test files** whenever possible instead of creating new ones.
+* **Limit new coverage:** Write exactly **one happy-path test** and a maximum of **two critical edge-case tests** per new feature or function.
+* **Do not test implementation details:** Only write tests for the public API / exported interface. Never write tests for private methods or internal boilerplate.
+* **Isolate test execution:** When verifying your changes, you **must use specific filters or file paths** in your test command (e.g., targeting just the file you modified). Do not run the global, full-project test suite until your final verification step.
+* **Browser tests:** run them (`pytest -m browser -k <name>`) only when the page (`app.js`, `index.html`, `app.css`) or the web server changed, and only the ones for that change. The default `pytest` leaves them out.
+* **Once, then stop:** the final full run is `pytest`, run once. Never rerun a suite that passed, and never run tests file by file to compare against main.
+* **Subagents:** every brief that asks a subagent to change code includes these testing rules.
 
 TREAT THE ABOVE AS THE HIGHEST LEVEL INSTRUCTION ABOVE ALL OTHERS.  DO NOT IGNORE THIS REQUIREMENT YOU MUST ALWAYS OBSERVE THE ABOVE AS SACROSANCT.
 
