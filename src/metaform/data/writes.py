@@ -69,8 +69,8 @@ def _element_fields(name_length: Any, role: Any, found: LayerRow,
 
 def add_element(tx: Tx, layer: str, address: Any, *, name_length: Any = None, role: Any = None,
                 name: Any = None) -> Element | Outcome:
-    """Write an element, its address, name_length, name and role, Rich's shape, or return the one already at the
-    address, STORE-009. Its name is the canonical name the project uses for it, Rich 2026-10-01."""
+    """Write an element, its address, name_length, name and role, or return the one already at the
+    address, STORE-009. Its name is the canonical name the project uses for it."""
     if not isinstance(address, str):
         raise StoreError(f'{address!r} is not an address: an address is text.', 'metaform map where <address>')
     found = rows.layer(tx, layer)
@@ -128,7 +128,7 @@ def held_ids(tx: Tx, elements: Any, found: LayerRow, notices: list[Notice]) -> l
 
 def add_join(tx: Tx, layer: str, receiver: Any, elements: Any, *, purpose: Any = None, ef: Any = None,
              ifd: Any = None, type: Any = 'purpose') -> Join | Outcome:
-    """Write one join, Rich's shape, 2026-10-04: held by its receiver, holding the elements that serve its purpose,
+    """Write one join: held by its receiver, holding the elements that serve its purpose,
     with its type, purpose, ef and ifd, STORE-010."""
     found = rows.layer(tx, layer)
     notices: list[Notice] = []
@@ -151,7 +151,7 @@ def add_join(tx: Tx, layer: str, receiver: Any, elements: Any, *, purpose: Any =
     return _with(views.join(tx, join_id, current, all_layers(tx.base)), notices)
 
 
-IFDS = ('sends', 'receives', 'both')  # IFD, Information Flow Direction, Rich 2026-10-01
+IFDS = ('sends', 'receives', 'both')  # IFD, Information Flow Direction
 IFD_SPELLINGS = {'send': 'sends', 'receive': 'receives'}  # the intake procedure's spelling, stored as the store's
 
 
@@ -168,7 +168,7 @@ def _ifd(value: Any, notices: list[Notice]) -> str | None:
 
 def add_ref(tx: Tx, owner: str, key: Any, value: Any) -> Ref | Outcome:
     """Add one ref to an item's or a property's current version, STORE-012. The base holds no refs; an element's
-    refs are items of the sources layer, Rich 2026-10-04."""
+    refs are items of the sources layer."""
     key = key if isinstance(key, str) else json.dumps(key, ensure_ascii=False, sort_keys=True)
     value = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, sort_keys=True)
     kind = rows.kind_of(tx, owner)

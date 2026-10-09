@@ -80,7 +80,7 @@ def _condition(value: Any, notices: list[Notice]) -> str:
         return str(value)
     if value is None or value in ("", "none"):
         return ""  # a plain task: the part's state is not in question, MAP-046
-    # The conditions are a closed list, so a word outside it is refused, Rich 2026-10-08: checking an entry is not
+    # The conditions are a closed list, so a word outside it is refused, checking an entry is not
     # judging the agent's reasoning, and a mark stored under a word no reader knows is lost.
     raise StoreError(
         f"{value!r} is not a condition. A part's condition is one of {', '.join(CONDITIONS)}, or none.",
@@ -102,7 +102,7 @@ def _kind(value: Any) -> str:
 
 def _building(tx: Tx, work_id: str) -> None:
     """A ticket taken at a part whose open state record says unbuilt starts its building: that record becomes
-    under-construction, Rich 2026-10-08. Nothing else of the part's state is set by a ticket, so finishing one never
+    under-construction. Nothing else of the part's state is set by a ticket, so finishing one never
     marks the part built."""
     row = _work_row(tx, work_id)
     if row["task"]:
@@ -1045,7 +1045,7 @@ def legacy_upgrade(db: DataConnection, found: str) -> None:
     if int(found) < 10:
         for shown, kind in (("in-progress", "under-construction"), ("fixing", "broken")):
             db.execute("UPDATE work SET condition=?, taken=COALESCE(taken, created) WHERE condition=?", (kind, shown))
-    # A store from any chassis layout before the stages, Rich 2026-10-08, holds the old names; the module's own
+    # A store from any chassis layout before the stages, holds the old names; the module's own
     # version 8 upgrade does not run again once the version is recorded, so the names move here as well.
     db.execute("UPDATE work SET condition='unbuilt' WHERE condition='missing'")
     db.execute("UPDATE work SET condition='under-construction' WHERE condition='in-progress'")
@@ -1053,7 +1053,7 @@ def legacy_upgrade(db: DataConnection, found: str) -> None:
     db.execute("UPDATE work SET condition='' WHERE condition IN ('flawed', 'enhancement', 'exclude')")
     moved = db.execute("SELECT 1 FROM temp.sqlite_master WHERE name='subtype_moves'").fetchone()
     if int(found) < 19 and moved is not None:
-        # Layout 19, Rich 2026-10-04: a subtype join is gone and its element is held by the join; what was at the
+        # Layout 19, a subtype join is gone and its element is held by the join; what was at the
         # subtype join is at that element.
         present = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         for table, kind, ident in (("work", "target_kind", "target_id"), ("work_links", "target_kind", "target_id"),
@@ -1073,7 +1073,7 @@ def legacy_fold(db: DataConnection, correction: str, intake: str) -> None:
 def upgrade(tx: Any, found: int) -> None:
     """The map's own tables brought from an earlier version of this module."""
     if found < 8:
-        # Version 8, Rich 2026-10-08: a part's state is a stage, unbuilt, under-construction or built, or the fault
+        # Version 8, a part's state is a stage, unbuilt, under-construction or built, or the fault
         # broken; missing read as a verdict and was put on working parts. flawed, enhancement and exclude were kinds
         # of ticket, never a part's state, so those records become plain tasks with their notes kept.
         renamed = {'missing': 'unbuilt', 'in-progress': 'under-construction', 'fixing': 'broken',

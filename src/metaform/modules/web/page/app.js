@@ -104,14 +104,14 @@ const folderOn = () => new Set(S.layers.filter(layer => layer.on).map(layer => l
 const shownOn = () => S.view ?? folderOn();
 const same = (a, b) => a.size === b.size && [...a].every(x => b.has(x));
 
-/* The edges of the project, Rich 2026-10-08: upstream entries, what the project depends on, and downstream entries,
+/* The edges of the project, upstream entries, what the project depends on, and downstream entries,
  * who it serves, are records under those roots, not layers; the page lists each root beside the layers as a toggle
  * that hides every record under it, so the product's own parts stand alone. Remembered per viewer. */
 const ROOTS = ['upstream', 'downstream'];
 const rootsOff = () => { try { return new Set(JSON.parse(localStorage.getItem('metaform.rootsOff') || '[]')); } catch { return new Set(); } };
 const rootOf = address => (address || '').split('.')[0];
 const underHiddenRoot = address => rootsOff().has(rootOf(address));
-/* The layers: a checklist opened from the header's Layers button, one row each, VIEW-007, Rich 2026-09-26. */
+/* The layers: a checklist opened from the header's Layers button, one row each, VIEW-007. */
 function renderChips() {
   const on = shownOn();
   const box = $('#layers');
@@ -234,7 +234,7 @@ async function exportAs(format, extension, type) {
 $('#exportMarkdown').onclick = () => exportAs('markdown', 'md', 'text/markdown');
 $('#exportXml').onclick = () => exportAs('xml', 'xml', 'application/xml');
 /* The intake's ignore list, .metaform/ignore.txt: what is not the project, said by the person up front, so the
- * intake never reads it and never judges it, Rich 2026-10-08. */
+ * intake never reads it and never judges it. */
 $('#ignoreBtn').onclick = async event => {
   event.stopPropagation();
   showAdmin(false);
@@ -262,7 +262,7 @@ $('#clearBtn').onclick = async event => {
   showClear(true);
 };
 /* The gate on clearing or removing a project: the word confirm, typed, as the command takes --confirm; the
- * destructive button stays off until it is there, Rich 2026-10-07. */
+ * destructive button stays off until it is there. */
 function typedConfirm(verb, act) {
   const field = h('input', {class: 'typed', type: 'text', placeholder: 'confirm', autocomplete: 'off', spellcheck: 'false'});
   const go = h('button', {class: 'btn danger confirm', disabled: true, onclick: act}, verb);
@@ -330,7 +330,7 @@ $('#apply').onclick = async () => {
 
 /* ---------- the graph data ---------- */
 /* The graph as the approved prototype draws it: each join uncollapsed as its receiver, a purpose vertex and the
- * encounter, a link on to each element the join holds, Rich's shape, 2026-10-04; the namespace joins each element to
+ * encounter, a link on to each element the join holds; the namespace joins each element to
  * its nearest parent element, VIEW-005. */
 function graphData() {
   const nodes = [], links = [];
@@ -356,7 +356,7 @@ function graphData() {
   // Every item and property of the layers turned on is its own node, hung from its node; a link runs on, VIEW-017.
   const drawnIds = new Set(nodes.map(node => node.id));
   const at = thing => thing.kind === 'property' ? thing.item.element_id : keyOf(thing.item.target);
-  // The sources layer's refs are shown in the panel and never hung on the map, Rich 2026-10-04: the map is the design.
+  // The sources layer's refs are shown in the panel and never hung on the map, the map is the design.
   const hung = [...S.items.values()].filter(thing => drawnIds.has(at(thing)) && thing.layer !== 'sources');
   for (const thing of hung) {
     nodes.push({id: thing.key, t: 'item', layer: thing.layer, text: itemText(thing.value)});
@@ -386,7 +386,7 @@ function graphData() {
   return {nodes, links};
 }
 /* A selection is an element's id or a join as 'p:<id>', the same keys the 3D view uses. */
-/* A join as Rich's shape holds it, 2026-10-04: `providers` are the ids of every element it holds, each a provider;
+/* A join as the metaform's shape holds it, D115: `providers` are the ids of every element it holds, each a provider;
  * `provider` and `provider_address` name the first, the one that names the join beside its receiver. */
 const withProviders = join => ({...join, providers: (join.elements || []).map(each => each.element_id),
   provider: join.elements?.[0]?.element_id, provider_address: join.elements?.[0]?.address});
@@ -1437,7 +1437,7 @@ function grounded() { G.scene().background = new THREE.Color(css('--ground')); }
  * a dot three times the opacity of the links, which a picture drawn on the screen holds at 1. The pictures this page
  * draws for the glass, and for the bloom while it is on, keep light over full brightness and hold no such limit: with
  * links at 0.8 a dot there was drawn as 2.4 times its color less 1.4 times what was behind it, so a dot passing through
- * a white node, or in front of it, turned it dark, Rich 2026-09-29. The library makes the dots' materials again
+ * a white node, or in front of it, turned it dark. The library makes the dots' materials again
  * whenever the map or the theme changes, so each is held at 1 as the scene is drawn. */
 function solid() {
   for (const link of G.graphData().links) for (const dot of link.__photonsObj?.children || [])
@@ -1513,7 +1513,7 @@ function clicked3d(node) {
   if (large()) MODE.mode = 'readable';  // a click on a node goes to mode two, VIEW-041
   select(node.id, true);
 }
-/* A node takes the pointer anywhere it is drawn, not only at its center, Rich 2026-10-03: a part not built on the
+/* A node takes the pointer anywhere it is drawn, not only at its center, a part not built on the
  * whole round of characters it is written in, which `DRAWN` keeps at least five characters wide however far away it
  * is, a cell drawn whole when its middle is inside; every other node on the whole of its sphere. Each node's object
  * is picked by a ball of that size on the screen around its center. */
@@ -1571,8 +1571,8 @@ const short = (text, most) => text.length > most ? text.slice(0, most - 1) + 'â€
  * behind a glass node is seen through the glass as the material lets it through, VIEW-025, since what is behind the
  * glass is drawn with the labels in it, and a nearer label is drawn over a farther one. Nothing ranks over depth, the
  * selected node, its neighbors and a lit or blinking node included. A label that falls on a nearer node's sphere or
- * on a nearer label keeps its own color: what is in front hides it by depth or shows it through the glass, Rich
- * 2026-10-02. Every element keeps its label, VIEW-005; the text is in the theme's
+ * on a nearer label keeps its own color: what is in front hides it by depth or shows it through the glass.
+ * Every element keeps its label, VIEW-005; the text is in the theme's
  * text color on a box of the background, and none is faded toward the background, VIEW-023. A label is painted again
  * only when what it shows changes. */
 const LABEL = {size: 11, chosen: 13, wide: 9, line: 1.15, padX: 4, padY: 1, gap: 8, written: 18, box: 0.72};
@@ -1883,7 +1883,7 @@ async function build2D(keep = true) {
   }
   const shown2d = [...S.elements].filter(([, {element}]) => !underHiddenRoot(element.address));
   const keys = new Map(shown2d.map(([id], index) => [id, `n${index}`]));
-  // One edge from a join's receiver to each element it holds, Rich's shape, 2026-10-04.
+  // One edge from a join's receiver to each element it holds.
   const drawn = S.joins.filter(join => keys.has(join.receiver))
     .flatMap(join => join.providers.filter(id => keys.has(id)).map(provider => ({join, provider})));
   const vertical = S.elements.size > 5;
@@ -2447,7 +2447,7 @@ function renderMemories(id) {
         related.map(relation => h('p', {class: 'meta'}, `${relation.from} ${relation.relationType} ${relation.to}`)));
     }) : h('p', {class: 'empty'}, 'No memories are kept here in the layers in view.'));
 }
-/* ---------- managing the memories, VIEW-031: Rich, 2026-10-02, "memories can be fricking poison to a project" ----------
+/* ---------- managing the memories, VIEW-031: memories can harm a project, so the person manages them here ----------
  * A memory in the panel, as the memory module keeps it: its type, its observations, its relations and the nodes it is
  * joined to, each edited or deleted in place. Every change is written with the memory module's commands through
  * /api/memory; an edit writes the new before it deletes the old, so a failure loses nothing. The page is told of the
@@ -2560,8 +2560,8 @@ async function renameEntity(name, next, type) {
   const gone = ['delete_entities', {entityNames: [name]}];
   if (next === name ? await memoryWrite(gone, ...steps) : await memoryWrite(...steps, gone)) S.selected = memoryKey(next);
 }
-/* ---------- the orphaned menu, LAYER-013: Rich, 2026-10-02, "the memory chains can just show what they were attached
- * to, like through an orphaned menu" ----------
+/* ---------- the orphaned menu, LAYER-013: memories that lost their node show what they were
+ * attached to ----------
  * The memory joins the map no longer holds, from `memory orphaned`, each with what it was attached to, and the memories
  * joined to no node at all; a join is taken away or its memory deleted from here. */
 const O = {open: false};
@@ -2808,7 +2808,7 @@ function clicked2d(id) {
   new ResizeObserver(() => applyMode()).observe($('#viewport'));  // the area changes size: the new fit, VIEW-041
 })();
 function fitAll() { fit2D(); fit3d(); }
-/* Fit and F go through three views, Rich 2026-09-26: zoomed out to the whole map, zoomed in on the selected node,
+/* Fit and F go through three views, zoomed out to the whole map, zoomed in on the selected node,
  * with the nodes inside it when it holds any, and regular, the node with its joined nodes. In the large area they go
  * back to mode one, VIEW-041. */
 function cycleView() {
@@ -2847,7 +2847,7 @@ function showSteps() {
   $('#forwardBtn').disabled = Boolean(MEM.key) || S.at >= S.history.length - 1;
 }
 
-/* The keys walk the join tree, Rich 2026-09-26: Down goes deeper, to the providers of the node's joins and then to
+/* The keys walk the join tree, Down goes deeper, to the providers of the node's joins and then to
  * the nodes inside it; Up goes back to the parent; Left and Right move between the nodes connected to the parent.
  * Enter goes inside a node; Escape or Shift+Enter backs out. F fits. */
 function across(keys) {  // in their order across the 2D map
@@ -4134,8 +4134,8 @@ $('#task .put').onclick = async () => {
   }
 };
 $('#task .close').onclick = () => { $('#task').hidden = true; K.generation++; };
-/* Notes, VIEW-034: Rich, 2026-10-02, "Allow one single note not a list, limit its characters to 2048, make it so you
- * can edit the note and so can the user". One note at the node, kept by the memory module and read and written with
+/* Notes, VIEW-034: one single note, not a list, of at most 2048 characters, edited in place.
+ * One note at the node, kept by the memory module and read and written with
  * `memory note`, whatever layers are in view. Writing it replaces what it held, and writing it empty clears it. A note
  * asks for nothing: it is not a message, it does not glow, and it stays. */
 const N = {node: null};
@@ -4232,7 +4232,7 @@ async function renderWork(target, key, also = null) {
       if (written) { toast(`${calledOf(key) || 'The part'} is ${CONDITION_WORDS[event.target.value] || 'built'}.`); renderWork(target, key, also); }
     }}, ...[['', 'state: not set'], ['unbuilt', 'unbuilt'], ['under-construction', 'under construction'], ['built', 'built'], ['broken', 'broken']]
       .map(([value, text]) => h('option', {value, selected: (held ? held.condition : '') === value}, text)));
-  // Raise an issue, Rich 2026-10-08: the person says what is wrong in their words; a sentinel investigates and brings
+  // Raise an issue, the person says what is wrong in their words; a sentinel investigates and brings
   // proposals to the chat; what they choose becomes held tickets. The only way work on an issue begins.
   const issue = h('div', {class: 'issue', hidden: true},
     h('textarea', {rows: 4, placeholder: 'What is wrong, what you expected, and how to make it happen.'}),
@@ -4275,7 +4275,7 @@ function joinCard(join, side) {
     join.ef ? h('p', {class: 'fn'}, join.ef) : null);
 }
 /* An item's value as text: an object as one `field: value` line per field it holds, empty fields left out, so a layer
- * such as intake details reads as fields, Rich 2026-10-04: "its not formatted". */
+ * such as intake details reads as fields, not as raw data. */
 const filled = value => value !== null && value !== undefined && value !== '' && !(Array.isArray(value) && !value.length);
 const fieldText = value => value && typeof value === 'object' ? JSON.stringify(value) : String(value);
 function itemText(value) {
@@ -4585,7 +4585,7 @@ function layerInView(layerId) {
   const shown = S.view === null ? layer.on : S.view.has(layer.name);
   return shown ? layer : false;
 }
-/* An element's parent: the element that holds it, when the intake recorded it, Rich 2026-10-08; otherwise the
+/* An element's parent: the element that holds it, when the intake recorded it; otherwise the
  * nearest address it starts with. */
 function holderOf(element) {
   if (element.within && [...S.elements.values()].some(entry => entry.element.address === element.within)) return element.within;

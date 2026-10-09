@@ -34,14 +34,13 @@ def loaded(db):
 
 
 def layer_names(db) -> set[str]:
-    """The layers a store holds: a layout 19 update makes the sources layer and no other, Rich 2026-10-04: "I want all
-    of that fucikiong  shit gone"."""
+    """The layers a store holds: a layout 19 update makes the sources layer and no other."""
     return {layer.name for layer in loaded(db).layers.values()}
 
 
 def element_names(db) -> dict[str, str | None]:
     """Each current element's name: a join's or a subtype join's name is the name of the element it holds after a
-    layout 19 update, Rich 2026-10-04: "the name on the join was the name for the element"."""
+    layout 19 update."""
     return {ident: version.fields.get('name') for ident, version in sorted(loaded(db).currents('element'))}
 
 
@@ -149,7 +148,7 @@ def test_a_store_older_than_layout_7_is_refused_and_left_unchanged(home: Path, t
 
 
 def test_a_layout_9_store_moves_an_elements_name_and_a_joins_ifd_out_of_extra_into_their_own_fields(home, tmp_path):
-    """Rich, 2026-10-01: extra should be gone; a name goes anywhere there is a namespace and name length, and the IFD is
+    """Extra should be gone; a name goes anywhere there is a namespace and name length, and the IFD is
     a field of the join. Layout 10 moves each out of the extra it was kept in."""
     path = tmp_path / 'main.metaform.sqlite3'
     layout_7_store(path)
@@ -171,7 +170,7 @@ def test_a_layout_9_store_moves_an_elements_name_and_a_joins_ifd_out_of_extra_in
                     for v in held if 'colour' in str(v.fields.get('value'))]
     assert element[0] == 'kitchen timer daemon'
     assert joined[0] == 'receives'
-    # What else the extra held is not kept in the store, layout 19, Rich 2026-10-04; the backup made first holds it.
+    # What else the extra held is not kept in the store, layout 19; the backup made first holds it.
     assert 'intake details' not in layers and anywhere == []
     backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))
     assert len(backups) == 1
@@ -218,7 +217,7 @@ def layout_10_store(path: Path) -> None:
 
 @pytest.mark.req('MAP-020')
 def test_a_layout_10_store_opens_with_no_perspective_and_every_other_field_of_every_join_kept(home: Path, tmp_path: Path):
-    """Rich, 2026-10-02: "drop perspective drop the duality , EF infers fine". The update takes the joins' perspective
+    """A join carries no perspective. The update takes the joins' perspective
     column out, keeps every other field of every join and backs the store up first."""
     path = tmp_path / 'main.metaform.sqlite3'
     layout_10_store(path)
@@ -318,8 +317,8 @@ def layout_11_store(path: Path) -> None:
 @pytest.mark.req('STORE-029')
 def test_a_layout_11_store_opens_with_ef_holding_the_old_relation_and_no_relation_or_observation(home: Path,
                                                                                                  tmp_path: Path):
-    """Rich, 2026-10-02: "observation was not my design. I didn't ask for observation"; "Neither was relation"; "by
-    placing permanent implementation details into the fucking metaform, you're fucking it all up". Every join and
+    """Observation and relation were never part of the design, and implementation detail does not belong in the
+    metaform. Every join and
     subtype join takes its old relation text as its ef, as its newest version, so its earlier versions keep the old
     ef; then the relation and observation columns are removed. The old observation text is kept only in the backup
     made first. Every element, join id, ticket, memory and question stays."""
@@ -389,7 +388,7 @@ LAYOUT_12 = (Path(__file__).parent / 'fixtures' / 'store-v12.sql').read_text(enc
 @pytest.mark.req('STORE-029')
 def test_a_layout_12_store_opens_with_every_purpose_join_still_typed_purpose_and_nothing_else_changed(home: Path,
                                                                                                       tmp_path: Path):
-    """Rich, 2026-10-04: "well I think we need to go back to purpose for semantics". Every version of every join of
+    """The join type goes back to purpose. Every version of every join of
     type purpose still reads as type purpose; a subtype join keeps its type, and every other field and row is kept.
     The store is backed up first."""
     path = tmp_path / 'main.metaform.sqlite3'
@@ -585,7 +584,7 @@ LAYOUT_15 = (Path(__file__).parent / 'fixtures' / 'store-v15.sql').read_text(enc
 @pytest.mark.req('LAYER-021')
 @pytest.mark.req('STORE-015')
 def test_a_layout_15_store_opens_with_every_item_kept_and_both_flags_false(home: Path, tmp_path: Path):
-    """Layout 16, LAYER-021, Rich 2026-10-03, D91 and D92: a knowledge item carries read_first and always_show. A
+    """Layout 16, LAYER-021, D91 and D92: a knowledge item carries read_first and always_show. A
     store at layout 15 is backed up, and the items table gains both columns, false on every item; nothing else
     changes."""
     path = tmp_path / 'main.metaform.sqlite3'
@@ -633,7 +632,7 @@ LAYOUT_16 = (Path(__file__).parent / 'fixtures' / 'store-v16.sql').read_text(enc
 @pytest.mark.req('MAP-054')
 @pytest.mark.req('STORE-010')
 def test_a_layout_16_store_opens_with_every_join_kept_and_naming_no_element(home: Path, tmp_path: Path):
-    """Layout 17, MAP-054, Rich 2026-10-02, D112: a promoted join names the element written for it by its address.
+    """Layout 17, MAP-054, D112: a promoted join names the element written for it by its address.
     A store at layout 16 is backed up, and the joins table gains its element column, empty on every join; nothing
     else changes."""
     path = tmp_path / 'main.metaform.sqlite3'
@@ -667,7 +666,7 @@ def test_a_layout_16_store_opens_with_every_join_kept_and_naming_no_element(home
         after = join_rows(opened, 'J1')
     assert version == SCHEMA_VERSION == '21'
     assert after == [without_row(renamed(row)) for row in before]
-    assert [row['type'] for row in after] == ['purpose', 'purpose']  # require is purpose again, Rich 2026-10-04
+    assert [row['type'] for row in after] == ['purpose', 'purpose']  # require is purpose again
     assert base.current('J1').seq == max(v.seq for v in base.versions['J1'])
     backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))
     assert len(backups) == 1
@@ -676,13 +675,11 @@ def test_a_layout_16_store_opens_with_every_join_kept_and_naming_no_element(home
 @pytest.mark.req('STORE-029')
 @pytest.mark.req('STORE-010')
 def test_a_layout_16_store_opens_in_richs_shape_with_nothing_it_held_lost(home: Path, tmp_path: Path):
-    """Rich, 2026-10-04: "we are reverting the data shape back to my original original design, no added field
-    nothing...   that can all go to a knowledge layer"; "the name on the join was the name for the element"; "I want
-    all of that fucikiong  shit gone". A join holds its provider, and its subtype join's element is held by it too; a
+    """D115: the data shape goes back to the original design, with no added field. A join holds its provider, and its subtype join's element is held by it too; a
     join's name is the name of the element it holds when that element has none; each element's refs, with those of the
     joins that held it, are its one item of the sources layer; a ticket, a message and an item at the subtype join move
     to its element. The current version is what moves. Nothing else of the old shape is kept in the store, and the copy
-    kept first holds all of it. The metaform keeps only Rich's fields."""
+    kept first holds all of it. The metaform keeps only its own fields."""
     path = tmp_path / 'main.metaform.sqlite3'
     db = sqlite3.connect(path)
     db.executescript(LAYOUT_16)

@@ -25,7 +25,7 @@ from .session import Tx
 
 EDITABLE: dict[str, tuple[str, ...]] = {
     'element': ('name_length', 'name', 'role', 'within', 'note'),  # never the address: an element cannot be moved, MAP-015
-    'join': ('receiver', 'elements', 'type', 'purpose', 'ef', 'ifd', 'element', 'note'),  # receiver moves it, MAP-003; Rich's shape
+    'join': ('receiver', 'elements', 'type', 'purpose', 'ef', 'ifd', 'element', 'note'),  # receiver moves it, MAP-003
     'item': ('value', 'link', 'extra', 'read_first', 'always_show'),  # the flags, LAYER-021
     'property': ('element', 'value', 'extra'),
 }
@@ -234,7 +234,7 @@ def new_element(tx: Tx, found: LayerRow, address: str, *, name_length: Any = Non
                 name: str | None = None) -> str:
     """Write a new element version in a layer, under the id the address held before when nothing holds it now.
 
-    The version is the element: its address, name_length, name and role, STORE-009, Rich's shape.
+    The version is the element: its address, name_length, name and role, STORE-009.
     """
     element_id = reused_element(tx, address) or new_id()
     tx.emit('add', 'element', element_id, found.id, {'mode': 'add', 'address': address, 'name_length': name_length,

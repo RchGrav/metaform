@@ -14,7 +14,7 @@ from metaform.data import Node, Store, export_document
 pytestmark = pytest.mark.kind('fixture')
 
 ROOT = Path(__file__).parents[5]
-SPEC = Path(__file__).parents[1] / 'resources' / 'intake.axiom'  # the served intake, Rich 2026-10-08
+SPEC = Path(__file__).parents[1] / 'resources' / 'intake.axiom'  # the served intake
 RESOURCE = SPEC
 FIXTURE = json.loads((ROOT / 'tests' / 'fixtures' / 'intake_timer.json').read_text(encoding='utf-8'))
 
@@ -29,7 +29,7 @@ def project(run, tmp_path):
 
 OBJECT_KEYS = {'namespace_address', 'role', 'name', 'name_length', 'refs', 'joins'}
 JOIN_KEYS = {'provider', 'purpose', 'ef', 'ifd', 'subtypes'}
-# Each element of the fixture carries its name, which is stored on the element, Rich 2026-10-01, with no notice.
+# Each element of the fixture carries its name, which is stored on the element, with no notice.
 NAMED: set[str] = set()
 SUBTYPE_KEYS = {'element'}
 
@@ -44,7 +44,7 @@ def fields(given, names):
 
 def submit(run, cwd, document, tmp_path, extra=(), as_json=True):
     """Record a document's elements and joins one object per call, as an intake agent does, then finish. A join of the
-    document holds its provider and the element of each of its parts, Rich's shape, 2026-10-04. The notices come back
+    document holds its provider and the element of each of its parts. The notices come back
     keyed by each object's place in the document and the field they name."""
     notes, calls = [], []
 
@@ -103,7 +103,7 @@ def footer(text):
 
 @pytest.mark.req('BASE-039')
 def test_only_the_axiom_intake_is_served():
-    """Rich, 2026-10-08: the digital typology intake, compiled to Axiom, is the served intake, the one copy; the
+    """The digital typology intake, compiled to Axiom, is the served intake, the one copy; the
     intakes it supersedes are not kept beside it."""
     assert all(not RESOURCE.with_name(name).exists()
                for name in ('Canonical_Intake.xml', 'Intake_2.0.md', 'Intake_2.1.md', 'digital-typology.axiom'))
@@ -113,7 +113,7 @@ def test_only_the_axiom_intake_is_served():
 @pytest.mark.req('MCP-009')
 @pytest.mark.req('MAP-043')
 def test_prompt_serves_the_intake_with_only_its_prompt_filled(run, project):
-    '''Rich, 2026-10-01: the intake's prompt slot holds what the person asked for, a target or a task; with nothing
+    '''the intake's prompt slot holds what the person asked for, a target or a task; with nothing
     asked it stays empty, and the intake reads that as this project. Intake 2.1 carries it as
     `{Prompt} := """{prompt}"""`, and its TARGET_RESOLUTION takes the target from it, so nothing else is filled.'''
     stored = SPEC.read_text(encoding='utf-8')
@@ -143,7 +143,7 @@ def test_the_prompt_is_filled_as_written_in_intake_2_1_and_escaped_only_in_an_xm
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('BASE-044')
 def test_no_setting_adds_an_instruction_to_the_intake(run, project):
-    """Rich, 2026-09-29: no instructions are side loaded into a workflow. What is added beside the intake competes
+    """No instructions are side loaded into a workflow. What is added beside the intake competes
     with it, and the agent cannot tell which of the two is the procedure."""
     plain = run('intake', 'prompt', cwd=project).stdout
     run('set', '--debug', '--no-report', cwd=project)
@@ -178,8 +178,8 @@ def test_an_intake_recorded_object_by_object_is_stored_whole_and_reads_back(run,
     assert store.has_intake()
     kitchen = store.element('code.timer.kitchen')
     assert (kitchen.short_name, kitchen.name_length, kitchen.role, kitchen.open_work) == ('kitchen timer', 2, 'DE', ())
-    assert kitchen.name == 'kitchen timer daemon'  # its own field, Rich 2026-10-01
-    # The element's refs are an item of the sources layer at it, Rich 2026-10-04, never a field of the element.
+    assert kitchen.name == 'kitchen timer daemon'  # its own field
+    # The element's refs are an item of the sources layer at it, never a field of the element.
     [kept] = store.layer_items('sources', Node('element', 'code.timer.kitchen'), limit=0).results
     assert [(ref.key, ref.value) for ref in kept.refs] == [('path', 'src/main.c')]
     cook_join = store.joins('stakeholder.cook.home').results[0]
@@ -200,7 +200,7 @@ def test_an_intake_recorded_object_by_object_is_stored_whole_and_reads_back(run,
     elements = [op for op in document['ops'] if op['kind'] == 'element']
     joins = [op for op in document['ops'] if op['kind'] == 'join']
     assert len(elements) == 4 and len(joins) == 2 and sum(len(op['data']['held']) for op in joins) == 3
-    assert sorted(op['data']['type'] for op in joins) == ['purpose', 'purpose']  # Rich 2026-10-04
+    assert sorted(op['data']['type'] for op in joins) == ['purpose', 'purpose']
     assert all(set(row) & {'perspective', 'verb', 'non_goal', 'name', 'provider'} == set() for row in (op['data'] for op in joins))
 
 
@@ -210,7 +210,7 @@ def test_an_intake_recorded_object_by_object_is_stored_whole_and_reads_back(run,
 @pytest.mark.req('STORE-009')
 @pytest.mark.req('BASE-044')
 def test_a_name_is_recorded_wherever_a_namespace_address_and_a_name_length_are(run, project):
-    """Rich, 2026-10-01: the name goes anywhere there is a namespace and name length; extra should be gone. The element
+    """The name goes anywhere there is a namespace and name length; extra should be gone. The element
     holds its name in a field of its own, beside name_length; the element a join holds is named the same way."""
     run('intake', 'start', cwd=project)
     element = json.loads(run('intake', 'element', 'code.timer.kitchen', 'role=DE', 'name_length=2',
@@ -240,8 +240,8 @@ def test_a_name_is_recorded_wherever_a_namespace_address_and_a_name_length_are(r
 @pytest.mark.req('MAP-020')
 @pytest.mark.req('BASE-039')
 def test_no_intake_tool_takes_a_perspective():
-    """Rich, 2026-10-02: "drop perspective drop the duality , EF infers fine, my reasoning is that its less reasoning,
-    its locks in which direction we care about more clearly, and make it easier nd lowers mistakes". No intake tool
+    """A join carries no perspective: one direction, read from its ef and ifd, is less to reason about and lowers
+    mistakes. No intake tool
     takes a perspective, and no field description names one."""
     import xml.etree.ElementTree as ET
     for verb in ('element', 'join'):
@@ -392,8 +392,8 @@ def test_a_report_and_feedback_are_saved_and_a_work_record_on_the_intake_is_coun
 @pytest.mark.req('BASE-043')
 def test_the_intake_tools_carry_no_flag_field_and_a_flag_sent_anyway_is_named_and_no_work_record(run, project,
                                                                                                    tmp_path):
-    """The intake tools carry no flag field, and a flag sent anyway is never a work record. With no extra in Rich's
-    shape the command line has nowhere to keep a word it does not know, so it refuses it, as the chassis grammar does
+    """The intake tools carry no flag field, and a flag sent anyway is never a work record. With no extra in the
+    metaform's shape the command line has nowhere to keep a word it does not know, so it refuses it, as the chassis grammar does
     for every verb with no extra, BASE-043, and writes nothing."""
     for verb in ('element', 'join'):
         assert not {'flag', 'flag_note'} & set(nouns_of(verb)), verb
@@ -440,7 +440,7 @@ def test_status_says_whether_there_is_an_intake_and_gives_no_intake_or_map_direc
 @pytest.mark.req('MCP-009')
 @pytest.mark.req('MCP-031')
 def test_an_intake_started_and_not_finished_is_named_in_the_instructions(run, project):
-    """Rich, 2026-10-02: the no-intake notice is needed to onboard; and when an intake is started and aborted, the next
+    """The no-intake notice is needed to onboard; and when an intake is started and aborted, the next
     agent is told that an intake was started but aborted and still remains to be completed. A finished intake clears
     both."""
     import xml.etree.ElementTree as ET
@@ -465,7 +465,7 @@ def test_an_intake_started_and_not_finished_is_named_in_the_instructions(run, pr
 
 @pytest.mark.req('MCP-027')
 def test_the_no_intake_notice_asks_once_starts_the_web_gui_and_runs_the_intake_while_the_person_watches(run, project):
-    """MCP-009 and MCP-027, reworded with Rich 2026-10-07: on a first run the agent tells the person a basic analysis is
+    """MCP-009 and MCP-027, reworded with on a first run the agent tells the person a basic analysis is
     about to run and asks once whether to start, starts the web GUI and gives its address, then has a subagent perform
     the intake from the procedure and forms resources while the person watches, then invites questions. What comes
     after intake is a separate notice. The notice leaves once an intake is finished."""
@@ -515,7 +515,7 @@ def test_a_test_intake_file_is_served_only_when_the_setting_names_it(run, projec
 @pytest.mark.req('BASE-039')
 def test_the_intake_serves_the_shipped_file_and_keeps_nothing_in_the_prompt_store(run, home, project, tmp_path):
     """The Canonical Intake is the one prompt that is not edited: it is served as shipped, never kept as a stored
-    prompt, and a stored prompt of the same name does not reach it, Rich 2026-09-26."""
+    prompt, and a stored prompt of the same name does not reach it."""
     from metaform.data import prompts
     first = run('intake', 'prompt', cwd=project).stdout
     assert without_target(first).startswith(without_target(RESOURCE.read_text(encoding='utf-8')))
@@ -547,7 +547,7 @@ def test_an_intake_file_is_served_as_it_is_and_links_no_version(run, home, proje
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('STORE-032')
 def test_a_building_intake_is_seen_only_through_intake_show_until_it_finishes(run, project):
-    """Rich, 2026-09-26: the intake is recorded object by object as it is reasoned; agents read it back while it is
+    """The intake is recorded object by object as it is reasoned; agents read it back while it is
     built, and only a finished intake reaches every other read."""
     run('intake', 'start', 'model=claude', 'role=intake agent', cwd=project)
     run('intake', 'element', 'stakeholder.cook.home', 'role=CQU', 'name=Home cook', cwd=project)
@@ -711,8 +711,7 @@ def handed_ids(result):
 
 @pytest.mark.req('BASE-039')
 def test_the_agent_records_joins_and_is_never_handed_an_id(run, project):
-    """Rich, 2026-10-02: "you need to have the AI submit stuff how it is being reasoned and then extract the joins";
-    Rich, 2026-10-04: "you can completely restore join to make a join". The intake tool names a join by its receiver
+    """The agent records the map as it reasons it, never handling ids. The intake tool names a join by its receiver
     and an element it holds, and an element by its address; no noun or result hands the agent an id."""
     from metaform.modules.intake import MODULE
     assert 'join' in [verb.name for verb in MODULE.verbs]
@@ -756,8 +755,8 @@ def test_a_join_call_naming_elements_two_joins_hold_changes_neither(run, project
 @pytest.mark.req('MAP-030')
 @pytest.mark.req('MAP-040')
 def test_annealing_adds_an_element_to_its_parents_join_and_the_element_stays_one_record(run, project):
-    """Rich, 2026-09-27: an element always appears as one element record; annealing places it in its parent's join,
-    and the element itself does not move. In Rich's shape, 2026-10-04, the join holds it as one more element."""
+    """An element always appears as one element record; annealing places it in its parent's join,
+    and the element itself does not move. In, the join holds it as one more element."""
     failsafe_intake(run, project)
     recorded(run, project, 'remove', 'receiver=stakeholder.operator', 'provider=code.probe.echo')
     annealed = recorded(run, project, 'join', 'stakeholder.operator', '["code.failsafe.gateway", "code.probe.echo"]')
@@ -780,7 +779,7 @@ def test_annealing_adds_an_element_to_its_parents_join_and_the_element_stays_one
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('MAP-040')
 def test_show_reads_one_receivers_joins_and_what_they_hold(run, project):
-    """Rich, 2026-09-27: the intake must not depend on the size of the agent's context."""
+    """The intake must not depend on the size of the agent's context."""
     failsafe_intake(run, project)
     recorded(run, project, 'remove', 'receiver=stakeholder.operator', 'provider=code.probe.echo')
     recorded(run, project, 'join', 'stakeholder.operator', '["code.failsafe.gateway", "code.probe.echo"]')
@@ -821,7 +820,7 @@ def test_recording_and_remove_name_an_element_and_a_join_by_their_addresses(run,
 @pytest.mark.req('MAP-017')
 @pytest.mark.req('STORE-025')
 def test_the_cestui_que_use_is_the_role_cqu_and_ve_is_no_longer_a_role(run, project):
-    """Rich, 2026-10-01: VE is changed to CQU, Cestui Que Use, throughout. The Canonical Intake names the roles
+    """VE is changed to CQU, Cestui Que Use, throughout. The Canonical Intake names the roles
     AUE, CQU, DE, SE and NE; an element given CQU is stored without a notice and is the map's entry beside the DE."""
     run('intake', 'start', 'model=claude', 'role=intake agent', cwd=project)
     kept = json.loads(run('intake', 'element', 'stakeholder.cook.home', 'role=CQU', 'name_length=2', '--json',
@@ -844,7 +843,7 @@ FIELDS = {'element': ('namespace_address', 'role', 'name_length', 'name', 'refs'
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('MCP-031')
 def test_each_recorded_field_is_described_once_from_the_intake_modules_prompts_file():
-    """Rich, 2026-10-01: the field definitions are not parsed out of the Canonical Intake, which is being refined and
+    """The field definitions are not parsed out of the Canonical Intake, which is being refined and
     no longer carries the response schema. Each one is written once, in the intake module's prompts.xml under
     <fields>, and every tool that takes the field shows those words."""
     import xml.etree.ElementTree as ET
@@ -864,7 +863,7 @@ def test_each_recorded_field_is_described_once_from_the_intake_modules_prompts_f
 @pytest.mark.req('MAP-020')
 @pytest.mark.req('MAP-040')
 def test_no_intake_or_map_tool_takes_relation_or_observation():
-    """Rich, 2026-10-02: "observation was not my design. I didn't ask for observation"; "Neither was relation". The
+    """Observation and relation were never part of the design, so the
     intake tools and the map knowledge tool stop taking both."""
     from metaform.modules.intake import MODULE
     from metaform.modules.map import MODULE as MAP
@@ -879,7 +878,7 @@ RECORDING = ('element', 'join', 'show', 'remove')
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('MCP-031')
 def test_every_noun_of_the_intakes_recording_verbs_takes_its_words_from_the_prompts_file():
-    """Rich, 2026-10-02: "The fields only need to carry the term of you want me to create dense descriptions I can."
+    """A field's description carries its term.
     Every noun the recording verbs take is defined once, in prompts.xml under <fields>, by its glossary lines or by
     its plainest name, and no tool writes words of its own for one."""
     import xml.etree.ElementTree as ET
@@ -897,7 +896,7 @@ def test_every_noun_of_the_intakes_recording_verbs_takes_its_words_from_the_prom
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('MAP-046')
 def test_a_condition_given_with_an_element_or_a_join_is_an_open_work_record_at_it(run, project):
-    """Rich, 2026-10-01: the agent said it found missing and broken things, and nothing like that showed in the GUI.
+    """The agent said it found missing and broken things, and nothing like that showed in the GUI.
     The Canonical Intake's step 2 has the agent mark them; the intake tools take the mark and the finding."""
     run('intake', 'start', cwd=project)
     element = recorded(run, project, 'element', 'code.auth', 'role=SE', 'name=auth', 'condition=broken',
@@ -923,7 +922,7 @@ def test_a_condition_given_with_an_element_or_a_join_is_an_open_work_record_at_i
 @pytest.mark.req('MAP-020')
 @pytest.mark.req('BASE-039')
 def test_every_join_is_asked_its_information_flow_direction(run, project):
-    """IFD, Information Flow Direction, Rich 2026-10-01: the primary flow of information. sends: OP to EF. receives:
+    """IFD, Information Flow Direction, the primary flow of information. sends: OP to EF. receives:
     EF to OP. both: equal need. It is a field of the join, defined once in prompts.xml, a closed choice of three, kept
     with the join, and named in a notice when it is missing."""
     noun = nouns_of('join')['ifd']
@@ -943,8 +942,7 @@ def test_every_join_is_asked_its_information_flow_direction(run, project):
 
 @pytest.mark.req('STORE-012')
 def test_refs_go_to_the_sources_layer_only_while_intake_sources_is_on(run, project):
-    """Rich, 2026-10-04: "then if you want to have refs you add a sources layer, or you keep them in a sources layer..
-    this makes the metaform itself the map I intended it to be." The refs given with an element are one item of the
+    """Refs go in a sources layer, which keeps the metaform itself the map. The refs given with an element are one item of the
     sources layer at it, and the element holds none; with intake_sources off they are not recorded."""
     path = json.dumps([{'key': 'path', 'value': 'timer.c'}])
     recorded(run, project, 'start')
@@ -980,7 +978,7 @@ def test_refs_go_to_the_sources_layer_only_while_intake_sources_is_on(run, proje
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('MAP-046')
 def test_the_ignore_list_follows_the_intake_and_exclude_is_not_a_condition(run, project):
-    """Rich, 2026-10-08: exclude was meant as a metaform ignore, like gitignore, not a judgment the intake makes on what
+    """Exclude was meant as a metaform ignore, like gitignore, not a judgment the intake makes on what
     it sees; agents acted on exclude marks and deleted files. The person lists what is not the project in
     .metaform/ignore.txt, the intake is served with that list after it and reads nothing it names, and a condition of
     exclude sent to an intake tool records nothing and is answered with where the list is."""
@@ -1002,7 +1000,7 @@ def test_the_ignore_list_follows_the_intake_and_exclude_is_not_a_condition(run, 
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('MAP-046')
 def test_the_core_node_containment_notes_missing_and_join_refs_are_kept_as_the_intake_records_them(run, project):
-    """Rich, 2026-10-08: the served intake records a core node at the reserved address core, says what holds what in
+    """The served intake records a core node at the reserved address core, says what holds what in
     the map's structure rather than in an address, keeps exclusions as notes with no condition, records what is
     absent as unbuilt, and gives a join refs where it needs them. Each was refused or lost by the tools before."""
     recorded(run, project, 'start')

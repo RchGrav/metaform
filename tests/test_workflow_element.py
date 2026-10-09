@@ -19,7 +19,7 @@ def mapped(store):
     element = store.element('code.timer.kitchen')
     store.refine(element.id, {'name': 'Kitchen Clock'}, reason='record the project name')
     store.refine(inner.id, {'ifd': 'receives'}, reason='record encounter details')
-    sources = knowledge(store, 'sources')  # an element's refs are items of the sources layer, Rich 2026-10-04
+    sources = knowledge(store, 'sources')  # an element's refs are items of the sources layer
     store.add_item(sources.name, Node('element', element.id), 'code.timer.kitchen',
                    refs=[('path', 'src/timer.c'), ('path', 'src/clock.c')])
     store.finish(sources.name)
@@ -44,7 +44,7 @@ def mapped(store):
     answered = store.ask(Node('element', element.id), 'Use a bell?', suggestions=['Yes'])
     store.reply(answered.id, 'Yes')
     memory(store)
-    page_note(store.project_id, 'element:code.timer.kitchen', 'A precise clock.', by='Rich')
+    page_note(store.project_id, 'element:code.timer.kitchen', 'A precise clock.', by='Sam')
     mem_store = Store(store.project_id, module='memory')
     ctx = Context('memory', Path(store.project().path), store=mem_store, nouns={
         'node': 'element:code.timer.kitchen', 'entities': [
@@ -70,7 +70,7 @@ def test_this_reads_the_complete_element_values(mapped):
         'value': {'guidance': ['Keep time.']}, 'read_first': True, 'always_show': True}
     assert [p.value for p in this.properties['quality.notes']] == ['audible']
     assert [(p.address, p.value) for p in this.context] == [('code.timer', 'timed'), ('code.timer.kitchen', 'audible')]
-    assert this.note.text == 'A precise clock.' and this.note.by == 'Rich' and this.note.at
+    assert this.note.text == 'A precise clock.' and this.note.by == 'Sam' and this.note.at
     assert this.memories[0].to_dict() == {
         'name': 'drift', 'entity_type': 'behavior', 'observations': ['Drifts under load.']}
     assert [w.to_dict() for w in this.work] == [

@@ -3,7 +3,7 @@
      <fields> holds the definition of each field the intake tools take, written once and shown by every tool that takes
      it, every noun of every recording verb included: <element> for an element, <join> for a join and the elements it
      holds. A field with lines in Intake 2.1's GLOSSARY carries them word for word, in place of 2.0's, each
-     prefixed by its term, one per line; Rich 2026-10-02: "I think the long field descriptions get these". A field
+     prefixed by its term, one per line. A field
      with no glossary line keeps its plainest name and allowed values, MAP-040. -->
 <prompts>
 <!-- intake's line in the instructions agents read while intake is on, MCP-029; its status hook adds no_intake or

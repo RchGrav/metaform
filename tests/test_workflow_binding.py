@@ -116,7 +116,7 @@ def test_single_tuple_target_unpacks_while_a_single_variable_keeps_the_tuple():
 def test_map_element_values_pass_through_composed_calls_and_serialize_for_the_agent(store):
     small_map(store)
     element = store.element('code.timer.kitchen')
-    sources = knowledge(store, 'sources')  # an element's refs are items of the sources layer, Rich 2026-10-04
+    sources = knowledge(store, 'sources')  # an element's refs are items of the sources layer
     store.add_item(sources.name, Node('element', element.id), 'code.timer.kitchen',
                    refs=[('path', 'src/timer.c')])
     store.finish(sources.name)

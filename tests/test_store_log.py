@@ -145,7 +145,7 @@ def test_two_processes_at_one_sequence_hold_the_same_graph(home, store):
 
 
 def test_a_cypher_query_sees_only_the_layers_in_view_and_can_name_its_own(store):
-    """Rich, 2026-10-08: Cypher over the map is there so layers can be hidden or shown on the fly. A query sees what
+    """Cypher over the map is there so layers can be hidden or shown on the fly. A query sees what
     the layers in view show, as every read does, and names other layers for itself."""
     filled(store)
     items = 'MATCH (n) WHERE n.kind = "item" RETURN n.value'

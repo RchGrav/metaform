@@ -22,7 +22,7 @@ from fakes import calls, recorder
 pytestmark = [pytest.mark.kind('simulation'), pytest.mark.req('MCP-024')]
 
 ROOT = Path(__file__).parents[1]
-SPEC = ROOT / 'src' / 'metaform' / 'modules' / 'intake' / 'resources' / 'intake.axiom'  # the served intake, Rich 2026-10-03
+SPEC = ROOT / 'src' / 'metaform' / 'modules' / 'intake' / 'resources' / 'intake.axiom'  # the served intake
 FIXTURE = json.loads((ROOT / 'tests' / 'fixtures' / 'intake_timer.json').read_text(encoding='utf-8'))
 TOOLS = {'intake_prompt', 'intake_start', 'intake_element', 'intake_join', 'intake_remove',
          'intake_show', 'intake_finish', 'memory_create_entities', 'memory_open_nodes', 'map_select', 'map_mask',
@@ -153,7 +153,7 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
             return out
 
         record('intake_start', {'model': 'fixture', 'role': 'intake subagent'})
-        # A join holds its provider and the element of each of its parts, Rich's shape, 2026-10-04.
+        # A join holds its provider and the element of each of its parts.
         described = ('role', 'name', 'name_length', 'refs')
         for element in submission['elements']:
             parts = [subtype['element'] for join in element.get('joins', []) for subtype in join.get('subtypes', [])]
@@ -172,7 +172,7 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
                             'note': 'the pin is never released', 'task': 'release it after stop'})
         report = record('intake_finish', {'report': REPORT, 'feedback': FEEDBACK})
         assert (report['elements'], report['joins'], report['work']) == (4, 2, 1)
-        # Each element of the fixture carries its name, kept on the element with no notice, Rich 2026-10-01.
+        # Each element of the fixture carries its name, kept on the element with no notice.
         assert noticed == ['purpose']
     finally:
         host.close()

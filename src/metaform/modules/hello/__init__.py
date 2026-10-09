@@ -179,7 +179,7 @@ def beep(ctx: Context) -> str:
 
 
 def noncedemo(ctx: Context) -> str:
-    """Rich's nonce demonstration, BASE-050. Run directly, it issues a nonce whose function is this same verb. Run
+    """The nonce demonstration, BASE-050. Run directly, it issues a nonce whose function is this same verb. Run
     through that nonce, it does the step named after the nonce, `next` or `complete`, or with none named the step
     the nonce's value in the chassis holds."""
     held = nonce.reached()

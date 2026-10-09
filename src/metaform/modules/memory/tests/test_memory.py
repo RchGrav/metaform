@@ -140,8 +140,8 @@ def test_the_whole_graph_behaves_as_the_reference_memory_server(run, mapped):
 @pytest.mark.req('LAYER-013')
 @pytest.mark.req('STORE-020')
 def test_a_memory_entity_is_never_an_element_of_the_map(run, mapped):
-    """Replaces the test that create-entities made an element in the memory layer: Rich, 2026-10-02, the memories
-    are addressed not as another segment off of the namespace."""
+    """Replaces the test that create-entities made an element in the memory layer: the memories
+    are not addressed as another segment off the namespace."""
     before = Store('proj').graph(raw=True, limit=0)
     mj(run, 'create_entities', J([entity('code.watchdog', 'element', 'Barks.')]), cwd=mapped)
     mj(run, 'create_entities', J([entity('code.manager.route.ghost', 'part')]), ROUTE, cwd=mapped)
@@ -250,8 +250,7 @@ def test_a_memory_on_a_map_join_reconnects_by_its_two_addresses_and_only_lost_ad
 @pytest.mark.req('STORE-020')
 @pytest.mark.req('LAYER-013')
 def test_memory_is_kept_as_the_reference_keeps_it_in_the_order_it_was_made(run, mapped):
-    """Rich, 2026-10-02: "I'm not convinced there is any benefit to dating memories, by keeping them how agents are
-    used to using them I think its probably the best". The graph read and the tables hold what the reference holds,
+    """Memories are not dated, so they are kept as agents are used to using them. The graph read and the tables hold what the reference holds,
     entities, observations and relations in the order they were made, and the joins their node's address."""
     mj(run, 'create_entities', J([entity('route', 'part', 'Drifts.', 'Holds.'), entity('probe', 'part')]), ROUTE,
        cwd=mapped)
@@ -322,7 +321,7 @@ def test_memory_kept_with_times_is_upgraded_keeping_every_memory_relation_join_a
         tx.insert('relations', {'source': 'probe', 'target': 'route', 'relation_type': 'checks', 'at': when})
         tx.insert('joins', {'join_id': 'j1', 'entity': 'route', 'receiver': 'code.manager.route', 'provider': '',
                             'at': when})
-        tx.insert('notes', {'receiver': 'code.manager.route', 'provider': '', 'text': 'Ask Rich first.', 'by': 'user',
+        tx.insert('notes', {'receiver': 'code.manager.route', 'provider': '', 'text': 'Ask the owner first.', 'by': 'user',
                             'at': when})
     whole = mj(run, 'read_graph', cwd=mapped)
     assert sorted(whole['entities'], key=lambda one: one['name']) == [
@@ -332,7 +331,7 @@ def test_memory_kept_with_times_is_upgraded_keeping_every_memory_relation_join_a
         ('j1', 'route', 'code.manager.route')]
     assert mj(run, 'read_graph', ROUTE, cwd=mapped)['entities'] == [entity('route', 'part', 'Drifts.', 'Holds.')]
     noted = mj(run, 'note', 'element:code.manager.route', cwd=mapped)['note']
-    assert (noted['text'], noted['by']) == ('Ask Rich first.', 'user')
+    assert (noted['text'], noted['by']) == ('Ask the owner first.', 'user')
     with project_transaction(path, write=False) as db:  # read through the public table API, never sqlite3, STORE-045
         recorded = json.loads(db.execute("SELECT value FROM meta WHERE key='module:memory'").fetchone()[0])
         held = {table: [row[1] for row in db.execute(f'PRAGMA table_info("memory.{table}")')]
@@ -349,7 +348,7 @@ def test_memory_kept_with_times_is_upgraded_keeping_every_memory_relation_join_a
 @pytest.mark.req('LAYER-007')
 def test_agents_see_the_memory_joins_when_they_read_a_node_and_the_layer_named_memory_turns_them_off(run, mapped):
     """Replaces the check on the memory group of a node read: the same select and mask now turn off the memory joins
-    the node read shows. Rich, 2026-10-02: Agent sees these joins; the orchestrator uses layer select."""
+    the node read shows. Agent sees these joins; the orchestrator uses layer select."""
     mj(run, 'create_entities', J([entity('route ejection', 'behavior', 'Routes are ejected.')]), ROUTE, cwd=mapped)
     shown = where(run, 'code.manager.route', mapped)['memory']
     assert shown['entities'] == [entity('route ejection', 'behavior', 'Routes are ejected.')]
@@ -441,10 +440,9 @@ def test_one_graph_read_opens_the_project_databases_of_the_home_as_often_whateve
 
 @pytest.mark.req('VIEW-034')
 def test_a_node_holds_one_note_of_at_most_2048_characters_that_only_the_person_writes(run, mapped):
-    """Rich, 2026-10-04: "It stands for me to be able to make a note for people on the nodes. That's what it stands
-    for, not for other people. It's for the admin and for other people to read what I, what the user writes. Not for
-    the AI. The AI is going to have the memory server." One single note, not a list, of at most 2048 characters; it
-    does not expire, and notes do not build up, Rich 2026-10-02."""
+    """The note is the person's: written for people to read on the node, not for agents, which have the memory
+    server. One single note, not a list, of at most 2048 characters; it
+    does not expire, and notes do not build up."""
     from metaform.errors import Stop
     written = page_note('proj', 'element:code.manager.route', 'Routes drift under load.')
     assert written['note']['text'] == 'Routes drift under load.'
@@ -523,7 +521,7 @@ def test_what_the_memory_layer_held_carries_into_the_graph_and_the_notes_once(ru
         store.add_item(layer, Node('element', 'code.manager.route'), 'Routes drift under load.')
         store.add_item(layer, Node('element', 'code.manager.route'), 'depends_on',
                        link=Node('element', 'code.probe.echo'))
-        store.add_item(layer, Node('element', 'code.manager.route'), 'Ask Rich before changing it.',
+        store.add_item(layer, Node('element', 'code.manager.route'), 'Ask the owner before changing it.',
                        extra={'by': 'user'})
     mj(run, 'create_entities', J([entity('echo timing', 'fact', 'Echoes answer in a second.')]), PROBE, cwd=mapped)
     graph = mj(run, 'read_graph', cwd=mapped)
@@ -532,7 +530,7 @@ def test_what_the_memory_layer_held_carries_into_the_graph_and_the_notes_once(ru
                                   entity('echo timing', 'fact', 'Echoes answer in a second.')],
                      'relations': [{'from': 'code.manager.route', 'to': 'code.probe.echo',
                                     'relationType': 'depends_on'}]}
-    assert mj(run, 'note', 'element:code.manager.route', cwd=mapped)['note']['text'] == 'Ask Rich before changing it.'
+    assert mj(run, 'note', 'element:code.manager.route', cwd=mapped)['note']['text'] == 'Ask the owner before changing it.'
     assert mj(run, 'read_graph', cwd=mapped) == graph
     assert mj(run, 'read_graph', ROUTE, cwd=mapped)['entities'] == [entity('code.manager.route', 'element',
                                                                            'Routes drift under load.')]
@@ -549,7 +547,7 @@ CARRYING = (('create_entities', J([entity('echo timing', 'fact')]), PROBE),
             ('delete_entities', J(['nothing'])),
             ('delete_observations', J([{'entityName': 'echo seed', 'observations': ['nothing']}])),
             ('delete_relations', J([{'from': 'echo seed', 'to': 'echo seed', 'relationType': 'nothing'}])))
-# The note is not among them: an agent never writes it, Rich 2026-10-04, VIEW-034.
+# The note is not among them: an agent never writes it, VIEW-034.
 
 
 @pytest.mark.req('VIEW-011')
@@ -561,7 +559,7 @@ def test_a_memory_command_that_only_reads_writes_nothing_and_one_that_writes_car
     layer = store.layers(kind='memory').results[0].name
     with store.atomic():
         store.add_item(layer, Node('element', 'code.manager.route'), 'Routes drift under load.')
-        store.add_item(layer, Node('element', 'code.manager.route'), 'Ask Rich before changing it.',
+        store.add_item(layer, Node('element', 'code.manager.route'), 'Ask the owner before changing it.',
                        extra={'by': 'user'})
     stores = sorted((home / 'projects').rglob('*.sqlite3'))
     assert any(path.name == 'memory.sqlite3' for path in stores)
@@ -575,7 +573,7 @@ def test_a_memory_command_that_only_reads_writes_nothing_and_one_that_writes_car
     mj(run, *write, cwd=mapped)
     assert mj(run, 'open_nodes', J(['code.manager.route']), cwd=mapped)['entities'] == [
         entity('code.manager.route', 'element', 'Routes drift under load.')]
-    assert mj(run, 'note', 'element:code.manager.route', cwd=mapped)['note']['text'] == 'Ask Rich before changing it.'
+    assert mj(run, 'note', 'element:code.manager.route', cwd=mapped)['note']['text'] == 'Ask the owner before changing it.'
 
 
 PURPOSE =('receiver=code.manager.route', 'provider=code.probe.echo')
@@ -584,9 +582,9 @@ PURPOSE =('receiver=code.manager.route', 'provider=code.probe.echo')
 @pytest.mark.req('LAYER-013')
 @pytest.mark.req('MAP-005')
 def test_memory_names_a_join_by_its_receiver_and_an_element_it_holds(run, mapped):
-    """Rich, 2026-10-03, ticket ad135d54: what an agent names is most easily inferred from what it already read; ids
+    """Ticket ad135d54: what an agent names is most easily inferred from what it already read; ids
     are internal. An agent names a join by its receiver and an element it holds, as refine does, and never handles
-    join:<id>; with address beside them it names an element that join holds, Rich's shape, 2026-10-04."""
+    join:<id>; with address beside them it names an element that join holds."""
     store = Store('proj')
     join_id = store.joins('code.manager.route').results[0].id
     with store.atomic():
@@ -620,7 +618,7 @@ def test_memory_names_a_join_by_its_receiver_and_an_element_it_holds(run, mapped
     assert [one['name'] for one in mj(run, 'read_graph', ROUTE, cwd=mapped)['entities']] == ['route cost']
     assert [one['name'] for one in mj(run, 'read_graph', PROBE, cwd=mapped)['entities']] == []
     assert [one['entity'] for one in mj(run, 'joins', *PURPOSE, cwd=mapped)['joins']] == ['echo timeout']
-    # note takes node first, Rich 2026-10-03: provider beside it names the join node holds as its receiver.
+    # note takes node first, provider beside it names the join node holds as its receiver.
     # The note is the person's, written from the page, VIEW-034; reading it is the same on every surface.
     written = page_note('proj', 'element:code.manager.route', 'The echo is the only liveness check.',
                         provider='code.probe.echo')

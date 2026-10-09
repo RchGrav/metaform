@@ -696,7 +696,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send(200, plain(done))
 
     def set_state(self, given: dict[str, Any]) -> None:
-        """The person sets a part's state on its node, MAP-046, Rich 2026-10-08: a stage or the fault, held on the
+        """The person sets a part's state on its node, MAP-046, a stage or the fault, held on the
         node's open record that carries a state, or on a new record with no task; built, or none, clears it, since
         built marks nothing."""
         node, condition = given.get('node'), given.get('condition') or ''
@@ -826,7 +826,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send(200, found or {'kind': None, 'reason': f'{ref} names nothing in this project.'})
 
     def raise_issue(self, given: dict[str, Any]) -> None:
-        """The person raises an issue on a node: the dispatch module's raise starts the sentinel, Rich 2026-10-08."""
+        """The person raises an issue on a node: the dispatch module's raise starts the sentinel."""
         node, text = given.get('node'), given.get('text')
         if not isinstance(node, str) or not node:
             return self.send(400, {'error': 'An issue is raised on one node.'})
@@ -1302,7 +1302,7 @@ FILE_LINES = 80  # how much of a file a reference shows
 
 def spec_record(folder: Path, code: str) -> dict[str, Any] | None:
     """A record of the project's specifications by its code: its `### CODE` section, or the paragraph that opens with
-    `**CODE.`, whole, with the file it is in. Rich's folder, rich/, is never read for this."""
+    `**CODE.`, whole, with the file it is in. The rich/ folder is never read for this."""
     for path in sorted((folder / 'specifications').glob('*.md')):
         lines = path.read_text(encoding='utf-8', errors='replace').splitlines()
         for at, line in enumerate(lines):

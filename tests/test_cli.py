@@ -283,7 +283,7 @@ def entered(run, *modules, cwd=None):
 
 @pytest.mark.req('CLI-039')
 def test_an_alias_is_one_name_at_the_top_that_lists_the_commands_of_its_modules(run):
-    """Rich, 2026-10-03, question 16: its own chassis command, metaform alias <name> <module> <module>..."""
+    """Question 16: its own chassis command, metaform alias <name> <module> <module>..."""
     assert lines(run('alias', 'mapping', 'map', 'memory')) == ['Success: mapping stands for map, memory']
     assert run('mapping').stdout == run('help', 'mapping').stdout == entered(run, 'map', 'memory')
     assert run('mapping', '--help').stdout == run('mapping', '-h').stdout == entered(run, 'map', 'memory')
@@ -352,7 +352,7 @@ def test_an_alias_is_defined_for_a_worker_folder_and_holds_below_it(run, tmp_pat
 
 @pytest.mark.req('CLI-039')
 def test_an_alias_is_stored_with_its_folder_in_the_database_that_holds_the_folder(run, home, project):
-    """Rich, 2026-10-03: stored per folder in the folder table."""
+    """Stored per folder in the folder table."""
     folder = (project / 'src').resolve()
     run('alias', 'mapping', 'map', 'memory', cwd=folder)
     key = os.path.normcase(str(folder))
@@ -500,7 +500,7 @@ def test_the_indexes_group_commands_by_owner(run, toggles):
 
 @pytest.mark.req('CLI-037')
 def test_a_modules_command_is_never_written_with_a_colon(run, toggles):
-    """Rich, 2026-10-01: `<server>:<prompt>` is how a person runs an MCP prompt in Claude Code, and only there. The
+    """`<server>:<prompt>` is how a person runs an MCP prompt in Claude Code, and only there. The
     command line reads `toggles:show` as no command of its own, the same as any unknown name."""
     assert run('toggles', 'show', '--tmux').stdout == 'tmux=True'
     for args in (('toggles:show', '--tmux'), ('help', 'toggles:show')):
@@ -1003,7 +1003,7 @@ def test_all_is_what_an_empty_list_setting_is_shown_as_and_setting_it_clears_the
 
 @pytest.mark.req('PROJ-030')
 def test_a_clear_backs_the_project_up_first_and_restore_brings_it_back_as_it_was(run, project, home, tmp_path):
-    """Rich, 2026-09-29: the clear backs it up and allows restoration easily, telling the user. What a clear removes
+    """The clear backs it up and allows restoration easily, telling the user. What a clear removes
     cannot be made again by an intake: answers, tasks and knowledge are added to a map by hand."""
     import re
     noted(run, project, 'Counts down.')

@@ -119,8 +119,8 @@ def test_a_module_s_full_instructions_are_read_on_their_own(run, home, tmp_path)
 @pytest.mark.req('MCP-031')
 @pytest.mark.req('MAP-048')
 def test_the_kanban_lines_are_served_only_while_tasks_is_on(run, home, tmp_path):
-    """Rich, 2026-10-01: agents assign and track work via Metaform like a kanban; a project that keeps its own board
-    turns it off, and then the instructions say nothing of it. On by default. Rich, 2026-10-07: the lines are read on
+    """Agents assign and track work via Metaform like a kanban; a project that keeps its own board
+    turns it off, and then the instructions say nothing of it. On by default. the lines are read on
     demand with the map module's full instructions, never in what every agent is handed at connect, MCP-037."""
     folder = tmp_path / 'proj'
     folder.mkdir()

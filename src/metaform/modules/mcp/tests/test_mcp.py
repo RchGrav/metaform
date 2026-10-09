@@ -515,7 +515,7 @@ def test_an_intake_is_recorded_over_mcp_one_object_per_call_and_read_back_while_
     assert {'intake_start', 'intake_element', 'intake_join', 'intake_show', 'intake_remove', 'intake_finish'} <= names
     assert not names & {'intake_add_purpose', 'intake_subtype', 'intake_absorb', 'intake_edit'}
     assert error is False and described_error is False
-    assert named == []  # the element's name is its own field, Rich 2026-10-01
+    assert named == []  # the element's name is its own field
     assert [(row['purpose'], row['ef'], row['ifd']) for row in shown['joins']] == [('Get attention.', 'rings',
                                                                                      'receives')]
     assert [(row['namespace_address'], row['role']) for row in shown['elements']] == [
@@ -944,7 +944,7 @@ def test_a_commands_arguments_sent_beside_the_command_are_taken_as_its_arguments
 @pytest.mark.req('MCP-032')
 @pytest.mark.req('MCP-033')
 def test_the_slash_commands_are_mcp_prompts_whose_text_is_what_the_command_line_prints(run, home, mapped):
-    """Rich, 2026-10-01: metaform still doesn't have its : commands, none for intake. Each command is an XML element
+    """Metaform still doesn't have its : commands, none for intake. Each command is an XML element
     of its owner's prompts.xml naming the verb it runs; /metaform:intake puts into the conversation exactly what
     metaform intake prompt prints for the same folder."""
     from metaform import prompt_files
@@ -968,7 +968,7 @@ def test_the_slash_commands_are_mcp_prompts_whose_text_is_what_the_command_line_
     assert texts['tasks'] == [run('map', 'work', 'open=true', cwd=mapped).stdout.strip()]
     assert texts['status'] == [run(cwd=mapped).stdout.strip()]
     declared = {name: before for name, _, before, _, _ in prompt_files.module_commands('map')}
-    assert texts['refine'] == [declared['refine'].strip()]             # Rich's survey instruction as declared, D107
+    assert texts['refine'] == [declared['refine'].strip()]             # the survey instruction as declared, D107
     assert not listed['refine'].arguments
     # D105: the stored prompt's exact text, the newest or the version named, as metaform prompt prints it
     assert [(one.name, one.required) for one in listed['prompt'].arguments] == [('name', True), ('version', False)]
@@ -994,7 +994,7 @@ def help_agents(run, folder):
 @pytest.mark.req('CLI-037')
 @pytest.mark.req('MCP-003')
 def test_opening_a_tool_gives_each_commands_summary_and_a_command_is_read_alone(run, home, mapped):
-    """Rich, 2026-10-02: organize the context flow so an agent pays for what it needs when it needs it. Opening a tool
+    """Organize the context flow so an agent pays for what it needs when it needs it. Opening a tool
     lists its commands with their one-line summaries; a command's arguments, descriptions and schemas come when that
     command is asked for, from the same declarations."""
     async def check(client, init):

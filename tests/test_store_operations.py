@@ -74,7 +74,7 @@ CASES: dict[str, tuple[Callable, Callable, dict]] = {
     'add_element with its name_length and name': (
         lambda s, w: None, lambda s, w, c: s.add_element('k', 'code.k.c', name_length=1, name='c'),
         {'ops': (1, 0), 'objects': (1, 0)}),
-    # A join is one row with one join_elements row for each element it holds, Rich's shape, 2026-10-04.
+    # A join is one row with one join_elements row for each element it holds.
     'add_join': (lambda s, w: None,
                  lambda s, w, c: s.add_join('k', 'code.k.b', 'code.k.a', purpose='p', ef='f'),
                  {'ops': (1, 0), 'objects': (1, 0)}),
@@ -339,7 +339,7 @@ NOTICES: dict[str, tuple[Callable, Callable, bool, Callable]] = {
     'add_join holding no element': (lambda s, w: None,
                                     lambda s, w: s.add_join('k', 'code.k.a', [], purpose='p', ef='f'), True,
                                     lambda s, w, got, before: got.elements == ()),
-    # The metaform holds no refs, Rich 2026-10-04: an element's refs are items of the sources layer.
+    # The metaform holds no refs, an element's refs are items of the sources layer.
     'add_ref on the metaform': (lambda s, w: None, lambda s, w: s.add_ref(w.outer.id, 'path', 'x'), False,
                                 _unchanged),
     # A ref that is not a key and a value, both text, is kept in the record's extra under refs, STORE-012.

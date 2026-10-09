@@ -240,7 +240,7 @@ def test_running_install_twice_leaves_one_entry(run, machine):
 
 @pytest.mark.req('MCP-019')
 def test_install_replaces_an_entry_it_has_no_record_of_and_continues(run, machine, home):
-    """Rich, 2026-09-30: the chassis database holding the install record was set aside, and the next install stopped
+    """The chassis database holding the install record was set aside, and the next install stopped
     at claude's own entry, "MCP server metaform already exists". Install replaces the one entry and goes on."""
     run('install', 'claude', cwd=machine['folder'], env=machine['env'])
     for name in ('metaform.sqlite3', 'metaform.sqlite3-wal', 'metaform.sqlite3-shm'):

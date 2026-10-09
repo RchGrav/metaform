@@ -235,7 +235,7 @@ TOGGLED = ['intake-1', *KNOWLEDGE]
 
 
 def build(store):
-    """An intake with a DE carrying a broken work record, the cook's join holding the DE and a tick loop, Rich's shape;
+    """An intake with a DE carrying a broken work record, the cook's join holding the DE and a tick loop;
     a knowledge layer on, one masked at code.alarm, one hidden; and a knowledge item orphaned when a refinement removes
     its element, VIEW-004 and LAYER-025."""
     from metaform.data import Node
@@ -363,7 +363,7 @@ def test_the_graph_pages_every_visible_element_and_join_once_with_its_nearest_pa
     assert len(parents) == len(elements)
     assert parents == {'exterior.cook': None, 'code.timer.kitchen': None, 'code.alarm.audible': None,
                        'code.loop.tick': None, 'code.timer.kitchen.display': 'code.timer.kitchen'}
-    # Each join once, with the elements it holds, Rich's shape, 2026-10-04.
+    # Each join once, with the elements it holds.
     held = sorted((join['receiver_address'], [each['address'] for each in join['elements']]) for join in joins)
     assert held == [('code.timer.kitchen', ['code.alarm.audible']),
                     ('code.timer.kitchen.display', ['code.timer.kitchen']),
@@ -552,12 +552,12 @@ def test_the_page_draws_each_join_as_its_path_and_both_views_select_together(run
     drawn_as_paths(graph, expected)
     page.wait_for_function('([count]) => window.metaform.labels3d().filter(label => !label.hidden).length === count',
                            arg=[len(elements)])
-    # an element's label is its name, or else its short name, Rich 2026-10-04
+    # an element's label is its name, or else its short name
     names = {entry['element'].get('name') or entry['element'].get('short_name') or entry['element']['address']
              for entry in expected['elements']}
     assert {label['text'] for label in page.evaluate('window.metaform.labels3d()')} == names
     assert page.locator('#map2d svg g.node').count() == len(elements)
-    # one edge from a join's receiver to each element it holds, Rich's shape, 2026-10-04
+    # one edge from a join's receiver to each element it holds
     assert page.locator('#map2d svg .edgePaths path').count() == sum(len(join['elements']) for join in expected['joins'])
     assert page.evaluate('[...document.querySelectorAll("#map2d svg .edgeLabel")].map(e => e.textContent.trim())'
                          '.filter(Boolean)') == []
@@ -578,7 +578,7 @@ def test_the_page_draws_each_join_as_its_path_and_both_views_select_together(run
 @pytest.mark.req('VIEW-007')
 @pytest.mark.req('VIEW-008')
 def test_the_layers_list_opens_from_the_header_and_back_and_forward_sit_clear_of_the_2d_map(run, web, mapped, browser):
-    """Rich, 2026-09-26: the layers are chosen with checkboxes from a Layers button at the top right of the header;
+    """The layers are chosen with checkboxes from a Layers button at the top right of the header;
     Back and Forward sit in the 2D map's top left corner on a strip of their own, never under the map's nodes."""
     started(run)
     page, problems, _ = opened(browser, web)
@@ -641,7 +641,7 @@ def remove(port, layer, headers=None):
 @pytest.mark.req('VIEW-007')
 @pytest.mark.req('VIEW-012')
 def test_a_refined_join_is_drawn_as_the_metaform_is_and_the_page_offers_no_correction_layers(run, web, mapped, browser):
-    """Rich, 2026-10-01: refinements should not be changing things' colors, and need not be in layer select."""
+    """Refinements should not be changing things' colors, and need not be in layer select."""
     from metaform.data import Store
     held = Store('proj').joins('code.timer.kitchen').results[0]
     join = held.id
@@ -699,7 +699,7 @@ def test_the_panel_shows_everything_about_the_selected_element_with_its_layers(r
 @pytest.mark.req('MAP-046')
 def test_a_node_with_open_unbuilt_work_is_drawn_in_characters_a_broken_one_flashes_red_until_resolved_and_the_panel_lists_the_records(
         run, web, mapped, browser):
-    """Rich, 2026-09-28: a part not built is drawn in characters, which is the one mark of it, and the circles are
+    """A part not built is drawn in characters, which is the one mark of it, and the circles are
     removed, VIEW-027; the agent that completes its task makes it solid; a node with an open issue flashes red; a part
     with a plain task carries no mark. The fixture's kitchen timer carries an open broken record."""
     from metaform.data import Node, Store
@@ -783,7 +783,7 @@ def test_a_join_that_is_not_built_yet_is_marked_in_both_views(run, web, mapped, 
 def test_the_text_of_a_part_being_worked_on_quickens_that_of_a_part_waiting_is_slow_and_a_part_done_is_normal(run, web, mapped, browser):
     """The text of a part says it needs building; it changes slowly while the part waits and quickens once the person
     marks it under construction, so the map shows where work is happening now; and it gives way to the node when the
-    work is done, VIEW-027. Taking a ticket changes no part's state, Rich 2026-10-08."""
+    work is done, VIEW-027. Taking a ticket changes no part's state."""
     from metaform.data import Node, Store
     store = Store('proj')
     waiting = store.add_work(Node('element', 'code.alarm.audible'), 'unbuilt', task='build it')
@@ -889,7 +889,7 @@ def test_a_propertys_reach_travels_as_a_wave_from_the_element_it_is_linked_to(ru
 @pytest.mark.req('MAP-020')
 @pytest.mark.req('VIEW-012')
 def test_each_encounter_keeps_its_layers_color_and_nothing_names_a_perspective(run, web, mapped, browser):
-    """Rich, 2026-10-02: "drop perspective drop the duality , EF infers fine". Each encounter link, one to each element
+    """A join carries no perspective. Each encounter link, one to each element
     a join holds, takes its layer's color in both views; the legend and the panel name no Function or Encounter word."""
     started(run)
     page, problems, _ = opened(browser, web)
@@ -923,7 +923,7 @@ def keys_of(web):
 @pytest.mark.req('VIEW-008')
 @pytest.mark.req('VIEW-012')
 def test_arrow_keys_go_deeper_back_to_the_parent_and_across_the_parents_nodes(run, web, mapped, browser):
-    """Rich, 2026-09-26: left and right move between the nodes connected to the parent, down goes deeper, up goes
+    """Left and right move between the nodes connected to the parent, down goes deeper, up goes
     back to the parent."""
     started(run)
     page, problems, _ = opened(browser, web)
@@ -1058,7 +1058,7 @@ def box_of(page, address):
 @pytest.mark.req('VIEW-008')
 @pytest.mark.req('VIEW-012')
 def test_enter_or_a_click_on_the_selected_node_goes_inside_it_and_escape_backs_out(run, web, mapped, browser):
-    """Rich, 2026-09-26: one click selects a node, a click on the selected node goes inside it, and so does Enter;
+    """One click selects a node, a click on the selected node goes inside it, and so does Enter;
     Escape or Shift+Enter backs out."""
     started(run)
     page, problems, _ = opened(browser, web)
@@ -1199,7 +1199,7 @@ def faded(page, view, to, samples, key='o', part='f'):
 
 @pytest.mark.req('VIEW-016')
 def test_going_inside_a_node_zooms_into_it_as_the_map_fades_and_its_own_graph_fades_in(run, web, mapped, browser):
-    """Rich, 2026-09-27: the zoom in and fade effect when going inside was nice and was lost when going inside became a
+    """The zoom in and fade effect when going inside was nice and was lost when going inside became a
     swap to the node's own graph. The base map zooms into the node as it fades out, the node's graph fades in, and
     going back out runs the other way; with reduced motion the views change at once."""
     started(run)
@@ -1250,7 +1250,7 @@ def test_going_inside_a_node_zooms_into_it_as_the_map_fades_and_its_own_graph_fa
 @pytest.mark.req('VIEW-008')
 def test_going_inside_any_node_replaces_the_2d_map_with_its_own_graph_of_what_the_visible_layers_attach(
         run, web, mapped, browser):
-    """Rich, 2026-09-26: any node can be entered, whether or not it holds subtypes; going inside a node replaces the map
+    """Any node can be entered, whether or not it holds subtypes; going inside a node replaces the map
     with another graph, and the other layers show only what is attached to the node being viewed, as busy as the
     layers turned on; the base map stays the project's current shape."""
     remember(run, mapped, 'create_entities', [entity('countdown drift', 'The countdown drifts under load.')],
@@ -1328,7 +1328,7 @@ def test_going_inside_any_node_replaces_the_2d_map_with_its_own_graph_of_what_th
 @pytest.mark.req('VIEW-016')
 @pytest.mark.req('VIEW-008')
 def test_inside_a_node_the_graph_keeps_the_maps_orientation_and_fit_still_zooms(run, web, mapped, browser):
-    """Rich, 2026-09-26, after going inside a node: the map seemed to turn on its side, and Fit did not zoom there.
+    """After going inside a node, the map seemed to turn on its side, and Fit did not zoom there.
     The inside graph runs the way the whole map does, and Fit's zoomed-in view works inside."""
     from metaform.data import Store
     store = Store('proj')
@@ -1345,7 +1345,7 @@ def test_inside_a_node_the_graph_keeps_the_maps_orientation_and_fit_still_zooms(
     page.keyboard.press('Enter')
     page.wait_for_function(f'() => window.metaform.inside().includes("{tick}")')
     assert page.evaluate('window.metaform.vertical()') == across
-    # the timer and the join it receives, found by their keys, since a join has no label, Rich 2026-10-04
+    # the timer and the join it receives, found by their keys, since a join has no label
     center, held = (page.evaluate(f'window.metaform.at2d("{key}")') for key in (kitchen, tick))
     if across:  # top to bottom: what the node holds sits below it
         assert held['y'] > center['y']
@@ -1421,7 +1421,7 @@ def test_in_every_theme_the_elements_are_glass_and_the_page_loads_nothing_from_o
         page.wait_for_function(made, timeout=10000)  # a node's object can be missing a moment after the theme changes
         for node in checked:
             seen = page.evaluate(f'window.metaform.look("{node}")')
-            # drei's glass, Rich 2026-09-29: it lets light through, parts its colors, bends it and draws its far wall
+            # drei's glass, it lets light through, parts its colors, bends it and draws its far wall
             assert seen['material'] == 'MeshTransmissionMaterial' and seen['transmission'] > 0, (theme, node, seen)
             assert seen['chromatic'] > 0 and seen['distortion'] > 0 and seen['backside'] is True, (theme, node, seen)
     # one shape for every node of a size, however many nodes there are
@@ -1494,7 +1494,7 @@ def test_the_page_exports_the_map_as_the_same_markdown_document_the_command_writ
 @pytest.mark.req('VIEW-024')
 def test_the_export_menu_saves_the_same_xml_document_the_command_writes_in_the_pages_layers(run, web, mapped,
                                                                                             browser):
-    """Rich, 2026-10-04: "make an export menu and have it be another format it can export". The menu offers each
+    """Export is a menu with an entry for each format. The menu offers each
     format the command writes; the XML holds what the layers in view hold, so a hidden layer and a layer masked at an
     address leave nothing in it, and a layer that is on does."""
     import xml.etree.ElementTree as ET
@@ -1744,7 +1744,7 @@ def press(page, selector):
 @pytest.mark.req('VIEW-041')
 def test_in_the_large_area_mode_one_keeps_the_whole_diagram_fitted_and_eases_to_each_new_fit(
         run, web, mapped, browser):
-    """Rich, 2026-10-03: with the 2D map in the large area, mode one, the default, keeps the whole diagram fitted and
+    """With the 2D map in the large area, mode one, the default, keeps the whole diagram fitted and
     eases to each new fit as nodes arrive or go and as the area changes size, so an intake can be watched filling in
     without the camera jumping; Fit, F and Home go back to it."""
     from metaform.data import Store
@@ -1842,7 +1842,7 @@ def test_inside_a_node_each_purpose_box_shows_its_purpose_with_the_elements_that
 @pytest.mark.req('VIEW-041')
 def test_in_the_large_area_a_click_goes_to_mode_two_which_holds_the_minimum_text_centered_on_the_selected_node(
         run, web, mapped, browser):
-    """Rich, 2026-10-03: mode two fits the whole diagram but never draws its text below a minimum, keys 1 to 9 at 8 to
+    """Mode two fits the whole diagram but never draws its text below a minimum, keys 1 to 9 at 8 to
     24 px, 5 the default; when the minimum wins it keeps the selected node at the center, following each selection; a
     click on a node goes to mode two, and after the wheel a click goes back to it."""
     from metaform.data import Store
@@ -1974,7 +1974,7 @@ def test_in_the_large_area_a_click_on_a_map_of_three_nodes_shows_the_whole_diagr
 @pytest.mark.req('VIEW-041')
 @pytest.mark.req('VIEW-008')
 def test_in_the_small_area_the_2d_map_keeps_its_zoom_and_every_camera_move_eases(run, web, mapped, browser):
-    """Rich, 2026-10-03: in the small area the 2D map keeps VIEW-008's zoom as it is, and every camera move there eases
+    """In the small area the 2D map keeps VIEW-008's zoom as it is, and every camera move there eases
     in and out too, never set at once: a selection, a click, Fit, a key, Back, and the map drawn again as a node
     arrives. The modes and their digit keys are the large area's."""
     from metaform.data import Store
@@ -2080,7 +2080,7 @@ def test_inside_a_node_with_many_joins_the_graph_opens_at_a_size_that_can_be_rea
 @pytest.mark.req('VIEW-005')
 def test_in_3d_every_item_of_the_layers_turned_on_is_its_own_node_joined_to_its_node_and_what_it_links(
         run, web, mapped, browser):
-    """Rich, 2026-09-26: the 3D map shows everything with no drilling, every memory and item its own node, relations
+    """The 3D map shows everything with no drilling, every memory and item its own node, relations
     as links, seen connected together like a brain, as busy as the layers turned on."""
     from metaform.data import Store
     started(run)
@@ -2127,7 +2127,7 @@ def test_in_3d_every_item_of_the_layers_turned_on_is_its_own_node_joined_to_its_
 @pytest.mark.req('VIEW-008')
 @pytest.mark.req('VIEW-012')
 def test_back_and_forward_step_through_the_selected_nodes_and_fit_cycles_three_views(run, web, mapped, browser):
-    """Rich, 2026-09-26: back and forward buttons in the 2D map's top left corner; Fit goes through three modes,
+    """Back and forward buttons in the 2D map's top left corner; Fit goes through three modes,
     zoomed out, zoomed in and regular."""
     started(run)
     page, problems, _ = opened(browser, web)
@@ -2213,7 +2213,7 @@ def test_every_element_and_join_of_every_page_is_drawn(run, home, web, mapped, b
             big.add_element(layer.name, f'code.g{n % 20}.e{n}', role='SE')
         for n in range(10):
             big.add_element(layer.name, f'code.loop.s{n}', role='SE')
-        for n in range(600):  # the first ten joins hold a second element each, Rich's shape, 2026-10-04
+        for n in range(600):  # the first ten joins hold a second element each
             held = [f'code.g{(n + 1) % 20}.e{(n + 1) % 600}', *([f'code.loop.s{n}'] if n < 10 else [])]
             big.add_join(layer.name, f'code.g{n % 20}.e{n}', held, purpose='p', ef='f')
         # e0 receives from e1 above; e1 also receives from e0: two joins, two paths, no loop, MAP-002.
@@ -2232,7 +2232,7 @@ def test_every_element_and_join_of_every_page_is_drawn(run, home, web, mapped, b
 @pytest.mark.req('VIEW-005')
 @pytest.mark.req('BASE-039')
 def test_an_intake_being_recorded_is_drawn_live_as_each_object_arrives(run, home, web, browser, tmp_path):
-    """Rich, 2026-09-26: the page reacts to the intake's records as they happen, then shows the finished map."""
+    """The page reacts to the intake's records as they happen, then shows the finished map."""
     started(run)
     folder = tmp_path / 'live'
     folder.mkdir()
@@ -2278,7 +2278,7 @@ def test_an_intake_being_recorded_is_drawn_live_as_each_object_arrives(run, home
 @pytest.mark.req('BASE-039')
 def test_following_a_new_intake_with_nothing_recorded_clears_the_panel_of_the_earlier_metaform(run, home, web,
                                                                                                browser, tmp_path):
-    """Rich, 2026-09-27: following a new, empty intake, the map cleared and the panel kept the earlier metaform's
+    """Following a new, empty intake, the map cleared and the panel kept the earlier metaform's
     element."""
     started(run)
     folder = tmp_path / 'again'
@@ -2307,7 +2307,7 @@ def test_following_a_new_intake_with_nothing_recorded_clears_the_panel_of_the_ea
 @pytest.mark.req('QUAL-016')
 @pytest.mark.req('BASE-019')
 def test_a_module_that_writes_to_the_map_is_seen_live_as_hello_greetings_appear_in_3d(run, web, mapped, browser):
-    """Rich, 2026-09-26: a capability added for a feature gets a demonstration in hello; here a greeting,
+    """A capability added for a feature gets a demonstration in hello; here a greeting,
     written by a module that is not built into the map, reaches the open page through map.changed."""
     run('enable', 'hello')
     started(run)
@@ -2527,7 +2527,7 @@ def test_the_log_dates_each_start_stop_and_error_and_leaves_out_pages_that_went_
 @pytest.mark.req('VIEW-018')
 @pytest.mark.req('QUAL-015')
 def test_a_new_metaform_an_activation_and_a_memory_reach_the_open_page_without_a_reload(run, web, mapped, browser):
-    """Rich, 2026-09-27: clearing the project left the page on data that no longer existed until he refreshed. Any
+    """Clearing the project left the page on data that no longer existed until the page was refreshed. Any
     command that changes the map is announced by the chassis, so the page follows it."""
     started(run)
     page, problems, _ = opened(browser, web)
@@ -3198,7 +3198,7 @@ def test_choosing_a_theme_recolors_both_views_at_once_and_the_page_keeps_it(run,
 
 @pytest.mark.req('VIEW-005')
 def test_every_link_of_the_3d_map_is_a_straight_line(run, web, mapped, browser):
-    """Rich, 2026-09-28: no curved edges. A link runs straight between the two nodes it joins."""
+    """No curved edges. A link runs straight between the two nodes it joins."""
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
@@ -3243,7 +3243,7 @@ def reopened(port, record, project='proj'):
 @pytest.mark.req('MAP-050')
 @pytest.mark.req('VIEW-011')
 def test_a_question_answered_by_mistake_is_reopened_from_the_page(run, web, mapped):
-    """Rich, 2026-10-03: "How do I reopen a question when I hit the wrong button"."""
+    """A question answered with the wrong button can be reopened."""
     from metaform.data import Node, Store
     store = Store('proj')
     asked = store.ask(Node('element', 'code.timer.kitchen'), 'Is the 1 Hz tick still wanted?',
@@ -3343,7 +3343,7 @@ def test_an_open_question_glows_at_its_node_and_messages_leads_to_the_oldest_whe
 @pytest.mark.req('VIEW-021')
 @pytest.mark.req('MAP-050')
 def test_reopen_beside_an_answer_makes_the_question_wait_again_with_its_suggestions(run, web, mapped, browser):
-    """Rich, 2026-10-03: "How do I reopen a question when I hit the wrong button"."""
+    """A question answered with the wrong button can be reopened."""
     from metaform.data import Node, Store
     store = Store('proj')
     asked = store.ask(Node('element', 'code.alarm.audible'), 'Is the quiet tone still wanted?',
@@ -3377,7 +3377,7 @@ def test_reopen_beside_an_answer_makes_the_question_wait_again_with_its_suggesti
 
 @pytest.mark.req('VIEW-028')
 def test_the_two_views_change_places_on_demand_and_each_works_in_either_place(run, web, mapped, browser):
-    """Rich, 2026-09-28: the chart in the big view and the graph in the other, on demand, since the chart is so small
+    """The chart in the big view and the graph in the other, on demand, since the chart is so small
     it cannot be read."""
     from metaform.data import Store
     store = Store('proj')
@@ -3424,9 +3424,9 @@ def test_the_two_views_change_places_on_demand_and_each_works_in_either_place(ru
 
 @pytest.mark.req('VIEW-029')
 def test_a_node_that_needs_attention_gives_off_light_in_both_views_and_no_other_does(run, web, mapped, browser):
-    """Rich, 2026-09-28: when the nodes light up and flash they give off some glow, and the chart flashes too. A
+    """When the nodes light up and flash they give off some glow, and the chart flashes too. A
     flash inside a node's outline is lost on a whole map; light that spreads past it is seen from across the map.
-    Rich, 2026-09-29: the light is the material's own light emission, spread by the bloom, and no circles are drawn
+    the light is the material's own light emission, spread by the bloom, and no circles are drawn
     around a node."""
     from metaform.data import Node, Store
     store = Store('proj')
@@ -3556,7 +3556,7 @@ def staged_pair(run, web, browser, alarm, kitchen):
 
 @pytest.mark.req('VIEW-005')
 def test_a_node_takes_the_pointer_anywhere_it_is_drawn(run, web, mapped, browser):
-    """Rich, 2026-10-03: only a tiny region in the center of a node took a click; anyplace on a node should. The alarm,
+    """Only a tiny region in the center of a node took a click; anyplace on a node should. The alarm,
     not built, is drawn in characters far wider than its sphere. Read from a picture, the farthest point above its
     center that is drawn takes a hover and a click; a point well past it, over the background, takes neither."""
     from metaform.data import Node, Store
@@ -3598,7 +3598,7 @@ def test_with_the_bloom_off_a_glass_node_takes_the_pointer_on_its_sphere_and_not
 
 @pytest.mark.req('VIEW-029')
 def test_the_light_of_a_node_spreads_past_its_outline_and_stays_behind_a_node_nearer_the_eye(run, web, mapped, browser):
-    """Rich, 2026-09-29: the glow was painted on top of everything when it should be behind. The broken kitchen timer
+    """The glow was painted on top of everything when it should be behind. The broken kitchen timer
     gives off its light; a join's purpose node is set nearer the eye, beside it, where its glow falls. The glow shows
     over the background around the timer and not over the nearer node."""
     from metaform.data import Node, Store
@@ -3682,7 +3682,7 @@ def drawn(page, frames=3):
 @pytest.mark.req('VIEW-005')
 @pytest.mark.req('VIEW-025')
 def test_a_dot_passing_through_the_white_node_never_turns_it_dark(run, web, mapped, browser):
-    """Rich, 2026-09-29: please fix the big white balls from flashing dark every time something goes through them. The
+    """The big white nodes must not flash dark every time something goes through them. The
     dots that travel a join are drawn solid, as the approved prototype draws them. A dot inside the DE's white glass
     shows through it and takes no light from it; a dot in front of it, with the bloom pass on, has the color it has
     farther along its link, never black. The dots are held still, so what is read does not hang on how fast the page
@@ -3744,7 +3744,7 @@ def test_a_dot_passing_through_the_white_node_never_turns_it_dark(run, web, mapp
 
 @pytest.mark.req('VIEW-027')
 def test_the_characters_of_a_part_not_built_keep_changing_and_glow_when_a_signal_reaches_them(run, web, mapped, browser):
-    """Rich, 2026-09-28: numbers and letters in both cases, the strings moving all the time; a signal reaching a part
+    """Numbers and letters in both cases, the strings moving all the time; a signal reaching a part
     still drawn in characters is a pulsing bloom."""
     from metaform.data import Node, Store
     store = Store('proj')
@@ -3829,7 +3829,7 @@ def test_a_question_is_answered_with_one_click_on_a_choice_or_by_typing_and_each
 @pytest.mark.req('VIEW-028')
 @pytest.mark.req('VIEW-021')
 def test_each_view_has_its_own_fit_and_swap_and_the_messages_button_is_at_the_top(run, web, mapped, browser):
-    """Rich, 2026-09-29: both views get a Fit button and a Swap button, and the messages box goes to the top of the
+    """Both views get a Fit button and a Swap button, and the messages box goes to the top of the
     screen."""
     from metaform.data import Node, Store
     Store('proj').ask(Node('element', 'code.alarm.audible'), 'Is the quiet tone still wanted?')
@@ -3851,7 +3851,7 @@ def test_each_view_has_its_own_fit_and_swap_and_the_messages_button_is_at_the_to
     near = page.evaluate('window.metaform.away3d()')
     page.click('#fit3dBtn')
     page.wait_for_function(f'() => window.metaform.away3d() > {near} * 1.5', timeout=15000)
-    # Rich, 2026-09-29: the Fit on the right reacted to the one on the left, and only zoomed out. Each Fit moves its
+    # The Fit on the right reacted to the one on the left, and only zoomed out. Each Fit moves its
     # own map, and the 3D map's goes between the whole map and close on the selected node.
     still3d(page, 3)
     wheel(page, -400)  # the 2D map in the large area shows the whole diagram, VIEW-041; zoomed in, its Fit has a move
@@ -3876,7 +3876,7 @@ def test_each_view_has_its_own_fit_and_swap_and_the_messages_button_is_at_the_to
 @pytest.mark.req('VIEW-030')
 @pytest.mark.req('MAP-050')
 def test_a_right_click_on_a_node_opens_its_menu_and_its_messages_are_read_in_a_floating_window(run, web, mapped, browser):
-    """Rich, 2026-09-29: right-click a node to read its unread messages, past messages for review on the menu, in a
+    """Right-click a node to read its unread messages, past messages for review on the menu, in a
     floating window, from the 2D map and from the 3D map."""
     from metaform.data import Node, Store
     store = Store('proj')
@@ -3945,7 +3945,7 @@ def test_a_right_click_on_a_node_opens_its_menu_and_its_messages_are_read_in_a_f
 @pytest.mark.req('VIEW-032')
 @pytest.mark.req('MAP-048')
 def test_work_is_given_at_a_node_from_its_menu_with_nodes_linked_and_named_inline(run, web, mapped, browser):
-    """Rich, 2026-09-29: a text editor window and a node selector on the right-click menu, where nodes are linked to
+    """A text editor window and a node selector on the right-click menu, where nodes are linked to
     the prompt or inserted inline by their proper noun, from a clickable browser of the namespace."""
     from metaform.data import Store
     store = Store('proj')
@@ -3955,7 +3955,7 @@ def test_work_is_given_at_a_node_from_its_menu_with_nodes_linked_and_named_inlin
              for address in ('code.timer.kitchen', 'exterior.cook')}
     before = len(store.work(None, None, None, limit=0).results)
     started(run)
-    for absent in ({}, {'condition': ''}):  # a task needs no state on its part, Rich 2026-10-08: it is written plain
+    for absent in ({}, {'condition': ''}):  # a task needs no state on its part, it is written plain
         status, body = api(web, '/api/task', method='POST', headers=own_write(web), body=json.dumps({
             'project': 'proj', 'task': 'Improve the alarm.', 'nodes': [f'element:{alarm}'], **absent}))
         assert status == 200 and body['results'][0]['condition'] == ''
@@ -4006,7 +4006,7 @@ def test_work_is_given_at_a_node_from_its_menu_with_nodes_linked_and_named_inlin
     written = [record for record in Store('proj').work(None, None, True, limit=0).results
                if record.task and record.task.startswith('Make the tone louder')]
     text = f"Make the tone louder when [[{names['code.timer.kitchen']}|code.timer.kitchen]] runs out of time."
-    # one ticket, on the node it was opened at, linking every other node of the task for reference, Rich 2026-10-01
+    # one ticket, on the node it was opened at, linking every other node of the task for reference
     [ticket] = written
     # the ticket carries its kind; the part's stage went on its state record, MAP-046 as amended 2026-10-08
     assert (ticket.address, ticket.task, ticket.condition, ticket.kind, ticket.column) == (
@@ -4021,7 +4021,7 @@ def test_work_is_given_at_a_node_from_its_menu_with_nodes_linked_and_named_inlin
 
 @pytest.mark.req('VIEW-032')
 def test_the_task_editor_has_a_chart_of_its_own_to_browse_and_is_sized_or_made_full_screen(run, web, mapped, browser):
-    """Rich, 2026-09-29: in the editor a 2D chart browser, independent from the other two, for seeing and browsing
+    """In the editor a 2D chart browser, independent from the other two, for seeing and browsing
     the project; the window sized or made full screen; the entry named Add Task."""
     from metaform.data import Store
     store = Store('proj')
@@ -4200,7 +4200,7 @@ def watch_dispatch(dispatch_runners, mapped, tmp_path):
 @pytest.mark.req('VIEW-033')
 def test_a_person_adds_an_element_joined_to_a_node_and_an_agent_is_started_to_validate_it(run, web, mapped, browser,
                                                                                           tmp_path, watch_dispatch):
-    """Rich, 2026-09-29: a new element tool so the user can add and join something into the map, with an option to
+    """A new element tool so the user can add and join something into the map, with an option to
     kick off an agent to pre-validate the new element, prompted in his words."""
     import sys
 
@@ -4223,7 +4223,7 @@ def test_a_person_adds_an_element_joined_to_a_node_and_an_agent_is_started_to_va
     assert page.is_visible('#element') and Store('proj').element('code.alarm.visible') is None
     page.fill('#element .address', 'code.alarm.visible')
     page.fill('#element .length', '2')
-    page.fill('#element .name', 'Flash Alert')                         # its canonical name, Rich 2026-10-01
+    page.fill('#element .name', 'Flash Alert')                         # its canonical name
     page.select_option('#element .receives', 'node')                  # the alarm holds the purpose; the new part serves it
     page.fill('#element .purpose', 'Tell a cook who cannot hear that the time is up.')
     page.fill('#element .ef', 'Flashes a lamp when the timer runs out.')
@@ -4276,8 +4276,8 @@ def Node_of(address):
 @pytest.mark.req('PROJ-030')
 def test_the_clear_is_in_the_administration_menu_asks_are_you_sure_and_its_backup_is_restored_from_the_menu(
         run, home, web, mapped, browser):
-    """Rich, 2026-09-29: the clear is in an administration menu, says are you sure, backs the project up, allows
-    restoration easily and tells the user. Rich, 2026-10-01: a clear that also offers to restore is not good design;
+    """The clear is in an administration menu, says are you sure, backs the project up, allows
+    restoration easily and tells the user. a clear that also offers to restore is not good design;
     the clear only clears, and a backup is restored from the menu's Restore a backup."""
     from metaform.data import Store
     started(run)
@@ -4318,10 +4318,8 @@ def test_the_clear_is_in_the_administration_menu_asks_are_you_sure_and_its_backu
 
 @pytest.mark.req('VIEW-034')
 def test_the_person_writes_the_note_at_a_node_in_the_page_and_an_agent_only_reads_it(run, web, mapped, browser):
-    """Rich, 2026-10-04: "It stands for me to be able to make a note for people on the nodes. That's what it stands
-    for, not for other people. It's for the admin and for other people to read what I, what the user writes. Not for
-    the AI. The AI is going to have the memory server." One single note, not a list, of at most 2048 characters, Rich
-    2026-10-02. The fixture's folder leaves memory out, and the note shows all the same."""
+    """The note is the person's: written for people to read on the node, not for agents, which have the memory
+    server. One single note, not a list, of at most 2048 characters. The fixture's folder leaves memory out, and the note shows all the same."""
     from metaform.data import Store
     alarm = Store('proj').element('code.alarm.audible').id
     noted = lambda: json.loads(run('memory', 'note', 'element:code.alarm.audible', '--json', cwd=mapped).stdout)['note']
@@ -4365,8 +4363,7 @@ def test_the_person_writes_the_note_at_a_node_in_the_page_and_an_agent_only_read
 @pytest.mark.req('VIEW-033')
 @pytest.mark.req('VIEW-013')
 def test_a_map_change_keeps_every_open_write_window_and_editor_open_with_its_text(run, web, mapped, browser):
-    """Rich, 2026-10-02: "Every time the screen updates it closes the message you are typing and you lose what you
-    wrote". Each write window is opened and typed into, a map change reaches the page, and each is still open with
+    """A screen update must not close a message being typed or lose what was written. Each write window is opened and typed into, a map change reaches the page, and each is still open with
     what was typed in it."""
     from metaform.data import Node, Store, prompts
     store = Store('proj')
@@ -4451,7 +4448,7 @@ def rect_of(page, selector):
 @pytest.mark.req('VIEW-031')
 @pytest.mark.req('VIEW-030')
 def test_the_memories_of_a_node_open_from_its_menu_as_a_graph_of_their_own_in_both_views(run, web, mapped, browser):
-    """Rich, 2026-09-29: the menu of a node has an entry for its memories; choosing it, in the 2D map or the 3D map,
+    """The menu of a node has an entry for its memories; choosing it, in the 2D map or the 3D map,
     shows the memory network of that node in both views; the view zooms into the node as the map gives way to it and
     opens with the whole memory network in view; going back returns to the map."""
     for name, observation, node in (('countdown drift', 'The countdown drifts under load.', 'code.timer.kitchen'),
@@ -4586,7 +4583,7 @@ def test_the_memories_of_a_node_open_from_its_menu_as_a_graph_of_their_own_in_bo
 
 @pytest.mark.req('VIEW-005')
 def test_the_edges_of_the_3d_map_are_smoothed_where_a_graphics_card_draws_them(run, web, mapped, browser):
-    """Rich, 2026-09-29: the 3D graph needs antialiasing, the joins break apart when zoomed out. The picture itself
+    """The 3D graph needs antialiasing, the joins break apart when zoomed out. The picture itself
     is judged by eye on a graphics card: the renderer these tests run on draws with the processor, where the samples
     changed nothing that could be measured and cost four frames in ten."""
     started(run)
@@ -4708,7 +4705,7 @@ def test_the_page_says_it_is_loaded_only_once_it_has_read_what_it_loads(run, web
 @pytest.mark.req('VIEW-032')
 @pytest.mark.req('VIEW-008')
 def test_dragging_the_2d_map_or_the_task_chart_moves_it_and_selects_no_label_text(run, web, mapped, browser):
-    """Rich, 2026-10-01: dragging the 2D map selected the label text of every node, and the next drag dragged the
+    """Dragging the 2D map selected the label text of every node, and the next drag dragged the
     labels instead of the map. A drag that starts on a label and sweeps across the others moves the view, selects no
     text, and the drag after it moves the view again."""
     from metaform.data import Store
@@ -4748,7 +4745,7 @@ def test_dragging_the_2d_map_or_the_task_chart_moves_it_and_selects_no_label_tex
 
 @pytest.mark.req('VIEW-036')
 def test_a_nodes_menu_opens_its_work_history_every_ticket_open_and_closed_with_its_steps(run, web, mapped, browser):
-    """Rich, 2026-10-01: right-clicking a node gives access to its work history: every ticket on it, open and done,
+    """Right-clicking a node gives access to its work history: every ticket on it, open and done,
     newest first, each with its kind, its column, who took it, the steps the agent filed and how it was resolved."""
     from metaform.data import Node, Store
     store = Store('proj')
@@ -4780,7 +4777,7 @@ def test_a_nodes_menu_opens_its_work_history_every_ticket_open_and_closed_with_i
 @pytest.mark.req('VIEW-037')
 def test_the_board_holds_the_tickets_in_four_columns_and_a_card_dragged_moves_its_ticket(run, web, mapped, browser,
                                                                                      monkeypatch):
-    """Rich, 2026-10-01: an actual classic kanban window you can open that mirrors the features in a traditional
+    """An actual classic kanban window you can open that mirrors the features in a traditional
     kanban: columns with counts, cards with their kind, nodes and progress, dragging between and within columns, a
     search and a filter by kind, and adding a card."""
     from metaform.data import Node, Store
@@ -5012,9 +5009,8 @@ def test_a_runner_that_dies_before_the_page_stream_opens_leaves_agent_deployed_w
 @pytest.mark.req('VIEW-035')
 def test_only_agents_whose_turn_is_executing_are_shown_as_working_and_an_idle_one_stays_reachable(run, web, mapped,
                                                                                                   browser):
-    """Rich saw five agents under Agent deployed and none on the map; all five were older sessions waiting on him.
-    Rich, 2026-10-03: they are not active so they shouldnt be shown, and dont change that label thats not a correct
-    solution. Agent deployed and the map's figures follow what the runner says a session is doing, activity working;
+    """Five agents showed under Agent deployed and none on the map; all five were older sessions waiting on the person.
+    Sessions that are not active are not shown, and the label stays as it is. Agent deployed and the map's figures follow what the runner says a session is doing, activity working;
     an idle session keeps its lifecycle, and its log, chat and Stop are opened from the node's work history."""
     from metaform.data import Node, Store
 
@@ -5061,8 +5057,8 @@ def test_only_agents_whose_turn_is_executing_are_shown_as_working_and_an_idle_on
 @pytest.mark.req('VIEW-039')
 @pytest.mark.req('VIEW-035')
 def test_a_session_whose_runner_is_not_verified_is_neither_in_the_agents_key_nor_on_the_map(run, web, mapped, browser):
-    """Rich, 2026-10-03, of the Unverified list added beside Agent deployed: they are not active so they shouldnt be
-    shown i dont understand how saying unverified is a solution. Only a verified running session is shown as at work."""
+    """An Unverified list beside Agent deployed was no solution: sessions that are not active are not shown. Only a
+    verified running session is shown as at work."""
     from metaform.data import Node, Store
 
     store = Store('proj')
@@ -5094,7 +5090,7 @@ def test_a_session_whose_runner_is_not_verified_is_neither_in_the_agents_key_nor
 
 @pytest.mark.req('VIEW-035')
 def test_an_agents_figure_walks_from_the_de_to_its_ticket_circles_it_and_walks_back_when_it_closes(run, web, mapped, browser):
-    """Rich, 2026-10-01: the agents materialize on the most primary node and navigate the mesh to the node being
+    """The agents materialize on the most primary node and navigate the mesh to the node being
     worked on; they go onto it and circle it until the ticket is closed, then navigate back; even if the agent
     finished, they still touch the node and walk back."""
     from metaform import relay
@@ -5118,7 +5114,7 @@ def test_an_agents_figure_walks_from_the_de_to_its_ticket_circles_it_and_walks_b
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.figures().length === 2', timeout=15000)
-    # Rich, 2026-10-03: an agent that is not active is not on the map, and the key lists only agents at work
+    # An agent that is not active is not on the map, and the key lists only agents at work
     assert {one['work_id'] for one in page.evaluate('window.metaform.figures()')} == {worked.id, other.id}
     assert sorted(page.eval_on_selector_all('#agents .agent', 'found => found.map(one => one.dataset.id)')) == sorted(
         [worked.id, other.id])
@@ -5183,9 +5179,8 @@ def test_an_agent_on_the_2d_map_is_its_flat_glyph_and_walks_to_its_ticket_circle
 @pytest.mark.req('VIEW-027')
 def test_an_agents_figure_is_big_enough_to_see_with_the_whole_map_in_view_and_circles_at_one_slow_pace_as_steps_are_filed(
         run, web, mapped, browser):
-    """Rich, 2026-10-02: "its so tint", "Its too fast to even see what it is", "the agent doesnt speed up the nodes
-    flashing or text is supposed to", "sloyly moving around it should be much bigger though I couldnt even see it and I
-    was watching it closely". The map is spread to hundreds of units, as a real map is, and seen whole: each figure
+    """The agent figures were too small and too fast to see; an agent keeps its pace while its node's flashing and
+    text quicken. The map is spread to hundreds of units, as a real map is, and seen whole: each figure
     stands tall enough on screen to see what it is, and circles its node slowly at one pace while steps are filed,
     while the node's flashing, and the text of a part not built, quicken."""
     from metaform.data import Node, Store
@@ -5236,9 +5231,9 @@ def test_an_agents_figure_is_big_enough_to_see_with_the_whole_map_in_view_and_ci
 
 @pytest.mark.req('VIEW-038')
 def test_the_labels_wrap_keep_the_draw_order_and_the_hover_says_what_a_part_does(run, web, mapped, browser):
-    """Rich, 2026-10-01: make these labels actually useful and respect the draw order; word wrap rather than cut off;
-    the hover said the name, then the name again, then the name in reverse; the data is in the joins. Rich,
-    2026-10-02: "I never said that I was like what the fuck maybe try observing the depth order": the alarm is
+    """Make these labels actually useful and respect the draw order; word wrap rather than cut off;
+    the hover said the name, then the name again, then the name in reverse; the data is in the joins. Labels
+    observe the depth order: the alarm is
     selected, and its label still goes under the nearer timer's."""
     from metaform.data import Store
     store = Store('proj')
@@ -5278,7 +5273,7 @@ def test_the_labels_wrap_keep_the_draw_order_and_the_hover_says_what_a_part_does
     tip.wait_for(state='visible')
     assert 'dish timer' in tip.inner_text() and 'Counts down and rings.' in tip.inner_text()
     assert 'code.timer.kitchen' not in tip.inner_text()               # the address is the name read the other way
-    # Rich, 2026-10-02: no subject rule; each ef is shown as written, where the relation was, with no receiver or
+    # No subject rule; each ef is shown as written, where the relation was, with no receiver or
     # provider put before it.
     page.evaluate(f'window.metaform.hover3d("{alarm}")')
     page.wait_for_function('() => document.querySelector("#tip3d").textContent.includes("Plays a tone")')
@@ -5290,7 +5285,7 @@ def test_the_labels_wrap_keep_the_draw_order_and_the_hover_says_what_a_part_does
 @pytest.mark.req('VIEW-038')
 @pytest.mark.req('VIEW-025')
 def test_a_node_between_the_camera_and_a_label_hides_the_label(run, web, mapped, browser):
-    """Rich, 2026-10-02: "The labels are in depth order but they are in front of the nodes". The alarm's label is
+    """Labels were in depth order but drawn in front of the nodes. The alarm's label is
     read on the screen first with nothing in front of it, then with the cook's glass node set between the camera and
     it. With nothing in front, showing the labels changes those pixels; with the node in front, the label is behind
     the node and is seen only as the glass lets it through, blurred, so showing the labels hardly changes them; with
@@ -5331,8 +5326,7 @@ def test_a_node_between_the_camera_and_a_label_hides_the_label(run, web, mapped,
             assert math.dist((x, y), (front['x'], front['y'])) < front['r'] * 0.9, (front, inner)  # all of it behind
     covered, _, covered_change = label_change()
     assert covered_change[1] < open_change[1] / 3, (covered_change, open_change)  # hidden behind the node
-    # Rich, 2026-10-02, at code.gui.web: "Drop the quieter color: a covered label keeps its own color, and whatever
-    # is in front hides it by depth or shows it through the glass"
+    # a covered label keeps its own color, and whatever is in front hides it by depth or shows it through the glass
     assert covered['under'] and covered['color'] == label['color'], (covered, label)
     # with the glass made clear, letting all the light through, with no frosting, absorption, bending or light of its
     # own, the label behind the node is seen through it: the glass shows what is behind it, labels included
@@ -5371,11 +5365,8 @@ def in_depth_order(page, camera, target):
 @pytest.mark.req('VIEW-038')
 @pytest.mark.parametrize('case', ['unbuilt', 'selected', 'neighbor', 'broken', 'question', 'reach'])
 def test_a_record_that_lights_nothing_leaves_the_label_in_depth_order(run, web, mapped, browser, case):
-    """Rich, 2026-10-02: "Text labels need to be depth sorted"; "Not if somethning is in front of it of something is
-    blinking you spin the map the more nodes there are the worse it looks its literally a terrible thing to not
-    observe depth ordering"; on keeping the selected node and its neighbors on top: "How is that physically possible
-    to happen I would rather have a true navigation surface... its not a benefit, it surfaces as a bug and bad
-    design". The alarm stands behind the cook, who carries nothing, and is in turn: a missing record, which lights
+    """Text labels are depth sorted, whatever is blinking or selected: keeping the selected node and its neighbors on
+    top reads as a bug on a navigation surface, and looks worse the more nodes there are. The alarm stands behind the cook, who carries nothing, and is in turn: a missing record, which lights
     nothing; the selected node; a neighbor of the selected node; broken, blinking; asked a question, glowing; reached by
     a property. Each time the cook's label is drawn over the alarm's, and the alarm's goes under it where they meet."""
     from metaform.data import Node, Store
@@ -5484,10 +5475,8 @@ def test_the_dispatch_writes_are_taken_only_from_the_page_and_say_what_to_do_nex
 @pytest.mark.req('VIEW-003')
 def test_an_agent_is_started_on_a_ticket_followed_messaged_and_stopped_from_the_page(run, web, mapped, browser,
                                                                                      tmp_path, watch_dispatch):
-    """Rich, 2026-10-02: "agents complete their work, memory server created, acp controls implemented"; "Maybe
-    onscreen if it had a box someplace that said agent deployed and showed the agent icon ... and the harness"; "This
-    little box is supposed to tell you that not the color"; "or whatever the agent is"; "every other system I know
-    allows monitoring and sending messages to agents this way you can see if they are doing the task right"."""
+    """A box on screen says Agent deployed, with each agent's icon and harness, so the person can watch an agent and
+    message it to see whether it is doing the task right; the box says it, not a color."""
     import sys
 
     from metaform.data import Node, Store
@@ -5532,7 +5521,7 @@ def test_an_agent_is_started_on_a_ticket_followed_messaged_and_stopped_from_the_
     page.wait_for_function('() => document.querySelector("#agents .agent img").naturalWidth > 0')
     page.wait_for_function(f'() => window.metaform.figures().some(one => one.work_id === "{work}")', timeout=30000)
     assert next(one for one in page.evaluate('window.metaform.figures()') if one['work_id'] == work)['glyph'] == glyph
-    # the same character on every load of the page, Rich 2026-10-03: it comes from the ticket, never from chance
+    # the same character on every load of the page, it comes from the ticket, never from chance
     reloaded, _, _ = opened(browser, web)
     reloaded.wait_for_selector('#agents:not([hidden]) .agent', timeout=30000)
     assert reloaded.get_attribute('#agents .agent img', 'src') == icon
@@ -5583,7 +5572,7 @@ def test_an_agent_is_started_on_a_ticket_followed_messaged_and_stopped_from_the_
               and entry['message']['params']['prompt'][0].get('text') == 'also run the tests')
     page.wait_for_function('() => document.querySelector("#agent textarea.say").value === ""')  # sent, so cleared
     # a chat: the person's message in the thread with what the agent says, thinks and runs, newest in view, and the
-    # window resized as the person wants, Rich 2026-10-03
+    # window resized as the person wants
     page.wait_for_function('() => [...document.querySelectorAll("#agent .activity .you")]'
                            '.some(one => one.innerText.includes("also run the tests"))', timeout=30000)
     kinds = page.eval_on_selector_all('#agent .activity li', 'found => found.map(one => one.className)')
@@ -5598,7 +5587,7 @@ def test_an_agent_is_started_on_a_ticket_followed_messaged_and_stopped_from_the_
     with Store('proj', module='dispatch').tables(write=False) as tx:
         assert [row['state'] for row in tx.rows('sessions', limit=0).results] == ['ended']
     assert 'dispatch' not in [layer.name for layer in Store('proj').layers(limit=0).results]  # nothing on the map
-    # the node's work history: why an agent was sent here, each dispatch of its tickets, and its log, Rich 2026-10-03
+    # the node's work history: why an agent was sent here, each dispatch of its tickets, and its log
     page.click('#agent .close')
     page.evaluate(f'window.metaform.menu("{alarm}")')
     page.click('#menu button.history')
@@ -5626,7 +5615,7 @@ def test_an_agent_is_started_on_a_ticket_followed_messaged_and_stopped_from_the_
 @pytest.mark.req('VIEW-011')
 @pytest.mark.req('BASE-052')
 def test_the_admin_sets_how_agent_prompts_are_answered_and_the_choice_is_kept_in_the_settings(run, web, mapped, browser):
-    """Rich, 2026-10-03: agent permissions in Administration, changed on the fly; the default is whatever the
+    """Agent permissions in Administration, changed on the fly; the default is whatever the
     administrator sets, kept in the settings and read from them, so it never reverts on a refresh."""
     from metaform import loader, settings
     run('enable', 'dispatch')
@@ -5677,9 +5666,8 @@ def note_write(port, node, text, project='proj'):
 @pytest.mark.req('LAYER-013')
 @pytest.mark.req('BASE-035')
 def test_the_page_reads_the_memory_graph_and_writes_it_through_the_memory_commands(run, web, mapped):
-    """Rich, 2026-10-02: "The user can show the memories in the graph, and manage them memories can be fricking poison
-    to a project", and "the memory chains can just show what they were attached to, like through an orphaned menu".
-    The page reads the whole graph with whether each join's memory shows at its node in the page's layers, the
+    """The person shows the memories in the graph and manages them, and memories that lost their node show what they
+    were attached to through an orphaned menu. The page reads the whole graph with whether each join's memory shows at its node in the page's layers, the
     orphaned joins, and a node's read with what the modules add, as `map node` gives it; it writes through the memory
     commands, from its own page only."""
     started(run)
@@ -5736,8 +5724,7 @@ def test_the_page_reads_the_memory_graph_and_writes_it_through_the_memory_comman
 @pytest.mark.req('VIEW-034')
 @pytest.mark.req('VIEW-011')
 def test_the_page_writes_a_nodes_one_note_through_memory_note(run, web, mapped):
-    """Rich, 2026-10-02: "Allow one single note not a list, limit its characters to 2048, make it so you can edit the
-    note and so can the user". The page's note is the node's one note, written in place as the user's."""
+    """One single note, not a list, of at most 2048 characters, edited in place. The page's note is the node's one note, written in place as the user's."""
     started(run)
     alarm = 'element:code.alarm.audible'
     status, said = note_write(web, alarm, 'Too quiet in a loud kitchen.')
@@ -5763,9 +5750,8 @@ def test_the_page_writes_a_nodes_one_note_through_memory_note(run, web, mapped):
 @pytest.mark.req('LAYER-013')
 @pytest.mark.req('VIEW-018')
 def test_a_person_shows_and_manages_the_memories_in_the_graph_and_finds_the_orphaned_ones(run, web, mapped, browser):
-    """Rich, 2026-10-02: memory "shows as a layer in the gui called memory", "The user can show the memories in the
-    graph, and manage them memories can be fricking poison to a project", and "the memory chains can just show what
-    they were attached to, like through an orphaned menu"."""
+    """Memory shows as a layer in the page called memory: the person shows the memories in the graph and manages
+    them, and memories that lost their node show what they were attached to through an orphaned menu."""
     remember(run, mapped, 'create_entities', [entity('countdown drift', 'Drifts under load.', 'Worse when hot.')],
              'element:code.timer.kitchen')
     remember(run, mapped, 'create_entities', [entity('quiet tone', 'Too quiet.')], 'element:code.alarm.audible')
@@ -5916,9 +5902,8 @@ def test_the_page_distributes_and_reads_glyphs_on_the_metaform_it_chose_and_show
 @pytest.mark.req('VIEW-039')
 def test_each_card_shows_its_agents_glyph_and_the_same_glyph_is_its_figure_and_its_icon_under_agent_deployed(
         run, web, mapped, browser):
-    """Rich, 2026-10-03: "Show tiny agent glyphs on kanban, use thaty glyph consistently, using glyphs on tasks can
-    signify 1 single agent meaning perform these tasks one at a timne since they all have the same glyph, add a button
-    to distribute work over N agents hitting it will evenly assign work using N glyphs"."""
+    """The board shows each ticket's agent glyph, the same glyph everywhere. Tickets with the same glyph are one agent's, done one at a time, and a button distributes work over N agents
+    by assigning N glyphs evenly."""
     from metaform.data import Node, Store
     store = Store('proj')
     run('enable', 'dispatch')
@@ -6023,7 +6008,7 @@ def test_a_line_of_an_agents_thread_reads_the_agents_again_and_never_the_map(run
 @pytest.mark.req('VIEW-039')
 def test_a_line_written_while_the_server_restarts_shows_in_the_open_agent_window_when_the_page_reconnects(
         run, web, mapped, browser):
-    """A Codex agent restarted the web GUI right after it answered Rich, work 109ae725: the announcements of its answer
+    """A Codex agent restarted the web GUI right after it answered the person, work 109ae725: the announcements of its answer
     reached no page, and the open window showed it only when some later line came. On its reconnect the page reads the
     agents and the open window's thread again, with no further line announced."""
     from metaform import relay
@@ -6483,7 +6468,7 @@ def test_start_all_keeps_failed_tickets_retryable_and_does_not_restart_successes
 @pytest.mark.req('VIEW-039')
 def test_a_read_that_fails_while_the_map_is_read_again_keeps_the_map_the_node_chosen_and_the_agents_at_work(
         run, web, mapped, browser):
-    """Rich, 2026-10-03: the graph suddenly disappeared while he browsed, shortly after chatting to an agent, and no
+    """The graph suddenly disappeared while the person browsed, shortly after chatting to an agent, and no
     agents were then shown working. A change pushed to the page reads the map and the agents again; when those reads
     fail, as every read does while the server is restarted, the page had already let go of the map it drew and drew
     nothing, and drew an empty agents key. The failure is said, and what was drawn stays."""
@@ -6526,7 +6511,7 @@ def test_a_read_that_fails_while_the_map_is_read_again_keeps_the_map_the_node_ch
 @pytest.mark.req('VIEW-035')
 def test_choosing_another_project_takes_the_agents_of_the_project_left_off_the_page(
         run, web, mapped, browser, tmp_path):
-    """Rich, 2026-10-03: after switching projects the agents stayed on screen. The agents key, the open agent window and
+    """After switching projects the agents stayed on screen. The agents key, the open agent window and
     the figures on the map are the project's own: choosing another project closes the window and draws that project's
     agents only, even when a read of the agents of the project left answers after the choice."""
     from metaform import relay
@@ -6643,7 +6628,7 @@ TOPMOST_TOAST = '''() => { const box = document.querySelector("#toast"); if (box
 @pytest.mark.req('VIEW-039')
 def test_starting_an_agent_from_the_board_says_what_happened_above_the_board(run, web, mapped, browser, tmp_path,
                                                                               watch_dispatch):
-    """Rich, 2026-10-03: 'On the kanban I tried starting agents and nothing happens'. Start says whether the agent is
+    """Starting agents from the board seemed to do nothing. Start says whether the agent is
     starting or why it is not only in a toast, and the toast was drawn under the open board, so the start window
     closed or its Start came back with nothing to see. The toast is the topmost thing where it is drawn."""
     import sys
@@ -6868,7 +6853,7 @@ def test_the_mouse_wheel_zooms_the_2d_map_at_once_and_nothing_eases_after_it(run
 @pytest.mark.req('STORE-041')
 @pytest.mark.req('VIEW-011')
 def test_a_base_is_activated_and_removed_from_the_header_and_the_active_one_is_refused(run, home, web, mapped, browser):
-    """Rich, 2026-10-07: the page's base chooser only changed what it showed, and the one base operation the page had
+    """The page's base chooser only changed what it showed, and the one base operation the page had
     was clearing the whole project. Activate and Remove sit beside the chooser; neither acts on the active base, and
     Remove keeps a copy of the store."""
     from metaform.data import Store
@@ -6906,7 +6891,7 @@ def test_a_base_is_activated_and_removed_from_the_header_and_the_active_one_is_r
 @pytest.mark.req('MAP-046')
 @pytest.mark.req('MAP-048')
 def test_a_task_carries_its_kind_and_its_stage_goes_on_the_parts_state_record(run, web, mapped):
-    """Rich, 2026-10-08: a ticket's kind and a part's stage are kept apart. The task form sends both: the kind is the
+    """A ticket's kind and a part's stage are kept apart. The task form sends both: the kind is the
     ticket's, and the stage goes on the part's state record, as the node's state control sets it."""
     from metaform.data import Node, Store
     store = Store('proj')

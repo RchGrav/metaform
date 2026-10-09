@@ -184,7 +184,7 @@ def test_beep_runs_only_on_its_own_system(run, hello):
 @pytest.mark.req('QUAL-016')
 @pytest.mark.req('MAP-046')
 def test_todo_writes_a_work_record_on_the_modules_own_element_and_done_resolves_it(run, hello):
-    """Rich, 2026-09-26: a capability added for a feature gets a demonstration in hello; here a module writes the
+    """A capability added for a feature gets a demonstration in hello; here a module writes the
     condition of its own element as a work record, apart from the map, and resolves it, MAP-046."""
     from metaform.data import Node, Store
     run('hello', 'greet', 'ada', cwd=hello)
@@ -205,7 +205,7 @@ def test_todo_writes_a_work_record_on_the_modules_own_element_and_done_resolves_
 @pytest.mark.req('BASE-019')
 @pytest.mark.req('BASE-050')
 def test_noncedemo_walks_an_agent_through_a_nonce_recalled_updated_closed_and_handed_on(run, hello):
-    """Rich's flow, 2026-09-29, every message as he wrote it. noncedemo run directly issues the first nonce; run
+    """The nonce demonstration's flow, every message as written. noncedemo run directly issues the first nonce; run
     through a nonce it does the step the nonce's value in the chassis says, or the step named after the nonce."""
     import re
 

@@ -18,7 +18,7 @@ Maintain a user's own modules over the released chassis, BASE-027. The harness s
 
 ## Prompts
 
-`resources/prompts.xml` holds the extension offer, the muster review task and the template update task. `resources/quality.md` is the project's own unchanged copy of the QUAL-001 standard. Runtime never reads Rich's folder.
+`resources/prompts.xml` holds the extension offer, the muster review task and the template update task. `resources/quality.md` is the project's own unchanged copy of the QUAL-001 standard. Runtime never reads the rich/ folder.
 
 ## Verbs
 

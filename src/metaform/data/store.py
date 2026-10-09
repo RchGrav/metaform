@@ -202,7 +202,7 @@ class Store:
 
     def add_element(self, layer: str | None, address: Any, *, name_length: Any = None, role: Any = None,
                     name: Any = None) -> Element | Outcome:
-        """Write an element, its address, name_length, name and role, Rich's shape, or return the one already at the
+        """Write an element, its address, name_length, name and role, or return the one already at the
         address, STORE-009."""
         with self._write() as tx:
             named, notice = self._named(tx, layer)
@@ -211,7 +211,7 @@ class Store:
 
     def add_join(self, layer: str | None, receiver: Any, elements: Any, *, purpose: Any = None, ef: Any = None,
                  ifd: Any = None, type: Any = 'purpose') -> Join | Outcome:
-        """Write one join, Rich's shape: held by its receiver, holding the elements that serve its purpose, with its
+        """Write one join: held by its receiver, holding the elements that serve its purpose, with its
         type, purpose, ef and ifd, STORE-010."""
         with self._write() as tx:
             named, notice = self._named(tx, layer)

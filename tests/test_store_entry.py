@@ -21,7 +21,7 @@ def test_the_entry_is_the_ve_and_de_with_their_joins_and_every_root_element(home
     small_map(store)
     tables = dump(store_file(home, store))
     assert 'element_roles' not in tables
-    # The tick loop a join holds is an element as any other, Rich's shape, 2026-10-04.
+    # The tick loop a join holds is an element as any other.
     assert sorted(op['data']['role'] for op in ops(store_file(home, store), 'element')) == ['CQU', 'DE', 'SE', 'SE']
     traced.clear()
     roots = store.roots()
@@ -113,7 +113,7 @@ def test_a_work_record_that_does_not_fit_is_stored_as_given_with_a_notice(run, t
     run('add', 'project', 'proj', str(folder))
     store = Store('proj')
     small_map(store)
-    # the conditions are a closed list: a word outside it is refused, and nothing is written, Rich 2026-10-08
+    # the conditions are a closed list: a word outside it is refused, and nothing is written
     with pytest.raises(StoreError, match="'sideways' is not a condition"):
         store.add_work(Node('element', 'code.alarm.audible'), 'sideways')
     sideways = store.add_work(Node('element', 'code.alarm.audible'), 'broken', note={'pin': 4})
@@ -135,7 +135,7 @@ def test_a_work_record_that_does_not_fit_is_stored_as_given_with_a_notice(run, t
 @pytest.mark.req('STORE-042')
 @pytest.mark.req('BASE-044')
 def test_a_work_record_without_a_condition_is_a_plain_task_stored_as_empty_text(store):
-    """Rich 2026-10-08: most tasks carry no state on their part, so none is the normal case and draws no notice."""
+    """Most tasks carry no state on their part, so none is the normal case and draws no notice."""
     from metaform.data import Node
     small_map(store)
     unsaid = store.add_work(Node('element', 'code.alarm.audible'), None, task='say what it is')

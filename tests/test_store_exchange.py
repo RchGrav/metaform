@@ -63,7 +63,7 @@ def test_export_import_export_gives_the_same_document(home, store, monkeypatch, 
 @pytest.mark.req('STORE-027')
 @pytest.mark.req('MAP-020')
 def test_an_exported_join_carries_no_relation_and_no_observation_and_a_document_with_them_is_refused(home, store):
-    """Rich, 2026-10-02: relation and observation are removed from export and import with the store."""
+    """Relation and observation are removed from export and import with the store."""
     filled(store)
     document = export_document(['proj'])
     joins = [op for op in document['projects'][0]['bases'][0]['ops'] if op['kind'] == 'join']
@@ -217,8 +217,8 @@ def test_an_import_document_is_checked_whole_before_any_write_and_its_keys_never
 @pytest.mark.req('STORE-042')
 def test_a_tickets_links_and_steps_and_the_messages_at_nodes_are_carried_by_export_and_import(home, store, monkeypatch,
                                                                                                tmp_path):
-    """An intake of Metaform found that export left out messages and work steps, Rich 2026-10-01: if you see issues
-    you can fix them; we need a rock solid data store. A ticket's reference links and filed steps, and the questions
+    """An intake of Metaform found that export left out messages and work steps, and the store must
+    keep everything. A ticket's reference links and filed steps, and the questions
     and messages left at nodes, come through export and import, and importing again adds nothing twice."""
     filled(store)
     ticket = store.add_work(Node('element', 'code.alarm.audible'), None, task='a quieter tone',

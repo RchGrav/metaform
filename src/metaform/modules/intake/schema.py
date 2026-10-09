@@ -1,4 +1,4 @@
-"""The fields of the intake tools, one object per call: Rich's shape of the metaform, BASE-039 and 2026-10-04.
+"""The fields of the intake tools, one object per call: the metaform's shape, BASE-039 and D115.
 
 Each schema says what the field expects; the tools never refuse a value for its
 content, BASE-044. What does not fit is stored as given and named in a notice.
