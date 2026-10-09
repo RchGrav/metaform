@@ -15,7 +15,6 @@ from metaform.data import (
     COLUMNS,
     CONDITIONS,
     LIMIT,
-    MESSAGES,
     Answer,
     ChallengeState,
     Column,
@@ -80,20 +79,12 @@ def _condition(value: Any, notices: list[Notice]) -> str:
         return str(value)
     if value is None or value in ("", "none"):
         return ""  # a plain task: the part's state is not in question, MAP-046
-    if value in MESSAGES:
-        notices.append(
-            Notice(
-                "condition",
-                f"A {value} is not the condition of a part; it was stored as given.",
-            )
-        )
-        return str(value)
-    notices.append(
-        Notice(
-            "condition", f"{value!r} is not missing, broken, flawed, enhancement or exclude; it was stored as given."
-        )
+    # The conditions are a closed list, so a word outside it is refused, Rich 2026-10-08: checking an entry is not
+    # judging the agent's reasoning, and a mark stored under a word no reader knows is lost.
+    raise StoreError(
+        f"{value!r} is not a condition. A part's condition is one of {', '.join(CONDITIONS)}, or none.",
+        "send the condition again with one of those words",
     )
-    return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
 
 
 def _work_row(tx: Tx, work_id: str) -> Any:

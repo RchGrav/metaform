@@ -982,9 +982,9 @@ def test_a_question_and_a_note_are_asked_told_answered_and_read_at_the_node(run,
     assert [(one['text'], one['answer']) for one in at_node] == [(form, 'No, make it louder')]
     where = j(run, 'where', 'code.alarm.audible', cwd=mapped)
     assert [(one['kind'], one['text']) for one in where['messages']] == [('message', 'The driver is written.')]
-    old = run('map', 'work', 'op=add', 'node=code.alarm.audible', 'condition=question', 'note=Old form.', '--json',
-              cwd=mapped)  # a question is no condition of a part
-    assert 'not the condition of a part' in ' '.join(message for _, message in said(json.loads(old.stdout)))
+    old = run('map', 'work', 'op=add', 'node=code.alarm.audible', 'condition=question', 'note=Old form.',
+              cwd=mapped, ok=False)  # a question is no condition of a part: the closed list refuses it
+    assert old.returncode != 0 and "'question' is not a condition" in old.stderr
 
     # a bare question is recorded with a notice that it has no suggestions, never refused, MAP-050
     bare = j(run, 'ask', 'code.alarm.audible', 'Which one?', cwd=mapped)

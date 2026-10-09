@@ -302,9 +302,6 @@ NOTICES: dict[str, tuple[Callable, Callable, bool, Callable]] = {
                               lambda s, w, got, before: got.state == 'A'),
     'add_plan unknown element': (lambda s, w: None, lambda s, w: s.add_plan('k', 'code.nothing', None), True,
                                  _raw_element('code.nothing')),
-    'add_work condition outside the three': (lambda s, w: None,
-                                             lambda s, w: s.add_work(Node('element', 'code.k.b'), 'sideways'), True,
-                                             lambda s, w, got, before: got.condition == 'sideways'),
     'add_work node that names nothing': (lambda s, w: None,
                                          lambda s, w: s.add_work(Node('element', 'code.nothing'), 'unbuilt'), True,
                                          lambda s, w, got, before: (got.node_kind, got.node_id, got.address) ==

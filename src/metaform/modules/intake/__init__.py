@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from metaform import home, prompt_files, settings
-from metaform.data import Element, GraphPage, Item, Join, Layer, Node, Notice, Store, StoreError
+from metaform.data import CONDITIONS, Element, GraphPage, Item, Join, Layer, Node, Notice, Store, StoreError
 from metaform.module import Context, Module, Noun, Resource, Status, Stop, Verb, save_report
 
 from .schema import ELEMENTS, IFD, NAME_LENGTH, REFS, ROLE
@@ -303,9 +303,19 @@ def _sources(ctx: Context, rec: Recording, kind: Literal['element', 'join'], ele
         _note(notices, store.add_item(SOURCES, Node(kind, element_id), address, refs=refs))
 
 
+def _checked_condition(ctx: Context) -> None:
+    """A condition outside the closed list is refused before anything is recorded, so a call is never half kept."""
+    given = ctx.nouns.get('condition')
+    if given in (None, '', 'exclude') or given in CONDITIONS or given == 'missing':
+        return
+    raise Stop(f'{given!r} is not a condition. A part\'s condition is one of {", ".join(CONDITIONS)}; an exclusion '
+               'is a note, "exclude: <why>".', 'send it again with one of those words')
+
+
 def element(ctx: Context) -> Any:
     """Record one element, or record it again: the fields given replace the ones it had, the rest are kept. An element
     is its namespace_address, name_length, name and role, Rich's shape; its refs go in the sources layer."""
+    _checked_condition(ctx)
     notices: Notices = []
     rec = _recording(ctx, notices)
     address = ctx.nouns[ADDRESS]
@@ -358,6 +368,7 @@ def join(ctx: Context) -> Any:
     """Record one join, Rich's shape: the receiver's purpose, the ef and the ifd, holding the elements that serve it.
     A join of the receiver that already holds one of the elements is that join: the fields given replace its own, and
     the elements given that it does not hold are added to it."""
+    _checked_condition(ctx)
     notices: Notices = []
     rec = _recording(ctx, notices)
     receiver = ctx.nouns['receiver']

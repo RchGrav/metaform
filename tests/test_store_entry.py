@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from storekit import dump, knowledge, ops, plans, record_intake, small_map, store_file
 
-from metaform.data import Node, Store
+from metaform.data import Node, Store, StoreError
 
 pytestmark = pytest.mark.kind('fixture')
 
@@ -113,20 +113,23 @@ def test_a_work_record_that_does_not_fit_is_stored_as_given_with_a_notice(run, t
     run('add', 'project', 'proj', str(folder))
     store = Store('proj')
     small_map(store)
-    sideways = store.add_work(Node('element', 'code.alarm.audible'), 'sideways', note={'pin': 4})
-    assert sideways.condition == 'sideways' and sideways.note == '{"pin": 4}'
-    assert sorted(notice.where for notice in sideways.notices) == ['condition', 'note']
+    # the conditions are a closed list: a word outside it is refused, and nothing is written, Rich 2026-10-08
+    with pytest.raises(StoreError, match="'sideways' is not a condition"):
+        store.add_work(Node('element', 'code.alarm.audible'), 'sideways')
+    sideways = store.add_work(Node('element', 'code.alarm.audible'), 'broken', note={'pin': 4})
+    assert sideways.condition == 'broken' and sideways.note == '{"pin": 4}'
+    assert [notice.where for notice in sideways.notices] == ['note']
     nowhere = store.add_work(Node('element', 'code.nowhere'), 'unbuilt', task='build it')
     assert (nowhere.node_kind, nowhere.node_id, nowhere.address) == ('element', 'code.nowhere', None)
     assert [notice.where for notice in nowhere.notices] == ['node']
-    assert store.element('code.alarm.audible').open_work == ('sideways',)
-    assert sorted(row.condition for row in store.work().results) == ['sideways', 'unbuilt']
+    assert store.element('code.alarm.audible').open_work == ('broken',)
+    assert sorted(row.condition for row in store.work().results) == ['broken', 'unbuilt']
     edited = store.edit_work(nowhere.id, {'task': 'decide it', 'color': 'red'})
     assert edited.task == 'decide it' and [notice.where for notice in edited.notices] == ['color']
     assert json.loads(run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'condition=broken',
                           'note=old probe', '--json', cwd=folder).stdout)['condition'] == 'broken'
     assert [row['condition'] for row in json.loads(run('map', 'work', 'node=element:code.alarm.audible', '--json',
-                                                       cwd=folder).stdout)['results']] == ['sideways', 'broken']
+                                                       cwd=folder).stdout)['results']] == ['broken', 'broken']
 
 
 @pytest.mark.req('STORE-042')
