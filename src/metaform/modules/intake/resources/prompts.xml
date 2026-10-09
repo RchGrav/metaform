@@ -53,7 +53,7 @@ request right after.
     <name>The element's name as the project calls it.</name>
     <refs>Where the element is found: a list of references, each a key and a value, such as path and src/timer.py.</refs>
     <within>The address of the element that holds this one, or core.</within>
-    <condition>missing or trouble. Leave it out when nothing is missing or wrong.</condition>
+    <condition>missing, trouble, ok or unverified, as the intake procedure defines them; recording it again replaces the last.</condition>
     <note>Free text kept with the element; an exclusion is a note that starts with "exclude:".</note>
   </element>
   <join>
@@ -64,7 +64,7 @@ request right after.
     <ef>The encounter function, the EF: what the providing elements do for the receiver, in active voice.</ef>
     <ifd>sends, receives or both: the information flow direction, as defined in the intake procedure.</ifd>
     <refs>Where the join is found: a list of references, each a key and a value.</refs>
-    <condition>missing or trouble. Leave it out when nothing is missing or wrong.</condition>
+    <condition>missing, trouble, ok or unverified, as the intake procedure defines them; recording it again replaces the last.</condition>
     <note>Free text kept with the join; an exclusion is a note that starts with "exclude:".</note>
   </join>
 </fields>

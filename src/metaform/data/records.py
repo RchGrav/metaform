@@ -32,7 +32,8 @@ FAULTS = ('broken', 'trouble')  # trouble is what the intake records where a par
 # A ticket's kind, what sort of work it is, kept apart from the part's state; none is a plain task.
 KINDS = ('broken', 'flawed', 'enhancement')
 FINDINGS = ('missing',)  # intended functionality that is absent, kept apart from the stage unbuilt
-CONDITIONS = STAGES + FAULTS + FINDINGS
+CHECKS = ('ok', 'unverified')  # what the intake's verification found when it read a part's source
+CONDITIONS = STAGES + FAULTS + FINDINGS + CHECKS
 MESSAGES = ('question', 'message')  # what waits for the person at a node, MAP-050; never a condition
 COLUMNS = ('backlog', 'todo', 'doing', 'done')  # the board's columns, MAP-048
 

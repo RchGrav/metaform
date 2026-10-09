@@ -1100,5 +1100,6 @@ def test_the_procedures_marks_are_taken_as_written(run, project):
     recorded(run, project, 'start')
     recorded(run, project, 'element', 'code.alarm.audible', 'role=SE', 'condition=BKN', 'note=never sounds; wire the pin')
     recorded(run, project, 'element', 'code.display.digit', 'role=SE', 'condition=OK')
-    assert [(w.address, w.condition) for w in Store('timer').work(open=True, limit=0).results] == \
-        [('code.alarm.audible', 'trouble')]
+    recorded(run, project, 'element', 'code.display.digit', 'role=SE', 'condition=UNVERIFIED')  # read again later
+    assert sorted((w.address, w.condition) for w in Store('timer').work(open=True, limit=0).results) == \
+        [('code.alarm.audible', 'trouble'), ('code.display.digit', 'unverified')]  # the last condition replaces

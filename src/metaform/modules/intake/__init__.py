@@ -309,14 +309,14 @@ def _sources(ctx: Context, rec: Recording, kind: Literal['element', 'join'], ele
         _note(notices, store.add_item(SOURCES, Node(kind, element_id), address, refs=refs))
 
 
-MARKS = {'MISS': 'missing', 'BKN': 'trouble', 'OK': None}  # the intake procedure's marks, as tool words
-INTAKE_MARKS = ('missing', 'trouble')
+MARKS = {'MISS': 'missing', 'BKN': 'trouble', 'OK': 'ok', 'UNVERIFIED': 'unverified'}  # the procedure's words
+INTAKE_MARKS = ('missing', 'trouble', 'ok', 'unverified')
 
 
 def _checked_condition(ctx: Context) -> None:
     """The intake marks a part missing or trouble, and nothing else; a mark outside them, or trouble with no note
     saying what is wrong, is refused before anything is recorded, so a call is never half kept. The served
-    procedure's marks are taken as written: MISS is missing, BKN is trouble, and OK is no mark."""
+    procedure's conditions are taken as written: MISS, BKN, OK and UNVERIFIED."""
     given = ctx.nouns.get('condition')
     if isinstance(given, str) and given.strip().upper() in MARKS:
         given = ctx.nouns['condition'] = MARKS[given.strip().upper()]
@@ -324,7 +324,7 @@ def _checked_condition(ctx: Context) -> None:
         raise Stop('trouble needs a note saying what is wrong and what corrects it.', 'send it again with note')
     if given in (None, '', 'exclude') or given in INTAKE_MARKS:
         return
-    raise Stop(f'{given!r} is not an intake mark. A part is marked missing or trouble; an exclusion is a note, '
+    raise Stop(f'{given!r} is not an intake condition: missing, trouble, ok or unverified; an exclusion is a note, '
                '"exclude: <why>".', 'send it again with one of those words')
 
 
@@ -372,6 +372,11 @@ def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], t
         return
     if thing is None or not ctx.nouns.get('condition'):  # none or empty: no finding; a note is kept on the object
         return
+    # A part has one condition: recorded again, as verification does once it has read the source, the new one
+    # replaces the last, which closes, so the read-back shows what was found most recently.
+    for row in rec.store.work(open=True, limit=0).results:
+        if row.node_id == thing and not row.task:
+            rec.store.finish_work(row.id, f'Replaced by {ctx.nouns["condition"]}.')
     _note(notices, rec.store.add_work(Node(kind, thing), str(ctx.nouns['condition']), note=ctx.nouns.get('note')))
 
 
@@ -461,6 +466,15 @@ def _findings(store: Store, elements: list[Element], joins: list[Join]) -> dict[
             for row in store.work(open=True, limit=0).results if row.node_id in ids}
 
 
+def _refs_at_join(store: Store, held: Join) -> list[dict[str, str]]:
+    """A join's refs, the items of the sources layer at it; none when there is no sources layer."""
+    try:
+        items = store.layer_items(SOURCES, Node('join', held.id), limit=0).results
+    except StoreError:
+        return []
+    return [{'key': ref.key, 'value': ref.value} for item in items if isinstance(item, Item) for ref in item.refs]
+
+
 def _refs(store: Store, found: Element) -> list[dict[str, str]]:
     """An element's refs, the items of the sources layer at it; none when there is no sources layer."""
     try:
@@ -497,7 +511,8 @@ def _map(elements: list[Element], joins: list[Join], store: Store | None = None)
         return not has_core and any(address.startswith(root + '.') for root in roots)
 
     return {'elements': listed,
-            'joins': [{**_join_entry(held), **marks.get(held.id, {})} for held in joins],
+            'joins': [{**_join_entry(held), **({'refs': _refs_at_join(store, held)} if store is not None else {}),
+                       **marks.get(held.id, {})} for held in joins],
             'root': roots[0] if len(roots) == 1 else roots,
             'disconnected': [found.address for found in elements if not under(found.address)
                              and found.address not in joined],
@@ -656,7 +671,7 @@ def status(ctx: Context) -> Status:
 
 E, J = ELEMENT_WORDS.get, JOIN_WORDS.get
 CONDITION = (Noun('condition', E('condition', ''), required=False,
-                  schema={'type': 'string', 'enum': ['missing', 'trouble']}),
+                  schema={'type': 'string', 'enum': ['missing', 'trouble', 'ok', 'unverified']}),
              Noun('note', E('note', ''), required=False))
 
 MODULE = Module(
