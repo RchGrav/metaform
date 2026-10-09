@@ -2,7 +2,7 @@
 
 [Documentation](../README.md) · [Reading a metaform](../guides/reading-a-metaform.md) · [Working with Metaform](../guides/working-with-metaform.md)
 
-An intake is the first analysis of a project. An agent reads the project, follows the intake procedure, and records the project's functional map one object at a time through the `intake` tool on the Metaform MCP server. This page lists every call the intake uses, what each field means, and how the calls are written inside an Axiom script.
+An intake is the first analysis of a project. An agent reads the project, follows the intake procedure, and records the project's functional map, its elements and the purpose joins between them, one object at a time through the `intake` tool on the Metaform MCP server. This page lists every call the intake uses, what each field means, and how the calls are written inside an Axiom script.
 
 ## Call notation
 
@@ -156,7 +156,7 @@ Records one element, or records it again. Fields given replace the ones the elem
 mcp.metaform.intake.join( receiver, elements, purpose, ef, ifd, refs, condition, note )
 ```
 
-Records one join: the receiver's purpose, served by the elements the join holds. Recorded again with an element it already holds, the fields given replace its own and new elements are added. A part folded into its parent during annealing is recorded as a join one level deeper, with the element it is part of as the receiver.
+Records one purpose join: the receiver's purpose, served by the elements the join holds. Recorded again with an element it already holds, the fields given replace its own and new elements are added. A part folded into its parent during annealing is recorded as a join one level deeper, with the element it is part of as the receiver.
 
 | Field | Meaning |
 |---|---|

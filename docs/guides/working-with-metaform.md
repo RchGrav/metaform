@@ -173,7 +173,7 @@ The layer starts **building**. Finishing makes it available to normal selection.
 The metaform holds only elements and joins. Anything more goes in a knowledge layer, as items at the element or the join:
 
 - The `sources` layer holds an element's refs, one item per element, written by the intake while `intake_sources` is on. It is mutable and hideable. The intake creates it already finished, so reads show it at once.
-- Logic is not a join. The workflow module, which ships off and starts with `metaform enable workflow`, adds it to an element in a knowledge layer with `metaform workflow add_logic`, and it reads back with `workflow history <address> <name> <layer>`.
+- Logic is a logic join, not a purpose join. The workflow module, which ships off and starts with `metaform enable workflow`, adds it to an element in a knowledge layer with `metaform workflow add_logic`, and it reads back with `workflow history <address> <name> <layer>`.
 - A store written at an earlier layout is updated when Metaform opens it, after a copy is kept under the home's `backups` folder. At layout 19 each subtype join's element becomes held by its parent join, and what the old shape kept beyond the owner's shape moved: refs into `sources`, and a join's name, verb, non_goal and extra and a subtype join's fields into a layer named `intake details`.
 
 ```sh

@@ -371,7 +371,7 @@ JOIN_FIELDS = ('purpose', 'ef', 'ifd')
 
 
 def join(ctx: Context) -> Any:
-    """Record one join: the receiver's purpose, the ef and the ifd, holding the elements that serve it.
+    """Record one purpose join: the receiver's purpose, the ef and the ifd, holding the elements that serve it.
     A join of the receiver that already holds one of the elements is that join: the fields given replace its own, and
     the elements given that it does not hold are added to it."""
     _checked_condition(ctx)
@@ -684,7 +684,7 @@ MODULE = Module(
                     Noun('refs', E('refs', ''), required=False, schema=REFS),
                     Noun('within', E('within', ''), required=False),
                     *CONDITION)),
-        Verb('join', join, "Record one join: the receiver's purpose served by the elements it holds. Recorded again "
+        Verb('join', join, "Record one purpose join: the receiver's purpose served by the elements it holds. Recorded again "
                            'with an element it holds, the fields given replace its own and new elements are added. An '
                            'annealed part is a join one level deeper: record it with the element it is part of as the '
                            'receiver.',

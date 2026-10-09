@@ -45,7 +45,7 @@ It is called by its element's address and its name.
   Call         ( {a}, {b} ) := &lt;address&gt;.&lt;name&gt;( param=value, ... )
                  &lt;address&gt; is the element that holds the subroutine. Arguments are by keyword.
                  The returned values land in the caller's variables.
-  this         [new] The element the logic is on. In logic added on a project element, this is
+  this         [new] The element the logic is on. In a logic join on a project element, this is
                that element. Inside a subroutine on a workflow element, this is the workflow
                element. Values are read in Python's syntax; metaform-system lists every name.
                this is read, never assigned. There is no call through this: every call names
@@ -144,7 +144,7 @@ Use them as structural reference for what strong Axiom looks like.
   [V1] Does every path end in RETURN?   NO -&gt; RECURSE Improve.
 &lt;/example_subroutine&gt;
 
-&lt;example_element_logic&gt;   # logic added on a project element, in a knowledge layer
+&lt;example_element_logic&gt;   # logic join on a project element, in a knowledge layer
 @STATE_INIT:
   {ok}     := NULL
   {issues} := NULL
@@ -193,9 +193,10 @@ Roles: every element carries one
         demand on its environment.
 
 Joins
-  - Joins connect elements, like database joins. A join records one encounter: a receiver's
-    purpose served by a provider's function. The receiver owns the join. It runs one way.
-  - A join's fields:
+  - Joins connect elements, like database joins. A purpose join records one encounter: a
+    receiver's purpose served by a provider's function. The receiver owns the join. It runs one way.
+  - A join can hold logic, not only a purpose.
+  - A purpose join's fields:
       purpose    the Operative Purpose: why the receiver needs this. Held by the receiver.
       ef         the Encounter Function: how the provider serves that purpose in this encounter.
                  Written as an active fragment that opens with a verb ending in -s or -es.
@@ -214,7 +215,7 @@ Knowledge layers
     has already read; it only loses what it has not read yet.
 
 Element logic
-  - Logic can be added on any element, by name, in a knowledge layer; it is not a join. This is
+  - Logic can sit on any element, in a named logic join, in a knowledge layer. This is
     element logic. Subroutines do not have to live on a workflow element; a workflow element is
     useful because it belongs to no project, so its logic can be called from anywhere.
   - this is the element the logic is on. In element logic, it is the element carrying
@@ -891,7 +892,7 @@ and every run starts from them instead of reasoning them again: inference amorti
 &lt;/example_subroutine&gt;
 
 # --- 4. Linking logic at an element: logic added on an element that calls the workflow with this
-&lt;example_element_logic&gt;   # logic added on a project element, in a knowledge layer
+&lt;example_element_logic&gt;   # logic join on a project element, in a knowledge layer
 @STATE_INIT:
   {ok}     := NULL
   {issues} := NULL
