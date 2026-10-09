@@ -304,7 +304,7 @@ def test_each_critic_run_adds_one_layer_blinded_by_its_type_and_is_given_the_who
     assert store.provenance(again_layer).blinded is True
     assert {(store.provenance(name).module, store.provenance(name).prompt)
             for name in (blind_layer, sighted_layer, again_layer)} == {('map', 'blind_spot_challenge')}
-    # Rich's prompt as written, then the mode's run: its layer and the whole metaform the intake agent built.
+    # The authored prompt as written, then the mode's run: its layer and the whole metaform the intake agent built.
     challenge = prompt_files.required(folder, 'blind_spot_challenge')
     assert blind.strip() == challenge + '\n\n' + prompt_files.required(folder, 'critic_fast', layer=blind_layer,
                                                                         metaform=metaform)
@@ -412,8 +412,8 @@ def test_each_read_verb_returns_what_its_operation_returns(run, mapped):
 @pytest.mark.req('STORE-009')
 @pytest.mark.req('BASE-043')
 def test_a_knowledge_layer_names_an_element_in_its_own_name_field(run, mapped):
-    """Rich, 2026-10-01: a name goes anywhere there is a namespace and name length, the element's own field beside
-    name_length; Rich, 2026-10-04: a join holds no name, its shape is its type, purpose, ef and ifd."""
+    """A name goes anywhere there is a namespace and name length, the element's own field beside
+    name_length; a join holds no name, its shape is its type, purpose, ef and ifd."""
     k(run, mapped, 'op=create', 'layer=notes', 'variable=Notes.', 'mutable=true', 'hideable=true', *PROVENANCE)
     element = json.loads(k(run, mapped, 'op=add-element', 'layer=notes', 'address=code.display.lcd',
                            'name=time display', 'name_length=2').stdout)
@@ -476,7 +476,7 @@ def test_knowledge_creates_no_correction_layer_and_offers_no_correct_or_peel(run
         gone = run('map', 'knowledge', f'op={op}', 'layer=intake', 'id=x', 'reason=r', cwd=mapped, ok=False)
         assert gone.returncode != 0 and 'not a knowledge operation' in gone.stdout + gone.stderr
     page = run('help', 'map', 'knowledge', cwd=mapped).stdout
-    # Rich, 2026-10-03: refining the metaform under knowledge read as touching a knowledge layer, which it does not.
+    # Refining the metaform under knowledge read as touching a knowledge layer, which it does not.
     assert 'op=refine' not in page and 'correction' not in page and 'peel' not in page
     assert 'refine' not in run('help', 'map', 'knowledge', cwd=mapped).stdout.split('Switches')[1].split('\n')[1]
     assert 'refine' in run('help', 'map', 'refine', cwd=mapped).stdout
@@ -757,8 +757,8 @@ def described(run, tmp_path):
 
 @pytest.mark.req('MAP-052')
 def test_the_markdown_document_orients_and_leaves_the_detail_in_the_files(run, described):
-    """The document holds what a reader finds its way by: each join's ef where it showed the relation, Rich
-    2026-10-02, its purpose and the elements it holds, and the paths the sources layer holds."""
+    """The document holds what a reader finds its way by: each join's ef where it showed the relation,
+    its purpose and the elements it holds, and the paths the sources layer holds."""
     text = run('map', 'markdown', cwd=described).stdout
     for address in ('stakeholder.cook.home', 'code.timer.kitchen', 'code.alarm.audible', 'code.display.digit'):
         assert f'`{address}`' in text
@@ -767,7 +767,7 @@ def test_the_markdown_document_orients_and_leaves_the_detail_in_the_files(run, d
     assert 'DE' in text and 'CQU' in text
     assert 'Paths: src/display.py' in text and 'DISP-001' not in text
     assert 'kitchen timer receives from digit display' in text
-    # Rich, 2026-10-02: no subject rule; ef is shown as written, where the relation was.
+    # No subject rule; ef is shown as written, where the relation was.
     lines = text.splitlines()
     assert 'shows the time left to the timer' in lines and 'learns from the timer when a dish is done' in lines
     assert 'digit display shows' not in text and 'home cook learns' not in text
@@ -810,7 +810,7 @@ def test_the_markdown_document_is_a_command_and_never_a_tool(run, described, hom
 
 @pytest.fixture(params=['timer-first', 'alarm-first'])
 def recorded(run, tmp_path, monkeypatch, request):
-    """An intake in Rich's shape: an AUE, a CQU receiving from the DE, the DE receiving from an alarm and from a
+    """An intake in the metaform's shape: an AUE, a CQU receiving from the DE, the DE receiving from an alarm and from a
     display with its driver, the cook receiving from the alarm too; refs in the sources layer; a finding on the alarm
     and one on the display's join."""
     folder = tmp_path / 'proj'
@@ -915,8 +915,8 @@ def test_the_xml_document_is_written_to_a_file_when_one_is_named(run, recorded, 
 @pytest.mark.req('MAP-046')
 @pytest.mark.req('MAP-049')
 def test_an_agent_that_takes_a_task_leaves_the_parts_state_and_the_record_no_longer_waits(run, mapped):
-    """Taking a task says an agent holds the work; the part's state is the intake's and the person's, Rich
-    2026-10-08, so it stays as it was. Done, the part is as any other."""
+    """Taking a task says an agent holds the work; the part's state is the intake's and the person's,
+    MAP-046, so it stays as it was. Done, the part is as any other."""
     store = Store('proj')
     build = store.add_work(Node('element', 'code.alarm.audible'), 'unbuilt', task='build it', held=True)
     fix = store.add_work(Node('element', 'code.timer.kitchen'), 'broken', task='fix it', held=True)
@@ -1005,7 +1005,7 @@ def test_where_gives_each_open_message_its_id_so_it_is_answered_from_that_read(r
 
 @pytest.mark.req('MAP-050')
 def test_a_question_answered_by_mistake_is_reopened_and_waits_again_with_its_suggestions(run, mapped):
-    """Rich, 2026-10-03: "How do I reopen a question when I hit the wrong button". The answer is cleared and the
+    """A question answered by mistake can be reopened. The answer is cleared and the
     question waits again, so the right answer can be given."""
     asked = j(run, 'ask', 'code.alarm.audible', 'Is the quiet tone still wanted?',
               'suggestions=["Yes, keep it", "No, make it louder"]', *FORM, cwd=mapped)
@@ -1103,7 +1103,7 @@ def test_an_agent_says_how_many_steps_it_plans_and_reports_each_as_it_finishes_i
 
 @pytest.mark.req('MAP-048')
 def test_a_ticket_is_moved_across_the_board_and_links_other_nodes_for_reference(run, mapped):
-    """Rich, 2026-10-01: assign and track work via Metaform like a kanban; the ticket is on the functionality it is
+    """Assign and track work via Metaform like a kanban; the ticket is on the functionality it is
     assigned to, and links other nodes for reference. It keeps its kind in every column."""
     made = json.loads(run('map', 'work', 'op=add', 'node=code.alarm.audible', 'condition=broken', 'task=quieter tone',
                           'links=["element:code.timer.kitchen"]', 'held=true', '--json', cwd=mapped).stdout)
@@ -1122,9 +1122,8 @@ def glyph_of(record):
 
 @pytest.mark.req('VIEW-040')
 def test_distributing_over_n_agents_gives_the_first_n_glyphs_in_turn_to_the_tickets_not_taken_or_done(run, mapped):
-    """Rich, 2026-10-03: "using glyphs on tasks can signify 1 single agent meaning perform these tasks one at a timne
-    since they all have the same glyph, add a button to distribute work over N agents hitting it will evenly assign
-    work using N glyphs". To do first, then Backlog, each in its board order; a ticket taken or done keeps its glyph,
+    """Tickets with the same glyph are one agent's, done one at a time, and a button distributes work over N agents
+    by assigning N glyphs evenly. To do first, then Backlog, each in its board order; a ticket taken or done keeps its glyph,
     and an exclude record is not a ticket."""
     from metaform.modules.map import AGENT_GLYPHS
     store = Store('proj')
@@ -1242,8 +1241,7 @@ def test_the_map_modules_glyphs_are_the_seventeen_the_page_draws_in_its_order():
 @pytest.mark.req('LAYER-025')
 @pytest.mark.req('MAP-020')
 def test_refining_a_join_changes_its_ifd(run, mapped):
-    """A join's IFD changes by refining with the rest of its fields, Rich 2026-10-01: if you see issues you can fix
-    them."""
+    """A join's IFD changes by refining with the rest of its fields."""
     join = Store('proj').joins('code.timer.kitchen').results[0]
     refined = json.loads(refined_by(run, mapped, f'receiver={join.receiver_address}', f'provider={join.elements[0].address}',
                            'ifd=sends', 'reason=The alarm is what the timer encounters.').stdout)
@@ -1254,7 +1252,7 @@ def test_refining_a_join_changes_its_ifd(run, mapped):
 
 @pytest.mark.req('MAP-020')
 def test_the_map_knowledge_tool_takes_no_perspective():
-    """Rich, 2026-10-02: "drop perspective drop the duality , EF infers fine". Neither add-join, add-subtype, edit
+    """A join carries no perspective. Neither add-join, add-subtype, edit
     nor refine takes one."""
     from metaform.modules.map import FIELDS, MODULE, READS
     knowledge = next(verb for verb in MODULE.verbs if verb.name == 'knowledge')
@@ -1376,7 +1374,7 @@ def test_map_where_shows_each_ticket_at_the_address_with_its_work_id(run, mapped
 @pytest.mark.req('LAYER-025')
 @pytest.mark.req('MAP-005')
 def test_refine_names_what_it_changes_by_address_and_never_hands_an_agent_an_id(run, mapped):
-    """Rich, 2026-10-03: what an agent names is most easily inferred from what it already read, an address; an id it
+    """What an agent names is most easily inferred from what it already read, an address; an id it
     must look up and copy is an extra step and the string a model garbles first. Refine takes no id and returns none;
     two purposes its addresses cannot tell apart are both named, and neither is changed."""
     nouns = {noun.name for verb in __import__('metaform.modules.map', fromlist=['MODULE']).MODULE.verbs
@@ -1407,7 +1405,7 @@ def test_refine_names_what_it_changes_by_address_and_never_hands_an_agent_an_id(
 @pytest.mark.req('MAP-046')
 @pytest.mark.req('MAP-048')
 def test_map_work_names_a_join_by_its_receiver_and_provider_and_an_element_it_holds_by_its_address(run, mapped):
-    """Rich, 2026-10-03, ticket ad135d54: what an agent names is most easily inferred from what it already read; ids
+    """Ticket ad135d54: what an agent names is most easily inferred from what it already read; ids
     are internal. An agent names a join by its receiver and an element it holds, as refine does, and an element the
     join holds by address beside them, and never handles join:<id>, in the node a ticket is on and in the nodes it
     links."""
@@ -1507,7 +1505,7 @@ def test_map_work_never_tells_an_agent_to_name_a_node_by_a_join_id(run, mapped):
 @pytest.mark.req('MAP-005')
 @pytest.mark.req('MAP-050')
 def test_ask_and_tell_take_node_first_and_provider_beside_it_names_the_purpose_node_holds(run, mapped):
-    """Rich, 2026-10-03, ticket ad135d54: keep node first; provider= beside it names the join node holds, node
+    """Ticket ad135d54: keep node first; provider= beside it names the join node holds, node
     being the receiver. An element the join holds is named by address beside them, as in memory and map work."""
     store = Store('proj')
     join = store.joins('code.timer.kitchen').results[0]
@@ -1577,7 +1575,7 @@ def test_tickets_links_and_questions_move_between_nodes_through_metaform(run, ma
 @pytest.mark.req('LAYER-021')
 @pytest.mark.req('MAP-048')
 def test_knowledge_add_item_takes_the_flags_and_a_task_item_adds_a_ticket_at_its_node(run, mapped):
-    """Rich, 2026-10-03, D91 and D92: read_first and always_show are stored on the item; task adds a ticket at the
+    """D91 and D92: read_first and always_show are stored on the item; task adds a ticket at the
     item's node and is not stored on the item. The ticket read returns the read_first items ahead of at."""
     k(run, mapped, 'op=create', 'layer=critic', 'variable=What the critic says at each node.', 'mutable=true',
       'hideable=true', *PROVENANCE)
@@ -1610,7 +1608,7 @@ def eligible_of(record):
 @pytest.mark.req('STORE-045')
 @pytest.mark.req('BASE-046')
 def test_any_agent_is_eligible_by_default_and_the_eligible_agents_are_kept_in_the_map_modules_own_table(run, mapped):
-    """Rich, ticket bd96cbd1: any agent is eligible by default unless the user specifies otherwise, and existing
+    """Ticket bd96cbd1: any agent is eligible by default unless the user specifies otherwise, and existing
     tickets default to Any. The user's choice is one or more agent types, shown on the ticket; like the glyph it is
     the map module's own field, a row keyed by the work id, and the work table has no column for it."""
     old = Store('proj').add_work(Node('element', 'code.timer.kitchen'), 'unbuilt', task='written before the setting')

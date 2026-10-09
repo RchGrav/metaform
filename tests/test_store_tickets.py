@@ -1,5 +1,5 @@
 """Tickets, D92 and VIEW-035: a work record keeps its kind while it is worked, records who took it, sits in a column
-of the board in an order, and links other nodes for reference. Rich, 2026-10-01."""
+of the board in an order, and links other nodes for reference."""
 from __future__ import annotations
 
 import sqlite3
@@ -59,7 +59,7 @@ def test_a_ticket_moves_through_the_columns_of_the_board_in_order(store):
     order = [ticket.id for ticket in sorted(store.work(open=True, limit=0).results, key=lambda one: one.position or 0)
              if ticket.column == 'todo']
     assert order == [first.id, second.id]
-    assert store.move_work(second.id, 'doing', by='Rich').taken_by == 'Rich'
+    assert store.move_work(second.id, 'doing', by='Sam').taken_by == 'Sam'
     back = store.move_work(second.id, 'todo')
     assert (back.column, back.taken, back.taken_by) == ('todo', None, None)
     done = store.move_work(second.id, 'done')
@@ -161,7 +161,7 @@ def test_a_ticket_already_taken_or_done_is_not_taken_again(store):
 
 
 def test_taking_a_ticket_leaves_the_parts_state_as_it_was(store):
-    """Rich 2026-10-08: the state is the part's, set by the intake and the person; an agent taking the work on it
+    """The state is the part's, set by the intake and the person; an agent taking the work on it
     changes nothing on the map."""
     small_map(store)
     built = store.add_work(KITCHEN, 'unbuilt', task='build it')

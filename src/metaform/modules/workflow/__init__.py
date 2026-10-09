@@ -310,7 +310,7 @@ def _assignment(word: str) -> str:
 
 def served(name: str, given: str | None = None) -> str:
     """A skill whole, for an agent already connected over ACP: its libs, the skill and the input bound as data, with
-    no nonce, Rich 2026-10-08. Dispatch sends it as a purpose agent's first turn; nothing is redeemed."""
+    no nonce. Dispatch sends it as a purpose agent's first turn; nothing is redeemed."""
     skill_name = _known(name, SKILLS, 'skill')
     fills = _fills()
     libs = '\n\n'.join(prompt_files.required(PACKAGE, lib_name, **fills) for lib_name in _requires(skill_name))

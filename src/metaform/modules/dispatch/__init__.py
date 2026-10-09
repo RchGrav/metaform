@@ -118,7 +118,7 @@ def prompt(name: str, **fills: str) -> str:
 
 
 def prompt_written(name: str) -> None:
-    """Refuse a feature whose prompt Rich has not written yet: the element ships empty until he does."""
+    """Refuse a feature whose prompt is not written yet: the element ships empty until it is."""
     if not prompt(name):
         raise Stop(f'This needs its prompt written: {resources.files(__name__) / "resources" / "prompts.xml"} {name}',
                    'write the prompt, then try again')
@@ -731,7 +731,7 @@ def system(ctx: Context) -> dict[str, Any]:
 
 
 def raise_issue(ctx: Context) -> dict[str, Any]:
-    """The person raises an issue on a node, Rich 2026-10-08: a sentinel starts on it with their words, investigates,
+    """The person raises an issue on a node, a sentinel starts on it with their words, investigates,
     and brings proposals to the page's chat; the person chooses one or talks it through, and the chosen one becomes
     held tickets. The issue is held on a ticket of its own at the node, so the chat has a place and the report is
     kept; no worker takes it. One summoned agent at a time, besides the agents at work."""

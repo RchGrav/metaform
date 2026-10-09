@@ -23,15 +23,15 @@ PLACE_KINDS: tuple[NodeKind, ...] = (*NODE_KINDS, 'type')
 LAYER_KINDS: tuple[LayerKind, ...] = ('layer', 'intake', 'memory')
 OPS: tuple[Op, ...] = ('add', 'change', 'remove')
 ROLES = ('AUE', 'CQU', 'DE', 'SE', 'NE')  # the intake's classification of an element, MAP-017
-HELD_ROLES = ('DE', 'SE', 'NE')  # the role of an element a join holds, in Rich's shape, 2026-10-04
-# The state of a part, held on a work record apart from the map, MAP-046, Rich 2026-10-08: a stage, where the part is
+HELD_ROLES = ('DE', 'SE', 'NE')  # the role of an element a join holds, in
+# The state of a part, held on a work record apart from the map, MAP-046, a stage, where the part is
 # on its way to existing, and one fault, a built part that does not do its job. Built is the normal state and draws
 # nothing; a record with no condition is a plain task. The intake and the person set it; agents at work do not.
 STAGES = ('unbuilt', 'under-construction', 'built')
 FAULTS = ('broken',)
-# A ticket's kind, what sort of work it is, kept apart from the part's state, Rich 2026-10-08; none is a plain task.
+# A ticket's kind, what sort of work it is, kept apart from the part's state; none is a plain task.
 KINDS = ('broken', 'flawed', 'enhancement')
-CONDITIONS = STAGES + FAULTS  # missing was ruled out: what is absent is unbuilt, Rich 2026-10-08
+CONDITIONS = STAGES + FAULTS  # missing was ruled out: what is absent is unbuilt
 MESSAGES = ('question', 'message')  # what waits for the person at a node, MAP-050; never a condition
 COLUMNS = ('backlog', 'todo', 'doing', 'done')  # the board's columns, MAP-048
 
@@ -121,7 +121,7 @@ class Page(NamedTuple, Generic[T]):
 @dataclass(frozen=True)
 class Element(Record):
     """An element is its address, name_length, name and role, STORE-009. `short_name` is its address read backward
-    through name_length, MAP-012; `name` is the canonical name the project uses for it, Rich 2026-10-01: a name goes
+    through name_length, MAP-012; `name` is the canonical name the project uses for it, a name goes
     anywhere there is a namespace and name length."""
     id: str
     address: str
@@ -138,14 +138,14 @@ class Element(Record):
     open_work: tuple[str, ...] = ()
     notices: tuple[Notice, ...] = ()
     name: str | None = None  # the canonical name the project uses for it
-    within: str | None = None  # the address of the element that holds it, when the structure says so, Rich 2026-10-08
+    within: str | None = None  # the address of the element that holds it, when the structure says so
     note: str | None = None  # what the recorder noted about it, kept on the element itself
 
 
 @dataclass(frozen=True)
 class Held(Record):
-    """An element a join holds, as Rich's shape places it inside the join: its address, name_length, name and role,
-    with its short name, MAP-012. Every element a join holds provides for the join's purpose, Rich 2026-10-04."""
+    """An element a join holds, placed inside the join, D115: its address, name_length, name and role,
+    with its short name, MAP-012. Every element a join holds provides for the join's purpose."""
     element_id: str
     address: str | None
     short_name: str = ''
@@ -156,7 +156,7 @@ class Held(Record):
 
 @dataclass(frozen=True)
 class Join(Record):
-    """A join, Rich's shape, 2026-10-04: its type, purpose, the ef and the ifd, held by its receiver, holding the
+    """A join: its type, purpose, the ef and the ifd, held by its receiver, holding the
     elements that serve its purpose. A promoted join also records its ordinary element by address, MAP-054."""
     id: str
     layer_id: str

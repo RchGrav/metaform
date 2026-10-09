@@ -768,7 +768,7 @@ and every run starts from them instead of reasoning them again: inference amorti
 #        that attaches it to elements, and the call that starts a run.
 # requires: lib_axiom (grammar), lib_metaform (the map, this, tools), lib_workflow (the rules)
 #           Load each once; skip any whose marker is already in your context.
-# procedure: workflow-authoring v1.4 (Rich), folded in below with its conditions and checks.
+# procedure: workflow-authoring v1.4, folded in below with its conditions and checks.
 
 @STATE_INIT:
   {Goal}             := &lt;&lt;DATA: [what the workflow must accomplish]&gt;&gt;
@@ -1064,7 +1064,7 @@ and every run starts from them instead of reasoning them again: inference amorti
 #        delexicalize it, cut it into subroutines one per step, keep every word.
 # requires: lib_axiom (grammar), lib_metaform (the map, tools), lib_workflow (the rules, delexicalization)
 #           Load each once; skip any whose marker is already in your context.
-# procedure: workflow-ingest v1.7 (Rich), folded in below.
+# procedure: workflow-ingest v1.7, folded in below.
 
 @STATE_INIT:
   {Text}             := &lt;&lt;DATA: [the imported workflow or prompt, verbatim]&gt;&gt;
@@ -1561,8 +1561,8 @@ Task := <task/></scan_input>
 <input/>
 
 When your YIELD is complete, run `metaform <nonce/> complete`, or over MCP call the `workflow` tool with command `complete` and nonce <nonce/>.</assignment>
-<!-- The sentinel, Rich 2026-10-08, VIEW-045: the resource agent the person meets when they raise an issue on a node.
-     Rich's Function_Sentinel_v1.0 as he wrote it, then the frame that binds the report and the node, which arrive as
+<!-- The sentinel, VIEW-045: the resource agent the person meets when they raise an issue on a node.
+     Function_Sentinel_v1.0 as written, then the frame that binds the report and the node, which arrive as
      DATA: Input. Served like every skill: listed, read by name, and sent whole by dispatch as the agent's first turn. -->
 <sentinel>#! AXIOM/2.0 name=sentinel strict=2
 # skill: sentinel · investigate an issue the person raised on a part of the map and bring them three proposals;
@@ -1692,7 +1692,7 @@ When your YIELD is complete, run `metaform <nonce/> complete`, or over MCP call 
 </sentinel>
 <!-- Fills <input/> in assignment when workflow assign was given an input, which fills this one's <input/> as data,
      MCP-034. -->
-<!-- A skill served whole to an agent dispatch has already started over ACP, Rich 2026-10-08: its libs, the skill and
+<!-- A skill served whole to an agent dispatch has already started over ACP, its libs, the skill and
      the input bound as data; nothing to redeem, since the agent is connected and the next prompt reaches it directly. -->
 <served><libs/>
 

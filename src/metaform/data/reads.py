@@ -497,7 +497,7 @@ def layer_graph(tx: Tx, layer: str) -> GraphPage:
 def cypher(tx: Tx, query: str, selection: Sequence[str] | None = None) -> Any:
     """A Cypher query over the base's graph, for agents and tools, STORE-046, seeing only what the layers in view show:
     the selection given, or else the layers turned on, with hidden layers and the select and mask rows at each
-    address applied, as every other read is, Rich 2026-10-08. A query names its own layers to hide or show them on
+    address applied, as every other read is. A query names its own layers to hide or show them on
     the fly."""
     import networkx
     res = resolver(tx, selection, tx.toggled)

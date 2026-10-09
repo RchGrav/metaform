@@ -1,4 +1,4 @@
-<!-- Test-only stand-ins for prompts Rich has not written yet; never shipped text. -->
+<!-- Test-only stand-ins for prompts not written yet; never shipped text. -->
 <prompts>
 <talk>Test talk prompt. About: <about/>. Read: <read/>.</talk>
 </prompts>

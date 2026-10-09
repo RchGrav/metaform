@@ -142,7 +142,7 @@ def now() -> str:
     return datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
-IGNORE_FILE = '.metaform/ignore.txt'  # what the intake does not read, gitignore patterns, Rich 2026-10-08
+IGNORE_FILE = '.metaform/ignore.txt'  # what the intake does not read, gitignore patterns
 
 
 def ignore_patterns(project_path: Path | str) -> list[str]:

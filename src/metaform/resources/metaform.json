@@ -1386,7 +1386,7 @@
               "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
               "type": "purpose",
               "receiver": "54246bdccc8243808796738987f39b3c",
-              "purpose": "Keep every word an agent reads in one authored place Rich edits, apart from the code.",
+              "purpose": "Keep every word an agent reads in one authored place, apart from the code.",
               "ef": "reads each prompt's words from its authored file by name",
               "ifd": "receives",
               "op": "add",

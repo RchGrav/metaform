@@ -94,7 +94,7 @@ def test_dao_follows_enablement_changed_by_another_process(store):
 
     assert store.layers().results == ()
     home.set_module_state("hello", True)
-    assert store.count_visit("Rich") == "Rich: 1 visit\n"
+    assert store.count_visit("Ada") == "Ada: 1 visit\n"
     home.set_module_state("hello", False)
     assert not hasattr(store, "count_visit")
 
@@ -105,7 +105,7 @@ def test_module_table_access_follows_external_enablement(store):
     assert store.layers().results == ()
     home.set_module_state("hello", True)
     with Store("proj", module="hello").tables() as tx:
-        tx.insert("visits", {"name": "Rich", "times": 1})
+        tx.insert("visits", {"name": "Ada", "times": 1})
 
 
 def test_direct_module_import_registers_settings_again_after_dao_unload(store, tmp_path):

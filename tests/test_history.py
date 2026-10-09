@@ -122,7 +122,7 @@ def test_a_folder_origin_copies_the_folder_and_later_changes_leave_the_copy(phot
 @pytest.mark.req('PROJ-013')
 @pytest.mark.req('PROJ-026')
 def test_the_same_content_in_another_project_is_its_own_first_instance_in_its_own_folder(photos, home, tmp_path):
-    """Rich, 2026-09-30: two projects are two paths, so two folders, and their origins cannot conflict. The next
+    """Two projects are two paths, so two folders, and their origins cannot conflict. The next
     suffix is taken only on a conflict inside one project."""
     import shutil
     twin = tmp_path / 'twin'

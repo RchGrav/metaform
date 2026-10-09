@@ -47,14 +47,14 @@ def test_module_operation_rolls_back_with_native_writes(store):
 
     loader.set_enabled("hello", True)
     layer, _, _ = small_map(store)
-    assert store.count_visit("Rich") == "Rich: 1 visit\n"
+    assert store.count_visit("Ada") == "Ada: 1 visit\n"
     with pytest.raises(RuntimeError, match="undo together"), store.atomic():
         store.add_element(layer.name, "code.rollback")
-        assert store.count_visit("Rich") == "Rich: 2 visits\n"
+        assert store.count_visit("Ada") == "Ada: 2 visits\n"
         raise RuntimeError("undo together")
     assert store.element("code.rollback") is None
     with Store("proj", module="hello").tables(write=False) as tx:
-        assert tx.get("visits", {"name": "Rich"})["times"] == 1
+        assert tx.get("visits", {"name": "Ada"})["times"] == 1
 
 
 @pytest.mark.parametrize("roundtrip", [False, True])

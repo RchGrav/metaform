@@ -1,5 +1,5 @@
 """A knowledge item's flags, LAYER-021: read_first and always_show are stored on the item, and an item flagged task adds
-a ticket at its node instead of storing the flag. Rich, 2026-10-03, D91 and D92."""
+a ticket at its node instead of storing the flag, D91 and D92."""
 from __future__ import annotations
 
 import sqlite3

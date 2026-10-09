@@ -4,7 +4,7 @@ Layout 20 to 21, the change order of 2026-10-07: the store becomes an op log. Th
 it is copied, brought to layout 20 on the copy when it is older, read into ops in a new file beside it, and kept whole
 under the home's backups once the new file has taken its name. The modules' own tables are copied as they are.
 
-Rich, 2026-10-01: the version changes only for a change that requires an update, and the store is updated, never
+the version changes only for a change that requires an update, and the store is updated, never
 thrown away. Layout 7 to 8, LAYER-025: a thing is no longer unique per layer, `reexamine.correction_layer_id` is
 `changed_in`, and there are no correction layers, so each correction layer's versions are folded into the intake
 layer it refined, after that layer's own versions, and the intake layer is named `intake`. A copy of the file is
@@ -14,46 +14,43 @@ Layout 8 to 9, D92 and VIEW-035: a ticket keeps its kind while it is worked, so 
 missing one taken, and one fixing a broken one taken; a ticket records who took it and its place on the board, and
 links other nodes for reference.
 
-Layout 10 to 11, Rich 2026-10-02: "drop perspective drop the duality , EF infers fine". The joins' perspective column
+Layout 10 to 11: a join carries no perspective, since its ef says the direction. The joins' perspective column
 is taken out; every other field of every join is kept as it was.
 
-Layout 11 to 12, Rich 2026-10-02: "observation was not my design. I didn't ask for observation"; "Neither was
-relation"; "by placing permanent implementation details into the fucking metaform, you're fucking it all up". The
-metaform is a map that points to the code, never documentation. Every current join and subtype join takes its old
+Layout 11 to 12: observation and relation were never part of the design, and implementation detail does not belong
+in the metaform. The metaform is a map that points to the code, never documentation. Every current join and subtype join takes its old
 relation text as its ef, written as its newest version, so its earlier versions keep the old ef; then the relation and
 observation columns are removed. The old ef text and the old observation text go into no field: they remain only in
 the store's version history and in the backup made first.
 
-Layout 12 to 13, Rich 2026-10-02: "the join type for requirements is require, rename it across the board from purpose".
+Layout 12 to 13: the join type for requirements is renamed from purpose to require.
 Every version of every join of type purpose is typed require; nothing else changes.
 
-Layout 13 to 14, VIEW-040, Rich 2026-10-03: a ticket holds the agent glyph it is assigned to. The work table gains its
+Layout 13 to 14, VIEW-040, a ticket holds the agent glyph it is assigned to. The work table gains its
 glyph column, empty on every ticket; nothing else changes.
 
 Layout 14 to 15, ticket 90430bba, STORE-045 and BASE-046: a ticket's glyph is a feature's field, kept in the map
 module's own table keyed by the work id, so the chassis work table drops its glyph column; every other field of every
 ticket is kept. The glyphs it held go into no field: they remain only in the backup made first.
 
-Layout 15 to 16, LAYER-021, Rich 2026-10-03, D91 and D92: a knowledge item carries read_first and always_show. The items
+Layout 15 to 16, LAYER-021, D91 and D92: a knowledge item carries read_first and always_show. The items
 table gains both columns, false on every item; nothing else changes.
 
-Layout 16 to 17, MAP-054, Rich 2026-10-02, D112: "When a join becomes an element it creates an element record for the
+Layout 16 to 17, MAP-054, D112: "When a join becomes an element it creates an element record for the
 join which can accept more joins itself. they are associated by the namespace name". The joins table gains its element
 column, the address of the element a promoted join names, empty on every join; nothing else changes.
 
-Layout 17 to 18, Rich 2026-10-04: "well I think we need to go back to purpose for semantics"; "yeah, add it to
-purpose..   thats because for certain artifact types like photos you cant call them a requirement but you can more
-easily reason a purpose". Every version of every join of type require is typed purpose again; nothing else changes.
+Layout 17 to 18: the join type goes back to purpose, because an artifact such as a photo cannot be said to meet a
+requirement but can be reasoned to serve a purpose. Every version of every join of type require is typed purpose again; nothing else changes.
 
-Layout 18 to 19, Rich 2026-10-04: "we are reverting the data shape back to my original original design, no added field
-nothing...   that can all go to a knowledge layer.  metaform goes back to my original shape"; "if you want to have refs
-you add a sources layer, or you keep them in a sources layer". An element keeps its address, name_length, name and
+Layout 18 to 19, D115: the data shape goes back to the original design with no added field; what was added goes to
+layers, and refs go in a sources layer. An element keeps its address, name_length, name and
 role; a join keeps its type, receiver, purpose, ef and ifd, and holds the elements that serve it. Every version of a
 join holds its provider; each current subtype join's element is held by its parent join's current version, and the
-subtype join is gone. A join's or subtype join's name is the name of the element it holds, Rich 2026-10-04: "the name on
-the join was the name for the element". Every current element's refs, and those of the joins that held it, become its
+subtype join is gone. A join's or subtype join's name is the name of the element it holds.
+Every current element's refs, and those of the joins that held it, become its
 one item of a layer named sources. Items, tickets and messages at a subtype join move to its element. Nothing else of
-the old shape is kept in the store, Rich 2026-10-04: "I want all of that fucikiong  shit gone"; the backup made first
+the old shape is kept in the store; the backup made first
 holds every field and every earlier version.
 
 Layout 19 to 20, MAP-054: the join gains its nullable element address again.
@@ -360,7 +357,7 @@ def _legacy(db: sqlite3.Connection, path: Path, found: str) -> None:
                 recompute(db, _kind_name(kind.table), ids)
         tables.legacy_upgrade(db, found)
         if int(found) < 19:
-            db.execute("UPDATE joins SET type='purpose' WHERE type='require'")  # layout 18, Rich 2026-10-04
+            db.execute("UPDATE joins SET type='purpose' WHERE type='require'")  # layout 18
         db.execute('DROP TABLE IF EXISTS temp.subtype_moves')
         problems = db.execute('PRAGMA foreign_key_check').fetchall()
         if problems:
@@ -410,7 +407,7 @@ def _relayout(db: sqlite3.Connection, wanted: list[tuple[str, str, str]]) -> Non
             db.execute(sql)
 
 
-EF_REASON = ('Layout 12, Rich 2026-10-02: ef takes the old relation text; relation and observation are removed, '
+EF_REASON = ('Layout 12, ef takes the old relation text; relation and observation are removed, '
              'since the metaform is a map that points to the code, never documentation.')
 
 
@@ -438,7 +435,7 @@ def _ef_from_relation(db: sqlite3.Connection) -> None:
 
 
 def _fields(db: sqlite3.Connection) -> None:
-    """Layout 10, Rich 2026-10-01: an element's name and a join's IFD are fields of their own, no longer kept in its
+    """Layout 10, an element's name and a join's IFD are fields of their own, no longer kept in its
     extra; each is moved out of the extra, and an extra left empty is cleared. Run before the relayout, which takes
     `extra` off, so the two columns are added here when the store does not have them yet."""
     for table, key in (('elements', 'name'), ('joins', 'ifd')):
@@ -493,12 +490,12 @@ def _kind_name(table: str) -> str:
     return next(name for name, kind in KINDS.items() if kind.table == table)
 
 
-SHAPE_REASON = "Layout 19, Rich 2026-10-04: the metaform goes back to Rich's original shape."
+SHAPE_REASON = "Layout 19, D115: the metaform goes back to its original shape."
 SOURCES = 'sources'
 
 
 def _to_shape(db: sqlite3.Connection, wanted: list[tuple[str, str, str]]) -> None:
-    """Layout 19: a join holds the elements that serve it, and everything beyond Rich's shape goes into layers.
+    """Layout 19: a join holds the elements that serve it, and everything beyond the metaform's shape goes into layers.
 
     Run before the old columns are removed. `temp.subtype_moves` names, for each subtype join, the element it held,
     so each module's legacy upgrade can move what it keeps at a subtype join to that element.
@@ -558,8 +555,7 @@ def _to_shape(db: sqlite3.Connection, wanted: list[tuple[str, str, str]]) -> Non
     refs: dict[str, list[tuple[str, str]]] = {}  # each element's refs, its own and those of the joins that held it
 
     def name(element_id: Any, given: Any) -> None:
-        """A join's or a subtype join's name is the name of the element it holds, Rich 2026-10-04: "the name on the
-        join was the name for the element"; an element that has a name of its own keeps it."""
+        """A join's or a subtype join's name is the name of the element it holds; an element that has a name of its own keeps it."""
         if given:
             db.execute('UPDATE elements SET name=? WHERE name IS NULL AND row=(SELECT row FROM current_elements '
                        'WHERE element_id=?)', (given, element_id))

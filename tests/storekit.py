@@ -57,7 +57,7 @@ def _named(given, names):
 
 def record_intake(run, folder, elements, env=None, finish=()):
     """Record an intake through the command line one object per call, as an intake agent does, then finish it. A join
-    of the fixture holds its provider and the elements of its parts, Rich's shape, 2026-10-04."""
+    of the fixture holds its provider and the elements of its parts."""
     def call(*args):
         return json.loads(run('intake', *args, '--json', cwd=folder, env=env).stdout)
     run('intake', 'start', cwd=folder, env=env)  # start hands over the intake text, not JSON, BASE-039
@@ -86,7 +86,7 @@ def memory(store):
 
 def small_map(store):
     """An intake with a CQU receiving from a DE, and the DE receiving from an SE; the CQU's join holds the DE and the
-    tick loop, a part annealed into it, Rich's shape, 2026-10-04: an element is its address, name_length, name and
+    tick loop, a part annealed into it: an element is its address, name_length, name and
     role, and a join its purpose, ef and ifd with the elements it holds."""
     with store.atomic():
         layer = intake(store)

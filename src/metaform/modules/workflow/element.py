@@ -100,7 +100,7 @@ def _refs(refs: Sequence[Ref]) -> dict[str, list[str]]:
 
 
 def _join(join: Join) -> dict[str, Any]:
-    """A join as Rich's shape holds it: its purpose, ef and ifd, and the elements it holds by address."""
+    """A join as the metaform's shape holds it: its purpose, ef and ifd, and the elements it holds by address."""
     return {'purpose': join.purpose, 'ef': join.ef, 'ifd': join.ifd,
             'elements': [held.address for held in join.elements if held.address is not None]}
 

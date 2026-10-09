@@ -190,7 +190,7 @@
 <!-- VIEW-042: the person clicked something on the page to talk about it: a ticket, open or done, a node, a question or
      an ended agent's session. A conversation, never ticket work. -->
 <talk>
-<!-- A draft so Talk works; Rich replaces it with his own. Variables: <about/>, what was clicked in words (a ticket with
+<!-- A draft so Talk works, until the authored prompt replaces it. Variables: <about/>, what was clicked in words (a ticket with
      its state and task, a question with its text, a node's address, or an ended agent's session and ticket); <read/>,
      the metaform commands that read it. -->
 @STATE_INIT:

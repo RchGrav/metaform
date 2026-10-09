@@ -2,7 +2,7 @@
 
 One writer for the command `metaform map xml` and for the web GUI's export menu, VIEW-024, so the two give the same
 document. It reads through `roots`, `where` and `graph`, STORE-025, so select, mask and hiding hold. The document is
-for reviewing what was recorded: the metaform, the AUE and each CQU beside it, Rich's schema, each join under its receiver with its type,
+for reviewing what was recorded: the metaform, the AUE and each CQU beside it, as the schema has them, each join under its receiver with its type,
 ifd, purpose and ef, and each element under the join that holds it with its namespace_address, name_length, name and
 role. An element's first occurrence holds its refs, the items the layers in context hold at it, its open work and the
 joins it receives; a later occurrence carries only its four fields. What the trace never reaches is kept under
@@ -89,7 +89,7 @@ def xml(store: Store, address: str | None = None, *, selection: Sequence[str] | 
         for aue in aues:
             writer.element(root, aue)
         for cqu in (element.address for element in entry if element.role == 'CQU'):
-            writer.element(root, cqu)  # a CQU is defined at downstream.cqu, beside the AUE, Rich 2026-10-04
+            writer.element(root, cqu)  # a CQU is defined at downstream.cqu, beside the AUE
         graph = store.graph(limit=0, **reading)
         unplaced = ET.Element('unplaced')
         for found in graph.elements:

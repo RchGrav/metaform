@@ -389,7 +389,7 @@ def _named(store: Store, nouns: dict[str, Any], notices: list[dict[str, str]]) -
 
 
 def _held(store: Store, nouns: dict[str, Any], notices: list[dict[str, str]]) -> Key:
-    """The key of the node note names, node first, Rich 2026-10-03: with provider beside it, the purpose node holds
+    """The key of the node note names, node first, with provider beside it, the purpose node holds
     as its receiver, and with address the element at that address the join holds, MAP-005."""
     if 'provider' not in nouns:
         if 'address' in nouns:
@@ -736,7 +736,7 @@ def _note_said(row: Row | None) -> dict[str, Any] | None:
 
 def note(ctx: Context) -> Any:
     """The node's one note: read it, or, from the web page only, write it in place of what it held; empty text clears
-    it. Rich, 2026-10-04: "the note is for me"; "no note for them". An agent reads the note and never writes it."""
+    it. The note is the person's, not the agents'. An agent reads the note and never writes it."""
     store = ctx.require_store()
     notices: list[dict[str, str]] = []
     key = _held(store, ctx.nouns, notices)

@@ -101,7 +101,7 @@ turn with the ticket open; the person reads it there.
   :ELSE -&gt; CORRECT the unresolved understanding.</instructions>
 
 <!-- Served by map critic to the critic of a blind-spot challenge, LAYER-014 and LAYER-015: blind_spot_challenge as
-     Rich wrote it, in the instructions tags he gave it, then critic_fast by default, or critic_critic with the critic switch. <layer/> is the blind-spot
+     written, in its own instructions tags, then critic_fast by default, or critic_critic with the critic switch. <layer/> is the blind-spot
      layer the run created; <metaform/> is the metaform as map markdown prints it. -->
 
 <blind_spot_challenge>

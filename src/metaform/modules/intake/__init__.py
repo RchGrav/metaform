@@ -8,7 +8,7 @@ recording again and with `intake remove`, and ends with `intake finish`. The
 intake layer is building until then: context reads do not see it, and the web
 GUI follows it live.
 
-The map is Rich's shape, 2026-10-04: an element is its namespace_address,
+The map is: an element is its namespace_address,
 name_length, name and role; a join is its type, purpose, ef and ifd, held by its
 receiver, holding the elements that serve it. An element's refs go in the
 sources layer while intake_sources is on. The agent names what it reasoned,
@@ -38,8 +38,8 @@ SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
 SHIPS_DISABLED = False
 
-RESOURCE = resources.files(__name__) / 'resources' / 'intake.axiom'  # the digital typology intake, the served intake, Rich 2026-10-08
-SHAPE = resources.files(__name__) / 'resources' / 'metaform.axiom'  # the metaform's shape, Rich 2026-10-04
+RESOURCE = resources.files(__name__) / 'resources' / 'intake.axiom'  # the digital typology intake, the served intake
+SHAPE = resources.files(__name__) / 'resources' / 'metaform.axiom'  # the metaform's shape
 VARIABLE = ('The functional map of the artifact: its elements, and each receiver\'s purpose served by a provider\'s '
             'encounter function.')
 TARGET = re.compile(r'<target\b[^>]*>')
@@ -110,8 +110,7 @@ def prompt(ctx: Context) -> str:
 
 
 def schema(ctx: Context) -> str:
-    """The shape of the metaform, served as written, Rich 2026-10-04: "add this as a tool maybe just to give this
-    shape"."""
+    """The shape of the metaform, served as written, so an agent can read the forms it records."""
     return SHAPE.read_text(encoding='utf-8')
 
 
@@ -120,9 +119,9 @@ def schema(ctx: Context) -> str:
 # Recording, one object per call ------------------------------------------------------------------------------
 
 Notices = list[dict[str, str]]
-ADDRESS = 'namespace_address'  # the element's address, named as in Rich's shape, MAP-040
-SOURCES = 'sources'  # the layer an element's refs go in, Rich 2026-10-04
-CORE = 'core'  # the reserved address of the core node, the project itself, Rich 2026-10-08
+ADDRESS = 'namespace_address'  # the element's address, named as in the metaform's shape, MAP-040
+SOURCES = 'sources'  # the layer an element's refs go in
+CORE = 'core'  # the reserved address of the core node, the project itself
 ID = re.compile(r'\b[0-9a-f]{32}\b')
 
 settings.boolean('intake_sources', True, label='Intake sources layer',
@@ -285,7 +284,7 @@ def start(ctx: Context) -> Any:
 
 def _described(element: Element) -> bool:
     """Whether an element was described with intake element, not only named in a join. The core is described by its
-    name alone, since it has no role and no name_length, Rich 2026-10-08."""
+    name alone, since it has no role and no name_length."""
     if element.address == CORE:
         return element.name is not None
     return element.role is not None or element.name_length is not None
@@ -293,8 +292,8 @@ def _described(element: Element) -> bool:
 
 def _sources(ctx: Context, rec: Recording, kind: Literal['element', 'join'], element_id: str, address: str,
              refs: list[Any], notices: Notices) -> None:
-    """The refs given with an element or a join, written as its one item of the sources layer, replacing what that item held,
-    Rich 2026-10-04: "if you want to have refs you add a sources layer". Off with intake_sources, nothing is written."""
+    """The refs given with an element or a join, written as its one item of the sources layer, replacing what that item held:
+    refs live in a sources layer, never in the metaform. Off with intake_sources, nothing is written."""
     if not ctx.setting('intake_sources'):
         notices.append({'where': 'refs', 'message': 'intake_sources is off, so the refs were not recorded.'})
         return
@@ -321,14 +320,14 @@ def _checked_condition(ctx: Context) -> None:
 
 def element(ctx: Context) -> Any:
     """Record one element, or record it again: the fields given replace the ones it had, the rest are kept. An element
-    is its namespace_address, name_length, name and role, Rich's shape; its refs go in the sources layer."""
+    is its namespace_address, name_length, name and role; its refs go in the sources layer."""
     _checked_condition(ctx)
     notices: Notices = []
     rec = _recording(ctx, notices)
     address = ctx.nouns[ADDRESS]
     given = {'name_length': _whole(ctx.nouns.get('name_length')), 'name': ctx.nouns.get('name'),
              'role': ctx.nouns.get('role')}
-    # what holds it, and a note without a condition, are kept on the element itself, Rich 2026-10-08
+    # what holds it, and a note without a condition, are kept on the element itself
     kept = {key: ctx.nouns[key] for key in ('within', 'note') if ctx.nouns.get(key)
             and (key == 'within' or not ctx.nouns.get('condition'))}
     current = rec.store.element(address, raw=True)
@@ -363,7 +362,7 @@ def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], t
         return
     if thing is None or not ctx.nouns.get('condition'):  # none or empty: no finding; a note is kept on the object
         return
-    # missing was ruled out: intended functionality that is absent is unbuilt, Rich 2026-10-08
+    # missing was ruled out: intended functionality that is absent is unbuilt
     stage = {'missing': 'unbuilt'}.get(str(ctx.nouns['condition']), str(ctx.nouns['condition']))
     _note(notices, rec.store.add_work(Node(kind, thing), stage, note=ctx.nouns.get('note')))
 
@@ -372,7 +371,7 @@ JOIN_FIELDS = ('purpose', 'ef', 'ifd')
 
 
 def join(ctx: Context) -> Any:
-    """Record one join, Rich's shape: the receiver's purpose, the ef and the ifd, holding the elements that serve it.
+    """Record one join: the receiver's purpose, the ef and the ifd, holding the elements that serve it.
     A join of the receiver that already holds one of the elements is that join: the fields given replace its own, and
     the elements given that it does not hold are added to it."""
     _checked_condition(ctx)
@@ -480,7 +479,7 @@ def _map(elements: list[Element], joins: list[Join], store: Store | None = None)
 
     def under(address: str) -> bool:
         seen: set[str] = set()
-        while address not in seen:  # what holds it, up to the core, Rich 2026-10-08
+        while address not in seen:  # what holds it, up to the core
             if address in roots:
                 return True
             seen.add(address)
@@ -659,7 +658,7 @@ MODULE = Module(
             'has an intake. The intake is agent work: a subagent reads its instructions with the command prompt and '
             'follows them. Details: metaform help intake.',
     details='The intake text is served as stored, with its prompt slot filled. The intake is recorded as it is '
-            "reasoned, one element or join per call, in Rich's shape: an element is its namespace_address, "
+            "reasoned, one element or join per call, in the metaform's shape: an element is its namespace_address, "
             'name_length, name and role; a join is the receiver\'s purpose, the ef and the ifd, holding the elements '
             'that serve it. An element\'s refs go in the sources layer while intake_sources is on. It is read back '
             'with show, whole or one receiver at a time, and corrected by recording again and with remove. No other '

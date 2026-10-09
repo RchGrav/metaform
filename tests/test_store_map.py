@@ -144,7 +144,7 @@ def test_an_item_attached_to_an_element_reads_back_after_it_is_removed_and_recor
 @pytest.mark.req('MAP-015')
 @pytest.mark.req('MAP-012')
 def test_an_element_is_its_address_name_length_and_role(home, store):
-    """Rich, 2026-09-27: the namespace address is the name index, the element was meant to be only its address and
+    """The namespace address is the name index, the element was meant to be only its address and
     name_length, and roles stay on the element; its proper noun is its address read backward through name_length."""
     knowledge(store, 'first')
     before = dump(store_file(home, store))
@@ -156,9 +156,9 @@ def test_an_element_is_its_address_name_length_and_role(home, store):
     element = store.element('code.timer.kitchen')
     assert (element.address, element.name_length, element.role, element.short_name, element.reading) == (
         'code.timer.kitchen', 2, 'DE', 'kitchen timer', 'kitchen timer code')
-    # Rich, 2026-10-04: an element is its address, name_length, name and role; its refs are in the sources layer
+    # An element is its address, name_length, name and role; its refs are in the sources layer
     assert 'refs' not in element.to_dict() and 'extra' not in element.to_dict()
-    # Rich, 2026-10-01: a name goes anywhere there is a namespace and name length; it is the element's own field
+    # A name goes anywhere there is a namespace and name length; it is the element's own field
     assert 'descriptors' not in element.to_dict() and element.name is None
     [made] = [op for op in ops(store_file(home, store), 'element') if op['id'] == element.id]
     assert {'name_length', 'name', 'role'} <= set(made['data'])  # the element's own fields, on its op
@@ -246,7 +246,7 @@ def test_a_join_reads_back_every_field_as_written(store):
 
 @pytest.mark.req('MAP-020')
 def test_a_join_holds_no_relation_and_no_observation(store):
-    """Rich, 2026-10-02: "observation was not my design. I didn't ask for observation"; "Neither was relation". The
+    """Observation and relation were never part of the design. The
     metaform is a map that points to the code, never documentation: neither field is stored, read or taken."""
     from metaform.data import Join
     from metaform.data.schema import STORE_SCHEMA
@@ -331,7 +331,7 @@ def test_a_join_holds_its_elements_in_rows_of_their_own_and_a_joins_identity_hol
 
 @pytest.mark.req('MAP-020')
 def test_a_join_has_no_perspective_field_anywhere_in_the_store(home, store):
-    """Rich, 2026-10-02: "drop perspective drop the duality , EF infers fine". No column, record field, editable field
+    """A join carries no perspective. No column, record field, editable field
     or word list holds it; a perspective given to a refinement is not a field of a join, so it is named and not
     applied, as any other unknown key is, STORE-034."""
     import dataclasses

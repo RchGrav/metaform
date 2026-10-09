@@ -640,12 +640,12 @@ def _knowledge(ctx: Context, op: str, notices: list[Notice]) -> Any:
     raise Stop(f'{op!r} is not a knowledge operation.', 'metaform help map knowledge')
 
 
-SOURCES = 'sources'  # the layer an element's refs go in, Rich 2026-10-04
+SOURCES = 'sources'  # the layer an element's refs go in
 
 
 def _sources(store: Store, element_id: str, address: str, refs: Any, notices: list[Notice]) -> None:
     """The refs given with an element, as its one item of the sources layer, replacing what that item held: the
-    metaform holds no refs, Rich 2026-10-04: "if you want to have refs you add a sources layer"."""
+    metaform holds no refs, so they live in a sources layer."""
     store.layer(SOURCES, 'intake', 'refs', kind='layer', mutable=True, hideable=True, ready=True)
     held = [item for item in store.layer_items(SOURCES, Node('element', element_id), limit=0).results
             if isinstance(item, Item)]
@@ -818,7 +818,7 @@ def _link(store: Store, value: Any) -> Node:
 
 
 def _held(store: Store, nouns: dict[str, Any], notices: list[Notice]) -> Node:
-    """The node ask and tell name, node first, Rich 2026-10-03: an element by its address, or with provider beside it
+    """The node ask and tell name, node first, an element by its address, or with provider beside it
     the purpose it holds as receiver, and with address the part at that address inside it, MAP-005."""
     if 'provider' not in nouns:
         if 'address' in nouns:
@@ -872,7 +872,7 @@ def work(ctx: Context) -> Any:
     op=list, the default, reads them, and an id with no op reads one; add, edit, take, plan, step, move and done
     write one each, and distribute gives the open tickets the glyphs of N agents, VIEW-040. A ticket is written by
     the person, or by the sentinel and the system agent for them on the command line, never by a worker over the
-    agents' tool, MAP-050, Rich 2026-10-08: work is planned before a ticket exists."""
+    agents' tool, MAP-050, work is planned before a ticket exists."""
     # An id with no op reads that one ticket with what the map holds at its node and its links, MAP-048.
     op = str(ctx.nouns.get('op', 'read' if 'id' in ctx.nouns else 'list'))
     if op == 'add' and ctx.surface == 'mcp':
@@ -1169,7 +1169,7 @@ WORK_NOUNS = (
 )
 
 RAW = ('raw',)
-# ask and tell take node first; these beside it name the purpose it holds, Rich 2026-10-03, MAP-005.
+# ask and tell take node first; these beside it name the purpose it holds, MAP-005.
 HELD = (_noun('provider', 'A purpose node holds as its receiver: the address of the element that serves it.'),
         _noun('address', 'With provider: the part at that address inside the purpose.'))
 
@@ -1178,7 +1178,7 @@ MODULE = Module(
     id='map',
     # The kanban lines speak to nodes, which exist once an intake is finished, MAP-048 and MCP-029.
     # The tasks instruction is read on demand with map's full instructions, not handed to every agent at connect,
-    # Rich 2026-10-07.
+    #.
     status=lambda ctx: Status(instruction=prompt_files.module('map', 'tasks') if ctx.setting('tasks') and ctx.store
                               is not None and ctx.store.has_intake() else None, at_connect=False),
     tables=TABLES,

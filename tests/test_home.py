@@ -114,7 +114,7 @@ def test_a_base_database_of_an_unknown_schema_version_is_refused_and_not_written
 
 @pytest.mark.req('STORE-029')
 def test_a_home_written_before_the_stores_layout_changed_still_opens(home, tmp_path):
-    """Rich, 2026-09-27: the metaform store's layout changed and his whole home was refused, the registry of projects
+    """The metaform store's layout changed and the whole home was refused, the registry of projects
     and settings included, whose own layout had not changed. Each kind of database keeps its own version."""
     from metaform import settings
     from metaform.data import history, prompts

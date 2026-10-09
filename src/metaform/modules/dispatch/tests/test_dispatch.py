@@ -537,7 +537,7 @@ def test_stop_answers_a_waiting_permission_request_as_cancelled(dispatch):
 
 @pytest.mark.req('BASE-052')
 def test_dispatch_prompts_approve_all_answers_every_request_without_asking(dispatch, run):
-    """Rich, 2026-10-03: a setting sets the default behavior for an agent's interactive prompts: approve-all,
+    """A setting sets the default behavior for an agent's interactive prompts: approve-all,
     approve-reads or ask_all. With approve-all, Metaform answers each request with its allow option, and the thread
     says so."""
     run('set', '--dispatch-prompts=approve-all', cwd=dispatch.folder)
@@ -583,7 +583,7 @@ def test_dispatch_prompts_is_read_at_each_request_so_a_change_reaches_a_running_
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('VIEW-034')
 def test_a_dispatched_agent_writes_nothing_on_the_map_and_its_session_and_transcript_are_dispatch_tables(dispatch):
-    """Rich, 2026-10-03: a node holds one note, so agents keep what they learn as memories; an agent's working log
+    """A node holds one note, so agents keep what they learn as memories; an agent's working log
     is no pile of items at the node. The session and its transcript are the dispatch module's own tables, STORE-045."""
     dispatch.start('ask')
     eventually(dispatch.questions)
@@ -599,7 +599,7 @@ def test_a_dispatched_agent_writes_nothing_on_the_map_and_its_session_and_transc
 
 @pytest.mark.req('VIEW-045')
 def test_raising_an_issue_holds_it_on_a_ticket_at_the_node_and_starts_the_sentinel_with_the_report(dispatch, run):
-    """Rich 2026-10-08: the person says what is wrong on a node; a sentinel starts with their words and nothing else
+    """The person says what is wrong on a node; a sentinel starts with their words and nothing else
     is written. The issue's ticket is held, so no worker takes it."""
     report = 'The alarm plays twice when the timer ends.'
     started = json.loads(run('dispatch', 'raise', NODE, '--json', '--', report, cwd=dispatch.folder,
@@ -688,7 +688,7 @@ def glyphed(dispatch, run, *tickets):
 @pytest.mark.req('VIEW-040')
 @pytest.mark.req('BASE-052')
 def test_one_agent_per_glyph_works_the_glyphs_tickets_in_turn_in_board_order(dispatch, run):
-    """Rich, 2026-10-03, VIEW-040: tickets with the same glyph are one agent's, done one at a time. The agent started on
+    """VIEW-040: tickets with the same glyph are one agent's, done one at a time. The agent started on
     a ticket with a glyph takes that glyph's tickets one after another in board order, To do before Backlog, each by
     its place, the next taken when the one before is done; a ticket of another glyph, one with none, and one taken
     by someone else are not its own."""

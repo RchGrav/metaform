@@ -295,7 +295,7 @@ def test_the_graph_read_pages_each_visible_element_with_its_nearest_parent_and_t
             break
     addresses = [entry.element.address for entry in entries]
     assert pages > 1 and addresses == sorted(set(addresses))
-    # an element a join holds is an element of the map as any other, Rich's shape, 2026-10-04
+    # an element a join holds is an element of the map as any other
     assert addresses == ['code.alarm.audible', 'code.loop.tick', 'code.timer.kitchen', 'code.timer.kitchen.display',
                          'stakeholder.cook.home']
     assert {entry.element.address: entry.parent for entry in entries} == {

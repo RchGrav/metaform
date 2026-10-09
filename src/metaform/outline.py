@@ -56,7 +56,7 @@ def _element_lines(store: Store, address: str, names: dict[str, str], reading: d
 
 
 def _labels(store: Store, elements: Sequence[Any], reading: dict[str, Any]) -> dict[str, str]:
-    """Each root element's name, the project's name for it, where it has one, Rich 2026-10-04."""
+    """Each root element's name, the project's name for it, where it has one."""
     found: dict[str, str] = {}
     for element in elements:
         record = store.element(element.address, **reading)
