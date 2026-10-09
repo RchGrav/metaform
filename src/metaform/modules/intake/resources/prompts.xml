@@ -26,11 +26,11 @@ request right after.
 3. If they say yes, do all of this in order without asking again:
 <register/>   b. Start the browser view: web tool, command start. Give them the
       address. If it fails, tell them what it said and stop.
-   c. Start ONE fresh subagent. Its whole task: "Read resource
-      metaform://intake/procedure and follow it exactly, recording with the
-      intake tool." Do not summarize the procedure for it, do not split the
-      work, and do not do the analysis yourself unless you cannot start a
-      subagent.
+   c. Read the procedure (intake tool, command prompt) and the schema
+      (intake tool, command schema). Start ONE fresh subagent and give it
+      both texts, exactly as written, as its task. Do not summarize or
+      reword them, do not split the work, and do not do the analysis
+      yourself unless you cannot start a subagent.
    d. When it finishes, tell them it's done and invite their questions.</no_intake>
 <!-- Fills no_intake's <register/> while the folder is not registered, MCP-009; the code indents it as a step. -->
 <register_step>a. Register this folder: metaform tool, command register.</register_step>

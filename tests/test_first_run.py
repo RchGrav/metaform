@@ -51,6 +51,7 @@ def test_a_first_run_in_an_unregistered_folder_goes_from_the_question_to_a_recor
         commands = {name: [one['command'] for one in json.loads(text(await client.call_tool(name, {}))[-1])['commands']]
                     for name in ('metaform', 'web', 'intake')}
         assert 'register' in commands['metaform'] and 'start' in commands['web']
+        assert {'prompt', 'schema'} <= set(commands['intake'])  # the hand-off reads both through the intake tool
         uris = {str(one.uri) for one in (await client.list_resources()).resources}
         assert {'metaform://intake/procedure', 'metaform://intake/schema'} <= uris
         # step 3a: the folder is registered under its own name, and the answer brings the onboarding without it

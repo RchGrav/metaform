@@ -122,11 +122,11 @@ It also defines the first working test, which exercises all three end to end.
   3. If they say yes, do all of this in order without asking again:
      b. Start the browser view: web tool, command start. Give them the
         address. If it fails, tell them what it said and stop.
-     c. Start ONE fresh subagent. Its whole task: "Read resource
-        metaform://intake/procedure and follow it exactly, recording with the
-        intake tool." Do not summarize the procedure for it, do not split the
-        work, and do not do the analysis yourself unless you cannot start a
-        subagent.
+     c. Read the procedure (intake tool, command prompt) and the schema
+        (intake tool, command schema). Start ONE fresh subagent and give it
+        both texts, exactly as written, as its task. Do not summarize or
+        reword them, do not split the work, and do not do the analysis
+        yourself unless you cannot start a subagent.
      d. When it finishes, tell them it's done and invite their questions.
   ```
   In a folder not registered yet, the same text carries step 3a, registering the folder, and the instructions end with the line that names the register command:
@@ -144,11 +144,11 @@ It also defines the first working test, which exercises all three end to end.
      a. Register this folder: metaform tool, command register.
      b. Start the browser view: web tool, command start. Give them the
         address. If it fails, tell them what it said and stop.
-     c. Start ONE fresh subagent. Its whole task: "Read resource
-        metaform://intake/procedure and follow it exactly, recording with the
-        intake tool." Do not summarize the procedure for it, do not split the
-        work, and do not do the analysis yourself unless you cannot start a
-        subagent.
+     c. Read the procedure (intake tool, command prompt) and the schema
+        (intake tool, command schema). Start ONE fresh subagent and give it
+        both texts, exactly as written, as its task. Do not summarize or
+        reword them, do not split the work, and do not do the analysis
+        yourself unless you cannot start a subagent.
      d. When it finishes, tell them it's done and invite their questions.
   ```
   In a project whose intake was started and not finished, the intake module's line ends instead with:

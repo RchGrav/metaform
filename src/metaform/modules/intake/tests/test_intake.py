@@ -465,7 +465,7 @@ def test_an_intake_started_and_not_finished_is_named_in_the_instructions(run, pr
     record = (ROOT / 'specifications' / '06-mcp-install.md').read_text(encoding='utf-8')
     assert line == 'An intake was started but aborted and still remains to be completed.' and line in record
     assert notice.startswith('FIRST RUN.') and notice in record.replace('\n  ', '\n')  # as fenced in the record
-    assert 'metaform://intake/procedure' in notice  # the procedure, named where an agent reads it, MCP-037
+    assert 'command prompt' in notice  # the procedure, named where an agent reads it, MCP-037
     agents = lambda: run('help', 'agents', cwd=project).stdout
     shown = agents()
     assert notice in shown and line not in shown
@@ -489,7 +489,7 @@ def test_the_no_intake_notice_asks_once_starts_the_web_gui_and_runs_the_intake_w
     ask, web = notice.index('Want me to start?'), notice.index('web tool, command start')
     delegate, questions = notice.index('Start ONE fresh subagent'), notice.index('invite their questions')
     assert ask < web < delegate < questions
-    assert 'metaform://intake/procedure' in notice and 'Register this folder' not in notice
+    assert 'command prompt' in notice and 'Register this folder' not in notice
     assert 'blind spot' not in notice and 'best practices' not in notice
     assert notice in run('help', 'agents', cwd=project).stdout
     run('intake', 'start', cwd=project)
