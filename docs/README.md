@@ -25,6 +25,8 @@ The [technical reference](inference-metaform/REFERENCE.md) is the full account o
 
 [MCP instruction places](reference/mcp-instruction-places.pdf) is a cheat sheet of every field an MCP server can use to put words in front of a model or a person: what it is, its type, its limit, what triggers it and how the model sees it, for protocol revision 2026-07-28 on Claude Code. [mcp-instruction-places.py](reference/mcp-instruction-places.py) holds its rows and writes the [HTML](reference/mcp-instruction-places.html) that prints it.
 
+[Intake calls](reference/intake-calls.md) lists every call an intake makes on the Metaform MCP server, what each field means, and how the calls are written in an Axiom script.
+
 The [bibliography](preprint/references.bib) contains the preprint's research references. [Citation information](preprint/CITATION.md) identifies this edition without implying journal publication or peer review.
 
 ## Examples and evidence
