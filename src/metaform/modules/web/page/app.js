@@ -2010,11 +2010,12 @@ function readable(fit, center) {
   const y = Math.min(Math.max(center.y - height / 2, fit.y), Math.max(fit.y, fit.y + fit.h - height));
   return {x, y, w, h: height};
 }
-/* The whole drawing framed with its margin, zoomed in or out as it needs, but never past 1.6 times its natural size,
- * so a map of a node or two does not fill the area. */
+/* The whole drawing framed with its margin, zoomed in or out as it needs, but in the panel never past 1.6 times its
+ * natural size, so a map of a node or two does not fill it. The large area keeps VIEW-041's mode one, the whole
+ * diagram as large as the area allows. */
 function fitted(box) {
   const area = $('#viewport').getBoundingClientRect(), least = area.width / 1.6;
-  if (!area.width || box.w >= least) return box;
+  if (!area.width || large() || box.w >= least) return box;
   const height = box.h * least / box.w;
   return {x: box.x + box.w / 2 - least / 2, y: box.y + box.h / 2 - height / 2, w: least, h: height};
 }

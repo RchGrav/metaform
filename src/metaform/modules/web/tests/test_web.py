@@ -996,10 +996,10 @@ def test_clicking_a_join_in_3d_shows_that_join(run, web, mapped, browser):
 @pytest.mark.req('VIEW-016')
 @pytest.mark.req('MAP-012')
 @pytest.mark.req('MAP-020')
-def test_an_element_is_labeled_by_its_name_or_else_its_short_name_and_a_join_has_no_label(run, web, mapped, browser):
-    """Rich, 2026-10-04: an element is labeled "its name and it falls back to namespace address reversed name length";
-    "name is the canonical name, namespace in reverse is full name, restricted to name length is short name"; "the name
-    on the join was the name for the element", so a join has no label of its own."""
+def test_an_element_is_labeled_by_its_name_or_else_its_short_name_and_a_join_shows_its_purpose(run, web, mapped, browser):
+    """An element is labeled with its name, or else its short name, its address read through name_length. A join has no
+    name, since a name belongs to the element it holds; inside a node its box shows its purpose instead of a blank, with
+    the elements that serve it drawn beneath it."""
     started(run)
     page, problems, _ = opened(browser, web)
     _, at = keys_of(web)
@@ -1010,7 +1010,7 @@ def test_an_element_is_labeled_by_its_name_or_else_its_short_name_and_a_join_has
     outer = page.evaluate('[...document.querySelectorAll("#map2d svg g.node")].map(node => [...node.childNodes].filter(part => part.nodeName !== "title").map(part => part.textContent).join("").trim())')
     assert outer.count('dish timer') == 1 and outer.count('audible alarm') == 1, outer
     graph = page.evaluate('window.metaform.graph().nodes')
-    assert [node for node in graph if node['t'] == 'purpose' and node.get('name')] == []  # a join has no label
+    assert [node for node in graph if node['t'] == 'purpose' and node.get('name')] == []  # a join has no name of its own
     page.evaluate(f'window.metaform.select("{at["code.timer.kitchen"]}")')
     assert page.text_content('#p-object h2') == 'kitchen timer' and 'dish timer' in page.inner_text('#p-object')
     cook = at['exterior.cook']
@@ -1018,7 +1018,7 @@ def test_an_element_is_labeled_by_its_name_or_else_its_short_name_and_a_join_has
     page.keyboard.press('Enter')
     page.wait_for_function(f'() => window.metaform.inside().includes("{cook}")')
     labels = page.evaluate('[...document.querySelectorAll("#map2d svg g.node")].map(node => [...node.childNodes].filter(part => part.nodeName !== "title").map(part => part.textContent).join("").trim())')
-    assert '·' in labels and 'dish timer' not in labels, labels  # inside the cook its join is drawn with no label
+    assert any(label.startswith('Know when food is') for label in labels) and 'dish timer' in labels, labels  # its purpose, the timer beneath
     assert problems == []
 
 
