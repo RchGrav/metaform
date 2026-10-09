@@ -119,7 +119,7 @@ This storage and runtime work preserves the semantic contract above.
   supported. Address resolution and reservation remain unimplemented.
 - Parametric Elements use an array when present. Their names reserve the
   corresponding Namespace addresses and block competing Element nodes. A
-  Parametric adjustment alone is not an imperative's acceptance signal. Rich's
+  Parametric adjustment alone is not an imperative's acceptance signal. The owner's
   exact clarification is in the [worked explanations](semantics/understanding-and-work.md#parametric-intake-data-reservations-and-adjustments).
 - Relationship typing belongs in the **intake join dictionary**; the intake
   shape does not itself specify the persistence layout. OP belongs to its
@@ -173,7 +173,7 @@ behavior from supporting infrastructure tests and superseded expectations.
 ```markdown
 # Relationship display correction and intake reset
 
-Rich directed the previous collected data to be cleared rather than patched.
+The owner directed the previous collected data to be cleared rather than patched.
 The example and its isolated global store now contain no collected Elements,
 joins, completed inferences, runs, pending assignments, or responses. The
 example's `handler.py` and `module.json` source files remain.
@@ -199,7 +199,7 @@ The status counts are recorded locally in `dist/mvp-review/reset-status.json`.
 ## Preserved explanations
 
 [Developed understanding, receiving relationships, and work](semantics/understanding-and-work.md)
-contains Rich's exact statements, separately marked interpretation, and links to
+contains the owner's exact statements, separately marked interpretation, and links to
 his photograph examples in `media.photo.product.used/`. Name removal and complete
 photo seed definitions remain proposals, not implementation changes.
 
@@ -911,7 +911,7 @@ changes into a registered service owner.
 Reviewed the upstream implementation on 2026-09-07. These are reference notes
 for discussion, not additional Metaform requirements.
 
-Metaform's CLI remains sufficient to operate the system. Rich currently
+Metaform's CLI remains sufficient to operate the system. The owner currently
 envisions MCP as an optional way to browse the knowledge graph. The browsing
 surface itself, and any role beyond it, remain to be discussed.
 
@@ -1253,7 +1253,7 @@ be fabricated. Records without completion markers remain eligible for inference.
 ```markdown
 # Metaform 0.2
 
-Metaform by Richard Graver prepares reusable type knowledge so subsequent
+Metaform prepares reusable type knowledge so subsequent
 instructions can address the project through its Elements and joins. This
 version makes the prompts and workflow operations inspectable and portable.
 
@@ -1822,7 +1822,7 @@ live model/image-provider authentication remains necessary for provider runs.
 ```markdown
 # Metaform discussion handoff
 
-This note collects Rich's recent clarifications for an external agent helping
+This note collects the owner's recent clarifications for an external agent helping
 organize what needs to be conveyed back into Metaform's development. It records
 understanding that had not yet been fully integrated into the specification or
 runtime at the pushed checkpoint `7eab035`. It is a conversation handoff, not a
@@ -1840,7 +1840,7 @@ speaks in the language of expertise. It represents functional Elements,
 their relationships, and their purposes. That understanding supports reasoning
 about the project and possible realizations beyond its present implementation.
 
-Rich explains the name as **meta**, as in meta prompting, and **form**, as in
+The owner explains the name as **meta**, as in meta prompting, and **form**, as in
 the form of the project. Prompts can address the represented form and its
 information, allowing compact instructions to become precise project-specific
 imperatives. The intended benefits are to eliminate hallucination, save
@@ -1858,7 +1858,7 @@ The Native Expert works within the frame of the project to identify its
 Defining Element and the functional Elements it uses. These include Elements
 realized within the project and those supplied by a framework it uses.
 
-Rich's clarification extends beyond the wording of Element descriptions:
+The owner's clarification extends beyond the wording of Element descriptions:
 
 > “it speaks the structure of the project itself, its speaks about the
 > functional elements on a more abstracted level”
@@ -1869,7 +1869,7 @@ of the code itself do not belong at this level. The project provides evidence
 for understanding its functional structure.
 
 This distinction matters: project-local meaning can be expressed through
-functional Types and their relationships. Rich corrected an earlier blanket
+functional Types and their relationships. The owner corrected an earlier blanket
 claim that nothing could speak to the project, then clarified the abstract
 level at which it must do so. The precise representation of local Operative
 Purposes still needs reconciliation with the current intake and handoff
@@ -1877,7 +1877,7 @@ implementation; the functional level itself has been clarified.
 
 The Latent Expert develops independent Type-level understanding without the
 Native project's OP relationships supplying its answer. Native and Latent
-views support examination of bias and blind spots. Rich chose these expert
+views support examination of bias and blind spots. The owner chose these expert
 names partly to avoid the connotation of naming one expert “biased.”
 
 ## How authored prompts use Metaform
@@ -1891,7 +1891,7 @@ This clarification corrected the assistant's introduction of file and code
 references into the explanation of Native intake. Project resolution does
 not establish a requirement to place those references in the Native form.
 
-Rich described these uses:
+The owner described these uses:
 
 - Consider the Metaform object by object, including prompts concerning purpose.
 - Produce checklists for points in the project, supporting inspection and remedy.
@@ -1901,7 +1901,7 @@ Rich described these uses:
   with the understanding available through Latent inference.
 
 The opportunity is to collect reusable prompts applicable to both the resolved
-project form and the independently inferred form. Rich described the potential
+project form and the independently inferred form. The owner described the potential
 as a “universal improvement engine.” These examples communicate the intended
 range of operations; they are not a closed catalog.
 
@@ -1913,20 +1913,20 @@ answered before the repository checkpoint was requested.
 
 ## Prompt organization and workflow imports
 
-Rich wants a solid GUI organization for prompts, including **intake prompts,
+The owner wants a solid GUI organization for prompts, including **intake prompts,
 rule prompts, imperative prompts, and workflows**, with schemas developed
 for them. The system should support importing workflows and working with
 prompts processed into project-specific instructions.
 
 The kinds, schema fields, relationships between source and processed prompts,
-and GUI arrangement have not been finalized. Rich explicitly presented this
+and GUI arrangement have not been finalized. The owner explicitly presented this
 as a goal to understand before implementation. The newly added `prompts/`
 collection was included in the repository push; its presence does not mean
 these organization and processing capabilities have been implemented.
 
 ## Global knowledge, local data, and portability
 
-Rich's stated direction is:
+The owner's stated direction is:
 
 - **Global** is a system-level database.
 - **Local** carries a project's own data. Its physical storage may also be
@@ -1951,7 +1951,7 @@ shared global Type objects.
 
 ## Improving the workflows themselves
 
-Rich sees a further opportunity if Metaform represents its own form and
+The owner sees a further opportunity if Metaform represents its own form and
 understands its own rules: the provenance being collected could help identify
 new ideas for improving the workflows. This connects the project's semantic
 representation, reusable prompting, and observed work to improvement of the
@@ -1963,7 +1963,7 @@ improvements remains exploratory.
 The pushed checkpoint includes the Native/Latent Expert rename, Type-level
 Element-description guidance, independently readable graph perspectives,
 structural similarity, workflow specialization fixes, prompt migrations, and
-Rich's prompt collection. The full suite passed **250 tests**, and the wheel
+The owner's prompt collection. The full suite passed **250 tests**, and the wheel
 built successfully before the push.
 
 The current Type proof step returns Contextual corrections separately from
@@ -1981,20 +1981,20 @@ exist; the discussion does not certify them against these clarified goals.
 ## Working with this understanding
 
 Semantic precision is central to the work. Preserve established terms,
-definitions, and formulas; keep Rich's statements distinguishable from
+definitions, and formulas; keep the owner's statements distinguishable from
 assistant interpretations and suggestions. Clarify consequential ambiguities
 in conversation before turning them into implementation decisions.
 
-Rich wants the build corrected and the documentation surface kept tight.
+The owner wants the build corrected and the documentation surface kept tight.
 This handoff was explicitly requested to help the external agent collect
 critical understanding. Finalized decisions should be integrated into the
 existing authoritative docs, avoiding a chain of alternate specifications
 and deviation reports.
 
-Rich's collaboration instructions are separate from behavior authored into
+The owner's collaboration instructions are separate from behavior authored into
 Metaform prompts. A correction to the assistant is not permission to invent
 prompt requirements, gates, blacklists, whitelists, or an inverted version of
-the behavior Rich asked to remove.
+the behavior the owner asked to remove.
 
 ```
 
@@ -2003,8 +2003,8 @@ the behavior Rich asked to remove.
 ```markdown
 # Developed understanding, receiving relationships, and work
 
-Quoted statements from Rich's 2026-09-08 design discussion are preserved with
-their informal spelling; expert role names follow Rich's subsequent terminology
+Quoted statements from the owner's 2026-09-08 design discussion are preserved with
+their informal spelling; expert role names follow the owner's subsequent terminology
 correction. The Element definitions below are
 quoted from the repository glossary. Other text provides source attribution and
 links.
@@ -2037,7 +2037,7 @@ and [Rulebook](../rulebook/README.md). [Implementation status](../current-work.m
 
 > it doesnt matter  by linking it someplace else it is creating a different unique element..  box2d game engine program code is  a 2D rigid body simulation library written in C++ that simulates the laws of physics for video games.
 
-Rich further clarified alias scope:
+The owner further clarified alias scope:
 
 > no you cant you can only do the alias for that artifact type
 
@@ -2099,7 +2099,7 @@ Definitions from the [glossary](../../src/metaform/data/semantics/glossary.md):
 
 > I think we tell the archeologist it should check the types and composite types to identify inference that is reusable and align it from there
 
-Rich's existing [photo examples](../../media.photo.product.used/) include one
+The owner's existing [photo examples](../../media.photo.product.used/) include one
 [original](../../media.photo.product.used/origin.png), three
 [good results](../../media.photo.product.used/good_results/), and two
 [bad results](../../media.photo.product.used/bad_results/).
@@ -2125,7 +2125,7 @@ Rich's existing [photo examples](../../media.photo.product.used/) include one
 
 ## Parametric intake data, reservations, and adjustments
 
-Rich subsequently specified:
+The owner subsequently specified:
 
 > what about the parametric element array if any parametric elements exist, these get reserved in the name space, and block nodes of those names.. also parametrics may be used but never as an acceptance signal for am imperative.   improve the brightness of the photo is not a mutation its an adjustment and does not qualify alone as a acceptance target for prompts
 
@@ -2143,7 +2143,7 @@ Contextual and Latent graphs with a separate shape-similarity layer.
 [Current work](../current-work.md) records implementation status.
 
 Start with [Developed understanding, receiving relationships, and work](understanding-and-work.md)
-for Rich's quoted design statements, glossary definitions, and photograph examples.
+for the owner's quoted design statements, glossary definitions, and photograph examples.
 
 These supplied source documents are preserved verbatim.
 
@@ -2519,7 +2519,7 @@ The alias forms do not replace or restructure the typology represented by the pr
 
 ## Intake clarification — 2026-09-08
 
-Rich's supplied clarification:
+The owner's supplied clarification:
 
 > you also need the alias array, for the leaf (last word in the schema)   the most basic universal aliases that would likely be searched last part of the name space in alphanumric only, the purpose is to eliminate double entry and ease searching the name space they block those aliases from being used by other elements
 
@@ -2657,7 +2657,7 @@ Its further role in the general organization remains to be defined.
 ```markdown
 # Functional typology and encounter
 
-Settled with Rich on 2026-09-07. The statements and encounter table below are
+Settled with the owner on 2026-09-07. The statements and encounter table below are
 preserved from that conversation. They establish the context for the rulebook's
 `code` example.
 
@@ -2682,7 +2682,7 @@ and [Aliases](inference_metaform_rules.md#aliases) provide the namespace example
 
 ## Leaf variants and transitive encounter
 
-Rich's clarification:
+The owner's clarification:
 
 > code.cpp is an encounter because its a leaf varient of its core function code
 
@@ -2696,7 +2696,7 @@ The core function remains `code`.
 
 ## Encounters of code.cpp
 
-Rich's supplied table uses namespaces and aliases relative to `code.cpp`.
+The owner's supplied table uses namespaces and aliases relative to `code.cpp`.
 Descriptions are reproduced as supplied.
 
 | Namespace | Aliases | Description |
@@ -2720,7 +2720,7 @@ inference; they are not a change log.
 
 ## Namespace characters and dispatcher correction
 
-Rich's subsequent corrections:
+The owner's subsequent corrections:
 
 > we shouldnt have underscores in names...
 
@@ -2737,7 +2737,7 @@ restriction, since the established `cxx23` encounter contains digits.
 
 ## Comprehensive functions and deterministic construction
 
-Rich explained why the naming rule preserves single-word Type levels:
+The owner explained why the naming rule preserves single-word Type levels:
 
 > I mean thats why I made the rule that way so that the name space could be comprehensive and hold all handlers under that node
 
@@ -2764,7 +2764,7 @@ source material and observable implementation. Exact rule wording was preserved,
 repository changes were isolated and published with identifiable contents, and
 software verification was distinguished from design interpretation.
 
-Rich values an active sounding board. Offer specific judgments and useful
+The owner values an active sounding board. Offer specific judgments and useful
 connections, help develop ideas, and explain concrete reasons for criticism.
 When a decision becomes clear, carry the agreed work through to a usable result.
 
@@ -2772,7 +2772,7 @@ When a decision becomes clear, carry the agreed work through to a usable result.
 
 **Keep implementation aligned with the visible design.** Some implementation
 choices advanced before their role and presentation had been jointly
-understood. Begin from the named things and relationships Rich expects to
+understood. Begin from the named things and relationships the owner expects to
 inspect, then choose the implementation that serves them. Surface consequential
 new choices during the design conversation.
 
@@ -2804,7 +2804,7 @@ Snapshot captured on 2026-09-07 at approximately 18:24 UTC.
 
 ## Goal to resume
 
-Complete the rulebook's agreed representation, then continue with Rich on the
+Complete the rulebook's agreed representation, then continue with the owner on the
 remaining Element-schema rules and their use in the task/workflow interface.
 Establish a maintainable development continuity process in this persistent CLI
 workspace while doing that work.
@@ -2850,7 +2850,7 @@ later agreed correction. It has not yet been applied to that PR.
 - The rulebook changes are documentation. They have not implemented a Rules
   editor, rule attachment UI, or first-exposure delivery mechanism.
 - The CLI remains sufficient to operate the system. The current MCP router
-  exposes broader commands; the role Rich presently wants to discuss is graph
+  exposes broader commands; the role the owner presently wants to discuss is graph
   browsing.
 - The viewer currently serves one selected project per process. Multiple
   project viewers and shared global knowledge exist. The desired longer-term
@@ -2893,7 +2893,7 @@ committed contents. The handoff itself is a documentation transfer.
 
 ## Next goal
 
-Finish the rulebook for completing the Element schema, and work with Rich on how
+Finish the rulebook for completing the Element schema, and work with the owner on how
 its rules will be inspected, edited, and attached to tasks or workflows in the
 next version. Begin with the established Name and Description rules.
 
@@ -2902,7 +2902,7 @@ rule sentences under “Expanded form.” The later agreed design makes those
 sentences the concise formulas. Expanded material supplies additional detail and
 worked examples alongside the formulas. The wording itself has been preserved.
 
-Continue discussing the remaining rules and interface organization with Rich.
+Continue discussing the remaining rules and interface organization.
 Rules are a concrete interface feature; their navigation placement is open.
 
 ## Starting context
@@ -2915,7 +2915,7 @@ remains available when the two perspectives are brought together.
 
 The immediate product emphasis is making that work understandable: inspect
 project knowledge, open a named workflow to its steps, and inspect the prompts
-and applicable rules. Rich is refining the semantics through collaboration.
+and applicable rules. The owner is refining the semantics through collaboration.
 
 This archive is intended to be placed at the root of the existing
 `RchGrav/metaform` checkout. It contains development continuity material. Its
@@ -2947,7 +2947,7 @@ below is dated; branches and pull requests may subsequently advance.
 ````markdown
 # Established rule wording
 
-These are Richard Graver's established initial Name and Description rules for
+These are the established initial Name and Description rules for
 completing the Element schema. The sentences below retain the supplied wording
 verbatim, including its original grammar. They are the concise formulas under
 the latest agreed arrangement.
@@ -2973,7 +2973,7 @@ seed definitions were not settled in this discussion.
 
 Expanded supporting material accompanies a rule on first exposure. The complete
 set of wrong, substandard, and correct worked examples remains to be selected
-from existing established material with Rich.
+from existing established material.
 
 ````
 
@@ -2982,7 +2982,7 @@ from existing established material with Rich.
 ```markdown
 # Development continuity process
 
-This is a proposed starting structure for the next context to refine with Rich
+This is a proposed starting structure for the next context to refine with the owner
 inside the persistent CLI workspace.
 
 ## Small maintained records
@@ -3023,7 +3023,7 @@ and useful to the work ahead.
 
 Lead the handoff with the next goal and a concrete starting item. Then point to
 the maintained decisions, exact semantic sources, current state, and open
-questions. Rich and the agent shape the intended context together before the
+questions. The owner and the agent shape the intended context together before the
 handoff is finalized.
 
 ```
@@ -3050,7 +3050,7 @@ single sentence. The expanded component is additional explanation and examples
 provided alongside it. First exposure presents both; later repetition in the
 same agent context can use the concise rule when needed.
 
-Rich's final clarification:
+The owner's final clarification:
 
 > the expanced version need not repeat the concise version the expanded version is extra detail provided alongside the concise version to lock in correct understanding on first exposure to the rule.
 
@@ -3067,7 +3067,7 @@ additional examples by reference. The supplied `code` trunk is preserved in
 ## D04 — Rules in the interface
 
 Rules are a concrete, inspectable and editable interface feature, attached to
-tasks or processes. Their placement in navigation is open. Rich suggested they
+tasks or processes. Their placement in navigation is open. The owner suggested they
 may sit inside an area containing related things such as tasks.
 
 ## D05 — Recognizable presentation
@@ -3079,13 +3079,13 @@ with source attribution visible. Supporting prompt and workflow records have
 their own identifiable role.
 
 These are serious engineering tools for understanding and refining the system.
-Interface organization should preserve Rich's ability to reason about what he
+Interface organization should preserve the owner's ability to reason about what he
 is viewing. The relevant earlier cleanup is documented in
 `docs/workbench-cleanup.md` in the checkout.
 
 ## D06 — Scope of the Metaform concept
 
-Rich described a Metaform as using a semantic function to express an invariant;
+The owner described a Metaform as using a semantic function to express an invariant;
 in the current base form, that invariant is Type. Encounter Function, Receiving
 Entity, and Operative Purpose are the principal dimensions discussed for this
 form. The broader concept allows other dimensions and forms. This is a
@@ -3124,11 +3124,11 @@ open matters, as recorded in `OPEN_QUESTIONS.md`.
 ## Rulebook
 
 - Develop the Alias and Dependency rule entries from existing source material
-  and Rich's explanations. Alias equations already exist in
+  and the owner's explanations. Alias equations already exist in
   `docs/semantics/inference_metaform_rules.md`; the typological process and OP
   dependency direction are described in
   `src/metaform/data/semantics/metaform-intake.source.md`.
-- Develop the “rule rule” with Rich. The agreed concise-plus-supplement
+- Develop the “rule rule”. The agreed concise-plus-supplement
   presentation is recorded in D02; a final rule sentence has not been settled.
 - Select the complete wrong/substandard/correct example sets from existing
   material and retain the reason each example illustrates its category.
@@ -3138,13 +3138,13 @@ open matters, as recorded in `OPEN_QUESTIONS.md`.
 
 ## Record notes and terminology
 
-Rich proposed a notes field. This is a schema proposal, not an implemented or
+The owner proposed a notes field. This is a schema proposal, not an implemented or
 settled field. His supplied note for the `code` record is:
 
 > We chose to use "programming language" over "computer code" because it better supported our desire to have all elements id's reverse into a natural description.
 
 Element IDs, Type IDs, and Objects were left undecided. The assistant suggested
-“namespace” for the particular sentence about reading lineage in reverse; Rich
+“namespace” for the particular sentence about reading lineage in reverse; the owner
 has not finalized that naming choice. “Record” was also an assistant suggestion
 for the stored representation.
 
@@ -3160,7 +3160,7 @@ for the stored representation.
 
 ## Server and MCP
 
-Discuss project selection, process ownership, and graph browsing with Rich.
+Discuss project selection, process ownership, and graph browsing.
 Serena was examined as a reference for running-server and deployment patterns.
 Its patterns are reference material, not an adopted architecture. Broader MCP
 workflow exposure remains open.
@@ -3174,11 +3174,11 @@ workflow exposure remains open.
 
 Current design, 2026-09-07. The discussed shape now has a working schema
 (`metaform:semantic-rule`) and [seed data](../../src/metaform/data/rulebook.json).
-Its descriptions and examples remain available for refinement with Rich.
+Its descriptions and examples remain available for refinement.
 
 ## Established meaning
 
-Rich clarified the concise component:
+The owner clarified the concise component:
 
 > consise is NOT the complete semantic rule, its the concisely accurate rule that is accurate and concise but should be reinforced with examples and explanations
 
@@ -3221,12 +3221,12 @@ The values here describe the fields. They are not seed-record contents.
 ```
 
 `priming` and `context` were proposed as clearer names for `expansion` and
-`explanation`. `rule_code` and `purpose` were proposed in response to Rich's
+`explanation`. `rule_code` and `purpose` were proposed in response to the owner's
 preference for a rule code and purpose over a complex applicability structure.
 
 ## Identifier direction
 
-Rich proposed letters followed by digits, potentially expressing a rule type
+The owner proposed letters followed by digits, potentially expressing a rule type
 and index. The interpretation offered was `^[a-z]+[0-9]+$`, requiring both parts.
 The schema uses that pattern. The meanings of prefixes and index allocation
 have not been established. The initial `r1` through `r4` references do not assign
@@ -3240,7 +3240,7 @@ sentences are available verbatim in their rulebook entries. The function/encount
 source statements and supplied examples are in
 [Functional typology and encounter](../semantics/functional_typology.md).
 Any newly composed concise sentence or example reasoning needs to remain
-distinguishable from Rich's established source wording during review.
+distinguishable from the owner's established source wording during review.
 
 The schema is registered alongside the existing schemas. Seeds are inserted
 only when their rule IDs are absent, preserving edits. The runtime's
@@ -3297,7 +3297,7 @@ not silently change a running frame. The default intake references `r1` through
 | Name | [Name rule](element/name.md) |
 | Description | [Description rule](element/description.md) |
 
-The concise formulas in these two rules are Richard Graver's supplied wording,
+The concise formulas in these two rules are the owner's supplied wording,
 preserved verbatim. Each expansion includes the supplied `code` trunk, with its
 Name now settled as **program code**. The
 [functional typology and encounter clarification](../semantics/functional_typology.md)
@@ -3337,16 +3337,16 @@ actual rule content. Provenance belongs here, outside the inference context.
 | --- | --- | --- |
 | `r1` | [Name, Concise form](element/name.md#concise-form) | Established wording, copied verbatim. |
 | `r2` | [Description, Concise form](element/description.md#concise-form) | Established wording, copied verbatim, including the original grammar “that both defines uses” and “but never name”. |
-| `r3` | [Functional typology, Leaf variants and transitive encounter](../semantics/functional_typology.md#leaf-variants-and-transitive-encounter) | Rich's complete transitive-linking statement, copied verbatim, including “effects”. |
+| `r3` | [Functional typology, Leaf variants and transitive encounter](../semantics/functional_typology.md#leaf-variants-and-transitive-encounter) | The owner's complete transitive-linking statement, copied verbatim, including “effects”. |
 | `r4` | [Inference Metaform Rules, Strict Typology](../semantics/inference_metaform_rules.md#strict-typology) | Maintained Type-qualification sentence, copied verbatim. |
 
-| `r5` | [Namespace characters](../semantics/functional_typology.md#namespace-characters-and-dispatcher-correction) | Rich’s concise alphanumeric statement, copied verbatim. |
+| `r5` | [Namespace characters](../semantics/functional_typology.md#namespace-characters-and-dispatcher-correction) | The owner's concise alphanumeric statement, copied verbatim. |
 
 ## Priming and examples
 
 Purposes and connecting explanations are assistant-authored expressions of the
 sources below. They do not replace the established concise wording. Examples
-and their reasoning remain available for refinement with Rich.
+and their reasoning remain available for refinement.
 
 - **`r1`:** The accepted `code` Name and Description are the supplied worked
   example in [element/name.md](element/name.md). Its program-code interpretation
@@ -3358,15 +3358,15 @@ and their reasoning remain available for refinement with Rich.
   [element/description.md](element/description.md). The rejected version appending
   “including C++” is an assistant-derived counterexample to the exact rule's
   exclusion of child names and definitions. It is not a historical rejected
-  Description. The context concerning backwards reading reflects Rich's
+  Description. The context concerning backwards reading reflects the owner's
   clarification in the current conversation that the check operates within the
   definition; fluency alone is insufficient. The seed intentionally does not
   invent an accepted full child Description to demonstrate ancestral naming.
-- **`r3`:** The first three paragraphs of context reproduce Rich's statements
+- **`r3`:** The first three paragraphs of context reproduce the owner's statements
   from [functional_typology.md](../semantics/functional_typology.md), including
   their spelling. The accepted `code.cpp` example follows that source.
   `code.cpp.cxx23`, the functional-branch explanation, and the rejected permanent
-  role and reversed-relation examples express Rich's subsequent clarification
+  role and reversed-relation examples express the owner's subsequent clarification
   in the current conversation: code is the trunk, cpp is the encounter when it
   is the leaf, and cxx23 is the encounter when it is the leaf attached to cpp.
   The example sentences and reasons are assistant-authored from that
@@ -3376,14 +3376,14 @@ and their reasoning remain available for refinement with Rich.
   [inference_metaform_rules.md](../semantics/inference_metaform_rules.md),
   specifically Programming Language, Interpret the Path, Not the Word, Encoding
   Names Are Not Banned, and HTML. Reasons preserve those distinctions, with
-  “program code” reflecting Rich's settled trunk Name. The older Programming
+  “program code” reflecting the owner's settled trunk Name. The older Programming
   Language explanation also says “`code` refers to types of languages”; that
   characterization is not imported into the seed because the later settled
   [code trunk statement](../semantics/functional_typology.md#the-code-trunk)
   establishes program code. Its rejection of `code.language.cpp` as a taxonomy
   space filler remains applicable and is preserved.
 
-- **`r3` and `r5`, dispatcher correction:** Rich supplied
+- **`r3` and `r5`, dispatcher correction:** the owner supplied
   `code.dispatcher.command` as the correction to the inferred
   `code.command_dispatcher`, then confirmed alphanumeric components. The
   function/encounter explanation and example reasons are assistant-authored
@@ -3394,7 +3394,7 @@ and their reasoning remain available for refinement with Rich.
   updated for this review.
 
 - **`r1`, comprehensive parent:** The handler and dispatcher examples apply
-  Rich's explanation that the namespace must hold all handlers under their
+  the owner's explanation that the namespace must hold all handlers under their
   function, and that the rules aim to enforce determinism. Their context and
   reasons are assistant-authored applications of the existing Name rule. The
   concise Name formula remains unchanged. Alphanumeric `commanddispatcher`

@@ -258,7 +258,7 @@ agent orchestrator receives from Metaform specification.
 
 Sources: `specifications/spec`, `specifications/REQUIREMENTS.md`, `specifications/REQUIREMENTS-corrections.md`, `specifications/SETTLED.md`, `specifications/code_quality_standards.md`, `specifications/metaprompting_element_segments_example.md`, `specifications/README.md`
 
-- **CLAUDE.md**, `document.rules.collaboration`, read as "collaboration rules document" (Encounter). States how an agent works on Metaform with Rich: no gates on prompted outputs unless they guard a named silent failure, intent encoded exactly as given, Linux, macOS and Windows for everything, turns that keep moving, and the MetaformFoundation block for expert agents building the platform. The collaboration rules govern how building agents work while they build from the specification. What is there: It says its instructions are for agents developing Metaform, never for agents in the runtime. Sources: `CLAUDE.md`.
+- **CLAUDE.md**, `document.rules.collaboration`, read as "collaboration rules document" (Encounter). States how an agent works on Metaform: no gates on prompted outputs unless they guard a named silent failure, intent encoded exactly as given, Linux, macOS and Windows for everything, turns that keep moving, and the MetaformFoundation block for expert agents building the platform. The collaboration rules govern how building agents work while they build from the specification. What is there: It says its instructions are for agents developing Metaform, never for agents in the runtime. Sources: `CLAUDE.md`.
 
 ## 3. What defines it
 

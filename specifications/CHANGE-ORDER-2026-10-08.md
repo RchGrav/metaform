@@ -2,7 +2,7 @@
 
 The decisions of 2026-10-08, in the order they can be built, grouped into four lanes that can run side by side, each with what it changes, why, and what it waits on. Nothing here replaces a record; each item becomes or amends one when it is built. The design notes behind it are in `artifacts/design-notes-2026-10-08.md`.
 
-Status of each item: **done** (committed on `main`), **decided** (agreed, not built), **open** (needs Rich's answer first).
+Status of each item: **done** (committed on `main`), **decided** (agreed, not built), **open** (needs the owner's answer first).
 
 ## 0. Done on 2026-10-08, for the record
 
@@ -23,7 +23,7 @@ Status of each item: **done** (committed on `main`), **decided** (agreed, not bu
 
 The served intake names these as bindings B1 to B6. Close the ones that lose what the agent records:
 - **Notes without a condition are kept** (B4), on the element or join itself, as a versioned field, so exclude notes and other notes survive. Today they are discarded with a notice that pushes agents to invent a condition.
-- **Missing is not a condition** (B5): ruled out by Rich, 2026-10-08; what is absent is unbuilt.
+- **Missing is not a condition** (B5): ruled out, 2026-10-08; what is absent is unbuilt.
 - **The join takes refs** (B3), since the intake records refs on a join where required.
 - **ifd accepts the schema's words** (B1): `send`, `receive`, `both` as well as the tool's `sends`, `receives`.
 - The run id (B2) needs no change: the intake carries it in the finish report.
@@ -34,7 +34,7 @@ Why: a test of the new intake measures what the tools keep, so the tools must ke
 
 One full intake of this project with `intake.axiom`, into a new base, compared with the 2.1 base `intake-20261008T030107Z`: element addresses not prefixed by the AUE, the core node connected, CQU roots, notes kept.
 
-### 1.3 The core node and collections on the system side (decided; waits on Rich's review of 1.2)
+### 1.3 The core node and collections on the system side (decided; waits on the owner's review of 1.2)
 
 - The core node is an element of the map with a name and no namespace address, holding the AUEs, collections and CQUs (schema `metaform.axiom`). The store identifies an element by its address today, MAP-015, so it needs an element that has a name and no address; the intake tools need a way to record it, since `intake element` requires an address. The page draws it at the center instead of starting from one DE, and the reads that look for the map's entry return what it holds.
 - `collection` joins the roots: MAP-014 and `roots.json`. A project can hold several CQU roots, one per collection.

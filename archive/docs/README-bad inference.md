@@ -93,7 +93,7 @@ agent runs establish only their tested behavior, not full product acceptance.
 
 ## Prepare understanding so later reasoning can start further ahead
 
-Metaform is Richard Graver's approach to **inference amortization**: invest in
+Metaform is an approach to **inference amortization**: invest in
 understanding a project, retain that understanding in a useful form, and supply
 it to later work. A short instruction can then address the project's actual
 functions, relationships, and constraints without requiring the agent to discover

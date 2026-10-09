@@ -4,7 +4,7 @@ The decisions of 2026-10-06 and 2026-10-07, in the order they are to be built, e
 what it depends on. Written so the work can be picked up by anyone from this file alone. Records referenced are in
 this folder; nothing here replaces a record, and each item below becomes or amends one when it is built.
 
-Status of each item: **done** (committed on `chassis`), **decided** (agreed, not built), **open** (needs Rich's
+Status of each item: **done** (committed on `chassis`), **decided** (agreed, not built), **open** (needs the owner's
 answer, named).
 
 ## 0. Done on 2026-10-06, for the record
@@ -94,7 +94,7 @@ This is what ends the shuddering; item 2 makes it possible and does not do it. D
 - A memory is one claim in plain words, attached to the element or purpose it is about, with the condition under
   which it applies as a sentence Jev can test. The memory prompt is rewritten to produce claims; the current one
   produces audit records ("Observed and verified ..., Evidence ..., Valid while ...") and that is why today's
-  memories read as compliance notes. Rich's judgment, 2026-10-06: the recorded memories are not worthwhile context.
+  memories read as compliance notes. The owner's judgment, 2026-10-06: the recorded memories are not worthwhile context.
 - Recall, conceptual not lexical, a concept being a purpose on the map: (1) Jev places the text on the map by one
   choice over the reversed addresses; (2) the graph expands to the purposes those elements serve and are served
   by, one hop each way, no model call; (3) one Jev call judges every memory attached there: directly relevant,
@@ -128,11 +128,11 @@ This is what ends the shuddering; item 2 makes it possible and does not do it. D
 - Capture the agent's stderr into the transcript.
 - Set the model and thinking level per ticket through the adapter's session model and effort options; today
   nothing sets them. This is where Jev's choice of model per task plugs in.
-- **Built, 2026-10-08**, with Rich's decisions of that day: the runner keeps the session when a turn ends with the
+- **Built, 2026-10-08**, with the owner's decisions of that day: the runner keeps the session when a turn ends with the
   ticket open, the ticket stays taken, autostart starts only untried tickets, and agents ask nothing, VIEW-042,
   MAP-050 and BASE-052 amended. The rest of this item, worktrees, checkpoints, adapters, stderr and model per
   ticket, is still decided and not built.
-- **Open (Rich):** a branch of an abandoned ticket, keep until removed, or remove after 30 days with the variant as
+- **Open:** a branch of an abandoned ticket, keep until removed, or remove after 30 days with the variant as
   the record. Recommended: 30 days.
 - Depends on: nothing; can start now. Item 2 does not block it.
 
@@ -184,7 +184,7 @@ after items 1 to 5, since it touches every file they touch. Not reviewed by ultr
 **Decided.** `main` passes its whole suite. A failing test is fixed or marked expected-to-fail with its ticket.
 12 tests fail today as the accepted normal; that ends with item 2's upgrade, which touches most of them.
 
-## 12. Housekeeping, needs Rich
+## 12. Housekeeping, needs the owner
 
 - Old worktrees: 11 fully in `chassis` (removable), `a3b492c` (2 commits, superseded by `c100c06`),
   `intake-base039-revert` (4 uncommitted edits, nowhere else), two old-line trees. Remove with approval.
@@ -194,9 +194,9 @@ after items 1 to 5, since it touches every file they touch. Not reviewed by ultr
   regression.
 - The 35 consensus messages of 2026-10-05: mark read or keep.
 - Nothing is pushed since 2026-10-04; a push of `main` to a private branch is overdue.
-- The third free ultrareview: hold for a finished feature branch, item 2 or 4, at Rich's call.
+- The third free ultrareview: hold for a finished feature branch, item 2 or 4, at the owner's call.
 
 ## Order
 
 1 and 2 together (one upgrade), 3 with them; then 5; then 4 and 6 together; then 7; then 10; 9 whenever a day
-has room; 8 when 1 to 5 are stable. 11 is a rule from item 2 onward. 12 as Rich answers.
+has room; 8 when 1 to 5 are stable. 11 is a rule from item 2 onward. 12 as the owner answers.

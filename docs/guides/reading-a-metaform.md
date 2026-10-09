@@ -6,7 +6,7 @@ An Inference Metaform is a representation of **what a workpiece is doing**. Its 
 
 This guide reads the earlier map of this repository, recorded on September 26, 2026 and kept as a dated snapshot, an [export](../examples/project-metaform.json) of an earlier version, at schema version 1. The current chassis imports schema version 19 only, so that file cannot be imported into it; the commands below are the reads that return records of this kind from a map that holds them, and on your own map they take its addresses. The recorded map has 19 global elements, 33 require joins, and 26 internal subtypes. Its 86 type-prefix records are the ancestry needed for the namespace, not 86 independently represented subsystems. The [implementation map](../inference-metaform/IMPLEMENTATION_MAP.md#graph-index) contains the complete element, join, and subtype index.
 
-The snapshot has the shape of its day, and the current shape is smaller. Rich restored his original shape on 2026-10-04. An element is its `namespace_address`, `name_length`, `name` and `role`. A join is its type, `purpose`, `ef` and `ifd`, held by its receiver, and it holds the elements that serve it. Compared with the snapshot:
+The snapshot has the shape of its day, and the current shape is smaller. The owner restored his original shape on 2026-10-04. An element is its `namespace_address`, `name_length`, `name` and `role`. A join is its type, `purpose`, `ef` and `ifd`, held by its receiver, and it holds the elements that serve it. Compared with the snapshot:
 
 | In the snapshot | Now |
 |---|---|

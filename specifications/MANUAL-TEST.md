@@ -281,7 +281,7 @@ Run 3, in the registered project `rtnew` with no intake: asked to quote what the
 
 ## Defects
 
-D1. `help modules` is refused. CLI-031's `help` row lists the noun `modules` next to `intro`, `switches` and `agents`, and points to CLI-008, whose indexes are `commands` and `switches`. Either the table means `commands`, a spec typo, or `help modules` should print the module list. Fix: decide which, then make the other agree. Question for Rich.
+D1. `help modules` is refused. CLI-031's `help` row lists the noun `modules` next to `intro`, `switches` and `agents`, and points to CLI-008, whose indexes are `commands` and `switches`. Either the table means `commands`, a spec typo, or `help modules` should print the module list. Fix: decide which, then make the other agree. Question for the owner.
 
 D2. `metaform help map` pads every verb row to the width of the `knowledge` usage line, about 350 characters, so the page is unreadable in a terminal. The `knowledge` usage also shows `op` and `layer` as optional. Fix: in the module page, cap the left column or print a long usage under its row; render `op=<op> layer=<layer>` as required in the `knowledge` usage.
 

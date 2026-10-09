@@ -81,7 +81,7 @@ Items marked blocking sit on the first-test build path.
 15. STORE-005 forbids a SCAN in any STORE-025 read. `layers()` lists every layer, and the default root selection of "all layers" in STORE-019 must read the whole `layers` table.
 16. BASE-009 awaits a coroutine in the running loop inside the MCP server. MCP-002 runs tool calls in a worker thread, where no loop is running.
 17. MAP-012's rule reads `code.loop.main` as "main loop code". The Canonical Intake reading example gives "main loop program code".
-18. REQUIREMENTS-corrections.md says nothing in it applies until Rich approves. TRACE.md reads REQUIREMENTS.md with the corrections applied.
+18. REQUIREMENTS-corrections.md says nothing in it applies until the owner approves. TRACE.md reads REQUIREMENTS.md with the corrections applied.
 19. 00-index.md says SETTLED.md is now carried by the records, while SETTLED.md's header says it holds design "the spec has not absorbed yet". TRACE marks REQ-001 to REQ-003 NOT COVERED, while the index's Authority section carries them.
 
 ## Resolution

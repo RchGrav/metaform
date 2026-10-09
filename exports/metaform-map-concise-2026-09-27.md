@@ -121,7 +121,7 @@ specification holds each requirement with its reason, its build and the tests th
 
 Why: Hand every builder agent one contract to build Metaform from, each requirement with its reason, its build detail and the tests that protect it, so no builder has to guess, choose or reinterpret.
 
-Not: It records Rich's design and decides none of it; an open question blocks only the records that depend on it.
+Not: It records the owner's design and decides none of it; an open question blocks only the records that depend on it.
 
 - collaboration guide: tells every agent developing Metaform how to work on it, and keeps the expert foundation out of intake
 - decision record: records each design decision with the record that carries it, later decisions outranking earlier ones

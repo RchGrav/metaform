@@ -17,7 +17,7 @@ People and agents working across projects use centrally maintained inference, th
 | R7 | Prompts, workflows, and graph operations retain the same operating model in both modes. |
 | R8 | User clarification during review: core operations must run from the exported form without Cypher; installed backend copies retain Cypher where useful for system development and analysis. |
 
-Rich clarified the capability relationship during this specification review:
+The owner clarified the capability relationship during this specification review:
 
 > cypher support is still supported ijn the back end since it has a copy of the data there.. the system has to be capable of running from its exported form which will not have that support available and if you design around it as a requirement you are actually breaking the system capabilities.. if the system operates without it properly, those capabilities can be kept whewre they are valuable in system development and analysis
 

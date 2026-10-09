@@ -1,6 +1,6 @@
 # Trace from source requirements to the spec
 
-This table maps every requirement in REQUIREMENTS.md, read with REQUIREMENTS-corrections.md applied, and every entry in SETTLED.md to the spec records that carry it. The corrections file says none of its entries apply until Rich approves them; this trace reads them as proposed, and a row whose disposition rests on an unapproved correction stands only once that correction is approved.
+This table maps every requirement in REQUIREMENTS.md, read with REQUIREMENTS-corrections.md applied, and every entry in SETTLED.md to the spec records that carry it. The corrections file says none of its entries apply until the owner approves them; this trace reads them as proposed, and a row whose disposition rests on an unapproved correction stands only once that correction is approved.
 Dispositions: covered; deferred, meaning nonces, assignment context or remote hosting; removed, with the reason from the corrections file; NOT COVERED, explained in the notes below the tables.
 
 ## REQUIREMENTS.md
@@ -167,9 +167,9 @@ Dispositions: covered; deferred, meaning nonces, assignment context or remote ho
 | S-05 | Template and demo modules ship disabled | BASE-017 | covered |
 | S-06 | Module data goes through the data access object as a layer | BASE-005, STORE-022, STORE-023 | covered |
 | S-07 | Repo wheel carries every module; local build carries enabled ones | BASE-022 | covered |
-| S-08 | A wheel runs directly from its own subfolder | BASE-023, BASE-025, STORE-030 | corrected by Rich 2026-10-03: the normal data folder, BASE-025 |
+| S-08 | A wheel runs directly from its own subfolder | BASE-023, BASE-025, STORE-030 | corrected 2026-10-03: the normal data folder, BASE-025 |
 | S-09 | A directly run wheel works in hosted code execution | BASE-024 | covered |
-| S-10 | Installing a wheel merges its data | BASE-025 | corrected by Rich 2026-10-03: the data is already in the main folder, BASE-025 |
+| S-10 | Installing a wheel merges its data | BASE-025 | corrected 2026-10-03: the data is already in the main folder, BASE-025 |
 | S-11 | Metaform offers to maintain a user's fork, CI and wheel | BASE-027 | covered |
 | S-12 | pyproject.toml, uv, and uvx launch | BASE-021, MCP-010 | covered |
 | S-13 | Distribution name undecided | BASE-021, MCP-010 | covered; open |

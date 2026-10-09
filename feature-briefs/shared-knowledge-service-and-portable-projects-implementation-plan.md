@@ -12,7 +12,7 @@
 
 ## Global constraints and status
 
-- The [feature brief](shared-knowledge-service-and-portable-projects.md) establishes R1–R7; Rich's review clarification establishes R8, preserving installed Cypher while requiring portable core operation without it.
+- The [feature brief](shared-knowledge-service-and-portable-projects.md) establishes R1–R7; the owner's review clarification establishes R8, preserving installed Cypher while requiring portable core operation without it.
 - The specification's §2 quotes the selected authoritative semantic equations. Preserve those source relationships and source contents; implementation implications do not amend them.
 - The specification is the accepted enhancement document alongside canonical [docs/SPEC.md](../docs/SPEC.md). The recommended P1–P9 design was reviewed and accepted for implementation; alternatives remain documented for context.
 - Python support remains `>=3.11`; the existing CI matrix is Python `3.11` and `3.13`.
@@ -207,7 +207,7 @@ assert len({j["id"] for j in result["global"]["joins"]}) == len(
 - Implement SQLite owner/reference indexes and single-read-transaction snapshot traversal. JSON creates one in-memory index over its captured two files under local locks and runs the same closure. Do not use Cypher, native graph procedures, namespace ancestry, or arbitrary prose matching.
 - Test a 1,100-join cycle/chain, an n-ary missing member, unrelated global additions, provenance-only edits, and a writer committing halfway through snapshot traversal. Assert termination, unchanged unrelated extent, retained provenance and one coherent revision. Compare outputs between service SQLite and portable JSON.
 - Run `uv run --frozen pytest -q tests/test_knowledge_export.py tests/test_graph_similarity.py tests/test_graph_perspectives.py`; expect exact owner/source/dependency equality after canonical ordering.
-- Update `docs/architecture.md` traversal/snapshot explanation at completion. Update SPEC's accepted capability text only after Rich accepts a product-contract change; do not move this proposal into canonical semantics merely because implementation passes tests.
+- Update `docs/architecture.md` traversal/snapshot explanation at completion. Update SPEC's accepted capability text only after the owner accepts a product-contract change; do not move this proposal into canonical semantics merely because implementation passes tests.
 
 ## Task 7 — Executable dependencies and a common resolution boundary
 
@@ -248,7 +248,7 @@ assert len({j["id"] for j in result["global"]["joins"]}) == len(
 
 ## Task 9 — Preserve installed Cypher over an explicit data copy
 
-**Prerequisite:** Tasks 2–3; independent of portable implementation after those interfaces stabilize. **Result:** Rich's R8 correction is realized: useful native analysis remains available, while the operating model works without it (A14).
+**Prerequisite:** Tasks 2–3; independent of portable implementation after those interfaces stabilize. **Result:** the owner's R8 correction is realized: useful native analysis remains available, while the operating model works without it (A14).
 
 **Files:** `src/metaform/service.py`, `knowledge.py`, `modules/graph.py`, `data/modules/graph.json`, existing `backends.py:LadybugGraph`; create `tests/test_service_analysis.py`.
 
@@ -293,7 +293,7 @@ Use a fresh task-specific environment path if that path already contains unrelat
 - `/home/rich/metaform/feature-briefs/shared-knowledge-service-and-portable-projects-specification.md`
 - `/home/rich/metaform/feature-briefs/shared-knowledge-service-and-portable-projects-implementation-plan.md`
 
-**Feature goal:** Shared global inference and project-owned knowledge, with a project-focused portable copy that continues independently. **Semantic contract:** canonical `docs/SPEC.md` and the exact selected equations in specification §2; ownership and storage cannot reconcile or collapse Contextual/Latent source contents. Rich's Cypher clarification is authoritative: preserve installed analysis capability and core portable independence together.
+**Feature goal:** Shared global inference and project-owned knowledge, with a project-focused portable copy that continues independently. **Semantic contract:** canonical `docs/SPEC.md` and the exact selected equations in specification §2; ownership and storage cannot reconcile or collapse Contextual/Latent source contents. The owner's Cypher clarification is authoritative: preserve installed analysis capability and core portable independence together.
 
 **Planning baseline:** `86b893ecf6813ffea3d5eaa5af60a3d34d8b81c3`, branch `main`; live origin/main matched on 2026-09-08. Relevant local differences are the modified `AGENTS.md` and untracked user/runtime/generated artifacts listed in specification §3. This describes the original planning inspection; implementation evidence follows below. Instruction files remain untouched by this work.
 

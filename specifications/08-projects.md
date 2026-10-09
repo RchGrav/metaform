@@ -157,7 +157,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
   - Two origins captured from identical content on two machines have the same `origin_sha256`.
   - `mform_sha_id` is 64 hex characters, and `mform_id` is 16 hex characters with the same last four characters.
 - Relates to: PROJ-012, PROJ-014, PROJ-021, PROJ-023.
-- Status: confirmed for the two forms and the suffix. The manifest format and the first suffix value are recommended, open question 7. Rich, 2026-09-30: the suffix counts within a project; two projects are two paths, so their origins cannot conflict.
+- Status: confirmed for the two forms and the suffix. The manifest format and the first suffix value are recommended, open question 7. 2026-09-30: the suffix counts within a project; two projects are two paths, so their origins cannot conflict.
 
 ### PROJ-014 An origin is never overwritten, and a new baseline starts a new origin unit
 - Requirement: A retained origin never changes. Moving the baseline to a new commit or new content, called re-anchoring, creates a new origin unit, and the earlier unit and its variants stay exactly as they were.
@@ -363,7 +363,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
   - With a report file that cannot be removed, made so on Linux and macOS by taking write permission off its folder and on Windows by holding it open: the command exits 0, the metaform rows are gone, the file is still on disk, and the output names that file alone, with its reason, and the Next line; over MCP the result names it in `not_removed` with one notice. Running the clear again once the file can be removed removes it.
   - On the web GUI, VIEW-019's acceptance.
 - Relates to: PROJ-001, PROJ-003, PROJ-024, STORE-041, BASE-013, BASE-014, CLI-001, CLI-018, CLI-031, MCP-006, VIEW-011, VIEW-018, VIEW-019.
-- Status: confirmed, 2026-09-13, for clearing a project's Metaform data, from the command line and from the page, so the intake starts again from nothing, keeping the project's registration, its folder and its files. Recommended, pending Rich: that history and folder settings stay and that report files go with the metaforms; that what could not be removed is named, and that counts are written as words, 2026-09-27; the words for one to nine, the wording of the Next line and exit 0.
+- Status: confirmed, 2026-09-13, for clearing a project's Metaform data, from the command line and from the page, so the intake starts again from nothing, keeping the project's registration, its folder and its files. Recommended, pending the owner: that history and folder settings stay and that report files go with the metaforms; that what could not be removed is named, and that counts are written as words, 2026-09-27; the words for one to nine, the wording of the Next line and exit 0.
 
 
 ### PROJ-030 A clear backs the project up first, and a backup is brought back by one command
@@ -375,7 +375,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - Build: `home.backup_project`, `home.backups` and `home.restore_project`; `home.clear_project` calls the first. A backup is the folder `<home>/backups/clear/<project>/<name>/` holding `metaforms/`, `reports/` and `rows.json`, the project's rows of the metaforms table and the id of the active one. A store is copied through SQLite's own backup, so a store another program holds open is copied whole. The name is the time in UTC as `YYYYMMDDTHHMMSSZ`, with `-2` and so on added when two are made in one second. The clear's result carries the backup's name, over MCP and to the web GUI as well, VIEW-019.
 - Acceptance: After a clear the backup folder holds the stores and the report files the project had. `restore project` brings back the metaforms by name with the same one active, and a read of the map returns what it returned before the clear. Restoring over a project that holds a metaform backs that one up first. A clear of a project with nothing to remove makes no backup. With the backups folder not writable, the clear stops with the reason and the project still has its metaforms.
 - Relates to: PROJ-025, STORE-041, MAP-045, VIEW-019, BASE-044.
-- Status: asked for by Rich 2026-09-29: the clear backs it up and allows restoration easily, telling the user. The names, the place and restoring over a project that holds data are recommended.
+- Status: asked for 2026-09-29: the clear backs it up and allows restoration easily, telling the user. The names, the place and restoring over a project that holds data are recommended.
 
 ### PROJ-031 An empty project is taken off the list by one command, and nothing of it is deleted
 
@@ -386,7 +386,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - Build: `home.not_empty`, `home.removal_caution` and `home.remove_project`, public names of the base, BASE-004. `remove_project` refuses a project that is not empty with what `not_empty` says, so no caller can skip the check, and otherwise deletes the project's rows of the projects, metaforms and active_metaforms tables and the folder settings whose `project` is it, and nothing on disk. The web GUI calls the same through `/api/remove-preview` and `/api/remove-project`, the second only with `confirm` true. It is not served as an MCP tool.
 - Acceptance: A project with a metaform or a report file is not removed and nothing changes. An empty project, after the remove, is not listed, a folder that selected it selects no project, its folder in the home and its backups are still there, its own folder holds the files it held, and after registering the same id again its backups are listed. Without `--confirm` nothing changes. An unregistered id stops with `Next: metaform list projects`.
 - Relates to: PROJ-025, PROJ-030, VIEW-019.
-- Status: asked for by Rich 2026-09-30: clearing never removes the names, and the list grows; only empty projects can be removed, because a clear backs the project up. The command's name, its wording, deleting nothing and not serving it as a tool are recommended.
+- Status: asked for 2026-09-30: clearing never removes the names, and the list grows; only empty projects can be removed, because a clear backs the project up. The command's name, its wording, deleting nothing and not serving it as a tool are recommended.
 
 ### PROJ-026 A project's folder in the home holds everything of the project
 
@@ -417,7 +417,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - Why no list: a list of projects in one database is a file every project depends on, so one fault reaches all of them, and a project copied without it is not whole. Named by its path, a project is found by looking where its name says, and the folder is all there is.
 - Acceptance: Open with the build. It will hold that a project's folder copied to an empty home reads back whole.
 - Relates to: STORE-001, STORE-003, STORE-027, STORE-041, STORE-044, PROJ-010, PROJ-020, PROJ-021.
-- Status: confirmed as design, 2026-09-28, the layout included. It follows the pattern of Tempo. Rich, 2026-09-30: no database holds a list of projects, each project is its own folder, and the build follows this record over STORE-001 to STORE-003, STORE-031 and STORE-041 where they differ. The dash, the three-digit number, `source.txt`, `project.sqlite3`, the store file names, and writing `origin/` and `.metaform/` at registration are recommended.
+- Status: confirmed as design, 2026-09-28, the layout included. It follows the pattern of Tempo. 2026-09-30: no database holds a list of projects, each project is its own folder, and the build follows this record over STORE-001 to STORE-003, STORE-031 and STORE-041 where they differ. The dash, the three-digit number, `source.txt`, `project.sqlite3`, the store file names, and writing `origin/` and `.metaform/` at registration are recommended.
 
 ### PROJ-027 A project is exported as a plain zip whose provenance and data are sealed inside it
 

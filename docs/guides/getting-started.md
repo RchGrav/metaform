@@ -119,7 +119,7 @@ metaform intake show
 metaform intake finish report="What the agent found broken or unfinished."
 ```
 
-The map has two kinds of record, in the shape Rich restored on 2026-10-04.
+The map has two kinds of record, in the shape the owner restored on 2026-10-04.
 
 - An element is its `namespace_address`, `name_length`, `name` and `role`. Its short name is its address read backward through `name_length`, so `code.timer.kitchen` with `name_length=2` is the kitchen timer. `name` is the project's own name for it: this project calls its kitchen timer the dish clock.
 - A join is its type (`purpose`), `purpose`, `ef` and `ifd`. The receiver holds the join and the join holds the elements that serve the purpose. `ef` is the Encounter Function, a fragment in the active voice. `ifd` is the information flow direction: `sends`, `receives` or `both`.

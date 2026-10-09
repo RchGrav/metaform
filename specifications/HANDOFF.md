@@ -12,13 +12,13 @@ This is the starting point for the Metaform session that continues the build in 
   - Step 10 is committed (`4b29c5d`): intake and reporting first. That covers never-blocked submissions, feedback, reports and the saved shape, the missing, broken and cruft flags, `--debug` and `--report`, and `map roots`.
   - Step 11 is committed (`1a10261`): most of the high findings.
   - A third step was started and is **uncommitted** in the working tree. It touches `src/metaform/data/corrections.py`, `records.py`, `schema.py` and several tests. Review it, then finish it or discard it. Don't commit it unreviewed.
-- **Rich's `CLAUDE.md` edit** is also uncommitted: a new instruction on how turns end. Keep it and commit it.
+- **The owner's `CLAUDE.md` edit** is also uncommitted: a new instruction on how turns end. Keep it and commit it.
 
 ## The Canonical Intake
 
-- `rich/Canonical_Intake.xml` is the schema for the map's shape. Rich changed VRE to VE throughout.
+- `rich/Canonical_Intake.xml` is the schema for the map's shape. The owner changed VRE to VE throughout.
 - Four typos are fixed: "of of", "traverse", "variants", and "Supportive Element".
-- Four questions are open. Ask Rich, and don't decide them:
+- Four questions are open. Ask the owner, and don't decide them:
   1. Step 1 says "DET elements." Should that be NE?
   2. Should the file state again that a VE outside the AUE is an element with role VE? The schema allows role VE, and an instruction line contradicts it.
   3. "Subtype" was replaced by "Vested Entity" in step 11, in the response instruction ("nested join Vested Entitys") and in the platformer example. Should those go back to "subtype"?
@@ -34,7 +34,7 @@ This is the starting point for the Metaform session that continues the build in 
    - the manual-test defects;
    - the quality tooling, which is strict pyright, ruff, and CI on Linux, macOS and Windows, including in the template.
 2. Run the critic review against `code_quality_standards.md` again. Run the manual test of every feature again, including a real Claude run connected over MCP. Repeat until both are clean. Neither is ever skipped.
-3. Build the viewer, section 9. The prototype Rich approved in direction is at https://claude.ai/artifact/99q1v9vinYyC8FzPzTXPnv. Its source is `specifications/viewer-prototype.html`.
+3. Build the viewer, section 9. The prototype the owner approved in direction is at https://claude.ai/artifact/99q1v9vinYyC8FzPzTXPnv. Its source is `specifications/viewer-prototype.html`.
    - **3D:** a synaptic map, joins shown uncollapsed as receiver, purpose and encounter, layers as colors, short names on the nodes.
    - **2D in the left window:** the whole map, with short names on the nodes and no text on the edges. The camera moves from node to node, which is how the selected node is shown. The long text goes in the panel below.
    - **In sync:** 2D and 3D are both ways to navigate and stay in sync. Arrow keys follow joins, and F fits the whole map.
@@ -43,13 +43,13 @@ This is the starting point for the Metaform session that continues the build in 
 
 ## The test artifact is Metaform itself
 
-Run intake on this repository and use the result as the running test. Rich follows the work in the viewer.
+Run intake on this repository and use the result as the running test. The owner follows the work in the viewer.
 
-An intake of this repository never runs inside it, and never as a subagent of the build session. A subagent inherits the build session's context: CLAUDE.md with the MetaformFoundation, which must never reach an intake, and the session's memory. Inside the repository it also reads the build's own records, the spec, the handoff, the build log, the tests and the git history, and the earlier map exports and generated map docs. On 2026-09-27 an Opus intake run that way copied an earlier intake's purpose line from the docs, reused addresses from an export, carried the build session's choice of Defining Element, and read about 290,000 tokens before it recorded its first object. Run it instead on a clean copy made with `git archive` into a folder outside /home/rich, with CLAUDE*.md and AGENTS.md removed and the exported maps, intake results and generated map docs left out, in a fresh headless process, `claude -p --model <model> --setting-sources ""`, allowed Read, Grep and Glob and the intake write path, the Metaform intake MCP tools or `Bash(metaform intake:*)`, recording into the metaform project though the copy lives elsewhere. Whether the specifications folder, apart from the Canonical Intake, belongs in the copy is Rich's call, asked on 2026-09-27. As the build proceeds, the map of Metaform, its knowledge layers, the reports and flags, and the correction stack should all show there. Run with `--debug` on during development, so process feedback and trouble reports are written. Nothing is written into the repository. All data lives under the Metaform home.
+An intake of this repository never runs inside it, and never as a subagent of the build session. A subagent inherits the build session's context: CLAUDE.md with the MetaformFoundation, which must never reach an intake, and the session's memory. Inside the repository it also reads the build's own records, the spec, the handoff, the build log, the tests and the git history, and the earlier map exports and generated map docs. On 2026-09-27 an Opus intake run that way copied an earlier intake's purpose line from the docs, reused addresses from an export, carried the build session's choice of Defining Element, and read about 290,000 tokens before it recorded its first object. Run it instead on a clean copy made with `git archive` into a folder outside /home/rich, with CLAUDE*.md and AGENTS.md removed and the exported maps, intake results and generated map docs left out, in a fresh headless process, `claude -p --model <model> --setting-sources ""`, allowed Read, Grep and Glob and the intake write path, the Metaform intake MCP tools or `Bash(metaform intake:*)`, recording into the metaform project though the copy lives elsewhere. Whether the specifications folder, apart from the Canonical Intake, belongs in the copy is the owner's call, asked on 2026-09-27. As the build proceeds, the map of Metaform, its knowledge layers, the reports and flags, and the correction stack should all show there. Run with `--debug` on during development, so process feedback and trouble reports are written. Nothing is written into the repository. All data lives under the Metaform home.
 
-## How Rich works
+## How the owner works
 
-- Rich decides design and vetoes.
+- The owner decides design and vetoes.
 - Every question to him carries your recommendation and the reason, and any plan you already have.
 - His words carry intent. Names and switches are designed from that intent and confirmed with him, never lifted from his phrasing.
 - Later decisions outrank earlier ones.

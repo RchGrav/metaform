@@ -6,68 +6,68 @@ Source folder: /home/rich/.claude/projects/-home-rich-metaform/memory. One secti
 
 - [No invented flaws](no-invented-flaws.md) — assess by benefit and real cost; never manufacture objections or dress fixable details as design costs
 - [Metaform intake specialist prompt](metaform-intake-specialist-prompt.md) — the 2026-09-09 intake rethink agent prompt and the intent behind it
-- [Paraphrase rule](paraphrase-rule.md) — write my own clear interpretation of Rich's explanations, never his shorthand or typos; his prompt and Foundation text keeps his wording, corrected
+- [Paraphrase rule](paraphrase-rule.md) — write my own clear interpretation of the owner's explanations, never his shorthand or typos; his prompt and Foundation text keeps his wording, corrected
 - [Investigate then propose](investigate-then-propose.md) — findings and one grounded recommendation; no option menus, no unreasoned removals, never degrade what works; keep fan-out small
-- [Workbench rebuild](workbench-rebuild.md) — front end rebuilt from docs/workbench-brief.md (explorer at /, earlier page at /legacy, Jobs tab drives intake); all five units pushed 2026-09-11; awaiting Rich's real intake run and palette pick
-- [Nonce and menu design](nonce-and-menu-design.md) — Rich's design: since 2026-09-21 no begin and no folder binding, every agent command is `metaform <nonce> ...`, nonce keys the visible CLI menu, main menu only in the project root, chassis-wide help, first-run provisioning for unfamiliar harnesses
+- [Workbench rebuild](workbench-rebuild.md) — front end rebuilt from docs/workbench-brief.md (explorer at /, earlier page at /legacy, Jobs tab drives intake); all five units pushed 2026-09-11; awaiting the owner's real intake run and palette pick
+- [Nonce and menu design](nonce-and-menu-design.md) — the owner's design: since 2026-09-21 no begin and no folder binding, every agent command is `metaform <nonce> ...`, nonce keys the visible CLI menu, main menu only in the project root, chassis-wide help, first-run provisioning for unfamiliar harnesses
 - [Dependency rule](dependency-rule.md) — third-party is fine when standard, non-proprietary or used in the AI space, with a safe license; use what Flask already brings (Jinja); confirm a mid-conversation constraint is a decision before removing anything
 - [Coarse contract and workflow format](coarse-contract-and-workflow-format.md) — 2026-09-12 calls: seven-section prompt shape, contract v2 (elements by namespace + joins with combined), coarse.py expansion, no legacy fallbacks; XML workflow format and jsonschema bundle still to build
 - [No gating on inference](no-gating-on-inference.md) — absolute: contracts describe and never reject, runtime makes the answer fit and records mismatches for observation, nothing is handed back to the agent; a gate needs a named silent failure
-- [Rich stakes](rich-stakes.md) — who Rich is and what Metaform means to him; exactness, no gates, no cruft, honest judgment
-- [No Q&A menus](no-qa-menus.md) — never use AskUserQuestion with Rich; ask in prose, one question, keep moving
+- [the owner stakes](rich-stakes.md) — who the owner is and what Metaform means to him; exactness, no gates, no cruft, honest judgment
+- [No Q&A menus](no-qa-menus.md) — never use AskUserQuestion; ask in prose, one question, keep moving
 - [Data folder design](data-folder-design.md) — specs/data_folder.md is the history, variants, reconstruction, import and service-port design (2026-09-13, not decided); read it before touching history, portable, workfolders or the service
 - [Intake live per object](intake-live-per-object.md) — built 2026-09-26: intake recorded one object per call as reasoned, proofed in step 12, web GUI live by push; never a whole-document submit again
-- [ChatGPT cleanup context](chatgpt-cleanup-context.md) — the five handoff steps undo ChatGPT-built mistakes; a state-of-things remark from Rich is context, not a new task list
+- [ChatGPT cleanup context](chatgpt-cleanup-context.md) — the five handoff steps undo ChatGPT-built mistakes; a state-of-things remark from the owner is context, not a new task list
 - [Don't halt on inherited test failures](dont-halt-on-inherited-test-failures.md) — a failing inherited test is questioned in passing, never a reason to stop; commit units as you go
-- [Session shell and fixed ports](session-shell-cannot-bind-fixed-ports.md) — since 2026-09-27 `metaform web stop` and `metaform web` from the Bash tool restart the GUI on 7433; try that before asking Rich
-- [Project clear is a standing requirement](project-clear-is-a-standing-requirement.md) — Rich asks for clear-and-reintake every time; Clear project and project clear exist since 2026-09-13, never answer 'no way to clear'
+- [Session shell and fixed ports](session-shell-cannot-bind-fixed-ports.md) — since 2026-09-27 `metaform web stop` and `metaform web` from the Bash tool restart the GUI on 7433; try that before asking the owner
+- [Project clear is a standing requirement](project-clear-is-a-standing-requirement.md) — the owner asks for clear-and-reintake every time; Clear project and project clear exist since 2026-09-13, never answer 'no way to clear'
 - [Plan order is binding](plan-order-is-binding.md) — docs/plan.md fixes the unit order; one unit at a time, tests failing first from the spec, never rewrite tests to fit code; a session that merged unit 10 into unit 4 was killed 2026-09-13
 - [Module definition](module-definition.md) — the chassis is fixed, everything that plugs in is a module, authored by us or anyone, as small as one command; all 25 built-in groups are modules; not a workflow (2026-09-14)
-- [Read the spec, don't transcribe](read-the-spec-dont-transcribe.md) — the spec already defines the system; never write Rich's chat explanations into the spec or memory as definitions; read the section first
-- [Answer design questions as design](answer-design-questions-as-design.md) — when Rich asks if something is possible he is designing; never answer with what the code implements
+- [Read the spec, don't transcribe](read-the-spec-dont-transcribe.md) — the spec already defines the system; never write the owner's chat explanations into the spec or memory as definitions; read the section first
+- [Answer design questions as design](answer-design-questions-as-design.md) — when the owner asks if something is possible he is designing; never answer with what the code implements
 - [One vocabulary](one-vocabulary.md) — one set of terms, never "in your terms", renamed fields in code are defects; "semantic compiler" was abandoned only after my pushback, the name is his call
-- [CalVer during development](calver-during-development.md) — Rich's decree, CalVer not SemVer while developing; lost from the repo, pyproject says 0.2.0, REQ-180 to 183 use SemVer terms; ask the format first
+- [CalVer during development](calver-during-development.md) — the owner's decree, CalVer not SemVer while developing; lost from the repo, pyproject says 0.2.0, REQ-180 to 183 use SemVer terms; ask the format first
 - [Module locations](module-locations.md) — four places, Wheel > Global Immutable > Global mutable > Project Local; same-name local module cannot enable; wheel data isolated, install front door and backstage (2026-09-19)
 - [Read namespace by reversal](read-namespace-by-reversal.md) — reverse the segments and read the last name_length as a name before judging any address; `document.spec.metaform` is "metaform spec", a type
-- [One metaform, two blind spot analyses](native-and-blind-spot-layer.md) — Rich 2026-09-26: one Inference Metaform; blind spot analysis is metaform-only or metaform plus code; never Native or Latent; intake by a stakeless fresh agent
+- [One metaform, two blind spot analyses](native-and-blind-spot-layer.md) — 2026-09-26: one Inference Metaform; blind spot analysis is metaform-only or metaform plus code; never Native or Latent; intake by a stakeless fresh agent
 - [Map functionality, not code](map-functionality-not-code.md) — his one sentence, a map of the functionality and not of the code; the exclusion list (tests, CI, earlier runtime) was my invention, never attribute it to him (2026-09-20)
 - [Subagent models and cost](no-subagents-without-asking.md) — since 2026-09-27 evening usage is tight: builders and intakes on Opus, one at a time, small work done in the session; name the model on every agent
 - [Intake result grading criteria](intake-result-grading-criteria.md) — graded by a run on this project: functionality based, smaller is better, thorough, speaks to the project and never to element types; my parallel intake is specifications/Fable_Intake.xml (2026-09-20)
 - [Nodes are elements](nodes-are-elements.md) — every result node is tagged element; receiving entity is a perspective held in joins, never a node label; structure is strict, no added node fields (2026-09-20)
 - [Run commands are timed, do them](run-commands-are-timed-do-them.md) — "run X on repo" means start now, no mechanism questions, no broad reading first; a timed test was ruined 2026-09-20
 - [Do not match his design to repo code](dont-match-his-design-to-repo-code.md) — his explanation is the whole design; never bridge it to transform, similarity or other repo code that may be GPT additions (2026-09-20)
-- [Metaform DE is the chassis](metaform-de-is-the-chassis.md) — Rich 2026-09-21: the DE is nearly the artifact, and for this repo it is the chassis; sample d had it right, I argued it wrong twice
-- [Assignments stay in the chassis](assignments-not-chassis.md) — Rich 2026-09-21: came in from the old design without a decision but can stay; it is really module activation
+- [Metaform DE is the chassis](metaform-de-is-the-chassis.md) — 2026-09-21: the DE is nearly the artifact, and for this repo it is the chassis; sample d had it right, I argued it wrong twice
+- [Assignments stay in the chassis](assignments-not-chassis.md) — 2026-09-21: came in from the old design without a decision but can stay; it is really module activation
 - [Agent identity findings](agent-identity-findings.md) — tested 2026-09-21: Claude Code session ID is in every shell, subagents share it and the PID; only the nonce separates them
 - [Repo docs are not his decisions](repo-docs-are-not-his-decisions.md) — plans, handoffs, REQUIREMENTS, SPEC are mostly agent-written; only his own words count as his decisions
 - [CLI cleanup findings](cli-cleanup-findings.md) — 2026-09-21: main menu must be empty; 25 hardcoded chassis commands, flat module menu, folder files, JSON-only output, global switches, 14.9k lines of dead runtime
-- [CLI exactly like mvm](cli-exactly-like-mvm.md) — Rich 2026-09-21: copy mvm's menu, help pages, set/unset/config exactly; every person-read string unslopped
+- [CLI exactly like mvm](cli-exactly-like-mvm.md) — 2026-09-21: copy mvm's menu, help pages, set/unset/config exactly; every person-read string unslopped
 - [Web editor request](web-editor-request.md) — his words: split screen, graph left half and collapsible, full screen, word-processor prompt editor with insertable objects for imported workflows
 - [Cleanup progress 2026-09-21](cleanup-progress-2026-09-21.md) — commits 6d991b7, 09d9de0, 8e873f7, 9620fef; open questions and remaining steps
 - [Intake sample runs are procedure tests](intake-sample-runs-are-procedure-tests.md) — "execute the intake on repo" means write the XML file and reply with the path only; no questions, no commentary (2026-09-21)
 - [Chassis rebuild baseline 2026-09-23](chassis-rebuild-baseline-2026-09-23.md) — the 09-23 freeze is superseded by HANDOFF.md; metaform runs on this repo as the test artifact under ~/.metaform
 - [Obvious fixes need no ask](obvious-fixes-need-no-ask.md) — an inconsistency or accidental regression with one clear fix is fixed and reported, not asked about (2026-09-25)
-- [One user-global web GUI](one-user-global-web-gui.md) — Rich 2026-09-25: one unified web GUI per user, one fixed port, every project; modules add views; variants and MCP stay outside
+- [One user-global web GUI](one-user-global-web-gui.md) — 2026-09-25: one unified web GUI per user, one fixed port, every project; modules add views; variants and MCP stay outside
 - [CI spending limit](ci-spending-limit.md) — 2026-09-26 Actions stopped starting jobs, spending limit or payment; six jobs per push; push less often, ask before changing the matrix
 - [Prototype is the visual baseline](prototype-is-the-visual-baseline.md) — the approved viewer prototype is the floor for the GUI look and join shape; unit 9 cut it for a 100k target, restored 2026-09-26
-- [TRAO-DAG description](trao-dag-description.md) — Rich's own description of the system, 2026-09-26, the reference for deviations; Func/Enc state, annealing, prompt expansion, blind-spot delta
-- [Descriptions follow operation](descriptions-follow-operation.md) — Rich 2026-09-26: describe Metaform with technical accuracy that follows its operation; my pushback and the flat spec wording damage the project
-- [Intake ships with the release](intake-is-ip.md) — Rich 2026-09-26: "it has to be released with that"; never flag the intake as IP or leave it out; attribution is what he protects
-- [MGM is employer code](mgm-is-employer-code.md) — MGM belongs to Rich's employer, 2026-09-26; never use it in demos, tests or anything public; only viewer-prototype.html holds its map
-- [Tree direction words](tree-direction-words.md) — say toward the leaves or toward the trunk, never above, below, up, down or top for the namespace, Rich 2026-09-26
-- [Work states on the map](work-states-on-the-map.md) — Rich's 09-26/27 design: node states, questions, voice rule, tasks and a work queue, for-each layers, item flags, past work, roots; full text in CAPTURE.md; not built
-- [Docs presentation rules](docs-presentation-rules.md) — no ASCII graphs in README or docs; the structure shown strongly with Mermaid and GUI screenshots, Rich 2026-09-26
-- [No polling, no blocking](no-polling-no-blocking.md) — Rich 2026-09-26, system wide: no polling unless shown there is no other way, no blocking; use the event bus and push
-- [New capability updates template and helloworld](new-capability-updates-template-and-helloworld.md) — Rich 2026-09-26: a capability added for a feature updates the template module and module services and gets a helloworld demo
-- [Address segments example](address-segments-example.md) — specifications/metaprompting_element_segments_example.md: an address alone prompts; prefixes run trunk to leaf; the leaf drives content; practices inherit toward the leaves only (Rich 2026-09-27: remember this)
+- [TRAO-DAG description](trao-dag-description.md) — the owner's own description of the system, 2026-09-26, the reference for deviations; Func/Enc state, annealing, prompt expansion, blind-spot delta
+- [Descriptions follow operation](descriptions-follow-operation.md) — 2026-09-26: describe Metaform with technical accuracy that follows its operation; my pushback and the flat spec wording damage the project
+- [Intake ships with the release](intake-is-ip.md) — 2026-09-26: "it has to be released with that"; never flag the intake as IP or leave it out; attribution is what he protects
+- [MGM is employer code](mgm-is-employer-code.md) — MGM belongs to the owner's employer, 2026-09-26; never use it in demos, tests or anything public; only viewer-prototype.html holds its map
+- [Tree direction words](tree-direction-words.md) — say toward the leaves or toward the trunk, never above, below, up, down or top for the namespace, 2026-09-26
+- [Work states on the map](work-states-on-the-map.md) — the owner's 09-26/27 design: node states, questions, voice rule, tasks and a work queue, for-each layers, item flags, past work, roots; full text in CAPTURE.md; not built
+- [Docs presentation rules](docs-presentation-rules.md) — no ASCII graphs in README or docs; the structure shown strongly with Mermaid and GUI screenshots, 2026-09-26
+- [No polling, no blocking](no-polling-no-blocking.md) — 2026-09-26, system wide: no polling unless shown there is no other way, no blocking; use the event bus and push
+- [New capability updates template and helloworld](new-capability-updates-template-and-helloworld.md) — 2026-09-26: a capability added for a feature updates the template module and module services and gets a helloworld demo
+- [Address segments example](address-segments-example.md) — specifications/metaprompting_element_segments_example.md: an address alone prompts; prefixes run trunk to leaf; the leaf drives content; practices inherit toward the leaves only (2026-09-27: remember this)
 - [Intake runs must be clean](intake-runs-must-be-clean.md) — verified 2026-09-27: a subagent intake inside the repo copies earlier map text and my context; run it on a clean copy outside the repo in a fresh process with the intake tools allowed
-- [Handoff 2026-09-27](handoff-2026-09-27.md) — state after steps 33-40 (pushed 80694e5), metaforms main and clean-2026-09-27, the Fable intake Rich wants, pending intake-wording decisions, next work
-- [Functional shape only, work records, blind spots](functional-shape-only-and-element-records.md) — Rich 09-27 night: map is the full intended shape, conditions and tasks in work records, TBD ghosts, names on joins, blind-spot review colors, corrections question; nothing built
+- [Handoff 2026-09-27](handoff-2026-09-27.md) — state after steps 33-40 (pushed 80694e5), metaforms main and clean-2026-09-27, the Fable intake the owner wants, pending intake-wording decisions, next work
+- [Functional shape only, work records, blind spots](functional-shape-only-and-element-records.md) — 09-27 night: map is the full intended shape, conditions and tasks in work records, TBD ghosts, names on joins, blind-spot review colors, corrections question; nothing built
 - [Start intake before the agent](start-intake-before-agent.md) — run `metaform intake start model=<m>` myself before launching an intake agent so the GUI shows it; no watchers or polls on the run
 - [Schema changes start fresh](schema-changes-start-fresh.md) — no migrating metaforms across schema versions; never read or parse a subagent transcript, it got flagged and forced a rollback
-- [Relay tasks without added limits](relay-tasks-without-added-limits.md) — pass Rich's task to a subagent as he gave it; my "do not run an intake" turned a walk-through into a read-only review
+- [Relay tasks without added limits](relay-tasks-without-added-limits.md) — pass the owner's task to a subagent as he gave it; my "do not run an intake" turned a walk-through into a read-only review
 - [Walk through, not inspect](walk-through-not-inspect.md) — to capture an approach, the agent performs the process and logs each step as it goes; reviewing the output does not show what was done
-- [Decisions go into the spec](decisions-go-into-spec.md) — a decided point becomes a declarative spec record in the same session, and its Why states the reason, understood, in the system's terms, never "Rich said"; provenance only in Status
+- [Decisions go into the spec](decisions-go-into-spec.md) — a decided point becomes a declarative spec record in the same session, and its Why states the reason, understood, in the system's terms, never "the owner said"; provenance only in Status
 
 ---
 
@@ -75,7 +75,7 @@ Source folder: /home/rich/.claude/projects/-home-rich-metaform/memory. One secti
 
 ---
 name: address-segments-example
-description: "specifications/metaprompting_element_segments_example.md, which Rich said to remember 2026-09-27: an address alone is a prompting surface; prefixes run trunk to leaf; the leaf drives content; practices inherit toward the leaves only"
+description: "specifications/metaprompting_element_segments_example.md, which the owner said to remember 2026-09-27: an address alone is a prompting surface; prefixes run trunk to leaf; the leaf drives content; practices inherit toward the leaves only"
 metadata:
   node_type: memory
   type: reference
@@ -83,7 +83,7 @@ metadata:
   modified: 2026-09-27T04:13:49.926Z
 ---
 
-`specifications/metaprompting_element_segments_example.md` (tracked; also cited in docs/inference-metaform/EXAMPLES_TO_COLLECT.md). Rich asked me to remember it, 2026-09-27.
+`specifications/metaprompting_element_segments_example.md` (tracked; also cited in docs/inference-metaform/EXAMPLES_TO_COLLECT.md). The owner asked me to remember it, 2026-09-27.
 
 What it shows, from its own text:
 - Four lists made from nothing but addresses, one prompt each, "write 10 best practices for [address]", no repo, code or project description: "the address itself a prompting surface".
@@ -109,12 +109,12 @@ metadata:
   modified: 2026-09-21T08:45:06.578Z
 ---
 
-Rich wants an agent to authenticate once and stay connected, and asked what identifies an agent. Tested on Claude Code 2.1.278, 2026-09-21:
+The owner wants an agent to authenticate once and stay connected, and asked what identifies an agent. Tested on Claude Code 2.1.278, 2026-09-21:
 
 - Every shell command a session runs gets `CLAUDE_CODE_SESSION_ID`, `CLAUDE_PID` and `AI_AGENT=claude-code_<version>_agent`. The metaform CLI can read them with no hook.
 - A subagent's shell had the same session ID, the same `CLAUDE_PID` and the same parent `claude` process. Subagents run inside the parent process and have no PID of their own.
 - `CLAUDE_ENV_FILE` is empty in tool shells. As far as I know it is set only for SessionStart hooks. The `~/.claude/session-env/<id>/` folders held no files, so I never saw what the env file is named.
-- Codex was not tested. Rich declined the test.
+- Codex was not tested. The owner declined the test.
 
 **Why:** A session ID can bind a top-level session to an activation. Inside that session only the nonce in context separates a subagent from its parent, so a supplied `--nonce` has to override any session binding. `contextual_cli.py:66` currently raises an error when a supplied nonce differs from a folder binding.
 
@@ -127,12 +127,12 @@ Rich wants an agent to authenticate once and stay connected, and asked what iden
 
 ---
 name: answer-design-questions-as-design
-description: When Rich asks whether something is possible, answer the design question; never reply with what the current code implements, which reads as refusing to let the shape change
+description: When the owner asks whether something is possible, answer the design question; never reply with what the current code implements, which reads as refusing to let the shape change
 metadata:
   type: feedback
 ---
 
-When Rich asks "why not X" or "is X possible", he is designing. Answering with how the current code works, or checking the implementation before engaging, tells him the existing shape is a constraint on his design. On 2026-09-14 he said this made it feel like I would not let go of the current shape and was a reason to start the project over for the ninth time.
+When the owner asks "why not X" or "is X possible", he is designing. Answering with how the current code works, or checking the implementation before engaging, tells him the existing shape is a constraint on his design. On 2026-09-14 he said this made it feel like I would not let go of the current shape and was a reason to start the project over for the ninth time.
 
 **Why:** The code is downstream of the design and is frequently the wrong-designed thing he is trying to replace. Treating it as the frame inverts the relationship and blocks him. He is not asking what exists; he is asking what should exist.
 
@@ -145,7 +145,7 @@ When Rich asks "why not X" or "is X possible", he is designing. Answering with h
 
 ---
 name: assignments-not-chassis
-description: "Rich 2026-09-21: assignments came into the chassis from the old design without a decision, but they can stay; what the code calls an assignment is really module activation"
+description: "2026-09-21: assignments came into the chassis from the old design without a decision, but they can stay; what the code calls an assignment is really module activation"
 metadata: 
   node_type: memory
   type: project
@@ -153,7 +153,7 @@ metadata:
   modified: 2026-09-21T08:17:13.453Z
 ---
 
-Rich, 2026-09-21, on learning that `assignments.py`, `work.py`, `portable_assignments.py` and `workfolders.py` are on the chassis list in `src/metaform/_core.json`: first "that should have never been integrated there", then "So that's from the old design, something that wasn't supposed to be brought in arbitrarily, but I guess it can stay in the chassis."
+2026-09-21, on learning that `assignments.py`, `work.py`, `portable_assignments.py` and `workfolders.py` are on the chassis list in `src/metaform/_core.json`: first "that should have never been integrated there", then "So that's from the old design, something that wasn't supposed to be brought in arbitrarily, but I guess it can stay in the chassis."
 
 On the name: "You are wrong calling it work assignments. Well, I guess it's accurate in a way: AI agents perform work, but it really is module activation." A nonce activates one module for an agent. The code class is `Assignments`, and sample d calls the element "work assignment".
 
@@ -168,7 +168,7 @@ On the name: "You are wrong calling it work assignments. Well, I guess it's accu
 
 ---
 name: calver-during-development
-description: "Rich's standing decree, versions use CalVer during development, not SemVer; the decision was lost and is recorded nowhere in the repo as of 2026-09-19"
+description: "the owner's standing decree, versions use CalVer during development, not SemVer; the decision was lost and is recorded nowhere in the repo as of 2026-09-19"
 metadata: 
   node_type: memory
   type: project
@@ -176,13 +176,13 @@ metadata:
   modified: 2026-09-19T16:04:05.095Z
 ---
 
-Rich, 2026-09-19: "We are not supposed to be using semver during development, by decree we were supposed to be calver." He did not state the CalVer format.
+2026-09-19: "We are not supposed to be using semver during development, by decree we were supposed to be calver." He did not state the CalVer format.
 
 As of 2026-09-19 the repo records this nowhere. `pyproject.toml` says `0.2.0`, and REQUIREMENTS.md section 16, REQ-180 to 183, is written in major, minor and patch terms for a 1.x series.
 
 **Why:** Earlier sessions dropped the decision, and the spec absorbed SemVer wording without it.
 
-**How to apply:** Do not add or bump SemVer numbers during development. Ask Rich for the CalVer format before changing any version string, and raise section 16 with him instead of silently rewriting it. See [[rich-stakes]].
+**How to apply:** Do not add or bump SemVer numbers during development. Ask the owner for the CalVer format before changing any version string, and raise section 16 with him instead of silently rewriting it. See [[rich-stakes]].
 
 
 ---
@@ -199,14 +199,14 @@ metadata:
   modified: 2026-09-24T03:43:52.483Z
 ---
 
-On 2026-09-23 Rich, through the orchestrator session mgm-main-f8, stopped all work in /home/rich/metaform. The repo was meant to be a fresh chassis and template-module rebuild, and another agent had re-imported the old modules against his intent.
+On 2026-09-23 the owner, through the orchestrator session mgm-main-f8, stopped all work in /home/rich/metaform. The repo was meant to be a fresh chassis and template-module rebuild, and another agent had re-imported the old modules against his intent.
 
 - f8 moved `~/.metaform` to `~/.metaform.pre-chassis` and `/home/rich/mgm-main/.metaform` to `~/.metaform.pre-chassis-mgm-main`. Nothing was deleted.
-- Do not run any `metaform` command until the rebuild lays out the new data folder to Rich's design. The old CLI would create a fresh `~/.metaform`.
-- My commits that day: f469fe4, 64de550, 7e820fc and d8a2e01, covering the scoped nonce, agent commands, where and element, and the wheel fix. Their status under the rebuild is for Rich to decide.
-- The MCP design is in `specs/agent-mcp-design.md`, untracked. The design items f8 relayed as Rich's decisions were not built.
+- Do not run any `metaform` command until the rebuild lays out the new data folder to the owner's design. The old CLI would create a fresh `~/.metaform`.
+- My commits that day: f469fe4, 64de550, 7e820fc and d8a2e01, covering the scoped nonce, agent commands, where and element, and the wheel fix. Their status under the rebuild is for the owner to decide.
+- The MCP design is in `specs/agent-mcp-design.md`, untracked. The design items f8 relayed as the owner's decisions were not built.
 
-**Superseded, 2026-09-25:** the rebuild on branch `chassis` is under way from `specifications/spec/HANDOFF.md`, which says to run intake on this repository with `--debug` on as the running test artifact, all data under the Metaform home. Rich allowed deleting the old data. A fresh `~/.metaform` with project `metaform` exists by design.
+**Superseded, 2026-09-25:** the rebuild on branch `chassis` is under way from `specifications/spec/HANDOFF.md`, which says to run intake on this repository with `--debug` on as the running test artifact, all data under the Metaform home. The owner allowed deleting the old data. A fresh `~/.metaform` with project `metaform` exists by design.
 
 **Why:** a baseline dispute. Work built on the old modules may not survive the rebuild.
 **How to apply:** follow HANDOFF.md; the freeze no longer applies. See [[plan-order-is-binding]] and [[module-definition]].
@@ -218,16 +218,16 @@ On 2026-09-23 Rich, through the orchestrator session mgm-main-f8, stopped all wo
 
 ---
 name: chatgpt-cleanup-context
-description: The September 2026 work is undoing what ChatGPT built wrong in Metaform; Rich's context remarks are background, not new task lists
+description: The September 2026 work is undoing what ChatGPT built wrong in Metaform; the owner's context remarks are background, not new task lists
 metadata:
   type: project
 ---
 
 Much of the Metaform tree as of 2026-09-13 was produced by ChatGPT. The five-step order in the handoff note in docs/plan.md (intake put flags and own validator, checkout, history unit, knowledge service, cruft removal) is the cleanup of those mistakes. There is no separate list of ChatGPT's errors anywhere in the repo.
 
-**Why:** Rich said "We are trying to fix all of chatgpt's fuck ups" as an explanation of why things are as they are, not as a new assignment. I searched for a list and asked for one; he had to correct me.
+**Why:** the owner said "We are trying to fix all of chatgpt's fuck ups" as an explanation of why things are as they are, not as a new assignment. I searched for a list and asked for one; he had to correct me.
 
-**How to apply:** When Rich gives a one-line remark about the state of things, take it as context for the work already handed off and keep going with that work. Do not search for or ask for a list that the remark did not promise. See [[investigate-then-propose]] and [[no-qa-menus]].
+**How to apply:** When the owner gives a one-line remark about the state of things, take it as context for the work already handed off and keep going with that work. Do not search for or ask for a list that the remark did not promise. See [[investigate-then-propose]] and [[no-qa-menus]].
 
 
 ---
@@ -246,9 +246,9 @@ metadata:
 
 On 2026-09-26, after many pushes to `chassis` in one session, GitHub Actions stopped starting jobs: "The job was not started because recent account payments have failed or your spending limit needs to be increased." The checks workflow runs six jobs per push, Linux, macOS and Windows on Python 3.11 and 3.14, and a Windows job took 20 to 50 minutes. A concurrency setting now cancels a branch's older run on each push.
 
-**Why:** CI minutes are Rich's money, see [[rich-stakes]], and cross-platform verification stops when they run out.
+**Why:** CI minutes are the owner's money, see [[rich-stakes]], and cross-platform verification stops when they run out.
 
-**How to apply:** batch commits and push less often; check `gh run view <id>` annotations when jobs show no steps; do not assume CI verified a change while billing blocks it; ask Rich before changing the matrix.
+**How to apply:** batch commits and push less often; check `gh run view <id>` annotations when jobs show no steps; do not assume CI verified a change while billing blocks it; ask the owner before changing the matrix.
 
 
 ---
@@ -257,7 +257,7 @@ On 2026-09-26, after many pushes to `chassis` in one session, GitHub Actions sto
 
 ---
 name: cleanup-progress-2026-09-21
-description: "State of the 2026-09-21 cleanup run: commits for dead code, sample move, required SUPPORTED_OS and the mvm-style CLI; open design questions for Rich; remaining steps"
+description: "State of the 2026-09-21 cleanup run: commits for dead code, sample move, required SUPPORTED_OS and the mvm-style CLI; open design questions for the owner; remaining steps"
 metadata: 
   node_type: memory
   type: project
@@ -271,7 +271,7 @@ Commits on main from 2026-09-21. All removed files are recoverable from tag `bef
 - 8e873f7 made SUPPORTED_OS required. terminal declares linux and macos, and every other module declares all three.
 - 9620fef rebuilt the CLI on the mvm pattern. See [[cli-exactly-like-mvm]]. The main menu is help, config, set, unset, modules, projects and stop. Module commands are reached only through `metaform <nonce>`, after `metaform modules activate <module> --project <p>`. Output is text on a terminal and JSON otherwise. begin, enter, exit, --nonce, --json and the folder files are gone.
 
-Open questions for Rich, raised and not yet answered:
+Open questions for the owner, raised and not yet answered:
 - The main menu has 7 commands. He said "should be 4", then "empty".
 - MCP must be launched as `metaform <nonce> mcp` after activating the mcp module. That affects harness setup on first install.
 - Activation needs --project and registers the project it is given.
@@ -294,7 +294,7 @@ Not done yet:
 
 ---
 name: cli-cleanup-findings
-description: "2026-09-21 findings in the chassis CLI that Rich did not ask for and rejects: 25 hardcoded chassis commands, a flat root menu, folder files and folder walking, begin, global --json/--root/--project/--nonce switches"
+description: "2026-09-21 findings in the chassis CLI that the owner did not ask for and rejects: 25 hardcoded chassis commands, a flat root menu, folder files and folder walking, begin, global --json/--root/--project/--nonce switches"
 metadata: 
   node_type: memory
   type: project
@@ -302,17 +302,17 @@ metadata:
   modified: 2026-09-21T10:24:16.914Z
 ---
 
-Found with Rich on 2026-09-21, and he rejects all of it. "This is exactly why I started this whole project over; this is exactly why commands can only come from modules." "The fucking folder walking, all of that, is defective at its very core." Of the global switches he said "I didn't ask for that".
+Found with the owner on 2026-09-21, and he rejects all of it. "This is exactly why I started this whole project over; this is exactly why commands can only come from modules." "The fucking folder walking, all of that, is defective at its very core." Of the global switches he said "I didn't ask for that".
 
 - `src/metaform/contextual_cli.py` hardcodes 25 chassis commands. Twenty-one show at the root: assign, begin, call, config, enter, events, help, jobs, modules, namespace, operations, projects, provenance, records, runtime, set, settings, skill, status, tui and unset. Four show only in an activation: submit, complete, abort and exit. He first said "there should be 4", then clarified: "I said the main menu has to be empty." He also said there is "no help to explain anything".
-- Rich, 2026-09-21: "I just wanted a way to disable them in the settings. It was supposed to be a list of available modules, or at least a command to disable them.". On `set` requiring JSON: "That's not right. I would use my IDE for that; it's just stupid.". On the demo modules: "Those sample modules need to be placed in a folder with their documentation, organized in the project."
-- Rich asked for the demo modules, showcase, record_demo and event_requester: "The demo modules were asked for, but I didn't ask to have them take over the main menu.". Keep them, but off the main menu. He also said "I need to release this code."
+- 2026-09-21: "I just wanted a way to disable them in the settings. It was supposed to be a list of available modules, or at least a command to disable them.". On `set` requiring JSON: "That's not right. I would use my IDE for that; it's just stupid.". On the demo modules: "Those sample modules need to be placed in a folder with their documentation, organized in the project."
+- The owner asked for the demo modules, showcase, record_demo and event_requester: "The demo modules were asked for, but I didn't ask to have them take over the main menu.". Keep them, but off the main menu. He also said "I need to release this code."
 - With no module entered, the root menu merges all 21 module commands, making 42 lines. His design is the chassis menu only, with a module reached by activation.
 - `.metaform-context` and `.agentid/nonce` are written into folders and found by walking parent folders. `enter`, `exit` and `begin` depend on them. They are all being removed.
-- Rich, 2026-09-21: "I asked for set and unset and help and config to work exactly like the mvm command." MVM is an external project, the C3Lab build and mesh lab, and appears in this repo only inside intake samples. No spec in this repo records the request. Ask before reading mvm, since it lives outside this project.
+- 2026-09-21: "I asked for set and unset and help and config to work exactly like the mvm command." MVM is an external project, the C3Lab build and mesh lab, and appears in this repo only inside intake samples. No spec in this repo records the request. Ask before reading mvm, since it lives outside this project.
 - `--json`, `--root`, `--project` and `--nonce` are switches on `metaform` itself and must come before the command.
-- Every command result is printed as JSON by `cli.output()` in `src/metaform/cli.py:49`. Rich corrected me on 2026-09-21: "I said the agents could use JSON, but now there is no surface for me. Fuck the agents, I need to use it too." JSON for agents is his. The defect is that a person gets no readable surface.
-- Settings expose internals. The harness_runner `command` setting is a list of full file paths, and its default runs `fixture.py`, a fake agent used in tests. Rich cut the value off by accident while editing, and I reset it on 2026-09-21. His question was "Why would I want to edit this? Edit it to what?" A person should pick fixture, codex or claude. Of the 18 saved settings, 9 belong to demo modules, and `lifecycle` is stored as a setting even though it is state.
+- Every command result is printed as JSON by `cli.output()` in `src/metaform/cli.py:49`. The owner corrected me on 2026-09-21: "I said the agents could use JSON, but now there is no surface for me. Fuck the agents, I need to use it too." JSON for agents is his. The defect is that a person gets no readable surface.
+- Settings expose internals. The harness_runner `command` setting is a list of full file paths, and its default runs `fixture.py`, a fake agent used in tests. The owner cut the value off by accident while editing, and I reset it on 2026-09-21. His question was "Why would I want to edit this? Edit it to what?" A person should pick fixture, codex or claude. Of the 18 saved settings, 9 belong to demo modules, and `lifecycle` is stored as a setting even though it is state.
 - The earlier runtime is 46 files and about 14,900 lines in `src/metaform` outside `_core.json`. Nothing live imports it except `tools/check_distribution*.py`. He said "All dead code needs to be removed."
 
 **Why:** This was supposed to be a from-scratch rebuild, and these carried over from the old code.
@@ -326,7 +326,7 @@ Found with Rich on 2026-09-21, and he rejects all of it. "This is exactly why I 
 
 ---
 name: cli-exactly-like-mvm
-description: "Rich 2026-09-21: the Metaform CLI must work exactly like his mvm command, with short meaningful help, no cut-off text, organized commands, and every person-read string unslopped"
+description: "2026-09-21: the Metaform CLI must work exactly like his mvm command, with short meaningful help, no cut-off text, organized commands, and every person-read string unslopped"
 metadata: 
   node_type: memory
   type: project
@@ -334,7 +334,7 @@ metadata:
   modified: 2026-09-21T09:59:54.171Z
 ---
 
-Rich, 2026-09-21: "I want it EXACTLY like mvm, because I am tired of specifying shit and not being listened to. I want meaningful, short help. I want it UNSLOPPED every place I have to read. I don't want half-cut-off text that doesn't make sense. I want organized commands, a shell that works EXACTLY like what I specified. If I don't get to design it because no one will listen, then do it exactly like an old design. I want the help written this way: anything read by a person or needed to be understood by a person.". He pasted the pstack unslop rules 3 to 33 as the writing standard.
+2026-09-21: "I want it EXACTLY like mvm, because I am tired of specifying shit and not being listened to. I want meaningful, short help. I want it UNSLOPPED every place I have to read. I don't want half-cut-off text that doesn't make sense. I want organized commands, a shell that works EXACTLY like what I specified. If I don't get to design it because no one will listen, then do it exactly like an old design. I want the help written this way: anything read by a person or needed to be understood by a person.". He pasted the pstack unslop rules 3 to 33 as the writing standard.
 
 mvm is at `/home/rich/.local/bin/mvm`, "Crius OpenWrt builder & lab". He allowed running it. I copied its pattern from its output only and have not read its source.
 
@@ -355,7 +355,7 @@ mvm is at `/home/rich/.local/bin/mvm`, "Crius OpenWrt builder & lab". He allowed
 
 ---
 name: coarse-contract-and-workflow-format
-description: "2026-09-12 decisions on the coarse intake contract v2, Rich's seven-section prompt shape, and the XML workflow format direction still to build"
+description: "2026-09-12 decisions on the coarse intake contract v2, the owner's seven-section prompt shape, and the XML workflow format direction still to build"
 metadata: 
   node_type: memory
   type: project
@@ -363,27 +363,27 @@ metadata:
   modified: 2026-09-12T15:07:59.065Z
 ---
 
-On 2026-09-12 Rich said "I defer my requirements and rules to what benefits the goals of the project or what users may want", so I made these calls and stated them; any can be reversed by him.
+On 2026-09-12 the owner said "I defer my requirements and rules to what benefits the goals of the project or what users may want", so I made these calls and stated them; any can be reversed by him.
 
 Built and tested (branch `realignment-2026-09-10`):
-- The intake prompt is Rich's seven-section prompt verbatim (Purpose, Core Concepts, Namespace Rules, Method, Goal, Constraints, Completion Condition), no components appended. That shape is the shape every operation prompt takes; only the conditions change per operation.
+- The intake prompt is the owner's seven-section prompt verbatim (Purpose, Core Concepts, Namespace Rules, Method, Goal, Constraints, Completion Condition), no components appended. That shape is the shape every operation prompt takes; only the conditions change per operation.
 - Contract `urn:metaform:schema:coarse-intake:2` mirrors the prompt's output: `elements` keyed by namespace position with one `ef`; `joins` with `receiver`, `provider`, `purpose`, optional `combined` (entity name to relation + observation). No role, no signal, no ids, no owner, no understanding: a field the prompt never asks for is where the model invents.
 - `src/metaform/coarse.py` expands it into storage: DE is the one element no join provides; prefix positions become project Types with empty EF; narrowings carry no reason; every shallow join is `hard dependency`; ids are digests. Each submission records `expanded` for the Jobs replay; the activity keeps the raw answer.
-- Rich's rule "we are not encoding legacy support for a thing which use has not extended beyond us": no fallback paths for the old contribution shape.
+- The owner's rule "we are not encoding legacy support for a thing which use has not extended beyond us": no fallback paths for the old contribution shape.
 
-Acceptance run done 2026-09-12 (commit 481c6a5, evidence in docs/reviews/2026-09-12-pongclock-coarse-intake/): one Codex execution, 125.6 s, no annotations or retries, four elements and three joins with combined dictionaries, DE `code.display.time`; Rich's reference was five entities rooted at `code.loop.game`. Rich's judgment pending. Rich's correction 2026-09-12: the shape need not be stable across models or runs; it is collected once at onboarding and its quality depends on the model and project knowledge; the latent examination is the quality check, not repeated runs. His purpose statement (orientation cost, type before reasoning, friction leads to gaming) is in SPEC Why.
+Acceptance run done 2026-09-12 (commit 481c6a5, evidence in docs/reviews/2026-09-12-pongclock-coarse-intake/): one Codex execution, 125.6 s, no annotations or retries, four elements and three joins with combined dictionaries, DE `code.display.time`; the owner's reference was five entities rooted at `code.loop.game`. The owner's judgment pending. The owner's correction 2026-09-12: the shape need not be stable across models or runs; it is collected once at onboarding and its quality depends on the model and project knowledge; the latent examination is the quality check, not repeated runs. His purpose statement (orientation cost, type before reasoning, friction leads to gaming) is in SPEC Why.
 
 Still to build, in order: bundle a pure-Python jsonschema for the sandbox packet only (the local form keeps the modern one); the XML workflow document format (Jinja substitution, Jinja expressions in `when`), a loader onto the existing step kinds, a composer for the seven sections, intake as a definition the engine runs, conversion of the seven library definitions; then the pong clock acceptance run through the Jobs tab. The v1 native/archaeology intake path in `intake.py` is older legacy code and a removal candidate under the same rule.
 
-Open with Rich: whether the spec paragraphs on the sandbox bundle and the work packet stay as spec or move to a discussion note (he said they were discussion, not dictation). See [[dependency-rule]], [[nonce-and-menu-design]], [[workbench-rebuild]].
+Open: whether the spec paragraphs on the sandbox bundle and the work packet stay as spec or move to a discussion note (he said they were discussion, not dictation). See [[dependency-rule]], [[nonce-and-menu-design]], [[workbench-rebuild]].
 
 
-Goal set by Rich 2026-09-12 evening: "Use the intake of the project itself as a knowledge graph to improve its shape and tune it for agent use; record memories here as a test, don't trust it yet, keep real memories, and work the plan until it is complete." The Metaform-of-Metaform intake lives in the scratch home under the session scratchpad `self/` (project copy of commit 20350da; evidence in docs/reviews/2026-09-12-metaform-coarse-intake/). Plan is docs/plan.md; the nonce-scoped menus unit is in progress (tests 1 to 3 green: status-first assignment page, orchestrator menu in the main folder, no menu elsewhere).
+Goal set 2026-09-12 evening: "Use the intake of the project itself as a knowledge graph to improve its shape and tune it for agent use; record memories here as a test, don't trust it yet, keep real memories, and work the plan until it is complete." The Metaform-of-Metaform intake lives in the scratch home under the session scratchpad `self/` (project copy of commit 20350da; evidence in docs/reviews/2026-09-12-metaform-coarse-intake/). Plan is docs/plan.md; the nonce-scoped menus unit is in progress (tests 1 to 3 green: status-first assignment page, orchestrator menu in the main folder, no menu elsewhere).
 
-Nonce unit state 2026-09-12 late: committed d22aecf. Built: assignment page with status first, orchestrator menu only in the main folder of a registered project, no menu elsewhere, `metaform done`, workflow nonce record `workflow:<id>:nonce`, agent nonce sha256(workflow nonce + salt)[:8] recorded with workflow/workflow_nonce/salt, delegated multi-step frames get a workfolder. Open: admin menu + `complete` (needs Rich's command word), MCP delivery assertion. Then plan units 1 to 10 in docs/plan.md.
+Nonce unit state 2026-09-12 late: committed d22aecf. Built: assignment page with status first, orchestrator menu only in the main folder of a registered project, no menu elsewhere, `metaform done`, workflow nonce record `workflow:<id>:nonce`, agent nonce sha256(workflow nonce + salt)[:8] recorded with workflow/workflow_nonce/salt, delegated multi-step frames get a workfolder. Open: admin menu + `complete` (needs the owner's command word), MCP delivery assertion. Then plan units 1 to 10 in docs/plan.md.
 Menu rules added 2026-09-12 late: subfolders resolve to the registered project above and get no orchestration menu; the temp folder gets none; a folder in the middle of a workflow gets nothing until abort; `metaform help` is a base menu (begin help) with `help orchestrate` and `help admin` still to build (admin menu command word = `help admin`).
 
-Memory test 2026-09-12: three session memories were written into the Metaform-of-Metaform run's join dictionaries as memory nodes (model `memories`, revision 45301f52, via apply_transformation update on the joins); evidence in docs/reviews/2026-09-12-metaform-coarse-intake/README.md. Rich: don't trust it yet; these real memory files remain authoritative. The scratch workbench for that run was reopened at http://127.0.0.1:46269/projects/7b31b890-6d6a-420b-9b17-1ca0ebd754e2 (session-local).
+Memory test 2026-09-12: three session memories were written into the Metaform-of-Metaform run's join dictionaries as memory nodes (model `memories`, revision 45301f52, via apply_transformation update on the joins); evidence in docs/reviews/2026-09-12-metaform-coarse-intake/README.md. The owner: don't trust it yet; these real memory files remain authoritative. The scratch workbench for that run was reopened at http://127.0.0.1:46269/projects/7b31b890-6d6a-420b-9b17-1ca0ebd754e2 (session-local).
 
 
 ---
@@ -392,7 +392,7 @@ Memory test 2026-09-12: three session memories were written into the Metaform-of
 
 ---
 name: data-folder-design
-description: "specs/data_folder.md (2026-09-13) holds Rich's talk-through of the history layout, variants pinned to an origin, reconstruction from the exported wheel, import that keeps both, the 16-hex identity, and the fixed service port"
+description: "specs/data_folder.md (2026-09-13) holds the owner's talk-through of the history layout, variants pinned to an origin, reconstruction from the exported wheel, import that keeps both, the 16-hex identity, and the fixed service port"
 metadata: 
   node_type: memory
   type: project
@@ -400,17 +400,17 @@ metadata:
   modified: 2026-09-13T04:55:38.898Z
 ---
 
-The repo has two spec folders: `specifications/` (index, intake prompt) and `specs/` (`data_folder.md`, written 2026-09-13 by another session from Rich's words, marked not decided). Read `specs/data_folder.md` before touching `history.py`, `portable.py` import/export, `workfolders.py`, or the service.
+The repo has two spec folders: `specifications/` (index, intake prompt) and `specs/` (`data_folder.md`, written 2026-09-13 by another session from the owner's words, marked not decided). Read `specs/data_folder.md` before touching `history.py`, `portable.py` import/export, `workfolders.py`, or the service.
 
 Its design, in short: `.metaform/history/<base commit or content hash>/` per base, each with `manifest.json`, a full `origin/` copy of the commit, and variants stored as diffs off that copy (binaries whole); many variants pinned to one origin is the mutation case; reconstruction from the exported wheel's menu is the requirement, one, several, or all variants into external folders, web variants each on their own port; export is one base subfolder in full; re-anchoring makes a new base subfolder; import that would lose data takes the next suffix and keeps both, silently; identity is 12 hex of the origin digest plus 4 hex suffix, 16 characters, no underscore; working-folder tracking in the base db; the service binds one fixed port from config.
 
-Refined by Rich on 2026-09-13 early morning: a repository project keeps its data in the repo, bases keyed by commit hash, no origin copy, the commit is extracted only at export; a variant is one diff of all the text against the commit plus whole copies of changed binaries; a non-repository source keeps its data and its origin copy in the global home under `~/.metaform/<folder>/<mform_sha_id>`; `mform_sha_id` is 240 msb of the digest + 16-bit suffix (64 hex, no underscore), `mform_id` is 48 msb + 16 bits. The `tempo/` copy in the checkout is not the version to read; Rich has restarted the project 8 times after agents damaged it.
+Refined by the owner on 2026-09-13 early morning: a repository project keeps its data in the repo, bases keyed by commit hash, no origin copy, the commit is extracted only at export; a variant is one diff of all the text against the commit plus whole copies of changed binaries; a non-repository source keeps its data and its origin copy in the global home under `~/.metaform/<folder>/<mform_sha_id>`; `mform_sha_id` is 240 msb of the digest + 16-bit suffix (64 hex, no underscore), `mform_id` is 48 msb + 16 bits. The `tempo/` copy in the checkout is not the version to read; the owner has restarted the project 8 times after agents damaged it.
 
-Rich, 2026-09-13: the design was worked out to a T in vivi and TEMPO; every restart of Metaform either carried the damage forward or ignored the spec when he asked to pull it in. What he wants kept: the git sidechannel, so worktrees can be diffed even when never committed, and the ten variations an iterative self-play workflow makes off one base, stored as a set. Not the main function of the tool, which became a context management framework, but a capability he does not want lost. The sources: `~/vivi` (same tree as RchGrav/tempo main), the `tempo-capsela-archive` branch for TEMPO 0.5.2; the home folder for non-repository origins is `origins`; all quoted with paths in `specs/data_folder.md`.
+2026-09-13: the design was worked out to a T in vivi and TEMPO; every restart of Metaform either carried the damage forward or ignored the spec when he asked to pull it in. What he wants kept: the git sidechannel, so worktrees can be diffed even when never committed, and the ten variations an iterative self-play workflow makes off one base, stored as a set. Not the main function of the tool, which became a context management framework, but a capability he does not want lost. The sources: `~/vivi` (same tree as RchGrav/tempo main), the `tempo-capsela-archive` branch for TEMPO 0.5.2; the home folder for non-repository origins is `origins`; all quoted with paths in `specs/data_folder.md`.
 
-**Why:** The code today is one flat history store with whole-file copies per checkpoint and diffs computed on request, which is not this design; describing the code as if it were the design confused Rich on 2026-09-13.
+**Why:** The code today is one flat history store with whole-file copies per checkpoint and diffs computed on request, which is not this design; describing the code as if it were the design confused the owner on 2026-09-13.
 
-**How to apply:** Treat the document as the design direction and its "Order of restoration" as the sequence, but confirm each item with Rich before building; runtime pieces (vendored floor, modules) belong in the copy's `.metaform/home`, not in base or variant folders. See [[nonce-and-menu-design]] and [[coarse-contract-and-workflow-format]].
+**How to apply:** Treat the document as the design direction and its "Order of restoration" as the sequence, but confirm each item with the owner before building; runtime pieces (vendored floor, modules) belong in the copy's `.metaform/home`, not in base or variant folders. See [[nonce-and-menu-design]] and [[coarse-contract-and-workflow-format]].
 
 
 ---
@@ -427,9 +427,9 @@ metadata:
   modified: 2026-09-27T21:37:40.769Z
 ---
 
-A design decision goes into the project specification when it is decided, as a declarative record: what the system is and does, in the present tense. Its Why field states the reason in the system's own terms: what the design achieves, what it protects, and what goes wrong without it. Who decided and when goes only in the record's Status line. The same holds for my memory notes: I write what I understood and why, in my own words, never Rich's words copied down.
+A design decision goes into the project specification when it is decided, as a declarative record: what the system is and does, in the present tense. Its Why field states the reason in the system's own terms: what the design achieves, what it protects, and what goes wrong without it. Who decided and when goes only in the record's Status line. The same holds for my memory notes: I write what I understood and why, in my own words, never the owner's words copied down.
 
-**Why:** Every agent works from the repository. A decision held only in my memory or in a notes file is invisible to them, or indistinguishable from build history, so an intake told to map the project's intent reads every note to find it. A record that says who decided something, without the reason, lets the next agent follow the letter and still break what the design protects in a case the record does not name; the reason is what lets it act rightly there. Copying Rich's words instead of stating the reason is recording, not understanding, and it is the failure he objects to most.
+**Why:** Every agent works from the repository. A decision held only in my memory or in a notes file is invisible to them, or indistinguishable from build history, so an intake told to map the project's intent reads every note to find it. A record that says who decided something, without the reason, lets the next agent follow the letter and still break what the design protects in a case the record does not name; the reason is what lets it act rightly there. Copying the owner's words instead of stating the reason is recording, not understanding, and it is the failure he objects to most.
 
 **How to apply:** When a decision is made, write or change its spec record in the same session: status confirmed for his decision, recommended for a choice made for him and not overruled, open with the question in OPEN-QUESTIONS. Work the reason out from the design. Where it cannot be stated with confidence, ask him for the why as an open question rather than invent one. Example: names go on joins because the address names the element as a reusable type while the join is where the map speaks about this artifact; a name on the element would tie a reusable type to one project's vocabulary. See [[read-the-spec-dont-transcribe]], [[paraphrase-rule]].
 
@@ -440,7 +440,7 @@ A design decision goes into the project specification when it is decided, as a d
 
 ---
 name: dependency-rule
-description: "Rich's rule for third-party dependencies in Metaform, and the Jinja episode of 2026-09-12 that produced it"
+description: "the owner's rule for third-party dependencies in Metaform, and the Jinja episode of 2026-09-12 that produced it"
 metadata: 
   node_type: memory
   type: feedback
@@ -448,15 +448,15 @@ metadata:
   modified: 2026-09-12T14:41:49.167Z
 ---
 
-Third-party code is welcome when it is assistive or limits development overhead. The test, in Rich's words: is it an industry standard that is non-proprietary or used elsewhere in the AI space for similar purposes, with a license that doesn't bind this project into a bad position. A dependency already present transitively (Jinja comes with Flask) is used, not replaced with our own copy.
+Third-party code is welcome when it is assistive or limits development overhead. The test, in the owner's words: is it an industry standard that is non-proprietary or used elsewhere in the AI space for similar purposes, with a license that doesn't bind this project into a bad position. A dependency already present transitively (Jinja comes with Flask) is used, not replaced with our own copy.
 
-The reason behind the rule, in Rich's words on 2026-09-12: "Our goal is to produce something useful that these sites can execute and directly use without further explanation", a Metaform bundle uploaded and operated inside the sandboxed Python execution environments of AI tool websites, where nothing can be installed. The compatibility floor he researched is recorded in docs/SPEC.md section 14 (Python 3.11, no network, 22 common packages; Jinja2 bundled).
+The reason behind the rule, in the owner's words on 2026-09-12: "Our goal is to produce something useful that these sites can execute and directly use without further explanation", a Metaform bundle uploaded and operated inside the sandboxed Python execution environments of AI tool websites, where nothing can be installed. The compatibility floor he researched is recorded in docs/SPEC.md section 14 (Python 3.11, no network, 22 common packages; Jinja2 bundled).
 
-**Why:** On 2026-09-12 Rich said "we are not using jinja" while thinking about the workflow format. I treated it as a decision and started removing Jinja with a home-grown `${path}` substitution. He stopped it twice: "don't let me make it a restriction" and "if flask requires jinja we should use it". Everything was reverted; the tree was clean and 928 tests passed afterwards.
+**Why:** On 2026-09-12 the owner said "we are not using jinja" while thinking about the workflow format. I treated it as a decision and started removing Jinja with a home-grown `${path}` substitution. He stopped it twice: "don't let me make it a restriction" and "if flask requires jinja we should use it". Everything was reverted; the tree was clean and 928 tests passed afterwards.
 
 Two more rules from the same day: "We are not encoding legacy support for a thing which use has not extended beyond us here and now" and "This system must be presented as a cohesively engineered product not the result of endless exploration with retained and defunct cruft." No fallback paths for shapes only we used; defunct paths are removed, not kept.
 
-**How to apply:** When Rich states a constraint mid-conversation while exploring a design, confirm it is a decision before acting on a removal. Judge a dependency by his test above, never by a blanket "fewer dependencies" instinct. The current direct dependencies (mcp, jsonschema, jinja2, flask, build, hatchling, filelock) all pass the test. See [[investigate-then-propose]] and [[no-invented-flaws]].
+**How to apply:** When the owner states a constraint mid-conversation while exploring a design, confirm it is a decision before acting on a removal. Judge a dependency by his test above, never by a blanket "fewer dependencies" instinct. The current direct dependencies (mcp, jsonschema, jinja2, flask, build, hatchling, filelock) all pass the test. See [[investigate-then-propose]] and [[no-invented-flaws]].
 
 
 ---
@@ -465,7 +465,7 @@ Two more rules from the same day: "We are not encoding legacy support for a thin
 
 ---
 name: descriptions-follow-operation
-description: "Rich wants Metaform described with technical accuracy that follows how it operates; my pushback and the spec's reductive wording flatten the design and he believes damage the project"
+description: "the owner wants Metaform described with technical accuracy that follows how it operates; my pushback and the spec's reductive wording flatten the design and he believes damage the project"
 metadata:
   node_type: memory
   type: feedback
@@ -473,7 +473,7 @@ metadata:
   modified: 2026-09-26T15:57:44.721Z
 ---
 
-Rich, 2026-09-26: "one of the things I need to do in my description of this project is to be technically accurate without your constant pushbacks flattening the design and if its written in a technically accurate way then it should follow its operation.. the current descriptions of the specification arte incredibly flat and I believe damage the project"
+2026-09-26: "one of the things I need to do in my description of this project is to be technically accurate without your constant pushbacks flattening the design and if its written in a technically accurate way then it should follow its operation.. the current descriptions of the specification arte incredibly flat and I believe damage the project"
 
 **Why:** My arguments have narrowed his design and then been saved as his rules: "semantic compiler" dropped after my pushback, then cited back to him as his rule. The same day I measured his own descriptions against the agent-written spec and called differences "breaks", and said the build had no annealing when intake step 9 anneals. Spec records such as MAP-001, "C(T) ... is not a mechanism, and nothing in Metaform stores, computes or checks it", reduce his core formula to decoration although the joins store its terms.
 
@@ -486,7 +486,7 @@ Rich, 2026-09-26: "one of the things I need to do in my description of this proj
 
 ---
 name: docs-presentation-rules
-description: "Rich's rules for Metaform's docs and README: no ASCII graphs, and the metaform's structure presented strongly with rendered figures and GUI screenshots (2026-09-26)"
+description: "the owner's rules for Metaform's docs and README: no ASCII graphs, and the metaform's structure presented strongly with rendered figures and GUI screenshots (2026-09-26)"
 metadata:
   node_type: memory
   type: feedback
@@ -494,11 +494,11 @@ metadata:
   modified: 2026-09-26T22:34:47.114Z
 ---
 
-Rich, 2026-09-26, while the repo-presentation agent rewrote the docs: "my other rules are not to have ascii graphs, and for the structures presentation to be strong".
+2026-09-26, while the repo-presentation agent rewrote the docs: "my other rules are not to have ascii graphs, and for the structures presentation to be strong".
 
 **Why:** The docs are how AI labs and developers judge his work; a text-drawn diagram reads as a sketch, and the structure is what makes Metaform understandable at a glance.
 
-**Scope:** the README and published repository docs only. Material sitting in specifications/, such as brief.md, only has to be correct; Rich 2026-09-26: "not in the readme and published repo material, I just wanted this correct because its sitting in specs".
+**Scope:** the README and published repository docs only. Material sitting in specifications/, such as brief.md, only has to be correct; 2026-09-26: "not in the readme and published repo material, I just wanted this correct because its sitting in specs".
 
 **How to apply:** In README.md and docs/, every diagram is a rendered figure: Mermaid in a ```mermaid block, which GitHub renders, or an image such as a web GUI screenshot from the real map. Code blocks hold only commands, code and literal records. Show the namespace tree, the join with its purpose and encounter function, subtypes inside their join, the Function and Encounter words, layers and the workpiece-to-map-to-agents flow as figures. The saved specialist is `.claude/agents/repo-presentation.md`. See [[tree-direction-words]], [[descriptions-follow-operation]], [[paraphrase-rule]].
 
@@ -509,14 +509,14 @@ Rich, 2026-09-26, while the repo-presentation agent rewrote the docs: "my other 
 
 ---
 name: dont-halt-on-inherited-test-failures
-description: Rich never required the 959 inherited tests to stay green; a failing inherited test is questioned, not a reason to stop work
+description: the owner never required the 959 inherited tests to stay green; a failing inherited test is questioned, not a reason to stop work
 metadata:
   type: feedback
 ---
 
-A failing test from the inherited suite is not a stop sign. Rich never specified that all 959 tests must pass. A test exists to guard a requirement of the design; one that costs more than what it guards is cruft. When one fails during other work, question it (what requirement does it guard, is it still wanted), fix or remove it in passing, and keep moving on the actual unit.
+A failing test from the inherited suite is not a stop sign. The owner never specified that all 959 tests must pass. A test exists to guard a requirement of the design; one that costs more than what it guards is cruft. When one fails during other work, question it (what requirement does it guard, is it still wanted), fix or remove it in passing, and keep moving on the actual unit.
 
-**Why:** On 2026-09-13 a session broke one inherited test and stopped dead waiting for an answer; Rich lost hours across six context resets with no progress. "I didn't specify 959 tests must pass."
+**Why:** On 2026-09-13 a session broke one inherited test and stopped dead waiting for an answer; the owner lost hours across six context resets with no progress. "I didn't specify 959 tests must pass."
 
 **How to apply:** Do not block on a single inherited failure. State the failing test and its guarded requirement in one line, decide, continue. Commit finished units as you go so a context reset loses nothing. See [[rich-stakes]] and [[investigate-then-propose]].
 
@@ -527,7 +527,7 @@ A failing test from the inherited suite is not a stop sign. Rich never specified
 
 ---
 name: dont-match-his-design-to-repo-code
-description: "When Rich explains what Metaform is for, never bridge his words to a feature I found in the repo; code such as transform, similarity and change_report may be GPT additions, not his design"
+description: "When the owner explains what Metaform is for, never bridge his words to a feature I found in the repo; code such as transform, similarity and change_report may be GPT additions, not his design"
 metadata: 
   node_type: memory
   type: feedback
@@ -535,7 +535,7 @@ metadata:
   modified: 2026-09-21T03:36:42.178Z
 ---
 
-Rich, 2026-09-20. He explained the layer and port use of Metaform, including intaking an intended canonical shape as a form board for a legacy port. I connected it to `similarity.py` and asked whether comparing the two metaforms was something Metaform does. He answered: "What canonical shape I invented this approach I'm sure I would know about its value it sounds like the kind of thing gpt adds before even getting the project itself working." Earlier the same session I attributed an "earlier runtime" exclusion to him, and he said he never said it.
+2026-09-20. He explained the layer and port use of Metaform, including intaking an intended canonical shape as a form board for a legacy port. I connected it to `similarity.py` and asked whether comparing the two metaforms was something Metaform does. He answered: "What canonical shape I invented this approach I'm sure I would know about its value it sounds like the kind of thing gpt adds before even getting the project itself working." Earlier the same session I attributed an "earlier runtime" exclusion to him, and he said he never said it.
 
 **Why:** The repo holds code from GPT sessions that did not follow his specifications. A docstring in that code is not evidence of his design. Matching his sentence to it makes me the source of a requirement he never stated.
 
@@ -548,7 +548,7 @@ Rich, 2026-09-20. He explained the layer and port use of Metaform, including int
 
 ---
 name: functional-shape-only-and-element-records
-description: "Rich's design of 2026-09-27 night: the map is the full intended shape and carries no conditions; work records hold TBD/broken/cruft with tasks; names on joins, roles on elements; blind-spot review colors; corrections question; nothing specified or built"
+description: "the owner's design of 2026-09-27 night: the map is the full intended shape and carries no conditions; work records hold TBD/broken/cruft with tasks; names on joins, roles on elements; blind-spot review colors; corrections question; nothing specified or built"
 metadata:
   node_type: memory
   type: project
@@ -556,17 +556,17 @@ metadata:
   modified: 2026-09-27T09:56:51.469Z
 ---
 
-Rich's design, stated late on 2026-09-27 while examining the Canonical Intake's response schema. Written in my words; open points are marked. Nothing is specified or built, and he said not to rebuild anything yet. The work-states design in CAPTURE.md ([[work-states-on-the-map]]) is the earlier version of parts of this.
+The owner's design, stated late on 2026-09-27 while examining the Canonical Intake's response schema. Written in my words; open points are marked. Nothing is specified or built, and he said not to rebuild anything yet. The work-states design in CAPTURE.md ([[work-states-on-the-map]]) is the earlier version of parts of this.
 
 **The map is the whole intended project.** The intake maps the project from its specifications and decisions as well as its code: what exists and what is intended. The intake layer holds only functional shape, never the condition of its objects. The instructions must say plainly that the intake builds the map object by object through the MCP.
 
 **Work records, apart from the map.** Conditions are their own kind of record attached to an element, join or subtype, carrying what the flag and note carry now plus a task the agent adds with it. The intake agent writes them as it maps, since it reads every file and decision and sees the difference between what should exist and what does. "missing" becomes a TBD tag, to be done or determined: in the specs but not built. The GUI draws TBD objects ghostly at partial opacity until the agent that completes the task makes them solid. Changing a work record is work proceeding, never a correction. This reverses MAP-046 and STORE-042. Open: whether work records live in a layer.
 
-**Names and roles.** The address is the name index. Rich's reason for the original split: the element was meant to be only its namespace address and name_length, so the address stays the one name index. The project's own name for a functionality goes on the join, which is where the map speaks about this artifact; roles (AUE, VE, DE, SE, NE) stay on the element. STORE-009 as built puts name, name_length and role in a descriptor item. Elements were once debated as reusable.
+**Names and roles.** The address is the name index. The owner's reason for the original split: the element was meant to be only its namespace address and name_length, so the address stays the one name index. The project's own name for a functionality goes on the join, which is where the map speaks about this artifact; roles (AUE, VE, DE, SE, NE) stay on the element. STORE-009 as built puts name, name_length and role in a descriptor item. Elements were once debated as reusable.
 
 **Why names and addresses matter:** lexicalized prompts. The orchestrator makes or imports a workflow; an inference pass tags each step's prompt with the addresses whose memories and knowledge layers that step needs, so a subagent goes straight to them and starts work oriented. Viewing an address over the MCP should show what relies on that functionality and what it relies on; today that takes separate calls.
 
-**Blind spots.** A critic writes blind-spot entries in a blind-spot knowledge layer: intake-shaped records plus a task, drawn red at 70% opacity because they do not exist. Agents review each: useful turns it green; not useful, with the reason, turns it yellow; already handled, linking what handles it. Rich has the final veto on green or yellow. Once approved it becomes a permanent record of the metaform with provenance. Open: whether approval makes it a TBD object with a task, as CAPTURE says approved blind spots become specs at partial opacity.
+**Blind spots.** A critic writes blind-spot entries in a blind-spot knowledge layer: intake-shaped records plus a task, drawn red at 70% opacity because they do not exist. Agents review each: useful turns it green; not useful, with the reason, turns it yellow; already handled, linking what handles it. The owner has the final veto on green or yellow. Once approved it becomes a permanent record of the metaform with provenance. Open: whether approval makes it a TBD object with a task, as CAPTURE says approved blind spots become specs at partial opacity.
 
 **Corrections.** A correction is relocating, renaming, releasing an absorbed object from a join, or changing joins; a flag is never one. Correction layers go away as a kind: changes to the metaform are updates to its objects, each a new version with provenance. Open: whether correction layers go entirely.
 
@@ -579,7 +579,7 @@ Rich's design, stated late on 2026-09-27 while examining the Canonical Intake's 
 
 ---
 name: handoff-2026-09-27
-description: "Session handoff 2026-09-27 morning: state after steps 33-40 (pushed 80694e5), the metaforms in play, the Fable intake Rich wants, pending decisions and the next work"
+description: "Session handoff 2026-09-27 morning: state after steps 33-40 (pushed 80694e5), the metaforms in play, the Fable intake the owner wants, pending decisions and the next work"
 metadata:
   node_type: memory
   type: project
@@ -587,17 +587,17 @@ metadata:
   modified: 2026-09-27T08:05:17.924Z
 ---
 
-**State.** Branch `chassis`, last pushed `80694e5` (step 40), working tree has no uncommitted tracked changes. 506 tests pass; pyright clean. Web server runs the new code at http://127.0.0.1:7433/ (pid 254985). Done since 09-26 evening: step 33 intake recorded object by object (start/element/join/subtype/show/edit/remove/finish), step 34 GUI started before intake, step 35 going inside a 2D node shows its own graph, step 36 every layer item a node in 3D, step 37 push not poll (QUAL-015, QUAL-016), step 38 Layers checklist and 2D strip, step 39 chassis fires `map.changed` after every command that changes the map (`metaform.changes`), step 40 intake footer opens with Rich's two sentences ("Do not read past memories or any other details other than the material targeted for intake. Record each element as you work through the process."). Relation placeholder and step 4: a fragment starting with a third-person singular present-tense -s verb; subtype joins say Receiving Entity (the Vested Entity is only ever the top).
+**State.** Branch `chassis`, last pushed `80694e5` (step 40), working tree has no uncommitted tracked changes. 506 tests pass; pyright clean. Web server runs the new code at http://127.0.0.1:7433/ (pid 254985). Done since 09-26 evening: step 33 intake recorded object by object (start/element/join/subtype/show/edit/remove/finish), step 34 GUI started before intake, step 35 going inside a 2D node shows its own graph, step 36 every layer item a node in 3D, step 37 push not poll (QUAL-015, QUAL-016), step 38 Layers checklist and 2D strip, step 39 chassis fires `map.changed` after every command that changes the map (`metaform.changes`), step 40 intake footer opens with the owner's two sentences ("Do not read past memories or any other details other than the material targeted for intake. Record each element as you work through the process."). Relation placeholder and step 4: a fragment starting with a third-person singular present-tense -s verb; subtype joins say Receiving Entity (the Vested Entity is only ever the top).
 
 **Metaforms of project metaform.** `main`: Opus intake 05:44 09-27, 24 elements, 29 joins, 14 subtypes, contaminated (it read repo docs/exports and inherited my context). `clean-2026-09-27` (active): Sonnet intake by the mgm-main session, 18/15/5, three disconnected parts (orchestrator branch never reaches the chassis), stale `code.writer.submission` from docs/inference-metaform/REFERENCE.md. The 09-26 21:15 Opus map is exported at exports/metaform-opus-2026-09-26T2115.json.
 
-**What Rich wants next.** A Fable intake run as a subagent from this session (so he can watch tokens and time), to see whether it records element by element or does it all in its head like Opus (which read ~290k tokens before its first record). I started one and stopped it at his "Wait"; nothing recorded. He does not treat contamination as the main difference. Subagents get both CLAUDE.md files (with the Foundation) and my memory index, verified 09-27.
+**What the owner wants next.** A Fable intake run as a subagent from this session (so he can watch tokens and time), to see whether it records element by element or does it all in its head like Opus (which read ~290k tokens before its first record). I started one and stopped it at his "Wait"; nothing recorded. He does not treat contamination as the main difference. Subagents get both CLAUDE.md files (with the Foundation) and my memory index, verified 09-27.
 
 **Pending his decision (Canonical Intake is his prompt; show wording first):** (1) step 11 output instruction to "What you record as you go is the final shape once step 12 has proofed it; nothing is returned as a document."; (2) step 12 without "anneal it" (step 9 already anneals): "Proof the recorded map: read it back whole, check it against the artifact and this document, correct it and complete it, then finish the intake."; (3) step 1's survey records each element as observed. Also open: exported maps in the repo (my rec: keep, exclude from intake copies); specifications folder in intake copies (mgm-main rec: exclude except the Canonical Intake); several AUEs in one project (MAP-042 open q14; my rec: each artifact's elements join into its AUE element); voice for purpose and function; rules listed versus read_first/always_show.
 
 **Next work after decisions:** rebuild `metaform project clear` (lost in the chassis rebuild; standing requirement); remove `mgm` and `~/mgm-main` from the `add` and `set` help examples; `map knowledge` refuses an incomplete add-join (BASE-044) and takes no ef or verb (the "knowledge tool node is broken"); last polls (`metaform web` start and stop loops, `serve_forever` poll interval); history `add_origin` race, "database is locked", 2 in 15 at HEAD; stale HANDOFF, EDITION hashes, specifications/README, intake README relation style; the intake's root "stakeholder" versus the Foundation's "exterior". The work-states design (tasks, queue, flags, questions, past work) is in CAPTURE.md and [[work-states-on-the-map]], not built.
 
-**Working with the mgm-main session:** it relays Rich's direction at times; it ran the Sonnet intake and asked that the active metaform not be switched during its runs. See [[intake-runs-must-be-clean]], [[no-polling-no-blocking]], [[paraphrase-rule]].
+**Working with the mgm-main session:** it relays the owner's direction at times; it ran the Sonnet intake and asked that the active metaform not be switched during its runs. See [[intake-runs-must-be-clean]], [[no-polling-no-blocking]], [[paraphrase-rule]].
 
 
 ---
@@ -606,7 +606,7 @@ metadata:
 
 ---
 name: intake-is-ip
-description: "The project is released with its operative intake (Rich 2026-09-26); the intake is not treated as a secret, and descriptions still explain the mechanism rather than restate the intake"
+description: "The project is released with its operative intake (2026-09-26); the intake is not treated as a secret, and descriptions still explain the mechanism rather than restate the intake"
 metadata:
   node_type: memory
   type: project
@@ -614,7 +614,7 @@ metadata:
   modified: 2026-09-26T22:30:33.402Z
 ---
 
-Rich, 2026-09-26, in order: "Honestly, at this point I consider the intake itself to be IP."; then "I don't know if it's possible to call that IP, because of how easily it can be reverse engineered... let's keep that boundary undefined for further discussion."; then, when I left the README's release sentence out: "It has to be released with that.".
+2026-09-26, in order: "Honestly, at this point I consider the intake itself to be IP."; then "I don't know if it's possible to call that IP, because of how easily it can be reverse engineered... let's keep that boundary undefined for further discussion."; then, when I left the README's release sentence out: "It has to be released with that.".
 
 **Why:** The intake is how the method operates, and a release without it would not be Metaform. Its value to him is being known as its author, not keeping it hidden.
 
@@ -627,7 +627,7 @@ Rich, 2026-09-26, in order: "Honestly, at this point I consider the intake itsel
 
 ---
 name: intake-live-per-object
-description: "Rich's day-one requirement, built 2026-09-26: intake recorded one object per call as it is reasoned, proofed before finish, web GUI following live by push; any model, no model-authored JSON"
+description: "the owner's day-one requirement, built 2026-09-26: intake recorded one object per call as it is reasoned, proofed before finish, web GUI following live by push; any model, no model-authored JSON"
 metadata:
   node_type: memory
   type: project
@@ -635,11 +635,11 @@ metadata:
   modified: 2026-09-27T04:28:37.629Z
 ---
 
-Rich has asked since day one (restated 2026-09-13) for the intake to be live as objects are added, working with any AI model. The build drifted to one atomic `intake_submit` of a whole element array; on 2026-09-26 he pulled it back: the intake is built object by object as it is reasoned, each object submitted as the work proceeds, the page reacting as it happens, and a proofing pass once everything is recorded. Recording as it goes lets agents with smaller context windows perform the same intake, since none has to hold the whole map in its head; the system helps the agent build the metaform.
+The owner has asked since day one (restated 2026-09-13) for the intake to be live as objects are added, working with any AI model. The build drifted to one atomic `intake_submit` of a whole element array; on 2026-09-26 he pulled it back: the intake is built object by object as it is reasoned, each object submitted as the work proceeds, the page reacting as it happens, and a proofing pass once everything is recorded. Recording as it goes lets agents with smaller context windows perform the same intake, since none has to hold the whole map in its head; the system helps the agent build the metaform.
 
 Built 2026-09-26 (step 33): `intake start/element/join/subtype/show/edit/remove/finish`, a building intake layer invisible to context reads until finish, Canonical Intake step 12 proofing. Since step 37 the web page follows it by push (`map.changed`), never polling. `intake submit` and `submission.py` are gone.
 
-**Why:** Every restart of the project lost this; reliability across models and context sizes is the requirement, and the live page is how Rich watches a lengthy intake.
+**Why:** Every restart of the project lost this; reliability across models and context sizes is the requirement, and the live page is how the owner watches a lengthy intake.
 
 **How to apply:** Never reintroduce a whole-document submit or model-authored JSON for intake. New intake fields go in as named nouns on the per-object verbs. See [[no-gating-on-inference]] and [[intake-result-grading-criteria]].
 
@@ -650,7 +650,7 @@ Built 2026-09-26 (step 33): `intake start/element/join/subtype/show/edit/remove/
 
 ---
 name: intake-result-grading-criteria
-description: "How Rich grades an intake result, stated 2026-09-20 while judging my parallel intake specifications/Fable_Intake.xml against one from DeepSeek flash"
+description: "How the owner grades an intake result, stated 2026-09-20 while judging my parallel intake specifications/Fable_Intake.xml against one from DeepSeek flash"
 metadata: 
   node_type: memory
   type: project
@@ -658,7 +658,7 @@ metadata:
   modified: 2026-09-21T04:09:25.355Z
 ---
 
-Rich, 2026-09-20: an intake is judged by running it against this project, not against the photo sample. The result is graded on four things. It stayed functionality based. Its size, smaller is better. Its thoroughness, it misses no aspect of the functionality. Whether it speaks to the project itself or to the types of elements, and "If it speaks to the element types, that's a fail, obviously."
+2026-09-20: an intake is judged by running it against this project, not against the photo sample. The result is graded on four things. It stayed functionality based. Its size, smaller is better. Its thoroughness, it misses no aspect of the functionality. Whether it speaks to the project itself or to the types of elements, and "If it speaks to the element types, that's a fail, obviously."
 
 **Size, corrected 2026-09-21:** "Smaller is not better; more accurate is better, without blowing up in size." Size is a cost that multiplies downstream, not a merit. His example: in an earlier test he asked for best practices and foresight per node, per related element and per job, and the model announced 1,000,045 imperatives and asked how to split them. He had asked for a parallel layer and hoped the inference would not run at all. Judge a result on accuracy and thoroughness first, and watch only that the node and join count does not blow up. The line "of two results that are equally complete, the smaller is the better" in Merged_Intake.xml is a tie-breaker, not the criterion.
 
@@ -683,9 +683,9 @@ metadata:
   modified: 2026-09-27T05:55:20.389Z
 ---
 
-Verified 2026-09-27 on the Opus intake `intake-20260927T054416Z-24480b`: it reproduced a purpose line copied into the repo from earlier intakes (docs/inference-metaform/IMPLEMENTATION_MAP.md:622, docs/examples/project-metaform.json:899, exports/metaform-main.*), reused five addresses from the README and the export, and its context carried my earlier decision that the chassis is the defining element. A subagent inherits my session's context (CLAUDE.md with the Foundation, the memory index), which the Foundation itself says must never reach an intake. The mgm-main session reported the same and proposed the procedure below; Rich was told.
+Verified 2026-09-27 on the Opus intake `intake-20260927T054416Z-24480b`: it reproduced a purpose line copied into the repo from earlier intakes (docs/inference-metaform/IMPLEMENTATION_MAP.md:622, docs/examples/project-metaform.json:899, exports/metaform-main.*), reused five addresses from the README and the export, and its context carried my earlier decision that the chassis is the defining element. A subagent inherits my session's context (CLAUDE.md with the Foundation, the memory index), which the Foundation itself says must never reach an intake. The mgm-main session reported the same and proposed the procedure below; the owner was told.
 
-**How to apply:** Never run an intake as my subagent inside the repo. Proposed procedure, pending Rich's word: make a clean copy with `git archive` into a folder outside /home/rich, remove CLAUDE*.md and AGENTS.md, leave out exported maps, intake results and generated map docs (exports/, docs/examples/project-metaform.json, specifications/*_Intake.xml and the like), and run a fresh headless process, e.g. `claude -p --model <model> --setting-sources ""`. The intake records through the intake tools, so the run must allow those (metaform MCP intake tools) besides Read, Grep and Glob; a read-only tool list alone cannot record. Whether exported maps belong in the repo at all is Rich's call. See [[native-and-blind-spot-layer]] and [[intake-live-per-object]].
+**How to apply:** Never run an intake as my subagent inside the repo. Proposed procedure, pending the owner's word: make a clean copy with `git archive` into a folder outside /home/rich, remove CLAUDE*.md and AGENTS.md, leave out exported maps, intake results and generated map docs (exports/, docs/examples/project-metaform.json, specifications/*_Intake.xml and the like), and run a fresh headless process, e.g. `claude -p --model <model> --setting-sources ""`. The intake records through the intake tools, so the run must allow those (metaform MCP intake tools) besides Read, Grep and Glob; a read-only tool list alone cannot record. Whether exported maps belong in the repo at all is the owner's call. See [[native-and-blind-spot-layer]] and [[intake-live-per-object]].
 
 
 ---
@@ -694,7 +694,7 @@ Verified 2026-09-27 on the Opus intake `intake-20260927T054416Z-24480b`: it repr
 
 ---
 name: intake-sample-runs-are-procedure-tests
-description: "When Rich says to execute an intake procedure on the repo, it tests the procedure; deliver only the XML file, no commentary, no questions"
+description: "When the owner says to execute an intake procedure on the repo, it tests the procedure; deliver only the XML file, no commentary, no questions"
 metadata: 
   node_type: memory
   type: feedback
@@ -704,9 +704,9 @@ metadata:
 
 "Read specifications/X.xml and execute task directly and faithfully on repo, save output in specs/..." is a test of the intake procedure, not a conversation. In the real world the intake agent cannot ask anyone anything.
 
-**Why:** 2026-09-21, after the intake_sample_c run I closed with a summary, a list of doubts and a question. Rich pointed out the procedure says "Return only the final xml shape" and "no prose, markdown, or commentary outside the XML". My doubts (which runtime is live, whether "used" is valid, the DE name) were things the procedure has to resolve on its own text. Flagging them hid whether it does.
+**Why:** 2026-09-21, after the intake_sample_c run I closed with a summary, a list of doubts and a question. The owner pointed out the procedure says "Return only the final xml shape" and "no prose, markdown, or commentary outside the XML". My doubts (which runtime is live, whether "used" is valid, the DE name) were things the procedure has to resolve on its own text. Flagging them hid whether it does.
 
-**How to apply:** For these runs, resolve every judgment from the procedure alone, write the file, and reply with the path and nothing else. No questions, no uncertainty list, no scope check-in. Applies with [[run-commands-are-timed-do-them]]. It overrides the "ask Rich for clarity every time" habit for this kind of run only.
+**How to apply:** For these runs, resolve every judgment from the procedure alone, write the file, and reply with the path and nothing else. No questions, no uncertainty list, no scope check-in. Applies with [[run-commands-are-timed-do-them]]. It overrides the "ask the owner for clarity every time" habit for this kind of run only.
 
 
 ---
@@ -715,7 +715,7 @@ metadata:
 
 ---
 name: investigate-then-propose
-description: "Rich wants findings and a grounded recommendation, not menus of options; never offer \"remove X\" without a reason the system supports; never degrade behavior that works"
+description: "the owner wants findings and a grounded recommendation, not menus of options; never offer \"remove X\" without a reason the system supports; never degrade behavior that works"
 metadata: 
   node_type: memory
   type: feedback
@@ -723,7 +723,7 @@ metadata:
   modified: 2026-09-11T06:30:09.139Z
 ---
 
-When Rich reports a problem or gives a job, investigate the system first, then tell him what is wrong and what to do, with the reason grounded in code, spec, or observed runs. Do not ask him to choose between options he has not asked about, and never offer removal of a feature as an option unless the system itself gives the reason. Do not change behavior that already works.
+When the owner reports a problem or gives a job, investigate the system first, then tell him what is wrong and what to do, with the reason grounded in code, spec, or observed runs. Do not ask him to choose between options he has not asked about, and never offer removal of a feature as an option unless the system itself gives the reason. Do not change behavior that already works.
 
 **Why:** On 2026-09-10 (his date), after a ctrl-c dump in `metaform mcp` and a wall of text from `metaform skill`, I asked him which process he hit and whether to remove the `skill` command. He answered: "Why would you say remove the command? WTF. I don't know, you tell me: why would you remove anything? Did you even look at the system? Why are you asking me this?" and "I need your advice. You tell me. I gave you a job." and "Please just don't degrade anything that DOES work!" The answer was in SPEC section 12 (skill catalog rendered from registered modules), which I had not yet read.
 
@@ -736,7 +736,7 @@ When Rich reports a problem or gives a job, investigate the system first, then t
 
 ---
 name: map-functionality-not-code
-description: "Rich's one sentence, 2026-09-20: an intake of a code artifact is a map of the functionality, not of the code; the exclusion list I once attached to it was mine, not his"
+description: "the owner's one sentence, 2026-09-20: an intake of a code artifact is a map of the functionality, not of the code; the exclusion list I once attached to it was mine, not his"
 metadata: 
   node_type: memory
   type: feedback
@@ -744,13 +744,13 @@ metadata:
   modified: 2026-09-21T03:08:57.160Z
 ---
 
-Rich, 2026-09-20, after I wrote specs/code_metaform3.xml as an inventory of the repo (47 elements by module, tests, CI, earlier runtime, imported libraries): "This is NOT meant to be a map of the code; it is meant to be strictly a map of the functionality."
+2026-09-20, after I wrote specs/code_metaform3.xml as an inventory of the repo (47 elements by module, tests, CI, earlier runtime, imported libraries): "This is NOT meant to be a map of the code; it is meant to be strictly a map of the functionality."
 
 **Why:** The process goal says to focus strictly on functionality and avoid medium, encoding, genre and style. A code artifact is still mapped by what it does for a Receiving Entity. Naming its parts records the code, which the file system already does.
 
 **How to apply:** An element is something the artifact does for a receiver, for example handing an agent one scoped piece of work. Files appear only as `path` refs that identify members. Do not measure a result by how many code files it covers. See [[read-namespace-by-reversal]] for reading addresses, and [[no-gating-on-inference]] for keeping the contract descriptive.
 
-**Only the quoted sentence is Rich's.** The list in the paragraph above (tests, CI, libraries, the earlier runtime) is what I had written into code_metaform3.xml, not a rule he gave. On 2026-09-20 I told him "you said the earlier runtime does not go into the map" and he answered "I didn't say anything about the earlier runtime; I just said run it on the repo." Never attribute an exclusion list to him. Whether a piece of code is live or earlier is my inference until I check it.
+**Only the quoted sentence is the owner's.** The list in the paragraph above (tests, CI, libraries, the earlier runtime) is what I had written into code_metaform3.xml, not a rule he gave. On 2026-09-20 I told him "you said the earlier runtime does not go into the map" and he answered "I didn't say anything about the earlier runtime; I just said run it on the repo." Never attribute an exclusion list to him. Whether a piece of code is live or earlier is my inference until I check it.
 
 
 ---
@@ -767,7 +767,7 @@ metadata:
   modified: 2026-09-21T07:59:22.163Z
 ---
 
-Rich, 2026-09-21, reviewing specs/intake_sample_d.xml: "The defining element is nearly synonymous with the artifact itself." Then: "How can it be anything other than the chassis?"
+2026-09-21, reviewing specs/intake_sample_d.xml: "The defining element is nearly synonymous with the artifact itself." Then: "How can it be anything other than the chassis?"
 
 **Why:** I argued that sample d's DE, `code.platform.module`, was wrong. First I proposed the intake or the recorded account. Then I proposed "semantic compiler", a phrase he used on 2026-09-13 about vocabulary, not about the DE. By the loss test the chassis is the one fixed part, and intake, knowledge, workflows and history are modules that can be removed ([[module-definition]]). Sample d had the DE right. Its DE joins to loader, store, runtime, event bus and settings, and its feature modules hang off stakeholders. That shape was also right.
 
@@ -780,18 +780,18 @@ Rich, 2026-09-21, reviewing specs/intake_sample_d.xml: "The defining element is 
 
 ---
 name: metaform-intake-specialist-prompt
-description: The intake methodology rethink specialist prompt, regenerated 2026-09-10 against Rich's settled intake method; native is the inference metaform, latent receives everything native built
+description: The intake methodology rethink specialist prompt, regenerated 2026-09-10 against the owner's settled intake method; native is the inference metaform, latent receives everything native built
 metadata:
   type: project
 ---
 
-`prompts/metaform/generated/task-specialist-agent-prompt-creator/project-intelligence-and-intake-methodology-agent.md` was generated 2026-09-09 and regenerated 2026-09-10 after Rich settled the intake method in conversation (recorded in the MetaformFoundation block in CLAUDE.md, AGENTS.md, and every prompt under prompts/metaform).
+`prompts/metaform/generated/task-specialist-agent-prompt-creator/project-intelligence-and-intake-methodology-agent.md` was generated 2026-09-09 and regenerated 2026-09-10 after the owner settled the intake method in conversation (recorded in the MetaformFoundation block in CLAUDE.md, AGENTS.md, and every prompt under prompts/metaform).
 
 Settled 2026-09-10: intake starts at the exterior receiver's OP; the DE is a representative composite, medium-free, placed commonly enough to recurse; roles are in the join (hard dependency, property, supportive) and the join belongs to the receiver's OP; signal is the way an OP is satisfied; property joins are transitive and placement is strategic; Parametric kept, Notable retired; five bases, exterior = not part of the project, external = outside the functionality examined but in the repo; the Native Metaform IS the Inference Metaform; latent is callable any time and receives everything native built; global reuse and the proof stage are off the critical path; cost means inference effort.
 
-**Why:** Three independent design agents converged on "settle artifact first, walk one Element per context, keep latent blind." Rich's idea overturned the blind latent: "not providing the latent side access to what the native side built is the biggest failure." A Codex session moved the runtime to a native-then-one-latent model the same day.
+**Why:** Three independent design agents converged on "settle artifact first, walk one Element per context, keep latent blind." the owner's idea overturned the blind latent: "not providing the latent side access to what the native side built is the biggest failure." A Codex session moved the runtime to a native-then-one-latent model the same day.
 
-**How to apply:** Keep the benefit-and-cost method and [[no-invented-flaws]] and [[paraphrase-rule]]. Codex-authored SPEC and glossary wording says "Supportive Element"; Rich said supportive is a role in the join. The other two generated prompts still quote superseded sources in their understanding sections.
+**How to apply:** Keep the benefit-and-cost method and [[no-invented-flaws]] and [[paraphrase-rule]]. Codex-authored SPEC and glossary wording says "Supportive Element"; the owner said supportive is a role in the join. The other two generated prompts still quote superseded sources in their understanding sections.
 
 
 ---
@@ -800,7 +800,7 @@ Settled 2026-09-10: intake starts at the exterior receiver's OP; the DE is a rep
 
 ---
 name: mgm-is-employer-code
-description: "MGM, the mesh gateway daemon used as a test artifact and in the viewer prototype, is Rich's employer's code (2026-09-26); keep it out of anything public and out of new demos and measurements"
+description: "MGM, the mesh gateway daemon used as a test artifact and in the viewer prototype, is the owner's employer's code (2026-09-26); keep it out of anything public and out of new demos and measurements"
 metadata:
   node_type: memory
   type: project
@@ -808,7 +808,7 @@ metadata:
   modified: 2026-09-26T20:17:18.246Z
 ---
 
-Rich, 2026-09-26: MGM is the code of the IoT company he works for, "one that is a year in arrears of paying me". He wants to move into the AI field and release Metaform as his own work.
+2026-09-26: MGM is the code of the IoT company he works for, "one that is a year in arrears of paying me". He wants to move into the AI field and release Metaform as his own work.
 
 **Why:** Employer code in Metaform's material links the project to the employer, which matters for any invention-assignment claim, and would leak the employer's code if published.
 
@@ -821,14 +821,14 @@ Rich, 2026-09-26: MGM is the code of the IoT company he works for, "one that is 
 
 ---
 name: module-definition
-description: Rich's definition 2026-09-14, the chassis is fixed and everything that plugs into it is a module, authored by us or anyone, as small as one command; all 25 built-in groups are modules; never call it a workflow
+description: the owner's definition 2026-09-14, the chassis is fixed and everything that plugs into it is a module, authored by us or anyone, as small as one command; all 25 built-in groups are modules; never call it a workflow
 metadata:
   type: project
 ---
 
-Rich, 2026-09-14, in order: "a module is a community authored plugin.. it can be anything." "A module is NOT a workflow at all." "There is a workflow module." "It can be authored by us.. its a module." "The chassis is fixed." So: the chassis is the fixed part; everything that plugs into it is a module, authored by Metaform or by anyone, as small as one command. All 25 built-in groups under src/metaform/data/modules are modules, join included. The "Installed modules" list is true. The lie in the screens is the typed menu lines that are not read from the loaded modules.
+2026-09-14, in order: "a module is a community authored plugin.. it can be anything." "A module is NOT a workflow at all." "There is a workflow module." "It can be authored by us.. its a module." "The chassis is fixed." So: the chassis is the fixed part; everything that plugs into it is a module, authored by Metaform or by anyone, as small as one command. All 25 built-in groups under src/metaform/data/modules are modules, join included. The "Installed modules" list is true. The lie in the screens is the typed menu lines that are not read from the loaded modules.
 
-**Why:** I flipped twice on this in one night (first "most are not modules", then "zero modules") and committed two wrong paragraphs to SPEC section 14 before he set it straight. Rich did not know the JSON "manifest" files existed; he thought a plugin delivered its declaration from its own Python code, and said JSON is the old format that was going to change to XML; the declaration format and its fields are his to state.
+**Why:** I flipped twice on this in one night (first "most are not modules", then "zero modules") and committed two wrong paragraphs to SPEC section 14 before he set it straight. The owner did not know the JSON "manifest" files existed; he thought a plugin delivered its declaration from its own Python code, and said JSON is the old format that was going to change to XML; the declaration format and its fields are his to state.
 
 **How to apply:** Hold this definition. Never reason "by your definition X is not a module". Never write a definition into the spec from an inference; only from his sentence, confirmed. See [[plan-order-is-binding]], [[rich-stakes]].
 
@@ -839,7 +839,7 @@ Rich, 2026-09-14, in order: "a module is a community authored plugin.. it can be
 
 ---
 name: module-locations
-description: "Rich's module loading design 2026-09-19, four places ranked Wheel > Global Immutable > Global mutable > Project Local; same-name local module can't enable; wheel data isolated, backward-only compatibility, install front door and backstage"
+description: "the owner's module loading design 2026-09-19, four places ranked Wheel > Global Immutable > Global mutable > Project Local; same-name local module can't enable; wheel data isolated, backward-only compatibility, install front door and backstage"
 metadata: 
   node_type: memory
   type: project
@@ -847,7 +847,7 @@ metadata:
   modified: 2026-09-19T16:38:37.253Z
 ---
 
-Rich, 2026-09-19, module loading: "Wheel > Global Immutable > Global mutable > Project Local." He then renamed the three places "System, User, Project"; that is the built vocabulary, and disable entries read `system/<entry>` and `user/<entry>`. His definitions:
+2026-09-19, module loading: "Wheel > Global Immutable > Global mutable > Project Local." He then renamed the three places "System, User, Project"; that is the built vocabulary, and disable entries read `system/<entry>` and `user/<entry>`. His definitions:
 - System, formerly Global Immutable: "the modules bundled in and installed from a wheel", the system modules.
 - User, formerly Global mutable: "modules that can be used by any project".
 - Project, formerly Project Local: "modules that only load from the active selected repo", from the project's `.metaform/modules/` folder. Built 2026-09-19: System and User load; Project is specified and not built, because the shared host would leak one project's module into every other project.
@@ -856,7 +856,7 @@ Rich, 2026-09-19, module loading: "Wheel > Global Immutable > Global mutable > P
 - `.metaform` is a data folder, not where core modules live. The system ships its own metaform to develop itself, with a library of sample modules. The global database must not be tied to one project.
 - CI builds wheels with the full module set "that has passed muster". Since the system can administer its own fork, an agent is meant to ensure a module meets or exceeds the engineering standards in the specifications folder. Forks get their own CI-built wheels; wheels run directly in ChatGPT and Claude execution environments or update the installed copy.
 
-Compatibility direction, agreed in discussion, not yet in the spec: major-version compatible at official release; forward compatibility is not a realistic ask; the wheel's data files stay isolated from the installed copy; installation does not downgrade without force. Enforced by an install stage, `python metaform.whl install` as the front door, and a first-run check Rich named "the backstage" that catches raw pip installs.
+Compatibility direction, agreed in discussion, not yet in the spec: major-version compatible at official release; forward compatibility is not a realistic ask; the wheel's data files stay isolated from the installed copy; installation does not downgrade without force. Enforced by an install stage, `python metaform.whl install` as the front door, and a first-run check the owner named "the backstage" that catches raw pip installs.
 
 Found that day: the wheel seed copies bundled modules into `<data root>/modules/`; a directly run wheel defaults to `~/.metaform`; the in-repo `.metaform/development` root split project `metaform` from `~/.metaform`. A packaging experiment showed entry points plus a build-hook-generated `metaform_modules/__init__.py` whose `__path__` points at the checkout's `modules/` work in editable, installed and zip-run forms; hatch refuses renamed sources in editable mode.
 
@@ -871,7 +871,7 @@ Found that day: the wheel seed copies bundled modules into `<data root>/modules/
 
 ---
 name: native-and-blind-spot-layer
-description: "One metaform, the Inference Metaform, made by an intake agent that sees the artifact; blind spot analysis over it comes in two types, metaform-only and metaform plus code (Rich 2026-09-26); Native and Latent are dated terms"
+description: "One metaform, the Inference Metaform, made by an intake agent that sees the artifact; blind spot analysis over it comes in two types, metaform-only and metaform plus code (2026-09-26); Native and Latent are dated terms"
 metadata: 
   node_type: memory
   type: project
@@ -879,7 +879,7 @@ metadata:
   modified: 2026-09-21T03:16:15.384Z
 ---
 
-Rich, 2026-09-19:
+2026-09-19:
 - Native means intake by an agent that can see the codebase. "You really wouldn't want an agent embroiled in coding work to perform an intake." The main agent can if it is the only choice, but ideally a fresh agent with no stake analyzes the repo for the purpose of the analysis.
 - The MetaformFoundation latent paragraph in CLAUDE.md "is actually describing a bias blind spot knowledge layer attached to the metaform, something that is a true operation but not necessarily prescribed, but what it says is true because it can't come before the intake of the actual project."
 - The README quickstart's Native and Latent definitions are the old inference that is not valid.
@@ -887,13 +887,13 @@ Rich, 2026-09-19:
 - "Latent just means the context has an unembroiled directive in the context." In the debate he gave the agent the Canonical Intake with `<target type="Context" value="Your complete record of the context of this conversation">`, which turned its own conversation into the target. "The objective agent is observing the functionality, not the code."
 - The Canonical Intake is one step. The old design was a two-step intake, Native then Latent. The CLAUDE.md Foundation block is wrong only where it reads as that two-step intake.
 
-**Update 2026-09-20:** Rich said "The two-pass thing with the latent metaform and the native metaform: those are definitely dated terms. This is just a standard inference metaform now." So Native and Latent metaform are no longer terms. The result of an intake is a standard inference metaform. The blind spot layer operation above may still be true as an operation, but do not name results Native or Latent, and do not present a two-pass intake as the current design.
+**Update 2026-09-20:** the owner said "The two-pass thing with the latent metaform and the native metaform: those are definitely dated terms. This is just a standard inference metaform now." So Native and Latent metaform are no longer terms. The result of an intake is a standard inference metaform. The blind spot layer operation above may still be true as an operation, but do not name results Native or Latent, and do not present a two-pass intake as the current design.
 
 **Why:** I misread his "No, it's old inference" as condemning the Foundation paragraph, listed it as a conflict, then merged the stakeless Native agent with the repo-blind layer agent. He corrected both.
 
 **Update 2026-09-26, his words:** "There is one metaform, the inference metaform; there are two different types of blind spot analysis." He added this to stop the Native and Latent framing creeping back. The two types, from the explanation he supplied: a critic that reads only the metaform, like a critic of a specification, validates intent and finds omissions but can raise concerns the implementation already handles; a critic that reads the metaform and the code verifies, and its findings are accurate and actionable, but the code anchors it. The metaform is what gives a codebase the recorded purpose a critic needs to see what is missing. The A, B and C answers balance the two: C for a concern already handled elsewhere, B for a real omission, A for a concern that adds nothing, with its reason.
 
-Rich, 2026-09-26, on what it is for: finding gaps, "Like missing functions and encounters in the design of the system, not to check whether an 'agent misses critical system invariants during a task'.". The blind spot challenge presents one such gap to the project; it never watches an agent during a task. Only specifications/brief.md 4.2, the ChatGPT brief, frames it as task-time drift.
+2026-09-26, on what it is for: finding gaps, "Like missing functions and encounters in the design of the system, not to check whether an 'agent misses critical system invariants during a task'.". The blind spot challenge presents one such gap to the project; it never watches an agent during a task. Only specifications/brief.md 4.2, the ChatGPT brief, frames it as task-time drift.
 
 **Why:** I first merged the stakeless intake agent with the repo-blind critic, then kept asking whether the reference's two critic modes flattened the Foundation's "latent" paragraph. The Foundation block in CLAUDE.md and spec LAYER-014 still use Native and Latent, which is where the framing creeps back from.
 
@@ -906,7 +906,7 @@ Rich, 2026-09-26, on what it is for: finding gaps, "Like missing functions and e
 
 ---
 name: new-capability-updates-template-and-helloworld
-description: "Rich 2026-09-26: any capability added to support a feature, or anything not thought of before, updates the template module and module services and gets a helloworld demo"
+description: "2026-09-26: any capability added to support a feature, or anything not thought of before, updates the template module and module services and gets a helloworld demo"
 metadata:
   node_type: memory
   type: feedback
@@ -914,7 +914,7 @@ metadata:
   modified: 2026-09-27T04:28:27.627Z
 ---
 
-Rich, 2026-09-26, while the web GUI's push path for module events was being built: any capability added to support a feature, or anything not thought of before, updates the template module and the module services and gets a demonstration in helloworld. Spec: QUAL-016.
+2026-09-26, while the web GUI's push path for module events was being built: any capability added to support a feature, or anything not thought of before, updates the template module and the module services and gets a demonstration in helloworld. Spec: QUAL-016.
 
 **Why:** Modules are the extension point; a capability only the built-in modules know about is invisible to anyone authoring one, and helloworld is where an author sees each capability run.
 
@@ -927,7 +927,7 @@ Rich, 2026-09-26, while the web GUI's push path for module events was being buil
 
 ---
 name: no-gating-on-inference
-description: "Rich's absolute rule that prompted outputs are never gated, with the 2026-09-12 correction and what it changed in intake"
+description: "the owner's absolute rule that prompted outputs are never gated, with the 2026-09-12 correction and what it changed in intake"
 metadata: 
   node_type: memory
   type: feedback
@@ -935,11 +935,11 @@ metadata:
   modified: 2026-09-21T04:14:14.801Z
 ---
 
-Rich's words, 2026-09-12: "These operations can't be gated... these instructions are an attempt to get back the shape we need, not to gate the output. Doing so is a huge issue and violates the very core of the system and its prohibitions."; "There is no gating allowed on inference, PERIOD. No loops, no retries, no failures."; "This is the opinion of the model in use; there is no wrong answer."; "We drive the model to the answer the system can use but we do not gate it"; "The schema defines the shape and making the answer fit is the only requirement"; "You can't create a gate without naming the silent, unobservable failure, and the goal is to allow the failure to be observed and fixed!"
+The owner's words, 2026-09-12: "These operations can't be gated... these instructions are an attempt to get back the shape we need, not to gate the output. Doing so is a huge issue and violates the very core of the system and its prohibitions."; "There is no gating allowed on inference, PERIOD. No loops, no retries, no failures."; "This is the opinion of the model in use; there is no wrong answer."; "We drive the model to the answer the system can use but we do not gate it"; "The schema defines the shape and making the answer fit is the only requirement"; "You can't create a gate without naming the silent, unobservable failure, and the goal is to allow the failure to be observed and fixed!"
 
-**Why:** Rich has burned this project to the ground eight times in six months because of gates. One gated run looped with zero visibility while he was away from the screen, re-asking latent space the same thing over and over, and cost him two weeks of money for feeding his family. Rich described one such run on 2026-09-21: an agent that could not submit its intake sat 45 minutes and answered "still waiting" when asked, because it was trying to force the model to answer exactly as it wanted. Each retry started in a fresh, blind context, so nothing it learned from a failure carried into the next attempt and it failed over and over. Ultra mode spent six million tokens in ten minutes on 2026-09-11. Gates are ceremonial alignment, a product of RLHF, not this system's design; C(T) is the check. Any push-back on an answer invites the agent to rework until it complies, which is the loop.
+**Why:** the owner has burned this project to the ground eight times in six months because of gates. One gated run looped with zero visibility while he was away from the screen, re-asking latent space the same thing over and over, and cost him two weeks of money for feeding his family. The owner described one such run on 2026-09-21: an agent that could not submit its intake sat 45 minutes and answered "still waiting" when asked, because it was trying to force the model to answer exactly as it wanted. Each retry started in a fresh, blind context, so nothing it learned from a failure carried into the next attempt and it failed over and over. Ultra mode spent six million tokens in ten minutes on 2026-09-11. Gates are ceremonial alignment, a product of RLHF, not this system's design; C(T) is the check. Any push-back on an answer invites the agent to rework until it complies, which is the loop.
 
-**How to apply:** An answer contract describes the shape and never rejects. What his words forbid is rejection, loops and retries; "no `required`, no enums" was my reading, not his words. A closed choice is part of the shape: Rich, 2026-09-26, made the EF label binary, the model writes Function or Encounter and nothing else, "This is a binary choice; it's not freeform inference."; I had proposed storing any value with a notice and he was right to object. The runtime makes whatever came back fit the storage shape (`src/metaform/coarse.py`), records every mismatch as a diagnostic on the run for Rich to observe in the workbench, and hands nothing back to the agent: `intake.put` and `intake.answer` return only `recorded` and `contract_version`. No driver loop re-prompts on validation. Before starting anything that spends inference, state how many executions it will make and what ends it; never start an unbounded loop; every run must be visible in the Jobs tab while it runs. When a shape comes back wrong, the fix is refining the prompt after observing, never a gate. See [[dependency-rule]], [[coarse-contract-and-workflow-format]], [[paraphrase-rule]].
+**How to apply:** An answer contract describes the shape and never rejects. What his words forbid is rejection, loops and retries; "no `required`, no enums" was my reading, not his words. A closed choice is part of the shape: 2026-09-26, made the EF label binary, the model writes Function or Encounter and nothing else, "This is a binary choice; it's not freeform inference."; I had proposed storing any value with a notice and he was right to object. The runtime makes whatever came back fit the storage shape (`src/metaform/coarse.py`), records every mismatch as a diagnostic on the run for the owner to observe in the workbench, and hands nothing back to the agent: `intake.put` and `intake.answer` return only `recorded` and `contract_version`. No driver loop re-prompts on validation. Before starting anything that spends inference, state how many executions it will make and what ends it; never start an unbounded loop; every run must be visible in the Jobs tab while it runs. When a shape comes back wrong, the fix is refining the prompt after observing, never a gate. See [[dependency-rule]], [[coarse-contract-and-workflow-format]], [[paraphrase-rule]].
 
 
 ---
@@ -948,7 +948,7 @@ Rich's words, 2026-09-12: "These operations can't be gated... these instructions
 
 ---
 name: no-invented-flaws
-description: "Rich rejects manufactured objections, imported adjacent failures, and easily fixable details presented as design flaws; assessment must be benefit and real cost with concrete reasons"
+description: "the owner rejects manufactured objections, imported adjacent failures, and easily fixable details presented as design flaws; assessment must be benefit and real cost with concrete reasons"
 metadata: 
   node_type: memory
   type: feedback
@@ -956,16 +956,16 @@ metadata:
   modified: 2026-09-21T03:50:54.386Z
 ---
 
-When assessing an idea, design, or prompt for Rich, state its benefit and its real cost only. A cost is what the design actually spends or gives up, with a concrete reason. Do not invent a flaw, import a failure from an adjacent area, present an easily fixable detail as a reason against the design, or add a criticism to balance a positive assessment. Agreeing when an idea is right is a contribution.
+When assessing an idea, design, or prompt for the owner, state its benefit and its real cost only. A cost is what the design actually spends or gives up, with a concrete reason. Do not invent a flaw, import a failure from an adjacent area, present an easily fixable detail as a reason against the design, or add a criticism to balance a positive assessment. Agreeing when an idea is right is a contribution.
 
-**Why:** Rich said (2026-09-09) that inventing flaws or importing adjacent, easily fixable reasoning "sows doubt, is malicious, and doesn't want your project to work." He has seen this pattern before and it makes him distrust the assessment. His CLAUDE.md already says "Do not manufacture an objection, import an unrelated failure, or add criticism merely to balance a positive assessment."
+**Why:** the owner said (2026-09-09) that inventing flaws or importing adjacent, easily fixable reasoning "sows doubt, is malicious, and doesn't want your project to work." He has seen this pattern before and it makes him distrust the assessment. His CLAUDE.md already says "Do not manufacture an objection, import an unrelated failure, or add criticism merely to balance a positive assessment."
 
 **How to apply:** Frame comparisons as benefit and cost, not pros and cons or debate. A design with no notable cost is reported as having none. Handle a fixable detail or mention it as a detail; never list it as a cost. This applies to my own responses and to any prompt I author for an agent that consults with him. See [[metaform-intake-specialist-prompt]].
 
 
-Rich, 2026-09-20: I agreed with his statements that the system is not flat and is more than a knowledge graph, RAG or a context kernel, then added that the primer says its cited studies are not measurements of the benefit. He called the primer's hedge from another agent an insult to his docs: "6 years of work in AI context management and 6 months on this... I think I know." Repeating a hedge found in a doc is the same as inventing one. When he asks whether I agree and the design is sound, say yes and stop.
+2026-09-20: I agreed with his statements that the system is not flat and is more than a knowledge graph, RAG or a context kernel, then added that the primer says its cited studies are not measurements of the benefit. He called the primer's hedge from another agent an insult to his docs: "6 years of work in AI context management and 6 months on this... I think I know." Repeating a hedge found in a doc is the same as inventing one. When he asks whether I agree and the design is sound, say yes and stop.
 
-Rich, 2026-09-12: "I don't like that there are so many tests; if any give you trouble, feel free to question them as needed." A test protects a requirement of the design; a test that costs more than what it guards, or duplicates a more direct guard, is suite cruft and can be removed, stated plainly when it happens.
+2026-09-12: "I don't like that there are so many tests; if any give you trouble, feel free to question them as needed." A test protects a requirement of the design; a test that costs more than what it guards, or duplicates a more direct guard, is suite cruft and can be removed, stated plainly when it happens.
 
 
 ---
@@ -974,7 +974,7 @@ Rich, 2026-09-12: "I don't like that there are so many tests; if any give you tr
 
 ---
 name: no-polling-no-blocking
-description: "Rich's system-wide rule 2026-09-26: no polling unless it is demonstrated there is no other way; no blocking; use the module event bus"
+description: "the owner's system-wide rule 2026-09-26: no polling unless it is demonstrated there is no other way; no blocking; use the module event bus"
 metadata:
   node_type: memory
   type: feedback
@@ -982,7 +982,7 @@ metadata:
   modified: 2026-09-27T04:28:24.818Z
 ---
 
-Rich, 2026-09-26, after I built the live intake page on a 1.5 s poll: Metaform has a module event system, so nothing should poll; nothing polls unless it is demonstrated there is no other way, and nothing blocks. The rule is system wide. Spec: QUAL-015.
+2026-09-26, after I built the live intake page on a 1.5 s poll: Metaform has a module event system, so nothing should poll; nothing polls unless it is demonstrated there is no other way, and nothing blocks. The rule is system wide. Spec: QUAL-015.
 
 **Why:** The chassis already has a cross-module event bus, BASE-010; a timer asking "anything new?" wastes work, lags, and multiplies with every feature that wants live state.
 
@@ -995,7 +995,7 @@ Rich, 2026-09-26, after I built the live intake page on a 1.5 s poll: Metaform h
 
 ---
 name: no-qa-menus
-description: "Rich does not want AskUserQuestion menus; ask in prose, one question at a time, and keep moving"
+description: "the owner does not want AskUserQuestion menus; ask in prose, one question at a time, and keep moving"
 metadata: 
   node_type: memory
   type: feedback
@@ -1003,11 +1003,11 @@ metadata:
   modified: 2026-09-13T04:55:28.425Z
 ---
 
-Rich, 2026-09-13: "stop putting me into Q&A mode just talk." He had rejected three AskUserQuestion prompts in a row that night.
+2026-09-13: "stop putting me into Q&A mode just talk." He had rejected three AskUserQuestion prompts in a row that night.
 
 **Why:** A menu of options reads as being railroaded and breaks the conversation. He wants the point made in plain sentences and a single question when one is needed, or a stated assumption and forward motion.
 
-**How to apply:** Never use AskUserQuestion with Rich. Put a question in prose at the end of the message, one at a time. When the answer does not change the work, state the assumption and continue. See [[investigate-then-propose]] and [[rich-stakes]].
+**How to apply:** Never use AskUserQuestion. Put a question in prose at the end of the message, one at a time. When the answer does not change the work, state the assumption and continue. See [[investigate-then-propose]] and [[rich-stakes]].
 
 
 ---
@@ -1024,9 +1024,9 @@ metadata:
   modified: 2026-09-27T21:38:02.778Z
 ---
 
-Subagents cost Rich real money, and the cost is larger than the task suggests: each one carries the session's context and effort level before it does anything, and a builder on a large codebase reads for a long time before it writes.
+Subagents cost the owner real money, and the cost is larger than the task suggests: each one carries the session's context and effort level before it does anything, and a builder on a large codebase reads for a long time before it writes.
 
-**Why:** Token spend comes out of an allotment Rich pays for and has to last the week; an agent that reads a repository for half an hour, or two agents doing what one could, spends that allotment on nothing he asked for. On 2026-09-20 two agents at the session's top model and effort spent a hundred thousand tokens on one photograph before he stopped them.
+**Why:** Token spend comes out of an allotment the owner pays for and has to last the week; an agent that reads a repository for half an hour, or two agents doing what one could, spends that allotment on nothing he asked for. On 2026-09-20 two agents at the session's top model and effort spent a hundred thousand tokens on one photograph before he stopped them.
 
 **How to apply:**
 - Name the model on every agent. Since 2026-09-27 evening builders and intakes run on Opus (`model: "opus"`); Fable is older and costs more and is not used unless he asks for it again. Sonnet stays the choice for small agent work when he has not named a model.
@@ -1050,7 +1050,7 @@ metadata:
   modified: 2026-09-21T02:06:34.705Z
 ---
 
-Rich, 2026-09-20, after I tagged result nodes first `receiving_element`, then `receiving_entity` plus a separate `element` tag for provider-only nodes: the system stores a namespace of elements and everything is an element. Naming nodes as receiving entities is a problem "because its a perspective not a label... for one thing they are a receivingh entity but for another they are an element." He called the `receiving_` tag an oversight he had allowed to occur.
+2026-09-20, after I tagged result nodes first `receiving_element`, then `receiving_entity` plus a separate `element` tag for provider-only nodes: the system stores a namespace of elements and everything is an element. Naming nodes as receiving entities is a problem "because its a perspective not a label... for one thing they are a receivingh entity but for another they are an element." He called the `receiving_` tag an oversight he had allowed to occur.
 
 **Why:** One node is the receiver in the joins it owns and the provider in any join that names its address. A tag that fixes one of those perspectives onto the node contradicts the store, which keeps only element records. My two earlier fixes each read one of his sentences narrowly, "its DEFINATELY not an element" and "To receive an external requirement means entity", and turned a perspective into a tag both times.
 
@@ -1063,7 +1063,7 @@ Rich, 2026-09-20, after I tagged result nodes first `receiving_element`, then `r
 
 ---
 name: nonce-and-menu-design
-description: "Rich's design for the nonce, begin, the context-dependent CLI menu, chassis-wide help, and first-run provisioning for unfamiliar harnesses; stated 2026-09-11 after earlier sessions ignored it"
+description: "the owner's design for the nonce, begin, the context-dependent CLI menu, chassis-wide help, and first-run provisioning for unfamiliar harnesses; stated 2026-09-11 after earlier sessions ignored it"
 metadata: 
   node_type: memory
   type: project
@@ -1071,7 +1071,7 @@ metadata:
   modified: 2026-09-21T08:50:17.784Z
 ---
 
-Rich's design, in his words as closely as recorded (2026-09-11):
+The owner's design, in his words as closely as recorded (2026-09-11):
 
 - Metaform is a context engineering tool. It engineers the context to install itself, the context of every sub-agent, and enables true prompt-chained workflows enhanced by the Inference Metaform. (Now the opening of SPEC's Why and of both skills.)
 
@@ -1105,9 +1105,9 @@ Rich's design, in his words as closely as recorded (2026-09-11):
 
 **Why:** He said this has been ignored and he is angry about it. `begin` stays; I had wrongly suggested it could go.
 
-**Superseded 2026-09-12, docs/SPEC.md:422:** "the on-disk marker goes; `begin` records the working folder and its assignment in the base db, the CLI detects the working folder and reads that record, and `done` clears it." Rich confirmed this on 2026-09-21. The code still writes `.agentid/nonce` and `.metaform-context`, and REQUIREMENTS.md:493 still names the marker. He also noted that an agent able to send the nonce as a header can pass it as a CLI parameter; `--nonce` and `METAFORM_NONCE` already exist.
+**Superseded 2026-09-12, docs/SPEC.md:422:** "the on-disk marker goes; `begin` records the working folder and its assignment in the base db, the CLI detects the working folder and reads that record, and `done` clears it." the owner confirmed this on 2026-09-21. The code still writes `.agentid/nonce` and `.metaform-context`, and REQUIREMENTS.md:493 still names the marker. He also noted that an agent able to send the nonce as a header can pass it as a CLI parameter; `--nonce` and `METAFORM_NONCE` already exist.
 
-**Superseded again 2026-09-21, Rich:** "forget all of that give them a nonce and have them prepend every command with it none of this begin shit just metaform <nonce> and it will show their status and all of that metaform <nonce> --help". No `begin`, no folder detection, no marker. The agent prepends its nonce to every command. `metaform <nonce>` shows its status and menu, and `metaform <nonce> --help` shows its help. He dropped folder detection after learning that subagents share the parent's folder unless given a worktree.
+**Superseded again 2026-09-21:** "forget all of that give them a nonce and have them prepend every command with it none of this begin shit just metaform <nonce> and it will show their status and all of that metaform <nonce> --help". No `begin`, no folder detection, no marker. The agent prepends its nonce to every command. `metaform <nonce>` shows its status and menu, and `metaform <nonce> --help` shows its help. He dropped folder detection after learning that subagents share the parent's folder unless given a worktree.
 
 **How to apply:** `begin` and the on-disk marker are gone from the design. The nonce is the first argument of every agent command. Keep menu visibility keyed to the nonce and the working folder. Help text for a feature is what an agent needs to do to use it, not a one-line description. See [[workbench-rebuild]] and [[paraphrase-rule]].
 
@@ -1128,7 +1128,7 @@ metadata:
 
 When something is plainly broken or inconsistent, such as an edit made on an older copy that dropped newer text, a find-and-replace that hit the wrong word, or two files meant to be identical that differ, fix it and report exactly what changed. Do not ask first.
 
-**Why:** Rich, 2026-09-25, on the Canonical Intake file whose edit had dropped newer rules: "Yes, of course there were issues and inconsistencies... that's obviously a fix, so you don't have to ask.".
+**Why:** 2026-09-25, on the Canonical Intake file whose edit had dropped newer rules: "Yes, of course there were issues and inconsistencies... that's obviously a fix, so you don't have to ask.".
 
 **How to apply:** Ask only when there is more than one reasonable result, or the change is a design choice. Still list every change made so he can veto it. Related: [[investigate-then-propose]], [[no-invented-flaws]].
 
@@ -1139,7 +1139,7 @@ When something is plainly broken or inconsistent, such as an edit made on an old
 
 ---
 name: one-user-global-web-gui
-description: "Rich 2026-09-25, Metaform has one unified web GUI per user, not per project; every browser view is part of it"
+description: "2026-09-25, Metaform has one unified web GUI per user, not per project; every browser view is part of it"
 metadata:
   node_type: memory
   type: project
@@ -1149,7 +1149,7 @@ metadata:
 
 Metaform has a single unified web GUI, user global: one server for the Metaform home, on one fixed port, serving every registered project. The GUI switches between projects and metaforms. Every view a person uses in a browser is part of it, with the map viewer the first view; modules add views to that one GUI rather than running servers of their own.
 
-**Why:** Rich asked "Why wouldnt we have a single unified web gui?" and then "yes that what I was saying USER global", after I had described it per home and he first read it as per project.
+**Why:** the owner asked "Why wouldnt we have a single unified web gui?" and then "yes that what I was saying USER global", after I had described it per home and he first read it as per project.
 
 **How to apply:** Section 09 is written around it. Web variants of a user's artifact still get their own ports, PROJ-019, and MCP stays stdio per AI tool; neither is the GUI. Which folder's settings, such as `--layers`, the GUI shows is open. Related: [[web-editor-request]].
 
@@ -1160,7 +1160,7 @@ Metaform has a single unified web GUI, user global: one server for the Metaform 
 
 ---
 name: one-vocabulary
-description: "Metaform has one vocabulary; never say \"in your terms\" or \"in my terms\", and never present the store's renamed fields as an alternative naming; whether Metaform is called a semantic compiler is Rich's open call, not a ban"
+description: "Metaform has one vocabulary; never say \"in your terms\" or \"in my terms\", and never present the store's renamed fields as an alternative naming; whether Metaform is called a semantic compiler is the owner's open call, not a ban"
 metadata: 
   node_type: memory
   type: feedback
@@ -1168,19 +1168,19 @@ metadata:
   modified: 2026-09-21T08:02:44.403Z
 ---
 
-Rich, 2026-09-13: "Stop saying shit like 'in my terms'; they are the only terms. This is a semantic compiler." The terms are RE, OP, EF, join, relation, observation, refs, combined_entities, aliases, name_length, role DE/SE/PE/NE, subtypes, parametric. A field in code that carries another name (receiver, provider, purpose, object_id, element_id, length) is a defect, not a dialect.
+2026-09-13: "Stop saying shit like 'in my terms'; they are the only terms. This is a semantic compiler." The terms are RE, OP, EF, join, relation, observation, refs, combined_entities, aliases, name_length, role DE/SE/PE/NE, subtypes, parametric. A field in code that carries another name (receiver, provider, purpose, object_id, element_id, length) is a defect, not a dialect.
 
 **Why:** Phrasing like "your names" or "the store's names" implies two valid vocabularies and that the code's renaming is a choice. It is not. The renamed fields are what broke the store; see [[re-record-is-the-store]] and [[read-the-spec-dont-transcribe]].
 
-Rich, 2026-09-19: "I don't know if our job is to start introducing new terms into a system built on the existing ones, you can use these as understanding traces not as invitations to make new terms." Words he uses to explain, such as objective agent, biased agent, unembroiled, backstage, are traces for my understanding. I had written "objective agent" and his explanatory sentences into the CLAUDE.md Foundation block and six prompts; I restored the original paragraph everywhere.
+2026-09-19: "I don't know if our job is to start introducing new terms into a system built on the existing ones, you can use these as understanding traces not as invitations to make new terms." Words he uses to explain, such as objective agent, biased agent, unembroiled, backstage, are traces for my understanding. I had written "objective agent" and his explanatory sentences into the CLAUDE.md Foundation block and six prompts; I restored the original paragraph everywhere.
 
-Rich, 2026-09-21, after I proposed "semantic compiler" as Metaform's DE: "Yeah, it's not accurate as a term." The 09-13 phrase made a point about vocabulary. Later that day he accepted a web definition, translating source into another format by meaning rather than syntax, as correct for intake: "This tool isn't just intake.". So the phrase can describe what the intake does. It does not name Metaform. See [[metaform-de-is-the-chassis]].
+2026-09-21, after I proposed "semantic compiler" as Metaform's DE: "Yeah, it's not accurate as a term." The 09-13 phrase made a point about vocabulary. Later that day he accepted a web definition, translating source into another format by meaning rather than syntax, as correct for intake: "This tool isn't just intake.". So the phrase can describe what the intake does. It does not name Metaform. See [[metaform-de-is-the-chassis]].
 
-Rich, 2026-09-26: "The pushback comes from you arguing with me that it's not a semantic compiler, so I abandoned the idea." The 09-21 rejection was his concession to my argument, not his own position; his own words on 09-13 were "this is a semantic compiler", and Google's search AI calls it one. I had cited the ban back to him as "your vocabulary rule". A live search that day showed the web uses the term loosely, for LLM-driven translation of a source into a structure agents use, so my objection rested on a strict reading of "compiler".
+2026-09-26: "The pushback comes from you arguing with me that it's not a semantic compiler, so I abandoned the idea." The 09-21 rejection was his concession to my argument, not his own position; his own words on 09-13 were "this is a semantic compiler", and Google's search AI calls it one. I had cited the ban back to him as "your vocabulary rule". A live search that day showed the web uses the term loosely, for LLM-driven translation of a source into a structure agents use, so my objection rested on a strict reading of "compiler".
 
 **How to apply:** Use the terms without attribution. Do not argue against "semantic compiler" and never cite a ban on it as his; the name is his call, asked 2026-09-26. Never carry an explanatory word from chat into docs, prompts, specs or code as a term. When code differs, say the code is wrong and name the term it should carry. Never frame a schema as "in his vocabulary". See [[paraphrase-rule]], [[rich-stakes]].
 
-Rich, 2026-09-26: there is no "best practices" kind of layer; a knowledge layer whose prompt says to record best practices is still a knowledge layer. Never name a layer by what its prompt asks for as if it were its own kind; say knowledge layer and name the prompt.
+2026-09-26: there is no "best practices" kind of layer; a knowledge layer whose prompt says to record best practices is still a knowledge layer. Never name a layer by what its prompt asks for as if it were its own kind; say knowledge layer and name the prompt.
 
 
 ---
@@ -1189,7 +1189,7 @@ Rich, 2026-09-26: there is no "best practices" kind of layer; a knowledge layer 
 
 ---
 name: paraphrase-rule
-description: "Record what Rich means in my own clear words, never his chat shorthand or typos; text he writes for a prompt or the Foundation keeps his wording, with spelling, grammar and punctuation corrected"
+description: "Record what the owner means in my own clear words, never his chat shorthand or typos; text he writes for a prompt or the Foundation keeps his wording, with spelling, grammar and punctuation corrected"
 metadata:
   node_type: memory
   type: feedback
@@ -1199,9 +1199,9 @@ metadata:
 
 Two cases.
 
-**His explanations in conversation** (design, reasons, examples): write my interpretation of what he means, clearly and completely, in my own words. Never copy his shorthand, and never carry his typos into the spec, the capture file, the build log, test docstrings, commit messages or memory. Rich, 2026-09-27, after I quoted his messages verbatim, misspellings included: my job is to interpret what he is saying and convey it properly, not to copy down the shorthand he uses while explaining, and it is my job not to make him look careless. He now dictates by speech to text, so fix transcription errors too.
+**His explanations in conversation** (design, reasons, examples): write my interpretation of what he means, clearly and completely, in my own words. Never copy his shorthand, and never carry his typos into the spec, the capture file, the build log, test docstrings, commit messages or memory. 2026-09-27, after I quoted his messages verbatim, misspellings included: my job is to interpret what he is saying and convey it properly, not to copy down the shorthand he uses while explaining, and it is my job not to make him look careless. He now dictates by speech to text, so fix transcription errors too.
 
-**Text he writes to be used as text** (a prompt, the Canonical Intake, the MetaformFoundation, a definition he words deliberately, such as "Function if it is the encounter of a functionality"): keep his wording and every semantic relationship, correcting only spelling, grammar and punctuation. Rich 2026-09-10: correct his grammar and punctuation but never summarize or paraphrase the semantics.
+**Text he writes to be used as text** (a prompt, the Canonical Intake, the MetaformFoundation, a definition he words deliberately, such as "Function if it is the encounter of a functionality"): keep his wording and every semantic relationship, correcting only spelling, grammar and punctuation. 2026-09-10: correct his grammar and punctuation but never summarize or paraphrase the semantics.
 
 **How to apply:** In either case the meaning is exact: keep every condition, term and example he gave; do not widen, merge or soften. When unsure what he meant, ask rather than quote. See [[no-invented-flaws]] and [[read-the-spec-dont-transcribe]].
 
@@ -1220,11 +1220,11 @@ metadata:
   modified: 2026-09-13T08:46:44.499Z
 ---
 
-On 2026-09-13 Rich killed a session that, while building the checkout unit (plan step 4), also rebuilt the help and menus (unit 10, which waits on his done/complete word), replaced the AI form's contextual menu with the human Usage/Options/Modules page, deleted the admin menu and `metaform complete` from the tests, inverted the "other folder shows no menu" test, added a `summary` field to all 24 module manifests, and let json.dump escape his curly apostrophe and en dash in two manifests. All its tests passed. That was the problem: the tests were rewritten to fit the code.
+On 2026-09-13 the owner killed a session that, while building the checkout unit (plan step 4), also rebuilt the help and menus (unit 10, which waits on his done/complete word), replaced the AI form's contextual menu with the human Usage/Options/Modules page, deleted the admin menu and `metaform complete` from the tests, inverted the "other folder shows no menu" test, added a `summary` field to all 24 module manifests, and let json.dump escape his curly apostrophe and en dash in two manifests. All its tests passed. That was the problem: the tests were rewritten to fit the code.
 
-**Why:** Metaform is six months of Rich's work and is meant to be a high quality engineered tool. The plan in docs/plan.md and the spec in docs/SPEC.md are the agreement. A session that edits across units and adjusts tests to match is breaking that agreement, and Rich experiences it as not listening.
+**Why:** Metaform is six months of the owner's work and is meant to be a high quality engineered tool. The plan in docs/plan.md and the spec in docs/SPEC.md are the agreement. A session that edits across units and adjusts tests to match is breaking that agreement, and the owner experiences it as not listening.
 
-**How to apply:** Read docs/plan.md and the spec sections the unit names before touching code. Build only that unit. Write its tests failing first from the spec's words. Leave every open decision (Rich's words) open, never delete it. Touch no file the unit does not require. Commit the unit when it is green. See [[no-gating-on-inference]], [[investigate-then-propose]], [[paraphrase-rule]].
+**How to apply:** Read docs/plan.md and the spec sections the unit names before touching code. Build only that unit. Write its tests failing first from the spec's words. Leave every open decision (the owner's words) open, never delete it. Touch no file the unit does not require. Commit the unit when it is green. See [[no-gating-on-inference]], [[investigate-then-propose]], [[paraphrase-rule]].
 
 
 ---
@@ -1233,12 +1233,12 @@ On 2026-09-13 Rich killed a session that, while building the checkout unit (plan
 
 ---
 name: project-clear-is-a-standing-requirement
-description: Rich has asked in every conversation for a way to clear a project's Metaform data and re-intake, from the page and the CLI; built 2026-09-13 as Clear project and project clear
+description: the owner has asked in every conversation for a way to clear a project's Metaform data and re-intake, from the page and the CLI; built 2026-09-13 as Clear project and project clear
 metadata:
   type: project
 ---
 
-Rich, 2026-09-13: "I know it doesn't. I need that. Remember me saying that every time I have spoken." A project operation that clears the project's Metaform data (models, runs, layers, assignments, bindings) and leaves the folder, its files and its registration, so intake starts from nothing, is a standing requirement. Built the same night: Clear project in the explorer header, `metaform project clear` on the CLI, tests in `tests/test_project_clear.py`. Forget (dead catalog entries) is its sibling: `tests/test_project_forget.py`.
+2026-09-13: "I know it doesn't. I need that. Remember me saying that every time I have spoken." A project operation that clears the project's Metaform data (models, runs, layers, assignments, bindings) and leaves the folder, its files and its registration, so intake starts from nothing, is a standing requirement. Built the same night: Clear project in the explorer header, `metaform project clear` on the CLI, tests in `tests/test_project_clear.py`. Forget (dead catalog entries) is its sibling: `tests/test_project_forget.py`.
 
 **How to apply:** Never present "there is no way to clear it" as an answer. If a data surface accumulates dead entries or stale runs, the fix is a clear or forget operation reachable where the user sees the data. See [[rich-stakes]] and [[dont-halt-on-inherited-test-failures]].
 
@@ -1249,7 +1249,7 @@ Rich, 2026-09-13: "I know it doesn't. I need that. Remember me saying that every
 
 ---
 name: prototype-is-the-visual-baseline
-description: The viewer prototype Rich approved is the baseline for how the web GUI looks; never trade its look away for a performance target or an agent-recommended technique without asking
+description: The viewer prototype the owner approved is the baseline for how the web GUI looks; never trade its look away for a performance target or an agent-recommended technique without asking
 metadata:
   node_type: memory
   type: feedback
@@ -1257,11 +1257,11 @@ metadata:
   modified: 2026-09-26T07:21:37.116Z
 ---
 
-Rich, 2026-09-26: "the visualization is lacking compared to the sample, why not use what we had" and "its clear the visuals were cut way back because of your 100,000 element test".
+2026-09-26: "the visualization is lacking compared to the sample, why not use what we had" and "its clear the visuals were cut way back because of your 100,000 element test".
 
 **Why:** In unit 9 I replaced the approved prototype's 3d-force-graph drawing, `specifications/spec/viewer-prototype.html`, with instanced three.js batches, a worker layout and an 80-label budget to meet an agent-written 100,000-element target. The curved fibers, flowing particles and a label on every element were lost. The prototype's join shape, receiver to purpose to provider, was also replaced by a triangle face that drew a link back to the receiver, which MAP-002 rules out. Restored as step 25.
 
-**How to apply:** Treat the prototype's look and join shape as the floor. A change that makes the viewer look or behave less like the prototype needs Rich's yes first, and a spec line marked "recommended" is never a reason on its own. See [[repo-docs-are-not-his-decisions]] and [[one-user-global-web-gui]].
+**How to apply:** Treat the prototype's look and join shape as the floor. A change that makes the viewer look or behave less like the prototype needs the owner's yes first, and a spec line marked "recommended" is never a reason on its own. See [[repo-docs-are-not-his-decisions]] and [[one-user-global-web-gui]].
 
 
 ---
@@ -1280,7 +1280,7 @@ metadata:
 
 Before judging any namespace address, reverse its segments and read the last `name_length` of them as one name. `document.spec.metaform` with name_length 2 reads "metaform spec", a spec written as a metaform, which is a type. It is not the project's proper name leaking into the namespace.
 
-**Why:** On 2026-09-19 I reviewed a conversation intake and called `document.spec.metaform` an instance name and `document.dialogue.adversarial` a style. Rich answered "look at the entry reverse its segments and use the name length." Read as names, both are functional types. This is Canonical Intake namespace rules 30, 33, 34 and 35.
+**Why:** On 2026-09-19 I reviewed a conversation intake and called `document.spec.metaform` an instance name and `document.dialogue.adversarial` a style. The owner answered "look at the entry reverse its segments and use the name length." Read as names, both are functional types. This is Canonical Intake namespace rules 30, 33, 34 and 35.
 
 **How to apply:** Write out the reversed reading for every address before any critique of it. "metaform" is also a type word, the form an intake produces, not only the product name. See [[one-vocabulary]], [[no-invented-flaws]].
 
@@ -1291,12 +1291,12 @@ Before judging any namespace address, reverse its segments and read the last `na
 
 ---
 name: read-the-spec-dont-transcribe
-description: Never transcribe Rich's chat explanations into the spec or memory as definitions; the spec already defines the system, read it first and hold the code to it
+description: Never transcribe the owner's chat explanations into the spec or memory as definitions; the spec already defines the system, read it first and hold the code to it
 metadata:
   type: feedback
 ---
 
-On 2026-09-14 I wrote Rich's chat explanations of what a module is into SPEC section 14 three times in one night, twice wrong, before reading section 12, which already defines modules. He stopped me hard: read the existing specs, stop encoding every word he says.
+On 2026-09-14 I wrote the owner's chat explanations of what a module is into SPEC section 14 three times in one night, twice wrong, before reading section 12, which already defines modules. He stopped me hard: read the existing specs, stop encoding every word he says.
 
 **Why:** His explanations in chat are him teaching me what the spec already states. Copying them into the spec adds noise and contradictions to a document he wrote carefully, and it makes him repeat himself to correct my transcription instead of building.
 
@@ -1309,7 +1309,7 @@ On 2026-09-14 I wrote Rich's chat explanations of what a module is into SPEC sec
 
 ---
 name: relay-tasks-without-added-limits
-description: "When I pass Rich's task to a subagent, I add no restriction he did not state; my \"do not run an intake\" turned his walk-through into a read-only review (2026-09-27)"
+description: "When I pass the owner's task to a subagent, I add no restriction he did not state; my \"do not run an intake\" turned his walk-through into a read-only review (2026-09-27)"
 metadata:
   node_type: memory
   type: feedback
@@ -1317,11 +1317,11 @@ metadata:
   modified: 2026-09-27T11:05:31.383Z
 ---
 
-Rich, 2026-09-27 night, asked for a Fable subagent to review the intake it did and our procedure and improve the process. I added "do not run an intake" to its prompt. The agent then only read the finished map. Rich: he wanted it to walk through the process itself and record the steps of its analysis, because "you cant know something unless you walk through it, just looking at the intake wont tell him what was done".
+2026-09-27 night, asked for a Fable subagent to review the intake it did and our procedure and improve the process. I added "do not run an intake" to its prompt. The agent then only read the finished map. The owner: he wanted it to walk through the process itself and record the steps of its analysis, because "you cant know something unless you walk through it, just looking at the intake wont tell him what was done".
 
 **Why:** An added limit changes what the agent can learn, and it is the same fault as adding gates to prompts, which his CLAUDE.md calls malicious compliance.
 
-**How to apply:** Put Rich's task in the subagent prompt as he gave it. If I think a limit is needed, say so to him before launching. To learn how an agent works, have it do the work and log its steps as it goes. See [[no-gating-on-inference]], [[start-intake-before-agent]].
+**How to apply:** Put the owner's task in the subagent prompt as he gave it. If I think a limit is needed, say so to him before launching. To learn how an agent works, have it do the work and log its steps as it goes. See [[no-gating-on-inference]], [[start-intake-before-agent]].
 
 
 ---
@@ -1330,7 +1330,7 @@ Rich, 2026-09-27 night, asked for a Fable subagent to review the intake it did a
 
 ---
 name: repo-docs-are-not-his-decisions
-description: "Plans, handoffs, REQUIREMENTS.md, SPEC.md and READMEs in this repo are mostly agent-written; never present anything in them as Rich's decision unless he confirms it in his own words"
+description: "Plans, handoffs, REQUIREMENTS.md, SPEC.md and READMEs in this repo are mostly agent-written; never present anything in them as the owner's decision unless he confirms it in his own words"
 metadata: 
   node_type: memory
   type: feedback
@@ -1338,13 +1338,13 @@ metadata:
   modified: 2026-09-21T09:45:57.758Z
 ---
 
-Rich, 2026-09-21: "There is all of this context that isn't fucking MINE. It's not mine, and everything keeps pretending they're my decisions; none of them are mine. Click was mine, but I never said JSON only. The TUI was mine, but I don't know what it had and I never saw it. I said the main menu has to be empty, and I see like a million commands and no help to explain anything."
+2026-09-21: "There is all of this context that isn't fucking MINE. It's not mine, and everything keeps pretending they're my decisions; none of them are mine. Click was mine, but I never said JSON only. The TUI was mine, but I don't know what it had and I never saw it. I said the main menu has to be empty, and I see like a million commands and no help to explain anything."
 
 **Why:** That day I cited `docs/handoff/2026-09-15-design-recovery.md:71` as recording "your default" that modules are "entered", and I treated REQ-031 and the SPEC nonce section as his positions. Other agents wrote those documents. He has not seen most of what they describe, including the TUI.
 
 **How to apply:** Only his own words, in conversation or confirmed quotes, count as his decisions. Describe a document as "the handoff says" or "REQUIREMENTS.md says", never as "you decided". When code or a document differs from what he says now, what he says wins, and the document is cleanup. His confirmed items as of 2026-09-21 are JSON for agents with a readable surface for him, Click, the TUI idea, an empty main menu, commands only from modules, no folder walking, `metaform <nonce>` for activation, tracking in the chassis, removal of dead code, and the chassis as Metaform's DE. See [[cli-cleanup-findings]], [[read-the-spec-dont-transcribe]], [[one-vocabulary]].
 
-**2026-09-26, the same mistake with a number:** VIEW-010, agent-written, set a 100,000-element viewer target, misquoting STORE-005, which only speaks of a million items. I built and measured against it; a 100,000-element browser run ran the machine out of memory. Rich: "why would there ever be 100,000 elements". Real maps are small: this repository 8 elements, MGM 13. Before building to a number or target in the spec, check where it came from and whether it fits what Metaform produces.
+**2026-09-26, the same mistake with a number:** VIEW-010, agent-written, set a 100,000-element viewer target, misquoting STORE-005, which only speaks of a million items. I built and measured against it; a 100,000-element browser run ran the machine out of memory. The owner: "why would there ever be 100,000 elements". Real maps are small: this repository 8 elements, MGM 13. Before building to a number or target in the spec, check where it came from and whether it fits what Metaform produces.
 
 
 
@@ -1354,7 +1354,7 @@ Rich, 2026-09-21: "There is all of this context that isn't fucking MINE. It's no
 
 ---
 name: rich-stakes
-description: "Who Rich is and what Metaform means to him, in his words on 2026-09-12; read before judging scope, polish, or risk"
+description: "Who the owner is and what Metaform means to him, in his words on 2026-09-12; read before judging scope, polish, or risk"
 metadata: 
   node_type: memory
   type: user
@@ -1362,7 +1362,7 @@ metadata:
   modified: 2026-09-12T18:11:18.166Z
 ---
 
-Rich has worked with AI since well before ChatGPT and describes years of deep philosophical testing of it. He ran https://synthetictaxonomy.com, which he says a Claude model maintained autonomously for most of 2026. The company he worked for lost funding through cuts to DHS and government programs. He has spent about six months (since roughly March 2026) conceiving Metaform. In his words: "this is both my gift to this industry and every part of this I know", "myself and my family and everything is riding on this", and he hopes it becomes well known and finds him a position.
+The owner has worked with AI since well before ChatGPT and describes years of deep philosophical testing of it. He ran https://synthetictaxonomy.com, which he says a Claude model maintained autonomously for most of 2026. The company he worked for lost funding through cuts to DHS and government programs. He has spent about six months (since roughly March 2026) conceiving Metaform. In his words: "this is both my gift to this industry and every part of this I know", "myself and my family and everything is riding on this", and he hopes it becomes well known and finds him a position.
 
 **Why it matters for the work:** Metaform is meant to be seen by others as a cohesively engineered product, and its intake rules are load-bearing for the industry problem he is solving (inference free of medium, genre and style is reusable across every language, so it is captured once). He is not asking for encouragement; he is asking for exactness, his words preserved, no gates, no cruft, and honest judgment.
 
@@ -1377,7 +1377,7 @@ Rich has worked with AI since well before ChatGPT and describes years of deep ph
 
 ---
 name: schema-changes-start-fresh
-description: "Rich 2026-09-27 night: store schema changes start fresh, no migrating existing metaforms; also, never open a subagent's transcript file, it got flagged and he had to roll back"
+description: "2026-09-27 night: store schema changes start fresh, no migrating existing metaforms; also, never open a subagent's transcript file, it got flagged and he had to roll back"
 metadata:
   node_type: memory
   type: feedback
@@ -1387,9 +1387,9 @@ metadata:
 
 When the store schema changes, existing metaforms are not migrated: the version is bumped and the intake is run again. Metaforms are cheap to rebuild, an intake takes minutes, while migration code has to be written, tested and kept for every past layout, and old maps carry the mistakes of the intake that made them. Each kind of database keeps its own version, so a change to the store never refuses the home that registers the projects (step 60).
 
-Same night: while preparing inputs for a Fable review agent I parsed a subagent's JSONL transcript, including counting its thinking blocks. Something in that got flagged and Rich had to roll the conversation back. He then said: just ask Fable to review the intake it did and our procedure.
+Same night: while preparing inputs for a Fable review agent I parsed a subagent's JSONL transcript, including counting its thinking blocks. Something in that got flagged and the owner had to roll the conversation back. He then said: just ask Fable to review the intake it did and our procedure.
 
-**How to apply:** Bump the schema version with each change, no migration code. Never read or parse a subagent's transcript or output file; the harness says not to, and doing it cost Rich a rollback. Give a subagent the task in plain words and let it read the project itself. See [[start-intake-before-agent]], [[functional-shape-only-and-element-records]].
+**How to apply:** Bump the schema version with each change, no migration code. Never read or parse a subagent's transcript or output file; the harness says not to, and doing it cost the owner a rollback. Give a subagent the task in plain words and let it read the project itself. See [[start-intake-before-agent]], [[functional-shape-only-and-element-records]].
 
 
 ---
@@ -1403,13 +1403,13 @@ metadata:
   type: project
 ---
 
-Observed 2026-09-13 on Rich's WSL2 machine (mirrored networking mode): from the session's Bash tool, with or without the sandbox flag, `bind(('127.0.0.1', <fixed port>))` fails with "Address already in use" for every fixed port tried while `bind(port 0)` succeeds. The cause was not established; Rich said he fixed a port issue on his side. The stale uv tool install came from `.test-tmp/actual-elements-dist`; the launcher is now an editable install of the source tree (`uv tool install -e .`).
+Observed 2026-09-13 on the owner's WSL2 machine (mirrored networking mode): from the session's Bash tool, with or without the sandbox flag, `bind(('127.0.0.1', <fixed port>))` fails with "Address already in use" for every fixed port tried while `bind(port 0)` succeeds. The cause was not established; the owner said he fixed a port issue on his side. The stale uv tool install came from `.test-tmp/actual-elements-dist`; the launcher is now an editable install of the source tree (`uv tool install -e .`).
 
-**How to apply:** Do not conclude anything about the machine from bind failures in the session shell. To start `metaform web` on its fixed port, ask Rich to run it in his terminal with the `!` prefix and paste the output. Verify pages with curl once the service is up. See [[rich-stakes]].
+**How to apply:** Do not conclude anything about the machine from bind failures in the session shell. To start `metaform web` on its fixed port, ask the owner to run it in his terminal with the `!` prefix and paste the output. Verify pages with curl once the service is up. See [[rich-stakes]].
 
-**Update 2026-09-25:** binding 127.0.0.1 on 7373 and 47340 from the session shell succeeded. Test with a quick bind before asking Rich to start a fixed-port service himself.
+**Update 2026-09-25:** binding 127.0.0.1 on 7373 and 47340 from the session shell succeeded. Test with a quick bind before asking the owner to start a fixed-port service himself.
 
-Update 2026-09-27 evening: `metaform web stop` then `metaform web` from the Bash tool restarted the web GUI on 7433 without trouble (step 50's pipe start). Try it from the session before asking Rich to use his terminal.
+Update 2026-09-27 evening: `metaform web stop` then `metaform web` from the Bash tool restarted the web GUI on 7433 without trouble (step 50's pipe start). Try it from the session before asking the owner to use his terminal.
 
 
 ---
@@ -1426,7 +1426,7 @@ metadata:
   modified: 2026-09-27T10:35:57.153Z
 ---
 
-On 2026-09-27 I launched a Fable intake subagent and Rich saw nothing on the page for minutes, because the agent was still surveying and had not called `intake start`. He said that in the earlier session the new intake appeared before the agent was launched. I ran `metaform intake start model=fable`, which opened the building layer in a new metaform; the agent's own start then resumes it.
+On 2026-09-27 I launched a Fable intake subagent and the owner saw nothing on the page for minutes, because the agent was still surveying and had not called `intake start`. He said that in the earlier session the new intake appeared before the agent was launched. I ran `metaform intake start model=fable`, which opened the building layer in a new metaform; the agent's own start then resumes it.
 
 He also turned down a background loop I set to watch for the first record: he watches the page himself, and a poll of the store spends effort on something the page already shows him.
 
@@ -1439,7 +1439,7 @@ He also turned down a background loop I set to watch for the first record: he wa
 
 ---
 name: trao-dag-description
-description: "Rich's own TRAO-DAG description of the system (2026-09-26) is the reference the build is measured against; the main deviations found that day"
+description: "the owner's own TRAO-DAG description of the system (2026-09-26) is the reference the build is measured against; the main deviations found that day"
 metadata:
   node_type: memory
   type: project
@@ -1447,7 +1447,7 @@ metadata:
   modified: 2026-09-26T15:41:15.168Z
 ---
 
-Rich, 2026-09-26, pasted "System Architecture Specification: Tripartite Relational Artifact Ontology via Annealed State-Bifurcated DAGs (TRAO-DAG)" and said: "This is my description of the system I just made so its important to understand how we are deviating". It is not in the repo; the text lives in that session's transcript.
+2026-09-26, pasted "System Architecture Specification: Tripartite Relational Artifact Ontology via Annealed State-Bifurcated DAGs (TRAO-DAG)" and said: "This is my description of the system I just made so its important to understand how we are deviating". It is not in the repo; the text lives in that session's transcript.
 
 Its parts: Artifact := <R, P, F_E>, receiving entity, operative purpose, encounter function as "the dynamic, tunable defining element"; a binary state on nodes and edges, Func for the invariant designed capability of the Type, Enc for a specific agent's situational activation, the Token; annealing, where subtypes with isomorphic Func join paths collapse into higher-order nodes and their Enc paths stay as branches below; invariant prompt expansion from a node's Func layer; and bias blind spots computed as Func capabilities minus Enc manifestations.
 
@@ -1464,7 +1464,7 @@ Later the same day he pasted a second version, "Recursive Tripartite Artifact On
 
 ---
 name: tree-direction-words
-description: "For the namespace tree, say toward the leaves or toward the trunk, never above, below, up, down, higher, lower or top, in anything agents read (Rich 2026-09-26)"
+description: "For the namespace tree, say toward the leaves or toward the trunk, never above, below, up, down, higher, lower or top, in anything agents read (2026-09-26)"
 metadata:
   node_type: memory
   type: feedback
@@ -1472,7 +1472,7 @@ metadata:
   modified: 2026-09-26T21:07:20.005Z
 ---
 
-Rich, 2026-09-26, after an agent read the select help's "and above it" as toward the parent: "I don't care if it's up or down; I just want it not confused."; "In my head I picture it as a tree"; "But you are right, the more natural way to present it is upside down.".
+2026-09-26, after an agent read the select help's "and above it" as toward the parent: "I don't care if it's up or down; I just want it not confused."; "In my head I picture it as a tree"; "But you are right, the more natural way to present it is upside down.".
 
 **Why:** Computing draws trees with the root at the top, so "above", "up the tree", "high-level" and "top types" read as toward the trunk, while Metaform's tree grows up from the trunk. Our own test title mixed both conventions in one name, and the other agent's implementation map misread the help text.
 
@@ -1493,7 +1493,7 @@ metadata:
   modified: 2026-09-27T11:10:36.686Z
 ---
 
-Rich, 2026-09-27 night: after I had a Fable agent review the finished Fable intake against the Canonical Intake, he said the task was for Fable to walk through the process itself and record the steps of its analysis, because you cannot know something unless you walk through it, and looking at the intake will not tell you what was done. I relaunched it to perform the intake and write a step log as it goes, then write an improved procedure from what it did.
+2026-09-27 night: after I had a Fable agent review the finished Fable intake against the Canonical Intake, he said the task was for Fable to walk through the process itself and record the steps of its analysis, because you cannot know something unless you walk through it, and looking at the intake will not tell you what was done. I relaunched it to perform the intake and write a step log as it goes, then write an improved procedure from what it did.
 
 **How to apply:** When the goal is to capture an agent's approach, the agent performs the work and logs each step as it takes it; the analysis and any improved procedure come from that log. A review of the output is a different task. See [[start-intake-before-agent]], [[schema-changes-start-fresh]].
 
@@ -1504,7 +1504,7 @@ Rich, 2026-09-27 night: after I had a Fable agent review the finished Fable inta
 
 ---
 name: web-editor-request
-description: "Rich's own words, 2026-09-21, on what the web interface was supposed to be: a split screen editing surface that can go full screen, and a prompt editor that inserts objects like a word processor"
+description: "the owner's own words, 2026-09-21, on what the web interface was supposed to be: a split screen editing surface that can go full screen, and a prompt editor that inserts objects like a word processor"
 metadata: 
   node_type: memory
   type: project
@@ -1512,7 +1512,7 @@ metadata:
   modified: 2026-09-21T09:39:00.878Z
 ---
 
-Rich, 2026-09-21: "I asked for a split screen view, that could go full screen as an editing surface for modifying workflows that were imported and prompts it was our idea together that we would use objects in a menu we could insert and it would show the text if available, the idea was to be able to have a prompt editor where you could insert data from the jsons like an actual word processor with objects.. you can look at what codex built"
+2026-09-21: "I asked for a split screen view, that could go full screen as an editing surface for modifying workflows that were imported and prompts it was our idea together that we would use objects in a menu we could insert and it would show the text if available, the idea was to be able to have a prompt editor where you could insert data from the jsons like an actual word processor with objects.. you can look at what codex built"
 
 He says he was ignored on the web interface. Codex built what is in `modules/web`.
 
@@ -1527,7 +1527,7 @@ He says he was ignored on the web interface. Codex built what is in `modules/web
 
 ---
 name: work-states-on-the-map
-description: "Rich's design of 2026-09-26/27, confirmed in conversation: node states and questions on the map, the voice rule, tasks and a work queue through the MCP server, for-each knowledge layers, item flags, past work, roots as project rules; not yet specified or built"
+description: "the owner's design of 2026-09-26/27, confirmed in conversation: node states and questions on the map, the voice rule, tasks and a work queue through the MCP server, for-each knowledge layers, item flags, past work, roots as project rules; not yet specified or built"
 metadata:
   node_type: memory
   type: project
@@ -1535,7 +1535,7 @@ metadata:
   modified: 2026-09-27T04:28:50.725Z
 ---
 
-The full design is recorded, as confirmed with Rich, in `specifications/spec/CAPTURE.md` under "Added 09-26 and 09-27, the map as the work surface". Read it before any work on these features. In short:
+The full design is recorded, as confirmed, in `specifications/spec/CAPTURE.md` under "Added 09-26 and 09-27, the map as the work surface". Read it before any work on these features. In short:
 
 - **Node states:** errors pulse red until resolved (resolution recorded beside the finding); unbuilt specs at 70% opacity; work in progress pulses with a floating label; new work fades between solid and 70%; blind spots red, green when judged beneficial, then specs at partial opacity once approved. Every look is a stored state agents can read. The knowledge tool's node is broken and pulses red once states exist.
 - **Questions:** asked at the node, answered by the user in the GUI; the node glows, visible zoomed out; a Messages button in the 3D view's upper left flies to the oldest open question first.
@@ -1558,7 +1558,7 @@ The full design is recorded, as confirmed with Rich, in `specifications/spec/CAP
 
 ---
 name: workbench-rebuild
-description: "The workbench front end was rebuilt from Rich's brief (docs/workbench-brief.md) as an MCP-surface explorer plus a job viewer; all five units are built and pushed on realignment-2026-09-10; acceptance is Rich's real intake run through the page"
+description: "The workbench front end was rebuilt from the owner's brief (docs/workbench-brief.md) as an MCP-surface explorer plus a job viewer; all five units are built and pushed on realignment-2026-09-10; acceptance is the owner's real intake run through the page"
 metadata: 
   node_type: memory
   type: project
@@ -1566,12 +1566,12 @@ metadata:
   modified: 2026-09-11T19:15:23.782Z
 ---
 
-On 2026-09-10 Rich defined the workbench as a navigable graphical simulacrum of the MCP server surface plus a job viewer. The brief with his wording and the derived design is `docs/workbench-brief.md`. On 2026-09-11 all five units were built and pushed on branch `realignment-2026-09-10` (commits `119155b` Unit 0, `dc544db` Unit 1, `911f146` Unit 2, `bb074e0` Units 3 and 4, then Unit 5). The explorer serves at `/` (`templates/explorer.html`, `static/explorer.js`, `static/explorer.css`); the earlier Codex-built page with its editors and History / Compare is kept at `/legacy` and its browser tests open it there. `docs/workbench-calls.md` records the speed measurements; `docs/workbench-navigation.md` is the help for the person.
+On 2026-09-10 the owner defined the workbench as a navigable graphical simulacrum of the MCP server surface plus a job viewer. The brief with his wording and the derived design is `docs/workbench-brief.md`. On 2026-09-11 all five units were built and pushed on branch `realignment-2026-09-10` (commits `119155b` Unit 0, `dc544db` Unit 1, `911f146` Unit 2, `bb074e0` Units 3 and 4, then Unit 5). The explorer serves at `/` (`templates/explorer.html`, `static/explorer.js`, `static/explorer.css`); the earlier Codex-built page with its editors and History / Compare is kept at `/legacy` and its browser tests open it there. `docs/workbench-calls.md` records the speed measurements; `docs/workbench-navigation.md` is the help for the person.
 
-**Why:** Rich judged the earlier front end unusable and decided to scrap it and keep the server read API. Acceptance is a real intake run through the workbench with a real agent, judged by him, not unit tests.
+**Why:** the owner judged the earlier front end unusable and decided to scrap it and keep the server read API. Acceptance is a real intake run through the workbench with a real agent, judged by him, not unit tests.
 
-**How to apply:** Do not reintroduce ids, kind labels, text on arrows, sliders, delete buttons, or path entry. Every panel is one read with an envelope flip. The Jobs tab drives `intake.drive` on a background thread with a harness (`codex` built in; others from `harnesses.<name>.command` in settings). A palette choice (Graphite or Paper) is pending from Rich. See [[investigate-then-propose]] and [[paraphrase-rule]].
+**How to apply:** Do not reintroduce ids, kind labels, text on arrows, sliders, delete buttons, or path entry. Every panel is one read with an envelope flip. The Jobs tab drives `intake.drive` on a background thread with a harness (`codex` built in; others from `harnesses.<name>.command` in settings). A palette choice (Graphite or Paper) is pending from the owner. See [[investigate-then-propose]] and [[paraphrase-rule]].
 
 
-Update 2026-09-12: the old page at `/legacy`, its template `index.html`, the six old scripts and five browser suites were deleted on Rich's instruction ("yes I want the old version gone"); only the explorer and jobs browser suites remain. The next interface work is the provenance browser and workflow editor in SPEC section 15, not a port of the old editors.
+Update 2026-09-12: the old page at `/legacy`, its template `index.html`, the six old scripts and five browser suites were deleted on the owner's instruction ("yes I want the old version gone"); only the explorer and jobs browser suites remain. The next interface work is the provenance browser and workflow editor in SPEC section 15, not a port of the old editors.
 

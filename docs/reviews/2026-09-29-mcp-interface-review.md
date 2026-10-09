@@ -2,7 +2,7 @@
 
 The module-based design is the right foundation for a concise agent interface. It has a small first surface, a predictable invocation pattern, and command declarations shared with the CLI. It does not yet meet the goal of an interface an unfamiliar agent can use instinctively. The main problem is uneven disclosure: the first menu is small, but entering a module delivers a large argument reference while withholding the operational guidance that explains how to use it.
 
-The subtype Operative Purpose defect discovered during this review has been fixed at Rich's request. The remaining design changes below are recommendations, not implemented changes.
+The subtype Operative Purpose defect discovered during this review has been fixed at the owner's request. The remaining design changes below are recommendations, not implemented changes.
 
 The review used the current working checkout, version `2026.9.29.25`, including its existing local changes. Its procedural test used [Canonical_Intake.xml](/home/rich/metaform/specifications/Canonical_Intake.xml) through a real MCP client and stdio server, with a separate `METAFORM_HOME` under this repository. The Artifact Under Examination was the current MCP interface and its module implementation, not a whole-repository intake. The requested file was selected with `intake_file`; the served text matched it after undoing only the target substitution. The Canonical Intake was not edited.
 

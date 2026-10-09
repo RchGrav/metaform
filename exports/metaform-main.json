@@ -1357,7 +1357,7 @@
        "name": "CLAUDE.md",
        "name_length": 2,
        "role": "SE",
-       "function": "States how an agent works on Metaform with Rich: no gates on prompted outputs unless they guard a named silent failure, intent encoded exactly as given, Linux, macOS and Windows for everything, turns that keep moving, and the MetaformFoundation block for expert agents building the platform.",
+       "function": "States how an agent works on Metaform: no gates on prompted outputs unless they guard a named silent failure, intent encoded exactly as given, Linux, macOS and Windows for everything, turns that keep moving, and the MetaformFoundation block for expert agents building the platform.",
        "ef": "Encounter",
        "relation": "The collaboration rules govern how building agents work while they build from the specification.",
        "observation": "It says its instructions are for agents developing Metaform, never for agents in the runtime.",

@@ -112,7 +112,7 @@ It covers the engineering standard, cross-platform proof, typing, linting, what 
   - interface stability;
   - speculative architecture.
 
-  Rich judges behavior. The critic judges the code.
+  the owner judges behavior. The critic judges the code.
 - Why: Passing tests are not quality. The standard's qualities can only be judged by reading the code. A reviewer who did not write the change sees what the author missed.
 - How it shows: Every merged change has a written review attached that names each standard item it touches and the verdict for each.
 - Build: A critic agent receives the diff, the standard and the spec records the change claims to meet. Findings that fail the standard block the merge until they are fixed. Where the review is stored is open.
@@ -151,11 +151,11 @@ It covers the engineering standard, cross-platform proof, typing, linting, what 
 ### QUAL-011 The cold build check of this spec
 
 - Requirement: The spec is buildable when a fresh agent, given only the spec, can list no point where it would have to guess, choose, or ask.
-- What this means: An agent with no memory, no repository and no conversation history reads the spec and lists every place where it would have to guess, choose between readings, or ask. Each item is either a gap fixed from the confirmed design, or a question for Rich. Nothing on the list is filled in by guesswork. The check repeats until the list comes back empty.
+- What this means: An agent with no memory, no repository and no conversation history reads the spec and lists every place where it would have to guess, choose between readings, or ask. Each item is either a gap fixed from the confirmed design, or a question for the owner. Nothing on the list is filled in by guesswork. The check repeats until the list comes back empty.
 - Why: Earlier builds were rebuilt many times because builders reinterpreted a spec that left room to guess. An empty list is the evidence that the build follows from the spec without reinterpretation.
-- How it shows: Each run produces a list. The list shrinks across runs, and open questions go to Rich in batches.
+- How it shows: Each run produces a list. The list shrinks across runs, and open questions go to the owner in batches.
 - Build: A clean agent run, with no instruction files and no access to earlier branches, gets the specifications/ folder and one instruction: list every point where you would guess, choose, or ask to build this, citing the record. The run follows the clean-run pattern of the intake, on a copy outside the repository. Because the builder has no repository, every record that describes a change to existing code also states the full resulting behavior, so the spec stands alone; existing code is only a starting point the builder may reuse where it matches.
-- Acceptance: The latest cold build run returns an empty list, and every item from earlier runs is traced to a fix or to Rich's answer.
+- Acceptance: The latest cold build run returns an empty list, and every item from earlier runs is traced to a fix or to the owner's answer.
 - Relates to: QUAL-009, every section of the spec.
 - Status: confirmed.
 
@@ -196,7 +196,7 @@ It covers the engineering standard, cross-platform proof, typing, linting, what 
 ### QUAL-015 No polling and no blocking
 
 - Requirement: Nothing in Metaform polls unless it is demonstrated that there is no other way, and nothing an agent or a person waits on blocks behind slow work.
-- What this means: Rich, 2026-09-26, after the web GUI followed an intake by asking every 1.5 s: Metaform has a module event system, so it does not poll; nothing polls unless it is demonstrated there is no other way, and nothing blocks. The rule is system wide. What happened is announced: a module publishes it, BASE-010, and whatever needs to know is told, the web GUI's open pages through the push of VIEW-018. A timer, a sleep in a loop or a repeated read that waits for a change is a defect unless a written demonstration shows no event exists or can exist. A thread that sleeps until an event wakes it is not polling, and holds nobody up. A single wait for a message with a limit on it, so a command never hangs forever, is not polling either: nothing runs while it stands, and the limit ends the wait once, as `metaform web` and `metaform web stop` wait, VIEW-002.
+- What this means: 2026-09-26, after the web GUI followed an intake by asking every 1.5 s: Metaform has a module event system, so it does not poll; nothing polls unless it is demonstrated there is no other way, and nothing blocks. The rule is system wide. What happened is announced: a module publishes it, BASE-010, and whatever needs to know is told, the web GUI's open pages through the push of VIEW-018. A timer, a sleep in a loop or a repeated read that waits for a change is a defect unless a written demonstration shows no event exists or can exist. A thread that sleeps until an event wakes it is not polling, and holds nobody up. A single wait for a message with a limit on it, so a command never hangs forever, is not polling either: nothing runs while it stands, and the limit ends the wait once, as `metaform web` and `metaform web stop` wait, VIEW-002.
 - Why: A poll does work while nothing changes, lags when something does, and multiplies with every feature that wants live state; the event bus already says when things happen.
 - How it shows: A page left open during an intake sends no request until something is recorded, then draws it at once.
 - Build: The critic review under QUAL-008 checks new code for timers, sleeps and repeated reads; a test that a feature pushes rather than polls sits with the feature, as VIEW-018's does.
@@ -213,7 +213,7 @@ It covers the engineering standard, cross-platform proof, typing, linting, what 
 - Build: The critic review under QUAL-008 checks each new capability for the three.
 - Acceptance: checked in the critic review, QUAL-008, and by hello's test of each demonstration.
 - Relates to: BASE-019, QUAL-008, QUAL-013.
-- Status: confirmed 2026-09-26. Rich, 2026-09-26: any capability added to support a feature, or anything not thought of before, updates the template module and the module services and gets a demonstration in hello.
+- Status: confirmed 2026-09-26. 2026-09-26: any capability added to support a feature, or anything not thought of before, updates the template module and the module services and gets a demonstration in hello.
 
 ### QUAL-017 Removing needs the same permission as building
 

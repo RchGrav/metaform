@@ -1,6 +1,6 @@
 # Jev and Metaform: analysis
 
-Status: analysis, 2026-09-23, written by metaform-68 for mgm-main-f8 at Rich's request. No code was written and no API was called.
+Status: analysis, 2026-09-23, written by metaform-68 for mgm-main-f8 at the owner's request. No code was written and no API was called.
 
 ## Recommendation
 
@@ -48,7 +48,7 @@ Sources:
 ## Two rules that shape every use
 
 - **No gating on inference.** Contracts describe and never reject, and intake is never gated or judged. A Jev decision about an intake answer is therefore recorded for observation. It never refuses, repairs or hands back the answer. Routing a low-confidence decision to an LLM or a person is allowed only where the workflow author or the orchestrator wrote that route. The server adds none.
-- **Context is selected by masks, never by similarity.** The spec says `orient` is lexical and deterministic. A Jev pick among addresses is a model judgment. So Jev may suggest candidates as a recorded decision, but it must not become the way context is selected unless Rich changes that rule.
+- **Context is selected by masks, never by similarity.** The spec says `orient` is lexical and deterministic. A Jev pick among addresses is a model judgment. So Jev may suggest candidates as a recorded decision, but it must not become the way context is selected unless the owner changes that rule.
 
 ## Candidate uses
 
@@ -73,7 +73,7 @@ Each entry gives the decision's schema, what feeds it, and what consumes the out
   - Under the layer-join model, it picks a layer join type. If selectors key on `type#id`, a second Choice picks the instance.
 
 ### 3. Finding kind. Value: high.
-- **Schema:** Choice over `drift`, meaning the map and the code have diverged; `violation`, meaning the code breaks a designer rule; and `missing`, meaning the map lacks an element the code has. Add `stale_note` if Rich wants the MGM layer's "Notes: ... stale" findings kept apart.
+- **Schema:** Choice over `drift`, meaning the map and the code have diverged; `violation`, meaning the code breaks a designer rule; and `missing`, meaning the map lacks an element the code has. Add `stale_note` if the owner wants the MGM layer's "Notes: ... stale" findings kept apart.
 - **Fed by:** the finding's text and the element it names.
 - **Consumed by:** the layer's item `kind` field, the latent critic's output, and the orchestrator deciding what to fix first.
 - **Why it fits:** the MGM layer's 22 findings already fall into these kinds by hand. It is cheap, frequent, and easy to label.
@@ -82,7 +82,7 @@ Each entry gives the decision's schema, what feeds it, and what consumes the out
 - **Schema:** Noul, or a Choice among the branches the author wrote.
 - **Fed by:** the step's state: the previous step's answer and the bound inputs.
 - **Consumed by:** the workflow engine's branch step, in place of an LLM call or a person's answer.
-- **Why it fits:** it evaluates a condition the author wrote. It does not invent one. The probabilities are recorded with the run, so a replay shows why the branch went the way it did. This supports Rich's deterministic prompt chain.
+- **Why it fits:** it evaluates a condition the author wrote. It does not invent one. The probabilities are recorded with the run, so a replay shows why the branch went the way it did. This supports the owner's deterministic prompt chain.
 - **Limit:** Jev may choose "hand off or not" and "blind to the repo or not" only where the author wrote that choice as a branch. It never adds a handoff.
 
 ### 5. Candidate addresses for a task, a suggestion beside `orient`. Value: medium to high.
@@ -113,10 +113,10 @@ Each entry gives the decision's schema, what feeds it, and what consumes the out
 ### 9. Namespace typology test. Value: medium as an audit.
 - **Schema:** Choice over `same_type_as_parent`, `function_within_parent` and `non_functionality`. A second Choice, asked only when the answer is `non_functionality`, names the kind: genre, medium, encoding, language, style or purpose.
 - **Fed by:** the address, its reading, the parent's reading, the join's function text, and the intake's namespace validity examples as part of the state.
-- **Consumed by:** a finding on the element. It never refuses the entry. It is also a check on layer names only if Rich wants one, because layer addresses are exempt from the validity rules.
+- **Consumed by:** a finding on the element. It never refuses the entry. It is also a check on layer names only if the owner wants one, because layer addresses are exempt from the validity rules.
 - **Why only an audit:** this is the intake's core judgment, made with the whole trace in view. A per-entry recognizer is a useful second opinion, not a replacement.
 
-### 10. Memory relation verbs. Value: depends on Rich's answer.
+### 10. Memory relation verbs. Value: depends on the owner's answer.
 - **Fixed set:** a Choice over the verbs, fed by the two roots and the observation that prompted the link.
 - **Free active-voice text:** Jev cannot produce it. At most it can say whether a verb an agent wrote matches an existing one, as a Choice among the verbs in use.
 
@@ -148,7 +148,7 @@ Two ways in. Both keep the nonce chain and the chassis-and-module split.
 
 **B. As a module's agent command.**
 - A `decisions` module declares `purpose` and an agent command `decide(question, schema, inputs)`, where `inputs` are references to joins in the record. It is served as the MCP tool `decisions_decide` and as `metaform <nonce> decide`.
-- Recording a decision is a write, so under the Authority rule it needs an orchestrator nonce, unless Rich counts decisions with memories.
+- Recording a decision is a write, so under the Authority rule it needs an orchestrator nonce, unless the owner counts decisions with memories.
 
 **Recommendation: build B first, provider-neutral.**
 - The module's backend setting picks Jev, or any LLM with structured output, for example Claude Sonnet 5 with a JSON schema, or a person.
@@ -176,7 +176,7 @@ Every record is a join owned by its receiver, and the metaform is its own proven
 
 - **Vendor claim, not tested:** confidence is calibrated.
 - **What would be measured:**
-  1. **Labels.** Rich, or a reviewer he names, labels the MGM map's decisions:
+  1. **Labels.** the owner, or a reviewer he names, labels the MGM map's decisions:
      - roles for the 16 roots;
      - typology for the 56 internal subtypes, plus invalid entries taken from the intake's own examples, such as `code.cpp`, `media.photo.jpg` and `code.game.engine.platformer`, and from the old map's mixed-in notes;
      - finding kinds for the MGM layer's 22 findings;
@@ -215,11 +215,11 @@ Every record is a join owned by its receiver, and the metaform is its own proven
 - **Lock-in.** It is reduced by the provider-neutral `decisions` module and by recording each decision in one format whatever the backend.
 - **Vendor-built benchmarks.** TypeSafe's own gains come from workflows its team built. The A/B above is the only evidence that counts for Metaform.
 - **Confidence misread.** Confidence is a margin, and calibration is claimed. A high-confidence wrong answer is possible, so every decision is recorded and reviewable, never final by itself.
-- **Scope creep toward gates.** Cheap, typed checks invite rejecting answers. Rich's no-gating rule forbids that: a Jev decision is recorded for observation and never refuses work.
+- **Scope creep toward gates.** Cheap, typed checks invite rejecting answers. The owner's no-gating rule forbids that: a Jev decision is recorded for observation and never refuses work.
 - **A sign-up is needed for any pilot.** No account exists, and none was created.
 
 ## Open items that change this analysis
 
 - **The layer model:** where a layer's metadata lives, how a join type is known to be a layer, and whether selectors key on type or `type#id`. This affects uses 2 and 6 and the recording branch.
 - **Memory:** whether relation verbs are a fixed set, which affects use 10, and whether decisions count with memories for the nonce rule.
-- **Whether Rich accepts Jev suggestions beside the lexical `orient`,** which is use 5.
+- **Whether the owner accepts Jev suggestions beside the lexical `orient`,** which is use 5.

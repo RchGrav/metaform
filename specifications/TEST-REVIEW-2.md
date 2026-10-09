@@ -122,7 +122,7 @@ I ran it: it currently passes, so it is protecting a real refusal in the code, a
 this changeset exercises the "import into a different registered project" success path that
 STORE-027's own sentence describes.
 
-Fix: read STORE-027 again with Rich to settle whether importing a document into a project other
+Fix: read STORE-027 again with the owner to settle whether importing a document into a project other
 than the one it names is meant to succeed (as the current text reads) or to be refused (as this
 test asserts); the record needs a stated rule either way, and the test should follow it, not
 invent it.

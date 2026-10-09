@@ -8,19 +8,19 @@ Every design decision goes into this spec when it is decided, in the record that
 
 ## Authority
 
-- This spec is the contract. Where it and any other document, code or test differ, this spec wins, and the difference is either a defect to fix or a question for Rich.
-- Rich's design is the authority over this spec. A record that misstates the design is corrected, not worked around.
+- This spec is the contract. Where it and any other document, code or test differ, this spec wins, and the difference is either a defect to fix or a question for the owner.
+- The owner's design is the authority over this spec. A record that misstates the design is corrected, not worked around.
 - Requirements state outcomes. The Build part of a record says how to reach the outcome; a builder may reach it another way only when every acceptance test for that record still holds and the record's why is still served, and must say so in the pull request.
 - An open question blocks only the records that depend on it. Everything else is built.
 - Older documents, code, tests and branches are evidence, not requirements. Material from them enters only where it matches this spec.
 
 ## Sources absorbed
 
-- `../rich/REQUIREMENTS.md` with `../rich/REQUIREMENTS-corrections.md`: the requirements drawn from Rich's design. TRACE.md maps every one of them to the records here.
+- `../rich/REQUIREMENTS.md` with `../rich/REQUIREMENTS-corrections.md`: the requirements drawn from the owner's design. TRACE.md maps every one of them to the records here.
 - `../rich/SETTLED.md`: design settled in conversation, now carried by the records here.
 - `../src/metaform/modules/intake/resources/intake.axiom`: the current intake procedure, the digital typology intake compiled to Axiom, served by the intake module, BASE-039, with its schema `metaform.axiom` beside it. Earlier intakes are in the history.
 - `../rich/Canonical_Intake.xml`: the previous intake procedure, no longer served. `../rich/Canonical_Intake_test.xml` was identical to it until `ef` was added to the Canonical Intake, 2026-09-26. `../rich/Canonical_Intake_old.xml` is the previous version, reference only.
-- `../rich/Workflow_Root_and_Workflow_Layers.md`: Rich's design of workflows, 2026-10-03: the `workflow` root, logic requirements called by address and name, control flow, handoffs by nonce, workflow layers, ingest and authoring, and what is left to build. With it, `../rich/Metaform_Axiom-OS.md`, the Axiom compiler v1.1, and the two workflow prompts it compiled, `../rich/workflow-ingest.md` and `../rich/workflow-authoring.md`.
+- `../rich/Workflow_Root_and_Workflow_Layers.md`: the owner's design of workflows, 2026-10-03: the `workflow` root, logic requirements called by address and name, control flow, handoffs by nonce, workflow layers, ingest and authoring, and what is left to build. With it, `../rich/Metaform_Axiom-OS.md`, the Axiom compiler v1.1, and the two workflow prompts it compiled, `../rich/workflow-ingest.md` and `../rich/workflow-authoring.md`.
 - `../rich/metaprompting_element_segments_example.md`: how an address and its prefixes carry inference.
 - `../rich/code_quality_standards.md`: the quality bar, carried by section 7.
 
@@ -50,12 +50,12 @@ The Open questions list at the end of each section shows the questions that sect
 Each record has these parts:
 - **Requirement:** one declarative sentence.
 - **What this means:** enough explanation for a builder with no other context.
-- **Why:** the reason, from Rich's design.
+- **Why:** the reason, from the owner's design.
 - **How it shows:** observable behavior.
 - **Build:** records, fields, operations and procedures.
 - **Acceptance:** the tests that protect the requirement and fail on a wrong build.
 - **Relates to:** other record IDs.
-- **Status:** confirmed by Rich, recommended, meaning the technically correct answer, accepted and built as written, open, or deferred.
+- **Status:** confirmed, recommended, meaning the technically correct answer, accepted and built as written, open, or deferred.
 
 A record whose status is recommended is built as written. A record whose status is open is not built past the point the record settles.
 

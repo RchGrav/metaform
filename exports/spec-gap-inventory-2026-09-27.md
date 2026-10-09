@@ -13,7 +13,7 @@ What this is: design points that live in notes or in conversation and have no sp
 | `exports/e8db85b1f53d4ad69db860d5b17b55d5-feedback.md` | The intake agent's feedback on the intake process |
 | `specifications/spec/CAPTURE.md` | 221 design points from 09-11 to 09-27, each with the record said to carry it |
 | `specifications/spec/OPEN-QUESTIONS.md` | The open D questions |
-| `CLAUDE.md` in the repo | The MetaformFoundation, Rich's own text |
+| `CLAUDE.md` in the repo | The MetaformFoundation, the owner's own text |
 
 ## 1. Said in the session of 2026-09-27 evening, written nowhere else
 
@@ -22,7 +22,7 @@ Each point has the reason as I understand it.
 1. **Join text is a short statement, enough to orient an agent.** It is not documentation. Reason: an agent reads a node to learn what a part is for, who receives it and what surrounds it, a 360 degree view from where it works. File details are in the file, which the path ref names. Detail copied into the map goes stale and is paid for on every read. The last intake wrote documentation into the observation and function fields.
 2. **The Canonical Intake states no size or aim for join fields.** The words short, concise and orient do not appear for them. This is the gap that let point 1 happen.
 3. **The instructions an agent receives at connection must instruct.** Today they are each module's `purpose` text, which describes the module. Reason: an agent connecting needs its next action, not a catalog.
-4. **When the repository is not onboarded, the instructions say to onboard it.** MCP-009 has a no-intake notice. Whether that notice is the onboarding instruction Rich means is not confirmed.
+4. **When the repository is not onboarded, the instructions say to onboard it.** MCP-009 has a no-intake notice. Whether that notice is the onboarding instruction the owner means is not confirmed.
 5. **An intake must not read past notes or memories.** The footer says so since step 40. It cannot hold while the notes sit in the folder being mapped, `specifications/spec` is 1.49 MB, and while a subagent inherits CLAUDE.md and the memory index from the harness. Measured effect: about 130K tokens before, 300K to 600K and 25 minutes on the last runs.
 6. **A Markdown exporter.** A concise export of a system's understanding from the map. Agreed fields: element name, address, role and paths, and per join the receiver, provider, purpose, relation and non_goal. Not built. No spec record.
 7. **Metaform's MCP server is not registered in Claude Code on this machine.** `metaform install claude` has not been run since the rebuild. One old entry exists for another project and uses the bare launcher path, which MCP-016 rules out.
@@ -30,7 +30,7 @@ Each point has the reason as I understand it.
 
 ## 2. The specification disagrees with the MetaformFoundation
 
-The Foundation is Rich's text. I have not judged which side is current.
+The Foundation is the owner's text. I have not judged which side is current.
 
 | Subject | Foundation | Specification |
 |---|---|---|
@@ -71,6 +71,6 @@ CAPTURE says step 63 placed these. Each record is design with the mechanism open
 
 ## 5. The quality problem across the specification
 
-- 214 of 273 records have status confirmed and 46 recommended. A recommended record is an agent's choice, not Rich's decision.
-- 53 lines in the nine sections name Rich. The memory notes quote him more heavily. A record that holds his words and a date holds no reason that survives the session.
+- 214 of 273 records have status confirmed and 46 recommended. A recommended record is an agent's choice, not the owner's decision.
+- 53 lines in the nine sections name the owner. The memory notes quote him more heavily. A record that holds his words and a date holds no reason that survives the session.
 - CAPTURE lists each point with a record id. It does not show that the record's Why states the reason. That check needs a read of each record against the design, and I have not done it.

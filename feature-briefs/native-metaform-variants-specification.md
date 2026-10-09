@@ -1,6 +1,6 @@
 # Native Metaform variants and regeneration of understanding
 
-**Status:** Agreed product behavior from Rich's 2026-09-09 discussion;
+**Status:** Agreed product behavior from the owner's 2026-09-09 discussion;
 implementation design choices are identified below. This documentation update
 does not implement the behavior.
 
@@ -46,14 +46,14 @@ inference. The equation supplies semantic meaning; this feature does not turn
 it into a runtime equality test.
 
 Names identify Types at the appropriate functional specificity. Typed OP joins
-express how the receiver uses another Element's EF. In Rich's examples:
+express how the receiver uses another Element's EF. In the owner's examples:
 
 | Receiver | EF provider | OP relationship | Type |
 | --- | --- | --- | --- |
 | `code.game` | `code.cpp` | Property | Medium |
 | `code.game` | `code.game.rules` | Dependency | Unspecified |
 
-Rich located Defining, Notable, Parametric, and Stylistic typing in the
+The owner located Defining, Notable, Parametric, and Stylistic typing in the
 receiver's OP relationship. Preserve the established terms and definitions;
 the hierarchy relating these terms to Medium remains an open design question.
 

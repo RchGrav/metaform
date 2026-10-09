@@ -1,6 +1,6 @@
 # Test review 8
 
-Scope: the tests step 27 added for the Encounter Function's word, Function or Encounter, by a test-review agent on Sonnet, 2026-09-26, judged against Rich's words that day and MAP-020, MAP-030, MAP-040, BASE-039, STORE-017 and VIEW-006; no implementation file was read. Two store tests in `tests/test_store_corrections.py`, two intake tests and the added assertions in `test_intake.py`, the fixture `tests/fixtures/intake_timer.json`, and the browser test in `test_web.py`.
+Scope: the tests step 27 added for the Encounter Function's word, Function or Encounter, by a test-review agent on Sonnet, 2026-09-26, judged against the owner's words that day and MAP-020, MAP-030, MAP-040, BASE-039, STORE-017 and VIEW-006; no implementation file was read. Two store tests in `tests/test_store_corrections.py`, two intake tests and the added assertions in `test_intake.py`, the fixture `tests/fixtures/intake_timer.json`, and the browser test in `test_web.py`.
 
 ## Findings and what was done
 

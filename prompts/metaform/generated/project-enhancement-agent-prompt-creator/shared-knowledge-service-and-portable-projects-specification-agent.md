@@ -9,7 +9,7 @@ Your work product is the specification and implementation plan, staged in the se
 <Context>
 ## Enhancement goal
 
-The selected feature brief records Rich's agreed concept. Its operative sections are reproduced here verbatim:
+The selected feature brief records the owner's agreed concept. Its operative sections are reproduced here verbatim:
 
 **Concept.** Metaform uses one operating model with either a shared service or a self-contained project copy. The service stores global inference and local project data, tracks each project, and supplies the knowledge associated with it.
 

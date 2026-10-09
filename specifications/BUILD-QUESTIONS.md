@@ -1,6 +1,6 @@
 # Build questions
 
-Questions the build raised. Each names the record it concerns, what the build did meanwhile, and what it blocks. The orchestrator takes them to Rich.
+Questions the build raised. Each names the record it concerns, what the build did meanwhile, and what it blocks. The orchestrator takes them to the owner.
 
 ## Step 1, storage
 
@@ -278,21 +278,21 @@ Recommended: the active metaform's intake layer is always in context, like corre
 Blocks: nothing built, but an orchestrator that toggles layers for a job hands its agents a map with no joins.
 
 **Q50. Where prompts are stored. (STORE-044, STORE-016, VIEW-013)**
-Answered, Rich 2026-09-26: one prompt store per Metaform home, as recommended. STORE-044 now builds it as `~/.metaform/prompts.sqlite3`, with a layer's version kept in its `prompt_uses` rows.
+Answered, 2026-09-26: one prompt store per Metaform home, as recommended. STORE-044 now builds it as `~/.metaform/prompts.sqlite3`, with a layer's version kept in its `prompt_uses` rows.
 STORE-044 gives prompts their own versioned tables, and provenance's `prompt_version_id` references them, which puts them in each metaform's store. A second intake makes a new metaform, BASE-039, so an edit saved in one metaform's store would not reach the next intake, and each project would keep its own copy of the same prompt. Nothing yet says how a module's shipped prompt, such as the Canonical Intake, becomes a stored prompt.
 Meanwhile: unit 2 of step 3, prompt storage, waits; the web GUI's other units go on.
 Recommended: one prompt store per Metaform home, like the web GUI, holding every prompt and its versions. A module's shipped prompt becomes version 1 the first time it is served, and the newest version is what later runs serve. A layer's provenance keeps the text it was made from, as now, with the version id beside it, a reference across files that the home store keeps valid by never changing or deleting a version.
 Blocks: VIEW-013 and STORE-044.
 
 **Q51. Where the viewer's layout cache is written. (VIEW-010, VIEW-011)**
-Withdrawn, 2026-09-26: VIEW-010 no longer has a layout cache. It came with the 100,000-element target, which was not Rich's, and went with the drawing built for it; the page draws as the approved prototype did.
+Withdrawn, 2026-09-26: VIEW-010 no longer has a layout cache. It came with the 100,000-element target, which was not the owner's, and went with the drawing built for it; the page draws as the approved prototype did.
 VIEW-010 keeps settled positions under `~/.metaform/cache/viewer/<project>/<metaform>/`, written by the viewer. The page cannot write files, so the server would take the positions in a fourth POST, while VIEW-011 says the viewer writes exactly three things. The cache is not the store and not a setting, so the conflict may be only in wording.
 Meanwhile: the cache is not built, and nor are the rest of VIEW-010's worker layout, instancing and label budget; the page lays out and draws the whole map directly.
 Recommended: VIEW-011's three writes are the three changes to Metaform's data; a fourth POST that writes only the viewer's own cache under `cache/viewer/`, checked like the others, is allowed and named in VIEW-011.
 Blocks: VIEW-010's cache.
 
 **Q52. The 2D map of a map too large for Mermaid. (VIEW-008, VIEW-010)**
-Withdrawn, 2026-09-26: the 100,000-element target it came from was removed from VIEW-010, since it was not Rich's and no intake produces maps near that size. The Mermaid limit of 5,000 elements stays as a guard.
+Withdrawn, 2026-09-26: the 100,000-element target it came from was removed from VIEW-010, since it was not the owner's and no intake produces maps near that size. The Mermaid limit of 5,000 elements stays as a guard.
 VIEW-008 puts the whole map in the 2D view, laid out by Mermaid, and VIEW-010 meets scale by technique without hiding structure. Mermaid lays out a few thousand elements; laying out 100,000 did not finish, and a browser doing it, with the 3D page, was the likely cause of a machine running out of memory during a measurement.
 Meanwhile: the 2D view lays out up to 5,000 elements with Mermaid; above that it says how many the layers show and that the 3D view shows them all. The 3D view and the panel are unaffected; the arrow keys follow joins by the 2D map's positions, so above the limit they do nothing.
 Recommended: above the limit the 2D view draws the whole map itself, on a canvas, from a 2D layout computed in the same worker, with the same camera moving node to node and the same arrow keys; Mermaid stays for maps under the limit, where its layered layout reads best.

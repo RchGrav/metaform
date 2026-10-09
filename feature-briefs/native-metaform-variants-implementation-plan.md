@@ -50,7 +50,7 @@ semantic sources under `src/metaform/data/semantics/`.
 - [ ] Record the chosen contracts in the feature specification, with concrete
   examples for Property / Medium, Dependency, an exterior receiver, a variant,
   and produced knowledge. Preserve the source equations and unresolved meaning
-  until Rich supplies the relevant clarification.
+  until the owner supplies the relevant clarification.
 
 **Deliverable:** Concrete record and operation contracts sufficient for the
 following units. Model-facing typing changes depend on the unresolved semantic

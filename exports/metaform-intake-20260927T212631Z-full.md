@@ -408,8 +408,8 @@ Provenance: module intake, workflow canonical-intake, model opus
 - EF: Function
 - Relation: holds each requirement with its reason, its build and the tests that protect it, as one contract a builder builds from alone
 - Verb: holds
-- Observation: specifications/spec, starting at 00-index.md. Where the spec and any code, test or older document differ, the spec wins, and Rich's design wins over the spec. Status is confirmed, recommended, open or deferred; a recommended record is built as written and an open one only as far as it is settled. It is frozen for the first release. BUILD-BRIEF.md tells a builder to write each step's tests first, see them fail, and report to the orchestrator; the cold build check, QUAL-011, runs a fresh agent over the spec until it finds nothing to guess.
-- Non-goal: It records Rich's design and decides none of it; an open question blocks only the records that depend on it.
+- Observation: specifications/spec, starting at 00-index.md. Where the spec and any code, test or older document differ, the spec wins, and the owner's design wins over the spec. Status is confirmed, recommended, open or deferred; a recommended record is built as written and an open one only as far as it is settled. It is frozen for the first release. BUILD-BRIEF.md tells a builder to write each step's tests first, see them fail, and report to the orchestrator; the cold build check, QUAL-011, runs a fresh agent over the spec until it finds nothing to guess.
+- Non-goal: It records the owner's design and decides none of it; an open question blocks only the records that depend on it.
 - Ref path: specifications/spec/00-index.md
 - Ref path: specifications/spec/BUILD-BRIEF.md
 - Ref spec: QUAL-011
@@ -456,7 +456,7 @@ Provenance: module intake, workflow canonical-intake, model opus
 
 - Provider: `document.guide.collaboration`
 - Name: CLAUDE.md
-- Function: Tells every agent developing Metaform how to work on it with Rich: ask when ambiguity changes the outcome, match complexity to the problem, keep scope, keep his wording, add no gate to prompted outputs, write tests first from the requirements, keep everything cross-platform, and carry the MetaformFoundation only into prompts for expert agents building the platform, never into intake.
+- Function: Tells every agent developing Metaform how to work on it: ask when ambiguity changes the outcome, match complexity to the problem, keep scope, keep his wording, add no gate to prompted outputs, write tests first from the requirements, keep everything cross-platform, and carry the MetaformFoundation only into prompts for expert agents building the platform, never into intake.
 - EF: Function
 - Relation: tells every agent developing Metaform how to work on it, and keeps the expert foundation out of intake
 - Verb: tells
@@ -649,7 +649,7 @@ Provenance: module intake, workflow canonical-intake, model opus
 - EF: Function
 - Relation: leads a reader from what Metaform is to a first map and on to reading, keeping and extending it
 - Verb: leads
-- Observation: README.md, 268 lines, keeps Rich's own passages, the Bruce Lee quote, What is Metaform, The name, What it does, Refactoring legacy code and Porting across languages, and its authorship section credits Rich as the method's independent developer. docs/README.md indexes the set. docs/examples/project-metaform.json is the 2026-09-26 export used by the walkthrough, labelled as that snapshot; docs/EDITION.md pins the documented source edition at commit ce9062b. Figures are Mermaid diagrams and a screenshot of the web GUI, never ASCII drawings.
+- Observation: README.md, 268 lines, keeps the owner's own passages, the Bruce Lee quote, What is Metaform, The name, What it does, Refactoring legacy code and Porting across languages, and its authorship section credits the owner as the method's independent developer. docs/README.md indexes the set. docs/examples/project-metaform.json is the 2026-09-26 export used by the walkthrough, labelled as that snapshot; docs/EDITION.md pins the documented source edition at commit ce9062b. Figures are Mermaid diagrams and a screenshot of the web GUI, never ASCII drawings.
 - Non-goal: It never presents intended functionality as shipped; lexicalization and automated blind-spot production are described as mechanisms, not commands.
 - Ref path: README.md
 - Ref path: docs/README.md
@@ -663,7 +663,7 @@ Provenance: module intake, workflow canonical-intake, model opus
 - EF: Function
 - Relation: develops the complete causal account of the method for readers who need the mechanism, with how to cite it
 - Verb: develops
-- Observation: docs/preprint/inference-metaform.md, 434 lines, typeset as inference-metaform.pdf, with references.bib and CITATION.md; it credits Rich as independent developer and claims no DOI, license or peer review.
+- Observation: docs/preprint/inference-metaform.md, 434 lines, typeset as inference-metaform.pdf, with references.bib and CITATION.md; it credits the owner as independent developer and claims no DOI, license or peer review.
 - Ref path: docs/preprint
 
 #### Subtype: technical reference
@@ -681,7 +681,7 @@ Provenance: module intake, workflow canonical-intake, model opus
 
 - Provider: `document.definition.agent`
 - Name: repo-presentation agent
-- Function: Instructs a Claude Code agent to rewrite the README and docs so a reader understands Metaform on the first read, keeping Rich's passages word for word, one vocabulary, the tree's direction words, rendered figures and every claim checked against the source, without touching code, tests or specifications.
+- Function: Instructs a Claude Code agent to rewrite the README and docs so a reader understands Metaform on the first read, keeping the owner's passages word for word, one vocabulary, the tree's direction words, rendered figures and every claim checked against the source, without touching code, tests or specifications.
 - EF: Function
 - Relation: instructs an agent to keep the README and docs readable and true to the source without touching the code
 - Verb: instructs
@@ -942,7 +942,7 @@ Provenance: module intake, workflow canonical-intake, model opus
 - Role: SE
 - name_length: 2
 - Ref path: src/metaform/data/challenges.py
-- Work record, tbd: Only the chassis side is built: challenge states, answer, approve and plans. LAYER-015's Build calls for a critic prompt that gives the metaform and asks for blind spots and an answer prompt that gives each challenge with the three answers as equals; neither exists, no module runs a blinded or sighted critic, and a blind-spot layer is any layer of kind layer, told apart by nothing. prompts.shipped has no caller. CAPTURE 09-27 adds, under discussion, the entries' looks: red at 70% opacity, green when useful, yellow when not, with the owner's veto. Task: Write the critic and answer prompts and the module or workflow that runs a blinded and a sighted critic, each into its own layer; settle the node looks with Rich.
+- Work record, tbd: Only the chassis side is built: challenge states, answer, approve and plans. LAYER-015's Build calls for a critic prompt that gives the metaform and asks for blind spots and an answer prompt that gives each challenge with the three answers as equals; neither exists, no module runs a blinded or sighted critic, and a blind-spot layer is any layer of kind layer, told apart by nothing. prompts.shipped has no caller. CAPTURE 09-27 adds, under discussion, the entries' looks: red at 70% opacity, green when useful, yellow when not, with the owner's veto. Task: Write the critic and answer prompts and the module or workflow that runs a blinded and a sighted critic, each into its own layer; settle the node looks.
 - Serves: agent orchestrator `stakeholder.orchestrator.agent`, project owner `stakeholder.owner.project`
 
 ## change announcer
@@ -997,7 +997,7 @@ Provenance: module intake, workflow canonical-intake, model opus
 - Address: `code.channel.question`
 - Role: SE
 - name_length: 2
-- Work record, tbd: Decided in conversation and not built: an agent adds a question at the node it concerns and carries on; the node glows while open; the person answers in the GUI; a Messages button in the 3D view flies to the oldest open question. CAPTURE 09-26 and 09-27, placed in no requirement; answering from the page would be a fifth write beyond VIEW-011's four. Task: Place the design in requirements with Rich, including the page's write, then build the question records, the glow and the Messages button.
+- Work record, tbd: Decided in conversation and not built: an agent adds a question at the node it concerns and carries on; the node glows while open; the person answers in the GUI; a Messages button in the 3D view flies to the oldest open question. CAPTURE 09-26 and 09-27, placed in no requirement; answering from the page would be a fifth write beyond VIEW-011's four. Task: Place the design in requirements, including the page's write, then build the question records, the glow and the Messages button.
 - Serves: agent orchestrator `stakeholder.orchestrator.agent`
 
 ## traceability check
@@ -1219,7 +1219,7 @@ Provenance: module intake, workflow canonical-intake, model opus
 - name_length: 2
 - Ref path: src/metaform/data/writes.py
 - Ref path: src/metaform/modules/map/__init__.py
-- Work record, tbd: specifications/spec/CAPTURE.md, 09-26 and 09-27, under discussion and placed in no requirement: the orchestrator writes each task's instructions on the nodes it touches; a work queue in the MCP server hands an agent a task with everything the map holds for those nodes and takes it off the list; a task whose agent dies stays taken, showing its age; each node shows the agent's progress sentence, so the map works as a kanban board; completed tasks become past work; items carry the flags task, read_first and always_show. Only the work records are built. Task: Settle this design with Rich and place it in requirements, then build the queue, the tasks on nodes and the progress labels.
+- Work record, tbd: specifications/spec/CAPTURE.md, 09-26 and 09-27, under discussion and placed in no requirement: the orchestrator writes each task's instructions on the nodes it touches; a work queue in the MCP server hands an agent a task with everything the map holds for those nodes and takes it off the list; a task whose agent dies stays taken, showing its age; each node shows the agent's progress sentence, so the map works as a kanban board; completed tasks become past work; items carry the flags task, read_first and always_show. Only the work records are built. Task: Settle this design with the owner and place it in requirements, then build the queue, the tasks on nodes and the progress labels.
 - Serves: agent orchestrator `stakeholder.orchestrator.agent`
 
 ## project registry
@@ -1287,7 +1287,7 @@ Provenance: module intake, workflow canonical-intake, model opus
 - Role: SE
 - name_length: 2
 - Ref path: src/metaform/data/corrections.py
-- Work record, tbd: specifications/spec/CAPTURE.md, 09-27 night: Rich's design reads no correction layers, changing the metaform is updating it, each change a new version of the object with provenance. It is marked not placed; the spec and code keep the correction stack, LAYER-011 and STORE-017. Task: Decide whether the correction stack stays or changing the metaform becomes versioned updates of each object, then bring the spec and the store to it.
+- Work record, tbd: specifications/spec/CAPTURE.md, 09-27 night: the owner's design reads no correction layers, changing the metaform is updating it, each change a new version of the object with provenance. It is marked not placed; the spec and code keep the correction stack, LAYER-011 and STORE-017. Task: Decide whether the correction stack stays or changing the metaform becomes versioned updates of each object, then bring the spec and the store to it.
 - Serves: agent orchestrator `stakeholder.orchestrator.agent`
 
 ## graph store
@@ -1459,7 +1459,7 @@ Provenance: module intake, workflow canonical-intake, model opus
 - name_length: 2
 - Ref path: specifications/Canonical_Intake.xml
 - Ref path: src/metaform/modules/intake/resources/Canonical_Intake.xml
-- Work record, tbd: The Canonical Intake names SE Substantial Element, line 20, while the spec's terms in 01-map.md, the preprint, docs/inference-metaform/REFERENCE.md and the repo-presentation agent call it Supportive Element; the project's one vocabulary has two names for one role. Task: Decide which name SE carries, in Rich's wording, and bring the spec and docs, or the intake text, to it.
+- Work record, tbd: The Canonical Intake names SE Substantial Element, line 20, while the spec's terms in 01-map.md, the preprint, docs/inference-metaform/REFERENCE.md and the repo-presentation agent call it Supportive Element; the project's one vocabulary has two names for one role. Task: Decide which name SE carries, in the owner's wording, and bring the spec and docs, or the intake text, to it.
 - Serves: intake `code.intake`, specification `document.specification`
 
 ## build record
@@ -1467,7 +1467,7 @@ Provenance: module intake, workflow canonical-intake, model opus
 - Address: `document.record.build`
 - Role: SE
 - name_length: 2
-- Work record, cruft: specifications/spec/HANDOFF.md still describes the build as it stood near step 11: the fix pass stopped partway with an uncommitted third step, Rich's CLAUDE.md edit uncommitted, and four open questions about the Canonical Intake, step 1's DET, a VE line, Subtype replaced by Vested Entity, and a missing nested subtype join, none of which the current text has. BUILD-LOG.md runs to step 62. Task: Rewrite HANDOFF.md from the build log's current state, or mark it superseded.
+- Work record, cruft: specifications/spec/HANDOFF.md still describes the build as it stood near step 11: the fix pass stopped partway with an uncommitted third step, the owner's CLAUDE.md edit uncommitted, and four open questions about the Canonical Intake, step 1's DET, a VE line, Subtype replaced by Vested Entity, and a missing nested subtype join, none of which the current text has. BUILD-LOG.md runs to step 62. Task: Rewrite HANDOFF.md from the build log's current state, or mark it superseded.
 
 ## decision record
 
@@ -1508,7 +1508,7 @@ Provenance: module intake, workflow canonical-intake, model opus
 - EF: Function
 - Relation: gives the map's shape in its response schema, which the spec maps field by field onto the tools and the store
 - Verb: gives
-- Observation: BUILD-BRIEF.md: the shape of the metaform comes from specifications/Canonical_Intake.xml, and where a record, older file or earlier code disagrees with its shape, it wins. MAP-040's table maps each XML field to its tool field and store column. The intake text is Rich's and changes only with his wording; a new text is adopted by copying it into the intake module's resources in the same commit.
+- Observation: BUILD-BRIEF.md: the shape of the metaform comes from specifications/Canonical_Intake.xml, and where a record, older file or earlier code disagrees with its shape, it wins. MAP-040's table maps each XML field to its tool field and store column. The intake text is the owner's and changes only with his wording; a new text is adopted by copying it into the intake module's resources in the same commit.
 - Ref path: specifications/spec/BUILD-BRIEF.md
 - Ref spec: MAP-040
 

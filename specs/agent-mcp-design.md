@@ -4,7 +4,7 @@ Status: proposal, 2026-09-23, written by metaform-68 for mgm-main-f8. It is not 
 
 ## The model
 
-As mgm-main-f8 passed on its understanding from Rich on 2026-09-23. Rich asked for this in place of his own quote.
+As mgm-main-f8 passed on its understanding from the owner on 2026-09-23. The owner asked for this in place of his own quote.
 
 Metaform is the one place an agent goes for its work. A worker never learns Metaform as a whole. It sees only what its job gives it.
 
@@ -37,7 +37,7 @@ Checked in `src/metaform/contextual_cli.py`, `src/metaform/help_pages.py`, `src/
 | Same surface on CLI and MCP | Chassis commands `jobs`, `records`, `provenance` and `events` have no MCP tool of the same name. | `resolve` and `assignment` have no CLI command of the same name. | Close, not equal. |
 | Provenance | Every operation run under a nonce writes a producer record naming module, operation and nonce. The MCP server also records its pid against each nonce it serves. | Same records. | Exists. Which agent held the nonce is known only through the nonce and the pid. |
 | Orchestrator text | None. The main menu is for a person. | One instructions string, written for an assigned worker. | Missing. |
-| Reaching the job over MCP | The status page prints a "Submission header", which `submit` requires unchanged. The harness passes `--nonce` to the MCP server it launches. | `assignment` returns the header, and `submit` requires it. | Open. The form the CLI or orchestrator gives a worker for MCP is being confirmed with Rich. |
+| Reaching the job over MCP | The status page prints a "Submission header", which `submit` requires unchanged. The harness passes `--nonce` to the MCP server it launches. | `assignment` returns the header, and `submit` requires it. | Open. The form the CLI or orchestrator gives a worker for MCP is being confirmed. |
 
 ## The job
 
@@ -120,7 +120,7 @@ Open question (c): does the orchestrator's own connection need a nonce to change
 
 - **(a) is settled by this model.** A worker sees only its job's surface: the job's instructions and steps, its granted commands, its layers, and the navigation commands. This is a1 of the superseded draft, narrowed from the whole module to the job.
 - **(b) matters only for the orchestrator's connection.** A worker's surface is chosen by its job, so which modules contribute cannot reach a worker. For the orchestrator it still decides whose purpose text and commands appear: every enabled module, which is b1, or only the modules enabled for the project, which is b2 and needs a per-project setting that does not exist today.
-- **What a worker is given to reach its job over MCP** stays open until Rich confirms its form.
+- **What a worker is given to reach its job over MCP** stays open until the owner confirms its form.
 
 ## Acceptance tests, written first
 
@@ -138,7 +138,7 @@ Tests 1 to 7 fail today, because `next`, `list`, `steps`, `commands` and `layers
 
 ## Four rules for every record
 
-Settled by Rich on 2026-09-23, as mgm-main-f8 passed them on. They apply to the whole design.
+Settled on 2026-09-23, as mgm-main-f8 passed them on. They apply to the whole design.
 
 1. **One set of navigation tools.** The core map is navigated with the same tools as the memory graph: open a root, follow its joins, search. The functional map is a graph of roots and purpose joins, and the memory tools work across it, not only on memories.
 2. **The core is immutable.** It changes only by a correction: a new revision of the corrected record. The prior revision stays readable, and nothing is edited in place. A correction needs an orchestrator nonce. A memory does not.
@@ -165,7 +165,7 @@ Checked in `src/metaform/production_joins.py` on 2026-09-23.
 | Layer item, one per practice, finding or question | first planned as a source join stored under the layer | a join owned by the item's target address, with the knowledge.attachment on that same target, as a memory is today |
 | Layer item aimed at a join | first planned as a source join under the layer | owned by the join's owning element, with `subject` naming the join |
 | Memory | the root it is about | already, in `knowledge.memory.remember` |
-| Memory relation | first proposed on the object owning the "from" memory | a join owned by the receiving root, with the other root as `provider` and the verb as `relation`. Which end receives is being confirmed with Rich. |
+| Memory relation | first proposed on the object owning the "from" memory | a join owned by the receiving root, with the other root as `provider` and the verb as `relation`. Which end receives is being confirmed. |
 | Memory link, see "Memory layer" | not yet built | owned by each root |
 | Correction | not yet built | a new revision of the corrected join on its own owner, same join id |
 | Retained import source, the layer XML or map XML | the import's document address | receiver-owned by that document element |
@@ -173,7 +173,7 @@ Checked in `src/metaform/production_joins.py` on 2026-09-23.
 ## Knowledge layer mapping, the MGM best practices layer
 
 Decisions from mgm-main-f8 on 2026-09-23 for the mismatches M1 to M8:
-- **M1.** Rich names the layer address. Until then, the address exists only as a placeholder in test fixtures, never in the real import.
+- **M1.** the owner names the layer address. Until then, the address exists only as a placeholder in test fixtures, never in the real import.
 - **M2.** Option A. Knowledge accepts any address, root object or not. At an address that is not a root object, it stores a knowledge-only record and creates no functional object. `element` and `recall` at an internal subtype address read the subtype from its parent join, plus the layer items.
 - **M3.** Each `(address, provider)` pair resolves at import to its exact join reference. A pair that resolves to no join, or to more than one, fails the import with an error naming the pair.
 - **M4.** One item join per practice, keeping the practice id.
@@ -188,7 +188,7 @@ Tests added:
 
 ## Memory layer
 
-Settled by Rich on 2026-09-23, as mgm-main-f8 passed it on. Build order: after the chassis and the knowledge layer read side.
+Settled on 2026-09-23, as mgm-main-f8 passed it on. Build order: after the chassis and the knowledge layer read side.
 
 The memory layer is a store that agents keep current as they work, by creating, reading, updating and deleting. It has the same shape as the MCP reference memory server, `@modelcontextprotocol/server-memory`.
 
@@ -209,7 +209,7 @@ The MCP server creates the links, and agents never do. More exactly, the knowled
 - **Idempotent.** The link's join id is derived from the layer address, the root address and, for a join root, the subject join id. A second run finds the join and writes nothing. If an identical body is written anyway, the namespace service deduplicates it without a new revision.
 - **Provenance.** Each link's producer is the knowledge module's `link_memory` operation. When the event started it, the producer's parent is the importing operation, so the trace shows which import caused the link. No agent nonce is involved.
 
-Open, with f8 confirming with Rich:
+Open, with f8 confirming:
 1. May an agent create a root the map does not have? The choices are yes, recorded as a knowledge-only root, or no, only the map's elements and joins.
 2. Are relation verbs free text? The choices are free active-voice text, or a fixed list.
 3. Which end of a relation is the receiver?
@@ -245,7 +245,7 @@ Acceptance tests, written first, on the MGM map in project `mgm`:
 12. `search_nodes("SafeNet")` finds roots by core text and by observation text, and shows the matched text.
 13. `knowledge_correct` without a nonce is refused. With one, it writes a new revision, and the prior revision still resolves.
 14. Hiding one root does not hide a root related to it.
-15. After Rich answers open question 1, a test for a root the map does not have.
+15. After the owner answers open question 1, a test for a root the map does not have.
 
 ---
 
@@ -254,7 +254,7 @@ Acceptance tests, written first, on the MGM map in project `mgm`:
 
 Status: proposal, 2026-09-23, written by metaform-68 for mgm-main-f8. It is not decided. Everything under "Superseded" below is the earlier two-server design, kept for the record.
 
-Rich, verbatim: "I see this as more of an approach to working with AI and not a one trick pony, so I think the whole chassis module separation is the right one". And: "the base mcp server when installed should give instructions to the orchestrating agent to tell then how to use it and then for modules, modules should form the orchstrator what their purpose is, that means modules need to be able to add text to the instructions."
+Decided: Metaform is an approach to working with AI, not a single trick, so the chassis and module separation is the right one. The base MCP server, once installed, gives the orchestrating agent instructions on how to use it, and each module tells the orchestrator its purpose, so modules must be able to add text to the instructions.
 
 ## What exists today
 
@@ -353,7 +353,7 @@ The workflow tests in `tests/test_workflow_mcp.py` keep every assertion. Only th
 
 The knowledge tests keep their assertions under `knowledge_*` names. Knowledge test 8 rests on chassis test 6. Test 7, agent A remembers and agent B recalls, uses the `change=False` path.
 
-Options (a) and (b) each add one test once Rich chooses.
+Options (a) and (b) each add one test once the owner chooses.
 
 ---
 
@@ -361,13 +361,13 @@ Options (a) and (b) each add one test once Rich chooses.
 
 ## Metaform agent MCPs: workflow and knowledge
 
-Status: draft, 2026-09-23. Rich: "it needs to be two things, one is for workflow importing and the other is for knowledge layers". Two servers with separate jobs. Both go only through the platform's public operations, and neither owns a store.
+Status: draft, 2026-09-23. The owner: two servers, one for importing workflows and one for knowledge layers. Two servers with separate jobs. Both go only through the platform's public operations, and neither owns a store.
 
 ---
 
 ## Authority
 
-Rich, 2026-09-23: "agents need to be given a nonce from the orchestrator to make changes in their project otherwise the mcp server wont allow modifying anything but agent memories".
+2026-09-23: agents need a nonce from the orchestrator to change their project; without one the MCP server allows changing nothing but agent memories.
 
 His correction the same day: the memories allowed without a nonce are memories tied to places in the metaform, at an element address or a join. Anyone can read them and add them, because they are for sharing knowledge. There is no private per-agent memory.
 
@@ -404,7 +404,7 @@ How the platform behaves, checked in `modules/workflows` on 2026-09-23:
 4. The latent worker receives the retained Native account in a fresh work folder. The account is the answer XML with its path refs. Nothing stops a harness from reading the filesystem, and no gate is added.
 5. A binding segment prints the object's name before the joined text. So the authored text goes in as a literal segment, which keeps it byte-identical.
 6. The importer keeps `provider`, `vested` and the `VE` and `AUE` roles as attributes. An `<element graph="internal">` nested in a `<join>` stays inside that join's value and is not made a root namespace object.
-7. `workflows.intake`, which runs the hardcoded runtime copy of the intake, stays unchanged until Rich decides.
+7. `workflows.intake`, which runs the hardcoded runtime copy of the intake, stays unchanged until the owner decides.
 
 Worker settings: the run carries `worker` with `provider`, `model` and `effort`. The Claude preset passes `--model` and `--effort`. The Codex preset passes `-m` and `-c model_reasoning_effort=`. The harness evidence records the exact command.
 
@@ -425,7 +425,7 @@ Acceptance tests, written first and shown failing:
 
 Its job: an agent working in a project, with no assignment, can find where it is, read the function and the rules there, record what it learned, and hand scoped context to a sub-agent.
 
-Rich, 2026-09-23: knowledge layers are where non-functional things live: medium, encoding, language, style and genre. Any namespace address can be linked into a knowledge layer. The Canonical Intake's validity rules do not apply to layer names or to the addresses layers link. A `code.c` layer carrying C concerns is legal, even though `code.c` is invalid in the functional map.
+2026-09-23: knowledge layers are where non-functional things live: medium, encoding, language, style and genre. Any namespace address can be linked into a knowledge layer. The Canonical Intake's validity rules do not apply to layer names or to the addresses layers link. A `code.c` layer carrying C concerns is legal, even though `code.c` is invalid in the functional map.
 
 | Tool | Does |
 |---|---|
