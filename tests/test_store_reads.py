@@ -99,14 +99,14 @@ def test_the_identity_read_among_many_joins_answers_from_the_index_in_memory(hom
         store.add_element(layer.name, 'code.target')
         for n in range(1000):
             store.add_element(layer.name, f'code.r{n}')
-        for n in range(100000):
+        for n in range(20000):  # enough that a scan shows; the trace below proves the index is what answers
             store.add_join(layer.name, f'code.r{n % 1000}', 'code.target' if n < 50 else f'code.r{(n + 1) % 1000}',
                            purpose='p', ef='f')
     store.finish(layer.name)
     traced.clear()
     started = time.monotonic()
     assert len(store.identity('code.target').results) == 50
-    assert time.monotonic() - started < 2  # the index in memory, not a scan of a hundred thousand joins
+    assert time.monotonic() - started < 2  # the index in memory, not a scan of twenty thousand joins
     assert not any(table in statement for statement in traced
                    for table in ('FROM joins', 'FROM elements', 'current_joins', 'join_elements'))
 

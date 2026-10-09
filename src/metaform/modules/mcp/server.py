@@ -957,5 +957,10 @@ def serve(folder: Path) -> None:
             async def run(local_read: Any, local_write: Any) -> None:
                 await server.run(local_read, local_write, server.create_initialization_options(
                     NotificationOptions(prompts_changed=True, tools_changed=True, resources_changed=True)))
-            await relay.run(run, read, write, subscriptions.close)
+            try:
+                await relay.run(run, read, write, subscriptions.close)
+            finally:
+                # The host closed its input, so the session is over: closing the output lets the stdio writer end and
+                # the process exit, as MCP's stdio transport expects, instead of waiting to be killed.
+                await write.aclose()
     anyio.run(main)

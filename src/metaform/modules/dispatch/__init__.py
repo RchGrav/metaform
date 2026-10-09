@@ -749,6 +749,8 @@ def raise_issue(ctx: Context) -> dict[str, Any]:
     agent = str(ctx.nouns.get('agent') or ctx.setting('dispatch_agent'))
     if shutil.which(argv(str(ctx.setting(f'dispatch_{agent}')))[0]) is None:  # checked before anything is written
         raise Stop(f'The start command of {agent} is not found on this system.', f'metaform set --dispatch-{agent} "<command>"')
+    if not any(module.id == 'workflow' for module in surface(ctx.folder)):  # the sentinel is its skill, checked first
+        raise Stop('The workflow module is not active; the sentinel is one of its skills.', 'metaform enable workflow')
     first = text.splitlines()[0][:120]
     made = map_work(ctx, op='add', node=node, task=f'Issue raised by the person: {first}', note=text, held=True, hold=True)
     work_id = str(made['id'] if isinstance(made, dict) else made.id)

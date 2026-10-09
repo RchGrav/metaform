@@ -101,7 +101,7 @@ def test_broken_unrelated_source_does_not_block_retained_reads(home, user_module
     from metaform.data import Node
 
     small_map(store)
-    work = store.add_work(Node("element", "code.timer.kitchen"), "missing", task="Recover its timer.")
+    work = store.add_work(Node("element", "code.timer.kitchen"), "unbuilt", task="Recover its timer.")
     loader.set_enabled("map", False)
     folder = user_module("aaa_broken", ENTRY.replace("id='retained'", "id='aaa_broken'"))
     if source is not None:

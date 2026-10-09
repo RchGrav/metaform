@@ -421,6 +421,7 @@ def test_one_graph_read_opens_the_project_databases_of_the_home_as_often_whateve
     monkeypatch.chdir(mapped)
 
     def graph():
+        metaform_home._invalidate_registry()  # a cold read each time; the process cache would hide the opens
         opened.clear()
         assert cli.main(['memory', 'graph', '--json']) == 0
         said = json.loads(capsys.readouterr().out)

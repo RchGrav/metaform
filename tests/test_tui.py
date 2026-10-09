@@ -26,7 +26,11 @@ def test_screen_shows_every_setting_in_the_schema(home, tmp_path):
                 screen.module_index = index
                 shown |= {item.key for item in screen.declared_settings}
             return shown
-        assert asyncio.run(drive()) == set(settings.SCHEMA)
+        shown = asyncio.run(drive())
+    # Every setting of the chassis and of each loaded module; a disabled module another test imported in this process
+    # has settings in the schema that the screen rightly does not show.
+    loaded = {'chassis'} | {item.id for item in loader.discover() if item.module is not None}
+    assert shown == {key for key, item in settings.SCHEMA.items() if item.owner in loaded}
 
 
 def test_screen_edits_and_glues_through_its_own_keys(home, tmp_path):

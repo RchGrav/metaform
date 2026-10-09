@@ -69,6 +69,7 @@ def test_repeated_changes_queue_one_followup_without_concurrent_batches(monkeypa
 
 
 @pytest.mark.req('BASE-053')
+@pytest.mark.cli_process
 def test_cli_setting_changes_reach_the_server_without_an_open_page(run, home, tmp_path, monkeypatch):
     folder = tmp_path / 'project'
     folder.mkdir()

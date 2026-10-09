@@ -487,7 +487,8 @@ def follow_enabled() -> None:
 
 
 def _follow_enabled() -> None:
-    if _cache is None:
+    cached = _cache  # one reading: a reset on another thread, such as a test's teardown, must not empty it mid-loop
+    if cached is None:
         return
     if _selected_project() != _cache_project:
         reset()
@@ -495,7 +496,7 @@ def _follow_enabled() -> None:
     path = home.chassis_path()
     if not path.is_file() or not path.stat().st_size:
         return
-    for item in _cache:
+    for item in cached:
         if item.declared is None:
             continue
         state = home.module_state(item.id)

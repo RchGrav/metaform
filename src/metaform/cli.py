@@ -1180,7 +1180,6 @@ def main(argv: list[str] | None = None) -> int:
         return _command(args, folder)
     with loader.request_scope():
         try:
-            loader.follow_enabled()
             return _command(args, folder)
         finally:
             changes.announce(folder, 'cli')  # what the command changed, fired on the event bus, VIEW-018
@@ -1191,6 +1190,7 @@ def _command(args: list[str], folder: Path) -> int:
         if args[:1] == ['--version']:
             out(f'metaform {__version__}')
             return 0
+        loader.follow_enabled()  # it reads the home, so a home it cannot read is reported as every error is, CLI-009
         from . import install
         force = (install.install_options(args[1:])[2]
                  if args[:1] == ['install'] and not any(word in ('-h', '--help') for word in args[1:])

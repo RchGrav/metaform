@@ -602,6 +602,10 @@ def test_raising_an_issue_holds_it_on_a_ticket_at_the_node_and_starts_the_sentin
     """The person says what is wrong on a node; a sentinel starts with their words and nothing else
     is written. The issue's ticket is held, so no worker takes it."""
     report = 'The alarm plays twice when the timer ends.'
+    refused = run('dispatch', 'raise', NODE, '--', report, cwd=dispatch.folder, ok=False)
+    assert refused.returncode != 0 and 'workflow' in refused.stderr  # the sentinel is a workflow skill, which ships off
+    assert dispatch.store.work(open=True, limit=0).results == (dispatch.ticket(),)  # and nothing was written
+    run('enable', 'workflow', cwd=dispatch.folder)
     started = json.loads(run('dispatch', 'raise', NODE, '--json', '--', report, cwd=dispatch.folder,
                              env=dispatch.env('hold')).stdout)
     assert started['conversation'] and started['work_id'] != dispatch.id
@@ -687,6 +691,7 @@ def glyphed(dispatch, run, *tickets):
 
 @pytest.mark.req('VIEW-040')
 @pytest.mark.req('BASE-052')
+@pytest.mark.cli_process
 def test_one_agent_per_glyph_works_the_glyphs_tickets_in_turn_in_board_order(dispatch, run):
     """VIEW-040: tickets with the same glyph are one agent's, done one at a time. The agent started on
     a ticket with a glyph takes that glyph's tickets one after another in board order, To do before Backlog, each by
