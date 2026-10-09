@@ -1454,15 +1454,10 @@ def test_what_is_behind_a_node_reaches_its_glass_through_the_pictures_the_page_d
 @pytest.mark.req('VIEW-024')
 def test_the_page_exports_the_map_as_the_same_markdown_document_the_command_writes(run, web, mapped, browser):
     """A person exports the understanding of a system from the page they read it on. The page and the command give
-    one document, written by one piece of the chassis."""
+    one document, written by one piece of the chassis. What the server answers is checked without a browser, in
+    test_the_exports_the_server_answers_are_the_documents_the_commands_write."""
     started(run)
     written = run('map', 'markdown', cwd=mapped).stdout
-    assert '## dish timer' in written
-    status, body, headers = request(web, '/api/markdown?project=proj')
-    assert status == 200 and body == written
-    assert headers['Content-Type'].startswith('text/markdown')
-    around = request(web, '/api/markdown?project=proj&address=code.timer.kitchen')[1]
-    assert around == run('map', 'markdown', 'address=code.timer.kitchen', cwd=mapped).stdout
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
     page.click('#exportBtn')
@@ -1471,9 +1466,6 @@ def test_the_page_exports_the_map_as_the_same_markdown_document_the_command_writ
     assert saved.value.suggested_filename == 'proj-map.md'
     assert Path(saved.value.path()).read_text(encoding='utf-8') == written
     assert problems == []
-    run('disable', 'map')
-    status, body, _ = request(web, '/api/markdown?project=proj')
-    assert status == 200 and body == written
 
 
 @pytest.mark.req('MAP-059')
@@ -1482,17 +1474,10 @@ def test_the_export_menu_saves_the_same_xml_document_the_command_writes_in_the_p
                                                                                             browser):
     """Export is a menu with an entry for each format. The menu offers each
     format the command writes; the XML holds what the layers in view hold, so a hidden layer and a layer masked at an
-    address leave nothing in it, and a layer that is on does."""
-    import xml.etree.ElementTree as ET
+    address leave nothing in it, and a layer that is on does. What the server answers is checked without a browser,
+    in test_the_exports_the_server_answers_are_the_documents_the_commands_write."""
     started(run)
     written = run('map', 'xml', cwd=mapped).stdout
-    status, body, headers = request(web, '/api/xml?project=proj')
-    assert status == 200 and body == written
-    assert headers['Content-Type'].startswith('application/xml')
-    addresses = {element.get('namespace_address') for element in ET.fromstring(written).iter('element')}
-    assert {'exterior.cook', 'code.timer.kitchen', 'code.loop.tick', 'code.timer.kitchen.display'} <= addresses
-    assert 'code.secret' not in addresses and 'code.alarm.audible.loud' not in addresses and 'code.gone' not in addresses
-    assert ('broken', 'drifts') in {(work.get('condition'), work.text) for work in ET.fromstring(written).iter('work')}
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
     assert page.is_hidden('#exportXml')
@@ -1503,9 +1488,6 @@ def test_the_export_menu_saves_the_same_xml_document_the_command_writes_in_the_p
     assert Path(saved.value.path()).read_text(encoding='utf-8') == written
     assert page.is_hidden('#exportXml')
     assert problems == []
-    run('disable', 'map')
-    status, body, _ = request(web, '/api/xml?project=proj')
-    assert status == 200 and body == written
 
 
 @pytest.mark.req('VIEW-008')
@@ -4942,15 +4924,11 @@ def test_workbench_and_cli_agree_when_a_runner_dies_with_a_running_row(
         page, problems, _ = opened(browser, web)
         button = f'#agents .agent[data-id="{agent.id}"]'
         page.wait_for_selector(button, timeout=15000)
-        assert api(web, '/api/dispatch-sessions?project=proj&thread=false')[1]['sessions'][0]['state'] == 'running'
         agent.process.kill()
         agent.process.wait()
         relay.deliver('map.changed', {'project': 'proj', 'tables': 'dispatch'})
         page.wait_for_selector(button, state='hidden', timeout=15000)
-        cli = json.loads(run('dispatch', 'sessions', 'thread=false', '--json', cwd=mapped).stdout)
-        served = api(web, '/api/dispatch-sessions?project=proj&thread=false')[1]
-        assert cli == served and cli['sessions'][0]['state'] == 'ended'
-        assert agent.session().extra['state'] == 'running'
+        # the command and the server agreeing: test_the_server_and_the_command_read_the_same_sessions_when_a_runner_dies
         assert problems == []
     finally:
         agent.close()
@@ -6328,12 +6306,7 @@ def test_start_is_not_offered_or_accepted_for_an_untaken_ticket_with_a_live_sess
     assert store.ticket(busy).work.taken is None
     for work_id in ((busy, later) if glyphed else (busy,)):
         assert page.locator(f'#board .card[data-id="{work_id}"] .start').count() == 0
-    for verb in ('start', 'run'):
-        refused = run('dispatch', verb, busy, 'codex', cwd=mapped, ok=False)
-        assert refused.returncode != 0 and busy in refused.stderr and 'session' in refused.stderr
-    status, refused = api(web, '/api/dispatch-start', method='POST', headers=own_write(web),
-                          body=json.dumps({'project': 'proj', 'work_id': busy, 'agent': 'codex'}))
-    assert status == 400 and busy in refused['error'] and 'session' in refused['error']
+    # the command and the server refusing it: test_a_start_the_server_is_asked_for_is_refused_as_the_command_refuses_it
     # Session-only changes redraw start controls even though no ticket changed.
     live_session(busy, state='ended')
     relay.deliver('map.changed', {'project': 'proj', 'tables': 'dispatch'})
@@ -6868,9 +6841,7 @@ def test_a_base_is_activated_and_removed_from_the_header_and_the_active_one_is_r
     assert [line.split()[0] for line in run('list', 'bases', cwd=mapped).stdout.splitlines()] == ['main']
     kept = list((home / 'backups' / 'remove-base' / 'proj').glob('*/fresh.metaform.sqlite3'))
     assert len(kept) == 1
-    status, body = api(web, '/api/remove-base', method='POST', headers=own_write(web),
-                       body=json.dumps({'project': 'proj', 'name': 'main', 'confirm': True}))
-    assert status == 400 and 'active' in body['error']
+    # the server refusing the active base: test_the_server_refuses_to_remove_the_active_base_and_activates_another
     assert problems == []
 
 
@@ -6894,3 +6865,133 @@ def test_a_task_carries_its_kind_and_its_stage_goes_on_the_parts_state_record(ru
     status, body = api(web, '/api/task', method='POST', headers=own_write(web), body=json.dumps({
         'project': 'proj', 'task': 'x', 'nodes': [f'element:{alarm}'], 'kind': 'sideways'}))
     assert status == 400 and "'sideways' is not a kind of ticket" in body['error']
+
+
+# What the server answers, checked without a browser: these ran inside browser tests, which the default run leaves out.
+
+@pytest.fixture
+def threaded(home):
+    """The web server in a thread of this process, on a port of its own, for a test of what it answers: no server
+    process and no browser."""
+    import threading
+
+    from metaform.modules.web.server import Server
+    server = Server('127.0.0.1', 0, 'nonce')
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield server.server_address[1]
+    server.shutdown()
+    server.server_close()
+
+
+@pytest.mark.req('MAP-052')
+@pytest.mark.req('MAP-059')
+@pytest.mark.req('VIEW-024')
+def test_the_exports_the_server_answers_are_the_documents_the_commands_write(run, mapped, threaded):
+    """The page and the command give one document, written by one piece of the chassis; the XML holds what the
+    layers in view hold, so a hidden layer and a layer masked at an address leave nothing in it. Both are served with
+    the map module off."""
+    import xml.etree.ElementTree as ET
+    markdown = run('map', 'markdown', cwd=mapped).stdout
+    assert '## dish timer' in markdown
+    status, body, headers = request(threaded, '/api/markdown?project=proj')
+    assert status == 200 and body == markdown and headers['Content-Type'].startswith('text/markdown')
+    around = request(threaded, '/api/markdown?project=proj&address=code.timer.kitchen')[1]
+    assert around == run('map', 'markdown', 'address=code.timer.kitchen', cwd=mapped).stdout
+    xml = run('map', 'xml', cwd=mapped).stdout
+    status, body, headers = request(threaded, '/api/xml?project=proj')
+    assert status == 200 and body == xml and headers['Content-Type'].startswith('application/xml')
+    addresses = {element.get('namespace_address') for element in ET.fromstring(xml).iter('element')}
+    assert {'exterior.cook', 'code.timer.kitchen', 'code.loop.tick', 'code.timer.kitchen.display'} <= addresses
+    assert 'code.secret' not in addresses and 'code.alarm.audible.loud' not in addresses and 'code.gone' not in addresses
+    assert ('broken', 'drifts') in {(work.get('condition'), work.text) for work in ET.fromstring(xml).iter('work')}
+    run('disable', 'map')
+    assert request(threaded, '/api/markdown?project=proj')[:2] == (200, markdown)
+    assert request(threaded, '/api/xml?project=proj')[:2] == (200, xml)
+
+
+@pytest.mark.req('VIEW-039')
+@pytest.mark.req('VIEW-040')
+def test_a_start_the_server_is_asked_for_is_refused_as_the_command_refuses_it(run, mapped, threaded):
+    """A ticket whose session is live is not started again, and an agent that cannot start is refused with its
+    reason, from the command and from the page's request alike."""
+    from metaform.data import Node, Store
+    run('enable', 'dispatch')
+    store = Store('proj')
+    busy = store.add_work(Node('element', 'code.alarm.audible'), 'unbuilt', task='Busy ticket').id
+    live_session(busy)
+    for verb in ('start', 'run'):
+        refused = run('dispatch', verb, busy, 'codex', cwd=mapped, ok=False)
+        assert refused.returncode != 0 and busy in refused.stderr and 'session' in refused.stderr
+    status, said = api(threaded, '/api/dispatch-start', method='POST', headers=own_write(threaded),
+                       body=json.dumps({'project': 'proj', 'work_id': busy, 'agent': 'codex'}))
+    assert status == 400 and busy in said['error'] and 'session' in said['error']
+    run('set', '--dispatch-codex', 'metaform-nonexistent-acp-adapter', cwd=mapped)
+    free = store.add_work(Node('element', 'exterior.cook'), 'unbuilt', task='Nothing runs this yet').id
+    status, said = api(threaded, '/api/dispatch-start', method='POST', headers=own_write(threaded),
+                       body=json.dumps({'project': 'proj', 'work_id': free, 'agent': 'codex'}))
+    assert status == 400 and 'not found' in said['error']
+    assert store.ticket(free).work.taken is None
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.req('VIEW-039')
+def test_the_server_and_the_command_read_the_same_sessions_when_a_runner_dies(run, home, mapped, threaded, tmp_path):
+    """A runner that dies with its session row still running reads as ended, the same from the command and from the
+    server, while the row itself is left as the runner wrote it."""
+    from metaform.modules.dispatch import end_group
+    from metaform.modules.dispatch.tests.test_dispatch import Dispatch, eventually
+    agent = Dispatch(run, home, mapped, tmp_path)
+    try:
+        agent.start('hold')  # a turn still executing
+        eventually(lambda: agent.logged('grandchild'))
+        sessions = '/api/dispatch-sessions?project=proj&thread=false'
+        assert api(threaded, sessions)[1]['sessions'][0]['state'] == 'running'
+        agent.process.kill()
+        agent.process.wait()
+        cli = json.loads(run('dispatch', 'sessions', 'thread=false', '--json', cwd=mapped).stdout)
+        assert cli == api(threaded, sessions)[1] and cli['sessions'][0]['state'] == 'ended'
+        assert agent.session().extra['state'] == 'running'
+    finally:
+        agent.close()
+        for pid in agent.logged('pid'):
+            end_group(pid)
+
+
+@pytest.mark.req('STORE-041')
+def test_the_server_refuses_to_remove_the_active_base_and_activates_another(run, mapped, threaded):
+    """Neither Activate nor Remove acts on the active base: removing it is refused with the reason."""
+    run('add', 'base', 'fresh', cwd=mapped)  # fresh is active now
+    status, said = api(threaded, '/api/remove-base', method='POST', headers=own_write(threaded),
+                       body=json.dumps({'project': 'proj', 'name': 'fresh', 'confirm': True}))
+    assert status == 400 and 'active' in said['error']
+    status, _ = api(threaded, '/api/activate-base', method='POST', headers=own_write(threaded),
+                    body=json.dumps({'project': 'proj', 'name': 'main'}))
+    assert status == 200
+    active = [line.split()[0] for line in run('list', 'bases', cwd=mapped).stdout.splitlines() if '(active)' in line]
+    assert active == ['main']
+
+
+@pytest.mark.req('VIEW-042')
+def test_a_reference_is_looked_up_as_a_spec_record_a_ticket_or_nothing_with_its_reason(mapped, threaded):
+    """What a reference in text stands for: a spec record by its code, a ticket by a prefix of its id, and nothing,
+    with a plain reason, for what names nothing; the rich/ folder is never read."""
+    from metaform.data import Node, Store
+    (mapped / 'specifications').mkdir()
+    (mapped / 'specifications' / '01-map.md').write_text('# Map\n\n### MAP-001 A record\n\nWhat it says.\n',
+                                                          encoding='utf-8')
+    (mapped / 'rich').mkdir()
+    (mapped / 'rich' / 'notes.md').write_text('private\n', encoding='utf-8')
+    ticket = Store('proj').add_work(Node('element', 'exterior.cook'), None, task='Name the cook').id
+
+    def lookup(ref):
+        status, said = api(threaded, f'/api/lookup?project=proj&ref={ref}')
+        assert status == 200
+        return said
+
+    record = lookup('MAP-001')
+    assert (record['kind'], record['title'], record['text'], record['file']) == (
+        'spec', 'MAP-001 A record', 'What it says.', 'specifications/01-map.md')
+    assert lookup(ticket[:8])['id'] == ticket
+    nothing = lookup('MAP-999')
+    assert nothing['kind'] is None and 'MAP-999' in nothing['reason']
+    assert lookup('rich/notes.md')['kind'] is None

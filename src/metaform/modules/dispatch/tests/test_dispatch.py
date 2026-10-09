@@ -62,10 +62,12 @@ def alive(pid):
 def end_agent(log, forced):
     """End the fake agent a test's runner started, and the child it started, with their process group, as the runner's
     own end does, BASE-052: the agent has a group of its own, so ending the runner alone leaves it behind. After the
-    runner was ended by force, read its log for up to 5 s, since a child already starting can log its PID late.
-    Returns the PIDs found."""
+    runner was ended by force, read its log until the agent has logged its PID, for up to 5 s, since an agent already
+    starting can log it late. Once its PID is known, ending its group also ends a child it started and has not logged
+    yet, which runs in that group. Returns the PIDs found."""
     from metaform.modules.dispatch import end_group
     children = set()
+    agent = False
     deadline = time.monotonic() + 5
     while True:
         try:
@@ -75,11 +77,12 @@ def end_agent(log, forced):
                         entry = json.loads(line)
                     except json.JSONDecodeError:  # teardown can meet a line the agent is still writing
                         continue
+                    agent = agent or 'pid' in entry
                     children.update(entry[key] for key in ('pid', 'grandchild') if key in entry)
         finally:
             for child in children:  # an agent that ended on its own still names the group its child runs in
                 end_group(child)
-        if not forced or time.monotonic() >= deadline:
+        if not forced or agent or time.monotonic() >= deadline:
             return children
         time.sleep(0.05)
 

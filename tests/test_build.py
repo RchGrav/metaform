@@ -25,6 +25,64 @@ def build(run, *modules_off):
     return wheels[0], out
 
 
+def shared(tmp_path_factory, name, *modules_off):
+    """A wheel built once for the whole run with these modules off, and its build output: the first worker to ask
+    builds it in a home of its own, and every other test, on any worker, reads the same one. Building it per test
+    repeated the same work."""
+    import json
+    import time
+    base = tmp_path_factory.getbasetemp()
+    root = base.parent if os.environ.get('PYTEST_XDIST_WORKER') else base  # the folder all workers of this run share
+    result, lock = root / f'wheel-{name}.json', root / f'wheel-{name}.lock'
+    deadline = time.monotonic() + 600
+    while not result.exists():
+        try:
+            handle = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            assert time.monotonic() < deadline, f'the shared {name} wheel was never built'
+            time.sleep(0.1)
+            continue
+        said = {}
+        try:
+            folder = root / f'wheel-{name}'
+            folder.mkdir()
+            env = {**os.environ, 'METAFORM_HOME': str(folder / 'home')}
+            for module in modules_off:
+                subprocess.run([sys.executable, '-m', 'metaform', 'disable', module], cwd=folder, env=env,
+                               capture_output=True, check=True)
+            done = subprocess.run([sys.executable, '-m', 'metaform', 'build'], cwd=folder, env=env,
+                                  capture_output=True, text=True, encoding='utf-8', check=False)
+            said = {'out': done.stdout, 'error': done.stderr if done.returncode else None}
+        finally:
+            os.close(handle)
+            written = root / f'wheel-{name}.json.part'
+            written.write_text(json.dumps(said or {'out': '', 'error': 'the build did not run'}), encoding='utf-8')
+            written.replace(result)
+    said = json.loads(result.read_text(encoding='utf-8'))
+    assert said['error'] is None, said['error']
+    wheels = [Path(line.split(':', 1)[1].strip()) for line in said['out'].splitlines() if line.startswith('Wheel:')]
+    assert len(wheels) == 1, said['out']
+    return wheels[0], said['out']
+
+
+@pytest.fixture
+def every_module(tmp_path_factory):
+    """The wheel with every module carried."""
+    return shared(tmp_path_factory, 'every')
+
+
+@pytest.fixture
+def map_only(tmp_path_factory):
+    """The wheel without mcp, memory, intake and web."""
+    return shared(tmp_path_factory, 'fewer', 'mcp', 'memory', 'intake', 'web')
+
+
+def plain_env():
+    """The environment for a separate Python, such as a venv's, without this run's PYTHONPATH, so it imports its own
+    copy of Metaform and not the one under test."""
+    return {k: v for k, v in os.environ.items() if k != 'PYTHONPATH'}
+
+
 def metadata(wheel):
     with zipfile.ZipFile(wheel) as archive:
         info = next(name for name in archive.namelist() if name.endswith('.dist-info/METADATA'))
@@ -76,8 +134,8 @@ def test_a_build_carries_only_the_enabled_modules_and_their_dependencies(run, ho
 @pytest.mark.req('BASE-024')
 @pytest.mark.req('BASE-025')
 @pytest.mark.req('STORE-030')
-def test_a_wheel_runs_directly_from_itself(run, home, tmp_path):
-    wheel, _ = build(run, 'mcp', 'memory', 'intake', 'web')
+def test_a_wheel_runs_directly_from_itself(home, tmp_path, map_only):
+    wheel, _ = map_only
     folder = tmp_path / 'proj'
     folder.mkdir()
     env = {k: v for k, v in os.environ.items() if k != 'METAFORM_HOME'}
@@ -108,36 +166,27 @@ def test_a_wheel_runs_directly_from_itself(run, home, tmp_path):
 
 
 @pytest.mark.req('BASE-041')
-def test_the_wheel_installs_with_pip(run, tmp_path):
-    wheel, _ = build(run, 'mcp', 'memory', 'intake', 'web')
-    environment = tmp_path / 'venv'
-    subprocess.run([sys.executable, '-m', 'venv', str(environment)], check=True)
-    python = environment / ('Scripts' if os.name == 'nt' else 'bin') / ('python.exe' if os.name == 'nt' else 'python')
-    result = subprocess.run([str(python), '-m', 'pip', 'install', '--no-deps', '--no-index', str(wheel)],
-                            capture_output=True, text=True, encoding='utf-8', check=False)
-    assert result.returncode == 0, result.stderr
-    version = subprocess.run([str(python), '-m', 'metaform', '--version'], capture_output=True, text=True, encoding='utf-8', check=False)
-    assert version.stdout.startswith('metaform ')
-
-
-@pytest.mark.req('BASE-041')
-def test_a_build_names_the_copy_it_packs(run):
-    _, out = build(run)
+def test_a_build_names_the_copy_it_packs(every_module):
+    _, out = every_module
     import metaform
     assert f'Packed from: {Path(metaform.__file__).parent}' in out.splitlines()
 
 
 @pytest.mark.req('BASE-041')
-def test_an_installed_build_run_in_a_checkout_says_the_checkout_is_not_packed(run, home, tmp_path):
-    wheel, _ = build(run, 'mcp', 'memory', 'intake', 'web')
+def test_an_installed_build_run_in_a_checkout_says_the_checkout_is_not_packed(home, tmp_path, map_only):
+    wheel, _ = map_only
     environment = tmp_path / 'venv'
     subprocess.run([sys.executable, '-m', 'venv', str(environment)], check=True)
     python = environment / ('Scripts' if os.name == 'nt' else 'bin') / ('python.exe' if os.name == 'nt' else 'python')
     result = subprocess.run([str(python), '-m', 'pip', 'install', '--no-deps', '--no-index', str(wheel)],
-                            capture_output=True, text=True, encoding='utf-8', check=False)
-    assert result.returncode == 0, result.stderr
+                            capture_output=True, text=True, encoding='utf-8', env=plain_env(), check=False)
+    assert result.returncode == 0, result.stderr  # the wheel installs with pip, BASE-041
+    version = subprocess.run([str(python), '-m', 'metaform', '--version'], capture_output=True, text=True,
+                             encoding='utf-8', env=plain_env(), check=False)
+    assert version.stdout.startswith('metaform ')
     installed = Path(subprocess.run([str(python), '-c', 'import metaform; print(metaform.__file__)'],
-                                    capture_output=True, text=True, encoding='utf-8', check=True).stdout.strip()).parent
+                                    capture_output=True, text=True, encoding='utf-8', env=plain_env(),
+                                    check=True).stdout.strip()).parent
     checkout = tmp_path / 'checkout'
     (checkout / 'src').mkdir(parents=True)
     (checkout / 'pyproject.toml').write_text('[project]\nname = "metaform"\n', encoding='utf-8')
@@ -152,7 +201,7 @@ def test_an_installed_build_run_in_a_checkout_says_the_checkout_is_not_packed(ru
 
     def installed_build():
         done = subprocess.run([str(python), '-m', 'metaform', 'build'], cwd=inside, capture_output=True, text=True,
-                              encoding='utf-8', env={**os.environ, 'METAFORM_HOME': str(home)}, check=False)
+                              encoding='utf-8', env={**plain_env(), 'METAFORM_HOME': str(home)}, check=False)
         assert done.returncode == 0, done.stdout + done.stderr
         lines = done.stdout.splitlines()
         wheels = [Path(line.split(':', 1)[1].strip()) for line in lines if line.startswith('Wheel:')]
@@ -175,8 +224,8 @@ def test_an_installed_build_run_in_a_checkout_says_the_checkout_is_not_packed(ru
 
 @pytest.mark.req('BASE-041')
 @pytest.mark.req('BASE-026')
-def test_a_compiled_dependency_stays_a_requirement_and_is_named(run):
-    wheel, out = build(run)
+def test_a_compiled_dependency_stays_a_requirement_and_is_named(every_module):
+    wheel, out = every_module
     with zipfile.ZipFile(wheel) as archive:
         vendored = {name.split('/')[2] for name in archive.namelist() if name.startswith('metaform/_vendor/')}
     assert not any(name.startswith('pydantic_core') for name in vendored)
@@ -186,12 +235,12 @@ def test_a_compiled_dependency_stays_a_requirement_and_is_named(run):
 
 @pytest.mark.req('BASE-041')
 @pytest.mark.req('BASE-021')
-def test_uvx_runs_the_built_wheel(run, tmp_path):
+def test_uvx_runs_the_built_wheel(tmp_path, every_module):
     import shutil
     uvx = shutil.which('uvx')
     if uvx is None:
         pytest.fail('uvx is required to check the entry points of a built wheel, MCP-013')
-    wheel, _ = build(run)
+    wheel, _ = every_module
     result = subprocess.run([uvx, '--from', str(wheel), 'metaform', '--version'], capture_output=True, text=True, encoding='utf-8',
                             cwd=tmp_path, check=False)
     assert result.returncode == 0, result.stderr

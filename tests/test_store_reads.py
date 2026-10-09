@@ -92,7 +92,7 @@ def test_every_read_is_answered_from_the_graph_in_memory(home, store, traced):
 
 @pytest.mark.req('STORE-010')
 @pytest.mark.req('STORE-046')
-def test_the_identity_read_among_many_joins_answers_from_the_index_in_memory(home, store, traced):
+def test_the_identity_read_among_many_joins_answers_from_the_index_in_memory(home, store, request):
     import time
     layer = knowledge(store, 'many')
     with store.atomic():
@@ -103,7 +103,7 @@ def test_the_identity_read_among_many_joins_answers_from_the_index_in_memory(hom
             store.add_join(layer.name, f'code.r{n % 1000}', 'code.target' if n < 50 else f'code.r{(n + 1) % 1000}',
                            purpose='p', ef='f')
     store.finish(layer.name)
-    traced.clear()
+    traced = request.getfixturevalue('traced')  # armed after the setup, so its twenty thousand writes are not traced
     started = time.monotonic()
     assert len(store.identity('code.target').results) == 50
     assert time.monotonic() - started < 2  # the index in memory, not a scan of twenty thousand joins

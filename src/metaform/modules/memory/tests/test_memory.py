@@ -551,10 +551,8 @@ CARRYING = (('create_entities', J([entity('echo timing', 'fact')]), PROBE),
 # The note is not among them: an agent never writes it, VIEW-034.
 
 
-@pytest.mark.req('VIEW-011')
-@pytest.mark.req('STORE-020')
-@pytest.mark.parametrize('write', CARRYING, ids=[one[0] for one in CARRYING])
-def test_a_memory_command_that_only_reads_writes_nothing_and_one_that_writes_carries(run, mapped, home, write):
+def _seeded(run, mapped):
+    """The memory of the two tests below: one entity the agent made, and two items at the route, one the person's."""
     mj(run, 'create_entities', J([entity('echo seed', 'fact')]), PROBE, cwd=mapped)
     store = Store('proj')
     layer = store.layers(kind='memory').results[0].name
@@ -562,6 +560,12 @@ def test_a_memory_command_that_only_reads_writes_nothing_and_one_that_writes_car
         store.add_item(layer, Node('element', 'code.manager.route'), 'Routes drift under load.')
         store.add_item(layer, Node('element', 'code.manager.route'), 'Ask the owner before changing it.',
                        extra={'by': 'user'})
+
+
+@pytest.mark.req('VIEW-011')
+@pytest.mark.req('STORE-020')
+def test_a_memory_command_that_only_reads_writes_nothing(run, mapped, home):
+    _seeded(run, mapped)
     stores = sorted((home / 'projects').rglob('*.sqlite3'))
     assert any(path.name == 'memory.sqlite3' for path in stores)
     before = [path.read_bytes() for path in stores]
@@ -571,6 +575,13 @@ def test_a_memory_command_that_only_reads_writes_nothing_and_one_that_writes_car
         m(run, verb, *args, cwd=mapped)
     assert sorted((home / 'projects').rglob('*.sqlite3')) == stores
     assert [path.read_bytes() for path in stores] == before
+
+
+@pytest.mark.req('VIEW-011')
+@pytest.mark.req('STORE-020')
+@pytest.mark.parametrize('write', CARRYING, ids=[one[0] for one in CARRYING])
+def test_a_memory_command_that_writes_carries_what_was_kept(run, mapped, write):
+    _seeded(run, mapped)
     mj(run, *write, cwd=mapped)
     assert mj(run, 'open_nodes', J(['code.manager.route']), cwd=mapped)['entities'] == [
         entity('code.manager.route', 'element', 'Routes drift under load.')]
