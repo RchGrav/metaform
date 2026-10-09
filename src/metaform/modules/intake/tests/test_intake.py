@@ -913,11 +913,11 @@ def test_a_condition_given_with_an_element_or_a_join_is_an_open_work_record_at_i
     """The agent said it found missing and broken things, and nothing like that showed in the GUI.
     The Canonical Intake's step 2 has the agent mark them; the intake tools take the mark and the finding."""
     run('intake', 'start', cwd=project)
-    element = recorded(run, project, 'element', 'code.auth', 'role=SE', 'name=auth', 'condition=broken',
+    element = recorded(run, project, 'element', 'code.auth', 'role=SE', 'name=auth', 'condition=trouble',
                        'note=Non-debug modes are forced to debug.')
     run('intake', 'element', 'code.timer', 'role=DE', 'name=timer', cwd=project)
     join = recorded(run, project, 'join', 'code.timer', '["code.auth"]', 'purpose=p', 'ef=f', 'ifd=receives',
-                    'condition=unbuilt', 'note=The demo does not declare its autoap dependency.')
+                    'condition=missing', 'note=The demo does not declare its autoap dependency.')
     plain = recorded(run, project, 'element', 'code.clock', 'role=SE', 'name=clock')
     for made in (element, join, plain):
         assert made['notices'] == []
@@ -926,9 +926,9 @@ def test_a_condition_given_with_an_element_or_a_join_is_an_open_work_record_at_i
     [held] = store.joins('code.timer').results
     work = {(row.node_kind, row.node_id): (row.condition, row.note, row.done) for row in store.work(open=True, limit=0).results}
     assert work == {
-        ('element', store.element('code.auth').id): ('broken', 'Non-debug modes are forced to debug.', None),
-        ('join', held.id): ('unbuilt', 'The demo does not declare its autoap dependency.', None)}
-    assert Store('timer').element('code.auth').open_work == ('broken',)  # what the page draws the node from
+        ('element', store.element('code.auth').id): ('trouble', 'Non-debug modes are forced to debug.', None),
+        ('join', held.id): ('missing', 'The demo does not declare its autoap dependency.', None)}
+    assert Store('timer').element('code.auth').open_work == ('trouble',)  # what the page draws the node from
     assert 'condition' not in Store('timer').element('code.auth').to_dict()  # apart from the map, MAP-046
     assert Store('timer').element('code.clock').open_work == ()
 
@@ -1038,8 +1038,7 @@ def test_the_core_node_containment_notes_missing_and_join_refs_are_kept_as_the_i
     assert notes['code.alarm.audible'] == 'exclude: a stray copy beside it'
     [joined] = graph.joins
     assert (joined.note, joined.ifd) == ('the join note', 'sends')
-    # missing was ruled out: what is absent is unbuilt
-    assert [(w.condition, w.note) for w in store.work(open=True, limit=0).results] == [('unbuilt', 'no display yet')]
+    assert [(w.condition, w.note) for w in store.work(open=True, limit=0).results] == [('missing', 'no display yet')]
     refs = [[(ref.key, ref.value) for ref in item.refs] for item in store.layer_items('sources', None, limit=0).results]
     assert [('path', 'src/alarm.c')] in refs
 
@@ -1055,7 +1054,7 @@ def test_the_read_back_shows_marks_containment_and_notes_and_a_removed_element_l
     recorded(run, project, 'element', 'code.timer.kitchen', 'name_length=2', 'name=Kitchen Timer', 'role=AUE',
              'within=core')
     recorded(run, project, 'element', 'code.alarm.audible', 'role=DE', 'within=code.timer.kitchen',
-             'condition=broken', 'note=it never sounds')
+             'condition=trouble', 'note=it never sounds')
     recorded(run, project, 'element', 'code.display.digit', 'role=SE', 'within=code.timer.kitchen',
              'note=exclude: a stray copy')
     recorded(run, project, 'element', 'downstream.cqu.cook', 'role=CQU', 'within=core')
@@ -1063,7 +1062,7 @@ def test_the_read_back_shows_marks_containment_and_notes_and_a_removed_element_l
              'purpose=Know when food is done', 'ef=Sounds an alarm', 'ifd=sends')
     shown = recorded(run, project, 'show')
     by = {entry['namespace_address']: entry for entry in shown['elements']}
-    assert (by['code.alarm.audible']['condition'], by['code.alarm.audible']['note']) == ('broken', 'it never sounds')
+    assert (by['code.alarm.audible']['condition'], by['code.alarm.audible']['note']) == ('trouble', 'it never sounds')
     assert by['code.display.digit']['note'] == 'exclude: a stray copy'
     assert by['code.timer.kitchen']['within'] == 'core'
     assert shown['root'] == 'core' and shown['disconnected'] == [] and shown['undescribed'] == []
@@ -1079,8 +1078,7 @@ def test_the_field_text_lists_exactly_the_values_the_intake_tools_accept():
     """The description beside each argument is what an agent reads as it records, so a value listed there and refused
     by the tool, or accepted and never listed, misleads it: the old text offered condition missing after it was
     ruled out."""
-    from metaform.data import CONDITIONS
-    from metaform.modules.intake import ELEMENT_WORDS, JOIN_WORDS, MODULE
+    from metaform.modules.intake import ELEMENT_WORDS, INTAKE_MARKS, JOIN_WORDS, MODULE
 
     def listed(words: str) -> set[str]:
         head = re.split(r'[.:]', words, maxsplit=1)[0]
@@ -1092,5 +1090,15 @@ def test_the_field_text_lists_exactly_the_values_the_intake_tools_accept():
             noun = nouns.get((verb, field))
             if noun is not None:
                 assert listed(words[field]) == set(noun.schema['enum']), (verb, field, words[field])
-    assert set(nouns['element', 'condition'].schema['enum']) == set(CONDITIONS)
+    assert set(nouns['element', 'condition'].schema['enum']) == set(INTAKE_MARKS)
     assert ELEMENT_WORDS['within'] != 'within'  # within is defined, not only named
+
+
+@pytest.mark.req('MAP-046')
+def test_the_procedures_marks_are_taken_as_written(run, project):
+    """The served procedure marks a part MISS, BKN or OK; the tools take those words, so the agent never translates."""
+    recorded(run, project, 'start')
+    recorded(run, project, 'element', 'code.alarm.audible', 'role=SE', 'condition=BKN', 'note=never sounds; wire the pin')
+    recorded(run, project, 'element', 'code.display.digit', 'role=SE', 'condition=OK')
+    assert [(w.address, w.condition) for w in Store('timer').work(open=True, limit=0).results] == \
+        [('code.alarm.audible', 'trouble')]

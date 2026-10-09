@@ -309,13 +309,23 @@ def _sources(ctx: Context, rec: Recording, kind: Literal['element', 'join'], ele
         _note(notices, store.add_item(SOURCES, Node(kind, element_id), address, refs=refs))
 
 
+MARKS = {'MISS': 'missing', 'BKN': 'trouble', 'OK': None}  # the intake procedure's marks, as tool words
+INTAKE_MARKS = ('missing', 'trouble')
+
+
 def _checked_condition(ctx: Context) -> None:
-    """A condition outside the closed list is refused before anything is recorded, so a call is never half kept."""
+    """The intake marks a part missing or trouble, and nothing else; a mark outside them, or trouble with no note
+    saying what is wrong, is refused before anything is recorded, so a call is never half kept. The served
+    procedure's marks are taken as written: MISS is missing, BKN is trouble, and OK is no mark."""
     given = ctx.nouns.get('condition')
-    if given in (None, '', 'exclude') or given in CONDITIONS or given == 'missing':
+    if isinstance(given, str) and given.strip().upper() in MARKS:
+        given = ctx.nouns['condition'] = MARKS[given.strip().upper()]
+    if given == 'trouble' and not str(ctx.nouns.get('note') or '').strip():
+        raise Stop('trouble needs a note saying what is wrong and what corrects it.', 'send it again with note')
+    if given in (None, '', 'exclude') or given in INTAKE_MARKS:
         return
-    raise Stop(f'{given!r} is not a condition. A part\'s condition is one of {", ".join(CONDITIONS)}; an exclusion '
-               'is a note, "exclude: <why>".', 'send it again with one of those words')
+    raise Stop(f'{given!r} is not an intake mark. A part is marked missing or trouble; an exclusion is a note, '
+               '"exclude: <why>".', 'send it again with one of those words')
 
 
 def element(ctx: Context) -> Any:
@@ -362,9 +372,7 @@ def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], t
         return
     if thing is None or not ctx.nouns.get('condition'):  # none or empty: no finding; a note is kept on the object
         return
-    # missing was ruled out: intended functionality that is absent is unbuilt
-    stage = {'missing': 'unbuilt'}.get(str(ctx.nouns['condition']), str(ctx.nouns['condition']))
-    _note(notices, rec.store.add_work(Node(kind, thing), stage, note=ctx.nouns.get('note')))
+    _note(notices, rec.store.add_work(Node(kind, thing), str(ctx.nouns['condition']), note=ctx.nouns.get('note')))
 
 
 JOIN_FIELDS = ('purpose', 'ef', 'ifd')
@@ -648,7 +656,7 @@ def status(ctx: Context) -> Status:
 
 E, J = ELEMENT_WORDS.get, JOIN_WORDS.get
 CONDITION = (Noun('condition', E('condition', ''), required=False,
-                  schema={'type': 'string', 'enum': ['broken', 'unbuilt', 'under-construction', 'built']}),
+                  schema={'type': 'string', 'enum': ['missing', 'trouble']}),
              Noun('note', E('note', ''), required=False))
 
 MODULE = Module(

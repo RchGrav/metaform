@@ -28,10 +28,11 @@ HELD_ROLES = ('DE', 'SE', 'NE')  # the role of an element a join holds, in
 # on its way to existing, and one fault, a built part that does not do its job. Built is the normal state and draws
 # nothing; a record with no condition is a plain task. The intake and the person set it; agents at work do not.
 STAGES = ('unbuilt', 'under-construction', 'built')
-FAULTS = ('broken',)
+FAULTS = ('broken', 'trouble')  # trouble is what the intake records where a part does not do its job
 # A ticket's kind, what sort of work it is, kept apart from the part's state; none is a plain task.
 KINDS = ('broken', 'flawed', 'enhancement')
-CONDITIONS = STAGES + FAULTS  # missing was ruled out: what is absent is unbuilt
+FINDINGS = ('missing',)  # intended functionality that is absent, kept apart from the stage unbuilt
+CONDITIONS = STAGES + FAULTS + FINDINGS
 MESSAGES = ('question', 'message')  # what waits for the person at a node, MAP-050; never a condition
 COLUMNS = ('backlog', 'todo', 'doing', 'done')  # the board's columns, MAP-048
 

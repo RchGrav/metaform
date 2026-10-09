@@ -156,7 +156,7 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 .addr{font:12px var(--mono);color:var(--signal);word-break:break-all}
 .pills{display:flex;flex-wrap:wrap;gap:6px}
 .pill{font:500 12px var(--mono);padding:2px 8px;border-radius:var(--r);border:0;background:var(--panel-2);color:var(--muted)}
-.pill.work-broken{color:var(--broken);background:color-mix(in srgb,var(--broken) 14%,transparent)}
+.pill.work-broken,.pill.work-trouble{color:var(--broken);background:color-mix(in srgb,var(--broken) 14%,transparent)}
 .pill.work-question,.pill.work-message{color:var(--question);background:color-mix(in srgb,var(--question) 14%,transparent)}
 .map2d .node.work-message,.map2d .cluster.work-message,.map2d path.work-message{--c:var(--question);animation:glow-pulse 1.6s ease-in-out infinite}
 .map2d .node.work-message rect,.map2d .cluster.work-message rect{stroke:var(--question)!important;stroke-width:2px}
@@ -278,8 +278,8 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 .map2d .node.reach,.map2d .cluster.reach{filter:drop-shadow(0 0 4px var(--reach)) drop-shadow(0 0 12px var(--reach))}
 /* The box gives off light in the lit half of its flash, VIEW-029. The light is on the box and not on its group, since the group's own animation is the fade of going inside a node. */
 @keyframes flash{0%,100%{stroke:var(--node-line);fill:var(--node);filter:none}50%{stroke:var(--broken);fill:var(--node-broken);filter:drop-shadow(0 0 4px var(--broken)) drop-shadow(0 0 12px var(--broken)) drop-shadow(0 0 24px var(--broken))}}
-.map2d .node.work-broken rect,.map2d .cluster.work-broken rect{stroke:var(--broken)!important;animation:flash var(--pace,1s) ease-in-out infinite}
-@media (prefers-reduced-motion: reduce){.map2d .node.work-broken rect,.map2d .cluster.work-broken rect{animation:none;fill:var(--node-broken)!important}}
+.map2d .node.work-broken rect,.map2d .cluster.work-broken rect,.map2d .node.work-trouble rect,.map2d .cluster.work-trouble rect{stroke:var(--broken)!important;animation:flash var(--pace,1s) ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){.map2d .node.work-broken rect,.map2d .cluster.work-broken rect,.map2d .node.work-trouble rect,.map2d .cluster.work-trouble rect{animation:none;fill:var(--node-broken)!important}}
 .map2d.focused .node:not(.sel):not(.near) text,.map2d.focused .node:not(.sel):not(.near) .nodeLabel{fill:var(--muted)!important}
 .map2d .edgePaths path{stroke:var(--edge)!important;stroke-width:1.2px!important;transition:stroke .3s,opacity .3s}
 .map2d .edgePaths path.on{stroke:var(--intake)!important;stroke-width:1.8px!important}

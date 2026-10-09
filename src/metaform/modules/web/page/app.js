@@ -513,7 +513,7 @@ function look(id) {
     text3d: Boolean(node?.__threeObj?.userData.written),  // until the node itself is drawn in its place
     turns: writing.get(id)?.rate ?? 0, pace: node ? paceOf(node) : null,
     text: textOf(id), signal3d: writing.get(id)?.reached ?? 0, signalColor3d: writing.get(id)?.signalColor ?? null,
-    glow2d: Boolean(box) && ['broken', 'question', 'message'].some(name => group.classList.contains('work-' + name))
+    glow2d: Boolean(box) && ['broken', 'trouble', 'question', 'message'].some(name => group.classList.contains('work-' + name))
       && [group, box].some(part => getComputedStyle(part).filter.includes('drop-shadow')),
     red3d: material ? '#' + material.color.getHexString() === css('--broken').toLowerCase() : false,
     material: material ? (material instanceof MeshTransmissionMaterial ? 'MeshTransmissionMaterial' : material.type) : null,
@@ -535,7 +535,7 @@ function look(id) {
 }
 
 /* ---------- 3D: a synaptic map, drawn as the approved prototype draws it ---------- */
-const CONDITIONS = ['unbuilt', 'under-construction', 'broken', 'question', 'message'];  // built draws nothing
+const CONDITIONS = ['missing', 'unbuilt', 'under-construction', 'broken', 'trouble', 'question', 'message'];  // built draws nothing
 /* The agents at work, VIEW-035: a figure for each ticket an agent works, from the moment it is taken until it is
  * closed. It materializes on the most primary node, the DE, makes its way along the map's own edges to the ticket's
  * node, goes onto it and circles it slowly, facing the way it moves, at one steady pace until the ticket is closed;
@@ -801,7 +801,7 @@ function roam2d() {
 /* A part's light, VIEW-035 and MAP-046: broken flashes red. Flashing lets the node's own
  * color show between flashes, and each step filed makes it faster: from FLASH.slow a beat while it waits, to
  * FLASH.fast as the steps planned are filed, or a little faster with each step when none were planned. */
-const LIGHTS = [['broken', '--broken']];  // the one fault a built part can have, MAP-046
+const LIGHTS = [['broken', '--broken'], ['trouble', '--broken']];  // the one fault a built part can have, MAP-046
 const FLASH = {slow: 1.2, fast: 0.24, step: 0.35};
 function paceOf(node) {
   const done = S.progress?.get(node.id);
@@ -1160,7 +1160,7 @@ const T = {letters: null, strokes: null, order: LETTERS, cell: {value: new THREE
   screen: {value: new THREE.Vector2(1, 1)}, zoom: {value: 1}, light: {value: TEXT.light}, away: 0, last: 0,
   rows: new Map()};
 const writing = new Map();  // what is being written, by node id, kept while the map is drawn again
-const unbuilt = node => has(node, 'unbuilt') || has(node, 'under-construction');
+const unbuilt = node => has(node, 'missing') || has(node, 'unbuilt') || has(node, 'under-construction');  // missing is absent, so not built
 const asText = node => unbuilt(node) || writing.has(node.id);
 const FACE = '500 48px "IBM Plex Mono", ui-monospace, monospace', WIDE = 30, HIGH = 60;
 function weightOf(letter) {
@@ -1322,7 +1322,7 @@ function rows3d(data) {
   }
 }
 const WHITE = new THREE.Color(1, 1, 1);
-const SIGNALS = [['broken', '--broken'], ['question', '--question'], ['message', '--question']];
+const SIGNALS = [['broken', '--broken'], ['trouble', '--broken'], ['question', '--question'], ['message', '--question']];
 function text3d() {
   const now = performance.now() / 1000, passed = Math.min(0.1, Math.max(0, now - (T.last || now)));
   T.last = now;
@@ -1854,9 +1854,9 @@ function renderLegend() {
   const open = new Set([...S.elements.values()].flatMap(entry => entry.element.open_work || [])
     .concat(S.joins.flatMap(join => join.open_work || [])));
   for (const condition of CONDITIONS) if (open.has(condition))
-    legend.append(h('span', {style: {'--c': condition === 'unbuilt' || condition === 'under-construction' ? 'var(--text)'
+    legend.append(h('span', {style: {'--c': condition === 'missing' || condition === 'unbuilt' || condition === 'under-construction' ? 'var(--text)'
       : `var(--${condition === 'message' ? 'question' : condition})`}},
-      h('i', {class: {unbuilt: 'dot bloom', 'under-construction': 'dot bloom pulse', question: 'dot bloom pulse', message: 'dot bloom pulse'}[condition] || 'dot'}),
+      h('i', {class: {missing: 'dot bloom', unbuilt: 'dot bloom', 'under-construction': 'dot bloom pulse', question: 'dot bloom pulse', message: 'dot bloom pulse'}[condition] || 'dot'}),
       condition === 'question' || condition === 'message' ? `waiting: ${condition}` : `part: ${condition.replace('-', ' ')}`));
   const shown = G ? G.graphData().nodes.length : 0;
   $('#count').textContent = noMetaform() ? 'no metaform yet'
@@ -3330,7 +3330,7 @@ const KINDS = ['broken', 'flawed', 'enhancement'];  // a ticket's kind; none is 
 const BOARD = [['backlog', 'Backlog'], ['todo', 'To do'], ['doing', 'Doing'], ['done', 'Done']];
 /* What a record's condition says about the part it is at, MAP-046: the condition belongs to the element or join, not
    to the ticket; the ticket is the work on it. A record with no condition is a plain task. */
-const CONDITION_WORDS = {unbuilt: 'not built yet', 'under-construction': 'under construction', built: 'built', broken: 'broken'};
+const CONDITION_WORDS = {missing: 'missing', trouble: 'trouble', unbuilt: 'not built yet', 'under-construction': 'under construction', built: 'built', broken: 'broken'};
 /* A ticket's label is its kind, what sort of work it is, MAP-046 as amended 2026-10-08: never the part's stage, which
    the map shows on the node. A ticket with no kind is a plain task. */
 const KIND_WORDS = {broken: 'broken', flawed: 'flawed', enhancement: 'works, could be better'};

@@ -171,7 +171,7 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
                     key: value for key, value in join.items() if key in ('purpose', 'ef', 'ifd')}})
         # The condition of an object is a work record, apart from the map, written by the intake agent with the
         # element it marks; an agent never adds a ticket through map_work over MCP, MAP-046.
-        record('intake_element', {'namespace_address': 'code.alarm.audible', 'condition': 'broken',
+        record('intake_element', {'namespace_address': 'code.alarm.audible', 'condition': 'trouble',
                                   'note': 'the pin is never released'})
         report = record('intake_finish', {'report': REPORT, 'feedback': FEEDBACK})
         assert (report['elements'], report['joins'], report['work']) == (4, 2, 1)
@@ -189,7 +189,7 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
         assert sorted(by_kind) == ['feedback', 'report']
         assert texts(asked(first, 'read_report', {'name': by_kind['report']}, limit=LIMIT)) == [REPORT]
         assert texts(asked(first, 'read_report', {'name': by_kind['feedback']}, limit=LIMIT)) == [FEEDBACK]
-        broken = last_json(asked(first, 'map_work', {'condition': 'broken'}, limit=LIMIT))['results']
+        broken = last_json(asked(first, 'map_work', {'condition': 'trouble'}, limit=LIMIT))['results']
         assert [(row['address'], row['note']) for row in broken] == [('code.alarm.audible', 'the pin is never released')]
         said = last_json(asked(first, 'feedback', {'text': 'The first working test ran.'}, limit=LIMIT))
         relisted = {row['name'] for row in last_json(asked(first, 'list_reports', {}, limit=LIMIT))['results']}
