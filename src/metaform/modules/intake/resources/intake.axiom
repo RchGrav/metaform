@@ -67,25 +67,16 @@
           another, without duplication.
   AT   := Artifact Type — a classification that anneals same-type AUEs
           (photos, data objects, scripts, templates) into one type.
-  Collection := a namespace root for identifying sets. A collection groups
-          AUEs of one content kind and sits above the AUE: its members are
-          the artifacts under examination. Main use: projects that are many
-          artifacts of a kind rather than one — a folder of photos, a body
-          of contracts, a set of stories. A codebase is one artifact and
-          normally needs no collection. The address after collection.
-          mirrors the members' own type: collection.media.photo reads
-          "photo media collection"; stripping collection. gives the
-          members' type, so the address alone says what is in the set.
-          Narrows the same way: collection.media.photo.product. Normal
-          namespace rules apply. Each collection can have a distinct CQU
-          with its own tripartite root join, so one project can hold
-          several roots of purpose, one per collection, under the core
-          node. Member paths are refs on the collection element (sources
-          layer), each member keeping its identity through its ref;
-          downstream, tagged refs allow automated collection and
-          organization while retaining the file paths or extraction, and
-          the collection address is what knowledge layers, workflows, and
-          work can target.
+  Collection := a namespace root for sets. A collection is a set of
+          artifacts of any type: code, documents, specifications, media or
+          data. Its address is collection. followed by the members' type,
+          so the address says what the set holds: collection.media.photo is
+          a set of photos, collection.document.specification a set of
+          specifications. It narrows like any other address. Each
+          collection can have its own CQU and root join under the core
+          node. Its members are refs on the collection element in the
+          sources layer, each keeping its identity and path. Knowledge
+          layers, workflows and work can target a collection by its address.
   NE   := Notable Element — states an essential external demand or
           dependency: what the system explicitly expects, needs, or
           depends on from its environment to operate.
