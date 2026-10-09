@@ -674,7 +674,7 @@ def test_a_layout_16_store_opens_with_every_join_kept_and_naming_no_element(home
 
 @pytest.mark.req('STORE-029')
 @pytest.mark.req('STORE-010')
-def test_a_layout_16_store_opens_in_richs_shape_with_nothing_it_held_lost(home: Path, tmp_path: Path):
+def test_a_layout_16_store_opens_in_the_metaforms_shape_with_nothing_it_held_lost(home: Path, tmp_path: Path):
     """D115: the data shape goes back to the original design, with no added field. A join holds its provider, and its subtype join's element is held by it too; a
     join's name is the name of the element it holds when that element has none; each element's refs, with those of the
     joins that held it, are its one item of the sources layer; a ticket, a message and an item at the subtype join move

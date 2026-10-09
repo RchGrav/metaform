@@ -26,7 +26,7 @@ TICKET = {'condition', 'note'}  # a ticket written beside what was recorded, apa
 @pytest.mark.req('STORE-009')
 @pytest.mark.req('STORE-010')
 @pytest.mark.req('STORE-046')
-def test_the_metaform_holds_only_the_fields_of_richs_shape(home, store):
+def test_the_metaform_holds_only_the_fields_of_its_shape(home, store):
     """Every op the base's layer writes for an element or a join carries the metaform's shape and nothing more; the base
     holds no refs, STORE-012: refs are on items and properties only."""
     small_map(store)
@@ -44,7 +44,7 @@ def test_the_metaform_holds_only_the_fields_of_richs_shape(home, store):
 @pytest.mark.kind('fixture')
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('MAP-020')
-def test_the_tools_that_write_the_metaform_take_no_field_beyond_richs_shape():
+def test_the_tools_that_write_the_metaform_take_no_field_beyond_its_shape():
     from metaform.modules.intake import MODULE
     taken = {verb.name: {noun.name for noun in verb.nouns} for verb in MODULE.verbs}
     # An element's refs go to the sources layer; a join takes none.

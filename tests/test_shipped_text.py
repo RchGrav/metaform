@@ -10,7 +10,7 @@ import pytest
 pytestmark = [pytest.mark.req('QUAL-001'), pytest.mark.kind('real')]
 
 ROOT = Path(__file__).resolve().parents[1]
-OWNER = re.compile(r'\b' + 'R' + r'ich\b|' + 'Gra' + 'ver')  # spelled apart so this file does not match itself
+OWNER = re.compile(r'\b' + 'R' + r'ich\b|\b' + 'r' + r'ichs\b|' + 'Gra' + 'ver')  # spelled apart so this file does not match itself
 # The question form's third heading, which the page matches word for word against what agents write; it changes
 # together with the form's text, which is not in this repository.
 KEPT = {('src/metaform/modules/web/page/app.js', '#3 Unexplained "' + 'R' + 'ich said":')}
