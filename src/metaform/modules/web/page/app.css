@@ -606,3 +606,6 @@ span.ref-link{color:var(--signal);text-decoration:underline dotted;cursor:pointe
 #work .issue{display:grid;gap:6px;margin:6px 0 10px}
 #work .issue textarea{width:100%;box-sizing:border-box;font:13px var(--sans);padding:6px 8px;border-radius:8px;border:1px solid var(--line-2);background:var(--panel-2);color:var(--text);resize:vertical}
 #work .issue button.send{justify-self:start;font:600 12px var(--sans);padding:4px 10px;border-radius:8px;border:1px solid var(--signal);background:var(--panel-2);color:var(--signal);cursor:pointer}
+
+/* A node grows and moves about its own center when the 2D map moves between layouts, VIEW-041. */
+.map2d .node{transform-box:fill-box;transform-origin:center}

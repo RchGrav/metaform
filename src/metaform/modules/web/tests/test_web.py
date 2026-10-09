@@ -1771,10 +1771,71 @@ def test_in_the_large_area_mode_one_keeps_the_whole_diagram_fitted_and_eases_to_
         assert readable_at(page, 16, kitchen)
         acted(page, back)                                 # and Fit, F and Home back to mode one
         assert fitted(page)
-    page.keyboard.press('f')                              # in the large area F does not go on to other views
-    page.wait_for_timeout(300)
-    still2d(page)
+    acted(page, lambda: page.keyboard.press('f'))         # from the whole diagram F goes back in, to mode two
+    assert readable_at(page, 16, kitchen)
+    acted(page, lambda: page.keyboard.press('f'))         # and out again
     assert fitted(page)
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-041')
+def test_in_the_large_area_fit_goes_back_in_after_the_whole_diagram_on_a_small_map(run, web, mapped, browser):
+    """Fit in the large area showed the whole diagram and never went back in. On a map small enough to read whole,
+    Fit from the whole diagram goes in on the selected node, and Fit again shows the whole diagram."""
+    page, problems = opened_on(browser, web, run)
+    _, at = keys_of(web)
+    kitchen = at['code.timer.kitchen']
+    assert page.evaluate('window.metaform.selected()') == kitchen and fitted(page)
+    whole = page.evaluate(VIEW_BOX)
+    closer = acted(page, lambda: press(page, '#fitBtn'))
+    assert closer[2] < whole[2] and centered(page, kitchen) <= 2   # in, on the node
+    acted(page, lambda: press(page, '#fitBtn'))
+    assert fitted(page)
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-041')
+def test_the_2d_map_moves_between_layouts_each_node_keeping_its_key_and_a_new_one_growing_into_place(
+        run, web, mapped, browser):
+    """Drawn again, the map jumped to its new layout before the camera eased. Each node now keeps the key of what it
+    stands for from one drawing to the next, starts where it stood and eases to its new place, and a new node grows
+    in; once settled every node is where the new layout puts it."""
+    page, problems = opened_on(browser, web, run, large=False)
+    _, at = keys_of(web)
+    kitchen = at['code.timer.kitchen']
+    assert page.evaluate(f'!!document.querySelector(\'#map2d svg g.node[data-key="{kitchen}"]\')')
+    page.clock.pause_at(page.evaluate('Date.now()') / 1000 + 1)
+    arrives(run, mapped)
+    added = '[...document.querySelectorAll("#map2d svg g.node")].find(g => g.querySelector("title")?.textContent === "code.part.added")'
+    for _ in range(600):
+        page.clock.run_for(FRAME)
+        if page.evaluate(f'!!{added}'):
+            break
+    assert page.evaluate(f'{added}.style.scale') not in ('', '1')   # it grows in
+    page.clock.run_for(1200)
+    assert page.evaluate('[...document.querySelectorAll("#map2d svg g.node")].every(g => !g.style.translate && !g.style.scale)')
+    assert page.evaluate(f'!!document.querySelector(\'#map2d svg g.node[data-key="{kitchen}"]\')')   # the same key, drawn again
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-016')
+def test_inside_a_node_each_purpose_box_shows_its_purpose_with_the_elements_that_serve_it_beneath(
+        run, web, mapped, browser):
+    """A join has no name of its own, so in a node's own graph its box showed only a dot. It shows the join's purpose,
+    and the elements the join holds are drawn beneath it."""
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && document.querySelector("#map2d svg")')
+    expected, at = keys_of(web)
+    cook, kitchen, tick = at['exterior.cook'], at['code.timer.kitchen'], at['code.loop.tick']
+    join = next(held['id'] for held in expected['joins'] if held['receiver'] == cook)
+    page.evaluate(f'window.metaform.select("{cook}")')
+    page.keyboard.press('Enter')
+    page.wait_for_function(f'() => window.metaform.inside().includes("{cook}")')
+    keys = page.evaluate('window.metaform.inside()')
+    assert f'p:{join}' in keys and kitchen in keys and tick in keys
+    text = page.evaluate(f'document.querySelector(\'#map2d svg g.node[data-key="p:{join}"]\').textContent')
+    assert 'Know when food is done' in text
     assert problems == []
 
 

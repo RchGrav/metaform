@@ -1904,6 +1904,7 @@ async function build2D(keep = true) {
   // The whole map drawn again keeps its camera and eases from there, VIEW-041, with the zoom the person has, VIEW-008.
   const was = keep && M.base && M.svg === M.base.svg && M.cam ? {cam: {...M.cam}, zoom: M.zoom} : null;
   const inside = IN.length > 0 || Boolean(MEM.key);
+  const before = was && !inside ? drawnAt(M.base) : null;  // where each node is drawn now, to move it from there
   const svg = mountSvg(result, host, inside);
   const nodes = new Map();
   for (const [id, key] of keys) {
@@ -1920,7 +1921,60 @@ async function build2D(keep = true) {
   if (inside) { svg.remove(); svg.style.visibility = ''; await drawInside(); return; }
   showBase();
   if (was) { setCam(was.cam, false); M.zoom = was.zoom; }
+  if (before) settle2D(before, nodes, svg);
   if (S.selected) focus2D(S.selected); else applyMode();
+}
+/* Where each node of a drawn map stands, by its element id, in the map's own units, counting any move it is still
+ * making, so a map drawn again mid-move starts from where its nodes are and not where they were going. */
+function drawnAt(base) {
+  const held = new Map();
+  for (const [id, node] of base.nodes) {
+    const [dx = 0, dy = 0] = String(node.g.style.translate || '').split(' ').map(parseFloat)
+      .filter(value => !isNaN(value));
+    held.set(id, {x: node.x + dx, y: node.y + dy, g: node.g});
+  }
+  return held;
+}
+/* The map moves between layouts, VIEW-041: the camera starts where it was, each node starts where it was drawn and
+ * eases to its new place, a new node grows from where its parent stood, a node gone fades out, and the edges fade in
+ * as the nodes arrive. It runs on animation frames, as the camera does, so the two move as one. With reduced motion
+ * the new drawing only fades in. */
+const SETTLE = {frame: 0};
+function settle2D(before, nodes, svg) {
+  cancelAnimationFrame(SETTLE.frame);
+  if (reduced()) { svg.animate([{opacity: 0}, {opacity: 1}], {duration: 160}); return; }
+  const byAddress = new Map([...before.keys()].map(id => [S.elements.get(id)?.element.address, before.get(id)]));
+  const moving = [];
+  for (const [id, node] of nodes) {
+    const old = before.get(id) || byAddress.get(S.elements.get(id)?.parent);
+    moving.push({g: node.g, dx: old ? old.x - node.x : 0, dy: old ? old.y - node.y : 0, grow: !before.has(id)});
+  }
+  const layer = svg.querySelector('.nodes') || svg.querySelector('g');
+  const ghosts = layer ? [...before].filter(([id]) => !nodes.has(id)).map(([, old]) => {
+    const ghost = layer.appendChild(old.g.cloneNode(true));
+    ghost.style.pointerEvents = 'none';
+    return ghost;
+  }) : [];
+  const edges = [...svg.querySelectorAll('.edgePaths, .edgeLabels')];
+  const ease = k => 1 - Math.pow(1 - k, 3);  // cubic ease-out
+  const draw = (moved, faded, shown) => {
+    for (const one of moving) {
+      const left = 1 - ease(moved);
+      one.g.style.translate = left ? `${one.dx * left}px ${one.dy * left}px` : '';
+      if (one.grow) { one.g.style.scale = left ? String(0.4 + 0.6 * (1 - left)) : ''; one.g.style.opacity = left ? String(1 - left) : ''; }
+    }
+    for (const ghost of ghosts) ghost.style.opacity = String(1 - faded);
+    for (const part of edges) part.style.opacity = shown < 1 ? String(Math.max(0, (shown - 0.55) / 0.45)) : '';
+  };
+  draw(0, 0, 0);  // the first frame shows the map as it stood
+  let start = null;
+  const step = now => {
+    start ??= now;
+    const gone = now - start, moved = Math.min(1, gone / 520), faded = Math.min(1, gone / 300), shown = Math.min(1, gone / 780);
+    draw(moved, faded, shown);
+    if (shown < 1) SETTLE.frame = requestAnimationFrame(step); else for (const ghost of ghosts) ghost.remove();
+  };
+  SETTLE.frame = requestAnimationFrame(step);
 }
 /* Mermaid's strict SVG, the only markup parsed; hidden when it is measured without being shown. */
 function mountSvg(result, host, hidden) {
@@ -1936,6 +1990,7 @@ function placeIn(nodes, id, group, title, work) {
   const matrix = group.transform.baseVal.consolidate()?.matrix;
   const center = new DOMPoint(box.x + box.width / 2, box.y + box.height / 2).matrixTransform(matrix || new DOMMatrix());
   nodes.set(id, {g: group, x: center.x, y: center.y, w: box.width, h: box.height});
+  group.dataset.key = id;  // what the node stands for, kept from one drawing to the next as the mermaid id is not
   for (const condition of work || []) group.classList.add(`work-${condition}`);  // the node's condition, MAP-046
   const paced = S.progress?.get(id);
   if (paced) group.style.setProperty('--pace', `${paceOf({id})}s`);
@@ -1949,11 +2004,19 @@ function placeIn(nodes, id, group, title, work) {
  * otherwise the node entered, at the size its labels are written in. Fit still shows the whole graph. */
 function readable(fit, center) {
   const view = $('#viewport').getBoundingClientRect();
-  if (!center || !view.width || view.width / frame(fit).w >= 1) return fit;
+  if (!center || !view.width || view.width / frame(fit).w >= 1) return fitted(fit);
   const w = view.width, height = view.height || w;
   const x = Math.min(Math.max(center.x - w / 2, fit.x), Math.max(fit.x, fit.x + fit.w - w));
   const y = Math.min(Math.max(center.y - height / 2, fit.y), Math.max(fit.y, fit.y + fit.h - height));
   return {x, y, w, h: height};
+}
+/* The whole drawing framed with its margin, zoomed in or out as it needs, but never past 1.6 times its natural size,
+ * so a map of a node or two does not fill the area. */
+function fitted(box) {
+  const area = $('#viewport').getBoundingClientRect(), least = area.width / 1.6;
+  if (!area.width || box.w >= least) return box;
+  const height = box.h * least / box.w;
+  return {x: box.x + box.w / 2 - least / 2, y: box.y + box.h / 2 - height / 2, w: least, h: height};
 }
 function fitOf(svg) {
   const scene = svg.querySelector('g').getBBox();
@@ -1993,11 +2056,10 @@ const keyOf = node => !node ? null : node.kind === 'join' ? 'p:' + node.id : nod
 const label2d = text => plain2d(String(text ?? '').replace(/\s+/g, ' ')) || '·';
 const samePath = (a, b) => a.length === b.length && a.every((level, index) => level.key === b[index].key);
 /* An element is labeled with its name, the project's name for it, or else its short namespace name, its address read
- * through name_length, MAP-012, Rich 2026-10-04: "the fall back for name not being provided is the short namespace
- * name"; "the name on the join was the name for the element". A join has no name in Rich's shape, so it has no label;
- * its purpose shows when it is hovered or selected. */
+ * through name_length, MAP-012. A join has no name of its own, since a name belongs to the element it holds; its box
+ * shows its purpose, the operative purpose it records, so a drill-in never draws a blank box. */
 const labelOf = element => element.name || element.short_name || element.address;
-const joinLabel = () => '';
+const joinLabel = join => join?.purpose || '';
 function nameOf(key, fallback = key) {
   if (key.startsWith('p:')) { const found = joinOf(key); return found ? joinLabel(found) : fallback; }
   const found = S.elements.get(key)?.element;
@@ -2032,8 +2094,12 @@ async function drawInside(arriving = false) {
       for (const provider of join.providers) edges.push(`${center} --> ${add(provider, nameOf(provider), 'stub')}`);
     }
   } else {
-    for (const join of S.joins.filter(item => item.receiver === key))
-      edges.push(`${center} --> ${add('p:' + join.id, joinLabel(join), 'purpose')}`);
+    // each join the node receives, as its purpose, with the elements that serve it drawn under it
+    for (const join of S.joins.filter(item => item.receiver === key)) {
+      const purpose = add('p:' + join.id, joinLabel(join), 'purpose');
+      edges.push(`${center} --> ${purpose}`);
+      for (const provider of join.providers) edges.push(`${purpose} --> ${add(provider, nameOf(provider), 'stub')}`);
+    }
   }
   const linked = [];
   for (const found of view?.layers || []) {
@@ -2651,7 +2717,7 @@ function smallestText(svg) {  // the smallest font size of the diagram's labels,
   return isFinite(least) ? least : 13;
 }
 function modeTarget() {
-  const fit = frame(M.fit), area = M.svg.getBoundingClientRect();
+  const fit = frame(fitted(M.fit)), area = M.svg.getBoundingClientRect();
   if (MODE.mode !== 'readable' || !area.width || !area.height) return fit;
   M.base.text ??= smallestText(M.base.svg);
   // The viewBox at which that text, times the screen pixels per unit, is the minimum; the larger on screen wins.
@@ -2668,7 +2734,7 @@ function fit2D() {
   $('#map2d').classList.remove('focused');
   for (const edge of M.edges) edge.path?.classList.remove('on');
   for (const node of M.nodes.values()) node.g.classList.remove('sel', 'near');
-  if (M.fit) moveCam(M.fit);
+  if (M.fit) moveCam(fitted(M.fit));
 }
 function focus2D(id, framing = 'around', zoom = false) {
   const join = id.startsWith('p:') ? joinOf(id) : null;
@@ -2746,8 +2812,17 @@ function fitAll() { fit2D(); fit3d(); }
  * back to mode one, VIEW-041. */
 function cycleView() {
   const here = S.selected;
+  if (large()) {  // the whole diagram, then back in: the readable view, or the selected node when the whole is readable
+    if (MODE.mode !== 'whole' || !here || !M.base || M.svg !== M.base.svg) return fit2D();
+    MODE.mode = 'readable';
+    const readableView = frame(modeTarget());
+    if (!near(readableView, frame(fitted(M.fit)))) return moveCam(readableView);
+    MODE.mode = null;
+    M.view = 'around';
+    return focus2D(here, 'around', true);
+  }
   const next = {around: 'out', out: 'in', in: 'around'}[M.view || 'around'];
-  if (large() || !here || next === 'out') return fit2D();  // its own map only; the 3D map has a Fit of its own, VIEW-028
+  if (!here || next === 'out') return fit2D();  // its own map only; the 3D map has a Fit of its own, VIEW-028
   if (next === 'in') return focus2D(here, 'close', true);
   focus2D(here, 'around', true);
 }
