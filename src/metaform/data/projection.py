@@ -390,10 +390,10 @@ class Projection:
     def layer_by_name(self, name: str) -> LayerRec | None:
         return next((layer for layer in self.layers.values() if layer.name == name), None)
 
-    def cypher(self, query: str) -> Any:
-        """A Cypher query over the graph, through grandcypher."""
+    def cypher(self, query: str, graph: Any = None) -> Any:
+        """A Cypher query over the graph, or over a view of it, through grandcypher."""
         from grandcypher import GrandCypher  # type: ignore[import-untyped]  loaded for the query only
-        return GrandCypher(self.graph).run(query)
+        return GrandCypher(self.graph if graph is None else graph).run(query)
 
     # ------------------------------------------------------------------ snapshots
 

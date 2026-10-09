@@ -494,6 +494,33 @@ def layer_graph(tx: Tx, layer: str) -> GraphPage:
     return GraphPage(tuple(elements), tuple(held))
 
 
-def cypher(tx: Tx, query: str) -> Any:
-    """A Cypher query over the base's graph, for agents and tools, STORE-046."""
-    return tx.base.cypher(query)
+def cypher(tx: Tx, query: str, selection: Sequence[str] | None = None) -> Any:
+    """A Cypher query over the base's graph, for agents and tools, STORE-046, seeing only what the layers in view show:
+    the selection given, or else the layers turned on, with hidden layers and the select and mask rows at each
+    address applied, as every other read is, Rich 2026-10-08. A query names its own layers to hide or show them on
+    the fly."""
+    import networkx
+    res = resolver(tx, selection, tx.toggled)
+    graph = tx.base.graph
+    nodes = graph.nodes
+
+    def address_of(node_id: Any) -> str | None:
+        found = nodes.get(node_id) if node_id is not None else None
+        if not found:
+            return None
+        if found.get('kind') == 'element':
+            return found.get('address')
+        if found.get('kind') == 'join':
+            return address_of(found.get('receiver'))
+        if found.get('kind') == 'item':
+            return address_of(found.get('target_id'))
+        return None
+
+    def shows(node_id: Any) -> bool:
+        found = nodes[node_id]
+        if not found.get('kind'):
+            return False
+        return res.reaches(str(found.get('layer_id') or ''), address_of(node_id))
+
+    view = networkx.subgraph_view(graph, filter_node=shows)
+    return tx.base.cypher(query, view)

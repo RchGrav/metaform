@@ -117,7 +117,7 @@ Module, prompt and published layer ids under the domain root, so authors cannot 
 
 ## Small, any time
 
-- **Cypher for agents.** Queries run over the in-memory graph in Python only; give agents a read command for them.
+- **Cypher for agents.** Done 2026-10-08: `map cypher`, over the layers in view or the ones named, STORE-046.
 - **The board drag test,** which fails under the browser driver; confirm whether it predates 2026-10-08 and fix it.
 - **The ten baseline test failures** (build, provision, TUI, first working test, memory count, module data source).
 - **Regenerate the MCP server dump** after lanes 1 to 3.

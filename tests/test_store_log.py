@@ -142,3 +142,19 @@ def test_two_processes_at_one_sequence_hold_the_same_graph(home, store):
     mine = Store(store.project_id)
     with mine._read() as tx:
         assert _state(tx.base) == _state(other)
+
+
+def test_a_cypher_query_sees_only_the_layers_in_view_and_can_name_its_own(store):
+    """Rich, 2026-10-08: Cypher over the map is there so layers can be hidden or shown on the fly. A query sees what
+    the layers in view show, as every read does, and names other layers for itself."""
+    filled(store)
+    items = 'MATCH (n) WHERE n.kind = "item" RETURN n.value'
+    everything = store.cypher(items)['n.value']
+    assert any('keep it small' in str(value) for value in everything)  # the notes layer is in view
+    base_only = store.cypher(items, ['intake-1'])['n.value'] if store.cypher(items, ['intake-1']) else []
+    assert not any('keep it small' in str(value) for value in base_only)  # named away for this query alone
+    store.hide('notes')
+    hidden = store.cypher(items)['n.value'] if store.cypher(items) else []
+    assert not any('keep it small' in str(value) for value in hidden)  # a hidden layer is out of every query
+    elements = store.cypher('MATCH (e) WHERE e.kind = "element" RETURN e.address', ['intake-1'])['e.address']
+    assert 'code.timer.kitchen' in elements  # the base itself is always there

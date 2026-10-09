@@ -521,10 +521,11 @@ class Store:
         with self._read() as tx:
             return reads.layer_graph(tx, layer)
 
-    def cypher(self, query: str) -> Any:
-        """A Cypher query over the base's graph in memory, STORE-046: every stored layer, no selection applied."""
+    def cypher(self, query: str, layers: Sequence[str] | None = None) -> Any:
+        """A Cypher query over the base's graph in memory, STORE-046, seeing what the layers in view show: the layers
+        named, or else the ones turned on."""
         with self._read() as tx:
-            return reads.cypher(tx, query)
+            return reads.cypher(tx, query, layers)
 
     def ops(self, after: int = 0, limit: int | None = None) -> list[dict[str, Any]]:
         """The ops of the log past a sequence, as a page applies them, STORE-046 and VIEW-018."""

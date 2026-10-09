@@ -240,6 +240,26 @@ def remove_base(ctx: Context) -> Any:
     return home.remove_base(_other_project(ctx).project_id, ctx.nouns['name'])
 
 
+def cypher(ctx: Context) -> Any:
+    """A Cypher query over the base's graph in memory, for agents, STORE-046: reads only, seeing what the layers in
+    view show, or the layers named. The answer is each returned column with its values in order."""
+    given: Any = ctx.nouns['query']
+    query = ' '.join(str(word) for word in given) if isinstance(given, (list, tuple)) else str(given)
+    named = [name for name in str(ctx.nouns.get('layers') or '').split(',') if name]
+    try:
+        found = _store(ctx).cypher(query, named or None)
+    except Stop:
+        raise
+    except Exception as error:  # the query language's own refusal, said plainly with what usually causes it
+        said = str(error).strip().splitlines()[0][:300]
+        raise Stop(f'The query was not understood: {said}. Strings take double quotes; edges are matched by their '
+                   'kind, as [x] WHERE x.kind = "join".', 'metaform help map cypher') from None
+    def plain(value: Any) -> Any:
+        return value if value is None or isinstance(value, (str, int, float, bool)) else str(value)
+    columns = {str(name): [plain(value) for value in values] for name, values in dict(found).items()}
+    return {'columns': columns, 'rows': max((len(values) for values in columns.values()), default=0)}
+
+
 def search(ctx: Context) -> Any:
     return _store(ctx).search(ctx.nouns['text'], ctx.nouns.get('layer'), **_paging(ctx))
 
@@ -1246,6 +1266,24 @@ MODULE = Module(
                      'in its own layer; a knowledge join follows its existing edit rules. Repeating the same '
                      'association adds no version. An existing element keeps its authored fields; a different '
                      'address for an already promoted join returns a notice and writes nothing.'),
+        Verb('cypher', cypher, 'Ask the map a question in Cypher: a read over the graph in memory, of the layers '
+                               'in view or the ones named, nothing written.',
+             nouns=(_noun('layers', 'The layers to see, by name, comma separated; left out, the layers turned on.'),
+                    Noun('query', 'The Cypher query: MATCH, WHERE, RETURN, ORDER BY, LIMIT; strings in double quotes.',
+                         many=True)),
+             details='The graph: nodes have a kind, element, join, item or property, and their fields. An element '
+                     'has address, name, name_length, role and layer_id. A join has purpose, ef, ifd, receiver and '
+                     'type. An item has value, target_kind, target_id and layer_id. Edges have a kind: join runs from '
+                     'a receiver element to each element its join holds and carries the join\'s id, purpose, ef and '
+                     'ifd; receives runs from a receiver to its join node; holds runs from a join node to each element '
+                     'it holds; attached runs from an element or join to an item; property runs from an element to a '
+                     'property. Match an edge by its kind in WHERE, and quote strings with double quotes. Results '
+                     'come back by column. The query sees what the layers in view show, hidden layers and masks '
+                     'applied, as every read does; layers=<names> picks the layers for this query alone.',
+             examples=(('metaform map cypher MATCH \'(e) WHERE e.kind = "element" AND e.role = "DE" RETURN e.address, e.name\'',
+                        'The defining elements.'),
+                       ('metaform map cypher \'MATCH (r)-[j]->(e) WHERE r.address = "code.store" AND j.kind = "join" '
+                        'RETURN e.address, j.purpose\'', 'What the store relies on, with the purpose of each join.'))),
         Verb('search', search, 'Items whose value holds every word of the text.',
              nouns=(Noun('text', 'The words to find.'), _noun('layer', 'Only this layer.'), *PAGING)),
         Verb('work', work, 'The work records, the condition of an element or a join apart from the map: list them, '
