@@ -119,6 +119,7 @@ def schema(ctx: Context) -> str:
 Notices = list[dict[str, str]]
 ADDRESS = 'namespace_address'  # the element's address, named as in Rich's shape, MAP-040
 SOURCES = 'sources'  # the layer an element's refs go in, Rich 2026-10-04
+CORE = 'core'  # the reserved address of the core node, the project itself, Rich 2026-10-08
 ID = re.compile(r'\b[0-9a-f]{32}\b')
 
 settings.boolean('intake_sources', True, label='Intake sources layer',
@@ -280,7 +281,10 @@ def start(ctx: Context) -> Any:
 
 
 def _described(element: Element) -> bool:
-    """Whether an element was described with intake element, not only named in a join."""
+    """Whether an element was described with intake element, not only named in a join. The core is described by its
+    name alone, since it has no role and no name_length, Rich 2026-10-08."""
+    if element.address == CORE:
+        return element.name is not None
     return element.role is not None or element.name_length is not None
 
 
@@ -332,7 +336,7 @@ def element(ctx: Context) -> Any:
             _note(notices, rec.store.edit(current.id, changes))
         element_id = current.id
     else:
-        for field in ('role', 'name'):
+        for field in ('name',) if address == CORE else ('role', 'name'):
             if given[field] is None:
                 notices.append({'where': field, 'message': f'{field} is missing; stored empty.'})
         made = rec.store.add_element(rec.layer.name, address, **given)
@@ -429,20 +433,22 @@ NOTHING = 'No intake is being recorded. intake start begins one.'
 
 
 def _element_entry(found: Element) -> dict[str, Any]:
-    return {ADDRESS: found.address, 'short_name': found.short_name, 'name_length': found.name_length,
-            'name': found.name, 'role': found.role}
+    entry = {ADDRESS: found.address, 'short_name': found.short_name, 'name_length': found.name_length,
+             'name': found.name, 'role': found.role}
+    return {**entry, **{key: value for key, value in (('within', found.within), ('note', found.note)) if value}}
 
 
 def _join_entry(held: Join) -> dict[str, Any]:
-    return {'receiver': held.receiver_address, 'type': held.type, 'purpose': held.purpose, 'ef': held.ef,
-            'ifd': held.ifd, 'elements': [each.address for each in held.elements]}
+    entry = {'receiver': held.receiver_address, 'type': held.type, 'purpose': held.purpose, 'ef': held.ef,
+             'ifd': held.ifd, 'elements': [each.address for each in held.elements]}
+    return {**entry, 'note': held.note} if held.note else entry
 
 
 def _findings(store: Store, elements: list[Element], joins: list[Join]) -> dict[str, dict[str, Any]]:
     """The open condition and note on each recorded element and join, by id, so an agent reads its marks back."""
     ids = {element.id for element in elements} | {held.id for held in joins}
-    return {row.id: {'condition': row.condition, 'note': row.note}
-            for row in store.work(open=True, limit=0).results if row.id in ids}
+    return {row.node_id: {'condition': row.condition, 'note': row.note}
+            for row in store.work(open=True, limit=0).results if row.node_id in ids}
 
 
 def _refs(store: Store, found: Element) -> list[dict[str, str]]:
@@ -464,11 +470,21 @@ def _map(elements: list[Element], joins: list[Join], store: Store | None = None)
         if store is not None:
             entry['refs'] = _refs(store, found)
         listed.append({**entry, **marks.get(found.id, {})})
-    roots = [found.address for found in elements if found.role == 'AUE']
+    has_core = any(found.address == CORE for found in elements)
+    roots = [CORE] if has_core else [found.address for found in elements if found.role == 'AUE']
     joined = {held.receiver_address for held in joins} | {each.address for held in joins for each in held.elements}
+    holder = {found.address: found.within for found in elements if found.within}
 
     def under(address: str) -> bool:
-        return any(address == root or address.startswith(root + '.') for root in roots)
+        seen: set[str] = set()
+        while address not in seen:  # what holds it, up to the core, Rich 2026-10-08
+            if address in roots:
+                return True
+            seen.add(address)
+            if address not in holder:
+                break
+            address = holder[address]
+        return not has_core and any(address.startswith(root + '.') for root in roots)
 
     return {'elements': listed,
             'joins': [{**_join_entry(held), **marks.get(held.id, {})} for held in joins],
@@ -542,6 +558,15 @@ def remove(ctx: Context) -> Any:
         if current is None:
             notices.append({'where': ADDRESS, 'message': f'{named[ADDRESS]} is not an element; nothing was changed.'})
         else:
+            # what held it lets it go, and its marks close with it, so nothing is left orphaned or open
+            for held in _recorded(found.store, found.layer)[1]:
+                if any(each.address == named[ADDRESS] for each in held.elements):
+                    kept = [each.address for each in held.elements if each.address != named[ADDRESS]]
+                    _note(notices, found.store.edit(held.id, {'elements': kept}) if kept
+                          else found.store.remove(held.id), words)
+            for row in found.store.work(open=True, limit=0).results:
+                if row.node_id == current.id:
+                    found.store.finish_work(row.id, 'Its element was removed from the intake.')
             _note(notices, found.store.remove(current.id), words)
     else:
         notices.append({'where': ADDRESS, 'message': NAMED_BY})

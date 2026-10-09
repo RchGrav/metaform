@@ -1030,3 +1030,33 @@ def test_the_core_node_containment_notes_missing_and_join_refs_are_kept_as_the_i
     assert [(w.condition, w.note) for w in store.work(open=True, limit=0).results] == [('unbuilt', 'no display yet')]
     refs = [[(ref.key, ref.value) for ref in item.refs] for item in store.layer_items('sources', None, limit=0).results]
     assert [('path', 'src/alarm.c')] in refs
+
+
+@pytest.mark.req('BASE-039')
+def test_the_read_back_shows_marks_containment_and_notes_and_a_removed_element_leaves_nothing_behind(run, project):
+    """Found in the runs of 2026-10-08: the read-back the proof step uses showed no marks, no within and no notes, and
+    called the core disconnected and undescribed; removing an element left its marks open and its joins orphaned."""
+    start = recorded(run, project, 'start')
+    del start
+    core = recorded(run, project, 'element', 'core', 'name=Kitchen timer')
+    assert not any(n['where'] == 'role' for n in core['notices'])  # the core has no role, and none is asked for
+    recorded(run, project, 'element', 'code.timer.kitchen', 'name_length=2', 'name=Kitchen Timer', 'role=AUE',
+             'within=core')
+    recorded(run, project, 'element', 'code.alarm.audible', 'role=DE', 'within=code.timer.kitchen',
+             'condition=broken', 'note=it never sounds')
+    recorded(run, project, 'element', 'code.display.digit', 'role=SE', 'within=code.timer.kitchen',
+             'note=exclude: a stray copy')
+    recorded(run, project, 'element', 'downstream.cqu.cook', 'role=CQU', 'within=core')
+    recorded(run, project, 'join', 'downstream.cqu.cook', '["code.alarm.audible", "code.display.digit"]',
+             'purpose=Know when food is done', 'ef=Sounds an alarm', 'ifd=sends')
+    shown = recorded(run, project, 'show')
+    by = {entry['namespace_address']: entry for entry in shown['elements']}
+    assert (by['code.alarm.audible']['condition'], by['code.alarm.audible']['note']) == ('broken', 'it never sounds')
+    assert by['code.display.digit']['note'] == 'exclude: a stray copy'
+    assert by['code.timer.kitchen']['within'] == 'core'
+    assert shown['root'] == 'core' and shown['disconnected'] == [] and shown['undescribed'] == []
+    recorded(run, project, 'remove', 'namespace_address=code.alarm.audible')
+    after = recorded(run, project, 'show')
+    [joined] = after['joins']
+    assert joined['elements'] == ['code.display.digit']  # the join lets the removed element go
+    assert Store('timer').work(open=True, limit=0).results == ()  # and its mark is closed, not left open
