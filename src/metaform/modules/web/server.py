@@ -707,27 +707,18 @@ class Handler(BaseHTTPRequestHandler):
         try:
             store = opened({'project': str(given.get('project', '')), 'base': str(given.get('base') or '')})
             with store.atomic():
-                target = Node.parse(node)
-                carrying = [record for record in store.work(target, None, True, limit=0).results if record.condition
-                            and record.node_kind == target.kind and record.node_id == target.id]
-                kept = '' if condition == 'built' else condition
-                if carrying:
-                    # A record the page made to hold a state, with no task, is done once the part is built: a work
-                    # record is never erased, MAP-046, and its history says when the state was set and cleared.
-                    written = [store.finish_work(record.id, 'Built.') if not kept and not (record.task or '').strip()
-                               else store.edit_work(record.id, {'condition': kept}) for record in carrying][0]
-                elif kept:
-                    written = store.add_work(target, kept, note='Set by the person on the page.')
-                else:
-                    return self.send(200, {'node': node, 'condition': ''})
+                written = _stage(store, Node.parse(node), condition)
         except (Stop, StoreError) as error:
             return self.refuse(error, 400)
-        self.send(200, {'node': node, 'condition': kept, 'work_id': written.id})
+        kept = '' if condition == 'built' else condition
+        self.send(200, {'node': node, 'condition': kept, **({'work_id': written.id} if written else {})})
 
     def give_work(self, given: dict[str, Any]) -> None:
         """Put a task a person wrote on the node it is assigned to, the first given, as one ticket that links the other
         nodes for reference, VIEW-032, VIEW-035 and MAP-048."""
-        text, nodes, condition = given.get('task'), given.get('nodes'), given.get('condition')
+        text, nodes, condition = given.get('task'), given.get('nodes'), given.get('condition') or ''
+        # The ticket carries its kind; the part's stage, when given, goes on the part's state record, as the state
+        # control sets it, never on the ticket, MAP-046 as amended 2026-10-08.
         if not isinstance(text, str) or not text.strip():
             return self.send(400, {'error': 'A task says what is to be done.'})
         if not isinstance(nodes, list) or not nodes or not all(isinstance(node, str) for node in cast(list[Any], nodes)):
@@ -738,8 +729,10 @@ class Handler(BaseHTTPRequestHandler):
             store = opened({'project': str(given.get('project', '')), 'base': str(given.get('base') or '')})
             with store.atomic():
                 targets = [Node.parse(node) for node in cast(list[str], nodes)]
-                written = [store.add_work(targets[0], condition, task=text.strip(), held=bool(given.get('held')),
-                                          links=targets[1:])]
+                written = [store.add_work(targets[0], None, task=text.strip(), held=bool(given.get('held')),
+                                          links=targets[1:], kind=given.get('kind'))]
+                if condition:
+                    _stage(store, targets[0], condition)
             kept = {key: given[key] for key in ('agent', 'hold', 'eligible') if given.get(key) is not None}
             if kept:  # the ticket's preferred agent and the person's hold, kept by the map module
                 module_verb(given, 'map', 'work', {'op': 'edit', 'id': written[0].id, **kept}, chosen=True)
@@ -1403,6 +1396,19 @@ def module_verb(given: dict[str, Any], module_id: str, name: str, arguments: dic
         ctx.store = Store(project.project_id, toggled=switches['layers'], base=str(given['base']),
                           module=module_id)
     return chassis.call(verb.run, ctx)
+
+
+def _stage(store: Store, target: Node, condition: str) -> Any:
+    """Set a part's stage on its state record, MAP-046: the node's open record with no task. Built, or none, clears it;
+    a record the page made is then done, since a work record is never erased and its history says when the stage was
+    set and cleared. A ticket is never a state record, so setting a stage never changes one."""
+    stated = [record for record in store.work(target, None, True, limit=0).results if record.condition
+              and not (record.task or '').strip() and record.node_kind == target.kind and record.node_id == target.id]
+    kept = '' if condition == 'built' else condition
+    if stated:
+        return [store.finish_work(record.id, 'Built.') if not kept else store.edit_work(record.id, {'condition': kept})
+                for record in stated][0]
+    return store.add_work(target, kept, note='Set by the person on the page.') if kept else None
 
 
 def opened(given: dict[str, str]) -> Store:

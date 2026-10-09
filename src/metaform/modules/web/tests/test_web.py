@@ -3934,7 +3934,10 @@ def test_work_is_given_at_a_node_from_its_menu_with_nodes_linked_and_named_inlin
     assert linked() == ['code.alarm.audible', 'exterior.cook']
     assert page.eval_on_selector_all('#task .condition option', 'found => found.map(one => one.value)') == [
         '', 'unbuilt', 'under-construction', 'broken']             # none, then the part's states
+    assert page.eval_on_selector_all('#task .ticket-kind option', 'found => found.map(one => one.value)') == [
+        '', 'broken', 'flawed', 'enhancement']                       # a plain task, then the ticket's kinds
     page.select_option('#task .condition', 'broken')
+    page.select_option('#task .ticket-kind', 'broken')
     assert page.is_enabled('#task .put')
     page.check('#task .backlog')
     page.click('#task .put')
@@ -3944,8 +3947,9 @@ def test_work_is_given_at_a_node_from_its_menu_with_nodes_linked_and_named_inlin
     text = f"Make the tone louder when [[{names['code.timer.kitchen']}|code.timer.kitchen]] runs out of time."
     # one ticket, on the node it was opened at, linking every other node of the task for reference, Rich 2026-10-01
     [ticket] = written
-    assert (ticket.address, ticket.task, ticket.condition, ticket.column) == ('code.alarm.audible', text, 'broken',
-                                                                               'backlog')
+    # the ticket carries its kind; the part's stage went on its state record, MAP-046 as amended 2026-10-08
+    assert (ticket.address, ticket.task, ticket.condition, ticket.kind, ticket.column) == (
+        'code.alarm.audible', text, '', 'broken', 'backlog')
     assert [link.address for link in ticket.links] == ['exterior.cook', 'code.timer.kitchen']
     page.wait_for_function(f'() => window.metaform.look("{alarm}").work.includes("broken")', timeout=6000)
     assert 'broken' not in page.evaluate(f'window.metaform.look("{cook}").work')
@@ -4688,7 +4692,7 @@ def test_a_nodes_menu_opens_its_work_history_every_ticket_open_and_closed_with_i
     from metaform.data import Node, Store
     store = Store('proj')
     alarm = store.element('code.alarm.audible').id
-    old = store.add_work(Node('element', 'code.alarm.audible'), 'broken', task='wire the tone')
+    old = store.add_work(Node('element', 'code.alarm.audible'), None, task='wire the tone', kind='broken')
     store.take_work(old.id, steps=2, by='codex')
     store.step_work(old.id, 'Traced the pin.')
     store.step_work(old.id, 'Wired the driver.')
@@ -4722,7 +4726,8 @@ def test_the_board_holds_the_tickets_in_four_columns_and_a_card_dragged_moves_it
     store = Store('proj')
     alarm = store.element('code.alarm.audible').id
     kitchen = Node('element', 'code.timer.kitchen')
-    todo = store.add_work(Node('element', 'code.alarm.audible'), 'broken', task='a quieter tone', links=[kitchen])
+    todo = store.add_work(Node('element', 'code.alarm.audible'), None, task='a quieter tone', links=[kitchen],
+                          kind='broken')
     store.add_work(kitchen, None, task='a second countdown', held=True)
     from datetime import UTC, datetime, timedelta
 
@@ -4730,10 +4735,10 @@ def test_the_board_holds_the_tickets_in_four_columns_and_a_card_dragged_moves_it
     with monkeypatch.context() as clock:
         earlier = (datetime.now(UTC) - timedelta(days=2)).isoformat()
         clock.setattr(home, 'now', lambda: earlier)
-        doing = store.add_work(Node('element', 'code.alarm.audible'), 'broken', task='wire the tone')
+        doing = store.add_work(Node('element', 'code.alarm.audible'), None, task='wire the tone', kind='broken')
     store.take_work(doing.id, steps=3, by='codex')
     store.step_work(doing.id, 'Traced the pin.')
-    done = store.add_work(kitchen, 'unbuilt', task='the display')
+    done = store.add_work(kitchen, None, task='the display')
     store.finish_work(done.id, 'built')
     started(run)
     page, problems, _ = opened(browser, web)
@@ -4760,14 +4765,14 @@ def test_the_board_holds_the_tickets_in_four_columns_and_a_card_dragged_moves_it
     page.drag_and_drop(f'#board .card[data-id="{todo.id}"]', '#board .column[data-column="doing"] .cards')
     page.wait_for_function(f'() => document.querySelector(\'#board .column[data-column="doing"] .card[data-id="{todo.id}"]\')')
     moved = next(record for record in Store('proj').work(limit=0).results if record.id == todo.id)
-    assert (moved.column, moved.taken_by, moved.condition) == ('doing', 'user', 'broken')
+    assert (moved.column, moved.taken_by, moved.kind) == ('doing', 'user', 'broken')
     assert int(count('doing')) == int(expected[2]) + 1 and int(count('todo')) == int(expected[1]) - 1
     page.fill('#board .search', 'quieter')
     assert page.locator('#board .card:visible').count() == 1
     page.fill('#board .search', '')
-    page.click('#board .kinds [data-kind="flawed"]')                    # a kind toggled off hides its cards
+    page.click('#board .kinds [data-kind="broken"]')                    # a kind toggled off hides its cards
     assert page.locator(f'#board .card[data-id="{todo.id}"]').is_hidden()
-    page.click('#board .kinds [data-kind="flawed"]')
+    page.click('#board .kinds [data-kind="broken"]')
     page.locator(f'#board .card[data-id="{todo.id}"] .node').first.click()
     page.wait_for_function(f'() => window.metaform.selected() === "{alarm}"')
     page.click('#board .add')
@@ -6092,7 +6097,7 @@ def test_a_change_that_adds_or_removes_no_node_redraws_the_3d_map_in_place_witho
     layouts = page.evaluate('window.metaform.layouts()')
     drawn = page.evaluate('window.metaform.drawn()')
     changes = page.evaluate('window.metaform.changes()')
-    run('map', 'work', 'op=add', 'node=code.alarm.audible', 'condition=flawed', 'note=too loud', cwd=mapped)
+    run('map', 'work', 'op=add', 'node=code.alarm.audible', 'condition=broken', 'note=too loud', cwd=mapped)
     page.wait_for_function(f'() => window.metaform.changes() > {changes} && window.metaform.loaded()', timeout=15000)
     assert page.evaluate(f'window.metaform.drawnWork("{alarm}")') == 1   # the ticket's light, on the node drawn
     assert page.evaluate('window.metaform.drawn()') == drawn
@@ -6835,3 +6840,25 @@ def test_a_base_is_activated_and_removed_from_the_header_and_the_active_one_is_r
                        body=json.dumps({'project': 'proj', 'name': 'main', 'confirm': True}))
     assert status == 400 and 'active' in body['error']
     assert problems == []
+
+
+@pytest.mark.req('MAP-046')
+@pytest.mark.req('MAP-048')
+def test_a_task_carries_its_kind_and_its_stage_goes_on_the_parts_state_record(run, web, mapped):
+    """Rich, 2026-10-08: a ticket's kind and a part's stage are kept apart. The task form sends both: the kind is the
+    ticket's, and the stage goes on the part's state record, as the node's state control sets it."""
+    from metaform.data import Node, Store
+    store = Store('proj')
+    alarm = store.element('code.alarm.audible').id
+    started(run)
+    status, body = api(web, '/api/task', method='POST', headers=own_write(web), body=json.dumps({
+        'project': 'proj', 'task': 'Build the alarm.', 'nodes': [f'element:{alarm}'], 'kind': 'broken',
+        'condition': 'unbuilt'}))
+    assert status == 200
+    ticket = body['results'][0]
+    assert (ticket['kind'], ticket['condition']) == ('broken', '')
+    stated = [record for record in store.work(Node('element', alarm), None, True, limit=0).results if not record.task]
+    assert [record.condition for record in stated] == ['unbuilt']
+    status, body = api(web, '/api/task', method='POST', headers=own_write(web), body=json.dumps({
+        'project': 'proj', 'task': 'x', 'nodes': [f'element:{alarm}'], 'kind': 'sideways'}))
+    assert status == 400 and "'sideways' is not a kind of ticket" in body['error']

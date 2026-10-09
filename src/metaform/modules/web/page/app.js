@@ -3250,17 +3250,20 @@ addEventListener('keydown', event => { if (event.key === 'Escape' && !$('#menu')
 /* The board, VIEW-037: the project's tickets as a classic kanban board, one column for each place a ticket can be,
  * a card for each ticket. A card dragged to a column moves its ticket there and to the place it was dropped. */
 const B = {tickets: [], off: new Set()};
-const KINDS = ['unbuilt', 'under-construction', 'broken'];
+const KINDS = ['broken', 'flawed', 'enhancement'];  // a ticket's kind; none is a plain task
 const BOARD = [['backlog', 'Backlog'], ['todo', 'To do'], ['doing', 'Doing'], ['done', 'Done']];
 /* What a record's condition says about the part it is at, MAP-046: the condition belongs to the element or join, not
    to the ticket; the ticket is the work on it. A record with no condition is a plain task. */
 const CONDITION_WORDS = {unbuilt: 'not built yet', 'under-construction': 'under construction', built: 'built', broken: 'broken'};
+/* A ticket's label is its kind, what sort of work it is, MAP-046 as amended 2026-10-08: never the part's stage, which
+   the map shows on the node. A ticket with no kind is a plain task. */
+const KIND_WORDS = {broken: 'broken', flawed: 'flawed', enhancement: 'works, could be better'};
 function conditionLabel(ticket, extra = '') {
-  const condition = ticket.condition;
-  const words = condition ? CONDITION_WORDS[condition] || condition : 'task';
-  const title = condition ? `${ticketPart(ticket)} is ${words} (${condition}): this ticket is the work on it.`
-    : `A task at ${ticketPart(ticket)}, with no condition recorded on the part.`;
-  return h('span', {class: `kind kind-${condition || 'none'}${extra}`, title}, words);
+  const kind = ticket.kind || '';
+  const words = kind ? KIND_WORDS[kind] || kind : 'task';
+  const title = kind ? `This ticket's kind: ${words} (${kind}). The part's stage shows on its node.`
+    : `A plain task at ${ticketPart(ticket)}. The part's stage shows on its node.`;
+  return h('span', {class: `kind kind-${kind || 'none'}${extra}`, title}, words);
 }
 const dated = text => { const d = new Date(text || ''); return isNaN(d) ? '' : d.toLocaleString(); };
 const ago = text => {
@@ -3435,7 +3438,7 @@ function card(ticket, place, total) {
   };
   // its agent's glyph, VIEW-040: its own, or while its agent is at work the one its figure is drawn as
   const glyph = ownGlyph(ticket) || ROAM.figures.get(ticket.id)?.glyph;
-  const box = h('div', {class: 'card', draggable: 'true', 'data-id': ticket.id, 'data-kind': ticket.condition || 'none',
+  const box = h('div', {class: 'card', draggable: 'true', 'data-id': ticket.id, 'data-kind': ticket.kind || 'none',
     onclick: () => { const element = partAt(ticket.address); if (element) { select(element.id, true); history(element.id); } }},
     h('div', {class: 'top'}, glyph ? h('img', {class: 'glyph', src: `/page/agent-glyphs/${glyph}.svg`, alt: glyph,
       title: `Agent ${glyph}: the tickets with this glyph are one agent's, done one at a time`}) : null,
@@ -3472,7 +3475,7 @@ function drawBoard() {
   const order = (one, two) => (one.position ?? 1e9) - (two.position ?? 1e9) || B.tickets.indexOf(one) - B.tickets.indexOf(two);
   fill($('#board .kinds'), [...KINDS, 'none'].map(kind => h('button', {class: `kindtoggle${B.off.has(kind) ? ' off' : ''}`,
     'data-kind': kind, 'aria-pressed': String(!B.off.has(kind)),
-    onclick: () => { B.off.has(kind) ? B.off.delete(kind) : B.off.add(kind); drawBoard(); }}, kind === 'none' ? 'unsorted' : kind)));
+    onclick: () => { B.off.has(kind) ? B.off.delete(kind) : B.off.add(kind); drawBoard(); }}, kind === 'none' ? 'task' : kind)));
   fill($('#board .columns'), BOARD.map(([column, title]) => {
     const tickets = B.tickets.filter(ticket => columnOf(ticket) === column).sort(order);
     const cards = h('div', {class: 'cards'}, tickets.map((ticket, place) => card(ticket, place, tickets.length)));
@@ -3876,6 +3879,7 @@ function giveWork(id, text = '') {
   if (!element) { toast('Work is given at an element.'); return; }
   Object.assign(K, {nodes: [element.address], chosen: null, at: null, project: S.project, base: S.base, eligible: []});
   $('#task .condition').value = '';
+  $('#task .ticket-kind').value = '';
   $('#task .backlog').checked = false;
   $('#task .start-agent').checked = false;
   $('#task select.agent').value = defaultAgent(element.address);
@@ -4040,7 +4044,7 @@ $('#task .put').onclick = async () => {
   const project = S.project, metaform = S.base, generation = K.generation;
   const agent = $('#task select.agent').value, startNow = $('#task .start-agent').checked;
   const eligible = [...K.eligible];
-  const written = await wrote('/api/task', {task, nodes, condition: $('#task .condition').value || null, held: $('#task .backlog').checked,
+  const written = await wrote('/api/task', {task, nodes, condition: $('#task .condition').value || null, kind: $('#task .ticket-kind').value || null, held: $('#task .backlog').checked,
     agent, eligible});
   if (project !== S.project || metaform !== S.base || generation !== K.generation) {
     if (written) toast(`Task saved in ${project}. Open that map to start its agent.`);

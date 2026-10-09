@@ -14,6 +14,7 @@ from typing import Any, cast
 from metaform.data import (
     COLUMNS,
     CONDITIONS,
+    KINDS,
     LIMIT,
     Answer,
     ChallengeState,
@@ -56,7 +57,7 @@ from metaform.data import (
 
 Row = DataRow
 ANSWERS = ("A", "B", "C")
-WORK_FIELDS = ("condition", "note", "task", "held", "reviewed")
+WORK_FIELDS = ("condition", "kind", "note", "task", "held", "reviewed")
 REPORT_KINDS = ("report", "feedback", "shape")
 
 
@@ -87,6 +88,31 @@ def _condition(value: Any, notices: list[Notice]) -> str:
     )
 
 
+def _kind(value: Any) -> str:
+    """A ticket's kind, from a closed list as the condition is; none is a plain task, stored as empty text."""
+    if value is None or value in ("", "none"):
+        return ""
+    if value in KINDS:
+        return str(value)
+    raise StoreError(
+        f"{value!r} is not a kind of ticket. A ticket is {', '.join(KINDS)}, or none for a plain task.",
+        "send the kind again with one of those words",
+    )
+
+
+def _building(tx: Tx, work_id: str) -> None:
+    """A ticket taken at a part whose open state record says unbuilt starts its building: that record becomes
+    under-construction, Rich 2026-10-08. Nothing else of the part's state is set by a ticket, so finishing one never
+    marks the part built."""
+    row = _work_row(tx, work_id)
+    if row["task"]:
+        tx.execute(
+            "UPDATE work SET condition='under-construction' WHERE target_kind=? AND target_id=? AND done IS NULL "
+            "AND condition='unbuilt' AND (task IS NULL OR task='')",
+            (row["target_kind"], row["target_id"]),
+        )
+
+
 def _work_row(tx: Tx, work_id: str) -> Any:
     row = tx.execute("SELECT * FROM work WHERE work_id=?", (work_id,)).fetchone()
     if row is None:
@@ -104,24 +130,28 @@ def add_work(
     held: Any = False,
     reviewed: Any = False,
     links: Any = (),
+    kind: Any = None,
 ) -> WorkRecord:
-    """Write the condition of an element or join as its own record, apart from the map, STORE-042."""
+    """Write the condition of an element or join as its own record, apart from the map, STORE-042; a ticket carries
+    its kind beside it."""
     notices: list[Notice] = []
-    kind, thing = work_target(tx, node, notices)
+    stage, ticket_kind = _condition(condition, notices), _kind(kind)  # both checked before anything is written
+    target_kind, thing = work_target(tx, node, notices)
     work_id = new_id()
     tx.execute(
-        "INSERT INTO work(work_id, target_kind, target_id, condition, note, task, held, reviewed, created) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO work(work_id, target_kind, target_id, condition, note, task, held, reviewed, created, kind) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             work_id,
-            kind,
+            target_kind,
             thing,
-            _condition(condition, notices),
+            stage,
             _work_text(note, "note", notices),
             _work_text(task, "task", notices),
             int(bool(held)),
             int(bool(reviewed)),
             now(),
+            ticket_kind,
         ),
     )
     _link(tx, work_id, links, notices)
@@ -160,6 +190,8 @@ def edit_work(tx: Tx, work_id: str, changes: Any) -> WorkRecord:
         value: Any = given[key]
         if key == "condition":
             value = _condition(value, notices)
+        elif key == "kind":
+            value = _kind(value)
         elif key in ("held", "reviewed"):
             value = int(bool(value))
         else:
@@ -312,7 +344,6 @@ def take_work(tx: Tx, work_id: str, steps: Any = None, by: Any = None) -> WorkRe
     waits no longer. A record taken or done cannot be taken again, so two agents never hold one task. A record with no
     condition, as the intake writes a drift finding, is taken as a ticket is."""
     row = _work_row(tx, work_id)
-    condition = str(row["condition"])
     if row["done"] is not None:
         raise StoreError(f"This work record was done at {row['done']}.", "metaform map work open=true")
     if row["taken"] is not None:
@@ -328,6 +359,7 @@ def take_work(tx: Tx, work_id: str, steps: Any = None, by: Any = None) -> WorkRe
         "UPDATE work SET taken=?, taken_by=?, held=0, steps=COALESCE(?, steps) WHERE work_id=?",
         (now(), _work_text(by, "by", notices), _count(steps, notices), work_id),
     )
+    _building(tx, work_id)
     return work_record(tx, _work_row(tx, work_id), tuple(notices))
 
 
@@ -348,6 +380,7 @@ def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any =
             "WHERE work_id=?",
             (now(), _work_text(by, "by", notices), work_id),
         )
+        _building(tx, work_id)  # moved to doing on the board is taken, as take_work takes it
     else:
         tx.execute(
             "UPDATE work SET done=NULL, taken=NULL, taken_by=NULL, held=? WHERE work_id=?",
@@ -432,6 +465,7 @@ def work(
     limit: int = LIMIT,
     after: str | None = None,
     joins: bool = False,
+    kind: str | None = None,
 ) -> Page[WorkRecord]:
     """The work records, in row order, by node, condition or whether open, STORE-042; not a context read, since a
     work record has no layer. With joins, an element's own records and those on the joins it receives or
@@ -453,6 +487,9 @@ def work(
         if condition is not None:
             where.append("condition=?")
             params.append(condition)
+        if kind is not None:
+            where.append("kind=?")
+            params.append("" if kind == "none" else kind)
         if open is not None:
             where.append("done IS NULL" if open else "done IS NOT NULL")
         return tx.execute(
@@ -584,6 +621,7 @@ def work_record(tx: Tx, row: Row, notices: tuple[Notice, ...] = ()) -> WorkRecor
         row["taken_by"],
         row["position"],
         links,
+        str(row["kind"] or ""),
     )
 
 
@@ -854,7 +892,8 @@ CREATE TABLE IF NOT EXISTS work(
   steps_done  INTEGER NOT NULL DEFAULT 0,
   taken       TEXT,
   taken_by    TEXT,
-  position    INTEGER
+  position    INTEGER,
+  kind        TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS work_by_target ON work(target_kind, target_id, row);
 CREATE INDEX IF NOT EXISTS work_by_condition ON work(condition, row);
@@ -1045,7 +1084,7 @@ def upgrade(tx: Any, found: int) -> None:
 
 
 TABLES = Tables(
-    version=8,  # 8: a part's state is a stage or the fault broken, Rich 2026-10-08; 7: no foreign keys, STORE-046
+    version=9,  # 9: a ticket's kind beside the part's state; 8: a part's state is a stage or broken; 7: no foreign keys
     upgrade=upgrade,
     legacy_upgrade=legacy_upgrade,
     legacy_fold=legacy_fold,

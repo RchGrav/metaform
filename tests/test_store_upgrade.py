@@ -510,7 +510,8 @@ def test_a_layout_13_store_opens_with_every_ticket_kept_and_no_glyph_column(home
         broken = opened.execute('PRAGMA foreign_key_check').fetchall()
     assert version == SCHEMA_VERSION == '21'
     # the stage names of 2026-10-08: a missing ticket of an old layout opens as unbuilt, MAP-046
-    assert after == [{**row, 'condition': 'unbuilt' if row['condition'] == 'missing' else row['condition']} for row in before]
+    assert after == [{**row, 'condition': 'unbuilt' if row['condition'] == 'missing' else row['condition'], 'kind': ''}
+                     for row in before]  # the ticket's kind, added at the map module's version 9, starts empty
     assert [tuple(row) for row in steps] == [('W2', 1, 'Traced it.')] and broken == []
     backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))
     assert len(backups) == 1
@@ -566,7 +567,8 @@ def test_a_layout_14_store_opens_with_every_ticket_kept_and_the_glyph_column_dro
     assert version == SCHEMA_VERSION == '21'
     assert 'glyph' not in columns
     assert after == [{**{key: value for key, value in row.items() if key != 'glyph'},
-                      'condition': 'unbuilt' if row['condition'] == 'missing' else row['condition']} for row in before]
+                      'condition': 'unbuilt' if row['condition'] == 'missing' else row['condition'], 'kind': ''}
+                     for row in before]
     assert [tuple(row) for row in links] == [('W1', 0, 'E1')]
     assert [tuple(row) for row in steps] == [('W2', 1, 'Traced it.')] and broken == []
     backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))

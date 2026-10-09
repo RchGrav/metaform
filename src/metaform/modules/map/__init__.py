@@ -735,11 +735,12 @@ REFINE_NOUNS = (
 # The nouns each work operation reads, besides op.
 WORK_READS: dict[str, frozenset[str]] = {
     'glyphs': frozenset(),
-    'list': frozenset({'node', 'receiver', 'provider', 'address', 'condition', 'open', 'limit', 'after', 'hold'}),
+    'list': frozenset({'node', 'receiver', 'provider', 'address', 'condition', 'kind', 'open', 'limit', 'after',
+                       'hold'}),
     'read': frozenset({'id'}),
-    'add': frozenset({'node', 'receiver', 'provider', 'address', 'condition', 'note', 'task', 'held', 'reviewed',
+    'add': frozenset({'node', 'receiver', 'provider', 'address', 'condition', 'kind', 'note', 'task', 'held', 'reviewed',
                       'links', 'agent', 'hold', 'eligible'}),
-    'edit': frozenset({'id', 'node', 'receiver', 'provider', 'address', 'condition', 'note', 'task', 'held',
+    'edit': frozenset({'id', 'node', 'receiver', 'provider', 'address', 'condition', 'kind', 'note', 'task', 'held',
                        'reviewed', 'glyph', 'links', 'agent', 'hold', 'eligible'}),
     'done': frozenset({'id', 'resolution'}),
     'take': frozenset({'id', 'steps', 'by'}),
@@ -748,7 +749,7 @@ WORK_READS: dict[str, frozenset[str]] = {
     'step': frozenset({'id', 'said'}),
     'distribute': frozenset({'agents'}),
 }
-WORK_FIELDS = ('condition', 'note', 'task', 'held', 'reviewed')  # the chassis work record's own, STORE-042
+WORK_FIELDS = ('condition', 'kind', 'note', 'task', 'held', 'reviewed')  # the chassis work record's own, STORE-042
 # The long fields a list row leaves out, each read with the ticket by id=, so the list stays small, MAP-049 and MAP-053.
 UNLISTED = frozenset({'said', 'resolution', 'task'})
 
@@ -868,6 +869,10 @@ def work(ctx: Context) -> Any:
         ctx.nouns.pop('condition')
         notices.append(Notice('condition', 'The state of a part is set by the intake and the person, not by an agent '
                                            'at work; it was ignored. Say what you found in the note.'))
+    if op == 'edit' and 'kind' in ctx.nouns and ctx.surface == 'mcp':  # what sort of ticket it is was decided with it
+        ctx.nouns.pop('kind')
+        notices.append(Notice('kind', 'A ticket\'s kind is set by whoever wrote it, not by an agent at work; it was '
+                                      'ignored. Say what you found in the note.'))
     for name in unread:
         ctx.nouns.pop(name)
     store, nouns = _store(ctx), ctx.nouns
@@ -879,7 +884,8 @@ def work(ctx: Context) -> Any:
         # finds its ticket, ticket dd2a9caf.
         # Open records unless open=false asks for the done ones: the done records with their logs made the bare list
         # too large to read, MAP-049.
-        found = store.work(node, nouns.get('condition'), nouns.get('open', True), **_paging(ctx), joins=True)
+        found = store.work(node, nouns.get('condition'), nouns.get('open', True), **_paging(ctx), joins=True,
+                           kind=nouns.get('kind'))
         if not nouns.get('hold'):  # a ticket the person holds is hidden from agents unless asked for with hold=true
             kept = _settings(store, [record.id for record in found.results])
             found = found._replace(results=tuple(record for record in found.results
@@ -896,7 +902,7 @@ def work(ctx: Context) -> Any:
         with store.atomic():
             added = store.add_work(node, nouns.get('condition'),
                                    links=[_link(store, link) for link in nouns.get('links') or ()],
-                                   **_optional(ctx, 'note', 'task', 'held', 'reviewed'))
+                                   **_optional(ctx, 'kind', 'note', 'task', 'held', 'reviewed'))
             _keep(store, added.id, nouns, notices)
         return _with_notices(_glyphed(store, added), notices)
     if op == 'distribute':
@@ -1100,6 +1106,11 @@ WORK_NOUNS = (
                        'do its job. A task on a part that exists and works carries none. The intake and the person '
                        'set it; an agent at work leaves it alone. condition=none on edit clears it.',
           schema={'type': 'string', 'enum': ['unbuilt', 'under-construction', 'built', 'broken', 'none']}),
+    _noun('kind', 'add, edit, and list as a filter: what sort of work the ticket is, never the state of the part: '
+                  'broken, a fix for a part that does not do its job; flawed, a part that works but is not right; '
+                  'enhancement, a part that works and could be better; or none for a plain task. kind=none on edit '
+                  'clears it.',
+          schema={'type': 'string', 'enum': ['broken', 'flawed', 'enhancement', 'none']}),
     _noun('links', 'add and edit: other nodes the task links for reference, a list of element addresses, and of '
                    'objects of receiver and provider, with address for a part inside, each naming a purpose.',
           'json', {'type': 'array', 'items': {'anyOf': [

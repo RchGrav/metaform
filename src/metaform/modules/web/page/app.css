@@ -384,7 +384,8 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 #float .ticket .head{display:flex;gap:8px;align-items:center;font:12px var(--sans)}
 #float .ticket .kind{padding:1px 6px;border-radius:4px;color:var(--ground);background:var(--muted)}
 #float .ticket .kind-broken{background:var(--broken)}
-#float .ticket .kind-unbuilt,#float .ticket .kind-under-construction{background:var(--text)}
+#float .ticket .kind-flawed{background:var(--k5)}
+#float .ticket .kind-enhancement{background:var(--k2)}
 #float .ticket .column,#float .ticket .by{color:var(--muted)}
 #float .ticket .task{margin:6px 0 2px;color:var(--text)}
 #float .ticket .note,#float .ticket .when{color:var(--muted);font-size:12px;margin:2px 0}
@@ -424,8 +425,8 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 #board .card:hover{box-shadow:0 8px 22px color-mix(in srgb,var(--ground) 70%,transparent),0 0 0 1px color-mix(in srgb,var(--c) 45%,transparent)}
 #board .card.dragging{opacity:.35;transform:scale(.98)}
 #board .card[data-kind="broken"],#board .kindtoggle[data-kind="broken"]{--c:var(--broken)}
-#board .card[data-kind="unbuilt"],#board .kindtoggle[data-kind="unbuilt"]{--c:var(--text)}
-#board .card[data-kind="under-construction"],#board .kindtoggle[data-kind="under-construction"]{--c:var(--text)}
+#board .card[data-kind="flawed"],#board .kindtoggle[data-kind="flawed"]{--c:var(--k5)}
+#board .card[data-kind="enhancement"],#board .kindtoggle[data-kind="enhancement"]{--c:var(--k2)}
 #board .card .top{display:flex;gap:8px;align-items:center;font:11px var(--sans);color:var(--muted)}
 #board .card .kind{color:var(--c);font-weight:700;text-transform:uppercase;letter-spacing:.06em}
 #board .card .by{color:var(--text)}

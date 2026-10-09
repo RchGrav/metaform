@@ -29,6 +29,8 @@ HELD_ROLES = ('DE', 'SE', 'NE')  # the role of an element a join holds, in Rich'
 # nothing; a record with no condition is a plain task. The intake and the person set it; agents at work do not.
 STAGES = ('unbuilt', 'under-construction', 'built')
 FAULTS = ('broken',)
+# A ticket's kind, what sort of work it is, kept apart from the part's state, Rich 2026-10-08; none is a plain task.
+KINDS = ('broken', 'flawed', 'enhancement')
 CONDITIONS = STAGES + FAULTS  # missing was ruled out: what is absent is unbuilt, Rich 2026-10-08
 MESSAGES = ('question', 'message')  # what waits for the person at a node, MAP-050; never a condition
 COLUMNS = ('backlog', 'todo', 'doing', 'done')  # the board's columns, MAP-048
@@ -544,6 +546,7 @@ class WorkRecord(Record):
     taken_by: str | None = None  # who took it
     position: int | None = None  # its place in its column
     links: tuple[WorkLink, ...] = ()  # the other nodes it links for reference
+    kind: str = ''  # a ticket's kind: broken, flawed, enhancement, or empty for a plain task
 
     @property
     def column(self) -> str:

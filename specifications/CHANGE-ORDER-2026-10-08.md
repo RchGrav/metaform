@@ -44,7 +44,7 @@ Open: the collection element's role, AUE or a grouping element with no AUE role.
 
 ## Lane 2: what the map shows
 
-### 2.1 Stage and kind as separate fields (decided)
+### 2.1 Stage and kind as separate fields (done, 2026-10-08; MAP-046 amended)
 
 The part's **stage** and the ticket's **kind** (broken, flawed, enhancement, plain task) share one field today, so setting one wipes the other. Split them: the board shows and filters by kind; the map draws stage; taking a build ticket sets under construction by itself; built is said only by the person or the intake.
 
