@@ -232,8 +232,11 @@ def pytest_collection_modifyitems(config, items):
         raise pytest.UsageError('Tests without a traced requirement:\n' + '\n'.join(problems))
     # Each browser test draws WebGL in software, which is heavy on the processor; spread over every core at once
     # they time out, so they run in BROWSERS groups, at most that many at a time, beside everything else.
+    # They are also marked browser, and the default run leaves them out (addopts -m "not browser"): they take most of a
+    # full run's time, so they run only when the page or the web server changed, with pytest -m browser.
     browsers = [item for item in items if 'browser' in getattr(item, 'fixturenames', ())]
     for number, item in enumerate(browsers):
+        item.add_marker(pytest.mark.browser)
         item.add_marker(pytest.mark.xdist_group(f'browser-{number % BROWSERS}'))
 
 

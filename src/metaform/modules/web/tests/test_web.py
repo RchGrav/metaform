@@ -482,6 +482,13 @@ def browser():
     with sync_playwright() as driver:
         launched = driver.chromium.launch(args=['--use-angle=swiftshader', '--enable-unsafe-swiftshader',
                                                 '--ignore-gpu-blocklist'])
+        new_page = launched.new_page
+
+        def quick(*args, **kwargs):  # a wait that is not met fails in 10 seconds, not Playwright's 30
+            page = new_page(*args, **kwargs)
+            page.set_default_timeout(10_000)
+            return page
+        launched.new_page = quick
         yield launched
         launched.close()
 
