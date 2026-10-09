@@ -346,7 +346,9 @@ def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], t
         return
     if thing is None or not ctx.nouns.get('condition'):  # none or empty: no finding; a note is kept on the object
         return
-    _note(notices, rec.store.add_work(Node(kind, thing), str(ctx.nouns['condition']), note=ctx.nouns.get('note')))
+    # missing was ruled out: intended functionality that is absent is unbuilt, Rich 2026-10-08
+    stage = {'missing': 'unbuilt'}.get(str(ctx.nouns['condition']), str(ctx.nouns['condition']))
+    _note(notices, rec.store.add_work(Node(kind, thing), stage, note=ctx.nouns.get('note')))
 
 
 JOIN_FIELDS = ('purpose', 'ef', 'ifd')
@@ -604,7 +606,7 @@ def status(ctx: Context) -> Status:
 
 E, J = ELEMENT_WORDS.get, JOIN_WORDS.get
 CONDITION = (Noun('condition', E('condition', ''), required=False,
-                  schema={'type': 'string', 'enum': ['missing', 'broken', 'unbuilt', 'under-construction', 'built']}),
+                  schema={'type': 'string', 'enum': ['broken', 'unbuilt', 'under-construction', 'built']}),
              Noun('note', E('note', ''), required=False))
 
 MODULE = Module(

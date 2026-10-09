@@ -1095,11 +1095,11 @@ WORK_NOUNS = (
     _noun('provider', 'list, add and edit: a join, by the address of an element it holds, with receiver.'),
     _noun('address', 'list, add and edit: an element, by address.'),
     _noun('condition', 'add, edit, and list as a filter: the state of the part the record is at, never the kind of '
-                       'ticket. missing is intended functionality that is absent, a finding. A stage, unbuilt, under-construction or built, says where the part is on its way to '
+                       'ticket. A stage, unbuilt, under-construction or built, says where the part is on its way to '
                        'existing; built is the normal state and marks nothing. broken is a built part that does not '
                        'do its job. A task on a part that exists and works carries none. The intake and the person '
                        'set it; an agent at work leaves it alone. condition=none on edit clears it.',
-          schema={'type': 'string', 'enum': ['missing', 'unbuilt', 'under-construction', 'built', 'broken', 'none']}),
+          schema={'type': 'string', 'enum': ['unbuilt', 'under-construction', 'built', 'broken', 'none']}),
     _noun('links', 'add and edit: other nodes the task links for reference, a list of element addresses, and of '
                    'objects of receiver and provider, with address for a part inside, each naming a purpose.',
           'json', {'type': 'array', 'items': {'anyOf': [

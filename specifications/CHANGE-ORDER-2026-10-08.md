@@ -23,7 +23,7 @@ Status of each item: **done** (committed on `main`), **decided** (agreed, not bu
 
 The served intake names these as bindings B1 to B6. Close the ones that lose what the agent records:
 - **Notes without a condition are kept** (B4), on the element or join itself, as a versioned field, so exclude notes and other notes survive. Today they are discarded with a notice that pushes agents to invent a condition.
-- **Missing is kept apart from unbuilt** (B5). Missing is intended functionality that is absent, a finding; unbuilt is a stage. Today the tool stores missing as unbuilt.
+- **Missing is not a condition** (B5): ruled out by Rich, 2026-10-08; what is absent is unbuilt.
 - **The join takes refs** (B3), since the intake records refs on a join where required.
 - **ifd accepts the schema's words** (B1): `send`, `receive`, `both` as well as the tool's `sends`, `receives`.
 - The run id (B2) needs no change: the intake carries it in the finish report.

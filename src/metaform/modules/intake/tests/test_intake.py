@@ -1003,8 +1003,8 @@ def test_the_ignore_list_follows_the_intake_and_exclude_is_not_a_condition(run, 
 @pytest.mark.req('MAP-046')
 def test_the_core_node_containment_notes_missing_and_join_refs_are_kept_as_the_intake_records_them(run, project):
     """Rich, 2026-10-08: the served intake records a core node at the reserved address core, says what holds what in
-    the map's structure rather than in an address, keeps exclusions as notes with no condition, keeps missing apart
-    from the stage unbuilt, and gives a join refs where it needs them. Each was refused or lost by the tools before."""
+    the map's structure rather than in an address, keeps exclusions as notes with no condition, records what is
+    absent as unbuilt, and gives a join refs where it needs them. Each was refused or lost by the tools before."""
     recorded(run, project, 'start')
     recorded(run, project, 'element', 'core', 'name=Kitchen timer')
     recorded(run, project, 'element', 'code.timer.kitchen', 'name_length=2', 'name=Kitchen Timer', 'role=AUE',
@@ -1026,6 +1026,7 @@ def test_the_core_node_containment_notes_missing_and_join_refs_are_kept_as_the_i
     assert notes['code.alarm.audible'] == 'exclude: a stray copy beside it'
     [joined] = graph.joins
     assert (joined.note, joined.ifd) == ('the join note', 'sends')
-    assert [(w.condition, w.note) for w in store.work(open=True, limit=0).results] == [('missing', 'no display yet')]
+    # missing was ruled out: what is absent is unbuilt
+    assert [(w.condition, w.note) for w in store.work(open=True, limit=0).results] == [('unbuilt', 'no display yet')]
     refs = [[(ref.key, ref.value) for ref in item.refs] for item in store.layer_items('sources', None, limit=0).results]
     assert [('path', 'src/alarm.c')] in refs

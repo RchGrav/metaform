@@ -29,9 +29,7 @@ HELD_ROLES = ('DE', 'SE', 'NE')  # the role of an element a join holds, in Rich'
 # nothing; a record with no condition is a plain task. The intake and the person set it; agents at work do not.
 STAGES = ('unbuilt', 'under-construction', 'built')
 FAULTS = ('broken',)
-# missing is a finding, intended functionality that is absent, kept apart from the stage unbuilt, Rich 2026-10-08
-FINDINGS = ('missing',)
-CONDITIONS = STAGES + FAULTS + FINDINGS
+CONDITIONS = STAGES + FAULTS  # missing was ruled out: what is absent is unbuilt, Rich 2026-10-08
 MESSAGES = ('question', 'message')  # what waits for the person at a node, MAP-050; never a condition
 COLUMNS = ('backlog', 'todo', 'doing', 'done')  # the board's columns, MAP-048
 
