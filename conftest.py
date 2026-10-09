@@ -27,6 +27,15 @@ def home(tmp_path, monkeypatch):
     loader.reset()
 
 
+def _loop_running():
+    import asyncio
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
 @pytest.fixture
 def run(home, tmp_path, request):
     """Run the real CLI as a user would, from a chosen folder. It runs in this process, through the same entry point
@@ -40,7 +49,9 @@ def run(home, tmp_path, request):
         folder = Path(cwd or tmp_path)
         folder.mkdir(parents=True, exist_ok=True)
         environment = {**os.environ, 'METAFORM_HOME': str(home), **(env or {})}
-        if isolated or os.environ.get('METAFORM_TEST_SUBPROCESS') == '1':
+        # A call made while an event loop runs on this thread, as a browser test's driver keeps one, would publish
+        # from inside that loop, which the chassis refuses, BASE-009; it runs as its own process instead.
+        if isolated or os.environ.get('METAFORM_TEST_SUBPROCESS') == '1' or _loop_running():
             result = subprocess.run([sys.executable, '-m', 'metaform', *args], cwd=folder, env=environment,
                                     capture_output=True, text=True, encoding='utf-8', input=input, check=False)
         else:
