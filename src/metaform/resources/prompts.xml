@@ -22,8 +22,8 @@ modules available.
      <projects/> is filled with their ids. -->
 <registered>Registered projects: <projects/>.</registered>
 <!-- Added to the instructions when the folder is in no registered project, after the registered list, and tells the
-     agent how to register one. -->
-<no_project>This folder is not in a registered project. To register one: metaform add project &lt;id&gt; &lt;path&gt;</no_project>
+     agent how to register it; the onboarding that asks the person first is the intake module's, MCP-009. -->
+<no_project>This folder is not in a registered project. To register it: call metaform with command register, or run metaform add project &lt;id&gt; &lt;path&gt;.</no_project>
 <!-- The pointer metaform provision and install write into a harness's global instructions file, such as
      ~/.claude/CLAUDE.md, so an agent opened directly in its harness knows to read Metaform's instructions; the
      provision help prints it for other harnesses, MCP-036. -->

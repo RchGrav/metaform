@@ -103,24 +103,70 @@ It also defines the first working test, which exercises all three end to end.
 - Relates to: MCP-007, BASE-012, BASE-019.
 - Status: confirmed. Using `purpose` follows D39, recommended. Corrected 2026-09-27 by MCP-029. The context flow was reorganized 2026-10-02 at the owner's request, without changing any prompt's meaning, from baseline commit 4c84d7c. A module's instructions prompt now reaches a running session as it stands: the instructions are composed for each request that carries them and read on demand with the `instructions` command, MCP-007.
 
-### MCP-009 A project with no intake gets a notice to delegate the intake to a subagent, and an aborted intake is named
+### MCP-009 A folder with no intake gets the onboarding, registered or not, and an aborted intake is named
 
 - Requirement: When the folder's project has no intake, the instructions say so and tell the agent what to do, in order: tell the person a basic analysis of the project is about to run and ask whether to start, start the web GUI and give them its address, then have a subagent perform the intake from the procedure and forms resources while the person watches, then invite their questions. Reworded 2026-10-07: the earlier notice stated a fact and left the intake optional; a first run asks once, in plain words, and the person watches the intake happen rather than being told about it. What is offered after intake, the language layers and the rest, is a separate notice so the agent has one next step at a time. The subagent reads its instructions from Metaform by name, through the CLI or MCP. The orchestrator passes only where to read them. When an intake was started and not finished, the instructions say instead that an intake was started but aborted and still remains to be completed.
 - What this means: Metaform never starts a model. The notice is addressed to the agent reading it. The intake goes to a fresh subagent with no stake in the project, carrying only the intake text and the target; the main agent performs it itself only when that is the only choice. The orchestrator tells a subagent the command or tool that returns the intake instructions, and never the instruction text itself. The subagent reads the text word for word, performs the method, recording the map one object per call through the intake tools as it reasons it, and finishes it with `intake_finish` after a proofing pass, BASE-039. The served text ends with the intake module's lines saying how to record the result; the intake text itself is never edited. The same notice appears in `metaform` status output, so an agent without MCP sees it too. Offering the intake, the agent also suggests the layers of MCP-027.
 - Why: Intake is agent work, and hosts start subagents in different ways, so a command that ran the intake could not work in every host. One source means every worker reads the same text unaltered, and the results depend on the procedure, not on how an orchestrator reworded it. An agent embroiled in coding work carries the bias of that work into the map, LAYER-014; a fresh agent with no stake maps the project for the purpose of the analysis alone.
-- How it shows: In a registered project with no intake, the instructions end with:
+- How it shows: In a registered project with no intake, the intake module's line in the instructions ends with:
   ```
-  This project has no intake. Nothing else in Metaform works until it is done. Tell the person, in words like these: "Since this is the first time running the system here, I'm going to do a basic analysis of the project. When it's done we can go through it together with some Q&A. If that's all right, I'll start the web GUI so you can watch the process in real time. It opens on this machine only; that can be changed later, just ask. Ready for me to start?" When they say yes: call web with command start. It returns the address the GUI runs at; give that to the person. If it returns an error, say so and stop. Once it is running, start the intake: read resource metaform://intake/procedure and resource metaform://intake/schema, start a subagent with both, and have it perform the intake with the intake tool: start, then element and join as it reasons, show to check, finish. The person follows it live in the web GUI. When it finishes, say so and invite their questions.
+  FIRST RUN. Metaform has not analysed this project yet. Handle this first,
+  even if the person asked for something else; tell them you'll get to their
+  request right after.
+
+  1. Ask the person once, in your own words:
+     "This is the first time Metaform is running in this project. I'd like to
+     do a quick analysis so I understand how it fits together. You can watch
+     it build live in a browser view on this machine. Want me to start?"
+  2. If they say no, drop it and help with what they asked.
+  3. If they say yes, do all of this in order without asking again:
+     b. Start the browser view: web tool, command start. Give them the
+        address. If it fails, tell them what it said and stop.
+     c. Start ONE fresh subagent. Its whole task: "Read resource
+        metaform://intake/procedure and follow it exactly, recording with the
+        intake tool." Do not summarize the procedure for it, do not split the
+        work, and do not do the analysis yourself unless you cannot start a
+        subagent.
+     d. When it finishes, tell them it's done and invite their questions.
+  ```
+  In a folder not registered yet, the same text carries step 3a, registering the folder, and the instructions end with the line that names the register command:
+  ```
+  FIRST RUN. Metaform has not analysed this project yet. Handle this first,
+  even if the person asked for something else; tell them you'll get to their
+  request right after.
+
+  1. Ask the person once, in your own words:
+     "This is the first time Metaform is running in this project. I'd like to
+     do a quick analysis so I understand how it fits together. You can watch
+     it build live in a browser view on this machine. Want me to start?"
+  2. If they say no, drop it and help with what they asked.
+  3. If they say yes, do all of this in order without asking again:
+     a. Register this folder: metaform tool, command register.
+     b. Start the browser view: web tool, command start. Give them the
+        address. If it fails, tell them what it said and stop.
+     c. Start ONE fresh subagent. Its whole task: "Read resource
+        metaform://intake/procedure and follow it exactly, recording with the
+        intake tool." Do not summarize the procedure for it, do not split the
+        work, and do not do the analysis yourself unless you cannot start a
+        subagent.
+     d. When it finishes, tell them it's done and invite their questions.
   ```
   In a project whose intake was started and not finished, the intake module's line ends instead with:
   ```
   An intake was started but aborted and still remains to be completed.
   ```
-  After an intake is completed, neither line is there.
-- Build: When the folder resolves to no registered project, no intake notice appears; the text ends instead with a blank line and `This folder is not in a registered project. To register one: metaform add project <id> <path>`. Otherwise the notice comes from the intake module's status hook, BASE-035 and BASE-039, which the chassis calls like any module's hook, so the chassis never checks for the intake module by name. "Has an intake" is `has_intake()`: a finished layer of kind intake exists, STORE-032. The intake layer is building while it is recorded and counts only once it is finished, so a half-recorded intake never clears the notice; while one is being recorded, the hook says so in place of the notice, BASE-039. The notice appears only when the intake module is on the folder's surface, because only surfaced modules' hooks are called. The intake instructions are served by the intake module, BASE-039, exactly as stored except for the filled `<target>` attributes and any `{project_id}` placeholder, followed by a blank line and the module's recording lines.
+  After an intake is completed, neither is there.
+- Build: The notice comes from the intake module's status hook in every folder with no intake, registered or not. In a folder that resolves to no registered project, the hook fills the notice's `<register/>` slot with the `register_step` prompt, and the text ends with a blank line and `This folder is not in a registered project. To register it: call metaform with command register, or run metaform add project <id> <path>.` Otherwise the notice comes from the intake module's status hook, BASE-035 and BASE-039, which the chassis calls like any module's hook, so the chassis never checks for the intake module by name. "Has an intake" is `has_intake()`: a finished layer of kind intake exists, STORE-032. The intake layer is building while it is recorded and counts only once it is finished, so a half-recorded intake never clears the notice; while one is being recorded, the hook says so in place of the notice, BASE-039. The notice appears only when the intake module is on the folder's surface, because only surfaced modules' hooks are called. The intake instructions are served by the intake module, BASE-039, exactly as stored except for the filled `<target>` attributes and any `{project_id}` placeholder, followed by a blank line and the module's recording lines.
 - Acceptance: Instructions for a project with no intake layer and none being recorded contain the notice, and the command it names exists on the surface. Instructions for a project with a finished intake layer do not contain it. The text returned by `intake prompt`, with the appended recording lines removed, equals the stored intake file with only the `<target>` element's attributes filled.
 - Relates to: MCP-007, MCP-024, MCP-027, CLI-028, LAYER-001, LAYER-014, STORE-032, BASE-039.
 - Status: confirmed, 2026-09-19 to 2026-10-02: the intake is recorded one object per call through the intake tools and goes to a fresh agent with no stake, the main agent performing it only when that is the only choice; the instructions give no direction on how to perform the intake; while the project has no intake the instructions carry the no-intake notice, the intake module's `no_intake` prompt, needed to onboard; while a building intake layer exists they carry instead the line that an intake was started but aborted and still remains to be completed, its `unfinished` prompt, MCP-031. Metaform dispatches tickets as an ACP client, BASE-052. The intake module, its command names and the notice wording follow D38, recommended. `metaform` status keeps its own lines, CLI-028.
+- Amendment, 2026-10-09: the onboarding reaches a folder that is not registered yet, and the agent registers it on the person's yes.
+  - The intake module's status hook gives the onboarding when the folder has no project, with step 3a, `a. Register this folder: metaform tool, command register.`, filled into the one onboarding text; a registered folder gets the same text without it. There is one source of the onboarding, the intake module's `no_intake`, with `register_step` for its slot.
+  - The `metaform` tool has a `register` command: it registers the server's folder through the same path as `metaform add project`, the id the folder's name made safe as an id unless one is given; a folder already in a project is answered with that project and changes nothing. Its answer carries the instructions composed for the folder now.
+  - Over MCP, a next step naming `metaform add project <id> <path>` is read as `call metaform with command register`, so an intake command in an unregistered folder points at it.
+  - The onboarding text is approved content, used as written. Its hand-off gives one fresh subagent the procedure resource alone and tells the orchestrator not to summarize it, split the work or do the analysis itself; the served procedure ends with one line saying where its schema is, `metaform://intake/schema`, so the subagent needs nothing else.
+  - The web module's `autostart` prompt, its `web_autostart` setting and the status hook that served it are removed: starting the browser view is step 3b of the onboarding, VIEW-015.
+  - Why: the first-run test on 2026-10-09 went off course from its first step. The folder was not registered, so the onboarding never reached the agent: the notice waited for registration, and the instructions are sent once at connect and never again. The agent had no way to register the folder over MCP, received only the web module's separate autostart rule, and improvised the rest, splitting the reading among helpers and recording from their summaries.
 
 ### MCP-010 AI tools start the server with uvx
 

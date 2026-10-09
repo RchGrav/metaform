@@ -205,27 +205,6 @@ def test_a_server_older_than_the_store_hands_over_to_the_code_on_disk_only_when_
     assert api(web, '/api/server')[1]['pid'] != os.getpid()
 
 
-@pytest.mark.req('VIEW-015')
-@pytest.mark.req('VIEW-015')
-@pytest.mark.req('MCP-029')
-def test_the_autostart_message_is_in_what_agents_read_until_the_intake_is_finished_and_while_it_is_on(run, tmp_path):
-    folder = tmp_path / 'proj'
-    folder.mkdir()
-    run('add', 'project', 'proj', str(folder))
-    assert prompt('autostart') in run('help', 'agents', cwd=folder).stdout
-    run('intake', 'start', cwd=folder)
-    assert prompt('autostart') in run('help', 'agents', cwd=folder).stdout
-    run('set', '--no-web-autostart', cwd=folder)
-    assert prompt('autostart') not in run('help', 'agents', cwd=folder).stdout
-    run('set', '--web-autostart', cwd=folder)
-    run('intake', 'element', 'code.timer.kitchen', 'role=DE', 'name_length=2', 'name=kitchen timer', cwd=folder)
-    run('intake', 'element', 'code.alarm.audible', 'role=SE', 'name_length=2', 'name=alarm', cwd=folder)
-    run('intake', 'join', 'code.timer.kitchen', '["code.alarm.audible"]', 'purpose=Get attention.', 'ef=Rings.',
-        'ifd=receives', cwd=folder)
-    run('intake', 'finish', cwd=folder)
-    assert prompt('autostart') not in run('help', 'agents', cwd=folder).stdout
-
-
 # A question the person writes from the command line, MAP-050.
 ASK_FORM = ('suggestions=["Yes", "No"]', 'by=builder')
 PROVENANCE = {'module': 'test', 'workflow': 'fixture', 'prompt': 'Write the fixture.', 'model': 'none',

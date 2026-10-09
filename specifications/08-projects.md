@@ -79,6 +79,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
   - A second server started in a registered project's folder serves that project without any call to `set`.
 - Relates to: MCP-011, MCP-025, CLI-021, PROJ-003, BASE-028.
 - Status: confirmed as the rule. The per-call resolution, the stop text and listing projects in status are recommended.
+- Amendment, 2026-10-09: with no project for the folder, the next step names registering this folder first, `metaform add project <id> <path>`, and selecting a registered one second when there are any; over MCP it is `call metaform with command register`, the `metaform` tool's register command, MCP-009. Why: the folder an agent is opened in is almost always the one the person wants worked on, and a first run's next step should take them there.
 
 ### PROJ-006 A worktree is its own working folder wherever it lives
 - Requirement: A git worktree, inside the project folder or anywhere else, is a working folder with its own context, and it reaches the same project data as every other folder.

@@ -16,6 +16,23 @@ pytestmark = pytest.mark.kind('fixture')
 ROOT = Path(__file__).parents[5]
 SPEC = Path(__file__).parents[1] / 'resources' / 'intake.axiom'  # the served intake, Rich 2026-10-08
 RESOURCE = SPEC
+
+
+def stored_with_pointer() -> str:
+    """The served intake: the stored file, then the line saying where its schema is, MCP-009."""
+    from importlib import resources
+
+    from metaform import prompt_files
+    pointer = prompt_files.required(resources.files('metaform.modules.intake'), 'schema_pointer')
+    return SPEC.read_text(encoding='utf-8').rstrip('\n') + '\n\n' + pointer + '\n'
+
+
+def onboarding() -> str:
+    """The onboarding as a registered folder is served it, MCP-009."""
+    from importlib import resources
+
+    from metaform import prompt_files
+    return prompt_files.required(resources.files('metaform.modules.intake'), 'no_intake')
 FIXTURE = json.loads((ROOT / 'tests' / 'fixtures' / 'intake_timer.json').read_text(encoding='utf-8'))
 
 
@@ -116,9 +133,9 @@ def test_prompt_serves_the_intake_with_only_its_prompt_filled(run, project):
     '''Rich, 2026-10-01: the intake's prompt slot holds what the person asked for, a target or a task; with nothing
     asked it stays empty, and the intake reads that as this project. Intake 2.1 carries it as
     `{Prompt} := """{prompt}"""`, and its TARGET_RESOLUTION takes the target from it, so nothing else is filled.'''
-    stored = SPEC.read_text(encoding='utf-8')
+    stored = stored_with_pointer()
     out = run('intake', 'prompt', cwd=project).stdout
-    assert out == stored  # the intake is the instruction, and nothing is served beside it
+    assert out == stored  # the intake is the instruction, with only where its schema is beside it
     asked = run('intake', 'prompt', 'text=Map the timer and its alarm', cwd=project).stdout
     # the Axiom intake has no slot: what was asked follows it as data, and the script is served as written
     assert asked == stored.rstrip('\n') + '\n\n<<DATA: Prompt>>\nMap the timer and its alarm\n<<END DATA>>\n'
@@ -129,7 +146,7 @@ def test_the_prompt_is_filled_as_written_in_intake_2_1_and_escaped_only_in_an_xm
     """Intake 2.1 is not XML, so what the person asks for reaches it exactly as written; an XML intake file, which the
     intake_file setting can still name, gets it escaped as an XML attribute value, as its <target> is filled."""
     asked = 'fix A & B in <main> "now"'
-    stored = SPEC.read_text(encoding='utf-8')
+    stored = stored_with_pointer()
     assert run('intake', 'prompt', f'text={asked}', cwd=project).stdout == (
         stored.rstrip('\n') + f'\n\n<<DATA: Prompt>>\n{asked}\n<<END DATA>>\n')
     xml = tmp_path / 'own-intake.xml'
@@ -150,7 +167,7 @@ def test_no_setting_adds_an_instruction_to_the_intake(run, project):
     assert run('intake', 'prompt', cwd=project).stdout == plain
     run('set', '--no-debug', '--report', cwd=project)
     assert run('intake', 'prompt', cwd=project).stdout == plain
-    assert plain == SPEC.read_text(encoding='utf-8').replace('{prompt}', '', 1)
+    assert plain == stored_with_pointer().replace('{prompt}', '', 1)
 
 
 @pytest.mark.req('CLI-034')
@@ -440,15 +457,14 @@ def test_status_says_whether_there_is_an_intake_and_gives_no_intake_or_map_direc
 @pytest.mark.req('MCP-009')
 @pytest.mark.req('MCP-031')
 def test_an_intake_started_and_not_finished_is_named_in_the_instructions(run, project):
-    """Rich, 2026-10-02: the no-intake notice is needed to onboard; and when an intake is started and aborted, the next
-    agent is told that an intake was started but aborted and still remains to be completed. A finished intake clears
-    both."""
+    """The no-intake notice is needed to onboard; when an intake is started and aborted, the next agent is told that an
+    intake was started but aborted and still remains to be completed. A finished intake clears both."""
     import xml.etree.ElementTree as ET
     prompts = ET.fromstring(RESOURCE.with_name('prompts.xml').read_text(encoding='utf-8'))
-    notice, line = (prompts.findtext(name, '').strip() for name in ('no_intake', 'unfinished'))
+    notice, line = onboarding(), prompts.findtext('unfinished', '').strip()
     record = (ROOT / 'specifications' / '06-mcp-install.md').read_text(encoding='utf-8')
     assert line == 'An intake was started but aborted and still remains to be completed.' and line in record
-    assert notice.startswith('This project has no intake.') and notice in record
+    assert notice.startswith('FIRST RUN.') and notice in record.replace('\n  ', '\n')  # as fenced in the record
     assert 'metaform://intake/procedure' in notice  # the procedure, named where an agent reads it, MCP-037
     agents = lambda: run('help', 'agents', cwd=project).stdout
     shown = agents()
@@ -463,24 +479,22 @@ def test_an_intake_started_and_not_finished_is_named_in_the_instructions(run, pr
     assert line in agents()
 
 
+@pytest.mark.req('MCP-009')
 @pytest.mark.req('MCP-027')
 def test_the_no_intake_notice_asks_once_starts_the_web_gui_and_runs_the_intake_while_the_person_watches(run, project):
-    """MCP-009 and MCP-027, reworded with Rich 2026-10-07: on a first run the agent tells the person a basic analysis is
-    about to run and asks once whether to start, starts the web GUI and gives its address, then has a subagent perform
-    the intake from the procedure and forms resources while the person watches, then invites questions. What comes
-    after intake is a separate notice. The notice leaves once an intake is finished."""
-    import xml.etree.ElementTree as ET
-    prompts = ET.fromstring(RESOURCE.with_name('prompts.xml').read_text(encoding='utf-8'))
-    notice = prompts.findtext('no_intake', '').strip()
-    ask, web = notice.index('Ready for me to start?'), notice.index('call web with command start')
-    delegate, questions = notice.index('start a subagent'), notice.index('invite their questions')
+    """MCP-009: on a first run the agent asks the person once, and on a yes starts the browser view and gives its
+    address, hands the intake to one fresh subagent with only the procedure's resource, then invites questions. A
+    registered folder skips the register step. The notice leaves once an intake is finished."""
+    notice = onboarding()
+    ask, web = notice.index('Want me to start?'), notice.index('web tool, command start')
+    delegate, questions = notice.index('Start ONE fresh subagent'), notice.index('invite their questions')
     assert ask < web < delegate < questions
-    assert 'metaform://intake/procedure' in notice and 'metaform://intake/schema' in notice
+    assert 'metaform://intake/procedure' in notice and 'Register this folder' not in notice
     assert 'blind spot' not in notice and 'best practices' not in notice
     assert notice in run('help', 'agents', cwd=project).stdout
     run('intake', 'start', cwd=project)
     run('intake', 'finish', cwd=project)
-    assert 'Ready for me to start?' not in run('help', 'agents', cwd=project).stdout
+    assert 'Want me to start?' not in run('help', 'agents', cwd=project).stdout
 
 
 @pytest.mark.req('MAP-041')
@@ -928,7 +942,7 @@ def test_every_join_is_asked_its_information_flow_direction(run, project):
     with the join, and named in a notice when it is missing."""
     noun = nouns_of('join')['ifd']
     assert noun.schema['enum'] == ['sends', 'receives', 'both']
-    assert noun.help.startswith('IFD: Information Flow Direction — the primary flow of information')
+    assert noun.help.startswith('sends, receives or both: the information flow direction')
     run('intake', 'start', cwd=project)
     run('intake', 'element', 'code.store.state', 'role=SE', cwd=project)
     read = recorded(run, project, 'join', 'code.selector.route', '["code.store.state"]', 'purpose=p', 'ef=f',
@@ -984,7 +998,7 @@ def test_the_ignore_list_follows_the_intake_and_exclude_is_not_a_condition(run, 
     it sees; agents acted on exclude marks and deleted files. The person lists what is not the project in
     .metaform/ignore.txt, the intake is served with that list after it and reads nothing it names, and a condition of
     exclude sent to an intake tool records nothing and is answered with where the list is."""
-    plain = SPEC.read_text(encoding='utf-8').replace('{prompt}', '', 1)
+    plain = stored_with_pointer().replace('{prompt}', '', 1)
     assert run('intake', 'prompt', cwd=project).stdout == plain  # no file: the intake alone
     (project / '.metaform').mkdir()
     (project / '.metaform' / 'ignore.txt').write_text('# not the project\nrich/\n\n*.zip\n', encoding='utf-8')
@@ -1060,3 +1074,25 @@ def test_the_read_back_shows_marks_containment_and_notes_and_a_removed_element_l
     [joined] = after['joins']
     assert joined['elements'] == ['code.display.digit']  # the join lets the removed element go
     assert Store('timer').work(open=True, limit=0).results == ()  # and its mark is closed, not left open
+
+
+@pytest.mark.req('MAP-040')
+def test_the_field_text_lists_exactly_the_values_the_intake_tools_accept():
+    """The description beside each argument is what an agent reads as it records, so a value listed there and refused
+    by the tool, or accepted and never listed, misleads it: the old text offered condition missing after it was
+    ruled out."""
+    from metaform.data import CONDITIONS
+    from metaform.modules.intake import ELEMENT_WORDS, JOIN_WORDS, MODULE
+
+    def listed(words: str) -> set[str]:
+        head = re.split(r'[.:]', words, maxsplit=1)[0]
+        return {part.strip() for part in re.split(r',| or ', head) if part.strip() and ' ' not in part.strip()}
+
+    nouns = {(verb.name, noun.name): noun for verb in MODULE.verbs for noun in verb.nouns}
+    for verb, words in (('element', ELEMENT_WORDS), ('join', JOIN_WORDS)):
+        for field in ('role', 'condition', 'ifd'):
+            noun = nouns.get((verb, field))
+            if noun is not None:
+                assert listed(words[field]) == set(noun.schema['enum']), (verb, field, words[field])
+    assert set(nouns['element', 'condition'].schema['enum']) == set(CONDITIONS)
+    assert ELEMENT_WORDS['within'] != 'within'  # within is defined, not only named

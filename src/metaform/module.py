@@ -234,8 +234,8 @@ class Context:
         if self.store is None:
             from . import home
             registered = home.projects()
-            raise Stop('No project for this folder.',
-                       'metaform set --project <id>' if registered else 'metaform add project <id> <path>')
+            raise Stop('No project for this folder.', 'metaform add project <id> <path>' + (
+                ' for this folder, or metaform set --project <id> for a registered one' if registered else ''))
         return self.store
 
     def publish(self, topic: str, payload: dict[str, Any] | None = None) -> list[dict[str, Any]]:

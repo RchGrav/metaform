@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- web's prompts, MCP-031. What is between an element's tags is what is served. With web_autostart on, autostart
-     follows web's instructions in the instructions agents read, VIEW-015, and is shown by `metaform status` before
-     the intake. -->
+<!-- web's prompts, MCP-031. What is between an element's tags is what is served. Starting the web GUI before an
+     intake is a step of the onboarding, the intake module's no_intake, MCP-009 and VIEW-015. -->
 <prompts>
 
 <!-- web's line in the instructions agents read while web is on, MCP-029. -->
@@ -35,37 +34,4 @@
 
 <!-- web's slash command, /metaform:web, which runs web start, MCP-032 and MCP-033. -->
 <commands><web verb="start"/></commands>
-
-<!-- While web_autostart is on and the project has no finished intake, web's status hook adds this to the instructions
-     agents read and to metaform status, so the agent starts the web GUI before the intake, VIEW-015 and MCP-029. -->
-<autostart>
-@STATE_INIT:
-  {Phase}:=BEFORE_INTAKE; {Web_Running}:=UNRESOLVED
-
-@CONSTRAINT:
-  +> Before an intake, ensure the web GUI is running.
-  +> If it is not running, start it with `web start`.
-
-@CONDITION:
-  ?IF ({Phase}==BEFORE_INTAKE AND {Web_Running}==FALSE) -> {State}:=START
-  :ELSE -> {State}:=CONTINUE
-
-@ROUTER:
-  @MATCH({State}):
-    | [START] -> EXECUTE_PIPELINE(Start)
-    | [CONTINUE] -> EXECUTE_PIPELINE(Continue)
-
-@EXECUTE_PIPELINE(Start):
-  Δ(`web start`) => start web GUI.
-  YIELD
-
-@EXECUTE_PIPELINE(Continue):
-  YIELD
-
-@VERIFY:
-  {Valid}:=(before intake implies web GUI running)
-  ?IF ({Valid}) -> YIELD
-  :ELSE -> EXECUTE_PIPELINE(Start)
-</autostart>
-
 </prompts>
