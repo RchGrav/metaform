@@ -34,7 +34,7 @@ Recommendation: each project's registered folder, shown with its path at the top
 Recommendation: yes, all four, since the design is mvm's and no later decision removed them.
 
 **D98. The writing standard's text.** Everything a person reads is written to one writing standard, CLI-036, given as a set of plain-writing rules that are not in this repository. Where is the text kept, so the critic review, QUAL-008, can apply it? (CLI-036, QUAL-008)
-Recommendation: a file in `rich/`, beside `code_quality_standards.md`.
+Recommendation: a file in `specifications/`, beside `code_quality_standards.md`.
 
 **D99. The Canonical Intake's wording.** Its text changes only in the owner's words. It differs from the decided shape in these places: each element carries a `<name/>`, while the project's name for a functionality goes on the join, MAP-020; its response protocol says to remove absorbed subparts recorded as root elements, while the element stays one record, MAP-031; its nested subtype join has no type and no non_goal and carries a provider beside its inline element, MAP-030; its method's steps do not show the call the agent makes for each entry, with the JSON arguments it sends; it does not say that the intake agent writes the condition of an object as a work record, MAP-046, and the recording lines served after it, BASE-039, do not name `map_work`; and the voice of the fields and the element's statement, D90, are not in it. Which wording do you want for each? (MAP-020, MAP-030, MAP-031, MAP-040, MAP-046, BASE-039, D90)
 

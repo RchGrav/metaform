@@ -389,7 +389,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - Build: Open. Every layer is kept in one project's metaform store today. A workflow layer belongs to no metaform, MAP-055, so it needs a store of its own; recommended: one Metaform-wide workflow store, which selection and masking in a project's metaform reach. Writing `<workflow name>.metaform` from the stored workflow is to build.
 - Acceptance: Open. Recommended: a workflow layer's `.metaform` file is written from the stored workflow and reads back as the same workflow element and logic requirements; turning the layer off leaves a project's metaform reads unchanged.
 - Relates to: LAYER-007, LAYER-010, LAYER-016, LAYER-020, LAYER-025, MAP-055, MAP-056, BASE-051.
-- Status: confirmed, 2026-10-03, from `rich/Workflow_Root_and_Workflow_Layers.md`. The Metaform-wide workflow store is recommended.
+- Status: confirmed, 2026-10-03, from the owner's workflow design. The Metaform-wide workflow store is recommended.
 
 ### LAYER-028 A layer's name is a namespace root, so a layer's work on an element has its own address
 

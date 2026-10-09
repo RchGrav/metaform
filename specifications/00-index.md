@@ -16,13 +16,10 @@ Every design decision goes into this spec when it is decided, in the record that
 
 ## Sources absorbed
 
-- `../rich/REQUIREMENTS.md` with `../rich/REQUIREMENTS-corrections.md`: the requirements drawn from the owner's design. TRACE.md maps every one of them to the records here.
-- `../rich/SETTLED.md`: design settled in conversation, now carried by the records here.
+- The owner's design, drawn into requirements and settled in conversation, is carried by the records here. TRACE.md maps every requirement to them.
 - `../src/metaform/modules/intake/resources/intake.axiom`: the current intake procedure, the digital typology intake compiled to Axiom, served by the intake module, BASE-039, with its schema `metaform.axiom` beside it. Earlier intakes are in the history.
-- `../rich/Canonical_Intake.xml`: the previous intake procedure, no longer served. `../rich/Canonical_Intake_test.xml` was identical to it until `ef` was added to the Canonical Intake, 2026-09-26. `../rich/Canonical_Intake_old.xml` is the previous version, reference only.
-- `../rich/Workflow_Root_and_Workflow_Layers.md`: the owner's design of workflows, 2026-10-03: the `workflow` root, logic requirements called by address and name, control flow, handoffs by nonce, workflow layers, ingest and authoring, and what is left to build. With it, `../rich/Metaform_Axiom-OS.md`, the Axiom compiler v1.1, and the two workflow prompts it compiled, `../rich/workflow-ingest.md` and `../rich/workflow-authoring.md`.
-- `../rich/metaprompting_element_segments_example.md`: how an address and its prefixes carry inference.
-- `../rich/code_quality_standards.md`: the quality bar, carried by section 7.
+- The owner's design of workflows, 2026-10-03: the `workflow` root, logic requirements called by address and name, control flow, handoffs by nonce, workflow layers, ingest and authoring, and what is left to build. It is carried by the workflow records in sections 01, 02 and 04. How an address and its prefixes carry inference is carried by section 01.
+- `code_quality_standards.md`: the quality bar, carried by section 7.
 
 ## Sections
 

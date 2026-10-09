@@ -94,7 +94,7 @@ The same component can therefore be a provider outwardly and a receiver internal
 
 ### 4.2 Joins retain the reason, not only the connection
 
-A join belongs to its receiver and records the provider, Operative Purpose, Encounter Function, active-voice relation, observation, and relevant references. An optional non-goal identifies a pertinent outcome the receiver does not seek when that distinction is meaningful. The relationship is a first-class object with its own identity, so it can be examined and can receive attached knowledge.
+A join belongs to its receiver and records the Operative Purpose, the Encounter Function as the active-voice fragment `ef`, the information flow direction `ifd`, and the elements that serve the purpose. In the September 26 snapshot the join also held a relation, a verb, an observation, references and an optional non-goal; the current shape keeps those in knowledge layers instead (see [section 13.1](#131-the-source-edition-and-recorded-representation)). The relationship is a first-class object with its own identity, so it can be examined and can receive attached knowledge.
 
 This reification is the basis for the account's knowledge-graph-of-knowledge-graphs, or reified knowledge hypergraph, semantics. The significance is not a claim about a particular graph database. A relation is no longer merely a binary adjacency: inference can consider its participants, roles, purpose, observations, references, and further knowledge. A later observation can concern the relationship itself rather than one endpoint in isolation.
 
@@ -104,9 +104,9 @@ For the actual module-author relationship, the provider is `code.system.plugin` 
 
 The intake distinguishes defining, supportive, and notable elements. A Defining Element supplies the functionality whose loss would prevent the artifact from remaining the same type. Supportive Elements contribute to its service of the vested purpose. Notable Elements express essential demands or requirements on the external environment. Parametric qualities are tunable details rather than automatically named independent functionalities.
 
-The method surveys the artifact, recursively examines receiving purposes and their providers, and anneals and converges the resulting structure. Subparts absorbed into a load-bearing parent are not repeated as an inflated global list. Their active contributions are preserved as internal subtypes within the parent's matching purpose joins.
+The method surveys the artifact, recursively examines receiving purposes and their providers, and anneals and converges the resulting structure. Subparts absorbed into a load-bearing parent are not repeated as an inflated global list. Their active contributions are preserved inside the parent's matching purpose join: the snapshot held them as internal subtypes, and the current shape holds each as another element of that join.
 
-In Metaform's own map, the module-author join contains `code.template.module`, named template, and `code.module.example`, named helloworld. Each retains its own encounter, relation, observations, and references. Neither acquires an independent copy of the parent's purpose. The representation thus keeps a coarse global shape while preserving the atomic contributions needed to understand a specific relationship.
+In Metaform's own map, the module-author join contains `code.template.module`, named template, and `code.module.example`, named helloworld. In the snapshot each retained its own encounter, relation, observations and references as a subtype join; in the current shape both are elements of the one join. Neither acquires an independent copy of the parent's purpose. The representation thus keeps a coarse global shape while preserving the atomic contributions needed to understand a specific relationship.
 
 The operative [Canonical Intake](../../src/metaform/modules/intake/resources/Canonical_Intake.xml) is the elicitation method. The resulting data, rather than repeated exposure to the procedure's wording, is what later operations use. The method's deliberately chosen language and examples guide inference toward functional meaning; replacing them with generic software-analysis terminology would change that operation.
 
@@ -118,7 +118,7 @@ The operative [Canonical Intake](../../src/metaform/modules/intake/resources/Can
 
 A timer's countdown and the audible encounter that gains a cook's attention illustrate the distinction. In Metaform's own implementation, a declaration is an encounter through which a module author adds a capability, while supplying verb definitions to the command line is a functional contribution to that receiver. The same broad provider can participate differently in different joins.
 
-The stored record separates descriptive text in `function` from the categorical `ef` value, Function or Encounter. This distinction belongs to purpose joins and internal subtype contributions. It does not require every element to change from a dormant Function state into an active Encounter state over time.
+In the September 26 snapshot the stored record separated descriptive text in `function` from a categorical `ef` value, Function or Encounter. In the current shape `ef` is the descriptive text itself, an active-voice fragment, and there is no categorical marker. The Function/Encounter reading is made from that text. It does not require every element to change from a dormant Function state into an active Encounter state over time.
 
 ### 5.2 A language Encounter changes reasoning through the type structure
 
@@ -166,7 +166,7 @@ The store represents broad Providing Elements with receiver-specific joins. Its 
 
 ### 7.1 Memory has a functional location
 
-An agent's finding can concern an element, a purpose join, or an internal subtype. Metaform uses those same objects as memory addresses. A note about the plugin system generally belongs at its element; a note about why the module author needs a particular encounter belongs at that receiving relationship. This is more informative than associating every finding with a project-wide conversation or a nearby file.
+An agent's finding can concern an element or a purpose join (in the snapshot, also an internal subtype). Metaform uses those same objects as memory addresses. A note about the plugin system generally belongs at its element; a note about why the module author needs a particular encounter belongs at that receiving relationship. This is more informative than associating every finding with a project-wide conversation or a nearby file.
 
 The location contributes meaning. A later agent entering through the receiver can encounter the stored rationale where it becomes relevant, while an agent entering through the provider can inspect the different purposes it serves. A relation is therefore both an object of inference and a place to retain the result of that inference.
 
@@ -313,15 +313,15 @@ This illustrates the importance of source correspondence. A represented function
 | Mechanism | Current realization and boundary |
 |---|---|
 | Canonical Intake | Serves the operative resource and records the agent's result one object per call, as it is reasoned, into an intake layer that becomes visible when the agent finishes it after a proofing pass. The agent performs the inference. |
-| Functional records | Elements, receiver-owned joins, internal subtypes, descriptors, and references are stored and queryable. |
+| Functional records | Elements and receiver-owned joins are stored and queryable; references live in the `sources` layer. The snapshot also held internal subtypes and descriptors. |
 | Knowledge participation | Layer selection, local masks/selects, scoped properties, hidden-source closure, and refinements are implemented. |
-| Addressed memory | Implemented at elements, joins, and subtypes. |
+| Addressed memory | Implemented at elements and joins (and, in the snapshot's shape, subtypes). |
 | Project lexicalization | Name/address, context, memory, and prompt facilities exist; the integrated preprocessing producer is not shipped. |
 | Blindspot exchange | State/plan storage exists; producing and coupling the substantive rationale remains distinct. |
-| Encounter reasoning | Function/Encounter fields and scoped context support exist; a complete consequence-generating producer is not shipped. |
+| Encounter reasoning | The `ef` text and scoped context support exist; a complete consequence-generating producer is not shipped. |
 | Intent-driven recomposition | The functional account and artifact-history facilities support the described work; no universal automatic recomposition engine is claimed. |
 
-The current map knowledge interface omits `ef`, although the store and intake support it. That is a local interface discrepancy, not evidence that the Function/Encounter distinction is absent from the system. The [implementation map](../inference-metaform/IMPLEMENTATION_MAP.md) records these correspondences at their source locations.
+At that commit the map knowledge interface omitted `ef`. In the current source `map knowledge op=add-join` takes `ef` and `ifd` with the receiver, elements and purpose, so the discrepancy is closed. The [implementation map](../inference-metaform/IMPLEMENTATION_MAP.md) records these correspondences at their source locations.
 
 ## 12. Forming the workpiece through intent
 
@@ -356,6 +356,8 @@ An image may also be an asset in another artifact. Its receiving relationship ch
 ### 13.1 The source edition and recorded representation
 
 This paper describes the supplied `chassis` source snapshot identified as commit `ce9062bdec9398ca1f23ac60684bd3cc7e37f23c`. The bundle provides the source bytes and commit attribution; it does not include a Git checkout from which a newer state was fetched. The accompanying project Metaform, named `main`, was recorded on September 26, 2026 at 19:28:40 UTC.
+
+The counts below describe that snapshot in the record shapes of its day. Since 2026-10-04 a join is its type, `purpose`, `ef` and `ifd` and holds its elements; it has no subtype joins, `verb`, `relation`, `observation` or `non_goal`.
 
 The recorded [project export](../examples/project-metaform.json) contains:
 

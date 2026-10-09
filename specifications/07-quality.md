@@ -5,7 +5,7 @@ It covers the engineering standard, cross-platform proof, typing, linting, what 
 
 ### QUAL-001 The code quality standard is the bar
 
-- Requirement: All chassis, common base, template and module code meets the standard in rich/code_quality_standards.md.
+- Requirement: All chassis, common base, template and module code meets the standard in specifications/code_quality_standards.md.
 - What this means: The standard treats Metaform as mission-critical engineering with aerospace-grade expectations for quality, reliability, maintainability and technical discipline. Code is:
   - organized by responsibility and ownership;
   - easy to understand, inspect, test and change;
@@ -20,7 +20,7 @@ It covers the engineering standard, cross-platform proof, typing, linting, what 
   Simple, explicit, durable engineering wins over cleverness and needless abstraction. No architecture is added for a hypothetical future need, and no shortcut is accepted that leaves lifecycle, concurrency, persistence or maintenance fragile. The standard's immediate aim is the right module shape: one repeatable structure that substantial modules follow while staying clean participants in the chassis contract.
 - Why: The code will face outside scrutiny and must pass it. Community authors copy the template and build on the common base, so every flaw in them is copied into every fork.
 - How it shows: Each part of the code has one clear owner. Resources are acquired and released in visible places. Failure behavior is stated where it happens. A reviewer can follow any boundary without reading unrelated code.
-- Build: The standard file stays in rich/ with its wording unchanged. The spec index lists it as the bar. The critic review in QUAL-008 checks code against it item by item.
+- Build: The standard file is kept in specifications/ with its wording unchanged. The spec index lists it as the bar. The critic review in QUAL-008 checks code against it item by item.
 - Acceptance: Every merge has a critic review that names each standard item the change touches and states whether the change meets it. A change with an unmet item does not merge.
 - Relates to: QUAL-008, QUAL-006, BASE-018, BASE-019.
 - Status: confirmed.

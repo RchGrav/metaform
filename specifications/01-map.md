@@ -459,7 +459,7 @@ These terms are used exactly as defined in the Canonical Intake.
 - Build: Open. `workflow` is added to the roots, and the intake neither creates nor traces anything under it. An element holds its address, name_length, role and name, MAP-015 and STORE-009, so where a workflow element keeps the knowledge layers it includes is to build.
 - Acceptance: Open. Recommended: an intake records nothing under `workflow`; a workflow element is read with its canonical name, its included layers and its logic requirements.
 - Relates to: MAP-010, MAP-011, MAP-014, MAP-015, MAP-056, LAYER-027, BASE-051.
-- Status: confirmed, 2026-10-03, from `rich/Workflow_Root_and_Workflow_Layers.md`, which supersedes the earlier workflow design.
+- Status: confirmed, 2026-10-03, from the owner's workflow design, which supersedes the earlier workflow design.
 - Amendment, 2026-10-08: the root is `logic`, and workflows live under `logic.workflow`. `logic` holds everything the system keeps in Axiom for agents to carry out. Workflows are one kind of it; skills such as the sentinel, subroutines, the rules attached at nodes and the orchestration logic are others, and each kind gets its own child under `logic` when it is needed, never before. `workflow.quality.code` becomes `logic.workflow.quality.code`, read backward as "code quality workflow logic". Why: a root names the widest type, so that each kind of procedure sits under a name that says what it is; with `workflow` as the root, a skill or a rule would sit under a name that is not what it is. The workflow module already calls this content logic: it submits a subroutine's logic and adds logic on an element. `axiom` was not chosen because it names the language, and the namespace rules never type by language or encoding, as the map says `code` and not `python`. Scope keeps names apart, so nothing is reserved: `logic` as a root and a project's own `code.logic.business` are different addresses, as `code.store` and `data.store` are; the intake simply never creates anything under the `logic` root. Build: open. The workflow module's catalog reads the `logic.workflow.` prefix where it reads `workflow.` today; the stored `namespace-rules` section names `logic` where it names `workflow` as the root only knowledge layers hold, which is a new version of that section; LAYER-028's names a layer may not take list `logic` in place of `workflow`; an element at the old root in a base is moved by a correction.
 
 ### MAP-056 A logic requirement is a subroutine, called by its workflow element's address and its name
@@ -477,7 +477,7 @@ These terms are used exactly as defined in the Canonical Intake.
 - Build: Open. A logic requirement is its own record, not a requirement's row. It is submitted as reasoned, the workflow element and each LOGIC, and the code assigns its `logic_id`, which the agent never handles.
 - Acceptance: Open. Recommended: a logic requirement submitted on a workflow element is read back with its four fields, and a call by that element's address and its name reaches it.
 - Relates to: MAP-003, MAP-020, MAP-055, LAYER-027, BASE-051.
-- Status: confirmed, 2026-10-03, from `rich/Workflow_Root_and_Workflow_Layers.md`, which supersedes the earlier workflow design.
+- Status: confirmed, 2026-10-03, from the owner's workflow design, which supersedes the earlier workflow design.
 
 ### MAP-057 `this` in added logic is the element the logic is on, and its values are addressed in Python's syntax
 
