@@ -564,6 +564,8 @@ def _upgrade(db: sqlite3.Connection, path: Path, module: str, declared: Tables, 
                          f'{elsewhere[moved[0]]} store, and the rows here would be lost; a table keeps its place, or '
                          f'the module\'s upgrade copies the rows itself before the table is declared elsewhere.',
                          f'metaform disable {module}')
+    deferred = db.execute('PRAGMA defer_foreign_keys').fetchone()[0]
+    db.execute('PRAGMA defer_foreign_keys=ON')
     for table in new:
         before = old.get(table.name)
         if before is None:
@@ -573,13 +575,19 @@ def _upgrade(db: sqlite3.Connection, path: Path, module: str, declared: Tables, 
             if index[3] != 'pk' and index[3] != 'u':
                 db.execute(f'DROP INDEX IF EXISTS {_quoted(index[1])}')
         if (before.columns, before.key, before.schema) != (table.columns, table.key, table.schema):
+            # Rebuilt beside the old table and swapped into its name, as adoption does: a rename would repoint the
+            # foreign keys of the tables that refer to it at a copy that is then dropped. The old rows stay readable
+            # to the module's upgrade in a plain copy, `<name>.found`.
             name = physical(module, table)
-            db.execute(f'ALTER TABLE {_quoted(name)} RENAME TO {_quoted(name + ".found")}')
+            db.execute(f'CREATE TABLE {_quoted(name + ".found")} AS SELECT * FROM {_quoted(name)}')
             held[table.name] = (before, name + '.found')
-            db.execute(_create_sql(module, table))
+            replacement = name + '__upgrade'
+            db.execute(_create_sql(module, table, replacement))
             shared = [column.name for column in table.columns if column.name in [c.name for c in before.columns]]
             listed = ', '.join(_quoted(column) for column in shared)
-            db.execute(f'INSERT INTO {_quoted(name)}({listed}) SELECT {listed} FROM {_quoted(name + ".found")}')
+            db.execute(f'INSERT INTO {_quoted(replacement)}({listed}) SELECT {listed} FROM {_quoted(name)}')
+            db.execute(f'DROP TABLE {_quoted(name)}')
+            db.execute(f'ALTER TABLE {_quoted(replacement)} RENAME TO {_quoted(name)}')
         _create_indexes(db, module, table)
     if declared.upgrade is not None:
         declared.upgrade(TableTx(module, declared, write=True, opener=lambda _: (db, path, True), bound=place,
@@ -587,6 +595,14 @@ def _upgrade(db: sqlite3.Connection, path: Path, module: str, declared: Tables, 
     for name, (_, where) in held.items():
         if name not in [table.name for table in new] or where != physical(module, declared.table(name)):
             db.execute(f'DROP TABLE IF EXISTS {_quoted(where)}')
+    problems = db.execute('PRAGMA foreign_key_check').fetchall()
+    if problems:
+        raise StoreError(f'Upgrading {module} would break {len(problems)} references. Nothing was changed.',
+                         f'compare {module}\'s table declaration with the rows already held')
+    # The swap leaves SQLite's deferred drop count pending though every reference is intact, as adoption notes.
+    db.execute('PRAGMA defer_foreign_keys=OFF')
+    if deferred:
+        db.execute('PRAGMA defer_foreign_keys=ON')
     _record(db, module, declared.recorded(place))
 
 
