@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from metaform.prompt_files import text as prompt_text
+
 pytestmark = pytest.mark.kind('fixture')
 
 SOURCE = Path(__file__).resolve().parents[1] / 'src' / 'metaform'
@@ -59,13 +61,12 @@ def test_the_full_instructions_are_the_instructions_prompt_with_the_surfaced_mod
     folder.mkdir()
     run('add', 'project', 'proj', str(folder))
     run('set', '--connect-instructions=full', cwd=folder)
-    run('set', '--no-web-autostart', cwd=folder)  # the web message, VIEW-015, is tested with the web module
     run('set', '--no-tasks', cwd=folder)  # the task lines are tested below
     element = prompt(SOURCE / 'resources' / 'prompts.xml', 'instructions')
     on = [line.split()[0] for line in run('list', 'modules', cwd=folder).stdout.splitlines() if line.split()[1] == 'on']
     def line(module):  # a module's instructions prompt; a project with no intake also gets the notice, MCP-009
         own = prompt(SOURCE / 'modules' / module / 'resources' / 'prompts.xml', 'instructions').text.strip()
-        notice = ET.parse(SOURCE / 'modules' / module / 'resources' / 'prompts.xml').getroot().findtext('no_intake')
+        notice = prompt_text(SOURCE / 'modules' / module, 'no_intake')
         return own if notice is None else f'{own} {notice}'
     listed = '\n'.join(line(module) for module in sorted(on))
     assert [child.tag for child in element] == ['modules']
@@ -95,7 +96,7 @@ def test_the_compact_instructions_fit_what_claude_code_keeps_in_every_intake_sta
         text = run('help', 'agents', cwd=folder).stdout
         assert more in text and len(text) <= 2048, len(text)
         return text
-    assert prompt(SOURCE / 'modules' / 'intake' / 'resources' / 'prompts.xml', 'no_intake').text.strip() in served()
+    assert prompt_text(SOURCE / 'modules' / 'intake', 'no_intake') in served()
     run('intake', 'start', cwd=folder)
     served()
     for step in INTAKE:

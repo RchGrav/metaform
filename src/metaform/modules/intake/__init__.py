@@ -91,8 +91,11 @@ def served(ctx: Context, asked: str = '') -> str:
     # project, BASE-039. An intake with a `{prompt}` slot gets the words there, escaped only in an XML intake file.
     # The Axiom intake declares its prompt as a parameter and has no slot, so what was asked follows it as data,
     # the way a skill's input is bound, and the script itself is served as written.
+    xml = source.name.lower().endswith('.xml')
+    if not xml:  # the procedure names its schema; the agent handed only the procedure is told where it is, MCP-009
+        text = text.rstrip('\n') + '\n\n' + prompt_files.required(resources.files(__name__), 'schema_pointer') + '\n'
     if '{prompt}' in text:
-        text = text.replace('{prompt}', _escape(asked) if source.name.lower().endswith('.xml') else asked, 1)
+        text = text.replace('{prompt}', _escape(asked) if xml else asked, 1)
     elif asked:
         text = text.rstrip('\n') + '\n\n<<DATA: Prompt>>\n' + asked + '\n<<END DATA>>\n'
     ignored = home.ignore_patterns(record.path)
@@ -626,8 +629,12 @@ def status_verb(ctx: Context) -> str:
 
 
 def status(ctx: Context) -> Status:
+    here = resources.files(__name__)
     if ctx.store is None:
-        return Status()
+        # A folder not registered yet gets the onboarding too, with registering as its first step: the instructions
+        # are sent once at connect, so a notice that waited for registration would never arrive, MCP-009.
+        step = '   ' + prompt_files.required(here, 'register_step') + '\n'
+        return Status(instruction=prompt_files.required(here, 'no_intake', register=step))
     found = _building(ctx.store)
     recording = (f'Intake: being recorded in layer {found.layer.name} of metaform {found.metaform}',) \
         if found is not None else ()
@@ -637,7 +644,7 @@ def status(ctx: Context) -> Status:
         return Status(lines=('Intake: complete', *recording), instruction=unfinished)
     if found is not None:
         return Status(lines=recording, instruction=unfinished)
-    return Status(lines=('Intake: none yet',), instruction=prompt_files.required(resources.files(__name__), 'no_intake'))
+    return Status(lines=('Intake: none yet',), instruction=prompt_files.required(here, 'no_intake'))
 
 
 E, J = ELEMENT_WORDS.get, JOIN_WORDS.get

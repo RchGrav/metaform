@@ -24,19 +24,17 @@ import threading
 from contextlib import ExitStack
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from importlib import resources
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, cast
 
-from metaform import home, prompt_files, settings
-from metaform.module import Context, Module, Noun, Status, Stop, Verb
+from metaform import home, settings
+from metaform.module import Context, Module, Noun, Stop, Verb
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
 SHIPS_DISABLED = False
 
-AUTOSTART = prompt_files.required(resources.files(__name__), 'autostart')
 WAIT = 15.0  # the limit on `start`'s one wait for the server's ready line, and on `stop`'s for its stream to end
 WILDCARDS = ('0.0.0.0', '::', '')
 IN_USE = {errno.EADDRINUSE, errno.EACCES, 10048, 10013}  # 10048 and 10013 are Windows's in use and access denied
@@ -48,8 +46,6 @@ settings.text('web_bind', '127.0.0.1', scope='global',
               help='The address the web GUI binds to. Any address but loopback also needs the token.',
               details='At 127.0.0.1 only this machine can reach the web GUI. Another address opens it to that '
                       'network, and then every request needs the token that metaform web prints.')
-settings.boolean('web_autostart', True,
-                 help='Have agents start the web GUI before an intake and tell you its address.')
 settings.text('agent_command', 'claude -p',
               help='The command the web GUI starts an agent with, the task given as its last argument.',
               details='It is run in the project\'s folder when a person asks for an agent from the web GUI, as when '
@@ -260,15 +256,6 @@ def held_open(record: dict[str, Any]) -> http.client.HTTPResponse | None:
     return response
 
 
-def status(ctx: Context) -> Status:
-    """With `web_autostart` on, the autostart message is in the instructions agents read and in status for a project
-    with no finished intake yet, where an intake comes next, VIEW-015 and MCP-029. Off, it is in neither."""
-    if not ctx.setting('web_autostart'):
-        return Status()
-    mapped = ctx.store is not None and ctx.store.has_intake()
-    return Status() if mapped else Status(notice=AUTOSTART, instruction=AUTOSTART)
-
-
 def serve(ctx: Context) -> None:
     """Reconstruct and serve static web variants until interrupted, PROJ-019."""
     store = ctx.require_store()
@@ -323,5 +310,4 @@ MODULE = Module(
                        ('metaform web serve all origin=<id>', 'Serve every variant of one origin.')),
              surfaces=('cli',)),
     ),
-    status=status,
 )

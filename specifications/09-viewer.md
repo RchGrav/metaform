@@ -207,6 +207,7 @@ The GUI is built after the intake and debug system is stable and the fix pass is
   - `web_start` with no server running returns `started` and the address; called again, it returns `running` and the same address.
 - Relates to: BASE-035, CLI-011, MCP-007, VIEW-002.
 - Status: confirmed for a setting, true by default, that instructs agents to start the GUI when it is not running and to tell the user its address when they started it, with the token when the server needs one, Rich 2026-09-25; before the intake rather than after, Rich 2026-09-26. The setting name, the delivery through the status notice and the notice's wording are recommended. Corrected by Rich 2026-09-30: the message is concise, says to start the GUI before an intake if it is not running, and is shown only when the setting is on; the wording is the web module's autostart prompt, MCP-031.
+- Amendment, 2026-10-09: the `autostart` prompt, the `web_autostart` setting and the web status hook that served them are removed. Starting the browser view before the intake is step 3b of the onboarding, the intake module's `no_intake`, MCP-009. Why: two texts told a first run what to do, and in the first-run test of 2026-10-09 the agent received only this one, in a folder the onboarding never reached; one onboarding text holds every step in order.
 
 ### VIEW-016 Going inside a node replaces the 2D map with the node's own graph
 

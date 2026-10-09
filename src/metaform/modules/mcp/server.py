@@ -163,6 +163,12 @@ CHASSIS: dict[str, tuple[str, dict[str, Any]]] = {
                      {'type': 'object', 'additionalProperties': False,
                       'properties': {'module': _text('A module on this folder\'s surface, by id.'),
                                      'project': PROJECT}}),
+    'register': (('Register this folder as a project, as metaform add project does, so Metaform can work on it. A '
+                  'folder already in a project is left as it is. Returns the project and the instructions for it '
+                  'now. Always available.'),
+                 {'type': 'object', 'additionalProperties': False,
+                  'properties': {'id': _text('The project id: lowercase letters, digits, - and _. Without it, the '
+                                             "folder's name.")}}),
 }
 ORIGIN = _text('The origin, by its short id; without it, the project\'s selected origin, the one established last.')
 # The clear_project prompts, MCP-031; clear_project checks its confirmation against the statement.
@@ -240,6 +246,7 @@ CLEAR_AGAIN = CLEAR
 HELP_AGENTS = re.compile(r'\bmetaform help agents(?: (?P<module>[a-z0-9_-]+))?')
 HELP_VERB = re.compile(r'\bmetaform help (?P<module>[a-z0-9_-]+)(?: (?P<verb>[a-z0-9_-]+))?')
 VERB = re.compile(r'\bmetaform (?P<module>[a-z0-9_-]+) (?P<verb>[a-z0-9_-]+)(?P<help> --help)?')
+ADD_PROJECT = re.compile(r'\bmetaform add project <id> <path>')  # registering this folder is a command over MCP
 
 
 def mcp_next(text: str, folder: Path) -> str:
@@ -270,6 +277,7 @@ def mcp_next(text: str, folder: Path) -> str:
             return f'read resource metaform://tools/{module}/{name}'
         return f'call {module} with command {name}'
 
+    text = ADD_PROJECT.sub(f'call {OWN} with command register', text)
     return VERB.sub(verb, HELP_VERB.sub(help_verb, HELP_AGENTS.sub(agents, text)))
 
 
@@ -351,11 +359,36 @@ def run_chassis(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
                            'call metaform with command instructions and no module')
         elif name == 'instructions':
             result = instructions(folder, project)
+        elif name == 'register':
+            result = result_json(register(folder, given.get('id')))
         else:
             result = read_report(folder, given['name'], project=project)
     except Stop as stop:
         return _error(stop, folder)
     return False, (['\n'.join(notices)] if notices else []) + [result]
+
+
+def project_id_for(folder: Path) -> str:
+    """A project id made from a folder's name: lowercase, every run of other characters one -, MCP-009."""
+    made = re.sub(r'[^a-z0-9_-]+', '-', folder.name.lower()).strip('-_')[:64]
+    return made if made and home.PROJECT_ID.fullmatch(made) else 'project'
+
+
+def register(folder: Path, given: str | None = None) -> dict[str, Any]:
+    """Register the server's folder as a project, the first step of onboarding, MCP-009, through the same path as
+    metaform add project. A folder already in a project answers with it and changes nothing. The answer carries the
+    instructions composed now, since the ones sent at connect are not sent again."""
+    held = home.folder_project(folder)
+    if held is not None:
+        said = f'This folder is already in project {held}; nothing was changed.'
+    else:
+        chosen = given or project_id_for(folder)
+        try:
+            said = home.add_project(chosen, folder)
+        except StoreError as error:
+            raise Stop(str(error), f'call {OWN} with command register and another id') from None
+        held = chosen
+    return {'project': held, 'said': said, 'instructions': instructions(folder)}
 
 
 def run_history(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
@@ -422,7 +455,7 @@ def _within(folder: Path, given: Any) -> Path:
 
 
 def _no_project() -> str:
-    raise Stop('No project for this folder.', 'metaform add project <id> <path>')
+    raise Stop('No project for this folder.', f'call {OWN} with command register')
 
 
 def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dict[str, Any],

@@ -23,7 +23,7 @@ def own(project_id):
 pytestmark = pytest.mark.kind('fixture')
 
 OS = "SUPPORTED_OS = ('linux', 'macos', 'windows')"
-CHASSIS_TOOLS = {'set', 'feedback', 'list_reports', 'read_report', 'instructions'}
+CHASSIS_TOOLS = {'set', 'feedback', 'list_reports', 'read_report', 'instructions', 'register'}
 
 
 def session(home, folder, fn, heard=None):
@@ -290,8 +290,11 @@ def test_a_server_started_outside_every_project_selects_one_with_set(run, home, 
         after = await called(client, 'map_layers', {})
         return init.instructions, before.is_error, text(before), chosen.is_error, after.is_error, text(after)
     instructions, before_error, before, chosen_error, after_error, after = session(home, outside, call)
-    assert instructions.rstrip().endswith('To register one: metaform add project <id> <path>')
-    assert before_error and before[0].splitlines()[-1] == 'Next: metaform set --project <id>'
+    assert instructions.rstrip().endswith('To register it: call metaform with command register, or run metaform add '
+                                          'project <id> <path>.')
+    assert before_error and before[0].splitlines()[-1] == ('Next: call metaform with command register for this '
+                                                           'folder, or metaform set --project <id> for a registered '
+                                                           'one')
     assert not chosen_error and not after_error
     assert [layer['name'] for layer in json.loads(after[-1])['results']] == ['intake-1']
 
