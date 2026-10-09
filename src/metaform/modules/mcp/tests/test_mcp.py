@@ -907,6 +907,7 @@ def test_an_alias_is_one_tool_whose_commands_are_the_commands_of_its_modules(run
 @pytest.mark.req('CLI-039')
 @pytest.mark.req('CLI-022')
 @pytest.mark.req('MCP-004')
+@pytest.mark.cli_process
 def test_an_alias_tool_follows_the_folders_surface_and_its_definition_reaches_a_running_session(run, home, mapped):
     heard = []
 
@@ -1031,6 +1032,7 @@ def test_opening_a_tool_gives_each_commands_summary_and_a_command_is_read_alone(
 @pytest.mark.req('MCP-007')
 @pytest.mark.req('MCP-031')
 @pytest.mark.req('CLI-029')
+@pytest.mark.cli_process
 def test_the_instructions_are_composed_for_each_request_and_read_with_the_instructions_command(run, home, mapped):
     """The server composed its instructions once, at process start, so a session kept a stale snapshot. Each request
     that carries them composes them again, and the always-available instructions command, on the command line and
@@ -1087,6 +1089,7 @@ def test_a_module_s_full_instructions_come_on_entering_its_tool_and_skills_are_t
 
 @pytest.mark.req('MCP-004')
 @pytest.mark.req('MCP-007')
+@pytest.mark.cli_process
 def test_a_change_to_the_surface_reaches_a_running_session_as_a_list_change(run, home, mapped):
     """Enabling a module did not reach a running session: the tool list was announced as unchanging. Where the
     protocol allows, a session is told when its tools or slash commands change, at its next request."""

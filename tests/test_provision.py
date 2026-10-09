@@ -43,8 +43,8 @@ def command(capsys, *args: str) -> tuple[int, str, str]:
 
 
 @pytest.mark.kind('fixture')
-@pytest.mark.parametrize('args', [('help',), ('--version',), ('help', 'commands'), ('list', 'projects'),
-                                  ('no-such-module',)])
+# --version is the installer's probe and reads no home, so it gives no notice, BASE-047
+@pytest.mark.parametrize('args', [('help',), ('help', 'commands'), ('list', 'projects'), ('no-such-module',)])
 def test_any_command_under_an_unrecorded_harness_gives_the_notice_once_on_stderr(under, capsys, args):
     under(HARNESS)
     _, out, err = command(capsys, *args)
@@ -64,7 +64,7 @@ def test_the_notice_changes_nothing_the_command_prints_or_returns(under, capsys)
 
 @pytest.mark.kind('fixture')
 @pytest.mark.req('CLI-009')
-@pytest.mark.parametrize('args', [('help',), ('--version',), ('provision', 'done')])
+@pytest.mark.parametrize('args', [('help',), ('provision', 'done')])  # --version reads no home, BASE-047
 def test_a_notice_record_read_error_uses_the_cli_error_handler(under, capsys, home, args):
     from metaform import home as metaform_home
     with metaform_home.chassis(write=True) as db:
@@ -135,10 +135,10 @@ def test_provision_through_timeout_records_only_the_actual_harness(monkeypatch, 
     assert code == 0 and NOTICE in err
     assert harness.known(HARNESS)
     assert recorded(home) == [harness.key(HARNESS)]
-    assert NOTICE not in command(capsys, '--version')[2]
+    assert NOTICE not in command(capsys, 'help')[2]
 
     processes[21] = (0, OTHER)
-    assert NOTICE in command(capsys, '--version')[2]
+    assert NOTICE in command(capsys, 'help')[2]
     assert not harness.known(OTHER)
 
 

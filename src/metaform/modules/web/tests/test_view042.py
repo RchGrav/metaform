@@ -54,8 +54,10 @@ def test_autostart_clears_waiting_work_including_questioned_tickets_before_the_a
         assert store.messages(node, 'question', False).results[0].answer == 'Use the existing approach'
         with Store('proj', module='dispatch').tables(write=False) as tx:
             sessions = tx.rows('sessions', by=('seq',), limit=0).results
+        # each ticket worked once, none restarted; tickets written in the same second share a board place, so the
+        # order among them is not fixed
         expected = [ticket.id for ticket in tickets] + [questioned.id]
-        assert [session['work_id'] for session in sessions] == expected
+        assert sorted(session['work_id'] for session in sessions) == sorted(expected)
     finally:
         api(web, '/api/dispatch-autostart', method='POST', headers=headers,
             body=json.dumps({'project': 'proj', 'value': False}))

@@ -28,6 +28,7 @@ def _entry_package(site: Path, name: str, files: dict[str, str]) -> None:
 
 @pytest.mark.req('BASE-018')
 @pytest.mark.req('QUAL-010')
+@pytest.mark.cli_process
 def test_a_cli_verb_that_spawns_a_task_shuts_down_cleanly_with_the_task_finished_before_stop(run, user_module,
                                                                                              tmp_path):
     marks = tmp_path / 'marks.txt'
@@ -178,7 +179,8 @@ def test_a_failed_proof_stops_the_server_and_keeps_its_reason(tmp_path):
 @pytest.mark.req('LAYER-006')
 @pytest.mark.req('LAYER-007')
 @pytest.mark.req('STORE-019')
-def test_hidden_and_masked_memory_reaches_no_read_path(run, tmp_path):
+def test_hidden_and_masked_memory_reaches_no_read_path(run, tmp_path, monkeypatch, capsys):
+    from metaform import cli
     from metaform.data import Store
     folder = tmp_path / 'proj'
     folder.mkdir()
@@ -197,12 +199,19 @@ def test_hidden_and_masked_memory_reaches_no_read_path(run, tmp_path):
     run('memory', 'create_relations', json.dumps([{'from': 'probe', 'to': 'route', 'relationType': 'checks'}]),
         cwd=folder)
 
+    monkeypatch.chdir(folder)
+
+    def command(*args):  # the same CLI, in this process: twenty reads cost a second, not twenty
+        capsys.readouterr()
+        assert cli.main([*args, '--json']) == 0
+        return json.loads(capsys.readouterr().out)
+
     def reads():
         def memory(*args):
-            return json.loads(run('memory', *args, '--json', cwd=folder).stdout)
+            return command('memory', *args)
         graph, found = memory('read_graph'), memory('search_nodes', 'ejected')
         opened = memory('open_nodes', json.dumps(['route']))
-        node = json.loads(run('map', 'where', 'code.manager.route', '--json', cwd=folder).stdout).get('memory', {})
+        node = command('map', 'where', 'code.manager.route').get('memory', {})
         return (graph['entities'], found['entities'], opened['entities'], opened['relations'],
                 memory('read_graph', route)['entities'], node.get('entities'))
     assert all(reads())

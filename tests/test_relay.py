@@ -60,6 +60,7 @@ def write_note(run, folder):
 
 @pytest.mark.req('BASE-053')
 @pytest.mark.req('QUAL-015')
+@pytest.mark.cli_process
 def test_a_listener_hears_map_changed_from_a_command_run_in_another_process(run, home, folder):
     from metaform import home as metaform_home
     from metaform import relay

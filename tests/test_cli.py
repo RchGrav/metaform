@@ -322,6 +322,7 @@ def test_an_alias_stands_for_two_or_more_real_modules_under_a_free_name(run):
 
 
 @pytest.mark.req('CLI-039')
+@pytest.mark.cli_process
 def test_a_module_of_an_aliases_name_comes_before_the_alias(run, user_module):
     run('alias', 'mapping', 'map', 'memory')
     user_module('mapping', f'''
@@ -950,6 +951,7 @@ def test_interrupting_an_async_verb_reports_cancelled_then_interrupted(home, use
 
 
 @pytest.mark.req('BASE-035')
+@pytest.mark.cli_process
 def test_a_module_named_alone_runs_its_default_verb_and_help_still_shows_its_syntax(run, user_module):
     user_module('dflt', f'''
         from metaform.module import Module, Verb

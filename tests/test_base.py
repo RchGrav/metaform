@@ -370,6 +370,7 @@ def test_a_project_module_loads_only_for_the_active_selected_project(run, module
 
 @pytest.mark.req('BASE-014')
 @pytest.mark.req('BASE-037')
+@pytest.mark.cli_process
 def test_a_project_module_never_displaces_a_same_name_module_of_an_earlier_place(home, tmp_path, user_module, run):
     proj = tmp_path / 'proj'
     proj.mkdir()

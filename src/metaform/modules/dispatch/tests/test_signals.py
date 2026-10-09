@@ -47,6 +47,7 @@ def test_permission_signal_is_cleared_by_its_answer(dispatch, run):
     assert [row for row in signals(dispatch, run, False) if row['signal'] == 'permission-waiting']
 
 
+@pytest.mark.cli_process
 def test_thresholds_count_unique_calls_and_reset_on_real_steps(dispatch, run):
     from acp.schema import ToolCallProgress, ToolCallStart
 
@@ -80,6 +81,7 @@ def test_thresholds_count_unique_calls_and_reset_on_real_steps(dispatch, run):
     asyncio.run(exercise())
 
 
+@pytest.mark.cli_process
 def test_elapsed_threshold_uses_the_next_event_and_not_a_timer(dispatch, run, monkeypatch):
     from acp.schema import AgentMessageChunk, TextContentBlock
 
@@ -127,6 +129,7 @@ def test_signals_verb_is_available_to_a_real_mcp_client(dispatch, home):
     session(home, dispatch.folder, check)
 
 
+@pytest.mark.cli_process
 def test_signal_events_reach_another_process_without_polling(dispatch, run):
     import threading
 
@@ -154,6 +157,7 @@ def test_signal_events_reach_another_process_without_polling(dispatch, run):
         listener.close()
 
 
+@pytest.mark.cli_process
 def test_idle_chat_time_and_prep_failures_do_not_flag_ticket_progress(dispatch, run, monkeypatch):
     from acp.schema import AgentMessageChunk, TextContentBlock, ToolCallStart
 

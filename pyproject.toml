@@ -26,6 +26,7 @@ markers = [
     "req(id): the spec requirement a test protects, QUAL-009 and E4",
     "kind(kind): fixture, simulation or real, QUAL-014",
     "browser: drives the page in a browser; left out of the default run, run with pytest -m browser",
+    "cli_process: each CLI call the test makes runs as its own process, for behaviour between processes",
 ]
 
 [tool.pyright]

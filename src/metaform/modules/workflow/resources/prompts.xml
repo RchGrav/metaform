@@ -1699,6 +1699,8 @@ When your YIELD is complete, run `metaform <nonce/> complete`, or over MCP call 
 <skill/>
 
 <input/></served>
+<!-- The input a skill is given, bound as data after the skill in assignment and served; empty when there is none,
+     MCP-034. -->
 <assignment_input>&lt;&lt;DATA: Input&gt;&gt;
 <input/>
 &lt;&lt;END DATA&gt;&gt;</assignment_input>

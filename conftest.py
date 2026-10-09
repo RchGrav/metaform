@@ -28,16 +28,23 @@ def home(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def run(home, tmp_path):
-    """Run the real CLI as a user would, from a chosen folder."""
+def run(home, tmp_path, request):
+    """Run the real CLI as a user would, from a chosen folder. It runs in this process, through the same entry point
+    a new process uses, because starting Python for each of the suite's twelve hundred calls cost most of a run. A
+    test marked cli_process, one about what crosses between processes, runs each call as its own process, as does
+    isolated=True on one call or METAFORM_TEST_SUBPROCESS=1 for the whole run."""
     from metaform import harness
+    separate = request.node.get_closest_marker('cli_process') is not None
 
-    def invoke(*args, cwd=None, ok=True, input=None, env=None):
+    def invoke(*args, cwd=None, ok=True, input=None, env=None, isolated=separate):
         folder = Path(cwd or tmp_path)
         folder.mkdir(parents=True, exist_ok=True)
-        result = subprocess.run([sys.executable, '-m', 'metaform', *args], cwd=folder,
-                                env={**os.environ, 'METAFORM_HOME': str(home), **(env or {})},
-                                capture_output=True, text=True, encoding='utf-8', input=input, check=False)
+        environment = {**os.environ, 'METAFORM_HOME': str(home), **(env or {})}
+        if isolated or os.environ.get('METAFORM_TEST_SUBPROCESS') == '1':
+            result = subprocess.run([sys.executable, '-m', 'metaform', *args], cwd=folder, env=environment,
+                                    capture_output=True, text=True, encoding='utf-8', input=input, check=False)
+        else:
+            result = _in_process(list(args), folder, environment, input)
         # MCP-028's notice is checked in test_provision; these assertions concern the command's own output.
         # The notice drops its first-run sentence once an intake exists, so both forms are stripped.
         for notice in (harness.NOTICE, harness.NOTICE.removeprefix(harness.FIRST_RUN)):
@@ -47,6 +54,35 @@ def run(home, tmp_path):
                                  f'{result.stdout}{result.stderr}')
         return result
     return invoke
+
+
+def _in_process(args, folder, environment, given):
+    """One CLI call in this process, as `python -m metaform` makes it, with its own folder, environment, input and
+    output; the process's own are put back afterwards."""
+    import io
+
+    from metaform import cli
+    out, err = (io.TextIOWrapper(io.BytesIO(), encoding='utf-8', newline='') for _ in range(2))
+    saved = (sys.stdin, sys.stdout, sys.stderr, os.getcwd(), dict(os.environ))
+    sys.stdin = io.TextIOWrapper(io.BytesIO((given or '').encode('utf-8')), encoding='utf-8')
+    sys.stdout, sys.stderr = out, err
+    os.environ.clear()
+    os.environ.update(environment)
+    os.chdir(folder)
+    try:
+        try:
+            code = cli.main(args)
+        except SystemExit as stopped:
+            code = stopped.code if isinstance(stopped.code, int) else (0 if stopped.code is None else 1)
+        out.flush()
+        err.flush()
+    finally:
+        sys.stdin, sys.stdout, sys.stderr = saved[0], saved[1], saved[2]
+        os.chdir(saved[3])
+        os.environ.clear()
+        os.environ.update(saved[4])
+    return subprocess.CompletedProcess([sys.executable, '-m', 'metaform', *args], code,
+                                       out.buffer.getvalue().decode('utf-8'), err.buffer.getvalue().decode('utf-8'))
 
 
 @pytest.fixture

@@ -17,7 +17,8 @@ FIELDS = {
     'element': VERSION | {'address', 'name_length', 'name', 'role'},
     'join': VERSION | {'type', 'receiver', 'purpose', 'ef', 'ifd', 'element', 'held'},  # held: its elements, in order
 }
-ELEMENT = {'namespace_address', 'name_length', 'name', 'role'}
+# within: the element that holds this one, up to the core node, BASE-039 amendment 2026-10-08
+ELEMENT = {'namespace_address', 'name_length', 'name', 'role', 'within'}
 JOIN = {'receiver', 'elements', 'purpose', 'ef', 'ifd'}
 TICKET = {'condition', 'note'}  # a ticket written beside what was recorded, apart from the map
 
@@ -47,9 +48,9 @@ def test_the_metaform_holds_only_the_fields_of_its_shape(home, store):
 def test_the_tools_that_write_the_metaform_take_no_field_beyond_its_shape():
     from metaform.modules.intake import MODULE
     taken = {verb.name: {noun.name for noun in verb.nouns} for verb in MODULE.verbs}
-    # An element's refs go to the sources layer; a join takes none.
+    # Refs, an element's or a join's, go to the sources layer, never into the metaform, BASE-039 amendment 2026-10-08.
     assert taken['element'] - TICKET == ELEMENT | {'refs'}, sorted(taken['element'])
-    assert taken['join'] - TICKET == JOIN, sorted(taken['join'])
+    assert taken['join'] - TICKET == JOIN | {'refs'}, sorted(taken['join'])
     from metaform.modules.map import READS, REFINE_FIELDS
     assert READS['add-element'] <= {'address', 'name_length', 'name', 'role', 'refs'}, sorted(READS['add-element'])
     assert READS['add-join'] <= {'receiver', 'elements', 'purpose', 'ef', 'ifd', 'type'}, sorted(READS['add-join'])

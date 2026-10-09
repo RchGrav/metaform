@@ -13,7 +13,7 @@ from contextlib import closing
 import pytest
 
 pytestmark = [pytest.mark.req('STORE-006'), pytest.mark.kind('real')]
-WORKERS, OPERATIONS = 6, 320
+WORKERS, OPERATIONS = 6, 60  # 360 overlapping writes race as the incident did; 320 each took a minute
 
 
 def _write(home: str, index: int, ids: list[str], failures) -> None:

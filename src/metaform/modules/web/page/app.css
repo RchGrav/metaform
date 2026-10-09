@@ -412,7 +412,7 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 #board .card .glyph{width:16px;height:16px;flex:none}
 /* the agents on the 2D map, VIEW-035: drawn over the boxes, never in the way of a click on them */
 .agents2d{pointer-events:none}
-.agents2d image{filter:drop-shadow(0 1px 2px rgb(0 0 0 / .45))}
+.agents2d image{filter:drop-shadow(0 1px 2px color-mix(in srgb, var(--shadow) 45%, transparent))}
 #board .columns{flex:1;min-height:0;display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:12px;padding:12px;overflow:auto}
 #board .column{display:flex;flex-direction:column;min-height:0;background:color-mix(in srgb,var(--panel-2) 72%,transparent);border:1px solid var(--line);border-radius:12px}
 #board .column .head{display:flex;justify-content:space-between;align-items:center;padding:10px 12px 6px;font:600 12px var(--sans);color:var(--muted);text-transform:uppercase;letter-spacing:.08em}

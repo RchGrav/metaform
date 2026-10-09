@@ -56,7 +56,7 @@ def test_the_chassis_depends_only_on_pure_python_packages():
 @pytest.mark.req('BASE-041')
 @pytest.mark.req('BASE-022')
 def test_a_build_carries_only_the_enabled_modules_and_their_dependencies(run, home):
-    wheel, _ = build(run, 'mcp', 'memory', 'intake', 'web')
+    wheel, _ = build(run, 'mcp', 'memory', 'intake', 'web', 'fork')  # fork ships enabled, BASE-017
     assert re.fullmatch(r'metaform-.+-py3-none-any\.whl', wheel.name)
     assert wheel.parent.parent == home / 'builds'
     with zipfile.ZipFile(wheel) as archive:
