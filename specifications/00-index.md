@@ -17,7 +17,7 @@ Every design decision goes into this spec when it is decided, in the record that
 ## Sources absorbed
 
 - The owner's design, drawn into requirements and settled in conversation, is carried by the records here. TRACE.md maps every requirement to them.
-- `../src/metaform/modules/intake/resources/intake.axiom`: the current intake procedure, the digital typology intake compiled to Axiom, served by the intake module, BASE-039, with its schema `metaform.axiom` beside it. Earlier intakes are in the history.
+- `../src/metaform/modules/intake/resources/intake.xml`: the current intake procedure, the digital typology intake as its author wrote it, served by the intake module, BASE-039, with its schema `metaform.axiom` beside it. Earlier intakes are in the history.
 - The owner's design of workflows, 2026-10-03: the `workflow` root, logic requirements called by address and name, control flow, handoffs by nonce, workflow layers, ingest and authoring, and what is left to build. It is carried by the workflow records in sections 01, 02 and 04. How an address and its prefixes carry inference is carried by section 01.
 - `code_quality_standards.md`: the quality bar, carried by section 7.
 
@@ -37,7 +37,6 @@ Every design decision goes into this spec when it is decided, in the record that
 | OPEN-QUESTIONS.md | D, E | Every open design and scope question with a recommendation, and the engineering choices made |
 | TRACE.md | | Every source requirement mapped to the records that carry it |
 | BUILD-BRIEF.md | | How the building agent works from this spec |
-| HANDOFF.md | | Where the build stands and what comes next |
 | CAPTURE.md | | Every design point from the design discussion, with the record that carries it |
 
 The Open questions list at the end of each section shows the questions that section raised. OPEN-QUESTIONS.md is the single merged list; answers are recorded there and in the owning records.
