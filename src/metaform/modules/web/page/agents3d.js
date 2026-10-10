@@ -19,8 +19,10 @@ export const GLYPHS = [
   'seahorse',
 ];
 
+// A harness's ring colour, by the agent id the dispatch module names it with, claude, codex or gemini, VIEW-039,
+// and by the longer names harnesses go by.
 export const HARNESS_RING = {
-  'claude-code': 0xd97757, codex: 0xe8e8e8, 'gemini-cli': 0x4f8cff, pi: 0xff5fa2,
+  claude: 0xd97757, 'claude-code': 0xd97757, codex: 0xe8e8e8, gemini: 0x4f8cff, 'gemini-cli': 0x4f8cff, pi: 0xff5fa2,
   hermes: 0x38e0a0, opencode: 0xf5c542, crush: 0xa78bfa, other: 0x7d88b0,
 };
 
@@ -731,7 +733,7 @@ export function createAgent(name, { harness = 'other', halo = false } = {}) {
   let t = Math.random() * 10, prev = null;
   const smooth = { turn: 0, climb: 0 };
   agent.userData = {
-    glyph: name, harness,
+    glyph: name, harness, turnRate: 0,
     // dt in seconds; busy 0..1 speeds the motion up (working rather than travelling)
     update(dt, { busy = 0 } = {}) {
       t += dt;
@@ -746,6 +748,7 @@ export function createAgent(name, { harness = 'other', halo = false } = {}) {
       prev = { yaw: _ev.y, y: _wp.y };
       smooth.turn += (turn - smooth.turn) * Math.min(1, dt * 4);
       smooth.climb += (climb - smooth.climb) * Math.min(1, dt * 4);
+      agent.userData.turnRate = smooth.turn;   // read by orientAgent, which leans a flyer into its turn
       anim(t, 1 + busy * 1.5, { busy, turn: smooth.turn, climb: smooth.climb, dt });
       if (ring) { ring.rotation.z += dt * (0.6 + busy * 3); ring.material.opacity = 0.75 + Math.sin(t * 3) * 0.2 + busy * 0.05; }
     },
@@ -754,14 +757,22 @@ export function createAgent(name, { harness = 'other', halo = false } = {}) {
 }
 
 const _q = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, 'YXZ');
+// The characters that walk, creep or hop keep upright in a turn; the seahorse leans by itself. The rest fly or swim and
+// lean into a turn, as a body moving through air or water does.
+const UPRIGHT = new Set(['snail', 'beetle', 'slime', 'mushroom', 'seahorse']);
+const LEAN = 0.09, MOST_LEAN = 0.35;   // radians of lean for each radian a second of turn, and the most
 // Turn the agent's +Z toward a direction, upright, smoothing over a few frames.
 // Built from yaw and a small pitch, so facing straight backward never flips.
-export function orientAgent(agent, direction, smoothing = 0.2) {
+// `smoothing` is the share of the way turned in a frame at 60 frames a second; given the frame's `dt` in seconds, the
+// share is that of the time that passed, so a figure turns at one pace whatever the frame rate.
+export function orientAgent(agent, direction, smoothing = 0.2, dt = null) {
   const h = Math.hypot(direction.x, direction.z);
   if (h < 1e-6) return;
-  _e.set(-Math.atan2(direction.y, h) * 0.35, Math.atan2(direction.x, direction.z), 0);
+  const lean = UPRIGHT.has(agent.userData.glyph) ? 0
+    : Math.max(-MOST_LEAN, Math.min(MOST_LEAN, -(agent.userData.turnRate || 0) * LEAN));
+  _e.set(-Math.atan2(direction.y, h) * 0.35, Math.atan2(direction.x, direction.z), lean);
   _q.setFromEuler(_e);
-  agent.quaternion.slerp(_q, smoothing);
+  agent.quaternion.slerp(_q, dt === null ? smoothing : 1 - Math.pow(1 - smoothing, Math.max(0, dt) * 60));
 }
 // Place the agent at u (0..1) along a THREE.Curve. reverse=true walks it from end to start.
 export function placeAgentOnCurve(agent, curve, u, { reverse = false, lift = 0 } = {}) {

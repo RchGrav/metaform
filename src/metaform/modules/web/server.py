@@ -62,7 +62,7 @@ from metaform.finish_xml import xml as map_xml
 from metaform.module import Stop
 from metaform.outline import markdown as map_markdown
 
-from . import WAIT, WILDCARDS, host_port, loopback, reach, ready_line, run_file, spawn, token
+from . import WAIT, WILDCARDS, host_port, loopback, opened_project, reach, ready_line, run_file, spawn, token
 
 HERE = Path(__file__).parent
 STATIC = {'page': HERE / 'page', 'vendor': HERE / 'vendor'}
@@ -370,9 +370,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.events(query.get('project', [''])[-1])
         if url.path == '/api/server':
             return self.send(200, {'pid': os.getpid(), 'home': str(home.home())})
-        if url.path == '/api/projects':
+        if url.path == '/api/projects':  # `opened`: the project of the folder `metaform web` ran in, VIEW-002
             return self.send(200, {'projects': [{'id': found.project_id, 'path': found.path}
-                                                for found in home.projects()]})
+                                                for found in home.projects()], 'opened': opened_project()})
         if url.path == '/api/clear-preview':
             return self.clear_preview(query.get('project', [''])[-1])
         if url.path == '/api/remove-preview':

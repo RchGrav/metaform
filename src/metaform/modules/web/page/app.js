@@ -57,6 +57,400 @@ function keyedFill(node, rows) {
   return changed;
 }
 
+/* ---------- the page's controls: every window, menu and popover on one stack; confirmation and undo; toasts ----------
+ * Each overlay is registered once with its kind, and opening or closing it is only showing or hiding it, wherever in
+ * the page that is done: the stack follows the element's `hidden`. The overlay last opened is on top. Escape closes
+ * the top one and nothing else; focus moves into an overlay as it opens, stays inside a modal one, and goes back to
+ * the control that opened it as it closes. A popover or a menu also closes on a click outside it. While a menu, a
+ * popover or a modal window is open, or the focus is in any overlay or a text field, the maps' keys rest, so a key
+ * meant for a window never moves the map behind it.
+ * The kinds: `menu` and `popover` float under their button and close on a click outside; `window` floats over the
+ * map and stays while the person looks around it, VIEW-030; `dialog` is modal, with a backdrop, and the rest of the
+ * page cannot be used until it closes; `dock` is the chat, which Escape closes only from inside it. */
+const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]):not([type=hidden]),select:not([disabled]),'
+  + 'textarea:not([disabled]),[contenteditable="true"],[tabindex]:not([tabindex="-1"])';
+const OVERLAY = {stack: [], known: new Map(), base: 1000, closing: new Map(), trail: []};
+/* The controls the person last reached, by the focus or by a press, so the one that opened an overlay is known even
+ * when the overlay takes the focus at once or a browser does not focus a button pressed. */
+function rememberReached(node) {
+  const control = node instanceof Element ? node.closest(FOCUSABLE) : null;
+  if (!control) return;
+  OVERLAY.trail = [...OVERLAY.trail.filter(one => one !== control), control].slice(-8);
+}
+document.addEventListener('focusin', event => rememberReached(event.target), true);
+document.addEventListener('pointerdown', event => rememberReached(event.target), true);
+const shown = node => Boolean(node && node.isConnected && node.getClientRects().length && !node.closest('[hidden],[inert]'));
+const focusables = box => [...box.querySelectorAll(FOCUSABLE)].filter(shown);
+/* Register an element as an overlay. `close` hides it as its own close button does, `guard` may keep it open (it
+ * returns false to keep it), `focus` names what takes the focus as it opens (a selector, a function, or false). */
+function overlay(box, {kind = 'window', close = null, guard = null, focus = null} = {}) {
+  OVERLAY.known.set(box, {box, kind, close, guard, focus});
+  if (!box.hidden) opened(box);
+  return box;
+}
+const overlayOf = box => OVERLAY.stack.find(entry => entry.box === box) || null;
+const topOverlay = () => OVERLAY.stack.at(-1) || null;
+/* Whether the maps' keys rest: an overlay that is not a window or the dock is open, or the focus is in one. */
+function overlayHolds(target = document.activeElement) {
+  if (OVERLAY.stack.some(entry => !['window', 'dock'].includes(entry.kind))) return true;
+  return Boolean(target && OVERLAY.stack.some(entry => entry.box.contains(target)));
+}
+function opened(box) {
+  const known = OVERLAY.known.get(box);
+  if (!known) return;
+  const active = document.activeElement;
+  const had = overlayOf(box);
+  OVERLAY.stack = OVERLAY.stack.filter(entry => entry.box !== box);
+  const opener = had ? had.opener : active && active !== document.body && !box.contains(active) ? active
+    : [...OVERLAY.trail].reverse().find(one => one.isConnected && !box.contains(one)) || null;
+  OVERLAY.stack.push({...known, opener});
+  if (box.classList.contains('window') && !had) place(box);
+  $('#tip3d').hidden = true;  // a node's name shown under the pointer does not stay over what opens
+  if (opener?.getAttribute?.('aria-controls') === box.id) opener.setAttribute('aria-expanded', 'true');
+  restack();
+  if (had || known.focus === false) return;
+  requestAnimationFrame(() => {  // once it is drawn, so its controls can take the focus
+    if (box.hidden || box.contains(document.activeElement)) return;
+    const wanted = typeof known.focus === 'function' ? known.focus() : known.focus ? box.querySelector(known.focus) : null;
+    if (wanted === false) return;
+    const fields = focusables(box);
+    const first = wanted || box.querySelector('[data-autofocus]')
+      || (known.kind === 'menu' ? fields.find(one => one.matches('button,[role=menuitem]')) : null)
+      || fields.find(one => one.matches('input:not([type=checkbox]):not([type=radio]),textarea,select,[contenteditable="true"]'))
+      || fields.find(one => !one.classList.contains('close')) || fields[0];
+    if (first) first.focus({preventScroll: true});
+    else { if (!box.hasAttribute('tabindex')) box.setAttribute('tabindex', '-1'); box.focus({preventScroll: true}); }
+  });
+}
+function closed(box) {
+  const entry = overlayOf(box);
+  if (!entry) return;
+  OVERLAY.stack = OVERLAY.stack.filter(one => one !== entry);
+  const opener = entry.opener;
+  if (opener?.getAttribute?.('aria-controls') === box.id) opener.setAttribute('aria-expanded', 'false');
+  restack();
+  for (const hook of OVERLAY.closing.get(box) || []) hook();
+  OVERLAY.closing.delete(box);
+  // The focus goes back to the control that opened it, unless the person has put it somewhere else since.
+  const active = document.activeElement;
+  if (active && active !== document.body && !box.contains(active)) return;
+  const back = shown(opener) ? opener : topOverlay() ? focusables(topOverlay().box)[0] || null : null;
+  back?.focus({preventScroll: true});
+}
+/* Close an overlay as its own close button would, unless its guard keeps it. */
+async function closeOverlay(entry) {
+  if (!entry) return false;
+  if (entry.guard && !(await entry.guard())) return false;
+  if (entry.close) entry.close(); else entry.box.hidden = true;
+  return true;
+}
+/* Run `hook` once when an open overlay next closes, however it closes. */
+function onClosed(box, hook) { OVERLAY.closing.set(box, [...(OVERLAY.closing.get(box) || []), hook]); }
+/* The stack's order is its stacking order, and a modal overlay makes everything under it inert behind a backdrop. */
+const SCRIM = h('div', {id: 'scrim', hidden: true, 'aria-hidden': 'true'});
+document.body.append(SCRIM);
+function restack() {
+  // the chat is stacked as its dock, which holds the tab and the chat in one layer of the page
+  const dock = $('#dock');
+  dock.style.zIndex = '';
+  OVERLAY.stack.forEach((entry, index) => {
+    (dock.contains(entry.box) ? dock : entry.box).style.zIndex = String(OVERLAY.base + index * 2 + 1);
+  });
+  const modal = OVERLAY.stack.findLastIndex(entry => entry.kind === 'dialog');
+  SCRIM.hidden = modal < 0;
+  if (modal >= 0) SCRIM.style.zIndex = String(OVERLAY.base + modal * 2);
+  // what is under the top modal overlay cannot be used; what is open over it can
+  OVERLAY.stack.forEach((entry, index) => { entry.box.inert = modal >= 0 && index < modal; });
+  for (const [box] of OVERLAY.known) if (!overlayOf(box)) box.inert = false;
+  $('.app').inert = modal >= 0;
+  const docked = OVERLAY.stack.findIndex(entry => dock.contains(entry.box));
+  dock.inert = modal >= 0 && docked < modal;
+  $('#reviewNotice').inert = modal >= 0;
+}
+new MutationObserver(changes => {
+  for (const change of changes) {
+    const box = change.target;
+    if (!OVERLAY.known.has(box)) continue;
+    if (box.hidden) closed(box); else opened(box);
+  }
+}).observe(document.body, {attributes: true, attributeFilter: ['hidden'], subtree: true});
+/* Escape closes the top overlay and only that one; the chat dock counts only while the focus is in it, so the chat
+ * left open at the side never takes an Escape meant for the map. With none open it reaches the maps. A search box of
+ * the prompt editor takes its own Escape. */
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Escape' || event.isComposing || !OVERLAY.stack.length) return;
+  if (event.target.closest?.('.CodeMirror-dialog')) return;
+  const active = document.activeElement;
+  const target = [...OVERLAY.stack].reverse().find(entry => entry.kind !== 'dock' || entry.box.contains(active));
+  if (!target) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  closeOverlay(target);
+}, true);
+/* A click outside a menu or a popover closes it; its own button toggles it. Pressed outside, it closes before the
+ * click acts, so the click reaches what it was meant for. */
+document.addEventListener('pointerdown', event => {
+  for (const entry of [...OVERLAY.stack].reverse()) {
+    if (!['menu', 'popover'].includes(entry.kind)) continue;
+    if (entry.box.contains(event.target)) break;  // a click inside the top popover leaves those under it as they are
+    const toggle = entry.opener?.getAttribute?.('aria-controls') === entry.box.id ? entry.opener : null;
+    if (toggle?.contains(event.target)) continue;
+    if (event.target.closest?.('#toast')) continue;
+    closeOverlay(entry);
+  }
+}, true);
+/* Tab stays inside a modal overlay and the ones open over it. */
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Tab') return;
+  const modal = OVERLAY.stack.findLastIndex(entry => entry.kind === 'dialog');
+  if (modal < 0) return;
+  const open = OVERLAY.stack.slice(modal).map(entry => entry.box);
+  const fields = open.flatMap(focusables);
+  if (!fields.length) return;
+  const at = fields.indexOf(document.activeElement);
+  if (at < 0 || (event.shiftKey && at === 0) || (!event.shiftKey && at === fields.length - 1)) {
+    event.preventDefault();
+    fields[event.shiftKey ? (at <= 0 ? fields.length - 1 : at - 1) : (at < 0 || at === fields.length - 1 ? 0 : at + 1)].focus();
+  }
+});
+/* A menu is walked with Up, Down, Home and End, as menus are; a field in it keeps its own keys. */
+document.addEventListener('keydown', event => {
+  const entry = topOverlay();
+  if (!entry || entry.kind !== 'menu' || !entry.box.contains(document.activeElement)) return;
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) || event.target.matches('input,select,textarea')) return;
+  const items = focusables(entry.box).filter(one => one.matches('button,[role=menuitem]'));
+  if (!items.length) return;
+  event.preventDefault();
+  const at = items.indexOf(document.activeElement);
+  const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
+    : (at + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+  items[next].focus();
+});
+/* Where a window opens: where the person last put it, kept in this browser; otherwise a window read beside the map
+ * stands just right of the side column, under the header, a step down from another one open there, and any other
+ * window in the middle of the page. A dialog is placed by its styles. Every place is kept inside the window's view. */
+const PLACES = 'metaform.places';
+function places() { try { return JSON.parse(localStorage.getItem(PLACES) || '{}'); } catch { return {}; } }
+function place(box) {
+  if (box.classList.contains('dialog') || box.id === 'board' || matchMedia('(max-width: 820px)').matches) return;
+  const kept = box.id ? places()[box.id] : null;
+  const size = box.getBoundingClientRect(), head = $('header').getBoundingClientRect().bottom;
+  let left, top;
+  if (kept) [left, top] = [kept.left, kept.top];
+  else if (box.classList.contains('beside')) {
+    const others = OVERLAY.stack.filter(entry => entry.box !== box && entry.box.classList.contains('beside')).length;
+    left = $('aside').getBoundingClientRect().right + 24 + others * 28;
+    top = head + 16 + others * 28;
+  } else [left, top] = [(innerWidth - size.width) / 2, Math.max(head + 8, (innerHeight - size.height) / 2.4)];
+  box.style.left = Math.round(Math.max(8, Math.min(left, innerWidth - Math.min(size.width, innerWidth - 16) - 8))) + 'px';
+  box.style.top = Math.round(Math.max(8, Math.min(top, innerHeight - 48))) + 'px';
+}
+function keepPlace(box) {
+  if (!box.id) return;
+  const kept = places();
+  kept[box.id] = {left: parseFloat(box.style.left) || 0, top: parseFloat(box.style.top) || 0};
+  try { localStorage.setItem(PLACES, JSON.stringify(kept)); } catch { /* storage can be blocked; it opens in its usual place */ }
+}
+
+/* Toasts: what happened, said near the bottom, as long as it takes to read, and kept while it is pointed at or has
+ * the focus. One that can be undone carries Undo. */
+const TOAST = {timer: null, held: false, ms: 0};
+function toast(message, {action = null, run = null, ms = null} = {}) {
+  const box = $('#toast');
+  fill(box, h('span', {class: 'msg'}, message),
+    action ? h('button', {class: 'btn sm', type: 'button', onclick: async () => { box.hidden = true; await run(); }}, action) : null);
+  box.hidden = false;
+  TOAST.ms = ms ?? Math.min(12000, Math.max(action ? 8000 : 4200, 1800 + String(message).length * 45));
+  toastLater(TOAST.ms);
+}
+function toastLater(ms) {
+  clearTimeout(TOAST.timer);
+  if (!TOAST.held) TOAST.timer = setTimeout(() => { $('#toast').hidden = true; }, ms);
+}
+for (const [kind, held] of [['pointerenter', true], ['pointerleave', false], ['focusin', true], ['focusout', false]]) {
+  $('#toast').addEventListener(kind, () => { TOAST.held = held; held ? clearTimeout(TOAST.timer) : toastLater(2500); });
+}
+/* What was just done, with Undo: `undo` writes it back and says whether it could. */
+function undoable(message, undo) {
+  toast(message, {action: 'Undo', run: async () => { if (await undo()) toast('Undone.'); }});
+}
+
+/* The confirmation, the same everywhere a person is asked before something is taken away: what is asked, the one fact
+ * that matters, what is lost and what stays, for an act that removes a project the word confirm typed, as the command
+ * takes --confirm, and the two answers, the safe one first. It is a dialog of its own, or it fills `host`, a panel
+ * the act belongs to, as clearing a project fills the panel under Administration, VIEW-019. It answers true for the
+ * act and false for anything else, Escape and a click away among them. */
+function confirmAct({title = 'Are you sure?', text = '', lost = [], kept = [], verb = 'Remove', cancel = 'Cancel',
+  typed = false, danger = true, host = null}) {
+  const box = host || $('#confirm');
+  const into = host || $('#confirm .body');
+  return new Promise(answer => {
+    let done = false;
+    const settle = value => { if (done) return; done = true; answer(value); };
+    const field = typed ? h('input', {class: 'typed', type: 'text', placeholder: 'confirm', autocomplete: 'off', spellcheck: 'false',
+      'aria-label': 'Type confirm to go on', 'data-autofocus': ''}) : null;
+    const go = h('button', {class: `btn confirm ${danger ? 'danger solid' : 'primary'}`, type: 'button', disabled: typed,
+      onclick: () => { settle(true); if (!host) box.hidden = true; }}, verb);
+    const keep = h('button', {class: 'btn keep', type: 'button', 'data-autofocus': typed ? null : '',
+      onclick: () => { settle(false); box.hidden = true; }}, cancel);
+    if (field) {
+      field.oninput = () => { go.disabled = field.value.trim().toLowerCase() !== 'confirm'; };
+      field.onkeydown = event => { if (event.key === 'Enter' && !go.disabled) go.click(); };
+    }
+    const list = (heading, items, kind) => items.length ? [h('div', {class: 'heading'}, heading),
+      h('ul', {class: kind}, items.map(item => h('li', {}, item)))] : null;
+    fill(into, h('div', {class: `confirm${danger ? ' warn' : ''}`},
+      h('h3', {class: 'ask', id: host ? null : 'confirmTitle'}, title),
+      text ? [text].flat().map(line => h('p', {}, line)) : null,
+      list('What is lost', lost, 'lost'), list('What stays', kept, 'kept'),
+      field ? h('label', {class: 'gate'}, 'Type confirm to go on:', field) : null,
+      h('div', {class: 'acts'}, keep, go)));
+    box.hidden = false;
+    onClosed(box, () => settle(false));
+    if (host && field) setTimeout(() => field.focus(), 0);
+  });
+}
+
+/* A segmented control: one choice of a few, as a row of buttons that act as radios, walked with the arrow keys.
+ * options: [{value, label, title, disabled}]. */
+function segmented({label, options, value, onchange}) {
+  const group = h('div', {class: 'segmented', role: 'radiogroup', 'aria-label': label});
+  const paint = chosen => {
+    value = chosen;
+    for (const button of group.children) {
+      const on = button.dataset.value === String(chosen);
+      button.setAttribute('aria-checked', String(on));
+      button.tabIndex = on ? 0 : -1;
+    }
+  };
+  for (const option of options) group.append(h('button', {type: 'button', role: 'radio', 'data-value': option.value,
+    title: option.title, disabled: option.disabled, onclick: () => { if (String(value) !== String(option.value)) { paint(option.value); onchange?.(option.value); } }},
+    option.label));
+  group.addEventListener('keydown', event => {
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+    event.preventDefault();
+    const buttons = [...group.children].filter(button => !button.disabled);
+    const at = buttons.findIndex(button => button.dataset.value === String(value));
+    const next = buttons[(at + (event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length];
+    next.click(); next.focus();
+  });
+  paint(value);
+  group.set = paint;
+  return group;
+}
+/* A progress bar with how far along in words. `value` from 0 to 1, or null while it cannot be told. */
+function progressBar({label, value = null, words = ''}) {
+  const fillPart = h('div', {class: 'fill'}), said = h('span', {class: 'said'}, words), share = h('span', {class: 'share'});
+  const bar = h('div', {class: 'progressbar', role: 'progressbar', 'aria-label': label, 'aria-valuemin': '0', 'aria-valuemax': '100'},
+    h('div', {class: 'track'}, fillPart), h('div', {class: 'words'}, said, share));
+  bar.set = (next, text = said.textContent) => {
+    bar.classList.toggle('indeterminate', next === null);
+    if (next === null) { bar.removeAttribute('aria-valuenow'); share.textContent = ''; }
+    else {
+      const percent = Math.round(Math.max(0, Math.min(1, next)) * 100);
+      bar.style.setProperty('--value', String(percent / 100));
+      bar.setAttribute('aria-valuenow', String(percent));
+      share.textContent = `${percent}%`;
+    }
+    said.textContent = text;
+    bar.setAttribute('aria-valuetext', [text, next === null ? '' : `${Math.round(next * 100)}%`].filter(Boolean).join(', '));
+  };
+  bar.set(value, words);
+  return bar;
+}
+/* A text to copy, shown whole and read-only, with Copy beside it; the clipboard where the browser gives one, and the
+ * text selected for a copy by hand where it does not. With `rows`, a text of many lines, shown in that many. */
+function copyField({label, text, rows = 0}) {
+  const field = rows ? h('textarea', {readonly: true, rows, 'aria-label': label, spellcheck: 'false', onfocus: event => event.target.select()})
+    : h('input', {type: 'text', readonly: true, value: text, 'aria-label': label, onfocus: event => event.target.select()});
+  if (rows) field.value = text;
+  const copy = h('button', {class: rows ? 'btn' : 'btn icon', type: 'button', 'aria-label': `Copy ${label}`, title: 'Copy',
+    onclick: async () => {
+      try { await navigator.clipboard.writeText(field.value); toast('Copied.'); }
+      catch { field.focus(); field.select(); toast('Press Ctrl+C or Cmd+C to copy it.'); }
+    }}, h('i', {class: 'i i-copy', 'aria-hidden': 'true'}), rows ? 'Copy' : null);
+  const box = h('div', {class: `copyfield${rows ? ' lines' : ''}`}, field, copy);
+  box.set = value => { field.value = value; };
+  return box;
+}
+/* A choice of one, each option with a badge saying whether it can be used here, such as an agent found on this
+ * machine or not; an option that cannot be chosen says why. options: [{value, label, badge, ok, disabled, hint}].
+ * It is a button that opens a list box, walked with the arrow keys, Home and End, and typed into to jump. The list
+ * floats over the page from its button, below it or, where there is more room or the choice is `.up`, above it, so a
+ * window's scrolling body never cuts it off; a scroll elsewhere or a resize closes it. */
+function choice({label, options, value, onchange}) {
+  const id = `choice${++choice.made}`;
+  const shownLabel = h('span', {class: 'lbl'});
+  const shownBadge = h('span');
+  const button = h('button', {class: 'btn', type: 'button', 'aria-haspopup': 'listbox', 'aria-expanded': 'false',
+    'aria-controls': id, 'aria-label': label}, h('span', {style: {display: 'flex', gap: '8px', 'align-items': 'center', 'min-width': '0'}},
+    shownLabel, shownBadge), h('i', {class: 'i i-chev', 'aria-hidden': 'true'}));
+  const list = h('div', {class: 'listbox', id, role: 'listbox', hidden: true, tabindex: '-1', 'aria-label': label});
+  const box = h('div', {class: 'choice'}, button, list);
+  let active = -1;
+  const badge = option => option.badge ? h('span', {class: `badge ${option.ok === false ? 'off' : option.ok ? 'ok' : ''}`}, option.badge) : null;
+  const paint = () => {
+    const chosen = options.find(option => option.value === value) || options[0];
+    shownLabel.textContent = chosen ? chosen.label : '';
+    fill(shownBadge, chosen ? badge(chosen) : null);
+    fill(list, options.map((option, index) => h('div', {role: 'option', id: `${id}-${index}`, 'data-value': option.value,
+      'aria-selected': String(option.value === value), 'aria-disabled': option.disabled ? 'true' : null,
+      class: index === active ? 'active' : null, onclick: () => pick(index), onpointermove: () => { active = index; mark(); }},
+      h('span', {}, option.label), badge(option), option.hint ? h('small', {}, option.hint) : null)));
+  };
+  const mark = () => {
+    [...list.children].forEach((row, index) => row.classList.toggle('active', index === active));
+    if (active >= 0) { list.setAttribute('aria-activedescendant', `${id}-${active}`); list.children[active]?.scrollIntoView({block: 'nearest'}); }
+  };
+  const pick = index => {
+    const option = options[index];
+    if (!option || option.disabled) return;
+    list.hidden = true;
+    if (option.value !== value) { value = option.value; paint(); onchange?.(value); }
+  };
+  const float = () => {
+    const at = button.getBoundingClientRect(), below = innerHeight - at.bottom - 12, above = at.top - 12;
+    const up = box.classList.contains('up') ? above >= 140 || above > below : below < 180 && above > below;
+    const width = Math.min(Math.max(at.width, 240), innerWidth - 16);
+    Object.assign(list.style, {position: 'fixed', left: `${Math.max(8, Math.min(at.left, innerWidth - width - 8))}px`, width: `${width}px`,
+      right: 'auto', top: up ? 'auto' : `${at.bottom + 4}px`, bottom: up ? `${innerHeight - at.top + 4}px` : 'auto',
+      maxHeight: `${Math.max(120, Math.min(320, up ? above : below))}px`});
+  };
+  button.onclick = () => {
+    if (!list.hidden) { list.hidden = true; return; }
+    active = Math.max(0, options.findIndex(option => option.value === value));
+    paint();
+    document.body.append(list);
+    float();
+    list.hidden = false;
+    choice.open.add(list);
+    onClosed(list, () => { choice.open.delete(list); box.append(list); });
+    mark();
+  };
+  list.addEventListener('keydown', event => {
+    const usable = options.map((option, index) => option.disabled ? -1 : index).filter(index => index >= 0);
+    const at = usable.indexOf(active);
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); active = usable[(at + (event.key === 'ArrowDown' ? 1 : -1) + usable.length) % usable.length]; mark(); }
+    else if (event.key === 'Home' || event.key === 'End') { event.preventDefault(); active = event.key === 'Home' ? usable[0] : usable.at(-1); mark(); }
+    else if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); pick(active); }
+    else if (event.key.length === 1 && /\S/.test(event.key)) {
+      const found = usable.find(index => options[index].label.toLowerCase().startsWith(event.key.toLowerCase()));
+      if (found !== undefined) { active = found; mark(); }
+    }
+  });
+  overlay(list, {kind: 'popover', focus: () => list});
+  box.set = (nextOptions, nextValue = value) => { options = nextOptions; value = nextValue; paint(); };
+  box.value = () => value;
+  paint();
+  return box;
+}
+choice.made = 0;
+choice.open = new Set();
+addEventListener('resize', () => { for (const list of choice.open) list.hidden = true; });
+document.addEventListener('scroll', event => {
+  for (const list of choice.open) if (!list.contains(event.target)) list.hidden = true;
+}, true);
+
 /* ---------- reads ---------- */
 const S = {
   projects: [], project: null, bases: [], base: null, layers: [], view: null,
@@ -110,7 +504,7 @@ const same = (a, b) => a.size === b.size && [...a].every(x => b.has(x));
 const ROOTS = ['upstream', 'downstream'];
 /* The side column's width and the split between its small map and its panes are dragged: each is
  * remembered by this browser, and a double-click puts it back. The maps follow the new size as they follow the window. */
-const SIZES = {side: ['metaform.sideWidth', '--side-width', 280, () => innerWidth - 320],
+const SIZES = {side: ['metaform.sideWidth', '--side-width', 320, () => innerWidth - 320],  // never narrower than a phone
   small: ['metaform.smallHeight', '--small-height', 120, () => $('aside').clientHeight - 140]};
 function sized(which, pixels) {
   const [key, name, least, most] = SIZES[which];
@@ -140,7 +534,9 @@ splitter($('#smallSplit'), 'small', moved => moved.clientY - $('#small').getBoun
 const rootsOff = () => { try { return new Set(JSON.parse(localStorage.getItem('metaform.rootsOff') || '[]')); } catch { return new Set(); } };
 const rootOf = address => (address || '').split('.')[0];
 const underHiddenRoot = address => rootsOff().has(rootOf(address));
-/* The layers: a checklist opened from the header's Layers button, one row each, VIEW-007. */
+/* The layers: a checklist opened from the header's Layers button, one row each, VIEW-007. The edges of the project,
+ * upstream and downstream, are listed apart under their own heading, VIEW-046, since they are records and not layers
+ * and the button counts layers only. */
 function renderChips() {
   const on = shownOn();
   const box = $('#layers');
@@ -148,19 +544,7 @@ function renderChips() {
   const listed = S.layers;
   let count = 0;
   const off = rootsOff();
-  for (const root of ROOTS) {
-    const input = h('input', {type: 'checkbox', 'data-root': root, onchange: () => {
-      const next = rootsOff();
-      input.checked ? next.delete(root) : next.add(root);
-      try { localStorage.setItem('metaform.rootsOff', JSON.stringify([...next])); } catch (error) { /* storage can be blocked; the view still changes */ }
-      renderChips();
-      draw3D(); renderLegend(); build2D();
-    }});
-    input.checked = !off.has(root);
-    box.append(h('label', {class: 'layerrow root', style: {'--c': 'var(--muted)'},
-      title: root === 'upstream' ? 'What the project depends on: records under upstream.' : 'Who the project serves: records under downstream.'},
-      input, h('i'), h('span', {class: 'name'}, root), ' ', h('span', {class: 'meta'}, 'root · records')));
-  }
+  box.append(h('div', {class: 'section'}, 'Layers'));
   for (const layer of listed) {
     const usable = layer.ready && !layer.hidden, checked = usable && on.has(layer.name);
     if (checked) count++;
@@ -177,7 +561,21 @@ function renderChips() {
       title: layer.hidden ? 'Hidden: it stays out even when turned on.' : !layer.ready ? 'Still building.' : null},
       input, h('i'), h('span', {class: 'name'}, layer.name), ' ', h('span', {class: 'meta'}, [layer.kind, ...(layer.tags || []), state].join(' · '))));
   }
-  $('#layersBtn').textContent = `Layers · ${count} of ${listed.length}`;
+  box.append(h('div', {class: 'section'}, 'Edges of the project'));
+  for (const root of ROOTS) {
+    const input = h('input', {type: 'checkbox', 'data-root': root, onchange: () => {
+      const next = rootsOff();
+      input.checked ? next.delete(root) : next.add(root);
+      try { localStorage.setItem('metaform.rootsOff', JSON.stringify([...next])); } catch (error) { /* storage can be blocked; the view still changes */ }
+      renderChips();
+      draw3D(); renderLegend(); build2D();
+    }});
+    input.checked = !off.has(root);
+    box.append(h('label', {class: 'layerrow root', style: {'--c': 'var(--muted)'},
+      title: root === 'upstream' ? 'What the project depends on: records under upstream.' : 'Who the project serves: records under downstream.'},
+      input, h('i'), h('span', {class: 'name'}, root), ' ', h('span', {class: 'meta'}, 'root · records')));
+  }
+  $('#layersBtn .lbl').textContent = `Layers · ${count} of ${listed.length}`;
   $('#apply').disabled = S.view === null;
   const folder = S.projects.find(item => item.id === S.project)?.path || '';
   $('#note').textContent = S.view === null
@@ -186,68 +584,142 @@ function renderChips() {
     : `This view differs from ${folder}. Apply to folder runs: metaform set --layers ${[...S.view].join(',')}`;
 }
 
-function showLayers(open) {
-  $('#layerlist').hidden = !open;
-  $('#layersBtn').setAttribute('aria-expanded', String(open));
+/* The header's menus and popovers, each on the overlay stack: its button opens and closes it, a click outside or
+ * Escape closes it, and the focus goes back to its button. */
+function toggler(button, box, open = () => {}) {
+  button.addEventListener('click', async () => {
+    if (!box.hidden) { box.hidden = true; return; }
+    box.hidden = false;
+    await open();
+  });
 }
-$('#layersBtn').onclick = event => { event.stopPropagation(); showLayers($('#layerlist').hidden); };
-document.addEventListener('click', event => {
-  if (!$('#layerlist').hidden && !event.target.closest('.layerpick')) showLayers(false);
-  if (!$('#clearbox').hidden && !event.target.closest('.clearpick')) showClear(false);
-  if (!$('#adminbox').hidden && !event.target.closest('.clearpick')) showAdmin(false);
-  if (!$('#exportbox').hidden && !event.target.closest('.exportpick')) showExport(false);
-  if (!$('#agentbox').hidden && !event.target.closest('.agentpick')) showAgentMenu(false);
+function showLayers(open) { $('#layerlist').hidden = !open; }
+overlay($('#layerlist'), {kind: 'popover', focus: () => $('#layerlist input:not(:disabled)')});
+toggler($('#layersBtn'), $('#layerlist'));
+overlay($('#settingsbox'), {kind: 'popover', focus: '#theme'});
+toggler($('#settingsBtn'), $('#settingsbox'));
+$('#shortcutsBtn').onclick = () => { $('#settingsbox').hidden = true; $('#help').hidden = false; };
+overlay($('#help'), {kind: 'dialog', close: () => { $('#help').hidden = true; }});
+$('#help .close').onclick = () => { $('#help').hidden = true; };
+/* The page's text size, VIEW-023: A down and A up step every size token of the page, the type, the spacing and the
+ * heights of controls, through --ui, so the header, the menus, the panel and the windows follow; the maps draw their
+ * own text and are not scaled. The size is kept in this browser and put back before the page draws, `theme.js`. */
+const TEXTSIZE = {steps: [0.84, 0.92, 1, 1.08, 1.17, 1.27, 1.38, 1.5], start: 3, key: 'metaform.textSize'};
+function textStep() {
+  const now = Number(getComputedStyle(document.documentElement).getPropertyValue('--ui')) || TEXTSIZE.steps[TEXTSIZE.start];
+  return TEXTSIZE.steps.reduce((best, step, index) => Math.abs(step - now) < Math.abs(TEXTSIZE.steps[best] - now) ? index : best, 0);
+}
+function textSize(index) {
+  const at = Math.max(0, Math.min(TEXTSIZE.steps.length - 1, index));
+  document.documentElement.style.setProperty('--ui', String(TEXTSIZE.steps[at]));
+  try { at === TEXTSIZE.start ? localStorage.removeItem(TEXTSIZE.key) : localStorage.setItem(TEXTSIZE.key, String(TEXTSIZE.steps[at])); }
+  catch (error) { /* storage can be blocked; the size still changes */ }
+  $('#textDown').disabled = at === 0;
+  $('#textUp').disabled = at === TEXTSIZE.steps.length - 1;
+  dispatchEvent(new Event('resize'));  // the panes and the maps' areas changed size with it, and the header folds if it must
+}
+$('#textDown').onclick = () => textSize(textStep() - 1);
+$('#textUp').onclick = () => textSize(textStep() + 1);
+textSize(textStep());
+/* Reset puts every size and zoom back as the page opens: the text, the side column and the split under the small map,
+ * the 2D map's least text and its whole view, and the 3D map fitted, each through its own reset. */
+$('#sizesReset').onclick = () => {
+  textSize(TEXTSIZE.start);
+  sized('side', null);
+  sized('small', null);
+  MODE.key = 5;  // the least text of the 2D map's Zoom, VIEW-041
+  fitAll();
+  toast('Sizes and zoom are back to their defaults.');
+};
+/* The header folds its rest behind the menu button below 1100 px, by the styles, and on a wider window whenever its
+ * one row does not hold everything, as at a larger text size: it is measured unfolded, in the same frame, so nothing
+ * flashes. */
+function foldHeader() {
+  const header = $('header');
+  header.classList.remove('fold');
+  if (innerWidth <= 1100) return;  // the styles fold it there
+  header.classList.add('measure');  // each part at its own width, so a row too full shows as overflow
+  const over = header.scrollWidth > header.clientWidth + 1;
+  header.classList.remove('measure');
+  header.classList.toggle('fold', over);
+}
+addEventListener('resize', foldHeader);
+document.fonts?.ready.then(foldHeader);
+/* Below 820 px the header's rest folds behind the menu button. */
+$('#moreBtn').onclick = () => {
+  const open = !$('header').classList.contains('expanded');
+  $('header').classList.toggle('expanded', open);
+  $('#moreBtn').setAttribute('aria-expanded', String(open));
+};
+/* The skip links take the focus to the large map or to the panel. */
+for (const link of document.querySelectorAll('.skip')) link.addEventListener('click', event => {
+  event.preventDefault();
+  const to = link.dataset.skip === 'panel' ? $('#p-object') : largeView();
+  to.focus();
 });
+const largeView = () => $('.app').classList.contains('swapped') ? $('#map2d') : $('#stage');
+// The pointer leaving the 3D map takes the name it showed there with it.
+$('#stage').addEventListener('pointerleave', () => { $('#tip3d').hidden = true; });
 
 /* ---------- clearing the project: what goes and what stays, asked on the page, VIEW-019 ----------
  * The warning is the command's own caution and the clear is the command's own operation, PROJ-025; every open page,
  * this one among them, follows it by the push, VIEW-018. */
-/* The Administration menu, VIEW-019: acts on the project as a whole, reached on purpose. */
-function showAdmin(open) {
-  $('#adminbox').hidden = !open;
-  $('#adminBtn').setAttribute('aria-expanded', String(open));
-}
-$('#adminBtn').onclick = async event => {
-  event.stopPropagation();
-  showClear(false);
-  showExport(false);
-  if (!$('#adminbox').hidden) return showAdmin(false);
-  showAdmin(true);
+/* The Administration menu, VIEW-019: acts on the project as a whole, reached on purpose; what reads first, then what
+ * changes something, and what removes something last and in the danger color. */
+function showAdmin(open) { $('#adminbox').hidden = !open; }
+overlay($('#adminbox'), {kind: 'menu'});
+toggler($('#adminBtn'), $('#adminbox'), async () => {
   try { $('#restoreBtn').disabled = !(await getJson(`/api/backups?project=${encodeURIComponent(S.project)}`)).results.length; }
   catch (error) { $('#restoreBtn').disabled = true; }
-};
+});
+/* The panel under Administration that its acts open in: a clear's warning, the backups, the ignore list. */
+function showClear(open) { $('#clearbox').hidden = !open; }
+overlay($('#clearbox'), {kind: 'popover'});
+/* A backup restored: the project's own backup of what it held is made first, so the restore is undone by restoring
+ * that one. */
 async function restoreFrom(project, backup) {
   const response = await fetch('/api/restore', {method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({project, backup})});
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) return toast(body.error || 'The backup was not restored.');
-  fill($('#clearbox'), h('div', {class: 'warn'}, h('span', {class: 'restored'}, body.said),
-    body.held_before ? h('span', {class: 'next'}, `What the project held was backed up as ${body.held_before}.`) : null,
-    h('div', {class: 'toolbar'}, h('button', {class: 'btn keep', onclick: () => showClear(false)}, 'Close'))));
+  if (!response.ok) { toast(body.error || 'The backup was not restored.'); return false; }
+  fill($('#clearbox'), h('div', {class: 'sheet'}, h('p', {class: 'restored'}, body.said),
+    body.held_before ? h('p', {class: 'next'}, `What the project held was backed up as ${body.held_before}.`) : null,
+    h('div', {class: 'acts'}, h('button', {class: 'btn keep', type: 'button', onclick: () => showClear(false)}, 'Close'))));
+  if (body.held_before) undoable(`Restored ${project} from ${backup}.`, () => restoreFrom(project, body.held_before));
+  return true;
 }
-$('#restoreBtn').onclick = async event => {
-  event.stopPropagation();
+/* A backup's name is the time it was made, 20261010T112014Z, said as a person reads a time: the day and the hour
+ * here, and how long ago. */
+function backupTime(name) {
+  const found = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/.exec(name || '');
+  if (!found) return null;
+  const [, year, month, day, hour, minute, second] = found.map(Number);
+  const at = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  const days = Math.round((new Date().setHours(0, 0, 0, 0) - new Date(at).setHours(0, 0, 0, 0)) / 86400000);
+  const date = days === 0 ? 'Today' : days === 1 ? 'Yesterday' : at.toLocaleDateString([], {day: 'numeric', month: 'short', year: 'numeric'});
+  const seconds = Math.max(0, (Date.now() - at) / 1000);
+  const ago = seconds < 60 ? 'just now' : seconds < 3600 ? `${Math.floor(seconds / 60)} min ago`
+    : seconds < 86400 ? `${Math.floor(seconds / 3600)} h ago` : `${Math.floor(seconds / 86400)} days ago`;
+  return `${date} ${at.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})} · ${ago}`;
+}
+$('#restoreBtn').onclick = async () => {
   showAdmin(false);
   let found;
   try { found = (await getJson(`/api/backups?project=${encodeURIComponent(S.project)}`)).results; }
   catch (error) { return toast(error.message); }
-  fill($('#clearbox'), h('div', {class: 'warn'}, h('b', {}, `Restore ${S.project} from a backup`),
-    h('span', {}, 'What the project holds now is backed up first, so nothing is lost.'),
-    h('ul', {class: 'backups'}, [...found].sort((one, two) => two.name.localeCompare(one.name)).map(kept => h('li', {}, h('span', {}, kept.name), ` ${kept.held} `,
-      h('button', {class: 'btn', onclick: () => restoreFrom(S.project, kept.name)}, 'Restore')))),
-    h('div', {class: 'toolbar'}, h('button', {class: 'btn keep', onclick: () => showClear(false)}, 'Close'))));
+  fill($('#clearbox'), h('div', {class: 'sheet'}, h('h3', {}, `Restore ${S.project} from a backup`),
+    h('p', {}, 'What the project holds now is backed up first, so a restore can be undone.'),
+    h('ul', {class: 'backups'}, [...found].sort((one, two) => two.name.localeCompare(one.name)).map(kept => h('li', {},
+      h('span', {class: 'name', title: kept.name}, kept.name), h('span', {class: 'when'}, backupTime(kept.name) || kept.name),
+      h('span', {class: 'held'}, kept.held),
+      h('button', {class: 'btn sm', type: 'button', onclick: () => restoreFrom(S.project, kept.name)}, 'Restore')))),
+    h('div', {class: 'acts'}, h('button', {class: 'btn keep', type: 'button', onclick: () => showClear(false)}, 'Close'))));
   showClear(true);
 };
-function showClear(open) {
-  $('#clearbox').hidden = !open;
-  $('#clearBtn').setAttribute('aria-expanded', String(open));
-}
 /* The export menu saves the map as a document the command writes: Markdown, MAP-052, or XML, MAP-059; VIEW-024. */
-function showExport(open) {
-  $('#exportbox').hidden = !open;
-  $('#exportBtn').setAttribute('aria-expanded', String(open));
-}
-$('#exportBtn').onclick = event => { event.stopPropagation(); showAdmin(false); showExport($('#exportbox').hidden); };
+function showExport(open) { $('#exportbox').hidden = !open; }
+overlay($('#exportbox'), {kind: 'menu'});
+toggler($('#exportBtn'), $('#exportbox'));
 async function exportAs(format, extension, type) {
   showExport(false);
   const query = new URLSearchParams({project: S.project, ...(S.base ? {base: S.base} : {}), ...viewLayers()});
@@ -264,70 +736,56 @@ $('#exportMarkdown').onclick = () => exportAs('markdown', 'md', 'text/markdown')
 $('#exportXml').onclick = () => exportAs('xml', 'xml', 'application/xml');
 /* The intake's ignore list, .metaform/ignore.txt: what is not the project, said by the person up front, so the
  * intake never reads it and never judges it. */
-$('#ignoreBtn').onclick = async event => {
-  event.stopPropagation();
+$('#ignoreBtn').onclick = async () => {
   showAdmin(false);
   let found;
   try { found = await read('ignore'); } catch (error) { return toast(error.message); }
-  const text = h('textarea', {class: 'ignore', rows: 8, spellcheck: 'false',
+  const text = h('textarea', {class: 'ignore', rows: 8, spellcheck: 'false', 'data-autofocus': '',
     'aria-label': 'Intake ignores (one pattern per line, like .gitignore)'});
   text.value = found.text || '';
-  fill($('#clearbox'), h('div', {class: 'warn'}, h('b', {}, 'Intake ignores (one pattern per line, like .gitignore)'),
-    h('span', {}, `Kept in ${found.file}. The intake never reads what these name.`), text,
-    h('button', {onclick: async () => {
-      if (await wrote('/api/ignore', {text: text.value})) { toast('Ignore list saved.'); showClear(false); }
-    }}, 'Save')));
+  fill($('#clearbox'), h('div', {class: 'sheet'}, h('h3', {}, 'Intake ignores'),
+    h('p', {}, `One pattern per line, like .gitignore. Kept in ${found.file}; the intake never reads what these name.`), text,
+    h('div', {class: 'acts'}, h('button', {class: 'btn keep', type: 'button', onclick: () => showClear(false)}, 'Cancel'),
+      h('button', {class: 'btn primary', type: 'button', onclick: async () => {
+        if (await wrote('/api/ignore', {text: text.value})) { toast('Ignore list saved.'); showClear(false); }
+      }}, 'Save'))));
   showClear(true);
 };
-$('#clearBtn').onclick = async event => {
-  event.stopPropagation();
+$('#clearBtn').onclick = async () => {
   showAdmin(false);
   let found;
   try { found = await getJson(`/api/clear-preview?project=${encodeURIComponent(S.project)}`); }
   catch (error) { return toast(error.message); }
-  fill($('#clearbox'), h('div', {class: 'warn'}, h('b', {}, 'Are you sure?'), h('span', {}, found.caution),
-    h('span', {class: 'backed'}, 'It is backed up first.'),
-    ...typedConfirm('Clear it', () => clearProject(found.project))));
-  showClear(true);
+  if (await confirmAct({title: 'Are you sure?', text: [found.caution, 'It is backed up first.'], verb: 'Clear it',
+    cancel: 'Keep it', typed: true, host: $('#clearbox')})) clearProject(found.project);
 };
-/* The gate on clearing or removing a project: the word confirm, typed, as the command takes --confirm; the
- * destructive button stays off until it is there. */
-function typedConfirm(verb, act) {
-  const field = h('input', {class: 'typed', type: 'text', placeholder: 'confirm', autocomplete: 'off', spellcheck: 'false'});
-  const go = h('button', {class: 'btn danger confirm', disabled: true, onclick: act}, verb);
-  field.oninput = () => { go.disabled = field.value.trim().toLowerCase() !== 'confirm'; };
-  field.onkeydown = event => { if (event.key === 'Enter' && !go.disabled) go.click(); };
-  setTimeout(() => field.focus(), 0);
-  return [h('label', {class: 'gate'}, 'Type confirm to go on:', field),
-    h('div', {class: 'toolbar'}, go, h('button', {class: 'btn keep', onclick: () => showClear(false)}, 'Keep it'))];
-}
 async function clearProject(project) {
   const response = await fetch('/api/clear-project', {method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({project, confirm: true})});
   const body = await response.json().catch(() => ({}));
   if (!response.ok) { showClear(false); return toast(body.error || 'The project was not cleared.'); }
   const left = body.not_removed || [];
-  fill($('#clearbox'), h('div', {class: 'warn'}, h('span', {class: 'said'}, body.said),
-    body.backup ? h('span', {class: 'backed'}, `Backed up as ${body.backup}.`) : null,
+  fill($('#clearbox'), h('div', {class: 'sheet'}, h('p', {class: 'said'}, body.said),
+    body.backup ? h('p', {class: 'backed'}, `Backed up as ${body.backup}.`) : null,
     left.length ? [h('b', {}, 'Not removed, still on disk:'),
       h('ul', {class: 'left'}, left.map(item => h('li', {}, `${item.path}: ${item.reason}`)))] : null,
-    (body.notices || []).map(notice => h('span', {class: 'next'}, notice.message)),
-    h('div', {class: 'toolbar'}, h('button', {class: 'btn keep', onclick: () => showClear(false)}, 'Close'))));
+    (body.notices || []).map(notice => h('p', {class: 'next'}, notice.message)),
+    h('div', {class: 'acts'}, h('button', {class: 'btn keep', type: 'button', onclick: () => showClear(false)}, 'Close'))));
 }
 /* Remove project takes an empty project off the list, PROJ-031: one that still holds metaforms or reports is named
    with what it holds, since a clear backs it up first. */
-$('#removeBtn').onclick = async event => {
-  event.stopPropagation();
+$('#removeBtn').onclick = async () => {
   showAdmin(false);
   let found;
   try { found = await getJson(`/api/remove-preview?project=${encodeURIComponent(S.project)}`); }
   catch (error) { return toast(error.message); }
-  fill($('#clearbox'), found.held
-    ? h('div', {class: 'warn'}, h('span', {class: 'held'}, found.held), h('span', {class: 'next'}, 'Use Clear project first.'),
-      h('div', {class: 'toolbar'}, h('button', {class: 'btn keep', onclick: () => showClear(false)}, 'Close')))
-    : h('div', {class: 'warn'}, h('b', {}, 'Are you sure?'), h('span', {}, found.caution),
-      ...typedConfirm('Remove it', () => removeProject(found.project))));
-  showClear(true);
+  if (found.held) {
+    fill($('#clearbox'), h('div', {class: 'sheet'}, h('p', {class: 'held'}, found.held), h('p', {class: 'next'}, 'Use Clear project first.'),
+      h('div', {class: 'acts'}, h('button', {class: 'btn keep', type: 'button', onclick: () => showClear(false)}, 'Close'))));
+    return showClear(true);
+  }
+  if (await confirmAct({title: 'Are you sure?', text: found.caution, verb: 'Remove it', cancel: 'Keep it', typed: true,
+    host: $('#clearbox')})) removeProject(found.project);
 };
 async function removeProject(project) {
   const response = await fetch('/api/remove-project', {method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -345,6 +803,21 @@ async function removeProject(project) {
 /* After a clear the project has no metaform until the next intake, or anything else written to it, makes one. */
 const noMetaform = () => !S.bases.length;
 const noneYet = () => `${S.project} has no metaform yet. The next intake creates one.`;
+/* The panel of a project with no map: what it is, and the intake, which makes one, as the thing to do. */
+function emptyPanel() {
+  const box = h('div', {class: 'emptypanel'}, h('p', {class: 'empty'}, noMetaform() ? noneYet() : 'Nothing to show in these layers yet.'),
+    h('div', {class: 'acts'}));
+  emptyActs(box);
+  return box;
+}
+/* Its act: Start the intake, or while one runs, its chat. */
+function emptyActs(box) {
+  const running = intakeRunning();
+  fill(box.querySelector('.acts'), S.elements.size ? null : running
+    ? h('button', {class: 'btn', type: 'button', onclick: () => openIntakeChat()}, 'The intake is running · open its chat')
+    : h('button', {class: 'btn primary', type: 'button', onclick: () => openIntake()},
+      h('i', {class: 'i i-spark', 'aria-hidden': 'true'}), 'Start the intake'));
+}
 $('#apply').onclick = async () => {
   if (S.view === null) return;
   const response = await fetch('/api/apply-layers', {method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -443,17 +916,19 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   samplesFor: name => samplesFor(name), drawnBy: () => G ? drawnBy() : '',
   // The samples a pixel are set, so a browser check can compare the picture with the smoothing and without it.
   smooth3d: samples => { if (!G) return; const chain = G.postProcessingComposer();
-    for (const target of [chain.renderTarget1, chain.renderTarget2]) { target.samples = samples; target.dispose(); } },
+    for (const target of [chain.renderTarget1, chain.renderTarget2]) { target.samples = samples; target.dispose(); } wake3d(); },
   // The 3D map stops drawing, or draws again, so a browser check that steps the page's clock frame by frame to read
   // the 2D camera does not draw the 3D map at every step.
-  pause3d: on => { if (G) { if (on) G.pauseAnimation(); else G.resumeAnimation(); } },
+  pause3d: on => { FRAMES.held = Boolean(on); if (on) { cancelAnimationFrame(FRAMES.id); clearTimeout(FRAMES.timer); FRAMES.id = FRAMES.timer = 0; } else wake3d(); },
+  // The frames the 3D map has drawn, which stop once nothing on it moves.
+  frames3d: () => FRAMES.drawn,
   zoom3d: share => { if (G) { const at = G.camera().position; G.cameraPosition({x: at.x * share, y: at.y * share, z: at.z * share}, undefined, 0); } },
   glass: (on, options = {}, segments = 16) => {  // to measure what it costs
     if (!G) return;
     Object.assign(GLASS, options);
     SEGMENTS = segments;
     shapes.clear();
-    G.nodeThreeObject(node => asText(node) ? written(node) : on && isGlass(node) ? bead(node) : false);
+    G.nodeThreeObject(node => nodeObject(node, on));
   }, bloom: () => ({pass: Boolean(BLOOM), levels: BLOOM ? BLOOM.levels : 0, on: Boolean(BLOOM?.enabled)}),
   wave: () => ({dots: W.dots.length, shapes: G ? G.renderer().info.memory.geometries : 0,
     lit: G ? G.graphData().nodes.filter(node => node.__threeObj?.material?.userData.pulsed).map(node => node.id) : []}),
@@ -472,7 +947,7 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
     return {x: box.left + point.x, y: box.top + point.y,
       r: Math.cbrt(nodeSize(node)) * 3 / (distance * Math.tan(camera.fov * Math.PI / 360)) * box.height / 2};
   },
-  waveTimes: times => { Object.assign(TIMES, times, {gaussian: times.gaussian === false ? [] : times.gaussian || TIMES.gaussian}); W.next = W.clock; },
+  waveTimes: times => { Object.assign(TIMES, times, {gaussian: times.gaussian === false ? [] : times.gaussian || TIMES.gaussian}); W.next = W.clock; wake3d(); },
   reach: () => ({property: R.key, edges: R.edges,
     elements: [...S.elements.values()].map(entry => entry.element).filter(element => R.nodes.has(element.id)).map(element => element.address)}),
   own: id => { const node = G ? G.graphData().nodes.find(item => item.id === id) : null; return node ? ownColor(node).toLowerCase() : null; },
@@ -483,10 +958,10 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   // link's dots are, so a browser check can read a picture of a dot passing through a node.
   dots3d: along => {
     if (!G) return [];
-    G.linkDirectionalParticleSpeed(0);
+    FLOW.held = along;
+    wake3d();
     const box = $('#stage').getBoundingClientRect();
     return G.graphData().links.filter(link => link.__photonsObj?.children.length).map(link => {
-      for (const dot of link.__photonsObj.children) dot.__progressRatio = along;
       const from = link.source, to = link.target;
       const point = G.graph2ScreenCoords(from.x + (to.x - from.x) * along, from.y + (to.y - from.y) * along,
         from.z + (to.z - from.z) * along);
@@ -495,13 +970,15 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   },
   // Each label of the 3D map: its text and lines, where it is on the page, its rank by depth, higher nearer, whether it
   // is under a nearer node or label, its color and its opacity, and whether it is in the scene and drawn with the depth
-  // test and writing depth, which is what orders it with the nodes and the other labels, VIEW-038.
+  // test, which orders it with the nodes nearer than it, and whether it writes depth, VIEW-038.
   labels3d: () => { const area = $('#stage').getBoundingClientRect();
     return [...tags.values()].map(tag => ({id: tag.id, text: tag.text, lines: tag.lines, hidden: tag.hidden, z: tag.z,
       under: tag.under, color: tag.color.toLowerCase(), opacity: tag.sprite.material.opacity, scene: tag.sprite.parent?.parent === G.scene(),
       depthTest: tag.sprite.material.depthTest, depthWrite: tag.sprite.material.depthWrite, left: area.left + (tag.rect?.left ?? 0), right: area.left + (tag.rect?.right ?? 0),
       top: area.top + (tag.rect?.top ?? 0), bottom: area.top + (tag.rect?.bottom ?? 0)})); },
-  showLabels3d: on => { LABELS.on = Boolean(on); if (LABELS.group) LABELS.group.visible = LABELS.on; },
+  // `only`, a list of node ids, shows those labels alone, so a picture of one label is not changed by another's.
+  showLabels3d: (on, only = null) => { LABELS.on = Boolean(on); LABELS.only = only ? new Set(only) : null;
+    if (LABELS.group) LABELS.group.visible = LABELS.on; wake3d(); },
   hover3d: id => { const node = G?.graphData().nodes.find(item => item.id === id); hovered = node || null;
     $('#tip3d').hidden = !hovered; if (hovered) { fill($('#tip3d'), tipFor(hovered)); placeTip(); } },
   figures2d: () => [...ROAM2D.figures.values()].map(figure => ({work_id: figure.id, glyph: figure.glyph, stage: figure.stage,
@@ -539,9 +1016,7 @@ function look(id) {
     animated2d: box ? getComputedStyle(box).animationName !== 'none' || getComputedStyle(group).animationName !== 'none' : false,
     opacity3d: material ? material.opacity : null,
     light3d: material ? material.emissiveIntensity ?? null : null,
-    text3d: Boolean(node?.__threeObj?.userData.written),  // until the node itself is drawn in its place
-    turns: writing.get(id)?.rate ?? 0, pace: node ? paceOf(node) : null,
-    text: textOf(id), signal3d: writing.get(id)?.reached ?? 0, signalColor3d: writing.get(id)?.signalColor ?? null,
+    ghost: Boolean(node?.__threeObj?.userData.ghost), pace: node ? paceOf(node) : null,  // a part not built, VIEW-027
     glow2d: Boolean(box) && ['broken', 'trouble', 'question', 'message'].some(name => group.classList.contains('work-' + name))
       && [group, box].some(part => getComputedStyle(part).filter.includes('drop-shadow')),
     red3d: material ? '#' + material.color.getHexString() === css('--broken').toLowerCase() : false,
@@ -553,8 +1028,8 @@ function look(id) {
     backside: Boolean(material?.userData.back && BEHIND.main && material.buffer === BEHIND.main.texture
       && material.userData.back.side === THREE.BackSide),
     shape: node?.__threeObj?.geometry ? node.__threeObj.geometry.uuid : null,
-    // what is drawn around the node besides the node itself; the node that fades in over text is the node
-    around3d: node?.__threeObj ? node.__threeObj.children.filter(child => !child.userData.arriving).length : null,
+    // what is drawn around the node besides the node itself
+    around3d: node?.__threeObj ? node.__threeObj.children.length : null,
     reach3d: R.nodes.has(id), reach2d: Boolean(group?.classList.contains('reach')),
 
     bloom2d: Boolean(box && getComputedStyle(group).filter.includes('drop-shadow')),
@@ -572,9 +1047,16 @@ const CONDITIONS = ['missing', 'unbuilt', 'under-construction', 'broken', 'troub
  * not built, shows how far along the work is. A figure is big enough to see what it is with the whole map in view:
  * its size is a share of the drawn map's span, and never less than ROAM.size. A ticket that was finished before its
  * figure got there is still touched, and then the figure walks back. A figure is one of the seventeen characters of
- * agents3d.js, drawn so that no two at work look alike. With reduced motion it stands at the node. */
+ * agents3d.js, drawn so that no two at work look alike. It moves as a body does: along a smooth curve through the
+ * nodes of its way, setting off and arriving gently and slowing into sharp turns, facing the way it goes and, if it
+ * flies or swims, leaning into its turns; it swings out onto its orbit carrying on the way it came, and leaves it from
+ * where it is. With reduced motion it stands at the node. */
 const ROAM = {figures: new Map(), seen: new Set(), last: 0, speed: 70, size: 2.6, share: 0.11, orbit: 1.5, lap: 12,
-  recent: 120, appear: 0.8, touch: 0.9, vanish: 0.6};
+  recent: 120, appear: 0.8, touch: 0.9, vanish: 0.6,
+  // how it moves along its way: units a second it speeds up and slows down by, and how much of its speed a turn
+  // straight back takes off, a gentler turn less; how long it takes to settle from its way onto its orbit; and how
+  // fast the size it is drawn at follows the map's span, so a layout that spreads never makes it jump
+  accel: 70, corner: 0.6, settle: 1.1, grow: 10, drawn: 0, sized: 0};
 const nodeById = (data, id) => data.nodes.find(node => node.id === id);
 const primaryOf = data => data.nodes.find(node => node.t === 'el' && node.role === 'DE') || data.nodes.find(node => node.t === 'el');
 const ticketNode = ticket => ticket.node_kind === 'join' ? 'p:' + ticket.node_id : ticket.node_id;
@@ -622,17 +1104,75 @@ function figures(tickets) {
       G.scene().add(mesh);
       ROAM.seen.add(ticket.id);
       ROAM.figures.set(ticket.id, {id: ticket.id, glyph, mesh, home: home.id, target, stage: 'arriving',
-        path: routeOf(data, home.id, target), leg: 0, along: 0, clock: 0, angle: Math.random() * Math.PI * 2,
-        done: Boolean(ticket.done)});
+        way: routeOf(data, home.id, target).map(id => ({id})), u: 0, speed: 0, clock: 0, angle: Math.random() * Math.PI * 2,
+        points: [], curve: new THREE.CatmullRomCurve3([], false, 'centripetal'), from: new THREE.Vector3(),
+        heading: new THREE.Vector3(0, 0, 1), done: Boolean(ticket.done)});
     }
   }
   for (const [id, figure] of ROAM.figures) if (!tickets.some(ticket => ticket.id === id)) figure.done = true;
+  wake3d();
 }
-const AHEAD = new THREE.Vector3();
+/* The places a figure's way passes: each node a little above its center, or the point where the figure left its orbit.
+ * Read again each frame, so a figure on its way moves with the map as the layout moves it. False while a node of the
+ * way is not drawn. */
+function placed(figure, data, lift) {
+  const points = figure.points;
+  points.length = figure.way.length;
+  for (let k = 0; k < figure.way.length; k++) {
+    const step = figure.way[k];
+    points[k] = points[k] || new THREE.Vector3();
+    if (step.point) { points[k].copy(step.point); continue; }
+    const node = nodeById(data, step.id);
+    if (!node || node.x === undefined) return false;
+    points[k].set(node.x, node.y + lift, node.z);
+  }
+  figure.curve.points = points;
+  return points.length >= 2;
+}
+/* A figure walks its way as one smooth curve through its places. It sets off from rest, speeding up by ROAM.accel to
+ * ROAM.speed, takes each turn slower the sharper it is, and slows to rest as it arrives, so it never starts, stops or
+ * turns at once. Its place on the way is its leg and how far along that leg it is, so it keeps to the edge it is on
+ * while the layout moves the nodes. Says whether it has arrived. */
+const HEAD = new THREE.Vector3(), NEXT = new THREE.Vector3();
+function walk(figure, passed) {
+  const points = figure.points, legs = points.length - 1, lengths = [];
+  let total = 0;
+  for (let k = 0; k < legs; k++) { lengths.push(Math.max(1e-3, points[k].distanceTo(points[k + 1]))); total += lengths[k]; }
+  const leg = Math.min(legs - 1, Math.floor(figure.u));
+  let done = (figure.u - leg) * lengths[leg];
+  for (let k = 0; k < leg; k++) done += lengths[k];
+  const least = ROAM.speed * 0.12, reach = (limit, away) => Math.sqrt(limit * limit + 2 * ROAM.accel * Math.max(0, away));
+  let speed = Math.min(ROAM.speed, reach(least, done), reach(least, total - done));
+  for (let k = 1, at = lengths[0]; k < legs; at += lengths[k], k++) {
+    const turn = HEAD.subVectors(points[k], points[k - 1]).normalize().dot(NEXT.subVectors(points[k + 1], points[k]).normalize());
+    speed = Math.min(speed, reach(ROAM.speed * (1 - ROAM.corner * (1 - turn) / 2), Math.abs(at - done)));
+  }
+  let step = speed * passed;
+  while (step > 0 && figure.u < legs) {
+    const now = Math.min(legs - 1, Math.floor(figure.u)), room = (now + 1 - figure.u) * lengths[now];
+    if (step < room) { figure.u += step / lengths[now]; step = 0; } else { step -= room; figure.u = now + 1; }
+  }
+  figure.speed = speed;
+  return figure.u >= legs - 1e-6;
+}
+/* The point a figure circles its node from, measured from the node, and its first turn on the orbit: the side of the
+ * node that lets it carry straight on the way it came, so it swings out onto its orbit with no turn back. */
+function onOrbit(figure, target) {
+  figure.from.copy(figure.mesh.position).sub(AT.set(target.x, target.y, target.z));
+  const across = Math.hypot(figure.heading.x, figure.heading.z);
+  if (across > 1e-3) figure.angle = Math.atan2(-figure.heading.x / across, figure.heading.z / across);
+}
+const AHEAD = new THREE.Vector3(), ORBIT = new THREE.Vector3();
+const easeBoth = k => k * k * (3 - 2 * k);  // from rest to rest
 function roam3d(data) {
   const now = performance.now() / 1000, passed = Math.min(0.1, Math.max(0, now - (ROAM.last || now)));
   ROAM.last = now;
-  const size = ROAM.figures.size ? sizeOf(data) : ROAM.size;
+  // The size follows the map's span gently, so a layout still spreading never makes a figure jump in size.
+  const real = Math.min(1, Math.max(0, now - (ROAM.sized || now)));
+  ROAM.sized = now;
+  const size = ROAM.drawn = ROAM.figures.size
+    ? (ROAM.drawn ? ROAM.drawn + (sizeOf(data) - ROAM.drawn) * (1 - Math.exp(-real * ROAM.grow)) : sizeOf(data)) : 0;
+  const lift = size * 0.6;
   for (const [id, figure] of ROAM.figures) {
     const {mesh} = figure;
     const gone = () => { G.scene().remove(mesh); releaseGlyph(id); ROAM.figures.delete(id); };
@@ -647,48 +1187,57 @@ function roam3d(data) {
     }
     if (figure.stage === 'arriving') {  // it materializes on the most primary node
       const grown = Math.min(1, figure.clock / ROAM.appear), over = 1 + 1.7 * Math.pow(grown - 1, 3) + 0.7 * Math.pow(grown - 1, 2);
-      mesh.position.set(home.x, home.y + ballOf(home) + size * 0.6, home.z);
+      mesh.position.set(home.x, home.y + lift, home.z);
       mesh.scale.setScalar(size * Math.max(0.001, over));
-      if (grown >= 1) Object.assign(figure, {stage: 'going', leg: 0, along: 0, clock: 0});
+      if (grown >= 1) Object.assign(figure, {stage: 'going', u: 0, clock: 0});
     } else if (figure.stage === 'going' || figure.stage === 'returning') {  // along the map's own edges
-      const from = nodeById(data, figure.path[figure.leg]), to = nodeById(data, figure.path[figure.leg + 1]);
-      if (!from || !to || from.x === undefined || to.x === undefined) {
-        Object.assign(figure, figure.stage === 'going' ? {stage: figure.done ? 'touching' : 'circling'} : {stage: 'leaving'}, {clock: 0});
+      const going = figure.stage === 'going';
+      if (!placed(figure, data, lift)) {  // a node of its way left the map: it goes on to what comes next
+        onOrbit(figure, target);
+        Object.assign(figure, going ? {stage: figure.done ? 'touching' : 'circling'} : {stage: 'leaving'}, {clock: 0});
         continue;
       }
-      AHEAD.set(to.x - from.x, to.y - from.y, to.z - from.z);
-      const length = Math.max(1, AHEAD.length());
-      figure.along = Math.min(1, figure.along + passed * ROAM.speed / length);
-      const hop = Math.sin(Math.PI * figure.along) * Math.min(6, length * 0.08);
-      mesh.position.set(from.x + AHEAD.x * figure.along, from.y + AHEAD.y * figure.along + size * 0.6 + hop,
-        from.z + AHEAD.z * figure.along);
+      const arrived = walk(figure, passed), along = figure.u / (figure.points.length - 1);
+      figure.curve.getPoint(along, mesh.position);
+      figure.curve.getTangent(along, AHEAD);
+      if (AHEAD.lengthSq() > 1e-8) figure.heading.copy(AHEAD);
       mesh.scale.setScalar(size);
-      orientAgent(mesh, AHEAD, 0.25);
-      if (figure.along >= 1) {
-        figure.leg += 1;
-        figure.along = 0;
-        if (figure.leg >= figure.path.length - 1) {
-          Object.assign(figure, {clock: 0, stage: figure.stage === 'returning' ? 'leaving' : figure.done ? 'touching' : 'circling'});
-        }
+      orientAgent(mesh, figure.heading, 0.25, passed);
+      if (arrived) {
+        if (going) onOrbit(figure, target);
+        Object.assign(figure, {clock: 0, stage: !going ? 'leaving' : figure.done ? 'touching' : 'circling'});
       }
     } else if (figure.stage === 'circling') {  // on the node, around it, slowly at one steady pace
-      const out = Math.min(1, figure.clock / 0.6), eased = 1 - Math.pow(1 - out, 3);  // it spirals out onto its orbit
-      const reach = (ballOf(target) + size * ROAM.orbit) * eased;
       figure.angle += passed * 2 * Math.PI / ROAM.lap;
-      const turn = figure.angle;
-      mesh.position.set(target.x + Math.cos(turn) * reach, target.y + Math.sin(turn * 2) * reach * 0.18 + size * 0.3,
-        target.z + Math.sin(turn) * reach);
+      const turn = figure.angle, reach = ballOf(target) + size * ROAM.orbit;
+      // It swings out from where it arrived onto its orbit, carrying on the way it came, and then holds the orbit.
+      const settled = easeBoth(Math.min(1, figure.clock / ROAM.settle));
+      ORBIT.set(Math.cos(turn) * reach, Math.sin(turn * 2) * reach * 0.18 + size * 0.3, Math.sin(turn) * reach);
+      ORBIT.lerpVectors(figure.from, ORBIT, settled);
+      mesh.position.set(target.x, target.y, target.z).add(ORBIT);
       mesh.scale.setScalar(size);
       AHEAD.set(-Math.sin(turn), Math.cos(turn * 2) * 0.36, Math.cos(turn));
-      orientAgent(mesh, AHEAD, 0.3);
-      if (figure.done) Object.assign(figure, {stage: 'returning', path: routeOf(data, figure.target, figure.home), leg: 0, along: 0, clock: 0});
-    } else if (figure.stage === 'touching') {  // finished before it got there: it still touches the node
-      const dip = Math.min(1, figure.clock / ROAM.touch);
-      mesh.position.set(target.x, target.y + ballOf(target) * (1 - 0.6 * Math.sin(Math.PI * dip)) + size * 0.4, target.z);
-      if (dip >= 1) Object.assign(figure, {stage: 'returning', path: routeOf(data, figure.target, figure.home), leg: 0, along: 0, clock: 0});
+      figure.heading.lerp(AHEAD, settled);
+      orientAgent(mesh, figure.heading, 0.3, passed);
+      if (figure.done) {  // it leaves its orbit from where it is, on the fewest edges back
+        const back = routeOf(data, figure.target, figure.home);
+        Object.assign(figure, {stage: 'returning', u: 0, clock: 0,
+          way: [{point: mesh.position.clone()}, ...(back.length > 1 ? back.slice(1) : [figure.home]).map(id => ({id}))]});
+      }
+    } else if (figure.stage === 'touching') {  // finished before it got there: it still touches the node, then leaves
+      const dip = Math.sin(Math.PI * Math.min(1, figure.clock / ROAM.touch));
+      ORBIT.copy(figure.from);
+      ORBIT.y += (ballOf(target) * 0.4 + size * 0.4 - ORBIT.y) * dip;
+      mesh.position.set(target.x, target.y, target.z).add(ORBIT);
+      if (figure.clock >= ROAM.touch) {
+        const back = routeOf(data, figure.target, figure.home);
+        Object.assign(figure, {stage: 'returning', u: 0, clock: 0,
+          way: [{point: mesh.position.clone()}, ...(back.length > 1 ? back.slice(1) : [figure.home]).map(id => ({id}))]});
+      }
     } else if (figure.stage === 'leaving') {  // home again, it is gone
       const faded = Math.min(1, figure.clock / ROAM.vanish);
-      mesh.scale.setScalar(size * Math.max(0.001, 1 - faded));
+      mesh.position.set(home.x, home.y + lift, home.z);
+      mesh.scale.setScalar(size * Math.max(0.001, 1 - faded * faded));
       if (faded >= 1) { gone(); continue; }
     }
     mesh.userData.update(passed);
@@ -698,9 +1247,15 @@ function roam3d(data) {
  * page/agent-glyphs/<glyph>.svg, the glyph its 3D figure is drawn with. It appears on the DE, walks the 2D map's own
  * edges to its ticket's node, circles the node's box while the ticket is open, and when the ticket closes walks back
  * and is gone; a join's ticket is circled at the middle of the join's edge. Its size is a share of a node's height,
- * so it keeps its place beside the boxes at any zoom. With reduced motion it stands above its node. */
+ * so it keeps its place beside the boxes at any zoom, and never so few pixels that it is lost with a large map
+ * whole in view. It walks as the 3D figures do, on a smooth curve, setting off and arriving gently, with a step's
+ * bounce and a lean the way it goes, and swings onto its orbit the way it came. With reduced motion it stands above
+ * its node. */
 const ROAM2D = {figures: new Map(), seen: new Set(), frame: 0, last: 0, speed: 240, size: 1.2, orbit: 0.45, lap: 12,
-  appear: 0.8, touch: 0.9, vanish: 0.6};
+  appear: 0.8, touch: 0.9, vanish: 0.6,
+  // as the 3D figures move, `ROAM`, in the map's own units; the most it leans the way it goes, in degrees; and the
+  // fewest pixels it spans on the screen, so it is still seen with the whole of a large map in view
+  accel: 300, corner: 0.6, settle: 1.1, lean: 9, least: 22};
 const home2d = () => [...S.elements.values()].find(item => item.element.role === 'DE')?.element.id
   || S.elements.keys().next().value;
 function route2d(base, from, to) {  // the fewest edges of the 2D map from one element to another
@@ -748,14 +1303,17 @@ function figures2d(tickets) {
       image.setAttribute('href', `/page/agent-glyphs/${glyph}.svg`);
       g.append(image);
       ROAM2D.seen.add(ticket.id);
+      // a join's figure walks on from its receiver onto the middle of the join's edge
+      const way = [...route2d(base, home, target.last), ...(target.key !== target.last ? [target.key] : [])];
       ROAM2D.figures.set(ticket.id, {id: ticket.id, glyph, g, home, target: target.key, last: target.last, stage: 'arriving',
-        path: route2d(base, home, target.last), leg: 0, along: 0, clock: 0, angle: Math.random() * Math.PI * 2,
-        x: 0, y: 0, size: 0, done: Boolean(ticket.done)});
+        way: way.map(key => ({key})), u: 0, speed: 0, clock: 0, angle: Math.random() * Math.PI * 2, stride: 0, lean: 0,
+        from: {x: 0, y: 0}, heading: {x: 1, y: 0}, x: 0, y: 0, size: 0, drawn: '', done: Boolean(ticket.done)});
     }
   }
   for (const [id, figure] of ROAM2D.figures) if (!tickets.some(ticket => ticket.id === id)) figure.done = true;
-  if (ROAM2D.figures.size && !ROAM2D.frame) ROAM2D.frame = requestAnimationFrame(roam2d);
+  again2d();
 }
+function again2d() { if (ROAM2D.figures.size && !ROAM2D.frame) ROAM2D.frame = requestAnimationFrame(roam2d); }
 function layer2d(base) {  // the figures are drawn over the boxes, in the boxes' own coordinates
   if (base.agents?.isConnected || (base.agents && base.svg.contains(base.agents))) return base.agents;
   const holder = base.nodes.values().next().value?.g.parentNode;
@@ -767,65 +1325,125 @@ function layer2d(base) {  // the figures are drawn over the boxes, in the boxes'
   base.agentSize = ROAM2D.size * (heights[Math.floor(heights.length / 2)] || 40);
   return base.agents;
 }
+/* A point of the curve through a 2D figure's places at `u`, its leg and how far along it, a Catmull-Rom curve, which
+ * passes through every place and turns smoothly at each. */
+function curve2d(points, u) {
+  const last = points.length - 1, leg = Math.min(last - 1, Math.max(0, Math.floor(u))), t = u - leg;
+  const one = points[leg], two = points[leg + 1];
+  const zero = points[leg - 1] || {x: 2 * one.x - two.x, y: 2 * one.y - two.y};
+  const three = points[leg + 2] || {x: 2 * two.x - one.x, y: 2 * two.y - one.y};
+  const t2 = t * t, t3 = t2 * t;
+  const at = (a, b, c, d) => 0.5 * (2 * b + (c - a) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (3 * b - a - 3 * c + d) * t3);
+  return {x: at(zero.x, one.x, two.x, three.x), y: at(zero.y, one.y, two.y, three.y)};
+}
+/* A 2D figure walks its way as the 3D figures do, `walk`: from rest up to ROAM2D.speed, slower into each sharp turn,
+ * and to rest as it arrives. Says whether it has arrived. */
+function walk2d(figure, points, passed) {
+  const legs = points.length - 1, lengths = [];
+  let total = 0;
+  for (let k = 0; k < legs; k++) { lengths.push(Math.max(1e-3, Math.hypot(points[k + 1].x - points[k].x, points[k + 1].y - points[k].y))); total += lengths[k]; }
+  const leg = Math.min(legs - 1, Math.floor(figure.u));
+  let done = (figure.u - leg) * lengths[leg];
+  for (let k = 0; k < leg; k++) done += lengths[k];
+  const least = ROAM2D.speed * 0.12, reach = (limit, away) => Math.sqrt(limit * limit + 2 * ROAM2D.accel * Math.max(0, away));
+  let speed = Math.min(ROAM2D.speed, reach(least, done), reach(least, total - done));
+  for (let k = 1, at = lengths[0]; k < legs; at += lengths[k], k++) {
+    const turn = ((points[k].x - points[k - 1].x) * (points[k + 1].x - points[k].x) + (points[k].y - points[k - 1].y) * (points[k + 1].y - points[k].y))
+      / (lengths[k - 1] * lengths[k]);
+    speed = Math.min(speed, reach(ROAM2D.speed * (1 - ROAM2D.corner * (1 - turn) / 2), Math.abs(at - done)));
+  }
+  let step = speed * passed;
+  figure.stride += step;
+  while (step > 0 && figure.u < legs) {
+    const now = Math.min(legs - 1, Math.floor(figure.u)), room = (now + 1 - figure.u) * lengths[now];
+    if (step < room) { figure.u += step / lengths[now]; step = 0; } else { step -= room; figure.u = now + 1; }
+  }
+  figure.speed = speed;
+  return figure.u >= legs - 1e-6;
+}
+/* Where a 2D figure leaves its orbit, or the place it last stood, and the way home from there. */
+function home2dFrom(base, figure) {
+  const way = back2d(base, figure).slice(1);
+  return [{point: {x: figure.x, y: figure.y}}, ...(way.length ? way : [figure.home]).map(key => ({key}))];
+}
 function roam2d() {
   ROAM2D.frame = 0;
   const now = performance.now() / 1000, passed = Math.min(0.1, Math.max(0, now - (ROAM2D.last || now)));
   ROAM2D.last = now;
   const base = M.base, layer = base && layer2d(base);
+  // A figure keeps its share of a box's height, and never less than ROAM2D.least pixels on the screen, so it is seen
+  // with the whole of a large map in view.
+  const view = $('#viewport').getBoundingClientRect(), perPixel = M.cam && view.width && M.svg === base?.svg ? M.cam.w / view.width : 0;
+  let moving = false;
   for (const [id, figure] of ROAM2D.figures) {
     const gone = () => { figure.g.remove(); ROAM2D.figures.delete(id); if (!ROAM.figures.has(id)) releaseGlyph(id); };
     if (!layer) { if (figure.done) gone(); continue; }
     if (figure.g.parentNode !== layer) layer.append(figure.g);
     figure.clock += passed;
-    const size = base.agentSize, target = spot2d(base, figure.target), home = spot2d(base, figure.home);
+    const size = Math.max(base.agentSize, ROAM2D.least * perPixel), target = spot2d(base, figure.target), home = spot2d(base, figure.home);
     if (!target || !home) { if (figure.done) gone(); continue; }
-    let x = target.x, y = target.y, scale = 1;
+    let x = target.x, y = target.y, scale = 1, lift = 0, lean = 0;
     if (reduced()) {  // no walking: it stands above its node while the ticket is worked
       y = target.y - target.h / 2 - size / 2;
       if (figure.done) { gone(); continue; }
     } else if (figure.stage === 'arriving') {  // it appears on the DE
       const grown = Math.min(1, figure.clock / ROAM2D.appear);
       ({x, y} = home); scale = Math.max(0.001, 1 + 1.7 * Math.pow(grown - 1, 3) + 0.7 * Math.pow(grown - 1, 2));
-      if (grown >= 1) Object.assign(figure, {stage: 'going', leg: 0, along: 0, clock: 0});
+      if (grown >= 1) Object.assign(figure, {stage: 'going', u: 0, clock: 0});
     } else if (figure.stage === 'going' || figure.stage === 'returning') {  // along the map's own edges
-      const from = spot2d(base, figure.path[figure.leg]), to = spot2d(base, figure.path[figure.leg + 1]);
-      if (!from || !to) {
-        Object.assign(figure, figure.stage === 'going' ? {stage: figure.done ? 'touching' : 'circling'} : {stage: 'leaving'}, {clock: 0});
-        ({x, y} = figure); continue;
+      const going = figure.stage === 'going';
+      const points = figure.way.map(step => step.point || spot2d(base, step.key));
+      if (points.length < 2 || points.some(point => !point)) {  // a node of its way left the map
+        Object.assign(figure, going ? {stage: figure.done ? 'touching' : 'circling'} : {stage: 'leaving'}, {clock: 0, from: {x: 0, y: 0}});
+        continue;
       }
-      const length = Math.max(1, Math.hypot(to.x - from.x, to.y - from.y));
-      figure.along = Math.min(1, figure.along + passed * ROAM2D.speed / length);
-      x = from.x + (to.x - from.x) * figure.along;
-      y = from.y + (to.y - from.y) * figure.along - Math.sin(Math.PI * figure.along) * Math.min(size * 0.4, length * 0.08);
-      if (figure.along >= 1) {
-        Object.assign(figure, {leg: figure.leg + 1, along: 0});
-        if (figure.leg >= figure.path.length - 1) {
-          // a join's figure steps from its receiver onto the middle of the join's edge
-          if (figure.stage === 'going' && figure.path.at(-1) !== figure.target) figure.path.push(figure.target);
-          else Object.assign(figure, {clock: 0, stage: figure.stage === 'returning' ? 'leaving' : figure.done ? 'touching' : 'circling'});
+      const arrived = walk2d(figure, points, passed), at = curve2d(points, figure.u), ahead = curve2d(points, Math.min(points.length - 1, figure.u + 0.02));
+      ({x, y} = at);
+      if (Math.hypot(ahead.x - x, ahead.y - y) > 1e-3) figure.heading = {x: ahead.x - x, y: ahead.y - y};
+      // a step's bounce, and a lean the way it goes, as fast as it goes
+      lift = Math.abs(Math.sin(figure.stride / (size * 0.9) * Math.PI)) * size * 0.07 * Math.min(1, figure.speed / ROAM2D.speed);
+      lean = Math.sign(figure.heading.x) * Math.min(1, figure.speed / ROAM2D.speed) * ROAM2D.lean;
+      if (arrived) {
+        if (going) {  // onto its orbit from where it arrived, on the side that carries it straight on
+          const across = target.w / 2 + size * ROAM2D.orbit, down = target.h / 2 + size * ROAM2D.orbit;
+          figure.from = {x: x - target.x, y: y - target.y};
+          figure.angle = Math.atan2(-figure.heading.x / across, figure.heading.y / down);
         }
+        Object.assign(figure, {clock: 0, stage: !going ? 'leaving' : figure.done ? 'touching' : 'circling'});
       }
     } else if (figure.stage === 'circling') {  // around its box, slowly at one steady pace
-      const out = Math.min(1, figure.clock / 0.6), eased = 1 - Math.pow(1 - out, 3);  // it spirals out onto its orbit
       figure.angle += passed * 2 * Math.PI / ROAM2D.lap;
-      x = target.x + Math.cos(figure.angle) * (target.w / 2 + size * ROAM2D.orbit) * eased;
-      y = target.y + Math.sin(figure.angle) * (target.h / 2 + size * ROAM2D.orbit) * eased;
-      if (figure.done) Object.assign(figure, {stage: 'returning', path: back2d(base, figure), leg: 0, along: 0, clock: 0});
+      const settled = easeBoth(Math.min(1, figure.clock / ROAM2D.settle));  // it swings out from where it arrived
+      const across = target.w / 2 + size * ROAM2D.orbit, down = target.h / 2 + size * ROAM2D.orbit;
+      x = target.x + figure.from.x + (Math.cos(figure.angle) * across - figure.from.x) * settled;
+      y = target.y + figure.from.y + (Math.sin(figure.angle) * down - figure.from.y) * settled;
+      lift = Math.sin(figure.clock * 2.4) * size * 0.025;   // at rest on its orbit it bobs, gently
+      lean = -Math.sin(figure.angle) * ROAM2D.lean * 0.5 * settled;
+      if (figure.done) Object.assign(figure, {stage: 'returning', way: home2dFrom(base, {...figure, x, y}), u: 0, clock: 0, stride: 0});
     } else if (figure.stage === 'touching') {  // finished before it got there: it still touches the node
       const dip = Math.min(1, figure.clock / ROAM2D.touch);
+      ({x, y} = {x: target.x + figure.from.x, y: target.y + figure.from.y});
       scale = 1 - 0.3 * Math.sin(Math.PI * dip);
-      if (dip >= 1) Object.assign(figure, {stage: 'returning', path: back2d(base, figure), leg: 0, along: 0, clock: 0});
+      if (dip >= 1) Object.assign(figure, {stage: 'returning', way: home2dFrom(base, {...figure, x, y}), u: 0, clock: 0, stride: 0});
     } else if (figure.stage === 'leaving') {  // home again, it is gone
       const faded = Math.min(1, figure.clock / ROAM2D.vanish);
-      ({x, y} = home); scale = Math.max(0.001, 1 - faded);
+      ({x, y} = home); scale = Math.max(0.001, 1 - faded * faded);
       if (faded >= 1) { gone(); continue; }
     }
+    figure.lean += (lean - figure.lean) * (1 - Math.exp(-passed * 8));
     Object.assign(figure, {x, y, size: size * scale});
-    const image = figure.g.firstChild, drawn = size * scale;
-    image.setAttribute('x', x - drawn / 2); image.setAttribute('y', y - drawn / 2);
+    const drawn = size * scale, top = y - lift;
+    const placed = [x - drawn / 2, top - drawn / 2, drawn, figure.lean].map(value => Math.round(value * 100) / 100).join(' ');
+    if (placed === figure.drawn) continue;   // nothing to draw again
+    figure.drawn = placed;
+    moving = true;
+    const image = figure.g.firstChild;
+    image.setAttribute('x', x - drawn / 2); image.setAttribute('y', top - drawn / 2);
     image.setAttribute('width', drawn); image.setAttribute('height', drawn);
+    image.setAttribute('transform', `rotate(${figure.lean.toFixed(2)} ${x} ${top})`);
   }
-  if (ROAM2D.figures.size) ROAM2D.frame = requestAnimationFrame(roam2d);
+  // With reduced motion a figure stands still, so the frames stop once each is drawn; a redraw or a change asks again.
+  if (ROAM2D.figures.size && (moving || !reduced())) ROAM2D.frame = requestAnimationFrame(roam2d);
 }
 /* A part's light, VIEW-035 and MAP-046: broken flashes red. Flashing lets the node's own
  * color show between flashes, and each step filed makes it faster: from FLASH.slow a beat while it waits, to
@@ -913,9 +1531,10 @@ const DRIFT = {value: 0};  // the one clock the distortion of every node drifts 
 const shapes = new Map();
 let SEGMENTS = 16;  // as the graph draws its own nodes; 32 halves the frame rate where there is no graphics card
 const isGlass = node => node.t === 'el';
+const ballShape = radius => shapes.get(radius) || shapes.set(radius, new THREE.SphereGeometry(radius, SEGMENTS, SEGMENTS)).get(radius);
 function bead(node) {
   const radius = Math.cbrt(nodeSize(node)) * 3;  // as the graph sizes a node: the cube root of its value, times 3
-  if (!shapes.has(radius)) shapes.set(radius, new THREE.SphereGeometry(radius, SEGMENTS, SEGMENTS));
+
   const {transmission, thickness, roughness, attenuationDistance, chromaticAberration, distortion, distortionScale,
     temporalDistortion, anisotropicBlur, samples, ...physical} = GLASS;
   // drei's amount of light let through is `_transmission`; three.js's own `transmission` stays 0, since the page
@@ -934,7 +1553,7 @@ function bead(node) {
   back.userData.front = material;
   material.userData.own = true;
   colored(material, colorOf(node));
-  return new THREE.Mesh(shapes.get(radius), material);
+  return new THREE.Mesh(ballShape(radius), material);
 }
 /* What is behind the glass, drawn each frame as drei's component draws it, once for every node, VIEW-025: the scene
  * with the glass hidden, into `back`; then with the far wall of every node, which reads `back`, into `main`; and the
@@ -1064,7 +1683,7 @@ function send(data, id, from, outward) {
  * never apart. */
 function pulse3d(node, depth) {
   const object = node.__threeObj;
-  if (!object || !object.material || object.userData.written) return;  // text glows by itself, VIEW-027
+  if (!object || !object.material) return;
   if (!depth) {
     if (object.material.userData.pulsed) {
       colored(object.material, colorOf(node));
@@ -1209,251 +1828,46 @@ function addBloom() {
     dispose() { for (const level of levels) { level.across.dispose(); level.down.dispose(); } }};
   composer.addPass(BLOOM);
 }
-/* A part not built yet is drawn in characters, VIEW-027: text floating where its node will be, which is the one mark
- * of it. The characters are the numbers and the letters in both cases, made at random and all made again at each
- * turn. They give the ball its shape by their weight, which is how much ink a character puts down: the heavy ones
- * where the ball is bright, the light ones where it is dark, toward the rim. Nothing is colored to make the shape.
- * How fast the text changes says how far the work is: slow while the part waits, quickening once an agent has taken
- * it. When the part is built the text speeds up to a blur, the node fades in over it and the text fades away. A
- * signal reaching the text makes it glow in the signal's color, and the glow swells and fades. The values are
- * chosen by eye and are not settled. */
-const LETTERS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-const TEXT = {size: 10, waiting: 1.5, first: 2.5, top: 10, fastest: 30, hold: 0.85, climb: 60, light: 2.4,
-  speedUp: 3, fadeIn: 2, fadeOut: 1.2, near: 1.6, far: 0.7};
-const T = {letters: null, strokes: null, order: LETTERS, cell: {value: new THREE.Vector2(6, 12)},
-  screen: {value: new THREE.Vector2(1, 1)}, zoom: {value: 1}, light: {value: TEXT.light}, away: 0, last: 0,
-  rows: new Map()};
-const writing = new Map();  // what is being written, by node id, kept while the map is drawn again
+/* A part not built yet is a ghost, VIEW-027: its own node in its own color, three quarters clear, so it is seen to be in
+ * the design and not yet there, and hides nothing behind it. A signal on it lights it as it lights any node, VIEW-029.
+ * When the part is built its node comes up to solid over GHOST.solid seconds; with reduced motion at once. Why: the
+ * characters that stood here moved all the time and drew the eye from everything else on the map; a ghost says the
+ * same, that the part is still to come, and is quiet. */
+const GHOST = {opacity: 0.25, solid: 1.2};
 const unbuilt = node => has(node, 'missing') || has(node, 'unbuilt') || has(node, 'under-construction');  // missing is absent, so not built
-const asText = node => unbuilt(node) || writing.has(node.id);
-const FACE = '500 48px "IBM Plex Mono", ui-monospace, monospace', WIDE = 30, HIGH = 60;
-function weightOf(letter) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 40; canvas.height = 64;
-  const pen = canvas.getContext('2d', {willReadFrequently: true});
-  pen.fillStyle = 'white'; pen.font = FACE; pen.textAlign = 'center'; pen.textBaseline = 'middle';
-  pen.fillText(letter, 20, 32);
-  const painted = pen.getImageData(0, 0, 40, 64).data;
-  let sum = 0;
-  for (let at = 3; at < painted.length; at += 4) sum += painted[at];
-  return sum;
+const GHOSTS = {now: new Set(), built: new Map()};   // the ids drawn as ghosts, and those built since, by when
+/* A material made a ghost's: clear by `opacity`, and writing no depth, so what is behind it shows through whole. */
+function ghostly(material, opacity) {
+  Object.assign(material, {transparent: true, opacity, depthWrite: opacity >= 1});
+  if (material.userData.back) Object.assign(material.userData.back, {transparent: true, opacity, depthWrite: opacity >= 1});
 }
-/* A strip of characters, painted large so the graphics card scales them with smooth edges. */
-function strip(texture, text) {
-  const canvas = texture.image;
-  canvas.width = WIDE * text.length; canvas.height = HIGH;
-  const pen = canvas.getContext('2d');
-  // Black and white here are not colors of the page: the strip is a mask, read for how much a stroke covers.
-  pen.fillStyle = 'black'; pen.fillRect(0, 0, canvas.width, canvas.height);
-  pen.fillStyle = 'white'; pen.font = FACE; pen.textAlign = 'center'; pen.textBaseline = 'middle';
-  [...text].forEach((letter, index) => pen.fillText(letter, WIDE * (index + 0.5), HIGH / 2 + 1));
-  texture.needsUpdate = true;
-}
-function letters() {
-  const weights = new Map([...LETTERS].map(letter => [letter, weightOf(letter)]));
-  T.order = [...LETTERS].sort((one, two) => weights.get(one) - weights.get(two)).join('');  // lightest first
-  strip(T.letters, T.order);
-  strip(T.strokes, '-/|\\');
-}
-function ready() {
-  if (T.letters) return;
-  T.letters = new THREE.CanvasTexture(document.createElement('canvas'));
-  T.strokes = new THREE.CanvasTexture(document.createElement('canvas'));
-  letters();
-  document.fonts.load(FACE).then(letters, () => {});  // painted again once the face is there
-}
-const PLACED = `uniform float radius; uniform vec2 screen; uniform vec2 cell; uniform float zoom;
-  varying vec2 vMiddle; varying float vReach;
-  void main() {
-    vec4 center = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-    float reach = radius * length(modelViewMatrix[0].xyz);
-    vec4 middle = projectionMatrix * center, edge = projectionMatrix * (center + vec4(reach, 0.0, 0.0, 0.0));
-    vMiddle = middle.xy / middle.w;
-    vReach = edge.x / edge.w - vMiddle.x;
-    // Room for the whole of the last cells, and from far away for the few characters a part still holds.
-    float room = 1.6 * max(1.0, 5.0 * cell.x * zoom / screen.x / max(vReach, 0.0001));
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position * room, 1.0);
-  }`;
-const DRAWN = `uniform sampler2D letters; uniform sampler2D cells; uniform vec2 screen; uniform vec2 cell;
-  uniform float zoom; uniform vec3 ink; uniform vec3 signal; uniform float reached; uniform float seen;
-  uniform float light;
-  varying vec2 vMiddle; varying float vReach;
-  void main() {
-    vec2 size = cell * zoom;
-    vec2 which = floor(gl_FragCoord.xy / size), within = fract(gl_FragCoord.xy / size);
-    vec2 middle = (which + 0.5) * size / screen * 2.0 - 1.0;
-    float wide = max(vReach, 5.0 * size.x / screen.x);                 // from far away a part still holds a few characters
-    vec2 off = (middle - vMiddle) / vec2(wide, wide * screen.x / screen.y);
-    float out2 = dot(off, off);
-    if (out2 > 1.0) discard;
-    vec3 normal = vec3(off, sqrt(1.0 - out2));
-    float facing = clamp(dot(normal, normalize(vec3(0.45, 0.6, 0.66))) * 0.8 + 0.2, 0.0, 1.0);
-    // Each cell is handed a number made at random by the page, new at each turn, so every graphics card shows the
-    // same. The character is picked by weight around the ball's brightness there, and stays random within it.
-    float got = texture2D(cells, (mod(which, 32.0) + 0.5) / 32.0).r;
-    float weighed = clamp(facing + (got - 0.5) * 0.45, 0.0, 0.999);
-    float letter = min(61.0, floor(weighed * 62.0));
-    // The size of a character on the screen is given to the lookup; left to guess it, the graphics card reads a
-    // smeared copy at a cell's border.
-    vec2 stepX = vec2(1.0 / size.x, 0.0), stepY = vec2(0.0, 1.0 / size.y);
-    float mark = textureGrad(letters, vec2((letter + within.x) / 62.0, within.y), stepX / 62.0, stepY).r;
-    float cover = clamp(mark * 1.25, 0.0, 1.0);                        // smooth at any size
-    if (cover < 0.02) discard;                                         // the characters float: nothing is behind them
-    gl_FragColor = vec4(mix(ink, signal, reached * 0.85) * (1.15 + light * reached), seen * cover);
-  }`;
-function written(node) {
-  ready();
-  const radius = Math.cbrt(nodeSize(node)) * 3;
-  if (!shapes.has(radius)) shapes.set(radius, new THREE.SphereGeometry(radius, SEGMENTS, SEGMENTS));
-  let state = writing.get(node.id);
-  if (!state) {
-    const cells = new THREE.DataTexture(new Uint8Array(1024).map(() => Math.floor(Math.random() * 256)), 32, 32, THREE.RedFormat);
-    cells.needsUpdate = true;
-    state = {level: 0, tick: 0, wrote: 0, rate: TEXT.waiting, ending: null, cells, reached: 0, signalColor: null,
-      seen: {value: 1}, glow: {value: 0}, signal: {value: new THREE.Color(1, 1, 1)}};
-    writing.set(node.id, state);
+/* What a node is drawn as: a ghost while its part is not built, glass if it is an element, else the graph's own
+ * sphere. A join's purpose node, which the graph draws itself, is made a ghost of its own here. */
+function nodeObject(node, glass = true) {
+  if (unbuilt(node)) {
+    const object = isGlass(node) && glass ? bead(node)
+      : new THREE.Mesh(ballShape(Math.cbrt(nodeSize(node)) * 3), new THREE.MeshLambertMaterial({color: colorOf(node)}));
+    object.material.userData.own = true;
+    ghostly(object.material, GHOST.opacity);
+    object.userData.ghost = true;
+    return object;
   }
-  const ink = new THREE.Color(ownColor(node));
-  const material = new THREE.ShaderMaterial({vertexShader: PLACED, fragmentShader: DRAWN, transparent: true, depthWrite: false,
-    uniforms: {letters: {value: T.letters}, cells: {value: state.cells}, screen: T.screen, cell: T.cell, zoom: T.zoom,
-      ink: {value: ink}, signal: state.signal, reached: state.glow, seen: state.seen, light: T.light, radius: {value: radius}}});
-  material.color = new THREE.Color(ownColor(node));  // the page colors a node through its material's color
-  material.userData.own = true;
-  const mesh = new THREE.Mesh(shapes.get(radius), material);
-  mesh.userData.written = true;
-  // The node itself, which fades in over the text when the part is built.
-  const arriving = isGlass(node) ? bead({...node, work: []})
-    : new THREE.Mesh(shapes.get(radius), new THREE.MeshLambertMaterial({color: ownColor(node)}));
-  Object.assign(arriving.material, {transparent: true, opacity: 0});
-  arriving.visible = false;
-  arriving.userData.arriving = true;
-  mesh.add(arriving);
-  return mesh;
+  return glass && isGlass(node) ? bead(node) : false;
 }
-/* An edge of a part not built is a row of characters floating along it, each the one that slopes as the edge does on
- * the screen, as lines are drawn in text. */
-const DOTS = 40;
-function row() {
-  const shape = new THREE.BufferGeometry();
-  shape.setAttribute('position', new THREE.BufferAttribute(new Float32Array(DOTS * 3), 3));
-  const made = new THREE.Points(shape, new THREE.ShaderMaterial({transparent: true, depthWrite: false,
-    uniforms: {strokes: {value: T.strokes}, which: {value: 0}, cell: T.cell, zoom: T.zoom, ink: {value: new THREE.Color()}},
-    vertexShader: `uniform vec2 cell; uniform float zoom;
-      void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_PointSize = cell.y * zoom; }`,
-    // A point is square and a cell is taller than it is wide, so the character is drawn in the middle of the point.
-    fragmentShader: `uniform sampler2D strokes; uniform float which; uniform vec3 ink; uniform vec2 cell;
-      void main() { float across = (gl_PointCoord.x - 0.5) * cell.y / cell.x + 0.5;
-        if (across < 0.0 || across > 1.0) discard;
-        float cover = clamp(texture2D(strokes, vec2((which + across) / 4.0, 1.0 - gl_PointCoord.y)).r * 1.25, 0.0, 1.0);
-        if (cover < 0.02) discard;
-        gl_FragColor = vec4(ink * 1.15, cover); }`}));
-  made.frustumCulled = false;
-  return made;
-}
-function rows3d(data) {
-  const live = new Set();
-  const textOf = end => typeof end === 'object' && end.__threeObj?.userData.written && writing.get(end.id)?.ending === null;
-  for (const link of data.links) {
-    const from = link.source, to = link.target, line = link.__lineObj;
-    if (!line || from?.x === undefined || to?.x === undefined) continue;
-    // A join's links are drawn in characters. A namespace edge and a layer's links stay thin lines, since they are
-    // many and dim, and rows of characters along all of them cover the map.
-    const joined = link.k === 'purpose' || link.k === 'encounter';
-    if (!joined || (!textOf(from) && !textOf(to))) { if (link.rowed) { line.visible = true; link.rowed = false; } continue; }
-    live.add(link);
-    let made = T.rows.get(link);
-    if (!made) { made = row(); T.rows.set(link, made); G.scene().add(made); }
-    line.visible = false;
-    link.rowed = true;
-    made.material.uniforms.ink.value.set(linkColor(link));
-    const one = G.graph2ScreenCoords(from.x, from.y, from.z), two = G.graph2ScreenCoords(to.x, to.y, to.z);
-    const long = Math.hypot(two.x - one.x, two.y - one.y), size = TEXT.size * 1.1 * T.zoom.value;
-    const count = Math.max(2, Math.min(DOTS, Math.floor(long * 0.8 / size)));
-    const turn = ((Math.atan2(-(two.y - one.y), two.x - one.x) * 180 / Math.PI) % 180 + 180) % 180;  // 0 to 180 degrees
-    made.material.uniforms.which.value = turn < 22.5 || turn >= 157.5 ? 0 : turn < 67.5 ? 1 : turn < 112.5 ? 2 : 3;
-    // The row runs from the edge of one node to the edge of the other, so it never crosses a node's own characters.
-    const whole = Math.max(1, Math.hypot(to.x - from.x, to.y - from.y, to.z - from.z));
-    const clear = end => Math.min(0.45, Math.cbrt(nodeSize(end)) * 3 * 1.2 / whole);
-    const begin = clear(from), end = 1 - clear(to), places = made.geometry.attributes.position;
-    for (let at = 0; at < DOTS; at++) {
-      const along = begin + (end - begin) * (Math.min(at, count - 1) + 0.5) / count;
-      places.setXYZ(at, from.x + (to.x - from.x) * along, from.y + (to.y - from.y) * along, from.z + (to.z - from.z) * along);
-    }
-    places.needsUpdate = true;
+/* Each frame: a part built since it was drawn as a ghost comes up to solid. */
+function ghost3d(data, now) {
+  for (const node of data.nodes) {
+    if (unbuilt(node)) { GHOSTS.now.add(node.id); continue; }
+    if (GHOSTS.now.delete(node.id) && !reduced()) GHOSTS.built.set(node.id, now);
   }
-  for (const [link, made] of T.rows) if (!live.has(link)) {
-    G.scene().remove(made); made.geometry.dispose(); made.material.dispose(); T.rows.delete(link);
+  for (const [id, since] of GHOSTS.built) {
+    const node = nodeById(data, id), material = node?.__threeObj?.material;
+    const risen = Math.min(1, (now - since) / 1000 / GHOST.solid);
+    if (material && !node.__threeObj.userData.ghost) ghostly(material, GHOST.opacity + (1 - GHOST.opacity) * risen * risen * (3 - 2 * risen));
+    if (risen >= 1 || !node) GHOSTS.built.delete(id);
   }
 }
-const WHITE = new THREE.Color(1, 1, 1);
 const SIGNALS = [['broken', '--broken'], ['trouble', '--broken'], ['question', '--question'], ['message', '--question']];
-function text3d() {
-  const now = performance.now() / 1000, passed = Math.min(0.1, Math.max(0, now - (T.last || now)));
-  T.last = now;
-  if (!writing.size) { if (T.rows.size) rows3d(G.graphData()); return; }
-  const ratio = G.renderer().getPixelRatio();
-  G.renderer().getDrawingBufferSize(T.screen.value);
-  T.cell.value.set(TEXT.size * 0.62 * ratio, TEXT.size * 1.25 * ratio);
-  const away = G.camera().position.distanceTo(G.controls().target);
-  if (!T.away) T.away = away;
-  T.zoom.value = Math.min(TEXT.near, Math.max(TEXT.far, T.away / away));  // the characters follow the zoom a little
-  let finished = false;
-  const shown = new Set();
-  for (const node of G.graphData().nodes) {
-    const state = writing.get(node.id), object = node.__threeObj;
-    if (!state) continue;
-    shown.add(node.id);
-    if (!object?.userData.written) continue;
-    // worked on: under construction, or a ticket on it taken and not done, as its steps are filed, VIEW-035
-    const working = has(node, 'under-construction') || Boolean(S.progress?.has(node.id)), climbed = () => TEXT.first + (TEXT.top - TEXT.first) * Math.pow(state.level, 1.4);
-    if (!unbuilt(node) && state.ending === null) state.ending = 0;   // it is built: the ending starts from where it is
-    if (state.ending === null) {
-      // Work with no phases to report climbs by itself, slowly, to a point short of the fastest; each step filed
-      // lifts it, VIEW-035.
-      if (working) state.level = Math.min(TEXT.hold, state.level + TEXT.hold * passed / TEXT.climb);
-      const done = S.progress?.get(node.id);
-      if (done?.filed) state.level = Math.max(state.level, Math.min(1, done.planned ? done.filed / done.planned
-        : 1 - 1 / (1 + FLASH.step * done.filed)));
-      state.rate = working ? climbed() : TEXT.waiting;
-    } else {
-      state.ending += passed;
-      const up = Math.min(1, state.ending / TEXT.speedUp);
-      const into = Math.min(1, Math.max(0, (state.ending - TEXT.speedUp) / TEXT.fadeIn));
-      const out = Math.min(1, Math.max(0, (state.ending - TEXT.speedUp - TEXT.fadeIn) / TEXT.fadeOut));
-      state.rate = climbed() + (TEXT.fastest - climbed()) * up;
-      state.seen.value = 1 - out;
-      const arriving = object.children.find(child => child.userData.arriving);
-      if (arriving) { arriving.visible = into > 0.01; arriving.material.opacity = 0.7 * into + 0.3 * out; }
-      if (out >= 1 || reduced()) { writing.delete(node.id); finished = true; continue; }
-    }
-    if (!reduced()) state.tick += passed * state.rate;
-    // The text is the color the page gives the part, lightened, since thin strokes show less of a color than a
-    // ball does.
-    object.material.uniforms.ink.value.copy(object.material.color).lerp(WHITE, 0.5);
-    if (Math.floor(state.tick) !== state.wrote) {                     // the whole of it is made again at once
-      state.wrote = Math.floor(state.tick);
-      const held = state.cells.image.data;
-      for (let at = 0; at < held.length; at++) held[at] = Math.floor(Math.random() * 256);
-      state.cells.needsUpdate = true;
-    }
-    // A signal reaching the text: a condition that needs attention, or the dot of a property's wave.
-    const found = SIGNALS.find(([condition]) => has(node, condition));
-    let reached = found ? (reduced() ? 1 : Math.max(0, Math.sin(now * 2 * Math.PI / paceOf(node)))) : 0, color = found ? css(found[1]) : null;
-    const dot = W.pulses.get(node.id), gone = dot ? (W.clock - dot.start) / dot.length : 2;
-    if (gone >= 0 && gone <= 1 && Math.sin(Math.PI * gone) > reached) { reached = Math.sin(Math.PI * gone); color = R.color; }
-    Object.assign(state, {reached, signalColor: reached > 0 && color ? color.toLowerCase() : null});
-    state.glow.value = reached;
-    if (reached > 0 && color) state.signal.value.set(color);
-  }
-  for (const id of writing.keys()) if (!shown.has(id)) writing.delete(id);  // no longer on the map
-  rows3d(G.graphData());
-  if (finished) G.nodeThreeObject(G.nodeThreeObject());             // the parts built are drawn as every built part
-}
-function textOf(id) {
-  const state = writing.get(id);
-  if (!state) return '';
-  return [...state.cells.image.data.slice(0, 64)].map(value => T.order[Math.min(61, Math.floor(value / 256 * 62))]).join('');
-}
 /* The condition of a node in 3D, MAP-046, VIEW-005 and VIEW-029: an open broken record flashes it red, steady red
  * with reduced motion; an open question or message keeps its color. While it is
  * lit the node gives off light in the color of what it signals, which the bloom spreads past its outline: a flash is
@@ -1462,7 +1876,7 @@ function textOf(id) {
  * still lit when its record has closed, to put its light back. */
 function paint3d(node) {
   const object = node.__threeObj;
-  if (!object || !object.material || object.userData.written) return;  // text shows its own condition, VIEW-027
+  if (!object || !object.material) return;
   const light = lightOf(node);
   // An open question glows in the question's color, pulsating, so it is seen with the whole map zoomed out, VIEW-021.
   const asked = has(node, 'question') || has(node, 'message');  // a message waits for the user, VIEW-030
@@ -1489,6 +1903,26 @@ function paint3d(node) {
 function linkColor(link) {
   if (link.k === 'tree') return css('--tree');
   return layerColor(link.layer);
+}
+/* The links are fibers, VIEW-005, shaded as the nodes are rather than flat: the graph library drew each as a matte
+ * tube that light falls on evenly, beside nodes of glass that give off light, so the two did not look of one map. A
+ * fiber gives off its color with a bright core along its middle, where the tube faces the eye, and dims toward its
+ * rim, so it reads as a round strand of light at any width. It is never brighter than full, so the bloom never takes
+ * it: light that spreads on the map means a node needs attention, VIEW-029, and fibers that glowed with it made the
+ * whole map hazy whenever one did. One material for each color and opacity, shared by every link of them. */
+const FIBERS = new Map();
+function fiberOf(link) {
+  const color = linkColor(link), opacity = Number(css('--link-opacity')), key = color + '|' + opacity;
+  if (!FIBERS.has(key)) FIBERS.set(key, new THREE.ShaderMaterial({transparent: true, depthWrite: true,
+    uniforms: {tint: {value: new THREE.Color(color)}, opacity: {value: opacity}},
+    vertexShader: `varying vec3 vNormal; varying vec3 vView;
+      void main() { vec4 at = modelViewMatrix * vec4(position, 1.0); vNormal = normalize(normalMatrix * normal);
+        vView = normalize(-at.xyz); gl_Position = projectionMatrix * at; }`,
+    fragmentShader: `uniform vec3 tint; uniform float opacity; varying vec3 vNormal; varying vec3 vView;
+      void main() { float facing = abs(dot(normalize(vNormal), normalize(vView)));
+        float core = pow(facing, 1.6), spark = pow(facing, 12.0);
+        gl_FragColor = vec4(tint * min(1.0, 0.4 + 0.5 * core + 0.3 * spark), opacity * (0.25 + 0.75 * core)); }`}));
+  return FIBERS.get(key);
 }
 let G = null;
 const nodeSize = node => node.t === 'el' ? (node.role === 'DE' ? 9 : node.role === 'CQU' ? 7 : 4) : node.t === 'purpose' ? 0.9
@@ -1522,47 +1956,138 @@ function start3D() {
     swap(true, false);
   }
 }
+/* The 3D map draws a frame only when something on it moves, so a page left alone costs the machine nothing. The page
+ * runs the graph's frames itself, `frame3d`, in place of the library's own loop, which draws every frame forever. A
+ * frame is drawn while the layout settles, the camera flies or coasts, the pointer is on the map, a part flashes or
+ * pulses, a property's wave, a part's text or an agent moves, and for `grace` after anything changes what is drawn:
+ * every setter of the graph and every act on the map wakes it, `wake3d`. The dots that flow along the joins are the
+ * one motion that never ends: they keep flowing, and once nothing has been done or changed for `idle` they are drawn
+ * `idleRate` times a second, a flow nobody is watching closely, at its own speed. `rest`, when set, is how long after
+ * that the flow stops until the next act or change; null keeps it flowing, as VIEW-005 draws it. With reduced motion
+ * nothing flows, so an idle map draws nothing at all. */
+const FRAMES = {id: 0, timer: 0, held: false, until: 0, active: 0, last: 0, drawn: 0, engine: false, moved: false,
+  busy: false, flowing: false, grace: 700, idle: 30000, idleRate: 15, rest: null};
+const DAMPING = 0.12;
+const DRAG_FRICTION = 0.65;  // the share of its speed a node loses each tick while one is dragged; 0.4 otherwise  // the share of a turn of the camera a hand gave that it loses each 60th of a second: it coasts
+function wake3d(ms = FRAMES.grace) {
+  const now = performance.now();
+  FRAMES.until = Math.max(FRAMES.until, now + ms);
+  FRAMES.active = now;
+  if (!G || FRAMES.held || FRAMES.id) return;
+  clearTimeout(FRAMES.timer);
+  FRAMES.timer = 0;
+  FRAMES.id = requestAnimationFrame(frame3d);
+}
+function frame3d(now) {
+  // While a frame is drawn `id` holds a mark, so a wake from inside the frame asks for no frame of its own: the frame
+  // asks for one next frame at its end, and only one, or every wake would start a second run of frames beside it.
+  FRAMES.id = -1;
+  if (!G || FRAMES.held) { FRAMES.id = 0; return; }
+  const passed = Math.min(0.1, Math.max(0.001, (now - (FRAMES.last || now - 16)) / 1000));
+  FRAMES.last = now;
+  FRAMES.engine = FRAMES.moved = false;
+  const controls = G.controls();  // the camera coasts for the same time at any frame rate
+  if (controls.enableDamping) controls.dampingFactor = 1 - Math.pow(1 - DAMPING, passed * 60);
+  try { G._animationCycle(); }  // the layout's tick, the dots, the controls, the picture and what the pointer is over
+  finally { G.pauseAnimation(); FRAMES.id = 0; }  // which asks for the library's next frame; the page asks for its own
+  FRAMES.drawn++;
+  const still = now - FRAMES.active;
+  if (now < FRAMES.until || FRAMES.engine || FRAMES.moved || FLIGHT.on || FRAMES.busy || (FRAMES.flowing && still < FRAMES.idle)) {
+    FRAMES.id = requestAnimationFrame(frame3d);
+  } else if (FRAMES.flowing && (FRAMES.rest === null || still < FRAMES.idle + FRAMES.rest)) {
+    FRAMES.timer = setTimeout(() => {
+      FRAMES.timer = 0;
+      if (!FRAMES.id && !FRAMES.held) FRAMES.id = requestAnimationFrame(frame3d);
+    }, 1000 / FRAMES.idleRate);
+  }
+}
+/* The library's setters and the methods that change what is drawn wake the map, as does every camera move asked for
+ * from outside the page's own flights; such a move also ends a flight under way and, unless it fits the whole map,
+ * tells the settled layout not to fit it again, since someone put the camera where it is. */
+const WAKERS = new Set(['refresh', 'd3ReheatSimulation', 'resumeAnimation', 'emitParticle']);
+const READERS = new Set(['graph2ScreenCoords', 'screen2GraphCoords', 'getGraphBbox', 'getPointerPos', 'pauseAnimation']);
+function wakeful(graph) {
+  for (const [name, method] of Object.entries(graph)) {
+    if (typeof method !== 'function' || name.startsWith('_') || READERS.has(name)) continue;
+    graph[name] = function (...args) {
+      // a getter, a force asked for by its name, or a reading of where something is drawn changes nothing
+      if ((!args.length && !WAKERS.has(name)) || (name === 'd3Force' && args.length < 2)) return method.apply(this, args);
+      if (name === 'cameraPosition' || name === 'zoomToFit') {
+        FLIGHT.on = false;
+        V3.auto = name === 'zoomToFit';
+        wake3d(FRAMES.grace + (Number(args[name === 'zoomToFit' ? 0 : 2]) || 0));
+      } else wake3d();
+      return method.apply(this, args);
+    };
+  }
+}
 function create3D() {
-  G = ForceGraph3D({controlType: 'orbit'})($('#stage'))
-    .backgroundColor(css('--ground'))
+  G = ForceGraph3D({controlType: 'orbit'})($('#stage'));
+  G.pauseAnimation();  // the page runs the frames, `frame3d`
+  wakeful(G);
+  G.backgroundColor(css('--ground'))
     .showNavInfo(false)
     .nodeRelSize(3)
     .nodeVal(nodeSize)
-    .nodeThreeObject(node => asText(node) ? written(node) : isGlass(node) ? bead(node) : false)
+    .nodeThreeObject(node => nodeObject(node))
     .nodeColor(node => dimmed(node) ? dim(colorOf(node)) : colorOf(node))
     .nodeVisibility(shownNode)
     .linkVisibility(link => shownNode(link.source) && shownNode(link.target))
     .nodeOpacity(0.95)
     .nodeResolution(16)
     .nodeLabel(() => '')  // the page shows its own tooltip, anchored above the node, not under the pointer
-    .onNodeHover(node => {
-      hovered = node || null;
-      $('#tip3d').hidden = !hovered;
-      if (hovered) { fill($('#tip3d'), tipFor(hovered)); placeTip(); }
-    })
+    .onNodeHover(node => hover3d(node))
     .linkColor(linkColor)
     .linkOpacity(Number(css('--link-opacity')))
+    .linkMaterial(fiberOf)
     .linkWidth(link => link.k === 'tree' ? 0.4 : link.k === 'layer' || link.k === 'item' ? 0.25 : link.k === 'relation' ? 0.5 : 0.9)
     .linkCurvature(0)
     .linkDirectionalParticles(link => !reduced() && (link.k === 'purpose' || link.k === 'encounter') ? 2 : 0)
-    .linkDirectionalParticleSpeed(0.006)
+    .linkDirectionalParticleSpeed(0)  // the page moves the dots itself, by the time that passed, `flow3d`
     .linkDirectionalParticleWidth(1.6)
     .linkDirectionalParticleColor(linkColor)
+    // The layout settles once its energy is spent rather than after a fixed time, and the map is then fitted to the
+    // view if nobody has moved the camera, `settled3d`.
+    .d3AlphaMin(0.001)
+    .onEngineTick(() => { FRAMES.engine = true; V3.ticks++; })
+    .onEngineStop(() => { if (V3.ticks > 30) settled3d(); V3.ticks = 0; })
+    // A node dragged gives the layout energy, so the nodes joined to it follow and the map settles again once it is
+    // let go: a settled layout would stop at once and leave the map rigid, so it is kept running while a node is held.
+    // The graph library warms it to 0.3 for a drag, which throws the whole map about; the nodes move against more
+    // friction while one is held, DRAG_FRICTION, so the map follows gently.
+    .onNodeDrag(() => { G.d3AlphaMin(0).d3VelocityDecay(DRAG_FRICTION); })
+    .onNodeDragEnd(() => { G.d3AlphaMin(0.001).d3VelocityDecay(0.4); })
     .onNodeClick(clicked3d)
     .onNodeRightClick((node, event) => { if (node) menu(node.id, event.clientX, event.clientY); });
   grounded();
   G.scene().onBeforeRender = solid;
   addBehind();
   addBloom();
+  // The page's own work for each frame runs first in the render chain: after the layout's tick and the controls, before
+  // anything is drawn, so the camera's flight, the labels, the dots and the tooltip are all of the same frame.
+  G.postProcessingComposer().insertPass({isPass: true, enabled: true, needsSwap: false, clear: false, renderToScreen: false,
+    setSize() {}, render() { prepare3d(); }, dispose() {}}, 0);
   G.d3Force('charge').strength(node => node.t === 'el' ? -140 : node.t === 'item' ? -10 : -18);
   G.d3Force('link').distance(link => link.k === 'layer' ? 8 : link.k === 'item' ? 12 : link.k === 'tree' ? 60 : 34);
+  // The camera coasts after a hand lets it go, and the wheel zooms toward the point under the pointer.
+  const controls = G.controls();
+  Object.assign(controls, {enableDamping: true, dampingFactor: DAMPING, zoomToCursor: true});
+  controls.addEventListener('start', () => { FLIGHT.on = false; V3.auto = false; hover3d(null); });
+  controls.addEventListener('change', () => { FRAMES.moved = true; });
+  const stage = $('#stage');
+  for (const type of ['pointerdown', 'wheel', 'keydown']) stage.addEventListener(type, () => wake3d(), {passive: true});
+  for (const type of ['pointerenter', 'pointermove']) stage.addEventListener(type, () => { TIP.out = false; wake3d(); }, {passive: true});
+  stage.addEventListener('pointerleave', () => { TIP.out = true; hover3d(null); });
+  // A press anywhere else, or a key, ends the tooltip: a menu or a window may now cover the node it named.
+  document.addEventListener('pointerdown', event => { if (!stage.contains(event.target)) hover3d(null); }, true);
+  document.addEventListener('keydown', () => hover3d(null), true);
   resize();
-  requestAnimationFrame(labels);
+  wake3d();
   $('#pauseBtn').onclick = () => {  // pausing pins every vertex where it is; resuming frees them and warms the layout
     const paused = $('#pauseBtn').dataset.paused === 'true';
     for (const node of G.graphData().nodes) Object.assign(node, paused ? {fx: undefined, fy: undefined, fz: undefined}
       : {fx: node.x, fy: node.y, fz: node.z});
-    if (paused) G.d3ReheatSimulation();
+    if (paused) G.d3ReheatSimulation(); else wake3d();
     $('#pauseBtn').dataset.paused = String(!paused);
     $('#pauseBtn').textContent = paused ? 'Pause layout' : 'Resume layout';
   };
@@ -1571,6 +2096,7 @@ function create3D() {
     for (const node of data.nodes) for (const key of ['x', 'y', 'z', 'vx', 'vy', 'vz', 'fx', 'fy', 'fz']) delete node[key];
     $('#pauseBtn').dataset.paused = 'false';
     $('#pauseBtn').textContent = 'Pause layout';
+    V3.auto = true;  // the new layout is fitted to the view as it settles
     G.graphData(data);  // the layout gives vertices without a position new ones and settles again
   };
 }
@@ -1580,10 +2106,8 @@ function clicked3d(node) {
   if (large()) MODE.mode = 'readable';  // a click on a node goes to mode two, VIEW-041
   select(node.id, true);
 }
-/* A node takes the pointer anywhere it is drawn, not only at its center, a part not built on the
- * whole round of characters it is written in, which `DRAWN` keeps at least five characters wide however far away it
- * is, a cell drawn whole when its middle is inside; every other node on the whole of its sphere. Each node's object
- * is picked by a ball of that size on the screen around its center. */
+/* A node takes the pointer anywhere on its sphere, not only at its center, a ghost of a part not built as every
+ * other node. Each node is picked by a ball of its size on the screen around its center. */
 const PICK = {edge: 2};  // the pixels past a sphere that the picture smooths its edge over, measured 2026-10-03
 const PICKED = {center: new THREE.Vector3(), at: new THREE.Vector3(), ball: new THREE.Sphere(), size: new THREE.Vector2()};
 function picked(raycaster, hits) {
@@ -1594,11 +2118,7 @@ function picked(raycaster, hits) {
   const depth = -at.copy(center).applyMatrix4(camera.matrixWorldInverse).z;
   if (depth <= 0) return;
   const unit = 2 * depth / (camera.projectionMatrix.elements[5] * G.renderer().getSize(size).y);  // world units a pixel spans there
-  const cell = T.cell.value.clone().multiplyScalar(T.zoom.value / G.renderer().getPixelRatio());  // a character, in pixels
-  const radius = Math.cbrt(nodeSize(node)) * 3;
-  const reach = this.userData.written ? Math.max(radius, 2.5 * cell.x * unit)
-    : radius + PICK.edge * unit;
-  if (!raycaster.ray.intersectSphere(ball.set(center, reach), at)) return;
+  if (!raycaster.ray.intersectSphere(ball.set(center, Math.cbrt(nodeSize(node)) * 3 + PICK.edge * unit), at)) return;
   const distance = raycaster.ray.origin.distanceTo(at);
   if (distance >= raycaster.near && distance <= raycaster.far) hits.push({distance, point: at.clone(), object: this});
 }
@@ -1618,6 +2138,16 @@ function servedBy(node) {
 /* The tooltip sits above the hovered node, clear of its sphere at any zoom, so the pointer never covers it; it goes
  * below the node only where it would leave the top of the view. */
 let hovered = null;
+/* The tooltip names the node under the pointer and nothing else: it goes when the pointer leaves the map, when a hand
+ * turns the camera, and when a press elsewhere or a key may have put a menu or a window over the node. The graph
+ * reports what is under the pointer's last place on the map, so while the pointer is off the map, `TIP.out`, nothing
+ * is. */
+const TIP = {out: true};
+function hover3d(node) {
+  hovered = TIP.out ? null : node || null;
+  $('#tip3d').hidden = !hovered;
+  if (hovered) { fill($('#tip3d'), tipFor(hovered)); placeTip(); }
+}
 function placeTip() {
   const tip = $('#tip3d');
   if (!G || !hovered || hovered.x === undefined) return;
@@ -1632,23 +2162,35 @@ function placeTip() {
 }
 const short = (text, most) => text.length > most ? text.slice(0, most - 1) + '…' : text;
 /* The labels of the 3D map, VIEW-038, are drawn inside the scene, each its element's whole name, wrapped at word
- * breaks, painted on a canvas and shown as a sprite that faces the camera and keeps one size on the screen. Each
- * stands at its node's depth just above the node's sphere, and is drawn with the depth test as the nodes are, so the
+ * breaks, painted on a canvas and shown as a sign in the scene, its face turned out from the map's middle. Its size and its opacity say how near it is:
+ * a label grows and shrinks with the map as it is zoomed, and from the front of the map in view to its back it goes
+ * from its full size to a fifth of it; the nearest label is solid and the farthest two thirds clear, so the near names stand
+ * out where the map is dense and the depth of the map reads from its names as well as its nodes. Each
+ * stands a set distance out from its node on the side away from the map's middle, and is drawn with the depth test
+ * as the nodes are, so the
  * depth buffer orders labels and nodes together: a node nearer the eye hides the part of a label behind it, a label
  * behind a glass node is seen through the glass as the material lets it through, VIEW-025, since what is behind the
  * glass is drawn with the labels in it, and a nearer label is drawn over a farther one. Nothing ranks over depth, the
  * selected node, its neighbors and a lit or blinking node included. A label that falls on a nearer node's sphere or
  * on a nearer label keeps its own color: what is in front hides it by depth or shows it through the glass.
  * Every element keeps its label, VIEW-005; the text is in the theme's
- * text color on a box of the background, and none is faded toward the background, VIEW-023. A label is painted again
- * only when what it shows changes. */
-const LABEL = {size: 11, chosen: 13, wide: 9, line: 1.15, padX: 4, padY: 1, gap: 8, written: 18, box: 0.72};
+ * text color, each letter outlined in the background's color, `stroke`, in place of a box behind the name, so the
+ * name reads over what is behind it without a bar hiding the map; the outline fades with the label by its depth. A
+ * label is painted again only when what it shows changes. */
+const LABEL = {size: 11, chosen: 13, wide: 9, line: 1.15, padX: 6, padY: 4, stroke: 2, after: 10,
+  out: 12,  // how far a label stands out from its ball's surface, away from the map's middle, in the map's units
+  // the size of a label's letters in the map, in its units, about an element's height; painted sharper at each
+  // `sharper` step of the size it is seen at, up to `largest`; and the farthest label's opacity, the nearest solid
+  letters: 10, largest: 4, sharper: 0.5, farthest: 0.34,
+  // in the small area, the share of its width the selected node's name spans, close in on it and with the whole map
+  smallNear: 0.8, smallFar: 0.5};
 const tags = new Map();   // by node id: the label's sprite, its canvas, what it shows and where it is on the screen
-const LABELS = {group: null, on: true, pen: null, measured: new Map()};
-const UP = new THREE.Vector3(), AT = new THREE.Vector3();
+const LABELS = {group: null, plane: null, on: true, only: null, pen: null, measured: new Map()};
+const OUT = new THREE.Vector3(), UP = new THREE.Vector3(), AT = new THREE.Vector3(), middle = new THREE.Vector3();
+const Y_UP = new THREE.Vector3(0, 1, 0);
 const fontOf = look => `${look.weight} ${look.size}px ${look.family}`;
 /* The name in lines no wider than the label's width, broken only between words, as the page wraps text; a word longer
- * than the width keeps its own line whole. */
+ * than the width keeps its own line whole. Measured once for each name and look. */
 function wrapped(text, look) {
   const key = fontOf(look) + '\n' + text;
   if (LABELS.measured.has(key)) return LABELS.measured.get(key);
@@ -1666,20 +2208,20 @@ function wrapped(text, look) {
   LABELS.measured.set(key, made);
   return made;
 }
-function painted(tag, look, ratio) {
-  const shape = wrapped(tag.text, look), canvas = tag.texture.image, pen = canvas.getContext('2d');
+function painted(tag, look, ratio, shape) {
+  const canvas = tag.texture.image, pen = canvas.getContext('2d');
   canvas.width = Math.ceil(shape.width * ratio); canvas.height = Math.ceil(shape.height * ratio);
   pen.scale(ratio, ratio);
-  pen.globalAlpha = LABEL.box;
-  pen.fillStyle = look.ground;
-  pen.beginPath(); pen.roundRect(0, 0, shape.width, shape.height, 4); pen.fill();
-  pen.globalAlpha = 1;
   pen.font = fontOf(look); pen.textAlign = 'center'; pen.textBaseline = 'middle';
-  const step = look.size * LABEL.line;
-  for (const blur of [...look.glow, 0]) {   // the text's glow of the background under it, then the text itself
+  const step = look.size * LABEL.line, at = index => LABEL.padY + step * (index + 0.5);
+  // each letter outlined in the background's color, so the name reads over the lines and nodes behind it, and
+  // nothing more: a shadow, or a wide glow, around the letters hid every edge that ran behind them
+  Object.assign(pen, {lineWidth: LABEL.stroke, lineJoin: 'round', strokeStyle: look.ground, shadowColor: 'transparent'});
+  shape.lines.forEach((line, index) => pen.strokeText(line, shape.width / 2, at(index)));
+  for (const blur of [...look.glow, 0]) {   // a reached part's glow of the background under it, then the text itself
     pen.shadowColor = blur ? look.ground : 'transparent'; pen.shadowBlur = blur * ratio;
     pen.fillStyle = look.color;
-    shape.lines.forEach((line, index) => pen.fillText(line, shape.width / 2, LABEL.padY + step * (index + 0.5)));
+    shape.lines.forEach((line, index) => pen.fillText(line, shape.width / 2, at(index)));
   }
   tag.texture.dispose();                    // the canvas may have changed size
   tag.texture.needsUpdate = true;
@@ -1695,14 +2237,21 @@ function labelFor(node) {
     Promise.all([500, 600].map(weight => document.fonts.load(`${weight} ${LABEL.size}px ${css('--sans')}`))).then(() => {
       LABELS.measured.clear();
       for (const each of tags.values()) each.key = '';
+      wake3d();
     }, () => {});
   }
   const texture = new THREE.CanvasTexture(document.createElement('canvas'));
   Object.assign(texture, {colorSpace: THREE.SRGBColorSpace, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
     generateMipmaps: false});
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map: texture, sizeAttenuation: false, depthTest: true,
-    depthWrite: true, transparent: true, alphaTest: 0.02, toneMapped: false}));
-  sprite.center.set(0.5, 0);                // it stands on the point above the node
+  // A sign in the scene, its face turned out from the map's middle and seen from either side, so from behind the
+  // map its name reads backward, as a sign does. `sprite` is the name it has always had in the page's reads.
+  LABELS.plane ??= new THREE.PlaneGeometry(1, 1);
+  // It is tested against what is nearer, so a nearer node or edge hides it, but writes no depth of its own and is
+  // drawn after the map, so it never cuts out an edge or a node behind it: written into the depth, each letter and
+  // its outline hid every edge drawn after it, however far behind.
+  const sprite = new THREE.Mesh(LABELS.plane, new THREE.MeshBasicMaterial({map: texture, side: THREE.DoubleSide,
+    depthTest: true, depthWrite: false, transparent: true, alphaTest: 0.02, toneMapped: false}));
+  sprite.renderOrder = LABEL.after;
   sprite.raycast = () => {};                // a label is never picked in place of the node
   LABELS.group.add(sprite);
   tag = {id: node.id, text: node.name || '', sprite, texture, key: '', classes: [], lines: [], width: 0, height: 0,
@@ -1724,7 +2273,7 @@ function lookOf(classes, palette) {
   const color = is('work-broken') ? palette.broken
     : reach ? palette.text : is('dim') ? palette.muted : chosen ? palette.signal : palette.text;
   return {size: chosen ? LABEL.chosen : LABEL.size, weight: chosen || reach ? 600 : 500, family: palette.sans, color,
-    ground: palette.ground, glow: reach ? [10, 6, 3] : [6, 2]};
+    ground: palette.ground, glow: reach ? [10, 6, 3] : []};  // a reached part's name glows; the rest have a shadow
 }
 /* Each frame: every label is put above its node at the node's depth and sized for the screen, and the labels that
  * fall on a nearer sphere or a nearer label are marked under. */
@@ -1733,37 +2282,73 @@ function layered() {
   const spread = camera.projectionMatrix.elements[5], ratio = G.renderer().getPixelRatio();
   const perPixel = depth => 2 * depth / (spread * height);   // world units a pixel spans at a depth
   const depthOf = node => -AT.set(node.x, node.y, node.z).applyMatrix4(camera.matrixWorldInverse).z;
-  UP.set(0, 1, 0).applyQuaternion(camera.quaternion);
   const palette = {text: css('--text'), muted: css('--muted'), signal: css('--signal'), broken: css('--broken'),
     exclude: css('--exclude'), ground: css('--ground'), sans: css('--sans')};  // read once a frame, not once a label
   if (LABELS.group) LABELS.group.visible = LABELS.on;
-  const spheres = [], shown = [];
+  UP.set(0, 1, 0).applyQuaternion(camera.quaternion);
+  const spheres = [], shown = [], small = $('.app').classList.contains('swapped'), focus = away3d();
+  let nearest = Infinity, deepest = -Infinity, placed = 0;
+  middle.set(0, 0, 0);  // the map's middle, its nodes' mean place, which the names stand away from
   for (const node of G.graphData().nodes) {
     if (node.x === undefined) continue;
     const point = G.graph2ScreenCoords(node.x, node.y, node.z), depth = depthOf(node);
     spheres.push({id: node.id, x: point.x, y: point.y, far: depth, r: Math.cbrt(nodeSize(node)) * 3 / perPixel(depth)});
+    middle.x += node.x; middle.y += node.y; middle.z += node.z; placed++;
+    // the front and back of the map are those of the names in view, not of parts off the screen
+    if (node.t === 'el' && depth > 0 && point.x >= 0 && point.x <= area.width && point.y >= 0 && point.y <= height) {
+      nearest = Math.min(nearest, depth); deepest = Math.max(deepest, depth);
+    }
   }
+  if (placed) middle.divideScalar(placed);
   for (const node of G.graphData().nodes) {
     if (node.t !== 'el') continue;
     const tag = labelFor(node);
     tag.text = node.name || '';
     tag.hidden = node.x === undefined;
-    tag.sprite.visible = !tag.hidden;
+    tag.sprite.visible = !tag.hidden && (!LABELS.only || LABELS.only.has(node.id));
     if (tag.hidden) continue;
     tag.classes = [node.id === S.selected ? 'sel' : S.neighbors.has(node.id) ? 'near' : S.selected ? 'dim' : '',
-      ...(node.work || []).map(condition => `work-${condition}`), R.nodes.has(node.id) ? 'reach' : '',
-      node.__threeObj?.userData.written ? 'text' : ''].filter(Boolean);
-    const look = lookOf(tag.classes, palette), shape = wrapped(tag.text, look);
+      ...(node.work || []).map(condition => `work-${condition}`), R.nodes.has(node.id) ? 'reach' : ''].filter(Boolean);
+    const look = lookOf(tag.classes, palette);
     const depth = depthOf(node), unit = perPixel(Math.max(depth, 1e-3)), radius = Math.cbrt(nodeSize(node)) * 3;
-    const lift = Math.max(radius, tag.classes.includes('text') ? LABEL.written * unit : 0) + LABEL.gap * unit;
-    tag.sprite.position.set(node.x, node.y, node.z).addScaledVector(UP, lift);
-    tag.sprite.scale.set(shape.width * 2 / (spread * height), shape.height * 2 / (spread * height), 1);
+    // Its letters are a set size in the map, in a set ratio to the balls, so the eye's own perspective makes it larger
+    // near and smaller far as it does the nodes; `grown` is the size it is seen at, the pixels on the screen for one of
+    // its canvas. From the front of the map in view to its back it fades, `back`.
+    const back = deepest > nearest ? Math.min(1, Math.max(0, (depth - nearest) / (deepest - nearest))) : 0;
+    const grown = LABEL.letters / LABEL.size / unit;
+    const shape = wrapped(tag.text, look);
+    tag.shape = shape;
+    // Pinned in the map a set distance from its node, on the side away from the map's middle, so it is a thing of the
+    // scene: it swings round its node as the map turns and goes behind the node as anything behind it does, and the
+    // outer names stand outside the map, over the least of it.
+    const ball = radius;
+    OUT.set(node.x - middle.x, node.y - middle.y, node.z - middle.z);
+    if (OUT.lengthSq() < 1e-6) OUT.copy(UP); else OUT.normalize();
+    tag.sprite.position.set(node.x, node.y, node.z).addScaledVector(OUT, ball + LABEL.out);
+    // turned to face out from the map's middle, upright in the map, or upright to the eye where it would face
+    // straight up or down
+    tag.sprite.up.copy(Math.abs(OUT.y) > 0.98 ? UP : Y_UP);
+    tag.sprite.lookAt(AT.copy(tag.sprite.position).add(OUT));
+    // In the small area the selected node's name is set to the area's width, to be read there: LABEL.smallNear of it
+    // with the camera in on the node, LABEL.smallFar with the whole map in view, and between as the camera moves.
+    let seen = grown, size = LABEL.letters / LABEL.size;
+    if (small && node.id === S.selected && shape.width) {
+      const out = V3.whole ? Math.min(1, Math.max(0, (focus / V3.whole - 0.4) / 0.6)) : 1;
+      seen = (LABEL.smallNear + (LABEL.smallFar - LABEL.smallNear) * out) * area.width / shape.width;
+      size = seen * perPixel(Math.max(1e-3, -AT.copy(tag.sprite.position).applyMatrix4(camera.matrixWorldInverse).z));
+      tag.sprite.quaternion.copy(camera.quaternion);  // turned to the eye, so it is read from any side of the map
+    }
+    tag.sprite.scale.set(shape.width * size, shape.height * size, 1);
     const anchor = G.graph2ScreenCoords(tag.sprite.position.x, tag.sprite.position.y, tag.sprite.position.z);
-    tag.rect = {left: anchor.x - shape.width / 2, right: anchor.x + shape.width / 2, top: anchor.y - shape.height, bottom: anchor.y};
-    shown.push({tag, far: depth, look});
+    tag.rect = {left: anchor.x - shape.width * seen / 2, right: anchor.x + shape.width * seen / 2,
+      top: anchor.y - shape.height * seen / 2, bottom: anchor.y + shape.height * seen / 2};
+    tag.grown = seen;
+    shown.push({tag, far: depth, look, back});
   }
   shown.sort((one, two) => one.far - two.far);
   shown.forEach((label, index) => {
+    // the nearest label solid, the farthest at LABEL.farthest of it, the rest between by their depth
+    label.tag.sprite.material.opacity = 1 - (1 - LABEL.farthest) * label.back;
     const box = label.tag.rect;
     const behind = spheres.some(sphere => sphere.id !== label.tag.id && sphere.far < label.far &&
       Math.hypot(Math.max(box.left, Math.min(sphere.x, box.right)) - sphere.x,
@@ -1774,33 +2359,85 @@ function layered() {
     tag.under = behind || covered;
     tag.z = shown.length - index;
     if (tag.under) tag.classes.push('under');
-    const look = lookOf(tag.classes, palette), key = [tag.text, fontOf(look), look.color, look.ground, look.glow, ratio].join('|');
-    if (key !== tag.key) { painted(tag, look, ratio); tag.key = key; }
+    const look = lookOf(tag.classes, palette);
+    // painted for the size it is drawn at, in steps, so a near label is as sharp as one at its own size
+    const sharp = ratio * Math.min(LABEL.largest, Math.max(1, Math.ceil(tag.grown / LABEL.sharper) * LABEL.sharper));
+    const key = [tag.text, fontOf(look), look.color, look.ground, look.glow, sharp].join('|');
+    if (key !== tag.key) { painted(tag, look, sharp, tag.shape); tag.key = key; }
   });
 }
-function labels() {
-  if (G) {
-    // A glass node is colored by the page, since the graph colors only the nodes it draws itself.
-    for (const node of G.graphData().nodes) if (isGlass(node) && node.__threeObj?.material && !node.__threeObj.material.userData.pulsed)
-      colored(node.__threeObj.material, dimmed(node) ? dim(colorOf(node)) : colorOf(node));
-    DRIFT.value = reduced() ? 0 : performance.now() / 1000;  // the distortion of the glass drifts, VIEW-025
-    wave3d(G.graphData());
-    roam3d(G.graphData());
-    text3d();
-    let signaled = false;
-    for (const node of G.graphData().nodes) {
-      if (node.__threeObj && node.__threeObj.raycast !== picked) node.__threeObj.raycast = picked;
-      if ((node.work && node.work.length) || node.__threeObj?.material?.userData.lit) paint3d(node);
-      signaled = signaled || SIGNALS.some(([condition]) => has(node, condition));
-    }
-    layered();
-    // The bloom runs while a reach is lit and while any part has a record that gives off light, VIEW-029, for as long
-    // as the record is open and not only at the moments of its flash: the glass's highlights are over full brightness
-    // too, and a pass switched with each flash would make them blink with it.
-    if (BLOOM) BLOOM.enabled = Boolean(R.key) || signaled;
-    placeTip();
+/* The page's work for each frame of the 3D map, run in the render chain before anything is drawn, `create3D`: the
+ * camera's flight, the colors, the wave, the figures, the text, the lights, the labels, the dots and the tooltip. It
+ * says whether the next frame has something of its own to show, `FRAMES.busy`, and whether the dots flow,
+ * `FRAMES.flowing`. */
+function prepare3d() {
+  const now = performance.now(), data = G.graphData();
+  frameWhileSpreading(now, data);
+  flight(now);
+  G.camera().updateMatrixWorld();
+  // A glass node is colored by the page, since the graph colors only the nodes it draws itself.
+  for (const node of data.nodes) if (isGlass(node) && node.__threeObj?.material && !node.__threeObj.material.userData.pulsed)
+    colored(node.__threeObj.material, dimmed(node) ? dim(colorOf(node)) : colorOf(node));
+  DRIFT.value = reduced() ? 0 : now / 1000;  // the distortion of the glass drifts, VIEW-025
+  wave3d(data);
+  roam3d(data);
+  ghost3d(data, now);
+  let signaled = false;
+  for (const node of data.nodes) {
+    if (node.__threeObj && node.__threeObj.raycast !== picked) node.__threeObj.raycast = picked;
+    if ((node.work && node.work.length) || node.__threeObj?.material?.userData.lit) paint3d(node);
+    signaled = signaled || SIGNALS.some(([condition]) => has(node, condition));
   }
-  requestAnimationFrame(labels);
+  layered();
+  flow3d(now, data);
+  // The bloom runs while a reach is lit and while any part has a record that gives off light, VIEW-029, for as long
+  // as the record is open and not only at the moments of its flash: the glass's highlights are over full brightness
+  // too, and a pass switched with each flash would make them blink with it.
+  if (BLOOM) BLOOM.enabled = Boolean(R.key) || signaled;
+  placeTip();
+  showModes3d();
+  FRAMES.busy = !reduced() && (Boolean(R.key) || ROAM.figures.size > 0 || GHOSTS.built.size > 0 || signaled);
+  FRAMES.flowing = !reduced() && FLOW.count > 0 && FLOW.held === null;
+}
+/* The dots that travel each join, VIEW-005: two to a link, flowing the way the join's information goes, its ifd,
+ * `flowOf`: from the receiver to the purpose vertex and on to each element the join holds when it sends, back when it
+ * receives, and one each way when both. The page moves them by the time that passed, so they flow at one speed at any frame
+ * rate. The purpose link and the encounter links of one join share one phase: a dot reaches the purpose vertex as
+ * the next leaves it for every element the join holds, so the flow runs through the join as one, receiver to
+ * providers. A dot grows out of the receiver and shrinks into the provider, so it neither appears nor vanishes at
+ * once. Each join has its own phase, so the map's joins never pulse in step. `held`, a share of the way, holds every
+ * dot there, `dots3d`. */
+const FLOW = {period: 2.8, clock: 0, last: 0, held: null, count: 0, ends: 0.08};
+const phases = new Map();
+function phaseOf(join) {
+  if (!phases.has(join)) {
+    let hash = 0x811c9dc5;  // FNV-1a over the join's id, so a join keeps its phase on every load
+    for (const char of String(join)) { hash ^= char.codePointAt(0); hash = Math.imul(hash, 0x01000193) >>> 0; }
+    phases.set(join, hash / 0x100000000);
+  }
+  return phases.get(join);
+}
+function flow3d(now, data) {
+  FLOW.clock += Math.min(0.1, Math.max(0, (now - (FLOW.last || now)) / 1000));
+  FLOW.last = now;
+  let count = 0;
+  const ways = new Map(S.joins.map(join => [join.id, flowOf(join)]));
+  for (const link of data.links) {
+    const dots = link.__photonsObj?.children, from = link.source, to = link.target;
+    if (!dots?.length || from?.x === undefined || to?.x === undefined) continue;
+    count++;
+    const offset = phaseOf(link.join), way = ways.get(link.join) || ['forth'];
+    dots.forEach((dot, index) => {
+      // the way the join's information goes: back, from the elements served to the receiver, runs the relay in reverse
+      const forth = (FLOW.clock / FLOW.period + offset + index / dots.length) % 1, back = way[index % way.length] === 'back';
+      const along = FLOW.held ?? (back ? 1 - forth : forth);
+      dot.__progressRatio = along;
+      dot.position.set(from.x + (to.x - from.x) * along, from.y + (to.y - from.y) * along, from.z + (to.z - from.z) * along);
+      const through = link.k === 'purpose' ? along / 2 : 0.5 + along / 2;  // its share of the whole join's way
+      dot.scale.setScalar(FLOW.held === null ? Math.max(0.001, Math.min(1, through / FLOW.ends, (1 - through) / FLOW.ends)) : 1);
+    });
+  }
+  FLOW.count = count;
 }
 /* The 3D view draws the map, or the memory network of a node while one is open, VIEW-031. `previous` holds where
  * each node stood, the positions of what is drawn now unless given. */
@@ -1814,6 +2451,7 @@ function draw3D(previous = null) {
     if (known) Object.assign(node, {x: known.x, y: known.y, z: known.z, vx: known.vx, vy: known.vy, vz: known.vz,
       fx: known.fx, fy: known.fy, fz: known.fz});
   }
+  arrivals(data);
   const named = new Set(data.nodes.filter(node => node.t === 'el').map(node => node.id));
   for (const id of [...tags.keys()]) if (!named.has(id)) dropLabel(id);
   if (hovered) hovered = data.nodes.find(node => node.id === hovered.id) || null;
@@ -1824,6 +2462,34 @@ function draw3D(previous = null) {
   G.warmupTicks(MEM.key ? 120 : 0);
   G.graphData(data);
   V3.layouts++;
+}
+/* A node new to a map already laid out starts beside a node it is linked to, a little way off in a direction its id
+ * gives, so it grows out of the part it belongs to and the layout only eases it into place: started where the layout
+ * puts a node with no place, around the middle of the map, it was pulled across the whole map and the nodes it passed
+ * were shaken. Nodes linked to nothing placed, and every node of a map with nothing placed yet or with much of it new,
+ * are left to the layout, which warms itself for the share of nodes it has to place. */
+function arrivals(data) {
+  const fresh = data.nodes.filter(node => node.x === undefined).length;
+  if (!fresh || fresh === data.nodes.length || fresh > Math.max(3, data.nodes.length * 0.15)) return;
+  const byId = new Map(data.nodes.map(node => [node.id, node])), linked = new Map();
+  for (const link of data.links) {
+    const one = endOf(link.source), two = endOf(link.target);
+    (linked.get(one) || linked.set(one, []).get(one)).push(two);
+    (linked.get(two) || linked.set(two, []).get(two)).push(one);
+  }
+  for (let round = 0, placedSome = true; placedSome && round < 8; round++) {  // a chain of new nodes, one link at a time
+    placedSome = false;
+    for (const node of data.nodes) {
+      if (node.x !== undefined) continue;
+      const beside = (linked.get(node.id) || []).map(id => byId.get(id)).find(other => other && other.x !== undefined);
+      if (!beside) continue;
+      const turn = phaseOf(node.id) * 2 * Math.PI, rise = phaseOf(node.id + '^') * 2 - 1, out = Math.sqrt(1 - rise * rise);
+      const apart = ballOf(beside) + ballOf(node) + 6;
+      Object.assign(node, {x: beside.x + Math.cos(turn) * out * apart, y: beside.y + rise * apart, z: beside.z + Math.sin(turn) * out * apart,
+        vx: 0, vy: 0, vz: 0});
+      placedSome = true;
+    }
+  }
 }
 /* New data starts the 3D layout again at full strength, which shakes the map, so a change that adds or removes no node
  * and no link is copied onto what is drawn, which is drawn again where it stands, VIEW-018. */
@@ -1863,7 +2529,7 @@ function setTheme(name) {
 $('#theme').value = document.documentElement.dataset.theme;
 if ($('#theme').selectedIndex < 0) $('#theme').value = document.documentElement.dataset.theme = 'space';  // a kept name that is no longer a theme
 $('#theme').onchange = () => setTheme($('#theme').value);
-const MODE = {mode: 'whole', key: 5};  // the 2D camera's mode in the large area, VIEW-041; see modeTarget
+const MODE = {mode: 'whole', key: 5, zoom: 3, most: 0.6};  // the 2D camera's mode in the large area, VIEW-041; see modeTarget
 /* The two views change places, VIEW-028: the 2D map takes the large area and the 3D map the small one, and back.
  * Each is then drawn for the area it has. The choice is the viewer's own, kept in this browser. */
 async function swap(on, remember = true) {
@@ -1882,32 +2548,228 @@ async function swap(on, remember = true) {
 }
 $('#swapBtn').onclick = $('#swap3dBtn').onclick = () => swap(!$('.app').classList.contains('swapped'));
 /* The 3D map's own Fit goes between two views: the whole map, and close on the selected node. It moves the 3D map
- * only, as the 2D map's Fit moves the 2D map only. */
-const V3 = {whole: 0, fits: 0, layouts: 0};  // how far the camera stands when the whole map is in view, and the fits ended
+ * only, as the 2D map's Fit moves the 2D map only. `auto` says the camera still shows the whole map as the page last
+ * fitted it, with no hand and no selection having moved it since, so the layout may fit it again once it settles. */
+const V3 = {whole: 0, fits: 0, layouts: 0, ticks: 0, auto: true, followed: 0, asked: false};  // the whole map's distance, the fits ended, the layouts
 const away3d = () => G.camera().position.distanceTo(G.controls().target);
+/* The 3D camera's flights, VIEW-008 and VIEW-028. A flight moves the point looked at and the camera's place around it
+ * together: the point in a straight line, the camera around it by its turn, its tilt and the log of its distance, so it
+ * swings round and moves in or out at an even pace rather than cutting through the map. Each part comes to rest as
+ * the flight ends and starts at the speed it has, so a flight asked for while another runs carries on from it without
+ * a jolt, and one from rest eases in. Between places far apart the camera draws back on the way, so where it goes is
+ * in sight before it arrives. A flight is run each frame before anything is drawn, `prepare3d`, so the labels and the
+ * tooltip follow it in the same frame. A hand on the camera ends it; with reduced motion the camera is put there at
+ * once. */
+const FLIGHT = {on: false, from: null, to: null, rate: null, start: 0, length: 1, back: 0, done: null};
+const PARTS = ['x', 'y', 'z', 'turn', 'tilt', 'far'];
+function cameraNow() {
+  const camera = G.camera().position, target = G.controls().target;
+  const dx = camera.x - target.x, dy = camera.y - target.y, dz = camera.z - target.z, far = Math.max(1e-6, Math.hypot(dx, dy, dz));
+  return {x: target.x, y: target.y, z: target.z, turn: Math.atan2(dx, dz), tilt: Math.acos(Math.max(-1, Math.min(1, dy / far))),
+    far: Math.log(far)};
+}
+function putCamera(at) {
+  const camera = G.camera(), target = G.controls().target, far = Math.exp(at.far), across = Math.sin(at.tilt) * far;
+  target.set(at.x, at.y, at.z);
+  camera.position.set(at.x + across * Math.sin(at.turn), at.y + Math.cos(at.tilt) * far, at.z + across * Math.cos(at.turn));
+  camera.lookAt(target);
+  camera.updateMatrixWorld();
+}
+/* A cubic from `from`, leaving at `rate` a second, to rest at `to` after `length` seconds: its value and rate at `s`,
+ * the share of the time gone. From rest it eases in and out. */
+function hermite(from, to, rate, length, s) {
+  const s2 = s * s, s3 = s2 * s;
+  return [(2 * s3 - 3 * s2 + 1) * from + (s3 - 2 * s2 + s) * rate * length + (3 * s2 - 2 * s3) * to,
+    ((6 * s2 - 6 * s) * from + (3 * s2 - 4 * s + 1) * rate * length + (6 * s - 6 * s2) * to) / length];
+}
+function flightAt(now) {
+  const s = Math.min(1, Math.max(0, (now - FLIGHT.start) / 1000 / FLIGHT.length)), at = {}, rate = {};
+  for (const part of PARTS) [at[part], rate[part]] = hermite(FLIGHT.from[part], FLIGHT.to[part], FLIGHT.rate[part], FLIGHT.length, s);
+  // drawing back on the way, nothing at either end and at rest there
+  at.far += FLIGHT.back * 16 * s * s * (1 - s) * (1 - s);
+  rate.far += FLIGHT.back * 32 * s * (1 - s) * (1 - 2 * s) / FLIGHT.length;
+  return {at, rate, s};
+}
+function flyTo(to, {length = null, done = null} = {}) {
+  if (!G) return;
+  const now = performance.now(), under = FLIGHT.on ? flightAt(now) : null, here = under ? under.at : cameraNow();
+  const goal = {...to, turn: here.turn + Math.atan2(Math.sin(to.turn - here.turn), Math.cos(to.turn - here.turn)),
+    tilt: Math.min(Math.PI - 0.05, Math.max(0.05, to.tilt))};
+  const moved = Math.hypot(goal.x - here.x, goal.y - here.y, goal.z - here.z) / Math.exp(Math.max(here.far, goal.far));
+  const turned = Math.abs(goal.turn - here.turn) + Math.abs(goal.tilt - here.tilt) + Math.abs(goal.far - here.far);
+  if (reduced()) {
+    Object.assign(FLIGHT, {on: false, done: null});
+    putCamera(goal);
+    wake3d();
+    return done?.();
+  }
+  Object.assign(FLIGHT, {on: true, from: here, to: goal, start: now, done,
+    rate: under ? under.rate : Object.fromEntries(PARTS.map(part => [part, 0])),
+    length: length ?? Math.min(1.6, Math.max(0.6, 0.5 + 0.45 * Math.sqrt(moved + turned * 0.6))),
+    back: Math.min(Math.log(1.7), 0.3 * Math.max(0, moved - 0.25))});
+  wake3d();
+}
+function flight(now) {
+  if (!FLIGHT.on) return;
+  const {at, s} = flightAt(now);
+  putCamera(at);
+  if (s < 1) return;
+  const done = FLIGHT.done;
+  Object.assign(FLIGHT, {on: false, done: null});
+  done?.();
+}
+/* Where the camera stands to show the given balls, {x, y, z, r}, whole on the screen with `room` pixels to spare and
+ * room above for the labels, seen the way the camera looks now: the point looked at, which is the middle of what is
+ * shown, or `toward` of the way from there to the ball `on`, and the distance, the least at which every ball is in
+ * view. */
+const LOOK = {back: new THREE.Vector3(), right: new THREE.Vector3(), up: new THREE.Vector3(), at: new THREE.Vector3()};
+function framed(balls, {room = 60, on = null, toward = 0, facing = null} = {}) {
+  // seen the way the camera looks now, or from `facing`, a turn and a tilt
+  const here = {...cameraNow(), ...(facing || {})}, camera = G.camera(), box = $('#stage').getBoundingClientRect();
+  const {back, right, up, at} = LOOK;
+  back.set(Math.sin(here.tilt) * Math.sin(here.turn), Math.cos(here.tilt), Math.sin(here.tilt) * Math.cos(here.turn));
+  right.crossVectors(camera.up, back);
+  if (right.lengthSq() < 1e-8) right.set(1, 0, 0);
+  right.normalize();
+  up.crossVectors(back, right);
+  const tall = Math.tan(camera.fov * Math.PI / 360), height = Math.max(1, box.height), width = Math.max(1, box.width);
+  const spare = (pixels, of) => Math.max(0.25, 1 - 2 * pixels / of);
+  const across = tall * camera.aspect * spare(room, width), down = tall * spare(room + LABEL.size, height);
+  // the middle of what is shown, as seen from the camera's way
+  let low = [Infinity, Infinity], high = [-Infinity, -Infinity];
+  const middle = new THREE.Vector3();
+  for (const ball of balls) middle.add(at.set(ball.x, ball.y, ball.z));
+  middle.divideScalar(Math.max(1, balls.length));
+  for (const ball of balls) {
+    at.set(ball.x, ball.y, ball.z).sub(middle);
+    const x = at.dot(right), y = at.dot(up);
+    low = [Math.min(low[0], x - ball.r), Math.min(low[1], y - ball.r)];
+    high = [Math.max(high[0], x + ball.r), Math.max(high[1], y + ball.r)];
+  }
+  middle.addScaledVector(right, (low[0] + high[0]) / 2).addScaledVector(up, (low[1] + high[1]) / 2);
+  if (on) middle.lerp(at.set(on.x, on.y, on.z), toward);
+  let far = 0;
+  for (const ball of balls) {
+    at.set(ball.x, ball.y, ball.z).sub(middle);
+    const ahead = -at.dot(back);  // how much farther from the camera than the point looked at
+    far = Math.max(far, (Math.abs(at.dot(right)) + ball.r) / across - ahead, (Math.abs(at.dot(up)) + ball.r) / down - ahead,
+      ball.r * 2 - ahead);
+  }
+  return {x: middle.x, y: middle.y, z: middle.z, turn: here.turn, tilt: here.tilt, far: Math.log(Math.max(far, 1))};
+}
+const ball = node => ({x: node.x, y: node.y, z: node.z, r: ballOf(node)});
+const drawnBalls = data => data.nodes.filter(node => node.x !== undefined && shownNode(node)).map(ball);
+/* What a fit of the whole map frames: every node, or in the small area the middle FIT_SMALL of them, the nodes nearest
+ * the map's middle, so the small map is seen close enough to read and its outermost nodes may run off its edges. */
+const FIT_SMALL = 0.8;
+function fitBalls(data) {
+  const balls = drawnBalls(data);
+  if (!$('.app').classList.contains('swapped') || balls.length < 6) return balls;
+  const middle = balls.reduce((sum, one) => ({x: sum.x + one.x / balls.length, y: sum.y + one.y / balls.length,
+    z: sum.z + one.z / balls.length}), {x: 0, y: 0, z: 0});
+  const away = one => Math.hypot(one.x - middle.x, one.y - middle.y, one.z - middle.z);
+  return balls.sort((one, two) => away(one) - away(two)).slice(0, Math.ceil(balls.length * FIT_SMALL));
+}
 function fit3d(time = 700, room = 60) {
   if (!G) return;
-  const took = reduced() ? 0 : time;
-  G.zoomToFit(took, room);
-  setTimeout(() => { if (G) { V3.whole = away3d(); V3.fits++; } }, took + 60);
+  const balls = fitBalls(G.graphData());
+  Object.assign(V3, {auto: true, asked: true});
+  if (!balls.length) return;
+  flyTo(framed(balls, {room}), {length: time / 1000, done: () => { V3.whole = away3d(); V3.fits++; }});
 }
-function fly3d(id) {
-  const node = G ? G.graphData().nodes.find(item => item.id === id) : null;
+/* A selected node is turned to face the eye: the camera swings round the map's middle to the side the node stands
+ * out on, so the node is in front, its sign turned to the eye, VIEW-038, as if the whole map had turned to present it.
+ * It stays right side up: the camera keeps the map's up as its own and is never more than TILT off level, so it never
+ * looks straight down on the map. Only a selection turns it; a hand on the camera, or a drag, moves it as the hand
+ * does. Swinging the camera round the middle shows what turning the whole map would, and keeps every node where the
+ * layout put it. */
+const TILT = 0.85;  // the most the camera rises above or falls below level, in radians, when it turns to a node
+function facingOf(node, balls) {
+  const middle = balls.reduce((sum, one) => ({x: sum.x + one.x / balls.length, y: sum.y + one.y / balls.length,
+    z: sum.z + one.z / balls.length}), {x: 0, y: 0, z: 0});
+  const dx = node.x - middle.x, dy = node.y - middle.y, dz = node.z - middle.z, away = Math.hypot(dx, dy, dz);
+  if (away < 1e-3) return null;  // the node at the middle: seen from where the camera is
+  return {turn: Math.atan2(dx, dz), tilt: Math.min(Math.PI / 2 + TILT, Math.max(Math.PI / 2 - TILT, Math.acos(dy / away)))};
+}
+/* A selection turns the map to the node, VIEW-008: the node at the center of the view, facing the eye, `facingOf`,
+ * at the zoom the person has, so a map seen whole stays whole. `close`, the 3D map's Zoom and Fit, comes in on it:
+ * close enough that its three nearest neighbors frame it, at most four tenths of the whole map's distance, never so
+ * near that the node fills the screen. */
+function fly3d(id, close = false) {
+  const data = G ? G.graphData() : null, node = data?.nodes.find(item => item.id === id);
   if (!node || node.x === undefined) return false;
-  const ratio = 1 + 90 / Math.hypot(node.x || 1, node.y || 1, node.z || 1);
-  G.cameraPosition({x: node.x * ratio, y: node.y * ratio, z: node.z * ratio}, node, reduced() ? 0 : 900);
+  const near = new Set(node.id === S.selected ? S.neighbors : []);
+  for (const link of data.links) {
+    const one = endOf(link.source), two = endOf(link.target);
+    if (one === id) near.add(two);
+    if (two === id) near.add(one);
+  }
+  near.delete(id);
+  const reach = item => Math.hypot(item.x - node.x, item.y - node.y, item.z - node.z);
+  const around = data.nodes.filter(item => near.has(item.id) && item.x !== undefined && shownNode(item))
+    .sort((one, two) => reach(one) - reach(two)).slice(0, 3);
+  const facing = facingOf(node, fitBalls(data));
+  const view = framed([ball(node), ...around.map(ball)], {room: 70, on: node, toward: 1, facing});
+  const whole = framed(fitBalls(data), {facing}).far;
+  view.far = close ? Math.min(Math.max(view.far, Math.log(ballOf(node) * 7)), whole + Math.log(0.4))
+    : (FLIGHT.on ? FLIGHT.to.far : cameraNow().far);  // a selection keeps the zoom the person has
+  V3.auto = false;
+  flyTo(view);
   return true;
+}
+/* While a map opens and its layout first spreads out, the camera keeps it framed, easing after it four times a second,
+ * so the map unfolds in view rather than off the edge of it or as a speck in the middle; the page's first fit then has
+ * little left to do. It stops once a fit is asked for, at a hand on the camera, or when the layout rests. */
+function frameWhileSpreading(now, data) {
+  if (V3.asked || !V3.auto || !FRAMES.engine || MEM.key || reduced() || now - V3.followed < 250) return;
+  V3.followed = now;
+  const balls = fitBalls(data);
+  if (balls.length > 1) flyTo(framed(balls), {length: 0.9});
+}
+/* Once the layout has settled, the map is fitted to the view, so the shape it settled into is seen whole, unless a
+ * hand or a selection has moved the camera since the page last fitted it, or the layout is held, or the camera already
+ * shows it so. */
+function settled3d() {
+  if (!G || !V3.auto || FLIGHT.on || MEM.key || $('#pauseBtn').dataset.paused === 'true') return;
+  const balls = fitBalls(G.graphData());
+  if (!balls.length) return;
+  const view = framed(balls), here = cameraNow();
+  const off = Math.hypot(view.x - here.x, view.y - here.y, view.z - here.z) / Math.exp(here.far);
+  if (Math.abs(view.far - here.far) > 0.06 || off > 0.04) fit3d(1100);
 }
 // Where the camera stands decides it, and not which button was clicked last, since the person also moves the camera
 // by hand: standing back with the whole map in view it goes in on the selected node, and from anywhere nearer it
 // goes out to the whole map.
+/* The 3D map's own Whole and Zoom, as the 2D map has, beside its Fit: the whole map, or close on the selected node,
+ * facing the eye; whichever the camera is at is checked. */
+const MODES3D = {box: null, whole: null, zoom: null, said: ''};
+MODES3D.box = h('div', {class: 'segmented modes3d', role: 'radiogroup', 'aria-label': 'How the 3D map is framed'},
+  MODES3D.whole = h('button', {type: 'button', role: 'radio', title: 'The whole map in view',
+    onclick: event => { event.stopPropagation(); fit3d(); }}, 'Whole'),
+  MODES3D.zoom = h('button', {type: 'button', role: 'radio', title: 'Close on the selected node, turned to face you',
+    onclick: event => { event.stopPropagation(); if (S.selected) fly3d(S.selected, true); }}, 'Zoom'));
+$('#big3d .mapbtns').prepend(MODES3D.box);
+function showModes3d() {  // each frame, from where the camera stands or is flying to
+  const far = FLIGHT.on ? Math.exp(FLIGHT.to.far) : away3d(), whole = V3.whole && far >= V3.whole * 0.8;
+  const said = V3.whole ? (whole ? 'whole' : 'zoom') : '';
+  if (said === MODES3D.said) return;
+  MODES3D.said = said;
+  MODES3D.whole.setAttribute('aria-checked', String(said === 'whole'));
+  MODES3D.zoom.setAttribute('aria-checked', String(said === 'zoom'));
+}
 $('#fit3dBtn').onclick = () => {
   if (!G) return;
   const back = V3.whole && away3d() >= V3.whole * 0.8;
-  if (back && S.selected && fly3d(S.selected)) return;
+  if (back && S.selected && fly3d(S.selected, true)) return;
   fit3d();
 };
-try { if (localStorage.getItem('metaform.swapped')) swap(true); } catch (error) { /* storage can be blocked */ }
+// The 2D map opens in the large area, where its names are read, unless this browser has put the 3D map there: the
+// chart is the map a person reads, and the 3D map keeps the whole in view beside it, VIEW-028.
+{
+  let kept = null;
+  try { kept = localStorage.getItem('metaform.swapped'); } catch (error) { /* storage can be blocked: the default */ }
+  if (kept === null || kept === '1') swap(true, false);
+}
 function resize() { if (G) { const box = $('#stage').getBoundingClientRect(); G.width(box.width).height(box.height); } }
 addEventListener('resize', resize);
 
@@ -1934,7 +2796,15 @@ function renderLegend() {
 /* ---------- 2D: the whole map, short names, no text on the edges; the camera moves node to node ---------- */
 const M = {svg: null, nodes: new Map(), edges: [], cam: null, to: null, fit: null, frame: 0, generation: 0};
 const MAP2D = 5000;  // the most elements Mermaid lays out; above it the 2D map is not drawn, BUILD-QUESTIONS Q52
-const plain2d = text => String(text || '').replace(/["[\]{}()<>|#;`]/g, '').slice(0, 30);
+/* A name as a 2D label: the characters Mermaid would read as its own taken out, and a name longer than `most` cut at the
+ * last break between words that keeps most of it, with an ellipsis, so a label never ends in half a word and always
+ * says it goes on. The whole name is in the panel and in the 3D map's tooltip. */
+function plain2d(text, most = 30) {
+  const plain = String(text || '').replace(/["[\]{}()<>|#;`]/g, '').trim();
+  if (plain.length <= most) return plain;
+  const cut = plain.slice(0, most - 1), space = cut.lastIndexOf(' ');
+  return (space >= most * 0.6 ? cut.slice(0, space) : cut).replace(/[\s,.;:–—-]+$/, '') + '…';
+}
 let mermaidReady = false;
 async function build2D(keep = true) {
   const generation = ++M.generation;
@@ -1981,6 +2851,7 @@ async function build2D(keep = true) {
   const edges = drawn.map(({join, provider}, index) => ({join, provider, path: svg.querySelector(`[data-id="e${index}"]`)
     || svg.querySelectorAll('.edgePaths path')[index]}));
   for (const edge of edges) for (const condition of edge.join.open_work || []) edge.path?.classList.add(`work-${condition}`);
+  for (const edge of edges) pointed(edge);
   // The base map is kept while a node is entered and shown again as it was, VIEW-016.
   M.base = {svg, nodes, edges, fit: fitOf(svg), vertical, cam: null};
   figures2d(S.tickets || []);
@@ -2118,11 +2989,12 @@ function showBase(left = null) {
  * layer attaches to the node, and the nodes those items link to, which can be entered in turn. */
 const IN = [];  // the levels entered from the base map: {key, label, more, things}
 const GROUP = 20;
+const PURPOSE2D = 64;  // a join's purpose in its box inside a node, VIEW-016: about three lines as Mermaid wraps it
 let insideGen = 0;
 const kindOf = key => key.startsWith('p:') ? 'join' : 'element';
 const bareId = key => key.replace(/^p:/, '');
 const keyOf = node => !node ? null : node.kind === 'join' ? 'p:' + node.id : node.kind === 'element' ? node.id : null;
-const label2d = text => plain2d(String(text ?? '').replace(/\s+/g, ' ')) || '·';
+const label2d = (text, most = 30) => plain2d(String(text ?? '').replace(/\s+/g, ' '), most) || '·';
 const samePath = (a, b) => a.length === b.length && a.every((level, index) => level.key === b[index].key);
 /* An element is labeled with its name, the project's name for it, or else its short namespace name, its address read
  * through name_length, MAP-012. A join has no name of its own, since a name belongs to the element it holds; its box
@@ -2152,7 +3024,7 @@ async function drawInside(arriving = false) {
     const id = `v${ids.size}`;
     ids.set(key, id);
     things.set(key, thing || {kind, key, label});
-    lines.push(`${id}["${label2d(label)}"]:::${kind}`);
+    lines.push(`${id}["${label2d(label, kind === 'purpose' ? PURPOSE2D : 30)}"]:::${kind}`);
     return id;
   };
   const key = level.key, center = add(key, level.label, 'center');
@@ -2248,9 +3120,20 @@ async function drawInside(arriving = false) {
   level.things = things;
   stopCam();  // a camera still easing on the level left must not move this one
   Object.assign(M, {svg, nodes, edges: [], fit: fitOf(svg), vertical, drawn: level});
-  setCam(frame(readable(M.fit, nodes.get(level.key))));
+  setCam(frame(insideView(M.fit, nodes.get(level.key), svg)));  // the node's own graph fades in where it opens, VIEW-016
   renderCrumbs();
   if (S.selected && nodes.has(S.selected)) focus2D(S.selected);
+}
+/* Where the camera opens on a node's own graph: `readable`, and in the large area never larger than the size at which
+ * its text is drawn at the readable mode's minimum, VIEW-041, so a small graph sits in the middle of the area at a size
+ * it reads at, rather than filling it with text three times that size. */
+function insideView(fit, center, svg) {
+  const view = readable(fit, center), area = $('#viewport').getBoundingClientRect();
+  if (!large() || !area.width || !area.height) return view;
+  const shown = frame(view), most = (6 + 2 * MODE.key) / smallestText(svg);
+  if (area.width / shown.w <= most) return view;
+  const w = area.width / most, height = area.height / most;
+  return {x: shown.x + shown.w / 2 - w / 2, y: shown.y + shown.h / 2 - height / 2, w, h: height};
 }
 function renderCrumbs() {
   const bar = $('#crumbs');
@@ -2280,8 +3163,8 @@ async function enter(key) {
   if (level?.key === key) return;
   if (!IN.length && M.base) M.base.cam = {...M.cam};
   const node = M.nodes.get(key);
-  if (M.svg && node && !reduced()) {  // the camera goes into the node as the view it is on fades, VIEW-016
-    moveCam(into(node));
+  if (M.svg && node && !reduced()) {  // the camera dives into the node as the view it is on fades, VIEW-016
+    moveCam(into(node), {length: 0.48, dive: true});
     await fade(M.svg, 0);
   }
   IN.push({key, label: nameOf(key, thing?.label || key), more: {}, things: new Map()});
@@ -2291,8 +3174,11 @@ async function enter(key) {
 /* Up to a level: 0 is the base map. The node left is selected where it shows. */
 async function goTo(depth) {
   if (depth >= IN.length) return;
-  const left = IN[depth].key;
-  if (M.svg && !reduced()) await fade(M.svg, 0);  // the node's graph fades as it is left, VIEW-016
+  const left = IN[depth].key, here = M.drawn === IN.at(-1) ? M.nodes.get(IN.at(-1).key) : null;
+  if (M.svg && !reduced()) {  // the node's graph gathers onto the node and fades as it is left, VIEW-016
+    if (here) moveCam(into(here), {length: 0.48});
+    await fade(M.svg, 0);
+  }
   IN.length = depth;
   if (depth) await drawInside(true); else showBase(left);
   select(left, true, true);
@@ -2546,19 +3432,22 @@ function renderEntity(name, pane = $('#p-object')) {
   const observation = one => {
     const row = h('div', {class: 'item obs', style: color}), editing = draft('obs:' + one.content);
     const show = () => { EDITING.delete(editing); fill(row, h('p', {class: 'itemtext'}, one.content),
-      h('div', {class: 'acts'}, h('button', {class: 'edit', onclick: edit}, 'Edit'),
-        h('button', {class: 'delete', onclick: () => memoryWrite(['delete_observations',
-          {deletions: [{entityName: name, observations: [one.content]}]}])}, 'Delete'))); };
+      h('div', {class: 'acts'}, h('button', {class: 'btn sm quiet edit', type: 'button', onclick: edit}, 'Edit'),
+        h('button', {class: 'btn sm danger delete', type: 'button', onclick: async () => {
+          if (await memoryWrite(['delete_observations', {deletions: [{entityName: name, observations: [one.content]}]}]))
+            undoable('Deleted the observation.', async () => Boolean(await memoryWrite(['add_observations',
+              {observations: [{entityName: name, contents: [one.content]}]}])));
+        }}, 'Delete'))); };
     const edit = () => {
       EDITING.add(editing);
-      const text = h('textarea', {'data-draft': editing}, one.content);  // its text, so the row is found by it
-      fill(row, text, h('div', {class: 'acts'}, h('button', {class: 'save', onclick: async () => {
+      const text = h('textarea', {'data-draft': editing, 'aria-label': 'The observation'}, one.content);  // its text, so the row is found by it
+      fill(row, text, h('div', {class: 'acts'}, h('button', {class: 'btn sm primary save', type: 'button', onclick: async () => {
         const changed = text.value.trim();
         if (!changed || changed === one.content) return show();
         EDITING.delete(editing);
         await memoryWrite(['add_observations', {observations: [{entityName: name, contents: [changed]}]}],
           ['delete_observations', {deletions: [{entityName: name, observations: [one.content]}]}]);
-      }}, 'Save'), h('button', {class: 'cancel', onclick: show}, 'Cancel')));
+      }}, 'Save'), h('button', {class: 'btn sm cancel', type: 'button', onclick: show}, 'Cancel')));
     };
     if (EDITING.has(editing)) edit(); else show();
     return row;
@@ -2567,20 +3456,24 @@ function renderEntity(name, pane = $('#p-object')) {
     one.from === name ? h('b', {}, name) : h('a', {class: 'link', href: '#', onclick: event => { event.preventDefault(); select(memoryKey(one.from), true); }}, one.from),
     ` ${one.relationType} `,
     one.to === name ? h('b', {}, name) : h('a', {class: 'link', href: '#', onclick: event => { event.preventDefault(); select(memoryKey(one.to), true); }}, one.to),
-    h('div', {class: 'acts'}, h('button', {class: 'delete', onclick: () => memoryWrite(['delete_relations',
-      {relations: [{from: one.from, to: one.to, relationType: one.relationType}]}])}, 'Delete')));
+    h('div', {class: 'acts'}, h('button', {class: 'btn sm danger delete', type: 'button', onclick: async () => {
+      const relations = [{from: one.from, to: one.to, relationType: one.relationType}];
+      if (await memoryWrite(['delete_relations', {relations}]))
+        undoable(`Deleted the relation ${one.from} ${one.relationType} ${one.to}.`,
+          async () => Boolean(await memoryWrite(['create_relations', {relations}])));
+    }}, 'Delete')));
   const joined = one => h('div', {class: 'item join', style: color},
     one.key ? h('a', {class: 'link', href: '#', onclick: event => { event.preventDefault(); enter(one.key); }}, nameOf(one.key))
       : h('b', {}, joinPlace(one)),
     one.orphaned ? h('small', {}, ' · orphaned, the map no longer holds it') : one.key ? h('small', {}, '; Enter goes there.') : null,
-    h('div', {class: 'acts'}, h('button', {class: 'unjoin', onclick: () => memoryWrite(['unjoin', {id: one.join_id}])}, 'Take away')));
+    h('div', {class: 'acts'}, h('button', {class: 'btn sm danger unjoin', type: 'button', onclick: () => unjoin(one)}, 'Take away')));
   const renaming = draft('rename');
   const naming = h('div', {class: 'naming', hidden: !EDITING.has(renaming)},
     h('input', {class: 'name', 'data-draft': draft('name'), value: name, 'aria-label': 'Name'}),
     h('input', {class: 'type', 'data-draft': draft('type'), value: entity.entityType, 'aria-label': 'Type'}),
-    h('button', {class: 'save-entity', onclick: () => renameEntity(name, naming.querySelector('.name').value.trim(),
+    h('button', {class: 'btn sm primary save-entity', type: 'button', onclick: () => renameEntity(name, naming.querySelector('.name').value.trim(),
       naming.querySelector('.type').value.trim())}, 'Save'),
-    h('button', {class: 'cancel', onclick: () => { EDITING.delete(renaming); naming.hidden = true; }}, 'Cancel'));
+    h('button', {class: 'btn sm cancel', type: 'button', onclick: () => { EDITING.delete(renaming); naming.hidden = true; }}, 'Cancel'));
   const adding = h('textarea', {class: 'add-obs', 'data-draft': draft('add'), placeholder: 'A new observation'});
   const relating = h('input', {class: 'add-rel-type', 'data-draft': draft('reltype'), placeholder: 'relation, in active voice'});
   const target = h('select', {class: 'add-rel-to', 'aria-label': 'To'}, others.map(other => h('option', {value: other}, other)));
@@ -2588,12 +3481,12 @@ function renderEntity(name, pane = $('#p-object')) {
     h('div', {class: 'eyebrow'}, 'Memory'),
     h('h2', {}, name),
     h('div', {class: 'pills'}, h('span', {class: 'pill'}, entity.entityType), layerPill(memoryLayer())),
-    h('div', {class: 'acts'}, h('button', {class: 'rename', onclick: () => { EDITING.add(renaming); naming.hidden = false; naming.querySelector('.name').focus(); }}, 'Rename or retype'),
-      h('button', {class: 'forget', onclick: () => memoryWrite(['delete_entities', {entityNames: [name]}])}, 'Delete memory')),
+    h('div', {class: 'acts'}, h('button', {class: 'btn sm rename', type: 'button', onclick: () => { EDITING.add(renaming); naming.hidden = false; naming.querySelector('.name').focus(); }}, 'Rename or retype'),
+      h('button', {class: 'btn sm danger forget', type: 'button', onclick: () => forget(name)}, 'Delete memory')),
     naming,
     h('div', {class: 'eyebrow'}, 'Observations'),
     entity.observations.length ? entity.observations.map(observation) : h('p', {class: 'empty'}, 'No observations.'),
-    adding, h('button', {class: 'add-obs', onclick: async () => {
+    adding, h('button', {class: 'btn sm add-obs', type: 'button', onclick: async () => {
       const text = adding.value.trim();
       if (!text) return;
       adding.value = '';  // emptied before the write, so the panel drawn again for it does not keep it
@@ -2601,7 +3494,7 @@ function renderEntity(name, pane = $('#p-object')) {
     }}, 'Add observation'),
     h('div', {class: 'eyebrow'}, 'Relations'),
     related.length ? related.map(relation) : h('p', {class: 'empty'}, 'No relations.'),
-    others.length ? h('div', {class: 'add-rel'}, relating, target, h('button', {class: 'add-rel', onclick: async () => {
+    others.length ? h('div', {class: 'add-rel'}, relating, target, h('button', {class: 'btn sm add-rel', type: 'button', onclick: async () => {
       const type = relating.value.trim();
       if (!type) return;
       relating.value = '';
@@ -2628,6 +3521,55 @@ async function renameEntity(name, next, type) {
   const gone = ['delete_entities', {entityNames: [name]}];
   if (next === name ? await memoryWrite(gone, ...steps) : await memoryWrite(...steps, gone)) S.selected = memoryKey(next);
 }
+/* Taking a memory away, VIEW-031: a wrong memory misleads every agent that reads it, and so does one deleted by a slip.
+ * What the map still holds is made again by Undo: the memory with its observations, its joins to the nodes drawn and
+ * its relations. A join the map no longer holds cannot be made again, so taking that away is asked first, naming what
+ * is lost. */
+const plural = (count, one, many = one + 's') => `${count} ${count === 1 ? one : many}`;
+function remade(name) {
+  const entity = S.memory.entities.get(name);
+  const made = {name, entityType: entity.entityType, observations: entity.observations.map(one => one.content)};
+  const joins = S.memory.joins.filter(join => join.entity === name);
+  const relations = S.memory.relations.filter(relation => relation.from === name || relation.to === name)
+    .map(relation => ({from: relation.from, to: relation.to, relationType: relation.relationType}));
+  const held = joins.filter(join => !join.orphaned && join.key);
+  return {entity, relations, lost: joins.filter(join => !held.includes(join)), steps: [['create_entities', {entities: [made]}],
+    ...held.map(join => ['create_entities', {entities: [made], node: targetOf(join.key)}]),
+    ...(relations.length ? [['create_relations', {relations}]] : [])]};
+}
+async function forget(name, after = () => {}) {
+  if (!S.memory.entities.has(name)) return;
+  const again = remade(name), gone = ['delete_entities', {entityNames: [name]}];
+  if (again.lost.length) {
+    const sure = await confirmAct({title: `Delete the memory ${name}?`,
+      text: 'No agent reads it again. It cannot be brought back from here, since the map no longer holds a node it was kept at.',
+      lost: [`${name}, ${again.entity.entityType}, with ${plural(again.entity.observations.length, 'observation')}`,
+        ...again.relations.map(relation => `The relation ${relation.from} ${relation.relationType} ${relation.to}`),
+        ...again.lost.map(join => `Its join to ${joinPlace(join)}, which the map no longer holds`)],
+      verb: 'Delete memory'});
+    if (sure && await memoryWrite(gone)) after();
+    return;
+  }
+  if (!await memoryWrite(gone)) return;
+  after();
+  undoable(`Deleted the memory ${name}.`, async () => Boolean(await memoryWrite(...again.steps)));
+}
+async function unjoin(join, after = () => {}) {
+  const entity = S.memory.entities.get(join.entity);
+  if (join.orphaned || !join.key) {
+    const sure = await confirmAct({title: 'Take this join away?',
+      text: `The memory stays. The join cannot be made again, since the map no longer holds ${joinPlace(join)}.`,
+      lost: [`The join from ${join.entity} to ${joinPlace(join)}`],
+      kept: [entity ? `${join.entity}, with ${plural(entity.observations.length, 'observation')}` : join.entity],
+      verb: 'Take away the join'});
+    if (sure && await memoryWrite(['unjoin', {id: join.join_id}])) after();
+    return;
+  }
+  if (!await memoryWrite(['unjoin', {id: join.join_id}])) return;
+  after();
+  undoable(`Took ${join.entity} away from ${nameOf(join.key)}.`, async () => Boolean(await memoryWrite(['create_entities',
+    {entities: [{name: join.entity, entityType: entity?.entityType || 'memory', observations: []}], node: targetOf(join.key)}])));
+}
 /* ---------- the orphaned menu, LAYER-013: memories that lost their node show what they were
  * attached to ----------
  * The memory joins the map no longer holds, from `memory orphaned`, each with what it was attached to, and the memories
@@ -2643,14 +3585,13 @@ async function orphans() {
   fill($('#float .body'),
     lost.length ? lost.map(join => h('div', {class: 'ticket orphan'}, h('b', {}, join.entity),
       h('p', {class: 'note'}, `was attached to ${joinPlace(join)}`),
-      h('div', {class: 'acts'}, h('button', {class: 'unjoin', onclick: async () => {
-        if (await memoryWrite(['unjoin', {id: join.join_id}])) orphans(); }}, 'Take away the join'),
-        h('button', {class: 'forget', onclick: async () => {
-          if (await memoryWrite(['delete_entities', {entityNames: [join.entity]}])) orphans(); }}, 'Delete memory'))))
+      h('div', {class: 'acts'}, h('button', {class: 'btn sm unjoin', type: 'button',
+        onclick: () => unjoin({...join, orphaned: true}, orphans)}, 'Take away the join'),
+        h('button', {class: 'btn sm danger forget', type: 'button', onclick: () => forget(join.entity, orphans)}, 'Delete memory'))))
       : h('p', {class: 'empty'}, 'No memory join is orphaned.'),
     loose.length ? [h('div', {class: 'eyebrow'}, 'Joined to no node'), loose.map(name => h('div', {class: 'ticket loose'},
-      h('b', {}, name), h('div', {class: 'acts'}, h('button', {class: 'forget', onclick: async () => {
-        if (await memoryWrite(['delete_entities', {entityNames: [name]}])) orphans(); }}, 'Delete memory'))))] : null);
+      h('b', {}, name), h('div', {class: 'acts'}, h('button', {class: 'btn sm danger forget', type: 'button',
+        onclick: () => forget(name, orphans)}, 'Delete memory'))))] : null);
   $('#float').hidden = false;
 }
 function renderOrphans() {
@@ -2659,9 +3600,11 @@ function renderOrphans() {
 }
 $('#orphanBtn').onclick = () => { showAdmin(false); orphans(); };
 /* Agent prompts, VIEW-039: how agents' permission prompts are answered, read from the settings each time the window
- * opens and written back to them, so the administrator's choice is the one every agent follows and never reverts. */
-const PROMPT_WORDS = {'approve-all': 'Approve every prompt', 'approve-reads': 'Approve reads and searches; ask for the rest',
-  ask_all: 'Ask every prompt as a question at the ticket'};
+ * opens and written back to them, so the administrator's choice is the one every agent follows and never reverts.
+ * Each choice reads in plain words, its setting's value under it, and approving every prompt says what it risks. A
+ * choice is saved as it is made, and the window says so. */
+const PROMPT_WORDS = {'approve-all': ['Approve every prompt', 'Agents run any tool without asking, including ones that change or delete files.'],
+  'approve-reads': ['Approve reads and searches; ask for the rest', ''], ask_all: ['Ask every prompt as a question at the ticket', '']};
 $('#promptsBtn').onclick = async () => {
   showAgentMenu(false);
   let found;
@@ -2672,24 +3615,28 @@ $('#promptsBtn').onclick = async () => {
                   if (await wrote('/api/dispatch-prompts', {value: choice})) $('#prompts .saved').textContent = `Saved: ${choice}`;
                   else $(`#prompts input[value="${found.value}"]`).checked = true;
                 }}),
-    h('b', {}, choice), h('span', {}, PROMPT_WORDS[choice] || ''))));
+    h('b', {}, (PROMPT_WORDS[choice] || [choice])[0]), h('code', {}, choice),
+    (PROMPT_WORDS[choice] || [])[1] ? h('span', {class: 'risk'}, PROMPT_WORDS[choice][1]) : null)));
   $('#prompts .saved').textContent = `Now: ${found.value}`;
   await readAutostart();
   $('#prompts').hidden = false;
 };
 /* The Agents menu: the agents' own settings and repair, kept apart from Administration's project-wide removals. */
-function showAgentMenu(open) {
-  $('#agentbox').hidden = !open;
-  $('#agentsMenuBtn').setAttribute('aria-expanded', String(open));
-}
-$('#agentsMenuBtn').onclick = async event => {
-  event.stopPropagation();
-  showAdmin(false); showExport(false);
-  const open = $('#agentbox').hidden;
-  showAgentMenu(open);
-  if (open) { await readAutostart(); $('#agentCount').value = AUTO.agents ?? 5; }  // the saved setting, as it is now
-};
-$('#agentbox').onclick = event => event.stopPropagation();
+function showAgentMenu(open) { $('#agentbox').hidden = !open; }
+overlay($('#agentbox'), {kind: 'menu', focus: '#agentCount'});
+toggler($('#agentsMenuBtn'), $('#agentbox'), async () => {
+  // the default agent, chosen here as in every picker: what chats, issues and intakes start with unless another is chosen
+  if (!$('#defaultAgentPick').firstChild) {
+    // the default as dispatch has it, and while one chosen is being made the default, that one
+    const holder = {chosen: false, asked: null};
+    Object.defineProperty(holder, 'agent', {get: () => holder.asked ?? HARNESS.default, set: agent => { holder.asked = agent; }});
+    $('#defaultAgentPick').append(PICKERS.default ||= agentPicker({label: 'Default agent', star: false, kept: true, exact: true,
+      holder, onchange: async agent => { await makeDefault(agent); holder.asked = null; paintPickers(); }}));
+  }
+  readHarnesses();
+  await readAutostart();
+  $('#agentCount').value = AUTO.agents ?? 5;  // the saved setting, as it is now
+});
 $('#agentCount').onchange = async event => {
   const count = Number(event.target.value);
   if (!Number.isInteger(count) || count < 1) { event.target.value = AUTO.agents ?? 5; return; }
@@ -2700,8 +3647,15 @@ $('#agentCount').onchange = async event => {
     else event.target.value = AUTO.agents ?? 5;
   } finally { event.target.disabled = false; }
 };
+/* Reset agents ends the sessions of agents that died; it cannot be undone, so it is asked first, saying what it does
+ * and what it leaves. */
 $('#resetAgentsBtn').onclick = async event => {
   showAgentMenu(false);
+  if (!await confirmAct({title: 'Reset agents?',
+    text: 'Use it after a crash, when an agent stopped without letting go of its ticket.',
+    lost: ['The sessions of agents that are no longer running are closed', 'The tickets they still hold go back on the board'],
+    kept: ['Agents at work are left alone', 'Nothing is deleted: every ticket, its steps and its log stay'],
+    verb: 'Reset agents'})) return;
   event.target.disabled = true;
   try {
     const done = await wrote('/api/dispatch-reset', {});
@@ -2712,7 +3666,7 @@ $('#resetAgentsBtn').onclick = async event => {
   } finally { event.target.disabled = false; }
 };
 $('#prompts .close').onclick = () => { $('#prompts').hidden = true; };
-movable($('#prompts'));
+overlay($('#prompts'), {kind: 'dialog'});
 function aspect() { const box = $('#viewport').getBoundingClientRect(); return Math.max(0.2, box.width / Math.max(1, box.height)); }
 function frame(box) {
   let {x, y, w, h: height} = box; const a = aspect();
@@ -2744,29 +3698,48 @@ function setCam(cam, settled = true) {
   M.cam = cam;
   if (settled) M.zoom = {w: cam.w, h: cam.h};
   M.svg?.setAttribute('viewBox', `${cam.x} ${cam.y} ${cam.w} ${cam.h}`);
+  again2d();  // a figure keeps its least size on the screen as the zoom changes
+  showModes();
 }
 const near = (a, b) => Boolean(a && b) && ['x', 'y', 'w', 'h'].every(k => Math.abs(a[k] - b[k]) <= Math.max(a.w, b.w) * 1e-4);
 function stopCam() { cancelAnimationFrame(M.frame); M.to = null; }
 /* Every move of the 2D camera eases in and out and is never set at once, VIEW-041; with reduced motion it moves at
- * once, VIEW-016. A move to where the camera is already going goes on as it is. */
-function moveCam(target) {
+ * once, VIEW-016. A move to where the camera is already going goes on as it is. The middle of the view moves in a
+ * straight line and its size by its log, so a zoom runs at one pace however far it goes, as the eye takes a zoom; a
+ * move asked for while another runs leaves at the speed that one had, so the camera never jolts, and one from rest
+ * eases in and out, `hermite`. `dive` speeds up all the way, the camera going into a node as its map fades out,
+ * VIEW-016; `length` is its time in seconds. Its time starts at its first frame, so work the page does before that
+ * frame is not skipped over in one step. */
+const MOVE = {from: null, to: null, rate: null, start: null, length: 0.7, dive: false};
+const CAM_PARTS = ['x', 'y', 'w', 'h'];
+const camParts = cam => ({x: cam.x + cam.w / 2, y: cam.y + cam.h / 2, w: Math.log(cam.w), h: Math.log(cam.h)});
+function camAt(now) {  // the camera of the move under way at `now`, how fast each part moves, and the share gone
+  const s = MOVE.start === null ? 0 : Math.min(1, Math.max(0, (now - MOVE.start) / 1000 / MOVE.length)), at = {}, rate = {};
+  for (const part of CAM_PARTS) {
+    const from = MOVE.from[part], to = MOVE.to[part];
+    if (MOVE.dive) [at[part], rate[part]] = [from + (to - from) * s * s * s, 3 * s * s * (to - from) / MOVE.length];
+    else [at[part], rate[part]] = hermite(from, to, MOVE.rate[part], MOVE.length, s);
+  }
+  const w = Math.exp(at.w), height = Math.exp(at.h);
+  return {cam: {x: at.x - w / 2, y: at.y - height / 2, w, h: height}, rate, s};
+}
+function moveCam(target, {length = 0.7, dive = false} = {}) {
   if (!M.svg) return;
   const to = frame(target);
   if (!M.cam) return setCam(to);
   if (near(M.to || M.cam, to)) return;
+  const under = M.to && MOVE.start !== null && !MOVE.dive ? camAt(performance.now()) : null;
   stopCam();
-  const from = {...M.cam};
   M.zoom = {w: to.w, h: to.h};
   if (reduced()) return setCam(to);
   M.to = to;
-  // Its time starts at its first frame, so work the page does before that frame is not skipped over in one step.
-  let start = null;
-  const duration = 700, ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  Object.assign(MOVE, {from: camParts(M.cam), to: camParts(to), start: null, length, dive,
+    rate: under && !dive ? under.rate : Object.fromEntries(CAM_PARTS.map(part => [part, 0]))});
   const step = now => {
-    start ??= now;
-    const k = ease(Math.min(1, (now - start) / duration));
-    setCam({x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k, w: from.w + (to.w - from.w) * k, h: from.h + (to.h - from.h) * k}, false);
-    if (k < 1) M.frame = requestAnimationFrame(step); else M.to = null;
+    MOVE.start ??= now;
+    const {cam, s} = camAt(now);
+    setCam(cam, false);
+    if (s < 1) M.frame = requestAnimationFrame(step); else M.to = null;
   };
   M.frame = requestAnimationFrame(step);
 }
@@ -2785,31 +3758,96 @@ function smallestText(svg) {  // the smallest font size of the diagram's labels,
       least = Math.min(least, parseFloat(getComputedStyle(text).fontSize) || Infinity);
   return isFinite(least) ? least : 13;
 }
+/* Mode two, Zoom: the whole diagram's view zoomed MODE.zoom times, but never with its text below the minimum the keys
+ * 1 to 9 set, and never so close that the selected node's box takes more than MODE.most of the area, centered on the
+ * selected node. Why: holding only a minimum size of text did nothing on a small map, whose whole diagram already draws
+ * its text that large, and a zoom is wanted on every map; the cap keeps a node of a small map from filling the area. */
 function modeTarget() {
   const fit = frame(fitted(M.fit)), area = M.svg.getBoundingClientRect();
   if (MODE.mode !== 'readable' || !area.width || !area.height) return fit;
   M.base.text ??= smallestText(M.base.svg);
-  // The viewBox at which that text, times the screen pixels per unit, is the minimum; the larger on screen wins.
-  const w = area.width * M.base.text / (6 + 2 * MODE.key), height = w * area.height / area.width;
-  if (w >= fit.w) return fit;
   const entry = [...S.elements.values()].find(item => item.element.role === 'DE')?.element.id;
-  const center = at2d(S.selected) || M.nodes.get(entry) || {x: fit.x + fit.w / 2, y: fit.y + fit.h / 2};
+  const node = at2d(S.selected) || M.nodes.get(entry);
+  const center = node || {x: fit.x + fit.w / 2, y: fit.y + fit.h / 2};
+  // screen pixels for a unit of the diagram: zoomed in from the whole, at least the minimum text, at most the node cap
+  let scale = Math.max(MODE.zoom * area.width / fit.w, (6 + 2 * MODE.key) / M.base.text);
+  if (node?.w && node?.h) scale = Math.min(scale, MODE.most * area.width / node.w, MODE.most * area.height / node.h);
+  const w = area.width / scale, height = area.height / scale;
+  if (w >= fit.w) return fit;
   return {x: center.x - w / 2, y: center.y - height / 2, w, h: height};
 }
-function applyMode() { if (moded()) moveCam(modeTarget()); }
+function applyMode() { if (moded()) moveCam(modeTarget()); showModes(); }
+/* The two modes of the large area, VIEW-041, shown in the 2D map's bar, so a person sees which one holds and changes it
+ * without knowing the keys: Whole, mode one, and Zoom, mode two, `modeTarget`. Neither is
+ * pressed after the wheel, which leaves both. */
+const MODES = {box: null, whole: null, readable: null, said: ''};
+function showModes() {
+  if (!MODES.box) return;
+  // In the large area on the whole map they are VIEW-041's two modes; elsewhere Whole fits and Zoom goes in close on
+  // the selected node, VIEW-008, and whichever view the camera is in is the one checked.
+  const moding = large() && Boolean(M.base) && M.svg === M.base.svg, least = 6 + 2 * MODE.key;
+  const mode = moding ? MODE.mode : M.view === 'out' ? 'whole' : M.view === 'in' ? 'readable' : null;
+  const said = [Boolean(M.svg), mode, least].join();
+  if (said === MODES.said) return;
+  MODES.said = said;
+  MODES.box.hidden = !M.svg;
+  MODES.whole.setAttribute('aria-checked', String(mode === 'whole'));
+  MODES.readable.setAttribute('aria-checked', String(mode === 'readable'));
+  MODES.readable.textContent = 'Zoom';
+  MODES.readable.title = `In ${MODE.zoom} times on the selected node, its text never smaller than ${least} px and the node never more than ${Math.round(MODE.most * 100)}% of the view; the keys 1 to 9 set the least text, 8 to 24 px`;
+}
+/* Fit, F and Whole show the whole map and leave the selection as it is, its node and its joins still marked, so the
+ * whole map is seen with what the selected node is joined to: clearing it threw away what the person had chosen to
+ * look at. Backing out to the whole map, Escape, and Home clear the marks, `fitAll`. */
 function fit2D() {
   if (large()) MODE.mode = 'whole';
+  showModes();
   M.view = 'out';
+  if (M.fit) moveCam(fitted(M.fit));
+}
+function unmark2D() {
   $('#map2d').classList.remove('focused');
   for (const edge of M.edges) edge.path?.classList.remove('on');
+  flows2d();
   for (const node of M.nodes.values()) node.g.classList.remove('sel', 'near');
-  if (M.fit) moveCam(fitted(M.fit));
+}
+/* A join's information flow direction, its ifd, MAP-020, as the receiver has it: it sends to the elements that serve
+ * it, receives from them, or both. The 2D map's arrows and flow and the 3D map's dots go the way the information goes. */
+const flowOf = join => join?.ifd === 'receives' ? ['back'] : join?.ifd === 'both' ? ['forth', 'back'] : ['forth'];
+/* An edge of the 2D map points the way its join's information goes: at the element served when the receiver sends, at
+ * the receiver when it receives, at both ends when it goes both ways. Mermaid draws the arrow at the served end. */
+function pointed(edge) {
+  const path = edge.path, end = path?.getAttribute('marker-end');
+  if (!end) return;
+  const start = end.replace('pointEnd', 'pointStart'), ways = flowOf(edge.join);
+  if (ways.includes('back')) path.setAttribute('marker-start', start);
+  if (!ways.includes('forth')) path.removeAttribute('marker-end');
+}
+/* The selected node's joins in the 2D map carry its flow, as the dots carry it along every join in 3D, VIEW-005:
+ * pulses running along each of its edges the way the join's information goes, `flowOf`, both ways for both.
+ * Only the selected node's, so the map stays still to read and the flow says what the selection takes from where.
+ * Each is a copy of its edge drawn over it in dashes that move, `.flow` in the styles; with reduced motion they stand. */
+function flows2d() {
+  for (const old of M.svg?.querySelectorAll('g.flows2d') || []) old.remove();
+  const on = M.edges.filter(edge => edge.path?.classList.contains('on'));
+  if (!on.length) return;
+  // a group of their own just over the edges, so the edges stay what they are
+  const flows = document.createElementNS(SVG, 'g'), edges = on[0].path.closest('.edgePaths') || on[0].path.parentNode;
+  flows.setAttribute('class', 'flows2d');
+  edges.after(flows);
+  for (const edge of on) for (const way of flowOf(edge.join)) {
+    const flow = edge.path.cloneNode(false);
+    for (const name of ['id', 'marker-end', 'marker-start', 'data-id', 'style']) flow.removeAttribute(name);
+    flow.setAttribute('class', way === 'back' ? 'flow back' : 'flow');
+    flows.append(flow);
+  }
 }
 function focus2D(id, framing = 'around', zoom = false) {
   const join = id.startsWith('p:') ? joinOf(id) : null;
   const node = M.nodes.get(id) || (join ? M.nodes.get(join.provider) : null);
   if (!M.svg) return;
   if (!node) return applyMode();
+  showModes();
   if (IN.length) {
     for (const [key, value] of M.nodes) value.g.classList.toggle('sel', key === id);
   } else {
@@ -2818,9 +3856,13 @@ function focus2D(id, framing = 'around', zoom = false) {
     for (const edge of M.edges) edge.path?.classList.toggle('on', join ? edge.join === join
       : edge.join.receiver === id || edge.provider === id);
   }
+  flows2d();
   if (moded()) return moveCam(modeTarget());  // in the large area the mode sets the camera, VIEW-041
-  // Selecting moves the view to the node at the zoom it has; the zoom changes only when Fit asks, VIEW-008.
+  // Selecting moves the view to the node at the zoom it has; the zoom changes only when Fit asks, VIEW-008. Inside a
+  // node, a node already in view stays where it is, since the view was framed for the node's whole graph and moving it
+  // to the middle would push the rest of that graph out of view, VIEW-016.
   const held = M.zoom || M.cam;
+  if (!zoom && IN.length && inView(node, M.to || M.cam)) return;
   if (!zoom) return moveCam({x: node.x - held.w / 2, y: node.y - held.h / 2, w: held.w, h: held.h});
   // 'around' shows the node with its joined nodes; 'inside' frames the node so the nodes it holds fill the view;
   // 'close' moves nearer to a node that holds nothing.
@@ -2836,8 +3878,21 @@ function clicked2d(id) {
   if (large()) MODE.mode = 'readable';
   if (!MEM.key && (id === S.selected || id.startsWith('m:'))) goInside(id); else select(id, true);
 }
+const inView = (node, cam) => Boolean(cam) && node.x - node.w / 2 >= cam.x && node.x + node.w / 2 <= cam.x + cam.w
+  && node.y - node.h / 2 >= cam.y && node.y + node.h / 2 <= cam.y + cam.h;
 (function wire2D() {
   const host = $('#map2d');
+  MODES.box = h('div', {class: 'segmented modes2d', role: 'radiogroup', 'aria-label': 'How the whole map is sized'},
+    MODES.whole = h('button', {type: 'button', role: 'radio', title: 'The whole diagram fitted to the area (Home)',
+      onclick: event => { event.stopPropagation(); fit2D(); }}, 'Whole'),
+    MODES.readable = h('button', {type: 'button', role: 'radio', onclick: event => {
+      event.stopPropagation();
+      if (large() && M.base && M.svg === M.base.svg) { MODE.mode = 'readable'; applyMode(); }
+      else if (S.selected) focus2D(S.selected, 'close', true);
+      showModes();
+    }}, 'Zoom'));
+  $('#map2d .mapbtns').prepend(MODES.box);
+  showModes();
   $('#fitBtn').onclick = event => { event.stopPropagation(); cycleView(); };
   $('#backBtn').onclick = event => { event.stopPropagation(); step(-1); };
   $('#forwardBtn').onclick = event => { event.stopPropagation(); step(1); };
@@ -2875,7 +3930,7 @@ function clicked2d(id) {
   }, {passive: false});
   new ResizeObserver(() => applyMode()).observe($('#viewport'));  // the area changes size: the new fit, VIEW-041
 })();
-function fitAll() { fit2D(); fit3d(); }
+function fitAll() { unmark2D(); fit2D(); fit3d(); }
 /* Fit and F go through three views, zoomed out to the whole map, zoomed in on the selected node,
  * with the nodes inside it when it holds any, and regular, the node with its joined nodes. In the large area they go
  * back to mode one, VIEW-041. */
@@ -2994,13 +4049,27 @@ function backOut() {
     if (up) select(up, true, true);
   } else fitAll();
 }
+/* Which keys the maps take. A key typed into a text is a letter of it and never a shortcut. While a menu, a popover or
+ * a modal window is open, or the focus is in any window, the maps' keys rest: the key belongs to what is open, VIEW-030
+ * and VIEW-041. Enter and Space on a button or a link press it, and the arrows on a tab, a menu item or a choice move
+ * between those; every other control leaves the keys to the maps. Escape that reaches here has closed nothing. */
+const ARROWS_OWN = 'select,[role=tab],[role=tablist],[role=menuitem],[role=option],[role=listbox],[role=radio],[role=radiogroup],[role=slider],input[type=range]';
+const PRESSABLE = 'button,a[href],summary,[role=button],[role=tab],[role=menuitem],[role=option],[role=switch],[role=checkbox],[role=radio],input[type=checkbox],input[type=radio]';
+function mapKeys(event) {
+  const target = event.target instanceof Element ? event.target : document.body;
+  if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return false;
+  if (target.closest('select, input, textarea, .CodeMirror, [contenteditable="true"]') && !target.matches('input[type=checkbox],input[type=radio]')) return false;
+  if (overlayHolds(target)) return false;
+  const onMap = target.closest('#map2d, #stage') && !target.closest('.bar2d, .bar3d');
+  if ((event.key === 'Enter' || event.key === ' ') && !onMap && target.closest(PRESSABLE)) return false;
+  if (event.key.startsWith('Arrow') && target.closest(ARROWS_OWN)) return false;
+  return true;
+}
 document.addEventListener('keydown', event => {
-  if (event.key === 'Escape' && !$('#layerlist').hidden) { event.preventDefault(); showLayers(false); $('#layersBtn').focus(); return; }
-  if (event.key === 'Escape' && !$('#adminbox').hidden) { event.preventDefault(); showAdmin(false); $('#adminBtn').focus(); return; }
-  if (event.key === 'Escape' && !$('#exportbox').hidden) { event.preventDefault(); showExport(false); $('#exportBtn').focus(); return; }
-  if (event.key === 'Escape' && !$('#clearbox').hidden) { event.preventDefault(); showClear(false); $('#adminBtn').focus(); return; }
-  // A key typed into a text is a letter of it and never a shortcut.
-  if (event.target.closest('select, input, textarea, .CodeMirror, [contenteditable="true"]')) return;
+  if (!mapKeys(event)) return;
+  // The page's own keys: / searches the map and ? shows every key.
+  if (event.key === '/') { event.preventDefault(); openSearch(); return; }
+  if (event.key === '?') { event.preventDefault(); $('#help').hidden = false; return; }
   if (event.key === 'f' || event.key === 'F') { event.preventDefault(); cycleView(); return; }
   if (event.key === 'Home') { event.preventDefault(); fitAll(); return; }
   // In the large area the keys 1 to 9 set the minimum text, 8 to 24 px, and go to mode two, VIEW-041.
@@ -3047,6 +4116,17 @@ document.addEventListener('keydown', event => {
  * such as the prompt being edited. */
 function select(id, fly, keepTrail = false, stepping = false, again = false) {
   if (!id) return;
+  const drawn = selectNow(id, fly, keepTrail, stepping, again), moved = S.panelFor !== id;
+  if (moved && S.selected === id) { S.panelFor = id; $('#p-object').scrollTop = 0; }  // a new object is read from its top
+  // A person who chose a node from elsewhere on the page goes on with the keys on the map; a text being written, an
+  // open window and the maps themselves keep the focus.
+  const active = document.activeElement;
+  const keeps = active && active !== document.body && shown(active)
+    && (active.closest('input, textarea, select, [contenteditable="true"], .CodeMirror, #map2d, #stage') || overlayHolds(active));
+  if (fly && !again && S.selected === id && !keeps) largeView().focus({preventScroll: true});
+  return drawn;
+}
+function selectNow(id, fly, keepTrail, stepping, again) {
   const join = id.startsWith('p:') ? joinOf(id) : null;
   const entity = Boolean(MEM.network?.entities.includes(id));  // a node of the memory network open, VIEW-031
   const known = join || S.elements.has(id) || entity,
@@ -3102,7 +4182,7 @@ function formParts(text) {
 function asked(record, metaform = S.base, full = false) {
   const answer = h('textarea', {class: 'answer', placeholder: 'Type an answer or a message'});
   const written = text => wrote('/api/answer', {id: record.id, answer: text, metaform});
-  const send = h('button', {class: 'answer', onclick: async () => {
+  const send = h('button', {class: 'btn sm primary answer', type: 'button', onclick: async () => {
     if (!answer.value.trim()) return;
     send.disabled = true;
     if (!await written(answer.value)) send.disabled = false;
@@ -3110,7 +4190,7 @@ function asked(record, metaform = S.base, full = false) {
   // The answers the agent suggests, the one it recommends first: one click answers; the box takes anything else.
   const suggested = record.closed ? [] : (record.suggestions || []).map(String);
   const choices = suggested.length ? h('div', {class: 'choices'},
-    suggested.map((text, index) => h('button', {class: index ? 'suggestion' : 'suggestion recommended', onclick: async event => {
+    suggested.map((text, index) => h('button', {class: index ? 'suggestion' : 'suggestion recommended', type: 'button', onclick: async event => {
       const buttons = [...event.target.parentNode.children];
       for (const button of buttons) button.disabled = true;
       if (!await written(text)) for (const button of buttons) button.disabled = false;
@@ -3120,11 +4200,11 @@ function asked(record, metaform = S.base, full = false) {
   const sections = parts.map(part => h('div', {class: 'form-part'},
     h('div', {class: 'heading'}, part.heading),
     h('p', {class: 'said'}, ...linked(part.text)),
-    h('button', {class: 'create-ticket', title: 'Write a ticket from this part, at the node of the question', onclick: () => {
+    h('button', {class: 'btn sm create-ticket', type: 'button', title: 'Write a ticket from this part, at the node of the question', onclick: () => {
       if ($('#qa')) $('#qa').hidden = true;
       giveWork(node, `${part.task}: ${part.text}\n\nFrom question: ${question}`);
     }}, 'Create ticket')));
-  const reader = full ? null : h('button', {class: 'read-full', title: 'Read the whole question in a large window', onclick: () => {
+  const reader = full ? null : h('button', {class: 'btn sm quiet read-full', type: 'button', title: 'Read the whole question in a large window', onclick: () => {
     fill($('#qa .body'), asked(record, metaform, true));
     $('#qa').hidden = false;
   }}, 'Read in full');
@@ -3135,12 +4215,15 @@ function asked(record, metaform = S.base, full = false) {
     ...sections,
     record.closed ? h('p', {class: 'obs'}, `Answer: ${record.answer || ''}`) : [choices, h('div', {class: 'typed'}, answer, send)],
     // Answered by mistake: Reopen clears the answer and the question waits again with its suggestions, MAP-050.
-    record.closed ? h('button', {class: 'reopen', onclick: async event => {
+    record.closed ? h('button', {class: 'btn sm reopen', type: 'button', onclick: async event => {
       event.target.disabled = true;
       if (!await wrote('/api/reopen', {id: record.id, metaform})) event.target.disabled = false;
     }}, 'Reopen') : null);
 }
 $('#qa .close').onclick = () => { $('#qa').hidden = true; };
+overlay($('#qa'), {kind: 'dialog', focus: 'textarea.answer'});
+overlay($('#mergeAsk'), {kind: 'dialog', focus: '.yes'});
+overlay($('#confirm'), {kind: 'dialog'});
 /* The review-or-merge flow, VIEW-044: Review. while done work waits; a click takes it over for good, offers an agent's
  * help, and the help comes in a support window at the lower right. */
 const MERGE = {rows: [], chat: null, since: 0};
@@ -3152,7 +4235,7 @@ async function renderMerges() {
     const ticket = (B.tickets || []).find(one => one.id === row.work_id);
     return h('div', {class: 'notice'}, h('b', {}, 'Review.'),
       h('span', {}, ` ${ticket ? (ticket.task || ticket.note || '').slice(0, 80) : row.branch} · merges by itself at ${at(row.deadline)}`),
-      h('button', {onclick: event => takeReview(row.work_id, event.target)}, 'Review'));
+      h('button', {class: 'btn sm primary', type: 'button', onclick: event => takeReview(row.work_id, event.target)}, 'Review'));
   }));
   $('#reviewNotice').hidden = !MERGE.rows.length;
 }
@@ -3166,6 +4249,7 @@ async function takeReview(workId, button) {
     if (!await wrote('/api/merge-assist', {work_id: workId})) drawHelpdesk('The agent could not be started.');
   };
   $('#mergeAsk .no').onclick = () => { $('#mergeAsk').hidden = true; toast('The merge is yours to handle; its countdown is off.'); };
+  OVERLAY.known.get($('#mergeAsk')).close = () => $('#mergeAsk .no').click();
   $('#mergeAsk').hidden = false;
 }
 /* The chat dock: a thin sliver at the lower right that lifts when the pointer comes near and opens, on a click, into a
@@ -3177,8 +4261,10 @@ const DOCK = {target: null, session: null, label: '', since: 0, notes: [], list:
   calling: null, chats: []};  // chats: every open conversation, one a tab; the fields above are the one on view
 const STANDBY = 'Please stand by while we contact an agent for you.';
 function dockState(state) {
+  const was = !$('#helpdesk').hidden;
   $('#dock').className = state;
   $('#helpdesk').hidden = state !== 'open' && state !== 'open big';
+  if (!was && !$('#helpdesk').hidden) drawHelpdesk();  // opened, even empty, it says what it is and how to start
 }
 function dockNote(text) { DOCK.notes.push({at: Date.now(), text}); drawHelpdesk(); }
 /* session: the session the chat is with, when it is known. The chat stays with it, so a later session of the same
@@ -3246,7 +4332,7 @@ function chatActivity(session) {
     : ({working: 'Busy', waiting: 'Waiting for permission', idle: 'Ready'}[session.activity] || 'Status unavailable');
   const note = session.interrupting ? 'Interrupting the current task.'
     : session.activity === 'working' ? 'Agent is working on a task. A message is read when its current step ends; Interrupt stops the step.'
-    : session.activity === 'waiting' ? 'Waiting for permission. Prompts are answered as the agent prompts setting says.' : '';
+    : session.activity === 'waiting' ? 'Waiting for your permission: its request is in the thread, with the agent\'s own choices.' : '';
   return {label, note, busy, interruptible: busy && !session.interrupting};
 }
 async function interruptChat(work, session, button) {
@@ -3256,8 +4342,11 @@ async function interruptChat(work, session, button) {
   await renderAgents();
   if (DOCK.target) await drawHelpdesk();
 }
+/* The chat on view, as ACP gives it: its settings and usage in the session bar, its plan as a checklist, and its
+ * thread, the conversation with the agent's tool calls and permission requests in it. With no chat on view, what
+ * waits for the person's permission elsewhere is listed, each with Open. */
 async function drawHelpdesk(trouble) {
-  let lines = [], session = null;
+  let lines = [], session = null, state = null;
   const target = DOCK.target, openedSession = DOCK.session;
   if (target) {
     try {
@@ -3270,45 +4359,70 @@ async function drawHelpdesk(trouble) {
         DOCK.session = session.session_id;
         const chat = DOCK.chats.find(one => one.target === target);
         if (chat) chat.session = session.session_id;
+        state = (found.states || {})[session.session_id] || null;
       }
       lines = session ? (found.lines || []).filter(line => line.session_id === session.session_id) : [];
     } catch (error) { trouble = error.message; }
   }
+  DOCK.state = state;
+  DOCK.agent = session?.agent || null;
   drawProposals();
-  const said = lines.filter(line => line.kind === 'agent_message_chunk' || line.kind === 'person');
+  drawSession($('#helpdesk .sessionbar'), {work: target, session, state});
+  drawPlan($('#helpdesk .planbox'), target ? state?.plan : null);
   const activity = chatActivity(session);
   const waiting = DOCK.target && !session;
-  const busy = DOCK.target && activity.busy;
-  $('#helpdesk .status').textContent = DOCK.target ? activity.label : 'Online';
+  const busy = DOCK.target && activity.busy && session?.activity !== 'waiting';
+  // one line says whom the chat is with, or that it is online; the other what that agent is doing, while there is one
+  $('#helpdesk .status').textContent = DOCK.target ? activity.label : '';
+  $('#helpdesk .status').hidden = !DOCK.target;
+  $('#helpdesk').classList.toggle('asks', Boolean(session && session.activity === 'waiting'));
   $('#helpdesk .interrupt').disabled = !DOCK.target || !activity.interruptible;
   $('#helpdesk .with').textContent = DOCK.target ? `With ${DOCK.label}` : 'Online';
-  const intro = 'You are connected to Metaform Support. Press Call to reach an agent, or type /help.';
+  const intro = 'You are connected to Metaform Support. Start a chat with your system agent below, or type / for the commands.';
   const system = (key, text) => ({key, text, make: () => h('div', {class: 'system'}, text)});
   const log = $('#helpdesk .log');
+  // with no chat on view, each agent waiting for the person's permission, so the dock's count leads somewhere
+  const asking = DOCK.target ? [] : (D.asking || []).map(one => ({key: `asks:${one.work_id}:${one.request}`, text: `${one.work_id}\n${one.tool}`,
+    make: () => h('div', {class: 'system asking'}, `${agentName(one.agent)} on ${workPart(one.work_id)} asks to ${one.tool || 'use a tool'}.`,
+      h('button', {class: 'btn sm primary', type: 'button', onclick: () => isIntake(one.work_id) ? openIntakeChat(one.work_id, one.session_id)
+        : openHelpdesk(one.work_id, `${agentName(one.agent)} on ${workPart(one.work_id)}`, 'It answers when its current step ends.', one.session_id)}, 'Open'))}));
   const changed = keyedFill(log, [
     system('intro', intro),
+    ...asking,
     ...DOCK.notes.filter(note => note.at >= DOCK.since - 1).map((note, index) => system(`note:${note.at}:${index}`, note.text)),
-    ...said.map(line => ({key: `${line.session_id}:${line.name ?? line.seq}`, text: line.text,
-      make: () => h('div', {class: line.kind === 'person' ? 'bubble mine' : 'bubble theirs'}, line.text)})),
+    ...threadRows(lines, {work: target, agent: session?.agent, dock: true}),
     ...(waiting || busy ? [{key: 'waiting', text: waiting ? DOCK.waiting : activity.note || activity.label, make: () => h('div', {class: 'system waiting'}, waiting ? DOCK.waiting : activity.note || activity.label,
       h('span', {class: 'typing', 'aria-hidden': 'true'}, h('i'), h('i'), h('i')))}] : []),
     ...(trouble ? [system('trouble', trouble)] : [])]);
   if (changed) log.scrollTop = log.scrollHeight;
 }
+/* The chat's own commands, offered with the agent's when the person types / in the message box. */
+const DOCK_COMMANDS = [{name: 'help', description: 'What the chat\'s commands do'},
+  {name: 'list', description: 'The agents at work, numbered'}, {name: 'chat', hint: '<number>', description: 'Talk with an agent at work, by its number in /list'},
+  {name: 'system', description: 'Start a chat with your system agent'}];
+const dockOffered = () => {
+  const agents = commandsOf(DOCK.target ? DOCK.state : null, DOCK.agent);
+  return [...agents, ...DOCK_COMMANDS.filter(one => !agents.some(agent => agent.name === one.name)).map(one => ({...one, from: 'This chat'}))];
+};
 async function dockCommand(text) {
   const [command, ...rest] = text.slice(1).trim().split(/\s+/);
-  if (command === 'help') return dockNote('/list shows the agents at work · /chat <number> talks with one of them · /system calls your system agent · Call and Dismiss do the same from the button.');
+  // a command the agent on view offers is the agent's: it goes to the agent as the message it is
+  if (DOCK.target && commandsOf(DOCK.state, DOCK.agent).some(one => one.name === command)) {
+    if (await wrote('/api/dispatch-message', {work_id: DOCK.target, text})) drawHelpdesk();
+    return;
+  }
+  if (command === 'help') return dockNote('/list shows the agents at work · /chat <number> talks with one of them · /system calls your system agent · the agent\'s own commands are offered as you type /.');
   if (command === 'list') {
     let found = [];
     try { found = (await read('dispatch-sessions', {thread: 'false'})).sessions || []; } catch (error) { return dockNote(error.message); }
     DOCK.list = found.filter(one => one.state === 'running');
-    return dockNote(DOCK.list.length ? DOCK.list.map((one, index) => `${index + 1}. ${agentName(one.agent)} on ${ticketPart(ticketOf(one.work_id))}${one.activity ? ' · ' + one.activity : ''}`).join('\n')
+    return dockNote(DOCK.list.length ? DOCK.list.map((one, index) => `${index + 1}. ${agentName(one.agent)} on ${workPart(one.work_id)}${one.activity ? ' · ' + one.activity : ''}`).join('\n')
       : 'No agent is at work right now.');
   }
   if (command === 'chat') {
     const chosen = DOCK.list[Number(rest[0]) - 1];
     if (!chosen) return dockNote('Type /list first, then /chat with the number of the agent.');
-    openHelpdesk(chosen.work_id, `${agentName(chosen.agent)} on ${ticketPart(ticketOf(chosen.work_id))}`, 'It answers when its current step ends.',
+    openHelpdesk(chosen.work_id, `${agentName(chosen.agent)} on ${workPart(chosen.work_id)}`, 'It answers when its current step ends.',
       chosen.session_id);
     return dockNote(`You are now talking with ${DOCK.label}. Its work goes on while you talk.`);
   }
@@ -3321,7 +4435,8 @@ async function callSystem() {
   $('#helpdesk .call').textContent = 'Dismiss';
   dockNote(STANDBY);
   const call = DOCK.calling = {};
-  const started = await wrote('/api/system-chat', {});
+  const agent = summonAgent();
+  const started = await wrote('/api/system-chat', agent ? {agent} : {});
   if (DOCK.calling !== call) {  // dismissed while it was being reached: it is stopped as soon as it answers
     if (started) await wrote('/api/dispatch-stop', {work_id: started.work_id});
     return;
@@ -3334,7 +4449,10 @@ async function callSystem() {
 /* Chat on anything the page shows, VIEW-042: a ticket, open or done, a node, a question, or an agent's session. An
  * agent at work on it is talked to directly; otherwise one starts to talk, and Dismiss stops it. */
 async function talkAbout(given, label) {
-  const started = await wrote('/api/talk', given);
+  // an intake's agent is a conversation already, never a ticket: its chat opens on its session
+  if (isIntake(given.id)) return openIntakeChat(given.id, null);
+  const agent = summonAgent();  // the agent a new chat starts with; one at work on it is talked to as it is
+  const started = await wrote('/api/talk', {...given, ...(agent ? {agent} : {})});
   if (!started) return;
   if (started.conversation) DOCK.mine = started.work_id;
   openHelpdesk(started.work_id, label, started.state === 'running' ? 'It answers when its current step ends.' : STANDBY,
@@ -3379,7 +4497,7 @@ $('#helpdesk .compose').onsubmit = async event => {
   } else box.value = text;
 };
 $('#helpdesk .say').addEventListener('keydown', event => {  // Enter sends, Shift+Enter starts a new line
-  if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); $('#helpdesk .compose').requestSubmit(); }
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); $('#helpdesk .compose').requestSubmit(); }
 });
 $('#helpdesk .clip input').onchange = async event => {
   for (const file of event.target.files) {
@@ -3393,6 +4511,8 @@ $('#helpdesk .clip input').onchange = async event => {
 $('#dockTab').onclick = () => dockState('open');
 $('#dockTab').onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); dockState('open'); } };
 $('#helpdesk .min').onclick = () => dockState('resting');
+// On the overlay stack as the dock: Escape puts it away only from inside it, and it stays usable over the board.
+overlay($('#helpdesk'), {kind: 'dock', close: () => dockState('resting'), focus: '.say'});
 $('#helpdesk .big').onclick = () => dockState($('#dock').className === 'open big' ? 'open' : 'open big');
 document.addEventListener('pointermove', event => {  // near the sliver it lifts enough to click; away, it settles back
   const dock = $('#dock');
@@ -3403,7 +4523,6 @@ document.addEventListener('pointermove', event => {  // near the sliver it lifts
   const state = away < 60 ? 'near' : 'resting';
   if (dock.className !== state) dock.className = state;
 });
-movable($('#qa'));
 /* The messages of a node, VIEW-030: what agents say to the user there. A question waits for an answer and a note
  * waits to be read. */
 const Q = {open: []};
@@ -3469,8 +4588,7 @@ async function menu(id, x = null, y = null) {
   box.style.left = Math.max(4, Math.min(x ?? 40, innerWidth - size.width - 4)) + 'px';
   box.style.top = Math.max(4, Math.min(y ?? 40, innerHeight - size.height - 4)) + 'px';
 }
-addEventListener('click', event => { if (!$('#menu').hidden && !$('#menu').contains(event.target)) $('#menu').hidden = true; });
-addEventListener('keydown', event => { if (event.key === 'Escape' && !$('#menu').hidden) { $('#menu').hidden = true; event.stopPropagation(); } }, true);
+overlay($('#menu'), {kind: 'menu'});  // a click outside it or Escape closes it, and the focus goes back where it was
 /* The board, VIEW-037: the project's tickets as a classic kanban board, one column for each place a ticket can be,
  * a card for each ticket. A card dragged to a column moves its ticket there and to the place it was dropped. */
 const B = {tickets: [], off: new Set()};
@@ -3509,7 +4627,8 @@ function nodeChip(target, role) {
 /* References in what the person reads, VIEW-042: a spec record's code, a ticket's or a message's id or its start, and
  * a path in the project. Each is drawn as plain text; once the server says what it stands for it becomes a link that
  * opens it in place, so an unknown code stays plain. */
-const REF = /\b(?:[A-Z]{2,6}-\d{3}|D\d{2,4}|[0-9a-f]{8,32}|(?:[\w.-]+\/)+[\w.-]+\.\w{1,6})\b/g;
+// an intake agent's work id, intake-<hex>, is not a ticket, so its hex is never taken for one
+const REF = /\b(?:[A-Z]{2,6}-\d{3}|D\d{2,4}|(?<!intake-)[0-9a-f]{8,32}|(?:[\w.-]+\/)+[\w.-]+\.\w{1,6})\b/g;
 function linked(text) {
   text = String(text ?? '');
   const parts = [];
@@ -3557,20 +4676,22 @@ async function popRef(span, pinned) {
       chatButton({node: found.address || ''}, 'its node'),
       ]
     : [h('h4', {}, found.title), h('pre', {class: 'text'}, found.text)];
-  fill(POP, h('div', {class: 'eyebrow'}, kind, h('button', {class: 'close', 'aria-label': 'Close', onclick: () => { POP.hidden = true; }}, '×')), ...body);
+  fill(POP, h('div', {class: 'eyebrow'}, kind, h('button', {class: 'close btn icon sm quiet', type: 'button', 'aria-label': 'Close', title: 'Close (Escape)',
+    onclick: () => { POP.hidden = true; }}, h('i', {class: 'i i-close', 'aria-hidden': 'true'}))), ...body);
   POP.pinned = pinned;
   POP.hidden = false;
   const box = span.getBoundingClientRect(), size = POP.getBoundingClientRect();
   POP.style.left = Math.max(8, Math.min(box.left, innerWidth - size.width - 8)) + 'px';
   POP.style.top = (box.bottom + size.height + 8 < innerHeight ? box.bottom + 6 : Math.max(8, box.top - size.height - 6)) + 'px';
 }
+// On the overlay stack: a click outside it or Escape closes it; one opened by a click or a key takes the focus, one
+// shown by resting the pointer does not.
+overlay(POP, {kind: 'popover', focus: () => POP.pinned ? POP.querySelector('.close') : false});
 document.addEventListener('click', event => {
   const span = event.target.closest?.('.ref-link');
-  if (span) { event.preventDefault(); event.stopPropagation(); popRef(span, true); return; }
-  if (!POP.hidden && !POP.contains(event.target)) POP.hidden = true;
+  if (span) { event.preventDefault(); event.stopPropagation(); popRef(span, true); }
 }, true);
 document.addEventListener('keydown', event => {
-  if (event.key === 'Escape' && !POP.hidden) POP.hidden = true;
   if ((event.key === 'Enter' || event.key === ' ') && event.target.classList?.contains('ref-link')) { event.preventDefault(); popRef(event.target, true); }
 });
 if (matchMedia('(hover: hover)').matches) {  // on a desktop, resting the pointer on a reference shows it too
@@ -3596,14 +4717,13 @@ function taskWords(text) {  // a node named inline, [[name|address]], shown as i
  * dispatch chooses it; the person can choose another on the card at any time. */
 const FRONTEND_WORDS = new Set(['gui', 'web', 'page', 'viewer', 'view', 'board', 'ui', 'frontend']);
 const defaultAgent = address => (address || '').split('.').some(word => FRONTEND_WORDS.has(word)) ? 'claude' : 'codex';
-const TICKET_AGENTS = [['claude', 'Claude Code'], ['codex', 'Codex'], ['gemini', 'Gemini CLI']];
 const eligibleAgents = ticket => Array.isArray(ticket?.map?.eligible) ? ticket.map.eligible : [];
 const allowsAgent = (ticket, agent) => !eligibleAgents(ticket).length || eligibleAgents(ticket).includes(agent);
 function eligibilityPicker(agents, save) {
   let chosen = [...agents];
   const summary = h('summary', {}), options = h('div', {class: 'choices'});
   const box = h('details', {class: 'eligible', onclick: event => event.stopPropagation()}, summary, options);
-  const names = [...new Set([...TICKET_AGENTS.map(([name]) => name), ...chosen])];
+  const names = [...new Set([...HARNESS.agents.map(one => one.agent), ...chosen])];  // the agents dispatch knows, VIEW-039
   const paint = () => {
     summary.textContent = 'Eligible agents: ' + (chosen.length ? chosen.map(agentName).join(', ') : 'Any agent');
     for (const input of options.querySelectorAll('input')) input.checked = input.classList.contains('any')
@@ -3633,10 +4753,9 @@ function ticketControls(ticket) {
   };
   const chosen = kept.agent || defaultAgent(ticket.address);
   const glyphs = kept.glyph && !FIVE_AGENTS.includes(kept.glyph) ? [...FIVE_AGENTS, kept.glyph] : FIVE_AGENTS;
-  return h('div', {class: 'ticket-controls', onclick: event => event.stopPropagation()},
+  const box = h('div', {class: 'ticket-controls', onclick: event => event.stopPropagation()},
     h('label', {title: 'The agent this ticket prefers; change it any time, even while one works on it'}, 'Agent ',
-      h('select', {class: 'agent', onchange: event => change({agent: event.target.value}, event.target)},
-        TICKET_AGENTS.map(([value, label]) => h('option', {value, selected: value === chosen}, label)))),
+      agentSelect(chosen, agent => change({agent}, box.querySelector('select.agent')))),
     eligibilityPicker(eligibleAgents(ticket), async agents => {
       if (!await wrote('/api/eligible', {work_id: ticket.id, agents})) return false;
       await renderBoard();
@@ -3646,14 +4765,15 @@ function ticketControls(ticket) {
       h('select', {class: 'glyph-pick', onchange: event => change({glyph: event.target.value}, event.target)},
         h('option', {value: '', selected: !kept.glyph}, 'any'),
         glyphs.map(glyph => h('option', {value: glyph, selected: glyph === kept.glyph}, glyph)))),
-    ticket.taken && !ticket.done ? h('button', {class: 'recall', title: 'Recall the agent working this ticket; the ticket goes back on the board',
+    ticket.taken && !ticket.done ? h('button', {class: 'btn sm recall', type: 'button', title: 'Recall the agent working this ticket; the ticket goes back on the board',
       onclick: async event => {
         event.target.disabled = true;
         if (await wrote('/api/dispatch-stop', {work_id: ticket.id})) await renderBoard(); else event.target.disabled = false;
       }}, 'Recall agent') : null,
-    ticket.done ? null : h('button', {class: kept.hold ? 'hold on' : 'hold',
+    ticket.done ? null : h('button', {class: kept.hold ? 'btn sm hold on' : 'btn sm hold', type: 'button',
       title: kept.hold ? 'Release it: agents and automatic starts see it again' : 'Hold it: hidden from agents and automatic starts',
       onclick: event => change({hold: !kept.hold}, event.target)}, kept.hold ? 'Release hold' : 'Hold'));
+  return box;
 }
 function card(ticket, place, total) {
   const steps = ticket.steps || 0, filed = ticket.steps_done || 0;
@@ -3677,16 +4797,20 @@ function card(ticket, place, total) {
     steps || filed ? h('div', {class: 'progress'}, h('span', {style: {width: `${Math.min(100, 100 * filed / Math.max(steps, filed, 1))}%`}}),
       h('small', {}, `${filed}/${steps || filed}`)) : null,
     ticket.resolution ? h('div', {class: 'resolution'}, ...linked(ticket.resolution)) : null,
-    h('div', {class: 'priority', role: 'group', 'aria-label': 'Card order'},
-      [['Top', 'Move to top', 0, place === 0], ['Up', 'Move up', place - 1, place === 0],
-        ['Down', 'Move down', place + 1, place === total - 1]].map(([text, label, position, disabled]) =>
-        h('button', {title: label, 'aria-label': label, disabled, onclick: event => {
-          event.stopPropagation(); move(position);
-        }}, text))),
-    ticketControls(ticket),
-    chatButton({id: ticket.id}, ticketPart(ticket)),  // anything can be talked about, a done ticket too, VIEW-042
-    waiting(ticket) ? h('button', {class: 'start', title: 'Start an agent on this ticket', onclick: event => {
-      event.stopPropagation(); startWindow(`Start an agent · ${ticketPart(ticket)}`, [ticket]); }}, 'Start agent') : null);
+    // its acts in one row: start and chat, then its place in the column; its agent's settings fold away below
+    h('div', {class: 'acts'},
+      waiting(ticket) ? h('button', {class: 'btn sm primary start', type: 'button', title: 'Start an agent on this ticket', onclick: event => {
+        event.stopPropagation(); startWindow(`Start an agent · ${ticketPart(ticket)}`, [ticket]); }}, 'Start agent') : null,
+      chatButton({id: ticket.id}, ticketPart(ticket)),  // anything can be talked about, a done ticket too, VIEW-042
+      h('span', {class: 'grow'}),
+      h('div', {class: 'priority', role: 'group', 'aria-label': 'Card order'},
+        [['Top', 'Move to top', 0, place === 0], ['↑', 'Move up', place - 1, place === 0],
+          ['↓', 'Move down', place + 1, place === total - 1]].map(([text, label, position, disabled]) =>
+          h('button', {class: 'btn sm quiet', type: 'button', title: label, 'aria-label': label, disabled, onclick: event => {
+            event.stopPropagation(); move(position);
+          }}, text)))),
+    h('details', {class: 'ticket-settings', onclick: event => event.stopPropagation()},
+      h('summary', {}, ticket.map?.hold ? 'Held · agent and glyph' : 'Agent, glyph and hold'), ticketControls(ticket)));
   if (ticket.map?.hold) box.classList.add('on-hold');
   box.addEventListener('dragstart', event => { event.dataTransfer.setData('text/plain', ticket.id); box.classList.add('dragging'); });
   box.addEventListener('dragend', () => box.classList.remove('dragging'));
@@ -3712,7 +4836,16 @@ function drawBoard() {
       const id = event.dataTransfer.getData('text/plain');
       const others = [...cards.querySelectorAll('.card')].filter(box => box.dataset.id !== id);
       const after = others.findIndex(box => { const at = box.getBoundingClientRect(); return event.clientY < at.top + at.height / 2; });
-      if (await wrote('/api/move', {work_id: id, column, position: after < 0 ? others.length : after, by: 'user'})) await renderBoard();
+      // where it was, so a move to another column, which takes, finishes or opens the ticket again, can be undone
+      const moved = B.tickets.find(ticket => ticket.id === id), from = moved ? columnOf(moved) : null;
+      const was = moved ? B.tickets.filter(ticket => columnOf(ticket) === from).sort(order).indexOf(moved) : -1;
+      if (!await wrote('/api/move', {work_id: id, column, position: after < 0 ? others.length : after, by: 'user'})) return;
+      await renderBoard();
+      if (from && from !== column) undoable(`Moved to ${COLUMN_NAMES[column]}.`, async () => {
+        const back = await wrote('/api/move', {work_id: id, column: from, position: Math.max(0, was), by: 'user'});
+        await renderBoard();
+        return Boolean(back);
+      });
     });
     return h('div', {class: 'column', 'data-column': column},
       h('div', {class: 'head'}, h('span', {}, title), h('span', {class: 'tally'}, String(tickets.length))), cards);
@@ -3727,8 +4860,9 @@ async function renderBoard() {
   if (S.project !== project || S.base !== metaform) return;
   drawBoard();
 }
-$('#boardBtn').onclick = async () => { $('#board').hidden = false; await renderBoard(); $('#board .search').focus(); };
+$('#boardBtn').onclick = async () => { $('#board').hidden = false; await renderBoard(); };
 $('#board .close').onclick = () => { $('#board').hidden = true; };
+overlay($('#board'), {kind: 'dialog', focus: '.search'});
 $('#board .start-all').onclick = async () => {
   await renderBoard();
   const tickets = B.tickets.filter(waiting).sort((one, two) =>
@@ -3736,10 +4870,20 @@ $('#board .start-all').onclick = async () => {
   startWindow('Start all agents', tickets, true);
 };
 // Distribute, VIEW-040: the open tickets not taken get the first N agents' glyphs in turn, To do first, then Backlog.
+// The glyphs the tickets had before are kept, so Undo gives each back its own.
 $('#board .distribute button').onclick = async () => {
   const agents = Number($('#board .distribute input').value);
   if (!Number.isInteger(agents) || agents < 1) return toast('Work is distributed over a whole number of agents.');
-  if (await wrote('/api/distribute', {agents})) await renderBoard();
+  const before = new Map(B.tickets.map(ticket => [ticket.id, ownGlyph(ticket) || '']));
+  if (!await wrote('/api/distribute', {agents})) return;
+  await renderBoard();
+  const changed = B.tickets.filter(ticket => before.has(ticket.id) && before.get(ticket.id) !== (ownGlyph(ticket) || ''));
+  if (changed.length) undoable(`Distributed ${plural(changed.length, 'ticket')} over ${plural(agents, 'agent')}.`, async () => {
+    let all = true;
+    for (const ticket of changed) all = Boolean(await wrote('/api/ticket', {work_id: ticket.id, glyph: before.get(ticket.id)})) && all;
+    await renderBoard();
+    return all;
+  });
 };
 $('#board .search').oninput = () => { for (const box of $('#board').querySelectorAll('.card')) shownOnBoard(box); };
 $('#board .add').onclick = () => {
@@ -3776,7 +4920,7 @@ async function history(id) {
         + (one.state === 'running' ? 'working' : `ended${one.how ? `, ${one.how}` : ''}`)),
       chatButton(one.state === 'running' ? {id: one.work_id} : {session: `${one.work_id}:${one.session_id}`},
         `${agentName(one.agent)} on ${ticketPart(ticket)}`),
-      h('button', {class: 'log', title: "The session's whole thread", onclick: async () => {
+      h('button', {class: 'btn sm log', type: 'button', title: "The session's whole thread", onclick: async () => {
         await renderAgents();
         agentAt(one.work_id, one.session_id);
       }}, 'Open log')))))
@@ -3824,16 +4968,18 @@ async function wrote(path, given) {
   if (!response.ok) toast(body.error || 'It was not written.');
   return response.ok ? body : null;
 }
-/* A floating window is moved by its title. */
+/* A floating window is moved by its title, and opens where the person last put it. */
 function movable(box) {
+  box.classList.add('movable');
   box.querySelector('.bar').addEventListener('pointerdown', event => {
-    if (event.target.closest('button')) return;
+    if (event.target.closest('button, input, select, textarea, a') || box.classList.contains('full')) return;
     const from = box.getBoundingClientRect(), start = [event.clientX - from.left, event.clientY - from.top];
+    Object.assign(box.style, {transform: 'none', left: from.left + 'px', top: from.top + 'px'});  // a centered dialog moves from where it is
     const move = moved => {
       box.style.left = Math.max(0, Math.min(moved.clientX - start[0], innerWidth - 60)) + 'px';
       box.style.top = Math.max(0, Math.min(moved.clientY - start[1], innerHeight - 40)) + 'px';
     };
-    const end = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', end); };
+    const end = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', end); keepPlace(box); };
     addEventListener('pointermove', move);
     addEventListener('pointerup', end);
     event.preventDefault();
@@ -3842,7 +4988,6 @@ function movable(box) {
 /* ---------- agents dispatched on tickets, VIEW-039 ----------
  * The dispatch module starts, messages and stops an agent on a ticket, BASE-052; the page asks it to through three
  * writes, VIEW-011. What an agent does is read from the dispatch layer at its ticket's node with each map change. */
-const AGENT_NAMES = {claude: 'Claude Code', codex: 'Codex', gemini: 'Gemini CLI'};  // as the dispatch module names them
 const DOING = {agent_message_chunk: 'said', agent_thought_chunk: 'thought', user_message_chunk: 'was told',
   tool_call: 'ran', tool_call_update: 'ran', plan: 'plan', turn: 'turn', failed: 'failed', person: 'you', approved: 'approved'};
 /* How each line of an agent's thread reads: what it says, what it thinks, what it runs, and what the person said. */
@@ -3858,7 +5003,6 @@ async function readAutostart() {
     if (S.project !== project) return;
     Object.assign(AUTO, found);
     control.checked = found.value;
-    if (found.agent) $('#dispatch select.agent').value = found.agent;
     control.disabled = found.available === false;
   } catch (error) { if (S.project === project) toast(error.message); }
 }
@@ -3866,7 +5010,9 @@ $('#autostartAgents').onchange = async () => {
   const project = S.project, control = $('#autostartAgents');
   control.disabled = true;
   try {
-    const saved = await wrote('/api/dispatch-autostart', {value: control.checked, agent: $('#dispatch select.agent').value});
+    // the switch alone: Autostart starts each ticket with the agent its card prefers, and the default agent is the
+    // person's own choice, made in a picker, never taken from whatever a window last showed
+    const saved = await wrote('/api/dispatch-autostart', {value: control.checked});
     if (S.project !== project) return;
     if (saved) Object.assign(AUTO, saved);
     control.checked = AUTO.value;
@@ -3886,16 +5032,18 @@ const ownGlyph = ticket => ticket?.map?.glyph;
 // the character its 3D figure is, VIEW-035: the ticket's own glyph when it is assigned one, VIEW-040
 const glyphFor = workId => drawGlyph(workId, ownGlyph(ticketOf(workId)));
 const glyphOf = workId => `/page/agent-glyphs/${glyphFor(workId)}.svg`;
-const agentName = agent => AGENT_NAMES[agent] || agent || 'An agent';
 async function startAgent(workId, agent) {
   if (!await wrote('/api/dispatch-start', {work_id: workId, agent})) return false;
   toast(`${agentName(agent)} is starting on the ticket. It shows under Agent deployed while it is working.`);
   return true;
 }
-/* The window an agent is started from: the tickets, and the agent chosen once for the window. */
+/* The window an agent is started from: the tickets, and the agent chosen once for the window, in the picker every
+ * start shares, VIEW-039. */
 function startWindow(title, tickets, all = false) {
   if (D.starting) return;
   $('#dispatch .title').textContent = title;
+  const pick = PICKERS.start ||= agentPicker({label: 'Agent', kept: true, onchange: () => START.draw?.()});
+  if (!$('#dispatch .pickhost').firstChild) $('#dispatch .pickhost').append(pick);
   const startAll = $('#dispatch .start-all');
   const candidates = tickets;
   startAll.hidden = !all;
@@ -3903,11 +5051,11 @@ function startWindow(title, tickets, all = false) {
   startAll.onclick = async () => {
     if (D.starting) return;
     D.starting = true;
-    const agent = $('#dispatch select.agent').value;
+    const agent = pick.value();
     const buttons = [...$('#dispatch .tickets').querySelectorAll('button.start')];
     const pending = tickets.filter((ticket, i) => !buttons[i].disabled);
     startAll.disabled = true;
-    $('#dispatch select.agent').disabled = true;
+    pick.hold(true);
     for (const button of buttons) button.disabled = true;
     drawBoard();
     let started = 0;
@@ -3918,7 +5066,7 @@ function startWindow(title, tickets, all = false) {
         else { button.disabled = false; button.textContent = 'Retry'; }
       } catch (error) { toast(error.message); button.disabled = false; button.textContent = 'Retry'; }
     }
-    $('#dispatch select.agent').disabled = false;
+    pick.hold(false);
     D.starting = false;
     startAll.disabled = !buttons.some(button => !button.disabled);
     if (started === pending.length) $('#dispatch').hidden = true;
@@ -3926,9 +5074,9 @@ function startWindow(title, tickets, all = false) {
       + (started < pending.length ? ` ${pending.length - started} could not start; retry their tickets.` : ''));
     await renderBoard();
   };
-  $('#dispatch select.agent').disabled = false;
+  pick.hold(false);
   const draw = () => {
-    const agent = $('#dispatch select.agent').value, glyphs = new Set();
+    const agent = pick.value(), glyphs = new Set();
     tickets = all ? candidates.filter(ticket => {
       if (!allowsAgent(ticket, agent)) return false;
       const glyph = ownGlyph(ticket);
@@ -3936,13 +5084,13 @@ function startWindow(title, tickets, all = false) {
       if (glyph) glyphs.add(glyph);
       return true;
     }) : candidates;
-    startAll.disabled = !tickets.length;
+    startAll.disabled = !tickets.length || !agent;
     fill($('#dispatch .tickets'), tickets.map(ticket => h('div', {class: 'ticket', 'data-id': ticket.id},
     conditionLabel(ticket),
-    h('button', {class: 'start', disabled: !allowsAgent(ticket, agent),
+    h('button', {class: 'btn primary start', type: 'button', disabled: !agent || !allowsAgent(ticket, agent),
       title: allowsAgent(ticket, agent) ? 'Start the agent chosen above on this ticket'
         : `Eligible agents: ${eligibleAgents(ticket).map(agentName).join(', ')}`, onclick: async event => {
-      const agent = $('#dispatch select.agent').value;
+      const agent = pick.value();
       event.target.disabled = true;
       try {
         if (await startAgent(ticket.id, agent)) { $('#dispatch').hidden = true; await renderBoard(); }
@@ -3951,12 +5099,14 @@ function startWindow(title, tickets, all = false) {
     }}, 'Start'),
     h('div', {class: 'task'}, ...taskWords(ticket.task || ticket.note || '')))));
   };
-  $('#dispatch select.agent').onchange = draw;
+  START.draw = draw;
   draw();
   $('#dispatch').hidden = false;
+  readHarnesses().then(() => { if (!$('#dispatch').hidden && START.draw === draw) draw(); });
 }
+const START = {draw: null};  // the start window's tickets, drawn again for the agent chosen
 $('#dispatch .close').onclick = () => { $('#dispatch').hidden = true; };
-movable($('#dispatch'));
+overlay($('#dispatch'), {kind: 'dialog', focus: () => $('#dispatch .choice > .btn'), close: () => { $('#dispatch').hidden = true; START.draw = null; }});
 /* The agents key: each agent working in the project now, with its flat icon and in words what it is; a click opens its
  * session's thread. An ended session leaves the key and the map; its log stays in the node's work history, VIEW-036.
  * Sessions are the dispatch module's own tables, never the map. */
@@ -3975,6 +5125,12 @@ async function renderAgents() {
   D.sessions = found.sessions || [];
   D.claims = claimed.claims || [];
   D.proposals = claimed.proposals || {};
+  // the permission requests waiting for the person, one per agent session, counted on the chat's tab
+  const asking = (found.signals || []).filter(one => one.signal === 'permission-waiting' && one.active !== false);
+  D.asking = asking.map(one => ({...one, agent: D.sessions.find(row => row.session_id === one.session_id)?.agent}))
+    .filter(one => D.sessions.some(row => row.session_id === one.session_id && row.state === 'running'));
+  drawDockTab();
+  readIntake(found.signals || []);
   if (D.chat) {
     const pending = D.chat;
     const session = D.sessions.find(one => one.work_id === pending.work && one.state === 'running'
@@ -3986,7 +5142,7 @@ async function renderAgents() {
   const working = D.sessions.filter(one => one.activity === 'working');
   // an entry drawn the same stays in place, so the one under the pointer is not swapped while it is clicked
   keyedFill($('#agents .list'), working.map(one => ({key: one.session_id,
-    text: [one.work_id, one.agent, glyphOf(one.work_id), ticketPart(ticketOf(one.work_id))].join('\n'),
+    text: [one.work_id, one.agent, glyphOf(one.work_id), workPart(one.work_id), agentName(one.agent)].join('\n'),
     make: () => h('div', {class: 'agent-row'}, h('input', {type: 'checkbox', class: 'inuse',
       checked: !INUSE.off.has(one.work_id), 'aria-label': `The part of the map ${agentName(one.agent)} is using`,
       title: 'Checked: the part of the map this work is using shows in white. Unchecked: it is hidden.',
@@ -3996,8 +5152,8 @@ async function renderAgents() {
       title: `${agentName(one.agent)} on work ${one.work_id}: working`,
       onclick: () => agentAt(one.work_id, one.session_id)},
       h('img', {src: glyphOf(one.work_id), alt: glyphFor(one.work_id)}), h('b', {}, agentName(one.agent)),
-      h('small', {}, `on ${ticketPart(ticketOf(one.work_id))} · working`)),
-      chatButton({id: one.work_id}, `${agentName(one.agent)} on ${ticketPart(ticketOf(one.work_id))}`))})));
+      h('small', {}, `on ${workPart(one.work_id)} · working`)),
+      chatButton({id: one.work_id}, `${agentName(one.agent)} on ${workPart(one.work_id)}`))})));
   $('#agents').hidden = !working.length;
   paintInUse();
   figures(S.tickets || []);  // the map's figures follow the same sessions
@@ -4005,14 +5161,15 @@ async function renderAgents() {
 }
 function agentAt(workId, sessionId = null) {
   D.session = sessionId;
-  if (D.work !== workId) { $('#agent .say').value = ''; D.drawn = new Map(); }
+  if (D.work !== workId) { $('#agent .say').value = ''; D.drawn = new Map(); PINNED.agent = true; }
   D.work = workId;
   $('#agent').hidden = false;
   drawAgent();
 }
-/* One agent's window: what its session wrote on the dispatch layer, in order, its open questions, answered as every
- * question is, VIEW-021, a message to send it, and Stop. The text being written is part of the page and is never
- * drawn again, so a map change keeps it, VIEW-018. */
+/* One agent's window: what its session wrote on the dispatch layer, in order, with its plan as a checklist, its tool
+ * calls opening to their diffs, its permission requests answered with the agent's own options, its settings and its
+ * usage in the session bar, its other open questions, answered as every question is, VIEW-021, a message to send it,
+ * and Stop. The text being written is part of the page and is never drawn again, so a map change keeps it, VIEW-018. */
 async function drawAgent() {
   const work = D.work;
   const session = D.sessions.filter(one => one.work_id === work && (!D.session || one.session_id === D.session)).at(-1);
@@ -4022,28 +5179,32 @@ async function drawAgent() {
   $('#agent .icon').alt = glyphFor(work);
   const activity = chatActivity(session);
   // the window's state is drawn at once and together: its title, what it is doing and what can be pressed
-  $('#agent .title').textContent = `${agentName(agent)} · ${ticketPart(ticket)} · ${activity.label}`;
+  $('#agent .title').textContent = `${agentName(agent)} · ${workPart(work)} · ${activity.label}`;
   $('#agent .state').textContent = activity.note;
   $('#agent .state').hidden = !activity.note;
+  $('#agent').classList.toggle('asks', session?.activity === 'waiting');
   $('#agent .interrupt').disabled = !activity.interruptible;
   $('#agent .send').disabled = $('#agent .stop').disabled = state !== 'running';
-  const task = ticket ? ticket.task || ticket.note || '' : '';
+  const task = ticket ? ticket.task || ticket.note || '' : isIntake(work) ? `The intake of ${S.project}: it records the map as it reads the project.` : '';
   if ($('#agent .task').textContent !== task) $('#agent .task').classList.remove('open');  // a new ticket starts short
   $('#agent .task').textContent = task;
   $('#agent .task').title = 'Click to show all of the task, and again to fold it';
   // A chat: newest at the bottom, kept in view while the person is reading the end of it, VIEW-039.
   const project = S.project, metaform = S.base;
-  let notes = D.notes;
-  try { notes = (await read('dispatch-sessions', {id: work})).lines || []; }
+  let notes = D.notes, states = D.states || {};
+  try { const found = await read('dispatch-sessions', {id: work}); notes = found.lines || []; states = found.states || {}; }
   catch (error) { toast(error.message); }
   if (D.work !== work || S.project !== project || S.base !== metaform) return;
   D.notes = notes;
+  D.states = states;
+  D.state = sessionId ? states[sessionId] || null : null;
+  D.agent = agent || null;
+  drawSession($('#agent .sessionbar'), {work, session, state: D.state});
+  drawPlan($('#agent .planbox'), D.state?.plan);
+  const lines = D.notes.filter(line => line.work_id === work && (!sessionId || line.session_id === sessionId));
   const thread = $('#agent .activity');
-  const following = !thread.childElementCount || thread.scrollTop + thread.clientHeight >= thread.scrollHeight - 24;
-  keyedFill(thread, D.notes.filter(line => line.work_id === work && (!sessionId || line.session_id === sessionId))
-    .map(line => ({key: `${line.session_id}:${line.name ?? line.seq}`, text: `${line.kind}\n${line.text}`,
-      make: () => h('li', {class: THREAD[line.kind] || 'note'},
-        h('small', {}, DOING[line.kind] || line.kind || ''), ...linked(line.text))})));
+  const following = PINNED.agent;
+  keyedFill(thread, threadRows(lines, {work, agent, dock: false}));
   if (following) thread.scrollTop = thread.scrollHeight;
   let open = [];
   if (ticket && sessionId) {
@@ -4051,15 +5212,30 @@ async function drawAgent() {
     catch (error) { toast(error.message); }
   }
   if (D.work !== work) return;
+  // a permission request is answered from its own card in the thread; its question at the node is the same request
+  const permits = new Set(lines.filter(line => line.kind === 'permission').map(line => line.data?.message_id).filter(Boolean));
+  open = open.filter(record => !permits.has(record.id));
   const drawn = new Map(open.map(record => [record.id, D.drawn.get(record.id) || asked(record)]));
   D.drawn = drawn;
   keepFill($('#agent .asked'), [...drawn.values()]);
 }
+/* The thread keeps its newest line in view while the person reads its end: it is pinned there until they scroll up,
+ * and stays pinned as the window around it changes, as a question drawn under it or a resize takes room from it. */
+const PINNED = {agent: true};
+$('#agent .activity').addEventListener('scroll', () => {
+  const thread = $('#agent .activity');
+  PINNED.agent = thread.scrollTop + thread.clientHeight >= thread.scrollHeight - 24;
+});
+new ResizeObserver(() => {
+  const thread = $('#agent .activity');
+  if (PINNED.agent) thread.scrollTop = thread.scrollHeight;
+}).observe($('#agent .activity'));
 // The task shows in three lines, so the conversation always has the window; a click unfolds it, within a third.
 $('#agent .task').onclick = () => $('#agent .task').classList.toggle('open');
 $('#agent .chat').onclick = () => {
   const session = D.sessions.filter(one => one.work_id === D.work && (!D.session || one.session_id === D.session)).at(-1);
-  const label = `${agentName(session?.agent)} on ${ticketPart(ticketOf(D.work))}`;
+  const label = `${agentName(session?.agent)} on ${workPart(D.work)}`;
+  if (isIntake(D.work)) return openIntakeChat(D.work, session?.session_id || null);
   talkAbout(!session || session.state === 'running' ? {id: D.work} : {session: `${D.work}:${session.session_id}`}, label);
 };
 $('#agent .send').onclick = async () => {
@@ -4082,6 +5258,7 @@ $('#agent .stop').onclick = async () => {
   else $('#agent .stop').disabled = false;
 };
 $('#agent .close').onclick = () => { $('#agent').hidden = true; D.work = null; };
+overlay($('#agent'), {kind: 'window', close: () => $('#agent .close').click(), focus: '.say'});
 movable($('#agent'));
 /* Giving work, VIEW-032: the task is written as a person writes, the nodes it concerns are linked to it, and a node
  * inserted into the text reads there as its proper noun and carries its address. */
@@ -4133,7 +5310,10 @@ function giveWork(id, text = '') {
   $('#task .ticket-kind').value = '';
   $('#task .backlog').checked = false;
   $('#task .start-agent').checked = false;
-  $('#task select.agent').value = defaultAgent(element.address);
+  // the agent the ticket prefers, Claude for front-end and GUI work and Codex for the rest as dispatch chooses it,
+  // in the picker every start shares; the one it shows is what the ticket keeps and what Start an agent now starts
+  if (!$('#task .pickhost').firstChild) $('#task .pickhost').append(PICKERS.task ||= agentPicker({label: 'Preferred agent', kept: true}));
+  PICKERS.task.set(defaultAgent(element.address));
   fill($('#task .eligibility'), eligibilityPicker([], agents => { K.eligible = agents; }));
   $('#task .title').textContent = `Add Task · ${named(element)}`;
   $('#task .text').replaceChildren(...(text ? [text] : []));
@@ -4293,7 +5473,7 @@ $('#task .put').onclick = async () => {
   const all = [...new Set([...K.nodes, ...inline])].filter(address => partOf(address));
   const nodes = all.map(address => `element:${partOf(address).id}`);
   const project = S.project, metaform = S.base, generation = K.generation;
-  const agent = $('#task select.agent').value, startNow = $('#task .start-agent').checked;
+  const agent = PICKERS.task?.value(), startNow = $('#task .start-agent').checked;
   const eligible = [...K.eligible];
   const written = await wrote('/api/task', {task, nodes, condition: $('#task .condition').value || null, kind: $('#task .ticket-kind').value || null, held: $('#task .backlog').checked,
     agent, eligible});
@@ -4309,6 +5489,11 @@ $('#task .put').onclick = async () => {
   }
 };
 $('#task .close').onclick = () => { $('#task').hidden = true; K.generation++; };
+/* Escape or a click beside it does not throw away a task being written without asking. */
+const discard = (what, kept) => confirmAct({title: `Discard ${what}?`, text: 'What you wrote here is not kept.',
+  verb: 'Discard', cancel: kept, danger: true});
+overlay($('#task'), {kind: 'dialog', close: () => $('#task .close').click(), focus: '.text',
+  guard: () => !taskText() || discard('this task', 'Keep writing')});
 /* Notes, VIEW-034: one single note, not a list, of at most 2048 characters, edited in place.
  * One note at the node, kept by the memory module and read and written with
  * `memory note`, whatever layers are in view. Writing it replaces what it held, and writing it empty clears it. A note
@@ -4328,7 +5513,7 @@ async function notesAt(id) {
   try { note = await noteOf(id); } catch (error) { toast(error.message); }
   if (N.node !== id) return;
   $('#notes .by').textContent = noteBy(note);
-  $('#notes textarea').value = note ? note.text : '';
+  $('#notes textarea').value = N.text = note ? note.text : '';
   noteCount();
   $('#notes').hidden = false;
 }
@@ -4340,6 +5525,8 @@ $('#notes .save').onclick = async () => {
   await notesAt(N.node);
 };
 $('#notes .close').onclick = () => { $('#notes').hidden = true; N.node = null; };
+overlay($('#notes'), {kind: 'window', close: () => $('#notes .close').click(), focus: 'textarea',
+  guard: () => $('#notes textarea').value === N.text || discard('the changes to this note', 'Keep editing')});
 movable($('#notes'));
 /* Adding an element, VIEW-033: a person gives it its address and joins it to the node the window was opened at. */
 const E = {node: null, from: ''};
@@ -4355,6 +5542,7 @@ function addElement(id) {
   E.from = element.address.includes('.') ? element.address.slice(0, element.address.lastIndexOf('.') + 1) : '';
   $('#element .address').value = E.from;
   fill($('#addresses'), [...S.elements.values()].map(entry => h('option', {value: entry.element.address + '.'})));
+  if (!$('#element .pickhost').firstChild) $('#element .pickhost').append(PICKERS.element ||= agentPicker({label: 'Agent', kept: true}));
   $('#element').hidden = false;
   $('#element .address').focus();
 }
@@ -4376,7 +5564,7 @@ $('#element .add').onclick = async () => {
   if (!response.ok) { toast(body.error || 'The element was not written.'); return; }
   for (const notice of body.notices || []) toast(notice.message);
   $('#element').hidden = true;
-  if (given.validate) await startAgent(body.work.id, $('#element select.agent').value);
+  if (given.validate) await startAgent(body.work.id, PICKERS.element?.value());
   // What a person adds is shown: where the layers in view are chosen by name, the layer of what is added by hand
   // is put among them.
   S.layers = (await read('layers', {limit: 0})).results;
@@ -4386,10 +5574,14 @@ $('#element .add').onclick = async () => {
   await loadGraph();
 };
 $('#element .close').onclick = () => { $('#element').hidden = true; };
+overlay($('#element'), {kind: 'dialog', close: () => $('#element .close').click(), focus: '.address',
+  guard: () => !['.purpose', '.ef', '.name'].some(name => $('#element ' + name).value.trim())
+    && [E.from, ''].includes($('#element .address').value.trim()) || discard('this element', 'Keep writing')});
 movable($('#element'));
 movable($('#task'));
 movable($('#float'));
 $('#float .close').onclick = () => { $('#float').hidden = true; O.open = false; Object.assign(F, {id: null, which: null, ids: new Set(), drawn: new Map()}); };
+overlay($('#float'), {kind: 'window', close: () => $('#float .close').click()});
 async function renderWork(target, key, also = null) {
   let records = [];
   try {
@@ -4399,7 +5591,7 @@ async function renderWork(target, key, also = null) {
   const box = $('#work');
   if (!box || S.selected !== key) return;
   const held = records.find(record => !record.done && record.condition);
-  const state = h('select', {class: 'state', title: 'The state of this part: a stage on its way to existing, or broken. Built draws nothing',
+  const state = h('select', {class: 'state', 'aria-label': 'The state of this part', title: 'The state of this part: a stage on its way to existing, or broken. Built draws nothing',
     onchange: async event => {
       event.target.disabled = true;
       const written = await wrote('/api/state', {node: target, condition: event.target.value});
@@ -4410,12 +5602,13 @@ async function renderWork(target, key, also = null) {
   // Raise an issue, the person says what is wrong in their words; a sentinel investigates and brings
   // proposals to the chat; what they choose becomes held tickets. The only way work on an issue begins.
   const issue = h('div', {class: 'issue', hidden: true},
-    h('textarea', {rows: 4, placeholder: 'What is wrong, what you expected, and how to make it happen.'}),
-    h('button', {class: 'send', onclick: async event => {
+    h('textarea', {rows: 4, placeholder: 'What is wrong, what you expected, and how to make it happen.', 'aria-label': 'What is wrong'}),
+    h('div', {class: 'issueacts'}, h('button', {class: 'btn sm primary send', type: 'button', onclick: async event => {
       const text = issue.querySelector('textarea').value.trim();
       if (!text) { toast('Say what is wrong.'); return; }
       event.target.disabled = true;
-      const started = await wrote('/api/raise', {...nodeTalk(key), text});
+      const agent = summonAgent();
+      const started = await wrote('/api/raise', {...nodeTalk(key), text, ...(agent ? {agent} : {})});
       event.target.disabled = false;
       if (!started) return;
       issue.hidden = true;
@@ -4424,17 +5617,23 @@ async function renderWork(target, key, also = null) {
         ? 'Queued: this part is in use, so the sentinel starts when that work is done.'
         : 'Queued: every agent slot is in use, so the sentinel starts when one is free.') : STANDBY;
       openHelpdesk(started.work_id, `the sentinel on ${calledOf(key) || 'this node'}`, queued, started.session_id);
-    }}, 'Send to the sentinel'));
-  const raise_ = h('button', {class: 'raise', title: 'Say what is wrong with this part; a sentinel investigates and brings you proposals',
-    onclick: () => { issue.hidden = !issue.hidden; if (!issue.hidden) issue.querySelector('textarea').focus(); }}, 'Raise an issue');
-  fill(box, h('div', {class: 'eyebrow'}, 'Work ', state, raise_, chatButton(nodeTalk(key), calledOf(key) || 'this node')), issue,
+    }}, 'Send to the sentinel'), h('span', {class: 'pickhost'})));
+  const raise_ = h('button', {class: 'btn sm raise', type: 'button', 'aria-expanded': 'false',
+    title: 'Say what is wrong with this part; a sentinel investigates and brings you proposals',
+    onclick: () => { issue.hidden = !issue.hidden; raise_.setAttribute('aria-expanded', String(!issue.hidden));
+      // the one picker of the issue form, moved into this form: the agent the sentinel starts with
+      if (!issue.hidden) { issue.querySelector('.pickhost').append(summonPicker('raise', {label: 'Agent for the sentinel'}));
+        issue.querySelector('textarea').focus(); } }}, 'Raise an issue');
+  // One row for the part: its state, Raise an issue and one Chat for the node; then one row for each ticket on it.
+  fill(box, h('div', {class: 'workhead'}, h('div', {class: 'eyebrow'}, 'Work'), state, raise_,
+    chatButton(nodeTalk(key), calledOf(key) || 'this node')), issue,
     records.map(record => h('div', {class: 'item work'},
-    h('div', {class: 'pills'}, workPill(record.condition), h('span', {class: 'pill'}, record.done ? 'done' : 'open'),
+    h('div', {class: 'pills'}, record.condition ? workPill(record.condition) : null,
+      h('span', {class: 'pill'}, KIND_WORDS[record.kind] || record.kind || 'task'), h('span', {class: 'pill'}, record.done ? 'done' : 'open'),
       record.held ? h('span', {class: 'pill'}, 'held') : null, record.reviewed ? h('span', {class: 'pill'}, 'reviewed') : null),
     record.note ? h('p', {}, ...linked(record.note)) : null,
     record.task ? h('p', {class: 'fn'}, ...linked(record.task)) : null,
-    record.done ? h('p', {class: 'obs'}, 'Resolved: ', ...linked(record.resolution)) : null,
-    chatButton({id: record.id}, ticketPart(record)))));
+    record.done ? h('p', {class: 'obs'}, 'Resolved: ', ...linked(record.resolution)) : null)));
 }
 function layerPill(name) { return h('span', {class: 'pill layer', style: {'--c': `var(${colorVar(name)})`}}, name); }
 function elementLink(id, address) {
@@ -4470,9 +5669,13 @@ function itemView(value) {
 }
 /* A selected join shows only itself, so nothing needs finding in its receiver's text. */
 function renderJoin(join) {
+  // A join has no name of its own, MAP-020: it is headed by the parts it joins, and its purpose and function are read
+  // below as text.
+  const called = id => S.elements.has(id) ? labelOf(S.elements.get(id).element) : null;
+  const providers = (join.elements || []).map(each => called(each.element_id) || each.address).join(', ');
   fill($('#p-object'),
     h('div', {class: 'eyebrow'}, 'Join'),
-    h('h2', {}, join.ef || `${join.receiver_address} receives from ${join.provider_address}`),
+    h('h2', {}, `${called(join.receiver) || join.receiver_address} ← ${providers || join.provider_address}`),
     h('p', {class: 'meta'}, elementLink(join.receiver, join.receiver_address), ' receives from ',
       ...(join.elements || []).flatMap((each, at) => [at ? ', ' : '', elementLink(each.element_id, each.address)]), '.'),
     (join.open_work || []).length ? h('div', {class: 'pills'}, join.open_work.map(workPill)) : null,
@@ -4484,11 +5687,14 @@ async function renderObject(id) {
   const {element} = S.elements.get(id);
   const pane = $('#p-object');
   const held = S.joins.filter(join => join.receiver === id), serves = S.joins.filter(join => join.providers.includes(id));
-  fill(pane, 
+  // The heading is its short name, the address read through name_length, VIEW-009; what the project calls it and its
+  // address follow, each with its label, so neither is taken for the other.
+  fill(pane,
     h('div', {class: 'eyebrow'}, 'Element'),
     h('h2', {}, element.short_name || element.address),
-    element.name ? h('div', {class: 'canonical'}, element.name) : null,  // what the project calls it
-    h('div', {class: 'addr'}, element.address),
+    h('dl', {class: 'facts'},
+      element.name ? [h('dt', {}, 'Project name'), h('dd', {class: 'canonical'}, element.name)] : null,
+      h('dt', {}, 'Address'), h('dd', {class: 'addr'}, element.address)),
     h('div', {class: 'pills'}, element.role ? h('span', {class: 'pill'}, element.role) : null,
       (element.open_work || []).map(workPill), layerPill(element.layer),
       h('span', {class: 'pill'}, `${held.length} held · ${serves.length} served`)),
@@ -4547,29 +5753,30 @@ async function renderProv() {
     style: {'--c': `var(${colorVar(layer.name)})`}, onclick: () => { provLayer = layer.name; renderProv(); }},
     h('span', {style: {display: 'flex', gap: '8px', 'align-items': 'center'}}, h('i', {class: 'sw'}), layer.name),
     h('span', {class: 'pill'}, layer.kind))));
+  if (!S.layers.length) return fill(pane, h('p', {class: 'empty'}, 'No layer is recorded in this metaform yet.'));
   fill(pane, h('div', {class: 'eyebrow'}, 'Layers in this metaform'), list);
   if (!provLayer) return;
   const layer = S.layers.find(item => item.name === provLayer);
-  pane.append(h('div', {class: 'eyebrow'}, 'How it was made'), h('h2', {}, layer.name),
-    h('dl', {class: 'prov'}, h('dt', {}, 'kind'), h('dd', {}, layer.kind), h('dt', {}, 'module'), h('dd', {}, layer.module),
-      h('dt', {}, 'created'), h('dd', {}, layer.created), h('dt', {}, 'state'),
-      h('dd', {}, layer.ready ? `ready ${layer.ready}` : 'building'), h('dt', {}, 'tags'), h('dd', {}, (layer.tags || []).join(', ') || 'none'),
-      h('dt', {}, 'holds'), h('dd', {}, layer.variable || '')));
+  // One list of facts for the layer, those its provenance record adds joining it, so every label lines up.
+  const facts = h('dl', {class: 'prov'}, ...[['kind', layer.kind], ['module', layer.module], ['created', layer.created],
+    ['state', layer.ready ? `ready ${layer.ready}` : 'building'], ['tags', (layer.tags || []).join(', ') || 'none'],
+    ['holds', layer.variable]].filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .flatMap(([key, value]) => [h('dt', {}, key), h('dd', {}, value)]));
+  pane.append(h('div', {class: 'eyebrow'}, 'How it was made'), h('h2', {}, layer.name), facts);
   if (layer.kind === 'memory') return pane.append(h('p', {class: 'empty'}, 'Memory has no provenance. Agents write it freely.'));
   try {
     const record = await read('provenance', {layer: layer.name});
     if (provLayer !== layer.name) return;
     const reports = (record.refs || []).map(ref => `${ref.key}: ${ref.value}`);
-    pane.append(h('dl', {class: 'prov'},
-      ...[['workflow', record.workflow], ['model', record.model], ['role', record.role],
-        ['blinded', record.blinded === null ? '' : record.blinded ? 'yes' : 'no'], ['reports', reports.join(' · ') || 'none']]
-        .flatMap(([key, value]) => [h('dt', {}, key), h('dd', {}, value || 'not recorded')])));
-    if (record.prompt_version) pane.append(h('div', {class: 'toolbar'}, h('button', {class: 'btn primary open-prompt',
+    facts.append(...[['workflow', record.workflow], ['model', record.model], ['role', record.role],
+      ['blinded', record.blinded === null ? '' : record.blinded ? 'yes' : 'no'], ['reports', reports.join(' · ') || 'none']]
+      .flatMap(([key, value]) => [h('dt', {}, key), h('dd', {}, value || 'not recorded')]));
+    if (record.prompt_version) pane.append(h('div', {class: 'toolbar'}, h('button', {class: 'btn primary open-prompt', type: 'button',
       onclick: () => { showTab('prompt'); renderPrompt(record.prompt_version.name, record.prompt_version.number); }},
       `Open prompt ${record.prompt_version.name}, version ${record.prompt_version.number}`)));
     if (record.prompt) pane.append(h('details', {}, h('summary', {class: 'eyebrow'}, 'The prompt as it was delivered'),
       h('pre', {class: 'prompt'}, record.prompt)));
-  } catch (error) { pane.append(h('p', {class: 'empty'}, error.message)); }
+  } catch (error) { pane.append(h('p', {class: 'failed', role: 'alert'}, error.message)); }
 }
 
 /* ---------- prompts: edited in a real editor, saved as a new version, VIEW-013 ---------- */
@@ -4586,6 +5793,9 @@ async function renderPrompt(name = P.name, number = P.number) {
   const asked = ++P.asked;
   const listed = (await getJson('/api/prompts')).prompts;
   if (asked !== P.asked) return;
+  // With no stored prompt there is nothing to choose or edit, so only that is said.
+  $('#p-prompt .toolbar').hidden = !listed.length;
+  if (!P.editor) $('#editor').hidden = !listed.length;
   if (!listed.length) {
     $('#promptNote').textContent = 'No stored prompts yet. The intake stores its prompt the first time it is served.';
     return;
@@ -4649,17 +5859,1127 @@ $('#saveBtn').onclick = async () => {
   toast(`Saved as version ${saved.number}. Layers made with earlier versions still show the version that made them.`);
 };
 
-/* ---------- tabs, toast ---------- */
+/* ---------- tabs ---------- */
+/* The panel's tabs, as tabs are: the open one is in the Tab order, and Left and Right move between them. */
 const TABS = {object: '#p-object', prov: '#p-prov', prompt: '#p-prompt'};
 function showTab(tab) {
-  for (const [key, selector] of Object.entries(TABS)) { $(selector).hidden = key !== tab; $('#t-' + key).setAttribute('aria-selected', String(key === tab)); }
+  if (tab !== 'prompt' && $('#p-prompt').classList.contains('full')) promptFull(false);
+  for (const [key, selector] of Object.entries(TABS)) {
+    $(selector).hidden = key !== tab;
+    $('#t-' + key).setAttribute('aria-selected', String(key === tab));
+    $('#t-' + key).tabIndex = key === tab ? 0 : -1;
+  }
   if (tab === 'prov') renderProv();
   if (tab === 'prompt' && !P.editor) renderPrompt();
   if (tab === 'prompt' && P.editor) setTimeout(() => P.editor.refresh(), 0);
 }
 for (const key of Object.keys(TABS)) $('#t-' + key).onclick = () => showTab(key);
-let toastTimer;
-function toast(message) { const box = $('#toast'); box.textContent = message; box.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { box.hidden = true; }, 4200); }
+$('.tabs[role=tablist]').addEventListener('keydown', event => {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+  event.preventDefault();
+  const keys = Object.keys(TABS), at = keys.findIndex(key => $('#t-' + key).getAttribute('aria-selected') === 'true');
+  const next = event.key === 'Home' ? 0 : event.key === 'End' ? keys.length - 1
+    : (at + (event.key === 'ArrowRight' ? 1 : -1) + keys.length) % keys.length;
+  showTab(keys[next]);
+  $('#t-' + keys[next]).focus();
+});
+/* The prompt editor fills the screen, and back, VIEW-013; Escape puts it back. */
+function promptFull(on) {
+  const pane = $('#p-prompt');
+  pane.classList.toggle('full', on);
+  $('#promptFull').setAttribute('aria-pressed', String(on));
+  // on the stack by hand, since the pane's own hidden follows the tabs and not the full screen
+  OVERLAY.stack = OVERLAY.stack.filter(entry => entry.box !== pane);
+  if (on) OVERLAY.stack.push({box: pane, kind: 'window', close: () => promptFull(false), opener: $('#promptFull')});
+  restack();
+  if (!on) { pane.style.zIndex = ''; $('#promptFull').focus({preventScroll: true}); }
+  if (P.editor) setTimeout(() => { P.editor.refresh(); if (on) P.editor.focus(); }, 0);
+}
+$('#promptFull').onclick = () => promptFull(!$('#p-prompt').classList.contains('full'));
+
+/* ---------- search: find a part, a join or what a layer holds, and go to it ----------
+ * The parts and joins drawn are matched in the page as each letter is typed, by every word of what is typed, each the
+ * start of a word of the name, the short name, the address, or the join's purpose and function; the layers' items are
+ * found by the store's own search, /api/search, read with the layers in view, VIEW-004, a moment after the typing
+ * stops. A result chosen is selected in both views and the cameras go to it, as a click on it does. */
+const SEARCH = {generation: 0, results: [], active: -1, timer: null, items: []};
+const wordsOf = text => String(text || '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+function matchScore(query, fields) {
+  const wanted = wordsOf(query);
+  if (!wanted.length) return 0;
+  let score = 0;
+  for (const word of wanted) {
+    let best = 0;
+    fields.forEach((field, rank) => {
+      const have = wordsOf(field);
+      if (have.includes(word)) best = Math.max(best, 6 - rank);
+      else if (have.some(one => one.startsWith(word))) best = Math.max(best, 4 - rank);
+    });
+    if (!best) return 0;
+    score += best;
+  }
+  const first = String(fields[0] || '').toLowerCase();
+  return score + (first.startsWith(query.trim().toLowerCase()) ? 5 : 0);
+}
+function searchParts(query) {
+  const parts = [...S.elements.values()].map(({element}) => ({key: element.id, kind: 'Part', name: labelOf(element),
+    where: element.address, layer: element.layer,
+    score: matchScore(query, [labelOf(element), element.short_name, element.address])}));
+  const joins = S.joins.map(join => {
+    const receiver = S.elements.get(join.receiver)?.element, provider = S.elements.get(join.provider)?.element;
+    const ends = `${receiver ? labelOf(receiver) : join.receiver_address} ← ${provider ? labelOf(provider) : join.provider_address || ''}`;
+    return {key: 'p:' + join.id, kind: 'Join', name: join.purpose || ends, where: ends, layer: join.layer,
+      score: matchScore(query, [join.purpose, join.ef, ends])};
+  });
+  const best = list => list.filter(one => one.score > 0).sort((one, two) => two.score - one.score || one.name.localeCompare(two.name)).slice(0, 8);
+  return [...best(parts), ...best(joins)];
+}
+/* A name with the words that matched marked, built as text, never as markup. */
+function marked(text, query) {
+  const wanted = wordsOf(query);
+  const parts = String(text).split(/([^\p{L}\p{N}]+)/u);
+  return parts.map(part => wanted.some(word => part.toLowerCase().startsWith(word)) && part ? h('mark', {}, part) : part);
+}
+function drawSearch(query) {
+  const box = $('#searchResults'), input = $('#search .query');
+  const results = SEARCH.results = [...searchParts(query), ...SEARCH.items];
+  SEARCH.active = results.length ? Math.min(Math.max(SEARCH.active, 0), results.length - 1) : -1;
+  const row = (one, index) => h('div', {role: 'option', id: `found${index}`, 'aria-selected': String(index === SEARCH.active),
+    style: {'--c': `var(${colorVar(one.layer)})`}, onpointermove: () => { if (SEARCH.active !== index) { SEARCH.active = index; paintSearch(); } },
+    onclick: () => chooseFound(index)}, h('i'), h('span', {class: 'name'}, ...marked(one.name, query)),
+    h('span', {class: 'where'}, one.where), h('span', {class: 'kind'}, one.kind));
+  const groups = ['Part', 'Join', 'Item'].map(kind => [kind, results.map((one, index) => [one, index]).filter(([one]) => one.kind === kind)]);
+  fill(box, !query.trim() ? h('p', {class: 'empty'}, 'Type a name, an address or words of a purpose.')
+    : !results.length ? h('p', {class: SEARCH.pending ? 'loading' : 'empty'}, SEARCH.pending ? 'Searching the layers…' : `Nothing in view matches ${query.trim()}.`)
+    : groups.filter(([, found]) => found.length).map(([kind, found]) => [
+      h('div', {class: 'group', role: 'presentation'}, {Part: 'Parts', Join: 'Joins', Item: 'In the layers'}[kind]),
+      found.map(([one, index]) => row(one, index))]));
+  paintSearch();
+  input.setAttribute('aria-expanded', String(results.length > 0));
+}
+function paintSearch() {
+  const input = $('#search .query');
+  for (const option of $('#searchResults').querySelectorAll('[role=option]')) {
+    const on = option.id === `found${SEARCH.active}`;
+    option.setAttribute('aria-selected', String(on));
+    if (on) option.scrollIntoView({block: 'nearest'});
+  }
+  if (SEARCH.active >= 0) input.setAttribute('aria-activedescendant', `found${SEARCH.active}`);
+  else input.removeAttribute('aria-activedescendant');
+}
+/* The layers' items, read from the store a moment after the typing stops; an answer for older words is dropped. */
+function searchItems(query) {
+  clearTimeout(SEARCH.timer);
+  const generation = ++SEARCH.generation;
+  SEARCH.items = [];
+  SEARCH.pending = Boolean(query.trim()) && !noMetaform();
+  if (!SEARCH.pending) return;
+  SEARCH.timer = setTimeout(async () => {
+    let found = [];
+    try { found = (await read('search', {text: query, limit: 8, ...viewLayers()})).results || []; } catch (error) { found = []; }
+    if (generation !== SEARCH.generation) return;
+    SEARCH.pending = false;
+    SEARCH.items = found.map(item => {
+      const at = item.target ? (item.target.kind === 'join' ? 'p:' + item.target.id : item.target.id) : null;
+      const drawn = S.items.has('i:' + item.id) ? 'i:' + item.id : null;
+      return {key: drawn || at, kind: 'Item', name: itemText(item.value).split('\n')[0].slice(0, 140) || item.id,
+        where: `${item.layer}${at ? ' · at ' + nameOf(at, at) : ''}`, layer: item.layer};
+    }).filter(one => one.key);
+    drawSearch($('#search .query').value);
+  }, 180);
+}
+function chooseFound(index) {
+  const one = SEARCH.results[index];
+  if (!one) return;
+  $('#search').hidden = true;
+  closed($('#search'));  // closed now, so the selection below finds the focus out of it and gives it to the map
+  select(one.key, true);
+}
+function openSearch() {
+  const input = $('#search .query');
+  input.value = '';
+  SEARCH.active = -1;
+  SEARCH.items = [];
+  SEARCH.pending = false;
+  drawSearch('');
+  $('#search').hidden = false;
+  input.focus();
+}
+overlay($('#search'), {kind: 'dialog', focus: '.query'});
+$('#searchBtn').onclick = openSearch;
+$('#search .query').addEventListener('input', event => {
+  SEARCH.active = 0;
+  searchItems(event.target.value);
+  drawSearch(event.target.value);
+});
+$('#search .query').addEventListener('keydown', event => {
+  const count = SEARCH.results.length;
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    if (!count) return;
+    SEARCH.active = (SEARCH.active + (event.key === 'ArrowDown' ? 1 : -1) + count) % count;
+    paintSearch();
+  } else if (event.key === 'Enter') {
+    event.preventDefault();
+    chooseFound(SEARCH.active);
+  }
+});
+
+/* ---------- the agents a person starts: one list, from the dispatch module, VIEW-039 ----------
+ * Which agents there are, which of them this machine can run, which is the default and how many more may be summoned
+ * now are the dispatch module's answer, `GET /api/dispatch-agents`; the page keeps no list of its own. Every place an
+ * agent is started offers the same picker: an agent not found is shown with how to set it up, the default is marked,
+ * and the star beside the picker makes the chosen agent the default in one click. */
+const HARNESS = {project: null, enabled: null, default: null, room: null, agents: [], next: null, error: null,
+  reading: null, read: 0, pickers: new Set()};
+const SUMMON = {agent: null, chosen: false};  // the agent new chats, issues and intakes start with; none chosen is the default
+async function readHarnesses() {
+  const project = S.project;
+  if (!project) return HARNESS;
+  if (HARNESS.reading && HARNESS.project === project) return HARNESS.reading;
+  const reading = HARNESS.reading = (async () => {
+    try {
+      const found = await getJson(`/api/dispatch-agents?project=${encodeURIComponent(project)}`);
+      if (S.project === project) {
+        Object.assign(HARNESS, {project, enabled: found.enabled !== false, default: found.default ?? null,
+          room: found.room ?? null, agents: found.agents || [], next: found.next || null, error: null, read: Date.now()});
+        if (!$('#board').hidden) drawBoard();  // a card's own agent select lists them too
+      }
+    } catch (error) {
+      if (S.project === project) Object.assign(HARNESS, {project, error: error.message, read: Date.now()});
+    }
+    paintPickers();
+    return HARNESS;
+  })();
+  HARNESS.project = project;
+  try { return await reading; } finally { if (HARNESS.reading === reading) HARNESS.reading = null; }
+}
+function forgetHarnesses() {
+  Object.assign(HARNESS, {project: null, enabled: null, default: null, room: null, agents: [], next: null, error: null,
+    reading: null, read: 0});
+  Object.assign(SUMMON, {agent: null, chosen: false});
+  paintPickers();
+}
+const harness = agent => HARNESS.agents.find(one => one.agent === agent) || null;
+const agentName = agent => harness(agent)?.label || agent || 'An agent';
+/* The agent a start uses when the person has chosen none: the one offered when this machine runs it, else the
+ * default, else the first it runs. An agent the person chose stays chosen, found or not, so nothing they did not
+ * choose is started in its place. */
+function usableAgent(chosen) {
+  const found = [chosen, HARNESS.default].map(harness).find(one => one?.available);
+  return found?.agent || HARNESS.agents.find(one => one.available)?.agent || chosen || HARNESS.default || null;
+}
+function paintPickers() {
+  for (const box of HARNESS.pickers) {
+    if (box.isConnected || box.kept) box.paint(); else HARNESS.pickers.delete(box);
+  }
+}
+/* Make one agent the default, kept as `metaform set --dispatch-agent` keeps it; Undo gives the one before back. */
+async function makeDefault(agent, {undo = true} = {}) {
+  const before = HARNESS.default;
+  if (!agent || agent === before) return false;
+  const saved = await wrote('/api/dispatch-agents', {default: agent});
+  if (!saved) return false;
+  Object.assign(HARNESS, {enabled: saved.enabled !== false, default: saved.default ?? agent, room: saved.room ?? HARNESS.room,
+    agents: saved.agents || HARNESS.agents, read: Date.now()});
+  paintPickers();
+  const said = `${agentName(agent)} is the default agent.`;
+  if (undo && before) undoable(said, () => makeDefault(before, {undo: false}));
+  else toast(said);
+  return true;
+}
+/* The picker. `holder` keeps its choice, {agent, chosen}, so pickers that share one, as the starts that summon an agent
+ * do, show the same; `chosen` says the person picked it, and an agent only offered, the default or a ticket's area's,
+ * gives way to one this machine runs. `room` says how many more agents may be summoned now, `star` offers to make the
+ * chosen agent the default, `up` opens the list upward. `kept`: the picker lives on outside the page, moved into each
+ * form that shows it. `exact` shows the agent held as it is, found or not, as the default itself is shown. */
+function agentPicker({label = 'Agent', holder = null, onchange = null, room = false, star = true, up = false,
+  kept = false, exact = false} = {}) {
+  const slot = holder || {agent: null, chosen: false};
+  const pick = choice({label, options: [], value: null, onchange: value => {
+    Object.assign(slot, {agent: value, chosen: true}); paintPickers(); onchange?.(value); }});
+  if (up) pick.classList.add('up');
+  const make = h('button', {class: 'btn icon quiet star', type: 'button', 'aria-pressed': 'false',
+    onclick: () => makeDefault(box.value())}, h('i', {class: 'i i-star', 'aria-hidden': 'true'}));
+  const note = h('small', {class: 'pickernote'});
+  const box = h('div', {class: 'agentpicker'}, h('div', {class: 'pickerrow'}, pick, star ? make : null), note);
+  box.kept = kept;
+  let held = false;  // while what it starts is being started, the choice waits
+  box.hold = on => { held = on; box.paint(); };
+  box.set = value => { Object.assign(slot, {agent: value, chosen: false}); box.paint(); };  // offered, not chosen
+  box.value = () => HARNESS.enabled === false ? null : exact || slot.chosen ? slot.agent : usableAgent(slot.agent);
+  box.paint = () => {
+    const off = HARNESS.enabled === false, none = !off && HARNESS.project && !HARNESS.agents.some(one => one.available);
+    pick.hidden = off;
+    const options = HARNESS.agents.map(one => ({value: one.agent, label: one.label,
+      badge: one.default ? 'Default' : one.available ? null : 'Not found', ok: one.available ? (one.default || undefined) : false,
+      disabled: !one.available,
+      hint: one.available ? null : ['Not found on this machine. Set its start command with ',
+        h('code', {}, one.next || `metaform set --dispatch-${one.agent} "<command>"`)]}));
+    const value = box.value();
+    pick.set(options, value);
+    pick.querySelector(':scope > .btn').disabled = !options.length || held;
+    const chosen = harness(value);
+    make.hidden = off || !chosen;
+    make.disabled = !chosen?.available || chosen.default;
+    make.setAttribute('aria-pressed', String(Boolean(chosen?.default)));
+    make.classList.toggle('on', Boolean(chosen?.default));
+    const said = chosen?.default ? `${chosen.label} is the default agent` : chosen ? `Make ${chosen.label} the default agent` : 'Make it the default';
+    make.title = said;
+    make.setAttribute('aria-label', said);
+    note.className = 'pickernote';
+    if (off) { note.classList.add('off'); fill(note, 'Agents are off here: ', h('code', {}, HARNESS.next || 'metaform enable dispatch')); }
+    else if (HARNESS.error) { note.classList.add('off'); fill(note, HARNESS.error); }
+    else if (none) { note.classList.add('off'); fill(note, 'No agent is found on this machine. Set one up with ', h('code', {}, HARNESS.agents[0]?.next || 'metaform dispatch agents')); }
+    else if (room && HARNESS.room !== null) fill(note, HARNESS.room > 0 ? `${plural(HARNESS.room, 'more agent')} can start now.`
+      : 'Every agent slot is in use: it starts when one is free.');
+    else fill(note);
+    note.hidden = !note.textContent;
+    note.title = note.textContent;
+  };
+  HARNESS.pickers.add(box);
+  box.paint();
+  if (HARNESS.project !== S.project || Date.now() - HARNESS.read > 15000) readHarnesses();
+  return box;
+}
+/* A plain select of the same agents, for a ticket's own preferred agent on its card, which starts nothing. */
+function agentSelect(value, onchange, label = 'Preferred agent') {
+  const options = [...HARNESS.agents.map(one => [one.agent, one.available ? one.label : `${one.label} (not found)`]),
+    ...(value && !harness(value) ? [[value, value]] : [])];
+  return h('select', {class: 'agent', 'aria-label': label, onchange: event => onchange(event.target.value)},
+    options.map(([agent, text]) => h('option', {value: agent, selected: agent === value}, text)));
+}
+const summonAgent = () => HARNESS.enabled === false ? null : SUMMON.chosen ? SUMMON.agent : usableAgent(SUMMON.agent);
+/* The pickers that live on: the chat dock's, the one of the issue form, the default in the Agents menu. */
+const PICKERS = {};
+function summonPicker(name, options = {}) {
+  return PICKERS[name] ||= agentPicker({label: 'Agent for new chats', holder: SUMMON, room: true, kept: true, ...options});
+}
+
+/* The chat's tab says when agents wait for the person's permission, and how many. */
+function drawDockTab() {
+  const waiting = (D.asking || []).length, tab = $('#dockTab');
+  tab.classList.toggle('asks', waiting > 0);
+  fill(tab, h('span', {}, 'Chat'), waiting ? h('b', {class: 'asking', 'aria-hidden': 'true'}, String(waiting)) : null);
+  tab.setAttribute('aria-label', waiting ? `Open the chat: ${plural(waiting, 'agent waits', 'agents wait')} for your permission`
+    : 'Open the chat with an agent');
+}
+
+/* ---------- an agent's session as ACP gives it, VIEW-039 and BASE-052 ----------
+ * The thread, the plan as a checklist, each tool call with its diffs and the parts of the map its files belong to,
+ * each permission request with the agent's own options, the session's settings, its slash commands and its usage,
+ * drawn alike in the chat dock and the agent window from `GET /api/dispatch-sessions`, read again on each dispatch
+ * event. Each piece is drawn again only when what it shows changed, so nothing under the person's hand flickers. */
+const clip = (text, most) => { const said = String(text ?? ''); return said.length > most ? said.slice(0, most - 1).trimEnd() + '…' : said; };
+const isIntake = workId => String(workId || '').startsWith('intake-');
+/* What a session works on, in words: the intake, or its ticket's part. An intake's work id is never a ticket. */
+const workPart = workId => isIntake(workId) ? 'the intake' : ticketPart(ticketOf(workId));
+/* A mode that lets the agent act without asking: named so by the agents that offer one, as bypassPermissions, yolo or
+ * full access are, so choosing it is a decision the person sees and confirms. */
+const SKIPS = /bypass|yolo|full[-_ ]?access|danger|skip[-_ ]?perm|no[-_ ]?approv|never[-_ ]?ask|without[-_ ]?ask/i;
+const skipsPrompts = option => Boolean(option) && SKIPS.test(`${option.value} ${option.name}`);
+const OPENED = new Set();  // the tool calls opened to their detail, by session and line, kept as the thread is drawn again
+const TOOL_ICON = {read: 'i-file', edit: 'i-pen', delete: 'i-trash', move: 'i-move', search: 'i-search', execute: 'i-terminal',
+  think: 'i-spark', fetch: 'i-globe', switch_mode: 'i-gear'};
+const STATUS_WORDS = {pending: 'pending', in_progress: 'running', completed: 'done', failed: 'failed'};
+const statusOf = line => line.data?.status || /\(([\w ]+)\)\s*$/.exec(line.text || '')?.[1] || 'pending';
+const titleOf = line => line.data?.title || String(line.text || '').replace(/\s*\([\w ]+\)\s*$/, '') || 'A tool call';
+const countOf = number => number >= 1e6 ? `${(number / 1e6).toFixed(1).replace(/\.0$/, '')}M`
+  : number >= 1e3 ? `${(number / 1e3).toFixed(1).replace(/\.0$/, '')}k` : String(number);
+/* A unified patch drawn as it reads: each line with its numbers before and after, added and removed in their colors. */
+function unifiedDiff(patch) {
+  const rows = [];
+  let old = 0, now = 0;
+  const lines = String(patch || '').split('\n');
+  if (lines.at(-1) === '') lines.pop();
+  const row = (kind, before, after, sign, text, word) => h('div', {class: `dl ${kind}`},
+    h('span', {class: 'ln', 'aria-hidden': 'true'}, before), h('span', {class: 'ln', 'aria-hidden': 'true'}, after),
+    h('span', {class: 'sg', 'aria-hidden': 'true'}, sign), word ? h('span', {class: 'visually-hidden'}, word) : null,
+    h('code', {}, text || ' '));
+  for (const line of lines) {
+    if (line.startsWith('--- ') || line.startsWith('+++ ')) continue;
+    const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+    if (hunk) { old = Number(hunk[1]); now = Number(hunk[2]); rows.push(row('hunk', '', '', '', line)); continue; }
+    if (line.startsWith('\\')) { rows.push(row('meta', '', '', '', line.slice(2))); continue; }
+    const sign = line[0], text = line.slice(1);
+    if (sign === '+') rows.push(row('add', '', now++, '+', text, 'added'));
+    else if (sign === '-') rows.push(row('del', old++, '', '−', text, 'removed'));
+    else rows.push(row('ctx', old++, now++, '', text));
+  }
+  return h('div', {class: 'udiff'}, rows);
+}
+/* The parts of the map a file belongs to, each a chip that selects the part and flies both views to it. */
+function nodeChips(nodes = []) {
+  return (nodes || []).map(node => {
+    const key = node.kind === 'join' ? 'p:' + node.id : node.id;
+    const known = node.kind === 'join' ? Boolean(joinOf(key)) : S.elements.has(key);
+    const name = known ? nameOf(key, node.address) : node.address || key;
+    return h('button', {class: 'chip nodechip', type: 'button', disabled: !known,
+      title: known ? `Select ${name} on the map (${node.address})` : `${node.address}: not in the map shown`,
+      onclick: event => { event.stopPropagation(); select(key, true); }}, h('i', {class: 'dot', 'aria-hidden': 'true'}), clip(name, 32));
+  });
+}
+function fileDetail(diff) {
+  return h('div', {class: 'file'},
+    h('div', {class: 'filehead'}, h('i', {class: 'i i-file', 'aria-hidden': 'true'}), h('span', {class: 'path', title: diff.path}, diff.path),
+      diff.created ? h('span', {class: 'badge ok'}, 'New file') : null,
+      h('span', {class: 'delta'}, h('b', {class: 'add'}, `+${diff.added ?? 0}`), h('b', {class: 'del'}, `−${diff.removed ?? 0}`))),
+    (diff.nodes || []).length ? h('div', {class: 'chips'}, nodeChips(diff.nodes)) : null,
+    unifiedDiff(diff.patch),
+    diff.truncated ? h('p', {class: 'hint'}, 'The diff is cut short here; the file holds the rest.') : null);
+}
+/* What a tool call acts on: its diffs, the places it reads or writes, and the terminals it runs. */
+function toolDetail(data) {
+  const located = (data.locations || []).filter(place => !(data.diffs || []).some(diff => diff.path === place.path));
+  return [(data.diffs || []).map(fileDetail),
+    located.length ? h('ul', {class: 'places'}, located.map(place => h('li', {},
+      h('i', {class: 'i i-file', 'aria-hidden': 'true'}), h('span', {class: 'path'}, place.line ? `${place.path}:${place.line}` : place.path),
+      (place.nodes || []).length ? h('span', {class: 'chips'}, nodeChips(place.nodes)) : null))) : null,
+    (data.terminals || []).length ? h('p', {class: 'hint'}, `Runs in ${plural(data.terminals.length, 'terminal')}: ${data.terminals.join(', ')}`) : null];
+}
+/* A tool call: one compact row, its kind, title, files and status; one with something to show opens to it. */
+function toolRow(line, tag, key) {
+  const data = line.data || null, status = statusOf(line), title = titleOf(line);
+  const kind = data?.kind || 'other';
+  const added = (data?.diffs || []).reduce((sum, diff) => sum + (diff.added || 0), 0);
+  const removed = (data?.diffs || []).reduce((sum, diff) => sum + (diff.removed || 0), 0);
+  const files = [...new Set([...(data?.diffs || []), ...(data?.locations || [])].map(one => one.path))];
+  const more = Boolean(data && ((data.diffs || []).length || (data.locations || []).length || (data.terminals || []).length));
+  const open = more && OPENED.has(key);
+  const detail = more ? h('div', {class: 'tooldetail', hidden: !open}, open ? toolDetail(data) : null) : null;
+  const head = h(more ? 'button' : 'div', {class: 'toolhead', ...(more ? {type: 'button', 'aria-expanded': String(open),
+    title: open ? 'Hide what it changed' : 'Show what it changed', onclick: () => {
+      const now = detail.hidden;
+      detail.hidden = !now;
+      if (now && !detail.childNodes.length) fill(detail, toolDetail(data));
+      head.setAttribute('aria-expanded', String(now));
+      OPENED[now ? 'add' : 'delete'](key);
+    }} : {})},
+    h('i', {class: `i ${TOOL_ICON[kind] || 'i-tool'} kind`, 'aria-hidden': 'true'}),
+    h('span', {class: 'title'}, title),
+    files.length ? h('span', {class: 'files', title: files.join('\n')}, files.length === 1 ? files[0].split('/').pop() : `${files.length} files`) : null,
+    added || removed ? h('span', {class: 'delta'}, h('b', {class: 'add'}, `+${added}`), h('b', {class: 'del'}, `−${removed}`)) : null,
+    h('span', {class: 'toolstate', 'data-status': status}, h('i', {'aria-hidden': 'true'}), STATUS_WORDS[status] || status),
+    more ? h('i', {class: 'i i-chev', 'aria-hidden': 'true'}) : null);
+  return h(tag, {class: 'tool', 'data-status': status}, head, detail);
+}
+/* A permission request, as the agent put it: what it would do and the agent's own options, each a button; while it
+ * waits it stands out, and once answered it says what was chosen. */
+function permissionCard(line, work, tag, agent) {
+  const data = line.data || {}, state = data.state || 'waiting';
+  const name = agentName(agent);
+  const chosen = (data.options || []).find(option => option.option_id === data.chosen);
+  const answer = h('div', {class: 'answers', role: 'group', 'aria-label': 'Answer the request'},
+    (data.options || []).map(option => h('button', {type: 'button', 'data-option': option.option_id,
+      class: `btn sm ${/^allow/.test(option.kind) ? (option.kind === 'allow_once' ? 'primary' : '') : 'danger'}`,
+      title: {allow_once: 'Let it do this once', allow_always: 'Let it do this, and the same again without asking',
+        reject_once: 'Do not let it do this', reject_always: 'Do not let it, and never ask again'}[option.kind] || option.name,
+      onclick: async event => {
+        const buttons = [...answer.querySelectorAll('button')];
+        for (const button of buttons) button.disabled = true;
+        event.currentTarget.classList.add('chosen');
+        const done = await wrote('/api/dispatch-permit', {work_id: work, request: data.request, option: option.option_id});
+        if (!done) { for (const button of buttons) button.disabled = false; event.currentTarget.classList.remove('chosen'); return; }
+        card.classList.replace('waiting', 'answered');
+        fill(answer, h('p', {class: 'said'}, h('i', {class: 'i i-check', 'aria-hidden': 'true'}), `${done.answer || option.name}, answered by you.`));
+      }}, option.name)));
+  const said = state === 'answered' ? `${data.answer || chosen?.name || 'Answered'}: answered.`
+    : state === 'cancelled' ? 'Not answered: its turn ended before an answer.'
+    : state === 'unmatched' ? `Answered at the node with “${data.answer || ''}”, which none of its options matched, so it was refused.` : '';
+  const card = h(tag, {class: `permission ${state}`, 'data-request': data.request},
+    h('div', {class: 'ask'}, h('span', {class: 'eyebrow'}, state === 'waiting' ? 'Waiting for you' : 'Permission'),
+      h('b', {}, `${name} asks to ${data.title || 'use a tool'}`), data.kind ? h('span', {class: 'chip'}, data.kind) : null),
+    data.said ? h('p', {class: 'why'}, ...linked(data.said)) : null,
+    data.detail ? h('div', {class: 'tooldetail'}, toolDetail(data.detail)) : null,
+    state === 'waiting' ? answer : h('p', {class: 'said'}, h('i', {class: `i ${state === 'answered' && /^allow/.test(chosen?.kind || '') ? 'i-check' : 'i-close'}`, 'aria-hidden': 'true'}), said));
+  return card;
+}
+/* A signal a session raised, said in words; a permission waiting is its card, so it is not said twice. */
+function signalWords(text) {
+  try { const found = JSON.parse(text); return found.signal === 'permission-waiting' ? null : `Signal: ${String(found.signal || '').replace(/-/g, ' ')}${found.active === false ? ', cleared' : ''}.`; }
+  catch { return text; }
+}
+const QUIET_KINDS = new Set(['setting', 'approved', 'notice']);  // drawn small, in the thread's quiet color
+/* The rows of a thread for keyedFill: in the dock, the conversation, its tool calls and its requests; in the agent
+ * window, everything the session wrote. The plan is drawn apart, as a checklist. */
+function threadRows(lines, {work, agent, dock}) {
+  const rows = [];
+  const tag = dock ? 'div' : 'li';
+  for (const line of lines) {
+    const key = `${line.session_id}:${line.name ?? line.seq}`;
+    const kind = line.kind;
+    const text = `${kind}\n${line.text}\n${line.data ? JSON.stringify(line.data) : ''}`;
+    if (kind === 'plan' || kind === 'state' || kind === 'tool_detail') continue;
+    if (kind === 'tool_call' || kind === 'tool_call_update') { rows.push({key, text, make: () => toolRow(line, tag, key)}); continue; }
+    if (kind === 'permission') { rows.push({key, text, make: () => permissionCard(line, work, tag, agent)}); continue; }
+    if (kind === 'signal') {
+      const words = signalWords(line.text);
+      if (words) rows.push({key, text, make: () => dock ? h('div', {class: 'system'}, words) : h('li', {class: 'signal'}, h('small', {}, 'signal'), words)});
+      continue;
+    }
+    if (dock) {
+      if (kind === 'agent_message_chunk') rows.push({key, text, make: () => h('div', {class: 'bubble theirs'}, ...linked(line.text))});
+      else if (kind === 'person' || kind === 'user_message_chunk') rows.push({key, text, make: () => h('div', {class: 'bubble mine'}, line.text)});
+      else if (['setting', 'approved', 'failed', 'notice'].includes(kind)) rows.push({key, text, make: () => h('div', {class: `system ${kind}`}, line.text)});
+      continue;
+    }
+    rows.push({key, text, make: () => h('li', {class: THREAD[kind] || (QUIET_KINDS.has(kind) ? kind : 'note'), 'data-kind': kind},
+      h('small', {}, DOING[kind] || String(kind || '').replace(/_/g, ' ')), ...linked(line.text))});
+  }
+  return rows;
+}
+/* The plan, a checklist of its entries as the agent keeps it, drawn again only when it changes. */
+function drawPlan(box, plan) {
+  const entries = Array.isArray(plan) ? plan : [];
+  const text = JSON.stringify(entries);
+  if (box.dataset.drawn === text) return;
+  box.dataset.drawn = text;
+  box.hidden = !entries.length;
+  if (!entries.length) return fill(box);
+  const done = entries.filter(entry => entry.status === 'completed').length;
+  // open as it was; at first open in a window, folded to its count in the chat, where the conversation needs the room
+  const wasOpen = box.querySelector('details') ? box.querySelector('details').open
+    : box.dataset.closed ? box.dataset.closed !== 'true' : !box.closest('#helpdesk');
+  const details = h('details', {open: wasOpen, ontoggle: event => { box.dataset.closed = String(!event.target.open); }},
+    h('summary', {}, h('span', {class: 'eyebrow'}, 'Plan'), h('span', {class: 'tally'}, `${done} of ${entries.length} done`),
+      h('span', {class: 'meter', 'aria-hidden': 'true'}, h('span', {style: {width: `${Math.round(100 * done / entries.length)}%`}}))),
+    h('ol', {class: 'steps'}, entries.map(entry => h('li', {class: entry.status || 'pending'},
+      h('i', {class: 'mark', 'aria-hidden': 'true'}),
+      h('span', {class: 'visually-hidden'}, `${STATUS_WORDS[entry.status] || entry.status}: `),
+      h('span', {class: 'what'}, entry.content || ''),
+      entry.priority === 'high' ? h('span', {class: 'prio', title: 'High priority'}, 'high') : null))));
+  fill(box, details);
+}
+/* The session's own bar: its settings as the agent offers them, a mode that skips the agent's own permission prompts
+ * said as such, its usage, and Resume for a session that ended when its agent can resume it. Drawn again only when
+ * what it shows changed, and never while one of its selects is in the person's hand. */
+function drawSession(box, {work, session, state}) {
+  const settings = state?.settings || [];
+  const usage = state?.usage || null;
+  const caps = state?.capabilities || {};
+  const ended = session && session.state !== 'running';
+  const resumable = ended && (caps.load || caps.resume);
+  const text = JSON.stringify([work, session?.session_id, session?.state, settings, usage, resumable, state?.tokens || null]);
+  if (box.dataset.drawn === text || box.contains(document.activeElement) && box.dataset.work === work) return;
+  box.dataset.drawn = text;
+  box.dataset.work = work || '';
+  const agent = agentName(session?.agent);
+  const controls = ended ? [] : settings.map(setting => {
+    if (setting.type === 'boolean') {
+      const input = h('input', {type: 'checkbox', role: 'switch', checked: Boolean(setting.current), onchange: async () => {
+        input.disabled = true;
+        const done = await wrote('/api/dispatch-configure', {work_id: work, setting: setting.id, value: input.checked});
+        input.disabled = false;
+        if (!done) input.checked = !input.checked;
+      }});
+      return h('label', {class: 'switch setting', title: setting.description || setting.name}, input, setting.name);
+    }
+    const current = (setting.options || []).find(option => option.value === setting.current);
+    const pick = h('select', {'aria-label': setting.name, title: setting.description || setting.name, onchange: async () => {
+      const option = (setting.options || []).find(one => one.value === pick.value);
+      if (skipsPrompts(option) && !await confirmAct({title: `Let ${agent} act without asking?`,
+        text: [`${option.name}: in this mode ${agent} skips its own permission prompts. It edits files and runs commands without asking you first.`,
+          'You can choose another mode at any time.'], verb: `Use ${option.name}`, cancel: 'Keep asking', danger: true})) {
+        pick.value = setting.current; return;
+      }
+      pick.disabled = true;
+      const done = await wrote('/api/dispatch-configure', {work_id: work, setting: setting.id, value: pick.value});
+      pick.disabled = false;
+      if (!done) pick.value = setting.current;
+      else toast(`${setting.name}: ${option?.name || pick.value}.`);
+    }}, (setting.options || []).map(option => h('option', {value: option.value, selected: option.value === setting.current},
+      skipsPrompts(option) ? `${option.name} · skips its permission prompts` : option.name)));
+    return h('label', {class: 'setting'}, h('span', {}, setting.name), pick,
+      setting.source === 'mode' || setting.category === 'mode' ? (skipsPrompts(current)
+        ? h('span', {class: 'badge danger', title: `${agent} does not ask before it acts`}, 'No prompts') : null) : null);
+  });
+  const used = usage && usage.used !== null && usage.used !== undefined
+    ? h('span', {class: 'usage', title: 'The context the session has used of its model\'s window'},
+      usage.size ? `${countOf(usage.used)} / ${countOf(usage.size)} tokens` : `${countOf(usage.used)} tokens`,
+      usage.cost && usage.cost.amount !== undefined ? ` · ${usage.cost.currency === 'USD' || !usage.cost.currency ? '$' : usage.cost.currency + ' '}${Number(usage.cost.amount).toFixed(2)}` : '') : null;
+  const resume = resumable ? h('button', {class: 'btn sm resume', type: 'button',
+    title: `${agent} offers to resume its sessions: it goes on where it ended, with its own memory of the work`,
+    onclick: async event => {
+      event.currentTarget.disabled = true;
+      const done = await wrote('/api/dispatch-resume', {work_id: work, session: session.session_id});
+      if (!done) { event.currentTarget.disabled = false; return; }
+      toast(done.state === 'running' ? `${agent} is running already; talk to it here.` : `${agent} is resuming its session; it waits for your next message.`);
+      await renderAgents();
+    }}, h('i', {class: 'i i-play', 'aria-hidden': 'true'}), 'Resume') : null;
+  box.hidden = !(controls.length || used || resume);
+  fill(box, controls, h('span', {class: 'grow'}), used, resume);
+}
+/* Slash commands: typing / at the start of a message offers the commands, the chat's own and the agent's, as the
+ * agent named them; Up and Down choose, Enter or Tab takes one, Escape closes the list. */
+function slashCommands(say, offered) {
+  const id = `slash${++slashCommands.made}`;
+  const list = h('div', {class: 'slash', id, role: 'listbox', hidden: true, 'aria-label': 'Commands'});
+  say.after(list);
+  say.setAttribute('aria-controls', id);
+  say.setAttribute('aria-autocomplete', 'list');
+  let found = [], active = 0;
+  const word = () => {
+    const before = say.value.slice(0, say.selectionStart ?? say.value.length);
+    const typed = /^\/(\S*)$/.exec(before);
+    return typed ? typed[1] : null;
+  };
+  const paint = () => {
+    [...list.children].filter(row => row.getAttribute('role') === 'option').forEach((row, index) => {
+      row.setAttribute('aria-selected', String(index === active));
+      if (index === active) { say.setAttribute('aria-activedescendant', row.id); row.scrollIntoView({block: 'nearest'}); }
+    });
+  };
+  const show = () => {
+    const typed = word();
+    found = typed === null ? [] : offered().filter(one => one.name.toLowerCase().startsWith(typed.toLowerCase()));
+    if (!found.length) { list.hidden = true; say.removeAttribute('aria-activedescendant'); return; }
+    active = Math.min(active, found.length - 1);
+    const groups = [...new Set(found.map(one => one.from))];
+    let index = -1;
+    fill(list, groups.map(group => [h('div', {class: 'group', role: 'presentation'}, group),
+      found.filter(one => one.from === group).map(one => { index++; const at = index;
+        return h('div', {role: 'option', id: `${id}-${at}`, 'aria-selected': 'false',
+          onpointerdown: event => { event.preventDefault(); take(at); }, onpointermove: () => { if (active !== at) { active = at; paint(); } }},
+          h('b', {}, `/${one.name}`), one.hint ? h('span', {class: 'hint'}, one.hint) : null,
+          one.description ? h('small', {}, one.description) : null); })]));
+    found = groups.flatMap(group => found.filter(one => one.from === group));
+    list.hidden = false;
+    paint();
+  };
+  const take = index => {
+    const one = found[index];
+    if (!one) return;
+    const rest = say.value.slice(say.selectionStart ?? say.value.length).replace(/^\S*/, '');
+    say.value = `/${one.name} ${rest.trimStart()}`;
+    const at = one.name.length + 2;
+    say.setSelectionRange(at, at);
+    if (one.hint) say.setAttribute('placeholder', one.hint);
+    list.hidden = true;
+    say.focus();
+  };
+  say.addEventListener('input', () => { active = 0; show(); });
+  say.addEventListener('click', show);
+  say.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== say) list.hidden = true; }, 120));
+  say.addEventListener('keydown', event => {
+    if (list.hidden) return;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault(); event.stopImmediatePropagation();
+      active = (active + (event.key === 'ArrowDown' ? 1 : -1) + found.length) % found.length; paint();
+    } else if ((event.key === 'Enter' && !event.shiftKey) || event.key === 'Tab') {
+      // a command typed whole is sent by Enter as it is; otherwise Enter and Tab take the one chosen
+      if (event.key === 'Enter' && found[active]?.name === word()) { list.hidden = true; return; }
+      event.preventDefault(); event.stopImmediatePropagation(); take(active);
+    }
+  }, true);
+  overlay(list, {kind: 'popover', focus: false, close: () => { list.hidden = true; }});
+  return list;
+}
+slashCommands.made = 0;
+/* The commands a session offers, from its state. */
+const commandsOf = (state, agent) => (state?.commands || []).filter(one => one.name)
+  .map(one => ({name: one.name, description: one.description, hint: one.hint, from: `${agentName(agent)}'s commands`}));
+
+/* ---------- the intake, started from the page, VIEW-045 and BASE-039 ----------
+ * An agent the person chooses runs the project's intake and records the map as it goes; the page follows the intake
+ * being recorded, so the map grows here. A project with no map offers it first; Administration offers it again, to map
+ * the project anew or to check the map against it. While it runs, a bar over the map says so, with its chat and Stop.
+ * Its work id, `intake-…`, is never a ticket. */
+const INTAKE = {work: null, session: null, agent: null, waiting: 0, reading: false, started: null};
+const STARTING = 180000;  // how long an intake's launch may take before its session is made, dispatch's STALE_START
+const INTAKE_KEY = project => `metaform.intake.${project}`;
+function keptIntake(project = S.project) { try { return localStorage.getItem(INTAKE_KEY(project)); } catch { return null; } }
+function keepIntake(work, project = S.project) {
+  try { if (work) localStorage.setItem(INTAKE_KEY(project), work); else localStorage.removeItem(INTAKE_KEY(project)); }
+  catch { /* storage can be blocked; the sessions read finds a running intake all the same */ }
+}
+const intakeRunning = () => Boolean(INTAKE.session && INTAKE.session.state === 'running');
+/* The intake agent of this project: a running intake session among those read, or the one this page started, read by
+ * its id wherever it is kept, since an intake that activates a new metaform keeps its session in the one it began in. */
+async function readIntake(signals = []) {
+  const project = S.project;
+  let session = D.sessions.filter(one => isIntake(one.work_id) && one.state === 'running').at(-1) || null;
+  const kept = keptIntake(project);
+  // launched by this page and not yet made: its runner is starting, so it is shown as starting until its session is
+  // made or its launch would have been given up
+  const launching = INTAKE.started && INTAKE.started.project === project && Date.now() - INTAKE.started.at < STARTING
+    ? INTAKE.started : null;
+  if (!session && kept && !INTAKE.reading) {
+    INTAKE.reading = true;
+    try {
+      const found = await read('dispatch-sessions', {id: kept, thread: 'false'});
+      if (S.project !== project) return;
+      session = (found.sessions || []).at(-1) || null;
+      signals = [...signals, ...(found.signals || [])];
+      if (session && session.state !== 'running') session = null;
+      if (!session && !(launching && launching.work === kept)) keepIntake(null, project);
+    } catch { session = null; } finally { INTAKE.reading = false; }
+  }
+  if (S.project !== project) return;
+  if (session) INTAKE.started = null;
+  else if (launching) session = {work_id: launching.work, agent: launching.agent, state: 'running', session_id: null, activity: null};
+  INTAKE.session = session;
+  INTAKE.work = session?.work_id || null;
+  INTAKE.agent = session?.agent || null;
+  INTAKE.waiting = session ? signals.filter(one => one.signal === 'permission-waiting' && one.active !== false
+    && one.work_id === session.work_id).length : 0;
+  drawIntake();
+}
+/* The bar over the map while an intake runs or is being recorded: what is happening, its agent, and its acts. */
+function drawIntake() {
+  const bar = $('#intakeBar');
+  const running = intakeRunning(), recording = LIVE.layer !== null;
+  bar.hidden = !(running || recording);
+  drawEmpty();
+  if (bar.hidden) return;
+  const parts = S.elements.size;
+  const doing = INTAKE.waiting ? `${agentName(INTAKE.agent)} waits for your permission`
+    : recording ? `Recording ${LIVE.layer} · ${plural(parts, 'part')} so far`
+    : INTAKE.session?.activity === 'working' ? 'Reading the project' : 'Starting';
+  bar.classList.toggle('asks', INTAKE.waiting > 0);
+  fill(bar, h('span', {class: 'pulse', 'aria-hidden': 'true'}),
+    h('span', {class: 'what'}, h('b', {}, running ? `Intake · ${agentName(INTAKE.agent)}` : 'Intake'),
+      h('span', {class: 'doing'}, running ? doing : `Recording ${LIVE.layer} · ${plural(parts, 'part')} so far · by an agent outside the page`)),
+    running ? h('button', {class: `btn sm ${INTAKE.waiting ? 'primary' : ''}`, type: 'button', onclick: () => openIntakeChat()},
+      INTAKE.waiting ? 'Answer' : 'Chat') : null,
+    running ? h('button', {class: 'btn sm danger', type: 'button', onclick: stopIntake}, 'Stop')
+      : h('button', {class: 'btn sm', type: 'button', title: 'Start an agent that goes on with this intake, once no agent is still recording it',
+        onclick: () => openIntake({resume: true})}, 'Take over…'));
+}
+/* The intake's chat in the dock: it is already a conversation, so it is opened on its session, never through a ticket. */
+function openIntakeChat(work = INTAKE.work, session = INTAKE.session?.session_id || null) {
+  if (!work) return;
+  openHelpdesk(work, `the intake agent (${agentName(INTAKE.agent)})`, STANDBY, session);
+  const chat = DOCK.chats.find(one => one.target === work);
+  if (chat) chat.mine = true;
+}
+async function stopIntake() {
+  const work = INTAKE.work;
+  if (!work || !await confirmAct({title: 'Stop the intake?', text: `${agentName(INTAKE.agent)} stops and its chat ends.`,
+    lost: ['The agent and its session; what it was about to record next'],
+    kept: ['Everything it recorded so far, in its layer', 'A new intake can take this one over and go on with it'],
+    verb: 'Stop the intake', cancel: 'Keep it running'})) return;
+  if (await wrote('/api/dispatch-stop', {work_id: work})) {
+    toast('The intake agent was stopped.');
+    keepIntake(null);
+    INTAKE.started = null;
+    await renderAgents();
+  }
+}
+/* The window an intake starts from: the agent, an optional note for it, and Start; a refusal is said with its next
+ * step, and the step offered as a button where the page can take it: taking over an intake left being recorded, or
+ * opening the one already at work. */
+async function openIntake({resume = false} = {}) {
+  showAdmin(false);
+  const box = $('#intake'), mapped = !noMetaform() && S.elements.size > 0;
+  if (intakeRunning() && !resume) {
+    openIntakeChat();
+    return toast(`An intake is running: ${agentName(INTAKE.agent)}. Its chat is open.`);
+  }
+  $('#intake .title').textContent = mapped ? `Run the intake again · ${S.project}` : `Map ${S.project}`;
+  fill($('#intake .lead'), mapped
+    ? `An agent runs the intake on ${S.project} as it is now and records what it finds. The map follows it as it records.`
+    : `An agent reads ${S.project} and records its map as it goes. You watch the map grow here, part by part.`);
+  const host = $('#intake .pickhost');
+  if (!host.firstChild) host.append(summonPicker('intake', {label: 'Agent for the intake'}));
+  const note = $('#intake textarea.note');
+  $('#intake .suggest').hidden = !mapped;
+  fill($('#intake .failed'));
+  $('#intake .failed').hidden = true;
+  $('#intake .resume').hidden = !resume;
+  INTAKE.resume = resume;
+  $('#intake .start').textContent = resume ? 'Take over the intake' : 'Start the intake';
+  box.hidden = false;
+  readHarnesses();
+  if (!note.value) note.focus();
+}
+async function startIntake() {
+  const button = $('#intake .start'), note = $('#intake textarea.note'), agent = summonAgent();
+  if (!agent) return showIntakeRefusal({error: 'No agent can start here.', next: HARNESS.next || 'metaform dispatch agents'});
+  button.disabled = true;
+  const sent = await posted('/api/dispatch-intake', {agent, text: note.value.trim() || undefined, resume: INTAKE.resume || undefined});
+  button.disabled = false;
+  if (!sent.ok) return showIntakeRefusal(sent.body);
+  const started = sent.body;
+  $('#intake').hidden = true;
+  note.value = '';
+  keepIntake(started.work_id);
+  INTAKE.started = {project: S.project, work: started.work_id, agent: started.agent, at: Date.now()};
+  INTAKE.work = started.work_id;
+  INTAKE.agent = started.agent;
+  INTAKE.session = {work_id: started.work_id, agent: started.agent, state: 'running', session_id: started.session_id, activity: null};
+  drawIntake();
+  toast(`${agentName(started.agent)} is starting on the intake. The map grows here as it records.`);
+  await renderAgents();
+}
+function showIntakeRefusal(body) {
+  const box = $('#intake .failed'), next = body?.next || '';
+  const acts = [];
+  const running = /dispatch stop (intake-[0-9a-f]+)/.exec(next);
+  if (/resume=true/.test(next)) acts.push(h('button', {class: 'btn sm', type: 'button', onclick: () => {
+    INTAKE.resume = true; $('#intake .resume').hidden = false; $('#intake .start').textContent = 'Take over the intake';
+    fill(box); box.hidden = true; $('#intake .start').focus();
+  }}, 'Take it over'));
+  if (running) acts.push(h('button', {class: 'btn sm', type: 'button', onclick: () => {
+    $('#intake').hidden = true; INTAKE.work = running[1]; openIntakeChat(running[1], null);
+  }}, 'Open its chat'));
+  fill(box, h('p', {}, h('b', {}, body?.error || 'The intake did not start.')),
+    next ? h('p', {class: 'next'}, 'Next: ', h('code', {}, next)) : null,
+    acts.length ? h('div', {class: 'acts'}, acts) : null);
+  box.hidden = false;
+}
+$('#intake .close').onclick = $('#intake .cancel').onclick = () => { $('#intake').hidden = true; };
+$('#intake .start').onclick = startIntake;
+for (const button of document.querySelectorAll('#intake .suggest button')) button.onclick = () => {
+  const note = $('#intake textarea.note');
+  note.value = button.dataset.text;
+  note.focus();
+};
+overlay($('#intake'), {kind: 'dialog', close: () => { $('#intake').hidden = true; }, focus: () => $('#intake textarea.note')});
+$('#intakeBtn').onclick = () => openIntake();
+/* A project with no map yet says so over the map, with the intake as the one thing to do. */
+function drawEmpty() {
+  const panel = $('#p-object > .emptypanel');
+  if (panel) emptyActs(panel);
+  const empty = !S.loading && !S.opening && S.project && !S.elements.size && LIVE.layer === null && !intakeRunning() && !MEM.key;
+  $('#emptyStage').hidden = !empty;
+  if (!empty) return;
+  fill($('#emptyStage .what'), noMetaform() ? `${S.project} has no map yet.` : `${S.project}'s map is empty.`);
+}
+$('#emptyStage .start').onclick = () => openIntake();
+
+/* A write whose refusal the page shows in place, with its next step, rather than in a toast. */
+async function posted(path, given) {
+  try {
+    const response = await reach(path, {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({project: S.project, base: S.base, ...given})}, 0);
+    const body = await response.json().catch(() => ({error: 'The server did not answer with JSON.'}));
+    return {ok: response.ok, status: response.status, body};
+  } catch (error) { return {ok: false, status: 0, body: {error: error.message}}; }
+}
+
+/* ---------- the build panel, BASE-060 ----------
+ * Four builds, each a large choice with what it makes: the project as an archive, the project with Metaform for a
+ * remote agent, the installer, and the installer with every module. A build that takes modules starts from a shape
+ * and lists every module found, each with what it does and whether a remote agent can use it; the project's metaform
+ * is always carried by the project builds. The project builds can leave the project's files out, and the remote
+ * agent's build takes a task, written in the prompt editor, or onboarding when none is written. One click builds;
+ * its stages are a progress bar, the browser saves the file when it is done, and a project wheel's prompt is ready to
+ * copy. The panel remembers each project's last choices in this browser. */
+const BUILD = {options: null, kind: null, picks: {}, files: true, task: '', job: null, project: null,
+  editor: null, docs: null, tab: 'task', saved: {}, heard: new Map(), watching: null};
+const BUILD_KEY = project => `metaform.build.${project}`;
+function keptBuild(project) { try { return JSON.parse(localStorage.getItem(BUILD_KEY(project)) || '{}') || {}; } catch { return {}; } }
+function keepBuild() {
+  if (!BUILD.project) return;
+  try {
+    localStorage.setItem(BUILD_KEY(BUILD.project), JSON.stringify({kind: BUILD.kind, picks: BUILD.picks,
+      files: BUILD.files, task: BUILD.task, job: BUILD.job?.build_id || null}));
+  } catch { /* storage can be blocked; the panel starts from its defaults */ }
+}
+const kindOfBuild = () => BUILD.options?.kinds.find(kind => kind.id === BUILD.kind) || null;
+const shapeOf = id => BUILD.options?.shapes.find(shape => shape.id === id) || null;
+/* The modules chosen for a build that takes them, kept for each build: a project wheel starts from the Remote agent
+ * shape and an installer from the modules on at home, as the builds themselves do, BASE-060. */
+function pickOf(kind) {
+  const known = new Set((BUILD.options?.modules || []).map(module => module.id));
+  let pick = BUILD.picks[kind];
+  if (!pick || !Array.isArray(pick.modules)) {
+    const shape = kind === 'installer' ? 'home' : BUILD.options?.defaults?.shape || 'remote';
+    pick = BUILD.picks[kind] = {shape, modules: [...(shapeOf(shape)?.modules || [])]};
+  }
+  pick.modules = pick.modules.filter(id => known.has(id));  // a module gone since is not offered
+  return pick;
+}
+const sameSet = (one, two) => one.length === two.length && one.every(item => two.includes(item));
+const STAGE_WORDS = {resolve: 'Resolve dependencies', collect: 'Collect them', 'pack modules': 'Pack the modules',
+  'pack project': 'Pack the project', write: 'Write the file'};
+const bytesOf = bytes => bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : bytes >= 1024 ? `${Math.round(bytes / 1024)} KB` : `${bytes} B`;
+async function openBuild() {
+  const box = $('#build');
+  box.hidden = false;
+  if (BUILD.project !== S.project) {
+    const kept = keptBuild(S.project);
+    Object.assign(BUILD, {project: S.project, kind: kept.kind || null, picks: kept.picks && typeof kept.picks === 'object' ? kept.picks : {},
+      files: kept.files ?? null, task: kept.task || '', job: null});
+    if (kept.job) getJson(`/api/build/${kept.job}`).then(job => { if (BUILD.project === S.project && !BUILD.job) { BUILD.job = job; drawBuildRun(); } })
+      .catch(() => { /* a build is kept while the server runs; an older one is gone */ });
+  }
+  // read on each opening, so a module added or a prompt saved since shows
+  if (!BUILD.options) fill($('#build .body'), h('p', {class: 'loading'}, 'Reading what can be built…'));
+  try { BUILD.options = await getJson('/api/build/options'); }
+  catch (error) { if (!BUILD.options) return fill($('#build .body'), h('div', {class: 'failed', role: 'alert'}, error.message)); }
+  const defaults = BUILD.options.defaults || {};
+  BUILD.kind = BUILD.options.kinds.some(kind => kind.id === BUILD.kind) ? BUILD.kind : defaults.kind || BUILD.options.kinds[0].id;
+  BUILD.files ??= defaults.files ?? true;
+  drawBuild();
+}
+function drawBuild() {
+  const options = BUILD.options, kind = kindOfBuild();
+  if (!options || !kind) return;
+  const takesProject = kind.takes_project;
+  const kinds = h('div', {class: 'kinds', role: 'radiogroup', 'aria-label': 'What to build'},
+    options.kinds.map(one => h('button', {type: 'button', role: 'radio', class: 'kindcard', 'data-kind': one.id,
+      'aria-checked': String(one.id === BUILD.kind), tabindex: one.id === BUILD.kind ? '0' : '-1',
+      onclick: () => { BUILD.kind = one.id; keepBuild(); drawBuild(); $(`#build .kindcard[data-kind="${one.id}"]`)?.focus(); }},
+      h('i', {class: `i ${{archive: 'i-archive', project: 'i-send', installer: 'i-box', full: 'i-boxes'}[one.id] || 'i-box'}`, 'aria-hidden': 'true'}),
+      h('b', {}, one.name), h('span', {}, one.summary))));
+  kinds.addEventListener('keydown', event => {
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+    event.preventDefault();
+    const ids = options.kinds.map(one => one.id), at = ids.indexOf(BUILD.kind);
+    const next = ids[(at + (['ArrowRight', 'ArrowDown'].includes(event.key) ? 1 : -1) + ids.length) % ids.length];
+    BUILD.kind = next; keepBuild(); drawBuild(); $(`#build .kindcard[data-kind="${next}"]`)?.focus();
+  });
+  const sections = [kinds];
+  if (takesProject) sections.push(h('div', {class: 'section project'}, h('div', {class: 'eyebrow'}, 'Project'),
+    h('div', {class: 'line'}, h('b', {}, S.project), h('span', {class: 'hint'}, kind.id === 'project'
+      ? 'Its map, carried as an archive in the wheel, and its files when they are included.' : 'Its map, and its files when they are included.'))));
+  if (kind.takes_files) {
+    const files = h('input', {type: 'checkbox', role: 'switch', checked: BUILD.files, onchange: () => { BUILD.files = files.checked; keepBuild(); drawFilesNote(); }});
+    const note = h('small', {class: 'hint files-note'});
+    const drawFilesNote = () => { note.textContent = BUILD.files
+      ? 'The project\'s files go in as they are; version control, virtual environments, caches and build folders never do.'
+      : kind.id === 'project' ? 'Left out: the remote agent works on the map alone and returns no file changes.' : 'Left out: the archive holds the map alone.'; };
+    drawFilesNote();
+    sections.push(h('div', {class: 'section'}, h('label', {class: 'switch'}, files, 'Include the project\'s files'), note));
+  }
+  if (kind.takes_modules) sections.push(modulesSection(kind));
+  else if (kind.id === 'full') sections.push(h('div', {class: 'section'}, h('div', {class: 'eyebrow'}, 'Modules'),
+    h('p', {class: 'hint'}, `Every module found: ${options.modules.map(one => one.id).join(', ')}.`)));
+  if (kind.takes_prompt) sections.push(promptSection());
+  fill($('#build .body'), sections, h('div', {class: 'run', 'aria-live': 'polite'}));
+  const go = $('#build .go');
+  go.textContent = `Build ${kind.name}`;
+  go.disabled = Boolean(BUILD.job && BUILD.job.state === 'running') || (kind.id === 'installer' && !pickOf('installer').modules.length);
+  $('#build .stages').textContent = kind.stages.map(stage => STAGE_WORDS[stage] || stage).join(' → ');
+  drawBuildRun();
+}
+function modulesSection(kind) {
+  const options = BUILD.options, pick = pickOf(kind.id);
+  const shapes = segmented({label: 'Shape', value: options.shapes.find(shape => sameSet(shape.modules, pick.modules))?.id ?? '',
+    options: options.shapes.map(shape => ({value: shape.id, label: shape.name, title: shape.modules.length ? `Ticks ${shape.modules.join(', ')}` : 'Ticks none'})),
+    onchange: id => { pick.shape = id; pick.modules = [...shapeOf(id).modules]; keepBuild(); drawBuild(); }});
+  const tally = h('span', {class: 'hint'}, `${plural(pick.modules.length, 'module')} chosen`);
+  const rows = options.modules.map(module => {
+    const on = pick.modules.includes(module.id);
+    const box = h('input', {type: 'checkbox', checked: on, 'aria-describedby': `mod-${module.id}`, onchange: () => {
+      pick.modules = box.checked ? [...new Set([...pick.modules, module.id])] : pick.modules.filter(id => id !== module.id);
+      pick.shape = options.shapes.find(shape => sameSet(shape.modules, pick.modules))?.id || null;
+      shapes.set(pick.shape ?? '');
+      tally.textContent = `${plural(pick.modules.length, 'module')} chosen`;
+      keepBuild();
+      $('#build .go').disabled = kind.id === 'installer' && !pick.modules.length;
+      row.classList.toggle('on', box.checked);
+    }});
+    const row = h('label', {class: `modrow${on ? ' on' : ''}`},
+      box, h('span', {class: 'name'}, module.id),
+      h('span', {class: 'about', id: `mod-${module.id}`}, module.summary || ''),
+      h('span', {class: 'tags'}, kind.id === 'project' && !module.remote
+        ? h('span', {class: 'badge off', title: 'It needs what a hosted agent does not have: a screen, local agents or compiled packages'}, 'Not for a remote agent') : null,
+        module.home ? h('span', {class: 'badge', title: 'It is turned on in this home'}, 'On at home') : null));
+    return row;
+  });
+  return h('div', {class: 'section modules'},
+    h('div', {class: 'head'}, h('div', {class: 'eyebrow'}, 'Modules'), shapes, tally),
+    h('div', {class: 'modlist'},
+      kind.id === 'project' ? h('div', {class: 'modrow locked', title: 'A project build always carries the project\'s metaform'},
+        h('i', {class: 'i i-lock', 'aria-hidden': 'true'}), h('span', {class: 'name'}, `${S.project}'s metaform`),
+        h('span', {class: 'about'}, 'Always included: the map the remote agent works on.'), h('span', {class: 'tags'}, h('span', {class: 'badge ok'}, 'Included'))) : null,
+      rows));
+}
+/* The prompt the remote agent is given: the person's task, or with none written the onboarding, each wrapped in the
+ * wrapper, as the build wraps them. */
+function promptSection() {
+  const prompts = BUILD.options.prompts, task = BUILD.task.trim();
+  return h('div', {class: 'section prompt'}, h('div', {class: 'eyebrow'}, 'Prompt'),
+    h('div', {class: 'promptcard'},
+      h('div', {class: 'which'}, task
+        ? [h('b', {}, 'Your task'), h('span', {class: 'first'}, clip(task.split('\n')[0], 120))]
+        : [h('b', {}, 'Onboarding'), h('span', {class: 'first'}, `No task written: the agent learns the project, tells you about it and waits for your instructions (${prompts.onboarding.name}, version ${prompts.onboarding.number}).`)],
+        h('small', {class: 'hint'}, `Wrapped in ${prompts.wrapper.name}, version ${prompts.wrapper.number}, which tells the agent what the wheel is and how to return its work.`)),
+      h('button', {class: 'btn', type: 'button', onclick: () => openBuildPrompt('task')}, h('i', {class: 'i i-pen', 'aria-hidden': 'true'}), task ? 'Edit the task' : 'Write a task')));
+}
+/* The run: its stages as a bar, then the file, or the stage that failed with its error and next step. */
+function drawBuildRun() {
+  const host = $('#build .run');
+  if (!host) return;
+  const job = BUILD.job;
+  if (!job) return fill(host);
+  if (!job.build_id) return fill(host, h('div', {class: 'eyebrow'}, 'The build did not start'),
+    h('div', {class: 'failed', role: 'alert'}, h('b', {}, job.error || 'The build was refused.'),
+      job.next ? h('p', {class: 'next'}, 'Next: ', h('code', {}, job.next)) : null));
+  const stages = job.stages || kindOfBuild()?.stages || [];
+  const at = Math.max(0, stages.indexOf(job.stage));
+  const share = job.state === 'done' ? 1 : stages.length ? at / stages.length : 0;
+  const bar = progressBar({label: 'Build progress', value: share,
+    words: job.state === 'done' ? 'Done' : job.state === 'failed' ? `Stopped at ${STAGE_WORDS[job.stage] || job.stage || 'the start'}` : `${STAGE_WORDS[job.stage] || 'Starting'}…`});
+  bar.classList.toggle('stopped', job.state === 'failed');
+  const steps = h('ol', {class: 'buildsteps'}, stages.map((stage, index) => {
+    const state = job.state === 'done' || index < at ? 'done' : index === at ? (job.state === 'failed' ? 'stopped' : 'now') : 'later';
+    return h('li', {class: state}, h('i', {'aria-hidden': 'true'}), h('span', {class: 'visually-hidden'}, `${{done: 'done', stopped: 'stopped here', now: 'under way', later: 'to come'}[state]}: `), STAGE_WORDS[stage] || stage);
+  }));
+  const parts = [h('div', {class: 'eyebrow'}, job.state === 'done' ? 'Built' : job.state === 'failed' ? 'The build stopped' : 'Building'), bar, steps];
+  if (job.state === 'failed') parts.push(h('div', {class: 'failed', role: 'alert'}, h('b', {}, job.error || 'The build failed.'),
+    job.next ? h('p', {class: 'next'}, 'Next: ', h('code', {}, job.next)) : null));
+  if (job.state === 'done' && job.file) {
+    const link = h('a', {class: 'btn sm', href: `/api/build/${job.build_id}/download`, download: job.file},
+      h('i', {class: 'i i-download', 'aria-hidden': 'true'}), 'Download again');
+    parts.push(h('div', {class: 'result'}, h('i', {class: 'i i-check', 'aria-hidden': 'true'}),
+      h('span', {class: 'file'}, h('span', {}, h('b', {}, job.file), job.size ? h('small', {class: 'size'}, ` · ${bytesOf(job.size)}`) : null),
+        h('small', {class: 'where'}, 'Saved by your browser; a copy stays in the builds folder of your Metaform home.')), link));
+    if (job.prompt) parts.push(h('div', {class: 'wrapped'}, h('div', {class: 'eyebrow'}, 'The prompt for the remote agent'),
+      h('p', {class: 'paste'}, `Upload ${job.file} to the agent and paste this as your message:`),
+      copyField({label: 'the remote agent\'s prompt', text: job.prompt, rows: 8})));
+  }
+  fill(host, parts);
+}
+async function startBuild() {
+  const kind = kindOfBuild();
+  if (!kind) return;
+  const given = {kind: kind.id};
+  if (kind.takes_project) given.project = S.project;
+  if (kind.takes_modules) {
+    const pick = pickOf(kind.id);
+    const shape = pick.shape && sameSet(shapeOf(pick.shape)?.modules || [], pick.modules) ? pick.shape : null;
+    if (shape) given.shape = shape; else given.modules = pick.modules;
+  }
+  if (kind.takes_files) given.files = BUILD.files;
+  if (kind.takes_prompt && BUILD.task.trim()) given.prompt = BUILD.task;
+  $('#build .go').disabled = true;
+  const sent = await posted('/api/build', given);
+  if (!sent.ok) {
+    BUILD.job = {build_id: null, stages: kind.stages, stage: null, state: 'failed', error: sent.body.error, next: sent.body.next};
+    $('#build .go').disabled = false;
+    return drawBuildRun();
+  }
+  BUILD.job = {build_id: sent.body.build_id, stages: sent.body.stages, stage: null, state: 'running', kind: kind.id};
+  BUILD.watching = sent.body.build_id;
+  keepBuild();
+  drawBuildRun();
+  showRun();
+  // a quick build can be told before its id comes back: what was heard of it meanwhile is taken now, and read once
+  // more, so a build that ended while the stream was away still ends here
+  const heard = BUILD.heard.get(sent.body.build_id);
+  BUILD.heard.clear();
+  if (heard) await buildEvent(heard);
+  else getJson(`/api/build/${sent.body.build_id}`).then(now => { if (BUILD.job?.build_id === now.build_id && now.state !== 'running' && BUILD.job.state === 'running') buildEvent(now); })
+    .catch(() => { /* the stream tells the rest */ });
+}
+/* A build's progress, pushed on the page's stream as each stage starts and as it ends; the file is saved at its end. */
+async function buildEvent(payload) {
+  if (!payload) return;
+  if (payload.build_id !== BUILD.job?.build_id) {  // another page's build, or this one's before its id came back
+    BUILD.heard.set(payload.build_id, payload);
+    if (BUILD.heard.size > 16) BUILD.heard.delete(BUILD.heard.keys().next().value);
+    return;
+  }
+  Object.assign(BUILD.job, payload);
+  if (payload.state !== 'running') {
+    try { Object.assign(BUILD.job, await getJson(`/api/build/${payload.build_id}`)); } catch { /* the event said enough */ }
+    if (BUILD.job.build_id !== payload.build_id) return;
+    if (payload.state === 'done' && BUILD.watching === payload.build_id) {
+      BUILD.watching = null;
+      const link = h('a', {href: `/api/build/${payload.build_id}/download`, download: payload.file || ''});
+      document.body.append(link); link.click(); link.remove();
+      // the panel shows the result; a person who closed it while it built is told in a toast
+      if ($('#build').hidden) toast(`Built ${payload.file}. Your browser saves it.`);
+    } else if (payload.state === 'failed' && $('#build').hidden) toast(`The build stopped at ${STAGE_WORDS[payload.stage] || 'its start'}: ${String(payload.error || 'it failed').replace(/\.$/, '')}.`);
+    if ($('#build .go')) $('#build .go').disabled = false;
+    drawBuildRun();
+    return showRun();
+  }
+  drawBuildRun();
+}
+/* The run is brought into view as it starts and as it ends, where the person looks for it. */
+function showRun() {
+  requestAnimationFrame(() => $('#build .run')?.scrollIntoView({block: 'nearest', behavior: reduced() ? 'auto' : 'smooth'}));
+}
+$('#buildBtn').onclick = openBuild;
+$('#build .close').onclick = () => { $('#build').hidden = true; };
+$('#build .go').onclick = startBuild;
+overlay($('#build'), {kind: 'dialog', close: () => { $('#build').hidden = true; }, focus: () => $('#build .kindcard[aria-checked="true"]')});
+/* The prompt editor of the remote agent's build, VIEW-013: the task as the person writes it, and the wrapper and the
+ * onboarding, the prompt store's own, each saved as its next version; the preview is the prompt as the build makes it,
+ * the wheel's name filled in when it is built. */
+async function openBuildPrompt(tab = 'task') {
+  const box = $('#buildPrompt');
+  const prompts = BUILD.options.prompts;
+  BUILD.saved = {wrapper: {...prompts.wrapper}, onboarding: {...prompts.onboarding}};
+  box.hidden = false;
+  if (!BUILD.editor) {
+    BUILD.editor = CodeMirror($('#buildPrompt .editor'), {lineNumbers: true, lineWrapping: true, mode: 'markdown'});
+    BUILD.editor.on('change', () => buildPromptChanged());
+  }
+  BUILD.docs = {task: CodeMirror.Doc(BUILD.task, 'markdown'), wrapper: CodeMirror.Doc(prompts.wrapper.text, 'markdown'),
+    onboarding: CodeMirror.Doc(prompts.onboarding.text, 'markdown')};
+  const tabs = segmented({label: 'What to edit', value: tab, options: [{value: 'task', label: 'Task'},
+    {value: 'onboarding', label: 'Onboarding'}, {value: 'wrapper', label: 'Wrapper'}, {value: 'preview', label: 'Preview'}],
+    onchange: value => showBuildPrompt(value)});
+  fill($('#buildPrompt .tabbar'), tabs);
+  showBuildPrompt(tab);
+}
+function showBuildPrompt(tab) {
+  BUILD.tab = tab;
+  const preview = tab === 'preview';
+  $('#buildPrompt .editor').hidden = preview;
+  $('#buildPrompt .preview').hidden = !preview;
+  if (preview) fill($('#buildPrompt .preview'), wrappedPreview());
+  else {
+    BUILD.editor.swapDoc(BUILD.docs[tab]);
+    setTimeout(() => { BUILD.editor.refresh(); BUILD.editor.focus(); }, 0);
+  }
+  buildPromptChanged();
+}
+function buildPromptChanged() {
+  const tab = BUILD.tab, task = BUILD.docs.task.getValue();
+  const saved = tab === 'wrapper' || tab === 'onboarding' ? BUILD.saved[tab] : null;
+  const changed = saved ? BUILD.docs[tab].getValue() !== saved.text : false;
+  const save = $('#buildPrompt .save');
+  save.hidden = !saved;
+  save.disabled = !changed;
+  $('#buildPrompt .revert').hidden = !saved;
+  $('#buildPrompt .revert').disabled = !changed;
+  fill($('#buildPrompt .about'), tab === 'task'
+    ? (task.trim() ? 'The remote agent is given this task, as you write it, inside the wrapper.'
+      : `Empty: the remote agent is given the onboarding, ${BUILD.saved.onboarding.name} version ${BUILD.saved.onboarding.number}, inside the wrapper.`)
+    : tab === 'preview' ? 'The prompt as the build makes it. The wheel\'s file name is filled in when it is built.'
+    : `${saved.name}, version ${saved.number}. Saved as a new version, it is what every build uses from then on; {wheel}, {project} and {task} are filled in by the build.`);
+}
+function wrappedPreview() {
+  const task = BUILD.docs.task.getValue().trim();
+  const filled = text => text.replaceAll('{project}', S.project);
+  const inner = task || filled(BUILD.docs.onboarding.getValue()).trim();
+  const text = filled(BUILD.docs.wrapper.getValue()).replace('{task}', inner).trim();
+  return h('pre', {class: 'prompt'}, ...text.split('{wheel}').flatMap((part, index) => index ? [h('mark', {title: 'The wheel\'s file name, filled in when it is built'}, '‹wheel›'), part] : [part]));
+}
+async function saveBuildPrompt() {
+  const tab = BUILD.tab, saved = BUILD.saved[tab];
+  if (!saved) return;
+  const sent = await posted('/api/save-prompt', {name: saved.name, text: BUILD.docs[tab].getValue(), parent: saved.number});
+  if (!sent.ok) return toast(sent.body.error || 'The prompt was not saved.');
+  Object.assign(saved, {number: sent.body.number, text: BUILD.docs[tab].getValue()});
+  BUILD.options.prompts[tab] = {...saved};
+  toast(`Saved ${saved.name} as version ${saved.number}. Every build uses it from now on.`);
+  buildPromptChanged();
+  if (!$('#build').hidden) drawBuild();
+}
+$('#buildPrompt .save').onclick = saveBuildPrompt;
+$('#buildPrompt .revert').onclick = () => { BUILD.docs[BUILD.tab].setValue(BUILD.saved[BUILD.tab].text); };
+// a prompt of the store changed and not saved is asked about before it is left, however the editor is closed
+const promptKept = () => !['wrapper', 'onboarding'].some(tab => BUILD.docs && BUILD.saved[tab] && BUILD.docs[tab].getValue() !== BUILD.saved[tab].text)
+  || discard('the unsaved changes to the prompts', 'Keep editing');
+$('#buildPrompt .done').onclick = $('#buildPrompt .close').onclick = async () => { if (await promptKept()) closeBuildPrompt(); };
+function closeBuildPrompt() {
+  if (BUILD.docs) { BUILD.task = BUILD.docs.task.getValue(); keepBuild(); }
+  $('#buildPrompt').hidden = true;
+  if (!$('#build').hidden) drawBuild();
+}
+overlay($('#buildPrompt'), {kind: 'dialog', close: closeBuildPrompt, guard: promptKept});
+// The message boxes offer the commands as / is typed: the dock's own and the agent's, and in the agent window the agent's.
+slashCommands($('#helpdesk .say'), dockOffered);
+slashCommands($('#agent .say'), () => commandsOf(D.state, D.agent));
+// The chat dock's own picker: the agent its new chats start with, beside Call.
+$('#helpdesk .summon').append(summonPicker('dock', {up: true, label: 'Agent for new chats'}));
 
 /* ---------- live: the server pushes what modules publish, and the page redraws; nothing polls, VIEW-018 ----------
  * An intake being recorded is drawn as each object arrives, BASE-039; any other write to the metaform shown is read
@@ -4675,6 +6995,7 @@ async function loadLive() {
   S.joins = page.joins.map(withProviders);
   S.items = new Map();
   draw3D(); renderLegend();
+  drawIntake();  // the bar over the map counts the parts recorded so far
   await build2D();
   const keep = S.selected && (S.elements.has(S.selected) || joinOf(S.selected)) ? S.selected : null;
   const start = keep || [...S.elements.values()].find(entry => entry.element.role === 'DE')?.element.id
@@ -4691,12 +7012,14 @@ async function follow(found) {
     Object.assign(LIVE, {layer: found.layer, base: found.base_id, seen: ''});
     if (S.base !== found.base_id) await loadProject(found.base_id);
     else { S.layers = (await read('layers', {limit: 0})).results; renderChips(); }
+    drawIntake();
     toast(`An intake is being recorded in ${found.layer}; the map follows it as each object is recorded.`);
   } else if (!found && LIVE.layer) {
     const {base} = LIVE;
     const stands = (await read('bases', {limit: 0})).results.some(item => item.id === base);
     Object.assign(LIVE, {layer: null, base: null, seen: ''});
     renderLegend();
+    drawIntake();
     toast(stands ? `The intake finished.` : `The intake stopped: ${S.project} was cleared.`);
     await loadProject();
     return;
@@ -4982,7 +7305,11 @@ function listen() {
   // the stream names the project this page shows: agents are started only for a project some page has open
   if (STREAM) STREAM.close();
   const source = STREAM = new EventSource(`/api/events?project=${encodeURIComponent(S.project || '')}`);
-  source.onmessage = message => changed(JSON.parse(message.data));
+  source.onmessage = message => {
+    const event = JSON.parse(message.data);
+    if (event.topic === 'build') return buildEvent(event.payload);  // the build panel's progress, BASE-060
+    changed(event);
+  };
   source.onopen = () => {
     recordingNow().catch(error => toast(error.message));
     agentsChanged();
@@ -5031,7 +7358,7 @@ async function progressOf() {
  * true while the page still reads what it loads. */
 async function opening(work) {
   S.opening++;
-  try { return await work(); } finally { S.opening--; }
+  try { return await work(); } finally { S.opening--; if (!S.opening) drawEmpty(); }
 }
 /* agents: whether the agents key is read with the map; a map change does not read it, since the agents are read again
  * on dispatch events, VIEW-018. */
@@ -5081,12 +7408,13 @@ async function readGraph(agents) {
     || MEM.network?.entities.includes(S.selected) || memoryThing(S.selected)) ? S.selected : null;
   const start = keep || MEM.key || [...S.elements.values()].find(entry => entry.element.role === 'DE')?.element.id
     || S.elements.keys().next().value;
-  if (!start) fill($('#p-object'), h('p', {class: 'empty'}, noMetaform() ? noneYet() : 'Nothing to show in these layers yet.'));
+  if (!start) fill($('#p-object'), emptyPanel());
   else {
     if (!keep) setTimeout(() => { if (G) fit3d(800, 60); }, 2200);
     await select(start, false, false, false, true);
   }
   await told;
+  drawIntake();
 }
 async function loadMetaform() {
   S.view = null; S.selected = null; IN.length = 0; M.base = null; dropMemories(); renderCrumbs();
@@ -5099,6 +7427,7 @@ async function loadMetaform() {
 function loadProject(wanted = null) { return opening(() => readProject(wanted)); }
 async function readProject(wanted) {
   const project = S.project;
+  readHarnesses();
   await readAutostart();
   const metaforms = (await read('bases', {limit: 0})).results;
   if (S.project !== project) return;  // the metaforms of a project the person has left
@@ -5110,6 +7439,7 @@ async function readProject(wanted) {
     : [h('option', {}, 'none yet')]));
   $('#mf').disabled = !metaforms.length;
   baseButtons();
+  foldHeader();  // the names chosen take their room
   await loadMetaform();
 }
 /* Activate and Remove beside the base chooser, STORE-041: the chooser only changes what the page shows; Activate makes
@@ -5127,9 +7457,14 @@ $('#activateBase').onclick = async () => {
   if (await wrote('/api/activate-base', {name: chosen.name})) toast(`${chosen.name} is the active base.`);
   else baseButtons();
 };
+/* Removing a base cannot be undone from the page, so it is asked first, saying what goes and what is kept. */
 $('#removeBase').onclick = async () => {
   const chosen = S.bases.find(item => item.id === $('#mf').value);
-  if (!chosen || !confirm(`Remove base ${chosen.name} from ${S.project}? A copy of its store is kept under backups/remove-base.`)) return;
+  if (!chosen || !await confirmAct({title: `Remove base ${chosen.name}?`,
+    text: `It is taken out of ${S.project}. The page cannot bring it back; a copy of its store is kept.`,
+    lost: [`Base ${chosen.name}, from the bases of ${S.project} and from what agents and the page can read`],
+    kept: ['A copy of its store, under backups/remove-base in the Metaform home', `The active base and every other base of ${S.project}`],
+    verb: 'Remove base'})) return;
   $('#removeBase').disabled = true;
   const done = await wrote('/api/remove-base', {name: chosen.name, confirm: true});
   if (done) toast(`Removed ${chosen.name}; its store is kept at ${done.kept}.`);
@@ -5143,6 +7478,7 @@ function toProject(id) {
   S.tickets = []; B.tickets = [];  // nothing of the project left behind shows on the next one
   if (!$('#board').hidden) drawBoard();
   location.hash = 'p=' + encodeURIComponent(id);
+  try { localStorage.setItem('metaform.project', id); } catch (error) { /* storage can be blocked; the address keeps it */ }
   Object.assign(LIVE, {layer: null, base: null, seen: ''});
   Object.assign(D, {sessions: [], notes: [], work: null, session: null, drawn: new Map(), chat: null});
   $('#autostartAgents').checked = false;
@@ -5153,7 +7489,15 @@ function toProject(id) {
   for (const [work, figure] of ROAM.figures) { G?.scene().remove(figure.mesh); releaseGlyph(work); }
   ROAM.figures.clear(); ROAM.seen.clear();
   Object.assign(MERGE, {rows: [], chat: null});
-  $('#reviewNotice').hidden = $('#mergeAsk').hidden = $('#helpdesk').hidden = true;
+  $('#reviewNotice').hidden = $('#mergeAsk').hidden = true;
+  dockState('resting');  // the chat put away to its tab, so it can be opened again here
+  forgetHarnesses();  // the agents another project's folder sets are its own, VIEW-039
+  for (const one of [PICKERS.start, PICKERS.task, PICKERS.element]) one?.set(null);  // and so is a choice made there
+  Object.assign(INTAKE, {work: null, session: null, agent: null, waiting: 0, started: null});
+  D.asking = [];
+  drawDockTab();
+  for (const id of ['#intake', '#build', '#buildPrompt']) $(id).hidden = true;
+  drawIntake();
   renderMerges();  // the merges this project has waiting for review, VIEW-044
 }
 $('#proj').onchange = () => { toProject($('#proj').value); loadProject(); listen(); };
@@ -5161,18 +7505,35 @@ $('#mf').onchange = () => { S.base = $('#mf').value; baseButtons(); loadMetaform
 
 async function main() {
   const response = await reach('/api/projects');
-  S.projects = (await response.json()).projects || [];
+  const listed = await response.json();
+  S.projects = listed.projects || [];
   if (!S.projects.length) {
     fill($('#p-object'), h('p', {class: 'empty'}, 'No project is registered. Register one with: metaform add project <id> <path>'));
     listen();  // still hears what modules publish: an intake started in a project registered later takes the page there
     return;
   }
-  const wanted = new URLSearchParams(location.hash.slice(1)).get('p');
-  S.project = S.projects.some(item => item.id === wanted) ? wanted : S.projects[0].id;
+  // The project shown first, VIEW-002: the one the address names; else the project of the folder `metaform web` ran
+  // in; else the one this browser showed last; else the first.
+  let remembered = null;
+  try { remembered = localStorage.getItem('metaform.project'); } catch (error) { /* storage can be blocked */ }
+  const registered = id => S.projects.some(item => item.id === id);
+  S.project = [new URLSearchParams(location.hash.slice(1)).get('p'), listed.opened, remembered].find(registered)
+    || S.projects[0].id;
+  try { localStorage.setItem('metaform.project', S.project); } catch (error) { /* storage can be blocked */ }
+  window.history.replaceState(null, '', '#p=' + encodeURIComponent(S.project));
   fill($('#proj'), ...S.projects.map(item => h('option', {value: item.id, selected: item.id === S.project}, item.id)));
   start3D();
   await loadProject();
   listen();
   renderMerges();  // VIEW-044
 }
+// What a browser check reads of the page's controls, the overlays open, bottom to top, and the controls themselves,
+// for the views built on them.
+Object.assign(window.metaform, {overlays: () => OVERLAY.stack.map(entry => entry.box.id || entry.box.className),
+  harnesses: () => ({...HARNESS, pickers: undefined, reading: undefined}), build: () => BUILD.job, intake: () => ({...INTAKE}),
+  // an agent's session opened in the chat dock or in its window, as its chat button and its entry in the key open it
+  chat: (work, session = null) => isIntake(work) ? openIntakeChat(work, session)
+    : openHelpdesk(work, `${agentName(D.sessions.find(one => one.session_id === session)?.agent)} on ${workPart(work)}`, STANDBY, session),
+  agent: (work, session = null) => agentAt(work, session),
+  ui: {overlay, confirmAct, undoable, toast, segmented, progressBar, copyField, choice}});
 main();

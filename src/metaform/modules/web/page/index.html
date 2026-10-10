@@ -11,98 +11,128 @@
 <script type="importmap">{"imports": {"three": "/vendor/three.module.min.js", "three/addons/": "/vendor/three-addons/", "three/examples/jsm/": "/vendor/three-addons/", "3d-force-graph": "/vendor/3d-force-graph/dist/3d-force-graph.mjs", "three-forcegraph": "/vendor/three-forcegraph/dist/three-forcegraph.mjs", "d3-force-3d": "/vendor/d3-force-3d/src/index.js", "d3-binarytree": "/vendor/d3-binarytree/src/index.js", "d3-quadtree": "/vendor/d3-quadtree/src/index.js", "d3-octree": "/vendor/d3-octree/src/index.js", "d3-dispatch": "/vendor/d3-dispatch/src/index.js", "d3-timer": "/vendor/d3-timer/src/index.js", "ngraph.graph": "/page/ngraph.graph.js", "ngraph.forcelayout": "/page/ngraph.forcelayout.js", "kapsule": "/vendor/kapsule/dist/kapsule.mjs", "lodash-es/debounce.js": "/vendor/lodash-es/debounce.js", "accessor-fn": "/vendor/accessor-fn/dist/accessor-fn.mjs", "d3-array": "/vendor/d3-array/src/index.js", "internmap": "/vendor/internmap/src/index.js", "data-joint": "/vendor/data-joint/dist/data-joint.mjs", "index-array-by": "/vendor/index-array-by/dist/index-array-by.mjs", "d3-scale": "/vendor/d3-scale/src/index.js", "d3-interpolate": "/vendor/d3-interpolate/src/index.js", "d3-color": "/vendor/d3-color/src/index.js", "d3-format": "/vendor/d3-format/src/index.js", "d3-time": "/vendor/d3-time/src/index.js", "d3-time-format": "/vendor/d3-time-format/src/index.js", "d3-scale-chromatic": "/vendor/d3-scale-chromatic/src/index.js", "tinycolor2": "/vendor/tinycolor2/esm/tinycolor.js", "three-render-objects": "/vendor/three-render-objects/dist/three-render-objects.mjs", "polished": "/vendor/polished/dist/polished.esm.js", "@babel/runtime/helpers/esm/extends": "/vendor/@babel/runtime/helpers/esm/extends.js", "@babel/runtime/helpers/esm/assertThisInitialized": "/vendor/@babel/runtime/helpers/esm/assertThisInitialized.js", "@babel/runtime/helpers/esm/inheritsLoose": "/vendor/@babel/runtime/helpers/esm/inheritsLoose.js", "@babel/runtime/helpers/esm/wrapNativeSuper": "/vendor/@babel/runtime/helpers/esm/wrapNativeSuper.js", "@babel/runtime/helpers/esm/taggedTemplateLiteralLoose": "/vendor/@babel/runtime/helpers/esm/taggedTemplateLiteralLoose.js", "@tweenjs/tween.js": "/vendor/@tweenjs/tween.js/dist/tween.esm.js"}}</script>
 </head>
 <body>
+<button class="skip btn primary" type="button" data-skip="map">Skip to the map</button>
+<button class="skip btn primary" type="button" data-skip="panel">Skip to the panel</button>
 <div class="app">
+  <!-- The header: the project and its base on the left, what acts on the project, the Messages button in the middle,
+       and what sets the view on the right. Below 820 px wide everything but the project, Messages and Search folds into
+       the menu button's rows. -->
   <header>
     <div class="brand"><span>meta<b>form</b></span></div>
-    <div class="ctx">
-      <label for="proj">project</label>
-      <select id="proj"></select>
-      <label for="mf">base</label>
-      <select id="mf"></select>
-      <button id="activateBase" type="button" title="Make the chosen base the active one: what agents and the command line read" disabled>Activate</button>
-      <button id="removeBase" type="button" title="Take the chosen base out of the project; a copy of its store is kept" disabled>Remove</button>
+    <div class="hfield proj"><label for="proj">Project</label><select id="proj"></select></div>
+    <div class="hmore">
+      <div class="hfield base"><label for="mf">Base</label><select id="mf"></select>
+        <button id="activateBase" class="btn sm" type="button" title="Make the chosen base the active one: what agents and the command line read" disabled><i class="i i-check" aria-hidden="true"></i><span class="lbl">Activate</span></button>
+        <button id="removeBase" class="btn sm danger" type="button" title="Take the chosen base out of the project; a copy of its store is kept" disabled><i class="i i-trash" aria-hidden="true"></i><span class="lbl">Remove</span></button>
+      </div>
+      <div class="exportpick pick">
+        <button class="btn quiet" id="exportBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="exportbox" title="Save the map as a document">Export<i class="i i-chev" aria-hidden="true"></i></button>
+        <div class="menu" id="exportbox" hidden role="menu" aria-label="Export">
+          <button id="exportMarkdown" type="button" role="menuitem" title="The map as a short Markdown document">Markdown</button>
+          <button id="exportXml" type="button" role="menuitem" title="The map as an XML document with every field">XML</button>
+        </div>
+      </div>
+      <button class="btn quiet" id="buildBtn" type="button" aria-controls="build" title="Build a file to download: the project as an archive, the project with Metaform for a remote agent, or the installer">Build</button>
     </div>
-    <label class="autostart" title="Start agents on this project's tickets. Each project has its own setting"><input id="autostartAgents" type="checkbox" disabled>Autostart</label>
-    <div class="agentpick">
-      <button class="clearbtn" id="agentsMenuBtn" aria-expanded="false" aria-controls="agentbox" title="The agents at work: how their prompts are answered, and putting them back in order">Agents</button>
-      <div class="adminbox" id="agentbox" hidden role="menu">
-        <button id="promptsBtn" role="menuitem" title="How agents' permission prompts are answered: approve-all, approve-reads or ask_all">Agent prompts</button>
-        <label class="agent-count" title="How many agents work at once, besides the one you summon to chat. Saved as the dispatch_agents setting">Agents at once <input id="agentCount" type="number" min="1" max="17" step="1"></label>
-        <button id="resetAgentsBtn" role="menuitem" title="After crashes: every ticket a dead agent still holds goes back on the board, and dead sessions are closed. Working agents are left alone; nothing is deleted">Reset agents</button>
+    <button id="messages" class="btn" type="button" hidden title="Go to the oldest message that waits for you"></button>
+    <div class="hmore">
+      <label class="switch autostart" title="Start agents on this project's tickets by themselves. Each project has its own setting"><input id="autostartAgents" type="checkbox" role="switch" disabled>Autostart</label>
+      <div class="agentpick pick">
+        <button class="btn quiet" id="agentsMenuBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="agentbox" title="The agents at work: how many at once, how their prompts are answered, and putting them back in order">Agents<i class="i i-chev" aria-hidden="true"></i></button>
+        <div class="menu" id="agentbox" hidden role="menu" aria-label="Agents">
+          <div class="label">Settings</div>
+          <div class="menu-field agent-count" title="How many agents work at once, besides the one you summon to chat. Saved as the dispatch_agents setting"><label for="agentCount">Agents at once</label><input id="agentCount" type="number" min="1" max="17" step="1"></div>
+          <div class="menu-field default-agent"><span class="name">Default agent</span><div id="defaultAgentPick"></div></div>
+          <p class="menu-hint">Chats, issues and intakes start with the default unless you choose another. Autostart starts each ticket with the agent its card prefers.</p>
+          <button id="promptsBtn" type="button" role="menuitem" title="How agents' permission prompts are answered">Agent prompts</button>
+          <div class="sep" role="separator"></div>
+          <button id="resetAgentsBtn" class="danger" type="button" role="menuitem" title="After crashes: every ticket a dead agent still holds goes back on the board, and dead sessions are closed. Working agents are left alone; nothing is deleted">Reset agents</button>
+        </div>
+      </div>
+      <button class="btn quiet" id="boardBtn" type="button" title="The project's tickets as a kanban board">Board</button>
+      <div class="clearpick pick">
+        <button class="btn quiet" id="adminBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="adminbox" title="Acts on the project as a whole">Administration<i class="i i-chev" aria-hidden="true"></i></button>
+        <div class="menu right" id="adminbox" hidden role="menu" aria-label="Administration">
+          <button id="orphanBtn" type="button" role="menuitem" title="The memories whose node the map no longer holds, with what each was attached to">Orphaned memories 0</button>
+          <button id="ignoreBtn" type="button" role="menuitem" title="What the intake does not read: one pattern per line, like .gitignore, kept in .metaform/ignore.txt">Intake ignores</button>
+          <button id="intakeBtn" type="button" role="menuitem" title="Start an agent on the project's intake: it records the map as it reads the project, and the map grows here">Run an intake…</button>
+          <button id="restoreBtn" type="button" role="menuitem" disabled title="Bring back what a clear removed, from the backup the clear made">Restore a backup</button>
+          <div class="sep" role="separator"></div>
+          <button id="removeBtn" class="danger" type="button" role="menuitem" title="Take an empty project off the list of projects. Clear it first, which backs it up; nothing is deleted">Remove project</button>
+          <button id="clearBtn" class="danger" type="button" role="menuitem" title="Remove this project's metaforms and reports. It is backed up first, it says what goes and what stays, and it asks first">Clear project</button>
+        </div>
+        <div class="clearbox surface" id="clearbox" hidden role="dialog" aria-label="Administration"></div>
       </div>
     </div>
-    <div class="exportpick">
-      <button class="clearbtn" id="exportBtn" aria-expanded="false" aria-controls="exportbox" title="Save the map as a document">Export</button>
-      <div class="adminbox" id="exportbox" hidden role="menu">
-        <button id="exportMarkdown" role="menuitem" title="The map as a short Markdown document">Markdown</button>
-        <button id="exportXml" role="menuitem" title="The map as an XML document with every field">XML</button>
+    <button class="btn searchbtn" id="searchBtn" type="button" aria-keyshortcuts="/" aria-controls="search" title="Search the map (/)"><i class="i i-search" aria-hidden="true"></i><span class="lbl">Search the map</span><kbd aria-hidden="true">/</kbd></button>
+    <div class="textsize" role="group" aria-label="Text size and zoom">
+      <button class="btn icon quiet" id="textDown" type="button" aria-label="Smaller text" title="Smaller text"><span class="aa" aria-hidden="true">A<b>−</b></span></button>
+      <button class="btn icon quiet" id="textUp" type="button" aria-label="Larger text" title="Larger text"><span class="aa big" aria-hidden="true">A<b>+</b></span></button>
+      <button class="btn icon quiet" id="sizesReset" type="button" aria-label="Reset sizes and zoom" title="Every size and zoom back to its default: the text, the side column, the split, the 2D map's zoom and the 3D map's fit"><i class="i i-reset" aria-hidden="true"></i></button>
+    </div>
+    <div class="hmore">
+      <div class="layerpick pick">
+        <button class="btn" id="layersBtn" type="button" aria-expanded="false" aria-controls="layerlist"><span class="lbl">Layers</span></button>
+        <div class="layerlist surface" id="layerlist" hidden role="dialog" aria-label="Layers shown in this view">
+          <div id="layers" role="group" aria-label="Layers shown in this view"></div>
+          <p class="note" id="note"></p>
+          <button class="btn sm primary apply" id="apply" type="button" disabled>Apply to folder</button>
+        </div>
+      </div>
+      <div class="settingspick pick">
+        <button class="btn icon quiet" id="settingsBtn" type="button" aria-label="View settings" aria-expanded="false" aria-controls="settingsbox" title="View settings: colors and keyboard shortcuts"><i class="i i-gear" aria-hidden="true"></i></button>
+        <div class="menu right" id="settingsbox" hidden role="dialog" aria-label="View settings">
+          <div class="label">View</div>
+          <div class="menu-field themepick"><label for="theme">Colors</label>
+            <select id="theme">
+              <option value="space">space</option>
+              <option value="midnight">midnight</option>
+              <option value="graphite">graphite</option>
+              <option value="plum">plum</option>
+              <option value="forest">forest</option>
+              <option value="ember">ember</option>
+              <option value="paper">paper</option>
+              <option value="mist">mist</option>
+            </select>
+          </div>
+          <div class="sep" role="separator"></div>
+          <button id="shortcutsBtn" type="button" title="Every key the map and the page take">Keyboard shortcuts <kbd aria-hidden="true">?</kbd></button>
+        </div>
       </div>
     </div>
-    <button class="clearbtn" id="boardBtn" title="The project's tickets as a kanban board">Board</button>
-    <div class="clearpick">
-      <button class="clearbtn" id="adminBtn" aria-expanded="false" aria-controls="adminbox" title="Acts on the project as a whole">Administration</button>
-      <div class="adminbox" id="adminbox" hidden role="menu">
-        <button id="clearBtn" role="menuitem" title="Remove this project's metaforms and reports. It is backed up first, it says what goes and what stays, and it asks first">Clear project</button>
-        <button id="restoreBtn" role="menuitem" disabled title="Bring back what a clear removed, from the backup the clear made">Restore a backup</button>
-        <button id="removeBtn" role="menuitem" title="Take an empty project off the list of projects. Clear it first, which backs it up; nothing is deleted">Remove project</button>
-        <button id="ignoreBtn" role="menuitem" title="What the intake does not read: one pattern per line, like .gitignore, kept in .metaform/ignore.txt">Intake ignores</button>
-        <button id="orphanBtn" role="menuitem" title="The memories whose node the map no longer holds, with what each was attached to">Orphaned memories 0</button>
-      </div>
-      <div class="clearbox" id="clearbox" hidden role="dialog" aria-label="Clear project"></div>
-    </div>
-    <button id="messages" hidden title="Go to the oldest message that waits for you"></button>
-    <div class="themepick">
-      <label for="theme">colors</label>
-      <select id="theme">
-        <option value="space">space</option>
-        <option value="midnight">midnight</option>
-        <option value="graphite">graphite</option>
-        <option value="plum">plum</option>
-        <option value="forest">forest</option>
-        <option value="ember">ember</option>
-        <option value="paper">paper</option>
-        <option value="mist">mist</option>
-      </select>
-    </div>
-    <div class="layerpick">
-      <button class="layersbtn" id="layersBtn" aria-expanded="false" aria-controls="layerlist">Layers</button>
-      <div class="layerlist" id="layerlist" hidden>
-        <div id="layers" role="group" aria-label="Layers shown in this view"></div>
-        <p class="note" id="note"></p>
-        <button class="apply" id="apply" disabled>Apply to folder</button>
-      </div>
-    </div>
+    <button class="btn icon quiet" id="moreBtn" type="button" aria-label="More controls" aria-expanded="false" title="More controls"><i class="i i-menu" aria-hidden="true"></i></button>
   </header>
 
   <aside>
     <div class="splitter side" id="sideSplit" role="separator" aria-orientation="vertical" aria-label="The side column's width"
          title="Drag to resize; double-click to reset"></div>
     <div class="small" id="small">
-    <div class="map2d" id="map2d" tabindex="0" aria-label="The whole map. Down goes deeper, Up back to the parent, Left and Right across; Enter goes inside, Escape out; F cycles the view.">
+    <div class="map2d" id="map2d" tabindex="0" aria-label="The whole map. Down goes deeper, Up back to the parent, Left and Right across; Enter goes inside, Escape out; F cycles the view. Press ? for every key.">
       <div class="bar2d">
-        <div class="navbtns"><button id="backBtn" title="Back to the node selected before" disabled>&lsaquo; Back</button><button id="forwardBtn" title="Forward again" disabled>Forward &rsaquo;</button></div>
+        <div class="navbtns"><button id="backBtn" class="btn icon sm quiet" type="button" aria-label="Back" title="Back to the node selected before" disabled><i class="i i-back" aria-hidden="true"></i></button><button id="forwardBtn" class="btn icon sm quiet" type="button" aria-label="Forward" title="Forward again" disabled><i class="i i-forward" aria-hidden="true"></i></button></div>
         <nav class="crumbs" id="crumbs" hidden aria-label="Where you are inside the map"></nav>
-        <div class="mapbtns"><button id="fitBtn" title="Zoomed out, zoomed in, regular (F)">Fit</button><button id="swapBtn" title="Put this map in the large area, and the 3D map here">Swap</button></div>
+        <div class="mapbtns"><button id="fitBtn" class="btn sm quiet" type="button" title="Zoomed out, zoomed in, regular (F)">Fit</button><button id="swapBtn" class="btn sm quiet" type="button" title="Put this map in the large area, and the 3D map here">Swap</button></div>
       </div>
       <div class="viewport" id="viewport"></div>
-      <span class="kbd">click again or Enter: in · Esc: out · arrows: walk · F: view</span>
     </div>
     </div>
     <div class="splitter split" id="smallSplit" role="separator" aria-orientation="horizontal"
          aria-label="The split between the small map and the panes" title="Drag to resize; double-click to reset"></div>
-    <div class="tabs" role="tablist">
-      <button role="tab" id="t-object" aria-selected="true">Object</button>
-      <button role="tab" id="t-prov" aria-selected="false">Provenance</button>
-      <button role="tab" id="t-prompt" aria-selected="false">Prompt</button>
+    <div class="tabs" role="tablist" aria-label="The selected object">
+      <button role="tab" id="t-object" type="button" aria-selected="true" aria-controls="p-object">Object</button>
+      <button role="tab" id="t-prov" type="button" aria-selected="false" aria-controls="p-prov" tabindex="-1">Provenance</button>
+      <button role="tab" id="t-prompt" type="button" aria-selected="false" aria-controls="p-prompt" tabindex="-1">Prompt</button>
     </div>
-    <section class="pane" id="p-object"></section>
-    <section class="pane" id="p-prov" hidden></section>
-    <section class="pane" id="p-prompt" hidden>
+    <section class="pane" id="p-object" role="tabpanel" aria-labelledby="t-object" tabindex="-1"><p class="loading">Reading the map…</p></section>
+    <section class="pane" id="p-prov" role="tabpanel" aria-labelledby="t-prov" hidden></section>
+    <section class="pane" id="p-prompt" role="tabpanel" aria-labelledby="t-prompt" hidden>
       <div class="toolbar">
         <select id="promptSel" aria-label="Prompt"></select>
         <select id="verSel" aria-label="Version"></select>
-        <button class="btn" id="diffBtn">Show changes</button>
-        <button class="btn primary" id="saveBtn">Save as new version</button>
+        <span class="grow"></span>
+        <button class="btn sm" id="diffBtn" type="button">Show changes</button>
+        <button class="btn sm primary" id="saveBtn" type="button">Save as new version</button>
+        <button class="btn icon sm quiet" id="promptFull" type="button" aria-label="Full screen" aria-pressed="false" title="Fill the screen with the editor, and back (Escape)"><i class="i i-expand" aria-hidden="true"></i></button>
       </div>
       <textarea id="editor"></textarea>
       <div id="diffOut" class="diff" hidden></div>
@@ -113,8 +143,8 @@
   <main>
     <div id="big3d">
     <div class="bar3d">
-      <div class="navbtns"><button id="pauseBtn" data-paused="false">Pause layout</button><button id="relayoutBtn">Re-run layout</button></div>
-      <div class="mapbtns"><button id="fit3dBtn" title="The whole map in view, or close on the selected node">Fit</button><button id="swap3dBtn" title="Put this map in the small area, and the 2D map here">Swap</button></div>
+      <div class="navbtns"><button id="pauseBtn" class="btn sm quiet" type="button" data-paused="false">Pause layout</button><button id="relayoutBtn" class="btn sm quiet" type="button">Re-run layout</button></div>
+      <div class="mapbtns"><button id="fit3dBtn" class="btn sm quiet" type="button" title="The whole map in view, or close on the selected node">Fit</button><button id="swap3dBtn" class="btn sm quiet" type="button" title="Put this map in the small area, and the 2D map here">Swap</button></div>
     </div>
     <div class="view3d">
     <div id="stage" aria-label="3D map of the metaform" tabindex="0"></div>
@@ -127,118 +157,204 @@
     </div>
     </div>
     </div>
+    <div id="intakeBar" class="intakebar" hidden role="status" aria-live="polite"></div>
+    <div class="emptystage" id="emptyStage" hidden>
+      <div class="card">
+        <i class="i i-spark" aria-hidden="true"></i>
+        <h2 class="what"></h2>
+        <p>An intake reads the project and records its map: its parts, what each is for, and how they serve one another. You watch the map grow here as each part is recorded.</p>
+        <button class="btn primary lg start" type="button">Start the intake</button>
+        <small>You choose the agent, and can give it a note.</small>
+      </div>
+    </div>
   </main>
 </div>
-<div class="toast" id="toast" hidden role="status"></div>
-<div id="menu" hidden role="menu" aria-label="What can be done with this node"></div>
-<div id="float" hidden role="dialog" aria-label="Messages">
-  <div class="bar"><span class="title"></span><button class="close" title="Close">Close</button></div>
+<div class="toast" id="toast" hidden role="status" aria-live="polite"></div>
+<div id="menu" class="menu" hidden role="menu" aria-label="What can be done with this node"></div>
+<div id="float" class="window movable beside" hidden role="dialog" aria-label="Messages">
+  <div class="bar"><span class="title"></span><button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button></div>
   <div class="body"></div>
 </div>
-<div id="board" hidden role="dialog" aria-label="Board">
-  <div class="bar"><span class="title">Board</span><input class="search" type="search" placeholder="Find a card" aria-label="Find a card"><div class="kinds" role="group" aria-label="Kinds shown"></div><span class="distribute" title="Give the open tickets the glyphs of this many agents, in turn: tickets with one glyph are one agent's"><input type="number" min="1" max="17" value="2" aria-label="Agents to distribute the work over"><button>Distribute</button></span><button class="start-all" title="Choose an agent and start the waiting work, one agent per glyph">Start all</button><button class="add" title="Write a new ticket">Add card</button><button class="close" title="Close">Close</button></div>
+<div id="board" class="window" hidden role="dialog" aria-label="Board" aria-modal="true">
+  <div class="bar">
+    <span class="title">Board</span>
+    <input class="search" type="search" placeholder="Find a card" aria-label="Find a card">
+    <div class="kinds" role="group" aria-label="Kinds shown"></div>
+    <span class="distribute" title="Give the open tickets the glyphs of this many agents, in turn: tickets with one glyph are one agent's"><label>Agents <input type="number" min="1" max="17" value="2" aria-label="Agents to distribute the work over"></label><button class="btn sm" type="button">Distribute</button></span>
+    <button class="start-all btn sm" type="button" title="Choose an agent and start the waiting work, one agent per glyph">Start all</button>
+    <button class="add btn sm primary" type="button" title="Write a new ticket">Add card</button>
+    <button class="close btn icon sm quiet" type="button" aria-label="Close the board" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button>
+  </div>
   <p class="guidance">Move cards up to prioritize work. Agents take their next ticket from To do before Backlog, higher cards first.</p>
   <div class="columns"></div>
 </div>
-<div id="task" hidden role="dialog" aria-label="Add a task">
-  <div class="bar"><span class="title"></span><button class="full" title="Fill the screen, and back">Full screen</button><button class="close" title="Close">Close</button></div>
+<div id="task" class="window movable" hidden role="dialog" aria-label="Add a task" aria-modal="true">
+  <div class="bar"><span class="title"></span><button class="full btn sm quiet" type="button" title="Fill the screen, and back">Full screen</button><button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button></div>
   <div class="body">
     <div class="write">
-      <div class="kindrow"><label title="The state of the part, not the kind of ticket: leave it as none unless the part is in that state">Part is <select class="condition"><option value="">none: a task on a part that exists</option><option value="unbuilt">unbuilt: not built yet, this task builds it</option><option value="under-construction">under construction</option><option value="broken">broken: built, does not do its job</option></select></label><label title="What sort of work this ticket is, apart from the part's state">Kind <select class="ticket-kind"><option value="">task</option><option value="broken">broken: fix a part that does not do its job</option><option value="flawed">flawed: works, but not right</option><option value="enhancement">enhancement: works, could be better</option></select></label><label class="hold"><input type="checkbox" class="backlog"> Put it in the backlog</label></div>
-      <label>Workflow <select class="workflow" disabled><option value="">Loading workflows…</option></select></label>
-      <label class="workflow-entry" hidden>Entry call <input class="workflow-call" aria-label="Workflow entry call" placeholder="workflow.quality.code.review(target=this)"><small>Edit the arguments for this run. this is the first node below. Task text is optional for a workflow.</small></label>
-      <div class="text" contenteditable="true" role="textbox" aria-multiline="true" aria-label="The task"></div>
-      <div class="eyebrow">Nodes of this task: the first is the one assigned, the others are for reference</div>
+      <div class="kindrow">
+        <label class="field" title="The state of the part, not the kind of ticket: leave it as none unless the part is in that state">Part is <select class="condition"><option value="">none: a task on a part that exists</option><option value="unbuilt">unbuilt: not built yet, this task builds it</option><option value="under-construction">under construction</option><option value="broken">broken: built, does not do its job</option></select></label>
+        <label class="field" title="What sort of work this ticket is, apart from the part's state">Kind <select class="ticket-kind"><option value="">task</option><option value="broken">broken: fix a part that does not do its job</option><option value="flawed">flawed: works, but not right</option><option value="enhancement">enhancement: works, could be better</option></select></label>
+        <label class="check hold"><input type="checkbox" class="backlog"> Put it in the backlog</label>
+      </div>
+      <p class="hint">The part's state says where the part stands on the map; the kind says what this ticket asks for. A plain task on a part that works needs neither.</p>
+      <label class="field">Workflow <select class="workflow" disabled><option value="">Loading workflows…</option></select></label>
+      <label class="field workflow-entry" hidden>Entry call <input class="workflow-call" aria-label="Workflow entry call" placeholder="workflow.quality.code.review(target=this)"><small>Edit the arguments for this run. this is the first node below. Task text is optional for a workflow.</small></label>
+      <div class="text" contenteditable="true" role="textbox" aria-multiline="true" aria-label="The task" data-placeholder="Say what is to be done. Insert a part from the list on the right to name it here."></div>
+      <div class="eyebrow">Nodes of this task</div>
+      <p class="hint">The first is the one the ticket is on; the others are for reference.</p>
       <div class="linked"></div>
-      <div class="kindrow"><label><input type="checkbox" class="start-agent"> Start an agent now</label>
-        <label title="The agent this ticket prefers: Claude for front-end and GUI work, Codex for back-end and system work, unless you choose another">Preferred agent <select class="agent"><option value="claude">Claude Code</option><option value="codex">Codex</option><option value="gemini">Gemini CLI</option></select></label></div>
+      <div class="kindrow"><label class="check"><input type="checkbox" class="start-agent"> Start an agent now</label>
+        <div class="field inline" title="The agent this ticket prefers: Claude for front-end and GUI work, Codex for back-end and system work, unless you choose another"><span>Preferred agent</span><div class="pickhost"></div></div></div>
       <div class="eligibility"></div>
-      <button class="put" title="Write this task on its node, linking the others, where agents find it and take it">Add task</button>
-      <div class="chartbox"><div class="chart" aria-label="A chart of the project to look around and choose parts from"></div><button class="whole" title="The whole chart in view">Fit</button></div>
+      <button class="put btn primary" type="button" title="Write this task on its node, linking the others, where agents find it and take it">Add task</button>
+      <div class="chartbox"><div class="chart" aria-label="A chart of the project to look around and choose parts from"></div><button class="whole btn sm" type="button" title="The whole chart in view">Fit</button></div>
     </div>
     <div class="pick">
       <div class="browser"><input type="search" placeholder="Find a part" aria-label="Find a part"><div class="rows"></div></div>
-      <div class="acts"><button class="insert" disabled title="Put its name into the text, at the cursor">Insert</button><button class="link" disabled title="Add it to the nodes of this task">Link</button></div>
+      <div class="acts"><button class="insert btn sm" type="button" disabled title="Put its name into the text, at the cursor">Insert</button><button class="link btn sm" type="button" disabled title="Add it to the nodes of this task">Link</button></div>
     </div>
   </div>
 </div>
 <div id="reviewNotice" hidden role="status" aria-live="polite"></div>
-<div id="mergeAsk" hidden role="dialog" aria-label="Agent assistance">
-  <p>Would you like agent assistance with prepping code so it doesn't conflict with the ongoing work?</p>
-  <div class="acts"><button class="yes">Yes</button><button class="no">No</button></div>
+<div id="mergeAsk" class="window dialog" hidden role="dialog" aria-label="Agent assistance" aria-modal="true">
+  <div class="body"><p>Would you like agent assistance with prepping code so it doesn't conflict with the ongoing work?</p></div>
+  <div class="foot acts"><button class="no btn" type="button">No</button><button class="yes btn primary" type="button">Yes</button></div>
 </div>
 <div id="dock" class="resting">
   <div id="dockTab" role="button" tabindex="0" aria-label="Open the chat with an agent"><span>Chat</span></div>
   <div id="helpdesk" hidden role="dialog" aria-label="Support chat">
-    <div class="head"><span class="avatar" aria-hidden="true">M</span><div class="who"><b>Metaform Support</b><small><span class="dot"></span> <span class="with">Online</span></small><small class="status" role="status">Online</small></div><button class="big" title="Make the chat large, and back" aria-label="Make the chat large">&#10530;</button><button class="min" title="Put the chat away" aria-label="Put the chat away">&#8211;</button></div>
+    <div class="head"><span class="avatar" aria-hidden="true">M</span><div class="who"><b>Metaform Support</b><small><span class="dot"></span> <span class="with">Online</span></small><small class="status" role="status">Online</small></div><button class="big" type="button" title="Make the chat large, and back" aria-label="Make the chat large"><i class="i i-expand" aria-hidden="true"></i></button><button class="min" type="button" title="Put the chat away" aria-label="Put the chat away"><i class="i i-minus" aria-hidden="true"></i></button></div>
     <div class="tabs" role="tablist" aria-label="Open chats" hidden></div>
+    <div class="sessionbar" hidden></div>
+    <div class="planbox" hidden></div>
     <div class="proposals" aria-label="The sentinel's proposals" hidden></div>
     <div class="log" aria-live="polite"></div>
     <div class="files"></div>
     <form class="compose">
       <label class="clip" title="Attach a file: it is saved in the project and the agent is told where"><input type="file" multiple hidden>&#128206;</label>
-      <textarea class="say" rows="1" placeholder="Type a message, or /help&#8230;" aria-label="Your message"></textarea>
+      <textarea class="say" rows="1" placeholder="Type a message, or / for commands&#8230;" aria-label="Your message"></textarea>
       <button class="send" type="submit">Send</button>
     </form>
-    <div class="calls"><button class="interrupt" type="button" disabled title="Interrupt the current turn and keep the conversation available">Interrupt</button><button class="call" type="button">Call</button></div>
+    <div class="calls"><button class="interrupt" type="button" disabled title="Interrupt the current turn and keep the conversation available">Interrupt</button><div class="summon"></div><button class="call" type="button" title="Start a chat with your system agent; while one is on, Dismiss ends it">Call</button></div>
   </div>
 </div>
-<div id="qa" hidden role="dialog" aria-label="A question, read in full">
-  <div class="bar"><span class="title">Question</span><button class="close" title="Close">Close</button></div>
+<div id="qa" class="window dialog wide" hidden role="dialog" aria-label="A question, read in full" aria-modal="true">
+  <div class="bar"><span class="title">Question</span><button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button></div>
   <div class="body"></div>
 </div>
-<div id="element" hidden role="dialog" aria-label="Add an element">
-  <div class="bar"><span class="title"></span><button class="close" title="Close">Close</button></div>
+<div id="element" class="window movable" hidden role="dialog" aria-label="Add an element" aria-modal="true">
+  <div class="bar"><span class="title"></span><button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button></div>
   <div class="body">
-    <label>Address <input class="address" list="addresses" placeholder="code.alarm.visible" autocomplete="off"></label>
+    <label class="field">Address <input class="address" list="addresses" placeholder="code.alarm.visible" autocomplete="off"></label>
     <datalist id="addresses"></datalist>
-    <div class="row"><label>Words of its name <input class="length" type="number" min="1" max="9" value="1" title="How many segments of the address, read from the leaf, name it"></label>
-      <label>Name <input class="name" placeholder="what the project calls it" title="Canonical Name (Project official terminology) or Informal Name"></label></div>
-    <div class="row">
-      <label>Role <select class="role"><option value="">none given</option><option>SE</option><option>NE</option><option>DE</option><option>CQU</option><option>AUE</option></select></label></div>
-    <label>The purpose is held by <select class="receives"><option value="node"></option><option value="new">the new element, and this node serves it</option></select></label>
-    <label>Purpose <textarea class="purpose" placeholder="What the one that holds the purpose needs this for"></textarea></label>
-    <label>Function <textarea class="ef" placeholder="What the one that serves does"></textarea></label>
+    <div class="row"><label class="field">Words of its name <input class="length" type="number" min="1" max="9" value="1" title="How many segments of the address, read from the leaf, name it"></label>
+      <label class="field">Name <input class="name" placeholder="what the project calls it" title="Canonical Name (Project official terminology) or Informal Name"></label></div>
+    <label class="field">Role <select class="role"><option value="">none given</option><option>SE</option><option>NE</option><option>DE</option><option>CQU</option><option>AUE</option></select></label>
+    <label class="field">The purpose is held by <select class="receives"><option value="node"></option><option value="new">the new element, and this node serves it</option></select></label>
+    <label class="field">Purpose <textarea class="purpose" placeholder="What the one that holds the purpose needs this for"></textarea></label>
+    <label class="field">Function <textarea class="ef" placeholder="What the one that serves does"></textarea></label>
     <label class="check"><input type="checkbox" class="validate" checked> Have an agent validate it</label>
-    <label>Agent <select class="agent"><option value="claude">Claude Code</option><option value="codex">Codex</option><option value="gemini">Gemini CLI</option></select></label>
-    <button class="add">Add element</button>
+    <div class="field"><span>Agent that validates it</span><div class="pickhost"></div></div>
   </div>
+  <div class="foot"><button class="add btn primary" type="button">Add element</button></div>
 </div>
-<div id="notes" hidden role="dialog" aria-label="Notes">
-  <div class="bar"><span class="title"></span><button class="close" title="Close">Close</button></div>
+<div id="notes" class="window movable beside" hidden role="dialog" aria-label="Notes">
+  <div class="bar"><span class="title"></span><button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button></div>
   <div class="body">
     <p class="by"></p>
     <textarea placeholder="A note for whoever works here next, a person or an agent" aria-label="The note"></textarea>
     <div class="count"></div>
-    <button class="save">Save note</button>
   </div>
+  <div class="foot"><button class="save btn primary" type="button">Save note</button></div>
 </div>
-<div id="dispatch" hidden role="dialog" aria-label="Start an agent">
-  <div class="bar"><span class="title"></span><button class="close" title="Close">Close</button></div>
+<div id="dispatch" class="window dialog" hidden role="dialog" aria-label="Start an agent" aria-modal="true">
+  <div class="bar"><span class="title"></span><button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button></div>
   <div class="body">
-    <label>Agent <select class="agent"><option value="claude">Claude Code</option><option value="codex">Codex</option><option value="gemini">Gemini CLI</option></select></label>
-    <button class="start-all" hidden>Start all</button>
+    <div class="field"><span>Agent</span><div class="pickhost"></div></div>
+    <button class="start-all btn primary" type="button" hidden>Start all</button>
     <div class="tickets"></div>
   </div>
 </div>
-<div id="prompts" hidden role="dialog" aria-label="Agent prompts">
-  <div class="bar"><span class="title">Agent prompts</span><button class="close" title="Close">Close</button></div>
+<div id="prompts" class="window dialog" hidden role="dialog" aria-label="Agent prompts" aria-modal="true">
+  <div class="bar"><span class="title">Agent prompts</span><button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button></div>
   <div class="body">
     <p>How an agent's permission prompts are answered. It is kept in the settings, and every agent reads it at its next prompt, so a change reaches agents already running.</p>
-    <div class="choices"></div>
-    <p class="saved"></p>
+    <div class="choices" role="radiogroup" aria-label="How prompts are answered"></div>
+    <p class="saved" role="status"></p>
   </div>
 </div>
-<div id="agent" hidden role="dialog" aria-label="An agent at work">
-  <div class="bar"><img class="icon" alt=""><span class="title"></span><button class="close" title="Close">Close</button></div>
+<div id="agent" class="window movable beside" hidden role="dialog" aria-label="An agent at work">
+  <div class="bar"><img class="icon" alt=""><span class="title"></span><button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button></div>
   <div class="body">
     <p class="task"></p>
+    <div class="sessionbar" hidden></div>
+    <div class="planbox" hidden></div>
     <div class="eyebrow">What it is doing</div>
     <ol class="activity"></ol>
     <div class="asked"></div>
     <p class="state" role="status" hidden></p>
-    <textarea class="say" placeholder="A message to the agent" aria-label="A message to the agent"></textarea>
-    <div class="acts"><button class="send" title="Send it to the agent">Send</button><button class="chat" title="Talk with this agent in the chat at the lower right; an ended one gets a new agent that reads its thread first">Chat</button><button class="interrupt" disabled title="Interrupt the current turn and keep the conversation available">Interrupt</button><button class="stop" title="Stop the agent, and end its session">Stop</button></div>
+    <div class="saybox"><textarea class="say" placeholder="A message to the agent, or / for its commands" aria-label="A message to the agent"></textarea></div>
+    <div class="acts"><button class="send btn primary" type="button" title="Send it to the agent">Send</button><button class="chat btn" type="button" title="Talk with this agent in the chat at the lower right; an ended one gets a new agent that reads its thread first">Chat</button><button class="interrupt btn" type="button" disabled title="Interrupt the current turn and keep the conversation available">Interrupt</button><span class="grow"></span><button class="stop btn danger" type="button" title="Stop the agent, and end its session">Stop</button></div>
+  </div>
+</div>
+<!-- The intake started from the page, VIEW-045: the agent, a note for it, and Start; a refusal with its next step. -->
+<div id="intake" class="window dialog" hidden role="dialog" aria-modal="true" aria-labelledby="intakeTitle">
+  <div class="bar"><span class="title" id="intakeTitle">Map the project</span><button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button></div>
+  <div class="body">
+    <p class="lead"></p>
+    <p class="resume warnline" hidden>An intake is being recorded that no agent of this page started. Take it over only when no agent is still recording it: the agent you start goes on with it.</p>
+    <div class="field"><span>Agent</span><div class="pickhost"></div></div>
+    <label class="field"><span>A note for the agent <small>· optional</small></span>
+      <textarea class="note" rows="3" placeholder="What to focus on, or what the project is for. Left empty, the agent maps the whole project."></textarea></label>
+    <div class="suggest" hidden><span class="hint">Or ask it to:</span>
+      <button class="chip" type="button" data-text="Check the map against the project as it is now, and record what has changed.">Check the map</button>
+      <button class="chip" type="button" data-text="Map the parts of the project that the map does not hold yet.">Map what is missing</button></div>
+    <div class="failed" role="alert" hidden></div>
+  </div>
+  <div class="foot"><button class="cancel btn" type="button">Cancel</button><button class="start btn primary" type="button">Start the intake</button></div>
+</div>
+<!-- The build panel, BASE-060: the four builds, their modules and prompt, one Build, its progress and its file. -->
+<div id="build" class="window dialog wide buildpanel" hidden role="dialog" aria-modal="true" aria-labelledby="buildTitle">
+  <div class="bar"><span class="title" id="buildTitle">Build</span><button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button></div>
+  <div class="body"></div>
+  <div class="foot"><small class="stages hint grow"></small><button class="go btn primary lg" type="button">Build</button></div>
+</div>
+<div id="buildPrompt" class="window dialog wide buildprompt" hidden role="dialog" aria-modal="true" aria-labelledby="buildPromptTitle">
+  <div class="bar"><span class="title" id="buildPromptTitle">The remote agent's prompt</span><button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button></div>
+  <div class="body">
+    <div class="tabbar"></div>
+    <p class="about hint"></p>
+    <div class="editor"></div>
+    <div class="preview" hidden></div>
+  </div>
+  <div class="foot"><button class="revert btn" type="button" hidden>Revert</button><button class="save btn" type="button" hidden>Save as new version</button><span class="grow"></span><button class="done btn primary" type="button">Done</button></div>
+</div>
+<!-- The page's own dialogs: a confirmation, the search of the map, and the keyboard shortcuts. -->
+<div id="confirm" class="window dialog" hidden role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle">
+  <div class="body"></div>
+</div>
+<div id="search" class="window dialog search" hidden role="dialog" aria-modal="true" aria-label="Search the map">
+  <div class="searchbar"><i class="i i-search" aria-hidden="true"></i>
+    <input class="query" type="search" role="combobox" aria-expanded="true" aria-controls="searchResults" aria-autocomplete="list" autocomplete="off" spellcheck="false" placeholder="Search parts, joins and what the layers hold" aria-label="Search the map">
+    <kbd aria-hidden="true">Esc</kbd></div>
+  <div class="results" id="searchResults" role="listbox" aria-label="Results"></div>
+  <div class="searchfoot"><span><kbd>↑</kbd><kbd>↓</kbd> choose</span><span><kbd>Enter</kbd> go to it</span><span><kbd>Esc</kbd> close</span></div>
+</div>
+<div id="help" class="window dialog wide" hidden role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+  <div class="bar"><span class="title">Keyboard shortcuts</span><button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button></div>
+  <div class="body">
+    <div class="keys">
+      <section><h3>Anywhere</h3>
+        <dl><dt><kbd>/</kbd></dt><dd>Search the map</dd><dt><kbd>?</kbd></dt><dd>These shortcuts</dd><dt><kbd>Esc</kbd></dt><dd>Close the window or menu on top; with none open, back out one level</dd></dl></section>
+      <section><h3>The maps</h3>
+        <dl><dt><kbd>↓</kbd></dt><dd>Deeper, to the provider drawn nearest below</dd><dt><kbd>↑</kbd></dt><dd>Back to the parent</dd>
+          <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Across the parent's nodes, then on to the next row</dd>
+          <dt><kbd>Enter</kbd></dt><dd>Inside the selected node</dd><dt><kbd>Shift</kbd> <kbd>Enter</kbd></dt><dd>Out one level</dd>
+          <dt><kbd>F</kbd></dt><dd>Fit: zoomed out, zoomed in, regular</dd><dt><kbd>Home</kbd></dt><dd>The whole map</dd>
+          <dt><kbd>1</kbd>–<kbd>9</kbd></dt><dd>With the 2D map large: the least text size, 8 to 24 px, the selected node centered</dd></dl></section>
+    </div>
+    <p class="hint">The keys reach the maps while no window is open over them and no text field has the focus.</p>
   </div>
 </div>
 <div id="draw" aria-hidden="true"></div>

@@ -66,6 +66,33 @@ def token_file() -> Path:
     return run_dir() / 'web-token'
 
 
+def opened_file() -> Path:
+    """The project of the folder `metaform web` last ran in, the one the page shows first, VIEW-002."""
+    return run_dir() / 'web-project'
+
+
+def opened(project: str | None) -> None:
+    """Note the project of the folder `start` ran in, so a page opened without one named shows it first, VIEW-002.
+    A folder of no project leaves no choice behind, so an older folder's choice does not outlive it."""
+    try:
+        if project:
+            run_dir().mkdir(parents=True, exist_ok=True)
+            opened_file().write_text(project, encoding='utf-8')
+        else:
+            opened_file().unlink(missing_ok=True)
+    except OSError:
+        pass  # the page then opens on the project it remembers, or the first; nothing else depends on it
+
+
+def opened_project() -> str | None:
+    """The project `opened` noted, when it is still registered."""
+    try:
+        found = opened_file().read_text(encoding='utf-8').strip()
+    except OSError:
+        return None
+    return found if found and home.project(found) is not None else None
+
+
 def loopback(bind: str) -> bool:
     if bind == 'localhost':
         return True
@@ -195,6 +222,7 @@ def log_tail() -> str:
 
 def start(ctx: Context) -> dict[str, Any]:
     bind, port = str(ctx.setting('web_bind')), int(ctx.setting('web_port'))
+    opened(ctx.project)
     record = recorded()
     if record is not None:
         if answering(record):
