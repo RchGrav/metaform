@@ -2072,7 +2072,16 @@ function create3D() {
   // The camera coasts after a hand lets it go, and the wheel zooms toward the point under the pointer.
   const controls = G.controls();
   Object.assign(controls, {enableDamping: true, dampingFactor: DAMPING, zoomToCursor: true});
-  controls.addEventListener('start', () => { FLIGHT.on = false; V3.auto = false; hover3d(null); });
+  controls.addEventListener('start', () => {
+    FLIGHT.on = false; V3.auto = false; hover3d(null);
+    if (MEET.on) { MEET.released = true; meetEnds(); }
+  });
+  controls.addEventListener('end', () => {  // let go after a meeting: back out to the node's usual close view
+    if (!MEET.released || !MEET.back) return;
+    MEET.released = false;
+    const node = G.graphData().nodes.find(item => item.id === MEET.back.id), here = cameraNow();
+    if (node && node.x !== undefined) flyTo({x: node.x, y: node.y, z: node.z, turn: here.turn, tilt: here.tilt, far: MEET.back.far});
+  });
   controls.addEventListener('change', () => { FRAMES.moved = true; });
   const stage = $('#stage');
   for (const type of ['pointerdown', 'wheel', 'keydown']) stage.addEventListener(type, () => wake3d(), {passive: true});
@@ -2582,6 +2591,7 @@ function flightAt(now) {
 }
 function flyTo(to, {length = null, done = null} = {}) {
   if (!G) return;
+  meetEnds();  // every flight starts with the whole scene drawn again; a meeting clears its foreground on arrival
   const now = performance.now(), under = FLIGHT.on ? flightAt(now) : null, here = under ? under.at : cameraNow();
   const goal = {...to, turn: here.turn + Math.atan2(Math.sin(to.turn - here.turn), Math.cos(to.turn - here.turn)),
     tilt: Math.min(Math.PI - 0.05, Math.max(0.05, to.tilt))};
@@ -2730,8 +2740,52 @@ function fly3d(id, close = true, share = NAME.in) {
   const named = close && small3d() ? nameFar(node, share) : null;
   if (named !== null) view.far = named;
   V3.auto = false;
+  const sign = close ? tags.get(id)?.sprite : null;
+  if (sign?.scale.x && !MEM.key) {
+    // The camera meets the node's sign: square on to it, along the way it faces, so its letters are level and whole,
+    // at the distance the view above chose for the node; on arrival what stands between the eye and the sign is
+    // cleared, `meetBegins`. A hand on the camera ends the meeting and the camera eases back to `view`.
+    const face = new THREE.Vector3(sign.position.x - node.x, sign.position.y - node.y, sign.position.z - node.z);
+    const out = face.length();
+    if (out > 1e-6) {
+      face.divideScalar(out);
+      const reach = Math.max(Math.exp(view.far) - out, sign.scale.y * 2);
+      MEET.back = {id, far: view.far};
+      flyTo({x: sign.position.x, y: sign.position.y, z: sign.position.z, turn: Math.atan2(face.x, face.z),
+        tilt: Math.acos(Math.max(-1, Math.min(1, face.y))), far: Math.log(reach)}, {done: () => meetBegins(reach)});
+      return true;
+    }
+  }
   flyTo(view);
   return true;
+}
+/* Meeting a sign, VIEW-005: the camera's near plane is moved out to just short of the sign, so the nodes, signs and
+ * edges between the eye and it are not drawn and it is read whole; it eases there and back. The plane is the camera's
+ * own, set back to its value when the meeting ends. */
+const MEET = {on: false, back: null, own: null, from: 0, to: 0, start: 0, released: false};
+function easeNear(to, length = 0.35) {
+  const camera = G.camera();
+  if (MEET.own === null) MEET.own = camera.near;
+  Object.assign(MEET, {from: camera.near, to, start: performance.now()});
+  const step = now => {
+    const s = reduced() ? 1 : Math.min(1, (now - MEET.start) / (length * 1000)), e = s * s * (3 - 2 * s);
+    camera.near = MEET.from + (MEET.to - MEET.from) * e;
+    camera.updateProjectionMatrix();
+    wake3d();
+    if (s < 1 && MEET.to === to) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+function meetBegins(reach) {
+  MEET.on = true;
+  // The sign is square to the eye, so its whole face is at one depth: the plane stops a hair short of it, and
+  // nothing in front of it, an edge crossing the last stretch included, is drawn.
+  easeNear(reach - Math.max(0.05, reach * 0.004));
+}
+function meetEnds() {
+  if (MEET.own === null || (!MEET.on && G.camera().near === MEET.own && MEET.to === MEET.own)) return;
+  MEET.on = false;
+  easeNear(MEET.own);
 }
 /* While a map opens and its layout first spreads out, the camera keeps it framed, easing after it four times a second,
  * so the map unfolds in view rather than off the edge of it or as a speck in the middle; the page's first fit then has
