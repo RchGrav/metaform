@@ -1006,10 +1006,12 @@ def test_opening_a_tool_gives_each_commands_summary_and_a_command_is_read_alone(
         opened = {name: await client.call_tool(name, {}) for name in tools}
         joins = await client.call_tool('map', {'help': 'joins'})
         element = await client.call_tool('intake', {'help': 'element'})
+        both = await client.call_tool('intake', {'command': 'element', 'help': 'element'})  # as a Haiku intake asked
         unknown = await client.call_tool('map', {'help': 'nothing'})
         wrong = await client.call_tool('map', {'command': 'joins', 'arguments': 'element'})
-        return opened, joins, element, unknown, wrong
-    opened, joins, element, unknown, wrong = session(home, mapped, check)
+        return opened, joins, element, unknown, wrong, both
+    opened, joins, element, unknown, wrong, both = session(home, mapped, check)
+    assert not both.is_error and text(both) == text(element)  # help with its command and nothing to run is help
     page = run('help', 'map', 'joins', cwd=mapped).stdout
     for name, result in opened.items():
         listing = json.loads(text(result)[-1])

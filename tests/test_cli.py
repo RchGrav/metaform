@@ -671,6 +671,9 @@ def test_remove_project_takes_an_empty_project_off_the_list_and_deletes_nothing(
     assert [line.split()[0] for line in lines(run('list', 'bases', cwd=project))] == ['main']
 
     run('clear', 'project', 'proj', '--confirm', cwd=elsewhere)
+    from metaform import home as metaform_home
+    metaform_home.ensure_base('proj')  # a write after the clear makes its default metaform again, empty
+    assert [line.split()[0] for line in lines(run('list', 'bases', cwd=project))] == ['main']
     backups = run('list', 'backups', 'proj').stdout
     refused = run('remove', 'project', 'proj', cwd=elsewhere, ok=False)
     assert refused.returncode == 2 and refused.stderr.splitlines() == [

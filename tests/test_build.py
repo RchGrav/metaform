@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+from metaform import _build_info
+
 pytestmark = pytest.mark.kind('simulation')
 
 ROOT = Path(__file__).parents[1]
@@ -163,6 +165,23 @@ def test_a_wheel_runs_directly_from_itself(home, tmp_path, map_only):
                               text=True, encoding='utf-8', check=False)
         assert done.returncode == 0, (args, done.stderr)
     assert not (home / 'projects').exists() or not any((home / 'projects').iterdir())  # nothing reached this home
+
+
+@pytest.mark.req('BASE-024')
+def test_a_wheel_run_on_an_older_python_says_what_it_needs(tmp_path, map_only):
+    wheel, _ = map_only
+    with zipfile.ZipFile(wheel) as packed:
+        bootstrap = packed.read('__main__.py').decode()
+    needs = repr(tuple(int(part) for part in _build_info.REQUIRES_PYTHON.removeprefix('>=').split('.')))
+    assert f'NEEDS = {needs}' in bootstrap
+    # No older Python is at hand on every runner, so the check is shown by raising what it needs.
+    script = tmp_path / '__main__.py'
+    script.write_text(bootstrap.replace(f'NEEDS = {needs}', 'NEEDS = (99,)'), encoding='utf-8')
+    done = subprocess.run([sys.executable, '-I', str(script)], capture_output=True, text=True, encoding='utf-8',
+                          check=False)
+    assert done.returncode == 1
+    assert done.stderr.startswith('Metaform needs Python 99 or newer; this is Python ')
+    assert 'Traceback' not in done.stderr
 
 
 @pytest.mark.req('BASE-041')

@@ -1162,13 +1162,28 @@ def removal_caution(project_id: str) -> str:
             "Its folder, history and backups stay in the home, and its source's folder and files are not touched.")
 
 
+def _holds_records(path: Path) -> bool:
+    """Whether a metaform's store holds anything a clear would lose: a row in any table but its meta. A read of a
+    cleared project makes its default metaform again, empty, and that holds nothing."""
+    if not path.is_file():
+        return False
+    try:
+        with closing(sqlite3.connect(f'file:{path.as_posix()}?mode=ro', uri=True)) as db:
+            tables = [row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name <> 'meta' "
+                                                   "AND name NOT LIKE 'sqlite_%'")]
+            return any(db.execute(f'SELECT 1 FROM "{table}" LIMIT 1').fetchone() for table in tables)
+    except sqlite3.Error:
+        return True  # what cannot be read is kept, so a clear backs it up first
+
+
 def not_empty(project_id: str) -> str | None:
-    """Why the project cannot be removed yet: it holds what a clear removes and backs up, PROJ-031. None when empty."""
+    """Why the project cannot be removed yet: it holds what a clear removes and backs up, PROJ-031. None when empty: a
+    metaform that holds nothing, as a read after a clear makes again, does not count."""
     found = to_clear(project_id)
-    if not found.bases and not found.reports:
+    held = tuple(name for name in found.bases if _holds_records(store_file(project_id, name)))
+    if not held and not found.reports:
         return None
-    forms = counted(len(found.bases), 'base', 'bases') + (
-        f', {listed(found.bases)},' if found.bases else '')
+    forms = counted(len(held), 'base', 'bases') + (f', {listed(held)},' if held else '')
     return (f'{project_id} holds {forms} and {counted(found.reports, "report file", "report files")}. Only an empty '
             'project is removed; clearing it backs it up first.')
 

@@ -201,7 +201,7 @@ def test_direct_wheel_provision_help_names_an_extractable_skill(tmp_path, home):
     package = Path(__file__).parents[1] / 'src' / 'metaform'
     wheel = tmp_path / 'metaform proof.whl'
     with zipfile.ZipFile(wheel, 'w') as archive:
-        archive.writestr('__main__.py', build.BOOTSTRAP)
+        archive.writestr('__main__.py', build.bootstrap())
         for path in package.rglob('*'):
             if path.is_file() and '__pycache__' not in path.parts:
                 archive.write(path, 'metaform/' + path.relative_to(package).as_posix())

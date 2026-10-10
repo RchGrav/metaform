@@ -300,7 +300,25 @@ python -m pip install -e . "mcp>=2.2" uv
 metaform list modules
 ```
 
-On Windows PowerShell, activate with `.\.venv\Scripts\Activate.ps1` instead. Register an existing workpiece folder:
+On Windows PowerShell, activate with `.\.venv\Scripts\Activate.ps1` instead.
+
+### Install from the repository onto your path
+
+To have the `metaform` command on your path, and the MCP server agents launch, run the code in a checkout, install the checkout as an editable [uv](https://docs.astral.sh/uv/) tool, with the MCP and agent-protocol packages beside it:
+
+```sh
+uv tool install --editable /path/to/metaform --with "mcp>=2.2" --with "agent-client-protocol>=0.12.1,<0.13" --force
+```
+
+The command lands in uv's tool folder, `~/.local/bin` on Linux and macOS, and imports Metaform from the checkout's `src/`. Every command then runs the checkout as it is now: after a pull or an edit, nothing is installed again. Processes already running keep the code they started with:
+
+- each agent session reconnects its MCP server, with `/mcp` in Claude Code, or starts again;
+- the web GUI restarts with `metaform web stop` and then `metaform web start`, and an open page reloads;
+- an agent dispatch started keeps the code it started with until its session ends.
+
+Run the install again only when `pyproject.toml` changes Metaform's dependencies or entry points.
+
+Register an existing workpiece folder:
 
 ```sh
 cd /path/to/workpiece
@@ -308,7 +326,7 @@ metaform add project example .
 metaform intake prompt
 ```
 
-The last command serves the intake instructions, Intake 2.1; **the agent performs the intake**. It examines the workpiece, follows the served method, and records the map one object at a time as it reasons it, through the intake tools, then reads it back, proofs it and finishes it with `intake_finish`. `metaform web` draws the map live while it is recorded. You choose the workpiece and direct the work; Metaform retains the resulting functional representation. Start reading it with `metaform map roots`, read one address with `metaform map where <address>`, or open `metaform web`. `metaform clear project <project> --confirm` removes the project's metaforms and reports so the intake can be taken again from nothing.
+The last command serves the intake instructions, the Digital Typology procedure; **the agent performs the intake**. It examines the workpiece, follows the served method, and records the map one object at a time as it reasons it, through the intake tools, then reads it back, proofs it and finishes it with `intake_finish`. `metaform web` draws the map live while it is recorded. You choose the workpiece and direct the work; Metaform retains the resulting functional representation. Start reading it with `metaform map roots`, read one address with `metaform map where <address>`, or open `metaform web`. `metaform clear project <project> --confirm` removes the project's metaforms and reports so the intake can be taken again from nothing.
 
 For an agent connection, build the selected modules with `metaform build`, then run `metaform install` to choose a detected supported client. The installer registers a wheel-backed stdio MCP server and probes it. [Getting started](docs/guides/getting-started.md) covers the source and wheel paths, supported installer adapters, how the intake is recorded, retained data, and first useful inspection. It also records a small map by hand, without a model.
 

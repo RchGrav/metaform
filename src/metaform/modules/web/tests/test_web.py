@@ -6203,6 +6203,77 @@ def test_a_sentinels_proposal_shows_what_it_reserves_and_shows_its_reach_on_the_
     assert problems == []
 
 
+@pytest.mark.req('VIEW-001')
+def test_the_side_column_and_its_split_are_dragged_to_size_kept_and_reset(run, web, mapped, browser):
+    """The panes are resized by hand: the side column's width and the split between its small map and its panes are
+    dragged, kept by the browser across a reload, and put back by a double-click."""
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
+    width = lambda: page.locator('aside').bounding_box()['width']  # noqa: E731
+    height = lambda: page.locator('#small').bounding_box()['height']  # noqa: E731
+    before = (width(), height())
+    handle = page.locator('#sideSplit').bounding_box()
+    page.mouse.move(handle['x'] + 4, handle['y'] + 300)
+    page.mouse.down()
+    page.mouse.move(handle['x'] + 154, handle['y'] + 300, steps=5)
+    page.mouse.up()
+    split = page.locator('#smallSplit').bounding_box()
+    page.mouse.move(split['x'] + 100, split['y'] + 3)
+    page.mouse.down()
+    page.mouse.move(split['x'] + 100, split['y'] - 80, steps=5)
+    page.mouse.up()
+    dragged = (width(), height())
+    assert dragged[0] > before[0] + 100 and dragged[1] < before[1] - 50, (before, dragged)
+    page.reload()
+    page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
+    assert abs(width() - dragged[0]) < 3 and abs(height() - dragged[1]) < 3  # kept by this browser
+    page.dblclick('#sideSplit')
+    page.dblclick('#smallSplit')
+    assert abs(width() - before[0]) < 3 and abs(height() - before[1]) < 3  # and put back
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-019')
+def test_an_intake_started_in_another_project_takes_the_page_there_and_it_follows_the_intake(
+        run, web, mapped, browser, tmp_path):
+    """An intake was followed only in the project the page had open: one started in another project went unseen.
+    The page goes to the project where an intake starts and follows it, once for that intake."""
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
+    assert page.evaluate('location.hash') == '#p=proj'
+    folder = tmp_path / 'other'  # registered after the page opened, as a first run registers the folder
+    folder.mkdir()
+    run('add', 'project', 'other', str(folder))
+    run('intake', 'start', cwd=folder)
+    run('intake', 'element', 'code.timer.kitchen', 'role=DE', cwd=folder)
+    page.wait_for_function('() => location.hash === "#p=other" && window.metaform.live() !== null', timeout=20000)
+    page.wait_for_function('() => window.metaform.drawn() && window.metaform.drawn().nodes === 1', timeout=15000)
+    assert page.locator('#proj').input_value() == 'other'  # the project list has it, chosen
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-019')
+def test_a_page_opened_with_no_project_follows_the_first_run_intake_without_a_reload(run, home, web, browser, tmp_path):
+    """On a first run the page was opened before the folder was registered, said no project is registered, and had to be
+    reloaded again and again until the intake showed. It now hears the intake start and goes to it."""
+    started(run)
+    page = browser.new_page(viewport={'width': 1280, 'height': 800})
+    problems = []
+    page.on('pageerror', lambda error: problems.append(str(error)))
+    page.goto(f'http://127.0.0.1:{web}/')
+    page.wait_for_function('() => document.querySelector("#p-object").innerText.includes("No project is registered")')
+    folder = tmp_path / 'fresh'
+    folder.mkdir()
+    run('add', 'project', 'fresh', str(folder))
+    run('intake', 'start', cwd=folder)
+    run('intake', 'element', 'code.timer.kitchen', 'role=DE', cwd=folder)
+    page.wait_for_function('() => location.hash === "#p=fresh" && window.metaform.live() !== null', timeout=20000)
+    page.wait_for_function('() => window.metaform.drawn() && window.metaform.drawn().nodes === 1', timeout=15000)
+    assert problems == []
+
+
 @pytest.mark.req('VIEW-018')
 def test_a_change_that_adds_or_removes_no_node_redraws_the_3d_map_in_place_without_starting_its_layout_again(
         run, web, mapped, browser):

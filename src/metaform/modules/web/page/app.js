@@ -108,6 +108,35 @@ const same = (a, b) => a.size === b.size && [...a].every(x => b.has(x));
  * who it serves, are records under those roots, not layers; the page lists each root beside the layers as a toggle
  * that hides every record under it, so the product's own parts stand alone. Remembered per viewer. */
 const ROOTS = ['upstream', 'downstream'];
+/* The side column's width and the split between its small map and its panes are dragged: each is
+ * remembered by this browser, and a double-click puts it back. The maps follow the new size as they follow the window. */
+const SIZES = {side: ['metaform.sideWidth', '--side-width', 280, () => innerWidth - 320],
+  small: ['metaform.smallHeight', '--small-height', 120, () => $('aside').clientHeight - 140]};
+function sized(which, pixels) {
+  const [key, name, least, most] = SIZES[which];
+  const app = document.querySelector('.app');
+  if (pixels === null) app.style.removeProperty(name);
+  else app.style.setProperty(name, Math.round(Math.max(least, Math.min(most(), pixels))) + 'px');
+  try { pixels === null ? localStorage.removeItem(key) : localStorage.setItem(key, String(Math.round(pixels))); }
+  catch (error) { /* storage can be blocked; the size still changes */ }
+  dispatchEvent(new Event('resize'));
+}
+function splitter(handle, which, measure) {
+  handle.addEventListener('pointerdown', event => {
+    event.preventDefault();
+    handle.classList.add('dragging');
+    const move = moved => sized(which, measure(moved));
+    const end = () => { handle.classList.remove('dragging'); removeEventListener('pointermove', move); removeEventListener('pointerup', end); };
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', end);
+  });
+  handle.addEventListener('dblclick', () => sized(which, null));
+  let kept = null;
+  try { kept = localStorage.getItem(SIZES[which][0]); } catch (error) { /* storage can be blocked */ }
+  if (kept) sized(which, Number(kept));
+}
+splitter($('#sideSplit'), 'side', moved => moved.clientX - $('aside').getBoundingClientRect().left);
+splitter($('#smallSplit'), 'small', moved => moved.clientY - $('#small').getBoundingClientRect().top);
 const rootsOff = () => { try { return new Set(JSON.parse(localStorage.getItem('metaform.rootsOff') || '[]')); } catch { return new Set(); } };
 const rootOf = address => (address || '').split('.')[0];
 const underHiddenRoot = address => rootsOff().has(rootOf(address));
@@ -204,7 +233,7 @@ $('#restoreBtn').onclick = async event => {
   catch (error) { return toast(error.message); }
   fill($('#clearbox'), h('div', {class: 'warn'}, h('b', {}, `Restore ${S.project} from a backup`),
     h('span', {}, 'What the project holds now is backed up first, so nothing is lost.'),
-    h('ul', {class: 'backups'}, found.map(kept => h('li', {}, h('span', {}, kept.name), ` ${kept.held} `,
+    h('ul', {class: 'backups'}, [...found].sort((one, two) => two.name.localeCompare(one.name)).map(kept => h('li', {}, h('span', {}, kept.name), ` ${kept.held} `,
       h('button', {class: 'btn', onclick: () => restoreFrom(S.project, kept.name)}, 'Restore')))),
     h('div', {class: 'toolbar'}, h('button', {class: 'btn keep', onclick: () => showClear(false)}, 'Close'))));
   showClear(true);
@@ -4657,6 +4686,7 @@ async function loadLive() {
  * recorded, saying what happened: it finished when its metaform still stands, or it stopped because the project was
  * cleared, the one thing that takes a metaform away, VIEW-019. */
 async function follow(found) {
+  if (found) ELSEWHERE.followed.add(`${S.project}/${found.base_id}/${found.layer}`);
   if (found && found.layer !== LIVE.layer) {
     Object.assign(LIVE, {layer: found.layer, base: found.base_id, seen: ''});
     if (S.base !== found.base_id) await loadProject(found.base_id);
@@ -4682,8 +4712,36 @@ async function recordingNow() {
  * The page reads what is being recorded, then follows it, returns to the map when it has finished, shows the active
  * metaform when the project's metaforms changed, or reads the layers and the map again, keeping the view and the
  * selection. A change to tickets or messages alone reads only those, below. */
+/* An intake happening in another project takes the page there, as one started in this project takes the map to it:
+ * the person watches an intake where it is recorded. Only a change written into the intake being recorded does it,
+ * once for that intake, so a person who goes back is left there; nothing else in another project ever switches the
+ * page, and a change of tickets or agents elsewhere is not even looked at. */
+const ELSEWHERE = {followed: new Set(), busy: false};
+async function intakeElsewhere(payload) {
+  const named = payload.tables;
+  if (ELSEWHERE.busy || named === 'dispatch' || ticketsOnly(payload)) return;
+  ELSEWHERE.busy = true;
+  try {
+    const found = (await getJson(`/api/intake-recording?project=${encodeURIComponent(payload.project)}`)).results?.[0];
+    // only a change written into the intake being recorded: an intake happening now, never an old one left unfinished
+    if (!found || payload.base_id !== found.base_id) return;
+    const key = `${payload.project}/${found.base_id}/${found.layer.name}`;
+    if (ELSEWHERE.followed.has(key) || payload.project === S.project) return;
+    ELSEWHERE.followed.add(key);
+    S.projects = (await getJson('/api/projects')).projects || [];  // a first run registers its folder just before
+    if (!G) start3D();  // a page opened with no project has not drawn a 3D map yet
+    toProject(payload.project);
+    fill($('#proj'), ...S.projects.map(item => h('option', {value: item.id, selected: item.id === S.project}, item.id)));
+    await loadProject();
+    listen();
+    toast(`An intake started in ${payload.project}; the page follows it there.`);
+  } catch (error) { /* a project that cannot be read now is not followed */ }
+  finally { ELSEWHERE.busy = false; }
+}
 async function changed(event) {
-  if (event.topic !== 'map.changed' || event.payload?.project !== S.project) return;
+  if (event.topic !== 'map.changed') return;
+  if (event.payload?.project && event.payload.project !== S.project) return intakeElsewhere(event.payload);
+  if (event.payload?.project !== S.project) return;
   const named = event.payload.tables;
   const agents = named === 'dispatch' || Array.isArray(named) && named.some(table => String(table).startsWith('dispatch.'));
   if (agents) agentsChanged(!linesOnly(event.payload));
@@ -5106,6 +5164,7 @@ async function main() {
   S.projects = (await response.json()).projects || [];
   if (!S.projects.length) {
     fill($('#p-object'), h('p', {class: 'empty'}, 'No project is registered. Register one with: metaform add project <id> <path>'));
+    listen();  // still hears what modules publish: an intake started in a project registered later takes the page there
     return;
   }
   const wanted = new URLSearchParams(location.hash.slice(1)).get('p');

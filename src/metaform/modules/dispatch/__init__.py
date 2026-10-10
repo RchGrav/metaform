@@ -832,12 +832,18 @@ def start_raised(ctx: Context, store: Store) -> list[str]:
     """Start the sentinel of each queued issue whose node is no longer in use, oldest first, while there is room to
     summon an agent, VIEW-045."""
     own = Store(store.project_id, module='dispatch')
+    with own.tables(write=False) as tx:  # read first: a pass with nothing queued writes nothing, so it never makes a
+        held = [dict(row) for row in tx.rows('raised', by=('seq',), limit=0).results]  # cleared project's base again
+    if not held:
+        return []
     made = {row['work_id'] for row in sessions(store)}
-    with own.tables() as tx:  # a launch whose session is made, or that never made one, is done waiting
-        for row in tx.rows('raised', by=('seq',), limit=0).results:
-            if row['started'] is not None and (row['work_id'] in made or time.time() - row['started'] >= STALE_START):
-                tx.delete('raised', {'work_id': row['work_id']})
-        waiting = [dict(row) for row in tx.rows('raised', by=('seq',), limit=0).results if row['started'] is None]
+    done = [row['work_id'] for row in held if row['started'] is not None
+            and (row['work_id'] in made or time.time() - row['started'] >= STALE_START)]
+    if done:  # a launch whose session is made, or that never made one, is done waiting
+        with own.tables() as tx:
+            for work_id in done:
+                tx.delete('raised', {'work_id': work_id})
+    waiting = [row for row in held if row['started'] is None]
     started: list[str] = []
     for row in waiting:
         if summon_room(ctx, store) <= 0:

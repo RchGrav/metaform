@@ -571,7 +571,8 @@ async def enter(folder: Path, tool: str, given: dict[str, Any], *, client: str |
         return True, [f'Error: No tool {tool} on this surface.\nNext: list the tools']
     summary, commands = known[tool]
     asked = given.get('help')
-    if asked is not None and 'command' not in given:
+    # help asks what a command takes; sent with that command and nothing to run it with, it is still that question
+    if asked is not None and not given.get('arguments'):
         if not isinstance(asked, str) or asked not in commands:
             return True, [f'Error: {tool} has no command {asked}.\nNext: call {tool} with no command for its commands']
         described, schema = commands[asked]

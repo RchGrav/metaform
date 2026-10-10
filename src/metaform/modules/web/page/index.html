@@ -75,6 +75,8 @@
   </header>
 
   <aside>
+    <div class="splitter side" id="sideSplit" role="separator" aria-orientation="vertical" aria-label="The side column's width"
+         title="Drag to resize; double-click to reset"></div>
     <div class="small" id="small">
     <div class="map2d" id="map2d" tabindex="0" aria-label="The whole map. Down goes deeper, Up back to the parent, Left and Right across; Enter goes inside, Escape out; F cycles the view.">
       <div class="bar2d">
@@ -86,6 +88,8 @@
       <span class="kbd">click again or Enter: in · Esc: out · arrows: walk · F: view</span>
     </div>
     </div>
+    <div class="splitter split" id="smallSplit" role="separator" aria-orientation="horizontal"
+         aria-label="The split between the small map and the panes" title="Drag to resize; double-click to reset"></div>
     <div class="tabs" role="tablist">
       <button role="tab" id="t-object" aria-selected="true">Object</button>
       <button role="tab" id="t-prov" aria-selected="false">Provenance</button>

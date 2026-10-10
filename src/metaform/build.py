@@ -29,9 +29,19 @@ from .errors import Stop
 NAME = 'metaform'
 COMPILED = ('.so', '.pyd', '.dylib')
 
+def _needs_python() -> tuple[int, ...]:
+    """The oldest Python the wheel runs on, checked by its bootstrap before anything is imported."""
+    return tuple(int(part) for part in _build_info.REQUIRES_PYTHON.removeprefix('>=').split('.'))
+
+
 BOOTSTRAP = '''"""Run Metaform from this wheel, with its carried dependencies, BASE-042."""
 import os
 import sys
+
+NEEDS = NEEDS_PYTHON
+if sys.version_info < NEEDS:
+    sys.exit('Metaform needs Python %s or newer; this is Python %s.'
+             % ('.'.join(map(str, NEEDS)), sys.version.split()[0]))
 
 WHEEL = os.path.abspath(os.path.dirname(__file__))
 VENDOR = os.path.join(WHEEL, 'metaform', '_vendor')
@@ -52,6 +62,11 @@ from metaform.cli import main  # noqa: E402  the path must be set first
 
 raise SystemExit(main())
 '''
+
+
+def bootstrap() -> str:
+    """The wheel's root `__main__.py`, with the oldest Python it runs on written in, BASE-042."""
+    return BOOTSTRAP.replace('NEEDS_PYTHON', repr(_needs_python()))
 
 
 def _walk(root: Any, prefix: str) -> dict[str, bytes]:
@@ -195,7 +210,7 @@ def build(folder: Path | None = None) -> tuple[Path, list[str]]:
             told.append(f'Not packed: the checkout at {checkout} differs from that copy in {differ} '
                         f'file{"" if differ == 1 else "s"}. To pack the checkout, run uv run metaform build in '
                         f'{checkout}.')
-    files['__main__.py'] = BOOTSTRAP.encode()
+    files['__main__.py'] = bootstrap().encode()
     with tempfile.TemporaryDirectory() as temporary:
         vendored, notes = _carry(requirements, per_module, Path(temporary))
     files.update(vendored)
