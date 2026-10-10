@@ -995,6 +995,13 @@ def help_agents(run, folder):
     return run('help', 'agents', cwd=folder).stdout
 
 
+def over_mcp(text):
+    """The instructions as the MCP server serves them: the command line's text with the opening line that names the
+    server, MCP-031."""
+    from metaform.prompt_files import chassis
+    return text.replace(chassis('surface_cli'), chassis('surface_mcp'), 1)
+
+
 @pytest.mark.req('CLI-037')
 @pytest.mark.req('MCP-003')
 def test_opening_a_tool_gives_each_commands_summary_and_a_command_is_read_alone(run, home, mapped):
@@ -1048,7 +1055,7 @@ def test_the_instructions_are_composed_for_each_request_and_read_with_the_instru
         run('set', '--debug', cwd=mapped)                               # changed after the server started
         after = help_agents(run, mapped)
         assert after != before
-        assert discover(july)['instructions'].strip() == after.strip()
+        assert discover(july)['instructions'].strip() == over_mcp(after).strip()
     finally:
         july.close()
     run('set', '--no-debug', cwd=mapped)
@@ -1059,8 +1066,9 @@ def test_the_instructions_are_composed_for_each_request_and_read_with_the_instru
         second = text(await client.call_tool('metaform', {'command': 'instructions'}))
         return init.instructions, first, second
     started, first, second = session(home, mapped, check)
-    assert started.strip() == before.strip()
-    assert [block.strip() for block in first] == [before.strip()] and [block.strip() for block in second] == [after.strip()]
+    assert started.strip() == over_mcp(before).strip()
+    assert [block.strip() for block in first] == [over_mcp(before).strip()] and \
+        [block.strip() for block in second] == [over_mcp(after).strip()]
     run('set', '--modules', 'intake', cwd=mapped)                     # the chassis off the surface
     assert run('instructions', cwd=mapped).stdout == help_agents(run, mapped)
 
@@ -1200,7 +1208,7 @@ def test_resources_serve_the_instructions_each_commands_schema_and_what_a_module
     assert all(one.description and one.name for one in fixed.values())
     assert templates == {'metaform://instructions/{module}', 'metaform://tools/{tool}/{command}',
                          'metaform://prompts/{name}', 'metaform://reports/{name}'}
-    assert texts['metaform://instructions'] == run('help', 'agents', cwd=mapped).stdout
+    assert texts['metaform://instructions'] == over_mcp(run('help', 'agents', cwd=mapped).stdout)
     assert texts['metaform://instructions/intake'] == run('help', 'agents', 'intake', cwd=mapped).stdout.strip()
     assert texts['metaform://intake/procedure'].strip() == run('intake', 'prompt', cwd=mapped).stdout.strip()
     assert texts['metaform://intake/schema'].strip() == run('intake', 'schema', cwd=mapped).stdout.strip()

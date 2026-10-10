@@ -5,13 +5,19 @@
 <prompts>
 <!-- The slash commands the chassis declares, MCP-032 and MCP-033: each runs the command line named in verb. -->
 <commands><status verb="" summary="This folder's project, its metaform and the modules on."/><config verb="config --show"/><prompt verb="prompt &lt;name&gt; [&lt;version&gt;]"/></commands>
-<!-- The base of the instructions an agent reads when it connects over MCP and from metaform help agents. <modules/>
+<!-- The base of the instructions an agent reads when it connects over MCP and from metaform help agents. <surface/>
+     is filled with surface_mcp when the MCP server serves them and with surface_cli everywhere else, such as metaform
+     help agents and a project wheel's first run, so the opening line is true where it is read, MCP-031. <modules/>
      is filled with one line per surfaced module: its active line by default, its whole instructions prompt with
      connect_instructions=full, MCP-029. -->
-<instructions>Metaform MCP server is active.
+<instructions><surface/>
 modules available.
 <modules/>
 </instructions>
+<!-- Opens the instructions the MCP server serves. -->
+<surface_mcp>Metaform MCP server is active.</surface_mcp>
+<!-- Opens the instructions served anywhere but the MCP server: the command line and a project wheel's run. -->
+<surface_cli>Metaform is active.</surface_cli>
 <!-- The compact instructions, connect_instructions=compact, MCP-029: each module is listed by active, with its id in
      place of <module/>, and more follows the list. -->
 <active><module/> is active.</active>

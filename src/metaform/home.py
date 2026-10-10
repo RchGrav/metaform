@@ -532,7 +532,11 @@ def add_project(project_id: str, path: Path | str, target_type: str | None = Non
 def register(record: Project) -> Path:
     """Write a project's folder: `source.txt`, its registration and, once, its provenance, PROJ-026. A folder
     named for the source that holds no registration, one whose project was removed, is taken again, so what it
-    kept is the project's again. The source folder itself need not exist here, as when an export is imported."""
+    kept is the project's again. The source folder itself need not exist here, as when an export is imported. The id
+    is held to the rule `add_project` holds a typed one to, whoever registers it, since it names files."""
+    if not PROJECT_ID.fullmatch(record.project_id):
+        raise StoreError(f'{record.project_id!r} is not a project id: use lowercase letters, digits, - and _.',
+                         'metaform list projects')
     holder = _folder_at(record.path)
     if holder is not None:
         held = _record_in(holder)

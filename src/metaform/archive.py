@@ -23,6 +23,7 @@ import json
 import os
 import stat
 import zipfile
+import zlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -54,6 +55,14 @@ LEFT_OUT = frozenset({'.git', '.hg', '.svn', 'node_modules', '__pycache__', '.my
                       '.ruff_cache', '.tox', '.nox', '.eggs'})
 LEFT_OUT_AT_TOP = frozenset({'build', 'dist'})
 LEFT_OUT_SUFFIXES = ('.pyc', '.pyo', '.egg-info')
+
+# The most one zip in an archive unpacks to. A zip states each file's size before it is read; an archive stating more
+# than this, or a file that unpacks larger than it states, is refused before it can fill the memory of the machine
+# reading it, since an archive comes from another machine.
+LARGEST = 2 * 1024 ** 3
+# The names Windows gives to devices whatever the extension, which a file written there would reach instead.
+DEVICES = frozenset({'con', 'prn', 'aux', 'nul', *(f'com{number}' for number in range(1, 10)),
+                     *(f'lpt{number}' for number in range(1, 10))})
 
 
 # ------------------------------------------------------------------------------------------- the project's files
@@ -99,7 +108,9 @@ def project_files(folder: Path, *, leave_out: frozenset[Path] = frozenset()) -> 
                 or any(part.endswith(LEFT_OUT_SUFFIXES) for part in parts) or in_environment(parts):
             continue
         file = root.joinpath(*parts)
-        if file.resolve() in skipped or is_archive(file):
+        resolved = file.resolve()
+        # A link to a file outside the folder is not the project's, and what it reaches is never carried away.
+        if resolved in skipped or not resolved.is_relative_to(root) or is_archive(file):
             continue
         found[entry.path] = (file.read_bytes(), entry.mode)
     return found
@@ -122,14 +133,53 @@ def _safe(name: str) -> str | None:
     """A path from an archive as a relative path with forward slashes, or None when it would reach outside the folder
     it is written into."""
     path = PurePosixPath(name.replace('\\', '/'))
-    if not name or path.is_absolute() or any(part in ('', '.', '..') or ':' in part for part in path.parts):
+    if not name or '\0' in name or path.is_absolute() \
+            or any(part in ('', '.', '..') or ':' in part for part in path.parts):
         return None
     return path.as_posix()
+
+
+def _target(folder: Path, name: str) -> Path:
+    """Where a file from an archive is written in a folder: refused when its name reaches outside the folder, through
+    `..`, a drive, or a link already in the folder, and on Windows when it names a device or a name Windows would
+    change."""
+    root = folder.resolve()
+    relative = _safe(name)
+    target = root.joinpath(*PurePosixPath(relative).parts) if relative else None
+    if target is None or not target.resolve().is_relative_to(root):
+        raise Stop(f'{name} would be written outside {folder}.', 'ask for the archive again')
+    if os.name == 'nt' and any(part.split('.')[0].strip().lower() in DEVICES or part.endswith(('.', ' '))
+                               or any(char in '<>"|?*' or ord(char) < 32 for char in part)
+                               for part in PurePosixPath(str(relative)).parts):
+        raise Stop(f'{name} cannot be written on Windows, which keeps that name for a device or changes it.',
+                   'rename the file on the system the archive came from, then build or return it again')
+    return target
+
+
+def _sized(held: zipfile.ZipFile, what: str) -> None:
+    """Refuse a zip that states it unpacks to more than LARGEST, before any of it is read."""
+    if sum(info.file_size for info in held.infolist()) > LARGEST:
+        raise Stop(f'{what} unpacks to more than {LARGEST // 1024 ** 3} GB, more than an archive may hold.',
+                   'leave large files out of the project archive: metaform build kind=archive files=false')
+
+
+def _member(held: zipfile.ZipFile, info: zipfile.ZipInfo, what: str) -> bytes:
+    """One file of a zip, read no further than the size the zip states for it, and refused when its bytes are not
+    the ones the zip recorded."""
+    try:
+        with held.open(info) as source:
+            data = source.read(info.file_size + 1)
+    except (zipfile.BadZipFile, zlib.error, EOFError):
+        data = None
+    if data is None or len(data) != info.file_size:
+        raise Stop(f'{info.filename} in {what} is not as its zip recorded it.', 'ask for the archive again')
+    return data
 
 
 def _unzipped_files(data: bytes, what: str) -> dict[str, tuple[bytes, str]]:
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as held:
+            _sized(held, what)
             files: dict[str, tuple[bytes, str]] = {}
             for info in held.infolist():
                 if info.is_dir():
@@ -138,7 +188,7 @@ def _unzipped_files(data: bytes, what: str) -> dict[str, tuple[bytes, str]]:
                 if name is None:
                     raise Stop(f'{what} holds {info.filename}, which is not a path inside the project.',
                                'build the archive again: metaform build kind=archive')
-                files[name] = (held.read(info), '755' if (info.external_attr >> 16) & 0o111 else '644')
+                files[name] = (_member(held, info, what), '755' if (info.external_attr >> 16) & 0o111 else '644')
             return files
     except zipfile.BadZipFile:
         raise Stop(f'{what} is not a zip.', 'build the archive again: metaform build kind=archive') from None
@@ -215,12 +265,13 @@ def read(data: bytes, what: str) -> Archive:
         raise Stop(f'{what} is not a zip.', 'metaform import <file>, with a .zip that metaform build or return wrote') \
             from None
     with held:
+        _sized(held, what)
         names = set(held.namelist())
         if MANIFEST not in names:
             raise Stop(f'{what} is not a Metaform archive: it has no {MANIFEST}.',
                        'metaform import <file>, with a .zip that metaform build or return wrote')
         try:
-            manifest = as_object(json.loads(held.read(MANIFEST)))
+            manifest = as_object(json.loads(_member(held, held.getinfo(MANIFEST), what)))
         except ValueError:
             raise Stop(f'The manifest of {what} is not JSON.', 'build the archive again') from None
         if manifest is None or manifest.get('format') != FORMAT:
@@ -229,9 +280,13 @@ def read(data: bytes, what: str) -> Archive:
         _readable(manifest, what)
         if manifest.get('kind') not in KINDS or not isinstance(manifest.get('project'), str):
             raise Stop(f'The manifest of {what} names no kind or no project.', 'build the archive again')
+        if not home.PROJECT_ID.fullmatch(manifest['project']):  # the id names files and folders on this machine
+            raise Stop(f'The manifest of {what} names {manifest["project"]!r}, which is not a project id.',
+                       'build the archive again')
         entries = [as_object(entry) for entry in as_list(manifest.get('work')) or []]
         listed = {str(entry.get('path')): entry for entry in entries if entry is not None}
-        work = {name: held.read(name) for name in names if not name.startswith(FOLDER) and not name.endswith('/')}
+        work = {name: _member(held, held.getinfo(name), what) for name in names
+                if not name.startswith(FOLDER) and not name.endswith('/')}
         for name in sorted(set(listed) | set(work)):
             if name not in work or name not in listed or \
                     hashlib.sha256(work[name]).hexdigest() != listed[name].get('sha256'):
@@ -239,14 +294,14 @@ def read(data: bytes, what: str) -> Archive:
         if DATA not in names:
             raise Stop(f'{what} holds no project data, {DATA}.', 'build the archive again')
         try:
-            document = as_object(json.loads(held.read(DATA)))
+            document = as_object(json.loads(_member(held, held.getinfo(DATA), what)))
         except ValueError:
             document = None
         if document is None:
             raise Stop(f'The project data of {what} is not a JSON object.', 'build the archive again')
     origin = _unzipped_files(work[ORIGIN], f'The origin in {what}') if ORIGIN in work else None
     changes = {name[len(CHANGES):]: body for name, body in work.items() if name.startswith(CHANGES)}
-    return Archive(manifest, document, origin, changes, work.get(NOTE, b'').decode('utf-8'))
+    return Archive(manifest, document, origin, changes, work.get(NOTE, b'').decode('utf-8', errors='replace'))
 
 
 # ------------------------------------------------------------------------------------------------- importing
@@ -267,35 +322,37 @@ class Imported:
     files: int = 0
 
 
-def counted_changes(origin: Mapping[str, Any], changes: Mapping[str, bytes]) -> tuple[tuple[str, ...], ...]:
-    """The files a variation changes, adds and removes against its origin, each sorted by path."""
-    named: set[str] = set()
-    for line in changes.get(vary.DIFF, b'').decode('utf-8').split('\n'):
-        if line.startswith('+++ b/'):
-            named.add(line[6:])
-    named |= {name[len(vary.FILES):] for name in changes if name.startswith(vary.FILES)}
-    removed = tuple(sorted(line for line in changes.get(vary.REMOVED, b'').decode('utf-8').split('\n') if line))
-    return (tuple(sorted(name for name in named if name in origin)),
-            tuple(sorted(name for name in named if name not in origin)), removed)
+def counted_changes(origin: Mapping[str, bytes], changes: Mapping[str, bytes],
+                    what: str = 'The changes') -> tuple[tuple[str, ...], ...]:
+    """The files a variation changes, adds and removes against its origin, each sorted by path, read by applying it,
+    so a line of a file that looks like a diff's header is never taken for one. A variation that does not apply to
+    its origin is refused."""
+    try:
+        work = vary.expanded(origin, changes)
+    except (vary.Mismatch, ValueError, IndexError):
+        raise Stop(f'{what} do not apply to the origin they were taken from.', 'ask for the archive again') from None
+    return (tuple(sorted(name for name in work if name in origin and work[name] != origin[name])),
+            tuple(sorted(name for name in work if name not in origin)),
+            tuple(sorted(name for name in origin if name not in work)))
 
 
 def _review_folder(source: Path) -> Path:
-    """A new folder beside the archive, named for it, for its changes; a second import of it takes the next number."""
+    """A new folder beside the archive, named for it, for its changes, made here so no other import takes it; a
+    second import of it takes the next number."""
     base = source.with_name(source.name[:-len(SUFFIX)] if source.name.lower().endswith(SUFFIX) else source.name)
     candidate, number = base, 1
-    while candidate.exists():
-        number += 1
-        candidate = base.with_name(f'{base.name}-{number}')
-    return candidate
+    while True:
+        try:
+            candidate.mkdir(parents=True)
+            return candidate
+        except FileExistsError:
+            number += 1
+            candidate = base.with_name(f'{base.name}-{number}')
 
 
 def _write_into(folder: Path, files: Mapping[str, bytes]) -> None:
-    root = folder.resolve()
     for name, data in files.items():
-        relative = _safe(name)
-        target = root.joinpath(*PurePosixPath(relative).parts) if relative else None
-        if target is None or not target.resolve().is_relative_to(root):
-            raise Stop(f'{name} would be written outside {folder}.', 'ask for the archive again')
+        target = _target(folder, name)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
 
@@ -313,8 +370,9 @@ def import_archive(source: Path, project: str | None = None) -> Imported:
     if home.project(target) is None:
         raise Stop(f'{source} returns work on the project {target}, which this home does not hold.',
                    'metaform import <file> <project>, naming the registered project it returns to')
+    origin = {name: data for name, (data, _) in (found.origin or {}).items()}
+    changed, added, removed = counted_changes(origin, found.changes, f'The changes in {source}')  # before any write
     report = import_document(found.document, target)
-    changed, added, removed = counted_changes(found.origin or {}, found.changes)
     review: Path | None = None
     if changed or added or removed or found.note:
         review = _review_folder(source)
@@ -410,21 +468,30 @@ def first_run(folder: Path, say: Callable[[str], None]) -> None:
         if holder is not None:
             raise Stop(f'{folder} is already registered as the project {holder}.',
                        f'run python {wheel} from an empty folder of its own')
-        source = home.Project(**found.document['projects'][0]['project'])
+        try:
+            source = home.Project(**found.document['projects'][0]['project'])
+        except (KeyError, IndexError, TypeError):
+            raise Stop(f'The project archive in {wheel} holds no record of its project.',
+                       'build the project wheel again: metaform build kind=project') from None
+        targets = {name: _target(folder, name) for name in found.origin or {}}  # every name checked before a write
         target = ('path', str(folder)) if source.target_type == 'path' else (source.target_type, source.target_value)
         home.register(home.Project(project, str(folder), *target))
-        report = import_document(found.document, project)
+        try:
+            report = import_document(found.document, project)
+        except BaseException:
+            home.forget_project(project)  # registered here a moment ago, so the next run tries again
+            raise
         told.append(f'Imported the project {project} at {folder}: {_counts(report)}.')
         if found.origin is None:
             told.append('This wheel carries no project files: the work is on the map alone.')
         else:
-            present = sorted(name for name in found.origin if folder.joinpath(*PurePosixPath(name).parts).exists())
+            present = sorted(name for name, target_file in targets.items() if target_file.exists())
             if present:
                 told.append(f'The folder already holds {len(present)} of the project\'s files, such as {present[0]}, '
                             'so none was unpacked.')
             else:
                 for name, (data, mode) in found.origin.items():
-                    target_file = folder.joinpath(*PurePosixPath(name).parts)
+                    target_file = targets[name]
                     target_file.parent.mkdir(parents=True, exist_ok=True)
                     target_file.write_bytes(data)
                     if mode == '755' and os.name != 'nt':
@@ -503,7 +570,7 @@ def write_return(folder: Path, note: str = '', file: Path | None = None) -> Retu
         origin = {name: data for name, (data, _) in held.archive.origin.items()}
         work = {name: data for name, (data, _) in project_files(root, leave_out=frozenset({held.wheel})).items()}
         changes = vary.variation(origin, work)
-        changed, added, removed = counted_changes(origin, changes)
+        changed, added, removed = counted_changes(origin, changes, 'The changes to the project files')
         if not (changed or added or removed):
             changes = {}
     target = file if file is not None else root / f'{project}-return-{_stamp()}{SUFFIX}'

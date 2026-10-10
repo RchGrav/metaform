@@ -285,6 +285,11 @@ def _op(value: Any, path: str, problems: list[str]) -> None:
         problems.append(f'{path}.data: not an object')
 
 
+def _layout(value: str | None) -> int | None:
+    """A layout version as a number, or None: ASCII digits only, so a document's `²` is refused, never raised."""
+    return int(value) if value is not None and value.isascii() and value.isdigit() else None
+
+
 def _readable(whole: dict[str, Any]) -> None:
     """Refuse a document only when this Metaform cannot read it, STORE-029: one at this layout, at a later layout whose
     `compatible_from` is at or below this one, or at an earlier layout from this one's `compatible_from` on, which
@@ -296,10 +301,11 @@ def _readable(whole: dict[str, Any]) -> None:
         raise StoreError('The document\'s compatible_from is not a layout version.', 'metaform export > <file>')
     if readable(found, needed, SCHEMA_VERSION):
         return
-    earlier = found.isdigit() and int(COMPATIBLE_FROM) <= int(found) < int(SCHEMA_VERSION)
-    if earlier and (needed is None or needed.isdigit() and int(needed) <= int(found)):
+    at, oldest = _layout(found), _layout(needed)
+    if at is not None and int(COMPATIBLE_FROM) <= at < int(SCHEMA_VERSION) and (needed is None or oldest is not None
+                                                                               and oldest <= at):
         return
-    if needed is not None and needed.isdigit() and int(needed) > int(SCHEMA_VERSION):
+    if oldest is not None and oldest > int(SCHEMA_VERSION):
         raise StoreError(f'The document has schema version {found}, which a Metaform reads from version {needed}; '
                          f'this Metaform supports version {SCHEMA_VERSION}.',
                          'install the Metaform release that wrote it')
@@ -325,6 +331,11 @@ def _validate(document: Any) -> None:
             problems.append(f'{path}: not an object')
             continue
         _record(entry.get('project'), f'{path}.project', PROJECT_KEYS, problems)
+        project_id = (as_object(entry.get('project')) or {}).get('project_id')
+        if isinstance(project_id, str) and not home.PROJECT_ID.fullmatch(project_id):
+            # The id names the project's folder entries, archives and downloads; one from a document is held to the
+            # rule metaform add project holds a typed one to, so no document reaches outside a folder with it.
+            problems.append(f'{path}.project.project_id: not a project id')
         if 'modules' in entry:
             tables.check(entry['modules'], f'{path}.modules', problems)
         if not _scalar(entry.get('active_base')):
@@ -340,6 +351,9 @@ def _validate(document: Any) -> None:
                 problems.append(f'{where}: not an object')
                 continue
             _record(base.get('base'), f'{where}.base', HEAD_KEYS, problems)
+            name = (as_object(base.get('base')) or {}).get('name')
+            if isinstance(name, (str, int, float)) and not home.NAME.fullmatch(str(name)):
+                problems.append(f'{where}.base.name: not a base name')  # it names the store's file, STORE-003
             if 'prior_schema_version' in base and base['prior_schema_version'] not in (
                     '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20'):
                 problems.append(f'{where}.prior_schema_version: not a historical layout version')
@@ -486,6 +500,9 @@ def import_document(document: dict[str, Any], project: str | None = None) -> dic
     project it registered is taken off the list again. Returns what was added and skipped, and a notice for each
     identity the document needs that this home does not hold, BASE-044.
     """
+    if project is not None and not home.PROJECT_ID.fullmatch(project):
+        raise StoreError(f'{project!r} is not a project id: use lowercase letters, digits, - and _.',
+                         'metaform list projects')
     if as_object(document) is not None and document.get('metaform_export') == 1:
         document = from_format_1(document)
     _validate(document)

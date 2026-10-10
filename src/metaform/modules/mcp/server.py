@@ -358,7 +358,7 @@ def run_chassis(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
                 raise Stop(f'No module {given["module"]} with instructions on this folder\'s surface.',
                            'call metaform with command instructions and no module')
         elif name == 'instructions':
-            result = instructions(folder, project)
+            result = instructions(folder, project, surface='mcp')
         elif name == 'register':
             result = result_json(register(folder, given.get('id')))
         else:
@@ -388,7 +388,7 @@ def register(folder: Path, given: str | None = None) -> dict[str, Any]:
         except StoreError as error:
             raise Stop(str(error), f'call {OWN} with command register and another id') from None
         held = chosen
-    return {'project': held, 'said': said, 'instructions': instructions(folder)}
+    return {'project': held, 'said': said, 'instructions': instructions(folder, surface='mcp')}
 
 
 def run_history(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
@@ -753,7 +753,7 @@ async def read_resource_text(folder: Path, uri: str, *, client: str | None = Non
                     raise Stop(blocks[0], 'read resource ' + INSTRUCTIONS_URI)
                 return '\n'.join(blocks), held.mime_type
     if uri == INSTRUCTIONS_URI:
-        return await anyio.to_thread.run_sync(instructions, folder), 'text/plain'
+        return await anyio.to_thread.run_sync(functools.partial(instructions, folder, surface='mcp')), 'text/plain'
     matched = next(((name, held.groupdict()) for name, pattern in TEMPLATE_PATTERNS.items()
                     if (held := pattern.match(uri))), None)
     if matched is None:
@@ -947,7 +947,7 @@ def serve(folder: Path) -> None:
             except NewerStore as error:
                 return refused(ctx, error)
             if ctx.method in ('initialize', 'server/discover') and isinstance(result, dict):
-                composed = await anyio.to_thread.run_sync(instructions, folder)
+                composed = await anyio.to_thread.run_sync(functools.partial(instructions, folder, surface='mcp'))
                 result = {**cast(dict[str, Any], result), 'instructions': composed}
             return result
     server.middleware.append(live)

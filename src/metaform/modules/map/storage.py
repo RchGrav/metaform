@@ -249,13 +249,23 @@ def add_message(tx: Tx, node: Any, kind: str, text: Any, *, suggestions: Any = N
     return message(tx, _message_row(tx, message_id), tuple(notices))
 
 
-def close_message(tx: Tx, message_id: str, answer: Any = None) -> Message:
-    """The user answered a question or read a message. One already closed keeps its first answer."""
+def close_message(tx: Tx, message_id: str, answer: Any = None, *, agent: bool = False) -> Message:
+    """The user answered a question or read a message. One already closed keeps its first answer. With `agent`, the
+    call came over an agent's surface, MCP, and an open question linked to a ticket is refused: it is a dispatched
+    agent's permission request, which only the person answers, on the page or the command line, BASE-052; checked in
+    the same transaction as the write, so no answer slips in between."""
     notices: list[Notice] = []
     row = _message_row(tx, message_id)
     if row["closed"] is not None:
         notices.append(Notice("id", f"This was closed at {row['closed']}; its answer was kept."))
         return message(tx, row, tuple(notices))
+    if agent and row["kind"] == "question" and tx.tables().get('question_work', {'message_id': message_id}):
+        raise StoreError(
+            f"Question {message_id} is linked to a ticket: an agent's permission request waits on it, and only the "
+            "person answers it.",
+            f'the person answers it on the page, or with metaform map reply {message_id} answer="..." on the command '
+            "line",
+        )
     tx.execute(
         "UPDATE messages SET closed=?, answer=? WHERE message_id=?",
         (now(), _work_text(answer, "answer", notices), message_id),

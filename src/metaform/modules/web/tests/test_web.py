@@ -1388,9 +1388,14 @@ def test_the_page_files_are_checked_with_the_server_on_every_load(run, web):
     """A page file the browser keeps would show a person the page as it was before an update, with nothing to say
     so. Each page file tells the browser to ask again before using its copy."""
     started(run)
-    for path in ('/', '/page/app.js', '/page/app.css'):
+    for path in ('/', '/page/app.js', '/page/app.css', '/vendor/three.module.min.js'):
         status, _, headers = request(web, path)
         assert status == 200 and headers['Cache-Control'] == 'no-cache', path
+        # a copy that is current is confirmed with no body, so a load re-sends none of the libraries
+        status, body, again = request(web, path, headers={'If-None-Match': headers['ETag']})
+        assert status == 304 and body == '' and again['ETag'] == headers['ETag'], path
+        assert again['Content-Security-Policy'] == headers['Content-Security-Policy'], path
+        assert request(web, path, headers={'If-None-Match': '"stale"'})[0] == 200, path
 
 
 @pytest.mark.req('VIEW-025')
@@ -2207,9 +2212,9 @@ def test_an_idle_3d_map_draws_no_frames_until_something_on_it_moves(run, web, ma
 
 
 @pytest.mark.req('VIEW-008')
-def test_selecting_a_node_turns_the_3d_map_to_it_at_the_zoom_it_has_and_zoom_goes_in_close(run, web, mapped, browser):
-    """A click on a node flew the camera in close from wherever it stood. A selection turns the map so the node is at
-    the center facing the eye, at the zoom the person has; the 3D map's Zoom goes in close on it, and Whole back out."""
+def test_selecting_a_node_turns_the_3d_map_to_it_and_comes_in_close(run, web, mapped, browser):
+    """A click on a node flew the camera so close that its neighbors were off the view, from wherever it stood. A
+    selection turns the map so the node is at the center facing the eye and comes in on it; Whole goes back out."""
     started(run)
     page, problems, _ = opened(browser, web)
     _, at = keys_of(web)
@@ -2224,10 +2229,9 @@ def test_selecting_a_node_turns_the_3d_map_to_it_at_the_zoom_it_has_and_zoom_goe
     seen = page.evaluate(f'window.metaform.screen3d("{cook}")')
     off = math.hypot(seen['x'] - stage['x'] - stage['width'] / 2, seen['y'] - stage['y'] - stage['height'] / 2)
     assert off < 0.1 * min(stage['width'], stage['height']), (seen, stage)
-    assert page.evaluate('window.metaform.away3d()') == pytest.approx(whole, rel=0.05)  # the zoom it had
-    page.click('#big3d .modes3d button:nth-child(2)')
-    still(page, '() => window.metaform.away3d()')
-    assert page.evaluate('window.metaform.away3d()') < whole * 0.7  # Zoom, in close on it
+    assert page.evaluate('window.metaform.away3d()') < whole * 0.7  # in close on it
+    page.click('#big3d .modes3d button:nth-child(1)')
+    page.wait_for_function(f'() => window.metaform.away3d() > {whole} * 0.9', timeout=15000)  # and Whole back out
     assert problems == []
 
 
@@ -5224,7 +5228,6 @@ def test_an_agents_figure_is_big_enough_to_see_with_the_whole_map_in_view_and_ci
     from metaform.data import Node, Store
     store = Store('proj')
     alarm = store.element('code.alarm.audible').id
-    cook = store.element('exterior.cook').id
     far = store.element('code.timer.kitchen.display').id
     run('enable', 'dispatch')
     flawed = store.add_work(Node('element', 'code.alarm.audible'), 'broken', task='a quieter tone')
@@ -5525,6 +5528,8 @@ def test_the_page_lists_the_agents_with_whether_each_is_found_and_sets_the_defau
     own, as_json = f'http://127.0.0.1:{web}', {'Content-Type': 'application/json'}
     status, said = api(web, '/api/dispatch-agents?project=proj')
     assert status == 200 and said == {'enabled': False, 'agents': [], 'default': None, 'next': 'metaform enable dispatch'}
+    for read in ('dispatch-agents', 'dispatch-sessions', 'dispatch-claims'):  # a project not registered is said
+        assert api(web, f'/api/{read}?project=gone')[0] == 404, read
     run('enable', 'dispatch')
     run('set', '--dispatch-claude', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
     run('set', '--dispatch-gemini', 'metaform-no-such-acp-adapter --acp', cwd=mapped)
@@ -6226,7 +6231,7 @@ def test_each_open_chat_is_a_tab_in_the_dock_and_dismissing_one_leaves_the_other
     for index in (0, 1):
         page.locator('#agents .agent-row button.chat').nth(index).click()
     page.wait_for_function('() => document.querySelectorAll("#helpdesk .tabs .tab").length === 2', timeout=10000)
-    shown = lambda: page.locator('#helpdesk .log').text_content()  # noqa: E731
+    shown = lambda: page.locator('#helpdesk .log').text_content()
     page.wait_for_function('() => /About the (quieter|longer) tone/.test(document.querySelector("#helpdesk .log").textContent)')
     on_view = 'About the longer tone' if 'About the longer tone' in shown() else 'About the quieter tone'
     page.locator('#helpdesk .tabs .tab:not(.on)').click()
@@ -6312,8 +6317,8 @@ def test_the_side_column_and_its_split_are_dragged_to_size_kept_and_reset(run, w
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
-    width = lambda: page.locator('aside').bounding_box()['width']  # noqa: E731
-    height = lambda: page.locator('#small').bounding_box()['height']  # noqa: E731
+    width = lambda: page.locator('aside').bounding_box()['width']
+    height = lambda: page.locator('#small').bounding_box()['height']
     before = (width(), height())
     handle = page.locator('#sideSplit').bounding_box()
     page.mouse.move(handle['x'] + 4, handle['y'] + 300)
@@ -6485,6 +6490,8 @@ def test_left_and_right_past_the_end_of_a_row_go_on_to_the_next_parents_nodes_on
 def test_past_the_end_of_a_row_the_node_drawn_beside_is_reached_whatever_level_its_parent_hangs_from(run, web, mapped, browser):
     """A node drawn on the same row as the selected one is reached by Left or Right even when its parent hangs from
     another branch of the tree, here a root of its own, so what is drawn side by side is never out of reach."""
+    from playwright.sync_api import TimeoutError as Waited
+
     from metaform.data import Store
     store = Store('proj')
     for address in ('code.alarm.audible.tone1', 'code.alarm.audible.tone1.pitch', 'code.panel', 'code.panel.cover',
@@ -6504,7 +6511,7 @@ def test_past_the_end_of_a_row_the_node_drawn_beside_is_reached_whatever_level_i
     depth = 'y' if page.evaluate('window.metaform.vertical()') else 'x'
     assert abs(page.evaluate(f'window.metaform.at2d("{pitch}")')[depth]
                - page.evaluate(f'window.metaform.at2d("{latch}")')[depth]) < 2   # drawn on one row
-    selected = lambda key, limit=5000: page.wait_for_function(  # noqa: E731  a key is applied as the frame draws
+    selected = lambda key, limit=5000: page.wait_for_function(
         f'() => window.metaform.selected() === "{key}"', timeout=limit)
     for key in ('ArrowRight', 'ArrowLeft'):
         page.evaluate(f'window.metaform.select("{tone}")')
@@ -6515,7 +6522,7 @@ def test_past_the_end_of_a_row_the_node_drawn_beside_is_reached_whatever_level_i
         try:
             selected(latch, 2000)
             break
-        except Exception:  # this way round reached another node; the other key is tried
+        except Waited:  # this way round reached another node; the other key is tried
             continue
     else:
         raise AssertionError('the latch drawn beside the pitch was not reached by Left or Right')
@@ -7391,7 +7398,7 @@ def test_escape_closes_only_the_window_on_top_and_the_focus_goes_back_to_the_con
     page.wait_for_function('() => window.metaform.loaded()')
     _, at = keys_of(web)
     kitchen = at['code.timer.kitchen']
-    selected = lambda: page.evaluate('window.metaform.selected()')  # noqa: E731
+    selected = lambda: page.evaluate('window.metaform.selected()')
     page.evaluate(f'window.metaform.select("{kitchen}")')
     page.click('#adminBtn')
     page.wait_for_function('() => document.activeElement.closest("#adminbox")')  # the focus moved into the menu
@@ -7443,7 +7450,7 @@ def test_a_memory_deleted_from_the_panel_is_made_again_by_undo(run, web, mapped,
     remember(run, mapped, 'create_entities', [entity('countdown drift', 'Drifts under load.')], 'element:code.timer.kitchen')
     remember(run, mapped, 'create_entities', [entity('quiet tone', 'Too quiet.')], 'element:code.alarm.audible')
     remember(run, mapped, 'create_relations', [{'from': 'countdown drift', 'to': 'quiet tone', 'relationType': 'drives'}])
-    whole = lambda: json.loads(run('memory', 'graph', '--json', cwd=mapped).stdout)  # noqa: E731
+    whole = lambda: json.loads(run('memory', 'graph', '--json', cwd=mapped).stdout)
     drawn = '() => window.metaform.loaded() && window.metaform.graph().nodes.some(node => node.id === "e:countdown drift")'
     started(run)
     page, problems, _ = opened(browser, web)
@@ -7475,7 +7482,7 @@ def test_the_page_is_told_the_project_of_the_folder_metaform_web_last_ran_in(run
         (tmp_path / name).mkdir()
     for name in ('alpha', 'beta'):
         run('add', 'project', name, str(tmp_path / name))
-    opened_first = lambda: json.loads(request(web, '/api/projects')[1])['opened']  # noqa: E731
+    opened_first = lambda: json.loads(request(web, '/api/projects')[1])['opened']
     assert started(run, tmp_path / 'beta')['state'] == 'started' and opened_first() == 'beta'
     assert started(run, tmp_path / 'alpha')['state'] == 'running' and opened_first() == 'alpha'
     started(run, tmp_path / 'outside')
@@ -7582,8 +7589,8 @@ def test_the_text_size_buttons_scale_the_page_and_reset_puts_every_size_back(run
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
-    size = lambda selector: page.evaluate(f'parseFloat(getComputedStyle(document.querySelector("{selector}")).fontSize)')  # noqa: E731
-    ui = lambda: page.evaluate('getComputedStyle(document.documentElement).getPropertyValue("--ui").trim()')  # noqa: E731
+    size = lambda selector: page.evaluate(f'parseFloat(getComputedStyle(document.querySelector("{selector}")).fontSize)')
+    ui = lambda: page.evaluate('getComputedStyle(document.documentElement).getPropertyValue("--ui").trim()')
     before = ui(), size('#boardBtn'), size('#p-object h2')
     assert before[0] == '1.08'                                          # one step larger than the sizes were drawn at
     page.click('#textUp')

@@ -259,3 +259,21 @@ def test_a_tickets_links_and_steps_and_the_messages_at_nodes_are_carried_by_expo
         ['Found the gain.', 'Lowered it.'], 2, 'codex')
     kept = {message.id: message for message in moved.messages(limit=0).results}
     assert asked.id in kept and len(kept) == 2
+
+
+@pytest.mark.req('STORE-027')
+@pytest.mark.req('BASE-060')
+def test_a_document_whose_project_id_or_base_name_would_reach_outside_a_folder_is_refused_whole(
+        home, store, monkeypatch, tmp_path):
+    """A project id and a base name from a document name files: the project's folder entries, its store, a return
+    archive and a download; one that is not an id or a name is refused before anything is written."""
+    filled(store)
+    document = json.loads(json.dumps(export_document(['proj'])))
+    other = move_home(monkeypatch, tmp_path, 'other-home')
+    document['projects'][0]['project']['project_id'] = '../escape'
+    document['projects'][0]['bases'][0]['base']['name'] = '../../outside'
+    with pytest.raises(StoreError) as refused:
+        import_document(document)
+    assert 'projects[0].project.project_id' in str(refused.value)
+    assert 'projects[0].bases[0].base.name' in str(refused.value)
+    assert not (other / 'projects').exists() and not (tmp_path / 'outside.metaform.sqlite3').exists()

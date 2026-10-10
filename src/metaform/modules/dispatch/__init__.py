@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import ctypes
 import json
-import uuid
 import os
 import secrets
 import shlex
@@ -29,13 +28,14 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from collections.abc import Sequence
 from importlib import resources
 from pathlib import Path
 from typing import Any, cast
 
 from metaform import home, nonce, prompt_files, settings
-from metaform.data import Column, Index, Message, Store, StoreError, Table, Tables, WorkRecord
+from metaform.data import Column, Index, Store, StoreError, Table, Tables, WorkRecord
 from metaform.module import Context, Module, Noun, Stop, Subscription, Verb, context, surface, work_reads
 
 from .signals import collect, own_store, requeued, rework_limit
@@ -838,7 +838,7 @@ def json_list(value: Any, name: str) -> list[str]:
         try:
             value = json.loads(value) if value.strip().startswith('[') else [value]
         except ValueError:
-            raise Stop(f'{name} is a JSON list, such as ["code.alarm.audible"].', f'metaform help dispatch') from None
+            raise Stop(f'{name} is a JSON list, such as ["code.alarm.audible"].', 'metaform help dispatch') from None
     if not isinstance(value, list) or any(not isinstance(one, str) for one in cast(list[Any], value)):
         raise Stop(f'{name} is a list of text.', 'metaform help dispatch')
     return cast(list[str], value)

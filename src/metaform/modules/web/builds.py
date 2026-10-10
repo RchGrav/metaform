@@ -10,8 +10,9 @@ builds folder. A build chooses what it carries and never turns a module on or of
 """
 from __future__ import annotations
 
-import json
+import os
 import secrets
+import shutil
 import threading
 import traceback
 from dataclasses import dataclass
@@ -73,12 +74,14 @@ def answer(handler: Handler, method: str, path: str) -> None:
     build_id, _, rest = path[len(PREFIX) + 1:].partition('/')
     with _lock:
         job = _jobs.get(build_id)
-    if job is None or rest not in ('', 'download'):
+        status = job.status() if job is not None else None  # whole under the lock: a finishing build is one change
+        file = job.path if job is not None else None
+    if job is None or status is None or rest not in ('', 'download'):
         return handler.send(404, {'error': f'No build {build_id or "named"} on this server; a build is kept while '
                                            'the server runs.', 'next': 'Build it again from the panel.'})
     if rest == '':
-        return handler.send(200, job.status())
-    return download(handler, job)
+        return handler.send(200, status)
+    return download(handler, status, file)
 
 
 def options(handler: Handler) -> None:
@@ -131,7 +134,7 @@ def start(handler: Handler, path: str) -> None:
     if path != PREFIX:
         return handler.send(404, {'error': f'No such write: {path}.'})
     try:
-        body: Any = json.loads(handler.rfile.read(int(handler.headers.get('Content-Length') or 0)) or b'null')
+        body: Any = handler.json_body()
     except ValueError:
         return handler.send(400, {'error': 'The body is not JSON.'})
     given = cast(dict[str, Any], body) if isinstance(body, dict) else {}
@@ -149,13 +152,17 @@ def start(handler: Handler, path: str) -> None:
 
 
 def _push(server: Server, job: Job) -> None:
-    server.push({'topic': 'build', 'payload': job.event()})
+    with _lock:
+        event = job.event()
+    server.push({'topic': 'build', 'payload': event})
 
 
 def _run(server: Server, job: Job, request: Any) -> None:
-    """Build in this thread, pushing each stage as it starts and then how the build ended."""
+    """Build in this thread, pushing each stage as it starts and then how the build ended. A job changes under the
+    lock, and its state last, so no reader sees it done before its file is set."""
     def progress(stage: str) -> None:
-        job.stage = stage
+        with _lock:
+            job.stage = stage
         _push(server, job)
 
     try:
@@ -163,28 +170,40 @@ def _run(server: Server, job: Job, request: Any) -> None:
             chassis.refresh_modules()
             built = build.make(request, None, progress)
     except Stop as error:
-        job.state, job.error, job.next = 'failed', str(error), error.next_step
+        with _lock:
+            job.error, job.next, job.state = str(error), error.next_step, 'failed'
     except Exception as error:  # noqa: BLE001  a build that breaks is reported on the page and in the log
         from .server import log
         log(f'Build {job.build_id} failed:\n{traceback.format_exc().rstrip()}')
-        job.state, job.error = 'failed', f'{type(error).__name__}: {error}'
-        job.next = f'metaform build kind={job.kind} in a terminal, which prints the whole error'
+        with _lock:
+            job.error = f'{type(error).__name__}: {error}'
+            job.next = f'metaform build kind={job.kind} in a terminal, which prints the whole error'
+            job.state = 'failed'
     else:
-        job.state, job.path, job.prompt = 'done', built.path, built.prompt
+        with _lock:
+            job.path, job.prompt, job.state = built.path, built.prompt, 'done'
     _push(server, job)
 
 
-def download(handler: Handler, job: Job) -> None:
-    """The build's file as an attachment, so the browser saves it."""
-    if job.state != 'done' or job.path is None:
-        return handler.send(409, {'error': f'Build {job.build_id} is {job.state}; it has no file to download.',
-                                  'next': 'Wait for the build to finish.' if job.state == 'running'
+def download(handler: Handler, status: dict[str, Any], path: Path | None) -> None:
+    """The build's file as an attachment, so the browser saves it, sent from the open file a part at a time, since a
+    project wheel carrying the project's files can be large."""
+    if status['state'] != 'done' or path is None:
+        return handler.send(409, {'error': f'Build {status["build_id"]} is {status["state"]}; it has no file to '
+                                           'download.',
+                                  'next': 'Wait for the build to finish.' if status['state'] == 'running'
                                   else 'Build it again from the panel.'})
     try:
-        body = job.path.read_bytes()
+        held = path.open('rb')
     except OSError:
-        return handler.send(404, {'error': f'The file {job.path} is no longer there.',
+        return handler.send(404, {'error': f'The file {path} is no longer there.',
                                   'next': 'Build it again from the panel.'})
-    kind = 'application/zip' if job.path.suffix == '.zip' else 'application/octet-stream'
-    handler.reply(200, body, kind, {'Content-Disposition': f'attachment; filename="{job.path.name}"',
-                                    'Cache-Control': 'no-store'})
+    with held:
+        handler.send_response(200)
+        handler.send_header('Content-Type', 'application/zip' if path.suffix == '.zip' else 'application/octet-stream')
+        handler.send_header('Content-Length', str(os.fstat(held.fileno()).st_size))
+        handler.send_header('X-Content-Type-Options', 'nosniff')
+        handler.send_header('Content-Disposition', f'attachment; filename="{path.name}"')
+        handler.send_header('Cache-Control', 'no-store')
+        handler.end_headers()
+        shutil.copyfileobj(held, handler.wfile)

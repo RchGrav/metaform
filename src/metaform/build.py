@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import os
 import shutil
 import subprocess
 import sys
@@ -167,7 +168,10 @@ def _carry(requirements: list[str], per_module: dict[str, list[str]], work: Path
             continue
         for path in paths:
             source = target / path
-            if source.is_file() and '__pycache__' not in Path(path).parts and not path.startswith('..'):
+            # RECORD also names what an install puts beside the packages, such as scripts; only what is inside the
+            # target is a package's file.
+            if source.is_file() and '__pycache__' not in Path(path).parts \
+                    and source.resolve().is_relative_to(target.resolve()):
                 files[f'metaform/_vendor/{Path(path).as_posix()}'] = source.read_bytes()
     return files, notes
 
@@ -384,17 +388,32 @@ def _project_archive(project: str, files: bool) -> bytes:
     return archive.packed('project', project, export_document([project]), origin=origin)
 
 
-def _folder(name: str) -> Path:
-    """A new folder under the home's builds, named by the time; a second build in the same second takes the next
-    number, so no build writes over another."""
+def _folder() -> Path:
+    """A new folder under the home's builds, named by the time and made here, so no other build takes it; a second
+    build in the same second takes the next number, so no build writes over another, the web GUI's running at once
+    included."""
     stamp = datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')
     root = home.home() / 'builds'
+    root.mkdir(parents=True, exist_ok=True)
     folder, number = root / stamp, 1
-    while (folder / name).exists():
-        number += 1
-        folder = root / f'{stamp}-{number}'
-    folder.mkdir(parents=True, exist_ok=True)
-    return folder
+    while True:
+        try:
+            folder.mkdir()
+            return folder
+        except FileExistsError:
+            number += 1
+            folder = root / f'{stamp}-{number}'
+
+
+def _written(path: Path, write: Callable[[Path], object]) -> None:
+    """Write a build's file under a passing name and give it its own name only once it is whole, so a build stopped
+    part way, by an error or by the web GUI's server stopping, never leaves a file that looks finished."""
+    partial = path.with_name(path.name + '.part')
+    try:
+        write(partial)
+        os.replace(partial, path)
+    finally:
+        partial.unlink(missing_ok=True)
 
 
 def make(request: Request, folder: Path | None = None,
@@ -408,8 +427,8 @@ def make(request: Request, folder: Path | None = None,
         data = _project_archive(chosen.project, chosen.files)
         progress('write')
         name = f'{chosen.project}-{datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")}{archive.SUFFIX}'
-        path = _folder(name) / name
-        path.write_bytes(data)
+        path = _folder() / name
+        _written(path, lambda part: part.write_bytes(data))
         return Built(path, 'archive', chosen.project, (), ())
     carried = [item for item in _found() if item.id in chosen.modules]
     requirements, per_module = _requirements(carried)
@@ -460,11 +479,15 @@ def make(request: Request, folder: Path | None = None,
     record = ''.join(f'{name},{_digest(data)},{len(data)}\n' for name, data in sorted(files.items()))
     record += f'{info}/RECORD,,\n'
     files[f'{info}/RECORD'] = record.encode()
-    target = _folder(WHEEL)
+    target = _folder()
     wheel = target / WHEEL
-    with zipfile.ZipFile(wheel, 'w', compression=zipfile.ZIP_DEFLATED) as written:
-        for name in sorted(files):
-            written.writestr(name, files[name])
+
+    def zipped(part: Path) -> None:
+        with zipfile.ZipFile(part, 'w', compression=zipfile.ZIP_DEFLATED) as written:
+            for name in sorted(files):
+                written.writestr(name, files[name])
+
+    _written(wheel, zipped)
     if prompt is not None:
         (target / 'prompt.md').write_text(prompt, encoding='utf-8')
     if chosen.kind in ('installer', 'full'):  # what install registers; a project wheel is for a remote agent, MCP-010

@@ -359,3 +359,19 @@ def test_an_archive_readable_only_by_a_newer_metaform_is_refused_and_nothing_is_
     assert f'which a Metaform reads from archive version {archive.ARCHIVE_VERSION + 1}' in done.stderr
     assert 'Next: install Metaform 2099.1.1.1 or newer' in done.stderr
     assert 'proj' not in run('list', 'projects', env={'METAFORM_HOME': str(other)}).stdout.split()
+
+
+@pytest.mark.req('BASE-060')
+def test_a_project_archive_never_carries_what_a_link_reaches_outside_the_project(tmp_path):
+    """A project's files go to another machine; a link in the folder to a file outside it, such as a key, is not the
+    project's, and what it reaches is never packed."""
+    from metaform import archive
+    folder, outside = tmp_path / 'proj', tmp_path / 'secret.txt'
+    folder.mkdir()
+    (folder / 'main.py').write_text('print("hi")\n', encoding='utf-8')
+    outside.write_text('private\n', encoding='utf-8')
+    try:
+        (folder / 'key.txt').symlink_to(outside)
+    except OSError:
+        pytest.skip('this system does not let the test make a link')
+    assert set(archive.project_files(folder)) == {'main.py'}

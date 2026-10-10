@@ -69,8 +69,9 @@ def test_the_full_instructions_are_the_instructions_prompt_with_the_surfaced_mod
         notice = prompt_text(SOURCE / 'modules' / module, 'no_intake')
         return own if notice is None else f'{own} {notice}'
     listed = '\n'.join(line(module) for module in sorted(on))
-    assert [child.tag for child in element] == ['modules']
-    expected = (element.text or '') + listed + (element[0].tail or '')
+    assert [child.tag for child in element] == ['surface', 'modules']
+    opening = prompt(SOURCE / 'resources' / 'prompts.xml', 'surface_cli').text.strip()  # no server claimed on the CLI
+    expected = (element.text or '') + opening + (element[0].tail or '') + listed + (element[1].tail or '')
     assert run('help', 'agents', cwd=folder).stdout.strip() == expected.strip()
 
 

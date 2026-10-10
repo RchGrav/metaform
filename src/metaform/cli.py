@@ -1057,7 +1057,8 @@ docs.command(Command('help', 'Show an overview, an index, or the page for one co
                      details='Each command also takes --help, which shows only its syntax.', see_also=('intro',)))
 docs.command(Command('instructions', 'Show the instructions agents read, composed now for this folder.',
                      ('metaform instructions', 'metaform instructions <module>'),
-                     details="The same text as metaform help agents and the MCP server's instructions. It runs "
+                     details="The same text as metaform help agents and the MCP server's instructions, but for its "
+                             "first line, which says whether a server or the command line serves it. It runs "
                              "whatever the folder's command surface. With a module, that module's full "
                              "instructions, as metaform help agents <module> shows them; --connect-instructions "
                              "chooses whether the instructions list each module in one line or in full.",

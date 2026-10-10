@@ -75,6 +75,7 @@ from . import (
     prompt,
     release,
     require_eligible,
+    runner_of,
     session_state,
     startable,
     ticket,
@@ -98,6 +99,9 @@ SOURCES = 'sources'  # the layer the intake keeps each part's refs in, MAP-021: 
 PATCH_LIMIT = 200_000  # the most characters of a file's two texts a diff is worked out from; past it, its size only
 PATCH_KEPT = 60_000  # the most characters of one diff kept in the thread; the rest is in the file itself
 TOUCHED_KEPT = 40  # the parts of the map a session's state lists as touched, the latest first
+# What a session reported of itself that a resume carries over until the agent reports it again, so the page is not
+# left blank after a resume; each is named in `before_resume` while it still holds what was known before the resume.
+CARRIED = ('plan', 'usage', 'tokens', 'title', 'updated_at', 'commands')
 SETTING_LIMIT = 10.0  # the one wait for the agent to take a setting; inside the caller's REPLY_LIMIT
 LINE_MARK = re.compile(r'(?::\d+(?:-\d+)?|#L\d+(?:-L?\d+)?)$')  # a line or a range after a path: file.py:12, #L3-L9
 FOLDED = os.name == 'nt' or sys.platform == 'darwin'  # their file systems compare names without case, as a rule
@@ -329,8 +333,8 @@ def subject(store: Store, work_id: str, talk: str) -> tuple[str, str]:
                 f'`metaform map messages kind=question` for question {ref}, and its ticket with `metaform map work id={work_id}`')
     if kind == 'thread':
         return (f'what an earlier agent did in session {ref} on ticket {work_id}',
-                f'that session\'s whole thread with `metaform dispatch sessions id={work_id}` (session {ref}), and the '
-                f'ticket with `metaform map work id={work_id}`')
+                (f'that session\'s whole thread with `metaform dispatch sessions id={work_id}` (session {ref}), and '
+                 f'the ticket with `metaform map work id={work_id}`'))
     return f'the node {ref} of the map', f'`metaform map where {ref}`'
 
 
@@ -373,7 +377,7 @@ class Session:
         # What the session is, kept whole in its `state` line: capabilities, settings, commands, plan, usage, touched.
         self.acp: dict[str, Any] = {'agent': agent, 'agent_info': None, 'capabilities': {}, 'cwd': self.folder,
                                     'commands': [], 'plan': [], 'usage': None, 'tokens': None, 'title': None,
-                                    'touched': [], 'resumed': None}
+                                    'touched': [], 'resumed': None, 'before_resume': []}
         self.modes: dict[str, Any] | None = None  # the agent's session modes: current and available
         self.config: list[dict[str, Any]] = []  # the agent's config options, as it sent them
         self.sources: dict[str, list[dict[str, str]]] | None = None  # the sources layer's paths, read when needed
@@ -618,12 +622,17 @@ class Session:
                             await self.raise_signal('repeated-failure', calls=self.failed_count, tool=title)
                     else:
                         self.failed_input, self.failed_count = None, 0
+                if known.get('status') in ('failed', 'completed'):
+                    # Its line and its detail line hold what it did; a long session keeps no copy of each file's text.
+                    for field in ('content', 'locations', 'rawInput'):
+                        known.pop(field, None)
             elif kind == 'plan':
                 entries: list[Any] = data.get('entries') or []
                 said = [cast(dict[str, Any], entry) for entry in entries if isinstance(entry, dict)]
                 await self.note('plan', kind, '\n'.join(f'{entry.get("content")} ({entry.get("status")})'
                                                         for entry in said))
                 self.acp['plan'] = [{key: entry.get(key) for key in ('content', 'priority', 'status')} for entry in said]
+                self.reported('plan')
                 await self.save_state()
             elif kind in STATE_UPDATES:
                 self.updated(kind, data)
@@ -632,6 +641,11 @@ class Session:
                 rest = {key: value for key, value in data.items() if key != 'sessionUpdate'}
                 await self.note(kind, kind, json.dumps(rest, ensure_ascii=False))
 
+    def reported(self, key: str) -> None:
+        """The agent has reported this part of its state since a resume; a replay of its history has not."""
+        if not self.replaying and key in self.acp['before_resume']:
+            self.acp['before_resume'] = [held for held in self.acp['before_resume'] if held != key]
+
     def updated(self, kind: str, data: dict[str, Any]) -> None:
         """One update to what the session is, kept in its state."""
         if kind == 'available_commands_update':
@@ -639,6 +653,7 @@ class Session:
             self.acp['commands'] = [{'name': one.get('name'), 'description': one.get('description'),
                                      'hint': cast(dict[str, Any], one.get('input') or {}).get('hint')}
                                     for one in commands]
+            self.reported('commands')
         elif kind == 'current_mode_update':
             self.modes = {**(self.modes or {'available': []}), 'current': data.get('currentModeId')}
         elif kind == 'config_option_update':
@@ -647,8 +662,10 @@ class Session:
             for key, field in (('title', 'title'), ('updatedAt', 'updated_at')):
                 if key in data:
                     self.acp[field] = data[key]
+                    self.reported(field)
         elif kind == 'usage_update':
             self.acp['usage'] = {'used': data.get('used'), 'size': data.get('size'), 'cost': data.get('cost')}
+            self.reported('usage')
 
     # ------------------------------------------------------------------ what the session is, for the page
 
@@ -1036,6 +1053,13 @@ class Session:
                         self.store.take_work(self.work_id, None, self.by)
                 with self.store.tables() as tx:
                     if self.resume:  # the ended session's own row runs again
+                        # Two resumes at once, a second click on Resume, would run one ACP session twice: the first
+                        # to get here holds it, and a row another live runner of this work holds is not taken over.
+                        held = tx.rows('sessions', {'session_id': self.session_id}, limit=1).results
+                        other = held[0]['pid'] if held and held[0]['state'] == 'running' else None
+                        if other not in (None, os.getpid()) and runner_of(other) == self.work_id:
+                            raise Stop(f'Session {self.session_id} has been resumed already.',
+                                       f'metaform dispatch sessions id={self.work_id}')
                         tx.update('sessions', {'session_id': self.session_id},
                                   {key: row[key] for key in ('state', 'nonce', 'pid', 'port', 'token', 'how')})
                     else:
@@ -1105,8 +1129,10 @@ class Session:
                            'cannot be resumed')
 
     def continue_thread(self) -> None:
-        """Take up the ended session's thread: the names its lines are kept by, the last of their order, and what its
-        state held of the map it touched."""
+        """Take up the ended session's thread: the names its lines are kept by, the last of their order, what its
+        state held of the map it touched, and what it last reported of itself, its plan, usage, tokens, title and
+        commands, each named in `before_resume` until the agent reports it again. Its settings and capabilities are
+        not carried: the agent gives them afresh when it starts and resumes."""
         with self.store.tables(write=False) as tx:
             rows = tx.rows('lines', {'session_id': self.session_id}, by=('session_id', 'seq'), limit=0).results
         self.named = {str(row['name']) for row in rows}
@@ -1114,9 +1140,16 @@ class Session:
         self.flows = max((int(name[5:]) for name in self.named if name.startswith('flow:') and name[5:].isdigit()),
                          default=0)
         kept = next((row for row in rows if row['name'] == 'state'), None)
+        before: Any = None
         if kept is not None:
             with contextlib.suppress(ValueError, TypeError):
-                self.acp['touched'] = list(json.loads(str(kept['text'])).get('touched') or [])
+                before = json.loads(str(kept['text']))
+        if isinstance(before, dict):
+            held = cast(dict[str, Any], before)
+            self.acp['touched'] = list(held.get('touched') or [])
+            carried = [key for key in CARRIED if held.get(key) not in (None, [], '')]
+            self.acp.update({key: held[key] for key in carried})
+            self.acp['before_resume'] = carried
 
     def turn(self, text: str) -> None:
         if self.ending:
@@ -1154,6 +1187,7 @@ class Session:
                         if answer.usage is not None:  # the tokens of the session so far, as the agent counts them
                             self.acp['tokens'] = answer.usage.model_dump(mode='json', exclude_none=True,
                                                                          exclude={'field_meta'})
+                            self.reported('tokens')
                 except Exception as error:  # noqa: BLE001  the turn's end is noted whatever ended it
                     reason = f'error: {error}'
                 async with self.interrupt_lock:

@@ -845,8 +845,9 @@ def ask(ctx: Context) -> Any:
 
 
 def reply(ctx: Context) -> Any:
-    """Answer a question, or mark a message read, MAP-050."""
-    return _store(ctx).reply(ctx.nouns['id'], ctx.nouns.get('answer'))
+    """Answer a question, or mark a message read, MAP-050. Over MCP a question linked to a ticket is not answered:
+    it is a dispatched agent's permission request, the person's to answer, BASE-052."""
+    return _store(ctx).reply(ctx.nouns['id'], ctx.nouns.get('answer'), agent=ctx.surface == 'mcp')
 
 
 def reopen(ctx: Context) -> Any:

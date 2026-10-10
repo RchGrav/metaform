@@ -202,7 +202,9 @@ def stamp(db: sqlite3.Connection, version: str, compatible: str) -> None:
 
 
 def _number(value: str | None) -> int | None:
-    return int(value) if value is not None and value.isdigit() else None
+    """A layout version as a number, or None when it is not one: ASCII digits only, since `isdigit` also takes
+    characters such as `²` that `int` refuses, and a damaged or crafted value is refused rather than raised."""
+    return int(value) if value is not None and value.isascii() and value.isdigit() else None
 
 
 def _versions(db: sqlite3.Connection) -> tuple[str | None, str | None]:

@@ -44,8 +44,8 @@ from metaform import events, home, settings
 from metaform import module as chassis
 from metaform.data import (
     COLUMNS,
-    SCHEMA_VERSION,
     CONDITIONS,
+    SCHEMA_VERSION,
     NewerStore,
     Node,
     Outcome,
@@ -73,6 +73,9 @@ TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=u
          '.json': 'application/json', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.md': 'text/plain; charset=utf-8',
          '.txt': 'text/plain; charset=utf-8'}  # fixed, since Windows's registry can give .js a type browsers refuse
 PAGE_POLICY = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'"
+# Each static file's validator, VIEW-003: a hash of its bytes, kept for as long as the file's size and modification
+# time are unchanged, so a page load re-sends nothing unchanged and an edited file is sent again at once.
+_TAGS: dict[str, tuple[int, int, str]] = {}
 IMPORT_MAP = re.compile(rb'<script type="importmap">(.*?)</script>', re.DOTALL)
 DISPATCH_CHANGES = frozenset({'work', 'messages', 'map.glyphs', 'map.ticket_settings', 'map.eligible',
                               'map.question_work', 'dispatch.sessions', 'dispatch.questions', 'dispatch.settings',
@@ -557,7 +560,7 @@ class Handler(BaseHTTPRequestHandler):
         if path not in writes:
             return self.send(404, {'error': f'No such write: {path}.'})
         try:
-            body: Any = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)) or b'null')
+            body: Any = self.json_body()
         except ValueError:
             return self.send(400, {'error': 'The body is not JSON.'})
         given = cast(dict[str, Any], body) if isinstance(body, dict) else {}
@@ -1145,10 +1148,10 @@ class Handler(BaseHTTPRequestHandler):
             if given.get('thread') == 'false':
                 nouns['thread'] = False
             found = module_verb(given, 'dispatch', 'sessions', nouns)
+        except StoreError as error:  # the project is gone or its store cannot be read; a StoreError is a Stop too
+            return self.refuse(error, 404)
         except Stop:
             return self.send(200, {'sessions': [], 'lines': [], 'states': {}})
-        except StoreError as error:  # the project is gone or its store cannot be read: said, as every other read says it
-            return self.refuse(error, 404)
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
     def dispatch_claims(self, given: dict[str, str]) -> None:
@@ -1156,10 +1159,10 @@ class Handler(BaseHTTPRequestHandler):
         With dispatch not enabled there are none."""
         try:
             found = module_verb(given, 'dispatch', 'claims', {})
+        except StoreError as error:  # the project is gone or its store cannot be read; a StoreError is a Stop too
+            return self.refuse(error, 404)
         except Stop:
             return self.send(200, {'claims': [], 'proposals': {}})
-        except StoreError as error:
-            return self.refuse(error, 404)
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
     def dispatch_prompts(self, project_id: str) -> None:
@@ -1266,6 +1269,14 @@ class Handler(BaseHTTPRequestHandler):
                                   'message': f'{cleared.left} {cleared.remedy("use Clear project again")}'}]
         self.send(200, answer)
 
+    def json_body(self) -> Any:
+        """A write's JSON body, read to its stated length; raises ValueError when the length or the JSON is not
+        valid, so a negative length never reads until the client closes the connection."""
+        length = int(self.headers.get('Content-Length') or 0)
+        if length < 0:
+            raise ValueError(length)
+        return json.loads(self.rfile.read(length) or b'null')
+
     def given_token(self, query: dict[str, list[str]]) -> str | None:
         if query.get('t'):
             return query['t'][0]
@@ -1275,16 +1286,40 @@ class Handler(BaseHTTPRequestHandler):
         return cookie[COOKIE].value if COOKIE in cookie else None
 
     def file(self, base: Path, relative: str, *, set_cookie: bool = False) -> None:
+        """A file of the page or a bundled library, VIEW-003. The browser asks again before it uses its copy, so an
+        updated page is the page a person sees; the file's ETag lets the answer be a 304 with no body when the copy is
+        current. The vendor files are revalidated too: their addresses carry no version, so a copy kept without asking
+        could outlive an upgrade that changed them."""
         resolved = (base / relative).resolve()
         if not resolved.is_relative_to(base.resolve()) or not resolved.is_file():
             return self.send(404, {'error': 'Nothing here.'})
-        body = resolved.read_bytes()
         kind = TYPES.get(resolved.suffix.lower(), 'application/octet-stream')
-        # The browser asks again before it uses its copy, so an updated page is the page a person sees.
-        headers = {'Content-Security-Policy': policy(body, kind), 'Cache-Control': 'no-cache'}
+        held = resolved.stat()
+        known = _TAGS.get(str(resolved))
+        body = None if known is not None and known[:2] == (held.st_mtime_ns, held.st_size) else resolved.read_bytes()
+        if body is not None:
+            known = (held.st_mtime_ns, held.st_size, '"' + hashlib.sha256(body).hexdigest()[:32] + '"')
+            _TAGS[str(resolved)] = known
+        assert known is not None
+        tag = known[2]
+        current = current_copy(self.headers.get('If-None-Match'), tag)
+        if body is None and (not current or kind.startswith('text/html')):  # the page's policy is read from its body
+            body = resolved.read_bytes()
+        headers = {'Content-Security-Policy': policy(body or b'', kind), 'Cache-Control': 'no-cache', 'ETag': tag}
         if set_cookie and self.gui.token is not None:
             headers['Set-Cookie'] = f'{COOKIE}={self.gui.token}; Path=/; HttpOnly; SameSite=Strict'
+        if current:
+            return self.unchanged(headers)
+        assert body is not None
         self.reply(200, body, kind, headers)
+
+    def unchanged(self, headers: dict[str, str]) -> None:
+        """A 304: the browser's copy is current. It carries the headers the file is sent with and no body."""
+        self.send_response(304)
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        for key, value in headers.items():
+            self.send_header(key, value)
+        self.end_headers()
 
     def refuse(self, error: Exception, status: int) -> None:
         """Answer with the error and its next step; or, for a store newer than this server's code once the code on
@@ -1308,6 +1343,13 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         if self.command != 'HEAD':
             self.wfile.write(body)
+
+
+def current_copy(given: str | None, tag: str) -> bool:
+    """Whether an `If-None-Match` header names the file's ETag, compared weakly as RFC 9110 has a GET compare it."""
+    if not given:
+        return False
+    return any(part.strip() in ('*', tag, 'W/' + tag) for part in given.split(','))
 
 
 def _versions(given: dict[str, str]) -> dict[str, Any]:
@@ -1523,8 +1565,9 @@ def _stage(store: Store, target: Node, condition: str) -> Any:
               and not (record.task or '').strip() and record.node_kind == target.kind and record.node_id == target.id]
     kept = '' if condition == 'built' else condition
     if stated:
-        return [store.finish_work(record.id, 'Built.') if not kept else store.edit_work(record.id, {'condition': kept})
-                for record in stated][0]
+        changed = [store.finish_work(record.id, 'Built.') if not kept else store.edit_work(record.id, {'condition': kept})
+                   for record in stated]  # every stated record changes; the first answers
+        return changed[0]
     return store.add_work(target, kept, note='Set by the person on the page.') if kept else None
 
 

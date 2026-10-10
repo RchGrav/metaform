@@ -298,10 +298,11 @@ def surface(folder: Path) -> list[Module]:
     return composed.surfaced(folder)
 
 
-def instructions(folder: Path, project: str | None = None) -> str:
-    """The composed instructions for agents working from this folder, MCP-007."""
+def instructions(folder: Path, project: str | None = None, *, surface: str = 'cli') -> str:
+    """The composed instructions for agents working from this folder, MCP-007; `surface` is where they are served,
+    `mcp` only for the MCP server, so their opening line is true where they are read."""
     from . import instructions as composed
-    return composed.compose(folder, project)
+    return composed.compose(folder, project, surface=surface)
 
 
 def module_instructions(folder: Path, identifier: str, project: str | None = None) -> str | None:

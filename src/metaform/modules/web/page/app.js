@@ -2181,9 +2181,7 @@ const LABEL = {size: 11, chosen: 13, wide: 9, line: 1.15, padX: 6, padY: 4, stro
   out: 12,  // how far a label stands out from its ball's surface, away from the map's middle, in the map's units
   // the size of a label's letters in the map, in its units, about an element's height; painted sharper at each
   // `sharper` step of the size it is seen at, up to `largest`; and the farthest label's opacity, the nearest solid
-  letters: 10, largest: 4, sharper: 0.5, farthest: 0.34,
-  // in the small area, the share of its width the selected node's name spans, close in on it and with the whole map
-  smallNear: 0.8, smallFar: 0.5};
+  letters: 10, largest: 4, sharper: 0.5, farthest: 0.34};
 const tags = new Map();   // by node id: the label's sprite, its canvas, what it shows and where it is on the screen
 const LABELS = {group: null, plane: null, on: true, only: null, pen: null, measured: new Map()};
 const OUT = new THREE.Vector3(), UP = new THREE.Vector3(), AT = new THREE.Vector3(), middle = new THREE.Vector3();
@@ -2286,7 +2284,7 @@ function layered() {
     exclude: css('--exclude'), ground: css('--ground'), sans: css('--sans')};  // read once a frame, not once a label
   if (LABELS.group) LABELS.group.visible = LABELS.on;
   UP.set(0, 1, 0).applyQuaternion(camera.quaternion);
-  const spheres = [], shown = [], small = $('.app').classList.contains('swapped'), focus = away3d();
+  const spheres = [], shown = [];
   let nearest = Infinity, deepest = -Infinity, placed = 0;
   middle.set(0, 0, 0);  // the map's middle, its nodes' mean place, which the names stand away from
   for (const node of G.graphData().nodes) {
@@ -2329,15 +2327,7 @@ function layered() {
     // straight up or down
     tag.sprite.up.copy(Math.abs(OUT.y) > 0.98 ? UP : Y_UP);
     tag.sprite.lookAt(AT.copy(tag.sprite.position).add(OUT));
-    // In the small area the selected node's name is set to the area's width, to be read there: LABEL.smallNear of it
-    // with the camera in on the node, LABEL.smallFar with the whole map in view, and between as the camera moves.
-    let seen = grown, size = LABEL.letters / LABEL.size;
-    if (small && node.id === S.selected && shape.width) {
-      const out = V3.whole ? Math.min(1, Math.max(0, (focus / V3.whole - 0.4) / 0.6)) : 1;
-      seen = (LABEL.smallNear + (LABEL.smallFar - LABEL.smallNear) * out) * area.width / shape.width;
-      size = seen * perPixel(Math.max(1e-3, -AT.copy(tag.sprite.position).applyMatrix4(camera.matrixWorldInverse).z));
-      tag.sprite.quaternion.copy(camera.quaternion);  // turned to the eye, so it is read from any side of the map
-    }
+    const seen = grown, size = LABEL.letters / LABEL.size;
     tag.sprite.scale.set(shape.width * size, shape.height * size, 1);
     const anchor = G.graph2ScreenCoords(tag.sprite.position.x, tag.sprite.position.y, tag.sprite.position.z);
     tag.rect = {left: anchor.x - shape.width * seen / 2, right: anchor.x + shape.width * seen / 2,
@@ -2623,7 +2613,7 @@ function flight(now) {
  * shown, or `toward` of the way from there to the ball `on`, and the distance, the least at which every ball is in
  * view. */
 const LOOK = {back: new THREE.Vector3(), right: new THREE.Vector3(), up: new THREE.Vector3(), at: new THREE.Vector3()};
-function framed(balls, {room = 60, on = null, toward = 0, facing = null} = {}) {
+function framed(balls, {room = 60, on = null, toward = 0, facing = null, mass = 0} = {}) {
   // seen the way the camera looks now, or from `facing`, a turn and a tilt
   const here = {...cameraNow(), ...(facing || {})}, camera = G.camera(), box = $('#stage').getBoundingClientRect();
   const {back, right, up, at} = LOOK;
@@ -2646,6 +2636,18 @@ function framed(balls, {room = 60, on = null, toward = 0, facing = null} = {}) {
     low = [Math.min(low[0], x - ball.r), Math.min(low[1], y - ball.r)];
     high = [Math.max(high[0], x + ball.r), Math.max(high[1], y + ball.r)];
   }
+  if (mass && balls.length >= 6) {
+    // The map's mass: across and up as the camera sees them, the spread between the `mass` quantile and its mirror on
+    // each axis, so the few nodes far out on their own do not set the frame and may run off the edges.
+    const xs = [], ys = [];
+    for (const ball of balls) { at.set(ball.x, ball.y, ball.z).sub(middle); xs.push(at.dot(right)); ys.push(at.dot(up)); }
+    const cut = (values, share) => { values.sort((a, b) => a - b); return values[Math.round(share * (values.length - 1))]; };
+    low = [cut(xs, mass), cut(ys, mass)];
+    high = [cut(xs, 1 - mass), cut(ys, 1 - mass)];
+    middle.addScaledVector(right, (low[0] + high[0]) / 2).addScaledVector(up, (low[1] + high[1]) / 2);
+    const far = Math.max((high[0] - low[0]) / 2 / across, (high[1] - low[1]) / 2 / down);
+    return {x: middle.x, y: middle.y, z: middle.z, turn: here.turn, tilt: here.tilt, far: Math.log(Math.max(far, 1))};
+  }
   middle.addScaledVector(right, (low[0] + high[0]) / 2).addScaledVector(up, (low[1] + high[1]) / 2);
   if (on) middle.lerp(at.set(on.x, on.y, on.z), toward);
   let far = 0;
@@ -2659,23 +2661,21 @@ function framed(balls, {room = 60, on = null, toward = 0, facing = null} = {}) {
 }
 const ball = node => ({x: node.x, y: node.y, z: node.z, r: ballOf(node)});
 const drawnBalls = data => data.nodes.filter(node => node.x !== undefined && shownNode(node)).map(ball);
-/* What a fit of the whole map frames: every node, or in the small area the middle FIT_SMALL of them, the nodes nearest
- * the map's middle, so the small map is seen close enough to read and its outermost nodes may run off its edges. */
-const FIT_SMALL = 0.8;
-function fitBalls(data) {
-  const balls = drawnBalls(data);
-  if (!$('.app').classList.contains('swapped') || balls.length < 6) return balls;
-  const middle = balls.reduce((sum, one) => ({x: sum.x + one.x / balls.length, y: sum.y + one.y / balls.length,
-    z: sum.z + one.z / balls.length}), {x: 0, y: 0, z: 0});
-  const away = one => Math.hypot(one.x - middle.x, one.y - middle.y, one.z - middle.z);
-  return balls.sort((one, two) => away(one) - away(two)).slice(0, Math.ceil(balls.length * FIT_SMALL));
-}
+/* What a fit of the whole map frames: its mass, every drawn node with the outer FIT share of their spread trimmed
+ * from each side as the camera sees it, `framed`'s `mass`, so the map is seen close enough to read and the few nodes
+ * far out on their own may run off the edges; a little more is trimmed in the small area, where room is short. */
+const FIT = {large: 0.1, small: 0.12};
+const fitTrim = () => $('.app').classList.contains('swapped') ? FIT.small : FIT.large;
+const fitBalls = data => drawnBalls(data);
 function fit3d(time = 700, room = 60) {
   if (!G) return;
+  // In the small area the map is read by its selected node, framed by its name, VIEW-005: the whole map is too small
+  // there to read, so its fit is the node's name across NAME.out of the width.
+  if (small3d() && S.selected && fly3d(S.selected, true, NAME.out)) return;
   const balls = fitBalls(G.graphData());
   Object.assign(V3, {auto: true, asked: true});
   if (!balls.length) return;
-  flyTo(framed(balls, {room}), {length: time / 1000, done: () => { V3.whole = away3d(); V3.fits++; }});
+  flyTo(framed(balls, {room, mass: fitTrim()}), {length: time / 1000, done: () => { V3.whole = away3d(); V3.fits++; }});
 }
 /* A selected node is turned to face the eye: the camera swings round the map's middle to the side the node stands
  * out on, so the node is in front, its sign turned to the eye, VIEW-038, as if the whole map had turned to present it.
@@ -2691,11 +2691,23 @@ function facingOf(node, balls) {
   if (away < 1e-3) return null;  // the node at the middle: seen from where the camera is
   return {turn: Math.atan2(dx, dz), tilt: Math.min(Math.PI / 2 + TILT, Math.max(Math.PI / 2 - TILT, Math.acos(dy / away)))};
 }
-/* A selection turns the map to the node, VIEW-008: the node at the center of the view, facing the eye, `facingOf`,
- * at the zoom the person has, so a map seen whole stays whole. `close`, the 3D map's Zoom and Fit, comes in on it:
- * close enough that its three nearest neighbors frame it, at most four tenths of the whole map's distance, never so
- * near that the node fills the screen. */
-function fly3d(id, close = false) {
+/* A selection turns the map to the node and comes in on it, VIEW-008: the node at the center of the view, facing the
+ * eye, `facingOf`, close enough that its three nearest neighbors frame it, at most four tenths of the whole map's
+ * distance, never so near that the node fills the screen; the 3D map's Zoom and Fit go to the same view. Without
+ * `close` it keeps the zoom the camera has. */
+// The share of the small area's width the selected node's name spans: framed out, and in close on it.
+const NAME = {out: 0.3, in: 0.8};
+const small3d = () => $('.app').classList.contains('swapped');
+/* How far the camera stands, as a log, for the node's name, at its real size in the map, to span `share` of the
+ * view's width; null while the name is not drawn yet. */
+function nameFar(node, share) {
+  const sign = tags.get(node.id)?.sprite;
+  if (!sign?.scale.x) return null;
+  const camera = G.camera(), across = 2 * Math.tan(camera.fov * Math.PI / 360) * camera.aspect;
+  const out = Math.hypot(sign.position.x - node.x, sign.position.y - node.y, sign.position.z - node.z);
+  return Math.log(sign.scale.x / (share * across) + out);
+}
+function fly3d(id, close = true, share = NAME.in) {
   const data = G ? G.graphData() : null, node = data?.nodes.find(item => item.id === id);
   if (!node || node.x === undefined) return false;
   const near = new Set(node.id === S.selected ? S.neighbors : []);
@@ -2710,9 +2722,13 @@ function fly3d(id, close = false) {
     .sort((one, two) => reach(one) - reach(two)).slice(0, 3);
   const facing = facingOf(node, fitBalls(data));
   const view = framed([ball(node), ...around.map(ball)], {room: 70, on: node, toward: 1, facing});
-  const whole = framed(fitBalls(data), {facing}).far;
+  const whole = framed(fitBalls(data), {facing, mass: fitTrim()}).far;
   view.far = close ? Math.min(Math.max(view.far, Math.log(ballOf(node) * 7)), whole + Math.log(0.4))
     : (FLIGHT.on ? FLIGHT.to.far : cameraNow().far);  // a selection keeps the zoom the person has
+  // In the small area the camera stands where the node's own name spans `share` of the window, so the name is read
+  // there because the eye is that near it, not because it was drawn larger than the map holds it.
+  const named = close && small3d() ? nameFar(node, share) : null;
+  if (named !== null) view.far = named;
   V3.auto = false;
   flyTo(view);
   return true;
@@ -2724,7 +2740,7 @@ function frameWhileSpreading(now, data) {
   if (V3.asked || !V3.auto || !FRAMES.engine || MEM.key || reduced() || now - V3.followed < 250) return;
   V3.followed = now;
   const balls = fitBalls(data);
-  if (balls.length > 1) flyTo(framed(balls), {length: 0.9});
+  if (balls.length > 1) flyTo(framed(balls, {mass: fitTrim()}), {length: 0.9});
 }
 /* Once the layout has settled, the map is fitted to the view, so the shape it settled into is seen whole, unless a
  * hand or a selection has moved the camera since the page last fitted it, or the layout is held, or the camera already
@@ -2733,7 +2749,7 @@ function settled3d() {
   if (!G || !V3.auto || FLIGHT.on || MEM.key || $('#pauseBtn').dataset.paused === 'true') return;
   const balls = fitBalls(G.graphData());
   if (!balls.length) return;
-  const view = framed(balls), here = cameraNow();
+  const view = framed(balls, {mass: fitTrim()}), here = cameraNow();
   const off = Math.hypot(view.x - here.x, view.y - here.y, view.z - here.z) / Math.exp(here.far);
   if (Math.abs(view.far - here.far) > 0.06 || off > 0.04) fit3d(1100);
 }
@@ -2750,6 +2766,8 @@ MODES3D.box = h('div', {class: 'segmented modes3d', role: 'radiogroup', 'aria-la
     onclick: event => { event.stopPropagation(); if (S.selected) fly3d(S.selected, true); }}, 'Zoom'));
 $('#big3d .mapbtns').prepend(MODES3D.box);
 function showModes3d() {  // each frame, from where the camera stands or is flying to
+  // the small area has no whole map to show, only the selected node framed out or in, which its Fit moves between
+  MODES3D.box.hidden = small3d();
   const far = FLIGHT.on ? Math.exp(FLIGHT.to.far) : away3d(), whole = V3.whole && far >= V3.whole * 0.8;
   const said = V3.whole ? (whole ? 'whole' : 'zoom') : '';
   if (said === MODES3D.said) return;
@@ -2759,6 +2777,13 @@ function showModes3d() {  // each frame, from where the camera stands or is flyi
 }
 $('#fit3dBtn').onclick = () => {
   if (!G) return;
+  const node = small3d() && S.selected ? G.graphData().nodes.find(item => item.id === S.selected) : null;
+  const out = node ? nameFar(node, NAME.out) : null, near = node ? nameFar(node, NAME.in) : null;
+  if (out !== null && near !== null) {  // in the small area Fit goes between the name framed out and in close
+    const here = Math.log(Math.max(away3d(), 1e-3));
+    fly3d(S.selected, true, Math.abs(here - near) < Math.abs(here - out) ? NAME.out : NAME.in);
+    return;
+  }
   const back = V3.whole && away3d() >= V3.whole * 0.8;
   if (back && S.selected && fly3d(S.selected, true)) return;
   fit3d();

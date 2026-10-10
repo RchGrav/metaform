@@ -126,9 +126,14 @@ class Dispatch:
         return self
 
     def entries(self):
+        """Each whole line the fake agent has logged. The agent appends while a test reads, and a long line, such as
+        a logged prompt, can be read half written; only what ends in a newline is complete, so the rest is left for
+        the next read rather than parsed, whatever the timing."""
         if not self.log.exists():
             return []
-        return [json.loads(line) for line in self.log.read_text(encoding='utf-8').splitlines() if line.strip()]
+        written = self.log.read_bytes()
+        whole = written[:written.rfind(b'\n') + 1].decode('utf-8')
+        return [json.loads(line) for line in whole.splitlines() if line.strip()]
 
     def received(self, method):
         return [entry['message'] for entry in self.entries() if entry.get('message', {}).get('method') == method]
@@ -633,7 +638,7 @@ def test_a_work_claim_holds_its_part_of_the_map_from_its_first_ticket_taken_unti
     an issue raised there waits; when its tickets are done the claim ends. The sentinel's proposals are kept for the
     page with the addresses each would reserve."""
     from metaform.data import Node
-    claims = lambda: json.loads(run('dispatch', 'claims', '--json', cwd=dispatch.folder).stdout)  # noqa: E731
+    claims = lambda: json.loads(run('dispatch', 'claims', '--json', cwd=dispatch.folder).stdout)
     made = json.loads(run('dispatch', 'claim', 'Quieter alarm', f'nodes=["{NODE}"]', f'work=["{dispatch.id}"]',
                           '--json', cwd=dispatch.folder).stdout)
     assert (made['state'], made['nodes'], made['work']) == ('proposed', [NODE], [dispatch.id])
@@ -970,8 +975,8 @@ def test_the_session_state_and_each_edit_are_structured_and_a_file_is_placed_on_
     location, each file at the node whose refs name it, so the page shows what the agent touches on the map."""
     dispatch.start('hold', **rich(dispatch))
     eventually(lambda: dispatch.logged('grandchild'))
-    found = eventually(lambda: (lambda got: got if got['states'].get('fake-session-1', {}).get('usage') else None)(
-        read(run, dispatch)))
+    found = eventually(lambda: got if (got := read(run, dispatch))['states'].get('fake-session-1', {}).get('usage')
+                       else None)
     state = found['states']['fake-session-1']
     assert state['agent_info']['name'] == 'fake-agent' and state['capabilities']['load'] is False
     assert Path(state['cwd']).resolve() == dispatch.folder.resolve()
@@ -1005,8 +1010,8 @@ def test_the_person_sets_a_running_sessions_mode_and_model_and_a_choice_it_does_
         ('fake-session-1', 'model', 'large')
     run('dispatch', 'configure', dispatch.id, 'mode', '--', 'plan', cwd=dispatch.folder)
     assert dispatch.received('session/set_mode')[0]['params']['modeId'] == 'plan'
-    settings = eventually(lambda: (lambda state: state if state['settings'][0]['current'] == 'plan' else None)(
-        read(run, dispatch)['states']['fake-session-1']))['settings']
+    settings = eventually(lambda: state if (state := read(run, dispatch)['states']['fake-session-1'])['settings'][0][
+        'current'] == 'plan' else None)['settings']
     assert [one['current'] for one in settings] == ['plan', 'large']
     assert [line['text'] for line in read(run, dispatch)['lines'] if line['kind'] == 'setting'] == \
         ['Model set to Large.', 'Mode set to Plan.']
@@ -1063,7 +1068,10 @@ def test_an_ended_session_is_resumed_in_place_where_its_agent_can_load_it(dispat
     assert Path(load['params']['cwd']).resolve() == dispatch.folder.resolve()
     eventually(lambda: dispatch.session().extra['state'] == 'running')
     assert len(dispatch.items('session')) == 1, 'the ended session itself runs again'
-    assert read(run, dispatch)['states']['fake-session-1']['resumed'] == 'load'
+    resumed = read(run, dispatch)['states']['fake-session-1']
+    assert resumed['resumed'] == 'load'
+    assert [entry['status'] for entry in resumed['plan']] == ['completed', 'pending'] \
+        and resumed['before_resume'] == ['plan'], 'what the agent last reported stays, marked as before the resume'
     run('dispatch', 'message', dispatch.id, 'Carry on', cwd=dispatch.folder)
     prompt = eventually(lambda: dispatch.received('session/prompt')[1:])[0]
     assert prompt['params']['sessionId'] == 'fake-session-1'
@@ -1125,3 +1133,21 @@ def test_an_intake_agent_follows_the_served_intake_holds_no_ticket_and_one_runs_
     [outcome] = eventually(lambda: dispatch.logged('permission'))
     assert outcome == {'outcome': {'outcome': 'selected', 'optionId': 'reject'}}
     run('dispatch', 'stop', work_id, cwd=dispatch.folder)
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.req('MAP-050')
+def test_an_agent_over_mcp_cannot_answer_a_permission_question_at_its_node(dispatch):
+    """A permission request is the person's to answer: `map reply` over MCP, the agent's own surface, refuses its
+    question at the node, which stays open, and the agent goes on waiting."""
+    from metaform.data import StoreError
+    from metaform.module import call, context, surface
+    dispatch.start('ask')
+    [question] = eventually(dispatch.questions)
+    reply = next(verb for module in surface(dispatch.folder) if module.id == 'map'
+                 for verb in module.verbs if verb.name == 'reply')
+    with pytest.raises(StoreError, match='only the person answers it'):
+        call(reply.run, context('map', dispatch.folder, project='proj', surface='mcp',
+                                nouns={'id': question.id, 'answer': 'Allow once'}))
+    assert [one.id for one in dispatch.questions()] == [question.id] and not dispatch.logged('permission')
+    dispatch.stop()

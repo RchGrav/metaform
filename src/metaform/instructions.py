@@ -9,7 +9,10 @@ everything past 2,048 characters. With full, each module's whole instructions
 prompt is listed. With no project for the folder, the registered projects and
 the way to register one follow; with debug on, the trouble report and debug
 prompts end it. Every word is from the prompt files, never from here.
-`metaform help agents` and the MCP server's instructions are this same text.
+`metaform help agents` and the MCP server's instructions are this same text, but
+for its opening line: the MCP server's names the server, and every other surface's,
+the command line and a project wheel's run, names only Metaform, since no server
+is known to be connected there.
 """
 from __future__ import annotations
 
@@ -59,11 +62,14 @@ def module_text(folder: Path, identifier: str, project: str | None = None) -> st
     return _listed(found, folder, chosen)
 
 
-def compose(folder: Path, project: str | None = None) -> str:
+def compose(folder: Path, project: str | None = None, *, surface: str = 'cli') -> str:
+    """The instructions for agents working from this folder; `surface` is where they are served, `mcp` for the MCP
+    server, so the opening line claims a server only when one serves them."""
     chosen = project if project is not None else context.project_for(folder)
     full = settings.value('connect_instructions', folder) == 'full'
     listed = [line for line in (_listed(module, folder, chosen, full=full) for module in surfaced(folder)) if line]
-    parts = [prompt_files.chassis('instructions', modules='\n'.join(listed))]
+    opening = prompt_files.chassis('surface_mcp' if surface == 'mcp' else 'surface_cli')
+    parts = [prompt_files.chassis('instructions', surface=opening, modules='\n'.join(listed))]
     if not full:
         parts.append(prompt_files.chassis('more'))
     if chosen is None:
