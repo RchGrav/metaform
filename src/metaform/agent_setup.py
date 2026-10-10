@@ -60,7 +60,8 @@ def _installed_pointer(content: bytes, path: Path) -> bytes | None:
         return None
     if content.count(BEGIN) == content.count(END) == 1:
         start, end = content.index(BEGIN), content.index(END)
-        middle = content[start + len(BEGIN):end]
+        # An editor that turned the file's line endings to CRLF, as Windows editors do, has not edited the block.
+        middle = content[start + len(BEGIN):end].replace(b'\r\n', b'\n')
         if middle.startswith(b'\n' + DIGEST):
             marker, _, payload = middle[1:].partition(b'\n')
             intact = marker == DIGEST + hashlib.sha256(payload).hexdigest().encode('ascii') + b' -->'
@@ -69,8 +70,8 @@ def _installed_pointer(content: bytes, path: Path) -> bytes | None:
             intact = middle == b'\n' + prompt_files.chassis('global_instructions').encode('utf-8') + b'\n'
         if start < end and intact:
             finish = end + len(END)
-            if content[finish:finish + 1] == b'\n':
-                finish += 1
+            finish += next((len(ending) for ending in (b'\r\n', b'\n')
+                            if content[finish:finish + len(ending)] == ending), 0)
             return content[start:finish]
     raise Stop(f'{path} has an edited Metaform instruction block or malformed ownership markers; '
                'Metaform left it unchanged.', 'metaform help provision')
@@ -157,20 +158,21 @@ def prepare(tool: str, user: Path, codex: Path, *, remove: bool = False) -> list
     filename = {'claude': 'CLAUDE.md', 'codex': 'AGENTS.md', 'gemini': 'GEMINI.md'}[tool]
     path = folder / filename
     before = path.read_bytes() if path.exists() else None
-    block = pointer_block()
     content = before or b''
+    newline = b'\r\n' if b'\r\n' in content else b'\n'  # the block takes the file's own line endings
+    block = pointer_block().replace(b'\n', newline)
     installed = _installed_pointer(content, path)
     if remove:
         after = content
         if installed is not None:
-            separated = b'\n\n' + installed
+            separated = newline * 2 + installed
             after = content.replace(separated if separated in content else installed, b'', 1)
     elif installed is not None:
         after = content.replace(installed, block, 1)
     elif prompt_files.chassis('global_instructions').encode('utf-8') in content:
         after = content
     else:
-        after = content + (b'\n\n' if content else b'') + block
+        after = content + (newline * 2 if content else b'') + block
     changes = [] if after == content else [Change(path, before, after, 'remove Metaform pointer' if remove else
                                                  prompt_files.chassis('global_instructions'))]
     if tool in ('claude', 'gemini'):
@@ -187,11 +189,11 @@ def owned(tool: str, user: Path, codex: Path) -> bool:
     path = folder / filename
     if path.is_file() and BEGIN in path.read_bytes():
         return True
-    settings = folder / 'settings.json'
-    if tool not in ('claude', 'gemini') or not settings.is_file():
+    hooks = folder / 'settings.json'
+    if tool not in ('claude', 'gemini') or not hooks.is_file():
         return False
     try:
-        data: Any = json.loads(settings.read_bytes())
+        data: Any = json.loads(hooks.read_bytes())
         event = 'PreToolUse' if tool == 'claude' else 'AfterTool'
         return any(_ours(handler) for entry in data.get('hooks', {}).get(event, [])
                    for handler in entry.get('hooks', []))

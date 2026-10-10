@@ -321,3 +321,12 @@ def test_the_graph_read_pages_each_visible_element_with_its_nearest_parent_and_t
     raw = store.graph(raw=True, limit=0)
     assert set(addresses) | {'code.timer.kitchen.secret'} == {entry.element.address for entry in raw.elements}
     assert hidden.id in [join.id for join in raw.joins]
+
+
+@pytest.mark.req('STORE-005')
+def test_a_list_read_given_a_cursor_it_never_returned_stops_with_a_next_step(store):
+    from metaform.data import StoreError
+    small_map(store)
+    with pytest.raises(StoreError) as stopped:
+        store.layers(after='intake-1')
+    assert stopped.value.next_step

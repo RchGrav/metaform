@@ -34,6 +34,7 @@ from metaform.module import Context, Module, Noun, Stop, Verb
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
 SHIPS_DISABLED = False
+REMOTE_AGENT = False  # the web GUI needs a screen and a browser
 
 WAIT = 15.0  # the limit on `start`'s one wait for the server's ready line, and on `stop`'s for its stream to end
 WILDCARDS = ('0.0.0.0', '::', '')

@@ -85,6 +85,7 @@ from metaform.module import (
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
 SHIPS_DISABLED = True
+REMOTE_AGENT = False  # a demonstration of the module contract, with nothing for project work
 
 LAYER = 'hello.greetings'
 HOLDER = 'code.module.hello'

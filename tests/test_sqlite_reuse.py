@@ -60,7 +60,7 @@ def test_external_commits_and_newer_versions_are_seen_by_next_read(database):
         other.execute("INSERT INTO records VALUES ('external')")
     assert read(database)[1] == ['first', 'external']
     with closing(sqlite3.connect(database, isolation_level=None)) as other:
-        other.execute("UPDATE meta SET value='999' WHERE key='schema_version'")
+        other.execute("UPDATE meta SET value='999' WHERE key IN ('schema_version', 'compatible_from')")
     with pytest.raises(StoreError, match='schema version 999'):
         read(database)
 

@@ -36,4 +36,36 @@ modules available.
 <!-- Follows stop in the instructions while the debug setting is on, and asks the agent for feedback on the Metaform
      process, MCP-031 and CLI-034. -->
 <debug>Submit feedback on the Metaform process with the same command: bad semantics, a command that did not match what it said it takes, where you got stuck.</debug>
+<!-- The remote agent's prompts, BASE-060. remote_wrapper and remote_onboarding are prompts of the prompt store, edited
+     in the prompt editor, so their slots are written as text the build fills in: {wheel}, the wheel's file name;
+     {project}, the project's id; {task}, the person's task as written, or remote_onboarding when the person gives
+     none. A project build wraps the task in remote_wrapper, and the wheel carries the result. -->
+<remote_wrapper>You are working on the project {project} with Metaform. Metaform holds the project's functional map: what each part of the project is for, and how the parts serve one another.
+
+The file uploaded with this message, {wheel}, is Metaform carrying the project. It is a Python wheel that runs directly with Python 3.11 or newer, with no install and no network.
+
+1. Run it first, from an empty folder of its own, which becomes the project's folder: `python {wheel}`, with the path to where the file was uploaded. The first run registers the project, unpacks its files into that folder when the wheel carries them, opens your working layer, and prints Metaform's instructions, the map's entry and how to return your work. Read all of it.
+2. Run each Metaform command the same way, from that folder: `python {wheel} &lt;command&gt;`. `python {wheel} help` lists the commands, and `python {wheel} help &lt;command&gt;` explains one.
+3. Record on the map what you learn and decide as you work. A write that names no layer goes to your working layer, and your working layer is what travels back to the person.
+4. Return your work with `python {wheel} return note="&lt;what you did, and what is left&gt;"`. It writes one archive holding your working layer, your file changes and your note, and prints where the archive is. Offer that archive to the person as a download. Each return writes a new archive with all of your work so far.
+
+Your task:
+
+{task}</remote_wrapper>
+<!-- The task a project build gives the remote agent when the person writes none, BASE-060: learn the project, tell the
+     person about it, and wait for instructions. Its slots are remote_wrapper's. -->
+<remote_onboarding>Get to know this project, then follow the person's instructions.
+
+1. Run the wheel and read everything it prints.
+2. Take in the map from its entry: the elements and joins it shows are where the project starts. Read further around any address with `python {wheel} map where &lt;address&gt;`.
+3. Tell the person what the project is and what it is for, as the map shows it, in a few short paragraphs.
+4. Tell the person which Metaform commands you have, and that your work comes back to them through `python {wheel} return` as an archive they download.
+5. Then follow the person's instructions in chat.</remote_onboarding>
+<!-- The description of the working layer a project wheel's first run opens, its variable, LAYER-002 and BASE-060. -->
+<remote_layer>What a remote agent learned, decided and changed while it worked on the project from a hosted sandbox, returned to the person in one archive.</remote_layer>
+<!-- Ends what a project wheel's run prints, BASE-060: how the remote agent returns its work. <wheel/> is the wheel's
+     file name and <layer/> the working layer. -->
+<remote_return>When your work is ready, or the person asks for it, run `python <wheel/> return note="&lt;what you did, and what is left&gt;"`. It writes one archive of your working layer, your file changes against the files the wheel carried, and your note, and prints where the archive is. Offer that archive to the person as a download. A write that names no layer goes to your working layer, <layer/>.</remote_return>
+<!-- What return prints after the archive's path, BASE-060. <archive/> is the archive's path. -->
+<remote_returned>Offer this archive to the person as a download: <archive/>. It holds your working layer, your file changes and your note. The person adds it to their Metaform with `metaform import &lt;file&gt;`.</remote_returned>
 </prompts>

@@ -40,7 +40,7 @@ from .module import Context, Module, call
 
 RESERVED = {'help', 'add', 'list', 'set', 'unset', 'config', 'enable', 'disable', 'activate', 'import', 'export',
             'query', 'build', 'install', 'uninstall', 'feedback', 'read', 'extract', 'prompts', 'prompt', 'clear', 'restore', 'remove', 'chassis',
-            'alias'}
+            'alias', 'instructions', 'provision', 'return'}
 SYSTEM: Traversable = importlib.resources.files('metaform') / 'modules'
 TOOL_NAME = re.compile(r'^[a-zA-Z0-9_-]{1,64}$')
 

@@ -58,6 +58,7 @@ from metaform.module import Module
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
 SHIPS_DISABLED = True
+REMOTE_AGENT = False  # the empty start of a module; a copy declares its own
 
 MODULE = Module(
     id='template',

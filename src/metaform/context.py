@@ -32,6 +32,7 @@ def build(module: str, folder: Path, *, project: str | None = None, nouns: dict[
     """A Context for one operation, with the project and store resolved for its folder."""
     chosen = project_for(folder, project) if resolve else project
     toggled = list(switches['layers']) if switches and isinstance(switches.get('layers'), list) else settings.toggled_layers(folder)
-    store = Store(chosen, toggled=toggled, module=module) if chosen else None
+    store = Store(chosen, toggled=toggled, module=module,
+                  write_layer=settings.value('write_layer', folder) or None) if chosen else None
     return Context(module=module, folder=folder, project=chosen, store=store, nouns=dict(nouns or {}),
                    switches=dict(switches or {}), sink=sink, surface=surface, client=client)

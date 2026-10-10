@@ -536,7 +536,7 @@ def test_version_probe_works_without_reading_an_incompatible_home(home, monkeypa
     from metaform import home as metaform_home
 
     with metaform_home.chassis(write=True) as db:
-        db.execute("UPDATE meta SET value='999' WHERE key='schema_version'")
+        db.execute("UPDATE meta SET value='999' WHERE key IN ('schema_version', 'compatible_from')")
     before = (home / 'metaform.sqlite3').read_bytes()
     monkeypatch.setattr(harness, 'running', lambda: Path('/opt/base047-harness/codex'))
     assert cli.main(['--version']) == 0
@@ -824,6 +824,23 @@ def test_user_edits_inside_owned_pointer_survive_setup_and_uninstall(home, machi
         with pytest.raises(Stop, match='edited Metaform instruction block'):
             action()
         assert path.read_bytes() == edited
+
+
+@pytest.mark.req('MCP-036', 'QUAL-002')
+def test_a_pointer_whose_line_endings_an_editor_changed_stays_owned(home, machine, monkeypatch):
+    from metaform import install
+
+    monkeypatch.setattr(install, 'user_home', lambda: machine['user'])
+    folder = machine['user'] / 'configured-codex'
+    monkeypatch.setenv('CODEX_HOME', str(folder))
+    folder.mkdir()
+    path = folder / 'AGENTS.md'
+    original = b'# Existing rules\r\nKeep these bytes.'
+    path.write_bytes(original)
+    install.provision('codex', lambda line: None)
+    path.write_bytes(path.read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n'))
+    install.uninstall(['codex'], lambda line: None)
+    assert path.read_bytes() == original
 
 
 @pytest.mark.req('MCP-015', 'MCP-036')

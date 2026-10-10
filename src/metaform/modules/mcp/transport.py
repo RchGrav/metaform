@@ -224,4 +224,6 @@ class Relay:
                     if isinstance(message, Exception):
                         print(f'MCP relay: {message}', file=sys.stderr, flush=True)
                         continue
+                    if origin == 'settled':  # the old server's settlement hook; the host is never sent the request
+                        continue
                     await (child_write if origin == 'host' else write).send(message)

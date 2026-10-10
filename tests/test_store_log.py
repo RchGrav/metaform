@@ -158,3 +158,13 @@ def test_a_cypher_query_sees_only_the_layers_in_view_and_can_name_its_own(store)
     assert not any('keep it small' in str(value) for value in hidden)  # a hidden layer is out of every query
     elements = store.cypher('MATCH (e) WHERE e.kind = "element" RETURN e.address', ['intake-1'])['e.address']
     assert 'code.timer.kitchen' in elements  # the base itself is always there
+
+
+@pytest.mark.req('STORE-019')
+def test_a_cypher_query_never_sees_a_join_out_of_view_as_an_edge_between_nodes_in_view(store):
+    """A join is a node and also an edge from its receiver to each element it holds. The edge belongs to the join's
+    layer: masked at the receiver, the join is out of view, and so is its edge, though both ends are the base's."""
+    filled(store)  # the notes layer's join from code.alarm.audible is masked at code.alarm
+    stop = 'MATCH (r)-[j]->(e) WHERE j.purpose = "stop" RETURN e.address'
+    assert not (store.cypher(stop) or {}).get('e.address')
+    assert not (store.cypher(stop, ['intake-1']) or {}).get('e.address')

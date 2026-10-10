@@ -179,6 +179,9 @@ def add_ref(tx: Tx, owner: str, key: Any, value: Any) -> Ref | Outcome:
     if current is None:
         return Outcome((Notice('owner', f'{owner} has no current version; nothing was written. See metaform map '
                                         f'history {owner}'),))
+    stop = unchangeable(tx, rows.layer(tx, current.layer_id), owner)  # a ref is written in place, as an edit is
+    if stop is not None:
+        return Outcome((stop,))
     rows.write_refs(tx, kind, current.seq, [(key, value)], start=len(current.refs))
     return Ref(key, value)
 

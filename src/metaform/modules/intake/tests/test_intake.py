@@ -1122,3 +1122,20 @@ def test_a_verify_pass_writes_conditions_and_refs_onto_the_finished_map_without_
         ('ok', [{'key': 'read', 'value': 't.c#L1'}])
     assert [(held['condition'], held['note']) for held in shown['joins']] == [('trouble', 'never fires')]
     assert [base['name'] for base in json.loads(run('map', 'bases', '--json', cwd=project).stdout)['results']] == ['main']
+
+
+@pytest.mark.req('BASE-039')
+@pytest.mark.req('BASE-044')
+def test_a_join_with_no_elements_records_nothing_and_starts_no_intake(run, project):
+    said = recorded(run, project, 'join', 'code.timer.kitchen', '[]', 'purpose=p')
+    assert said['layer'] is None and [notice['where'] for notice in said['notices']] == ['elements']
+    assert 'No intake yet' in run('intake', 'status', cwd=project).stdout
+
+
+@pytest.mark.req('MAP-046')
+@pytest.mark.req('BASE-039')
+def test_removing_a_join_from_a_building_intake_closes_its_marks(run, project):
+    failsafe_intake(run, project)
+    recorded(run, project, 'join', 'code.alarm', '["code.probe.echo"]', 'condition=BKN', 'note=never fires')
+    recorded(run, project, 'remove', 'receiver=code.alarm', 'provider=code.probe.echo')
+    assert Store('timer').work(open=True, limit=0).results == ()

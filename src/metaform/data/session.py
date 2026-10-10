@@ -113,7 +113,8 @@ _ATOMIC: ContextVar[Tx | None] = ContextVar('metaform_atomic', default=None)
 def open_store(path: Path, *, write: bool,
                required: tuple[str, Tables] | None = None) -> Generator[sqlite3.Connection, None, None]:
     """A prepared connection to one store file, opened inside its lock, STORE-006."""
-    with sqlite.opened(path, STORE_SCHEMA, write=write, version=sqlite.SCHEMA_VERSION, upgrade=upgrade) as db:
+    with sqlite.opened(path, STORE_SCHEMA, write=write, version=sqlite.SCHEMA_VERSION,
+                       compatible=sqlite.COMPATIBLE_FROM, upgrade=upgrade) as db:
         db.row_factory = sqlite3.Row
         from . import tables
         if not tables.extensions_ready(db) or required is not None and tables.state(

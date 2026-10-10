@@ -50,8 +50,7 @@ def assemble(store: Store, text: str, addresses: object, *, scope: str = 'contex
 
     def add(record: Item | Property, address: str | None) -> None:
         kind = 'items' if isinstance(record, Item) else 'properties'
-        identity = record.id if isinstance(record, Item) else record.id
-        key = (kind, identity)
+        key = (kind, record.id)
         if key in seen:
             return
         seen.add(key)

@@ -36,7 +36,9 @@ from .errors import Stop, StoreError
 from .wording import counted, listed
 
 CHASSIS_SCHEMA_VERSION = '3'  # 2 holds no project; 3 backfills installed harnesses, PROJ-026, MCP-028, STORE-029
+CHASSIS_COMPATIBLE_FROM = '3'  # code at 2 would install harnesses without the records 3 backfilled, STORE-029
 PROJECT_SCHEMA_VERSION = '2'  # a project's own project.sqlite3, PROJ-026; 2 names its bases, the change order of 2026-10-07
+PROJECT_COMPATIBLE_FROM = '2'  # 2 renamed the tables and columns code at 1 reads, STORE-029
 # The nonce table, BASE-050. A home made before it existed is given it on the first write of a nonce.
 NONCES = """CREATE TABLE IF NOT EXISTS nonces(
   nonce     TEXT PRIMARY KEY,
@@ -296,9 +298,9 @@ def _invalidate_registry() -> None:
 
 
 @contextmanager
-def _transaction(path: Path, schema: str, version: str, write: bool,
+def _transaction(path: Path, schema: str, version: str, compatible: str, write: bool,
                  upgrade: sqlite.Upgrade | None = None) -> Generator[sqlite3.Connection, None, None]:
-    with sqlite.opened(path, schema, write=write, version=version, upgrade=upgrade) as db:
+    with sqlite.opened(path, schema, write=write, version=version, compatible=compatible, upgrade=upgrade) as db:
         db.execute('BEGIN IMMEDIATE' if write else 'BEGIN')
         try:
             yield db
@@ -313,7 +315,8 @@ def _transaction(path: Path, schema: str, version: str, write: bool,
 @contextmanager
 def chassis(write: bool = False) -> Generator[sqlite3.Connection, None, None]:
     """One transaction on the chassis database. A read of a home with no chassis database creates nothing."""
-    with _transaction(chassis_path(), CHASSIS_SCHEMA, CHASSIS_SCHEMA_VERSION, write, _upgrade_chassis) as db:
+    with _transaction(chassis_path(), CHASSIS_SCHEMA, CHASSIS_SCHEMA_VERSION, CHASSIS_COMPATIBLE_FROM, write,
+                      _upgrade_chassis) as db:
         yield db
 
 
@@ -339,7 +342,7 @@ def _upgrade_chassis(db: sqlite3.Connection, path: Path, found: str) -> None:
                 if binary is not None and (key := harness.key(binary)) is not None:
                     db.execute('INSERT OR IGNORE INTO harnesses(path_key, binary, done) VALUES (?, ?, ?)',
                                (key, binary, installed))
-            db.execute("UPDATE meta SET value=? WHERE key='schema_version'", (CHASSIS_SCHEMA_VERSION,))
+            sqlite.stamp(db, CHASSIS_SCHEMA_VERSION, CHASSIS_COMPATIBLE_FROM)
         db.execute('COMMIT')
     except BaseException:
         db.execute('ROLLBACK')
@@ -376,7 +379,8 @@ def _source_of(folder: Path) -> str | None:
 @contextmanager
 def project_db(folder: Path, write: bool = False) -> Generator[sqlite3.Connection, None, None]:
     """One transaction on a project folder's own database, PROJ-026."""
-    with _transaction(folder / PROJECT_DB, PROJECT_SCHEMA, PROJECT_SCHEMA_VERSION, write, _upgrade_project) as db:
+    with _transaction(folder / PROJECT_DB, PROJECT_SCHEMA, PROJECT_SCHEMA_VERSION, PROJECT_COMPATIBLE_FROM, write,
+                      _upgrade_project) as db:
         yield db
 
 
@@ -397,7 +401,7 @@ def _upgrade_project(db: sqlite3.Connection, path: Path, found: str) -> None:
         # The layer the intake writes is named base now; a folder's layers setting that named it as intake names it
         # as base, so what was in view stays in view, STORE-046.
         db.execute("UPDATE settings SET value='\"base\"' WHERE key='layers' AND value='\"intake\"'")
-        db.execute("UPDATE meta SET value=? WHERE key='schema_version'", (PROJECT_SCHEMA_VERSION,))
+        sqlite.stamp(db, PROJECT_SCHEMA_VERSION, PROJECT_COMPATIBLE_FROM)
         db.execute('COMMIT')
     except BaseException:
         db.execute('ROLLBACK')
@@ -755,13 +759,19 @@ def bases(project_id: str) -> tuple[Base, ...]:
                  for row in rows)
 
 
+def _read_only(path: Path) -> sqlite3.Connection:
+    """A read-only connection to a database file. The path goes in as a proper file URI, so a home under a folder
+    whose name holds `#`, `?` or `%` opens the file named rather than another one, which SQLite would create."""
+    return sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)
+
+
 def intake_exists() -> bool:
     """Whether any base store of any project in the home holds an intake, finished or not, MCP-028. Read only;
     a store that cannot be read is passed over."""
     root = projects_dir()
     for path in sorted(root.glob(f'*/*{STORE_SUFFIX}')) if root.is_dir() else ():
         try:
-            with closing(sqlite3.connect(f'file:{path.as_posix()}?mode=ro', uri=True)) as db:
+            with closing(_read_only(path)) as db:
                 if db.execute("SELECT 1 FROM ops WHERE kind='layer' AND op='add' AND "
                               "json_extract(data, '$.kind') IN ('base', 'intake') LIMIT 1").fetchone():
                     return True
@@ -1016,9 +1026,10 @@ def clear_project(project_id: str) -> Cleared:
     # again by an intake, and a clear without its backup is a loss the person learns of when they need it, PROJ-030.
     try:
         saved = backup_project(project_id)
-    except OSError as error:
-        raise StoreError(f'{project_id} was not cleared, since it could not be backed up first: '
-                         f'{error.strerror or error}.', 'metaform list backups') from error
+    except (OSError, sqlite3.Error) as error:
+        reason = error.strerror if isinstance(error, OSError) and error.strerror else str(error)
+        raise StoreError(f'{project_id} was not cleared, since it could not be backed up first: {reason}.',
+                         'metaform list backups') from error
     folder = _folder_of_project(project_id)
     stores = _stores(folder)
     with project_db(folder, write=True) as db:
@@ -1064,7 +1075,7 @@ def _copied(source: Path, target: Path) -> None:
         elif path.suffix == '.sqlite3':
             to.parent.mkdir(parents=True, exist_ok=True)
             # closed on the way out whatever happens; a connection's `with` only commits, it never closes
-            with closing(sqlite3.connect(f'file:{path.as_posix()}?mode=ro', uri=True)) as read, \
+            with closing(_read_only(path)) as read, \
                     closing(sqlite3.connect(to)) as write:
                 read.backup(write)
         elif not path.name.endswith(('.sqlite3-wal', '.sqlite3-shm')):
@@ -1090,16 +1101,25 @@ def backup_project(project_id: str) -> Backup | None:
                           for form in forms],
             'active': next((form.id for form in forms if form.active), None), 'reports': found.reports}
     folder = _folder_of_project(project_id)
-    (kept / 'stores').mkdir()
-    for store in _stores(folder):
-        _copied_store(store, kept / 'stores' / store.name)
-    if (folder / 'reports').is_dir():
-        _copied(folder / 'reports', kept / 'reports')
-    else:
-        (kept / 'reports').mkdir()
-    if (folder / 'modules').is_dir():  # the modules' project-level stores, which a clear keeps, STORE-045
-        _copied(folder / 'modules', kept / 'modules')
-    (kept / 'rows.json').write_text(json.dumps(rows, indent=2) + '\n', encoding='utf-8')
+    try:
+        (kept / 'stores').mkdir()
+        for store in _stores(folder):
+            try:
+                _copied_store(store, kept / 'stores' / store.name)
+            except sqlite3.Error as error:  # named, since SQLite's own message does not say which file it read
+                raise sqlite3.DatabaseError(f'{store} cannot be read ({error})') from error
+        if (folder / 'reports').is_dir():
+            _copied(folder / 'reports', kept / 'reports')
+        else:
+            (kept / 'reports').mkdir()
+        if (folder / 'modules').is_dir():  # the modules' project-level stores, which a clear keeps, STORE-045
+            _copied(folder / 'modules', kept / 'modules')
+        (kept / 'rows.json').write_text(json.dumps(rows, indent=2) + '\n', encoding='utf-8')
+    except BaseException:
+        # This call made the folder and it holds no whole backup: none lists or restores it, so it would only be
+        # clutter beside the real backups.
+        shutil.rmtree(kept, ignore_errors=True)
+        raise
     return Backup(project_id, name, found.bases, found.reports)
 
 
@@ -1168,7 +1188,7 @@ def _holds_records(path: Path) -> bool:
     if not path.is_file():
         return False
     try:
-        with closing(sqlite3.connect(f'file:{path.as_posix()}?mode=ro', uri=True)) as db:
+        with closing(_read_only(path)) as db:
             tables = [row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name <> 'meta' "
                                                    "AND name NOT LIKE 'sqlite_%'")]
             return any(db.execute(f'SELECT 1 FROM "{table}" LIMIT 1').fetchone() for table in tables)
@@ -1265,7 +1285,7 @@ def _remove_files(store: Path, failed: list[tuple[str, str]]) -> None:
 def _copied_store(source: Path, target: Path) -> None:
     """A store copied through SQLite's own backup, so one another program holds open is copied as it stands."""
     target.parent.mkdir(parents=True, exist_ok=True)
-    with closing(sqlite3.connect(f'file:{source.as_posix()}?mode=ro', uri=True)) as read, \
+    with closing(_read_only(source)) as read, \
             closing(sqlite3.connect(target)) as write:  # closed whatever happens; `with` on a connection never closes
         read.backup(write)
 

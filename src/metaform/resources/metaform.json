@@ -1,2234 +1,2407 @@
 {
-  "metaform_export": 1,
-  "schema_version": "19",
+  "metaform_export": 2,
+  "schema_version": "21",
+  "compatible_from": "21",
   "projects": [
     {
       "project": {
         "project_id": "metaform",
-        "path": "/home/rich/metaform",
+        "path": "",
         "target_type": "path",
-        "target_value": "/home/rich/metaform"
+        "target_value": ""
       },
-      "metaforms": [
+      "bases": [
         {
-          "metaform": {
-            "metaform_id": "5e1dab60292c48bd8d4df55f5aef9f9b",
+          "base": {
+            "id": "2b3028fac1b642f5b67a1902de67677e",
             "name": "metaform-release",
-            "created": "2026-10-05T10:29:41Z"
+            "created": "2026-10-10T11:30:07Z"
           },
-          "layers": [
+          "ops": [
             {
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "metaform_id": "5e1dab60292c48bd8d4df55f5aef9f9b",
-              "name": "intake",
-              "module": "intake",
-              "variable": "The functional map of the artifact: its elements, and each receiver's purpose served by a provider's encounter function.",
-              "mutable": 0,
-              "hideable": 0,
-              "result_id": null,
-              "kind": "intake",
-              "created": "2026-10-05T10:29:41Z",
-              "ready": "2026-10-05T10:29:41Z"
+              "seq": 1,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "layer",
+              "id": "3412e32fb43f4e86a70606a362d6fbce",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "base_id": "2b3028fac1b642f5b67a1902de67677e",
+                "name": "base",
+                "module": "intake",
+                "variable": "The functional map of the artifact: its elements, and each receiver's purpose served by a provider's encounter function.",
+                "mutable": false,
+                "hideable": false,
+                "result_id": null,
+                "kind": "base",
+                "created": "2026-10-10T11:30:07Z",
+                "ready": "2026-10-10T11:30:07Z",
+                "fields": [],
+                "tags": [],
+                "sources": [],
+                "hidden": false,
+                "provenance": {
+                  "module": "chassis",
+                  "workflow": "release-snapshot",
+                  "prompt": null,
+                  "model": null,
+                  "role": "release builder",
+                  "blinded": null
+                },
+                "reexamine": []
+              }
+            },
+            {
+              "seq": 2,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "973acefb3006499cbeb08830e0a8645e",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "downstream.cqu.engineer.context",
+                "name": "Context Engineer",
+                "name_length": 2,
+                "role": "CQU"
+              }
+            },
+            {
+              "seq": 3,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "f140a84c231349e3b096b48648d50c47",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "code.tool.engineering.context",
+                "name": "Metaform",
+                "name_length": 3,
+                "role": "DE"
+              }
+            },
+            {
+              "seq": 4,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "a20012502b51464c9736084d4e64bf5d",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "downstream.cqu.author.module",
+                "name": "Module Author",
+                "name_length": 2,
+                "role": "CQU"
+              }
+            },
+            {
+              "seq": 5,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "84a4093d4bb94732bc9f2dfa4beaf3de",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "downstream.cqu.author.workflow",
+                "name": "Workflow Author",
+                "name_length": 2,
+                "role": "CQU"
+              }
+            },
+            {
+              "seq": 6,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "5d4009ba81e04fe9b697c699e70da3e3",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "code.store.graph",
+                "name": "Store",
+                "name_length": 2,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 7,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "bb8631b657344fed8b0ecfed6ab302b5",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "code.recorder.graph",
+                "name": "intake",
+                "name_length": 2,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 8,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "1d3af4d4c1574a3b99224f63d28a36ca",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "code.loader.module",
+                "name": "module contract and loader",
+                "name_length": 2,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 9,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "728b3c7049d5458ea287944f45ce2ccd",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "code.interface.command_line",
+                "name": "command line",
+                "name_length": 2,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 10,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "620f607499734d00b85204755d5a032a",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "code.server.mcp",
+                "name": "MCP server",
+                "name_length": 2,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 11,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "5b2a1dc7b5d344fd92bd8ceaacae3500",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "code.interface.graphical",
+                "name": "web GUI",
+                "name_length": 2,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 12,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "63a6425a47894693a73311b396f5f57b",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "code.engine.workflow",
+                "name": "workflow",
+                "name_length": 2,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 13,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "4c88bdd11b5d4bfaaec9c307357e36a4",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "code.dispatcher.task",
+                "name": "dispatch",
+                "name_length": 2,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 14,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "3e794cbca964433f915d0c5ceb454dea",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "code.manager.project",
+                "name": "projects and history",
+                "name_length": 2,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 15,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "e4e94a60fff64fa7946005051d986147",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "code.graph.memory",
+                "name": "memory",
+                "name_length": 2,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 16,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "cd25d7902ae140fca94243aeeaae921a",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "code.queue.work",
+                "name": "work records and messages",
+                "name_length": 2,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 17,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "ce32b4a2795348c6885b32c0ce9e3701",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "code.manager.prompt",
+                "name": "prompt store and review",
+                "name_length": 2,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 18,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "bc19bc97495f4f70954f13667f7c3ab4",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "code.bus.event",
+                "name": "event bus",
+                "name_length": 2,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 19,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "fcf1f0b3c8be4db49f233c57a704851a",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "code.registry.nonce",
+                "name": "nonce service",
+                "name_length": 2,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 20,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "2a06c3dc2999448a8e630cb971b0edca",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "code.builder.package",
+                "name": "build",
+                "name_length": 2,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 21,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "852c37c39c4a494fb6f34a875f4a57c4",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "code.installer.package",
+                "name": "install",
+                "name_length": 2,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 22,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "05db9b1a9138461aab84988299bcc5f1",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "code.manager.repository",
+                "name": "fork",
+                "name_length": 2,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 23,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "9b5af7c1177b41ca92ab43f1775b9f74",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "code.archive.sealed",
+                "name": "packet",
+                "name_length": 2,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 24,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "ef64d6297974402a91046d317277a57c",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "code.example.module",
+                "name": "hello and template",
+                "name_length": 2,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 25,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "60624c02ed5140c8ac5d35cdd438ab6a",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "code.router.workflow",
+                "name": "automatic workflow routing",
+                "name_length": 2,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 26,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "947b742db6af4def8d54e940cb081882",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "downstream.cqu.architect.software",
+                "name": "Software Architect",
+                "name_length": 2,
+                "role": "CQU"
+              }
+            },
+            {
+              "seq": 27,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "e8107f3a9d96438da7910cbdfd0ad92f",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "document.specification.software",
+                "name": "Metaform specification",
+                "name_length": 2,
+                "role": "DE"
+              }
+            },
+            {
+              "seq": 28,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "390817ad153248dd8d2f652c043edb4b",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "document.manual",
+                "name": "Metaform documentation",
+                "name_length": 1,
+                "role": "DE"
+              }
+            },
+            {
+              "seq": 29,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "e63d5b5971d4489fb425fa0bb2066d0f",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "document.procedure.analysis.functional",
+                "name": "Digital Typology",
+                "name_length": 3,
+                "role": "DE"
+              }
+            },
+            {
+              "seq": 30,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "cbf8bf6b083b44a8be95a30d5e5d1ffe",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "data.schema.graph",
+                "name": "metaform.axiom",
+                "name_length": 2,
+                "role": "NE"
+              }
+            },
+            {
+              "seq": 31,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "482f8e8b3a45421ba3449903e5a14b0c",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "document.prompt",
+                "name": "agent prompts",
+                "name_length": 1,
+                "role": "DE"
+              }
+            },
+            {
+              "seq": 32,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "21a0aea526df4d24bbe21265d1495bc8",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "downstream.cqu.engineer.quality.software",
+                "name": "Software Quality Engineer",
+                "name_length": 3,
+                "role": "CQU"
+              }
+            },
+            {
+              "seq": 33,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "fbe78a063d94433f9399ad3864d1c175",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "code.harness.test",
+                "name": "tests and checks",
+                "name_length": 2,
+                "role": "DE"
+              }
+            },
+            {
+              "seq": 34,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "c27b27876d9743c6b2e1c8b24333f61f",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "document.explanation",
+                "name": "Inference Metaform",
+                "name_length": 1,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 35,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "70336d5ed5e546e395a48f2db13693fc",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "data.graph.functional",
+                "name": "functional map snapshots",
+                "name_length": 2,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 36,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "480f36933ffb47b79064f9fff4fd8102",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "document.report.analysis",
+                "name": "review and validation records",
+                "name_length": 2,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 37,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "eb49a233872e4c5cb15dab5cae878925",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "data.workflow",
+                "name": "workflow examples",
+                "name_length": 1,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 38,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "80e6bf98a2ed4450811e1923e3798579",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "upstream.code.agent",
+                "name": "agent harnesses and ACP adapters",
+                "name_length": 1,
+                "role": "NE"
+              }
+            },
+            {
+              "seq": 39,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "20009b97581e425f9a9070b8d633253f",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "upstream.code.database.relational",
+                "name": "SQLite",
+                "name_length": 2,
+                "role": "NE"
+              }
+            },
+            {
+              "seq": 40,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "3cf58630b28b4963adc2f03c92a48f88",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "upstream.code.renderer.graph",
+                "name": "graph visualization libraries",
+                "name_length": 2,
+                "role": "NE"
+              }
+            },
+            {
+              "seq": 41,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "ce3f92966f79458ca18821d52db237f7",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "code.api.graph",
+                "name": "map",
+                "name_length": 2,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 42,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "fa3981b78fbd4d4f8f54c51e35e20fd8",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "code.migration.schema",
+                "name": "schema version",
+                "name_length": 2,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 43,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "element",
+              "id": "0e7260d9d7b54fbf86da67c0dc4caf7d",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "address": "code.controller.loop",
+                "name": "loop controller",
+                "name_length": 2,
+                "role": "SE"
+              }
+            },
+            {
+              "seq": 44,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "a933f62b20c14d35ab387193173c282c",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "records functional types and receiver-owned purpose joins, serves their selected knowledge and memory to agents, and carries findings and work against stable functional addresses",
+                "element": null,
+                "held": [
+                  "f140a84c231349e3b096b48648d50c47"
+                ],
+                "ifd": "both",
+                "purpose": "Prepare and maintain project-specific functional understanding so agents improve an artifact from its purposes, dependencies, and retained knowledge across sessions.",
+                "receiver": "973acefb3006499cbeb08830e0a8645e",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 45,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "b04f13393bb54fd08e7b1a369d5c2fb8",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "loads independently declared modules and supplies one common base through which their capabilities reach the command line, MCP, and project records",
+                "element": null,
+                "held": [
+                  "f140a84c231349e3b096b48648d50c47"
+                ],
+                "ifd": "both",
+                "purpose": "Extend Metaform with reusable capabilities that share project storage, settings, lifecycle, events, commands, and agent-facing guidance.",
+                "receiver": "a20012502b51464c9736084d4e64bf5d",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 46,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "4b106b2d69aa4a84b9cc75ef0c969207",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "stores named workflow logic at functional addresses, binds calls to visible element values, and transports calls and results through persistent nonces",
+                "element": null,
+                "held": [
+                  "f140a84c231349e3b096b48648d50c47"
+                ],
+                "ifd": "both",
+                "purpose": "Author and evolve reusable agent workflows whose calls use the workpiece's functional records while preserving authored logic and resumable handoffs.",
+                "receiver": "84a4093d4bb94732bc9f2dfa4beaf3de",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 47,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "6f2c4de3082148cdb49f4fe7e301912c",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "discovers bundled, home, installed-entry-point, and project modules, checks their declarations and dependencies, and runs their verbs and lifecycle through a per-call Context and shared public base",
+                "element": null,
+                "held": [
+                  "1d3af4d4c1574a3b99224f63d28a36ca"
+                ],
+                "ifd": "both",
+                "purpose": "Add and remove capabilities through declared modules while keeping their commands, settings, tasks, events, and data owned consistently.",
+                "receiver": "f140a84c231349e3b096b48648d50c47",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 48,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "4f3e4ad82517484b8ce567364729493e",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "serves one tool per enabled module plus chassis commands, command help, resources, and slash prompts over stdio, creates a Context for each call, and refreshes declarations and instructions",
+                "element": null,
+                "held": [
+                  "620f607499734d00b85204755d5a032a"
+                ],
+                "ifd": "both",
+                "purpose": "Make project context and module operations available to connected agents with live guidance and the same command semantics.",
+                "receiver": "f140a84c231349e3b096b48648d50c47",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 49,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "8ed7d4d91b5e4f6aa56f6ce8ecf18907",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "stores named Axiom subroutines in knowledge layers, reads visible element values, binds arguments and returns, serves workflow skills and lexicalization instructions, and transports sequential or parallel nonce handoffs for agents to interpret",
+                "element": null,
+                "held": [
+                  "63a6425a47894693a73311b396f5f57b"
+                ],
+                "ifd": "both",
+                "purpose": "Reuse authored functional logic while preserving bound project values and continuation state between agent calls.",
+                "receiver": "f140a84c231349e3b096b48648d50c47",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 50,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "55705f2e0afd40df9b94c8a77f2a3ebb",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "reads authored prompt resources, composes current module guidance and skills, versions stored prompts and their uses, and stages terminal edits as retained prompt revisions and source-change packets",
+                "element": null,
+                "held": [
+                  "ce32b4a2795348c6885b32c0ce9e3701"
+                ],
+                "ifd": "both",
+                "purpose": "Supply agents with authored instructions whose source and revisions remain inspectable.",
+                "receiver": "1d3af4d4c1574a3b99224f63d28a36ca",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 51,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "a8f949e0b44d4bb9a1d301a25b54d89e",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "delivers published topics to enabled subscribers with their own Context and individual outcomes, relays map changes between processes, and closes module-owned listeners and asynchronous tasks with lifecycle",
+                "element": null,
+                "held": [
+                  "bc19bc97495f4f70954f13667f7c3ab4"
+                ],
+                "ifd": "both",
+                "purpose": "Let modules coordinate changes and notify long-running processes without owning duplicate communication machinery.",
+                "receiver": "1d3af4d4c1574a3b99224f63d28a36ca",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 52,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "70008c342b074e86863e24640c33f1a6",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "issues unique seven-digit nonces tied to module verbs, persists and atomically updates continuation values, exposes only current call frames, and retains closed identifiers so completed assignments are never reused",
+                "element": null,
+                "held": [
+                  "fcf1f0b3c8be4db49f233c57a704851a"
+                ],
+                "ifd": "both",
+                "purpose": "Resume a particular call or agent handoff with its bound state and return to its caller.",
+                "receiver": "63a6425a47894693a73311b396f5f57b",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 53,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "bd81a1c9cb9141a689162204dae5563c",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "builds a wheel from the installed chassis and enabled module declarations, carries pure-Python dependencies and resource files, lists compiled dependency requirements, and includes a direct-execution launcher",
+                "element": null,
+                "held": [
+                  "2a06c3dc2999448a8e630cb971b0edca"
+                ],
+                "ifd": "both",
+                "purpose": "Distribute a selected set of modules with the same common base and required resources.",
+                "receiver": "1d3af4d4c1574a3b99224f63d28a36ca",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 54,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "07926608c73241ee94b285812246e75b",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "creates a local module repository from the template, binds six platform and Python check reports to reviewed sources, dispatches quality review before wheel creation, and dispatches template-upkeep pull requests",
+                "element": null,
+                "held": [
+                  "05db9b1a9138461aab84988299bcc5f1"
+                ],
+                "ifd": "both",
+                "purpose": "Help module authors maintain their extension repository against released chassis and template versions.",
+                "receiver": "1d3af4d4c1574a3b99224f63d28a36ca",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 55,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "fa10227640d4437d8c917e749d7f99a5",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "writes work as a plain archive with sealed data and provenance, verifies manifests and lineage before opening it, and reconstructs textual and binary variations using bundled expansion scripts",
+                "element": null,
+                "held": [
+                  "9b5af7c1177b41ca92ab43f1775b9f74"
+                ],
+                "ifd": "both",
+                "purpose": "Carry a workpiece and its retained Metaform data across homes with inspectable lineage and detectable changes.",
+                "receiver": "3e794cbca964433f915d0c5ceb454dea",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 56,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "0727dfb2e29a4a60829dcd3aee26dbcd",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "demonstrates shared storage, settings, events, tasks, reports, lifecycle and nonce use in hello, and supplies an empty MODULE declaration and documented public imports in template",
+                "element": null,
+                "held": [
+                  "ef64d6297974402a91046d317277a57c"
+                ],
+                "ifd": "both",
+                "purpose": "Give module authors a working reference and a minimal starting declaration for every supported extension surface.",
+                "receiver": "1d3af4d4c1574a3b99224f63d28a36ca",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 57,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "3d9e8dd5726343af87fe90bc8dc592e7",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "would hand incoming work and its project context to the workflow_builder skill through a routing mechanism that has not yet been implemented",
+                "element": null,
+                "held": [
+                  "60624c02ed5140c8ac5d35cdd438ab6a"
+                ],
+                "ifd": "sends",
+                "purpose": "Route incoming work to the workflow builder before it proceeds so the affected functions receive the workflow's rules.",
+                "receiver": "63a6425a47894693a73311b396f5f57b",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 58,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "b7378c2c19d54d6f8739a58f026f27b0",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "states requirements, reasons, observable behavior, build detail, acceptance conditions, relationships, and decision status for the map, layers, storage, chassis, interfaces, projects, and viewer",
+                "element": null,
+                "held": [
+                  "e8107f3a9d96438da7910cbdfd0ad92f"
+                ],
+                "ifd": "both",
+                "purpose": "Maintain an implementable account of Metaform's intended semantics and behavior, including the reasons and unresolved decisions that govern changes.",
+                "receiver": "947b742db6af4def8d54e940cb081882",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 59,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "91c7ebfa9a6b40bb8d5589841b64adba",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "provides the governing requirement records, rationale, trace, and open decisions against which runtime behavior and its verification are assessed",
+                "element": null,
+                "held": [
+                  "e8107f3a9d96438da7910cbdfd0ad92f"
+                ],
+                "ifd": "receives",
+                "purpose": "Preserve the intended functional semantics while the implementation evolves.",
+                "receiver": "f140a84c231349e3b096b48648d50c47",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 60,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "362302b7852246be9b02e7e27b18ea49",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "explains installation, intake, map reading, knowledge layers, addressed memory, refinement, and project exchange with concrete commands and worked examples",
+                "element": null,
+                "held": [
+                  "390817ad153248dd8d2f652c043edb4b"
+                ],
+                "ifd": "receives",
+                "purpose": "Make the functional-map method and its supported operations understandable enough to use and maintain project context.",
+                "receiver": "973acefb3006499cbeb08830e0a8645e",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 61,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "911dd5b7ca5b43ae860feb7e3b1c1c0f",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "documents declarations, lifecycle, shared public services, example usage, packaging, and per-module responsibilities through the extension guide and module READMEs",
+                "element": null,
+                "held": [
+                  "390817ad153248dd8d2f652c043edb4b"
+                ],
+                "ifd": "receives",
+                "purpose": "Document the extension contract clearly enough that a module author can build against the shared chassis and maintain compatible modules.",
+                "receiver": "a20012502b51464c9736084d4e64bf5d",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 62,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "2f6e10cbf7f34d628298bef33f9976bc",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "directs code and artifact survey, role and namespace inference, receiver-owned purpose and encounter traces, observed findings, annealing, and a final connected-map proof",
+                "element": null,
+                "held": [
+                  "e63d5b5971d4489fb425fa0bb2066d0f"
+                ],
+                "ifd": "receives",
+                "purpose": "Improve functional intake so it captures this artifact's notable types and receiving purposes rather than implementation layout or nonfunctional variants.",
+                "receiver": "973acefb3006499cbeb08830e0a8645e",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 63,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "b12825d02e8742028f072b6e1ab5acbb",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "supplies the procedure served by intake prompt with its project target and explicit ignored paths",
+                "element": null,
+                "held": [
+                  "e63d5b5971d4489fb425fa0bb2066d0f"
+                ],
+                "ifd": "receives",
+                "purpose": "Give the intake agent the operative method for examining the current project and recording its functional shape.",
+                "receiver": "bb8631b657344fed8b0ecfed6ab302b5",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 64,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "d4cbfe31d4a541888e923593dde7c22e",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "defines namespace_address, canonical name, name_length, role, purpose, encounter function, flow direction, recursive element encounters, and project-boundary links for intake records",
+                "element": null,
+                "held": [
+                  "cbf8bf6b083b44a8be95a30d5e5d1ffe"
+                ],
+                "ifd": "receives",
+                "purpose": "Express the resulting map with stable element identities and receiver-owned purpose joins in a consistent recursive form.",
+                "receiver": "e63d5b5971d4489fb425fa0bb2066d0f",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 65,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "b997724f6c7446c68ec5bddf718fb5e1",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "provides authored module guidance, workflow libraries and skills, dispatch instructions, and standalone task prompts, with source placeholders and semantic rules retained in their declared resources",
+                "element": null,
+                "held": [
+                  "482f8e8b3a45421ba3449903e5a14b0c"
+                ],
+                "ifd": "both",
+                "purpose": "Maintain operative agent instructions and reusable task logic whose semantics survive serving, editing, and workflow preparation.",
+                "receiver": "84a4093d4bb94732bc9f2dfa4beaf3de",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 66,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "66310a3961eb4f8093291fccc2de09cc",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "supplies the source texts read from package prompt resources and registered prompt sources, including libraries, skills, field help, state instructions, and operation-specific guidance",
+                "element": null,
+                "held": [
+                  "482f8e8b3a45421ba3449903e5a14b0c"
+                ],
+                "ifd": "receives",
+                "purpose": "Serve the authored instructions appropriate to a module, workflow, client, or project state.",
+                "receiver": "ce32b4a2795348c6885b32c0ce9e3701",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 67,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "5379b6a4204d4e6eba6a830b0f5d17c6",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "runs requirement-tagged unit, integration, transport, persistence, and browser scenarios alongside lint and strict type checking, with CI jobs on Linux, macOS, and Windows",
+                "element": null,
+                "held": [
+                  "fbe78a063d94433f9399ad3864d1c175"
+                ],
+                "ifd": "both",
+                "purpose": "Improve the evidence that Metaform obeys its declared behavior and continues to work across supported systems and interfaces.",
+                "receiver": "21a0aea526df4d24bbe21265d1495bc8",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 68,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "312079fa850d47e0961b4fc53e73b1a2",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "exercises namespace and join shape, layer resolution, retained histories, concurrent storage, module ownership, installation and MCP, workflow binding, dispatch, and web operations against representative scenarios",
+                "element": null,
+                "held": [
+                  "fbe78a063d94433f9399ad3864d1c175"
+                ],
+                "ifd": "receives",
+                "purpose": "Protect the functional-map contract and shared runtime behavior as implementations change.",
+                "receiver": "f140a84c231349e3b096b48648d50c47",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 69,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "209d7abcf72d493cb7d13e5375388cc1",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "provides requirement IDs, acceptance conditions, and quality rules used to organize the verification scenarios and distinguish evidence from conclusions",
+                "element": null,
+                "held": [
+                  "e8107f3a9d96438da7910cbdfd0ad92f"
+                ],
+                "ifd": "receives",
+                "purpose": "Test requirements and their observable outcomes rather than treating implementation detail as the contract.",
+                "receiver": "fbe78a063d94433f9399ad3864d1c175",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 70,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "454cf259a82d453c818cabe55b80f336",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "develops the method's causal account, terminology, examples, research comparisons, authorship, and distinctions between existing mechanisms and proposed inference-producing operations",
+                "element": null,
+                "held": [
+                  "c27b27876d9743c6b2e1c8b24333f61f"
+                ],
+                "ifd": "receives",
+                "purpose": "Explain why functional types, receiver-owned purposes, and retained encounters provide useful orientation for later agent work.",
+                "receiver": "390817ad153248dd8d2f652c043edb4b",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 71,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "62ede576b9ff490e9aeddf49fcf60e2c",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "preserves exported elements, joins, references, and recorded understanding for documented examples and historical snapshots without making their old shapes current runtime requirements",
+                "element": null,
+                "held": [
+                  "70336d5ed5e546e395a48f2db13693fc"
+                ],
+                "ifd": "receives",
+                "purpose": "Keep inspectable examples of functional representations and earlier intake results so method claims can be compared with the records that support them.",
+                "receiver": "c27b27876d9743c6b2e1c8b24333f61f",
+                "type": "purpose",
+                "note": "Historical samples and procedure revisions are evidence of earlier forms. examples/intake/mgm-main/README.md and docs/EDITION.md identify older formats and source editions. Their represented functions are demonstration and comparison, not independent implementation of the systems they describe."
+              }
+            },
+            {
+              "seq": 72,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "1d3dc10c24154a9795f242cb37a543ec",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "records code reviews, test reviews, manual exercises, cold-build results, requirement traces, and interface evidence with their edition or source context",
+                "element": null,
+                "held": [
+                  "480f36933ffb47b79064f9fff4fd8102"
+                ],
+                "ifd": "receives",
+                "purpose": "Retain the findings, evidence, and scope limits of earlier verification and review work.",
+                "receiver": "fbe78a063d94433f9399ad3864d1c175",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 73,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "9485ec40ccca46de8f9233b5fe36b44b",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "pairs seven authored source prompts with structured definitions and a manifest of intent and inputs, while separately retaining older workflow examples whose current compatibility is unverified",
+                "element": null,
+                "held": [
+                  "eb49a233872e4c5cb15dab5cae878925"
+                ],
+                "ifd": "receives",
+                "purpose": "Preserve inspectable examples of turning authored task prompts into structured workflow definitions for later platform ingestion.",
+                "receiver": "482f8e8b3a45421ba3449903e5a14b0c",
+                "type": "purpose",
+                "note": "The current workflow module imports portable documents with workflow metadata and named logic records. These historical id/steps JSON examples are source material for authored conversion, not evidence that they execute under the current Axiom call transport."
+              }
+            },
+            {
+              "seq": 74,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "90d0422420a04cd9816b9e9486675a21",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "provides the configured Claude Code, Codex, or Gemini agent through its ACP adapter, project process environment, tool access, and streamed conversation protocol",
+                "element": null,
+                "held": [
+                  "80e6bf98a2ed4450811e1923e3798579"
+                ],
+                "ifd": "both",
+                "purpose": "Obtain an inference-capable agent session that can act on a ticket and exchange progress, messages, and permissions.",
+                "receiver": "4c88bdd11b5d4bfaaec9c307357e36a4",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 75,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "c0e6f5d7e0b64bb8a69ba477401c9209",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "performs the functional reasoning and records its results through the intake tools while Metaform transports and stores the procedure and records",
+                "element": null,
+                "held": [
+                  "80e6bf98a2ed4450811e1923e3798579"
+                ],
+                "ifd": "both",
+                "purpose": "Have the served intake procedure interpreted against the actual artifacts and their functionality.",
+                "receiver": "bb8631b657344fed8b0ecfed6ab302b5",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 76,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "fcd8ba39b3da4a3b967a39d604d0d9e6",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "reads the current bound subroutine and values, interprets Choice, Map, Retry, Catch, verification, and routing, and uses the transport commands to advance or return",
+                "element": null,
+                "held": [
+                  "80e6bf98a2ed4450811e1923e3798579"
+                ],
+                "ifd": "both",
+                "purpose": "Interpret authored workflow conditions and choose calls without replacing the prompt's semantics with hardcoded control flow.",
+                "receiver": "63a6425a47894693a73311b396f5f57b",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 77,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "06952b55c8784679abf52f09e3179903",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "provides local transactional databases for append-only operations, object identity, projection snapshots, and declared module tables",
+                "element": null,
+                "held": [
+                  "20009b97581e425f9a9070b8d633253f"
+                ],
+                "ifd": "both",
+                "purpose": "Durably commit ordered graph operations and module records with transactional consistency across processes.",
+                "receiver": "5d4009ba81e04fe9b697c699e70da3e3",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 78,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "563b365ec92c452b9252ee57d764394b",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "provides bundled graph layouts, two-dimensional and three-dimensional graph rendering, scene rendering, and diagram rendering used by the workbench",
+                "element": null,
+                "held": [
+                  "3cf58630b28b4963adc2f03c92a48f88"
+                ],
+                "ifd": "receives",
+                "purpose": "Render and navigate graph structure, spatial agent activity, and technical diagrams in the browser.",
+                "receiver": "5b2a1dc7b5d344fd92bd8ceaacae3500",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 79,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "1bde89c45f614c78b706c4cb47c1933a",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "creates the building intake layer, records elements and joins with content notices rather than rejection, stores refs in sources, and makes the finalized layer visible on completion",
+                "element": null,
+                "held": [
+                  "5d4009ba81e04fe9b697c699e70da3e3"
+                ],
+                "ifd": "both",
+                "purpose": "Persist the intake's inferred shape and references without publishing an unfinished layer to ordinary context reads.",
+                "receiver": "bb8631b657344fed8b0ecfed6ab302b5",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 80,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "573ce828bda545178cc387e7b6eec12f",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "provides the Store interface, native map operations, extension operations, and versioned module tables with common ownership, removal, and import/export behavior",
+                "element": null,
+                "held": [
+                  "5d4009ba81e04fe9b697c699e70da3e3"
+                ],
+                "ifd": "both",
+                "purpose": "Give extension modules transactional data operations and declared tables through one shared public service.",
+                "receiver": "1d3af4d4c1574a3b99224f63d28a36ca",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 81,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "9fd84ace4f9841e2aa3f4859ad81c2f1",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "supplies live Module, Verb, Noun, Resource, setting, and status declarations from which the MCP server derives its callable surface and refresh notifications",
+                "element": null,
+                "held": [
+                  "1d3af4d4c1574a3b99224f63d28a36ca"
+                ],
+                "ifd": "both",
+                "purpose": "Expose the enabled module capabilities and their exact argument help to connected agents.",
+                "receiver": "620f607499734d00b85204755d5a032a",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 82,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "d91c1324a542467bbd5be35d30a6fb23",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "provides command declarations and Context-bound verb invocation, refreshes module selection, and scopes available operations without duplicating the module's implementation",
+                "element": null,
+                "held": [
+                  "1d3af4d4c1574a3b99224f63d28a36ca"
+                ],
+                "ifd": "both",
+                "purpose": "Run the declared module operations through the same contract as other Metaform surfaces.",
+                "receiver": "728b3c7049d5458ea287944f45ce2ccd",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 83,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "7a74ea0bd7cb4ff297f41fb2002ba4aa",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "returns roots, addressed joins, knowledge, properties, sources, history, work, and messages, and accepts graph refinements through the public Store operations used by the web server",
+                "element": null,
+                "held": [
+                  "5d4009ba81e04fe9b697c699e70da3e3"
+                ],
+                "ifd": "both",
+                "purpose": "Display and edit the selected project's map while obeying the same layer visibility as agent reads.",
+                "receiver": "5b2a1dc7b5d344fd92bd8ceaacae3500",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 84,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "827cc5e72ae7456db6f370202d9a815e",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "returns read-only element values, receiver and provider encounters, properties, sources, memories and work, and assembles selected contextual or whole-layer knowledge between the unchanged prompt body and canonical address footer",
+                "element": null,
+                "held": [
+                  "5d4009ba81e04fe9b697c699e70da3e3"
+                ],
+                "ifd": "both",
+                "purpose": "Bind reusable logic and prepared prompts to the knowledge actually visible at their subject addresses.",
+                "receiver": "63a6425a47894693a73311b396f5f57b",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 85,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "23f91dc57e2b4860ad126b4296affb49",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "registers shared sections lazily, composes libraries from the newest stored sections, and exposes authored skills and prompt-lexicalization inputs without performing the inference itself",
+                "element": null,
+                "held": [
+                  "ce32b4a2795348c6885b32c0ce9e3701"
+                ],
+                "ifd": "both",
+                "purpose": "Serve current authored workflow libraries, skills, and lexicalization guidance while retaining prior prompt versions.",
+                "receiver": "63a6425a47894693a73311b396f5f57b",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 86,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "e79c797710534779b9768b1d2f38b1d5",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "provides ordered tickets, claim and completion state, step progress, work links, messages, permissions, and past resolutions used by ACP sessions and the board",
+                "element": null,
+                "held": [
+                  "cd25d7902ae140fca94243aeeaae921a"
+                ],
+                "ifd": "both",
+                "purpose": "Run eligible work once and keep its state, steps, questions, and results attached to the correct function.",
+                "receiver": "4c88bdd11b5d4bfaaec9c307357e36a4",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 87,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "bbbbe0d6e9bb4c76b05d92121aa56189",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "delivers map changes and dispatch or signal events to local subscribers and cross-process listeners while long-running runners record activity and react to work changes",
+                "element": null,
+                "held": [
+                  "bc19bc97495f4f70954f13667f7c3ab4"
+                ],
+                "ifd": "both",
+                "purpose": "Update remote workbench and session observers as agent activity or ticket state changes.",
+                "receiver": "4c88bdd11b5d4bfaaec9c307357e36a4",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 88,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "0ee66ef9f57b4de8927183a34a344158",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "creates review and upkeep tickets, starts the configured agent through declared dispatch verbs, retains verdicts and evidence, and waits for completion before packaging or continuation",
+                "element": null,
+                "held": [
+                  "4c88bdd11b5d4bfaaec9c307357e36a4"
+                ],
+                "ifd": "both",
+                "purpose": "Perform extension quality review and template upkeep through the project's existing agent work service.",
+                "receiver": "05db9b1a9138461aab84988299bcc5f1",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 89,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "8aa09ab6ea3d4e94b27b60be81a5d164",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "provides the concrete built wheel and dependency requirements that the installer launches through uvx and probes using the supported client registration",
+                "element": null,
+                "held": [
+                  "2a06c3dc2999448a8e630cb971b0edca"
+                ],
+                "ifd": "both",
+                "purpose": "Register a distributable Metaform wheel containing the capabilities selected for installation.",
+                "receiver": "852c37c39c4a494fb6f34a875f4a57c4",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 90,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "e320cf6f22544f81a1973f32766ffb1d",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "would trigger the fork's template-version comparison and upkeep work from the installation stage, whose connection has not yet been implemented",
+                "element": null,
+                "held": [
+                  "05db9b1a9138461aab84988299bcc5f1"
+                ],
+                "ifd": "sends",
+                "purpose": "Keep the user's module repository current when installation brings in a newer Metaform template.",
+                "receiver": "852c37c39c4a494fb6f34a875f4a57c4",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 91,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "7282c0b9a96846b09c239b4cf4718c47",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "holds the shared sections, libs and task skills, the sentinel among them, that the engine serves by name and binds with each run's input",
+                "element": null,
+                "held": [
+                  "482f8e8b3a45421ba3449903e5a14b0c"
+                ],
+                "ifd": "receives",
+                "purpose": "Serve each agent the libs and skills its task requires, exactly as authored, so a workflow runs the instructions its authors wrote.",
+                "receiver": "63a6425a47894693a73311b396f5f57b",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 92,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "7e927467a6564e1ea567bad0625214cd",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "reads the map's entry and any address with what relies on it, what it relies on, its open work and the layers in context there; writes the map out as Markdown or XML; answers Cypher and text searches; creates, builds, tags, selects, masks and hides knowledge layers; refines, promotes and collapses the base as new versions with every id kept; and starts blind-spot critic runs and records their challenges, answers and plans",
+                "element": null,
+                "held": [
+                  "ce3f92966f79458ca18821d52db237f7"
+                ],
+                "ifd": "both",
+                "purpose": "Let agents and people read the functional map at the address they work on, and change the map and the knowledge layered on it, through one surface that obeys the same visibility rules everywhere.",
+                "receiver": "f140a84c231349e3b096b48648d50c47",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 93,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "7bf3829b72a64a489275f10a35d85b62",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "provides the roots, where, context, graph, search and history reads with the layers that reach each address resolved, and the element, join, item, property, refine, promote, collapse and layer writes, storing what does not fit as given and naming it in a notice",
+                "element": null,
+                "held": [
+                  "5d4009ba81e04fe9b697c699e70da3e3"
+                ],
+                "ifd": "both",
+                "purpose": "Answer every read and make every write through the one data access object, so a tool call, a command and the web GUI see the same map.",
+                "receiver": "ce3f92966f79458ca18821d52db237f7",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 94,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "4a7ba722d0614c229e2c0d71858294be",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "stores work records with their condition, kind, planned and finished steps, reference links, board place, agent glyph and eligible agents, the questions and messages left at nodes, blind-spot challenge states and plans, and report rows, in the map module's own declared tables, and keeps completed work as past work at its node",
+                "element": null,
+                "held": [
+                  "cd25d7902ae140fca94243aeeaae921a"
+                ],
+                "ifd": "both",
+                "purpose": "Keep each finding, ticket, question and decision attached to the element or join it concerns, apart from the map's shape.",
+                "receiver": "ce3f92966f79458ca18821d52db237f7",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 95,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "7357d0c4dfe44242b3025eb9455fe1a5",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "presents a graph of entities, observations and relations at each node exactly as the MCP reference memory server does, attaches them to elements or joins by joins of type memory, shows them as the memory layer under layer selection, moves joins to a new address and lists those a new map orphans, and holds each node's one note, which only the page writes",
+                "element": null,
+                "held": [
+                  "e4e94a60fff64fa7946005051d986147"
+                ],
+                "ifd": "both",
+                "purpose": "Keep what agents learn and what the person notes at stable functional addresses, across sessions and later metaforms.",
+                "receiver": "f140a84c231349e3b096b48648d50c47",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 96,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "afbe6b7680404710b371ba50f692fe78",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "keeps the memory module's declared project-level tables through the data access object and resolves the elements and joins of the active map that memory joins point to, so a join whose address the map no longer holds reads as orphaned",
+                "element": null,
+                "held": [
+                  "5d4009ba81e04fe9b697c699e70da3e3"
+                ],
+                "ifd": "both",
+                "purpose": "Keep the memory graph in the project's own store and tie it to the map's current addresses.",
+                "receiver": "e4e94a60fff64fa7946005051d986147",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 97,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "cc9f341d54f247d8bae4a4360d6b2407",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "runs the memory module's commands in the web server for the whole memory graph, the orphaned memory joins and each node's note, and writes the page's memory changes in order",
+                "element": null,
+                "held": [
+                  "e4e94a60fff64fa7946005051d986147"
+                ],
+                "ifd": "both",
+                "purpose": "Show the person the memories at a node as a graph of their own, and keep the person's one note there.",
+                "receiver": "5b2a1dc7b5d344fd92bd8ceaacae3500",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 98,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "81656c6f251f4d8e857c1501585f7678",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "records each database's layout version and the oldest layout whose code still reads and writes it, backs up and updates a store at an earlier layout forward, opens a newer store that is still compatible and leaves its numbers as they are, and refuses one that is not, naming the version it needs",
+                "element": null,
+                "held": [
+                  "fa3981b78fbd4d4f8f54c51e35e20fd8"
+                ],
+                "ifd": "receives",
+                "purpose": "Open every store written by older or newer code without misreading it or losing what it holds.",
+                "receiver": "5d4009ba81e04fe9b697c699e70da3e3",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 99,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "48c3717effd64a7698791e9a4b76c3c2",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "keeps each loop's attempt count and MaxAttempts limit, opens each pass as a ticket at its nodes, decides from the pass's result whether to go again, and ends the run with its result delivered to the caller",
+                "element": null,
+                "held": [
+                  "0e7260d9d7b54fbf86da67c0dc4caf7d"
+                ],
+                "ifd": "both",
+                "purpose": "End every loop of a workflow run by code, so no worker decides whether its own work goes again.",
+                "receiver": "63a6425a47894693a73311b396f5f57b",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 100,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "300b681001e948b7894df492d0546369",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "issues the session's handoff nonce, whose run prints the handoff prompt and the where read of the ticket's node and each node it links, keeps the runner's recovery identities in it, and closes it when the session ends",
+                "element": null,
+                "held": [
+                  "fcf1f0b3c8be4db49f233c57a704851a"
+                ],
+                "ifd": "both",
+                "purpose": "Hand each ticket to an agent by one short code that brings it its task and the map around it.",
+                "receiver": "4c88bdd11b5d4bfaaec9c307357e36a4",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 101,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "f760378721e04ddb8eac6b461889eb2e",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "carries the current functional map of Metaform in the package as one exchange document, collapsed to a single finished intake layer with element and join ids kept and no knowledge, memory, sources or tickets, which an explicit metaform import adds as the metaform-release map",
+                "element": null,
+                "held": [
+                  "70336d5ed5e546e395a48f2db13693fc"
+                ],
+                "ifd": "receives",
+                "purpose": "Let an agent developing Metaform, or a fork of it, start from Metaform's own recorded functional understanding instead of reconstructing it.",
+                "receiver": "f140a84c231349e3b096b48648d50c47",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 102,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "9611631d2f11442a88801bf853c39a17",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "makes a Project Archive, a Project + Metaform wheel, the Metaform Installer or Metaform Full from shape presets and a checklist of every module the loader finds, shows the build's real stages in a progress bar that stops at a failed stage with its next step, and hands the finished file to the browser while keeping it under the home's builds folder",
+                "element": null,
+                "held": [
+                  "2a06c3dc2999448a8e630cb971b0edca"
+                ],
+                "ifd": "both",
+                "purpose": "Let the person make the build a destination needs from the page, and receive the file without looking for it.",
+                "receiver": "5b2a1dc7b5d344fd92bd8ceaacae3500",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 103,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "9b5886e2239f496da29ae238bc715070",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "packs a Project Archive, the modules that declare remote use, and the person's task wrapped in Metaform's system prompt, or the onboarding prompt when no task is written, into one wheel that, run with Python alone, unpacks and registers the project, opens a working layer and prints the prompt, the modules' instructions and the map's entry; its return command writes the working layer, the file changes and a note as one Project Archive that metaform import adds as a new layer",
+                "element": null,
+                "held": [
+                  "2a06c3dc2999448a8e630cb971b0edca"
+                ],
+                "ifd": "both",
+                "purpose": "Carry a project and its map to a remote agent system that offers only an upload, a chat and a download, and bring the agent's work back without anyone assembling files by hand.",
+                "receiver": "f140a84c231349e3b096b48648d50c47",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 104,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "c990c3c55a5946d4911813bcdaf7bd77",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "lists, loads and reads each skill folder by name or by its logic.skill address through a skills tool, with its libs fresh from the prompt store, and adds a compact index of the discoverable skills at connect for a harness the deploy record does not show",
+                "element": null,
+                "held": [
+                  "482f8e8b3a45421ba3449903e5a14b0c"
+                ],
+                "ifd": "both",
+                "purpose": "Let an agent in any harness find the skills meant to be found, and load any skill by its address.",
+                "receiver": "620f607499734d00b85204755d5a032a",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 105,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "ed83cd028ceb4575b7c7ae5cef86a83d",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "starts Claude Code, Codex or Gemini CLI on a ticket through its ACP adapter and streams the session to the ticket's node, queues messages and answers in order, interrupts or stops a turn, works an agent glyph's tickets in turn, autostarts waiting work, raises signals when an agent spins, fails repeatedly or waits on a permission, recovers dead runners by policy, starts the system agent and the conversation agents the person summons, starts a sentinel on an issue raised at a node whose chosen proposal becomes held tickets under a work claim, and holds a clean worktree merge for review before it lands",
+                "element": null,
+                "held": [
+                  "4c88bdd11b5d4bfaaec9c307357e36a4"
+                ],
+                "ifd": "both",
+                "purpose": "Run agent work on tickets against the map with every session observable, reachable and recoverable, and bring the person only agents whose purpose is to serve them.",
+                "receiver": "f140a84c231349e3b096b48648d50c47",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 106,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "3dca5ff9f29b441a8da5f3e48ce427f0",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "serves the intake procedure and schema with the project's ignore list, records one element or purpose join per call with its refs in the sources layer and its conditions as work records, refusing no content, shows the building map for review and activates it at finish; on a finished map it writes conditions and refs onto it and opens a new base only for new shape",
+                "element": null,
+                "held": [
+                  "bb8631b657344fed8b0ecfed6ab302b5"
+                ],
+                "ifd": "both",
+                "purpose": "Establish an artifact-specific functional map through the authored intake procedure without rejecting inferred content.",
+                "receiver": "f140a84c231349e3b096b48648d50c47",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 107,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "56bdbae4302040ceb2a85acf0db86507",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "registers each workpiece source under the Metaform home, resolves a folder's project and its bases, records origins and variants and reconstructs them with Python alone, exports and imports a project whole by unique id, saves process feedback, intake reports and shapes as files with one row each, and backs a project up before clearing it so one command restores it",
+                "element": null,
+                "held": [
+                  "3e794cbca964433f915d0c5ceb454dea"
+                ],
+                "ifd": "both",
+                "purpose": "Keep each workpiece's identity, functional maps, and physical revisions available across folders, variants, and transfers.",
+                "receiver": "f140a84c231349e3b096b48648d50c47",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 108,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "6c8b03de4ba54857b2b6b7320ea5f6f8",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "draws the selected metaform and its layers in linked 2D and 3D views with upstream and downstream toggles, lights each node by its work and open questions, edits tasks, elements, notes, prompts and the layer choice, runs the Kanban board with agent glyphs, starts, follows, messages and stops agents and their chats, takes an issue raised on a node to a sentinel, exports the map as Markdown or XML, clears a project, serves saved web variants side by side, and follows every map change without polling",
+                "element": null,
+                "held": [
+                  "5b2a1dc7b5d344fd92bd8ceaacae3500"
+                ],
+                "ifd": "both",
+                "purpose": "Inspect and change the functional map and coordinate addressed work through one live project workbench.",
+                "receiver": "f140a84c231349e3b096b48648d50c47",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 109,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "f4bb4df9696244b69ca0e1ae2611d37f",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "keeps each base's elements, receiver-owned joins, knowledge items and properties with every version of them in one append-only op log per store, and resolves which layers reach each address for every read",
+                "element": null,
+                "held": [
+                  "5d4009ba81e04fe9b697c699e70da3e3"
+                ],
+                "ifd": "both",
+                "purpose": "Preserve and read the project's functional records with the knowledge and provenance selected for each address.",
+                "receiver": "f140a84c231349e3b096b48648d50c47",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 110,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "74eefeb2abf04d7b868e746aed3bede8",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "detects the supported AI tools, previews and backs up every file it changes, registers the uvx server entry through each tool's own mechanism, copies the one skill and the global instruction pointers, proves each registered launch starts the server, asks an unfamiliar harness on its first run to provision what it supports, and removes what it added on uninstall",
+                "element": null,
+                "held": [
+                  "852c37c39c4a494fb6f34a875f4a57c4"
+                ],
+                "ifd": "both",
+                "purpose": "Connect supported agent clients to a concrete, validated Metaform installation.",
+                "receiver": "620f607499734d00b85204755d5a032a",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 111,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "773067ee45a64f8d8f902bd6cedc840e",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "parses verbs, nouns, switches and aliases, keeps every long switch as a folder setting with default, set and glued states, derives help from the live declarations, asks the design's questions through the store's reads, and opens the terminal settings screen, each resolved from the working folder's project",
+                "element": null,
+                "held": [
+                  "728b3c7049d5458ea287944f45ce2ccd"
+                ],
+                "ifd": "both",
+                "purpose": "Operate Metaform and its modules from the working folder with consistent arguments, settings, help, and next actions.",
+                "receiver": "f140a84c231349e3b096b48648d50c47",
+                "type": "purpose"
+              }
+            },
+            {
+              "seq": 112,
+              "session_id": "collapse",
+              "at": "2026-10-10T11:30:07Z",
+              "op": "add",
+              "kind": "join",
+              "id": "0eaa63a8ce944caea18d2079b2365f09",
+              "layer_id": "3412e32fb43f4e86a70606a362d6fbce",
+              "data": {
+                "mode": "add",
+                "reason": null,
+                "evidence": null,
+                "ef": "exposes each session's activity, state and chat, ticket claims, messages, questions, interruption and stop, raised issues with their sentinel chats and proposals, work claims and Autostart agents to the page through public dispatch verbs and map-change notifications",
+                "element": null,
+                "held": [
+                  "4c88bdd11b5d4bfaaec9c307357e36a4"
+                ],
+                "ifd": "both",
+                "purpose": "Make addressed agent work observable and controllable from the project workbench.",
+                "receiver": "5b2a1dc7b5d344fd92bd8ceaacae3500",
+                "type": "purpose"
+              }
             }
           ],
-          "provenance": [
-            {
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "module": "chassis",
-              "workflow": "release-snapshot",
-              "prompt": null,
-              "model": null,
-              "role": "release builder",
-              "blinded": null
-            }
-          ],
-          "types": [
-            {
-              "address": "code",
-              "parent": null
-            },
-            {
-              "address": "code.map",
-              "parent": "code"
-            },
-            {
-              "address": "code.map.functional",
-              "parent": "code.map"
-            },
-            {
-              "address": "code.tool",
-              "parent": "code"
-            },
-            {
-              "address": "code.tool.context_engineering",
-              "parent": "code.tool"
-            },
-            {
-              "address": "code.namespace",
-              "parent": "code"
-            },
-            {
-              "address": "code.namespace.type",
-              "parent": "code.namespace"
-            },
-            {
-              "address": "code.record",
-              "parent": "code"
-            },
-            {
-              "address": "code.record.join",
-              "parent": "code.record"
-            },
-            {
-              "address": "code.record.join.subtype",
-              "parent": "code.record.join"
-            },
-            {
-              "address": "code.record.property",
-              "parent": "code.record"
-            },
-            {
-              "address": "code.layer",
-              "parent": "code"
-            },
-            {
-              "address": "code.layer.knowledge",
-              "parent": "code.layer"
-            },
-            {
-              "address": "code.layer.memory",
-              "parent": "code.layer"
-            },
-            {
-              "address": "code.selection",
-              "parent": "code"
-            },
-            {
-              "address": "code.selection.layer",
-              "parent": "code.selection"
-            },
-            {
-              "address": "code.record.provenance",
-              "parent": "code.record"
-            },
-            {
-              "address": "code.store",
-              "parent": "code"
-            },
-            {
-              "address": "code.store.prompt",
-              "parent": "code.store"
-            },
-            {
-              "address": "code.store.data",
-              "parent": "code.store"
-            },
-            {
-              "address": "code.module",
-              "parent": "code"
-            },
-            {
-              "address": "code.module.intake",
-              "parent": "code.module"
-            },
-            {
-              "address": "document",
-              "parent": null
-            },
-            {
-              "address": "document.procedure",
-              "parent": "document"
-            },
-            {
-              "address": "document.procedure.intake",
-              "parent": "document.procedure"
-            },
-            {
-              "address": "code.queue",
-              "parent": "code"
-            },
-            {
-              "address": "code.queue.work",
-              "parent": "code.queue"
-            },
-            {
-              "address": "code.board",
-              "parent": "code"
-            },
-            {
-              "address": "code.board.message",
-              "parent": "code.board"
-            },
-            {
-              "address": "code.challenge",
-              "parent": "code"
-            },
-            {
-              "address": "code.challenge.blind_spot",
-              "parent": "code.challenge"
-            },
-            {
-              "address": "code.server",
-              "parent": "code"
-            },
-            {
-              "address": "code.server.mcp",
-              "parent": "code.server"
-            },
-            {
-              "address": "code.command",
-              "parent": "code"
-            },
-            {
-              "address": "code.command.slash",
-              "parent": "code.command"
-            },
-            {
-              "address": "code.instructions",
-              "parent": "code"
-            },
-            {
-              "address": "code.instructions.agent",
-              "parent": "code.instructions"
-            },
-            {
-              "address": "document.prompt",
-              "parent": "document"
-            },
-            {
-              "address": "code.chassis",
-              "parent": "code"
-            },
-            {
-              "address": "code.interface",
-              "parent": "code"
-            },
-            {
-              "address": "code.interface.command_line",
-              "parent": "code.interface"
-            },
-            {
-              "address": "code.schema",
-              "parent": "code"
-            },
-            {
-              "address": "code.schema.settings",
-              "parent": "code.schema"
-            },
-            {
-              "address": "code.bus",
-              "parent": "code"
-            },
-            {
-              "address": "code.bus.event",
-              "parent": "code.bus"
-            },
-            {
-              "address": "code.service",
-              "parent": "code"
-            },
-            {
-              "address": "code.service.nonce",
-              "parent": "code.service"
-            },
-            {
-              "address": "code.registry",
-              "parent": "code"
-            },
-            {
-              "address": "code.registry.project",
-              "parent": "code.registry"
-            },
-            {
-              "address": "code.page",
-              "parent": "code"
-            },
-            {
-              "address": "code.page.help",
-              "parent": "code.page"
-            },
-            {
-              "address": "code.screen",
-              "parent": "code"
-            },
-            {
-              "address": "code.screen.settings",
-              "parent": "code.screen"
-            },
-            {
-              "address": "code.history",
-              "parent": "code"
-            },
-            {
-              "address": "code.history.version",
-              "parent": "code.history"
-            },
-            {
-              "address": "code.exchange",
-              "parent": "code"
-            },
-            {
-              "address": "code.exchange.data",
-              "parent": "code.exchange"
-            },
-            {
-              "address": "code.archive",
-              "parent": "code"
-            },
-            {
-              "address": "code.archive.tamper_evident",
-              "parent": "code.archive"
-            },
-            {
-              "address": "code.builder",
-              "parent": "code"
-            },
-            {
-              "address": "code.builder.package",
-              "parent": "code.builder"
-            },
-            {
-              "address": "code.store.report",
-              "parent": "code.store"
-            },
-            {
-              "address": "code.installer",
-              "parent": "code"
-            },
-            {
-              "address": "document.skill",
-              "parent": "document"
-            },
-            {
-              "address": "document.skill.agent",
-              "parent": "document.skill"
-            },
-            {
-              "address": "code.loader",
-              "parent": "code"
-            },
-            {
-              "address": "code.loader.module",
-              "parent": "code.loader"
-            },
-            {
-              "address": "code.module.template",
-              "parent": "code.module"
-            },
-            {
-              "address": "code.module.example",
-              "parent": "code.module"
-            },
-            {
-              "address": "code.gui",
-              "parent": "code"
-            },
-            {
-              "address": "code.gui.web",
-              "parent": "code.gui"
-            },
-            {
-              "address": "code.library",
-              "parent": "code"
-            },
-            {
-              "address": "code.library.vendored",
-              "parent": "code.library"
-            },
-            {
-              "address": "code.viewer",
-              "parent": "code"
-            },
-            {
-              "address": "code.viewer.graph",
-              "parent": "code.viewer"
-            },
-            {
-              "address": "code.board.kanban",
-              "parent": "code.board"
-            },
-            {
-              "address": "code.outline",
-              "parent": "code"
-            },
-            {
-              "address": "code.outline.map",
-              "parent": "code.outline"
-            },
-            {
-              "address": "code.engine",
-              "parent": "code"
-            },
-            {
-              "address": "code.engine.workflow",
-              "parent": "code.engine"
-            },
-            {
-              "address": "code.preprocessor",
-              "parent": "code"
-            },
-            {
-              "address": "code.preprocessor.prompt",
-              "parent": "code.preprocessor"
-            },
-            {
-              "address": "document.prompt.workflow",
-              "parent": "document.prompt"
-            },
-            {
-              "address": "document.specification",
-              "parent": "document"
-            },
-            {
-              "address": "code.suite",
-              "parent": "code"
-            },
-            {
-              "address": "code.suite.test",
-              "parent": "code.suite"
-            },
-            {
-              "address": "document.guide",
-              "parent": "document"
-            },
-            {
-              "address": "document.preprint",
-              "parent": "document"
-            },
-            {
-              "address": "document.instructions",
-              "parent": "document"
-            },
-            {
-              "address": "document.instructions.agent",
-              "parent": "document.instructions"
-            },
-            {
-              "address": "document.log",
-              "parent": "document"
-            },
-            {
-              "address": "document.log.build",
-              "parent": "document.log"
-            },
-            {
-              "address": "document.brief",
-              "parent": "document"
-            },
-            {
-              "address": "document.brief.feature",
-              "parent": "document.brief"
-            },
-            {
-              "address": "downstream",
-              "parent": null
-            },
-            {
-              "address": "downstream.cqu",
-              "parent": "downstream"
-            },
-            {
-              "address": "downstream.cqu.engineer",
-              "parent": "downstream.cqu"
-            },
-            {
-              "address": "downstream.cqu.engineer.context",
-              "parent": "downstream.cqu.engineer"
-            },
-            {
-              "address": "downstream.cqu.author",
-              "parent": "downstream.cqu"
-            },
-            {
-              "address": "downstream.cqu.author.module",
-              "parent": "downstream.cqu.author"
-            },
-            {
-              "address": "upstream",
-              "parent": null
-            },
-            {
-              "address": "upstream.code",
-              "parent": "upstream"
-            },
-            {
-              "address": "upstream.code.database",
-              "parent": "upstream.code"
-            },
-            {
-              "address": "upstream.code.database.embedded",
-              "parent": "upstream.code.database"
-            },
-            {
-              "address": "upstream.code.host",
-              "parent": "upstream.code"
-            },
-            {
-              "address": "upstream.code.host.mcp",
-              "parent": "upstream.code.host"
-            },
-            {
-              "address": "upstream.code.sdk",
-              "parent": "upstream.code"
-            },
-            {
-              "address": "upstream.code.sdk.mcp",
-              "parent": "upstream.code.sdk"
-            },
-            {
-              "address": "upstream.code.manager",
-              "parent": "upstream.code"
-            },
-            {
-              "address": "upstream.code.manager.package",
-              "parent": "upstream.code.manager"
-            },
-            {
-              "address": "upstream.code.control",
-              "parent": "upstream.code"
-            },
-            {
-              "address": "upstream.code.control.version",
-              "parent": "upstream.code.control"
-            }
-          ],
-          "elements": [
-            {
-              "element_id": "08f2339fb13a4ffaa032360140bd539b",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.map.functional",
-              "name_length": 2,
-              "name": "Inference Metaform",
-              "role": "DE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "494b5601bcd44c41a1902a5d9ca042ba",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.tool.context_engineering",
-              "name_length": 2,
-              "name": "Metaform",
-              "role": "AUE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "614b5291ae5f4e449485e7604e0c938f",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.namespace.type",
-              "name_length": 2,
-              "name": "namespace",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "4214cb00c5414d6f9fdd3d2660d6180d",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.record.join",
-              "name_length": 2,
-              "name": "join",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "c235aebef7dc440d990ffb2aa19556e3",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.record.join.subtype",
-              "name_length": 2,
-              "name": "subtype join",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "7074c67850944dda8b7940855916d93a",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.record.property",
-              "name_length": 2,
-              "name": "property",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "c5b2c4446b404f71b71497a9002a3451",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.layer.knowledge",
-              "name_length": 2,
-              "name": "knowledge layer",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "2f0b02b662d345b69f3b53ece2834f7c",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.layer.memory",
-              "name_length": 2,
-              "name": "memory",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "9cea77344e3548f986fae43f65e76bac",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.selection.layer",
-              "name_length": 2,
-              "name": "select and mask",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "54f51e932783484ab199498ca52c28e9",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.record.provenance",
-              "name_length": 2,
-              "name": "provenance",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "9547712b5e5b4f34a84ab5b516081384",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.store.prompt",
-              "name_length": 2,
-              "name": "prompts as versioned records",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "e5a32786f34b4a49bbffbdfc550cb9f9",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.store.data",
-              "name_length": 2,
-              "name": "data access object",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "e0bf3d6ccc90469dadb40b9e0df975cd",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.module.intake",
-              "name_length": 2,
-              "name": "intake module",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "b1d10c4c456f49a59a6e7b547ef47f28",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "document.procedure.intake",
-              "name_length": 2,
-              "name": "Canonical Intake",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "830e090cbde347afa6d797cafbf93896",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.queue.work",
-              "name_length": 2,
-              "name": "work records",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "0492218b833c4fe9a25b099f402d00f0",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.board.message",
-              "name_length": 2,
-              "name": "questions and messages",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "ca1e2076315b414fbfdd28d807798ae5",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.challenge.blind_spot",
-              "name_length": 2,
-              "name": "blind-spot challenge",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "a52d69d1598f4d2baefc0c94ed5b900c",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.server.mcp",
-              "name_length": 2,
-              "name": "MCP server",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "a365c3c1d6c54eceb86b6ba606e04277",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.command.slash",
-              "name_length": 2,
-              "name": "slash commands",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "54246bdccc8243808796738987f39b3c",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.instructions.agent",
-              "name_length": 2,
-              "name": "instructions agents read",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "ed7a09c1088346a0bc7b5ff3ee89c7ca",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "document.prompt",
-              "name_length": 2,
-              "name": "prompt files",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "5d56ab6e5b804da4aff3d7164e79bed5",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.chassis",
-              "name_length": 1,
-              "name": "chassis",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "1d29fdc24c204621aaaecb97d62ed582",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.interface.command_line",
-              "name_length": 2,
-              "name": "metaform command line",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "7ba902d1f53e4832a6255ffc7c145405",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.schema.settings",
-              "name_length": 2,
-              "name": "settings",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "0a6b8afc31f1404085c07eb34a21a409",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.bus.event",
-              "name_length": 2,
-              "name": "event bus",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "baac6e8d35664d659e6172b5598f4347",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.service.nonce",
-              "name_length": 2,
-              "name": "nonce service",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "7c8b7c7a49f142a09cea5494d0d1894a",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.registry.project",
-              "name_length": 2,
-              "name": "projects and working folders",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "d6df241b51f3479e88f5340146a9b043",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.page.help",
-              "name_length": 2,
-              "name": "help",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "a69799fa2b3449a7a8f3706f0572f3c4",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.screen.settings",
-              "name_length": 2,
-              "name": "settings screen",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "f43406ac1b8146419ac2dc75da52e1e2",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.history.version",
-              "name_length": 2,
-              "name": "history",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "72ddeb419b5b436db0c9bfae68b94669",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.exchange.data",
-              "name_length": 2,
-              "name": "export and import",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "29695ee8041040958e89aefbe4a24864",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.archive.tamper_evident",
-              "name_length": 2,
-              "name": "packet",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "803491132f30425681c9aaa98e44123b",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.builder.package",
-              "name_length": 2,
-              "name": "metaform build",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "adf385a80e2e46d3a1b69ffe4e1fb9bd",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.store.report",
-              "name_length": 2,
-              "name": "reports and feedback",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "7ca5935ae5a147b69ada3cab29430c64",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.installer",
-              "name_length": 1,
-              "name": "metaform install",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "390bb644f0484437b4cb66f835002e76",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "document.skill.agent",
-              "name_length": 2,
-              "name": "Metaform skill",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "4d3503da762149e1a4c51400ef340f60",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.loader.module",
-              "name_length": 2,
-              "name": "module contract and loader",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "aa17c39003fb4ff492aa77a43c7e379c",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.module.template",
-              "name_length": 2,
-              "name": "template",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "3533f34f249d4b279007607729d2435a",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.module.example",
-              "name_length": 2,
-              "name": "hello",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "ac4be8df4bf143ef9075d59028bee60a",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.gui.web",
-              "name_length": 2,
-              "name": "web GUI",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "38583c4402d64d98a598c6da286b0949",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.library.vendored",
-              "name_length": 2,
-              "name": "bundled scripts",
-              "role": "NE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "afe780542f47427fadc17df9d38e43a3",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.viewer.graph",
-              "name_length": 2,
-              "name": "viewer",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "dd2dcfae96e04de8a9c0725615559cfd",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.board.kanban",
-              "name_length": 2,
-              "name": "Board",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "c425b3b135974c1ba2b4c5bd96ddd576",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.outline.map",
-              "name_length": 2,
-              "name": "map markdown",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "04da899f46c440a0b03dbbff24f9c8aa",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.engine.workflow",
-              "name_length": 2,
-              "name": "workflow module",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "3bcfad8dac5247dd8b9de5137adb6106",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.preprocessor.prompt",
-              "name_length": 2,
-              "name": "prompt preprocessing",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "13c95e1024ad46a0b876567e052c852e",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "document.prompt.workflow",
-              "name_length": 2,
-              "name": "prompts",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "8218d5f719934f558fb1da7902b44fbb",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "document.specification",
-              "name_length": 1,
-              "name": "Metaform specification",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "a56cee6bd77444aab7f81d8cae64a7bf",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.suite.test",
-              "name_length": 2,
-              "name": "tests",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "729ea8e8cfbf4968986e6a4964e24ca1",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "document.guide",
-              "name_length": 1,
-              "name": "documentation",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "89503a7a4b364eb7a5517042d36f0a40",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "document.preprint",
-              "name_length": 1,
-              "name": "preprint",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "fb3af3b8127b4938aa928d795d5a9b35",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "document.instructions.agent",
-              "name_length": 2,
-              "name": "development agent instructions",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "23b23f91234e4cf0af1e58b7aa071062",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "document.log.build",
-              "name_length": 2,
-              "name": "build log",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "84c2a9a44c694dbe829e02869d421354",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "document.brief.feature",
-              "name_length": 2,
-              "name": "feature briefs",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "2f65bb40a82f4bd3a0cda6a2b3f5dfbe",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "code.layer",
-              "name_length": 1,
-              "name": "layer",
-              "role": "SE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "3074c20048e5473ab01cdf74e6db1946",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "downstream.cqu.engineer.context",
-              "name_length": 2,
-              "name": "context engineer",
-              "role": "CQU",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "1b321c0f7c4c4e91a8d953d09164e626",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "downstream.cqu.author.module",
-              "name_length": 2,
-              "name": "module author",
-              "role": "CQU",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "e77fb9ffc47e4c84a06a9955c7c43600",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "upstream.code.database.embedded",
-              "name_length": 2,
-              "name": "SQLite",
-              "role": "NE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "183dd0ece42e496a912af109d51fa9ce",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "upstream.code.host.mcp",
-              "name_length": 2,
-              "name": "AI tools",
-              "role": "NE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "dbdaeea9b2c84a3796fac2fd9aa41645",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "upstream.code.sdk.mcp",
-              "name_length": 2,
-              "name": "mcp Python SDK",
-              "role": "NE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "29cab6cbba0642a7a7b18a739c088b46",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "upstream.code.manager.package",
-              "name_length": 2,
-              "name": "uv",
-              "role": "NE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "element_id": "1461d95f802b4d71abe668cb3068db20",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "address": "upstream.code.control.version",
-              "name_length": 2,
-              "name": "git",
-              "role": "NE",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            }
-          ],
-          "joins": [
-            {
-              "join_id": "f02f86f25e044b76bbe4ef0f5984dda1",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "3074c20048e5473ab01cdf74e6db1946",
-              "purpose": "Have every agent that works a project start from the project's recorded functional understanding, what each part is for, who receives it and how, instead of reconstructing it, so the agent's inference goes to the task.",
-              "ef": "hands every agent the project's parts, purposes and encounters before it works",
-              "ifd": "receives",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "62d60dbc6ef44ac7ba4baebb5ed3adaa",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "494b5601bcd44c41a1902a5d9ca042ba",
-              "purpose": "Remain a context engineering tool: engineer the context of every agent and subagent from one project's recorded functional understanding.",
-              "ef": "defines Metaform as the tool that hands agents a project's functional map",
-              "ifd": "receives",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "4094575bf0624abab11c11bbd4d86737",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "3074c20048e5473ab01cdf74e6db1946",
-              "purpose": "Use one tool on whatever artifact he directs agents on, a codebase, one project inside a repository, a folder of photographs, a contract or a story, with what the map covers and where it stops always explicit.",
-              "ef": "maps any registered artifact by what it does, keeping its data out of the artifact",
-              "ifd": "receives",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "9ffab8fafe0e42a48cdab737dd22164f",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "08f2339fb13a4ffaa032360140bd539b",
-              "purpose": "Give every part of a project an address that reads as a proper noun, so an agent orients by type understanding and general knowledge lives once at the prefix where it applies.",
-              "ef": "names each part by a typed address that reads backward as its name",
-              "ifd": "receives",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "86611727aa86424a9d8a29927d82284a",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "08f2339fb13a4ffaa032360140bd539b",
-              "purpose": "Say, for each part, who receives what it does, why they need it and how it is delivered, so an agent knows what must keep holding when it changes the part.",
-              "ef": "records one receiver's purpose served by one provider's encounter function",
-              "ifd": "receives",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "19ec60ad16a348bfa0050ddaf00e9406",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "08f2339fb13a4ffaa032360140bd539b",
-              "purpose": "Let what describes a part, such as the medium it is written in or a practice for all code, flow to every part beneath it without a join tying it to one receiver.",
-              "ef": "carries a value along the namespace from the element it is attached to",
-              "ifd": "receives",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "09be98cfd253425eb4301d7d73e083c7",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "08f2339fb13a4ffaa032360140bd539b",
-              "purpose": "Hold the map and every layer durably, safe with many agents writing at once, and answer each question an agent asks of it straight from an index.",
-              "ef": "stores every element, join, layer item and version and answers each read through an index",
-              "ifd": "both",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "93b921d47d32463a8e0242173a6b0e06",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "e5a32786f34b4a49bbffbdfc550cb9f9",
-              "purpose": "Keep each metaform in one local file that many processes can write without corrupting it, with full-text search over items.",
-              "ef": "persists each metaform in one file under WAL with FTS5 search",
-              "ifd": "both",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "e4fd1c3da3354a4fa7dbc6437ef54329",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "08f2339fb13a4ffaa032360140bd539b",
-              "purpose": "Come into being from a fresh agent's reading of the artifact, recorded as it is reasoned, so no agent has to hold the whole map in its context and the person can watch it form.",
-              "ef": "records the map one element, join and subtype join per call as the intake agent reasons it",
-              "ifd": "receives",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "ae190c7c3fe44701bae942492fe805a3",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "e0bf3d6ccc90469dadb40b9e0df975cd",
-              "purpose": "Give every intake agent, of any model, the same method unaltered, so the map depends on the procedure and not on how an orchestrator reworded it.",
-              "ef": "serves the agent the procedure it performs word for word",
-              "ifd": "receives",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "4fb5a7faa6f64aa0aaf47b1a46762b47",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "08f2339fb13a4ffaa032360140bd539b",
-              "purpose": "Show, on the parts themselves, what is missing, broken, flawed or wanted, who is working it and how far along, so the map serves as the project's kanban and no two agents start the same work.",
-              "ef": "keeps the condition and progress of each part beside the map",
-              "ifd": "both",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "c83f4df4eb3d40259dcef7c6b39736af",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "08f2339fb13a4ffaa032360140bd539b",
-              "purpose": "Let an agent ask the person at the part a question concerns and carry on, with the answer kept there for the next agent.",
-              "ef": "holds agents' questions to the person at the parts they concern",
-              "ifd": "both",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "42537cc159894e9cba9be98aac59d73b",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "08f2339fb13a4ffaa032360140bd539b",
-              "purpose": "Find the functions and encounters the design should have and does not, and have the project answer each gap with reasons rather than silence.",
-              "ef": "records each gap a critic raises and the project's answer to it",
-              "ifd": "both",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "d7609d2d4ed2454da2823bad98a347cd",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "08f2339fb13a4ffaa032360140bd539b",
-              "purpose": "Reach an agent inside whatever AI tool it runs in, with the same reads and writes the command line has and the instructions it needs on connecting.",
-              "ef": "serves every surfaced module as one MCP tool over stdio",
-              "ifd": "both",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "f87c4122c870401ba856426230079dcf",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "a52d69d1598f4d2baefc0c94ed5b900c",
-              "purpose": "Speak the Model Context Protocol exactly as hosts expect, tools, prompts, instructions and cancellation included.",
-              "ef": "carries the server's JSON-RPC exchange with the host",
-              "ifd": "both",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "3acd3e69d4664c6d8fb43b75257cdf3c",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "a52d69d1598f4d2baefc0c94ed5b900c",
-              "purpose": "Be started by the AI tool the agent runs in, in a folder that resolves to the right project.",
-              "ef": "starts the server and relays the agent's calls to it",
-              "ifd": "both",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "d23973827bd041388e082518c362c6ca",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "08f2339fb13a4ffaa032360140bd539b",
-              "purpose": "Tell an agent opening a registered project, the moment it connects, what Metaform holds here and what to do next.",
-              "ef": "tells each connecting agent what the project holds and what to do next",
-              "ifd": "receives",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "5732a656fc004bb3880f8938596a448d",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "54246bdccc8243808796738987f39b3c",
-              "purpose": "Keep every word an agent reads in one authored place, apart from the code.",
-              "ef": "reads each prompt's words from its authored file by name",
-              "ifd": "receives",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "5f71e5dbaf484f5fbf4c1d7839601ca6",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "08f2339fb13a4ffaa032360140bd539b",
-              "purpose": "Be held, read and changed by one fixed core that works on its own with every module disabled, so new capabilities plug in without touching it.",
-              "ef": "carries the map, its settings and its command line for every module",
-              "ifd": "both",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "5f1f8129f3bb48cab54af81635d112bb",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "5d56ab6e5b804da4aff3d7164e79bed5",
-              "purpose": "Give people and agents without MCP every command, read and write in one grammar that runs with no prompts.",
-              "ef": "runs every chassis and module command from one verb, noun and switch grammar",
-              "ifd": "both",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "2c1acafaab5242d0bbd601497b585e4b",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "5d56ab6e5b804da4aff3d7164e79bed5",
-              "purpose": "Let every switch be passed once, stored for a folder and its subfolders, or glued against change, with Metaform working at zero configuration.",
-              "ef": "resolves each setting for the folder from one declared schema",
-              "ifd": "both",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "397809dd1a2a4967991c9c466fcb2d1c",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "5d56ab6e5b804da4aff3d7164e79bed5",
-              "purpose": "Let modules react to each other, and open web pages follow every change to the map, without polling and without one module knowing another.",
-              "ef": "delivers each published topic to every subscriber and reports each outcome",
-              "ifd": "sends",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "80caecd80d79493c88124518761b745e",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "5d56ab6e5b804da4aff3d7164e79bed5",
-              "purpose": "Hand an agent its piece of a module's work by one number it runs, with the module moving the work forward behind it.",
-              "ef": "routes an agent's metaform <nonce> to the module function that holds its work",
-              "ifd": "both",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "3f37dc6336c84ee7aa967620bec277c3",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "5d56ab6e5b804da4aff3d7164e79bed5",
-              "purpose": "Know, from whatever folder a command or server runs in, which project and which of its metaforms the work is about.",
-              "ef": "resolves each working folder to its project and active metaform",
-              "ifd": "receives",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "39d73dfadaee42c896fb0ff10d08120f",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "5d56ab6e5b804da4aff3d7164e79bed5",
-              "purpose": "Keep every agent's piece of work against the baseline it started from, committed or not, so variants can be compared side by side and rebuilt anywhere without the original repository.",
-              "ef": "keeps each piece of agent work as a sibling variant of one origin",
-              "ifd": "both",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "1ce857c54c2649d187b8f97561be99d4",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "f43406ac1b8146419ac2dc75da52e1e2",
-              "purpose": "Base a repository's history on the commit it starts from instead of a copy of every file.",
-              "ef": "supplies the commit a repository's origin is based on",
-              "ifd": "receives",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "416d42c75add4d5c91a10fa39262ac14",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "f43406ac1b8146419ac2dc75da52e1e2",
-              "purpose": "Hand a project's work to another person or machine as one file anyone can open, with its provenance and data bound to the work so a change after sealing shows.",
-              "ef": "seals the work and its provenance into one plain ZIP",
-              "ifd": "sends",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "8fc8a81ff2074b4c840707ac091eed76",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "5d56ab6e5b804da4aff3d7164e79bed5",
-              "purpose": "Carry a project's metaforms, or chosen layers, between homes or bring an agent's work in without losing an identity, a version or a provenance record.",
-              "ef": "moves a project's metaforms between homes by identity id",
-              "ifd": "both",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "5ab66075bb934a4ab51715d443ce578c",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "5d56ab6e5b804da4aff3d7164e79bed5",
-              "purpose": "Deliver Metaform as one wheel holding the chassis and only the modules a person has enabled, runnable directly even offline in a hosted code environment.",
-              "ef": "packs the chassis and enabled modules into one directly runnable wheel",
-              "ifd": "sends",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "c8a68b3296b94cee8ea49ec5bc44a669",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "5d56ab6e5b804da4aff3d7164e79bed5",
-              "purpose": "Keep what agents report about the project and about Metaform's own process, so broken code and bad semantics reach the person and feed back into the method.",
-              "ef": "files agents' project reports and process feedback in the home",
-              "ifd": "receives",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "cc97bf890fa04c4cac486b6889f42578",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "3074c20048e5473ab01cdf74e6db1946",
-              "purpose": "Connect Metaform to each AI tool he uses with one command, safely repeatable, and know each connection works before relying on it.",
-              "ef": "registers Metaform with each chosen AI tool and proves it starts",
-              "ifd": "receives",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "b927e59c963b47349d36aa42068318b6",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "7ca5935ae5a147b69ada3cab29430c64",
-              "purpose": "Have an agent in any registered project know Metaform is there and where its live instructions are, even before the MCP server is read.",
-              "ef": "hands each chosen AI tool a fixed skill that points agents at the live instructions",
-              "ifd": "sends",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "2ae02a720dc7412eb1b6686f888cc005",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "7ca5935ae5a147b69ada3cab29430c64",
-              "purpose": "Give every AI tool one launch command that starts the server from the built wheel with its dependencies, on Linux, macOS and Windows.",
-              "ef": "launches the server from the wheel in an isolated environment",
-              "ifd": "receives",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "27b932dfa1c84717a10f57c660dd6b01",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "7ca5935ae5a147b69ada3cab29430c64",
-              "purpose": "Register Metaform the way each AI tool expects on each operating system.",
-              "ef": "accepts Metaform's entry through its own registration mechanism",
-              "ifd": "both",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "2ae2388ca6bb4e5d8e32cadb7d6f8a2f",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "1b321c0f7c4c4e91a8d953d09164e626",
-              "purpose": "Add a capability to Metaform as a module, declared once in its own folder, that runs as a metaform command and an MCP tool with its own settings, events, status line, prompts and lifecycle, without changing the chassis.",
-              "ef": "turns one module declaration into commands, tools, settings and subscriptions it owns",
-              "ifd": "both",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "0f87d73af26642b1b35d6d152f5e7e4f",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "5d56ab6e5b804da4aff3d7164e79bed5",
-              "purpose": "Stay fixed while every feature beyond it arrives as a module that can be enabled, disabled, removed and restored by name.",
-              "ef": "loads each enabled, compatible module as one owned unit",
-              "ifd": "receives",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "0fd212e64a04464d8499144b53f78923",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "3074c20048e5473ab01cdf74e6db1946",
-              "purpose": "See a project's metaform form live during an intake, watch the work on its parts, and act on it, answering agents' questions, adding tasks, notes and elements, and choosing which layers agents get, without reading records.",
-              "ef": "shows the metaform and the work on it and takes the person's answers and tasks",
-              "ifd": "both",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "8a3edf7aa4c2450faf8f07fa45be0209",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "ac4be8df4bf143ef9075d59028bee60a",
-              "purpose": "Draw the graph, the 2D map, the editors and the fonts offline, from files carried in the module.",
-              "ef": "supplies the graph, glass, diagram, editor and font code the page runs",
-              "ifd": "receives",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "eb5d17452cc64815ac62595eeb358127",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "ac4be8df4bf143ef9075d59028bee60a",
-              "purpose": "Show the person exactly what agents would see, and write the page's eighteen changes as any agent's would be written.",
-              "ef": "answers the page's reads under agents' visibility rules and takes its writes",
-              "ifd": "both",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "a7d3e380c902469e887ad9e977097707",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "08f2339fb13a4ffaa032360140bd539b",
-              "purpose": "Let the understanding of a system leave Metaform as a short document a person can read and pass on, holding what a reader finds their way by.",
-              "ef": "writes the map as a short Markdown outline",
-              "ifd": "sends",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "6784e292b2a24fc5a270db02409cef6e",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "3074c20048e5473ab01cdf74e6db1946",
-              "purpose": "Run any prompt as a deterministic chain handed from agent to agent, each step carrying the metaform's context, to improve the project itself.",
-              "ef": "chains prompts from agent to agent with the metaform's context at each step",
-              "ifd": "both",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "a776c4d55d904b0f87539ea5fdeabf78",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "04da899f46c440a0b03dbbff24f9c8aa",
-              "purpose": "Hand each working agent a prompt that already speaks the project's own terms and carries the addresses and knowledge layers the orchestrator chose.",
-              "ef": "rewrites a prompt in the project's own terms with its addresses attached",
-              "ifd": "sends",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "d0ddb643a9eb4925815f9b9fd4a2f9e9",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "04da899f46c440a0b03dbbff24f9c8aa",
-              "purpose": "Start with a body of tuned prompts to ingest as Metaform's bundled workflows.",
-              "ef": "ingests the collected prompts, once tuned, as bundled workflows",
-              "ifd": "receives",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "1a5c18ee297b4d7da62ec7607aaa08db",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "3074c20048e5473ab01cdf74e6db1946",
-              "purpose": "Decide Metaform's design once, in records with their reasons and the tests that protect them, so any builder agent builds the same Metaform from that folder alone and no decision lives only in a conversation.",
-              "ef": "decides the design every build and test follows",
-              "ifd": "sends",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "5afa9f88d1b14c9395e9a7fa78fdec45",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "8218d5f719934f558fb1da7902b44fbb",
-              "purpose": "Have every requirement protected by a test that fails on a build that gets it wrong, on Linux, macOS and Windows, for every change.",
-              "ef": "checks each requirement on every change on three systems",
-              "ifd": "receives",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "6fec480bebf247bfa23a39a9db9581c0",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "3074c20048e5473ab01cdf74e6db1946",
-              "purpose": "Have a person at an AI lab or a developer understand Metaform on the first read, install it, connect an agent, take an intake and read the first map, with every claim checked against the source.",
-              "ef": "explains Metaform to people who adopt or extend it",
-              "ifd": "sends",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "28bfb0d9ba5b49c48b8126707c05ba5d",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "3074c20048e5473ab01cdf74e6db1946",
-              "purpose": "Set out the complete causal account of the Inference Metaform and its independent authorship in a citable form.",
-              "ef": "argues the method's causal account in citable form",
-              "ifd": "sends",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "383c2b14578944a5b9b7a8f6a5002989",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "3074c20048e5473ab01cdf74e6db1946",
-              "purpose": "Have every agent that develops Metaform follow his standing rules, preserve his wording and intent, and keep the project uncontaminated by outside context.",
-              "ef": "directs the agents that develop Metaform",
-              "ifd": "sends",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            },
-            {
-              "join_id": "18c158b411dc45b6aaab18148191c23b",
-              "layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "type": "purpose",
-              "receiver": "08f2339fb13a4ffaa032360140bd539b",
-              "purpose": "Keep each kind of knowledge about the project apart, the map itself, agents' memory and every operation's answers, so an agent gets exactly the layers chosen for its work and nothing learned is lost or mixed.",
-              "ef": "separates the map, memory and each operation's knowledge into layers an agent toggles",
-              "ifd": "receives",
-              "op": "add",
-              "reason": null,
-              "evidence": null
-            }
-          ],
-          "join_elements": [
-            {
-              "join_id": "62d60dbc6ef44ac7ba4baebb5ed3adaa",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "08f2339fb13a4ffaa032360140bd539b"
-            },
-            {
-              "join_id": "9ffab8fafe0e42a48cdab737dd22164f",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "614b5291ae5f4e449485e7604e0c938f"
-            },
-            {
-              "join_id": "19ec60ad16a348bfa0050ddaf00e9406",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "7074c67850944dda8b7940855916d93a"
-            },
-            {
-              "join_id": "09be98cfd253425eb4301d7d73e083c7",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "e5a32786f34b4a49bbffbdfc550cb9f9"
-            },
-            {
-              "join_id": "e4fd1c3da3354a4fa7dbc6437ef54329",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "e0bf3d6ccc90469dadb40b9e0df975cd"
-            },
-            {
-              "join_id": "ae190c7c3fe44701bae942492fe805a3",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "b1d10c4c456f49a59a6e7b547ef47f28"
-            },
-            {
-              "join_id": "4fb5a7faa6f64aa0aaf47b1a46762b47",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "830e090cbde347afa6d797cafbf93896"
-            },
-            {
-              "join_id": "c83f4df4eb3d40259dcef7c6b39736af",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "0492218b833c4fe9a25b099f402d00f0"
-            },
-            {
-              "join_id": "42537cc159894e9cba9be98aac59d73b",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "ca1e2076315b414fbfdd28d807798ae5"
-            },
-            {
-              "join_id": "d7609d2d4ed2454da2823bad98a347cd",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "a52d69d1598f4d2baefc0c94ed5b900c"
-            },
-            {
-              "join_id": "d7609d2d4ed2454da2823bad98a347cd",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 1,
-              "element_id": "a365c3c1d6c54eceb86b6ba606e04277"
-            },
-            {
-              "join_id": "d23973827bd041388e082518c362c6ca",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "54246bdccc8243808796738987f39b3c"
-            },
-            {
-              "join_id": "5732a656fc004bb3880f8938596a448d",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "ed7a09c1088346a0bc7b5ff3ee89c7ca"
-            },
-            {
-              "join_id": "5f71e5dbaf484f5fbf4c1d7839601ca6",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "5d56ab6e5b804da4aff3d7164e79bed5"
-            },
-            {
-              "join_id": "5f1f8129f3bb48cab54af81635d112bb",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "1d29fdc24c204621aaaecb97d62ed582"
-            },
-            {
-              "join_id": "5f1f8129f3bb48cab54af81635d112bb",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 1,
-              "element_id": "d6df241b51f3479e88f5340146a9b043"
-            },
-            {
-              "join_id": "2c1acafaab5242d0bbd601497b585e4b",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "7ba902d1f53e4832a6255ffc7c145405"
-            },
-            {
-              "join_id": "2c1acafaab5242d0bbd601497b585e4b",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 1,
-              "element_id": "a69799fa2b3449a7a8f3706f0572f3c4"
-            },
-            {
-              "join_id": "397809dd1a2a4967991c9c466fcb2d1c",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "0a6b8afc31f1404085c07eb34a21a409"
-            },
-            {
-              "join_id": "80caecd80d79493c88124518761b745e",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "baac6e8d35664d659e6172b5598f4347"
-            },
-            {
-              "join_id": "3f37dc6336c84ee7aa967620bec277c3",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "7c8b7c7a49f142a09cea5494d0d1894a"
-            },
-            {
-              "join_id": "39d73dfadaee42c896fb0ff10d08120f",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "f43406ac1b8146419ac2dc75da52e1e2"
-            },
-            {
-              "join_id": "416d42c75add4d5c91a10fa39262ac14",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "29695ee8041040958e89aefbe4a24864"
-            },
-            {
-              "join_id": "8fc8a81ff2074b4c840707ac091eed76",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "72ddeb419b5b436db0c9bfae68b94669"
-            },
-            {
-              "join_id": "5ab66075bb934a4ab51715d443ce578c",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "803491132f30425681c9aaa98e44123b"
-            },
-            {
-              "join_id": "c8a68b3296b94cee8ea49ec5bc44a669",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "adf385a80e2e46d3a1b69ffe4e1fb9bd"
-            },
-            {
-              "join_id": "b927e59c963b47349d36aa42068318b6",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "390bb644f0484437b4cb66f835002e76"
-            },
-            {
-              "join_id": "0f87d73af26642b1b35d6d152f5e7e4f",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "4d3503da762149e1a4c51400ef340f60"
-            },
-            {
-              "join_id": "8a3edf7aa4c2450faf8f07fa45be0209",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "38583c4402d64d98a598c6da286b0949"
-            },
-            {
-              "join_id": "a7d3e380c902469e887ad9e977097707",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "c425b3b135974c1ba2b4c5bd96ddd576"
-            },
-            {
-              "join_id": "a776c4d55d904b0f87539ea5fdeabf78",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "3bcfad8dac5247dd8b9de5137adb6106"
-            },
-            {
-              "join_id": "d0ddb643a9eb4925815f9b9fd4a2f9e9",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "13c95e1024ad46a0b876567e052c852e"
-            },
-            {
-              "join_id": "5afa9f88d1b14c9395e9a7fa78fdec45",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "a56cee6bd77444aab7f81d8cae64a7bf"
-            },
-            {
-              "join_id": "18c158b411dc45b6aaab18148191c23b",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "2f65bb40a82f4bd3a0cda6a2b3f5dfbe"
-            },
-            {
-              "join_id": "18c158b411dc45b6aaab18148191c23b",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 1,
-              "element_id": "c5b2c4446b404f71b71497a9002a3451"
-            },
-            {
-              "join_id": "18c158b411dc45b6aaab18148191c23b",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 2,
-              "element_id": "2f0b02b662d345b69f3b53ece2834f7c"
-            },
-            {
-              "join_id": "18c158b411dc45b6aaab18148191c23b",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 3,
-              "element_id": "9cea77344e3548f986fae43f65e76bac"
-            },
-            {
-              "join_id": "18c158b411dc45b6aaab18148191c23b",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 4,
-              "element_id": "54f51e932783484ab199498ca52c28e9"
-            },
-            {
-              "join_id": "18c158b411dc45b6aaab18148191c23b",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 5,
-              "element_id": "9547712b5e5b4f34a84ab5b516081384"
-            },
-            {
-              "join_id": "86611727aa86424a9d8a29927d82284a",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "4214cb00c5414d6f9fdd3d2660d6180d"
-            },
-            {
-              "join_id": "86611727aa86424a9d8a29927d82284a",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 1,
-              "element_id": "c235aebef7dc440d990ffb2aa19556e3"
-            },
-            {
-              "join_id": "0fd212e64a04464d8499144b53f78923",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "ac4be8df4bf143ef9075d59028bee60a"
-            },
-            {
-              "join_id": "0fd212e64a04464d8499144b53f78923",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 1,
-              "element_id": "afe780542f47427fadc17df9d38e43a3"
-            },
-            {
-              "join_id": "0fd212e64a04464d8499144b53f78923",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 2,
-              "element_id": "dd2dcfae96e04de8a9c0725615559cfd"
-            },
-            {
-              "join_id": "1a5c18ee297b4d7da62ec7607aaa08db",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "8218d5f719934f558fb1da7902b44fbb"
-            },
-            {
-              "join_id": "1a5c18ee297b4d7da62ec7607aaa08db",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 1,
-              "element_id": "23b23f91234e4cf0af1e58b7aa071062"
-            },
-            {
-              "join_id": "1a5c18ee297b4d7da62ec7607aaa08db",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 2,
-              "element_id": "84c2a9a44c694dbe829e02869d421354"
-            },
-            {
-              "join_id": "28bfb0d9ba5b49c48b8126707c05ba5d",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "89503a7a4b364eb7a5517042d36f0a40"
-            },
-            {
-              "join_id": "383c2b14578944a5b9b7a8f6a5002989",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "fb3af3b8127b4938aa928d795d5a9b35"
-            },
-            {
-              "join_id": "4094575bf0624abab11c11bbd4d86737",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "494b5601bcd44c41a1902a5d9ca042ba"
-            },
-            {
-              "join_id": "6784e292b2a24fc5a270db02409cef6e",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "04da899f46c440a0b03dbbff24f9c8aa"
-            },
-            {
-              "join_id": "6fec480bebf247bfa23a39a9db9581c0",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "729ea8e8cfbf4968986e6a4964e24ca1"
-            },
-            {
-              "join_id": "cc97bf890fa04c4cac486b6889f42578",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "7ca5935ae5a147b69ada3cab29430c64"
-            },
-            {
-              "join_id": "f02f86f25e044b76bbe4ef0f5984dda1",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "08f2339fb13a4ffaa032360140bd539b"
-            },
-            {
-              "join_id": "93b921d47d32463a8e0242173a6b0e06",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "e77fb9ffc47e4c84a06a9955c7c43600"
-            },
-            {
-              "join_id": "27b932dfa1c84717a10f57c660dd6b01",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "183dd0ece42e496a912af109d51fa9ce"
-            },
-            {
-              "join_id": "3acd3e69d4664c6d8fb43b75257cdf3c",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "183dd0ece42e496a912af109d51fa9ce"
-            },
-            {
-              "join_id": "f87c4122c870401ba856426230079dcf",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "dbdaeea9b2c84a3796fac2fd9aa41645"
-            },
-            {
-              "join_id": "2ae02a720dc7412eb1b6686f888cc005",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "29cab6cbba0642a7a7b18a739c088b46"
-            },
-            {
-              "join_id": "1ce857c54c2649d187b8f97561be99d4",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "1461d95f802b4d71abe668cb3068db20"
-            },
-            {
-              "join_id": "2ae2388ca6bb4e5d8e32cadb7d6f8a2f",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "4d3503da762149e1a4c51400ef340f60"
-            },
-            {
-              "join_id": "2ae2388ca6bb4e5d8e32cadb7d6f8a2f",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 1,
-              "element_id": "aa17c39003fb4ff492aa77a43c7e379c"
-            },
-            {
-              "join_id": "2ae2388ca6bb4e5d8e32cadb7d6f8a2f",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 2,
-              "element_id": "3533f34f249d4b279007607729d2435a"
-            },
-            {
-              "join_id": "eb5d17452cc64815ac62595eeb358127",
-              "join_layer_id": "3b11402cfaaf42e8a4c0505f7d4e83ac",
-              "join_version": 0,
-              "position": 0,
-              "element_id": "e5a32786f34b4a49bbffbdfc550cb9f9"
-            }
-          ],
-          "layer_fields": [],
-          "layer_tags": [],
-          "layer_sources": [],
-          "selections": [],
-          "hidden": [],
-          "items": [],
-          "properties": [],
-          "refs": [],
-          "reexamine": [],
           "requires": []
         }
       ],
-      "active_metaform": "5e1dab60292c48bd8d4df55f5aef9f9b"
+      "active_base": "2b3028fac1b642f5b67a1902de67677e"
     }
   ]
 }

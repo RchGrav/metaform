@@ -17,6 +17,7 @@ from metaform.module import Context, Module, Noun, Stop, Verb
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ('cryptography>=42',)
 SHIPS_DISABLED = True
+REMOTE_AGENT = False  # sealing needs the compiled cryptography package, which a direct run does not carry
 
 settings.text('packet_evidence', '', help='A file of 32 bytes or more to seal and open packets with, for someone who '
                                           'needs secrecy. Empty means the evidence every copy of Metaform holds.')

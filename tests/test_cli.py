@@ -1068,3 +1068,13 @@ def test_a_clear_stops_when_the_backup_cannot_be_made_and_a_project_with_nothing
     assert lines(run('clear', 'project', '--confirm', cwd=project)) == [  # nothing to remove: no backup is made
         'Cleared proj: no bases and no report files. Its registration, folder, settings, origins and variants stay.']
     assert len(lines(run('list', 'backups', cwd=project))) == 1
+
+
+@pytest.mark.req('BASE-037')
+def test_every_chassis_command_name_is_refused_as_a_module_id(module_row, user_module):
+    from metaform import cli
+    for verb in ('provision', 'instructions'):
+        user_module(verb, "SUPPORTED_OS = ('linux', 'macos', 'windows')\nraise SystemExit('must not run')\n")
+    rows = {verb: module_row(verb) for verb in ('provision', 'instructions')}
+    assert all(row[1] == 'error' and 'chassis' in row[3] for row in rows.values()), rows
+    assert {'provision', 'instructions'} <= set(cli.VERBS)

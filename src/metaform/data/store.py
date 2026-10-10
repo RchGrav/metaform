@@ -62,11 +62,12 @@ class Store:
     """Reads and writes one project's active metaform.
 
     `module` names the module the store works for; a layer this store makes for a write sent without one records it
-    as its owner, LAYER-001.
+    as its owner, LAYER-001. `write_layer` names the layer a write sent without one goes to instead, the folder's
+    `write_layer` setting, BASE-060.
     """
 
     def __init__(self, project: str, *, toggled: Sequence[str] | None = None, base: str | None = None,
-                 module: str | None = None) -> None:
+                 module: str | None = None, write_layer: str | None = None) -> None:
         record = home.project(project)
         if record is None:
             raise StoreError(f'No project {project} is registered.', 'metaform list projects')
@@ -74,6 +75,7 @@ class Store:
         self._session = Session(record.project_id, base)
         self.toggled: tuple[str, ...] = tuple(toggled or ())
         self.module = module
+        self.write_layer = write_layer
 
     # ------------------------------------------------------------------ plumbing
 
@@ -124,9 +126,15 @@ class Store:
         return reads.resolver(tx, selection, self.toggled)
 
     def _named(self, tx: Tx, layer: str | None) -> tuple[str, Notice | None]:
-        """The layer a write goes to: the one named, or a new building layer `unnamed-<UTC timestamp>`, LAYER-001."""
+        """The layer a write goes to: the one named, else the store's write layer, BASE-060, else a new building layer
+        `unnamed-<UTC timestamp>`, LAYER-001."""
         if layer:
             return layer, None
+        if self.write_layer:
+            if tx.base.layer_by_name(self.write_layer) is None:
+                raise StoreError(f"No layer {self.write_layer}, which this folder's write_layer setting names.",
+                                 'metaform unset --write-layer, or name the layer with layer=<name>')
+            return self.write_layer, None
         stamp = datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')
         made = layering.create(tx, f'unnamed-{stamp}', self.module or '', '', mutable=True, hideable=True)
         return made.name, Notice('layer', f'No layer was named; this was stored in a new building layer {made.name}, '
@@ -301,12 +309,10 @@ class Store:
 
     def _metaform_tables(self, stack: ExitStack, module: str, declared: Tables,
                          write: bool) -> tuple[sqlite3.Connection, Path, bool]:
-        def path(tx: Tx) -> Path:
-            return home.store_path(self.project_id, tx.base_id) if tx.base_id else Path()
         if write:
             tx = stack.enter_context(self._write())
-            tables.ensure(tx.db, path(tx), module, declared, 'metaform')
-            return tx.db, path(tx), True
+            tables.ensure(tx.db, tx.path, module, declared, 'metaform')
+            return tx.db, tx.path, True
         reading = ExitStack()
         try:
             tx = reading.enter_context(self._read())
@@ -314,14 +320,14 @@ class Store:
             if found == 'older':  # an upgrade is a write, made before the read begins
                 reading.close()
                 with self._write() as upgrading:
-                    tables.ensure(upgrading.db, path(upgrading), module, declared, 'metaform')
+                    tables.ensure(upgrading.db, upgrading.path, module, declared, 'metaform')
                 tx = reading.enter_context(self._read())
                 found = tables.state(tx.db, module, declared, 'metaform')
         except BaseException:
             reading.close()
             raise
         stack.enter_context(reading)
-        return tx.db, path(tx), found == 'ready'
+        return tx.db, tx.path, found == 'ready'
 
     @contextmanager
     def _project_write(self, path: Path) -> Generator[sqlite3.Connection, None, None]:

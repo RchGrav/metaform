@@ -15,7 +15,7 @@ import xml.etree.ElementTree as ET
 from collections.abc import Sequence
 from typing import Any
 
-from .data import Element, Join, Node, Store, Where
+from .data import Element, Join, Node, Store, Where, WorkRecord
 from .errors import Stop
 
 
@@ -28,6 +28,10 @@ class _Writer:
         self.store, self.reading = store, reading
         self.placed: set[str] = set()
         self.joined: set[str] = set()
+        # The open work of every node, read once rather than once for each node written.
+        self.open_work: dict[tuple[str, str], list[WorkRecord]] = {}
+        for record in store.work(open=True, limit=0).results:
+            self.open_work.setdefault((record.node_kind, record.node_id), []).append(record)
 
     def fields(self, parent: ET.Element, element: Element | Any) -> ET.Element:
         return ET.SubElement(parent, 'element', {
@@ -35,7 +39,7 @@ class _Writer:
             str(element.name_length), 'name': element.name or '', 'role': element.role or ''})
 
     def work(self, parent: ET.Element, node: Node) -> None:
-        for record in self.store.work(node, open=True, limit=0).results:
+        for record in self.open_work.get((node.kind, node.id), []):
             ET.SubElement(parent, 'work', condition=record.condition or '').text = record.note or ''
 
     def element(self, parent: ET.Element, address: str) -> None:

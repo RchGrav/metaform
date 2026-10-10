@@ -13,6 +13,7 @@ import inspect
 import re
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, NamedTuple, cast
@@ -77,21 +78,22 @@ class Setting:
 
 
 SCHEMA: dict[str, Setting] = {}
-_owner: str | None = None
+# The module the current thread is loading. It is per thread, not a process global: while one thread loads a module,
+# another thread's own declarations, such as a direct import of a module package, keep their own owner.
+_owner: ContextVar[str | None] = ContextVar('metaform_settings_owner', default=None)
 
 
 @contextmanager
 def owned_by(module: str) -> Generator[None, None, None]:
-    """While a module loads, the settings it declares belong to it."""
-    global _owner
-    previous, _owner = _owner, module
+    """While a module loads, the settings it declares on this thread belong to it."""
+    token = _owner.set(module)
     try:
         yield
     finally:
-        _owner = previous
+        _owner.reset(token)
 
 
-_MODULE_NAME = re.compile(r'^(?:metaform\.modules\.|metaform_module_(?:system|user)_)([A-Za-z0-9_-]+)')
+_MODULE_NAME = re.compile(r'^(?:metaform\.modules\.|metaform_module_(?:system|user|project)_)([A-Za-z0-9_-]+)')
 
 
 def _declaring_module() -> str | None:
@@ -117,7 +119,7 @@ def declare(setting: Setting) -> Setting:
         raise ValueError('confirm is never a setting; it is a one-call switch of caution verbs, CLI-018.')
     if setting.kind not in KINDS:
         raise ValueError(f'Setting {setting.key}: kind must be one of {", ".join(KINDS)}.')
-    owner = _owner or _declaring_module() or setting.owner
+    owner = _owner.get() or _declaring_module() or setting.owner
     hyphens = setting.key.replace('_', '-')
     switches = setting.switches or ((f'--{hyphens}', f'--no-{hyphens}') if setting.kind == 'bool' else (f'--{hyphens}',))
     setting = replace(setting, owner=owner, group=setting.group or owner,
@@ -378,10 +380,11 @@ def _check_layers(names: Any, folder: Path) -> list[str] | None:
     if project_id is None:
         raise SettingError('--layers names layers of a project, and this folder is not in one.',
                            'metaform add project <id> <path>')
-    layers = {layer.name: layer for layer in Store(project_id).layers(limit=0).results}
+    store = Store(project_id)
+    layers = {layer.name for layer in store.layers(limit=0).results}
     notices: list[str] = []
     for name in names:
-        if name not in layers and not Store(project_id).layers(tag=name, limit=0).results:
+        if name not in layers and not store.layers(tag=name, limit=0).results:
             notices.append(f'{name} is not a layer or a tag here; it was kept and turns nothing on. See metaform map '
                            'layers')
     return notices
@@ -409,6 +412,13 @@ install_server = text('install_server', scope='global',
 layers = items('layers', check=_check_layers,
                help='The layers toggled on in this folder, by name or tag. Empty means every finished layer that '
                     'is not hidden.')
+
+write_layer = text('write_layer', '',
+                   help='The layer a write that names no layer goes to. Empty means a new building layer '
+                        'unnamed-<time> for each such write.',
+                   details='A project wheel\'s first run sets it to the working layer it opens, so what a remote '
+                           'agent writes travels back in one layer, BASE-060. A write that names its layer still goes '
+                           'to the layer it names.')
 
 debug = boolean('debug', False, help='Ask agents doing Metaform work for feedback and trouble reports on the Metaform '
                                      'process.')

@@ -127,6 +127,6 @@ def test_changed_registry_version_is_refused_before_serving_cached_record(home, 
     with registry.registry_scope():
         assert registry.project('p') is not None
     with sqlite3.connect(path) as other:
-        other.execute("UPDATE meta SET value='999' WHERE key='schema_version'")
+        other.execute("UPDATE meta SET value='999' WHERE key IN ('schema_version', 'compatible_from')")
     with pytest.raises(registry.StoreError, match='999'), registry.registry_scope():
         registry.project('p')

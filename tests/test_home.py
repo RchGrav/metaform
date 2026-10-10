@@ -74,6 +74,7 @@ def test_read_only_commands_create_only_first_run_version_records(home, run, tmp
     with metaform_home.chassis() as db:
         assert dict(db.execute('SELECT key, value FROM meta')) == {
             'schema_version': metaform_home.CHASSIS_SCHEMA_VERSION,
+            'compatible_from': metaform_home.CHASSIS_COMPATIBLE_FROM,
             'last_run_version': __version__,
         }
         assert db.execute('SELECT COUNT(*) FROM settings').fetchone()[0] == 0
@@ -102,7 +103,7 @@ def test_a_base_database_of_an_unknown_schema_version_is_refused_and_not_written
     for path, act in ((own('p') / 'project.sqlite3', lambda: metaform_home.add_project('q', folder.parent)),
                       (home / 'metaform.sqlite3', lambda: metaform_home.set_module_state('hello', False))):
         db = sqlite3.connect(path)
-        db.execute("UPDATE meta SET value='999' WHERE key='schema_version'")
+        db.execute("UPDATE meta SET value='999' WHERE key IN ('schema_version', 'compatible_from')")
         db.commit()
         db.close()
         before = path.read_bytes()
@@ -146,7 +147,7 @@ def test_a_store_of_an_unknown_schema_version_is_refused_and_not_written(home, s
     store.add_element(layer.name, 'code.engine')
     path = metaform_home.store_path('proj', store.active_base().id)
     db = sqlite3.connect(path)
-    db.execute("UPDATE meta SET value='999' WHERE key='schema_version'")
+    db.execute("UPDATE meta SET value='999' WHERE key IN ('schema_version', 'compatible_from')")
     db.commit()
     db.close()
     before = path.read_bytes()
@@ -156,6 +157,30 @@ def test_a_store_of_an_unknown_schema_version_is_refused_and_not_written(home, s
     with pytest.raises(StoreError):
         store.element('code.engine')
     assert path.read_bytes() == before
+
+
+@pytest.mark.req('STORE-029')
+def test_a_store_at_a_later_layout_compatible_with_this_one_opens_and_keeps_both_numbers(home, store):
+    from metaform.sqlite import COMPATIBLE_FROM, SCHEMA_VERSION
+    layer = store.layer('notes', 'test', 'Notes.', mutable=True, hideable=True,
+                        provenance={'module': 'test'})
+    store.add_element(layer.name, 'code.engine')
+    path = metaform_home.store_path('proj', store.active_base().id)
+    later = str(int(SCHEMA_VERSION) + 1)
+    db = sqlite3.connect(path)
+    db.execute("UPDATE meta SET value=? WHERE key='schema_version'", (later,))
+    db.execute("CREATE TABLE added_later(id TEXT PRIMARY KEY)")  # what the later layout added, unknown here
+    db.execute("INSERT INTO added_later VALUES ('kept')")
+    db.commit()
+    db.close()
+    store.add_element(layer.name, 'code.other')
+    added = ('code.engine', 'code.other')
+    assert tuple(store.element(address, raw=True).address for address in added) == added
+    db = sqlite3.connect(path)
+    assert dict(db.execute("SELECT key, value FROM meta WHERE key IN ('schema_version', 'compatible_from')")) == {
+        'schema_version': later, 'compatible_from': COMPATIBLE_FROM}
+    assert db.execute('SELECT id FROM added_later').fetchall() == [('kept',)]
+    db.close()
 
 
 @pytest.mark.req('STORE-031')
@@ -256,3 +281,15 @@ def test_every_layer_names_the_metaform_that_holds_it(store):
     layer = store.layer('notes', 'test', 'Notes.', mutable=True, hideable=True,
                         provenance={'module': 'test'})
     assert layer.base_id == store.active_base().id
+
+
+@pytest.mark.req('PROJ-031')
+def test_a_home_under_a_folder_named_with_a_hash_still_reads_its_stores(tmp_path, monkeypatch):
+    from tests.storekit import small_map
+    monkeypatch.setenv('METAFORM_HOME', str(tmp_path / 'user#1' / 'home'))
+    source = tmp_path / 'source'
+    source.mkdir()
+    metaform_home.add_project('proj', source)
+    small_map(Store('proj'))
+    assert metaform_home.intake_exists()
+    assert metaform_home.not_empty('proj') is not None

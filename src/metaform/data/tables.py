@@ -1,13 +1,14 @@
 """A module's own tables, declared through the public base and reached through the data access object, STORE-045.
 
-A module declares `Tables(version, tables, upgrade=None)`, each `Table` with its columns, its key, its indexes and
-its place: `metaform`, beside the map in the metaform's store, or `project`, in a store of the project that
-outlives a clear of its metaforms, `projects/<project>/modules/<module>.sqlite3`. A module table is named
-`"<module>.<table>"`; an imported SQL declaration retains its existing physical name.
+A module declares `Tables(version, tables, upgrade=None, compatible_from=None)`, each `Table` with its columns, its
+key, its indexes and its place: `metaform`, beside the map in the metaform's store, or `project`, in a store of the
+project that outlives a clear of its metaforms, `projects/<project>/modules/<module>.sqlite3`. A module table is
+named `"<module>.<table>"`; an imported SQL declaration retains its existing physical name.
 
-Each store that holds a module's tables records the module's version and the declaration of the tables it holds in
-its `meta` table under `module:<id>`, so a module's change never changes the chassis store layout, STORE-029, and
-export, import and the chassis's own upgrade can carry the tables without the module loaded.
+Each store that holds a module's tables records the module's version, the oldest version whose code still reads and
+writes them, and the declaration of the tables it holds in its `meta` table under `module:<id>`, so a module's change
+never changes the chassis store layout, STORE-029, and export, import and the chassis's own upgrade can carry the
+tables without the module loaded.
 
 `TableTx` reads and writes them in one transaction on the store of the first table it touches, STORE-006, every read
 through the key's index or a declared index, STORE-005. A declared `Data` operation can also issue SQL through its
@@ -42,6 +43,7 @@ META_PREFIX = 'module:'
 # A project-level module store holds only its meta table and the module's tables; its own layout, STORE-029.
 MODULE_STORE_SCHEMA = 'CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);\n'
 MODULE_STORE_VERSION = '1'
+MODULE_STORE_COMPATIBLE_FROM = '1'  # its first layout, STORE-029
 Row = dict[str, Any]
 
 
@@ -164,17 +166,26 @@ Upgrade = Callable[['TableTx', int], Any]
 
 @dataclass(frozen=True)
 class Tables:
-    """Every table a module declares, at the module's own version, with what moves its data on an upgrade."""
+    """Every table a module declares, at the module's own version, with what moves its data on an upgrade.
+
+    `compatible_from` is the oldest version whose code still reads and writes these tables, the version itself when
+    not given, STORE-029. A version that only adds a table, or a column that may be empty or has a default, keeps the
+    one before it; any other change raises it to the new version, since older code would misread the tables."""
     version: int
     tables: tuple[Table, ...]
     upgrade: Upgrade | None = None
     legacy_upgrade: Callable[[sqlite3.Connection, str], Any] | None = None
     legacy_fold: Callable[[sqlite3.Connection, str, str], Any] | None = None
+    compatible_from: int | None = None
 
     def __post_init__(self) -> None:
         version: Any = self.version
         if isinstance(version, bool) or not isinstance(version, int) or version < 1:
             raise ValueError('Tables: version is a whole number from 1.')
+        oldest: Any = self.compatible_from
+        if oldest is not None and (isinstance(oldest, bool) or not isinstance(oldest, int)
+                                   or not 1 <= oldest <= version):
+            raise ValueError('Tables: compatible_from is a whole number from 1 to the version.')
         names = [table.name for table in self.tables]
         if len(names) != len(set(names)):
             raise ValueError('Tables: two tables share one name.')
@@ -187,9 +198,15 @@ class Tables:
                              'declare it in the module\'s Tables and raise its version')
         return found
 
+    @property
+    def oldest(self) -> int:
+        """The oldest version whose code reads these tables, STORE-029."""
+        return self.version if self.compatible_from is None else self.compatible_from
+
     def recorded(self, place: Place) -> dict[str, Any]:
-        """What a store of this place records for the module: its version and the tables it holds."""
-        return {'version': self.version,
+        """What a store of this place records for the module: its version, the oldest version whose code reads it
+        and the tables it holds."""
+        return {'version': self.version, 'compatible_from': self.oldest,
                 'tables': [table.to_dict() for table in self.tables if table.place == place]}
 
 
@@ -440,20 +457,44 @@ def _record(db: sqlite3.Connection, module: str, recorded: dict[str, Any]) -> No
 
 def state(db: sqlite3.Connection, module: str, declared: Tables, place: Place) -> Literal['absent', 'ready', 'older']:
     """Whether a store holds the module's tables of this place at the declared version, an earlier one, or none.
-    A later version, or other tables at the same version, cannot be read and nothing is written, STORE-029."""
+    A later version whose `compatible_from` is at or below the declared one is read and written as it is, and
+    nothing of it is rewritten or dropped; any other later version, or other tables at the same version, cannot be
+    read and nothing is written, STORE-029."""
     recorded = _recorded(db, module)
     if recorded is None:
         return 'absent'
     found = int(recorded['version'])
     if found > declared.version:
-        raise StoreError(f'The store holds the tables of {module} at version {found}; this {module} declares version '
-                         f'{declared.version}.', f'install the {module} release that wrote version {found}')
+        needed = int(recorded.get('compatible_from', found))
+        if needed > declared.version:
+            raise StoreError(f'The store holds the tables of {module} at version {found}, which {module} reads from '
+                             f'version {needed}; this {module} declares version {declared.version}.',
+                             f'install the {module} release that wrote version {found}')
+        missing = _not_held(recorded, [table for table in declared.tables if table.place == place])
+        if missing:
+            raise StoreError(f'The tables of {module} at version {found} are named readable from version {needed}, '
+                             f'but they do not hold {missing} as version {declared.version} declares it.',
+                             f'install the {module} release that wrote version {found}')
+        return 'ready'
     if found < declared.version:
         return 'older'
     if recorded['tables'] != declared.recorded(place)['tables']:
         raise StoreError(f'The tables {module} declares differ from those its store holds at version {found}.',
                          f'raise the version of {module}\'s Tables to {found + 1}')
     return 'ready'
+
+
+def _not_held(recorded: Mapping[str, Any], tables: Sequence[Table]) -> str | None:
+    """The first of these tables that a later version's record does not hold with the same key and every column, or
+    None: a later version that only added tables and columns holds them all."""
+    held = {str(value['name']): value for value in recorded['tables']}
+    for table in tables:
+        wanted = json.loads(json.dumps(table.to_dict()))  # as a record holds it, a default's tuple a list
+        found = held.get(table.name)
+        if found is None or found['key'] != wanted['key'] or any(
+                column not in found['columns'] for column in wanted['columns']):
+            return table.name
+    return None
 
 
 def ensure(db: sqlite3.Connection, path: Path, module: str, declared: Tables, place: Place) -> None:
@@ -534,7 +575,7 @@ def _backup(path: Path, module: str, version: int) -> None:
     folder = (home.home() / 'backups' / f'module-{module}-{version}' /
               home.now().replace(':', '').replace('-', '') / path.parent.name)
     folder.mkdir(parents=True, exist_ok=True)
-    source = sqlite3.connect(f'file:{path.as_posix()}?mode=ro', uri=True)
+    source = sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)  # as_uri escapes #, ? and %
     copy = sqlite3.connect(folder / path.name)
     try:
         source.backup(copy)
@@ -862,7 +903,8 @@ def project_store(project_id: str, module: str) -> Path:
 @contextmanager
 def open_project_store(path: Path, *, write: bool) -> Generator[sqlite3.Connection, None, None]:
     """A prepared connection to a project-level module store, opened inside its lock like every file, STORE-006."""
-    with sqlite.opened(path, MODULE_STORE_SCHEMA, write=write, version=MODULE_STORE_VERSION) as db:
+    with sqlite.opened(path, MODULE_STORE_SCHEMA, write=write, version=MODULE_STORE_VERSION,
+                       compatible=MODULE_STORE_COMPATIBLE_FROM) as db:
         db.row_factory = sqlite3.Row
         yield db
 
@@ -970,7 +1012,9 @@ def export_modules(db: sqlite3.Connection) -> list[dict[str, Any]]:
                                f'{_quoted(physical(module, table))} '
                                f'ORDER BY {", ".join(_quoted(name) for name in table.key)}').fetchall()
             rows[table.name] = [dict(zip(names, tuple(row), strict=True)) for row in found]
-        exported.append({'module': module, 'version': recorded['version'], 'tables': recorded['tables'], 'rows': rows})
+        exported.append({'module': module, 'version': recorded['version'],
+                         'compatible_from': recorded.get('compatible_from', recorded['version']),
+                         'tables': recorded['tables'], 'rows': rows})
     return exported
 
 
@@ -989,13 +1033,17 @@ def check(entries: Any, path: str, problems: list[str]) -> None:
             problems.append(f'{where}: not an object')
             continue
         fields = cast(dict[str, Any], entry)
-        if set(fields) != {'module', 'version', 'tables', 'rows'}:
-            problems.append(f'{where}: holds exactly module, version, tables and rows')
+        # compatible_from is optional: a document written before it was recorded takes it as the version, STORE-029.
+        if set(fields) - {'compatible_from'} != {'module', 'version', 'tables', 'rows'}:
+            problems.append(f'{where}: holds exactly module, version, tables and rows, and may hold compatible_from')
             continue
         if not isinstance(fields['module'], str) or not MODULE_ID.fullmatch(fields['module']):
             problems.append(f'{where}.module: not a module id')
         if isinstance(fields['version'], bool) or not isinstance(fields['version'], int) or fields['version'] < 1:
             problems.append(f'{where}.version: not a whole number from 1')
+        elif 'compatible_from' in fields and (isinstance(fields['compatible_from'], bool) or not isinstance(
+                fields['compatible_from'], int) or not 1 <= fields['compatible_from'] <= fields['version']):
+            problems.append(f'{where}.compatible_from: not a whole number from 1 to the version')
         tables: list[Table] = []
         try:
             tables = [Table.from_dict(value) for value in fields['tables']]
@@ -1019,10 +1067,23 @@ def check(entries: Any, path: str, problems: list[str]) -> None:
                                     'column')
 
 
+def _takes(recorded: Mapping[str, Any], entry: Mapping[str, Any], tables: Sequence[Table]) -> bool:
+    """Whether a store's tables of a module take the rows of a document's entry: the same version and tables, or a
+    later version readable from the entry's that holds each of its tables with its key and columns."""
+    found, version = int(recorded['version']), int(entry['version'])
+    if found == version:
+        return recorded['tables'] == entry['tables']
+    if found < version or int(recorded.get('compatible_from', found)) > version:
+        return False
+    return _not_held(recorded, tables) is None
+
+
 def import_modules(db: sqlite3.Connection, entries: Sequence[dict[str, Any]], report: dict[str, Any],
                    where: str) -> None:
     """Inside the import's transaction: create the tables a store lacks and add each row whose key it does not
-    hold. A module held at another version adds nothing, and a notice says so, BASE-044."""
+    hold. A module held at a later version that names the document's version compatible takes the rows as code at
+    that version writes them, STORE-029; a module held at any other version adds nothing, and a notice says so,
+    BASE-044."""
     for entry in entries:
         module, version = str(entry['module']), int(entry['version'])
         tables = [Table.from_dict(value) for value in entry['tables']]
@@ -1030,8 +1091,9 @@ def import_modules(db: sqlite3.Connection, entries: Sequence[dict[str, Any]], re
         if recorded is None:
             for table in tables:
                 _create(db, module, table)
-            _record(db, module, {'version': version, 'tables': entry['tables']})
-        elif int(recorded['version']) != version or recorded['tables'] != entry['tables']:
+            _record(db, module, {'version': version, 'compatible_from': int(entry.get('compatible_from', version)),
+                                 'tables': entry['tables']})
+        elif not _takes(recorded, entry, tables):
             report['notices'].append({'where': f'{where}.{module}', 'message': (
                 f'This store holds the tables of {module} at version {recorded["version"]}; the document carries '
                 f'version {version}, so none of its rows was imported. To add them, import into a home whose '

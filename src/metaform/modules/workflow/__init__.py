@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
+from contextlib import contextmanager
 from importlib import resources
 from itertools import takewhile
 from pathlib import Path
@@ -21,6 +22,7 @@ from .element import Value, element_value
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
 SHIPS_DISABLED = True
+REMOTE_AGENT = True  # workflows run from the CLI over the carried map
 PACKAGE = resources.files(__name__)
 
 # The owner placeholders of prompt-lexicalization that choose how it works, LAYER-017; each choice is the script's
@@ -68,6 +70,22 @@ def preprocess(ctx: Context) -> dict[str, Any]:
                                   scope=settings.value('preprocess_knowledge', ctx.folder))
 
 
+@contextmanager
+def _correctable(next_step: str) -> Generator[None, None, None]:
+    """An address, subroutine, argument or RETURN the caller gave that does not bind is the caller's to correct: a
+    user error with its next step, CLI-009, not an unexpected failure the host is told to report. The exception's
+    type stays in the message, since it says which part did not bind."""
+    try:
+        yield
+    except (KeyError, TypeError, ValueError, SyntaxError) as error:
+        raise Stop(f'{type(error).__name__}: {error}', next_step) from error
+
+
+def _path(ctx: Context, given: str) -> Path:
+    path = Path(given)
+    return path if path.is_absolute() else ctx.folder / path
+
+
 def workflows(ctx: Context) -> Any:
     return catalog.workflows(ctx.require_store())
 
@@ -91,35 +109,43 @@ def submit(ctx: Context) -> Any:
 
 def add_logic(ctx: Context) -> Any:
     n = ctx.nouns
-    result = catalog.submit_logic(ctx.require_store(), n['address'], n['layer'], n['name'], n['content'],
-                                  n.get('provenance'))
+    with _correctable(f'metaform map where {n["address"]}'):
+        result = catalog.submit_logic(ctx.require_store(), n['address'], n['layer'], n['name'], n['content'],
+                                      n.get('provenance'))
     return _checked(ctx, {'address': n['address'], 'layer': n['layer'], 'name': result.name,
                           'content': result.content}, n['address'], [result.to_dict()])
 
 
 def history(ctx: Context) -> Any:
     n = ctx.nouns
-    return catalog.history(ctx.require_store(), n['address'], n['name'], n['layer'])
+    with _correctable('metaform workflow list'):
+        return catalog.history(ctx.require_store(), n['address'], n['name'], n['layer'])
 
 
 def export(ctx: Context) -> Any:
     n = ctx.nouns
-    doc = catalog.document(ctx.require_store(), n['address'], n['layer'])
+    with _correctable('metaform workflow list'):
+        doc = catalog.document(ctx.require_store(), n['address'], n['layer'])
     if not n.get('file'):
         return doc
-    path = Path(n['file'])
-    if not path.is_absolute():
-        path = ctx.folder / path
-    path.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    path = _path(ctx, n['file'])
+    try:
+        path.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    except OSError as error:
+        raise Stop(f'Cannot write {path}: {error.strerror or error}.',
+                   f'metaform workflow export {n["address"]} {n["layer"]} file=<a writable path>') from error
     return {'file': str(path)}
 
 
 def import_(ctx: Context) -> Any:
-    path = Path(ctx.nouns['file'])
-    if not path.is_absolute():
-        path = ctx.folder / path
-    doc = catalog.ingest_document(ctx.require_store(), json.loads(path.read_text(encoding='utf-8')),
-                                  ctx.nouns.get('layer'))
+    path = _path(ctx, ctx.nouns['file'])
+    try:
+        given = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as error:
+        raise Stop(f'Cannot read {path} as a portable workflow: {getattr(error, "strerror", None) or error}.',
+                   'metaform help workflow import') from error
+    with _correctable('metaform help workflow import'):
+        doc = catalog.ingest_document(ctx.require_store(), given, ctx.nouns.get('layer'))
     return _checked(ctx, doc, doc['workflow']['address'], doc['logic'])
 
 
@@ -162,15 +188,16 @@ def _shown(word: str) -> dict[str, Any]:
 
 
 def run(ctx: Context) -> Any:
-    store = _call_store(ctx.require_store(), ctx.nouns['call'])
-    element = ctx.nouns.get('element')
-    this = None if element is None else element_value(store, element)
-    variables = _values(ctx.nouns.get('variables', {}))
-    active = store.bound_base()
-    word = executor.start(ctx.nouns['call'], variables, this, _lookup(store), {
-        'project': store.project_id, 'folder': str(ctx.folder),
-        'metaform': None if active is None else active.id, 'layers': store.toggled},
-        resolve=lambda address: element_value(store, address))
+    with _correctable('metaform workflow list'):
+        store = _call_store(ctx.require_store(), ctx.nouns['call'])
+        element = ctx.nouns.get('element')
+        this = None if element is None else element_value(store, element)
+        variables = _values(ctx.nouns.get('variables', {}))
+        active = store.bound_base()
+        word = executor.start(ctx.nouns['call'], variables, this, _lookup(store), {
+            'project': store.project_id, 'folder': str(ctx.folder),
+            'metaform': None if active is None else active.id, 'layers': store.toggled},
+            resolve=lambda address: element_value(store, address))
     return _shown(word)
 
 
@@ -195,27 +222,33 @@ def _call_context(store: Store, word: str) -> dict[str, Any]:
 
 def call(ctx: Context) -> Any:
     word = _token(ctx)
-    store = _call_store(_store(ctx, word), ctx.nouns['call'])
-    child = executor.call(word, ctx.nouns['call'], _variables(ctx, word), _lookup(store),
-                          resolve=lambda address: element_value(store, address), context=_call_context(store, word))
+    with _correctable('metaform workflow list'):
+        store = _call_store(_store(ctx, word), ctx.nouns['call'])
+        child = executor.call(word, ctx.nouns['call'], _variables(ctx, word), _lookup(store),
+                              resolve=lambda address: element_value(store, address),
+                              context=_call_context(store, word))
     return _shown(child)
 
 
 def handoff(ctx: Context) -> Any:
     word = _token(ctx)
-    store = _call_store(_store(ctx, word), ctx.nouns['call'])
-    child = executor.call(word, ctx.nouns['call'], _variables(ctx, word), _lookup(store), fresh=True,
-                          resolve=lambda address: element_value(store, address), context=_call_context(store, word))
+    with _correctable('metaform workflow list'):
+        store = _call_store(_store(ctx, word), ctx.nouns['call'])
+        child = executor.call(word, ctx.nouns['call'], _variables(ctx, word), _lookup(store), fresh=True,
+                              resolve=lambda address: element_value(store, address),
+                              context=_call_context(store, word))
     return {'nonce': child, 'handoff': prompt_files.required(PACKAGE, 'handoff', nonce=child)}
 
 
 def parallel(ctx: Context) -> Any:
     word = _token(ctx)
-    store = _store(ctx, word)
-    for text in ctx.nouns['calls']:
-        store = _call_store(store, text)
-    words = executor.parallel(word, ctx.nouns['calls'], _variables(ctx, word), _lookup(store),
-                              resolve=lambda address: element_value(store, address), context=_call_context(store, word))
+    with _correctable('metaform workflow list'):
+        store = _store(ctx, word)
+        for text in ctx.nouns['calls']:
+            store = _call_store(store, text)
+        words = executor.parallel(word, ctx.nouns['calls'], _variables(ctx, word), _lookup(store),
+                                  resolve=lambda address: element_value(store, address),
+                                  context=_call_context(store, word))
     return {'handoffs': [{'nonce': child, 'handoff': prompt_files.required(PACKAGE, 'handoff', nonce=child)}
                          for child in words]}
 
@@ -228,7 +261,8 @@ def complete(ctx: Context) -> Any:
     expression = _words(ctx.nouns.get('return'))
     if not expression:
         raise Stop("complete needs the call's RETURN.", f'metaform workflow complete "RETURN {{value}}" nonce={word}')
-    return executor.complete(word, expression, _variables(ctx, word))
+    with _correctable(f'metaform workflow resume nonce={word}'):  # its targets and scope, to correct the RETURN
+        return executor.complete(word, expression, _variables(ctx, word))
 
 
 def fail(ctx: Context) -> Any:

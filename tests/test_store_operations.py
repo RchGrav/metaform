@@ -342,6 +342,10 @@ NOTICES: dict[str, tuple[Callable, Callable, bool, Callable]] = {
     # The metaform holds no refs, an element's refs are items of the sources layer.
     'add_ref on the metaform': (lambda s, w: None, lambda s, w: s.add_ref(w.outer.id, 'path', 'x'), False,
                                 _unchanged),
+    # A ref is written in place, and a finished intake never changes in place, STORE-032.
+    'add_ref on an item of a finished intake': (
+        lambda s, w: s.add_item('intake-1', Node('element', 'code.timer.kitchen'), 'a condition'),
+        lambda s, w: s.add_ref(s.layer_items('intake-1').results[-1].id, 'path', 'x'), False, _unchanged),
     # A ref that is not a key and a value, both text, is kept in the record's extra under refs, STORE-012.
     'add_item ref not text': (lambda s, w: None,
                               lambda s, w: s.add_item('k', Node('element', 'code.k.a'), 'v', refs=[('line', 12)]),

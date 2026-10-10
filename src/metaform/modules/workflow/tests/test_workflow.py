@@ -256,3 +256,19 @@ def test_an_incomplete_prompt_is_stored_with_its_notice(run, store, project_fold
     assert submitted['logic'][0]['content'] == 'Use X.'
     assert {'where': 'review', 'message': 'Incomplete prompt: @VERIFY is missing.'} in submitted['notices']
     assert 'notices' not in read(run, project_folder, 'workflow', 'add_logic', ADDRESS, 'procedures', 'review', SCRIPT)
+
+
+@pytest.mark.req('CLI-009')
+def test_a_call_or_export_that_does_not_bind_is_the_callers_error_with_its_next_step(run, store, project_folder):
+    import asyncio
+    small_map(store)
+    catalog.submit_workflow(store, ADDRESS, 'procedures')
+    catalog.submit_logic(store, ADDRESS, 'procedures', 'review', SCRIPT)
+    for arguments in (('workflow', 'run', f'{ADDRESS}.review()'), ('workflow', 'run', f'{ADDRESS}.absent(target=1)'),
+                      ('workflow', 'export', ADDRESS, 'nolayer')):
+        failed = run(*arguments, cwd=project_folder, ok=False)
+        assert failed.returncode == 2, failed.stderr
+        assert failed.stderr.count('\nNext: ') == 1 and 'StopIteration' not in failed.stderr
+    failed, blocks = asyncio.run(enter(project_folder, 'workflow', {'command': 'run',
+                                                                   'arguments': {'call': f'{ADDRESS}.review()'}}))
+    assert failed and 'Missing required parameter: target' in blocks[-1] and 'feedback' not in blocks[-1]

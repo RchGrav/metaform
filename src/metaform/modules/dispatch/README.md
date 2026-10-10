@@ -83,7 +83,13 @@ workflow agent to repair its execution instructions and restart it. Changes to t
 - `autostart`, when enabled, starts the free glyphs in board order over the tickets that have not been tried: open, not taken, not held, with a task. A ticket an agent stopped on stays taken until the person puts it back; nothing restarts by itself. Without distributed glyphs it fills the configured agent slots.
 - `recover` applies the dead runner recovery setting and reports tickets released or deferred with their reasons. Autostart applies it before selecting tickets, including when automatic agent starts are off. Session reads preserve ownership.
 
-`message` and `stop` with no agent running on the ticket name `metaform dispatch start <id> <agent>` as the next step.
+- `agents`: the agents dispatch starts, for the person to choose from: each one's `agent`, `label`, start `command`, whether that command is `available` on this system (its first word found on PATH, by PATHEXT on Windows), the `path` found, whether it is the `default`, and the `next` step when it is not found; with a project, `room`, how many more agents may be summoned now.
+- `intake [agent=<agent>] [resume=true] [-- <text>]`: starts an agent on the project's intake. Its first turn is the intake exactly as `intake prompt` serves it, with the person's text in its prompt slot; the text reaches the runner in a nonce, never in an argument. It holds no ticket: its work id is `intake-<token>`, and `message`, `interrupt`, `stop`, `permit` and `configure` take it as they take a ticket's id. It counts as a summoned agent, its launch holding its slot in `raised` until its session is made, and stays to talk until stopped. A second intake while one runs or starts is refused, naming the one at work; an intake being recorded that no agent of Metaform's started is refused unless `resume=true`, which starts the agent to resume it.
+- `resume <id> [session=<session id>]`: resumes an ended session in place, the latest of the ticket when none is named, through `session/resume` where the agent offers it and otherwise `session/load`, whose replay is not written into the thread again. The session's own row runs again and its thread goes on. A worker whose ticket is still taken by that session goes on as its worker; any other session comes back as a summoned conversation. It sends nothing: the agent waits for the person's next message. A session whose agent offered neither, or whose folder is gone, is refused with `talk session=<work id>:<session id>` as the next step.
+- `permit <id> <request> -- <option>`, CLI only: answers a waiting permission request with the option named by its id or its name, at once; its question at the node, when there is one, is closed with the option's name. Not offered over MCP, so an agent cannot answer its own request.
+- `configure <id> <setting> -- <value>`, CLI only: sets one of a running session's settings as its state lists them: the agent's modes as the setting `mode`, through `session/set_mode`, and each config option, a model among them, through `session/set_config_option`; a choice by its value or its name, a switch by on or off. The thread notes the change. Not offered over MCP, so an agent cannot change its own mode.
+
+`message`, `stop`, `permit` and `configure` with no agent running on the ticket name `metaform dispatch start <id> <agent>` as the next step.
 
 Eligible agents is a map-owned ticket setting, MAP-058. Explicit `start` and `run` refuse an agent outside the list. A glyph's runner selects its next eligible ticket in board order and leaves skipped tickets' glyphs and positions intact. Autostart and Chat use the configured agent when eligible, otherwise the first listed agent. Tickets with no list allow Any agent.
 
@@ -93,7 +99,7 @@ Eligible agents is a map-owned ticket setting, MAP-058. Explicit `start` and `ru
 - `dispatch_codex`, default `npx -y @agentclientprotocol/codex-acp`.
 - `dispatch_gemini`, default `gemini --acp`.
 - `dispatch_autostart`, false by default, labeled Autostart agents; separate from the web GUI autostart setting.
-- `dispatch_agent`, codex by default, the agent for automatic starts.
+- `dispatch_agent`, codex by default, the default agent: the one started when none is chosen, for a chat, the system agent, an issue or an intake. Starting another agent on a ticket leaves it as it is.
 - `dispatch_agents`, 5 by default, the number of simultaneous agents when tickets have not been distributed.
 - `dispatch_recovery`, `manual` by default. `automatic` verifies runner death and cleans up its abandoned agent before returning its ticket to To do. Set it with `metaform set --dispatch-recovery=automatic`, or restore manual recovery with `metaform set --dispatch-recovery=manual`.
 
@@ -102,7 +108,18 @@ Eligible agents is a map-owned ticket setting, MAP-058. Explicit `start` and `ru
 ## Events
 
 - Publishes `map.changed` after each write the runner makes, since those writes are made inside one long command and would otherwise be announced only when it ends.
-- The runner listens for `map.changed` through the base, `ctx.listen`, BASE-053: each one published in another process, a command, the MCP server, the web server or another runner, for the runner's project, makes it read the questions it asked and those its agent asked itself. This is how an answer given from the web GUI, the CLI or MCP reaches the agent without polling, QUAL-015. The runner's own writes do not reach its listener. The control port takes only `message` and `stop`.
+- The runner listens for `map.changed` through the base, `ctx.listen`, BASE-053: each one published in another process, a command, the MCP server, the web server or another runner, for the runner's project, makes it read the questions it asked and those its agent asked itself. This is how an answer given from the web GUI, the CLI or MCP reaches the agent without polling, QUAL-015. The runner's own writes do not reach its listener. A change to the map itself makes it read the sources layer's refs again when it next places a file. The control port takes `status`, `message`, `interrupt`, `stop`, `permit` and `configure`.
+- A new permission request announces `dispatch_tables` `dispatch.lines` and `dispatch.permissions`, with its `permission-waiting` signal carrying `request` beside `message_id`.
+
+## What ACP gives beyond text
+
+Each session keeps a few lines whose text is JSON, read back structured by `sessions`:
+
+- `state`, one per session, kept at its latest and returned under `states` by session id, out of the thread: the agent and its `agent_info`, its `capabilities` (`load`, `resume`, `list`, `close`, `fork`, `image`, `audio`, `embedded_context`), the `cwd` it works in, its `settings` (each `id`, `name`, `description`, `category`, `type` select or boolean, `current`, `options` with `value`, `name`, `description` and `group`, and `source`, `mode` or `option`), its slash `commands` (`name`, `description`, `hint`), its `plan` entries, its `usage` and `tokens`, its `title`, whether and how it was `resumed`, and the parts of the map it has `touched`, the latest first.
+- `tool_detail`, one per tool call that names a file or a terminal, attached to the call's own line as `data`: its `diffs`, each a unified `patch` with the lines `added` and `removed`, its `locations` with their lines, its `terminals`, and the `nodes` each file belongs to on the map. A file belongs to the parts whose refs in the `sources` layer name it, or else the nearest folder holding it.
+- `permission`, one per request, in the thread where it was asked, with `data`: its `request` id, the `message_id` of its question at the node when there is one, the tool call, its `options` with their ids, names and kinds, the call's detail, and its `state`, waiting, answered, unmatched or cancelled, with the option `chosen`.
+
+The client offers no file system and no terminal of its own, and takes boolean config options.
 
 ## Sync and async
 

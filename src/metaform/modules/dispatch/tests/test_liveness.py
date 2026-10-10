@@ -212,6 +212,10 @@ def test_interrupt_during_turn_start_prevents_the_prompt_and_keeps_chat_usable(d
     asyncio.run(exercise())
 
 
+# A newer layout that older code cannot read: both numbers are raised, STORE-029.
+VERSIONS = "UPDATE meta SET value=? WHERE key IN ('schema_version', 'compatible_from')"
+
+
 @pytest.mark.parametrize('trigger', ['change', 'agent_exit', 'stop'])
 def test_schema_change_cannot_strand_a_runner_or_its_resources(dispatch, trigger):
     dispatch.start('ask')
@@ -220,7 +224,7 @@ def test_schema_change_cannot_strand_a_runner_or_its_resources(dispatch, trigger
     agent_pid = dispatch.logged('pid')[0]
     path = homes.store_path('proj', dispatch.store.active_base().id)
     with DataConnection(path) as db:
-        db.execute("UPDATE meta SET value=? WHERE key='schema_version'", (str(int(sqlite.SCHEMA_VERSION) + 1),))
+        db.execute(VERSIONS, (str(int(sqlite.SCHEMA_VERSION) + 1),))
     try:
         if trigger == 'change':
             relay.deliver('map.changed', {'project': 'proj'})
@@ -240,7 +244,7 @@ def test_schema_change_cannot_strand_a_runner_or_its_resources(dispatch, trigger
         assert not nonce.read(held['nonce']).open
     finally:
         with DataConnection(path) as db:
-            db.execute("UPDATE meta SET value=? WHERE key='schema_version'", (sqlite.SCHEMA_VERSION,))
+            db.execute(VERSIONS, (sqlite.SCHEMA_VERSION,))
     # The failed old-schema write leaves a historical running row; readers must verify it.
     assert dispatch.session().extra['state'] == 'running'
     [found] = sessions(Store('proj', module='dispatch'))
@@ -251,7 +255,7 @@ def upgraded(dispatch):
     """The store at the next schema version, as a newer Metaform on disk leaves it under a runner started earlier."""
     path = homes.store_path('proj', dispatch.store.active_base().id)
     with DataConnection(path) as db:
-        db.execute("UPDATE meta SET value=? WHERE key='schema_version'", (str(int(sqlite.SCHEMA_VERSION) + 1),))
+        db.execute(VERSIONS, (str(int(sqlite.SCHEMA_VERSION) + 1),))
     return path
 
 
@@ -555,7 +559,7 @@ def test_a_terminated_runner_on_a_store_upgraded_under_it_releases_through_the_c
         assert dispatch.session().extra['state'] == 'ended'
     finally:
         with DataConnection(path) as db:
-            db.execute("UPDATE meta SET value=? WHERE key='schema_version'", (str(int(sqlite.SCHEMA_VERSION) - 1),))
+            db.execute(VERSIONS, (str(int(sqlite.SCHEMA_VERSION) - 1),))
 
 
 @pytest.mark.skipif(os.name == 'nt', reason='Windows ends a process without a signal it can handle')
@@ -570,7 +574,7 @@ def test_a_runner_that_cannot_release_its_ticket_says_so_and_how_to_put_it_back(
         assert f'metaform map work op=move id={dispatch.id} column=todo' in said
     finally:
         with DataConnection(path) as db:
-            db.execute("UPDATE meta SET value=? WHERE key='schema_version'", (sqlite.SCHEMA_VERSION,))
+            db.execute(VERSIONS, (sqlite.SCHEMA_VERSION,))
     assert dispatch.ticket().taken  # the record says what is left, and nothing moved it
 
 

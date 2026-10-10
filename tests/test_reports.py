@@ -53,6 +53,17 @@ def test_feedback_with_a_shape_and_no_layer_writes_two_files_with_one_run_id(run
 
 
 @pytest.mark.req('BASE-045')
+@pytest.mark.req('BASE-044')
+def test_a_shape_file_that_is_not_utf8_is_saved_with_a_notice_and_never_as_its_name(run, project, home):
+    shape = project.parent / 'shape.txt'
+    shape.write_bytes(b'<result id="caf\xe9"/>\n')
+    result = json.loads(run('feedback', 'Encoding.', f'shape={shape}', '--json', cwd=project).stdout)
+    saved = next(name for name in result['files'] if name.endswith('-shape.txt'))
+    assert (own('proj') / 'reports' / saved).read_text(encoding='utf-8') == '<result id="caf�"/>\n'
+    assert [notice['where'] for notice in result['notices']] == ['shape']
+
+
+@pytest.mark.req('BASE-045')
 def test_a_second_write_for_one_run_appends_a_section_and_read_returns_the_text_exactly(run, project, home):
     store = Store('proj')
     store.layer('notes', 'test', 'Notes.', mutable=True, hideable=True, provenance={'module': 'test'})

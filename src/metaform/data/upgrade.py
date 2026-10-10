@@ -71,7 +71,7 @@ from typing import Any
 
 from .. import home
 from ..errors import StoreError
-from ..sqlite import SCHEMA_VERSION
+from ..sqlite import COMPATIBLE_FROM, SCHEMA_VERSION, stamp
 from . import tables
 from .schema import LAYOUT_20, STORE_SCHEMA
 
@@ -107,7 +107,7 @@ def upgrade(db: sqlite3.Connection, path: Path, found: str) -> bool:
             tables.create_missing(db)
             tables.legacy_upgrade(db, found)
             db.execute("INSERT OR IGNORE INTO meta(key,value) VALUES ('prior_schema_version',?)", (found,))
-            db.execute("UPDATE meta SET value=? WHERE key='schema_version'", (SCHEMA_VERSION,))
+            stamp(db, SCHEMA_VERSION, COMPATIBLE_FROM)
             db.execute('COMMIT')
         except BaseException:
             db.execute('ROLLBACK')
@@ -132,6 +132,9 @@ def upgrade(db: sqlite3.Connection, path: Path, found: str) -> bool:
     kept = _kept_folder(path)
     kept.mkdir(parents=True, exist_ok=True)
     db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+    # The caller's connection reads the old file and is reconnected after this returns; it is closed before the file
+    # moves, since Windows refuses to move or delete a file a connection holds open.
+    db.close()
     shutil.move(str(path), str(kept / path.name))
     for suffix in ('-wal', '-shm'):
         path.with_name(path.name + suffix).unlink(missing_ok=True)
@@ -155,19 +158,19 @@ def _to_log(old: sqlite3.Connection, fresh: Path, found: str) -> None:
     try:
         new.execute('PRAGMA journal_mode=WAL')
         new.executescript('BEGIN IMMEDIATE;\n' + STORE_SCHEMA +
-                          f"\nINSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '{SCHEMA_VERSION}');"
                           '\nCOMMIT;')
         new.execute('BEGIN IMMEDIATE')
         for key, value in old.execute('SELECT key, value FROM meta'):
-            if key not in ('schema_version', 'prior_schema_version'):
+            if key not in ('schema_version', 'compatible_from', 'prior_schema_version'):
                 new.execute('INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)', (key, value))
         new.execute("INSERT OR REPLACE INTO meta(key, value) VALUES ('prior_schema_version', ?)", (found,))
-        stamp = home.now()
+        stamp(new, SCHEMA_VERSION, COMPATIBLE_FROM)
+        written = home.now()
         for seq, (op, kind, ident, layer_id, data) in enumerate(ops_of(old), 1):
             if kind in ('element', 'join', 'item', 'property'):
                 new.execute('INSERT OR IGNORE INTO objects(id, kind) VALUES (?, ?)', (ident, kind))
             new.execute('INSERT INTO ops(seq, session_id, at, op, kind, id, layer_id, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                        (seq, UPGRADE_SESSION, stamp, op, kind, ident, layer_id,
+                        (seq, UPGRADE_SESSION, written, op, kind, ident, layer_id,
                          json.dumps(data, ensure_ascii=False, sort_keys=True)))
         _copy_module_tables(old, new)
         new.execute('COMMIT')

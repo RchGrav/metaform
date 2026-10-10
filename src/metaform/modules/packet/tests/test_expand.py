@@ -14,13 +14,13 @@ import pytest
 
 
 class _Vary:
-    """The module, imported when a test first uses it. Imported as this file is collected, it would declare the
-    packet's setting for every test of the run, and the module ships disabled."""
+    """The chassis's variation module, imported when a test first uses it, as it was while it lived in the packet
+    module, whose import declares the packet's setting."""
 
     def __getattr__(self, name):
         if name.startswith('_') or name in ('pytestmark', 'obj'):  # pytest looking the object over as it collects
             raise AttributeError(name)
-        from metaform.modules.packet import vary
+        from metaform import vary
         return getattr(vary, name)
 
 

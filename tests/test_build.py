@@ -267,3 +267,95 @@ def test_uvx_runs_the_built_wheel(tmp_path, every_module):
     from metaform.probe import probe
     served = probe([uvx, '--from', str(wheel), 'metaform', 'mcp', 'serve'], cwd=tmp_path, limit=180)
     assert served.ok and served.tools > 0, served.reason
+
+
+def _mapped(folder):
+    """A registered project proj with a file and a small finished map: a cook whose dish timer serves them."""
+    from metaform.data import Store
+    store = Store('proj')
+    with store.atomic():
+        intake = store.layer('intake-1', 'intake', 'The functional map.', kind='intake', mutable=False,
+                             hideable=False, provenance={'module': 'intake'}, ready=True)
+        store.add_element(intake.name, 'exterior.cook', name_length=1, role='CQU')
+        store.add_element(intake.name, 'code.timer.kitchen', name_length=2, role='DE', name='dish timer')
+        store.add_join(intake.name, 'exterior.cook', ['code.timer.kitchen'], purpose='Know when food is done.',
+                       ef='Counts down.')
+
+
+@pytest.mark.req('BASE-060')
+def test_a_project_wheel_onboards_a_remote_agent_and_its_return_imports_as_a_new_layer(run, home, tmp_path):
+    import xml.etree.ElementTree as ET
+    folder = tmp_path / 'proj'
+    folder.mkdir()
+    (folder / 'main.py').write_text('print("hi")\n', encoding='utf-8')
+    run('add', 'project', 'proj', str(folder))
+    _mapped(folder)
+    out = run('build', 'kind=project', 'shape=map', cwd=folder).stdout
+    wheel = Path(next(line.split(': ', 1)[1] for line in out.splitlines() if line.startswith('Wheel: ')))
+    assert 'Modules: map' in out.splitlines()
+    remote, there = tmp_path / 'remote', tmp_path / 'remote-home'
+    remote.mkdir()
+    env = {**plain_env(), 'METAFORM_HOME': str(there)}
+
+    def wheel_run(*args):
+        done = subprocess.run([sys.executable, '-I', str(wheel), *args], cwd=remote, env=env, capture_output=True,
+                              text=True, encoding='utf-8', check=False)
+        assert done.returncode == 0, done.stdout + done.stderr
+        return done.stdout
+
+    first = wheel_run()
+    onboarding = ET.parse(ROOT / 'src' / 'metaform' / 'resources' / 'prompts.xml').getroot().find('remote_onboarding')
+    assert onboarding is not None and onboarding.text.splitlines()[0] in first
+    assert 'Imported the project proj' in first and (remote / 'main.py').read_text(encoding='utf-8') == 'print("hi")\n'
+    assert "## The map's entry" in first and 'code.timer.kitchen' in first.split("## The map's entry")[1]
+    again = wheel_run()
+    assert 'nothing was imported again' in again and 'Imported the project' not in again
+    wheel_run('map', 'knowledge', 'op=add-item', 'node=element:code.timer.kitchen', 'value="Rings twice."')
+    (remote / 'main.py').write_text('print("hello")\n', encoding='utf-8')
+    (remote / 'notes.txt').write_text('new\n', encoding='utf-8')
+    returned = wheel_run('return', 'note=Changed the greeting.')
+    archive = Path(next(line.split(': ', 1)[1] for line in returned.splitlines() if line.startswith('Archive: ')))
+    assert 'Changes: one file changed, one new, no removed.' in returned.splitlines()
+    imported = run('import', str(archive), cwd=folder).stdout
+    assert 'layers added: one' in imported.splitlines() and 'things added: one' in imported.splitlines()
+    from metaform.data import Store
+    layers = {layer.name for layer in Store('proj').layers(limit=0).results}
+    working = next(name for name in layers if name.startswith('remote_'))
+    assert working in imported
+    review = archive.with_name(archive.name[:-len('.zip')])
+    assert '+print("hello")' in (review / 'changes.diff').read_text(encoding='utf-8')
+    assert (review / 'note.txt').read_text(encoding='utf-8') == 'Changed the greeting.'
+    assert (folder / 'main.py').read_text(encoding='utf-8') == 'print("hi")\n'  # nothing applied to the project
+
+
+@pytest.mark.req('BASE-060')
+@pytest.mark.req('STORE-029')
+def test_an_archive_readable_only_by_a_newer_metaform_is_refused_and_nothing_is_imported(run, home, tmp_path):
+    import io
+    import json
+
+    from metaform import archive
+    from metaform.data import export_document
+    folder = tmp_path / 'proj'
+    folder.mkdir()
+    run('add', 'project', 'proj', str(folder))
+    _mapped(folder)
+    packed = archive.packed('project', 'proj', export_document(['proj']), origin=None)
+    rewritten = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(packed)) as source, zipfile.ZipFile(rewritten, 'w') as target:
+        for name in source.namelist():
+            data = source.read(name)
+            if name == archive.MANIFEST:
+                manifest = json.loads(data)
+                manifest.update(archive_version=archive.ARCHIVE_VERSION + 1, compatible_from=archive.ARCHIVE_VERSION + 1,
+                                metaform='2099.1.1.1')
+                data = json.dumps(manifest).encode()
+            target.writestr(name, data)
+    file = tmp_path / 'newer.zip'
+    file.write_bytes(rewritten.getvalue())
+    other = tmp_path / 'other-home'
+    done = run('import', str(file), ok=False, env={'METAFORM_HOME': str(other)})
+    assert done.returncode == 2
+    assert f'which a Metaform reads from archive version {archive.ARCHIVE_VERSION + 1}' in done.stderr
+    assert 'Next: install Metaform 2099.1.1.1 or newer' in done.stderr
+    assert 'proj' not in run('list', 'projects', env={'METAFORM_HOME': str(other)}).stdout.split()

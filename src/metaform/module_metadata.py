@@ -1,7 +1,7 @@
 """Read a module's declarations without running it, BASE-015.
 
 `SUPPORTED_OS` and `DEPENDENCIES` are literal tuples or lists of strings,
-`SHIPS_DISABLED` a literal boolean and `REQUIRES_CHASSIS` a literal string. The
+`SHIPS_DISABLED` and `REMOTE_AGENT` literal booleans and `REQUIRES_CHASSIS` a literal string. The
 module's `__init__.py`, and a `manifest.py` beside it, are parsed with `ast` and
 never executed. A name assigned more than once, assigned a non-literal, or
 defined any other way is an error naming the declaration.
@@ -36,6 +36,7 @@ class Declared:
     requires_chassis: str | None
     summary: str | None = None
     data_source: str | None = None
+    remote_agent: bool = False  # useful to an agent on a hosted sandbox through the CLI; undeclared is not, BASE-060
 
     @property
     def compatible(self) -> bool:
@@ -140,5 +141,6 @@ def read(folder: Any) -> Declared:
     ships_disabled = declared('SHIPS_DISABLED', _boolean) or False
     requires = declared('REQUIRES_CHASSIS', _text)
     data_source = declared('DATA_SOURCE', _text) or None
+    remote_agent = declared('REMOTE_AGENT', _boolean) or False
     return Declared(None if systems is None else tuple(canonical(name) for name in systems), tuple(dependencies),
-                    ships_disabled, requires, _summary(tree), data_source)
+                    ships_disabled, requires, _summary(tree), data_source, remote_agent)

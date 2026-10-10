@@ -139,8 +139,8 @@ def init(root: Path, name: str, agent: str, secret: str) -> dict[str, str]:
         raise Stop(f'{name} is not a module identifier.', 'metaform help fork init')
     if not re.fullmatch(r'[A-Z][A-Z0-9_]*', secret):
         raise Stop('The CI secret name must be an uppercase environment variable name.', 'metaform help fork init')
-    if root.exists() and any(root.iterdir()):
-        raise Stop(f'{root} is not empty; no files were changed.', 'metaform help fork init')
+    if root.exists() and (not root.is_dir() or any(root.iterdir())):
+        raise Stop(f'{root} is not an empty folder; no files were changed.', 'metaform help fork init')
     root.mkdir(parents=True, exist_ok=True)
     target = root / name
     source = template_root()

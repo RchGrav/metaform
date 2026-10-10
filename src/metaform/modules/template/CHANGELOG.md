@@ -4,6 +4,8 @@ Each change to the module contract, newest first, so a module copied from the te
 
 ## Unreleased
 
+- A module declares `REMOTE_AGENT`, a literal boolean read without running the module, BASE-060: True when an agent working on an already-mapped project from a hosted code-execution sandbox, through the CLI, has use for it; a module that needs a screen, local agents or compiled packages a direct run of a wheel does not carry declares False. An undeclared module counts as False. The Remote agent shape of `metaform build` and of the web GUI's build panel is the modules that declare True. The template declares False; a copy declares its own.
+
 - `metaform.module.code_print()` exposes the shared package source metadata fingerprint used by MCP and the web GUI to detect changed code before attempting schema recovery, STORE-029 and QUAL-016. It works with installed and editable packages, creates no state, and does not guarantee replacement compatibility. Hello's `basedemo` demonstrates it.
 
 - Shipped and user modules share the public chassis services, BASE-004 and QUAL-016: `metaform.module` exposes home/project lookup, layer selection, command surfaces and aliases, module refresh and change announcement, version and command summaries, and project clear, removal, backup and restore services. `metaform.data` exposes Markdown/XML rendering, named reads with their text conversions, `Record`, `plain` and `NewerStore`. `prompt_files.module_commands` reads loaded modules' slash commands. These services keep extensions on the same implementation as shipped modules without private imports. Hello's `basedemo`, `base-restore`, `base-remove` and existing `follow` demonstrate them.

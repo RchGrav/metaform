@@ -216,7 +216,7 @@ class ChassisTUI:
         ])
         self.app: Application[None] = Application(layout=Layout(container, focused_element=self.modules_window),
                                                   key_bindings=self._bindings(), style=STYLE, full_screen=True,
-                                                  input=input, output=output, refresh_interval=.5)
+                                                  input=input, output=output)  # redrawn on change, QUAL-015
         self.app.ttimeoutlen = .1
 
     def _details_height(self) -> int:
@@ -350,7 +350,7 @@ class ChassisTUI:
             try:
                 await action()
                 await self.refresh()
-                self.message = success() if success else 'Applied. Changes are saved globally.'
+                self.message = success() if success else 'Applied. Changes are saved.'
             except Exception as error:  # noqa: BLE001  the failure is the screen's status line, CLI-026
                 self.message = str(error)
                 self.error = True
@@ -487,7 +487,7 @@ class ChassisTUI:
             if exit_after:
                 self.exit_requested = True
         self._perform(save, 'Saving settings and module state…',
-                      success=lambda: ' '.join(['Applied. Changes are saved globally.', *noted]))
+                      success=lambda: ' '.join(['Applied. Changes are saved.', *noted]))
 
     def _apply_edit(self) -> None:
         if self.filtering:

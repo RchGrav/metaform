@@ -16,7 +16,7 @@ from typing import Any
 
 from .. import home
 from ..errors import StoreError
-from ..sqlite import SCHEMA_VERSION
+from ..sqlite import COMPATIBLE_FROM, SCHEMA_VERSION, readable
 from . import log, tables
 from .ids import as_list, as_object, new_id
 from .projection import OBJECT_KINDS, Op, Projection
@@ -61,7 +61,8 @@ def export_document(project_ids: Sequence[str] | None = None, *, metaform: str |
         if modules:  # a module's project-level tables, STORE-045
             entry['modules'] = modules
         exported.append(entry)
-    return {'metaform_export': FORMAT, 'schema_version': SCHEMA_VERSION, 'projects': exported}
+    return {'metaform_export': FORMAT, 'schema_version': SCHEMA_VERSION, 'compatible_from': COMPATIBLE_FROM,
+            'projects': exported}
 
 
 def _export_base(project_id: str, base: home.Base, layer_names: Sequence[str]) -> dict[str, Any]:
@@ -241,7 +242,8 @@ def from_format_1(document: dict[str, Any]) -> dict[str, Any]:
         projects.append({'project': entry['project'], 'bases': bases,
                          'active_base': entry.get('active_base', entry.get('active_metaform')),
                          **({'modules': entry['modules']} if entry.get('modules') else {})})
-    return {'metaform_export': FORMAT, 'schema_version': SCHEMA_VERSION, 'projects': projects}
+    return {'metaform_export': FORMAT, 'schema_version': SCHEMA_VERSION, 'compatible_from': COMPATIBLE_FROM,
+            'projects': projects}
 
 
 # ----------------------------------------------------------------------------------------------- validation
@@ -283,14 +285,34 @@ def _op(value: Any, path: str, problems: list[str]) -> None:
         problems.append(f'{path}.data: not an object')
 
 
+def _readable(whole: dict[str, Any]) -> None:
+    """Refuse a document only when this Metaform cannot read it, STORE-029: one at this layout, at a later layout whose
+    `compatible_from` is at or below this one, or at an earlier layout from this one's `compatible_from` on, which
+    differs from this one only by what this one added, is read as it is. A document without `compatible_from` takes
+    it as its own `schema_version`."""
+    found, needed = str(whole.get('schema_version')), whole.get('compatible_from')
+    needed = None if needed is None or isinstance(needed, bool) else str(needed)
+    if 'compatible_from' in whole and needed is None:
+        raise StoreError('The document\'s compatible_from is not a layout version.', 'metaform export > <file>')
+    if readable(found, needed, SCHEMA_VERSION):
+        return
+    earlier = found.isdigit() and int(COMPATIBLE_FROM) <= int(found) < int(SCHEMA_VERSION)
+    if earlier and (needed is None or needed.isdigit() and int(needed) <= int(found)):
+        return
+    if needed is not None and needed.isdigit() and int(needed) > int(SCHEMA_VERSION):
+        raise StoreError(f'The document has schema version {found}, which a Metaform reads from version {needed}; '
+                         f'this Metaform supports version {SCHEMA_VERSION}.',
+                         'install the Metaform release that wrote it')
+    raise StoreError(f'The document has schema version {found}; this Metaform supports version {SCHEMA_VERSION}.',
+                     'install the Metaform release that wrote it')
+
+
 def _validate(document: Any) -> None:
     """Check the whole document before anything is written; every problem is named with its path, H8."""
     whole = as_object(document)
     if whole is None or whole.get('metaform_export') != FORMAT:
         raise StoreError('This is not a Metaform export document.', 'metaform export > <file>')
-    if str(whole.get('schema_version')) != SCHEMA_VERSION:
-        raise StoreError(f'The document has schema version {whole.get("schema_version")}; this Metaform '
-                         f'supports version {SCHEMA_VERSION}.', 'install the Metaform release that wrote it')
+    _readable(whole)
     problems: list[str] = []
     entries = as_list(whole.get('projects'))
     if entries is None:
@@ -390,7 +412,8 @@ def collapsed(document: dict[str, Any], name: str, *, workflow: str, role: str, 
             emit('add', kind, ident, {'mode': 'add', 'reason': None, 'evidence': None, **version.fields})
     result: dict[str, Any] = {'base': {'id': base_id, 'name': name, 'created': created}, 'ops': ops,
                               'requires': _requires(ops)}
-    released = {**{key: document[key] for key in ('metaform_export', 'schema_version')},
+    released = {**{key: document[key] for key in ('metaform_export', 'schema_version', 'compatible_from')
+                   if key in document},
                 'projects': [{'project': project['project'].copy(), 'bases': [result], 'active_base': base_id}]}
     _validate(released)
     return released
@@ -427,6 +450,11 @@ def _plan(document: dict[str, Any], project: str | None,
         else:
             project_id = record.project_id
             registered = home.project(project_id) is not None
+            if not registered and not record.path:
+                # A document that carries no folder, as the release's own map, BASE-048, goes into a project
+                # the person names, never one registered nowhere.
+                raise StoreError(f'The document carries project {project_id} without a folder.',
+                                 'metaform import <file> <project>')
             if not registered:
                 holder = home.project_at(record.path)
                 if holder is not None:

@@ -3,6 +3,7 @@
 A module declares its own tables with `Tables`, `Table`, `Column` and `Index`, and reads and writes them in the
 `TableTx` that `Store.tables()` gives it, STORE-045.
 """
+import sqlite3 as _sqlite3
 from collections.abc import Mapping
 from typing import Any
 
@@ -18,13 +19,13 @@ from .projection import Projection
 from .records import (
     COLUMNS,
     CONDITIONS,
+    FAULTS,
     HELD_ROLES,
+    KINDS,
     MESSAGES,
     PLACE_KINDS,
     ROLES,
     STAGES,
-    KINDS,
-    FAULTS,
     Answer,
     ChallengeState,
     Citation,
@@ -67,7 +68,6 @@ from .records import (
     plain,
 )
 from .session import Tx as DataTx
-from .session import sqlite3 as _sqlite3
 from .store import Store
 from .tables import Column, Index, Table, Tables, TableTx
 
@@ -95,15 +95,15 @@ def query_read(store: Store, name: str, arguments: Mapping[str, str]) -> Any:
 __all__ = [
     'COLUMNS',
     'CONDITIONS',
+    'FAULTS',
     'HELD_ROLES',
+    'KINDS',
     'LIMIT',
     'MESSAGES',
     'PLACE_KINDS',
     'ROLES',
     'SCHEMA_VERSION',
     'STAGES',
-    'KINDS',
-    'FAULTS',
     'Answer',
     'ChallengeState',
     'Citation',

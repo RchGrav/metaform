@@ -12,7 +12,7 @@ def count(number: int) -> str:
 
 
 def counted(number: int, noun: str, plural: str) -> str:
-    """A count with its noun: no metaforms, one metaform, two metaforms, 12 metaforms."""
+    """A count with its noun: no bases, one base, two bases, 12 bases."""
     return f'{count(number)} {noun if number == 1 else plural}'
 
 

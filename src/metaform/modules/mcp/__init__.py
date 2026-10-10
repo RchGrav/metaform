@@ -15,6 +15,7 @@ from metaform.module import Context, Module, Verb
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ('mcp>=2.2,<3',)
 SHIPS_DISABLED = False
+REMOTE_AGENT = False  # a hosted agent reaches Metaform through the CLI, and mcp's compiled dependencies do not travel
 
 settings.choice('mcp_schemas', ['on_demand', 'inline'], 'on_demand', label='Tool schemas',
                 help='List the commands only and serve an argument schema when asked, or serve every schema inside '

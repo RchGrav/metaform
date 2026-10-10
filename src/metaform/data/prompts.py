@@ -20,6 +20,7 @@ from ..errors import StoreError
 from .records import Notice, Record
 
 PROMPT_SCHEMA_VERSION = '2'  # the prompt database's own layout, apart from the store's, STORE-029
+PROMPT_COMPATIBLE_FROM = '2'  # 2 renamed the column code at 1 reads, STORE-029
 PROMPT_SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS prompts(
@@ -60,7 +61,7 @@ def _upgrade(db: sqlite3.Connection, path: Path, found: str) -> None:
     try:
         if db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone() == ('1',):
             db.execute('ALTER TABLE prompt_uses RENAME COLUMN metaform_id TO base_id')
-            db.execute("UPDATE meta SET value=? WHERE key='schema_version'", (PROMPT_SCHEMA_VERSION,))
+            sqlite.stamp(db, PROMPT_SCHEMA_VERSION, PROMPT_COMPATIBLE_FROM)
         db.execute('COMMIT')
     except BaseException:
         db.execute('ROLLBACK')
@@ -101,7 +102,7 @@ class PromptUse(Record):
 @contextmanager
 def _db(*, write: bool = False) -> Generator[sqlite3.Connection, None, None]:
     with sqlite.opened(home.home() / 'prompts.sqlite3', PROMPT_SCHEMA, write=write,
-                       version=PROMPT_SCHEMA_VERSION, upgrade=_upgrade) as db:
+                       version=PROMPT_SCHEMA_VERSION, compatible=PROMPT_COMPATIBLE_FROM, upgrade=_upgrade) as db:
         db.row_factory = sqlite3.Row
         db.execute('BEGIN IMMEDIATE' if write else 'BEGIN')
         try:
@@ -198,11 +199,7 @@ def save_prompt(name: str, text: str, *, format: str = 'text', parent: int | Non
             return _edit(db, record, text, int(newest['number']) if parent is None else parent)
         if parent is not None:
             raise StoreError(f'Prompt {name} has no version {parent}.', f'metaform prompt {name}')
-        prompt_id = uuid.uuid4().hex
-        db.execute('INSERT INTO prompts(prompt_id, name, format, created) VALUES (?, ?, ?, ?)',
-                   (prompt_id, name, format, home.now()))
-        version_id = _insert(db, prompt_id, 1, None, text, 'edited')
-        return _version(db.execute(_VERSION + 'AND v.version_id=?', (prompt_id, version_id)).fetchone())
+        return _create(db, name, format, text, 'edited')
 
 
 def shipped(name: str, format: str, text: str) -> PromptVersion:

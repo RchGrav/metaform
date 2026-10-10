@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, TypeVar
 
+from ..errors import StoreError
 from .records import Page
 
 LIMIT = 500
@@ -37,8 +38,13 @@ def paged(fetch: Callable[[str | None, int], list[Any]], build: Callable[[Any], 
 
 
 def sliced(values: tuple[T, ...], limit: int, after: str | None) -> Page[T]:
-    """A page of a list already read whole: for the few reads allowed to read their whole table, STORE-005."""
-    start = int(after or 0)
+    """A page of a list already read whole: for the few reads allowed to read their whole table, STORE-005. Its
+    cursor is the position the next page starts at."""
+    text = '' if after is None else str(after)
+    if text and not (text.isascii() and text.isdigit()):
+        raise StoreError(f'{after!r} is not a cursor of this list: a cursor is the next a page of it returned.',
+                         'read the list again without after, then pass the next it returns')
+    start = int(text or 0)
     if not limit:
         return Page(values[start:], None)
     end = start + limit

@@ -944,3 +944,184 @@ def test_interrupt_cancels_waiting_permission_without_ending_the_session(dispatc
     eventually(lambda: tell(held, 'status')['activity'] == 'idle')
     assert dispatch.process.poll() is None and dispatch.ticket().taken
     dispatch.stop()
+
+
+# ------------------------------------------------------------------ what ACP gives beyond text
+
+def rich(dispatch):
+    """The fake agent made rich, editing src/engine.py, a file the sources layer places at NODE."""
+    from metaform.data import Node
+    edited = dispatch.folder / 'src' / 'engine.py'
+    edited.parent.mkdir(exist_ok=True)
+    edited.write_text('one\n', encoding='utf-8')
+    dispatch.store.layer('sources', 'intake', 'refs', kind='layer', mutable=True, hideable=True, ready=True)
+    dispatch.store.add_item('sources', Node('element', NODE), NODE, refs=[{'key': 'path', 'value': 'src/engine.py:1'}])
+    return {'FAKE_ACP_RICH': '1', 'FAKE_ACP_RICH_PATH': str(edited)}
+
+
+def read(run, dispatch, work_id=None):
+    return json.loads(run('dispatch', 'sessions', f'id={work_id or dispatch.id}', '--json', cwd=dispatch.folder).stdout)
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.req('VIEW-039')
+def test_the_session_state_and_each_edit_are_structured_and_a_file_is_placed_on_the_map_by_its_refs(dispatch, run):
+    """The agent's settings, commands, usage and plan are the session's state, and an edit is its diff and its
+    location, each file at the node whose refs name it, so the page shows what the agent touches on the map."""
+    dispatch.start('hold', **rich(dispatch))
+    eventually(lambda: dispatch.logged('grandchild'))
+    found = eventually(lambda: (lambda got: got if got['states'].get('fake-session-1', {}).get('usage') else None)(
+        read(run, dispatch)))
+    state = found['states']['fake-session-1']
+    assert state['agent_info']['name'] == 'fake-agent' and state['capabilities']['load'] is False
+    assert Path(state['cwd']).resolve() == dispatch.folder.resolve()
+    assert [(one['id'], one['source'], one['current']) for one in state['settings']] == \
+        [('mode', 'mode', 'default'), ('model', 'option', 'small')]
+    assert state['commands'] == [{'name': 'review', 'description': 'Review the changes', 'hint': 'what to review'}]
+    assert state['usage'] == {'used': 1200, 'size': 200000, 'cost': None}
+    assert [entry['status'] for entry in state['plan']] == ['completed', 'pending']
+    assert [(one['address'], one['action']) for one in state['touched']] == [(NODE, 'edit')]
+    [edit] = [line for line in found['lines'] if line['name'] == 'tool:t-edit']
+    assert edit['text'] == 'Edit engine (completed)', 'the thread reads as it did'
+    detail = edit['data']
+    assert detail['status'] == 'completed' and detail['locations'][0]['line'] == 2
+    [diff] = detail['diffs']
+    assert (diff['path'], diff['added'], diff['removed'], diff['created']) == ('src/engine.py', 1, 0, False)
+    assert '+two' in diff['patch'] and [node['address'] for node in diff['nodes']] == [NODE]
+    assert not [line for line in found['lines'] if line['kind'] in ('state', 'tool_detail')]
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.req('VIEW-039')
+def test_the_person_sets_a_running_sessions_mode_and_model_and_a_choice_it_does_not_offer_is_refused(dispatch, run):
+    dispatch.start('hold', **rich(dispatch))
+    eventually(lambda: dispatch.logged('grandchild'))
+    set_model = json.loads(run('dispatch', 'configure', dispatch.id, 'model', '--json', '--', 'Large',
+                               cwd=dispatch.folder).stdout)
+    assert set_model['value'] == 'large'
+    [asked] = dispatch.received('session/set_config_option')
+    assert (asked['params']['sessionId'], asked['params']['configId'], asked['params']['value']) == \
+        ('fake-session-1', 'model', 'large')
+    run('dispatch', 'configure', dispatch.id, 'mode', '--', 'plan', cwd=dispatch.folder)
+    assert dispatch.received('session/set_mode')[0]['params']['modeId'] == 'plan'
+    settings = eventually(lambda: (lambda state: state if state['settings'][0]['current'] == 'plan' else None)(
+        read(run, dispatch)['states']['fake-session-1']))['settings']
+    assert [one['current'] for one in settings] == ['plan', 'large']
+    assert [line['text'] for line in read(run, dispatch)['lines'] if line['kind'] == 'setting'] == \
+        ['Model set to Large.', 'Mode set to Plan.']
+    refused = run('dispatch', 'configure', dispatch.id, 'model', '--', 'huge', cwd=dispatch.folder, ok=False)
+    assert refused.returncode != 0 and 'Small (small), Large (large)' in refused.stderr
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.req('VIEW-039')
+def test_a_permission_request_is_a_choice_among_its_options_that_the_person_answers_from_the_page(dispatch, run):
+    """The page gets the request with its options and answers with one; the question at the node is closed with
+    it, so its history reads the same as an answer given there. An option it does not offer is refused."""
+    dispatch.start('ask')
+    [question] = eventually(dispatch.questions)
+    [line] = eventually(lambda: [one for one in read(run, dispatch)['lines'] if one['kind'] == 'permission'])
+    asked = line['data']
+    assert (asked['request'], asked['message_id'], asked['state']) == (question.id, question.id, 'waiting')
+    assert [(one['option_id'], one['name'], one['kind']) for one in asked['options']] == \
+        [('allow', 'Allow once', 'allow_once'), ('reject', 'Reject', 'reject_once')]
+    refused = run('dispatch', 'permit', dispatch.id, question.id, '--', 'maybe', cwd=dispatch.folder, ok=False)
+    assert refused.returncode != 0 and 'Allow once (allow), Reject (reject)' in refused.stderr
+    assert not dispatch.logged('permission')
+    answered = json.loads(run('dispatch', 'permit', dispatch.id, question.id, '--json', '--', 'allow',
+                              cwd=dispatch.folder).stdout)
+    assert (answered['chosen'], answered['answer']) == ('allow', 'Allow once')
+    [outcome] = eventually(lambda: dispatch.logged('permission'))
+    assert outcome == {'outcome': {'outcome': 'selected', 'optionId': 'allow'}}
+    [closed] = dispatch.questions(open=False)
+    assert closed.id == question.id and closed.answer == 'Allow once'
+    assert [one['data']['state'] for one in read(run, dispatch)['lines'] if one['kind'] == 'permission'] == ['answered']
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.req('VIEW-039')
+def test_an_ended_session_is_resumed_in_place_where_its_agent_can_load_it(dispatch, run, dispatch_runners):
+    """The agent loads its own session again: the same session id, its thread going on with nothing replayed into
+    it twice, and its ticket still its own; a session whose agent offered no way back is refused with a fresh agent
+    that reads its thread as the next step."""
+    from metaform.data import Store
+    dispatch.start('hold', FAKE_ACP_LOAD='1')
+    eventually(lambda: dispatch.logged('grandchild'))
+    dispatch.stop()
+    assert dispatch.process.wait(30) == 0
+    assert dispatch.session().extra['state'] == 'ended' and dispatch.ticket().taken_by == 'claude fake-session-1'
+    before = len(read(run, dispatch)['lines'])
+    started = json.loads(run('dispatch', 'resume', dispatch.id, '--json', cwd=dispatch.folder,
+                             env=dispatch.env('hold', FAKE_ACP_LOAD='1')).stdout)
+    dispatch_runners.append((started, dispatch.folder, dispatch.log))
+    assert (started['state'], started['session_id'], started['conversation']) == ('starting', 'fake-session-1', False)
+    [load] = eventually(lambda: dispatch.received('session/load'))
+    assert load['params']['sessionId'] == 'fake-session-1'
+    assert Path(load['params']['cwd']).resolve() == dispatch.folder.resolve()
+    eventually(lambda: dispatch.session().extra['state'] == 'running')
+    assert len(dispatch.items('session')) == 1, 'the ended session itself runs again'
+    assert read(run, dispatch)['states']['fake-session-1']['resumed'] == 'load'
+    run('dispatch', 'message', dispatch.id, 'Carry on', cwd=dispatch.folder)
+    prompt = eventually(lambda: dispatch.received('session/prompt')[1:])[0]
+    assert prompt['params']['sessionId'] == 'fake-session-1'
+    lines = read(run, dispatch)['lines']
+    assert not [line for line in lines if 'Replayed history' in line['text']], 'a replay is never written again'
+    assert [line['text'] for line in lines[before:] if line['kind'] == 'person'] == ['Carry on']
+    with Store('proj', module='dispatch').tables() as tx:  # a session that kept no state, as one older than it
+        tx.insert('sessions', {'session_id': 'older', 'work_id': dispatch.id, 'agent': 'codex', 'state': 'ended',
+                               'started': '2026-10-01T00:00:00Z', 'seq': 1})
+    refused = run('dispatch', 'resume', dispatch.id, 'session=older', cwd=dispatch.folder, ok=False)
+    assert refused.returncode != 0 and f'dispatch talk session={dispatch.id}:older' in refused.stdout + refused.stderr
+    run('dispatch', 'stop', dispatch.id, cwd=dispatch.folder)
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.req('VIEW-039')
+def test_the_agents_are_listed_with_whether_each_is_found_here_and_the_default_a_start_leaves_as_it_is(
+        dispatch, run, dispatch_runners):
+    listed = json.loads(run('dispatch', 'agents', '--json', cwd=dispatch.folder).stdout)
+    assert [(one['agent'], one['label'], one['available'], one['default']) for one in listed['agents']] == \
+        [('claude', 'Claude Code', True, False), ('codex', 'Codex', True, True), ('gemini', 'Gemini CLI', True, False)]
+    assert listed['default'] == 'codex' and listed['room'] == 6
+    run('set', '--dispatch-gemini', 'metaform-no-such-acp-adapter --acp', cwd=dispatch.folder)
+    gemini = json.loads(run('dispatch', 'agents', '--json', cwd=dispatch.folder).stdout)['agents'][2]
+    assert (gemini['available'], gemini['path'], gemini['next']) == \
+        (False, None, 'metaform set --dispatch-gemini "<command>"')
+    started = json.loads(run('dispatch', 'start', dispatch.id, 'claude', '--json', cwd=dispatch.folder,
+                             env=dispatch.env('hold')).stdout)
+    dispatch_runners.append((started, dispatch.folder, dispatch.log))
+    assert json.loads(run('dispatch', 'agents', '--json', cwd=dispatch.folder).stdout)['default'] == 'codex', \
+        'the person sets the default; starting another agent on a ticket leaves it'
+
+
+@pytest.mark.req('VIEW-045')
+@pytest.mark.req('BASE-039')
+def test_an_intake_agent_follows_the_served_intake_holds_no_ticket_and_one_runs_at_a_time(dispatch, run,
+                                                                                         dispatch_runners):
+    """Its first turn is the intake exactly as `intake prompt` serves it, with what the person asked for; it takes
+    no ticket, counts as a summoned agent, and a permission it asks for, with no node to ask at, is a choice on the
+    page that the person answers. A second intake while it runs is refused."""
+    served = run('intake', 'prompt', 'text=the engine only', cwd=dispatch.folder).stdout
+    room = json.loads(run('dispatch', 'agents', '--json', cwd=dispatch.folder).stdout)['room']
+    started = json.loads(run('dispatch', 'intake', 'agent=claude', '--json', '--', 'the engine only',
+                             cwd=dispatch.folder, env=dispatch.env('ask', FAKE_ACP_ASK_HOLD='1')).stdout)
+    dispatch_runners.append((started, dispatch.folder, dispatch.log))
+    work_id = started['work_id']
+    assert work_id.startswith('intake-') and started['intake'] and started['conversation']
+    [prompt] = eventually(lambda: dispatch.received('session/prompt'))
+    [block] = prompt['params']['prompt']
+    assert block['type'] == 'text' and block['text'].strip() == served.strip(), 'the intake as served, nothing added'
+    assert dispatch.store.work(open=True, limit=0).results == (dispatch.ticket(),), 'no ticket is written or taken'
+    assert not dispatch.ticket().taken
+    [line] = eventually(lambda: [one for one in read(run, dispatch, work_id)['lines'] if one['kind'] == 'permission'])
+    assert line['data']['message_id'] is None and not dispatch.questions(), 'no node to ask at'
+    assert json.loads(run('dispatch', 'agents', '--json', cwd=dispatch.folder).stdout)['room'] == room - 1
+    refused = run('dispatch', 'intake', cwd=dispatch.folder, ok=False)
+    assert refused.returncode != 0 and f'dispatch stop {work_id}' in refused.stdout + refused.stderr
+    run('dispatch', 'permit', work_id, line['data']['request'], '--', 'Reject', cwd=dispatch.folder)
+    [outcome] = eventually(lambda: dispatch.logged('permission'))
+    assert outcome == {'outcome': {'outcome': 'selected', 'optionId': 'reject'}}
+    run('dispatch', 'stop', work_id, cwd=dispatch.folder)

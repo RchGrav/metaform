@@ -14,6 +14,7 @@ import io
 import json
 import signal
 import sys
+import threading
 import zipfile
 from collections.abc import Callable
 from importlib import resources
@@ -166,7 +167,7 @@ def add(args: list[str], folder: Path) -> None:
         out(f'Added base {created.name} to {project_id}; it is now active. The previous base {kept} is kept. '
             f'To switch back: metaform activate base {kept}')
         if created.name != args[1]:
-            out(f'Notice: name: {project_id} already has a metaform named {args[1]}; this one was named '
+            out(f'Notice: name: {project_id} already has a base named {args[1]}; this one was named '
                 f'{created.name}.')
         return
     if args[:1] == ['origin'] and len(args) in (1, 2):
@@ -196,7 +197,7 @@ def add(args: list[str], folder: Path) -> None:
         out(f'Collected variant {made.variant_id} of origin {made.mform_id}: '
             f'{counted(len(made.files), "file", "files")} changed.')
         return
-    raise Stop('add needs: project <id> <path>, metaform <name>, origin, or variant <folder>.',
+    raise Stop('add needs: project <id> <path>, base <name>, origin, or variant <folder>.',
                'metaform add project <id> <path>')
 
 
@@ -278,17 +279,29 @@ def read(args: list[str], folder: Path) -> None:
     sys.stdout.write(reports.read_report(folder, args[1], project=args[2] if len(args) == 3 else None))
 
 
-def _text_or_file(value: str) -> str:
-    """A report or shape given on the command line: `-` reads standard input, a file's path reads the file."""
+def _text_or_file(value: str, noun: str, notices: list[tuple[str, str]]) -> str:
+    """A report or shape given on the command line: `-` reads standard input, a file's path reads the file. A file
+    that cannot be read as given is still saved, never refused, with a notice saying what was kept, BASE-044."""
     if value == '-':
         return sys.stdin.read()
     path = Path(value)
     try:
-        if path.is_file():
-            return path.read_bytes().decode('utf-8')
-    except (OSError, ValueError):
+        named = path.is_file()
+    except (OSError, ValueError):  # text no file name can hold, such as a long report with line breaks
         return value
-    return value
+    if not named:
+        return value
+    try:
+        data = path.read_bytes()
+    except OSError as error:
+        said = f'{path} could not be read ({error.strerror or error}); its name was saved as the {noun}.'
+        notices.append((noun, said))
+        return value
+    try:
+        return data.decode('utf-8')
+    except UnicodeDecodeError:
+        notices.append((noun, f'{path} is not UTF-8 text; it was saved with each byte that is not shown as U+FFFD.'))
+        return data.decode('utf-8', errors='replace')
 
 
 def feedback(args: list[str], folder: Path) -> None:
@@ -298,9 +311,11 @@ def feedback(args: list[str], folder: Path) -> None:
     if len(positional) != 1:
         raise Stop('feedback takes one text; put it in quotes.', 'metaform help feedback')
     given = {key: values[0] for key, values in named.items()}
-    report = _text_or_file(given['report']) if 'report' in given else None
-    shape = _text_or_file(given['shape']) if 'shape' in given else None
-    result = reports.feedback(folder, positional[0], layer=given.get('layer'), report=report, shape=shape)
+    notices: list[tuple[str, str]] = []
+    report = _text_or_file(given['report'], 'report', notices) if 'report' in given else None
+    shape = _text_or_file(given['shape'], 'shape', notices) if 'shape' in given else None
+    result = results.noted(reports.feedback(folder, positional[0], layer=given.get('layer'), report=report,
+                                            shape=shape), notices)
     sys.stdout.write(results.as_json(result) + '\n' if as_json else results.as_text(result))
 
 
@@ -317,7 +332,7 @@ def activate(args: list[str], folder: Path) -> None:
 
 
 def clear(args: list[str], folder: Path) -> None:
-    """`clear project [<project>] --confirm`: the metaforms and reports go, everything else stays, PROJ-025."""
+    """`clear project [<project>] --confirm`: the bases and reports go, everything else stays, PROJ-025."""
     confirm = '--confirm' in args
     words = [arg for arg in args if arg != '--confirm']
     if words[:1] != ['project'] or len(words) not in (1, 2):
@@ -545,12 +560,12 @@ def config(args: list[str], folder: Path) -> None:
     unknown = [arg for arg in args if arg not in ('--show', '--json')]
     if unknown:
         raise Stop(f'config does not take {unknown[0]}.', 'metaform config --help')
-    rows = settings.describe(folder)
     if not show_it:
         from . import tui
         if tui.available():
             tui.run(folder)
             return
+    rows = settings.describe(folder)
     if as_json:
         out(json.dumps(rows, default=str, ensure_ascii=False))
         return
@@ -657,16 +672,49 @@ def import_(args: list[str], folder: Path) -> None:
     source = _named_folder(folder, args[0])
     if not source.is_file():
         raise Stop(f'No file at {source}.', 'metaform export > <file>')
+    if zipfile.is_zipfile(source):  # a project archive or a returned one, BASE-060
+        _import_archive(source, args[1] if len(args) == 2 else None)
+        return
     try:
         document = json.loads(source.read_text(encoding='utf-8'))
     except ValueError:
         raise Stop(f'{source} is not JSON.', 'metaform export > <file>') from None
-    report = import_document(document, args[1] if len(args) == 2 else None)
+    _imported(import_document(document, args[1] if len(args) == 2 else None))
+
+
+def _imported(report: dict[str, Any]) -> None:
     for key, number in report.items():
         if key != 'notices':
             out(f'{key.replace("_", " ")}: {count(number)}')
     for notice in report['notices']:
         out(f"Notice: {notice['where']}: {notice['message']}")
+
+
+def _import_archive(source: Path, project: str | None) -> None:
+    """Import an archive and say what came in, and for returned work which layers and where its file changes wait for
+    review: nothing is applied to the project's folder, BASE-060."""
+    from . import archive
+    found = archive.import_archive(source, project)
+    if found.kind == 'project':
+        out(f'Imported the project archive of {found.project}.')
+        _imported(found.report)
+        if found.files:
+            out(f"Files: the archive holds the project's {counted(found.files, 'file', 'files')} in "
+                f'{archive.ORIGIN}; nothing was unpacked.')
+        return
+    out(f'Imported work returned on the project {found.project}'
+        + (f', working layer {found.layer}.' if found.layer else '.'))
+    _imported(found.report)
+    record = home.project(found.project)
+    if found.changed or found.added or found.removed:
+        out(f'Changes: {counted(len(found.changed), "file", "files")} changed, {count(len(found.added))} new, '
+            f'{count(len(found.removed))} removed, written for review to {found.review}; nothing was applied to '
+            f'{record.path if record is not None else "the project"}. Review {archive.vary.DIFF}, '
+            f'{archive.vary.FILES} and {archive.vary.REMOVED} there, then apply what you want.')
+    else:
+        out('Changes: none to the files.')
+    if found.note and found.review is not None:
+        out(f'Note: {found.review / archive.NOTE}')
 
 
 def query_(args: list[str], folder: Path) -> None:
@@ -728,7 +776,7 @@ def prompt_(args: list[str], folder: Path) -> None:
                                     parent=int(parent) if parent is not None else None)
         out(results.as_json(saved) if json_output else results.as_text(saved))
         return
-    if len(args) not in (1, 2) or (len(args) == 2 and not args[1].isdigit()):
+    if len(args) not in (1, 2) or (len(args) == 2 and not args[1].isdecimal()):
         raise Stop('prompt takes a prompt name and an optional version number.', 'metaform prompts')
     sys.stdout.write(prompts.prompt_version(args[0], int(args[1]) if len(args) == 2 else None).text)
 
@@ -765,19 +813,69 @@ def uninstall_(args: list[str], folder: Path) -> None:
 
 
 def build_(args: list[str], folder: Path) -> None:
-    if args:
-        raise Stop('build takes no words.', 'metaform build')
+    """One of the four builds, BASE-060; with no words, the wheel of the modules on at home, BASE-041. It asks
+    nothing: what is built is what the words say."""
     from . import build
-    wheel, notes = build.build(folder)
-    for note in notes:
+    positional, named = _nouns(args, ('kind', 'project', 'modules', 'shape', 'files', 'prompt'), 'build')
+    if positional:
+        raise Stop(f'build takes only name=value words, not {positional[0]}.', 'metaform help build')
+    if any(len(values) != 1 for values in named.values()):
+        raise Stop('build takes each of its words once.', 'metaform help build')
+    given = {key: values[0] for key, values in named.items()}
+    if given.get('files', 'true') not in ('true', 'false'):
+        raise Stop('files= takes true or false.', 'metaform help build')
+    task = None
+    if 'prompt' in given:
+        task = sys.stdin.read() if given['prompt'] == '-' else _read_task(_named_folder(folder, given['prompt']))
+    built = build.make(build.Request(
+        kind=given.get('kind', 'installer'), project=given.get('project'),
+        modules=tuple(name for name in given['modules'].split(',') if name) if 'modules' in given else None,
+        shape=given.get('shape'), files=given.get('files', 'true') == 'true', task=task), folder)
+    for note in built.notes:
         out(note)
-    out(f'Wheel: {wheel}')
+    if built.kind == 'archive':
+        out(f'Archive: {built.path}')
+        return
+    out(f'Modules: {", ".join(built.modules) or "none"}')
+    out(f'Wheel: {built.path}')
+    if built.prompt is not None:
+        out(f'Prompt: {built.path.parent / "prompt.md"}')
+
+
+def _read_task(path: Path) -> str:
+    try:
+        return path.read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError) as error:
+        raise Stop(f'The prompt file {path} could not be read: {error}.', 'metaform build prompt=<a UTF-8 text file>') \
+            from None
+
+
+def return_(args: list[str], folder: Path) -> None:
+    """`python <project wheel> return`: the remote agent's work as one archive to offer as a download, BASE-060."""
+    from . import archive
+    positional, named = _nouns(args, ('note', 'file'), 'return')
+    if positional or any(len(values) != 1 for values in named.values()):
+        raise Stop('return takes note=<text> and file=<path>, each at most once.', 'metaform help return')
+    file = _named_folder(folder, named['file'][0]) if 'file' in named else None
+    returned = archive.write_return(folder, named.get('note', [''])[0], file)
+    out(f'Archive: {returned.path}')
+    out(f'Layers: {", ".join(returned.layers)}')
+    if not returned.files:
+        out('Changes: this wheel carried no project files, so the archive holds no file changes.')
+    else:
+        out(f'Changes: {counted(len(returned.changed), "file", "files")} changed, {count(len(returned.added))} new, '
+            f'{count(len(returned.removed))} removed.')
+    if returned.left:
+        out(f'Notice: layers: {counted(returned.left, "write", "writes")} went to layers the person\'s home already '
+            'holds, such as refinements of the base; they stay here and are not in the archive. Write what should '
+            'return to the working layer.')
+    out(prompt_files.chassis('remote_returned', archive=str(returned.path)))
 
 
 VERBS: dict[str, Callable[[list[str], Path], None]] = {
     'help': help_, 'add': add, 'list': list_, 'set': set_, 'unset': unset, 'config': config, 'enable': enable,
     'disable': disable, 'activate': activate, 'import': import_, 'export': export, 'query': query_,
-    'install': install_, 'uninstall': uninstall_, 'build': build_, 'feedback': feedback, 'read': read,
+    'install': install_, 'uninstall': uninstall_, 'build': build_, 'return': return_, 'feedback': feedback, 'read': read,
     'extract': extract, 'prompts': prompts_, 'prompt': prompt_, 'clear': clear, 'restore': restore, 'remove': remove,
     'instructions': instructions_, 'provision': provision, 'alias': alias}
 
@@ -848,11 +946,15 @@ def _run_async(function: Callable[..., Any], ctx: Any, label: str) -> Any:
         sys.stderr.flush()
         loop.call_soon_threadsafe(task.cancel)
 
-    previous = signal.signal(signal.SIGINT, on_interrupt)
+    # Only the main thread can take Ctrl+C; a call made on another thread, as a test or a host may make, runs
+    # without the handler rather than failing with its loop and task left open.
+    handling = threading.current_thread() is threading.main_thread()
+    previous = signal.signal(signal.SIGINT, on_interrupt) if handling else None
     try:
         return loop.run_until_complete(task)
     finally:
-        signal.signal(signal.SIGINT, previous)
+        if handling:
+            signal.signal(signal.SIGINT, previous)
         try:
             spawned = {item for item in loader.tasks_of(ctx.module) if item.get_loop() is loop}
             loader.finish_tasks(spawned)
@@ -960,7 +1062,7 @@ docs.command(Command('instructions', 'Show the instructions agents read, compose
                              "instructions, as metaform help agents <module> shows them; --connect-instructions "
                              "chooses whether the instructions list each module in one line or in full.",
                      see_also=('help',)))
-docs.command(Command('add', 'Register a project, or start a new metaform for one.',
+docs.command(Command('add', 'Register a project, or start a new base for one.',
                      ('metaform add project <id> <path> [<target type> <target value>]',
                       'metaform add base <name> [<project>]', 'metaform add origin [<project>]',
                       ('metaform add variant <folder> [origin=<id>] [remove=true] [workflow=<text>] [prompt=<text>] '
@@ -1021,9 +1123,15 @@ docs.command(Command('export', "Write a project's data to one JSON document.",
                      ('metaform export [<project>|all] [file=<file>] [base=<name>] [layer=<name>]...',),
                      details='With no file the document goes to standard output. Everything carries its unique id.',
                      see_also=('import',)))
-docs.command(Command('import', 'Add what a JSON document holds and this home does not.',
+docs.command(Command('import', 'Add what a JSON document or a project archive holds and this home does not.',
                      ('metaform import <file> [<project>]',),
-                     details='Importing something that already exists does nothing.', see_also=('export',)))
+                     description='The file is an export document, or a .zip archive that metaform build or a '
+                                 "project wheel's return wrote.",
+                     details='Importing something that already exists does nothing. A returned archive adds the '
+                             "remote agent's working layer as a new layer of a project this home holds, and writes its "
+                             'file changes, as diffs and whole files, and its note into a new folder beside the '
+                             "archive for you to review; the project's own folder is never changed.",
+                     see_also=('export', 'build', 'return')))
 docs.command(Command('query', "Ask one of the design's questions of the folder's project.",
                      ('metaform query', 'metaform query <read> [<argument>...] [name=value]... [--json]'),
                      details="metaform query alone lists the reads.", see_also=('export',)))
@@ -1119,13 +1227,13 @@ docs.command(Command('read', 'Read one report, feedback or shape file exactly.',
 docs.command(Command('clear', "Remove a project's bases and reports; its registration, settings and history stay.",
                      ('metaform clear project [<project>] --confirm',),
                      description='Clears what Metaform inferred about the project so an intake can be taken again '
-                                 'from nothing. Every metaform goes with its store, and every report, feedback and '
+                                 'from nothing. Every base goes with its store, and every report, feedback and '
                                  'shape file. The registration, the folder and every file in it, the folder settings, '
                                  'and the origins and variants stay.',
                      details='It backs the project up before it removes anything, says the backup\'s name, and '
                              'metaform restore project brings it back. '
                              'Without --confirm it says exactly what it would remove and removes nothing. After a '
-                             'clear the project has no metaform until the next intake, or any other write, creates '
+                             'clear the project has no base until the next intake, or any other write, creates '
                              'main again. A file it cannot remove, such as a store a running web GUI holds open on '
                              'Windows, stays on disk and is named with the reason and what to do.',
                      examples=(('metaform clear project', 'Say what clearing this folder\'s project would remove.'),
@@ -1133,9 +1241,9 @@ docs.command(Command('clear', "Remove a project's bases and reports; its registr
                      see_also=('list', 'add', 'restore')))
 docs.command(Command('restore', 'Bring back what a clear removed, from the backup the clear made.',
                      ('metaform restore project [<project>] [<backup>]',),
-                     description='Puts the project back as it was when the backup was made: its metaforms with their '
+                     description='Puts the project back as it was when the backup was made: its bases with their '
                                  'stores, the one that was active, and its report files.',
-                     details='With no backup named it brings back the newest. A project that holds metaforms or '
+                     details='With no backup named it brings back the newest. A project that holds bases or '
                              'reports is cleared first, which backs up what it holds, so nothing is lost. '
                              'metaform list backups lists them, the newest first.',
                      examples=(('metaform restore project', "Bring back this folder's project from its newest backup."),
@@ -1152,9 +1260,34 @@ docs.command(Command('remove', 'Take an empty project off the list of projects; 
                      examples=(('metaform clear project old --confirm', 'Empty the project old, backing it up.'),
                                ('metaform remove project old --confirm', 'Then take it off the list.')),
                      see_also=('clear', 'restore', 'list')))
-docs.command(Command('build', 'Build one wheel of the chassis and the enabled modules.', ('metaform build',),
-                     details='The wheel carries its pure-Python dependencies and runs directly with python <wheel>.',
-                     see_also=('install',)))
+docs.command(Command('build', 'Build a Metaform wheel, a project archive, or a wheel carrying a project.',
+                     ('metaform build',
+                      ('metaform build [kind=archive|project|installer|full] [project=<id>] '
+                       '[modules=<a,b>|shape=remote|map|home|everything] [files=true|false] [prompt=<file|->]')),
+                     description='installer, the default, is the wheel of the modules on at home, or of the modules '
+                                 'named; full carries every module found; project is the wheel with the project '
+                                 'archive and the prompt for a remote agent inside it; archive is the project archive '
+                                 'alone, a .zip of the project\'s data and, with files=true, its files.',
+                     details='A shape is where the modules start: remote, the modules a remote agent has use for; '
+                             'map, map alone; home, those on at home; everything, every module found. A project build '
+                             'starts from remote. project= defaults to the folder\'s project. prompt= is a file '
+                             'holding your task for the remote agent, or - for standard input; with none the agent '
+                             'learns the project and waits. files= includes the project\'s files, true by default. '
+                             'Building never turns a module on or off at home. A wheel carries its pure-Python '
+                             'dependencies and runs directly with python <wheel>; everything is written under the '
+                             "home's builds folder, a project wheel's prompt beside it as prompt.md.",
+                     examples=(('metaform build kind=project project=notes shape=remote',
+                                'A wheel carrying notes, for a remote agent.'),
+                               ('metaform build kind=archive files=false', "The folder's project's data alone.")),
+                     see_also=('install', 'return', 'import')))
+docs.command(Command('return', "Write a project wheel's work back as one archive to download.",
+                     ('python <project wheel> return [note=<text>] [file=<path>]',),
+                     description='Run from a project wheel, it writes one archive of the working layer and every '
+                                 'other layer made since the project was carried, the changes to the project\'s files '
+                                 'against the files the wheel carried, as diffs and new files, and the note.',
+                     details='The archive goes to file=, or into the project\'s folder named <project>-return-<time>'
+                             '.zip. The person adds it to their Metaform with metaform import <file>.',
+                     see_also=('build', 'import')))
 docs.switch(Switch('--glue', 'Keep the settings you set through unset all.',
                    'A glued setting is skipped by unset all until you unset it with --unglue.', ('set',)))
 docs.switch(Switch('--unglue', 'Reset glued settings too, and unglue them.', used_by=('unset',)))
@@ -1206,6 +1339,10 @@ def _command(args: list[str], folder: Path) -> int:
             sys.stderr.write(f'Notice: {first_run}\n')  # under a harness the home has not recorded, D96
         loader.discover()
         if not args:
+            from . import archive
+            if archive.carried() is not None:  # a project wheel run with nothing after it, BASE-060
+                archive.first_run(folder, out)
+                return 0
             status(args, folder)
             return 0
         verb, *rest = args

@@ -33,6 +33,7 @@ from metaform.module import Context, Module, Noun, Stop, Verb
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
 SHIPS_DISABLED = False
+REMOTE_AGENT = True  # what an agent learns at a node travels back in its working layer
 
 VARIABLE = 'What agents have noted at this node.'
 LAYER = 'memory'
@@ -700,9 +701,19 @@ def rekey(ctx: Context) -> Any:
             for table, key in (('joins', ('join_id',)), ('notes', ('receiver', 'provider'))):
                 for row in tx.rows(table, limit=0).results:
                     changes = {end: new for end in ('receiver', 'provider') if row[end] == old}
-                    if changes:
+                    if not changes:
+                        continue
+                    try:
                         tx.update(table, {name: row[name] for name in key}, changes)
-                        counts[table] += 1
+                    except StoreError as error:  # the destination already holds this key; the transaction rolls back
+                        held = f'join of {row["entity"]}' if table == 'joins' else 'note'
+                        first = (f'unjoin one of the two joins metaform memory joins entity={row["entity"]} lists'
+                                 if table == 'joins' else f'clear the note at {new} on the web page once what it '
+                                                          'holds is kept')
+                        raise Stop(f'{new} already holds a memory {held} that this one would replace: {error} '
+                                   'Nothing was changed.', f'{first}, then run metaform memory rekey {old} {new} '
+                                                           'again') from None
+                    counts[table] += 1
     return {'old': old, 'new': new, **counts}
 
 
@@ -750,7 +761,7 @@ def note(ctx: Context) -> Any:
     _carry(store)
     if len(text) > NOTE_LIMIT:
         raise Stop(f'A note holds at most {NOTE_LIMIT} characters; this one has {len(text)}.',
-                   f'metaform memory note {ctx.nouns["node"]} text=<at most {NOTE_LIMIT} characters>')
+                   f'shorten the note to at most {NOTE_LIMIT} characters and save it again')
     with store.tables() as tx:
         if text == '':
             tx.delete('notes', where)
@@ -883,8 +894,7 @@ MODULE = Module(
                     Noun('address', 'With provider: the element at that address the join holds.', required=False),
                     Noun('text', f'The note, at most {NOTE_LIMIT} characters; only the web page writes it.', required=False),
                     Noun('by', 'Who wrote it.', required=False)),
-             examples=(('metaform memory note element:code.manager.route text="Routes drift under load."',
-                        "Write the route manager's note."),)),
+             examples=(('metaform memory note element:code.manager.route', "Read the route manager's note."),)),
         Verb('joins', joins, 'The joins of type memory: at a node, of an entity, or all, each with whether it is '
                              'orphaned.',
              nouns=(Noun('node', 'element:<address>.', required=False), *NAMED,

@@ -160,7 +160,12 @@ def entry(wheel: Path, command: list[str]) -> list[str]:
 
 
 def provision_mcp(folder: Path) -> str:
-    command = server(folder)
+    """The MCP line of `metaform help provision`. A help page always shows: a provider choice that cannot be made
+    is said on it, with its next step, instead of failing the page."""
+    try:
+        command = server(folder)
+    except Stop as undecided:
+        return f'MCP registration: none chosen yet. {undecided} Next: {undecided.next_step}. '
     if command is None:
         return 'MCP registration: skipped; no enabled module declares an MCP server. '
     return ('MCP registration: add a stdio MCP server named metaform whose command is ' +
@@ -225,10 +230,7 @@ def _merge(path: Path, command: list[str], backup: Path | None, key: str = 'mcpS
     refused, naming it and its backup; the merged file replaces the old one whole, so a crash never leaves half."""
     data: Any = {}
     if path.is_file():
-        try:
-            data = json.loads(path.read_text(encoding='utf-8'))
-        except ValueError:
-            data = None
+        data = _read_json(path)
     servers = cast(dict[str, Any], data).get(key, {}) if isinstance(data, dict) else None
     if not isinstance(servers, dict):
         kept = f' A copy is at {backup}.' if backup else ''
@@ -237,10 +239,28 @@ def _merge(path: Path, command: list[str], backup: Path | None, key: str = 'mcpS
                    f'{path}')
     data = cast(dict[str, Any], data)
     data[key] = {**cast(dict[str, Any], servers), 'metaform': {'command': command[0], 'args': command[1:]}}
+    _write_json(path, data)
+
+
+def _read_json(path: Path) -> Any:
+    """A tool's JSON config, or None when it is not JSON. Bytes are read so a UTF-8 file with a byte order mark,
+    as some Windows editors write, reads as the JSON it holds."""
+    try:
+        return json.loads(path.read_bytes())
+    except ValueError:
+        return None
+
+
+def _write_json(path: Path, data: Any) -> None:
+    """Write a tool's JSON config beside the old one and move it into place, so a crash never leaves half a file;
+    the temporary file never outlives a failed move, such as onto a file another program holds open on Windows."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f'.{path.name}.metaform-{os.getpid()}')
-    temporary.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
-    os.replace(temporary, path)
+    try:
+        temporary.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 TOOL_TIMEOUT = 120  # seconds for one command of a tool, such as claude mcp add, M6
@@ -518,10 +538,7 @@ def _unmerge(path: Path, key: str) -> bool:
     """Take Metaform's entry out of a tool's JSON config and leave every other entry as it is, MCP-020."""
     if not path.is_file():
         return False
-    try:
-        data: Any = json.loads(path.read_text(encoding='utf-8'))
-    except ValueError:
-        data = None
+    data = _read_json(path)
     servers = cast(dict[str, Any], data).get(key) if isinstance(data, dict) else None
     if not isinstance(servers, dict):
         raise Stop(f'{path} is not a JSON object with a {key} object, so Metaform did not change it.',
@@ -530,9 +547,7 @@ def _unmerge(path: Path, key: str) -> bool:
         return False
     data = cast(dict[str, Any], data)
     data[key] = {name: value for name, value in cast(dict[str, Any], servers).items() if name != 'metaform'}
-    temporary = path.with_name(f'.{path.name}.metaform-{os.getpid()}')
-    temporary.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
-    os.replace(temporary, path)
+    _write_json(path, data)
     return True
 
 

@@ -133,6 +133,24 @@ def test_moved_joins_and_the_elements_joins_hold_come_through_export_and_import_
     assert [each.address for each in cook.elements] == ['code.timer.kitchen', 'code.loop.tick']
 
 
+@pytest.mark.req('STORE-029')
+def test_a_document_from_a_later_layout_imports_only_when_it_names_this_one_compatible(home, store, monkeypatch,
+                                                                                      tmp_path):
+    from metaform.sqlite import COMPATIBLE_FROM, SCHEMA_VERSION
+    filled(store)
+    document = export_document(['proj'])
+    assert (document['schema_version'], document['compatible_from']) == (SCHEMA_VERSION, COMPATIBLE_FROM)
+    later = str(int(SCHEMA_VERSION) + 1)
+    move_home(monkeypatch, tmp_path, 'other-home')
+    with pytest.raises(StoreError) as refused:
+        import_document({**json.loads(json.dumps(document)), 'schema_version': later, 'compatible_from': later})
+    assert f'schema version {later}, which a Metaform reads from version {later}' in str(refused.value)
+    assert metaform_home.project('proj') is None
+    report = import_document({**json.loads(json.dumps(document)), 'schema_version': later})
+    assert report['layers_added'] == 3
+    assert export_document(['proj'])['projects'] == document['projects']
+
+
 @pytest.mark.req('STORE-027')
 def test_importing_what_already_exists_changes_nothing(home, store):
     filled(store)

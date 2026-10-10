@@ -5414,7 +5414,12 @@ def test_the_dispatch_writes_are_taken_only_from_the_page_and_say_what_to_do_nex
     given = {'/api/dispatch-start': {'work_id': work, 'agent': 'claude'},
              '/api/dispatch-message': {'work_id': work, 'text': 'also run the tests'},
              '/api/dispatch-stop': {'work_id': work},
-             '/api/dispatch-interrupt': {'work_id': work}}
+             '/api/dispatch-interrupt': {'work_id': work},
+             '/api/dispatch-permit': {'work_id': work, 'request': 'r1', 'option': 'allow'},
+             '/api/dispatch-configure': {'work_id': work, 'setting': 'model', 'value': 'large'},
+             '/api/dispatch-resume': {'work_id': work},
+             '/api/dispatch-intake': {'agent': 'claude'},
+             '/api/dispatch-agents': {'default': 'claude'}}
     for path, body in given.items():
         sent = json.dumps({'project': 'proj', **body})
         assert request(web, path, method='POST', body=sent,
@@ -5427,7 +5432,8 @@ def test_the_dispatch_writes_are_taken_only_from_the_page_and_say_what_to_do_nex
     status, said = api(web, '/api/dispatch-start', method='POST', headers={**as_json, 'Origin': own},
                        body=json.dumps({'project': 'proj', 'work_id': work, 'agent': 'someone'}))
     assert status == 400 and 'claude, codex, gemini' in said['error'], said
-    for path in ('/api/dispatch-message', '/api/dispatch-stop', '/api/dispatch-interrupt'):
+    for path in ('/api/dispatch-message', '/api/dispatch-stop', '/api/dispatch-interrupt', '/api/dispatch-permit',
+                 '/api/dispatch-configure'):
         status, said = api(web, path, method='POST', headers={**as_json, 'Origin': own},
                            body=json.dumps({'project': 'proj', **given[path]}))
         assert status == 400 and said['next'] == f'metaform dispatch start {work} <agent>', (path, said)
@@ -5439,6 +5445,30 @@ def test_the_dispatch_writes_are_taken_only_from_the_page_and_say_what_to_do_nex
     for name in AGENT_GLYPHS:
         status, body, headers = request(web, f'/page/agent-glyphs/{name}.svg')
         assert status == 200 and headers['Content-Type'] == 'image/svg+xml' and body.startswith('<svg'), name
+
+
+@pytest.mark.req('VIEW-039')
+def test_the_page_lists_the_agents_with_whether_each_is_found_and_sets_the_default(run, web, mapped):
+    """The page offers each agent with whether its start command is found on this machine, and the person makes one
+    the default, kept in the settings as `metaform set --dispatch-agent` keeps it."""
+    started(run)
+    own, as_json = f'http://127.0.0.1:{web}', {'Content-Type': 'application/json'}
+    status, said = api(web, '/api/dispatch-agents?project=proj')
+    assert status == 200 and said == {'enabled': False, 'agents': [], 'default': None, 'next': 'metaform enable dispatch'}
+    run('enable', 'dispatch')
+    run('set', '--dispatch-claude', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
+    run('set', '--dispatch-gemini', 'metaform-no-such-acp-adapter --acp', cwd=mapped)
+    status, said = api(web, '/api/dispatch-agents', method='POST', headers={**as_json, 'Origin': own},
+                       body=json.dumps({'project': 'proj', 'default': 'claude'}))
+    assert status == 200 and said['enabled'] and said['default'] == 'claude' and said['room'] >= 1, said
+    found = {one['agent']: (one['label'], one['available'], one['default']) for one in said['agents']}
+    assert found['claude'] == ('Claude Code', True, True) and found['gemini'] == ('Gemini CLI', False, False)
+    assert api(web, '/api/dispatch-agents?project=proj')[1]['default'] == 'claude'
+    kept = json.loads(run('config', '--json', cwd=mapped).stdout)
+    assert next(entry for entry in kept if entry['key'] == 'dispatch_agent')['value'] == 'claude'
+    status, said = api(web, '/api/dispatch-agents', method='POST', headers={**as_json, 'Origin': own},
+                       body=json.dumps({'project': 'proj', 'default': 'someone'}))
+    assert status == 400 and 'claude' in said['error'], said
 
 
 @pytest.mark.req('VIEW-039')
@@ -7233,3 +7263,44 @@ def test_chat_shows_busy_and_interrupts_a_turn_while_the_conversation_stays_avai
         assert problems == []
     finally:
         run('dispatch', 'stop', work, cwd=mapped, ok=False)
+
+
+@pytest.mark.req('BASE-060')
+def test_the_build_panel_lists_its_choices_builds_an_archive_with_progress_and_downloads_it(run, home, web, mapped):
+    import io
+    import zipfile
+    (mapped / 'main.py').write_text('print("hi")\n', encoding='utf-8')
+    started(run)
+    status, options = api(web, '/api/build/options')
+    assert status == 200
+    assert [kind['id'] for kind in options['kinds']] == ['archive', 'project', 'installer', 'full']
+    remote = {module['id']: module['remote'] for module in options['modules']}
+    assert remote['map'] is True and remote['web'] is False
+    assert next(shape for shape in options['shapes'] if shape['id'] == 'remote')['modules'] == \
+        sorted(name for name, on in remote.items() if on)
+    assert options['prompts']['wrapper']['name'] == 'remote_wrapper' and '{task}' in options['prompts']['wrapper']['text']
+    heard, _ = events_on(web)
+    own = {'Content-Type': 'application/json', 'Origin': f'http://127.0.0.1:{web}'}
+    body = json.dumps({'kind': 'archive', 'project': 'proj', 'files': True})
+    assert request(web, '/api/build', method='POST', body=body, headers={'Content-Type': 'application/json'})[0] == 403
+    status, started_build = api(web, '/api/build', method='POST', body=body, headers=own)
+    assert status == 200 and started_build['stages'] == ['pack project', 'write']
+    build_id = started_build['build_id']
+    deadline = time.monotonic() + 30
+    while not any(event.get('topic') == 'build' and event['payload']['state'] != 'running' for event in heard):
+        assert time.monotonic() < deadline, heard
+        time.sleep(0.05)
+    states = [event['payload'] for event in heard if event.get('topic') == 'build']
+    assert [state['stage'] for state in states] == ['pack project', 'write', 'write']
+    assert states[-1]['state'] == 'done' and states[-1]['build_id'] == build_id, states[-1]
+    status, found = api(web, f'/api/build/{build_id}')
+    assert status == 200 and found['file'] == states[-1]['file'] and found['file'].startswith('proj-')
+    status, _, headers = request(web, f'/api/build/{build_id}/download')
+    assert status == 200 and headers['Content-Disposition'] == f'attachment; filename="{found["file"]}"'
+    downloaded = next((home / 'builds').rglob(found['file'])).read_bytes()
+    assert int(headers['Content-Length']) == len(downloaded) == found['size']
+    with zipfile.ZipFile(io.BytesIO(downloaded)) as held:
+        assert {'origin.zip', '.metaform/manifest', '.metaform/data/export.json'} <= set(held.namelist())
+    assert api(web, '/api/build', method='POST', body=json.dumps({'kind': 'full', 'project': 'proj'}),
+               headers=own) == (400, {'error': 'A full build carries no project, BASE-048.',
+                                      'next': 'metaform build kind=project project=<id>'})

@@ -93,5 +93,7 @@ def collect(payload: dict[str, Any], ctx: Context) -> None:
 def clear_permissions(ctx: Context, session_id: str) -> None:
     for value in rows(ctx.require_store()):
         if value['session_id'] == session_id and value['signal'] == 'permission-waiting':
-            publish(ctx, 'permission-waiting', work_id=value['work_id'], session_id=session_id,
-                    key=value['message_id'], active=False, message_id=value['message_id'], reason='the session ended')
+            # keyed by its request; a request with no question at a node, an intake agent's, has no message id
+            request = value.get('request') or value['message_id']
+            publish(ctx, 'permission-waiting', work_id=value['work_id'], session_id=session_id, key=request,
+                    active=False, message_id=value.get('message_id'), request=request, reason='the session ended')

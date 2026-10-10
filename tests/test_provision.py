@@ -68,7 +68,7 @@ def test_the_notice_changes_nothing_the_command_prints_or_returns(under, capsys)
 def test_a_notice_record_read_error_uses_the_cli_error_handler(under, capsys, home, args):
     from metaform import home as metaform_home
     with metaform_home.chassis(write=True) as db:
-        db.execute("UPDATE meta SET value='999' WHERE key='schema_version'")
+        db.execute("UPDATE meta SET value='999' WHERE key IN ('schema_version', 'compatible_from')")
     under(HARNESS)
     code, out, err = command(capsys, *args)
     assert code == 2 and not out
@@ -192,6 +192,17 @@ def test_help_provision_says_what_to_do_for_each_feature_and_how_to_finish(under
     assert named and all(Path(word).read_bytes() == skill.read_bytes() for word in named if Path(word).is_absolute())
     assert any(Path(word).is_absolute() for word in named)
     assert 'metaform provision done' in page
+
+
+@pytest.mark.kind('fixture')
+@pytest.mark.req('CLI-009')
+def test_help_provision_shows_its_page_when_the_chosen_server_provider_is_off(under, capsys):
+    under(None)
+    assert command(capsys, 'set', '--install-server', 'mcp')[0] == 0
+    assert command(capsys, 'disable', 'mcp')[0] == 0
+    code, page, _ = command(capsys, 'help', 'provision')
+    assert code == 0
+    assert 'metaform provision done' in page and 'metaform unset --install-server' in page
 
 
 @pytest.mark.kind('simulation')

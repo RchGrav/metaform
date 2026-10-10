@@ -14,6 +14,7 @@ from .review import upkeep, wheel
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
 SHIPS_DISABLED = False
+REMOTE_AGENT = False  # it sets up a repository of the person's own modules, which is work done at home
 
 settings.choice('fork_agent', ['codex', 'claude', 'gemini'], 'codex',
                 help='The dispatched agent for CI muster and template upkeep.')

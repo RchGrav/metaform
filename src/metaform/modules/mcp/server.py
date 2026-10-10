@@ -788,7 +788,7 @@ def serve(folder: Path) -> None:
     )
     from mcp.shared.exceptions import MCPError
 
-    from .transport import Relay
+    from .transport import RETRY, Relay
 
     relay = Relay(folder, settings.value('mcp_recovery', folder) == 'relay')
 
@@ -856,7 +856,6 @@ def serve(folder: Path) -> None:
         return types.ListPromptsResult(prompts=found)
 
     async def get_prompt(ctx: Any, params: Any) -> Any:
-        from mcp.shared.exceptions import MCPError
         found = await anyio.to_thread.run_sync(slashes, folder)
         slash = found.get(params.name)
         if slash is None:
@@ -927,7 +926,7 @@ def serve(folder: Path) -> None:
 
     def refused(ctx: Any, error: NewerStore) -> dict[str, Any]:
         if ctx.method != 'tools/call':
-            raise MCPError(-32603, f'Error: {error}\nNext: {error.next_step}')
+            raise MCPError(-32603, f'Error: {error}\nNext: {mcp_next(str(error.next_step), folder)}')
         return types.CallToolResult(content=[types.TextContent(type='text', text=_error(error, folder)[1][0])],
                                     is_error=True).model_dump(by_alias=True, exclude_none=True)
 
@@ -939,7 +938,7 @@ def serve(folder: Path) -> None:
                 await anyio.to_thread.run_sync(prepare, ctx)
             except NewerStore as error:
                 retry = relay.refusal(error)
-                if retry.code == -32098:
+                if retry.code == RETRY:
                     raise retry
                 # With recovery disabled or unchanged code, the command keeps its usual behavior, including
                 # commands that do not need this project's store. The preflight must not add a new gate.

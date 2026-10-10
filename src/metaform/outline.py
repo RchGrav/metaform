@@ -31,11 +31,14 @@ def _join_lines(join: dict[str, Any], receiver: str, provider: str) -> list[str]
     return lines
 
 
-def _element_lines(store: Store, address: str, names: dict[str, str], reading: dict[str, Any],
-                   around: bool) -> list[str]:
-    """One element with the joins it receives, and with `around` those it provides too."""
+def _view(store: Store, address: str, reading: dict[str, Any]) -> dict[str, Any]:
+    """One element as `where` reads it, or nothing when it is not in view."""
     found = store.where(address, **reading)
-    view: dict[str, Any] = found.to_dict() if found is not None else {}
+    return found.to_dict() if found is not None else {}
+
+
+def _element_lines(view: dict[str, Any], address: str, names: dict[str, str], around: bool) -> list[str]:
+    """One element with the joins it receives, and with `around` those it provides too."""
     element = cast(dict[str, Any], view.get('element') or {})
     if not element:
         return []
@@ -70,15 +73,19 @@ def markdown(store: Store, address: str | None = None, *, selection: Sequence[st
     reading: dict[str, Any] = {'selection': selection, 'raw': raw}
     found = store.roots(limit=0, **reading)
     names = {element.address: element.short_name for element in found.elements}
-    names.update({address: label for address, label in _labels(store, found.elements, reading).items() if label})
     if address:
-        lines = _element_lines(store, address, names, reading, True)
+        names.update({address: label for address, label in _labels(store, found.elements, reading).items() if label})
+        lines = _element_lines(_view(store, address, reading), address, names, True)
         if not lines:
             raise Stop(f'No element at {address}.', 'metaform map roots')
         title = f'# {names.get(address, address)}'
     else:
         ordered = sorted(found.elements, key=lambda element: (FIRST.get(element.role, 3), element.address))
+        # Each root is read once: its name comes from the same read that writes its section.
+        views = {element.address: _view(store, element.address, reading) for element in ordered}
+        names.update({root: str(label) for root, view in views.items()
+                      if (label := cast(dict[str, Any], view.get('element') or {}).get('name'))})
         title = f'# {store.project().project_id} functional map'
         lines = [line for element in ordered
-                 for line in _element_lines(store, element.address, names, reading, False)]
+                 for line in _element_lines(views[element.address], element.address, names, False)]
     return '\n'.join([title, '', *lines]).rstrip('\n') + '\n'

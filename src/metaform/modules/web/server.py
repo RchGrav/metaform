@@ -361,6 +361,9 @@ class Handler(BaseHTTPRequestHandler):
         given = self.given_token(query)
         if self.gui.token is not None and not (given and hmac.compare_digest(given, self.gui.token)):
             return self.send(403, {'error': 'This request needs the token that metaform web prints.'})
+        if url.path == '/api/build' or url.path.startswith('/api/build/'):  # the build panel, BASE-060
+            from . import builds
+            return builds.answer(self, method, url.path)
         if method == 'POST':
             return self.write(url.path)
         if url.path == '/api/events':
@@ -386,6 +389,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.dispatch_prompts(query.get('project', [''])[-1])
         if url.path == '/api/dispatch-autostart':
             return self.dispatch_autostart({'project': query.get('project', [''])[-1]})
+        if url.path == '/api/dispatch-agents':
+            return self.dispatch_agents({'project': query.get('project', [''])[-1]})
         if url.path == '/api/lookup':
             return self.lookup(query.get('project', [''])[-1], query.get('ref', [''])[-1])
         if url.path == '/api/merges':
@@ -545,7 +550,10 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/dispatch-start': self.dispatch_start, '/api/dispatch-message': self.dispatch_message,
                   '/api/dispatch-stop': self.dispatch_stop, '/api/dispatch-interrupt': self.dispatch_interrupt,
                   '/api/dispatch-prompts': self.set_dispatch_prompts,
-                  '/api/dispatch-autostart': self.set_dispatch_autostart}
+                  '/api/dispatch-autostart': self.set_dispatch_autostart,
+                  '/api/dispatch-agents': self.set_dispatch_agent, '/api/dispatch-intake': self.dispatch_intake,
+                  '/api/dispatch-resume': self.dispatch_resume, '/api/dispatch-permit': self.dispatch_permit,
+                  '/api/dispatch-configure': self.dispatch_configure}
         if path not in writes:
             return self.send(404, {'error': f'No such write: {path}.'})
         try:
@@ -813,8 +821,12 @@ class Handler(BaseHTTPRequestHandler):
         self.dispatched(given, 'prep', [work_id])
 
     def system_chat(self, given: dict[str, Any]) -> None:
-        """Call in the chat dock: the person's system agent starts, or the running one is reused."""
-        self.dispatched(given, 'system', [])
+        """Call in the chat dock: the person's system agent starts, with the agent chosen or the default one, or the
+        running one is reused."""
+        agent = given.get('agent')
+        if agent is not None and (not isinstance(agent, str) or not agent):
+            return self.send(400, {'error': 'The agent is claude, codex or gemini.'})
+        self.dispatched(given, 'system', [f'agent={agent}'] if agent else [])
 
     def lookup(self, project_id: str, ref: str) -> None:
         """What a reference in text the person reads stands for, VIEW-042: a spec record, a ticket or a message by its
@@ -836,7 +848,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {'error': 'An issue is raised on one node.'})
         if not isinstance(text, str) or not text.strip():
             return self.send(400, {'error': 'Say what is wrong, in your words.'})
-        self.dispatched(given, 'raise', [node], text.strip())
+        agent = given.get('agent')
+        if agent is not None and (not isinstance(agent, str) or not agent):
+            return self.send(400, {'error': 'The agent is claude, codex or gemini.'})
+        self.dispatched(given, 'raise', [node, *([f'agent={agent}'] if agent else [])], text.strip())
 
     def talk(self, given: dict[str, Any]) -> None:
         """Chat on anything the page shows: a ticket, open or done, a node, a question or an agent's session."""
@@ -1019,6 +1034,84 @@ class Handler(BaseHTTPRequestHandler):
         self.gui.schedule_dispatch(project.project_id)
         self.dispatch_autostart(given)
 
+    def dispatch_agents(self, given: dict[str, Any]) -> None:
+        """The agents the page offers to start, VIEW-039: each one's name, whether its start command is found on this
+        machine and which is the default, with how many more agents may be summoned now; with dispatch not enabled,
+        none, and the step that enables it."""
+        try:
+            found = module_verb(given, 'dispatch', 'agents', {})
+        except StoreError as error:  # the project is gone or its store cannot be read; a StoreError is a Stop too
+            return self.refuse(error, 404)
+        except Stop:
+            return self.send(200, {'enabled': False, 'agents': [], 'default': None, 'next': 'metaform enable dispatch'})
+        self.reply(200, chassis.result_json({**cast(dict[str, Any], found), 'enabled': True}).encode('utf-8'),
+                   'application/json', {'Cache-Control': 'no-store'})
+
+    def set_dispatch_agent(self, given: dict[str, Any]) -> None:
+        """Make one agent the default, the one started when none is chosen, as `metaform set --dispatch-agent` sets
+        it, and answer with the agents as they are now."""
+        project, value = home.project(str(given.get('project', ''))), given.get('default')
+        if project is None:
+            return self.send(404, {'error': f'No project {given.get("project", "")} is registered.',
+                                   'next': 'metaform list projects'})
+        folder = Path(project.path)
+        chassis.refresh_modules()
+        if not any(module.id == 'dispatch' for module in chassis.surface(folder)):
+            return self.send(400, {'error': 'The dispatch module is not enabled.', 'next': 'metaform enable dispatch'})
+        if not isinstance(value, str) or not value:
+            return self.send(400, {'error': 'The default agent is claude, codex or gemini.'})
+        try:
+            settings.checked('dispatch_agent', value, folder, typed=True)
+            settings.put('dispatch_agent', value, folder)
+        except (settings.SettingError, Stop) as error:
+            return self.refuse(error, 400)
+        self.dispatch_agents({'project': project.project_id})
+
+    def dispatch_intake(self, given: dict[str, Any]) -> None:
+        """Start an agent on the project's intake with the dispatch module's intake, VIEW-045 and BASE-039: the agent
+        chosen or the default one, what the person asked for after `--`, and resume to take up an intake left being
+        recorded. The page follows the intake as it is recorded."""
+        agent, text, resume = given.get('agent'), given.get('text'), given.get('resume')
+        if agent is not None and (not isinstance(agent, str) or not agent):
+            return self.send(400, {'error': 'The agent is claude, codex or gemini.'})
+        if text is not None and not isinstance(text, str):
+            return self.send(400, {'error': 'What the intake is for is text.'})
+        if resume is not None and not isinstance(resume, bool):
+            return self.send(400, {'error': 'resume is true or false.'})
+        nouns = [*([f'agent={agent}'] if agent else []), *(['resume=true'] if resume else [])]
+        self.dispatched(given, 'intake', nouns, text.strip() if text and text.strip() else None)
+
+    def dispatch_resume(self, given: dict[str, Any]) -> None:
+        """Resume an ended agent session in place with the dispatch module's resume, where its agent can."""
+        work_id, session = given.get('work_id'), given.get('session')
+        if not isinstance(work_id, str) or not work_id:
+            return self.send(400, {'error': 'A session is resumed by the work id of its ticket.'})
+        if session is not None and (not isinstance(session, str) or not session):
+            return self.send(400, {'error': 'The session id must be a nonempty string.'})
+        self.dispatched(given, 'resume', [work_id, *([f'session={session}'] if session else [])])
+
+    def dispatch_permit(self, given: dict[str, Any]) -> None:
+        """Answer an agent's waiting permission request with the option the person chose, with the dispatch module's
+        permit; the option goes after `--`."""
+        work_id, request, option = given.get('work_id'), given.get('request'), given.get('option')
+        if not isinstance(work_id, str) or not work_id or not isinstance(request, str) or not request:
+            return self.send(400, {'error': 'A permission is answered by the work id and the request it waits on.'})
+        if not isinstance(option, str) or not option.strip():
+            return self.send(400, {'error': 'A permission is answered with one of its options.'})
+        self.dispatched(given, 'permit', [work_id, request], option.strip())
+
+    def dispatch_configure(self, given: dict[str, Any]) -> None:
+        """Set one of a running session's settings, its mode, its model or another option, with the dispatch
+        module's configure; the value goes after `--`, and a switch takes true or false."""
+        work_id, setting, value = given.get('work_id'), given.get('setting'), given.get('value')
+        if not isinstance(work_id, str) or not work_id or not isinstance(setting, str) or not setting:
+            return self.send(400, {'error': 'A setting is set by the work id and the setting\'s id.'})
+        if isinstance(value, bool):
+            value = 'true' if value else 'false'
+        if not isinstance(value, str) or not value.strip():
+            return self.send(400, {'error': 'A setting is set to one of its choices, or on or off.'})
+        self.dispatched(given, 'configure', [work_id, setting], value.strip())
+
     def dispatch_message(self, given: dict[str, Any]) -> None:
         """Send a person's message to the agent working a ticket with the dispatch module's message, VIEW-039."""
         work_id, text = given.get('work_id'), given.get('text')
@@ -1053,7 +1146,7 @@ class Handler(BaseHTTPRequestHandler):
                 nouns['thread'] = False
             found = module_verb(given, 'dispatch', 'sessions', nouns)
         except Stop:
-            return self.send(200, {'sessions': [], 'lines': []})
+            return self.send(200, {'sessions': [], 'lines': [], 'states': {}})
         except StoreError as error:  # the project is gone or its store cannot be read: said, as every other read says it
             return self.refuse(error, 404)
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})

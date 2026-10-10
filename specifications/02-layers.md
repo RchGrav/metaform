@@ -13,6 +13,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - Acceptance:
   - After an intake through MCP, every stored element, join and subtype names the intake layer, and reading the intake layer returns all of them.
   - An element, join, subtype or layer item sent without a layer is stored in a new building layer named `unnamed_<UTC timestamp yyyymmddthhmmssz>`, LAYER-028, and the result names that layer in a notice, BASE-044.
+  - Amended, 2026-10-10: when the folder's `write_layer` setting names a layer, such a write is stored in that layer instead, with no notice, BASE-060. A project wheel's first run sets it to the working layer it opens, so what a remote agent writes travels back in one layer.
 - Relates to: LAYER-002, LAYER-003, LAYER-008, MAP-040, STORE-013, STORE-014.
 - Status: confirmed.
 

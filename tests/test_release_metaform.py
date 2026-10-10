@@ -10,7 +10,8 @@ import pytest
 from storekit import knowledge, small_map
 
 from metaform import build
-from metaform.data import Node, Store, export_document, import_document
+from metaform import home as homes
+from metaform.data import Node, Store, StoreError, export_document, import_document
 from scripts.release_metaform import snapshot
 
 pytestmark = pytest.mark.kind('fixture')
@@ -40,8 +41,14 @@ def test_snapshot_keeps_current_encounters_and_identities_without_working_histor
     assert held['base']['id'] != original['projects'][0]['bases'][0]['base']['id']
     layers = [op for op in held['ops'] if op['kind'] == 'layer' and op['op'] == 'add']
     assert len(layers) == 1 and layers[0]['id'] != layer.id
+    assert document['projects'][0]['project']['path'] == ''  # the source machine's folder does not travel
     monkeypatch.setenv('METAFORM_HOME', str(tmp_path / 'other-home'))
-    result = import_document(document)
+    with pytest.raises(StoreError, match='without a folder'):
+        import_document(document)
+    other = tmp_path / 'other'
+    other.mkdir()
+    homes.register(homes.Project('proj', str(other), 'path', str(other)))
+    result = import_document(document, 'proj')
     assert result['notices'] == []
     moved = Store('proj')
     assert moved.element('code.loop.tick') is None
@@ -78,8 +85,10 @@ def test_bundled_map_imports_explicitly_into_a_fork_and_reimport_is_idle(run, ho
     assert Store('fork').active_base() == active
     assert export_document(['fork'], metaform=active.name)['projects'][0]['bases'][0] == before_import
     run('map', 'activate', 'metaform-release', cwd=folder)
-    read = json.loads(run('map', 'where', 'code.tool.context_engineering', '--json', cwd=folder).stdout)
-    assert read['element']['role'] == 'AUE'
+    ops = json.loads(data)['projects'][0]['bases'][0]['ops']
+    defining = next(op['data']['address'] for op in ops if op['kind'] == 'element' and op['data'].get('role') == 'DE')
+    read = json.loads(run('map', 'where', defining, '--json', cwd=folder).stdout)
+    assert read['element']['role'] == 'DE'
     assert read['receives'] and read['provides']
     assert not Store('fork').work().results
     before = export_document(['fork'])

@@ -40,6 +40,7 @@ from .storage import DATA, TABLES
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
 SHIPS_DISABLED = False
+REMOTE_AGENT = True  # reading and writing the map is the work a remote agent does
 DATA_SOURCE = 'storage.py'
 
 settings.boolean('raw', False, help='Read every stored layer, building, hidden and masked ones included.')
@@ -132,26 +133,28 @@ def where(ctx: Context) -> Any:
     return _with_modules(ctx, found, Node('element', ctx.nouns['address']))
 
 
-def markdown(ctx: Context) -> Any:
-    """The map, or the part around one address, as a short Markdown document to find one's way by, MAP-052."""
-    text = map_markdown(_store(ctx), ctx.nouns.get('address') or None, **_reading(ctx))
+def _document(ctx: Context, verb: str, text: str) -> Any:
+    """A document printed, or written to the file the call names, a relative one in the caller's folder."""
     target = ctx.nouns.get('file')
     if not target:
         return text
     path = Path(target) if Path(target).is_absolute() else ctx.folder / target
-    path.write_text(text, encoding='utf-8')
+    try:
+        path.write_text(text, encoding='utf-8')
+    except OSError as error:
+        raise Stop(f'The {verb} document could not be written to {path}: {error.strerror or error}.',
+                   f'name a file in a folder that exists, or leave out file= and metaform map {verb} prints it') from None
     return {'written': str(path)}
+
+
+def markdown(ctx: Context) -> Any:
+    """The map, or the part around one address, as a short Markdown document to find one's way by, MAP-052."""
+    return _document(ctx, 'markdown', map_markdown(_store(ctx), ctx.nouns.get('address') or None, **_reading(ctx)))
 
 
 def xml(ctx: Context) -> Any:
     """The map, or one element and all it receives, as an XML document in the Finish shape of Intake 2.1, MAP-059."""
-    text = map_xml(_store(ctx), ctx.nouns.get('address') or None, **_reading(ctx))
-    target = ctx.nouns.get('file')
-    if not target:
-        return text
-    path = Path(target) if Path(target).is_absolute() else ctx.folder / target
-    path.write_text(text, encoding='utf-8')
-    return {'written': str(path)}
+    return _document(ctx, 'xml', map_xml(_store(ctx), ctx.nouns.get('address') or None, **_reading(ctx)))
 
 
 def element(ctx: Context) -> Any:
@@ -249,15 +252,18 @@ def cypher(ctx: Context) -> Any:
     named = [name for name in str(ctx.nouns.get('layers') or '').split(',') if name]
     try:
         found = _store(ctx).cypher(query, named or None)
-    except Stop:
+    except (Stop, OSError):  # the store's own refusal is said as itself
         raise
-    except Exception as error:  # the query language's own refusal, said plainly with what usually causes it
-        said = str(error).strip().splitlines()[0][:300]
+    except Exception as error:  # the query library refuses with errors of many types, its parser's and its own; each is said plainly with what usually causes it
+        if type(error).__module__ == 'sqlite3':  # a failure of the store, not the query; modules import no sqlite3, BASE-004
+            raise
+        said = (str(error).strip().splitlines() or [type(error).__name__])[0][:300]
         raise Stop(f'The query was not understood: {said}. Strings take double quotes; edges are matched by their '
                    'kind, as [x] WHERE x.kind = "join".', 'metaform help map cypher') from None
-    def plain(value: Any) -> Any:
+
+    def scalar(value: Any) -> Any:
         return value if value is None or isinstance(value, (str, int, float, bool)) else str(value)
-    columns = {str(name): [plain(value) for value in values] for name, values in dict(found).items()}
+    columns = {str(name): [scalar(value) for value in values] for name, values in dict(found).items()}
     return {'columns': columns, 'rows': max((len(values) for values in columns.values()), default=0)}
 
 
@@ -1176,8 +1182,7 @@ HELD = (_noun('provider', 'A purpose node holds as its receiver: the address of 
 MODULE = Module(
     id='map',
     # The kanban lines speak to nodes, which exist once an intake is finished, MAP-048 and MCP-029.
-    # The tasks instruction is read on demand with map's full instructions, not handed to every agent at connect,
-    #.
+    # The tasks instruction is read on demand with map's full instructions, not handed to every agent at connect.
     status=lambda ctx: Status(instruction=prompt_files.module('map', 'tasks') if ctx.setting('tasks') and ctx.store
                               is not None and ctx.store.has_intake() else None, at_connect=False),
     tables=TABLES,
@@ -1281,8 +1286,8 @@ MODULE = Module(
                      'applied, as every read does; layers=<names> picks the layers for this query alone.',
              examples=(('metaform map cypher MATCH \'(e) WHERE e.kind = "element" AND e.role = "DE" RETURN e.address, e.name\'',
                         'The defining elements.'),
-                       ('metaform map cypher \'MATCH (r)-[j]->(e) WHERE r.address = "code.store" AND j.kind = "join" '
-                        'RETURN e.address, j.purpose\'', 'What the store relies on, with the purpose of each join.'))),
+                       (('metaform map cypher \'MATCH (r)-[j]->(e) WHERE r.address = "code.store" AND j.kind = "join" '
+                         'RETURN e.address, j.purpose\''), 'What the store relies on, with the purpose of each join.'))),
         Verb('search', search, 'Items whose value holds every word of the text.',
              nouns=(Noun('text', 'The words to find.'), _noun('layer', 'Only this layer.'), *PAGING)),
         Verb('work', work, 'The work records, the condition of an element or a join apart from the map: list them, '
@@ -1302,8 +1307,10 @@ MODULE = Module(
                      'preserved. Marking a record does not remove files or change gitignore. Unneeded legacy '
                      'migration code is marked for review. A store at an earlier layout is updated by Metaform '
                      'when it opens it. It is '
-                     'open until op=done records its resolution, which is kept beside it. Any agent writes one at any '
-                     'time, the intake agent as it maps, a critic with its findings, held=true until agents take it.',
+                     'open until op=done records its resolution, which is kept beside it. The person writes one, or '
+                     'the sentinel and the system agent for them on the command line, held=true until agents take '
+                     'it; over the agents\' tool op=add is refused, and an agent at work says what it found in its '
+                     'own ticket\'s note.',
              examples=(('metaform map work op=add node=element:code.alarm.audible condition=unbuilt task="build it"',
                         'Record that the alarm is not built yet, with the task that builds it.'),
                        ('metaform map work op=edit id=<work id> node=code.alarm.audible',
@@ -1345,7 +1352,7 @@ MODULE = Module(
              nouns=KNOWLEDGE_NOUNS,
              details='Every call names its layer with layer=. op=create makes the layer; the add, edit and remove '
                      'operations change one object each; op=finish marks it ready. The base grows by the add '
-                     'operations with layer=intake; it changes by refine.',
+                     'operations with layer=base; it changes by refine.',
              examples=((('metaform map knowledge op=create layer=practices-cpp variable="C++ practice here." '
                          'mutable=true hideable=true'), 'Start a knowledge layer.'),)),
         Verb('refine', refine, 'Refine the base: change or remove one of its elements or joins as a new version, '
@@ -1353,8 +1360,9 @@ MODULE = Module(
              nouns=REFINE_NOUNS,
              details='The change is written in the base\'s own layer, never in a new one, LAYER-025; history '
                      'shows every version.',
-             examples=((('metaform map refine id=<join id> purpose="Know when each dish is done." '
-                         'reason="the old purpose named the clock"'), 'Refine one join\'s purpose.'),)),
+             examples=((('metaform map refine receiver=code.timer.kitchen provider=code.clock.tick '
+                         'purpose="Know when each dish is done." reason="the old purpose named the clock"'),
+                        'Refine one join\'s purpose, the join named by its receiver and an element it holds.'),)),
         Verb('select', select, 'Turn a layer on at an address and at every address toward the leaves from it.',
              nouns=(Noun('address', 'An address.'), Noun('layer', 'A layer.'))),
         Verb('mask', mask, 'Stop a layer flowing into an address and every address toward the leaves from it.',

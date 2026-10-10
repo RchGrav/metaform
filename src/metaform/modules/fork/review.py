@@ -102,8 +102,8 @@ def wheel(ctx: Context) -> dict[str, Any]:
     """Checks and agent review precede every build. Agent credentials remain in its inherited environment."""
     secret = str(ctx.setting('fork_secret'))
     if not os.environ.get(secret):
-        raise Stop(f'Missing CI secret {secret}; muster is required before a wheel can be built.',
-                   f'Set the repository CI secret {secret}')
+        raise Stop(f'Missing CI secret {secret}: set it as a repository secret; muster is required before a wheel '
+                   'can be built.', 'metaform help fork wheel')
     candidates = repository.modules(ctx.folder)
     failures = checks.evidence(ctx.folder, candidates)
     approved: list[Path] = []

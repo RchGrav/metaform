@@ -20,7 +20,12 @@ DESTINATION = Path(__file__).resolve().parents[1] / 'src/metaform/resources/meta
 
 def snapshot(document: dict[str, Any]) -> dict[str, Any]:
     """The release's current functional map, as a new metaform named `metaform-release`."""
-    return collapsed(document, 'metaform-release', workflow='release-snapshot', role='release builder')
+    released = collapsed(document, 'metaform-release', workflow='release-snapshot', role='release builder')
+    # The resource travels in every package, and the folder it was exported from belongs to that one machine;
+    # import takes the project it is imported into, so the source's place is left empty.
+    for entry in released['projects']:
+        entry['project'].update(path='', target_value='')
+    return released
 
 
 def main() -> None:

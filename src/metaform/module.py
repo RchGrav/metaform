@@ -1,8 +1,9 @@
 """The module contract, BASE-035: what a module declares and what a verb receives.
 
 A module is a folder with an `__init__.py` that sets the literals
-`SUPPORTED_OS`, and optionally `DEPENDENCIES` and `SHIPS_DISABLED`, and
-`MODULE = Module(...)`. Each verb runs as `metaform <module> <verb> <nouns>
+`SUPPORTED_OS`, and optionally `DEPENDENCIES`, `SHIPS_DISABLED` and
+`REMOTE_AGENT`, whether an agent on a hosted sandbox working through the CLI
+has use for it, BASE-060, and `MODULE = Module(...)`. Each verb runs as `metaform <module> <verb> <nouns>
 [switches]` on the CLI and as the command `<verb>` of the tool `<module>` over MCP, both built
 from this one declaration. A verb's switches are settings the module declares
 with `metaform.settings`.
@@ -327,6 +328,12 @@ def command_summary(name: str) -> str | None:
     record = docs.COMMANDS.get(name)
     return None if record is None else record.summary
 
+
+def builder() -> Any:
+    """The chassis build, BASE-060: the builds, shapes and modules the web GUI's build panel offers, and the build
+    it runs; a build chooses what it carries and never turns a module on or off."""
+    from . import build
+    return build
 
 def chassis_version() -> str:
     """The version of the running chassis, BASE-020."""

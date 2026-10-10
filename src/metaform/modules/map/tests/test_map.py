@@ -1656,3 +1656,11 @@ def test_a_direct_claim_on_the_command_line_is_honored_by_the_agent_its_by_names
     j(run, 'work', 'op=edit', f'id={person.id}', 'eligible=["codex"]', cwd=mapped)
     moved = j(run, 'work', 'op=move', f'id={person.id}', 'column=doing', 'by=user', cwd=mapped)
     assert moved['taken_by'] == 'user'
+
+
+@pytest.mark.req('MAP-052')
+def test_a_document_that_cannot_be_written_stops_with_its_next_step(run, described, tmp_path):
+    target = tmp_path / 'no such folder' / 'map.md'
+    said = run('map', 'markdown', f'file={target}', cwd=described, ok=False)
+    assert said.returncode != 0 and str(target) in said.stderr and 'leave out file=' in said.stderr
+    assert not target.parent.exists()

@@ -85,10 +85,11 @@ def _held(nonce: str) -> Nonce:
 
 def update(nonce: str, *, value: Any = None, function: str | None = None) -> Nonce:
     """Change what the next run of the nonce is sent, the function it calls, or both."""
-    held = _held(nonce)
+    _held(nonce)
+    # Only what is given is written, so a concurrent `mutate` of the value is never overwritten by an earlier read.
     with home.chassis(write=True) as db:
-        db.execute('UPDATE nonces SET value=?, function=? WHERE nonce=?',
-                   (json.dumps(held.value if value is None else value), function or held.function, nonce))
+        db.execute('UPDATE nonces SET value=COALESCE(?, value), function=COALESCE(?, function) WHERE nonce=?',
+                   (None if value is None else json.dumps(value), function or None, nonce))
     found = _held(nonce)
     if (now := _CURRENT.get()) is not None and now.nonce == nonce:
         _CURRENT.set(found)

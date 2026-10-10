@@ -10,6 +10,7 @@ from metaform.module import Context
 from .binding import Logic
 from .element import ElementValue, element_value
 
+FORMAT = 'metaform-workflow:1'  # the portable document `export` writes and `import` reads
 TABLES = Tables(version=1, tables=(
     Table('logic_versions', key=('logic_id', 'number'), columns=(
         Column('logic_id', required=True), Column('number', 'int', required=True),
@@ -149,8 +150,13 @@ def history(store: Store, address: str, name: str, layer: str) -> list[dict[str,
     found = _typed(_items(store, address, layer=layer), 'logic', name)
     if not found:
         raise KeyError(f'{address}.{name}')
+    return _saved(_owned(store), found[-1].id)
+
+
+def _saved(store: Store, logic_id: str) -> list[dict[str, Any]]:
+    """Every saved version of one logic requirement, without the id it is kept under."""
     return [{key: value for key, value in version.items() if key != 'logic_id'}
-            for version in _versions(_owned(store), found[-1].id)]
+            for version in _versions(store, logic_id)]
 
 
 def workflows(store: Store, selection: Sequence[str] | None = None) -> list[dict[str, Any]]:
@@ -188,22 +194,29 @@ def document(store: Store, address: str, layer: str) -> dict[str, Any]:
     element = store.element(address, raw=True)
     if element is None:
         raise KeyError(address)
-    found = next(one for one in store.layers(limit=0).results if one.name == layer)
+    found = next((one for one in store.layers(limit=0).results if one.name == layer), None)
+    if found is None:
+        raise StoreError(f'No layer {layer}.', 'metaform map layers')
     items = _items(store, address, layer=layer)
     metadata = _typed(items, 'workflow')
     logic = _typed(items, 'logic')
     recorded = store.provenance(layer)
     provenance = {} if recorded is None else recorded.to_dict()
     provenance.pop('layer_id', None)
-    return {'format': 'metaform-workflow:1', 'workflow': {
+    owned = _owned(store)
+    return {'format': FORMAT, 'workflow': {
         'address': address, 'name': element.name, 'name_length': element.name_length,
         'selected_layers': metadata[-1].value.get('selected_layers', []) if metadata else []},
         'layer': {'name': layer, 'variable': found.variable, 'provenance': provenance},
         'logic': [_logic(item).to_dict() for item in logic],
-        'versions': {item.id: history(store, address, item.value['name'], layer) for item in logic}}
+        'versions': {item.id: _saved(owned, item.id) for item in logic}}
 
 
-def ingest_document(store: Store, payload: Mapping[str, Any], layer: str | None = None) -> dict[str, Any]:
+def ingest_document(store: Store, given: object, layer: str | None = None) -> dict[str, Any]:
+    payload: Mapping[str, Any] = cast(Mapping[str, Any], given) if isinstance(given, Mapping) else {}
+    if payload.get('format') != FORMAT:
+        raise StoreError(f'This is not a portable workflow: it does not carry the format {FORMAT}.',
+                         'metaform help workflow import')
     owned = _owned(store)
     workflow = payload['workflow']
     source = payload['layer']

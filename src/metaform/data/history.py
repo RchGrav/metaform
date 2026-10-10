@@ -31,6 +31,7 @@ from ..errors import StoreError
 from .records import Record
 
 HISTORY_SCHEMA_VERSION = '1'  # a project's history database's own layout, apart from the store's, STORE-029
+HISTORY_COMPATIBLE_FROM = '1'  # its first layout, STORE-029
 HISTORY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS origins(
@@ -192,7 +193,8 @@ def _db(project_id: str, *, write: bool = False) -> Generator[sqlite3.Connection
     if folder is None:
         raise StoreError(f'No project {project_id} is registered.', 'metaform list projects')
     path = folder / 'history.sqlite3'
-    with sqlite.opened(path, HISTORY_SCHEMA, write=write, version=HISTORY_SCHEMA_VERSION) as db:
+    with sqlite.opened(path, HISTORY_SCHEMA, write=write, version=HISTORY_SCHEMA_VERSION,
+                       compatible=HISTORY_COMPATIBLE_FROM) as db:
         db.row_factory = sqlite3.Row
         db.execute('BEGIN IMMEDIATE' if write else 'BEGIN')
         try:

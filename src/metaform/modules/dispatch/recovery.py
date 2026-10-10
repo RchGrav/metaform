@@ -167,7 +167,7 @@ def stop_adapter(held: dict[str, Any]) -> None:
 
 def recover(ctx: Context) -> dict[str, Any]:
     """Apply the configured recovery policy on demand or before Autostart selection, without rewriting reads."""
-    from . import sessions, ticket
+    from . import intake_id, sessions, ticket
 
     policy = str(ctx.setting('dispatch_recovery'))
     result: dict[str, Any] = {'policy': policy, 'released': [], 'deferred': []}
@@ -179,6 +179,8 @@ def recover(ctx: Context) -> dict[str, Any]:
         if row['state'] != 'running':
             continue
         work_id = str(row['work_id'])
+        if intake_id(work_id):  # an intake agent holds no ticket, so it has none to return
+            continue
         owner = f'{row["agent"]} {row["session_id"]}'
         record = ticket(own, work_id)
         if record.done or not record.taken or record.taken_by != owner:

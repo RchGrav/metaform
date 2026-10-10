@@ -2,8 +2,10 @@
 
 A variation's folder holds `changes.diff`, a unified diff of the text files that differ; `files/`, a whole copy of
 each binary file that differs, since a binary file is never written as a diff; and `removed.txt`, the files the work
-no longer has. `expanded` gives the work back, and the scripts beside this file do the same where there is no
-Metaform, PROJ-027. A diff applies at the lines it names or not at all.
+no longer has. `expanded` gives the work back, and the packet module's scripts do the same where there is no
+Metaform, PROJ-027. A diff applies at the lines it names or not at all. It is the chassis's, not the packet module's,
+because the project archive carries a remote agent's file changes in this form and every build carries the archive,
+BASE-060.
 """
 from __future__ import annotations
 

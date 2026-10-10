@@ -514,13 +514,24 @@ def cypher(tx: Tx, query: str, selection: Sequence[str] | None = None) -> Any:
             return address_of(found.get('receiver'))
         if found.get('kind') == 'item':
             return address_of(found.get('target_id'))
+        if found.get('kind') == 'property':
+            return address_of(found.get('element_id'))
         return None
 
     def shows(node_id: Any) -> bool:
         found = nodes[node_id]
-        if not found.get('kind'):
+        kind = found.get('kind')
+        if not kind or found.get('current') is False:
             return False
-        return res.reaches(str(found.get('layer_id') or ''), address_of(node_id))
+        layer_id = str(found.get('layer_id') or '')
+        if kind == 'element':  # the base's elements are always nodes, as in every read, views.element_shows
+            return views.element_shows(res, layer_id, str(found.get('address')))
+        return res.reaches(layer_id, address_of(node_id))
 
-    view = networkx.subgraph_view(graph, filter_node=shows)
+    def shows_edge(source: Any, target: Any, key: Any) -> bool:
+        """An edge belongs to the object that drew it, a join, item or property, and shows where its layer reaches
+        the place the edge starts from, so no edge carries a layer out of view between two nodes in view."""
+        return res.reaches(str(graph.edges[source, target, key].get('layer_id') or ''), address_of(source))
+
+    view = networkx.subgraph_view(graph, filter_node=shows, filter_edge=shows_edge)
     return tx.base.cypher(query, view)

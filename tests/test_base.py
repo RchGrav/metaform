@@ -618,6 +618,28 @@ def test_load_unload_and_reload_leave_one_registration_each(home, user_module):
     assert not [key for key, item in settings.SCHEMA.items() if item.owner == 'counted']
 
 
+@pytest.mark.req('BASE-029')
+def test_a_module_loading_on_one_thread_never_owns_another_threads_setting():
+    import threading
+
+    from metaform import settings
+    loading, done = threading.Event(), threading.Event()
+
+    def load():
+        with settings.owned_by('elsewhere'):
+            loading.set()
+            done.wait(10)
+    thread = threading.Thread(target=load)
+    thread.start()
+    try:
+        assert loading.wait(10)
+        assert settings.text('threaded_word', 'x', help='A word.').owner == 'chassis'
+    finally:
+        done.set()
+        thread.join()
+        settings.SCHEMA.pop('threaded_word', None)
+
+
 @pytest.mark.req('BASE-018')
 def test_a_failed_start_unloads_the_module(module_row, user_module, run):
     user_module('badstart', '''

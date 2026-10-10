@@ -2,26 +2,33 @@
 
 The catalog is every element of the chassis's and each module's `resources/prompts.xml`: its text, the comment
 written above it in the file (its purpose), and the lines of code that load it. The list shows them; Enter shows
-one whole; e opens its text in an editor. A changed text is saved two ways: as a new version in the prompt store,
-and as a packet under artifacts/prompt-edits/ with the source file, the element, the old text and the new, so an
-agent told to apply the edits knows where each came from and what to replace. The source files are never written.
+one whole; e opens its text in an editor. A changed text is saved as a new version in the prompt store, and then
+written where the prompt lives when that can be done exactly; otherwise it becomes a packet under
+artifacts/prompt-edits/ with the source file, the element, the old text and the new, so an agent told to apply the
+edits knows where each came from and what to replace.
 """
 from __future__ import annotations
 
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from . import home, loader
 from .data import prompts as store
 from .errors import Stop
+
+if TYPE_CHECKING:
+    import curses  # the screen's window type; at run time curses is imported only where it exists
 
 PACKETS = 'artifacts/prompt-edits'
 REGISTRY = 'prompt-registry.json'  # in the Metaform home: prompts kept anywhere, registered with the review
@@ -35,7 +42,7 @@ class Entry:
     source: Path        # the prompts.xml it is in
     text: str
     purpose: str        # the comment above it, if any
-    used_at: list[str] = field(default_factory=list)   # file:line of the code that loads it
+    used_at: list[str] = field(default_factory=list[str])   # file:line of the code that loads it
     saved: int | None = None                           # the newest stored version number, when an edit was saved
 
     @property
@@ -43,16 +50,15 @@ class Entry:
         return f'{self.owner}:{self.name}'
 
 
-_ELEMENT = re.compile(r'(?:<!--(?P<comment>.*?)-->\s*)?<(?P<name>[a-z_-]+)(?:\s[^>]*)?>(?P<body>.*?)</(?P=name)>', re.S)
+_ELEMENT = re.compile(r'(?:<!--(?P<comment>.*?)-->\s*)?<(?P<name>[a-z_-]+)(?:\s[^>]*)?>(?P<body>.*?)</(?P=name)>', re.DOTALL)
 
 
 def _entries(owner: str, source: Path, code: Path) -> list[Entry]:
     raw = source.read_text(encoding='utf-8')
     inner = raw[raw.index('<prompts>') + len('<prompts>'):raw.rindex('</prompts>')] if '<prompts>' in raw else raw
-    found = []
+    found: list[Entry] = []
     for match in _ELEMENT.finditer(inner):
-        name, body = match.group('name'), match.group('body')
-        text = re.sub(r'<(\w+)/>', r'<\1/>', body).strip()
+        name, text = match.group('name'), match.group('body').strip()
         purpose = ' '.join((match.group('comment') or '').split())
         found.append(Entry(owner, name, source, text, purpose, _uses(code, name)))
     return found
@@ -134,8 +140,8 @@ def _registered_entry(item: dict[str, str]) -> Entry:
     source = Path(item['source'])
     text = source.read_text(encoding='utf-8') if source.is_file() else '(the source file is gone)'
     if item.get('element') and source.is_file():
-        found = re.search(rf'<{item["element"]}(?:\s[^>]*)?>(.*?)</{item["element"]}>', text, re.S)
-        text = found.group(1).strip() if found else f'(no <{item["element"]}> element in the file)'
+        found = _pattern(item['element']).search(text)
+        text = found.group(2).strip() if found else f'(no <{item["element"]}> element in the file)'
     return Entry(owner, name, source, text.strip(), item.get('purpose', ''), [item['used']] if item.get('used') else [])
 
 
@@ -143,13 +149,15 @@ def _registered_entry(item: dict[str, str]) -> Entry:
 
 def packet_folder() -> Path:
     """Under the project this folder works on, else under the folder itself."""
-    try:
-        from .context import project_for
-        project = project_for(Path.cwd())
-        root = Path(project.path) if project is not None else Path.cwd()
-    except Exception:
-        root = Path.cwd()
-    return root / PACKETS
+    from .context import project_for
+    project_id = project_for(Path.cwd())
+    project = home.project(project_id) if project_id is not None else None
+    return (Path(project.path) if project is not None else Path.cwd()) / PACKETS
+
+
+def _is_packet(where: Path) -> bool:
+    """Whether `save_edit` wrote a packet rather than the prompt's own file, read by path parts on every system."""
+    return where.parent.parts[-len(Path(PACKETS).parts):] == Path(PACKETS).parts
 
 
 def save_edit(entry: Entry, new_text: str, folder: Path | None = None) -> Path:
@@ -173,18 +181,19 @@ def update_source(entry: Entry, new_text: str) -> bool:
     source = entry.source
     if not source.is_file() or not os.access(source, os.W_OK):
         return False
-    element = _element_of(entry)
+    tag = _tag(entry)
     try:
-        if element == 'the whole file':
+        if tag is None:
             source.write_text(new_text + '\n', encoding='utf-8')
             return source.read_text(encoding='utf-8').strip() == new_text
-        tag = element.strip('<>')
         raw = source.read_text(encoding='utf-8')
-        pattern = re.compile(rf'(<{tag}(?:\s[^>]*)?>)(.*?)(</{tag}>)', re.S)
+        pattern = _pattern(tag)
         found = pattern.findall(raw)
         if len(found) != 1:
             return False
         written = pattern.sub(lambda m: m.group(1) + new_text + m.group(3), raw, count=1)
+        if _parses(raw) and not _parses(written):
+            return False  # a text that would break the file, such as a bare < or &, goes to a packet instead
         source.write_text(written, encoding='utf-8')
         back = pattern.search(source.read_text(encoding='utf-8'))
         return back is not None and back.group(2).strip() == new_text
@@ -197,7 +206,7 @@ def packet(entry: Entry, new_text: str, folder: Path | None = None) -> Path:
     folder = folder or packet_folder()
     folder.mkdir(parents=True, exist_ok=True)
     version = store.prompt_version(entry.key)
-    when = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    when = datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
     packet = folder / f'{entry.owner}--{entry.name}.md'
     packet.write_text(
         f'# Prompt edit: {entry.key}\n\n'
@@ -211,6 +220,26 @@ def packet(entry: Entry, new_text: str, folder: Path | None = None) -> Path:
     return packet
 
 
+def _tag(entry: Entry) -> str | None:
+    """The element the prompt is the text of, or None when it is a registered file's whole text."""
+    reg = next((i for i in registered() if i['key'] == entry.key), None)
+    if reg is not None:
+        return reg.get('element') or None
+    return entry.name
+
+
+def _pattern(tag: str) -> re.Pattern[str]:
+    return re.compile(rf'(<{re.escape(tag)}(?:\s[^>]*)?>)(.*?)(</{re.escape(tag)}>)', re.DOTALL)
+
+
+def _parses(text: str) -> bool:
+    try:
+        ET.fromstring(text)
+    except ET.ParseError:
+        return False
+    return True
+
+
 def _element_of(entry: Entry) -> str:
     reg = next((i for i in registered() if i['key'] == entry.key), None)
     if reg is not None:
@@ -219,10 +248,9 @@ def _element_of(entry: Entry) -> str:
 
 
 def _apply_of(entry: Entry) -> str:
-    element = _element_of(entry)
-    if element == 'the whole file':
+    tag = _tag(entry)
+    if tag is None:
         return 'Replace the whole source file with the new text below, exactly as written.'
-    tag = element.strip('<>')
     return (f'Replace the text between `<{tag}>` and `</{tag}>` in the source file with the new text below, exactly as '
             'written. Keep any empty fill elements such as `<modules/>` the code fills in.')
 
@@ -230,8 +258,8 @@ def _apply_of(entry: Entry) -> str:
 def _index(folder: Path) -> None:
     packets = sorted(p for p in folder.glob('*--*.md'))
     lines = ['# Prompt edits waiting to be applied\n',
-             'Each file holds one prompt: where it lives, its old text and the new text. To apply them, tell an agent: '
-             'apply every packet in artifacts/prompt-edits, then delete the packet it applied.\n']
+             ('Each file holds one prompt: where it lives, its old text and the new text. To apply them, tell an agent: '
+              'apply every packet in artifacts/prompt-edits, then delete the packet it applied.\n')]
     lines += [f'- `{p.name}`' for p in packets]
     (folder / 'README.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
@@ -249,7 +277,10 @@ def edit_text(text: str, editor: str) -> str:
         f.write(text)
         path = f.name
     try:
-        subprocess.call([*editor.split(), path])
+        if os.name == 'nt':  # Windows splits its own command lines, and an editor's path often holds spaces
+            subprocess.call(f'{editor} "{path}"')
+        else:
+            subprocess.call([*shlex.split(editor), path])
         return Path(path).read_text(encoding='utf-8').strip()
     finally:
         os.unlink(path)
@@ -287,11 +318,11 @@ def _plain(entries: list[Entry]) -> None:
     new = edit_text(entry.text, choices[0] if choices else 'notepad')
     if new != entry.text:
         where = save_edit(entry, new)
-        sys.stdout.write((f'Could not update the source. Tell an agent: apply {PACKETS}/{where.name}\n'
-                          if where.name.endswith('.md') else f'Updated {where}\n'))
+        sys.stdout.write(f'Could not update the source. Tell an agent: apply {PACKETS}/{where.name}\n'
+                          if _is_packet(where) else f'Updated {where}\n')
 
 
-def _screen(win, entries: list[Entry]) -> None:
+def _screen(win: curses.window, entries: list[Entry]) -> None:
     import curses
     curses.curs_set(0)
     choices = editors() or ['nano']
@@ -303,8 +334,7 @@ def _screen(win, entries: list[Entry]) -> None:
         win.erase()
         win.addnstr(0, 0, f' Prompts agents read: {len(entries)}   edits saved: {sum(1 for e in entries if e.saved)}', w - 1, curses.A_REVERSE)
         rows = h - 3
-        if at < top:
-            top = at
+        top = min(top, at)
         if at >= top + rows:
             top = at - rows + 1
         for i, e in enumerate(entries[top:top + rows]):
@@ -340,7 +370,7 @@ def _pick_editor(choices: list[str], current: int, key: int) -> int:
     return (current + 1) % len(choices)
 
 
-def _edit(win, entry: Entry, editor: str) -> str:
+def _edit(win: curses.window, entry: Entry, editor: str) -> str:
     import curses
     curses.endwin()
     new = edit_text(entry.text, editor)
@@ -349,12 +379,12 @@ def _edit(win, entry: Entry, editor: str) -> str:
         return 'unchanged'
     where = save_edit(entry, new)
     entry.saved = store.prompt_version(entry.key if entry.owner != 'store' else entry.name).number
-    if where.name.endswith('.md') and PACKETS in str(where):
+    if _is_packet(where):
         return f'could not update the source; tell an agent: apply {PACKETS}/{where.name}'
     return f'updated {where}'
 
 
-def _detail(win, entry: Entry, choices: list[str], editor: int) -> str:
+def _detail(win: curses.window, entry: Entry, choices: list[str], editor: int) -> str:
     import curses
     scroll, message = 0, ''
     while True:

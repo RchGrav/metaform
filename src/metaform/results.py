@@ -42,7 +42,7 @@ def _layer_row(layer: Layer) -> list[str]:
 
 
 def _rows(result: Any) -> list[list[str]] | None:
-    """A page of layers or of metaforms as rows, or None for any other result."""
+    """A page of layers or of bases as rows, or None for any other result."""
     from .home import Base
     found = getattr(result, 'results', None)
     if not isinstance(found, tuple) or not found:
@@ -63,7 +63,7 @@ def _aligned(rows: list[list[str]]) -> list[str]:
 def as_text(result: Any) -> str:
     """The CLI's readable form of a result that is not a string; its notices follow as `Notice:` lines, BASE-044.
 
-    A page of layers or metaforms is one aligned row each, CLI-033; `--json` and MCP keep the data, BASE-036.
+    A page of layers or bases is one aligned row each, CLI-033; `--json` and MCP keep the data, BASE-036.
     """
     rows = _rows(result)
     if rows is not None:

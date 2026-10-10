@@ -15,6 +15,11 @@ FAKE_ACP_MODE says what its first turn does after two message chunks and one too
         overlapping prompts abandon the earlier request, reproducing adapters that replace rather than queue
 A later prompt is logged and ends at once. Each process's session id counts the sessions made in the log before it,
 fake-session-1 for the first, so the agents a runner starts one after another have sessions of their own.
+
+FAKE_ACP_RICH=1 makes it an agent with more than text: it names itself, offers two modes and a model option at
+session/new, then its slash commands, takes session/set_mode and session/set_config_option, and its first turn edits
+FAKE_ACP_RICH_PATH, a diff at a location, and reports its usage. FAKE_ACP_LOAD=1 offers session/load, which takes the
+session id it is given and replays one message of its history before it answers.
 """
 import json
 import os
@@ -35,6 +40,20 @@ CANCELLED = threading.Event()
 PROMPTS = [0]
 ACTIVE_PROMPT = [None]
 PROMPT_LOCK = threading.Lock()
+RICH = os.environ.get('FAKE_ACP_RICH') == '1'
+MODES = {'currentModeId': 'default', 'availableModes': [{'id': 'default', 'name': 'Default'},
+                                                         {'id': 'plan', 'name': 'Plan', 'description': 'Plans only'}]}
+MODEL = ['small']
+
+
+def options():
+    return [{'id': 'model', 'name': 'Model', 'type': 'select', 'category': 'model', 'currentValue': MODEL[0],
+             'options': [{'value': 'small', 'name': 'Small'}, {'value': 'large', 'name': 'Large'}]}]
+
+
+def made():
+    """What session/new and session/load answer with: the modes and the options of a rich agent."""
+    return {'modes': MODES, 'configOptions': options()} if RICH else {}
 
 
 def log(entry):
@@ -81,6 +100,13 @@ def first_turn(prompt_id, text):
     update({'sessionUpdate': 'tool_call', 'toolCallId': 't1', 'title': 'Read file', 'kind': 'read',
             'status': 'pending'})
     update({'sessionUpdate': 'tool_call_update', 'toolCallId': 't1', 'status': 'completed'})
+    if RICH:
+        path = os.environ['FAKE_ACP_RICH_PATH']
+        update({'sessionUpdate': 'tool_call', 'toolCallId': 't-edit', 'title': 'Edit engine', 'kind': 'edit',
+                'status': 'in_progress', 'locations': [{'path': path, 'line': 2}],
+                'content': [{'type': 'diff', 'path': path, 'oldText': 'one\n', 'newText': 'one\ntwo\n'}]})
+        update({'sessionUpdate': 'tool_call_update', 'toolCallId': 't-edit', 'status': 'completed'})
+        update({'sessionUpdate': 'usage_update', 'used': 1200, 'size': 200000})
     if MODE == 'ask':
         gate = os.environ.get('FAKE_ACP_ASK_GATE')
         while gate and not os.path.exists(gate) and not CANCELLED.wait(0.05):
@@ -172,12 +198,28 @@ def main():
             continue
         if method == 'initialize':
             send({'jsonrpc': '2.0', 'id': ident,
-                  'result': {'protocolVersion': 1, 'agentCapabilities': {'loadSession': False}, 'authMethods': []}})
+                  'result': {'protocolVersion': 1, 'authMethods': [],
+                             'agentCapabilities': {'loadSession': os.environ.get('FAKE_ACP_LOAD') == '1'},
+                             **({'agentInfo': {'name': 'fake-agent', 'version': '1.0'}} if RICH else {})}})
         elif method == 'session/new':
             with WRITING, open(LOG, encoding='utf-8') as handle:
-                made = sum(json.loads(line).get('message', {}).get('method') == 'session/new' for line in handle)
-            SESSION = f'fake-session-{made}'
-            send({'jsonrpc': '2.0', 'id': ident, 'result': {'sessionId': SESSION}})
+                count = sum(json.loads(line).get('message', {}).get('method') == 'session/new' for line in handle)
+            SESSION = f'fake-session-{count}'
+            send({'jsonrpc': '2.0', 'id': ident, 'result': {'sessionId': SESSION, **made()}})
+            if RICH:
+                update({'sessionUpdate': 'available_commands_update', 'availableCommands': [
+                    {'name': 'review', 'description': 'Review the changes', 'input': {'hint': 'what to review'}}]})
+        elif method == 'session/load' and os.environ.get('FAKE_ACP_LOAD') == '1':
+            SESSION = message['params']['sessionId']
+            update({'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': 'Replayed history'}})
+            send({'jsonrpc': '2.0', 'id': ident, 'result': made()})
+        elif method == 'session/set_mode' and RICH:
+            MODES['currentModeId'] = message['params']['modeId']
+            send({'jsonrpc': '2.0', 'id': ident, 'result': {}})
+            update({'sessionUpdate': 'current_mode_update', 'currentModeId': MODES['currentModeId']})
+        elif method == 'session/set_config_option' and RICH:
+            MODEL[0] = message['params']['value']
+            send({'jsonrpc': '2.0', 'id': ident, 'result': {'configOptions': options()}})
         elif method == 'session/prompt':
             CANCELLED.clear()  # each serial turn receives only its own cancellation
             PROMPTS[0] += 1

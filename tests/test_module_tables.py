@@ -250,14 +250,33 @@ def test_a_store_at_a_later_version_is_refused_and_left_unchanged(ledger, user_m
     recorded = raw(store_file(), "SELECT value FROM meta WHERE key='module:ledger'")
     with pytest.raises(StoreError) as refused, Store('proj', module='ledger').tables() as tx:
         tx.insert('entries', {'entry_id': 'e9', 'who': 'eve'})
-    assert str(refused.value) == ('The store holds the tables of ledger at version 2; this ledger declares '
-                                  'version 1.')
+    assert str(refused.value) == ('The store holds the tables of ledger at version 2, which ledger reads from '
+                                  'version 2; this ledger declares version 1.')
     assert raw(store_file(), 'SELECT * FROM "ledger.entries" ORDER BY entry_id') == before
     assert raw(store_file(), "SELECT value FROM meta WHERE key='module:ledger'") == recorded
     with pytest.raises(StoreError), Store('proj', module='ledger').tables() as tx:
         tx.insert('notes', {'note_id': 'n9', 'text': 'x', 'at': 'now'})
     assert raw(project_store(), 'SELECT note_id FROM "ledger.notes" ORDER BY note_id') == [('n1',), ('n2',)]
 
+
+
+@pytest.mark.req('STORE-029')
+def test_tables_at_a_later_version_compatible_with_this_one_are_read_and_written_as_held(ledger, user_module):
+    fill(ledger)
+    user_module('ledger', LEDGER_V2.replace('Tables(version=2,', 'Tables(version=2, compatible_from=1,'))
+    loader.reset()
+    with Store('proj', module='ledger').tables(write=False) as tx:
+        tx.rows('entries', limit=0)
+    user_module('ledger', LEDGER_V1)
+    loader.reset()
+    recorded = raw(store_file(), "SELECT value FROM meta WHERE key='module:ledger'")
+    assert json.loads(recorded[0][0])['version'] == 2 and json.loads(recorded[0][0])['compatible_from'] == 1
+    with Store('proj', module='ledger').tables() as tx:
+        tx.insert('entries', {'entry_id': 'e9', 'who': 'eve'})
+        assert tx.get('entries', {'entry_id': 'e1'})['amount'] == 5
+    assert raw(store_file(), "SELECT value FROM meta WHERE key='module:ledger'") == recorded
+    assert raw(store_file(), 'SELECT entry_id, currency FROM "ledger.entries" ORDER BY entry_id') == [
+        ('e1', 'EUR'), ('e2', 'EUR'), ('e3', 'EUR'), ('e9', None)]
 
 def test_export_import_export_carries_the_module_rows_and_importing_again_adds_none(ledger, monkeypatch, tmp_path):
     fill(ledger)

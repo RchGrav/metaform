@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import os
 import xml.etree.ElementTree as ET
-from pathlib import Path
 from importlib import resources
 from importlib.resources.abc import Traversable
+from pathlib import Path
 
 FILE = 'prompts.xml'
 TRIAL = 'METAFORM_PROMPTS'  # a prompts.xml whose non-empty prompts are read before a package's own: prompts on trial, tests

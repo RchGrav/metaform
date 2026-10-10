@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from metaform import home, prompt_files, settings
-from metaform.data import CONDITIONS, Element, GraphPage, Item, Join, Layer, Node, Notice, Store, StoreError
+from metaform.data import Element, GraphPage, Item, Join, Layer, Node, Notice, Store, StoreError
 from metaform.module import Context, Module, Noun, Resource, Status, Stop, Verb, save_report
 
 from .schema import ELEMENTS, IFD, NAME_LENGTH, REFS, ROLE
@@ -37,6 +37,7 @@ from .schema import ELEMENTS, IFD, NAME_LENGTH, REFS, ROLE
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
 SHIPS_DISABLED = False
+REMOTE_AGENT = False  # a project wheel carries a map already built
 
 RESOURCE = resources.files(__name__) / 'resources' / 'intake.xml'  # the digital typology intake, the served intake
 SHAPE = resources.files(__name__) / 'resources' / 'metaform.axiom'  # the metaform's shape
@@ -82,6 +83,9 @@ def served(ctx: Context, asked: str = '') -> str:
         text = source.read_text(encoding='utf-8')
     except OSError:
         raise Stop(f'No intake file at {source}.', 'metaform unset --intake-file') from None
+    except UnicodeDecodeError:
+        raise Stop(f'The intake file {source} is not UTF-8 text.',
+                   'save it as UTF-8, or metaform unset --intake-file') from None
     record = store.project()
     match = TARGET.search(text)
     if match is not None:
@@ -195,11 +199,16 @@ def _given(ctx: Context, name: str, notices: Notices) -> str | None:
         return sys.stdin.read()
     path = Path(value) if Path(value).is_absolute() else ctx.folder / value
     try:
-        if path.is_file():
-            return path.read_bytes().decode('utf-8')
-    except (OSError, ValueError):
+        if not path.is_file():
+            return value
+        return path.read_bytes().decode('utf-8')
+    except UnicodeDecodeError:
+        notices.append({'where': name, 'message': f'{path} is not UTF-8 text, so its path was saved as the {name}; '
+                                                  f'save the file as UTF-8 and finish again, or give the {name} as '
+                                                  'text.'})
         return value
-    return value
+    except (OSError, ValueError):  # a value too long or too odd to be a path is the text itself
+        return value
 
 
 def _json(ctx: Context, name: str) -> tuple[Any, bool]:
@@ -407,10 +416,18 @@ def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], t
         return
     # A part has one condition: recorded again, as verification does once it has read the source, the new one
     # replaces the last, which closes, so the read-back shows what was found most recently.
-    for row in rec.store.work(open=True, limit=0).results:
-        if row.node_id == thing and not row.task:
+    # Read at this one part, not every open record of the project, so an intake's calls stay linear in its size.
+    for row in rec.store.work(Node(kind, thing), open=True, limit=0).results:
+        if not row.task:  # a ticket at the part outlives a new condition recorded there
             rec.store.finish_work(row.id, f'Replaced by {ctx.nouns["condition"]}.')
     _note(notices, rec.store.add_work(Node(kind, thing), str(ctx.nouns['condition']), note=ctx.nouns.get('note')))
+
+
+def _close_work(store: Store, things: set[str], resolution: str) -> None:
+    """Close every open work record at these elements and joins, which are being removed."""
+    for row in store.work(open=True, limit=0).results:
+        if row.node_id in things:
+            store.finish_work(row.id, resolution)
 
 
 JOIN_FIELDS = ('purpose', 'ef', 'ifd')
@@ -434,13 +451,15 @@ def join(ctx: Context) -> Any:
             _condition(ctx, mapped, 'join', held_map[0].id, notices)
             return {'receiver': receiver, 'elements': elements, 'layer': mapped.layer.name, 'base': mapped.metaform,
                     'notices': notices}
-    rec = _recording(ctx, notices)
-    result = {'receiver': receiver, 'elements': elements, 'layer': rec.layer.name, 'notices': notices}
-    if not elements:
+    if not elements:  # checked before an intake is started or a base opened, since nothing is recorded
+        building = _building(ctx.require_store())
         notices.append({'where': 'elements', 'message': 'elements is missing; a join holds the elements that serve '
                                                         'its purpose. A join takes receiver, elements, purpose, ef '
                                                         'and ifd. Nothing was recorded.'})
-        return result
+        return {'receiver': receiver, 'elements': elements,
+                'layer': building.layer.name if building is not None else None, 'notices': notices}
+    rec = _recording(ctx, notices)
+    result = {'receiver': receiver, 'elements': elements, 'layer': rec.layer.name, 'notices': notices}
     words = _words(rec.store, rec.layer)
     found = _joins_holding(rec.store, rec.layer, receiver, elements)
     if len(found) > 1:
@@ -509,22 +528,19 @@ def _findings(store: Store, elements: list[Element], joins: list[Join]) -> dict[
             for row in store.work(open=True, limit=0).results if row.node_id in ids}
 
 
-def _refs_at_join(store: Store, held: Join) -> list[dict[str, str]]:
-    """A join's refs, the items of the sources layer at it; none when there is no sources layer."""
+def _refs(store: Store) -> dict[tuple[str, str], list[dict[str, str]]]:
+    """Every element's and join's refs, the items of the sources layer at it, by its kind and id, read in one pass
+    rather than one read per element; none when there is no sources layer."""
     try:
-        items = store.layer_items(SOURCES, Node('join', held.id), limit=0).results
+        held = store.layer_items(SOURCES, limit=0).results
     except StoreError:
-        return []
-    return [{'key': ref.key, 'value': ref.value} for item in items if isinstance(item, Item) for ref in item.refs]
-
-
-def _refs(store: Store, found: Element) -> list[dict[str, str]]:
-    """An element's refs, the items of the sources layer at it; none when there is no sources layer."""
-    try:
-        held = store.layer_items(SOURCES, Node('element', found.id), limit=0).results
-    except StoreError:
-        return []
-    return [{'key': ref.key, 'value': ref.value} for item in held if isinstance(item, Item) for ref in item.refs]
+        return {}
+    found: dict[tuple[str, str], list[dict[str, str]]] = {}
+    for item in held:
+        if isinstance(item, Item):
+            found.setdefault((item.target.kind, item.target.id), []).extend(
+                {'key': ref.key, 'value': ref.value} for ref in item.refs)
+    return found
 
 
 def _map(elements: list[Element], joins: list[Join], store: Store | None = None) -> dict[str, Any]:
@@ -532,11 +548,12 @@ def _map(elements: list[Element], joins: list[Join], store: Store | None = None)
     with the elements it holds, each with its open condition and note, the CQUs whose root joins the map comes off,
     what those joins do not reach, and the addresses never described."""
     marks = _findings(store, elements, joins) if store is not None else {}
+    refs = _refs(store) if store is not None else {}
     listed: list[dict[str, Any]] = []
     for found in elements:
         entry = _element_entry(found)
         if store is not None:
-            entry['refs'] = _refs(store, found)
+            entry['refs'] = refs.get(('element', found.id), [])
         listed.append({**entry, **marks.get(found.id, {})})
     serves: dict[str, set[str]] = {}  # each receiver, and the elements its joins hold
     for held in joins:
@@ -551,7 +568,7 @@ def _map(elements: list[Element], joins: list[Join], store: Store | None = None)
                 waiting.append(address)
 
     return {'elements': listed,
-            'joins': [{**_join_entry(held), **({'refs': _refs_at_join(store, held)} if store is not None else {}),
+            'joins': [{**_join_entry(held), **({'refs': refs.get(('join', held.id), [])} if store is not None else {}),
                        **marks.get(held.id, {})} for held in joins],
             'roots': roots,
             'disconnected': [found.address for found in elements if found.address not in reached],
@@ -619,21 +636,24 @@ def remove(ctx: Context) -> Any:
             else:
                 _note(notices, found.store.edit(held[0].id, {'elements': kept}), words)
         else:
+            _close_work(found.store, {held[0].id}, 'Its join was removed from the intake.')
             _note(notices, found.store.remove(held[0].id), words)
     elif ADDRESS in named and 'receiver' not in named and 'provider' not in named:
         current = found.store.element(named[ADDRESS], raw=True)
         if current is None:
             notices.append({'where': ADDRESS, 'message': f'{named[ADDRESS]} is not an element; nothing was changed.'})
         else:
-            # what held it lets it go, and its marks close with it, so nothing is left orphaned or open
+            # what held it lets it go, and its marks close with it, so nothing is left orphaned or open; a join
+            # left holding nothing is removed, and its marks close too
+            gone = {current.id}
             for held in _recorded(found.store, found.layer)[1]:
                 if any(each.address == named[ADDRESS] for each in held.elements):
                     kept = [each.address for each in held.elements if each.address != named[ADDRESS]]
+                    if not kept:
+                        gone.add(held.id)
                     _note(notices, found.store.edit(held.id, {'elements': kept}) if kept
                           else found.store.remove(held.id), words)
-            for row in found.store.work(open=True, limit=0).results:
-                if row.node_id == current.id:
-                    found.store.finish_work(row.id, 'Its element was removed from the intake.')
+            _close_work(found.store, gone, 'Its element was removed from the intake.')
             _note(notices, found.store.remove(current.id), words)
     else:
         notices.append({'where': ADDRESS, 'message': NAMED_BY})
@@ -703,7 +723,7 @@ def status(ctx: Context) -> Status:
     recording = (f'Intake: being recorded in layer {found.layer.name} of metaform {found.metaform}',) \
         if found is not None else ()
     # The instructions agents read name an intake started and not finished, or else a project with no intake, MCP-009.
-    unfinished = prompt_files.required(resources.files(__name__), 'unfinished') if found is not None else None
+    unfinished = prompt_files.required(here, 'unfinished') if found is not None else None
     if ctx.store.has_intake():
         return Status(lines=('Intake: complete', *recording), instruction=unfinished)
     if found is not None:

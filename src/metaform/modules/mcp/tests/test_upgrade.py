@@ -47,7 +47,7 @@ def upgrade(installation, changed=True):
         state = source.stat()
         os.utime(source, (state.st_atime, state.st_mtime + 2))
     with closing(sqlite.connect(database)) as db:
-        db.execute("UPDATE meta SET value=? WHERE key='schema_version'", (newer,))
+        db.execute("UPDATE meta SET value=? WHERE key IN ('schema_version', 'compatible_from')", (newer,))
 
 
 # One durable write an agent may make over the tool, MAP-050: a ticket is the person's to write, so the write under
