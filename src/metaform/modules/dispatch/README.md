@@ -6,6 +6,11 @@ Metaform starts an agent on a ticket through the Agent Client Protocol, BASE-052
 
 dispatch starts Claude Code, Codex or Gemini CLI on one ticket, one ACP session per ticket, in the project's folder with Metaform's MCP server. What the agent does shows as notes at the ticket's node, each permission it asks for is a question there, and a person can message it or stop it. Details: `metaform help dispatch`.
 
+`metaform dispatch interrupt <work id>` cancels the current turn and keeps the session available. Messages already
+sent stay queued in arrival order. `session=<session id>` restricts the request to the chat you opened. The reply
+reports cancellation requested; live status stays busy, with `interrupting=true`, until the turn actually returns.
+Interrupting an idle agent does nothing. `stop` ends the entire session and its process group.
+
 ## Template version
 
 The template changelog version this module started from: the Unreleased contract after 0.3.0.

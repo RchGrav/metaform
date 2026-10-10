@@ -5,7 +5,7 @@
 @font-face{font-family:"IBM Plex Mono";font-weight:500;src:url(/vendor/fonts/IBMPlexMono-Medium.woff2) format("woff2")}
 @font-face{font-family:"IBM Plex Sans Condensed";font-weight:500;src:url(/vendor/fonts/IBMPlexSansCondensed-Medium.woff2) format("woff2")}
 @font-face{font-family:"IBM Plex Sans Condensed";font-weight:600;src:url(/vendor/fonts/IBMPlexSansCondensed-SemiBold.woff2) format("woff2")}
-:root{
+:root{--in-use:#ffffff;
   --r:6px; --ctl:32px; --ctl-sm:24px;  /* one radius, two control heights, from the spacing scale */
   --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --cond:"IBM Plex Sans Condensed","IBM Plex Sans",system-ui,sans-serif;
@@ -275,6 +275,10 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 .map2d .node.work-under-construction,.map2d .cluster.work-under-construction,.map2d path.work-under-construction{animation:glow-pulse 1.6s ease-in-out infinite}
 /* A property's reach, VIEW-022: the elements it carries to, in its color. */
 .map2d .node.reach rect,.map2d .cluster.reach rect{stroke:var(--reach)!important;stroke-width:2px}
+.map2d .node.inuse rect,.map2d .node.inuse polygon,.map2d .node.inuse circle{fill:var(--in-use)!important;stroke:var(--in-use)!important}
+.map2d .node.inuse text,.map2d .node.inuse .nodeLabel{fill:var(--ground)!important;color:var(--ground)!important}
+.map2d .node.reserved,.map2d path.reserved{visibility:hidden}
+#agents .agent-row input.inuse{margin:0 4px 0 0;accent-color:var(--in-use);cursor:pointer}
 .map2d .node.reach,.map2d .cluster.reach{filter:drop-shadow(0 0 4px var(--reach)) drop-shadow(0 0 12px var(--reach))}
 /* The box gives off light in the lit half of its flash, VIEW-029. The light is on the box and not on its group, since the group's own animation is the fade of going inside a node. */
 @keyframes flash{0%,100%{stroke:var(--node-line);fill:var(--node);filter:none}50%{stroke:var(--broken);fill:var(--node-broken);filter:drop-shadow(0 0 4px var(--broken)) drop-shadow(0 0 12px var(--broken)) drop-shadow(0 0 24px var(--broken))}}
@@ -487,6 +491,8 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 #agent .activity li.you{align-self:flex-end;max-width:85%;background:var(--panel-2);border:1px solid var(--line-2);border-radius:8px;padding:6px 10px}
 #agent .activity:empty::after{content:'Nothing yet.';color:var(--faint);font:13px var(--sans)}
 #agent .say{min-height:56px;resize:vertical;background:var(--ground);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r);padding:8px;font:13px var(--sans)}
+#agent .state{margin:0;font:12px var(--sans);color:var(--muted)}
+#agent .state[hidden]{display:none}
 #agent .acts{display:flex;gap:8px}
 #agent .stop{height:var(--ctl);background:var(--panel-2);color:var(--broken);border:1px solid color-mix(in srgb,var(--broken) 60%,transparent);border-radius:var(--r);padding:0 14px;cursor:pointer;font:600 13px var(--sans)}
 .agents{position:absolute;top:12px;right:14px;z-index:5;min-width:180px;max-width:320px;display:grid;gap:6px;padding:10px 12px;background:color-mix(in srgb,var(--panel) 88%,transparent);border:1px solid var(--line-2);border-radius:var(--r);box-shadow:0 8px 24px color-mix(in srgb,var(--ground) 60%,transparent)}
@@ -558,12 +564,28 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 #helpdesk .files:empty{display:none}
 #helpdesk .chip{background:var(--panel-2);border:1px solid var(--line-2);border-radius:10px;padding:2px 8px;font-size:11px}
 #helpdesk .clip{display:grid;place-items:center;width:30px;cursor:pointer;font-size:16px}
-#helpdesk .calls{display:flex;padding:0 10px 10px;background:var(--panel)}
+#helpdesk .calls{display:flex;gap:8px;padding:0 10px 10px;background:var(--panel)}
 #helpdesk .call{flex:1;background:var(--add);color:var(--ground);border:0;border-radius:18px;padding:7px;font:600 12px var(--sans);cursor:pointer}
+#helpdesk .interrupt{background:var(--panel-2);color:var(--text);border:1px solid var(--line-2);border-radius:18px;padding:7px 12px;font:600 12px var(--sans);cursor:pointer}
+#helpdesk .interrupt:disabled{opacity:.5;cursor:default}
 #helpdesk .system{white-space:pre-wrap}
 #helpdesk .head{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--signal);color:var(--ground)}
 #helpdesk .avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--ground);color:var(--signal);font-weight:700}
 #helpdesk .who{flex:1;display:flex;flex-direction:column;line-height:1.2}
+#helpdesk .tabs{display:flex;gap:4px;padding:6px 8px 0;overflow-x:auto;border-bottom:1px solid var(--line)}
+#helpdesk .tabs[hidden]{display:none}
+#board .distribute{display:inline-flex;gap:4px;align-items:center}
+#board .distribute input{width:3.5em}
+#helpdesk .tab{flex:0 1 auto;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:4px 10px;
+  border:1px solid var(--line);border-bottom:0;border-radius:6px 6px 0 0;background:transparent;color:inherit;cursor:pointer;font:inherit;font-size:12px}
+#helpdesk .tab.on{background:var(--signal);color:var(--ground);border-color:var(--signal)}
+#helpdesk .proposals{display:flex;flex-direction:column;gap:8px;padding:8px 12px;max-height:45%;overflow-y:auto;border-bottom:1px solid var(--line)}
+#helpdesk .proposals[hidden]{display:none}
+#helpdesk .proposal{border:1px solid var(--line-2);border-radius:var(--r);padding:8px 10px;font-size:13px}
+#helpdesk .proposal p{margin:4px 0}
+#helpdesk .proposal small{opacity:.7;margin-right:4px}
+#helpdesk .proposal .acts{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:6px}
+#helpdesk .proposal .reach.on{border-color:var(--in-use)}
 #helpdesk .who small{display:flex;align-items:center;gap:5px;opacity:.85}
 #helpdesk .dot{width:8px;height:8px;border-radius:50%;background:var(--add);display:inline-block}
 #helpdesk .head button{background:transparent;border:0;color:var(--ground);font-size:18px;cursor:pointer;width:26px}

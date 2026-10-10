@@ -251,6 +251,15 @@ def _fills() -> dict[str, str]:
     return fills
 
 
+def _overridden(served: str) -> str:
+    """A line naming each section of a lib served from a person's edit in place of the shipped text: the shipped file
+    is the source, and an edit kept in the prompt store over it is said, never silent."""
+    edited = [section for section in SECTIONS if (stored := prompts.prompt_version(section).text) in served
+              and stored != prompt_files.required(PACKAGE, section)]
+    return (f'\n\nServed from an edit in the prompt store in place of the shipped text: {", ".join(edited)}.'
+            if edited else '')
+
+
 def _known(name: str, held: tuple[str, ...], kind: str) -> str:
     if name not in held:
         raise Stop(f'workflow has no {kind} {name}.', f'metaform workflow {kind}s')
@@ -275,7 +284,8 @@ def _about(skill_name: str) -> str:
 
 
 def lib(ctx: Context) -> str:
-    return prompt_files.required(PACKAGE, _known(ctx.nouns['name'], LIBS, 'lib'), **_fills())
+    served = prompt_files.required(PACKAGE, _known(ctx.nouns['name'], LIBS, 'lib'), **_fills())
+    return served + _overridden(served)
 
 
 def libs(ctx: Context) -> list[dict[str, str]]:

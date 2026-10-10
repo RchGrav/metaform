@@ -179,6 +179,7 @@ def main():
             SESSION = f'fake-session-{made}'
             send({'jsonrpc': '2.0', 'id': ident, 'result': {'sessionId': SESSION}})
         elif method == 'session/prompt':
+            CANCELLED.clear()  # each serial turn receives only its own cancellation
             PROMPTS[0] += 1
             if MODE == 'replace':
                 with PROMPT_LOCK:

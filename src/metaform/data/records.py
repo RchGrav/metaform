@@ -22,7 +22,7 @@ NODE_KINDS: tuple[NodeKind, ...] = ('element', 'join')
 PLACE_KINDS: tuple[NodeKind, ...] = (*NODE_KINDS, 'type')
 LAYER_KINDS: tuple[LayerKind, ...] = ('layer', 'intake', 'memory')
 OPS: tuple[Op, ...] = ('add', 'change', 'remove')
-ROLES = ('AUE', 'CQU', 'DE', 'SE', 'NE')  # the intake's classification of an element, MAP-017
+ROLES = ('CQU', 'DE', 'SE', 'NE')  # the intake's classification of an element, MAP-017
 HELD_ROLES = ('DE', 'SE', 'NE')  # the role of an element a join holds, in
 # The state of a part, held on a work record apart from the map, MAP-046, a stage, where the part is
 # on its way to existing, and one fault, a built part that does not do its job. Built is the normal state and draws
@@ -32,7 +32,7 @@ FAULTS = ('broken', 'trouble')  # trouble is what the intake records where a par
 # A ticket's kind, what sort of work it is, kept apart from the part's state; none is a plain task.
 KINDS = ('broken', 'flawed', 'enhancement')
 FINDINGS = ('missing',)  # intended functionality that is absent, kept apart from the stage unbuilt
-CHECKS = ('ok', 'unverified')  # what the intake's verification found when it read a part's source
+CHECKS = ('ok',)  # what the intake found when it read a part's source and it does its job
 CONDITIONS = STAGES + FAULTS + FINDINGS + CHECKS
 MESSAGES = ('question', 'message')  # what waits for the person at a node, MAP-050; never a condition
 COLUMNS = ('backlog', 'todo', 'doing', 'done')  # the board's columns, MAP-048

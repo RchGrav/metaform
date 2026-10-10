@@ -14,17 +14,30 @@ from metaform.data import Node, Store, export_document
 pytestmark = pytest.mark.kind('fixture')
 
 ROOT = Path(__file__).parents[5]
-SPEC = Path(__file__).parents[1] / 'resources' / 'intake.axiom'  # the served intake
+SPEC = Path(__file__).parents[1] / 'resources' / 'intake.xml'  # the served intake
 RESOURCE = SPEC
 
 
 def stored_with_pointer() -> str:
-    """The served intake: the stored file, then the line saying where its schema is, MCP-009."""
+    """The served intake: the stored file, then, when it does not name its schema, the line saying where it is,
+    MCP-009."""
     from importlib import resources
 
     from metaform import prompt_files
+    if 'metaform://intake/schema' in SPEC.read_text(encoding='utf-8'):
+        return SPEC.read_text(encoding='utf-8')
     pointer = prompt_files.required(resources.files('metaform.modules.intake'), 'schema_pointer')
     return SPEC.read_text(encoding='utf-8').rstrip('\n') + '\n\n' + pointer + '\n'
+
+
+def served_asked(asked: str) -> str:
+    """The served intake with what the person asked: in an XML intake's prompt slot, escaped as an attribute value;
+    after an Axiom intake, which has no slot, as data."""
+    stored = stored_with_pointer()
+    if SPEC.suffix == '.xml':
+        escaped = asked.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+        return stored.replace('{prompt}', escaped, 1)
+    return stored.rstrip('\n') + f'\n\n<<DATA: Prompt>>\n{asked}\n<<END DATA>>\n' if asked else stored
 
 
 def onboarding() -> str:
@@ -133,12 +146,10 @@ def test_prompt_serves_the_intake_with_only_its_prompt_filled(run, project):
     '''the intake's prompt slot holds what the person asked for, a target or a task; with nothing
     asked it stays empty, and the intake reads that as this project. Intake 2.1 carries it as
     `{Prompt} := """{prompt}"""`, and its TARGET_RESOLUTION takes the target from it, so nothing else is filled.'''
-    stored = stored_with_pointer()
     out = run('intake', 'prompt', cwd=project).stdout
-    assert out == stored  # the intake is the instruction, with only where its schema is beside it
+    assert out == served_asked('')  # the intake is the instruction, with only its prompt filled
     asked = run('intake', 'prompt', 'text=Map the timer and its alarm', cwd=project).stdout
-    # the Axiom intake has no slot: what was asked follows it as data, and the script is served as written
-    assert asked == stored.rstrip('\n') + '\n\n<<DATA: Prompt>>\nMap the timer and its alarm\n<<END DATA>>\n'
+    assert asked == served_asked('Map the timer and its alarm')
 
 
 @pytest.mark.req('BASE-039')
@@ -146,14 +157,12 @@ def test_the_prompt_is_filled_as_written_in_intake_2_1_and_escaped_only_in_an_xm
     """Intake 2.1 is not XML, so what the person asks for reaches it exactly as written; an XML intake file, which the
     intake_file setting can still name, gets it escaped as an XML attribute value, as its <target> is filled."""
     asked = 'fix A & B in <main> "now"'
-    stored = stored_with_pointer()
-    assert run('intake', 'prompt', f'text={asked}', cwd=project).stdout == (
-        stored.rstrip('\n') + f'\n\n<<DATA: Prompt>>\n{asked}\n<<END DATA>>\n')
+    assert run('intake', 'prompt', f'text={asked}', cwd=project).stdout == served_asked(asked)
     xml = tmp_path / 'own-intake.xml'
     xml.write_text('<process><prompt text="{prompt}"/></process>\n', encoding='utf-8')
     run('set', f'--intake-file={xml}', cwd=project)
-    assert run('intake', 'prompt', f'text={asked}', cwd=project).stdout == (
-        '<process><prompt text="fix A &amp; B in &lt;main&gt; &quot;now&quot;"/></process>\n')
+    assert run('intake', 'prompt', f'text={asked}', cwd=project).stdout.startswith(
+        '<process><prompt text="fix A &amp; B in &lt;main&gt; &quot;now&quot;"/></process>\n')  # then where its schema is
 
 
 @pytest.mark.req('CLI-034')
@@ -507,14 +516,13 @@ def test_an_artifact_that_is_not_software_is_mapped_the_same_way(run, tmp_path):
     (photos / 'kitchen.jpg').write_bytes(b'\xff\xd8\xff')
     run('add', 'project', 'photos', str(photos), 'artifact', 'kitchen_photos')
     document = {'elements': [
-        {'namespace_address': 'media.photo.product', 'role': 'AUE', 'name': 'kitchen photos'},
         {'namespace_address': 'stakeholder.seller', 'role': 'CQU', 'joins': [
             {'provider': 'media.photo.subject', 'purpose': 'Show the object at its best.', 'ef': 'Frames it.',
              'ifd': 'receives'}]},
         {'namespace_address': 'media.photo.subject', 'role': 'DE'}]}
     submit(run, photos, document, tmp_path)
     store = Store('photos')
-    assert store.element('media.photo.product').role == 'AUE' and store.element('media.photo.subject').role == 'DE'
+    assert store.element('media.photo.subject').role == 'DE'
     assert store.project().target_type == 'artifact'
 
 
@@ -836,8 +844,8 @@ def test_recording_and_remove_name_an_element_and_a_join_by_their_addresses(run,
 @pytest.mark.req('MAP-017')
 @pytest.mark.req('STORE-025')
 def test_the_cestui_que_use_is_the_role_cqu_and_ve_is_no_longer_a_role(run, project):
-    """VE is changed to CQU, Cestui Que Use, throughout. The Canonical Intake names the roles
-    AUE, CQU, DE, SE and NE; an element given CQU is stored without a notice and is the map's entry beside the DE."""
+    """VE is changed to CQU, Cestui Que Use, throughout. The served intake names the roles
+    CQU, DE, SE and NE; an element given CQU is stored without a notice and is the map's entry beside the DE."""
     run('intake', 'start', 'model=claude', 'role=intake agent', cwd=project)
     kept = json.loads(run('intake', 'element', 'stakeholder.cook.home', 'role=CQU', 'name_length=2', '--json',
                           cwd=project).stdout)
@@ -845,7 +853,7 @@ def test_the_cestui_que_use_is_the_role_cqu_and_ve_is_no_longer_a_role(run, proj
     old = json.loads(run('intake', 'element', 'stakeholder.diner', 'role=VE', 'name_length=1', '--json',
                          cwd=project).stdout)
     [said] = [notice['message'] for notice in old['notices'] if notice['where'] == 'role']
-    assert said == "'VE' is not AUE, CQU, DE, SE or NE; it was stored as given."
+    assert said == "'VE' is not CQU, DE, SE or NE; it was stored as given."
     run('intake', 'element', 'code.timer.kitchen', 'role=DE', 'name_length=2', cwd=project)
     run('intake', 'finish', cwd=project)
     roots = json.loads(run('map', 'roots', '--json', cwd=project).stdout)
@@ -1015,27 +1023,18 @@ def test_the_ignore_list_follows_the_intake_and_exclude_is_not_a_condition(run, 
 
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('MAP-046')
-def test_the_core_node_containment_notes_missing_and_join_refs_are_kept_as_the_intake_records_them(run, project):
-    """The served intake records a core node at the reserved address core, says what holds what in
-    the map's structure rather than in an address, keeps exclusions as notes with no condition, records what is
-    absent as unbuilt, and gives a join refs where it needs them. Each was refused or lost by the tools before."""
+def test_notes_missing_and_join_refs_are_kept_as_the_intake_records_them(run, project):
+    """The served intake keeps exclusions as notes with no condition, records what is absent as missing, and gives a
+    join refs where it needs them. Each was refused or lost by the tools before."""
     recorded(run, project, 'start')
-    recorded(run, project, 'element', 'core', 'name=Kitchen timer')
-    recorded(run, project, 'element', 'code.timer.kitchen', 'name_length=2', 'name=Kitchen Timer', 'role=AUE',
-             'within=core')
-    recorded(run, project, 'element', 'code.alarm.audible', 'role=DE', 'within=code.timer.kitchen',
-             'note=exclude: a stray copy beside it')
-    recorded(run, project, 'element', 'downstream.cqu.cook', 'role=CQU', 'within=core')
+    recorded(run, project, 'element', 'code.alarm.audible', 'role=DE', 'note=exclude: a stray copy beside it')
+    recorded(run, project, 'element', 'downstream.cqu.cook', 'role=CQU')
     recorded(run, project, 'join', 'downstream.cqu.cook', 'code.alarm.audible', 'purpose=Know when food is done',
              'ef=Sounds an alarm', 'ifd=send', 'note=the join note', 'refs=[{"key": "path", "value": "src/alarm.c"}]')
-    recorded(run, project, 'element', 'code.display.digit', 'role=SE', 'within=code.timer.kitchen',
-             'condition=missing', 'note=no display yet')
+    recorded(run, project, 'element', 'code.display.digit', 'role=SE', 'condition=missing', 'note=no display yet')
     recorded(run, project, 'finish', 'report=done')
     store = Store('timer')
     graph = store.graph()
-    parents = {entry.element.address: entry.parent for entry in graph.elements}
-    assert parents['code.timer.kitchen'] == 'core' and parents['code.alarm.audible'] == 'code.timer.kitchen'
-    assert parents['downstream.cqu.cook'] == 'core' and parents['core'] is None
     notes = {entry.element.address: entry.element.note for entry in graph.elements}
     assert notes['code.alarm.audible'] == 'exclude: a stray copy beside it'
     [joined] = graph.joins
@@ -1046,28 +1045,23 @@ def test_the_core_node_containment_notes_missing_and_join_refs_are_kept_as_the_i
 
 
 @pytest.mark.req('BASE-039')
-def test_the_read_back_shows_marks_containment_and_notes_and_a_removed_element_leaves_nothing_behind(run, project):
-    """Found in the runs of 2026-10-08: the read-back the proof step uses showed no marks, no within and no notes, and
-    called the core disconnected and undescribed; removing an element left its marks open and its joins orphaned."""
-    start = recorded(run, project, 'start')
-    del start
-    core = recorded(run, project, 'element', 'core', 'name=Kitchen timer')
-    assert not any(n['where'] == 'role' for n in core['notices'])  # the core has no role, and none is asked for
-    recorded(run, project, 'element', 'code.timer.kitchen', 'name_length=2', 'name=Kitchen Timer', 'role=AUE',
-             'within=core')
-    recorded(run, project, 'element', 'code.alarm.audible', 'role=DE', 'within=code.timer.kitchen',
-             'condition=trouble', 'note=it never sounds')
-    recorded(run, project, 'element', 'code.display.digit', 'role=SE', 'within=code.timer.kitchen',
-             'note=exclude: a stray copy')
-    recorded(run, project, 'element', 'downstream.cqu.cook', 'role=CQU', 'within=core')
+def test_the_read_back_shows_marks_notes_and_what_no_root_join_reaches(run, project):
+    """Found in the runs of 2026-10-08: the read-back the proof step uses showed no marks and no notes; removing an
+    element left its marks open and its joins orphaned. The map comes off the CQUs' root joins, so an element no join
+    reaches from them is named disconnected for the proof to correct."""
+    recorded(run, project, 'start')
+    recorded(run, project, 'element', 'code.alarm.audible', 'role=DE', 'condition=trouble', 'note=it never sounds')
+    recorded(run, project, 'element', 'code.display.digit', 'role=SE', 'note=exclude: a stray copy')
+    recorded(run, project, 'element', 'code.light.indicator', 'role=SE')
+    recorded(run, project, 'element', 'downstream.cqu.cook', 'role=CQU')
     recorded(run, project, 'join', 'downstream.cqu.cook', '["code.alarm.audible", "code.display.digit"]',
              'purpose=Know when food is done', 'ef=Sounds an alarm', 'ifd=sends')
     shown = recorded(run, project, 'show')
     by = {entry['namespace_address']: entry for entry in shown['elements']}
     assert (by['code.alarm.audible']['condition'], by['code.alarm.audible']['note']) == ('trouble', 'it never sounds')
     assert by['code.display.digit']['note'] == 'exclude: a stray copy'
-    assert by['code.timer.kitchen']['within'] == 'core'
-    assert shown['root'] == 'core' and shown['disconnected'] == [] and shown['undescribed'] == []
+    assert shown['roots'] == ['downstream.cqu.cook'] and shown['undescribed'] == []
+    assert shown['disconnected'] == ['code.light.indicator']
     recorded(run, project, 'remove', 'namespace_address=code.alarm.audible')
     after = recorded(run, project, 'show')
     [joined] = after['joins']
@@ -1092,27 +1086,30 @@ def test_the_field_text_lists_exactly_the_values_the_intake_tools_accept():
             noun = nouns.get((verb, field))
             if noun is not None:
                 assert listed(words[field]) == set(noun.schema['enum']), (verb, field, words[field])
-    assert set(nouns['element', 'condition'].schema['enum']) == set(INTAKE_MARKS)
-    assert ELEMENT_WORDS['within'] != 'within'  # within is defined, not only named
+    assert set(nouns['element', 'condition'].schema['enum']) == set(INTAKE_MARKS) | {'MISS', 'BKN', 'OK', 'broken'}
 
 
 @pytest.mark.req('MAP-046')
 def test_the_procedures_marks_are_taken_as_written(run, project):
     """The served procedure marks a part MISS, BKN or OK; the tools take those words, so the agent never translates."""
-    recorded(run, project, 'start')
+    started = recorded(run, project, 'start', 'result=dt-20261010')  # the result id the procedure gives at start
+    assert Store('timer').layer_ref(started['layer']).result_id == 'dt-20261010'
+    refused = run('intake', 'element', 'code.alarm.audible', 'role=SE', 'condition=BKN', cwd=project, ok=False)
+    assert refused.returncode != 0 and 'needs a note' in refused.stderr  # BKN says what is wrong and what corrects it
     recorded(run, project, 'element', 'code.alarm.audible', 'role=SE', 'condition=BKN', 'note=never sounds; wire the pin')
     recorded(run, project, 'element', 'code.display.digit', 'role=SE', 'condition=OK')
-    recorded(run, project, 'element', 'code.display.digit', 'role=SE', 'condition=UNVERIFIED')  # read again later
+    recorded(run, project, 'element', 'code.display.digit', 'role=SE', 'condition=broken', 'note=blank; reseat it')
+    recorded(run, project, 'element', 'code.display.digit', 'role=SE', 'condition=MISS')  # found absent on a second look
     assert sorted((w.address, w.condition) for w in Store('timer').work(open=True, limit=0).results) == \
-        [('code.alarm.audible', 'trouble'), ('code.display.digit', 'unverified')]  # the last condition replaces
+        [('code.alarm.audible', 'trouble'), ('code.display.digit', 'missing')]  # the last condition replaces
 
 
 @pytest.mark.req('BASE-039')
 def test_a_verify_pass_writes_conditions_and_refs_onto_the_finished_map_without_a_new_base(run, project):
-    """The intake's verification phase reads each part's source and records what it found on the map it verifies;
+    """An intake on a project that already has one re-examines the finished map and records what it found on it;
     conditions and refs are kept apart from the map's shape, so a finished map takes them without a new intake."""
     recorded(run, project, 'start')
-    recorded(run, project, 'element', 'code.timer.kitchen', 'role=DE', 'name=timer', 'condition=UNVERIFIED')
+    recorded(run, project, 'element', 'code.timer.kitchen', 'role=DE', 'name=timer', 'condition=MISS')
     recorded(run, project, 'element', 'code.alarm.audible', 'role=SE', 'name=alarm')
     recorded(run, project, 'join', 'code.timer.kitchen', '["code.alarm.audible"]', 'purpose=p', 'ef=f', 'ifd=receives')
     recorded(run, project, 'finish', 'report=done')

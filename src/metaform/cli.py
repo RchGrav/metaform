@@ -40,7 +40,7 @@ from . import (
 )
 from .data import Store, export_document, history, import_document, prompts
 from .docs import Command, Switch
-from .errors import Stop
+from .errors import Stop, StoreError
 from .module import Verb, call, on_this_system
 from .wording import count, counted
 
@@ -1179,10 +1179,16 @@ def main(argv: list[str] | None = None) -> int:
     if args[:1] == ['--version']:
         return _command(args, folder)
     with loader.request_scope():
+        code = 1
         try:
-            return _command(args, folder)
+            code = _command(args, folder)
+            return code
         finally:
-            changes.announce(folder, 'cli')  # what the command changed, fired on the event bus, VIEW-018
+            try:
+                changes.announce(folder, 'cli')  # what the command changed, fired on the event bus, VIEW-018
+            except StoreError as error:  # a home that cannot be read: the command has said so; a done one is told
+                if code == 0:
+                    print(f'Notice: what this command changed was not announced: {error}', file=sys.stderr)
 
 
 def _command(args: list[str], folder: Path) -> int:

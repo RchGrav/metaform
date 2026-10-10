@@ -38,8 +38,9 @@ SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
 SHIPS_DISABLED = False
 
-RESOURCE = resources.files(__name__) / 'resources' / 'intake.axiom'  # the digital typology intake, the served intake
+RESOURCE = resources.files(__name__) / 'resources' / 'intake.xml'  # the digital typology intake, the served intake
 SHAPE = resources.files(__name__) / 'resources' / 'metaform.axiom'  # the metaform's shape
+SCHEMA_URI = 'metaform://intake/schema'
 VARIABLE = ('The functional map of the artifact: its elements, and each receiver\'s purpose served by a provider\'s '
             'encounter function.')
 TARGET = re.compile(r'<target\b[^>]*>')
@@ -92,7 +93,7 @@ def served(ctx: Context, asked: str = '') -> str:
     # The Axiom intake declares its prompt as a parameter and has no slot, so what was asked follows it as data,
     # the way a skill's input is bound, and the script itself is served as written.
     xml = source.name.lower().endswith('.xml')
-    if not xml:  # the procedure names its schema; the agent handed only the procedure is told where it is, MCP-009
+    if SCHEMA_URI not in text:  # an agent handed only the procedure is told where its schema is, MCP-009
         text = text.rstrip('\n') + '\n\n' + prompt_files.required(resources.files(__name__), 'schema_pointer') + '\n'
     if '{prompt}' in text:
         text = text.replace('{prompt}', _escape(asked) if xml else asked, 1)
@@ -121,7 +122,6 @@ def schema(ctx: Context) -> str:
 Notices = list[dict[str, str]]
 ADDRESS = 'namespace_address'  # the element's address, named as in the metaform's shape, MAP-040
 SOURCES = 'sources'  # the layer an element's refs go in
-CORE = 'core'  # the reserved address of the core node, the project itself
 ID = re.compile(r'\b[0-9a-f]{32}\b')
 
 settings.boolean('intake_sources', True, label='Intake sources layer',
@@ -251,6 +251,8 @@ def _open(ctx: Context, store: Store, notices: Notices) -> Recording:
                   'model': ctx.nouns.get('model'), 'role': ctx.nouns.get('role')}
     layer = target.layer('base', 'intake', VARIABLE, kind='intake', mutable=False, hideable=False,
                          provenance=provenance)
+    if ctx.nouns.get('result'):  # the result id the procedure generates and gives at start, LAYER-010
+        _note(notices, target.complete(layer.name, {}, result_id=str(ctx.nouns['result'])))
     return Recording(target, layer, name, is_active)
 
 
@@ -267,7 +269,7 @@ def _active_map(store: Store) -> Recording | None:
     return Recording(store, base, active.name, True)
 
 
-SHAPE_FIELDS = ('name_length', 'name', 'role', 'within')  # an element's fields that are its shape
+SHAPE_FIELDS = ('name_length', 'name', 'role')  # an element's fields that are its shape
 
 
 def _recording(ctx: Context, notices: Notices) -> Recording:
@@ -292,7 +294,8 @@ def start(ctx: Context) -> Any:
                                                       f'{found.layer.name} of metaform {found.metaform}; this call '
                                                       'resumes it. intake show reads back what it holds.'})
         # What the layer lacks of its provenance is filled in; what it holds is kept, LAYER-010.
-        _note(notices, found.store.complete(found.layer.name, {name: ctx.nouns.get(name) for name in ('model', 'role')}))
+        _note(notices, found.store.complete(found.layer.name, {name: ctx.nouns.get(name) for name in ('model', 'role')},
+                                            result_id=str(ctx.nouns['result']) if ctx.nouns.get('result') else None))
     elif (mapped := _active_map(store)) is not None:
         notices.append({'where': 'intake', 'message': f'The active metaform {mapped.metaform} has a finished intake. '
                         'Conditions, their notes and refs recorded on its elements and joins are written onto it. '
@@ -305,10 +308,7 @@ def start(ctx: Context) -> Any:
 
 
 def _described(element: Element) -> bool:
-    """Whether an element was described with intake element, not only named in a join. The core is described by its
-    name alone, since it has no role and no name_length."""
-    if element.address == CORE:
-        return element.name is not None
+    """Whether an element was described with intake element, not only named in a join."""
     return element.role is not None or element.name_length is not None
 
 
@@ -331,14 +331,14 @@ def _sources(ctx: Context, rec: Recording, kind: Literal['element', 'join'], ele
         _note(notices, store.add_item(SOURCES, Node(kind, element_id), address, refs=refs))
 
 
-MARKS = {'MISS': 'missing', 'BKN': 'trouble', 'OK': 'ok', 'UNVERIFIED': 'unverified'}  # the procedure's words
-INTAKE_MARKS = ('missing', 'trouble', 'ok', 'unverified')
+MARKS = {'MISS': 'missing', 'BKN': 'trouble', 'OK': 'ok', 'BROKEN': 'trouble'}  # the procedure's words, any case
+INTAKE_MARKS = ('missing', 'trouble', 'ok')
 
 
 def _checked_condition(ctx: Context) -> None:
-    """The intake marks a part missing or trouble, and nothing else; a mark outside them, or trouble with no note
-    saying what is wrong, is refused before anything is recorded, so a call is never half kept. The served
-    procedure's conditions are taken as written: MISS, BKN, OK and UNVERIFIED."""
+    """The intake marks a part missing or trouble, or ok, and nothing else; a mark outside them, or trouble with no
+    note saying what is wrong and what corrects it, as the procedure asks of BKN, is refused before anything is
+    recorded, so a call is never half kept. The served procedure's conditions are taken as written: MISS, BKN and OK."""
     given = ctx.nouns.get('condition')
     if isinstance(given, str) and given.strip().upper() in MARKS:
         given = ctx.nouns['condition'] = MARKS[given.strip().upper()]
@@ -346,7 +346,7 @@ def _checked_condition(ctx: Context) -> None:
         raise Stop('trouble needs a note saying what is wrong and what corrects it.', 'send it again with note')
     if given in (None, '', 'exclude') or given in INTAKE_MARKS:
         return
-    raise Stop(f'{given!r} is not an intake condition: missing, trouble, ok or unverified; an exclusion is a note, '
+    raise Stop(f'{given!r} is not an intake condition: missing, trouble or ok; an exclusion is a note, '
                '"exclude: <why>".', 'send it again with one of those words')
 
 
@@ -371,9 +371,8 @@ def element(ctx: Context) -> Any:
     rec = _recording(ctx, notices)
     given = {'name_length': _whole(ctx.nouns.get('name_length')), 'name': ctx.nouns.get('name'),
              'role': ctx.nouns.get('role')}
-    # what holds it, and a note without a condition, are kept on the element itself
-    kept = {key: ctx.nouns[key] for key in ('within', 'note') if ctx.nouns.get(key)
-            and (key == 'within' or not ctx.nouns.get('condition'))}
+    # a note without a condition is kept on the element itself
+    kept = {'note': ctx.nouns['note']} if ctx.nouns.get('note') and not ctx.nouns.get('condition') else {}
     current = rec.store.element(address, raw=True)
     element_id: str | None
     if current is not None and current.layer_id == rec.layer.id:
@@ -382,7 +381,7 @@ def element(ctx: Context) -> Any:
             _note(notices, rec.store.edit(current.id, changes))
         element_id = current.id
     else:
-        for field in ('name',) if address == CORE else ('role', 'name'):
+        for field in ('role', 'name'):
             if given[field] is None:
                 notices.append({'where': field, 'message': f'{field} is missing; stored empty.'})
         made = rec.store.add_element(rec.layer.name, address, **given)
@@ -494,7 +493,7 @@ NOTHING = 'No intake is being recorded. intake start begins one.'
 def _element_entry(found: Element) -> dict[str, Any]:
     entry = {ADDRESS: found.address, 'short_name': found.short_name, 'name_length': found.name_length,
              'name': found.name, 'role': found.role}
-    return {**entry, **{key: value for key, value in (('within', found.within), ('note', found.note)) if value}}
+    return {**entry, **({'note': found.note} if found.note else {})}
 
 
 def _join_entry(held: Join) -> dict[str, Any]:
@@ -530,7 +529,8 @@ def _refs(store: Store, found: Element) -> list[dict[str, str]]:
 
 def _map(elements: list[Element], joins: list[Join], store: Store | None = None) -> dict[str, Any]:
     """The recorded map in the agent's words: every element by its address with its refs, every join by its receiver
-    with the elements it holds, each with its open condition and note, and the addresses never described."""
+    with the elements it holds, each with its open condition and note, the CQUs whose root joins the map comes off,
+    what those joins do not reach, and the addresses never described."""
     marks = _findings(store, elements, joins) if store is not None else {}
     listed: list[dict[str, Any]] = []
     for found in elements:
@@ -538,28 +538,23 @@ def _map(elements: list[Element], joins: list[Join], store: Store | None = None)
         if store is not None:
             entry['refs'] = _refs(store, found)
         listed.append({**entry, **marks.get(found.id, {})})
-    has_core = any(found.address == CORE for found in elements)
-    roots = [CORE] if has_core else [found.address for found in elements if found.role == 'AUE']
-    joined = {held.receiver_address for held in joins} | {each.address for held in joins for each in held.elements}
-    holder = {found.address: found.within for found in elements if found.within}
-
-    def under(address: str) -> bool:
-        seen: set[str] = set()
-        while address not in seen:  # what holds it, up to the core
-            if address in roots:
-                return True
-            seen.add(address)
-            if address not in holder:
-                break
-            address = holder[address]
-        return not has_core and any(address.startswith(root + '.') for root in roots)
+    serves: dict[str, set[str]] = {}  # each receiver, and the elements its joins hold
+    for held in joins:
+        serves.setdefault(held.receiver_address, set()).update(each.address for each in held.elements)
+    # the map comes off the root joins, each a CQU receiving from the DE; what they do not reach is disconnected
+    roots = [found.address for found in elements if found.role == 'CQU' and found.address in serves]
+    reached, waiting = set(roots), list(roots)
+    while waiting:
+        for address in serves.get(waiting.pop(), ()):
+            if address not in reached:
+                reached.add(address)
+                waiting.append(address)
 
     return {'elements': listed,
             'joins': [{**_join_entry(held), **({'refs': _refs_at_join(store, held)} if store is not None else {}),
                        **marks.get(held.id, {})} for held in joins],
-            'root': roots[0] if len(roots) == 1 else roots,
-            'disconnected': [found.address for found in elements if not under(found.address)
-                             and found.address not in joined],
+            'roots': roots,
+            'disconnected': [found.address for found in elements if found.address not in reached],
             'undescribed': [found.address for found in elements if not _described(found)]}
 
 
@@ -581,7 +576,7 @@ def show(ctx: Context) -> Any:
                                                       f'{found.metaform}, whose intake is finished.'})
     if found is None:
         return {'layer': None, 'project': store.project_id, 'base': None, 'elements': [], 'joins': [],
-                'root': None, 'disconnected': [], 'undescribed': [],
+                'roots': [], 'disconnected': [], 'undescribed': [],
                 'notices': [{'where': 'intake', 'message': NOTHING}]}
     elements, joins = _recorded(found.store, found.layer)
     receiver = ctx.nouns.get('receiver')
@@ -717,9 +712,11 @@ def status(ctx: Context) -> Status:
 
 
 E, J = ELEMENT_WORDS.get, JOIN_WORDS.get
-CONDITION = (Noun('condition', E('condition', ''), required=False,
-                  schema={'type': 'string', 'enum': ['missing', 'trouble', 'ok', 'unverified']}),
-             Noun('note', E('note', ''), required=False))
+def _condition_nouns(words: Any) -> tuple[Noun, Noun]:
+    """The condition and the note an element or a join is recorded with, each in that command's own words."""
+    return (Noun('condition', words('condition', ''), required=False,
+                 schema={'type': 'string', 'enum': ['MISS', 'BKN', 'OK', 'broken', *INTAKE_MARKS]}),  # the procedure's word or its stored one
+            Noun('note', words('note', ''), required=False))
 
 MODULE = Module(
     id='intake',
@@ -733,18 +730,21 @@ MODULE = Module(
             'that serve it. An element\'s refs go in the sources layer while intake_sources is on. It is read back '
             'with show, whole or one receiver at a time, and corrected by recording again and with remove. No other '
             'read sees it until finish; after finish the metaform changes by refining, metaform map refine, in the '
-            'same layer. Nothing is refused for its content: what does not fit is stored as given and named in a '
-            'notice.',
+            'same layer, or by another intake, which writes conditions, notes and refs onto it and opens a new base '
+            'only for new shape. Nothing is refused for its content: what does not fit is stored as given and named '
+            'in a notice.',
     verbs=(
         Verb('prompt', prompt, 'The intake instructions for this project.',
              nouns=(Noun('text', 'path to the target for the intake process; leaving this blank means this project',
                          required=False),)),
         Verb('schema', schema, 'The shape of the metaform: the namespace roots, the upstream and downstream links, '
                                'and the element and join forms the intake records.'),
-        Verb('start', start, 'Resume the intake being recorded, or start a fresh one. If the active metaform already '
-                            'has an intake, creates a separate intake-<UTC timestamp> metaform, keeping the earlier '
-                            'one untouched. Returns its name; the existing web GUI follows it live.',
-             nouns=(Noun('model', 'The model that performs the intake.', required=False),
+        Verb('start', start, 'Resume the intake being recorded, or start a fresh one. On a project whose intake is '
+                            'finished it stays on that map: conditions, notes and refs are written onto it, and '
+                            'recording a new element or join opens a separate intake-<UTC timestamp> metaform, '
+                            'keeping the earlier one untouched. Returns its name; the existing web GUI follows it live.',
+             nouns=(Noun('result', 'The result id the intake procedure generates and gives at start, kept with the intake.', required=False),
+                    Noun('model', 'The model that performs the intake.', required=False),
                     Noun('role', 'The role of the agent that performs it.', required=False))),
         Verb('element', element, 'Record one element, or record it again; the fields given replace the ones it had.',
              nouns=(Noun(ADDRESS, E(ADDRESS, '')),
@@ -752,19 +752,16 @@ MODULE = Module(
                     Noun('name', E('name', ''), required=False),
                     Noun('role', E('role', ''), required=False, schema=ROLE),
                     Noun('refs', E('refs', ''), required=False, schema=REFS),
-                    Noun('within', E('within', ''), required=False),
-                    *CONDITION)),
+                    *_condition_nouns(E))),
         Verb('join', join, "Record one purpose join: the receiver's purpose served by the elements it holds. Recorded again "
-                           'with an element it holds, the fields given replace its own and new elements are added. An '
-                           'annealed part is a join one level deeper: record it with the element it is part of as the '
-                           'receiver.',
+                           'with an element it holds, the fields given replace its own and new elements are added.',
              nouns=(Noun('receiver', J('receiver', '')),
                     Noun('elements', J('elements', ''), schema=ELEMENTS),
                     Noun('purpose', J('purpose', ''), required=False),
                     Noun('ef', J('ef', ''), required=False),
                     Noun('ifd', J('ifd', ''), required=False, schema=IFD),
                     Noun('refs', J('refs', ''), required=False, schema=REFS),
-                    *CONDITION)),
+                    *_condition_nouns(J))),
         Verb('show', show, 'The intake being recorded, whole or one receiver at a time.',
              nouns=(Noun('receiver', J('receiver', ''), required=False),)),
         Verb('remove', remove, 'Remove one recorded element, one join, or one element from a join, named by addresses.',
@@ -773,7 +770,7 @@ MODULE = Module(
                     Noun(ADDRESS, E(ADDRESS, ''), required=False))),
         Verb('finish', finish, 'Finish and activate the recorded metaform, keeping the earlier one whole. Switch '
                                'back with metaform map activate <previous-name>. After finish the metaform changes '
-                               'by refining: metaform map refine.',
+                               'by refining, metaform map refine, or by another intake.',
              nouns=(Noun('report', 'Your report on the project you examined: broken code, things that need fixing, '
                                    'anything not working or partially working. On the command line a file is read '
                                    'and - is standard input.', required=False),

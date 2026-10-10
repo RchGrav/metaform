@@ -141,6 +141,14 @@ def _insert(db: sqlite3.Connection, prompt_id: str, number: int, parent: str | N
     return version_id
 
 
+def _create(db: sqlite3.Connection, name: str, format: str, text: str, origin: str) -> PromptVersion:
+    prompt_id = uuid.uuid4().hex
+    db.execute('INSERT INTO prompts(prompt_id, name, format, created) VALUES (?, ?, ?, ?)',
+               (prompt_id, name, format, home.now()))
+    version_id = _insert(db, prompt_id, 1, None, text, origin)
+    return _version(db.execute(_VERSION + 'AND v.version_id=?', (prompt_id, version_id)).fetchone())
+
+
 def add_prompt(name: str, format: str, text: str, *, origin: str = 'edited') -> PromptVersion:
     """Create a prompt and its version 1."""
     if format not in FORMATS:
@@ -148,11 +156,7 @@ def add_prompt(name: str, format: str, text: str, *, origin: str = 'edited') -> 
     with _db(write=True) as db:
         if db.execute('SELECT 1 FROM prompts WHERE name=?', (name,)).fetchone():
             raise StoreError(f'There is already a prompt {name}.', f'metaform prompt {name}')
-        prompt_id = uuid.uuid4().hex
-        db.execute('INSERT INTO prompts(prompt_id, name, format, created) VALUES (?, ?, ?, ?)',
-                   (prompt_id, name, format, home.now()))
-        version_id = _insert(db, prompt_id, 1, None, text, origin)
-        return _version(db.execute(_VERSION + 'AND v.version_id=?', (prompt_id, version_id)).fetchone())
+        return _create(db, name, format, text, origin)
 
 
 def add_prompt_version(prompt: str, text: str, parent: int | str, *, origin: str = 'edited') -> PromptVersion:
@@ -208,7 +212,12 @@ def shipped(name: str, format: str, text: str) -> PromptVersion:
         found = db.execute('SELECT * FROM prompts WHERE name=?', (name,)).fetchone()
         newest = _newest(db, found['prompt_id']) if found is not None else None
     if found is None:
-        return add_prompt(name, format, text, origin='shipped')
+        if format not in FORMATS:
+            raise StoreError(f'{format} is not a prompt format: {", ".join(FORMATS)}.', 'metaform prompts')
+        with _db(write=True) as db:
+            if db.execute('SELECT 1 FROM prompts WHERE name=?', (name,)).fetchone() is None:
+                return _create(db, name, format, text, 'shipped')
+        return shipped(name, format, text)  # another writer made it first, as two agents starting at once do
     assert newest is not None
     if newest['text'] == text or newest['origin'] == 'edited':
         return _version(newest)

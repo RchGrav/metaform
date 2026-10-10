@@ -134,11 +134,62 @@ def dispatch_runners(run):
 SURVIVORS = ('-m metaform.modules.web.server ', '-m metaform dispatch ')
 
 
+def _left(folder):
+    """The metaform processes started under the test homes in a folder that are still running: each web server and
+    dispatch runner records its PID in its home's run/web.json or run/listeners, VIEW-002 and BASE-052."""
+    import json
+
+    from metaform.modules.dispatch import command_line
+    from metaform.modules.dispatch.tests.test_dispatch import alive
+    pids = set()
+    for path in [*folder.glob('**/run/web.json'), *folder.glob('**/run/listeners/*.json')]:
+        try:
+            pids.add(int(json.loads(path.read_text(encoding='utf-8'))['pid']))
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    said = {pid: ' '.join(command_line(pid)) for pid in pids if alive(pid)}
+    return {pid: words for pid, words in said.items() if any(one in words for one in SURVIVORS)}
+
+
+def pytest_sessionstart(session):
+    """A run stopped before its teardown, by a timeout or a kill, leaves the servers its tests started running, since a
+    web server outlives the command that starts it. pytest keeps such a run's numbered folder with its .lock naming the
+    run's PID: a lock whose PID has ended marks a run that died, and what its test homes left running is ended here. A
+    folder whose PID is alive belongs to a run in progress and is left alone. Under xdist only the controller sweeps."""
+    if hasattr(session.config, 'workerinput'):
+        return
+    factory = getattr(session.config, '_tmp_path_factory', None)
+    if factory is None:
+        return
+    from metaform.modules.dispatch import end_group
+    from metaform.modules.dispatch.tests.test_dispatch import alive
+    current = factory.getbasetemp()
+    ended = {}
+    for folder in current.parent.glob('pytest-*'):
+        lock = folder / '.lock'
+        if folder.is_symlink() or folder.resolve() == current.resolve() or not lock.is_file():
+            continue
+        try:
+            owner = int(lock.read_text(encoding='utf-8').strip())
+        except (OSError, ValueError):
+            continue
+        if alive(owner):
+            continue
+        for pid, words in _left(folder).items():
+            end_group(pid)
+            ended[pid] = words
+    reporter = session.config.pluginmanager.get_plugin('terminalreporter')
+    if ended and reporter is not None:
+        reporter.write_line('An earlier test run stopped before its teardown left these metaform processes running; '
+                            'they are now ended:', yellow=True)
+        for pid, words in ended.items():
+            reporter.write_line(f'  {pid} {words}', yellow=True)
+
+
 def pytest_sessionfinish(session):
     """No metaform web server or dispatch runner started under a test home outlives the test session: each records
     its PID in its home's run/web.json or run/listeners. One still alive fails the run and is ended, VIEW-002 and
     BASE-052. Under xdist only the controller checks, once every worker has finished."""
-    import json
     import time
 
     if hasattr(session.config, 'workerinput'):
@@ -146,19 +197,11 @@ def pytest_sessionfinish(session):
     folder = getattr(getattr(session.config, '_tmp_path_factory', None), '_basetemp', None)
     if folder is None:  # the run made no temporary folder, so it started nothing under a test home
         return
-    from metaform.modules.dispatch import command_line, end_group
-    from metaform.modules.dispatch.tests.test_dispatch import alive
+    from metaform.modules.dispatch import end_group
 
-    pids = set()
-    for path in [*folder.glob('**/run/web.json'), *folder.glob('**/run/listeners/*.json')]:
-        try:
-            pids.add(int(json.loads(path.read_text(encoding='utf-8'))['pid']))
-        except (OSError, ValueError, KeyError, TypeError):
-            continue
     deadline = time.monotonic() + 5  # a server told to stop by the last teardown can still be exiting
     while True:
-        said = {pid: ' '.join(command_line(pid)) for pid in pids if alive(pid)}
-        left = {pid: words for pid, words in said.items() if any(one in words for one in SURVIVORS)}
+        left = _left(folder)
         if not left or time.monotonic() >= deadline:
             break
         time.sleep(0.1)

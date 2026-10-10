@@ -20,6 +20,7 @@ from typing import Any, TypeVar, cast
 
 from metaform import prompt_files, settings
 from metaform.data import (
+    CONDITIONS,
     PLACE_KINDS,
     Item,
     Node,
@@ -683,22 +684,22 @@ KNOWLEDGE_NOUNS = (
     _noun('workflow', 'create: the workflow within that module.'),
     _noun('prompt', 'create: the prompt the layer is made from.'),
     _noun('model', 'create: the model that makes it.'),
-    _noun('role', 'create: the role of its producer; add-element: DE, SE, NE, CQU or AUE, the role of the element.'),
+    _noun('role', 'create: the role of its producer; add-element: CQU, DE, SE or NE, the role of the element.'),
     _noun('blinded', 'create: whether the producer saw only the map.', 'bool'),
     _noun('address', 'add-element: the element\'s dotted namespace address. An element cannot be moved: edit does '
                      'not apply it.'),
     _noun('name', 'add-element: Canonical Name (Project official terminology) or Informal Name of the element.'),
-    _noun('name_length', 'add-element: how many trailing segments form the element\'s short name.', 'int'),
+    _noun('name_length', 'add-element: name_length, as defined in the intake procedure.', 'int'),
     _noun('refs', 'add-property and add-item: a JSON list of [key, value] pairs, in order; add-element: the element\'s '
                   'refs, written to the sources layer.', 'json', REFS_SCHEMA),
     _noun('extra', 'add-property and add-item: a JSON object of further fields.', 'json', {'type': 'object'}),
     _noun('receiver', 'add-join: the element that holds the purpose; edit: another receiver, which moves the join.'),
     _noun('elements', 'add-join and edit: the elements that serve the purpose, a JSON list of addresses.', 'json',
           {'type': 'array', 'items': {'type': 'string'}}),
-    _noun('purpose', 'add-join: the Operative Purpose.'),
-    _noun('ef', 'add-join: the Encounter Function.'),
-    _noun('ifd', 'add-join: IFD, Information Flow Direction, the primary flow of information. sends: OP to EF. '
-                 'receives: EF to OP. both: equal need.', schema={'type': 'string', 'enum': ['sends', 'receives', 'both']}),
+    _noun('purpose', 'add-join: the receiver\'s purpose, the OP, as defined in the intake procedure.'),
+    _noun('ef', 'add-join: the encounter function, the EF, as defined in the intake procedure.'),
+    _noun('ifd', 'add-join: sends, receives or both, the information flow direction as defined in the intake procedure.',
+          schema={'type': 'string', 'enum': ['sends', 'receives', 'both']}),
     _noun('type', 'add-join: the join type, purpose by default.'),
     _noun('join', 'add-plan: the join id.'),
     _noun('element', 'add-property and add-plan: the element, by address or id, or as a node such as type:code.'),
@@ -721,14 +722,13 @@ KNOWLEDGE_NOUNS = (
 REFINE_WORDS = {
     'address': "An element's address cannot change: given for an element, it is not applied.",
     'name': "The project's own name for the element or the join's functionality.",
-    'name_length': "How many trailing segments form the element's short name.",
-    'role': 'DE, SE, NE, CQU or AUE.',
+    'name_length': 'name_length, as defined in the intake procedure.',
+    'role': 'CQU, DE, SE or NE.',
     'receiver': 'Another receiver, which moves the join.',
     'elements': 'The elements the join holds, a JSON list of addresses; they replace the ones it held.',
-    'purpose': 'The Operative Purpose.',
-    'ef': 'The Encounter Function.',
-    'ifd': 'IFD, Information Flow Direction, the primary flow of information. sends: OP to EF. receives: EF to OP. '
-           'both: equal need.',
+    'purpose': "The receiver's purpose, the OP, as defined in the intake procedure.",
+    'ef': 'The encounter function, the EF, as defined in the intake procedure.',
+    'ifd': 'sends, receives or both, the information flow direction as defined in the intake procedure.',
     'type': 'The join type.',
     'element': 'The element, by address or id.',
     'value': 'The value, as JSON.',
@@ -1125,7 +1125,7 @@ WORK_NOUNS = (
                        'existing; built is the normal state and marks nothing. broken is a built part that does not '
                        'do its job. A task on a part that exists and works carries none. The intake and the person '
                        'set it; an agent at work leaves it alone. condition=none on edit clears it.',
-          schema={'type': 'string', 'enum': ['missing', 'unbuilt', 'under-construction', 'built', 'broken', 'trouble', 'ok', 'unverified', 'none']}),
+          schema={'type': 'string', 'enum': [*CONDITIONS, 'none']}),
     _noun('kind', 'add, edit, and list as a filter: what sort of work the ticket is, never the state of the part: '
                   'broken, a fix for a part that does not do its job; flawed, a part that works but is not right; '
                   'enhancement, a part that works and could be better; or none for a plain task. kind=none on edit '
@@ -1159,8 +1159,7 @@ WORK_NOUNS = (
                     'that many glyphs in turn, To do first and then Backlog.', 'int'),
     _noun('id', 'The work record id, for edit, take, plan, step, move and done. Given with no op, it reads that one '
                 'ticket with the where read of its node and of each node it links: their refs, open work and open '
-                'questions, knowledge layers and modules\' memories. Review the knowledge layers first; other '
-                'agents\' memories are attached there, and record your own memories at the nodes you work on. '
+                'questions, knowledge layers and modules\' memories. '
                 'past_work lists completed tickets with their age; read one with id= to see its log.'),
     _noun('resolution', 'done: how it was resolved, kept beside the record.'),
     _noun('open', 'list: true, the default, for records not done; false for those done. A listed record leaves out '
@@ -1259,7 +1258,7 @@ MODULE = Module(
                     _noun('address', 'The address of the element to create or reuse for the join.'),
                     _noun('name', 'The canonical name of the new element; an existing element keeps its name.'),
                     _noun('name_length', 'How many trailing address segments form its short name.', 'int'),
-                    _noun('role', 'The intake classification of the new element: DE, SE, NE, CQU or AUE.'),
+                    _noun('role', 'The intake classification of the new element: CQU, DE, SE or NE.'),
                     _noun('reason', 'Why the join needs an element.')),
              details='The join records its element by address and keeps its receiver and held elements. The '
                      'associated element receives and provides ordinary joins. An intake join gains a version '

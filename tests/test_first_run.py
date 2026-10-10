@@ -65,7 +65,7 @@ def test_a_first_run_in_an_unregistered_folder_goes_from_the_question_to_a_recor
         assert again['project'] == 'my-project' and 'nothing was changed' in again['said']
         # step 3c: the subagent handed only the procedure finds the schema from it, and the intake tools work
         procedure = (await client.read_resource('metaform://intake/procedure')).contents[0].text
-        assert procedure.rstrip().endswith(prompt_files.required(INTAKE, 'schema_pointer'))
+        assert 'metaform://intake/schema' in procedure  # named by the procedure, or by the line served after it
         started = await call(client, 'intake', 'start')
         assert not started.is_error, text(started)
 

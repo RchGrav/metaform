@@ -5,11 +5,8 @@
 <!-- intake's line in the instructions agents read while intake is on, MCP-029; its status hook adds no_intake or
      unfinished after it, MCP-009. -->
 <instructions>intake is active.
-When assigned an intake, read its instructions at resource metaform://intake/procedure,
-with metaform intake prompt, or the intake tool's prompt command, and follow the procedure it serves.
-The forms it records are at resource metaform://intake/schema. The recording commands are
-start, then element and join as reasoned, show to read back, and finish; their arguments are in
-the intake tool's schema, or read metaform help intake.</instructions>
+When assigned an intake, follow the procedure at resource metaform://intake/procedure, or the intake tool's
+prompt command; the forms it records are at resource metaform://intake/schema.</instructions>
 <!-- The onboarding, MCP-009: added to the instructions while the folder has no intake, registered or not, since the
      instructions are sent once at connect and are the only place a first run learns what to do. Approved text, used as
      written. <register/> is filled with register_step while the folder is not registered yet, and is empty once it
@@ -47,13 +44,12 @@ request right after.
      allowed values listed here against what the tools accept. -->
 <fields>
   <element>
-    <namespace_address>The element's dotted address, formed as the intake procedure says, such as code.timer.kitchen, or core for the core element.</namespace_address>
-    <role>AUE, CQU, DE, SE or NE, as defined in the intake procedure. The core element has none.</role>
+    <namespace_address>The element's dotted address, formed as the intake procedure says, such as code.timer.kitchen.</namespace_address>
+    <role>CQU, DE, SE or NE, as defined in the intake procedure.</role>
     <name_length>How many of the address's last segments form the element's name, a whole number from 1, as defined in the intake procedure.</name_length>
     <name>The element's name as the project calls it.</name>
     <refs>Where the element is found: a list of references, each a key and a value, such as path and src/timer.py.</refs>
-    <within>The address of the element that holds this one, or core.</within>
-    <condition>missing, trouble, ok or unverified, as the intake procedure defines them; recording it again replaces the last.</condition>
+    <condition>MISS, BKN or OK, as the intake procedure marks a part, or broken, missing, trouble or ok: MISS and missing are stored as missing, not built yet; BKN and broken as trouble, which needs a note saying what is wrong and what corrects it; OK as ok. Recording it again replaces the last.</condition>
     <note>Free text kept with the element; an exclusion is a note that starts with "exclude:".</note>
   </element>
   <join>
@@ -64,7 +60,7 @@ request right after.
     <ef>The encounter function, the EF: what the providing elements do for the receiver, in active voice.</ef>
     <ifd>sends, receives or both: the information flow direction, as defined in the intake procedure.</ifd>
     <refs>Where the join is found: a list of references, each a key and a value.</refs>
-    <condition>missing, trouble, ok or unverified, as the intake procedure defines them; recording it again replaces the last.</condition>
+    <condition>MISS, BKN or OK, as the intake procedure marks a part, or broken, missing, trouble or ok: MISS and missing are stored as missing, not built yet; BKN and broken as trouble, which needs a note saying what is wrong and what corrects it; OK as ok. Recording it again replaces the last.</condition>
     <note>Free text kept with the join; an exclusion is a note that starts with "exclude:".</note>
   </join>
 </fields>

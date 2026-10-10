@@ -810,7 +810,7 @@ def test_the_markdown_document_is_a_command_and_never_a_tool(run, described, hom
 
 @pytest.fixture(params=['timer-first', 'alarm-first'])
 def recorded(run, tmp_path, monkeypatch, request):
-    """An intake in the metaform's shape: an AUE, a CQU receiving from the DE, the DE receiving from an alarm and from a
+    """An intake in the metaform's shape: a CQU receiving from the DE, the DE receiving from an alarm and from a
     display with its driver, the cook receiving from the alarm too; refs in the sources layer; a finding on the alarm
     and one on the display's join."""
     folder = tmp_path / 'proj'
@@ -820,7 +820,6 @@ def recorded(run, tmp_path, monkeypatch, request):
     with store.atomic():
         layer = store.layer('intake-1', 'intake', 'The functional map.', kind='intake', mutable=False,
                             hideable=False, provenance={'module': 'intake'}, ready=True)
-        store.add_element(layer.name, 'code.appliance.kitchen', name_length=2, role='AUE', name='Kitchen timer app')
         store.add_element(layer.name, 'stakeholder.cook.home', name_length=2, role='CQU')
         store.add_element(layer.name, 'code.timer.kitchen', name_length=2, role='DE', name='kitchen timer')
         store.add_element(layer.name, 'code.alarm.audible', name_length=2, role='SE')
@@ -862,9 +861,7 @@ def test_the_xml_document_holds_every_field_the_intake_recorded_in_the_finish_sh
     metaform = store.active_base()
     assert document.tag == 'metaform' and document.get('id') == metaform.id
     assert document.get('name') == metaform.name
-    aue = document.find('element')
-    assert aue.get('namespace_address') == 'code.appliance.kitchen' and aue.get('role') == 'AUE'
-    cook = document.findall('element')[1]
+    cook = document.find('element')
     assert cook.get('namespace_address') == 'stakeholder.cook.home' and cook.get('role') == 'CQU'
     cook_joins = {join.find('element').get('namespace_address'): join for join in cook.findall('join')}
     assert set(cook_joins) == {'code.timer.kitchen', 'code.alarm.audible'}

@@ -2,7 +2,7 @@
 
 One writer for the command `metaform map xml` and for the web GUI's export menu, VIEW-024, so the two give the same
 document. It reads through `roots`, `where` and `graph`, STORE-025, so select, mask and hiding hold. The document is
-for reviewing what was recorded: the metaform, the AUE and each CQU beside it, as the schema has them, each join under its receiver with its type,
+for reviewing what was recorded: the metaform and each CQU in it, as the schema has them, each join under its receiver with its type,
 ifd, purpose and ef, and each element under the join that holds it with its namespace_address, name_length, name and
 role. An element's first occurrence holds its refs, the items the layers in context hold at it, its open work and the
 joins it receives; a later occurrence carries only its four fields. What the trace never reaches is kept under
@@ -73,7 +73,7 @@ class _Writer:
 
 def xml(store: Store, address: str | None = None, *, selection: Sequence[str] | None = None,
         raw: bool = False) -> str:
-    """The whole map from its AUE, or with an address that element and all it receives, as an XML document."""
+    """The whole map from its CQUs, or with an address that element and all it receives, as an XML document."""
     reading: dict[str, Any] = {'selection': selection, 'raw': raw}
     metaform = store.active_base()
     root = ET.Element('metaform', id=metaform.id if metaform else '', name=metaform.name if metaform else '',
@@ -85,11 +85,8 @@ def xml(store: Store, address: str | None = None, *, selection: Sequence[str] | 
             raise Stop(f'No element at {address}.', 'metaform map roots')
     else:
         entry = sorted(store.roots(limit=0, **reading).elements, key=lambda element: element.address)
-        aues = [element.address for element in entry if element.role == 'AUE']
-        for aue in aues:
-            writer.element(root, aue)
         for cqu in (element.address for element in entry if element.role == 'CQU'):
-            writer.element(root, cqu)  # a CQU is defined at downstream.cqu, beside the AUE
+            writer.element(root, cqu)  # the map comes off each CQU's root join to the DE
         graph = store.graph(limit=0, **reading)
         unplaced = ET.Element('unplaced')
         for found in graph.elements:

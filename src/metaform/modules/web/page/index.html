@@ -132,7 +132,7 @@
   <div class="body"></div>
 </div>
 <div id="board" hidden role="dialog" aria-label="Board">
-  <div class="bar"><span class="title">Board</span><input class="search" type="search" placeholder="Find a card" aria-label="Find a card"><div class="kinds" role="group" aria-label="Kinds shown"></div><button class="start-all" title="Choose an agent and start the waiting work, one agent per glyph">Start all</button><button class="add" title="Write a new ticket">Add card</button><button class="close" title="Close">Close</button></div>
+  <div class="bar"><span class="title">Board</span><input class="search" type="search" placeholder="Find a card" aria-label="Find a card"><div class="kinds" role="group" aria-label="Kinds shown"></div><span class="distribute" title="Give the open tickets the glyphs of this many agents, in turn: tickets with one glyph are one agent's"><input type="number" min="1" max="17" value="2" aria-label="Agents to distribute the work over"><button>Distribute</button></span><button class="start-all" title="Choose an agent and start the waiting work, one agent per glyph">Start all</button><button class="add" title="Write a new ticket">Add card</button><button class="close" title="Close">Close</button></div>
   <p class="guidance">Move cards up to prioritize work. Agents take their next ticket from To do before Backlog, higher cards first.</p>
   <div class="columns"></div>
 </div>
@@ -166,7 +166,9 @@
 <div id="dock" class="resting">
   <div id="dockTab" role="button" tabindex="0" aria-label="Open the chat with an agent"><span>Chat</span></div>
   <div id="helpdesk" hidden role="dialog" aria-label="Support chat">
-    <div class="head"><span class="avatar" aria-hidden="true">M</span><div class="who"><b>Metaform Support</b><small><span class="dot"></span> <span class="with">Online</span></small></div><button class="big" title="Make the chat large, and back" aria-label="Make the chat large">&#10530;</button><button class="min" title="Put the chat away" aria-label="Put the chat away">&#8211;</button></div>
+    <div class="head"><span class="avatar" aria-hidden="true">M</span><div class="who"><b>Metaform Support</b><small><span class="dot"></span> <span class="with">Online</span></small><small class="status" role="status">Online</small></div><button class="big" title="Make the chat large, and back" aria-label="Make the chat large">&#10530;</button><button class="min" title="Put the chat away" aria-label="Put the chat away">&#8211;</button></div>
+    <div class="tabs" role="tablist" aria-label="Open chats" hidden></div>
+    <div class="proposals" aria-label="The sentinel's proposals" hidden></div>
     <div class="log" aria-live="polite"></div>
     <div class="files"></div>
     <form class="compose">
@@ -174,7 +176,7 @@
       <textarea class="say" rows="1" placeholder="Type a message, or /help&#8230;" aria-label="Your message"></textarea>
       <button class="send" type="submit">Send</button>
     </form>
-    <div class="calls"><button class="call" type="button">Call</button></div>
+    <div class="calls"><button class="interrupt" type="button" disabled title="Interrupt the current turn and keep the conversation available">Interrupt</button><button class="call" type="button">Call</button></div>
   </div>
 </div>
 <div id="qa" hidden role="dialog" aria-label="A question, read in full">
@@ -230,8 +232,9 @@
     <div class="eyebrow">What it is doing</div>
     <ol class="activity"></ol>
     <div class="asked"></div>
+    <p class="state" role="status" hidden></p>
     <textarea class="say" placeholder="A message to the agent" aria-label="A message to the agent"></textarea>
-    <div class="acts"><button class="send" title="Send it to the agent">Send</button><button class="chat" title="Talk with this agent in the chat at the lower right; an ended one gets a new agent that reads its thread first">Chat</button><button class="stop" title="Stop the agent, and end its session">Stop</button></div>
+    <div class="acts"><button class="send" title="Send it to the agent">Send</button><button class="chat" title="Talk with this agent in the chat at the lower right; an ended one gets a new agent that reads its thread first">Chat</button><button class="interrupt" disabled title="Interrupt the current turn and keep the conversation available">Interrupt</button><button class="stop" title="Stop the agent, and end its session">Stop</button></div>
   </div>
 </div>
 <div id="draw" aria-hidden="true"></div>

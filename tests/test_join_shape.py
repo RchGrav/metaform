@@ -17,8 +17,7 @@ FIELDS = {
     'element': VERSION | {'address', 'name_length', 'name', 'role'},
     'join': VERSION | {'type', 'receiver', 'purpose', 'ef', 'ifd', 'element', 'held'},  # held: its elements, in order
 }
-# within: the element that holds this one, up to the core node, BASE-039 amendment 2026-10-08
-ELEMENT = {'namespace_address', 'name_length', 'name', 'role', 'within'}
+ELEMENT = {'namespace_address', 'name_length', 'name', 'role'}
 JOIN = {'receiver', 'elements', 'purpose', 'ef', 'ifd'}
 TICKET = {'condition', 'note'}  # a ticket written beside what was recorded, apart from the map
 

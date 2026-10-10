@@ -238,7 +238,7 @@ It covers the base database, the per-project store, the correction stack, layers
     address     TEXT NOT NULL REFERENCES types(address),
     name_length INTEGER,                                -- MAP-012: trailing segments read backward as its short name
     name        TEXT,                                   -- the canonical name the project uses for it
-    role        TEXT,                                   -- MAP-017: AUE, CQU, DE, SE or NE, stored as given
+    role        TEXT,                                   -- MAP-017: CQU, DE, SE or NE, stored as given
     op          TEXT NOT NULL DEFAULT 'add' CHECK(op IN ('add','change','remove')),  -- STORE-017
     reason      TEXT,
     evidence    TEXT

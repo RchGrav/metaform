@@ -809,9 +809,44 @@ function paceOf(node) {
   const share = done.planned ? Math.min(1, done.filed / done.planned) : 1 - 1 / (1 + FLASH.step * done.filed);
   return FLASH.slow + (FLASH.fast - FLASH.slow) * share;
 }
+/* The part of the map each agent's work is using, VIEW-045: the node of the ticket it took, until work claims reserve
+ * wider areas, LAYER-029. Checked beside the agent it shows in white; unchecked it is hidden, so the rest of the map
+ * can be reviewed without it. `parts` holds node id → true when shown, false when hidden. */
+const INUSE = {off: new Set(), parts: new Map(), preview: new Set()};
+/* The element ids of addresses, as the map holds them. */
+function idsAt(addresses) {
+  const wanted = new Set(addresses || []);
+  return [...S.elements.values()].filter(entry => wanted.has(entry.element.address)).map(entry => entry.element.id);
+}
+function paintInUse() {
+  const parts = new Map();
+  for (const one of D.sessions) {
+    const ticket = one.state === 'running' ? ticketOf(one.work_id) : null;
+    if (!ticket || !ticket.taken || ticket.done) continue;
+    const shown = !INUSE.off.has(one.work_id);
+    // a ticket inside an active work claim is using all the claim reserves, LAYER-029; else the node it is on
+    const held = (D.claims || []).find(claim => claim.state === 'active' && claim.work.includes(one.work_id));
+    for (const node of held ? [ticketNode(ticket), ...idsAt(held.nodes)] : [ticketNode(ticket)]) {
+      parts.set(node, parts.get(node) === true || shown);
+    }
+  }
+  for (const node of INUSE.preview) parts.set(node, true);  // a proposal's reach, shown while it is reviewed
+  const same = parts.size === INUSE.parts.size && [...parts].every(([id, shown]) => INUSE.parts.get(id) === shown);
+  INUSE.parts = parts;
+  if (G && !same) G.nodeColor(G.nodeColor()).nodeVisibility(G.nodeVisibility()).linkVisibility(G.linkVisibility());
+  for (const [id, node] of M.base?.nodes || []) {
+    node.g.classList.toggle('inuse', parts.get(id) === true);
+    node.g.classList.toggle('reserved', parts.get(id) === false);
+  }
+  for (const edge of M.base?.edges || []) {
+    edge.path?.classList.toggle('reserved', parts.get(edge.join.receiver) === false || parts.get(edge.provider) === false);
+  }
+}
+const shownNode = node => INUSE.parts.get(typeof node === 'object' ? node.id : node) !== false;
 const lightOf = node => LIGHTS.find(([condition]) => has(node, condition));
 const has = (node, condition) => (node.work || []).includes(condition);
 function colorOf(node) {
+  if (INUSE.parts.get(node.id) === true) return css('--in-use');  // the part an agent's work is using, VIEW-045
   if (node.t === 'el') return node.role === 'CQU' ? css('--signal') : node.role === 'DE' ? css('--de') : layerColor(node.layer);
   if (node.t === 'purpose') return css('--text');
   return layerColor(node.layer);
@@ -1340,7 +1375,8 @@ function text3d() {
     if (!state) continue;
     shown.add(node.id);
     if (!object?.userData.written) continue;
-    const working = has(node, 'under-construction'), climbed = () => TEXT.first + (TEXT.top - TEXT.first) * Math.pow(state.level, 1.4);
+    // worked on: under construction, or a ticket on it taken and not done, as its steps are filed, VIEW-035
+    const working = has(node, 'under-construction') || Boolean(S.progress?.has(node.id)), climbed = () => TEXT.first + (TEXT.top - TEXT.first) * Math.pow(state.level, 1.4);
     if (!unbuilt(node) && state.ending === null) state.ending = 0;   // it is built: the ending starts from where it is
     if (state.ending === null) {
       // Work with no phases to report climbs by itself, slowly, to a point short of the fastest; each step filed
@@ -1465,6 +1501,8 @@ function create3D() {
     .nodeVal(nodeSize)
     .nodeThreeObject(node => asText(node) ? written(node) : isGlass(node) ? bead(node) : false)
     .nodeColor(node => dimmed(node) ? dim(colorOf(node)) : colorOf(node))
+    .nodeVisibility(shownNode)
+    .linkVisibility(link => shownNode(link.source) && shownNode(link.target))
     .nodeOpacity(0.95)
     .nodeResolution(16)
     .nodeLabel(() => '')  // the page shows its own tooltip, anchored above the node, not under the pointer
@@ -1529,7 +1567,7 @@ function picked(raycaster, hits) {
   const unit = 2 * depth / (camera.projectionMatrix.elements[5] * G.renderer().getSize(size).y);  // world units a pixel spans there
   const cell = T.cell.value.clone().multiplyScalar(T.zoom.value / G.renderer().getPixelRatio());  // a character, in pixels
   const radius = Math.cbrt(nodeSize(node)) * 3;
-  const reach = this.userData.written ? Math.max(radius, 2.5 * cell.x * unit) + cell.y / 2 * unit
+  const reach = this.userData.written ? Math.max(radius, 2.5 * cell.x * unit)
     : radius + PICK.edge * unit;
   if (!raycaster.ray.intersectSphere(ball.set(center, reach), at)) return;
   const distance = raycaster.ray.origin.distanceTo(at);
@@ -1920,6 +1958,7 @@ async function build2D(keep = true) {
   if (MEM.key) { svg.remove(); svg.style.visibility = ''; await drawMemory2d(); return; }
   if (inside) { svg.remove(); svg.style.visibility = ''; await drawInside(); return; }
   showBase();
+  paintInUse();
   if (was) { setCam(was.cam, false); M.zoom = was.zoom; }
   if (before) settle2D(before, nodes, svg);
   if (S.selected) focus2D(S.selected); else applyMode();
@@ -3102,11 +3141,11 @@ async function takeReview(workId, button) {
 }
 /* The chat dock: a thin sliver at the lower right that lifts when the pointer comes near and opens, on a click, into a
  * customer-service chat. Call reaches the person's system agent, the +1 outside the agent limit; /list and /chat <n>
- * talk with an agent at work instead. Bubbles alternate: the person's on the right, the agent's on the left. A file
+ * talk with an agent at work instead, and each open chat is a tab, VIEW-045. Bubbles alternate: the person's on the right, the agent's on the left. A file
  * attached with the paperclip is saved in the project and the agent is told where. Live monitoring stays in the agent
  * window; this is only the conversation. */
 const DOCK = {target: null, session: null, label: '', since: 0, notes: [], list: [], files: [], mine: null, waiting: '',
-  calling: null};
+  calling: null, chats: []};  // chats: every open conversation, one a tab; the fields above are the one on view
 const STANDBY = 'Please stand by while we contact an agent for you.';
 function dockState(state) {
   $('#dock').className = state;
@@ -3117,28 +3156,102 @@ function dockNote(text) { DOCK.notes.push({at: Date.now(), text}); drawHelpdesk(
  * ticket never swaps the conversation; with none known yet, the chat waits for the ticket's running session and then
  * stays with that one. */
 function openHelpdesk(workId, label = 'an agent', waiting = 'Waiting for the next available agent.', session = null) {
-  Object.assign(DOCK, {target: workId, session, label, waiting, since: Date.now()});
-  MERGE.chat = workId;
+  let chat = DOCK.chats.find(one => one.target === workId);
+  if (chat) Object.assign(chat, {label, waiting, ...(session ? {session} : {})});
+  else DOCK.chats.push(chat = {target: workId, session, label, waiting, mine: DOCK.mine === workId, since: Date.now()});
+  showChat(chat);
   if (!$('#dock').className.startsWith('open')) dockState('open');
+}
+/* Several chats are open at once, a sentinel for each issue raised and anyone talked with, each a tab; the one on
+ * view is the dock's target, and switching keeps each conversation and its session. */
+function showChat(chat) {
+  Object.assign(DOCK, {target: chat.target, session: chat.session, label: chat.label, waiting: chat.waiting,
+    since: chat.since});
+  MERGE.chat = chat.target;
   $('#helpdesk .call').textContent = 'Dismiss';
+  drawTabs();
   drawHelpdesk();
 }
+/* A sentinel's proposals in its chat, VIEW-045: each with its grounds, its disruption and how much of the map its
+ * reach reserves, its benefit and trade-off, a link to its own explanation when it made one, Show on the map, which
+ * paints its reach white, and Choose, which tells the sentinel. */
+function drawProposals() {
+  const box = $('#helpdesk .proposals'), given = (D.proposals || {})[DOCK.target] || [];
+  box.hidden = !given.length;
+  const total = S.elements.size;
+  fill(box, given.map((one, index) => {
+    const reach = idsAt(one.reach), on = reach.length && reach.every(id => INUSE.preview.has(id));
+    const link = /^https?:\/\//.test(one.view || '') ? h('a', {href: one.view, target: '_blank', rel: 'noopener noreferrer'},
+      'Its explanation') : null;
+    return h('div', {class: 'proposal'},
+      h('b', {}, `${index + 1}. ${one.title}`),
+      one.grounds ? h('p', {}, h('small', {}, 'Grounds '), one.grounds) : null,
+      h('p', {class: 'disruption'}, h('small', {}, 'Disruption '), `Reserves ${reach.length} of ${total} parts`,
+        one.disruption ? ` · ${one.disruption}` : ''),
+      one.benefit ? h('p', {}, h('small', {}, 'Benefit '), one.benefit) : null,
+      one.tradeoff ? h('p', {}, h('small', {}, 'Trade-off '), one.tradeoff) : null,
+      h('div', {class: 'acts'}, link,
+        h('button', {type: 'button', class: on ? 'reach on' : 'reach', disabled: !reach.length, onclick: () => {
+          INUSE.preview = new Set(on ? [] : reach);
+          paintInUse(); drawProposals();
+        }}, on ? 'Hide from the map' : 'Show on the map'),
+        h('button', {type: 'button', class: 'choose', onclick: async () => {
+          if (await wrote('/api/dispatch-message', {work_id: DOCK.target, text: `I choose proposal ${index + 1}: ${one.title}.`})) {
+            INUSE.preview = new Set(); paintInUse(); drawHelpdesk();
+          }
+        }}, 'Choose')));
+  }));
+}
+function drawTabs() {
+  const tabs = $('#helpdesk .tabs');
+  tabs.hidden = DOCK.chats.length < 2;
+  fill(tabs, DOCK.chats.map(chat => h('button', {class: chat.target === DOCK.target ? 'tab on' : 'tab', role: 'tab',
+    'aria-selected': String(chat.target === DOCK.target), title: chat.label, onclick: () => showChat(chat)},
+    chat.label.replace(/^the /, ''))));
+}
+function chatActivity(session) {
+  if (!session) return {label: 'Connecting', busy: false, interruptible: false};
+  if (session.state !== 'running') return {label: 'Ended', busy: false, interruptible: false};
+  const busy = session.activity === 'working' || session.activity === 'waiting';
+  const label = session.interrupting ? 'Interrupting'
+    : ({working: 'Busy', waiting: 'Waiting for permission', idle: 'Ready'}[session.activity] || 'Status unavailable');
+  const note = session.interrupting ? 'Interrupting the current task.'
+    : session.activity === 'working' ? 'Agent is working on a task. A message is read when its current step ends; Interrupt stops the step.'
+    : session.activity === 'waiting' ? 'Waiting for permission. Prompts are answered as the agent prompts setting says.' : '';
+  return {label, note, busy, interruptible: busy && !session.interrupting};
+}
+async function interruptChat(work, session, button) {
+  button.disabled = true;
+  const result = await wrote('/api/dispatch-interrupt', {work_id: work, session});
+  if (result) toast(result.requested ? 'Interruption requested.' : 'The agent has no active turn.');
+  await renderAgents();
+  if (DOCK.target) await drawHelpdesk();
+}
 async function drawHelpdesk(trouble) {
-  let lines = [];
-  const target = DOCK.target;
+  let lines = [], session = null;
+  const target = DOCK.target, openedSession = DOCK.session;
   if (target) {
     try {
       const found = await read('dispatch-sessions', {id: target});
-      if (DOCK.target !== target) return;  // the chat moved on while this was read
+      if (DOCK.target !== target || DOCK.session !== openedSession) return;  // the chat moved on while this was read
       const sessions = found.sessions || [];
-      const session = DOCK.session ? sessions.find(one => one.session_id === DOCK.session)
+      session = DOCK.session ? sessions.find(one => one.session_id === DOCK.session)
         : sessions.filter(one => one.state === 'running').at(-1);
-      if (session) DOCK.session = session.session_id;
+      if (session) {
+        DOCK.session = session.session_id;
+        const chat = DOCK.chats.find(one => one.target === target);
+        if (chat) chat.session = session.session_id;
+      }
       lines = session ? (found.lines || []).filter(line => line.session_id === session.session_id) : [];
     } catch (error) { trouble = error.message; }
   }
+  drawProposals();
   const said = lines.filter(line => line.kind === 'agent_message_chunk' || line.kind === 'person');
-  const waiting = DOCK.target && !said.some(line => line.kind !== 'person');
+  const activity = chatActivity(session);
+  const waiting = DOCK.target && !session;
+  const busy = DOCK.target && activity.busy;
+  $('#helpdesk .status').textContent = DOCK.target ? activity.label : 'Online';
+  $('#helpdesk .interrupt').disabled = !DOCK.target || !activity.interruptible;
   $('#helpdesk .with').textContent = DOCK.target ? `With ${DOCK.label}` : 'Online';
   const intro = 'You are connected to Metaform Support. Press Call to reach an agent, or type /help.';
   const system = (key, text) => ({key, text, make: () => h('div', {class: 'system'}, text)});
@@ -3148,7 +3261,7 @@ async function drawHelpdesk(trouble) {
     ...DOCK.notes.filter(note => note.at >= DOCK.since - 1).map((note, index) => system(`note:${note.at}:${index}`, note.text)),
     ...said.map(line => ({key: `${line.session_id}:${line.name ?? line.seq}`, text: line.text,
       make: () => h('div', {class: line.kind === 'person' ? 'bubble mine' : 'bubble theirs'}, line.text)})),
-    ...(waiting ? [{key: 'waiting', text: DOCK.waiting, make: () => h('div', {class: 'system waiting'}, DOCK.waiting,
+    ...(waiting || busy ? [{key: 'waiting', text: waiting ? DOCK.waiting : activity.note || activity.label, make: () => h('div', {class: 'system waiting'}, waiting ? DOCK.waiting : activity.note || activity.label,
       h('span', {class: 'typing', 'aria-hidden': 'true'}, h('i'), h('i'), h('i')))}] : []),
     ...(trouble ? [system('trouble', trouble)] : [])]);
   if (changed) log.scrollTop = log.scrollHeight;
@@ -3211,12 +3324,18 @@ async function dismiss() {
     $('#helpdesk .call').textContent = 'Call';
     return dockNote('The call was cancelled.');
   }
-  if (DOCK.target && DOCK.target === DOCK.mine) await wrote('/api/dispatch-stop', {work_id: DOCK.mine});
-  Object.assign(DOCK, {target: null, session: null, label: '', mine: DOCK.target === DOCK.mine ? null : DOCK.mine});
+  const chat = DOCK.chats.find(one => one.target === DOCK.target);
+  if (chat && (chat.mine || chat.target === DOCK.mine)) await wrote('/api/dispatch-stop', {work_id: chat.target});
+  if (DOCK.target === DOCK.mine) DOCK.mine = null;
+  DOCK.chats = DOCK.chats.filter(one => one !== chat);
+  dockNote('The agent was dismissed.');
+  if (DOCK.chats.length) return showChat(DOCK.chats.at(-1));  // the next open chat comes on view
+  Object.assign(DOCK, {target: null, session: null, label: ''});
   MERGE.chat = null;
   $('#helpdesk .call').textContent = 'Call';
-  dockNote('The agent was dismissed.');
+  drawTabs();
 }
+$('#helpdesk .interrupt').onclick = () => interruptChat(DOCK.target, DOCK.session, $('#helpdesk .interrupt'));
 $('#helpdesk .call').onclick = () => (DOCK.target || DOCK.calling ? dismiss() : callSystem());
 $('#helpdesk .compose').onsubmit = async event => {
   event.preventDefault();
@@ -3536,6 +3655,7 @@ function card(ticket, place, total) {
           event.stopPropagation(); move(position);
         }}, text))),
     ticketControls(ticket),
+    chatButton({id: ticket.id}, ticketPart(ticket)),  // anything can be talked about, a done ticket too, VIEW-042
     waiting(ticket) ? h('button', {class: 'start', title: 'Start an agent on this ticket', onclick: event => {
       event.stopPropagation(); startWindow(`Start an agent · ${ticketPart(ticket)}`, [ticket]); }}, 'Start agent') : null);
   if (ticket.map?.hold) box.classList.add('on-hold');
@@ -3585,6 +3705,12 @@ $('#board .start-all').onclick = async () => {
   const tickets = B.tickets.filter(waiting).sort((one, two) =>
     Number(Boolean(one.held)) - Number(Boolean(two.held)) || (one.position ?? 1e9) - (two.position ?? 1e9));
   startWindow('Start all agents', tickets, true);
+};
+// Distribute, VIEW-040: the open tickets not taken get the first N agents' glyphs in turn, To do first, then Backlog.
+$('#board .distribute button').onclick = async () => {
+  const agents = Number($('#board .distribute input').value);
+  if (!Number.isInteger(agents) || agents < 1) return toast('Work is distributed over a whole number of agents.');
+  if (await wrote('/api/distribute', {agents})) await renderBoard();
 };
 $('#board .search').oninput = () => { for (const box of $('#board').querySelectorAll('.card')) shownOnBoard(box); };
 $('#board .add').onclick = () => {
@@ -3812,8 +3938,14 @@ async function renderAgents() {
     try { found = await read('dispatch-sessions', {thread: 'false'}); }  // the threads are read for the open window only
     catch (error) { toast(error.message); found = {sessions: D.sessions}; }  // a failed read keeps the agents drawn
   }
+  let claimed = {claims: D.claims || [], proposals: D.proposals || {}};
+  if (!noMetaform()) {
+    try { claimed = await read('dispatch-claims'); } catch (error) { /* drawn as last read */ }
+  }
   if (S.project !== project || S.base !== metaform) return;  // the answer for a project the person has left
   D.sessions = found.sessions || [];
+  D.claims = claimed.claims || [];
+  D.proposals = claimed.proposals || {};
   if (D.chat) {
     const pending = D.chat;
     const session = D.sessions.find(one => one.work_id === pending.work && one.state === 'running'
@@ -3826,7 +3958,11 @@ async function renderAgents() {
   // an entry drawn the same stays in place, so the one under the pointer is not swapped while it is clicked
   keyedFill($('#agents .list'), working.map(one => ({key: one.session_id,
     text: [one.work_id, one.agent, glyphOf(one.work_id), ticketPart(ticketOf(one.work_id))].join('\n'),
-    make: () => h('div', {class: 'agent-row'}, h('button', {
+    make: () => h('div', {class: 'agent-row'}, h('input', {type: 'checkbox', class: 'inuse',
+      checked: !INUSE.off.has(one.work_id), 'aria-label': `The part of the map ${agentName(one.agent)} is using`,
+      title: 'Checked: the part of the map this work is using shows in white. Unchecked: it is hidden.',
+      onchange: event => { INUSE.off[event.target.checked ? 'delete' : 'add'](one.work_id);
+        paintInUse(); }}), h('button', {
       class: 'agent working', 'data-id': one.work_id, 'data-session': one.session_id,
       title: `${agentName(one.agent)} on work ${one.work_id}: working`,
       onclick: () => agentAt(one.work_id, one.session_id)},
@@ -3834,6 +3970,7 @@ async function renderAgents() {
       h('small', {}, `on ${ticketPart(ticketOf(one.work_id))} · working`)),
       chatButton({id: one.work_id}, `${agentName(one.agent)} on ${ticketPart(ticketOf(one.work_id))}`))})));
   $('#agents').hidden = !working.length;
+  paintInUse();
   figures(S.tickets || []);  // the map's figures follow the same sessions
   if (D.work) await drawAgent();
 }
@@ -3854,7 +3991,13 @@ async function drawAgent() {
   const ticket = ticketOf(work);
   $('#agent .icon').src = glyphOf(work);
   $('#agent .icon').alt = glyphFor(work);
-  $('#agent .title').textContent = `${agentName(agent)} · ${ticketPart(ticket)}${state && state !== 'running' ? ' · ended' : ''}`;
+  const activity = chatActivity(session);
+  // the window's state is drawn at once and together: its title, what it is doing and what can be pressed
+  $('#agent .title').textContent = `${agentName(agent)} · ${ticketPart(ticket)} · ${activity.label}`;
+  $('#agent .state').textContent = activity.note;
+  $('#agent .state').hidden = !activity.note;
+  $('#agent .interrupt').disabled = !activity.interruptible;
+  $('#agent .send').disabled = $('#agent .stop').disabled = state !== 'running';
   const task = ticket ? ticket.task || ticket.note || '' : '';
   if ($('#agent .task').textContent !== task) $('#agent .task').classList.remove('open');  // a new ticket starts short
   $('#agent .task').textContent = task;
@@ -3882,7 +4025,6 @@ async function drawAgent() {
   const drawn = new Map(open.map(record => [record.id, D.drawn.get(record.id) || asked(record)]));
   D.drawn = drawn;
   keepFill($('#agent .asked'), [...drawn.values()]);
-  $('#agent .send').disabled = $('#agent .stop').disabled = state !== 'running';
 }
 // The task shows in three lines, so the conversation always has the window; a click unfolds it, within a third.
 $('#agent .task').onclick = () => $('#agent .task').classList.toggle('open');
@@ -3901,6 +4043,10 @@ $('#agent .send').onclick = async () => {
 $('#agent .say').addEventListener('keydown', event => {  // Enter sends, Shift+Enter starts a new line
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); $('#agent .send').click(); }
 });
+$('#agent .interrupt').onclick = () => {
+  const session = D.sessions.filter(one => one.work_id === D.work && (!D.session || one.session_id === D.session)).at(-1);
+  return interruptChat(D.work, session?.session_id, $('#agent .interrupt'));
+};
 $('#agent .stop').onclick = async () => {
   $('#agent .stop').disabled = true;
   if (await wrote('/api/dispatch-stop', {work_id: D.work})) toast('The agent was stopped.');
@@ -4245,7 +4391,10 @@ async function renderWork(target, key, also = null) {
       if (!started) return;
       issue.hidden = true;
       if (started.conversation) DOCK.mine = started.work_id;
-      openHelpdesk(started.work_id, `the sentinel on ${calledOf(key) || 'this node'}`, STANDBY, started.session_id);
+      const queued = started.state === 'queued' ? (Array.isArray(started.waiting_on)
+        ? 'Queued: this part is in use, so the sentinel starts when that work is done.'
+        : 'Queued: every agent slot is in use, so the sentinel starts when one is free.') : STANDBY;
+      openHelpdesk(started.work_id, `the sentinel on ${calledOf(key) || 'this node'}`, queued, started.session_id);
     }}, 'Send to the sentinel'));
   const raise_ = h('button', {class: 'raise', title: 'Say what is wrong with this part; a sentinel investigates and brings you proposals',
     onclick: () => { issue.hidden = !issue.hidden; if (!issue.hidden) issue.querySelector('textarea').focus(); }}, 'Raise an issue');

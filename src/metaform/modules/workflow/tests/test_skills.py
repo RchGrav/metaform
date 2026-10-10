@@ -30,8 +30,11 @@ def test_lib_serves_the_newest_stored_shared_section(run, project_folder):
     assert stored.text in served and 'metaform workflow submit' in served
     assert '<<TO FILL:' not in served, 'no tool is left as a placeholder; the section only states the rule for one'
     edited = stored.text + '\nAn edit saved in the prompt store.'
+    assert 'in place of the shipped text' not in served
     prompts.add_prompt_version('metaform-tools', edited, stored.number)
-    assert edited in run('workflow', 'lib', 'lib_metaform', cwd=project_folder).stdout
+    after = run('workflow', 'lib', 'lib_metaform', cwd=project_folder).stdout
+    assert edited in after  # a person's edit is served, and said: an override of the shipped file is never silent
+    assert after.rstrip().endswith('in place of the shipped text: metaform-tools.')
 
 
 def test_skills_list_the_libs_their_requires_line_names(run, project_folder):

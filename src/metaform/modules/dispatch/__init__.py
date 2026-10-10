@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ctypes
 import json
+import uuid
 import os
 import secrets
 import shlex
@@ -48,7 +49,7 @@ SHIPS_DISABLED = True
 # STORE-045, and nothing of them is on the map: a node holds one note, and what an agent learns is a memory, VIEW-034.
 # A line is one thing in the session's thread: the agent's words or thinking, a tool call, its plan, a turn's end, a
 # prompt Metaform answered, or the person's message; `name` is what a line is kept for, so it changes in place.
-TABLES = Tables(version=5, tables=(  # 5: no questions, consensus, votes, voters, advice or mode: agents do not ask
+TABLES = Tables(version=7, tables=(  # 7: work claims and proposals; 6: raised issues wait; 5: agents do not ask
     Table('sessions', key=('session_id',),
           columns=(Column('session_id', required=True), Column('work_id', required=True), Column('agent', required=True),
                    Column('state', required=True), Column('nonce'), Column('pid', 'int'), Column('port', 'int'),
@@ -63,6 +64,25 @@ TABLES = Tables(version=5, tables=(  # 5: no questions, consensus, votes, voters
                    Column('state', required=True), Column('reason'), Column('ready', 'real', required=True),
                    Column('deadline', 'real', required=True), Column('seq', 'int', required=True)),
           indexes=(Index(('state',)),)),
+    # An issue raised and not yet talking: waiting for its node or a slot, oldest first, or, with `started`, its
+    # sentinel launched and its session not made yet, which holds a slot all the same, VIEW-045.
+    Table('raised', key=('work_id',),
+          columns=(Column('work_id', required=True), Column('node', required=True), Column('agent', required=True),
+                   Column('started', 'real'), Column('seq', 'int', required=True)),
+          indexes=(Index(('seq',)),)),
+    # A work claim, LAYER-029: the part of the map a chosen proposal reserves while its tickets are built, the
+    # addresses of the elements it touches as a JSON list, and the tickets it covers in claim_work.
+    Table('claims', key=('claim_id',),
+          columns=(Column('claim_id', required=True), Column('name', required=True), Column('nodes', required=True),
+                   Column('issue'), Column('seq', 'int', required=True)),
+          indexes=(Index(('seq',)),)),
+    Table('claim_work', key=('work_id',),
+          columns=(Column('work_id', required=True), Column('claim_id', required=True)),
+          indexes=(Index(('claim_id',)),)),
+    # A sentinel's proposals for the issue it was raised on, as a JSON list, for the page to present, VIEW-045.
+    Table('proposals', key=('issue',),
+          columns=(Column('issue', required=True), Column('text', required=True), Column('seq', 'int', required=True)),
+          indexes=(Index(('seq',)),)),
 ))
 PRIVATE = ('port', 'token', 'pid', 'nonce')  # what only this module uses to reach a running session
 AGENTS = {
@@ -77,7 +97,8 @@ settings.choice('dispatch_recovery', ['manual', 'automatic'], 'manual', label='D
                 help='manual leaves a dead runner ticket taken; automatic verifies death and cleans up before returning it.',
                 details='Applies before Autostart selection or with dispatch recover. Older sessions or uncertain cleanup '
                         'still require manual recovery. Session reads never change ownership.')
-settings.number('dispatch_agents', 5, min=1, help='How many agents may work at once, besides one the person summons to chat.')
+settings.number('dispatch_agents', 5, min=1, help='How many agents may work at once. The person can always summon one '
+                'more; agents the person summons beyond that use the slots the agents at work leave free.')
 settings.number('dispatch_spin_calls', 40, min=1, help='Tool calls without a completed ticket step before raising a spinning signal.')
 settings.number('dispatch_spin_minutes', 10, min=1, help='Minutes without a completed step before the next session event raises a spinning signal.')
 settings.number('dispatch_repeat_failures', 3, min=2, help='Consecutive failures of the same tool input before raising a repeated-failure signal.')
@@ -294,6 +315,7 @@ def session_status(store: Store, row: dict[str, Any], *, done: bool | None = Non
         return {**row, 'activity': recorded_activity(store, row)}
     reported = answer.get('activity')
     return {**row, 'state': answer['state'], 'how': answer.get('how'),
+            'interrupting': answer.get('interrupting') is True,
             'activity': reported if reported in ('working', 'waiting', 'idle') else recorded_activity(store, row)}
 
 
@@ -372,6 +394,10 @@ def startable(ctx: Context, store: Store, record: WorkRecord, agent: str) -> Non
     if not (record.task or '').strip():
         raise Stop(f'Work {record.id} has no task: nothing for an agent to do until one is written.',
                    f'metaform map work op=edit id={record.id} task="<what it needs>"')
+    lock = claimed(store, record.address or record.receiver_address, record.id)
+    if lock is not None:  # work claims are the scheduling lock, LAYER-029: no ticket inside another's claim starts
+        raise Stop(f'Work {record.id} is on a part of the map claimed by "{lock["name"]}" until that work has landed.',
+                   'metaform dispatch claims')
     glyph = glyph_of(ctx, record)
     if glyph is not None:
         occupied = next((held for held in store.work(open=True, limit=0).results
@@ -504,6 +530,7 @@ def autostart(ctx: Context) -> dict[str, Any]:
     from .recovery import recover
     recovered = recover(ctx)
     store = ctx.require_store()
+    start_raised(ctx, store)  # the person raised these, so they start whether Autostart agents is checked or not
     if not ctx.setting('dispatch_autostart'):
         return {'started': [], 'recovery': recovered}
     kept = ticket_settings(ctx)
@@ -530,11 +557,12 @@ def autostart(ctx: Context) -> dict[str, Any]:
     taken = [record for record in taken if record not in stale]
     occupied.update(glyph.get(record.id) for record in taken)
     # An agent at work always holds its ticket, so the tickets in motion are the agents at work: a runner on its
-    # glyph's next ticket, or one too busy to answer a status check, is counted all the same. The one ticket the
-    # person's summoned chat holds is the +1 and does not count.
+    # glyph's next ticket, or one too busy to answer a status check, is counted all the same. The tickets the
+    # person's summoned chats hold are not workers; the first summoned is the +1, and the rest take slots, as `extra`.
     chatting = {row['work_id'] for row in active if summoned(row)}
     in_motion = {record.id for record in opened if record.taken and not record.done} - chatting
-    capacity = max(0, int(ctx.setting('dispatch_agents')) -
+    extra = max(0, sum(1 for row in active if summoned(row)) - 1)  # summoned beyond the first hold worker slots
+    capacity = max(0, int(ctx.setting('dispatch_agents')) - extra -
                    len(in_motion | {row['work_id'] for row in workers} | {record.id for record in taken}))
     started: list[dict[str, Any]] = []
     for record in candidates:
@@ -659,7 +687,7 @@ def start(ctx: Context) -> dict[str, Any]:
 
 def prep(ctx: Context) -> dict[str, Any]:
     """Start an agent in a merge's worktree to prepare its code for the person's review, VIEW-044; it takes no ticket
-    and stays to talk with the person until stopped. It is the one agent the person may summon, besides the five."""
+    and stays to talk with the person until stopped. It is an agent the person summons, VIEW-045."""
     store = ctx.require_store()
     work_id = str(ctx.nouns['id'])
     from .merge import worktree_of
@@ -703,8 +731,8 @@ def anchor(ctx: Context, store: Store, at: str | None = None) -> WorkRecord:
 
 
 def converse(ctx: Context, store: Store, work_id: str, agent: str, extra: Sequence[str]) -> dict[str, Any]:
-    """Start a conversation agent on a ticket without taking it: the one agent the person may summon besides the agents
-    at work. It never takes, reopens or closes the ticket, and lasts until the person stops it."""
+    """Start a conversation agent on a ticket without taking it: an agent the person summons, one always and more in the
+    slots the agents at work leave free, VIEW-045. It never takes, reopens or closes the ticket, and lasts until the person stops it."""
     if any(word.startswith('talk=') for word in extra):
         prompt_written('talk')
     if shutil.which(argv(str(ctx.setting(f'dispatch_{agent}')))[0]) is None:
@@ -730,11 +758,165 @@ def system(ctx: Context) -> dict[str, Any]:
     return converse(ctx, store, held.id, str(ctx.nouns.get('agent') or 'claude'), [])
 
 
+def json_list(value: Any, name: str) -> list[str]:
+    """A list argument: a JSON list of text, or one value alone."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value) if value.strip().startswith('[') else [value]
+        except ValueError:
+            raise Stop(f'{name} is a JSON list, such as ["code.alarm.audible"].', f'metaform help dispatch') from None
+    if not isinstance(value, list) or any(not isinstance(one, str) for one in cast(list[Any], value)):
+        raise Stop(f'{name} is a list of text.', 'metaform help dispatch')
+    return cast(list[str], value)
+
+
+def claim_rows(store: Store) -> list[dict[str, Any]]:
+    """Every work claim with its nodes, its tickets and its state, LAYER-029: proposed until a ticket of it is taken,
+    active from then, and ended when every ticket is done and nothing of it waits to merge."""
+    own = Store(store.project_id, module='dispatch')
+    with own.tables(write=False) as tx:
+        claims = [dict(row) for row in tx.rows('claims', by=('seq',), limit=0).results]
+        members = [dict(row) for row in tx.rows('claim_work', limit=0).results]
+    with own.tables(write=False) as tx:  # merges are in the project's store, a transaction of their own, STORE-006
+        waiting = {row['work_id'] for row in tx.rows('merges', limit=0).results if row['state'] != 'merged'}
+    for claim in claims:
+        claim['nodes'] = json.loads(claim['nodes'])
+        claim['work'] = [row['work_id'] for row in members if row['claim_id'] == claim['claim_id']]
+        held = []
+        for work_id in claim['work']:
+            try:
+                held.append(store.ticket(work_id).work)
+            except StoreError:
+                continue
+        started = any(record.taken or record.done for record in held)
+        landed = bool(held) and all(record.done and record.id not in waiting for record in held)
+        claim['state'] = 'ended' if started and landed else 'active' if started else 'proposed'
+    return claims
+
+
+def claimed(store: Store, address: str | None, work_id: str | None = None) -> dict[str, Any] | None:
+    """The active claim reserving an address that the work is not part of, or None."""
+    if not address:
+        return None
+    return next((claim for claim in claim_rows(store) if claim['state'] == 'active' and address in claim['nodes']
+                 and work_id not in claim['work']), None)
+
+
+def in_use(store: Store, node: str) -> list[str]:
+    """What is using a node: the tickets in motion on it, taken by an agent and not done, and any active work claim
+    that reserves it, LAYER-029."""
+    using = [record.id for record in store.work(open=True, limit=0).results if record.taken and not record.done
+             and node in (record.address, record.receiver_address, record.provider_address)]
+    found = claimed(store, node)
+    return using + ([f'claim {found["name"]}'] if found else [])
+
+
+def summon_room(ctx: Context, store: Store) -> int:
+    """How many more agents the person may summon now: one is always theirs, and beyond it the agent slots the agents
+    at work leave free, up to `dispatch_agents`."""
+    opened = store.work(open=True, limit=0).results
+    active = [row for row in sessions(store, open_work=opened) if row['state'] == 'running']
+    called = [row for row in active if summoned(row)]
+    chatting = {row['work_id'] for row in called}
+    made = {row['work_id'] for row in sessions(store)}  # a launch holds its slot until its session is made
+    with Store(store.project_id, module='dispatch').tables(write=False) as tx:
+        launching = [row for row in tx.rows('raised', by=('seq',), limit=0).results if row['started'] is not None
+                     and row['work_id'] not in made and time.time() - row['started'] < STALE_START]
+    working = ({record.id for record in opened if record.taken and not record.done} - chatting) | {
+        row['work_id'] for row in active if not summoned(row)}
+    free = max(0, int(ctx.setting('dispatch_agents')) - len(working))
+    return max(0, 1 + free - len(called) - len(launching))
+
+
+def start_raised(ctx: Context, store: Store) -> list[str]:
+    """Start the sentinel of each queued issue whose node is no longer in use, oldest first, while there is room to
+    summon an agent, VIEW-045."""
+    own = Store(store.project_id, module='dispatch')
+    made = {row['work_id'] for row in sessions(store)}
+    with own.tables() as tx:  # a launch whose session is made, or that never made one, is done waiting
+        for row in tx.rows('raised', by=('seq',), limit=0).results:
+            if row['started'] is not None and (row['work_id'] in made or time.time() - row['started'] >= STALE_START):
+                tx.delete('raised', {'work_id': row['work_id']})
+        waiting = [dict(row) for row in tx.rows('raised', by=('seq',), limit=0).results if row['started'] is None]
+    started: list[str] = []
+    for row in waiting:
+        if summon_room(ctx, store) <= 0:
+            break
+        if in_use(store, row['node']):
+            continue
+        launch(ctx, store, row['work_id'], row['node'], row['agent'])
+        started.append(row['work_id'])
+    return started
+
+
+def launch(ctx: Context, store: Store, work_id: str, node: str, agent: str) -> dict[str, Any]:
+    """Start an issue's sentinel, holding its slot in `raised` until its session is made."""
+    with Store(store.project_id, module='dispatch').tables() as tx:
+        tx.delete('raised', {'work_id': work_id})
+        tx.insert('raised', {'work_id': work_id, 'node': node, 'agent': agent, 'started': time.time(),
+                             'seq': time.time_ns()})
+    return converse(ctx, store, work_id, agent, [f'sentinel={node}'])
+
+
+def claim(ctx: Context) -> dict[str, Any]:
+    """Record a work claim, LAYER-029: the part of the map a chosen proposal reserves and the tickets it covers. It
+    is active from the first of its tickets being taken until the last has landed; while active, no other ticket on
+    its nodes starts, and an issue raised on them waits."""
+    store = ctx.require_store()
+    name = str(ctx.nouns['name']).strip()
+    nodes = json_list(ctx.nouns.get('nodes') or [], 'nodes')
+    work = json_list(ctx.nouns.get('work') or [], 'work')
+    if not name or not nodes:
+        raise Stop('A claim has a name and the addresses it reserves.', 'metaform dispatch claim "<name>" nodes=\'["<address>"]\'')
+    for work_id in work:
+        ticket(store, work_id)
+    claim_id = uuid.uuid4().hex
+    with Store(store.project_id, module='dispatch').tables() as tx:
+        tx.insert('claims', {'claim_id': claim_id, 'name': name, 'nodes': json.dumps(nodes),
+                             'issue': ctx.nouns.get('issue'), 'seq': time.time_ns()})
+        for work_id in work:
+            tx.delete('claim_work', {'work_id': work_id})
+            tx.insert('claim_work', {'work_id': work_id, 'claim_id': claim_id})
+    return next(one for one in claim_rows(store) if one['claim_id'] == claim_id)
+
+
+def claims(ctx: Context) -> dict[str, Any]:
+    """The work claims with their state, and the proposals sentinels have made, for the page, VIEW-045."""
+    store = ctx.require_store()
+    with Store(store.project_id, module='dispatch').tables(write=False) as tx:
+        proposals = {row['issue']: json.loads(row['text']) for row in tx.rows('proposals', by=('seq',), limit=0).results}
+    return {'claims': claim_rows(store), 'proposals': proposals}
+
+
+def propose(ctx: Context) -> dict[str, Any]:
+    """A sentinel's proposals for its issue, kept for the page to present beside what each reserves, VIEW-045: each
+    a title, its grounds, its disruption with the addresses it reserves as reach, its benefit and its trade-off,
+    and, where the sentinel made one, a link to its own explanation as view."""
+    store = ctx.require_store()
+    issue = ticket(store, str(ctx.nouns['issue'])).id
+    given: Any = ctx.nouns.get('proposals')
+    if isinstance(given, str):
+        try:
+            given = json.loads(given)
+        except ValueError:
+            raise Stop('proposals is a JSON list of objects.', 'metaform help dispatch propose') from None
+    if not isinstance(given, list) or not given or any(not isinstance(one, dict) or not one.get('title')
+                                                      for one in cast(list[Any], given)):
+        raise Stop('proposals is a JSON list of objects, each with a title.', 'metaform help dispatch propose')
+    for one in cast(list[dict[str, Any]], given):
+        one['reach'] = json_list(one.get('reach') or [], 'reach')
+    with Store(store.project_id, module='dispatch').tables() as tx:
+        tx.delete('proposals', {'issue': issue})
+        tx.insert('proposals', {'issue': issue, 'text': json.dumps(given), 'seq': time.time_ns()})
+    return {'issue': issue, 'proposals': given}
+
+
 def raise_issue(ctx: Context) -> dict[str, Any]:
     """The person raises an issue on a node, a sentinel starts on it with their words, investigates,
     and brings proposals to the page's chat; the person chooses one or talks it through, and the chosen one becomes
     held tickets. The issue is held on a ticket of its own at the node, so the chat has a place and the report is
-    kept; no worker takes it. One summoned agent at a time, besides the agents at work."""
+    kept; no worker takes it. An issue on a node other work is using, or raised when every agent slot is taken,
+    waits; its sentinel starts when the work is complete and a slot is free."""
     store = ctx.require_store()
     given: Any = ctx.nouns['text']
     words = [str(word) for word in cast(list[Any], given)] if isinstance(given, (list, tuple)) else [str(given)]
@@ -742,10 +924,6 @@ def raise_issue(ctx: Context) -> dict[str, Any]:
     if not text:
         raise Stop('An issue says what is wrong, in the person\'s words.', 'metaform dispatch raise <node> -- "<what is wrong>"')
     node = str(ctx.nouns['node'])
-    talking = next((row for row in sessions(store) if row['state'] == 'running' and summoned(row)), None)
-    if talking is not None:
-        raise Stop(f'A chat is already open with {talking["agent"]} on work {talking["work_id"]}; one at a time, '
-                   'besides the agents at work. Close that chat first.', f'metaform dispatch stop {talking["work_id"]}')
     agent = str(ctx.nouns.get('agent') or ctx.setting('dispatch_agent'))
     if shutil.which(argv(str(ctx.setting(f'dispatch_{agent}')))[0]) is None:  # checked before anything is written
         raise Stop(f'The start command of {agent} is not found on this system.', f'metaform set --dispatch-{agent} "<command>"')
@@ -754,13 +932,20 @@ def raise_issue(ctx: Context) -> dict[str, Any]:
     first = text.splitlines()[0][:120]
     made = map_work(ctx, op='add', node=node, task=f'Issue raised by the person: {first}', note=text, held=True, hold=True)
     work_id = str(made['id'] if isinstance(made, dict) else made.id)
-    return converse(ctx, store, work_id, agent, [f'sentinel={node}'])
+    busy = in_use(store, node)
+    if busy or summon_room(ctx, store) <= 0:
+        with Store(store.project_id, module='dispatch').tables() as tx:
+            tx.insert('raised', {'work_id': work_id, 'node': node, 'agent': agent, 'seq': time.time_ns()})
+        return {'state': 'queued', 'work_id': work_id, 'node': node,
+                'waiting_on': busy or 'a free agent slot', 'conversation': True}
+    return launch(ctx, store, work_id, node, agent)
 
 
 def talk(ctx: Context) -> dict[str, Any]:
     """Talk with an agent about anything the person clicks, VIEW-042: a ticket, open or done, a node, or an ended
     agent's session. An agent at work on it is talked to directly; otherwise a conversation agent starts, told
-    what it is about. One summoned agent at a time: a second is refused, naming the one open."""
+    what it is about. One summoned agent is always the person's; more use the agent slots left free, and past them
+    a chat is refused until a slot frees."""
     store = ctx.require_store()
     given = {key: str(ctx.nouns[key]) for key in ('id', 'node', 'session') if ctx.nouns.get(key)}
     if len(given) != 1:
@@ -782,12 +967,13 @@ def talk(ctx: Context) -> dict[str, Any]:
         working = next((row for row in reversed(running) if row['work_id'] == work_id and not summoned(row)), None)
         if working is not None and (kind != 'session' or working['session_id'] == ref.partition(':')[2]):
             return {key: working[key] for key in ('work_id', 'agent', 'session_id', 'state')}
-    talking = next((row for row in running if summoned(row)), None)
-    if talking is not None:
-        if talking['work_id'] == work_id and f'talk={about}' in command_line(talking['pid']):
-            return {key: talking[key] for key in ('work_id', 'agent', 'session_id', 'state')}
-        raise Stop(f'A chat is already open with {talking["agent"]} on work {talking["work_id"]}; one at a time, '
-                   'besides the agents at work. Close that chat first.', f'metaform dispatch stop {talking["work_id"]}')
+    talking = next((row for row in running if summoned(row) and row['work_id'] == work_id
+                    and f'talk={about}' in command_line(row['pid'])), None)
+    if talking is not None:  # the chat about this is already open: it is reused
+        return {key: talking[key] for key in ('work_id', 'agent', 'session_id', 'state')}
+    if summon_room(ctx, store) <= 0:
+        raise Stop(f'Every agent slot is in use: {ctx.setting("dispatch_agents")} besides the one you can always '
+                   'summon. A chat opens when an agent finishes or one is stopped.', 'metaform dispatch sessions')
     record = ticket(store, work_id)
     return converse(ctx, store, work_id, agent_for(ctx, record, ctx.nouns.get('agent')), [f'talk={about}'])
 
@@ -804,6 +990,18 @@ def message(ctx: Context) -> dict[str, Any]:
     words = [str(word) for word in cast(list[Any], given)] if isinstance(given, (list, tuple)) else [str(given)]
     text = ' '.join(words)
     return tell(_running_or_stop(store, ctx.nouns['id']), 'message', text=text)
+
+
+def interrupt(ctx: Context) -> dict[str, Any]:
+    """Cancel the current turn while keeping the session reachable and queued messages in order."""
+    row = _running_or_stop(ctx.require_store(), ctx.nouns['id'])
+    if ctx.nouns.get('session') and ctx.nouns['session'] != row['session_id']:
+        raise Stop('The chat session is no longer the running session on this ticket.',
+                   f'metaform dispatch sessions id={ctx.nouns["id"]}')
+    result = tell(row, 'interrupt')
+    if result.get('error'):
+        raise Stop(str(result['error']), f'metaform dispatch stop {ctx.nouns["id"]}')
+    return result
 
 
 def stop(ctx: Context) -> dict[str, Any]:
@@ -898,6 +1096,21 @@ MODULE = Module(
              examples=(('metaform dispatch raise code.alarm.audible -- "The alarm plays twice when the timer ends."',
                         'Starts the sentinel on the alarm with that report.'),),
              surfaces=('cli',)),
+        Verb('propose', propose, 'A sentinel records its proposals for the issue it was raised on, for the page to '
+                                 'present beside what each reserves.',
+             nouns=(Noun('issue', 'The work id of the issue the sentinel was raised on.'),
+                    Noun('proposals', 'Required: a JSON list, each {"title", "grounds", "disruption", "reach": [addresses], '
+                                      '"benefit", "tradeoff", "view": an optional link to its own explanation}.',
+                         required=False))),
+        Verb('claim', claim, 'Reserve the part of the map a chosen proposal touches while its tickets are built; '
+                             'no other ticket on it starts until they have landed.',
+             nouns=(Noun('name', 'What the work is called.'),
+                    Noun('nodes', 'The addresses it reserves, as a JSON list; required.', required=False),
+                    Noun('work', 'The work ids of its tickets, as a JSON list.', required=False),
+                    Noun('issue', 'The work id of the issue it answers.', required=False)),
+             examples=(('metaform dispatch claim "Quieter alarm" nodes=\'["code.alarm.audible"]\' work=\'["<work id>"]\'',
+                        'Reserves the alarm for those tickets.'),)),
+        Verb('claims', claims, 'The work claims with their state, and the proposals sentinels have made.'),
         Verb('talk', talk, 'Talk with an agent about a ticket, open or done, a node or an ended agent\'s '
                            'session; an agent at work on it is talked to directly.',
              nouns=(Noun('id', 'The work id of a ticket, open or done.', required=False),
@@ -923,6 +1136,10 @@ MODULE = Module(
              examples=(('metaform dispatch message 198452e1... "also run the tests"', 'Sends it as session/prompt.'),
                        ('metaform dispatch message 198452e1... -- "--json"',
                         'Sends --json as written; after --, every word is the message, CLI-003.'))),
+        Verb('interrupt', interrupt, 'Interrupt the current turn while keeping the conversation available.',
+             nouns=(Noun('id', 'The work id of the ticket.'),
+                    Noun('session', 'The chat session id, to avoid interrupting a replacement session.', required=False)),
+             examples=(('metaform dispatch interrupt 198452e1...', 'Requests cancellation; the session stays available.'),)),
         Verb('stop', stop, 'Stop the agent working a ticket.', nouns=(Noun('id', 'The work id of the ticket.'),)),
         Verb('sessions', read_sessions, 'The agent sessions of a ticket, or of every ticket, each with its thread.',
              nouns=(Noun('id', 'The work id of the ticket; none for every ticket.', required=False),

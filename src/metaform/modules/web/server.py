@@ -75,7 +75,8 @@ TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=u
 PAGE_POLICY = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'"
 IMPORT_MAP = re.compile(rb'<script type="importmap">(.*?)</script>', re.DOTALL)
 DISPATCH_CHANGES = frozenset({'work', 'messages', 'map.glyphs', 'map.ticket_settings', 'map.eligible',
-                              'map.question_work', 'dispatch.sessions', 'dispatch.questions', 'dispatch.settings'})
+                              'map.question_work', 'dispatch.sessions', 'dispatch.questions', 'dispatch.settings',
+                              'dispatch.claims', 'dispatch.claim_work', 'dispatch.raised'})
 
 
 def dispatch_change(payload: dict[str, Any]) -> bool:
@@ -379,6 +380,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.read_ignore(query.get('project', [''])[-1])
         if url.path == '/api/dispatch-sessions':
             return self.dispatch_sessions({key: values[-1] for key, values in query.items() if key != 't'})
+        if url.path == '/api/dispatch-claims':
+            return self.dispatch_claims({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/dispatch-prompts':
             return self.dispatch_prompts(query.get('project', [''])[-1])
         if url.path == '/api/dispatch-autostart':
@@ -540,7 +543,8 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/remove-base': self.remove_base, '/api/ignore': self.write_ignore,
                   '/api/memory': self.write_memory,
                   '/api/dispatch-start': self.dispatch_start, '/api/dispatch-message': self.dispatch_message,
-                  '/api/dispatch-stop': self.dispatch_stop, '/api/dispatch-prompts': self.set_dispatch_prompts,
+                  '/api/dispatch-stop': self.dispatch_stop, '/api/dispatch-interrupt': self.dispatch_interrupt,
+                  '/api/dispatch-prompts': self.set_dispatch_prompts,
                   '/api/dispatch-autostart': self.set_dispatch_autostart}
         if path not in writes:
             return self.send(404, {'error': f'No such write: {path}.'})
@@ -1024,6 +1028,15 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {'error': 'A message says something.'})
         self.dispatched(given, 'message', [work_id], text.strip())
 
+    def dispatch_interrupt(self, given: dict[str, Any]) -> None:
+        """Interrupt the chat's current turn through dispatch without ending its session."""
+        work_id, session = given.get('work_id'), given.get('session')
+        if not isinstance(work_id, str) or not work_id:
+            return self.send(400, {'error': 'An agent is interrupted by the work id of its ticket.'})
+        if session is not None and (not isinstance(session, str) or not session):
+            return self.send(400, {'error': 'The chat session id must be a nonempty string.'})
+        self.dispatched(given, 'interrupt', [work_id, *([f'session={session}'] if session else [])])
+
     def dispatch_stop(self, given: dict[str, Any]) -> None:
         """Stop the agent working a ticket with the dispatch module's stop, VIEW-039."""
         work_id = given.get('work_id')
@@ -1042,6 +1055,17 @@ class Handler(BaseHTTPRequestHandler):
         except Stop:
             return self.send(200, {'sessions': [], 'lines': []})
         except StoreError as error:  # the project is gone or its store cannot be read: said, as every other read says it
+            return self.refuse(error, 404)
+        self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
+
+    def dispatch_claims(self, given: dict[str, str]) -> None:
+        """The work claims and the sentinels' proposals, from the dispatch module's own tables, LAYER-029 and VIEW-045.
+        With dispatch not enabled there are none."""
+        try:
+            found = module_verb(given, 'dispatch', 'claims', {})
+        except Stop:
+            return self.send(200, {'claims': [], 'proposals': {}})
+        except StoreError as error:
             return self.refuse(error, 404)
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 

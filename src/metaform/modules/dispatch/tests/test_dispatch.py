@@ -618,9 +618,79 @@ def test_raising_an_issue_holds_it_on_a_ticket_at_the_node_and_starts_the_sentin
     [prompt] = eventually(lambda: dispatch.received('session/prompt'))
     text = prompt['params']['prompt'][0]['text']
     assert 'SENTINEL' in text and report in text and NODE in text
-    again = run('dispatch', 'raise', NODE, '--', 'A second one.', cwd=dispatch.folder, ok=False)
-    assert again.returncode != 0 and 'one at a time' in again.stderr + again.stdout
+    again = json.loads(run('dispatch', 'raise', NODE, '--json', '--', 'A second one.', cwd=dispatch.folder,
+                           env=dispatch.env('hold')).stdout)
+    assert again['conversation'] and again['state'] == 'starting'  # a running sentinel never turns another away
+    eventually(lambda: [p for p in dispatch.received('session/prompt') if 'A second one.' in str(p)] or None)
     run('dispatch', 'stop', started['work_id'], cwd=dispatch.folder)
+    run('dispatch', 'stop', again['work_id'], cwd=dispatch.folder)
+
+
+@pytest.mark.req('LAYER-029')
+@pytest.mark.req('VIEW-045')
+def test_a_work_claim_holds_its_part_of_the_map_from_its_first_ticket_taken_until_its_work_has_landed(dispatch, run):
+    """A chosen proposal reserves the nodes it touches: once a ticket of it is taken no other ticket there starts and
+    an issue raised there waits; when its tickets are done the claim ends. The sentinel's proposals are kept for the
+    page with the addresses each would reserve."""
+    from metaform.data import Node
+    claims = lambda: json.loads(run('dispatch', 'claims', '--json', cwd=dispatch.folder).stdout)  # noqa: E731
+    made = json.loads(run('dispatch', 'claim', 'Quieter alarm', f'nodes=["{NODE}"]', f'work=["{dispatch.id}"]',
+                          '--json', cwd=dispatch.folder).stdout)
+    assert (made['state'], made['nodes'], made['work']) == ('proposed', [NODE], [dispatch.id])
+    dispatch.store.take_work(dispatch.id, by='claude')
+    assert claims()['claims'][0]['state'] == 'active'
+    other = dispatch.store.add_work(Node('element', NODE), 'unbuilt', task='Another change').id
+    refused = run('dispatch', 'start', other, 'claude', cwd=dispatch.folder, ok=False)
+    assert refused.returncode != 0 and 'claimed by "Quieter alarm"' in refused.stderr + refused.stdout
+    run('enable', 'workflow', cwd=dispatch.folder)
+    queued = json.loads(run('dispatch', 'raise', NODE, '--json', '--', 'Too loud still.', cwd=dispatch.folder).stdout)
+    assert queued['state'] == 'queued' and 'claim Quieter alarm' in queued['waiting_on']
+    proposals = [{'title': 'Lower the gain', 'grounds': 'alarm.c:12 sets 0 dB', 'disruption': 'the alarm only',
+                  'reach': [NODE], 'benefit': 'quieter at once', 'tradeoff': 'none'}]
+    run('dispatch', 'propose', queued['work_id'], f'proposals={json.dumps(proposals)}', cwd=dispatch.folder)
+    assert claims()['proposals'][queued['work_id']] == proposals
+    dispatch.store.finish_work(dispatch.id, 'Landed')
+    assert claims()['claims'][0]['state'] == 'ended'
+
+
+@pytest.mark.req('VIEW-045')
+def test_summoned_agents_are_one_plus_the_free_agent_slots_and_the_next_issue_waits_for_a_slot(dispatch, run):
+    """One summoned agent is always the person's and more use the free slots: with one slot and no work, two
+    sentinels start and a third waits until one ends."""
+    run('enable', 'workflow', cwd=dispatch.folder)
+    run('set', '--dispatch-agents', '1', cwd=dispatch.folder)
+    raised = [json.loads(run('dispatch', 'raise', NODE, '--json', '--', f'Issue {n}.', cwd=dispatch.folder,
+                             env=dispatch.env('hold')).stdout) for n in (1, 2, 3)]
+    assert [one['state'] for one in raised] == ['starting', 'starting', 'queued']
+    assert raised[2]['waiting_on'] == 'a free agent slot'
+    for one in raised[:2]:
+        eventually(lambda one=one: [p for p in dispatch.received('session/prompt') if f"Issue {raised.index(one) + 1}."
+                                    in str(p)] or None)
+    run('dispatch', 'stop', raised[0]['work_id'], cwd=dispatch.folder)
+    eventually(lambda: run('dispatch', 'autostart', '--json', cwd=dispatch.folder, env=dispatch.env('hold')) and
+               [p for p in dispatch.received('session/prompt') if 'Issue 3.' in str(p)] or None)
+    for one in raised[1:]:
+        run('dispatch', 'stop', one['work_id'], cwd=dispatch.folder, ok=False)
+
+
+@pytest.mark.req('VIEW-045')
+def test_an_issue_raised_on_a_node_in_use_waits_until_that_work_is_complete(dispatch, run):
+    """An issue on a node an agent is working on is queued, not refused; its sentinel starts when the work is done."""
+    run('enable', 'workflow', cwd=dispatch.folder)
+    dispatch.start('hold')
+    eventually(lambda: dispatch.ticket().taken)
+    queued = json.loads(run('dispatch', 'raise', NODE, '--json', '--', 'It drifts.', cwd=dispatch.folder,
+                            env=dispatch.env('hold')).stdout)
+    assert (queued['state'], queued['waiting_on']) == ('queued', [dispatch.id])
+    run('map', 'work', 'op=done', f'id={dispatch.id}', 'resolution=landed', cwd=dispatch.folder)
+    run('dispatch', 'autostart', cwd=dispatch.folder, env=dispatch.env('hold'))
+    from metaform.data import Store
+    with Store('proj', module='dispatch').tables(write=False) as tx:
+        assert all(row['started'] for row in tx.rows('raised', limit=0).results)  # launched, no longer waiting
+    [prompt] = eventually(lambda: [p for p in dispatch.received('session/prompt') if 'It drifts.' in str(p)] or None)
+    assert NODE in prompt['params']['prompt'][0]['text']
+    dispatch.stop()
+    run('dispatch', 'stop', queued['work_id'], cwd=dispatch.folder)
 
 
 @pytest.mark.req('BASE-052')
@@ -815,3 +885,62 @@ def test_autostart_starts_each_ticket_with_an_agent_eligible_for_it(dispatch, ru
                         {'work_id': ctx.nouns['id']})
     module.autostart(context('dispatch', dispatch.folder, project='proj'))
     assert launched == [(dispatch.id, 'codex'), (claude_only, 'claude')]
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.req('VIEW-039')
+def test_interrupt_keeps_the_session_and_delivers_queued_messages_in_order(dispatch, run, tmp_path):
+    from metaform import nonce
+    from metaform.modules.dispatch import tell
+    gates = tmp_path / 'interrupt-turns'
+    gates.mkdir()
+    dispatch.start('replace', FAKE_ACP_TURN_GATES=str(gates))
+    eventually(lambda: dispatch.received('session/prompt'))
+    held = dispatch.session().extra
+    before = dispatch.ticket()
+    refused = run('dispatch', 'interrupt', dispatch.id, 'session=another-session', cwd=dispatch.folder, ok=False)
+    assert refused.returncode != 0 and 'no longer the running session' in refused.stderr
+    assert not dispatch.received('session/cancel')
+    run('dispatch', 'message', dispatch.id, 'Queued correction', cwd=dispatch.folder)
+    run('dispatch', 'message', dispatch.id, 'Second correction', cwd=dispatch.folder)
+    result = json.loads(run('dispatch', 'interrupt', dispatch.id, '--json', cwd=dispatch.folder).stdout)
+    assert result['requested'] is True and result['session_id'] == held['session_id']
+    eventually(lambda: len(dispatch.received('session/prompt')) == 2)
+    assert dispatch.received('session/prompt')[-1]['params']['prompt'] == [{'type': 'text', 'text': 'Queued correction'}]
+    assert tell(held, 'status')['activity'] == 'working', 'the next turn must not inherit cancellation'
+    (gates / '2').touch()
+    eventually(lambda: len(dispatch.received('session/prompt')) == 3)
+    assert dispatch.received('session/prompt')[-1]['params']['prompt'] == [{'type': 'text', 'text': 'Second correction'}]
+    assert tell(held, 'status')['activity'] == 'working'
+    (gates / '3').touch()
+    eventually(lambda: tell(held, 'status')['activity'] == 'idle')
+    assert nonce.read(held['nonce']).open and alive(dispatch.logged('pid')[0])
+    assert dispatch.ticket().taken_by == before.taken_by
+    assert dispatch.session().extra['state'] == 'running'
+    idle = json.loads(run('dispatch', 'interrupt', dispatch.id, '--json', cwd=dispatch.folder).stdout)
+    assert idle['requested'] is False and len(dispatch.received('session/cancel')) == 1
+    run('dispatch', 'message', dispatch.id, 'Continue', cwd=dispatch.folder)
+    eventually(lambda: len(dispatch.received('session/prompt')) == 4)
+    (gates / '4').touch()
+    eventually(lambda: tell(held, 'status')['activity'] == 'idle')
+    assert not dispatch.logged('replaced')
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+def test_interrupt_cancels_waiting_permission_without_ending_the_session(dispatch, run):
+    from metaform.modules.dispatch import tell
+    dispatch.start('ask')
+    [question] = eventually(dispatch.questions)
+    held = dispatch.session().extra
+    assert tell(held, 'status')['activity'] == 'waiting'
+    result = json.loads(run('dispatch', 'interrupt', dispatch.id, '--json', cwd=dispatch.folder).stdout)
+    assert result['requested'] is True
+    eventually(lambda: dispatch.logged('permission'))
+    assert dispatch.logged('permission')[0]['outcome'] == {'outcome': 'cancelled'}
+    assert not dispatch.questions(), 'cancelled requests must no longer offer live answer controls'
+    [closed] = dispatch.questions(open=False)
+    assert closed.id == question.id and closed.closed, 'the cancelled permission stays in history'
+    eventually(lambda: tell(held, 'status')['activity'] == 'idle')
+    assert dispatch.process.poll() is None and dispatch.ticket().taken
+    dispatch.stop()

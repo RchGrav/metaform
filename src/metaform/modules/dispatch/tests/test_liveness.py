@@ -112,6 +112,106 @@ def test_stop_during_queued_turn_start_does_not_send_a_prompt_after_cancel(dispa
     asyncio.run(exercise())
 
 
+def test_interrupt_during_turn_start_prevents_the_prompt_and_keeps_chat_usable(dispatch):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from metaform.modules.dispatch.runner import Session
+
+    async def exercise():
+        held = Session(SimpleNamespace(nouns={}), Store('proj', module='dispatch'), dispatch.ticket(), 'codex', [])
+        held.session_id = 'controlled-interrupt'
+        held.prep = True
+        held.process = SimpleNamespace(returncode=None)
+        held.conn = SimpleNamespace(prompt=AsyncMock(return_value=SimpleNamespace(stop_reason='end_turn')),
+                                    cancel=AsyncMock())
+        held.note = AsyncMock()
+        starting, proceed = asyncio.Event(), asyncio.Event()
+        calls = 0
+
+        async def changed(**kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                starting.set()
+                await proceed.wait()
+
+        held.changed = changed
+        server = await asyncio.start_server(held.control, '127.0.0.1', 0)
+        port = server.sockets[0].getsockname()[1]
+
+        async def control(op, **given):
+            reader, writer = await asyncio.open_connection('127.0.0.1', port)
+            try:
+                writer.write(json.dumps({'token': held.token, 'op': op, **given}).encode() + b'\n')
+                await writer.drain()
+                return json.loads(await asyncio.wait_for(reader.readline(), 5))
+            finally:
+                writer.close()
+                await writer.wait_closed()
+
+        try:
+            assert (await control('message', text='First message'))['sent'] is True
+            await asyncio.wait_for(starting.wait(), 5)
+            first_turn = tuple(held.tasks)
+            assert (await control('interrupt'))['requested'] is True
+            proceed.set()
+            await asyncio.wait_for(asyncio.gather(*first_turn), 5)
+            assert held.conn.prompt.await_count == 0, 'the interrupted turn must never reach the adapter'
+            status = await control('status')
+            assert status['state'] == 'running' and status['activity'] == 'idle'
+            assert (await control('interrupt'))['requested'] is False
+            assert (await control('message', text='Continue the conversation'))['sent'] is True
+            await asyncio.wait_for(asyncio.gather(*tuple(held.tasks)), 5)
+            assert [call.kwargs['prompt'][0].text for call in held.conn.prompt.await_args_list] == [
+                'Continue the conversation']
+            status = await control('status')
+            assert status['state'] == 'running' and status['activity'] == 'idle'
+
+            later_started = asyncio.Event()
+            later_answer = asyncio.get_running_loop().create_future()
+
+            async def later_prompt(**kwargs):
+                later_started.set()
+                return await later_answer
+
+            attempts = 0
+
+            async def cancel(**kwargs):
+                nonlocal attempts
+                attempts += 1
+                if attempts == 1:
+                    raise OSError('Cancellation transport failed')
+
+            held.conn.prompt.side_effect = later_prompt
+            held.conn.cancel.side_effect = cancel
+            assert (await control('message', text='A turn to interrupt'))['sent'] is True
+            await asyncio.wait_for(later_started.wait(), 5)
+            later_turn = tuple(held.tasks)
+            failed = await control('interrupt')
+            assert 'Cancellation transport failed' in failed['error']
+            status = await control('status')
+            assert status['state'] == 'running' and status['activity'] == 'working'
+            assert status['interrupting'] is False, 'a failed request must leave interruption available to retry'
+            assert (await control('interrupt'))['requested'] is True
+            status = await control('status')
+            assert status['activity'] == 'working' and status['interrupting'] is True
+            later_answer.set_result(SimpleNamespace(stop_reason='cancelled'))
+            await asyncio.wait_for(asyncio.gather(*later_turn), 5)
+            assert attempts == 2 and later_answer.done()
+            status = await control('status')
+            assert status['state'] == 'running' and status['activity'] == 'idle'
+        finally:
+            proceed.set()
+            if 'later_answer' in locals() and not later_answer.done():
+                later_answer.set_result(SimpleNamespace(stop_reason='end_turn'))
+            await asyncio.gather(*tuple(held.tasks), return_exceptions=True)
+            server.close()
+            await server.wait_closed()
+
+    asyncio.run(exercise())
+
+
 @pytest.mark.parametrize('trigger', ['change', 'agent_exit', 'stop'])
 def test_schema_change_cannot_strand_a_runner_or_its_resources(dispatch, trigger):
     dispatch.start('ask')

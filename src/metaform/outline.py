@@ -13,7 +13,7 @@ from typing import Any, cast
 from .data import Store
 from .errors import Stop
 
-FIRST = {'CQU': 0, 'AUE': 1, 'DE': 2}
+FIRST = {'CQU': 0, 'DE': 1}
 
 
 def _held(join: dict[str, Any], names: dict[str, str]) -> str:
@@ -66,7 +66,7 @@ def _labels(store: Store, elements: Sequence[Any], reading: dict[str, Any]) -> d
 
 def markdown(store: Store, address: str | None = None, *, selection: Sequence[str] | None = None,
              raw: bool = False) -> str:
-    """The whole map, the CQU, the AUE and the DE first, or with an address that element and all around it."""
+    """The whole map, the CQUs and the DE first, or with an address that element and all around it."""
     reading: dict[str, Any] = {'selection': selection, 'raw': raw}
     found = store.roots(limit=0, **reading)
     names = {element.address: element.short_name for element in found.elements}

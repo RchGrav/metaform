@@ -22,7 +22,7 @@ from fakes import calls, recorder
 pytestmark = [pytest.mark.kind('simulation'), pytest.mark.req('MCP-024')]
 
 ROOT = Path(__file__).parents[1]
-SPEC = ROOT / 'src' / 'metaform' / 'modules' / 'intake' / 'resources' / 'intake.axiom'  # the served intake
+SPEC = ROOT / 'src' / 'metaform' / 'modules' / 'intake' / 'resources' / 'intake.xml'  # the served intake
 FIXTURE = json.loads((ROOT / 'tests' / 'fixtures' / 'intake_timer.json').read_text(encoding='utf-8'))
 TOOLS = {'intake_prompt', 'intake_start', 'intake_element', 'intake_join', 'intake_remove',
          'intake_show', 'intake_finish', 'memory_create_entities', 'memory_open_nodes', 'map_select', 'map_mask',
@@ -138,9 +138,9 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
         # 5 and 6: the subagent reads its instructions by name, unaltered.
         served = texts(asked(host, 'intake_prompt', {}, limit=LIMIT))[-1]
         spec = SPEC.read_text(encoding='utf-8').replace('{prompt}', '', 1)
-        # unaltered, followed only by the line saying where its schema is, MCP-009 amendment 2026-10-09
+        # unaltered, followed at most by the line saying where its schema is, MCP-009 amendment 2026-10-09
         assert served[:len(spec)] == spec and served[len(spec):].strip().count('\n') == 0
-        assert 'metaform://intake/schema' in served[len(spec):]
+        assert 'metaform://intake/schema' in served  # the procedure names its schema, or that line does
 
         # 7: the intake is recorded one object per call; a join missing its purpose is stored with a notice naming
         # that field, and nothing is refused.

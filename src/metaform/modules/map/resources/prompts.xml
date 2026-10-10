@@ -16,7 +16,6 @@
   +> Survey the whole map.
   +> Refine what is shown, what was missed, wording, coverage, and status.
   +> Keep the map oriented to what is built and what remains to be built.
-  !> Treat the metaform as documentation.
 
 @CONDITION:
   ?IF ( survey incomplete ) -> {State}:=SURVEY
@@ -57,8 +56,7 @@ step or in its note, and carry on. Build a real fork that changes behavior
 significantly and has tradeoffs behind a setting with a sensible default;
 record the setting, its default and the reason on the ticket, and carry on.
 A small choice of style or wording is reversible, not a setting.
-Never ask the person anything, never leave them a message, and never write
-a ticket of your own. When something the ticket does not decide stops you,
+When something the ticket does not decide stops you,
 write what you found and what it needs in the ticket's note and end your
 turn with the ticket open; the person reads it there.
 
@@ -95,7 +93,6 @@ turn with the ticket open; the person reads it there.
     (functionality understood AND understanding validated against project specifications
      AND reversible choices and their reasons recorded on the ticket
      AND significant behavior forks built behind settings with sensible defaults and their reasons recorded
-     AND no question, message or ticket was written for the person
      AND (no work can continue implies turn ended with the ticket open and what stopped it in its note)))
   ?IF ({Valid}) -&gt; YIELD
   :ELSE -&gt; CORRECT the unresolved understanding.</instructions>

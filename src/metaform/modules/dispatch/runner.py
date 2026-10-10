@@ -24,6 +24,7 @@ import sys
 import time
 from collections import deque
 from collections.abc import Callable, Coroutine
+from dataclasses import dataclass
 from importlib import metadata
 from typing import Any, cast
 
@@ -193,6 +194,13 @@ def subject(store: Store, work_id: str, talk: str) -> tuple[str, str]:
     return f'the node {ref} of the map', f'`metaform map where {ref}`'
 
 
+@dataclass
+class ActiveTurn:
+    """Cancellation belongs to one prompt, including its turn-start publication before ACP receives it."""
+    sent: bool = False
+    cancel_requested: bool = False
+
+
 class Session:
     """One ticket's ACP session. The SDK calls `session_update` and `request_permission` on it."""
 
@@ -229,6 +237,8 @@ class Session:
         self.answers: dict[str, tuple[str | None, str | None]] = {}  # the answer revision already delivered
         self.heard = stamp()  # the last session update or prompt, the earliest a tool call first seen next began
         self.turns = 0
+        self.active_turn: ActiveTurn | None = None
+        self.interrupt_lock = asyncio.Lock()  # cancellation cannot spill into the next queued prompt
         self.pending: deque[str] = deque()  # prompts wait in arrival order while one turn is in flight
         self.idle = asyncio.Event()
         self.idle.set()
@@ -475,7 +485,7 @@ class Session:
 
     async def ask(self, waiting: asyncio.Future[str | None], options: list[PermissionOption], title: str,
                   before: str) -> None:
-        if self.ending:
+        if self.ending or (self.active_turn is not None and self.active_turn.cancel_requested):
             if not waiting.done():
                 waiting.set_result(None)
             return
@@ -644,6 +654,7 @@ class Session:
         if self.turns:
             return
         self.turns = 1
+        self.active_turn = ActiveTurn()
         self.idle.clear()
         self.spawn(self.prompted())
 
@@ -651,16 +662,25 @@ class Session:
         """One prompt in flight, draining messages in order before the normal turn-end decision."""
         try:
             while self.pending and not self.ending:
-                text = self.pending.popleft()
+                async with self.interrupt_lock:
+                    current = self.active_turn or ActiveTurn()
+                    self.active_turn = current
+                    text = self.pending.popleft()
                 self.heard = stamp()  # a tool call of this turn began no earlier than its prompt
                 try:
                     await self.changed(tables='dispatch')
                     if self.ending:
                         break  # stop may arrive while the turn-start event is published
-                    answer = await self.conn.prompt(session_id=self.session_id, prompt=[acp.text_block(text)])
-                    reason = str(answer.stop_reason)
+                    if current.cancel_requested:
+                        reason = 'cancelled'
+                    else:
+                        current.sent = True
+                        answer = await self.conn.prompt(session_id=self.session_id, prompt=[acp.text_block(text)])
+                        reason = str(answer.stop_reason)
                 except Exception as error:  # noqa: BLE001  the turn's end is noted whatever ended it
                     reason = f'error: {error}'
+                async with self.interrupt_lock:
+                    self.active_turn = None
                 async with self.lock:
                     await self.flush()
                     await self.note('turn', 'turn', f'The turn ended: {reason}.')
@@ -678,6 +698,34 @@ class Session:
             # Otherwise the agent stopped with its ticket open: the session stays, idle and reachable, and the
             # ticket stays taken with the agent's last note, until the person talks to it, stops it or puts the
             # ticket back. Nothing restarts by itself, change order of 2026-10-07.
+
+    async def interrupt(self) -> bool:
+        """Request cancellation of only the current turn; its response owns completion and queued prompts stay serial."""
+        async with self.interrupt_lock:
+            current = self.active_turn
+            if self.ending or self.session_id is None or current is None:
+                return False
+            if current.cancel_requested:
+                return True
+            current.cancel_requested = True
+            if current.sent:
+                try:
+                    await asyncio.wait_for(self.conn.cancel(session_id=self.session_id), END_LIMIT)
+                except Exception:
+                    current.cancel_requested = False  # a failed notification must allow a real retry
+                    raise
+            async with self.lock:
+                for message_id, (waiting, _, title) in list(self.asked.items()):
+                    await self.write(self.store.reply, message_id)  # closed history remains, without live answer controls
+                    if not waiting.done():
+                        waiting.set_result(None)
+                    await self.raise_signal('permission-waiting', key=message_id, active=False,
+                                            message_id=message_id, tool=title)
+                self.asked.clear()
+                await self.flush()
+                await self.note(None, 'interrupt', 'Cancellation of the current turn requested.')
+            await self.changed(tables='dispatch')
+            return True
 
     async def watch(self, process: asyncio.subprocess.Process) -> None:
         await self.exited.wait()
@@ -708,6 +756,7 @@ class Session:
                 activity = ('waiting' if self.asked else 'working' if self.turns else 'idle') if live else 'idle'
                 await self.reply(writer, {**said, 'state': 'running' if live else 'ended', 'agent_alive': alive,
                                           'activity': activity,
+                                          'interrupting': bool(self.active_turn and self.active_turn.cancel_requested),
                                           'how': None if live else self.how or 'the agent is no longer running'})
             elif op == 'message':
                 if self.ending or self.session_id is None:
@@ -719,6 +768,12 @@ class Session:
                     await self.note(None, 'person', text)
                 self.turn(text)
                 await self.reply(writer, {**said, 'sent': True})
+            elif op == 'interrupt':
+                try:
+                    requested = await self.interrupt()
+                    await self.reply(writer, {**said, 'requested': requested})
+                except Exception as error:  # noqa: BLE001  a failed cancel is reported without destroying the session
+                    await self.reply(writer, {**said, 'error': f'Could not interrupt the turn: {error}'})
             elif op == 'stop':
                 await self.end('stopped by the person', release=False)
                 try:
@@ -753,7 +808,7 @@ class Session:
             # acquisition finish and let begin observe ending before proceeding, then clean up its resources.
             async with self.starting:
                 pass
-            for message_id, (waiting, _, title) in self.asked.items():
+            for message_id, (waiting, _, title) in list(self.asked.items()):
                 if not waiting.done():
                     waiting.set_result(None)
                 with contextlib.suppress(Exception):

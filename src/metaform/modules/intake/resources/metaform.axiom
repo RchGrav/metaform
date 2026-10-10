@@ -6,81 +6,52 @@ METAFORM(
 
   elements := [
 
-    # The core node: the project itself. An element with a name and the
-    # namespace address core. It is not a type, so it takes no part in the
-    # namespace and is never reversed or read as one. namespace carries
-    # only a single placeholder word "core", Its job is
-    # connective: everything the intake records connects to it — the
-    # AUEs, the collections, and the CQUs. In a single-artifact project
-    # it holds the one AUE directly.
+    # Each project element: the DE, and the SEs and NEs reached from it.
     ELEMENT(
-      namespace_address := core,
-      name := [canonical name | project name | inferred name],
+      namespace_address := [code|document|media|data dotted namespace address],
+      name_length       := [proper_noun_lookback_segment_count],
+      name              := [Canonical Name (Project official terminology)],
+      role              := [DE|SE|NE],
+      joins             := []
+    ),
 
-      elements := [
+    # Each CQU: defined at downstream.cqu.
+    ELEMENT(
+      namespace_address := downstream.cqu.[CQU type],
+      name_length       := [proper_noun_lookback_segment_count],
+      name              := [industry title of the CQU role],
+      role              := CQU,
+      elements          := [],
 
-        # The AUE: the root of the project's elements.
-        ELEMENT(
-          namespace_address := [code|document|media|data dotted namespace address],
-          name_length       := [proper_noun_lookback_segment_count],
-          name              := [Canonical Name (Project official terminology)],
-          role              := AUE,
+      joins := [
+        JOIN(
+          type    := purpose,
+          purpose := [RE Operative Purpose],
+          ef      := [PE Encounter Function within this RE encounter],
+          ifd     := [send|receive|both],
 
           elements := [
+            # The PE.
             ELEMENT(
               namespace_address := [dotted namespace address],
               name_length       := [proper_noun_lookback_segment_count],
               name              := [Canonical Name (Project official terminology)],
               role              := [DE|SE|NE],
-              joins             := []
-            )
-          ],
+              elements          := [],
 
-          joins := [JOIN(...)]
-        ),
-
-        # Each CQU: defined at downstream.cqu, beside the AUE.
-        ELEMENT(
-          namespace_address := downstream.cqu.[CQU type],
-          name_length       := [proper_noun_lookback_segment_count],
-          name              := [industry title of the CQU role],
-          role              := CQU,
-          elements          := [],
-
-          joins := [
-            JOIN(
-              type    := purpose,
-              purpose := [RE Operative Purpose],
-              ef      := [PE Encounter Function within this RE encounter],
-              ifd     := [send|receive|both],
-
-              elements := [
-                # The PE.
-                ELEMENT(
-                  namespace_address := [dotted namespace address],
-                  name_length       := [proper_noun_lookback_segment_count],
-                  name              := [Canonical Name (Project official terminology)],
-                  role              := [DE|SE|NE],
-                  elements          := [],
-
-                  joins := [
-                    # One level deeper: what this PE receives, in the same JOIN form, repeated at every depth.
-                    JOIN(...)
-                  ]
-                )
+              joins := [
+                # One level deeper: what this PE receives, in the same JOIN form, repeated at every depth.
+                JOIN(...)
               ]
             )
           ]
         )
-      ],
-
-      joins := []
+      ]
     )
   ]
 )
 
 # Notes
-+> The core node is an element with a name and the namespace address core; it is not a type, and it holds the AUEs, the collections, and the CQUs.
 +> The element owning a purpose join is the RE; its nested element is the PE.
 +> PE is not a role. An element may receive in one join and provide in another.
 +> purpose is the only join type.

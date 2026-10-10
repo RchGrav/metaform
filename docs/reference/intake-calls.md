@@ -124,7 +124,7 @@ Returns the shape of the metaform: the namespace roots, the upstream and downstr
 mcp.metaform.intake.start( model, role )
 ```
 
-Opens the intake, or resumes the one being recorded. When the active metaform already has an intake, a separate metaform named `intake-<UTC timestamp>` is created and the earlier one is kept untouched. Returns the new metaform's name. An open web view follows the intake live.
+Opens the intake, or resumes the one being recorded. On a project whose intake is finished it stays on that map: conditions, notes and refs recorded on its elements and joins are written onto it, and recording a new element or join opens a separate metaform named `intake-<UTC timestamp>`, keeping the earlier one untouched. Returns the metaform's name. An open web view follows the intake live.
 
 | Field | Meaning |
 |---|---|
@@ -134,20 +134,19 @@ Opens the intake, or resumes the one being recorded. When the active metaform al
 ### intake.element
 
 ```
-mcp.metaform.intake.element( namespace_address, name_length, name, role, refs, within, condition, note )
+mcp.metaform.intake.element( namespace_address, name_length, name, role, refs, condition, note )
 ```
 
 Records one element, or records it again. Fields given replace the ones the element had; fields left out are kept.
 
 | Field | Meaning |
 |---|---|
-| `namespace_address` | The element's dotted address, formed as the intake procedure describes, such as `code.timer.kitchen`, or `core` for the core element. |
+| `namespace_address` | The element's dotted address, formed as the intake procedure describes, such as `code.timer.kitchen`. |
 | `name_length` | How many of the address's last segments form the element's name, counted from 1. |
 | `name` | The element's name as the project calls it. |
-| `role` | AUE, CQU, DE, SE or NE, as the intake procedure defines them. The core element has none. |
+| `role` | CQU, DE, SE or NE, as the intake procedure defines them. The artifact under examination is not an element; its DE stands for it, MAP-042. |
 | `refs` | Where the element is found: a list of references, each a key and a value, such as `path` and `src/timer.py`. Stored in the `sources` layer. |
-| `within` | The address of the element that holds this one, or `core`. |
-| `condition` | The part's state: `unbuilt`, `under-construction`, `built` or `broken`. Left out when the state is not in question. Any other word is refused before anything is recorded. |
+| `condition` | The procedure's mark: `MISS`, `BKN` or `OK`, stored as `missing`, `trouble` and `ok`. `BKN` needs a note saying what is wrong and what corrects it. Left out when the state is not in question. Recording it again replaces the last. Any other word is refused before anything is recorded. |
 | `note` | Free text kept with the element. An exclusion is a note that starts with `exclude:`. |
 
 ### intake.join
@@ -175,7 +174,7 @@ Records one purpose join: the receiver's purpose, served by the elements the joi
 mcp.metaform.intake.show( receiver )
 ```
 
-Returns the intake being recorded: every element with its fields, `within`, refs, open condition and note, every join with the elements it holds, the root, and the elements that are disconnected or never described.
+Returns the intake being recorded, or the finished map when none is: every element with its fields, refs, open condition and note, every join with the elements it holds and its refs, the CQUs whose root joins the map comes off as `roots`, the elements no root join reaches as `disconnected`, and the addresses never described.
 
 | Field | Meaning |
 |---|---|
@@ -201,7 +200,7 @@ Removes one recorded object while the intake is open. The fields given decide wh
 mcp.metaform.intake.finish( report, feedback )
 ```
 
-Finishes the intake and makes the recorded metaform the active one, keeping the earlier one whole. `metaform map activate <previous-name>` switches back. After `finish`, the metaform changes only by refinement, `metaform map refine`.
+Finishes the intake and makes the recorded metaform the active one, keeping the earlier one whole. `metaform map activate <previous-name>` switches back. After `finish`, the metaform changes by refinement, `metaform map refine`, or by another intake, which writes conditions, notes and refs onto it and opens a new metaform only for new shape.
 
 | Field | Meaning |
 |---|---|

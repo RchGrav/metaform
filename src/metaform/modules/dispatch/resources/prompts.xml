@@ -10,6 +10,12 @@
 
 @CONSTRAINT:
   +> Operate with dispatch active.
+  +> The person can always summon one agent; agents they summon beyond it use the agent slots the agents at work
+     leave free, up to dispatch_agents.
+  +> An issue raised on a part of the map another ticket or a work claim is using, or when every slot is taken, is
+     queued; its sentinel starts when that part and a slot are free, oldest first.
+  +> A chosen proposal's work claim reserves the parts of the map it touches until its tickets have landed; no other
+     ticket there starts.
 
 @CONDITION:
   ?IF ({Dispatch}==ACTIVE) -> {State}:=READY
