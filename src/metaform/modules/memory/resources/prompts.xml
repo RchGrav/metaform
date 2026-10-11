@@ -1,13 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- memory's prompts, MCP-031. What is between an element's tags is what is served. -->
 <prompts>
+<!-- memory's step in the order every agent follows at connect, MCP-029 as amended 2026-10-10: served under the
+     opening line, before the modules, in module id order. -->
+<orient>2. Read the memories on that element, which map where lists. Before you finish, record there what the next agent would otherwise rediscover.</orient>
+<!-- memory's line in the compact instructions at connect, MCP-029 as amended 2026-10-10: empty, since its step
+     in the order of work already says when and where. -->
+<connect></connect>
 <!-- memory's line in the instructions agents read while memory is on, MCP-029. -->
 <instructions>
 @STATE_INIT:
 {Task}:=[current user task]; {Memory}:=NULL; {Findings}:=[]; {State}:=RETRIEVE; {Valid}:=FALSE
 
 @CONSTRAINT:
-+&gt; Before responding or working, always call memory retrieval tools (e.g. search_nodes/read_graph) for target functionality, past decisions, inherited context, selected layers, and relevant user context and preferences.
++&gt; Before working, read the node you are working in with map where &lt;address&gt;: it holds that node's memories, open work and layers, and nothing else. Never read or search the whole graph.
 +&gt; Treat memory as prior findings; specification, standing instructions, and current evidence take precedence.
 +&gt; Verify implementation references before relying on them.
 +&gt; While working, understand relevant implementation/execution paths and preserve durable findings another agent would otherwise need to rediscover: non-obvious behavior, constraints, edge cases, decision rationale, demonstrated failures, reproducible diagnoses, verified changes, and cross-function dependencies.
@@ -40,7 +46,7 @@
 
 @EXECUTE_PIPELINE(Retrieve):
 ∇({Task}) =&gt; identify target functionality, past decisions, relevant inherited context, selected layers, user context/preferences
-=&gt; call search_nodes/read_graph as appropriate
+=&gt; call map where at the address of the node you are working in
 Δ(results) =&gt; {Memory}; {State}:=WORK
 
 @EXECUTE_PIPELINE(Work):
@@ -64,7 +70,7 @@
 
 @VERIFY:
 {Valid}:=
-(memory retrieval occurs before work/response)
+(the working node's memory is read with map where before work)
 AND (memory remains subordinate to specification/instructions/evidence)
 AND (implementation references are checked before reliance)
 AND (durable findings are integrated without duplication)

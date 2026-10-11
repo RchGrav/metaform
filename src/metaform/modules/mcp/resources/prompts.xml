@@ -3,6 +3,9 @@
      clear_statement prompt, which clear_project checks its confirmation against. clear_project, clear_confirm and
      clear_confirmation are its tool description and the descriptions of its confirm and confirmation arguments. -->
 <prompts>
+<!-- mcp's line in the compact instructions at connect, MCP-029 as amended 2026-10-10: empty, since an agent
+     reading the instructions is already connected; the module is not listed. -->
+<connect></connect>
 <!-- mcp's line in the instructions agents read while mcp is on, MCP-029. -->
 <instructions>mcp is active.</instructions>
 <!-- The exact statement an agent passes as confirmation to the MCP clear_project tool, which checks it; it fills

@@ -65,11 +65,6 @@
       </div>
     </div>
     <button class="btn searchbtn" id="searchBtn" type="button" aria-keyshortcuts="/" aria-controls="search" title="Search the map (/)"><i class="i i-search" aria-hidden="true"></i><span class="lbl">Search the map</span><kbd aria-hidden="true">/</kbd></button>
-    <div class="textsize" role="group" aria-label="Text size and zoom">
-      <button class="btn icon quiet" id="textDown" type="button" aria-label="Smaller text" title="Smaller text"><span class="aa" aria-hidden="true">A<b>−</b></span></button>
-      <button class="btn icon quiet" id="textUp" type="button" aria-label="Larger text" title="Larger text"><span class="aa big" aria-hidden="true">A<b>+</b></span></button>
-      <button class="btn icon quiet" id="sizesReset" type="button" aria-label="Reset sizes and zoom" title="Every size and zoom back to its default: the text, the side column, the split, the 2D map's zoom and the 3D map's fit"><i class="i i-reset" aria-hidden="true"></i></button>
-    </div>
     <div class="hmore">
       <div class="layerpick pick">
         <button class="btn" id="layersBtn" type="button" aria-expanded="false" aria-controls="layerlist"><span class="lbl">Layers</span></button>
@@ -95,6 +90,9 @@
               <option value="mist">mist</option>
             </select>
           </div>
+          <div class="menu-field themepick" title="Also Alt and +, Alt and −, Alt and 0 for the default"><label for="textsize">Text size</label>
+            <select id="textsize" aria-keyshortcuts="Alt+= Alt+- Alt+0"></select>
+          </div>
           <div class="sep" role="separator"></div>
           <button id="shortcutsBtn" type="button" title="Every key the map and the page take">Keyboard shortcuts <kbd aria-hidden="true">?</kbd></button>
         </div>
@@ -107,11 +105,11 @@
     <div class="splitter side" id="sideSplit" role="separator" aria-orientation="vertical" aria-label="The side column's width"
          title="Drag to resize; double-click to reset"></div>
     <div class="small" id="small">
-    <div class="map2d" id="map2d" tabindex="0" aria-label="The whole map. Down goes deeper, Up back to the parent, Left and Right across; Enter goes inside, Escape out; F cycles the view. Press ? for every key.">
+    <div class="map2d" id="map2d" tabindex="0" aria-label="The whole map. Down goes deeper, Up back to the parent, Left and Right across; Enter goes inside, Escape lets go of the selection, then out; 4 to 9 and 0 choose the zoom. Press ? for every key.">
       <div class="bar2d">
         <div class="navbtns"><button id="backBtn" class="btn icon sm quiet" type="button" aria-label="Back" title="Back to the node selected before" disabled><i class="i i-back" aria-hidden="true"></i></button><button id="forwardBtn" class="btn icon sm quiet" type="button" aria-label="Forward" title="Forward again" disabled><i class="i i-forward" aria-hidden="true"></i></button></div>
         <nav class="crumbs" id="crumbs" hidden aria-label="Where you are inside the map"></nav>
-        <div class="mapbtns"><button id="fitBtn" class="btn sm quiet" type="button" title="Zoomed out, zoomed in, regular (F)">Fit</button><button id="swapBtn" class="btn sm quiet" type="button" title="Put this map in the large area, and the 3D map here">Swap</button></div>
+        <div class="mapbtns"><button id="swapBtn" class="btn sm quiet" type="button" title="Put this map in the large area, and the 3D map here">Swap</button></div>
       </div>
       <div class="viewport" id="viewport"></div>
     </div>
@@ -346,13 +344,19 @@
   <div class="body">
     <div class="keys">
       <section><h3>Anywhere</h3>
-        <dl><dt><kbd>/</kbd></dt><dd>Search the map</dd><dt><kbd>?</kbd></dt><dd>These shortcuts</dd><dt><kbd>Esc</kbd></dt><dd>Close the window or menu on top; with none open, back out one level</dd></dl></section>
+        <dl><dt><kbd>/</kbd></dt><dd>Search the map</dd><dt><kbd>?</kbd></dt><dd>These shortcuts</dd><dt><kbd>Esc</kbd></dt><dd>Close the window or menu on top; with none open, let go of the selection, and with nothing selected, back out one level</dd></dl></section>
       <section><h3>The maps</h3>
         <dl><dt><kbd>↓</kbd></dt><dd>Deeper, to the provider drawn nearest below</dd><dt><kbd>↑</kbd></dt><dd>Back to the parent</dd>
           <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Across the parent's nodes, then on to the next row</dd>
           <dt><kbd>Enter</kbd></dt><dd>Inside the selected node</dd><dt><kbd>Shift</kbd> <kbd>Enter</kbd></dt><dd>Out one level</dd>
-          <dt><kbd>F</kbd></dt><dd>Fit: zoomed out, zoomed in, regular</dd><dt><kbd>Home</kbd></dt><dd>The whole map</dd>
-          <dt><kbd>1</kbd>–<kbd>9</kbd></dt><dd>With the 2D map large: the least text size, 8 to 24 px, the selected node centered</dd></dl></section>
+          <dt>Click</dt><dd>Select; on the selected node, inside it; on empty space, let go of the selection</dd>
+          <dt><kbd>Shift</kbd> click</dt><dd>Out one level</dd></dl></section>
+      <section><h3>The 2D map's zoom</h3>
+        <dl><dt><kbd>4</kbd> <kbd>5</kbd> <kbd>6</kbd></dt><dd>Small, Medium, Large: the map's text at the page's smallest text, the panel's headings, twice those</dd>
+          <dt><kbd>7</kbd> <kbd>8</kbd></dt><dd>Height, Width: the map fitted one way; the wheel scrolls the other</dd>
+          <dt><kbd>9</kbd> <kbd>Home</kbd></dt><dd>All: the whole map</dd>
+          <dt><span class="ctrlclick"><kbd>Ctrl</kbd></span> click</dt><dd>All, from anywhere on the 2D map</dd>
+          <dt><kbd>0</kbd></dt><dd>Free: the wheel zooms</dd></dl></section>
     </div>
     <p class="hint">The keys reach the maps while no window is open over them and no text field has the focus.</p>
   </div>

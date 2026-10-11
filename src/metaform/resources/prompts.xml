@@ -18,12 +18,12 @@ modules available.
 <surface_mcp>Metaform MCP server is active.</surface_mcp>
 <!-- Opens the instructions served anywhere but the MCP server: the command line and a project wheel's run. -->
 <surface_cli>Metaform is active.</surface_cli>
-<!-- The compact instructions, connect_instructions=compact, MCP-029: each module is listed by active, with its id in
-     place of <module/>, and more follows the list. -->
-<active><module/> is active.</active>
+<!-- The compact instructions' line for a module that has no connect line of its own, connect_instructions=compact,
+     MCP-029 as amended 2026-10-10: its id in place of <module/>, and where to go when the agent needs it. -->
+<active><module/>: when you need it, call its tool with no command.</active>
 <!-- Follows the module list in the compact instructions, the default connect_instructions=compact, and tells the
      agent where a module's full instructions are, MCP-029. -->
-<more>A module's full instructions: read resource metaform://instructions/&lt;module&gt;, or call its tool with no command. A command's arguments: call its tool with help and the command.</more>
+<more>A module's instructions: call its tool with no command. A command's arguments: call its tool with help and the command.</more>
 <!-- Added to the instructions when the folder is in no registered project and other projects are registered;
      <projects/> is filled with their ids. -->
 <registered>Registered projects: <projects/>.</registered>
@@ -34,9 +34,10 @@ modules available.
      ~/.claude/CLAUDE.md, so an agent opened directly in its harness knows to read Metaform's instructions; the
      provision help prints it for other harnesses, MCP-036. -->
 <global_instructions>This system orchestrates work using Metaform. You must use its active features. Read them with `metaform help agents`, or the metaform tool's instructions command.</global_instructions>
-<!-- The passive reminder provision installs as a hook: Claude Code shows it before an Agent, Task or AskUserQuestion
-     call, Gemini after invoke_agent, delegate_to_agent or ask_user, MCP-036. -->
-<work_reminder>Use Metaform for all task assignment.</work_reminder>
+<!-- The passive reminder provision installs as a hook: Claude Code shows it before an Agent, Task, Workflow or
+     AskUserQuestion call, Gemini after invoke_agent, delegate_to_agent or ask_user, MCP-036; the orchestrator hands
+     the map at the moment it hands out work, MCP-029 as amended 2026-10-10. -->
+<work_reminder>If this hands work to an agent: give it map where &lt;address&gt; for the node its work is in, and tell it to record what it learns at that node.</work_reminder>
 <!-- Served, in this order, only while the debug setting is on, MCP-031. -->
 <stop>If you cannot continue, stop and submit a trouble report: call the metaform tool with command feedback, attaching what you have in its shape field. Do not retry.</stop>
 <!-- Follows stop in the instructions while the debug setting is on, and asks the agent for feedback on the Metaform

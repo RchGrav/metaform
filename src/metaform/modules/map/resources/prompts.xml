@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- map's prompts, MCP-031. What is between an element's tags is what is served. -->
 <prompts>
+<!-- map's step in the order every agent follows at connect, MCP-029 as amended 2026-10-10: served under the
+     opening line, before the modules, in module id order. -->
+<orient>1. Orient: find the functionality you work on in the map, map where &lt;address&gt;, or from a file, map citing key=path value=&lt;file&gt;. Hand an agent you start that map where.</orient>
+<!-- map's line in the compact instructions at connect, MCP-029 as amended 2026-10-10: empty, since its step
+     in the order of work already says when and where. -->
+<connect></connect>
 
 <!-- map's slash commands: /metaform:messages runs map messages, /metaform:tasks runs map work open=true, and
      /metaform:refine serves the survey text written in it, MCP-032 and MCP-033. -->

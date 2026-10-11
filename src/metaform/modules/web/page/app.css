@@ -516,8 +516,12 @@ dl.facts dd.addr{font:var(--t-sm)/1.6 var(--mono);color:var(--signal)}
 .map2d .node.work-broken rect,.map2d .cluster.work-broken rect,.map2d .node.work-trouble rect,.map2d .cluster.work-trouble rect{stroke:var(--broken)!important;animation:flash var(--pace,1s) ease-in-out infinite}
 @media (prefers-reduced-motion: reduce){.map2d .node.work-broken rect,.map2d .cluster.work-broken rect,.map2d .node.work-trouble rect,.map2d .cluster.work-trouble rect{animation:none;fill:var(--node-broken)!important}}
 .map2d.focused .node:not(.sel):not(.near) text,.map2d.focused .node:not(.sel):not(.near) .nodeLabel{fill:var(--muted)!important}
-.map2d .edgePaths path{stroke:var(--edge)!important;stroke-width:1.2px!important;transition:stroke .3s,opacity .3s}
-.map2d .edgePaths path.on{stroke:var(--intake)!important;stroke-width:1.8px!important}
+.map2d .edgePaths path{stroke:var(--edge)!important;stroke-width:max(1.2px,calc(var(--pixel2d,0) * 1px))!important;transition:stroke .3s,opacity .3s}
+.map2d .edgePaths path.on{stroke:var(--intake)!important;stroke-width:max(1.8px,calc(var(--pixel2d,0) * 1.5px))!important}
+/* An edge takes a click on a band one screen pixel wider than its line, VIEW-008: a copy of it over it, unpainted. */
+.map2d .hits2d path{stroke:transparent!important;fill:none!important;pointer-events:stroke;cursor:pointer;
+  stroke-width:calc(max(1.2px,calc(var(--pixel2d,0) * 1px)) + var(--unit2d,0) * 1px)}
+.map2d .hits2d path.on{stroke-width:calc(max(1.8px,calc(var(--pixel2d,0) * 1.5px)) + var(--unit2d,0) * 1px)}
 .map2d .cluster rect{fill:var(--group)!important;stroke:var(--node-line)!important;stroke-width:1px!important;rx:6px;cursor:pointer}
 .map2d .cluster .nodeLabel,.map2d .cluster text,.map2d .cluster-label text{fill:var(--text)!important;font:500 12px var(--sans)!important}
 .map2d .cluster.sel rect{stroke:var(--signal)!important;stroke-width:2px!important}
@@ -1265,10 +1269,15 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
 .map2d .node{transform-box:fill-box;transform-origin:center}
 
 /* ---------- the graph stage: the maps' own controls ----------
- * The two modes of the 2D map in the large area, VIEW-041, as the page's segmented control in the map's bar: the mode
- * that holds is the one checked. */
+ * The 2D map's seven modes, VIEW-041, as the page's segmented control in the map's bar: the mode the map is in is the
+ * one checked, and each names its key. In the small area each shows a short name, its key in its tip. */
 .map2d .mapbtns .modes2d{margin-right:var(--s2)}
 .map2d .mapbtns .modes2d[hidden]{display:none}
+.modes2d button{display:inline-flex;align-items:center;gap:var(--s1)}
+.modes2d button kbd{font:500 var(--t-xs)/1 var(--mono);color:var(--faint);background:none;border:0;padding:0;min-width:0;height:auto}
+.modes2d button[aria-checked="true"] kbd{color:var(--muted)}
+.modes2d .short,.small .modes2d .long,.small .modes2d kbd{display:none}
+.small .modes2d .short{display:inline}
 /* The selected node's joins in the 2D map carry its flow, VIEW-005: pulses along each edge, receiver to provider. */
 .map2d .flows2d path.flow{fill:none;stroke:var(--signal)!important;stroke-width:2.6px!important;stroke-linecap:round;
   stroke-dasharray:1 13;animation:flow2d 1.4s linear infinite;pointer-events:none;opacity:.9}
@@ -1279,3 +1288,11 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
 /* In the small area the bar is narrow: the modes are set tighter, and the breadcrumb keeps room to be read. */
 .small .mapbtns .modes2d button,.small .mapbtns .modes3d button{padding:0 var(--s1)}
 .map2d .bar2d .crumbs{min-width:72px}
+/* the met sign, drawn on the screen over the map where the sign in the scene would be, VIEW-005 */
+.metsign{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:1}
+/* met: the map behind the met sign out of focus, a shallow depth of field on the name, back in focus at a touch */
+#stage canvas:not(.metsign){transition:filter .3s ease}
+#big3d.met #stage canvas:not(.metsign){filter:blur(5px) brightness(.75);transition:filter 1.8s ease}
+@media (prefers-reduced-motion:reduce){#stage canvas:not(.metsign){transition:none}}
+/* the View menu's field labels stay on one line, VIEW-023 */
+.menu-field.themepick label{white-space:nowrap}

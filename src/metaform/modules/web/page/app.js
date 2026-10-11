@@ -455,6 +455,7 @@ document.addEventListener('scroll', event => {
 const S = {
   projects: [], project: null, bases: [], base: null, layers: [], view: null,
   elements: new Map(), joins: [], items: new Map(), selected: null, neighbors: new Set(), trail: [], history: [], at: -1, loading: 0, opening: 0,
+  cleared: false,  // the person let go of the selection, VIEW-008, so a map read again selects nothing in its place
   whole: null,  // the last map read whole, {elements, joins}, put back when a read of it fails
   memory: {entities: new Map(), relations: [], joins: [], at: new Map(), age: 0, orphaned: 0},  // LAYER-013
 };
@@ -601,9 +602,11 @@ toggler($('#settingsBtn'), $('#settingsbox'));
 $('#shortcutsBtn').onclick = () => { $('#settingsbox').hidden = true; $('#help').hidden = false; };
 overlay($('#help'), {kind: 'dialog', close: () => { $('#help').hidden = true; }});
 $('#help .close').onclick = () => { $('#help').hidden = true; };
-/* The page's text size, VIEW-023: A down and A up step every size token of the page, the type, the spacing and the
- * heights of controls, through --ui, so the header, the menus, the panel and the windows follow; the maps draw their
- * own text and are not scaled. The size is kept in this browser and put back before the page draws, `theme.js`. */
+/* The page's text size, VIEW-023: chosen from the View menu's list or stepped with Alt and =, Alt and -, and Alt and 0
+ * for the default. It steps every size token of the page, the type, the spacing and the heights of controls, through
+ * --ui, so the header, the menus, the panel and the windows follow; the maps draw their own text and are not scaled.
+ * There is no button for it in the header: a button that grows with the text it sizes moves out from under the mouse.
+ * The size is kept in this browser and put back before the page draws, `theme.js`; it touches this page only. */
 const TEXTSIZE = {steps: [0.84, 0.92, 1, 1.08, 1.17, 1.27, 1.38, 1.5], start: 3, key: 'metaform.textSize'};
 function textStep() {
   const now = Number(getComputedStyle(document.documentElement).getPropertyValue('--ui')) || TEXTSIZE.steps[TEXTSIZE.start];
@@ -614,23 +617,23 @@ function textSize(index) {
   document.documentElement.style.setProperty('--ui', String(TEXTSIZE.steps[at]));
   try { at === TEXTSIZE.start ? localStorage.removeItem(TEXTSIZE.key) : localStorage.setItem(TEXTSIZE.key, String(TEXTSIZE.steps[at])); }
   catch (error) { /* storage can be blocked; the size still changes */ }
-  $('#textDown').disabled = at === 0;
-  $('#textUp').disabled = at === TEXTSIZE.steps.length - 1;
+  $('#textsize').value = String(at);
   dispatchEvent(new Event('resize'));  // the panes and the maps' areas changed size with it, and the header folds if it must
 }
-$('#textDown').onclick = () => textSize(textStep() - 1);
-$('#textUp').onclick = () => textSize(textStep() + 1);
+for (const [index, step] of TEXTSIZE.steps.entries()) {
+  $('#textsize').append(h('option', {value: String(index)}, `${Math.round(step / TEXTSIZE.steps[TEXTSIZE.start] * 100)}%`
+    + (index === TEXTSIZE.start ? ' (default)' : '')));
+}
+$('#textsize').onchange = event => textSize(Number(event.target.value));
+// By the key's place, not its character: on a Mac, Alt turns = into another character.
+const TEXTKEYS = {Equal: 1, NumpadAdd: 1, Minus: -1, NumpadSubtract: -1, Digit0: 0, Numpad0: 0};
+addEventListener('keydown', event => {
+  if (!event.altKey || event.ctrlKey || event.metaKey || !(event.code in TEXTKEYS)) return;
+  event.preventDefault();
+  const by = TEXTKEYS[event.code];
+  textSize(by ? textStep() + by : TEXTSIZE.start);
+});
 textSize(textStep());
-/* Reset puts every size and zoom back as the page opens: the text, the side column and the split under the small map,
- * the 2D map's least text and its whole view, and the 3D map fitted, each through its own reset. */
-$('#sizesReset').onclick = () => {
-  textSize(TEXTSIZE.start);
-  sized('side', null);
-  sized('small', null);
-  MODE.key = 5;  // the least text of the 2D map's Zoom, VIEW-041
-  fitAll();
-  toast('Sizes and zoom are back to their defaults.');
-};
 /* The header folds its rest behind the menu button below 1100 px, by the styles, and on a wider window whenever its
  * one row does not hold everything, as at a larger text size: it is measured unfolded, in the same frame, so nothing
  * flashes. */
@@ -904,7 +907,7 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   loaded: () => !S.loading && !S.opening, editor: () => P.editor, live: () => LIVE.layer, changes: () => LIVE.done,
   inside: () => IN.length && M.drawn === IN.at(-1) ? [...M.nodes.keys()] : [], vertical: () => M.vertical,
   at2d: id => M.nodes.has(id) ? {x: M.nodes.get(id).x, y: M.nodes.get(id).y} : null,
-  look: id => look(id), fit: () => fit2D(), menu: id => menu(id), task: id => giveWork(id), element: id => addElement(id), note: id => notesAt(id),
+  look: id => look(id), fit: () => setMode('all'), menu: id => menu(id), task: id => giveWork(id), element: id => addElement(id), note: id => notesAt(id),
   // The memory network of a node, VIEW-031: opened as the menu's entry opens it, and what both views draw of it, or
   // null on the map.
   memories: id => memories(id),
@@ -951,6 +954,7 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   reach: () => ({property: R.key, edges: R.edges,
     elements: [...S.elements.values()].map(entry => entry.element).filter(element => R.nodes.has(element.id)).map(element => element.address)}),
   own: id => { const node = G ? G.graphData().nodes.find(item => item.id === id) : null; return node ? ownColor(node).toLowerCase() : null; },
+  dbgBounds: () => [M.bounds, (b => [b.x, b.y, b.width, b.height])(M.svg.querySelector("g").getBBox())],
   box2d: id => { const box = M.nodes.get(id)?.g.getBoundingClientRect(); return box ? {left: box.left, right: box.right, top: box.top, bottom: box.bottom} : null; },
   edge2d: join => [...(M.base?.edges.find(edge => edge.join.id === join)?.path?.classList || [])]
     .filter(name => name.startsWith('work-')),
@@ -2074,13 +2078,10 @@ function create3D() {
   Object.assign(controls, {enableDamping: true, dampingFactor: DAMPING, zoomToCursor: true});
   controls.addEventListener('start', () => {
     FLIGHT.on = false; V3.auto = false; hover3d(null);
-    if (MEET.on) { MEET.released = true; meetEnds(); }
-  });
-  controls.addEventListener('end', () => {  // let go after a meeting: back out to the node's usual close view
-    if (!MEET.released || !MEET.back) return;
-    MEET.released = false;
-    const node = G.graphData().nodes.find(item => item.id === MEET.back.id), here = cameraNow();
-    if (node && node.x !== undefined) flyTo({x: node.x, y: node.y, z: node.z, turn: here.turn, tilt: here.tilt, far: MEET.back.far});
+    // A hand on the camera releases a meeting: the sign goes back into the scene, the map behind comes back into
+    // focus, and the camera stays where the hand leaves it, so the small area is a map to look around, until the
+    // next selection meets a sign again.
+    if (MEET.on) meetEnds();
   });
   controls.addEventListener('change', () => { FRAMES.moved = true; });
   const stage = $('#stage');
@@ -2112,7 +2113,6 @@ function create3D() {
 /* A click on any vertex selects that object itself: an element or a join's purpose vertex. */
 function clicked3d(node) {
   if (!node) return;
-  if (large()) MODE.mode = 'readable';  // a click on a node goes to mode two, VIEW-041
   select(node.id, true);
 }
 /* A node takes the pointer anywhere on its sphere, not only at its center, a ghost of a part not built as every
@@ -2186,7 +2186,7 @@ const short = (text, most) => text.length > most ? text.slice(0, most - 1) + '�
  * text color, each letter outlined in the background's color, `stroke`, in place of a box behind the name, so the
  * name reads over what is behind it without a bar hiding the map; the outline fades with the label by its depth. A
  * label is painted again only when what it shows changes. */
-const LABEL = {size: 11, chosen: 13, wide: 9, line: 1.15, padX: 6, padY: 4, stroke: 2, after: 10,
+const LABEL = {size: 11, chosen: 13, wide: 9, line: 1.15, padX: 6, padY: 4, stroke: 2, after: 10, titleStep: 0.06,
   out: 12,  // how far a label stands out from its ball's surface, away from the map's middle, in the map's units
   // the size of a label's letters in the map, in its units, about an element's height; painted sharper at each
   // `sharper` step of the size it is seen at, up to `largest`; and the farthest label's opacity, the nearest solid
@@ -2308,9 +2308,16 @@ function layered() {
   }
   if (placed) middle.divideScalar(placed);
   for (const node of G.graphData().nodes) {
-    if (node.t !== 'el') continue;
+    // A join has no name of its own on the map; selected, its title fades in on it, its receiver and the parts that
+    // serve it, VIEW-038, and fades out when it is no longer selected.
+    const titled = node.t === 'purpose' && (node.id === S.selected || tags.get(node.id)?.fade > 0);
+    if (node.t !== 'el' && !titled) continue;
     const tag = labelFor(node);
-    tag.text = node.name || '';
+    tag.text = titled ? joinTitle(node) : node.name || '';
+    if (titled) {
+      tag.fade = Math.max(0, Math.min(1, (tag.fade || 0) + (node.id === S.selected ? 1 : -1) * LABEL.titleStep));
+      if (tag.fade > 0 && tag.fade < 1) wake3d();
+    }
     tag.hidden = node.x === undefined;
     tag.sprite.visible = !tag.hidden && (!LABELS.only || LABELS.only.has(node.id));
     if (tag.hidden) continue;
@@ -2347,7 +2354,7 @@ function layered() {
   shown.sort((one, two) => one.far - two.far);
   shown.forEach((label, index) => {
     // the nearest label solid, the farthest at LABEL.farthest of it, the rest between by their depth
-    label.tag.sprite.material.opacity = 1 - (1 - LABEL.farthest) * label.back;
+    label.tag.sprite.material.opacity = (1 - (1 - LABEL.farthest) * label.back) * (label.tag.fade ?? 1);
     const box = label.tag.rect;
     const behind = spheres.some(sphere => sphere.id !== label.tag.id && sphere.far < label.far &&
       Math.hypot(Math.max(box.left, Math.min(sphere.x, box.right)) - sphere.x,
@@ -2355,7 +2362,7 @@ function layered() {
     const covered = shown.slice(0, index).some(({tag: other}) => !(box.right <= other.rect.left ||
       other.rect.right <= box.left || box.bottom <= other.rect.top || other.rect.bottom <= box.top));
     const tag = label.tag;
-    tag.under = behind || covered;
+    tag.under = (behind || covered) && !(MEET.on && tag === tags.get(MEET.back?.id));
     tag.z = shown.length - index;
     if (tag.under) tag.classes.push('under');
     const look = lookOf(tag.classes, palette);
@@ -2364,6 +2371,37 @@ function layered() {
     const key = [tag.text, fontOf(look), look.color, look.ground, look.glow, sharp].join('|');
     if (key !== tag.key) { painted(tag, look, sharp, tag.shape); tag.key = key; }
   });
+  metSign(MEET.on ? tags.get(MEET.back?.id) : null);
+}
+/* The met sign on the canvas, VIEW-005: while the camera meets a sign square on, the sign in the scene and its face
+ * drawn flat on the screen look the same, so it is drawn on a layer over the map at the very rectangle its four
+ * corners project to, frame by frame, and the sign in the scene is hidden. An edge passing through the sign's plane in
+ * the map then never crosses its letters; when the meeting ends the sign in the scene is shown again where it was. */
+const MET = {box: null, pen: null, corner: new THREE.Vector3()};
+function metSign(tag) {
+  if (!MET.box) {
+    MET.box = h('canvas', {class: 'metsign', 'aria-hidden': 'true'});
+    MET.box.hidden = true;
+    $('#stage').append(MET.box);
+    MET.pen = MET.box.getContext('2d');
+  }
+  const box = MET.box, pen = MET.pen;
+  if (!tag || tag.hidden || !tag.texture.image.width) { if (!box.hidden) box.hidden = true; return; }
+  const area = $('#stage').getBoundingClientRect(), ratio = window.devicePixelRatio || 1;
+  const wide = Math.round(area.width * ratio), tall = Math.round(area.height * ratio);
+  if (box.width !== wide || box.height !== tall) Object.assign(box, {width: wide, height: tall});
+  tag.sprite.updateMatrixWorld();
+  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+  for (const [x, y] of [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]]) {
+    const at = tag.sprite.localToWorld(MET.corner.set(x, y, 0)), seen = G.graph2ScreenCoords(at.x, at.y, at.z);
+    left = Math.min(left, seen.x); right = Math.max(right, seen.x); top = Math.min(top, seen.y); bottom = Math.max(bottom, seen.y);
+  }
+  pen.setTransform(ratio, 0, 0, ratio, 0, 0);
+  pen.clearRect(0, 0, area.width, area.height);
+  pen.globalAlpha = tag.sprite.material.opacity ?? 1;
+  pen.drawImage(tag.texture.image, left, top, right - left, bottom - top);
+  tag.sprite.visible = false;
+  box.hidden = false;
 }
 /* The page's work for each frame of the 3D map, run in the render chain before anything is drawn, `create3D`: the
  * camera's flight, the colors, the wave, the figures, the text, the lights, the labels, the dots and the tooltip. It
@@ -2528,12 +2566,24 @@ function setTheme(name) {
 $('#theme').value = document.documentElement.dataset.theme;
 if ($('#theme').selectedIndex < 0) $('#theme').value = document.documentElement.dataset.theme = 'space';  // a kept name that is no longer a theme
 $('#theme').onchange = () => setTheme($('#theme').value);
-const MODE = {mode: 'whole', key: 5, zoom: 3, most: 0.6};  // the 2D camera's mode in the large area, VIEW-041; see modeTarget
+/* The 2D map's modes, VIEW-041: one at a time, in the large area, the small one and inside a node alike, and the mode
+ * alone sets the 2D map's zoom. Small, Medium and Large set it by the size the map's text is drawn at, Height, Width
+ * and All fit the map to the pane, and in Free the wheel sets it. Each is [name, key, word, short word, what it does].
+ * `free` is the zoom the wheel left in Free, in screen pixels to a unit of the map; `page` the page's text sizes the
+ * text modes are read from, `pageText`; `labels` each drawing's own label size. The 3D map's zoom is its own, VIEW-005. */
+const MODES2D = [['small', '4', 'Small', 'S', "the map's text at the size of the smallest text on the page"],
+  ['medium', '5', 'Medium', 'M', "the map's text at the size of the panel's headings"],
+  ['large', '6', 'Large', 'L', "the map's text at twice the size of the panel's headings"],
+  ['height', '7', 'Height', 'H', "the map's height fitted to the pane; the wheel scrolls across"],
+  ['width', '8', 'Width', 'W', "the map's width fitted to the pane; the wheel scrolls up and down"],
+  ['all', '9', 'All', 'All', 'the whole map in the pane'],
+  ['free', '0', 'Free', 'Free', 'the wheel zooms']];
+const MODE = {mode: 'all', free: 1, box: null, buttons: new Map(), page: null, labels: new WeakMap()};
+const MARGIN = 40;  // the most screen pixels shown beyond the map's edge where it runs past the pane, VIEW-041
 /* The two views change places, VIEW-028: the 2D map takes the large area and the 3D map the small one, and back.
  * Each is then drawn for the area it has. The choice is the viewer's own, kept in this browser. */
 async function swap(on, remember = true) {
   $('.app').classList.toggle('swapped', on);
-  if (on) MODE.mode = 'whole';  // the 2D map comes to the large area in mode one, VIEW-041
   (on ? $('main') : $('#small')).append($('#map2d'));
   (on ? $('#small') : $('main')).append($('#big3d'));
   $('#swapBtn').title = on ? 'Put the 3D map back in the large area' : 'Put this map in the large area, and the 3D map here';
@@ -2679,9 +2729,9 @@ const fitTrim = () => $('.app').classList.contains('swapped') ? FIT.small : FIT.
 const fitBalls = data => drawnBalls(data);
 function fit3d(time = 700, room = 60) {
   if (!G) return;
-  // In the small area the map is read by its selected node, framed by its name, VIEW-005: the whole map is too small
-  // there to read, so its fit is the node's name across NAME.out of the width.
-  if (small3d() && S.selected && fly3d(S.selected, true, NAME.out)) return;
+  // In the small area the map is read by its selected node, met at its sign, VIEW-005: the whole map is too small to
+  // read there, so with a selection there is one view, and the mouse looks around it.
+  if (small3d() && S.selected && fly3d(S.selected)) return;
   const balls = fitBalls(G.graphData());
   Object.assign(V3, {auto: true, asked: true});
   if (!balls.length) return;
@@ -2705,8 +2755,8 @@ function facingOf(node, balls) {
  * eye, `facingOf`, close enough that its three nearest neighbors frame it, at most four tenths of the whole map's
  * distance, never so near that the node fills the screen; the 3D map's Zoom and Fit go to the same view. Without
  * `close` it keeps the zoom the camera has. */
-// The share of the small area's width the selected node's name spans: framed out, and in close on it.
-const NAME = {out: 0.3, in: 0.8};
+// The share of the small area's width the selected node's name spans when the camera meets it.
+const NAME = {in: 0.8};
 const small3d = () => $('.app').classList.contains('swapped');
 /* How far the camera stands, as a log, for the node's name, at its real size in the map, to span `share` of the
  * view's width; null while the name is not drawn yet. */
@@ -2737,6 +2787,7 @@ function fly3d(id, close = true, share = NAME.in) {
     : (FLIGHT.on ? FLIGHT.to.far : cameraNow().far);  // a selection keeps the zoom the person has
   // In the small area the camera stands where the node's own name spans `share` of the window, so the name is read
   // there because the eye is that near it, not because it was drawn larger than the map holds it.
+  if (close && node.t === 'purpose' && !tags.get(id)?.sprite.scale.x) layered();  // a join's title is made on selection
   const named = close && small3d() ? nameFar(node, share) : null;
   if (named !== null) view.far = named;
   V3.auto = false;
@@ -2762,7 +2813,7 @@ function fly3d(id, close = true, share = NAME.in) {
 /* Meeting a sign, VIEW-005: the camera's near plane is moved out to just short of the sign, so the nodes, signs and
  * edges between the eye and it are not drawn and it is read whole; it eases there and back. The plane is the camera's
  * own, set back to its value when the meeting ends. */
-const MEET = {on: false, back: null, own: null, from: 0, to: 0, start: 0, released: false};
+const MEET = {on: false, back: null, own: null, from: 0, to: 0, start: 0};
 function easeNear(to, length = 0.35) {
   const camera = G.camera();
   if (MEET.own === null) MEET.own = camera.near;
@@ -2778,6 +2829,8 @@ function easeNear(to, length = 0.35) {
 }
 function meetBegins(reach) {
   MEET.on = true;
+  // in the small area the map behind the met sign goes soft, as a lens focused on the sign sees it
+  $('#big3d').classList.toggle('met', small3d());
   // The sign is square to the eye, so its whole face is at one depth: the plane stops a hair short of it, and
   // nothing in front of it, an edge crossing the last stretch included, is drawn.
   easeNear(reach - Math.max(0.05, reach * 0.004));
@@ -2785,6 +2838,7 @@ function meetBegins(reach) {
 function meetEnds() {
   if (MEET.own === null || (!MEET.on && G.camera().near === MEET.own && MEET.to === MEET.own)) return;
   MEET.on = false;
+  $('#big3d').classList.remove('met');
   easeNear(MEET.own);
 }
 /* While a map opens and its layout first spreads out, the camera keeps it framed, easing after it four times a second,
@@ -2820,8 +2874,9 @@ MODES3D.box = h('div', {class: 'segmented modes3d', role: 'radiogroup', 'aria-la
     onclick: event => { event.stopPropagation(); if (S.selected) fly3d(S.selected, true); }}, 'Zoom'));
 $('#big3d .mapbtns').prepend(MODES3D.box);
 function showModes3d() {  // each frame, from where the camera stands or is flying to
-  // the small area has no whole map to show, only the selected node framed out or in, which its Fit moves between
+  // the small area has no whole map to show and one view of the selected node, so it has neither these nor Fit
   MODES3D.box.hidden = small3d();
+  $('#fit3dBtn').hidden = small3d();
   const far = FLIGHT.on ? Math.exp(FLIGHT.to.far) : away3d(), whole = V3.whole && far >= V3.whole * 0.8;
   const said = V3.whole ? (whole ? 'whole' : 'zoom') : '';
   if (said === MODES3D.said) return;
@@ -2831,13 +2886,6 @@ function showModes3d() {  // each frame, from where the camera stands or is flyi
 }
 $('#fit3dBtn').onclick = () => {
   if (!G) return;
-  const node = small3d() && S.selected ? G.graphData().nodes.find(item => item.id === S.selected) : null;
-  const out = node ? nameFar(node, NAME.out) : null, near = node ? nameFar(node, NAME.in) : null;
-  if (out !== null && near !== null) {  // in the small area Fit goes between the name framed out and in close
-    const here = Math.log(Math.max(away3d(), 1e-3));
-    fly3d(S.selected, true, Math.abs(here - near) < Math.abs(here - out) ? NAME.out : NAME.in);
-    return;
-  }
   const back = V3.whole && away3d() >= V3.whole * 0.8;
   if (back && S.selected && fly3d(S.selected, true)) return;
   fit3d();
@@ -2873,7 +2921,7 @@ function renderLegend() {
 }
 
 /* ---------- 2D: the whole map, short names, no text on the edges; the camera moves node to node ---------- */
-const M = {svg: null, nodes: new Map(), edges: [], cam: null, to: null, fit: null, frame: 0, generation: 0};
+const M = {svg: null, nodes: new Map(), edges: [], cam: null, to: null, bounds: null, frame: 0, generation: 0};
 const MAP2D = 5000;  // the most elements Mermaid lays out; above it the 2D map is not drawn, BUILD-QUESTIONS Q52
 /* A name as a 2D label: the characters Mermaid would read as its own taken out, and a name longer than `most` cut at the
  * last break between words that keeps most of it, with an ellipsis, so a label never ends in half a word and always
@@ -2909,7 +2957,7 @@ async function build2D(keep = true) {
   if (!S.elements.size || S.elements.size > MAP2D) { IN.length = 0; M.base = null; renderCrumbs(); }
   if (!S.elements.size) { fill(host, h('p', {class: 'empty', style: {padding: '16px'}}, noMetaform() ? noneYet() : 'This metaform has no elements in these layers.')); return; }
   if (S.elements.size > MAP2D) {
-    M.svg = null; M.nodes = new Map(); M.edges = [];
+    M.svg = null; M.nodes = new Map(); M.edges = []; showModes();
     fill(host, h('p', {class: 'empty', style: {padding: '16px'}}, `The 2D map lays out at most ${MAP2D} elements; these layers show ${S.elements.size}. The 3D view shows them all.`));
     return;
   }
@@ -2917,30 +2965,33 @@ async function build2D(keep = true) {
   try { result = await window.mermaid.render(`map2d${generation}`, lines.join('\n'), $('#draw')); }
   catch (error) { fill(host, h('p', {class: 'empty', style: {padding: '16px'}}, 'The 2D map could not be drawn.')); return; }
   if (generation !== M.generation) return;
-  // The whole map drawn again keeps its camera and eases from there, VIEW-041, with the zoom the person has, VIEW-008.
-  const was = keep && M.base && M.svg === M.base.svg && M.cam ? {cam: {...M.cam}, zoom: M.zoom} : null;
+  // The whole map drawn again keeps its camera and eases from there to its mode's framing, VIEW-041.
+  const was = keep && M.base && M.svg === M.base.svg && M.cam ? {...M.cam} : null;
   const inside = IN.length > 0 || Boolean(MEM.key);
   const before = was && !inside ? drawnAt(M.base) : null;  // where each node is drawn now, to move it from there
   const svg = mountSvg(result, host, inside);
   const nodes = new Map();
   for (const [id, key] of keys) {
     const group = svg.querySelector(`[id*="-flowchart-${key}-"]`);
-    if (group) placeIn(nodes, id, group, S.elements.get(id).element.address, S.elements.get(id).element.open_work);
+    const {element} = S.elements.get(id);
+    if (group) placeIn(nodes, id, group, element.address, element.open_work,
+      labelOf(element) === element.address ? element.address : `${labelOf(element)}\n${element.address}`);
   }
   const edges = drawn.map(({join, provider}, index) => ({join, provider, path: svg.querySelector(`[data-id="e${index}"]`)
     || svg.querySelectorAll('.edgePaths path')[index]}));
   for (const edge of edges) for (const condition of edge.join.open_work || []) edge.path?.classList.add(`work-${condition}`);
   for (const edge of edges) pointed(edge);
+  hits2d(edges);
   // The base map is kept while a node is entered and shown again as it was, VIEW-016.
-  M.base = {svg, nodes, edges, fit: fitOf(svg), vertical, cam: null};
+  M.base = {svg, nodes, edges, bounds: boundsOf(svg), vertical, cam: null};
   figures2d(S.tickets || []);
   if (MEM.key) { svg.remove(); svg.style.visibility = ''; await drawMemory2d(); return; }
   if (inside) { svg.remove(); svg.style.visibility = ''; await drawInside(); return; }
   showBase();
   paintInUse();
-  if (was) { setCam(was.cam, false); M.zoom = was.zoom; }
+  if (was) setCam(was);
   if (before) settle2D(before, nodes, svg);
-  if (S.selected) focus2D(S.selected); else applyMode();
+  if (S.selected) focus2D(S.selected); else aim2d();
 }
 /* Where each node of a drawn map stands, by its element id, in the map's own units, counting any move it is still
  * making, so a map drawn again mid-move starts from where its nodes are and not where they were going. */
@@ -3003,64 +3054,45 @@ function mountSvg(result, host, hidden) {
   if (hidden) { svg.style.visibility = 'hidden'; host.append(svg); } else fill(host, svg);
   return svg;
 }
-function placeIn(nodes, id, group, title, work) {
+/* `title` names the node in full, kept on it as `data-title`; `tip` is its hovertext, shown only while the map's text is
+ * drawn smaller than Small, `hover2d`. */
+function placeIn(nodes, id, group, title, work, tip = title) {
   const box = group.getBBox();
   const matrix = group.transform.baseVal.consolidate()?.matrix;
   const center = new DOMPoint(box.x + box.width / 2, box.y + box.height / 2).matrixTransform(matrix || new DOMMatrix());
-  nodes.set(id, {g: group, x: center.x, y: center.y, w: box.width, h: box.height});
+  nodes.set(id, {g: group, x: center.x, y: center.y, w: box.width, h: box.height, tip});
   group.dataset.key = id;  // what the node stands for, kept from one drawing to the next as the mermaid id is not
+  group.dataset.title = title;
   for (const condition of work || []) group.classList.add(`work-${condition}`);  // the node's condition, MAP-046
   const paced = S.progress?.get(id);
   if (paced) group.style.setProperty('--pace', `${paceOf({id})}s`);
-  const text = document.createElementNS(SVG, 'title');
-  text.textContent = title;
-  group.append(text);
-  group.addEventListener('click', event => { event.stopPropagation(); clicked2d(id); });
+  group.addEventListener('click', event => { event.stopPropagation(); clicked2d(id, event); });
   group.addEventListener('contextmenu', event => { event.preventDefault(); event.stopPropagation(); menu(id, event.clientX, event.clientY); });
 }
-/* Where the camera opens on a node's own graph, VIEW-016: the whole graph when its labels can be read at that size,
- * otherwise the node entered, at the size its labels are written in. Fit still shows the whole graph. */
-function readable(fit, center) {
-  const view = $('#viewport').getBoundingClientRect();
-  if (!center || !view.width || view.width / frame(fit).w >= 1) return fitted(fit);
-  const w = view.width, height = view.height || w;
-  const x = Math.min(Math.max(center.x - w / 2, fit.x), Math.max(fit.x, fit.x + fit.w - w));
-  const y = Math.min(Math.max(center.y - height / 2, fit.y), Math.max(fit.y, fit.y + fit.h - height));
-  return {x, y, w, h: height};
-}
-/* The whole drawing framed with its margin, zoomed in or out as it needs, but in the panel never past 1.6 times its
- * natural size, so a map of a node or two does not fill it. The large area keeps VIEW-041's mode one, the whole
- * diagram as large as the area allows. */
-function fitted(box) {
-  const area = $('#viewport').getBoundingClientRect(), least = area.width / 1.6;
-  if (!area.width || large() || box.w >= least) return box;
-  const height = box.h * least / box.w;
-  return {x: box.x + box.w / 2 - least / 2, y: box.y + box.h / 2 - height / 2, w: least, h: height};
-}
-function fitOf(svg) {
+/* The drawing's own bounds, the map's edge in its own units, VIEW-041. */
+function boundsOf(svg) {
+  window.__dbg = [...svg.querySelectorAll('g.root > g, g.root > g > *')].map(e => { try { const b = e.getBBox(); const m = e.transform?.baseVal?.consolidate()?.matrix; return [e.tagName, e.getAttribute('class'), e.dataset?.title, b.y + b.height + (m ? m.f : 0)]; } catch (x) { return null; } }).filter(Boolean).sort((a, b) => b[3] - a[3]).slice(0, 5);
   const scene = svg.querySelector('g').getBBox();
-  return {x: scene.x - 30, y: scene.y - 30, w: scene.width + 60, h: scene.height + 60};
+  return {x: scene.x, y: scene.y, w: scene.width, h: scene.height};
 }
+const entryOf = () => [...S.elements.values()].find(item => item.element.role === 'DE')?.element.id || S.elements.keys().next().value;
 function showBase(left = null) {
   const base = M.base;
   renderCrumbs();
   if (!base) return;
   stopCam();  // a camera still easing on the level left must not move this one
-  Object.assign(M, {svg: base.svg, nodes: base.nodes, edges: base.edges, fit: base.fit, vertical: base.vertical, drawn: null});
+  Object.assign(M, {svg: base.svg, nodes: base.nodes, edges: base.edges, bounds: base.bounds, vertical: base.vertical, drawn: null});
   fill($('#viewport'), base.svg);
   const node = left ? base.nodes.get(left) : null;
-  if (node && !reduced()) {  // back from inside the node: the map returns zoomed on it and fades in, VIEW-016
-    const kept = base.cam || frame(readable(base.fit, node));  // the zoom held before going inside
-    setCam(frame(into(node)), false);
-    M.zoom = {w: kept.w, h: kept.h};
+  if (node && !reduced()) {  // back from inside the node: the map returns zoomed on it, fades in and eases out, VIEW-016
+    setCam(frame(into(node)));
     arrive(base.svg);
-    moveCam(moded() ? modeTarget() : {x: node.x - kept.w / 2, y: node.y - kept.h / 2, w: kept.w, h: kept.h});
+    aim2d(node);  // to the mode's framing, the node left centered as far as the limits allow
     return;
   }
   base.svg.style.transition = ''; base.svg.style.opacity = '';  // a map faded on the way in shows whole again
-  const entry = [...S.elements.values()].find(item => item.element.role === 'DE')?.element.id;
-  setCam(base.cam || (moded() ? frame(modeTarget()) : frame(readable(base.fit, base.nodes.get(S.selected)
-    || base.nodes.get(entry) || base.nodes.values().next().value))));
+  aim2d(node || (base.cam ? mid2d(base.cam) : center2d(S.selected) || base.nodes.get(entryOf())
+    || base.nodes.values().next().value), true);
 }
 
 /* ---------- inside a node: the 2D map is replaced by the node's own graph, VIEW-016 ----------
@@ -3080,6 +3112,11 @@ const samePath = (a, b) => a.length === b.length && a.every((level, index) => le
  * shows its purpose, the operative purpose it records, so a drill-in never draws a blank box. */
 const labelOf = element => element.name || element.short_name || element.address;
 const joinLabel = join => join?.purpose || '';
+// A join's title, its receiver and the parts that serve it, as the 3D map shows it on a selected join, VIEW-038.
+function joinTitle(node) {
+  const join = S.joins.find(item => item.id === node.join);
+  return join ? `${nameOf(join.receiver)} ${flowArrow(join)} ${join.providers.map(id => nameOf(id)).join(', ')}` : '';
+}
 function nameOf(key, fallback = key) {
   if (key.startsWith('p:')) { const found = joinOf(key); return found ? joinLabel(found) : fallback; }
   const found = S.elements.get(key)?.element;
@@ -3187,7 +3224,8 @@ async function drawInside(arriving = false) {
   for (const [thingKey, id] of ids) {
     const group = svg.querySelector(`[id*="-flowchart-${id}-"]`), thing = things.get(thingKey);
     if (!group) continue;
-    placeIn(nodes, thingKey, group, thing.value !== undefined ? itemText(thing.value) : thing.label, null);
+    const title = thing.value !== undefined ? itemText(thing.value) : thing.label;
+    placeIn(nodes, thingKey, group, title, null, nameOf(thingKey, title));  // its hovertext its name in full
     group.classList.add(`in-${thing.kind}`);
   }
   for (const [gid, layer] of groups) {
@@ -3198,21 +3236,10 @@ async function drawInside(arriving = false) {
   }
   level.things = things;
   stopCam();  // a camera still easing on the level left must not move this one
-  Object.assign(M, {svg, nodes, edges: [], fit: fitOf(svg), vertical, drawn: level});
-  setCam(frame(insideView(M.fit, nodes.get(level.key), svg)));  // the node's own graph fades in where it opens, VIEW-016
+  Object.assign(M, {svg, nodes, edges: [], bounds: boundsOf(svg), vertical, drawn: level});
+  aim2d(nodes.get(level.key), true);  // the node's own graph fades in framed by the mode, on the node, VIEW-016
   renderCrumbs();
   if (S.selected && nodes.has(S.selected)) focus2D(S.selected);
-}
-/* Where the camera opens on a node's own graph: `readable`, and in the large area never larger than the size at which
- * its text is drawn at the readable mode's minimum, VIEW-041, so a small graph sits in the middle of the area at a size
- * it reads at, rather than filling it with text three times that size. */
-function insideView(fit, center, svg) {
-  const view = readable(fit, center), area = $('#viewport').getBoundingClientRect();
-  if (!large() || !area.width || !area.height) return view;
-  const shown = frame(view), most = (6 + 2 * MODE.key) / smallestText(svg);
-  if (area.width / shown.w <= most) return view;
-  const w = area.width / most, height = area.height / most;
-  return {x: shown.x + shown.w / 2 - w / 2, y: shown.y + shown.h / 2 - height / 2, w, h: height};
 }
 function renderCrumbs() {
   const bar = $('#crumbs');
@@ -3394,7 +3421,7 @@ async function memories(key) {
   if (generation !== MEM.generation) return;
   MEM.drawn = true;
   select(key, false, true);
-  if (M.fit && M.drawn === MEM) { stopCam(); setCam(frame(M.fit)); }  // it opens with the whole memory network in view
+  if (M.bounds && M.drawn === MEM) { stopCam(); aim2d(M.nodes.get(key), true); }  // it opens framed by the mode, VIEW-041
   await whole3d();
   if (generation !== MEM.generation) return;
   renderCrumbs();
@@ -3453,8 +3480,8 @@ async function drawMemory2d(hidden = false) {
   }
   network.relations.forEach((relation, index) => svg.querySelector(`path[data-id="e${index}"]`)?.classList.add('relation'));
   stopCam();  // a camera still easing on the view left must not move this one
-  Object.assign(M, {svg, nodes, edges: [], fit: fitOf(svg), vertical, drawn: MEM});
-  setCam(frame(M.fit));
+  Object.assign(M, {svg, nodes, edges: [], bounds: boundsOf(svg), vertical, drawn: MEM});
+  aim2d(nodes.get(MEM.key), true);
   $('#map2d').classList.add('focused');
   for (const [key, value] of nodes) {
     value.g.classList.toggle('sel', key === S.selected);
@@ -3771,13 +3798,18 @@ function arrive(svg) {
   fade(svg, 1);
 }
 const into = node => ({x: node.x - node.w * 0.6, y: node.y - node.h * 0.6, w: node.w * 1.2, h: node.h * 1.2});
-/* M.zoom is the zoom the person has: the size the view opened at, what Fit set, or what they set by wheel. A
- * selection moves the view at that size; a camera still easing toward it never changes it, VIEW-008. */
-function setCam(cam, settled = true) {
+/* The camera is the map's viewBox; the zoom in it is the one the mode sets, VIEW-041. */
+function setCam(cam) {
   M.cam = cam;
-  if (settled) M.zoom = {w: cam.w, h: cam.h};
   M.svg?.setAttribute('viewBox', `${cam.x} ${cam.y} ${cam.w} ${cam.h}`);
+  // In the small area an edge is never thinner than a pixel on the screen, VIEW-008: the map's units one pixel spans,
+  // which the edges' width is held to at least; in the large area they keep the width the map gives them. Every edge
+  // takes a click a pixel wider than it is drawn, `--unit2d`.
+  const wide = M.svg?.getBoundingClientRect().width;
+  M.svg?.style.setProperty('--pixel2d', !$('.app').classList.contains('swapped') && wide ? String(cam.w / wide) : '0');
+  M.svg?.style.setProperty('--unit2d', wide ? String(cam.w / wide) : '0');
   again2d();  // a figure keeps its least size on the screen as the zoom changes
+  hover2d(wide ? wide / cam.w : 0);
   showModes();
 }
 const near = (a, b) => Boolean(a && b) && ['x', 'y', 'w', 'h'].every(k => Math.abs(a[k] - b[k]) <= Math.max(a.w, b.w) * 1e-4);
@@ -3809,7 +3841,6 @@ function moveCam(target, {length = 0.7, dive = false} = {}) {
   if (near(M.to || M.cam, to)) return;
   const under = M.to && MOVE.start !== null && !MOVE.dive ? camAt(performance.now()) : null;
   stopCam();
-  M.zoom = {w: to.w, h: to.h};
   if (reduced()) return setCam(to);
   M.to = to;
   Object.assign(MOVE, {from: camParts(M.cam), to: camParts(to), start: null, length, dive,
@@ -3817,19 +3848,18 @@ function moveCam(target, {length = 0.7, dive = false} = {}) {
   const step = now => {
     MOVE.start ??= now;
     const {cam, s} = camAt(now);
-    setCam(cam, false);
+    setCam(cam);
     if (s < 1) M.frame = requestAnimationFrame(step); else M.to = null;
   };
   M.frame = requestAnimationFrame(step);
 }
-/* The two modes of the 2D map in the large area, VIEW-041: `whole` keeps the whole diagram fitted to the area, and
- * `readable` fits it the same way but never draws its text below the minimum the keys 1 to 9 set, 8 to 24 px, holding
- * the selected node at the center when the minimum wins. The wheel leaves both, null, until a click or Fit. They set
- * the camera of the whole map; a node's own graph and a memory network keep theirs, and the small area keeps the zoom
- * VIEW-008 gives it. */
-const large = () => $('.app').classList.contains('swapped');
-const moded = () => large() && Boolean(MODE.mode) && Boolean(M.base) && M.svg === M.base.svg;
+/* The 2D map's camera, VIEW-041: the mode sets its zoom, `scaleFor`, and the limits where it stands, `place2d`.
+ * Changing mode eases there, `setMode`; after that the zoom holds, a selection only moving the view within the limits,
+ * and a fit refitting, eased, when the pane or the map changes size, `aim2d`. */
 const at2d = id => !id ? null : M.nodes.get(id) || (id.startsWith('p:') ? M.nodes.get(joinOf(id)?.provider) : null);
+const area2d = () => $('#viewport').getBoundingClientRect();
+const mid2d = box => ({x: box.x + box.w / 2, y: box.y + box.h / 2});
+const MAC = /Mac|iPhone|iPad/.test(navigator.userAgentData?.platform || navigator.platform || '');
 function smallestText(svg) {  // the smallest font size of the diagram's labels, in its own units
   let least = Infinity;
   for (const text of svg.querySelectorAll('text, tspan'))
@@ -3837,62 +3867,127 @@ function smallestText(svg) {  // the smallest font size of the diagram's labels,
       least = Math.min(least, parseFloat(getComputedStyle(text).fontSize) || Infinity);
   return isFinite(least) ? least : 13;
 }
-/* Mode two, Zoom: the whole diagram's view zoomed MODE.zoom times, but never with its text below the minimum the keys
- * 1 to 9 set, and never so close that the selected node's box takes more than MODE.most of the area, centered on the
- * selected node. Why: holding only a minimum size of text did nothing on a small map, whose whole diagram already draws
- * its text that large, and a zoom is wanted on every map; the cap keeps a node of a small map from filling the area. */
-function modeTarget() {
-  const fit = frame(fitted(M.fit)), area = M.svg.getBoundingClientRect();
-  if (MODE.mode !== 'readable' || !area.width || !area.height) return fit;
-  M.base.text ??= smallestText(M.base.svg);
-  const entry = [...S.elements.values()].find(item => item.element.role === 'DE')?.element.id;
-  const node = at2d(S.selected) || M.nodes.get(entry);
-  const center = node || {x: fit.x + fit.w / 2, y: fit.y + fit.h / 2};
-  // screen pixels for a unit of the diagram: zoomed in from the whole, at least the minimum text, at most the node cap
-  let scale = Math.max(MODE.zoom * area.width / fit.w, (6 + 2 * MODE.key) / M.base.text);
-  if (node?.w && node?.h) scale = Math.min(scale, MODE.most * area.width / node.w, MODE.most * area.height / node.h);
-  const w = area.width / scale, height = area.height / scale;
-  if (w >= fit.w) return fit;
-  return {x: center.x - w / 2, y: center.y - height / 2, w, h: height};
+function labelSize(svg) {  // read once for each drawing, while it is on the page
+  if (!MODE.labels.has(svg) && svg.isConnected) MODE.labels.set(svg, smallestText(svg));
+  return MODE.labels.get(svg) || 12;
 }
-function applyMode() { if (moded()) moveCam(modeTarget()); showModes(); }
-/* The two modes of the large area, VIEW-041, shown in the 2D map's bar, so a person sees which one holds and changes it
- * without knowing the keys: Whole, mode one, and Zoom, mode two, `modeTarget`. Neither is
- * pressed after the wheel, which leaves both. */
-const MODES = {box: null, whole: null, readable: null, said: ''};
-function showModes() {
-  if (!MODES.box) return;
-  // In the large area on the whole map they are VIEW-041's two modes; elsewhere Whole fits and Zoom goes in close on
-  // the selected node, VIEW-008, and whichever view the camera is in is the one checked.
-  const moding = large() && Boolean(M.base) && M.svg === M.base.svg, least = 6 + 2 * MODE.key;
-  const mode = moding ? MODE.mode : M.view === 'out' ? 'whole' : M.view === 'in' ? 'readable' : null;
-  const said = [Boolean(M.svg), mode, least].join();
-  if (said === MODES.said) return;
-  MODES.said = said;
-  MODES.box.hidden = !M.svg;
-  MODES.whole.setAttribute('aria-checked', String(mode === 'whole'));
-  MODES.readable.setAttribute('aria-checked', String(mode === 'readable'));
-  MODES.readable.textContent = 'Zoom';
-  MODES.readable.title = `In ${MODE.zoom} times on the selected node, its text never smaller than ${least} px and the node never more than ${Math.round(MODE.most * 100)}% of the view; the keys 1 to 9 set the least text, 8 to 24 px`;
+/* The text the text modes are measured from, read from the page so they move with its text size, VIEW-023: the
+ * smallest text shown outside the maps, Small, and the panel's heading, Medium. Read again when the page changes
+ * size, as a change of its text size does. */
+function pageText() {
+  if (MODE.page) return MODE.page;
+  let small = Infinity;
+  const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let text = walk.nextNode(); text; text = walk.nextNode()) {
+    const box = text.parentElement;
+    if (!box || !text.textContent.trim() || box.closest('#viewport, #stage, #draw, svg, script, style')) continue;
+    if (box.checkVisibility ? !box.checkVisibility({checkOpacity: true, checkVisibilityCSS: true}) : !box.getClientRects().length) continue;
+    const size = parseFloat(getComputedStyle(box).fontSize);
+    if (size > 0) small = Math.min(small, size);
+  }
+  const probe = $('#p-object').appendChild(h('h2', {style: {position: 'absolute', visibility: 'hidden'}}, 'M'));
+  const heading = parseFloat(getComputedStyle(probe).fontSize) || 20;
+  probe.remove();
+  return MODE.page = {small: isFinite(small) ? small : 11, heading};
 }
-/* Fit, F and Whole show the whole map and leave the selection as it is, its node and its joins still marked, so the
- * whole map is seen with what the selected node is joined to: clearing it threw away what the person had chosen to
- * look at. Backing out to the whole map, Escape, and Home clear the marks, `fitAll`. */
-function fit2D() {
-  if (large()) MODE.mode = 'whole';
+addEventListener('resize', () => { MODE.page = null; });
+/* The zoom a mode sets, in screen pixels to a unit of the map. A fit leaves a margin of MARGIN pixels, less on a pane
+ * too small to spare it, on the sides it fits. */
+function scaleFor(mode, area = area2d()) {
+  const box = M.bounds, room = side => Math.min(MARGIN, side / 10), text = pageText();
+  const across = (area.width - 2 * room(area.width)) / Math.max(1, box.w);
+  const down = (area.height - 2 * room(area.height)) / Math.max(1, box.h);
+  const px = {small: text.small, medium: text.heading, large: 2 * text.heading}[mode];
+  if (px) return px / labelSize(M.svg);
+  return mode === 'height' ? down : mode === 'width' ? across : mode === 'free' ? MODE.free : Math.min(across, down);
+}
+/* The view at `scale` with its middle as near `center` as the limits let it be: along an axis where the map runs past
+ * the pane, no more than MARGIN screen pixels beyond the map's edge show, and along one where it does not, the map is
+ * centered. */
+function place2d(scale, center, area = area2d()) {
+  const box = M.bounds, w = area.width / scale, height = area.height / scale, room = MARGIN / scale;
+  const along = (at, start, size, view) => size <= view ? start + size / 2 - view / 2
+    : Math.min(Math.max(at - view / 2, start - room), start + size + room - view);
+  return {x: along(center.x, box.x, box.w, w), y: along(center.y, box.y, box.h, height), w, h: height};
+}
+/* The camera to the mode's framing, with `center` in the middle as far as the limits allow, or the middle of the view
+ * where it is going; eased, or with `now` put there at once, for a view that fades in. */
+function aim2d(center = null, now = false) {
+  const area = area2d(), here = M.to || M.cam;
+  if (!M.svg || !M.bounds || !area.width || !area.height) return;
+  const view = place2d(scaleFor(MODE.mode, area), center || (here ? mid2d(here) : mid2d(M.bounds)), area);
+  if (now || !M.cam) setCam(view); else moveCam(view);
+}
+/* Where a selection is centered: a node at its middle, and a join of the whole map at the middle of its edge, where a
+ * 2D figure stands at it, `spot2d`. */
+function center2d(id) {
+  const edge = id?.startsWith('p:') && M.base && M.svg === M.base.svg ? spot2d(M.base, id) : null;
+  if (edge) return edge;
+  const node = at2d(id);
+  return node ? {x: node.x, y: node.y} : null;
+}
+/* A mode chosen by its button, its key, Home or a Ctrl-click: the camera eases to its framing, on the selection. Free
+ * starts at the zoom the map has. */
+function setMode(mode) {
+  if (!MODES2D.some(([name]) => name === mode)) return;
+  if (mode === 'free' && M.cam) MODE.free = area2d().width / (M.to || M.cam).w || MODE.free;
+  MODE.mode = mode;
+  MODE.page = null;  // read again, in case the page's text has changed since
   showModes();
-  M.view = 'out';
-  if (M.fit) moveCam(fitted(M.fit));
+  aim2d(center2d(S.selected));
 }
+/* The modes on the 2D map's bar, the one the map is in checked, VIEW-041. */
+function showModes() {
+  if (!MODE.box || MODE.shown === `${Boolean(M.svg)} ${MODE.mode}`) return;
+  MODE.shown = `${Boolean(M.svg)} ${MODE.mode}`;
+  MODE.box.hidden = !M.svg;
+  for (const [name, button] of MODE.buttons) button.setAttribute('aria-checked', String(name === MODE.mode));
+}
+/* A node's name is its hovertext only while the map's text is drawn smaller than Small, VIEW-041: there the eye
+ * cannot read it, and above it a tip would cover a map that can be read. */
+function hover2d(scale) {
+  if (!M.svg || !scale) return;
+  const tips = labelSize(M.svg) * scale < pageText().small - 0.05;
+  if (M.tips === tips && M.tipped === M.svg && M.tipping === M.nodes) return;
+  Object.assign(M, {tips, tipped: M.svg, tipping: M.nodes});
+  for (const node of M.nodes.values()) {
+    const tip = node.g.querySelector(':scope > title');
+    if (tips && !tip) node.g.append(Object.assign(document.createElementNS(SVG, 'title'), {textContent: node.tip}));
+    else if (!tips) tip?.remove();
+  }
+}
+/* Each edge of the whole map takes a click, which selects its join, VIEW-008: on a band one screen pixel wider than its
+ * line, a copy of it with no paint in a group of their own just over the edges, `.hits2d`. They lie under the nodes, so
+ * where a band crosses a node the node takes the click. */
+function hits2d(edges) {
+  const drawn = edges.filter(edge => edge.path);
+  if (!drawn.length) return;
+  const hits = document.createElementNS(SVG, 'g'), group = drawn[0].path.closest('.edgePaths') || drawn[0].path.parentNode;
+  hits.setAttribute('class', 'hits2d');
+  group.after(hits);
+  for (const edge of drawn) {
+    const hit = edge.hit = edge.path.cloneNode(false);
+    for (const name of ['id', 'marker-end', 'marker-start', 'data-id', 'style']) hit.removeAttribute(name);
+    hit.setAttribute('class', 'hit');
+    hits.append(hit);
+    hit.addEventListener('click', event => { event.stopPropagation(); clicked2d('p:' + edge.join.id, event); });
+  }
+}
+/* All shows the whole map and leaves the selection as it is, its node and its joins still marked, so the whole map is
+ * seen with what the selected node is joined to; letting go of the selection clears the marks, `deselect`. */
 function unmark2D() {
   $('#map2d').classList.remove('focused');
-  for (const edge of M.edges) edge.path?.classList.remove('on');
+  for (const edge of M.edges) { edge.path?.classList.remove('on'); edge.hit?.classList.remove('on'); }
   flows2d();
   for (const node of M.nodes.values()) node.g.classList.remove('sel', 'near');
 }
 /* A join's information flow direction, its ifd, MAP-020, as the receiver has it: it sends to the elements that serve
  * it, receives from them, or both. The 2D map's arrows and flow and the 3D map's dots go the way the information goes. */
 const flowOf = join => join?.ifd === 'receives' ? ['back'] : join?.ifd === 'both' ? ['forth', 'back'] : ['forth'];
+/* The arrow between a join's receiver and its providers in its title: the receiver comes first, which says who needs
+ * whom, and the arrow says which way the information goes, its ifd, as the 2D map's arrowheads do: ← when the receiver
+ * receives, → when it sends, ↔ both ways; a join with no ifd recorded keeps ←, the way it is served. */
+const flowArrow = join => join?.ifd === 'both' ? '↔' : join?.ifd === 'sends' ? '→' : '←';
 /* An edge of the 2D map points the way its join's information goes: at the element served when the receiver sends, at
  * the receiver when it receives, at both ends when it goes both ways. Mermaid draws the arrow at the served end. */
 function pointed(edge) {
@@ -3921,62 +4016,62 @@ function flows2d() {
     flows.append(flow);
   }
 }
-function focus2D(id, framing = 'around', zoom = false) {
+function focus2D(id) {
   const join = id.startsWith('p:') ? joinOf(id) : null;
   const node = M.nodes.get(id) || (join ? M.nodes.get(join.provider) : null);
   if (!M.svg) return;
-  if (!node) return applyMode();
-  showModes();
+  if (!node) return aim2d();
   if (IN.length) {
     for (const [key, value] of M.nodes) value.g.classList.toggle('sel', key === id);
   } else {
     $('#map2d').classList.add('focused');
     for (const [key, value] of M.nodes) { value.g.classList.toggle('sel', key === id); value.g.classList.toggle('near', key !== id && S.neighbors.has(key)); }
-    for (const edge of M.edges) edge.path?.classList.toggle('on', join ? edge.join === join
-      : edge.join.receiver === id || edge.provider === id);
+    for (const edge of M.edges) {
+      const on = join ? edge.join === join : edge.join.receiver === id || edge.provider === id;
+      edge.path?.classList.toggle('on', on);
+      edge.hit?.classList.toggle('on', on);  // its band a pixel wider than the line drawn for a selection
+    }
   }
   flows2d();
-  if (moded()) return moveCam(modeTarget());  // in the large area the mode sets the camera, VIEW-041
-  // Selecting moves the view to the node at the zoom it has; the zoom changes only when Fit asks, VIEW-008. Inside a
-  // node, a node already in view stays where it is, since the view was framed for the node's whole graph and moving it
-  // to the middle would push the rest of that graph out of view, VIEW-016.
-  const held = M.zoom || M.cam;
-  if (!zoom && IN.length && inView(node, M.to || M.cam)) return;
-  if (!zoom) return moveCam({x: node.x - held.w / 2, y: node.y - held.h / 2, w: held.w, h: held.h});
-  // 'around' shows the node with its joined nodes; 'inside' frames the node so the nodes it holds fill the view;
-  // 'close' moves nearer to a node that holds nothing.
-  M.view = framing === 'around' ? 'around' : 'in';
-  const [w, height] = framing === 'inside' ? [node.w * 1.25, node.h * 1.25]
-    : framing === 'close' ? [Math.max(node.w * 1.8, 160), Math.max(node.h * 2.6, 110)]
-    : [Math.max(node.w * 3.4, 380), Math.max(node.h * 5, 260)];
-  moveCam({x: node.x - w / 2, y: node.y - height / 2, w, h: height});
+  // The selection is centered as far as the mode's limits allow, at the zoom the mode holds: a selection never changes
+  // it, VIEW-041.
+  aim2d(center2d(id));
 }
-/* One click selects; a click on the selected node goes inside it; a group's "more" node shows the next ones. In the
- * large area a click on a node goes to mode two, VIEW-041. */
-function clicked2d(id) {
-  if (large()) MODE.mode = 'readable';
+/* A click on the map, VIEW-008: on a node or an edge it selects it, and on the selected one it goes inside it; a
+ * group's "more" node shows the next ones. Anywhere on the map, with Shift held it backs out one level, and with Ctrl
+ * held, Command on macOS, where a click with Control is the system's right-click, it goes to All. */
+function clicked2d(id, event) {
+  if (modified2d(event)) return;
   if (!MEM.key && (id === S.selected || id.startsWith('m:'))) goInside(id); else select(id, true);
 }
-const inView = (node, cam) => Boolean(cam) && node.x - node.w / 2 >= cam.x && node.x + node.w / 2 <= cam.x + cam.w
-  && node.y - node.h / 2 >= cam.y && node.y + node.h / 2 <= cam.y + cam.h;
+function modified2d(event) {
+  if (event?.shiftKey) { levelUp(); return true; }
+  if (event && (MAC ? event.metaKey : event.ctrlKey)) { setMode('all'); return true; }
+  return false;
+}
+/* Letting go of the selection, by a click on the map's empty space or Escape, VIEW-008: its marks go from both maps,
+ * the panel says nothing is selected, and nothing is selected again until the person selects, even as the map is read
+ * again. */
+function deselect() {
+  if (!S.selected) return;
+  Object.assign(S, {selected: null, cleared: true, panelFor: null, trail: [], neighbors: new Set()});
+  setReach(null);
+  unmark2D();
+  if (G) { G.nodeColor(G.nodeColor()); meetEnds(); wake3d(); }
+  noneSelected();
+}
+function noneSelected() {
+  fill($('#p-object'), h('p', {class: 'empty'}, 'Nothing is selected. Click a part on either map, or press an arrow key to start from the map\'s entry.'));
+}
 (function wire2D() {
   const host = $('#map2d');
-  MODES.box = h('div', {class: 'segmented modes2d', role: 'radiogroup', 'aria-label': 'How the whole map is sized'},
-    MODES.whole = h('button', {type: 'button', role: 'radio', title: 'The whole diagram fitted to the area (Home)',
-      onclick: event => { event.stopPropagation(); fit2D(); }}, 'Whole'),
-    MODES.readable = h('button', {type: 'button', role: 'radio', onclick: event => {
-      event.stopPropagation();
-      if (large() && M.base && M.svg === M.base.svg) { MODE.mode = 'readable'; applyMode(); }
-      else if (S.selected) focus2D(S.selected, 'close', true);
-      showModes();
-    }}, 'Zoom'));
-  $('#map2d .mapbtns').prepend(MODES.box);
-  showModes();
-  $('#fitBtn').onclick = event => { event.stopPropagation(); cycleView(); };
+  if (MAC) for (const key of document.querySelectorAll('#help .ctrlclick kbd')) key.textContent = '⌘';  // as modified2d reads it
   $('#backBtn').onclick = event => { event.stopPropagation(); step(-1); };
   $('#forwardBtn').onclick = event => { event.stopPropagation(); step(1); };
-  let drag = null;
+  // A drag moves the view within the mode's limits, VIEW-041, and is not a click on what it started on.
+  let drag = null, dragged = false;
   host.addEventListener('pointerdown', event => {
+    dragged = false;
     if (event.target.closest('button, a') || !M.cam) return;
     drag = {x: event.clientX, y: event.clientY, cam: {...M.cam}, moving: false};
   });
@@ -3988,47 +4083,45 @@ const inView = (node, cam) => Boolean(cam) && node.x - node.w / 2 >= cam.x && no
       drag.cam = {...M.cam};
       drag.moving = true; host.setPointerCapture(event.pointerId);
     }
-    const box = $('#viewport').getBoundingClientRect(), scale = M.cam.w / box.width;
-    setCam({...drag.cam, x: drag.cam.x - (event.clientX - drag.x) * scale, y: drag.cam.y - (event.clientY - drag.y) * scale});
+    const area = area2d(), scale = area.width / drag.cam.w, at = mid2d(drag.cam);
+    setCam(place2d(scale, {x: at.x - (event.clientX - drag.x) / scale, y: at.y - (event.clientY - drag.y) / scale}, area));
   });
-  host.addEventListener('pointerup', () => { drag = null; });
+  host.addEventListener('pointerup', () => { dragged = Boolean(drag?.moving); drag = null; });
+  // A click on the map where there is no node and no edge lets go of the selection, VIEW-008.
+  host.addEventListener('click', event => {
+    if (dragged) { dragged = false; return; }
+    if (!M.svg || !event.target.closest('#viewport') || modified2d(event)) return;
+    deselect();
+  });
+  // The wheel, VIEW-041: with the whole map in view it does nothing; where the map runs past the pane it scrolls,
+  // along the axis that runs past, or with both, up and down, and across by a sideways scroll or with Shift held, as a
+  // page scrolls; in Free it zooms at the pointer. All at once, as a wheel does, within the mode's limits.
   host.addEventListener('wheel', event => {
-    if (!M.cam) return;
+    if (!M.cam || !M.bounds) return;
     event.preventDefault();
-    if (large()) MODE.mode = null;  // the wheel leaves both modes, VIEW-041
-    // The wheel zooms at once, by how far it turned: flat steps on a mouse wheel, its own acceleration on a trackpad.
-    // No easing: a zoom that lags the wheel and lands after it stops is not how a mouse works.
     stopCam();
-    const lines = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaMode === 2 ? event.deltaY * 400 : event.deltaY;
-    const f = Math.exp(Math.max(-200, Math.min(200, lines)) * 0.0015), box = $('#viewport').getBoundingClientRect();
-    const px = (event.clientX - box.left) / box.width, py = (event.clientY - box.top) / box.height, c = M.cam;
-    const w = c.w * f, height = c.h * f;
-    const to = frame({x: c.x + (c.w - w) * px, y: c.y + (c.h - height) * py, w, h: height});
-    M.zoom = {w: to.w, h: to.h};
-    setCam(to);
+    const pixels = delta => event.deltaMode === 1 ? delta * 16 : event.deltaMode === 2 ? delta * 400 : delta;
+    const area = area2d(), c = M.cam, scale = area.width / c.w;
+    if (MODE.mode === 'free') {
+      // flat steps on a mouse wheel, its own acceleration on a trackpad, toward the point under the pointer
+      const f = Math.exp(Math.max(-200, Math.min(200, pixels(event.deltaY))) * 0.0015);
+      const least = scaleFor('all', area) / 2, most = 64 / labelSize(M.svg);
+      const zoom = Math.min(most, Math.max(least, scale / f)), w = area.width / zoom, height = area.height / zoom;
+      const px = (event.clientX - area.left) / area.width, py = (event.clientY - area.top) / area.height;
+      MODE.free = zoom;
+      return setCam(place2d(zoom, mid2d({x: c.x + (c.w - w) * px, y: c.y + (c.h - height) * py, w, h: height}), area));
+    }
+    const across = M.bounds.w > c.w, down = M.bounds.h > c.h;
+    if (!across && !down) return;
+    let dx = pixels(event.deltaX), dy = pixels(event.deltaY);
+    if (event.shiftKey && !dx) [dx, dy] = [dy, 0];
+    if (!down) [dx, dy] = [dx || dy, 0];
+    else if (!across) [dx, dy] = [0, dy || dx];
+    const at = mid2d(c);
+    setCam(place2d(scale, {x: at.x + dx / scale, y: at.y + dy / scale}, area));
   }, {passive: false});
-  new ResizeObserver(() => applyMode()).observe($('#viewport'));  // the area changes size: the new fit, VIEW-041
+  new ResizeObserver(() => aim2d()).observe($('#viewport'));  // a fit refits as the pane changes size, VIEW-041
 })();
-function fitAll() { unmark2D(); fit2D(); fit3d(); }
-/* Fit and F go through three views, zoomed out to the whole map, zoomed in on the selected node,
- * with the nodes inside it when it holds any, and regular, the node with its joined nodes. In the large area they go
- * back to mode one, VIEW-041. */
-function cycleView() {
-  const here = S.selected;
-  if (large()) {  // the whole diagram, then back in: the readable view, or the selected node when the whole is readable
-    if (MODE.mode !== 'whole' || !here || !M.base || M.svg !== M.base.svg) return fit2D();
-    MODE.mode = 'readable';
-    const readableView = frame(modeTarget());
-    if (!near(readableView, frame(fitted(M.fit)))) return moveCam(readableView);
-    MODE.mode = null;
-    M.view = 'around';
-    return focus2D(here, 'around', true);
-  }
-  const next = {around: 'out', out: 'in', in: 'around'}[M.view || 'around'];
-  if (!here || next === 'out') return fit2D();  // its own map only; the 3D map has a Fit of its own, VIEW-028
-  if (next === 'in') return focus2D(here, 'close', true);
-  focus2D(here, 'around', true);
-}
 /* Back and forward step through the nodes selected, as a browser does; a new selection drops the steps forward. */
 async function step(by) {
   if (MEM.key) { if (by < 0) leaveMemories(); return; }  // back from a memory network is back to the map, VIEW-031
@@ -4118,15 +4211,11 @@ function roots() {  // the nodes nothing receives from, CQUs first; then any par
   return ordered;
 }
 function goInside(key) { if (!MEM.key) enter(key); }  // a memory network has no inside of its own
-function backOut() {
+/* Out one level, by Shift+Enter, a Shift-click, or Escape with nothing selected, VIEW-008: from a memory network or a
+ * node's own graph to the level before; on the whole map there is no level to leave. */
+function levelUp() {
   if (MEM.key) return leaveMemories();
   if (IN.length) return goTo(IN.length - 1);
-  const here = S.selected;
-  if (!here) return;
-  if (here.startsWith('p:')) {
-    const up = S.trail.length ? S.trail.pop() : parentOf(here);
-    if (up) select(up, true, true);
-  } else fitAll();
 }
 /* Which keys the maps take. A key typed into a text is a letter of it and never a shortcut. While a menu, a popover or
  * a modal window is open, or the focus is in any window, the maps' keys rest: the key belongs to what is open, VIEW-030
@@ -4149,15 +4238,18 @@ document.addEventListener('keydown', event => {
   // The page's own keys: / searches the map and ? shows every key.
   if (event.key === '/') { event.preventDefault(); openSearch(); return; }
   if (event.key === '?') { event.preventDefault(); $('#help').hidden = false; return; }
-  if (event.key === 'f' || event.key === 'F') { event.preventDefault(); cycleView(); return; }
-  if (event.key === 'Home') { event.preventDefault(); fitAll(); return; }
-  // In the large area the keys 1 to 9 set the minimum text, 8 to 24 px, and go to mode two, VIEW-041.
-  if (/^[1-9]$/.test(event.key) && !event.ctrlKey && !event.metaKey && !event.altKey && large()) {
-    event.preventDefault(); Object.assign(MODE, {mode: 'readable', key: Number(event.key)}); applyMode(); return;
+  // The keys 4 to 9 and 0 choose the 2D map's mode, and Home chooses All, VIEW-041; 1 to 3 are the 3D map's, VIEW-005.
+  const mode = MODES2D.find(([, key]) => key === event.key);
+  if (mode || event.key === 'Home') { event.preventDefault(); setMode(mode ? mode[0] : 'all'); return; }
+  // Escape lets go of the selection, and with nothing selected backs out one level; Shift+Enter always backs out.
+  if (event.key === 'Escape') { event.preventDefault(); if (S.selected) deselect(); else levelUp(); return; }
+  if (event.key === 'Enter' && event.shiftKey) { event.preventDefault(); levelUp(); return; }
+  if (!S.selected) {  // with nothing selected, an arrow starts from the level's own node, or on the map its entry
+    const start = event.key.startsWith('Arrow') ? (IN.length ? IN.at(-1).key : MEM.key || entryOf()) : null;
+    if (start) { event.preventDefault(); select(start, true, true); }
+    return;
   }
-  if (!S.selected) return;
   const here = S.selected;
-  if (event.key === 'Escape' || (event.key === 'Enter' && event.shiftKey)) { event.preventDefault(); backOut(); return; }
   if (event.key === 'Enter') { event.preventDefault(); goInside(here); return; }
   if ((IN.length || MEM.key) && event.key.startsWith('Arrow')) {  // inside a node or a memory network the arrows go through its graph in order
     event.preventDefault();
@@ -4218,6 +4310,7 @@ function selectNow(id, fly, keepTrail, stepping, again) {
   }
   showSteps();
   S.selected = id;
+  S.cleared = false;
   setReach(id);
   if (!known) { S.neighbors = new Set(); focus2D(id); if (!again) showTab('object'); renderThing(thing); return; }
   S.neighbors = MEM.key ? new Set([id, ...(MEM.network?.relations || []).flatMap(relation =>
@@ -5754,7 +5847,7 @@ function renderJoin(join) {
   const providers = (join.elements || []).map(each => called(each.element_id) || each.address).join(', ');
   fill($('#p-object'),
     h('div', {class: 'eyebrow'}, 'Join'),
-    h('h2', {}, `${called(join.receiver) || join.receiver_address} ← ${providers || join.provider_address}`),
+    h('h2', {}, `${called(join.receiver) || join.receiver_address} ${flowArrow(join)} ${providers || join.provider_address}`),
     h('p', {class: 'meta'}, elementLink(join.receiver, join.receiver_address), ' receives from ',
       ...(join.elements || []).flatMap((each, at) => [at ? ', ' : '', elementLink(each.element_id, each.address)]), '.'),
     (join.open_work || []).length ? h('div', {class: 'pills'}, join.open_work.map(workPill)) : null,
@@ -6006,7 +6099,7 @@ function searchParts(query) {
     score: matchScore(query, [labelOf(element), element.short_name, element.address])}));
   const joins = S.joins.map(join => {
     const receiver = S.elements.get(join.receiver)?.element, provider = S.elements.get(join.provider)?.element;
-    const ends = `${receiver ? labelOf(receiver) : join.receiver_address} ← ${provider ? labelOf(provider) : join.provider_address || ''}`;
+    const ends = `${receiver ? labelOf(receiver) : join.receiver_address} ${flowArrow(join)} ${provider ? labelOf(provider) : join.provider_address || ''}`;
     return {key: 'p:' + join.id, kind: 'Join', name: join.purpose || ends, where: ends, layer: join.layer,
       score: matchScore(query, [join.purpose, join.ef, ends])};
   });
@@ -6916,7 +7009,7 @@ async function startBuild() {
   const kind = kindOfBuild();
   if (!kind) return;
   const given = {kind: kind.id};
-  if (kind.takes_project) given.project = S.project;
+  given.project = kind.takes_project ? S.project : null;  // `posted` sends the page's project with every write
   if (kind.takes_modules) {
     const pick = pickOf(kind.id);
     const shape = pick.shape && sameSet(shapeOf(pick.shape)?.modules || [], pick.modules) ? pick.shape : null;
@@ -7077,9 +7170,9 @@ async function loadLive() {
   drawIntake();  // the bar over the map counts the parts recorded so far
   await build2D();
   const keep = S.selected && (S.elements.has(S.selected) || joinOf(S.selected)) ? S.selected : null;
-  const start = keep || [...S.elements.values()].find(entry => entry.element.role === 'DE')?.element.id
-    || S.elements.keys().next().value;
+  const start = keep || (S.cleared ? null : entryOf());  // a selection let go of stays let go, VIEW-008
   if (start) select(start, false, false, false, true);
+  else if (S.cleared && S.elements.size) noneSelected();
   else fill($('#p-object'), h('p', {class: 'empty'}, 'Nothing to show in these layers yet.'));
 }
 /* Follow the intake being recorded, found = {layer, base_id}, or return to the map when it is no longer being
@@ -7485,9 +7578,8 @@ async function readGraph(agents) {
   await build2D();
   const keep = S.selected && (S.elements.has(S.selected) || joinOf(S.selected)
     || MEM.network?.entities.includes(S.selected) || memoryThing(S.selected)) ? S.selected : null;
-  const start = keep || MEM.key || [...S.elements.values()].find(entry => entry.element.role === 'DE')?.element.id
-    || S.elements.keys().next().value;
-  if (!start) fill($('#p-object'), emptyPanel());
+  const start = keep || MEM.key || (S.cleared ? null : entryOf());  // a selection let go of stays let go, VIEW-008
+  if (!start) S.cleared && S.elements.size ? noneSelected() : fill($('#p-object'), emptyPanel());
   else {
     if (!keep) setTimeout(() => { if (G) fit3d(800, 60); }, 2200);
     await select(start, false, false, false, true);
@@ -7496,7 +7588,7 @@ async function readGraph(agents) {
   drawIntake();
 }
 async function loadMetaform() {
-  S.view = null; S.selected = null; IN.length = 0; M.base = null; dropMemories(); renderCrumbs();
+  S.view = null; S.selected = null; S.cleared = false; IN.length = 0; M.base = null; dropMemories(); renderCrumbs();
   S.elements = new Map(); S.joins = []; S.whole = null;
   S.layers = (await read('layers', {limit: 0})).results;
   renderChips();

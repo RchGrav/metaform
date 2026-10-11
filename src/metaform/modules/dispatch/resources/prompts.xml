@@ -2,6 +2,9 @@
 <!-- dispatch's prompts, MCP-031. What is between an element's tags is what is served; an empty element inside one is
      filled with the value of its name. -->
 <prompts>
+<!-- dispatch's line in the compact instructions every agent reads at connect, MCP-029 as amended 2026-10-10: when the
+     agent needs dispatch, and where to go then; the instructions themselves are read there, on demand. -->
+<connect>To give work to an agent: dispatch start on its ticket.</connect>
 
 <!-- dispatch's line in the instructions agents read while dispatch is on, MCP-029. -->
 <instructions>

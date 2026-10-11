@@ -569,14 +569,14 @@ def test_the_page_draws_each_join_as_its_path_and_both_views_select_together(run
                          '.filter(Boolean)') == []
     alarm = next(entry['element'] for entry in expected['elements'] if entry['element']['address'] == 'code.alarm.audible')
     page.evaluate(f'window.metaform.select("{alarm["id"]}")')
-    assert page.evaluate('[...document.querySelectorAll("#map2d svg g.node.sel title")].map(t => t.textContent)') == [
+    assert page.evaluate('[...document.querySelectorAll("#map2d svg g.node.sel")].map(g => g.dataset.title)') == [
         'code.alarm.audible']
-    page.evaluate('[...document.querySelectorAll("#map2d svg g.node")].find(g => g.querySelector("title").textContent '
+    page.evaluate('[...document.querySelectorAll("#map2d svg g.node")].find(g => g.dataset.title '
                   '=== "exterior.cook").dispatchEvent(new MouseEvent("click", {bubbles: true}))')
     cook = next(entry['element'] for entry in expected['elements'] if entry['element']['address'] == 'exterior.cook')
     assert page.evaluate('window.metaform.selected()') == cook['id']
     assert page.text_content('#p-object h2') == 'cook'
-    page.keyboard.press('f')
+    page.keyboard.press('9')
     page.wait_for_timeout(300)
     assert problems == [] and remote == []
 
@@ -606,7 +606,7 @@ def test_the_layers_list_opens_from_the_header_and_back_and_forward_sit_clear_of
     page.keyboard.press('Escape')
     assert not page.is_visible('#layerlist')
     page.evaluate('() => { const svg = document.querySelector("#map2d svg"); svg.setAttribute("viewBox", "-400 -400 1600 1600"); }')
-    for name in ('#backBtn', '#forwardBtn', '#fitBtn'):
+    for name in ('#backBtn', '#forwardBtn', '#map2d .modes2d'):
         hit = page.evaluate(f"""(() => {{ const box = document.querySelector('{name}').getBoundingClientRect();
             const found = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
             return found && found.closest('{name}') !== null; }})()""")
@@ -1044,17 +1044,19 @@ def still3d(page, fits):
 
 def box_of(page, address):
     return page.evaluate(f"""() => {{
-        const title = [...document.querySelectorAll('#map2d svg title')].find(t => t.textContent === '{address}');
-        const box = title?.parentNode.getBoundingClientRect();
+        const node = [...document.querySelectorAll('#map2d svg g.node')].find(g => g.dataset.title === '{address}');
+        const box = node?.getBoundingClientRect();
         return box && {{x: box.left, y: box.top, w: box.width, h: box.height}};
     }}""")
 
 
 @pytest.mark.req('VIEW-008')
 @pytest.mark.req('VIEW-012')
-def test_enter_or_a_click_on_the_selected_node_goes_inside_it_and_escape_backs_out(run, web, mapped, browser):
-    """One click selects a node, a click on the selected node goes inside it, and so does Enter;
-    Escape or Shift+Enter backs out."""
+def test_a_click_selects_and_goes_inside_escape_lets_go_then_backs_out_and_an_edge_selects_its_join(
+        run, web, mapped, browser):
+    """One click selects a node, a click on the selected node goes inside it, and so does Enter. Escape lets go of the
+    selection first and backs out once nothing is selected, as a click on empty space lets go of it; Shift+Enter and a
+    Shift-click back out whatever is selected. An edge takes a click and selects its join, VIEW-008."""
     started(run)
     page, problems, _ = opened(browser, web)
     expected, at = keys_of(web)
@@ -1067,11 +1069,14 @@ def test_enter_or_a_click_on_the_selected_node_goes_inside_it_and_escape_backs_o
     page.keyboard.press('Enter')
     page.wait_for_function(f'() => window.metaform.inside().includes("{tick}")')
     assert selected() == kitchen
-    page.keyboard.press('Escape')
+    page.keyboard.press('Escape')                          # lets go of the selection, and stays inside
+    assert selected() is None and now_inside()
+    page.keyboard.press('Escape')                          # with nothing selected, out one level, to the node left
     page.wait_for_function('() => window.metaform.inside().length === 0')
     assert selected() == kitchen and 'focused' in page.get_attribute('#map2d', 'class')
     page.keyboard.press('Escape')
-    assert selected() == kitchen and 'focused' not in page.get_attribute('#map2d', 'class')
+    assert selected() is None and 'focused' not in page.get_attribute('#map2d', 'class')
+    assert page.inner_text('#p-object').startswith('Nothing is selected')
     page.evaluate(f'window.metaform.select("{cook}")')
     box = box_of(page, 'code.timer.kitchen')
     page.mouse.click(box['x'] + 6, box['y'] + 6)  # the element's own box, clear of the nodes inside it
@@ -1087,6 +1092,28 @@ def test_enter_or_a_click_on_the_selected_node_goes_inside_it_and_escape_backs_o
     page.keyboard.press('Enter')  # the cook has an inside too, VIEW-016
     page.wait_for_function(f'() => window.metaform.inside().includes("{cook}")')
     assert selected() == cook and now_inside()
+    still2d(page)
+    view = page.locator('#viewport').bounding_box()
+    page.keyboard.down('Shift')                            # a Shift-click anywhere backs out, a node selected or not
+    page.mouse.click(view['x'] + view['width'] / 2, view['y'] + view['height'] / 2)
+    page.keyboard.up('Shift')
+    page.wait_for_function('() => window.metaform.inside().length === 0')
+    assert selected() == cook
+    still2d(page)
+    # an edge: a point on an edge's band where nothing else is under the pointer
+    point = page.evaluate("""(() => { const view = document.querySelector('#viewport').getBoundingClientRect();
+        for (const hit of document.querySelectorAll('#map2d .hits2d path')) {
+            const length = hit.getTotalLength(), screen = hit.getScreenCTM();
+            for (let share = 0.1; share < 0.95; share += 0.05) {
+                const on = hit.getPointAtLength(length * share), at = new DOMPoint(on.x, on.y).matrixTransform(screen);
+                if (at.x > view.left + 2 && at.x < view.right - 2 && at.y > view.top + 2 && at.y < view.bottom - 2
+                    && document.elementFromPoint(at.x, at.y) === hit) return [at.x, at.y];
+            } } return null; })()""")
+    assert point
+    page.mouse.click(*point)
+    assert selected().startswith('p:') and page.text_content('#p-object .eyebrow') == 'Join'
+    page.mouse.click(view['x'] + 3, view['y'] + view['height'] - 3)  # empty space lets go of it
+    assert selected() is None
     assert problems == []
 
 
@@ -1109,7 +1136,7 @@ def click_node(page, title):
         return {x: box.left, y: box.top, w: box.width, h: box.height}; })()""")
     x, y = box['x'] + box['w'] / 2, box['y'] + box['h'] / 2
     if not (view['x'] <= x <= view['x'] + view['w'] and view['y'] <= y <= view['y'] + view['h']):
-        page.evaluate('window.metaform.fit()')  # the view opens at a readable size, so a node may be outside it
+        page.evaluate('window.metaform.fit()')  # All: a mode that zooms in may leave a node outside the view
         still2d(page)
         box = box_of(page, title)
     page.mouse.click(box['x'] + box['w'] / 2, box['y'] + box['h'] / 2)
@@ -1218,7 +1245,7 @@ def test_going_inside_a_node_zooms_into_it_as_the_map_fades_and_its_own_graph_fa
     assert own[-1]['o'] == 1
 
     page.evaluate(SAMPLE_2D)
-    page.keyboard.press('Escape')
+    page.keyboard.press('Shift+Enter')  # out one level; Escape would let go of the selection first, VIEW-008
     page.wait_for_function('() => window.metaform.inside().length === 0')
     page.wait_for_function('() => { const last = window.samples.at(-1); return last && last.base && last.o === 1; }')
     still2d(page)
@@ -1273,7 +1300,7 @@ def test_going_inside_any_node_replaces_the_2d_map_with_its_own_graph_of_what_th
     keys, crumbs = inside(page)
     assert crumbs.split('›')[-1].strip() == 'cook' and not page.query_selector('#map2d svg[data-base]')
     assert any(key.startswith('p:') for key in keys)  # the join it holds, as its purpose
-    page.keyboard.press('Escape')
+    page.keyboard.press('Shift+Enter')
     page.wait_for_function('() => window.metaform.inside().length === 0')
     assert page.query_selector('#map2d svg[data-base="yes"]') is not None  # the same map, never laid out again
     assert page.evaluate('document.querySelectorAll("#map2d svg g.node").length') == base
@@ -1304,6 +1331,8 @@ def test_going_inside_any_node_replaces_the_2d_map_with_its_own_graph_of_what_th
     page.wait_for_function('() => window.metaform.inside().length && '
                            'document.querySelector("#crumbs").textContent.includes("audible alarm")')
     assert [part.strip() for part in inside(page)[1].split('›')] == ['map', 'dish timer', 'audible alarm']
+    page.keyboard.press('Escape')  # the first lets go of the selection, VIEW-008, the second backs out
+    assert page.evaluate('window.metaform.selected()') is None and len(inside(page)[0])
     page.keyboard.press('Escape')
     page.wait_for_function('() => window.metaform.inside().length && '
                            '!document.querySelector("#crumbs").textContent.includes("audible alarm")')
@@ -1311,10 +1340,10 @@ def test_going_inside_any_node_replaces_the_2d_map_with_its_own_graph_of_what_th
     click_node(page, 'audible alarm')  # the alarm is selected: a click on it goes inside
     page.wait_for_function('() => window.metaform.inside().length && '
                            'document.querySelector("#crumbs").textContent.includes("audible alarm")')
-    page.keyboard.press('Escape')
+    page.keyboard.press('Shift+Enter')  # out one level whatever is selected
     page.wait_for_function('() => window.metaform.inside().length && '
                            '!document.querySelector("#crumbs").textContent.includes("audible alarm")')
-    page.keyboard.press('Escape')
+    page.keyboard.press('Shift+Enter')
     page.wait_for_function('() => window.metaform.inside().length === 0')
     assert page.evaluate('window.metaform.selected()') == kitchen and not page.is_visible('#crumbs')
     assert problems == []
@@ -1322,9 +1351,9 @@ def test_going_inside_any_node_replaces_the_2d_map_with_its_own_graph_of_what_th
 
 @pytest.mark.req('VIEW-016')
 @pytest.mark.req('VIEW-008')
-def test_inside_a_node_the_graph_keeps_the_maps_orientation_and_fit_still_zooms(run, web, mapped, browser):
-    """After going inside a node, the map seemed to turn on its side, and Fit did not zoom there.
-    The inside graph runs the way the whole map does, and Fit's zoomed-in view works inside."""
+def test_inside_a_node_the_graph_keeps_the_maps_orientation_and_a_mode_still_zooms(run, web, mapped, browser):
+    """After going inside a node, the map seemed to turn on its side, and the zoom did not work there.
+    The inside graph runs the way the whole map does, and the modes zoom inside, VIEW-041."""
     from metaform.data import Store
     store = Store('proj')
     for name in ('dial', 'buzzer', 'battery'):  # enough elements that the map runs top to bottom, as a real one does
@@ -1348,10 +1377,9 @@ def test_inside_a_node_the_graph_keeps_the_maps_orientation_and_fit_still_zooms(
         assert held['x'] > center['x']
     width = lambda: float(page.get_attribute('#map2d svg', 'viewBox').split()[2])
     whole = width()
-    page.keyboard.press('f')
-    page.keyboard.press('f')
+    page.keyboard.press('6')  # Large
     still2d(page)  # the camera eases for 700 ms
-    assert width() < whole * 0.8  # zoomed in on the selected node
+    assert width() < whole * 0.8  # zoomed in
     assert problems == []
 
 
@@ -1504,42 +1532,6 @@ def test_the_export_menu_saves_the_same_xml_document_the_command_writes_in_the_p
     assert problems == []
 
 
-@pytest.mark.req('VIEW-008')
-def test_the_2d_map_opens_at_a_size_that_can_be_read_and_only_fit_changes_the_zoom(run, web, mapped, browser):
-    """Zoom is the person's choice: the map opens with its labels readable, selecting a node moves the view to it at
-    the same zoom, and the zoom changes only when Fit is asked."""
-    from metaform.data import Store
-    store = Store('proj')
-    for index in range(30):  # a map far wider than the view
-        store.add_element('notes', f'code.part.number{index}', name_length=2)
-        store.add_join('notes', 'code.timer.kitchen', f'code.part.number{index}', purpose='Keep the timer working.',
-                       ef='serves the timer')
-    started(run)
-    page, problems, _ = opened(browser, web)
-    _, at = keys_of(web)
-    page.wait_for_function('() => window.metaform.loaded() && document.querySelector("#map2d svg")')
-    width = lambda: float(page.get_attribute('#map2d svg', 'viewBox').split()[2])
-    view = page.evaluate('document.querySelector("#viewport").getBoundingClientRect().width')
-    assert view / width() >= 0.99  # labels are drawn at the size they are written in, or larger
-    before = width()
-    for address in ('code.part.number3', 'code.part.number27', 'code.timer.kitchen'):
-        page.evaluate(f'window.metaform.select("{at[address]}")')
-        still2d(page)  # the camera eases for 700 ms
-        assert width() == pytest.approx(before, rel=0.01)
-        shown = page.evaluate(f"""(() => {{ const view = document.querySelector('#viewport').getBoundingClientRect();
-            const box = window.metaform.box2d("{at[address]}");
-            return box.left >= view.left && box.right <= view.right && box.top >= view.top && box.bottom <= view.bottom; }})()""")
-        assert shown, address
-    page.evaluate('window.metaform.fit()')
-    still2d(page)
-    assert width() > before * 1.5  # Fit shows the whole map
-    whole = width()
-    page.evaluate(f'window.metaform.select("{at["code.part.number3"]}")')
-    still2d(page)
-    assert width() == pytest.approx(whole, rel=0.01)  # and a click leaves it there
-    assert problems == []
-
-
 # The smallest text of the 2D map as drawn on the screen, in pixels: each label's font size times the screen pixels
 # per unit of its own coordinates, which the camera's viewBox sets, VIEW-041.
 TEXT_PX = '''() => { const sizes = [...document.querySelectorAll("#map2d svg text, #map2d svg tspan")]
@@ -1624,16 +1616,57 @@ def fitted(page):
     return page.evaluate(ALL_IN) and page.evaluate(SPAN) >= FILLS
 
 
-def readable_at(page, px, key, whole_px):
-    """Mode two, Zoom, VIEW-041: the node centered, at three times the whole diagram's size with its smallest text never
-    below `px`, whole_px being that text with the whole diagram in view, unless the node's box would then take more than
-    60 percent of the area, which it never does."""
-    view = page.evaluate("(() => { const box = document.querySelector('#viewport').getBoundingClientRect(); return [box.width, box.height]; })()")
-    box = page.evaluate(f'window.metaform.box2d("{key}")')
-    wide, tall = box['right'] - box['left'], box['bottom'] - box['top']
-    capped = wide >= 0.6 * view[0] - 1 or tall >= 0.6 * view[1] - 1
-    sized = capped or page.evaluate(TEXT_PX) == pytest.approx(max(px, 3 * whole_px), abs=1)
-    return sized and wide <= 0.6 * view[0] + 1 and tall <= 0.6 * view[1] + 1 and centered(page, key) <= 2
+def margins(page):
+    """How far in from each side of the 2D map's area the map's drawing stands, by its own bounds as the page reads
+    them, in screen pixels; negative on a side it runs past, VIEW-041."""
+    return page.evaluate("""(() => { const view = document.querySelector('#viewport').getBoundingClientRect();
+        const scene = document.querySelector('#map2d svg > g'), box = scene.getBBox(), screen = scene.getScreenCTM();
+        const from = new DOMPoint(box.x, box.y).matrixTransform(screen);
+        const to = new DOMPoint(box.x + box.width, box.y + box.height).matrixTransform(screen);
+        return {left: from.x - view.left, right: view.right - to.x, top: from.y - view.top,
+                bottom: view.bottom - to.y}; })()""")
+
+
+def held(page, key):
+    """VIEW-041: along each axis the map either fits and is centered, or the node is centered unless that would show
+    more than 40 pixels past the map's edge, where 40 pixels show."""
+    edges, off = margins(page), page.evaluate(f"""(() => {{ const view = document.querySelector('#viewport')
+        .getBoundingClientRect(), box = window.metaform.box2d("{key}");
+        return [(box.left + box.right - view.left - view.right) / 2, (box.top + box.bottom - view.top - view.bottom) / 2];
+        }})()""")
+    for (near, far), away in ((('left', 'right'), off[0]), (('top', 'bottom'), off[1])):
+        if edges[near] >= 0 and edges[far] >= 0:
+            if abs(edges[near] - edges[far]) > 1:
+                return False
+        elif abs(away) > 2 and min(abs(edges[near] - 40), abs(edges[far] - 40)) > 1:
+            return False
+    return True
+
+
+def mode(page):
+    """The 2D map's mode, the one checked on its bar."""
+    return page.eval_on_selector_all('#map2d .modes2d button[aria-checked="true"]',
+                                     'found => found.map(one => one.getAttribute("aria-label"))')
+
+
+# The panel heading's size on the screen, which Medium draws the 2D map's text at, VIEW-041.
+HEADING = 'parseFloat(getComputedStyle(document.querySelector("#p-object h2")).fontSize)'
+ALL_CLICK = 'Meta' if sys.platform == 'darwin' else 'Control'  # a Ctrl-click, a Command-click on macOS, VIEW-008
+
+
+def modified_click(page, key, x, y):
+    """A click with a key held, which waits for nothing."""
+    page.keyboard.down(key)
+    page.mouse.click(x, y)
+    page.keyboard.up(key)
+
+
+def turn(page, delta):
+    """The wheel turned over the middle of the 2D map's area; it moves the map at once or not at all, VIEW-041."""
+    page.mouse.move(*page.evaluate('(() => { const box = document.querySelector("#viewport").getBoundingClientRect();'
+                                   ' return [(box.left + box.right) / 2, (box.top + box.bottom) / 2]; })()'))
+    page.mouse.wheel(0, delta)
+    page.wait_for_timeout(60)
 
 
 def to_large_area(page):
@@ -1692,25 +1725,13 @@ def click_center(page, key):
 def shown(page, at, besides):
     """A node of the 2D map other than `besides` whose middle is in the map's area, by its key."""
     title = page.evaluate("""(() => { const view = document.querySelector('#viewport').getBoundingClientRect();
-        return [...document.querySelectorAll('#map2d svg g.node')].map(node => [node.querySelector('title').textContent,
+        return [...document.querySelectorAll('#map2d svg g.node')].map(node => [node.dataset.title,
             node.getBoundingClientRect()]).filter(([title, box]) => (box.left + box.right) / 2 > view.left + 10
             && (box.left + box.right) / 2 < view.right - 10 && (box.top + box.bottom) / 2 > view.top + 10
             && (box.top + box.bottom) / 2 < view.bottom - 10).map(([title]) => title); })()""")
     keys = [at[name] for name in title if name in at and at[name] != besides]
     assert keys, title
     return keys[0]
-
-
-def wheel(page, delta):
-    """The wheel turned over the middle of the 2D map's area, and the camera still."""
-    still2d(page)
-    before = view_box(page)[2]
-    page.mouse.move(*page.evaluate('(() => { const box = document.querySelector("#viewport").getBoundingClientRect();'
-                                   ' return [(box.left + box.right) / 2, (box.top + box.bottom) / 2]; })()'))
-    page.mouse.wheel(0, delta)
-    page.wait_for_function(f'() => Number(document.querySelector("#map2d svg").getAttribute("viewBox")'
-                           f'.split(" ")[2]) !== {before}')  # the browser has delivered the wheel and its ease began
-    still2d(page)
 
 
 def acted(page, act, must=True, until='true'):
@@ -1731,23 +1752,21 @@ def press(page, selector):
 
 
 @pytest.mark.req('VIEW-041')
-def test_in_the_large_area_mode_one_keeps_the_whole_diagram_fitted_and_eases_to_each_new_fit(
-        run, web, mapped, browser):
-    """With the 2D map in the large area, mode one, the default, keeps the whole diagram fitted and
-    eases to each new fit as nodes arrive or go and as the area changes size, so an intake can be watched filling in
-    without the camera jumping; Fit, F and Home go back to it."""
+def test_all_keeps_the_whole_map_fitted_and_eases_to_each_new_fit(run, web, mapped, browser):
+    """All, the mode the page opens in, keeps the whole map fitted and eases to each new fit as nodes arrive or go and
+    as the area changes size, so an intake can be watched filling in without the camera jumping; 9, Home and a
+    Ctrl-click anywhere on the map go back to it from another mode."""
     from metaform.data import Store
     thirty(Store('proj'))
     page, problems = opened_on(browser, web, run)
-    whole_px = page.evaluate(TEXT_PX)
-    assert fitted(page) and whole_px < 8   # nothing pressed: the whole diagram, however small its text
+    assert fitted(page) and mode(page) == ['All']
     acted(page, lambda: arrives(run, mapped), until=arrival(page))  # a node arrives: it eases out to hold it too
-    assert page.evaluate('[...document.querySelectorAll("#map2d svg title")].some(t => t.textContent === "code.part.added")')
+    assert page.evaluate('[...document.querySelectorAll("#map2d svg g.node")].some(g => g.dataset.title === "code.part.added")')
     assert fitted(page)
     expected, at = keys_of(web)
     joined = next(join['id'] for join in expected['joins']
                   if [held['element_id'] for held in join['elements']] == [at['code.part.added']])
-    gone = '![...document.querySelectorAll("#map2d svg title")].some(t => t.textContent === "code.part.added")'
+    gone = '![...document.querySelectorAll("#map2d svg g.node")].some(g => g.dataset.title === "code.part.added")'
     acted(page, lambda: [run('map', 'knowledge', 'op=remove', 'layer=notes', f'id={thing}', cwd=mapped)
                          for thing in (joined, at['code.part.added'])],
           until=f'{arrival(page)} && {gone}')             # it goes: the row is narrower again
@@ -1755,32 +1774,15 @@ def test_in_the_large_area_mode_one_keeps_the_whole_diagram_fitted_and_eases_to_
     acted(page, lambda: page.set_viewport_size({'width': 1100, 'height': 760}))  # the area changes size
     assert fitted(page)
     kitchen = at['code.timer.kitchen']                    # selected as the map opened, as its DE
-    assert page.evaluate('window.metaform.selected()') == kitchen
-    for back in (lambda: press(page, '#fitBtn'), lambda: page.keyboard.press('f'), lambda: page.keyboard.press('Home')):
-        acted(page, lambda: page.keyboard.press('5'))     # a digit from mode one goes to mode two
-        assert readable_at(page, 16, kitchen, whole_px)
-        acted(page, back)                                 # and Fit, F and Home back to mode one
-        assert fitted(page)
-    acted(page, lambda: page.keyboard.press('f'))         # from the whole diagram F goes back in, to mode two
-    assert readable_at(page, 16, kitchen, whole_px)
-    acted(page, lambda: page.keyboard.press('f'))         # and out again
-    assert fitted(page)
-    assert problems == []
-
-
-@pytest.mark.req('VIEW-041')
-def test_in_the_large_area_fit_goes_back_in_after_the_whole_diagram_on_a_small_map(run, web, mapped, browser):
-    """Fit in the large area showed the whole diagram and never went back in. On a map small enough to read whole,
-    Fit from the whole diagram goes in on the selected node, and Fit again shows the whole diagram."""
-    page, problems = opened_on(browser, web, run)
-    _, at = keys_of(web)
-    kitchen = at['code.timer.kitchen']
-    assert page.evaluate('window.metaform.selected()') == kitchen and fitted(page)
-    whole = page.evaluate(VIEW_BOX)
-    closer = acted(page, lambda: press(page, '#fitBtn'))
-    assert closer[2] < whole[2] and centered(page, kitchen) <= 2   # in, on the node
-    acted(page, lambda: press(page, '#fitBtn'))
-    assert fitted(page)
+    corner = page.evaluate('(() => { const box = document.querySelector("#viewport").getBoundingClientRect();'
+                           ' return [box.left + 4, box.top + 4]; })()')
+    for back in (lambda: page.keyboard.press('9'), lambda: page.keyboard.press('Home'),
+                 lambda: modified_click(page, ALL_CLICK, *corner)):
+        acted(page, lambda: page.keyboard.press('5'))
+        assert mode(page) == ['Medium'] and not fitted(page)
+        acted(page, back)                                 # eased back to the whole map
+        assert fitted(page) and mode(page) == ['All']
+    assert page.evaluate('window.metaform.selected()') == kitchen  # a Ctrl-click changes nothing else
     assert problems == []
 
 
@@ -1796,7 +1798,7 @@ def test_the_2d_map_moves_between_layouts_each_node_keeping_its_key_and_a_new_on
     assert page.evaluate(f'!!document.querySelector(\'#map2d svg g.node[data-key="{kitchen}"]\')')
     page.clock.pause_at(page.evaluate('Date.now()') / 1000 + 1)
     arrives(run, mapped)
-    added = '[...document.querySelectorAll("#map2d svg g.node")].find(g => g.querySelector("title")?.textContent === "code.part.added")'
+    added = '[...document.querySelectorAll("#map2d svg g.node")].find(g => g.dataset.title === "code.part.added")'
     for _ in range(600):
         page.clock.run_for(FRAME)
         if page.evaluate(f'!!{added}'):
@@ -1830,178 +1832,105 @@ def test_inside_a_node_each_purpose_box_shows_its_purpose_with_the_elements_that
 
 
 @pytest.mark.req('VIEW-041')
-def test_in_the_large_area_a_click_goes_to_mode_two_which_holds_the_minimum_text_centered_on_the_selected_node(
-        run, web, mapped, browser):
-    """Mode two fits the whole diagram but never draws its text below a minimum, keys 1 to 9 at 8 to
-    24 px, 5 the default; when the minimum wins it keeps the selected node at the center, following each selection; a
-    click on a node goes to mode two, and after the wheel a click goes back to it."""
+@pytest.mark.req('VIEW-008')
+def test_the_2d_map_opens_in_all_and_its_mode_holds_the_zoom_through_every_selection(run, web, mapped, browser):
+    """The map zoomed further in at each selection and slid about. It opens in All with the whole map in view, All
+    checked among the seven modes on its bar; 5 eases until its text is the panel heading's size, and a click in the
+    3D map, a click, the arrow keys and a selection by id then each center their node as far as the 40 pixel margin
+    allows and never change the zoom. A node's name is its hovertext only while the map's text is drawn smaller than
+    Small."""
     from metaform.data import Store
     thirty(Store('proj'))
     page, problems = opened_on(browser, web, run)
     _, at = keys_of(web)
-    whole_px = page.evaluate(TEXT_PX)
     part = lambda number: at[f'code.part.number{number}']
-    page.evaluate(f'window.metaform.click3d("{part(5)}")')  # a click in the 3D map
-    still2d(page)
-    assert readable_at(page, 16, part(5), whole_px)
-    acted(page, lambda: page.keyboard.press('Home'))
-    assert fitted(page)
-    acted(page, lambda: click_center(page, part(3)))      # a click in the 2D map
-    assert page.evaluate('window.metaform.selected()') == part(3) and readable_at(page, 16, part(3), whole_px)
-    wheel(page, 400)                                      # the wheel leaves mode two; a click goes back to it
-    other = shown(page, at, part(3))
-    acted(page, lambda: click_center(page, other))
-    assert page.evaluate('window.metaform.selected()') == other and readable_at(page, 16, other, whole_px)
-    wheel(page, 400)                                      # and Fit to mode one
-    acted(page, lambda: press(page, '#fitBtn'))
-    assert fitted(page)
-    acted(page, lambda: click_center(page, part(3)))
-    acted(page, lambda: page.keyboard.press('9'))
-    assert readable_at(page, 24, part(3), whole_px)
-    acted(page, lambda: page.keyboard.press('ArrowRight'))  # the camera follows each new selection
-    following = page.evaluate('window.metaform.selected()')
-    assert following != part(3) and readable_at(page, 24, following, whole_px)
-    tick = keys_of(web)[1]['code.loop.tick']              # another element, selected by its id
-    acted(page, lambda: page.evaluate(f'window.metaform.select("{tick}")'), must=following != tick)
-    assert readable_at(page, 24, tick, whole_px)
-    acted(page, lambda: page.keyboard.press('1'))         # 8 px, as the whole diagram draws its text smaller still
-    assert whole_px < 7 and readable_at(page, 8, tick, whole_px)
+    assert page.eval_on_selector_all('#map2d .modes2d button', 'found => found.map(one => [one.getAttribute("aria-label"),'
+                                     ' one.getAttribute("aria-keyshortcuts")])') == [
+        ['Small', '4'], ['Medium', '5'], ['Large', '6'], ['Height', '7'], ['Width', '8'], ['All', '9'], ['Free', '0']]
+    assert mode(page) == ['All'] and page.evaluate(ALL_IN)
+    tips = '[...document.querySelectorAll("#map2d svg g.node")].filter(g => g.querySelector(":scope > title")).length'
+    assert page.evaluate(TEXT_PX) < 8 and page.evaluate(tips) == page.locator('#map2d svg g.node').count()
     acted(page, lambda: page.keyboard.press('5'))
-    acted(page, lambda: arrives(run, mapped), must=False, until=arrival(page))  # a node arrives in mode two
-    assert readable_at(page, 16, tick, whole_px)
+    assert mode(page) == ['Medium'] and page.evaluate(TEXT_PX) == pytest.approx(page.evaluate(HEADING), abs=1)
+    assert page.evaluate(tips) == 0                       # read where it is drawn: no hovertext
+    zoom = view_box(page)[2:]
+    selected = lambda: page.evaluate('window.metaform.selected()')
+    for act in (lambda: page.evaluate(f'window.metaform.click3d("{part(5)}")'),
+                lambda: click_center(page, shown(page, at, selected())),
+                lambda: page.keyboard.press('ArrowRight'), lambda: page.keyboard.press('ArrowUp'),
+                lambda: page.evaluate(f'window.metaform.select("{part(27)}")')):
+        before = selected()
+        acted(page, act, must=False)
+        assert selected() != before
+        assert view_box(page)[2:] == pytest.approx(zoom, rel=1e-6), selected()
+        assert held(page, selected()), (selected(), margins(page))
     assert problems == []
 
 
 @pytest.mark.req('VIEW-041')
-def test_in_the_large_area_the_wheel_leaves_both_modes_and_a_digit_typed_in_a_field_moves_nothing(
+def test_the_wheel_scrolls_only_where_the_map_runs_past_and_no_further_than_forty_pixels_beyond_its_edge(
         run, web, mapped, browser):
-    """The wheel leaves both modes and its zoom holds through the map drawn again, VIEW-008; a digit after it goes to
-    mode two; the digit keys are taken only when no text field has the focus."""
+    """A wheel that moved a map with nothing beyond its edges only lost it. In All the wheel moves nothing; in Height,
+    on a map far wider than the pane, it scrolls across and stops with 40 pixels past the map's edge, and the map's
+    height refits exactly when the pane changes size; a digit typed in a text field chooses no mode."""
     from metaform.data import Store
     thirty(Store('proj'))
     page, problems = opened_on(browser, web, run)
-    _, at = keys_of(web)
-    kitchen = at['code.timer.kitchen']
-    whole_px = page.evaluate(TEXT_PX)
-    wheel(page, -400)
-    zoom = view_box(page)[2]
-    changed_by(page, lambda: run('map', 'ask', 'element:code.timer.kitchen', 'Is one second right?', *ASK_FORM,
-                                 cwd=mapped))
-    page.wait_for_timeout(300)
-    still2d(page)
-    assert view_box(page)[2] == pytest.approx(zoom, rel=0.01)
-    acted(page, lambda: page.keyboard.press('5'))         # a digit after the wheel goes to mode two
-    assert readable_at(page, 16, kitchen, whole_px)
-    wheel(page, 400)                                      # and the wheel leaves mode two: its zoom holds too
-    zoom = view_box(page)[2]
-    changed_by(page, lambda: run('map', 'ask', 'element:code.alarm.audible', 'Is the tone right?', *ASK_FORM,
-                                 cwd=mapped))
-    page.wait_for_timeout(300)
-    still2d(page)
-    assert view_box(page)[2] == pytest.approx(zoom, rel=0.01)
-    page.click('#messages')                               # the answer box: a digit typed there is a letter of the answer
-    page.wait_for_selector('#float textarea.answer')
-    still2d(page)
-    held = view_box(page)
-    page.focus('#float textarea.answer')
-    page.keyboard.type('9')
-    page.evaluate(f'window.metaform.element("{kitchen}")')  # and in the address field of Add Element
-    page.wait_for_selector('#element .address')
-    page.focus('#element .address')
-    page.keyboard.type('7')
-    page.wait_for_timeout(300)
-    still2d(page)
-    assert view_box(page) == held
-    assert page.input_value('#float textarea.answer') == '9' and page.input_value('#element .address').endswith('7')
-    assert problems == []
-
-
-@pytest.mark.req('VIEW-041')
-def test_in_the_large_area_a_click_on_a_map_of_three_nodes_still_zooms_in_on_the_node(run, web, home, tmp_path, browser):
-    """Mode two held only a minimum size of text, so on a map of a few nodes, whose whole diagram draws its text larger
-    than that, a click did not zoom at all. It zooms in three times on the node, its box never more than 60 percent of
-    the area, so a map of two or three nodes still zooms."""
-    from metaform.data import Store
-    folder = tmp_path / 'proj'
-    folder.mkdir()
-    run('add', 'project', 'proj', str(folder))
-    store = Store('proj')
-    with store.atomic():
-        intake = store.layer('intake-1', 'intake', 'The functional map.', kind='intake', mutable=False,
-                             hideable=False, provenance=PROVENANCE, ready=True)
-        store.add_element(intake.name, 'exterior.cook', name_length=1, role='CQU')
-        store.add_element(intake.name, 'code.timer.kitchen', name_length=2, role='DE')
-        store.add_element(intake.name, 'code.alarm.audible', name_length=2, role='SE')
-        store.add_join(intake.name, 'exterior.cook', 'code.timer.kitchen', purpose='Know when food is done.',
-                       ef='Counts down and rings.')
-        store.add_join(intake.name, 'code.timer.kitchen', 'code.alarm.audible', purpose='Get attention.',
-                       ef='Plays a tone.')
-    store.layer('notes', 'test', 'What notes says.', mutable=True, hideable=True, provenance=PROVENANCE)
-    store.finish('notes')
-    run('set', '--layers', 'intake-1,notes', cwd=folder)
-    page, problems = opened_on(browser, web, run)
-    page.set_viewport_size({'width': 2200, 'height': 1400})  # an area where the whole diagram draws its text above 24 px
-    page.wait_for_timeout(300)
-    still2d(page)
-    _, at = keys_of(web)
     whole = view_box(page)
-    whole_px = page.evaluate(TEXT_PX)
-    assert fitted(page) and whole_px > 25
-    cook = at['exterior.cook']
-    zoomed = acted(page, lambda: click_center(page, cook))
-    assert page.evaluate('window.metaform.selected()') == cook
-    assert zoomed[2] < whole[2] * 0.8 and readable_at(page, 16, cook, whole_px)  # in on it, as far as the cap lets it
-    for key in ('9', '1'):                                # its text is larger than any minimum the keys set
-        assert stepped(page, lambda key=key: page.keyboard.press(key))[-1] == pytest.approx(zoomed, abs=1)
-    acted(page, lambda: page.keyboard.press('Home'))      # the whole diagram again, mode one
-    assert fitted(page) and view_box(page) == pytest.approx(whole, abs=1)
-    # a node arriving and going in mode one: the fit changes and the camera eases to it
-    acted(page, lambda: (Store('proj').add_element('notes', 'code.alarm.loud', name_length=2),
-                         run('map', 'knowledge', 'op=add-join', 'layer=notes', 'receiver=code.alarm.audible',
-                             'elements=["code.alarm.loud"]', 'purpose=Be heard.', 'ef=rings loudly', cwd=folder)),
-          until=arrival(page))
-    assert fitted(page) and view_box(page) != pytest.approx(whole, abs=1)
-    loud = keys_of(web)[1]['code.alarm.loud']
-    acted(page, lambda: run('map', 'knowledge', 'op=remove', 'layer=notes', f'id={loud}', cwd=folder),
-          until=arrival(page))
-    assert fitted(page) and view_box(page) == pytest.approx(whole, abs=1)
+    turn(page, 400)
+    assert view_box(page) == whole                        # the whole map in view: nothing to scroll to
+    acted(page, lambda: page.keyboard.press('7'))
+    edges = margins(page)
+    assert edges['top'] == pytest.approx(40, abs=1) and edges['bottom'] == pytest.approx(40, abs=1)
+    assert edges['left'] < 0 or edges['right'] < 0       # it runs past the pane across
+    zoom = view_box(page)[2]
+    for _ in range(30):
+        turn(page, 800)
+    assert margins(page)['right'] == pytest.approx(40, abs=1) and view_box(page)[2] == zoom
+    for _ in range(30):
+        turn(page, -800)
+    assert margins(page)['left'] == pytest.approx(40, abs=1) and view_box(page)[2] == zoom
+    acted(page, lambda: page.set_viewport_size({'width': 1280, 'height': 640}))  # a shorter pane: the height refits
+    edges = margins(page)
+    assert edges['top'] == pytest.approx(40, abs=1) and edges['bottom'] == pytest.approx(40, abs=1)
+    page.keyboard.press('/')                              # a digit typed in the search box is a letter of it
+    page.wait_for_selector('#search:not([hidden])')
+    page.keyboard.type('5')
+    page.wait_for_timeout(300)
+    assert mode(page) == ['Height'] and page.input_value('#search .query') == '5'
     assert problems == []
 
 
 @pytest.mark.req('VIEW-041')
 @pytest.mark.req('VIEW-008')
-def test_in_the_small_area_the_2d_map_keeps_its_zoom_and_every_camera_move_eases(run, web, mapped, browser):
-    """In the small area the 2D map keeps VIEW-008's zoom as it is, and every camera move there eases
-    in and out too, never set at once: a selection, a click, Fit, a key, Back, and the map drawn again as a node
-    arrives. The modes and their digit keys are the large area's."""
+def test_in_the_small_area_the_mode_holds_through_selections_a_drag_and_a_redraw_and_every_move_eases(
+        run, web, mapped, browser):
+    """The modes hold in the small area as in the large one: 5 eases there, and a run of selections each centers its
+    node within the limits at the zoom the mode set, every move easing; a drag stops 40 pixels past the map's edge;
+    and the map drawn again as a node arrives keeps the zoom, the node selected centered again."""
     from metaform.data import Store
     thirty(Store('proj'))
     page, problems = opened_on(browser, web, run, large=False)
     _, at = keys_of(web)
-    wheel(page, 200)                                      # the person's zoom
-    zoom = view_box(page)[2]
-    part = at['code.part.number27']
-    assert acted(page, lambda: page.evaluate(f'window.metaform.select("{part}")'))[2] == pytest.approx(zoom, rel=0.01)
+    assert mode(page) == ['All'] and page.evaluate(ALL_IN)
+    acted(page, lambda: page.keyboard.press('5'))
+    assert mode(page) == ['Medium'] and page.evaluate(TEXT_PX) == pytest.approx(page.evaluate(HEADING), abs=1)
+    zoom = view_box(page)[2:]
+    for address in ('code.part.number3', 'code.part.number27', 'code.timer.kitchen', 'code.part.number14'):
+        acted(page, lambda address=address: page.evaluate(f'window.metaform.select("{at[address]}")'), must=False)
+        assert view_box(page)[2:] == pytest.approx(zoom, rel=1e-6) and held(page, at[address]), (address, margins(page), page.evaluate(f"window.metaform.box2d(\"{at[address]}\")"), page.evaluate("JSON.stringify(document.querySelector(\"#viewport\").getBoundingClientRect())"), page.evaluate("JSON.stringify(document.querySelector(\"#map2d svg\").getBoundingClientRect())"), view_box(page), page.evaluate("(() => { const b = document.querySelector(\"#map2d svg > g\").getBBox(); return [b.x, b.y, b.width, b.height]; })()"))
     middle = page.evaluate('(() => { const box = document.querySelector("#viewport").getBoundingClientRect();'
                            ' return [(box.left + box.right) / 2, (box.top + box.bottom) / 2]; })()')
-    page.mouse.move(*middle)                              # the map dragged away from the node
+    page.mouse.move(*middle)                              # the map dragged far to the right
     page.mouse.down()
-    page.mouse.move(middle[0] + 150, middle[1] + 60, steps=8)
+    page.mouse.move(middle[0] + 4000, middle[1], steps=12)
     page.mouse.up()
     still2d(page)
-    assert centered(page, part) > 50
-    # a node arrives: the map is drawn again with the zoom kept, and the camera eases back to the node selected
-    assert acted(page, lambda: arrives(run, mapped), until=arrival(page))[2] == pytest.approx(zoom, rel=0.01)
-    assert centered(page, part) <= 2
-    other = shown(page, at, part)
-    assert acted(page, lambda: click_center(page, other))[2] == pytest.approx(zoom, rel=0.01)  # a click
-    assert page.evaluate('window.metaform.selected()') == other
-    held = view_box(page)
-    page.keyboard.press('9')                              # the digits set nothing here
-    page.wait_for_timeout(300)
-    still2d(page)
-    assert view_box(page) == held
-    for act in (lambda: press(page, '#fitBtn'), lambda: page.keyboard.press('ArrowUp'), lambda: press(page, '#backBtn')):
+    assert margins(page)['left'] == pytest.approx(40, abs=1) and view_box(page)[2:] == pytest.approx(zoom, rel=1e-6)
+    part = at['code.part.number14']
+    assert acted(page, lambda: arrives(run, mapped), until=arrival(page))[2:] == pytest.approx(zoom, rel=1e-6)
+    assert held(page, part)
+    for act in (lambda: page.keyboard.press('ArrowUp'), lambda: press(page, '#backBtn')):
         acted(page, act)
     assert problems == []
 
@@ -2015,6 +1944,8 @@ def test_a_drag_interrupts_an_eased_2d_camera_move(run, web, mapped, browser):
     thirty(Store('proj'))
     page, problems = opened_on(browser, web, run, large=False)
     _, at = keys_of(web)
+    page.keyboard.press('5')  # Medium, where the map runs past the pane and so can be dragged, VIEW-041
+    still2d(page)
     page.clock.pause_at(page.evaluate('Date.now()') / 1000 + 1)
     try:
         before = view_box(page)
@@ -2041,9 +1972,11 @@ def test_a_drag_interrupts_an_eased_2d_camera_move(run, web, mapped, browser):
 
 
 @pytest.mark.req('VIEW-016')
-def test_inside_a_node_with_many_joins_the_graph_opens_at_a_size_that_can_be_read(run, web, mapped, browser):
-    """A node that holds many joins has an inside graph far wider than the view. It opens on the node at a size whose
-    labels can be read, and Fit still shows the whole of it."""
+@pytest.mark.req('VIEW-041')
+def test_inside_a_node_the_graph_opens_framed_by_the_maps_mode_and_keeps_it_on_the_way_out(run, web, mapped, browser):
+    """A node's own graph opened at a size of its own, and the map came back at another. It opens in the mode the map
+    is in: in All the whole graph in view; in Medium its text at the panel heading's size, the node entered in view;
+    and the map keeps the mode on the way back out."""
     from metaform.data import Store
     store = Store('proj')
     for index in range(14):
@@ -2055,21 +1988,27 @@ def test_inside_a_node_with_many_joins_the_graph_opens_at_a_size_that_can_be_rea
     _, at = keys_of(web)
     kitchen = at['code.timer.kitchen']
     page.evaluate(f'window.metaform.select("{kitchen}")')
+    heading = page.evaluate(HEADING)
     page.keyboard.press('Enter')
     page.wait_for_function('() => window.metaform.inside().length > 14')
     still2d(page)
-    scale = lambda: page.evaluate("""(() => { const view = document.querySelector('#viewport').getBoundingClientRect();
-        return view.width / Number(document.querySelector('#map2d svg').getAttribute('viewBox').split(' ')[2]); })()""")
-    opened_at = scale()
-    assert opened_at >= 0.99  # a label's 11px text is drawn at 11px or larger
-    inside = page.evaluate("""(() => { const view = document.querySelector('#viewport').getBoundingClientRect();
-        const title = [...document.querySelectorAll('#map2d svg title')].find(t => t.textContent === 'dish timer');
-        const box = title.parentNode.getBoundingClientRect();
-        return box.left >= view.left && box.right <= view.right && box.top >= view.top && box.bottom <= view.bottom; })()""")
-    assert inside  # the node entered is in view
-    page.evaluate('window.metaform.fit()')
+    assert mode(page) == ['All'] and page.evaluate(ALL_IN)
+    page.keyboard.press('Shift+Enter')
+    page.wait_for_function('() => window.metaform.inside().length === 0')
+    page.keyboard.press('5')
+    page.keyboard.press('Enter')
+    page.wait_for_function('() => window.metaform.inside().length > 14')
     still2d(page)
-    assert scale() < opened_at  # Fit shows the whole graph
+    assert page.evaluate(TEXT_PX) == pytest.approx(heading, abs=1)
+    seen = page.evaluate("""(() => { const view = document.querySelector('#viewport').getBoundingClientRect();
+        const node = [...document.querySelectorAll('#map2d svg g.node')].find(g => g.dataset.title === 'dish timer');
+        const box = node.getBoundingClientRect();
+        return box.left >= view.left && box.right <= view.right && box.top >= view.top && box.bottom <= view.bottom; })()""")
+    assert seen  # the node entered is in view
+    page.keyboard.press('Shift+Enter')
+    page.wait_for_function('() => window.metaform.inside().length === 0')
+    still2d(page)
+    assert mode(page) == ['Medium'] and page.evaluate(TEXT_PX) == pytest.approx(heading, abs=1)
     assert problems == []
 
 
@@ -2123,9 +2062,8 @@ def test_in_3d_every_item_of_the_layers_turned_on_is_its_own_node_joined_to_its_
 
 @pytest.mark.req('VIEW-008')
 @pytest.mark.req('VIEW-012')
-def test_back_and_forward_step_through_the_selected_nodes_and_fit_cycles_three_views(run, web, mapped, browser):
-    """Back and forward buttons in the 2D map's top left corner; Fit goes through three modes,
-    zoomed out, zoomed in and regular."""
+def test_back_and_forward_step_through_the_selected_nodes(run, web, mapped, browser):
+    """Back and forward buttons in the 2D map's top left corner step through the nodes selected."""
     started(run)
     page, problems, _ = opened(browser, web)
     _, at = keys_of(web)
@@ -2143,26 +2081,6 @@ def test_back_and_forward_step_through_the_selected_nodes_and_fit_cycles_three_v
     page.evaluate(f'window.metaform.select("{display}")')
     assert page.is_disabled('#forwardBtn')
     page.click('#backBtn')
-    assert selected() == kitchen
-    width = lambda: float(page.get_attribute('#map2d svg', 'viewBox').split()[2])
-    still2d(page)
-    page.click('#fitBtn')
-    still2d(page)
-    out = width()
-    assert 'focused' in page.get_attribute('#map2d', 'class')  # the whole map, the selection still marked
-    page.keyboard.press('Home')  # Home always shows the whole map
-    still2d(page)
-    assert abs(width() - out) < 1
-    page.click('#fitBtn')
-    still2d(page)
-    zoomed = width()
-    page.click('#fitBtn')
-    still2d(page)
-    regular = width()
-    assert regular > zoomed and out > zoomed
-    page.click('#fitBtn')  # and round again to the whole map
-    still2d(page)
-    assert abs(width() - out) < 1
     assert selected() == kitchen
     assert problems == []
 
@@ -2243,50 +2161,11 @@ def test_a_long_name_is_cut_in_the_2d_map_at_a_break_between_words_with_an_ellip
     Store('proj').add_element('notes', 'code.timer.kitchen.chime', name_length=1, name=name)
     started(run)
     page, problems, _ = opened(browser, web)
-    label = page.evaluate("""[...document.querySelectorAll('#map2d svg g.node')].map(node => [node.querySelector('title')
-        .textContent, [...node.querySelectorAll('tspan.row')].map(row => row.textContent.trim()).join(' ')])
+    label = page.evaluate("""[...document.querySelectorAll('#map2d svg g.node')].map(node => [node.dataset.title,
+        [...node.querySelectorAll('tspan.row')].map(row => row.textContent.trim()).join(' ')])
         .find(([title]) => title === 'code.timer.kitchen.chime')[1]""")  # a row for each line Mermaid wraps it to
     assert label.endswith('…') and len(label) <= 30, label
     assert name.startswith(label[:-1]) and name[len(label) - 1] == ' ', label  # whole words only
-    assert problems == []
-
-
-@pytest.mark.req('VIEW-016')
-@pytest.mark.req('VIEW-041')
-def test_in_the_large_area_a_nodes_own_graph_opens_whole_at_no_more_than_the_readable_size(run, web, mapped, browser):
-    """Inside a node, the large area drew a small graph with labels three times the readable size, low in the area with
-    its last row cut off. It opens whole, in view, its text no larger than the readable mode's minimum."""
-    started(run)
-    page, problems, _ = opened(browser, web)
-    _, at = keys_of(web)
-    to_large_area(page)
-    page.evaluate(f'window.metaform.select("{at["exterior.cook"]}")')
-    page.keyboard.press('Enter')
-    page.wait_for_function(f'() => window.metaform.inside().includes("{at["code.loop.tick"]}")')
-    still2d(page)
-    assert page.evaluate(ALL_IN)
-    largest = page.evaluate(TEXT_PX.replace('Math.min', 'Math.max'))
-    assert largest <= 16 * 12 / 11 + 1, largest  # the 11 px text at 16 px, the 12 px names in proportion
-    assert problems == []
-
-
-@pytest.mark.req('VIEW-041')
-def test_the_2d_maps_bar_shows_its_two_modes_in_the_large_area_and_readable_goes_to_mode_two(run, web, mapped, browser):
-    """Mode two of the large area was reached only by the keys 1 to 9, which nothing on the page named. The 2D map's bar
-    shows Whole and Zoom, the mode that holds checked, and Zoom goes to mode two."""
-    from metaform.data import Store
-    thirty(Store('proj'))
-    started(run)
-    page, problems, _ = opened(browser, web)
-    _, at = keys_of(web)
-    assert page.is_visible('#map2d .modes2d') and page.is_visible('#big3d .modes3d')  # on both maps, in either area
-    to_large_area(page)
-    whole_px = page.evaluate(TEXT_PX)
-    pressed = lambda: page.eval_on_selector_all('#map2d .modes2d button', 'found => found.map(one => one.getAttribute("aria-checked"))')
-    assert pressed() == ['true', 'false']
-    page.click('#map2d .modes2d button:nth-child(2)')
-    still2d(page)
-    assert pressed() == ['false', 'true'] and readable_at(page, 16, at['code.timer.kitchen'], whole_px)
     assert problems == []
 
 
@@ -3498,7 +3377,7 @@ def test_the_two_views_change_places_on_demand_and_each_works_in_either_place(ru
     # each view is its bar and its map, and the two areas are what change hands
     assert swapped['#map2d'] == first['#big3d'] and swapped['#stage canvas'] == swapped['#stage']
     assert swapped['#big3d'][0] == first['#map2d'][0]
-    assert page.locator('#map2d svg g.node').count() > 0 and page.is_visible('#fitBtn') and page.is_visible('#swapBtn')
+    assert page.locator('#map2d svg g.node').count() > 0 and page.is_visible('#map2d .modes2d') and page.is_visible('#swapBtn')
     page.evaluate(f'window.metaform.select("{kitchen}")')
     page.evaluate(f'window.metaform.click3d("{alarm}")')  # the small 3D map takes a click
     page.wait_for_function(f'() => window.metaform.selected() === "{alarm}"')
@@ -3866,15 +3745,15 @@ def test_a_question_is_answered_with_one_click_on_a_choice_or_by_typing_and_each
 
 @pytest.mark.req('VIEW-028')
 @pytest.mark.req('VIEW-021')
-def test_each_view_has_its_own_fit_and_swap_and_the_messages_button_is_at_the_top(run, web, mapped, browser):
-    """Both views get a Fit button and a Swap button, and the messages box goes to the top of the
-    screen."""
+def test_each_view_has_its_own_zoom_controls_and_swap_and_the_messages_button_is_at_the_top(run, web, mapped, browser):
+    """Both views get their own zoom controls, the 2D map its modes and the 3D map its Fit, and a Swap button, and the
+    messages box goes to the top of the screen."""
     from metaform.data import Node, Store
     Store('proj').ask(Node('element', 'code.alarm.audible'), 'Is the quiet tone still wanted?')
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
-    seen = lambda: [page.is_visible(name) for name in ('#fitBtn', '#swapBtn', '#fit3dBtn', '#swap3dBtn')]
+    seen = lambda: [page.is_visible(name) for name in ('#map2d .modes2d', '#swapBtn', '#fit3dBtn', '#swap3dBtn')]
     larger = lambda: page.evaluate("""() => { const area = name => { const box = document.querySelector(name).getBoundingClientRect();
         return box.width * box.height; }; return area('#map2d') > area('#stage') ? '2d' : '3d'; }""")
     assert seen() == [True] * 4 and larger() == '3d'
@@ -3892,9 +3771,10 @@ def test_each_view_has_its_own_fit_and_swap_and_the_messages_button_is_at_the_to
     # The Fit on the right reacted to the one on the left, and only zoomed out. Each Fit moves its
     # own map, and the 3D map's goes between the whole map and close on the selected node.
     still3d(page, 3)
-    wheel(page, -400)  # the 2D map in the large area shows the whole diagram, VIEW-041; zoomed in, its Fit has a move
+    page.keyboard.press('5')  # the 2D map opens in All, VIEW-041; in another mode, All has a move to make
+    still2d(page)
     whole, chart = page.evaluate('window.metaform.away3d()'), page.evaluate('document.querySelector("#map2d svg").getAttribute("viewBox")')
-    page.click('#fitBtn')                                             # the 2D map's Fit
+    page.click('#map2d .modes2d button[aria-label="All"]')            # the 2D map's All
     still2d(page)
     assert abs(page.evaluate('window.metaform.away3d()') - whole) < 1  # the 3D map did not move
     assert page.evaluate('document.querySelector("#map2d svg").getAttribute("viewBox")') != chart
@@ -4577,7 +4457,7 @@ def test_the_memories_of_a_node_open_from_its_menu_as_a_graph_of_their_own_in_bo
     assert selected() == waits and network()['key'] == kitchen  # a click in it selects, and stays in it
 
     # going back returns to the map, the same 2D map, never laid out again, and the whole 3D map
-    page.keyboard.press('Escape')
+    page.keyboard.press('Shift+Enter')
     page.wait_for_function('() => !window.metaform.memory() && document.querySelector("#map2d svg[data-base]")')
     page.wait_for_function('() => window.metaform.drawn().nodes === window.metaform.graph().nodes.length')
     assert page.evaluate('document.querySelectorAll("#map2d svg g.node").length') == base
@@ -4608,7 +4488,8 @@ def test_the_memories_of_a_node_open_from_its_menu_as_a_graph_of_their_own_in_bo
     page.wait_for_timeout(400)
     still = page.evaluate('() => { window.sampling = false; return window.samples; }')
     assert still and all(one['o'] == 1 and one['o3'] == 1 for one in still)
-    page.keyboard.press('Escape')
+    page.keyboard.press('Escape')  # lets go of the selection
+    page.keyboard.press('Escape')  # and with nothing selected goes back
     page.wait_for_function('() => !window.metaform.memory()')
 
     # the memories are read as every read of the page is, with the layers in view, VIEW-004
@@ -4769,7 +4650,9 @@ def test_dragging_the_2d_map_or_the_task_chart_moves_it_and_selects_no_label_tex
             assert after[0] > before[0] and after[1] > before[1]  # dragged up and left, the view moves down and right
             page.wait_for_timeout(300)
 
-    label = page.evaluate("""(() => { const box = document.querySelector('#map2d svg g.node text').getBoundingClientRect();
+    page.keyboard.press('6')  # Large, where the map runs past the pane and a drag has somewhere to take it, VIEW-041
+    still2d(page)
+    label = page.evaluate("""(() => { const box = document.querySelector('#map2d svg g.node.sel text').getBoundingClientRect();
         return [box.left + box.width / 2, box.top + box.height / 2]; })()""")
     sweep(label, lambda: page.get_attribute('#map2d svg', 'viewBox'))
     page.evaluate(f'window.metaform.menu("{alarm}")')
@@ -7090,11 +6973,12 @@ def test_a_spec_code_and_a_ticket_id_in_a_question_open_what_they_refer_to(run, 
 @pytest.mark.req('VIEW-041')
 @pytest.mark.kind('fixture')
 def test_the_mouse_wheel_zooms_the_2d_map_at_once_and_nothing_eases_after_it(run, web, mapped, browser):
-    """The wheel zooms as it turns, by how far it turned; nothing moves after the wheel stops. An eased zoom that lags the
-    wheel and lands after it, far in or far out, is not how a mouse works."""
+    """In Free, VIEW-041, the wheel zooms as it turns, by how far it turned; nothing moves after the wheel stops. An
+    eased zoom that lags the wheel and lands after it, far in or far out, is not how a mouse works."""
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
+    page.keyboard.press('0')
     still2d(page)
     before = view_box(page)[2]
     page.mouse.move(*page.evaluate('(() => { const box = document.querySelector("#viewport").getBoundingClientRect();'
@@ -7437,7 +7321,7 @@ def test_slash_searches_the_map_and_the_result_chosen_is_selected_in_both_views(
     page.keyboard.press('Enter')
     page.wait_for_function(f'() => window.metaform.selected() === "{at["code.alarm.audible"]}"')
     assert page.is_hidden('#search')
-    assert page.evaluate('[...document.querySelectorAll("#map2d svg g.node.sel title")].map(t => t.textContent)') == [
+    assert page.evaluate('[...document.querySelectorAll("#map2d svg g.node.sel")].map(g => g.dataset.title)') == [
         'code.alarm.audible']
     assert page.evaluate('Boolean(document.activeElement.closest("#stage, #map2d"))')  # the keys go on with the map
     assert problems == []

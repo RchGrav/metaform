@@ -1,4 +1,7 @@
 <prompts>
+<!-- fork's line in the compact instructions every agent reads at connect, MCP-029 as amended 2026-10-10: when the
+     agent needs fork, and where to go then; the instructions themselves are read there, on demand. -->
+<connect>When the person wants a feature Metaform does not have: fork.</connect>
 <!-- fork's line in the instructions agents read while fork is on, MCP-029. -->
 <instructions>fork is active. When a user wants a feature Metaform does not have, explain that an agent can build it as a module in the user's own repository and offer to set that repository up with metaform fork init. User features belong in modules over the released chassis. A user's agent never changes the chassis. Every public base service available to shipped modules is available to user modules. Details: metaform help fork.</instructions>
 <!-- The task metaform fork wheel writes on a ticket and dispatches for each module of the user's fork before a wheel

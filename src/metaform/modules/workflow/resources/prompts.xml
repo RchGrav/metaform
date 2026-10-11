@@ -1,4 +1,7 @@
 <prompts>
+<!-- workflow's line in the compact instructions every agent reads at connect, MCP-029 as amended 2026-10-10: when the
+     agent needs workflow, and where to go then; the instructions themselves are read there, on demand. -->
+<connect>To run authored workflow logic or a skill: workflow.</connect>
 <!-- A stored section, shipped here and versioned in the prompt store: the Axiom grammar, filled into lib_axiom as <axiom-language/>, MCP-034 and STORE-044. -->
 <axiom-language>Axiom is pseudo-code for prompts. It fixes the structure of a task so an agent follows it
 the same way every time: what goes in, what counts as done, what to do on failure, and what

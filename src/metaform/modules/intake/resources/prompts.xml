@@ -2,6 +2,9 @@
 <!-- intake's prompts, MCP-031. What is between an element's tags is what is served. An empty element inside a prompt
      marks where the code fills in what it names. -->
 <prompts>
+<!-- intake's line in the compact instructions every agent reads at connect, MCP-029 as amended 2026-10-10: when the
+     agent needs intake, and where to go then; the instructions themselves are read there, on demand. -->
+<connect>When you are assigned an intake: intake.</connect>
 <!-- intake's line in the instructions agents read while intake is on, MCP-029; its status hook adds no_intake or
      unfinished after it, MCP-009. -->
 <instructions>intake is active.

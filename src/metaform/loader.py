@@ -20,6 +20,7 @@ import importlib.machinery
 import importlib.resources
 import importlib.util
 import inspect
+import os
 import re
 import shutil
 import sys
@@ -288,6 +289,11 @@ def discover() -> list[Found]:
             if not item.enabled:
                 continue
             needed = missing_dependencies(item.declared.dependencies)
+            if needed and os.environ.get('METAFORM_WHEEL'):
+                # Run straight from a wheel, a module whose dependencies the wheel cannot carry, such as mcp's compiled
+                # ones, is not offered at all: it cannot run there, and installing the wheel brings it, BASE-042.
+                item.problem = 'withdrawn'
+                continue
             if needed:
                 item.problem = f'Needs {", ".join(needed)}, which {"is" if len(needed) == 1 else "are"} not installed.'
                 continue
@@ -298,6 +304,7 @@ def discover() -> list[Found]:
                 _withdraw_settings(item.id)
                 _forget(item.import_name)
                 item.problem = f'{type(error).__name__}: {error}'
+        found = [item for item in found if item.problem != 'withdrawn']
         _cache = found
         _register_exit()
         for item in found:

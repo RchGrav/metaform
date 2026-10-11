@@ -47,9 +47,15 @@ def _added(module: Module, folder: Path, project: str | None, *, full: bool) -> 
 
 
 def _listed(module: Module, folder: Path, project: str | None, *, full: bool = True) -> str | None:
-    """A module's line under "modules available.": its instructions prompt, or with full off the `active` line,
-    then the instruction its status hook gives."""
-    own = prompt_files.module(module.id, 'instructions') if full else prompt_files.chassis('active', module=module.id)
+    """A module's line under "modules available.": its instructions prompt, or with full off its `connect` line, when
+    to need it and where to go then, MCP-029; a module with no `connect` line gets the chassis's `active` line, and
+    an empty one lists nothing of its own. Then the instruction its status hook gives."""
+    if full:
+        own = prompt_files.module(module.id, 'instructions')
+    else:
+        own = prompt_files.module(module.id, 'connect')
+        if own is None:
+            own = prompt_files.chassis('active', module=module.id)
     return ' '.join(part for part in (own, _added(module, folder, project, full=full)) if part) or None
 
 
@@ -69,6 +75,10 @@ def compose(folder: Path, project: str | None = None, *, surface: str = 'cli') -
     full = settings.value('connect_instructions', folder) == 'full'
     listed = [line for line in (_listed(module, folder, chosen, full=full) for module in surfaced(folder)) if line]
     opening = prompt_files.chassis('surface_mcp' if surface == 'mcp' else 'surface_cli')
+    # The order of work comes first: orient on the map, then read the memories there, each step its module's, MCP-029.
+    steps = [] if full else [step for step in (prompt_files.module(module.id, 'orient')
+                                               for module in surfaced(folder)) if step]
+    opening = '\n'.join((opening, *steps))
     parts = [prompt_files.chassis('instructions', surface=opening, modules='\n'.join(listed))]
     if not full:
         parts.append(prompt_files.chassis('more'))

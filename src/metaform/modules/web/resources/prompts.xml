@@ -2,6 +2,9 @@
 <!-- web's prompts, MCP-031. What is between an element's tags is what is served. Starting the web GUI before an
      intake is a step of the onboarding, the intake module's no_intake, MCP-009 and VIEW-015. -->
 <prompts>
+<!-- web's line in the compact instructions every agent reads at connect, MCP-029 as amended 2026-10-10: when the
+     agent needs web, and where to go then; the instructions themselves are read there, on demand. -->
+<connect>To show the person the map: web start, then give them its address.</connect>
 
 <!-- web's line in the instructions agents read while web is on, MCP-029. -->
 <instructions>

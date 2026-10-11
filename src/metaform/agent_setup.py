@@ -83,7 +83,7 @@ def _hook(tool: str) -> dict[str, Any]:
         'hookEventName': event, 'additionalContext': prompt_files.chassis('work_reminder')}})
     code = f'import sys; sys.stdout.write({(payload + chr(10))!r})' + HOOK_MARK
     if tool == 'claude':
-        return {'matcher': '^(Agent|Task|AskUserQuestion)$',
+        return {'matcher': '^(Agent|Task|Workflow|AskUserQuestion)$',
                 'hooks': [{'type': 'command', 'command': sys.executable, 'args': ['-c', code], 'timeout': 5}]}
     # Gemini runs hooks in Bash on POSIX and PowerShell on Windows, not a direct argument vector.
     # Hex keeps JSON quotes out of native argument passing in Windows PowerShell 5.1.
@@ -146,7 +146,7 @@ def _settings(path: Path, tool: str, remove: bool) -> Change | None:
         data.pop('hooks', None)
     after = (json.dumps(data, indent=2) + '\n').encode('utf-8')
     return Change(path, before, after, 'remove Metaform reminder' if remove else
-                  ('add passive PreToolUse reminder for Agent, Task and AskUserQuestion' if tool == 'claude' else
+                  ('add passive PreToolUse reminder for Agent, Task, Workflow and AskUserQuestion' if tool == 'claude' else
                    'add passive AfterTool reminder after delegation or questioning; cannot redirect the first call'))
 
 

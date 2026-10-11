@@ -21,6 +21,12 @@
         <concept term="SE" full="Substantial Element" definition="An element whose Encounter Function helps the DE serve the CQU's OP. It counts as substantial because of what it is meant to contribute to this AUE, even when that contribution is subversive, weak, replaceable, or should be improved." />
         <concept term="Parametric" definition="A quality or quantity that can be tuned but does not carry a specific name in the scope of the namespace of this AUE. We do not name parametrics with a namespace address in this graph or as part of this operation." />
         <concept term="NS" full="Namespace Scope" definition="The scope of the Artifact Type. The base valid types are code, document, media, data, collection, upstream and downstream." />
+        <concept term="IFD" full="Information Flow Direction" definition="A direction [send|receive|both] assigned to a movement of substance as a requirement that satisfies the OP of the RE." />
+        <examples concept="ifd">
+            <example id="ifd1" scenario="Receiving Entity (RE) has operative purpose (OP) to encounter -> function (EF) of Providing Element (PE)" requirement="{ifd} data completing a goal" ifd="receives" reasoning="RE's goal is not to send parameters, they are not the information that satisfied RE's OP."/>
+            <example id="ifd2" scenario="Continued from ifd1, the PE which provided information is now an (RE) and has an (OP) to log the request with the logger (PE)" requirement="{ifd} logs completing its goal" ifd="sends" reasoning="sending log data satisfied the OP of the RE." />
+            <example id="ifd3" scenario="Email Client (RE) calls Email Server (PE) using SMTP and IMAP" requirement="direction of substantial flow" ifd="both" reasoning="RE as an email client has a goal of sends and receives email, sending or receiving only cannot satisfy RE's OP."/>
+        </examples>
     </core_concepts>
 
     <constraints>
