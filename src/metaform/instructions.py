@@ -59,6 +59,16 @@ def _listed(module: Module, folder: Path, project: str | None, *, full: bool = T
     return ' '.join(part for part in (own, _added(module, folder, project, full=full)) if part) or None
 
 
+def _mapped(folder: Path, project: str | None) -> bool:
+    """Whether the project has a finished intake, so the order of work has a map to orient on and record at; before
+    one the steps would speak to a state that does not hold, MCP-029."""
+    try:
+        store = context.build('map', folder, project=project, resolve=False).store
+        return store is not None and store.has_intake()
+    except Exception:  # noqa: BLE001  a project that cannot be read has no map to orient on
+        return False
+
+
 def module_text(folder: Path, identifier: str, project: str | None = None) -> str | None:
     """One surfaced module's full instructions, as the full form lists them, or None when it is not on the surface."""
     found = next((module for module in surfaced(folder) if module.id == identifier), None)
@@ -76,8 +86,8 @@ def compose(folder: Path, project: str | None = None, *, surface: str = 'cli') -
     listed = [line for line in (_listed(module, folder, chosen, full=full) for module in surfaced(folder)) if line]
     opening = prompt_files.chassis('surface_mcp' if surface == 'mcp' else 'surface_cli')
     # The order of work comes first: orient on the map, then read the memories there, each step its module's, MCP-029.
-    steps = [] if full else [step for step in (prompt_files.module(module.id, 'orient')
-                                               for module in surfaced(folder)) if step]
+    steps = [] if full or not _mapped(folder, chosen) else [
+        step for step in (prompt_files.module(module.id, 'orient') for module in surfaced(folder)) if step]
     opening = '\n'.join((opening, *steps))
     parts = [prompt_files.chassis('instructions', surface=opening, modules='\n'.join(listed))]
     if not full:

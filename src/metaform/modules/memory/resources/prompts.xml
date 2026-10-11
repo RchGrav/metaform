@@ -3,7 +3,7 @@
 <prompts>
 <!-- memory's step in the order every agent follows at connect, MCP-029 as amended 2026-10-10: served under the
      opening line, before the modules, in module id order. -->
-<orient>2. Read the memories on that element, which map where lists. Before you finish, record there what the next agent would otherwise rediscover.</orient>
+<orient>2. Read the memories on that element, which map where lists. Use Metaform's memory tool to store what you learn under the functional namespace of your assignment, so future agents working there can retrieve it: memory create_entities with node set to that address.</orient>
 <!-- memory's line in the compact instructions at connect, MCP-029 as amended 2026-10-10: empty, since its step
      in the order of work already says when and where. -->
 <connect></connect>

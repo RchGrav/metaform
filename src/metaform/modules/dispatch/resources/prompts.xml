@@ -41,6 +41,11 @@
   :ELSE -> CORRECT
 </instructions>
 
+<!-- The handoff's line on recording what the agent learns, filled in only while the memory module is on the folder's
+     surface, so an agent is never told to use a command it does not have; the owner's sentence, MCP-029 and
+     BASE-052, 2026-10-11. A ticket on a join records on the join, by its receiver and provider, BASE-040. -->
+<record>+&gt; Use Metaform's memory tool to store what you learn under the functional namespace of your assignment, so future agents working there can retrieve it: `metaform memory create_entities '&lt;entities&gt;' node=&lt;the address under at in the ticket read&gt;`, or for a ticket on a join, receiver=&lt;its receiver&gt; provider=&lt;its provider&gt; in place of node.
+</record>
 <!-- The first turn the dispatch runner sends an agent it starts on a ticket, and what an agent reads when it runs a
      dispatch handoff nonce; <work_id/> is the ticket, BASE-052 and BASE-050. -->
 <handoff>
@@ -50,7 +55,7 @@
 @CONSTRAINT:
   +> Work {Work_ID} is assigned to you and already taken.
   +> Read it with `metaform map work id=<work_id/>`.
-  +> Work the ticket.
+<record/>  +> Work the ticket.
   +> Report planned steps with `metaform map work op=plan id=<work_id/> steps=&lt;n&gt;`.
   +> As each step finishes, report it with `metaform map work op=step id=<work_id/> said="&lt;one sentence&gt;"`.
   +> When complete, close it with `metaform map work op=done id=<work_id/> resolution="&lt;what you found or changed&gt;"`.

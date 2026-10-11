@@ -6204,9 +6204,10 @@ def test_the_side_column_and_its_split_are_dragged_to_size_kept_and_reset(run, w
     height = lambda: page.locator('#small').bounding_box()['height']
     before = (width(), height())
     handle = page.locator('#sideSplit').bounding_box()
-    page.mouse.move(handle['x'] + 4, handle['y'] + 300)
+    middle = handle['y'] + handle['height'] / 2  # the edge is grabbed where it crosses the bar at the top, VIEW-028
+    page.mouse.move(handle['x'] + 4, middle)
     page.mouse.down()
-    page.mouse.move(handle['x'] + 154, handle['y'] + 300, steps=5)
+    page.mouse.move(handle['x'] + 154, middle, steps=5)
     page.mouse.up()
     split = page.locator('#smallSplit').bounding_box()
     page.mouse.move(split['x'] + 100, split['y'] + 3)
@@ -7490,3 +7491,29 @@ def test_the_text_size_buttons_scale_the_page_and_reset_puts_every_size_back(run
     assert page.evaluate('localStorage.getItem("metaform.textSize")') is None
     assert page.evaluate('document.querySelector(".app").style.getPropertyValue("--side-width")') == ''
     assert problems == []
+
+
+@pytest.mark.req('VIEW-028')
+def test_the_side_column_moves_to_the_right_by_its_top_bar_and_stays_there(run, web, mapped, browser):
+    """Dragging the side column's top bar to the right half of the page puts the column on the right, and a reload
+    keeps it there; its edge is grabbed only where it crosses that bar."""
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.evaluate("localStorage.removeItem('metaform.sideAt')")
+    page.reload()
+    page.wait_for_function('() => window.metaform.loaded()')
+    bar = page.evaluate("(() => { const bar = document.querySelector('aside .bar2d, aside .bar3d'), r = bar.getBoundingClientRect();"
+                        " const y = r.top + r.height / 2;"  # an empty part of the bar: a press on a button stays a click
+                        " for (let x = r.left + 4; x < r.right; x += 4) if (document.elementFromPoint(x, y) === bar) return [x, y, r.height];"
+                        " return null; })()")
+    edge = page.locator('#sideSplit').bounding_box()
+    assert edge['height'] == pytest.approx(bar[2], abs=1)
+    page.mouse.move(bar[0], bar[1])
+    page.mouse.down()
+    page.mouse.move(page.viewport_size['width'] - 100, bar[1], steps=10)
+    page.mouse.up()
+    page.reload()
+    page.wait_for_function('() => window.metaform.loaded()')
+    assert page.evaluate("document.querySelector('.app').classList.contains('side-right')")
+    assert page.locator('aside').bounding_box()['x'] > page.viewport_size['width'] / 2
+    assert not problems

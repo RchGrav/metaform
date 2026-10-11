@@ -142,6 +142,14 @@ def prompt(name: str, **fills: str) -> str:
     return prompt_files.required(resources.files(__name__), name, **fills)
 
 
+def handoff_prompt(work_id: str, folder: Path) -> str:
+    """The handoff, with its line on recording what the agent learns only while the memory module is on the folder's
+    surface, so an agent is never told to use a command it does not have, BASE-052."""
+    from metaform import instructions
+    memory = any(module.id == 'memory' for module in instructions.surfaced(folder))
+    return prompt('handoff', work_id=work_id, record=f"  {prompt('record')}\n" if memory else '')
+
+
 def prompt_written(name: str) -> None:
     """Refuse a feature whose prompt is not written yet: the element ships empty until it is."""
     if not prompt(name):
@@ -1111,7 +1119,7 @@ def handoff(ctx: Context) -> str:
     except StoreError as error:
         raise Stop(str(error), 'metaform map work open=true') from None
     nodes = json.dumps({'at': read.get('at'), 'linked': read.get('linked')}, ensure_ascii=False, indent=1)
-    return f"{prompt('handoff', work_id=work_id)}\n\n{prompt('nodes')}\n{nodes}\n"
+    return f"{handoff_prompt(work_id, ctx.folder)}\n\n{prompt('nodes')}\n{nodes}\n"
 
 
 def threaded(lines: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:

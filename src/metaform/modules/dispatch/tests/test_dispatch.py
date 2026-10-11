@@ -1151,3 +1151,18 @@ def test_an_agent_over_mcp_cannot_answer_a_permission_question_at_its_node(dispa
                                 nouns={'id': question.id, 'answer': 'Allow once'}))
     assert [one.id for one in dispatch.questions()] == [question.id] and not dispatch.logged('permission')
     dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+def test_the_handoff_asks_to_record_at_the_node_only_while_memory_is_on(tmp_path):
+    """The handoff carries the owner's sentence with both scope forms while memory is on the folder's surface, and
+    leaves it out when memory is not there, so no agent is told to use a command it does not have."""
+    from unittest import mock
+
+    from metaform.modules.dispatch import handoff_prompt
+    with mock.patch('metaform.instructions.surfaced', return_value=[mock.Mock(id='memory')]):
+        text = handoff_prompt('w1', tmp_path)
+    assert "Use Metaform's memory tool to store what you learn under the functional namespace" in text
+    assert 'node=<the address under at in the ticket read>' in text and 'receiver=<its receiver>' in text
+    with mock.patch('metaform.instructions.surfaced', return_value=[]):
+        assert 'memory tool' not in handoff_prompt('w1', tmp_path)

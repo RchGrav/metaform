@@ -57,6 +57,18 @@ def parse(module: str, verb: Verb, words: list[str]) -> Parsed:
     parsed = Parsed()
     positional: list[str] = []
     optional = {noun.name: noun for noun in verb.nouns if not noun.required}
+    # A required noun named as name=value fills that noun, so `map citing key=path value=x` reads as written instead
+    # of taking `key=path` as the key; after `--` every word stays positional, BASE-043.
+    required = {noun.name: noun for noun in verb.nouns if noun.required}
+
+    def unfilled(name: str) -> bool:
+        """Whether a required noun is still to be given: not named already, and not reached by the positional words
+        before it, which fill the required nouns not named, in order. A word such as `key=abc` after the positional
+        word that fills key is that later noun's value, not a second key."""
+        if name in parsed.nouns:
+            return False
+        waiting = [noun.name for noun in verb.nouns if noun.required and not noun.many and noun.name not in parsed.nouns]
+        return name not in waiting or waiting.index(name) >= len(positional)
     ended = False
     index = 0
     while index < len(words):
@@ -97,13 +109,19 @@ def parse(module: str, verb: Verb, words: list[str]) -> Parsed:
                 parsed.switches[setting.key] = settings.parse(setting, inline)
             except settings.SettingError as error:
                 raise Stop(str(error), error.next_step or f'metaform help {setting.switch}') from None
+        elif '=' in word and word.split('=', 1)[0] in required and unfilled(word.split('=', 1)[0]):
+            name, _, raw = word.partition('=')
+            if required[name].many:
+                positional.append(raw)  # a noun of several words begins here and takes the words that follow
+            else:
+                parsed.nouns[name] = convert(required[name], raw, where)
         elif '=' in word and word.split('=', 1)[0] in optional:
             name, _, raw = word.partition('=')
-            if not positional_complete(verb, positional):
+            if not positional_complete(verb, positional, parsed.nouns):
                 raise Stop(f'{name}= comes after the required nouns.', f'{where} --help')
             parsed.nouns[name] = convert(optional[name], raw, where)
         elif 'extra' in optional and '=' in word and word.split('=', 1)[0].isidentifier() and \
-                positional_complete(verb, positional):
+                positional_complete(verb, positional, parsed.nouns):
             name, _, raw = word.partition('=')
             parsed.fields[name] = raw
         else:
@@ -136,9 +154,9 @@ def keep_fields(module: str, verb: Verb, nouns: dict[str, Any], fields: dict[str
                    f'nouns are {named}.')) for key in fields]
 
 
-def positional_complete(verb: Verb, positional: list[str]) -> bool:
-    required = [noun for noun in verb.nouns if noun.required]
-    return len(positional) >= len([noun for noun in required if not noun.many])
+def positional_complete(verb: Verb, positional: list[str], named: dict[str, Any] | None = None) -> bool:
+    required = [noun for noun in verb.nouns if noun.required and not noun.many]
+    return len(positional) >= len([noun for noun in required if noun.name not in (named or {})])
 
 
 def _place(verb: Verb, positional: list[str], parsed: Parsed, where: str) -> None:

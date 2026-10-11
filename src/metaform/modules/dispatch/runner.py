@@ -68,6 +68,7 @@ from . import (
     end_group,
     glyph_of,
     group_options,
+    handoff_prompt,
     intake_id,
     intake_prompt,
     intake_store,
@@ -1096,7 +1097,7 @@ class Session:
             self.turn(prompt('prep', work_id=self.work_id, branch=branch_of(self.work_id),
                              dev=dev_branch(self.store.project().path) or 'the dev branch'))
             return
-        text = await self.checked(prompt('handoff', work_id=self.work_id))
+        text = await self.checked(handoff_prompt(self.work_id, Path(self.folder)))
         if not self.ending:
             self.turn(text)
 

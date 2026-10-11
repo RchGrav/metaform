@@ -108,7 +108,10 @@ def _key_of(store: Store, node: Node) -> Key | None:
 
 
 def _key(store: Store, text: str) -> Key:
-    """The key of the node a command names, which must be a node of the active map."""
+    """The key of the node a command names, which must be a node of the active map. A bare address names the element
+    at it, as every command names things the way an agent reads them, MAP-005."""
+    if ':' not in text:
+        text = f'element:{text}'
     try:
         node = Node.parse(text)
     except StoreError:
@@ -474,7 +477,13 @@ def create_entities(ctx: Context) -> Any:
         seen: set[str] = set()
         for name, kind, observations in entities:
             if name in graph.entities or name in seen:
-                if key is not None and name in graph.entities:
+                # An existing name is not made again, but what was learned is never dropped: its new observations
+                # are added to it, and the agent is told where they went, BASE-040 and BASE-044.
+                added = _observe(tx, graph, name, observations)
+                if added:
+                    given.notices.append({'where': 'entities', 'message': (
+                        f'{name} already exists; {len(added)} new observation(s) were added to it.')})
+                if key is not None:
                     _join(tx, name, key)
                 continue
             seen.add(name)

@@ -93,6 +93,9 @@
           <div class="menu-field themepick" title="Also Alt and +, Alt and −, Alt and 0 for the default"><label for="textsize">Text size</label>
             <select id="textsize" aria-keyshortcuts="Alt+= Alt+- Alt+0"></select>
           </div>
+          <div class="menu-field themepick" title="Or drag the side column's top bar across the page"><label for="sideat">Side column</label>
+            <select id="sideat"><option value="left">Left</option><option value="right">Right</option></select>
+          </div>
           <div class="sep" role="separator"></div>
           <button id="shortcutsBtn" type="button" title="Every key the map and the page take">Keyboard shortcuts <kbd aria-hidden="true">?</kbd></button>
         </div>
@@ -103,7 +106,7 @@
 
   <aside>
     <div class="splitter side" id="sideSplit" role="separator" aria-orientation="vertical" aria-label="The side column's width"
-         title="Drag to resize; double-click to reset"></div>
+         title="Drag to resize; double-click to reset. Drag the bar beside it to move the column to the other side"></div>
     <div class="small" id="small">
     <div class="map2d" id="map2d" tabindex="0" aria-label="The whole map. Down goes deeper, Up back to the parent, Left and Right across; Enter goes inside, Escape lets go of the selection, then out; 4 to 9 and 0 choose the zoom. Press ? for every key.">
       <div class="bar2d">

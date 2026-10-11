@@ -175,12 +175,15 @@ def test_at_a_node_the_commands_act_on_that_nodes_memories_tied_by_a_join_of_typ
     said = mj(run, 'delete_observations', J([{'entityName': 'echo cost', 'observations': ['Echoes are ejected cheaply.']}]),
               ROUTE, cwd=mapped)
     assert said['message'] == 'Deleted 0 of 1 observations. Entities not found: echo cost'
-    mj(run, 'create_entities', J([entity('echo cost', 'ignored', 'ignored')]), ROUTE, cwd=mapped)
+    # an existing name keeps its type and gains the new observation, BASE-040 as amended 2026-10-11
+    mj(run, 'create_entities', J([entity('echo cost', 'other type', 'Echoes cost one packet.')]), ROUTE, cwd=mapped)
     assert mj(run, 'read_graph', ROUTE, cwd=mapped)['entities'][1] == entity('echo cost', 'fact',
-                                                                            'Echoes are ejected cheaply.')
+                                                                            'Echoes are ejected cheaply.',
+                                                                            'Echoes cost one packet.')
     assert mj(run, 'read_graph', cwd=mapped)['entities'] == [
         entity('route ejection', 'behavior', 'Routes are ejected.'), entity('echo cost', 'fact',
-                                                                            'Echoes are ejected cheaply.')]
+                                                                            'Echoes are ejected cheaply.',
+                                                                            'Echoes cost one packet.')]
 
 
 @pytest.mark.req('LAYER-013')
@@ -748,3 +751,27 @@ def test_rekey_rolls_back_all_attachments_and_notes_on_a_destination_collision(r
     assert refused.returncode == 2 and 'UNIQUE constraint failed' in refused.stderr
     with store.tables(write=False) as tx:
         assert {table: list(tx.rows(table, limit=0).results) for table in ('joins', 'notes')} == before
+
+
+@pytest.mark.req('BASE-040')
+def test_create_entities_with_an_existing_name_keeps_the_new_observations_and_says_so(run, mapped):
+    """An agent recording under a name already in the graph loses nothing: the new observation is added to the
+    existing entity, with a notice, and an observation it already holds is not repeated."""
+    first = json.dumps([{'name': 'route ejection', 'entityType': 'behavior', 'observations': ['Routes are ejected.']}])
+    again = json.dumps([{'name': 'route ejection', 'entityType': 'behavior',
+                         'observations': ['Routes are ejected.', 'Ejection waits for the probe.']}])
+    m(run, 'create_entities', first, ROUTE, cwd=mapped)
+    said = json.loads(m(run, 'create_entities', again, ROUTE, cwd=mapped).stdout)
+    assert said['entities'] == []
+    assert any('route ejection already exists; 1 new observation' in n['message'] for n in said['notices'])
+    found = json.loads(m(run, 'open_nodes', '["route ejection"]', ROUTE, cwd=mapped).stdout)
+    assert found['entities'][0]['observations'] == ['Routes are ejected.', 'Ejection waits for the probe.']
+
+
+@pytest.mark.req('BASE-040')
+def test_a_bare_address_names_the_element_at_it(run, mapped):
+    """node=<address> acts on the element at that address, as node=element:<address> does, MAP-005."""
+    m(run, 'create_entities', J([entity('route ejection', 'behavior', 'Routes are ejected.')]),
+      'node=code.manager.route', cwd=mapped)
+    assert mj(run, 'read_graph', 'node=code.manager.route', cwd=mapped) == mj(run, 'read_graph', ROUTE, cwd=mapped)
+    assert mj(run, 'read_graph', ROUTE, cwd=mapped)['entities'][0]['name'] == 'route ejection'

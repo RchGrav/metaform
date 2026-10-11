@@ -1664,3 +1664,26 @@ def test_a_document_that_cannot_be_written_stops_with_its_next_step(run, describ
     said = run('map', 'markdown', f'file={target}', cwd=described, ok=False)
     assert said.returncode != 0 and str(target) in said.stderr and 'leave out file=' in said.stderr
     assert not target.parent.exists()
+
+
+@pytest.mark.req('BASE-043')
+def test_required_nouns_named_as_name_value_read_as_written(run, described):
+    """`map citing key=path value=<file>` names its two required nouns and finds what the positional form finds,
+    where it used to take `key=path` as the key and answer nothing."""
+    named = json.loads(run('map', 'citing', 'key=path', 'value=src/display.py', '--json', cwd=described).stdout)
+    positional = json.loads(run('map', 'citing', 'path', 'src/display.py', '--json', cwd=described).stdout)
+    assert named == positional
+    assert [one['address'] for one in named['results']] == ['code.display.digit']
+
+
+@pytest.mark.req('BASE-043')
+def test_a_positional_value_holding_an_equals_sign_stays_the_value(run, described):
+    """`map citing path key=abc` keeps `path` as the key and `key=abc` as the value: the positional word before it
+    already gave the key, so the later word is not read as a second one."""
+    said = json.loads(run('map', 'citing', 'path', 'key=abc', '--json', cwd=described).stdout)
+    assert said['results'] == []
+    from metaform import loader
+    from metaform.grammar import parse
+    citing = next(verb for module in loader.enabled() if module.id == 'map' for verb in module.verbs
+                  if verb.name == 'citing')
+    assert parse('map', citing, ['path', 'key=abc']).nouns == {'key': 'path', 'value': 'key=abc'}

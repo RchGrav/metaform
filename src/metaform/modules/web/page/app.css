@@ -383,9 +383,19 @@ header{grid-area:top;display:flex;align-items:center;gap:var(--s2);min-height:ca
 .toolbar .grow{flex:1}
 aside{grid-area:side;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0;min-width:0;position:relative}
 .splitter{flex:none;background:transparent;z-index:5}
-.splitter:hover,.splitter.dragging{background:var(--control)}
-.splitter.side{position:absolute;top:0;bottom:0;right:-4px;width:8px;cursor:col-resize}
+/* The side column's edge is grabbed only where it crosses the bar at the top, and nothing on it changes under the
+ * pointer but the cursor; below the bar it is the plain line of the column's border. */
+.splitter.side{position:absolute;top:0;height:var(--bar);right:-4px;width:8px;cursor:col-resize}
 .splitter.split{height:6px;margin-top:-3px;cursor:row-resize}
+/* The side column on either side of the page: its top bar is dragged across, and the column goes to the half of the
+ * page the pointer is in; the bar looks the same under the pointer, only the cursor says it can be dragged. */
+aside .bar2d,aside .bar3d{cursor:grab}
+aside .bar2d button,aside .bar3d button,aside .bar2d nav{cursor:pointer}
+body.moving-side,body.moving-side *{cursor:grabbing!important}
+.app.side-right{grid-template-columns:1fr var(--side-width,max(320px,25vw));grid-template-areas:"top top" "stage side"}
+.app.side-right aside{border-right:0;border-left:1px solid var(--line)}
+.app.side-right .splitter.side{right:auto;left:-4px}
+.app.side-right .splitter.side::after{left:4px}
 /* Tabs: the one open is underlined in the accent. */
 .tabs{display:flex;border-bottom:1px solid var(--line);flex:none}
 .tabs button{flex:1;min-height:40px;padding:0 var(--s1);background:none;border:0;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;
@@ -1236,8 +1246,10 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
   #task .write,#task .pick{flex:none}
   #task .chartbox{flex:none;height:240px}
   .app{grid-template-columns:minmax(0,1fr);grid-template-rows:auto 56vh auto;grid-template-areas:"top" "stage" "side";height:auto;min-height:100%}
-  aside{border-right:0;border-top:1px solid var(--line)}
+  aside,.app.side-right aside{border-right:0;border-left:0;border-top:1px solid var(--line)}
+  .app.side-right{grid-template-columns:minmax(0,1fr);grid-template-areas:"top" "stage" "side"}
   .splitter{display:none}
+  aside .bar2d,aside .bar3d{cursor:auto}
   .hfield.proj select{max-width:none}
   .menu > button{min-height:var(--ctl)}
   .layerrow{min-height:40px}

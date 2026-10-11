@@ -227,7 +227,7 @@ document.addEventListener('keydown', event => {
   items[next].focus();
 });
 /* Where a window opens: where the person last put it, kept in this browser; otherwise a window read beside the map
- * stands just right of the side column, under the header, a step down from another one open there, and any other
+ * stands just beside the side column, on the map's side, under the header, a step down from another one open there, and any other
  * window in the middle of the page. A dialog is placed by its styles. Every place is kept inside the window's view. */
 const PLACES = 'metaform.places';
 function places() { try { return JSON.parse(localStorage.getItem(PLACES) || '{}'); } catch { return {}; } }
@@ -239,7 +239,9 @@ function place(box) {
   if (kept) [left, top] = [kept.left, kept.top];
   else if (box.classList.contains('beside')) {
     const others = OVERLAY.stack.filter(entry => entry.box !== box && entry.box.classList.contains('beside')).length;
-    left = $('aside').getBoundingClientRect().right + 24 + others * 28;
+    const column = $('aside').getBoundingClientRect();
+    left = document.querySelector('.app').classList.contains('side-right')
+      ? column.left - 24 - size.width - others * 28 : column.right + 24 + others * 28;
     top = head + 16 + others * 28;
   } else [left, top] = [(innerWidth - size.width) / 2, Math.max(head + 8, (innerHeight - size.height) / 2.4)];
   box.style.left = Math.round(Math.max(8, Math.min(left, innerWidth - Math.min(size.width, innerWidth - 16) - 8))) + 'px';
@@ -530,7 +532,45 @@ function splitter(handle, which, measure) {
   try { kept = localStorage.getItem(SIZES[which][0]); } catch (error) { /* storage can be blocked */ }
   if (kept) sized(which, Number(kept));
 }
-splitter($('#sideSplit'), 'side', moved => moved.clientX - $('aside').getBoundingClientRect().left);
+splitter($('#sideSplit'), 'side', moved => {
+  const edge = $('aside').getBoundingClientRect();
+  return document.querySelector('.app').classList.contains('side-right') ? edge.right - moved.clientX : moved.clientX - edge.left;
+});
+/* The side column goes on the left or the right of the page: its top bar, whichever map is in the small area, is
+ * dragged across and the column follows the pointer to the half of the page it is in; a press that does not move is
+ * an ordinary click. The View menu chooses the side too. The side is kept in this browser. */
+const SIDE_AT = 'metaform.sideAt';
+function sideAt(right) {
+  const app = document.querySelector('.app');
+  $('#sideat').value = right ? 'right' : 'left';
+  if (app.classList.contains('side-right') === right) return;
+  app.classList.toggle('side-right', right);
+  try { localStorage.setItem(SIDE_AT, right ? 'right' : 'left'); } catch { /* storage can be blocked; it moves for now */ }
+  dispatchEvent(new Event('resize'));
+}
+$('aside').addEventListener('pointerdown', event => {
+  if (event.button !== 0 || !event.target.closest('aside .bar2d, aside .bar3d')
+    || event.target.closest('button, input, select, textarea, a, nav') || matchMedia('(max-width: 820px)').matches) return;
+  const from = event.clientX, pointer = event.pointerId;
+  let moving = false;
+  const move = moved => {
+    if (moved.pointerId !== pointer) return;
+    if (!moving && Math.abs(moved.clientX - from) < 6) return;
+    moving = true;
+    document.body.classList.add('moving-side');
+    sideAt(moved.clientX > innerWidth / 2);
+  };
+  // a drag ends however the pointer is let go: released, cancelled by the system, or the window losing focus
+  const end = () => {
+    document.body.classList.remove('moving-side');
+    removeEventListener('pointermove', move);
+    for (const type of ['pointerup', 'pointercancel', 'blur']) removeEventListener(type, end);
+  };
+  addEventListener('pointermove', move);
+  for (const type of ['pointerup', 'pointercancel', 'blur']) addEventListener(type, end);
+});
+$('#sideat').onchange = event => sideAt(event.target.value === 'right');
+try { if (localStorage.getItem(SIDE_AT) === 'right') sideAt(true); } catch { /* storage can be blocked; it opens on the left */ }
 splitter($('#smallSplit'), 'small', moved => moved.clientY - $('#small').getBoundingClientRect().top);
 const rootsOff = () => { try { return new Set(JSON.parse(localStorage.getItem('metaform.rootsOff') || '[]')); } catch { return new Set(); } };
 const rootOf = address => (address || '').split('.')[0];
@@ -4072,7 +4112,8 @@ function noneSelected() {
   let drag = null, dragged = false;
   host.addEventListener('pointerdown', event => {
     dragged = false;
-    if (event.target.closest('button, a') || !M.cam) return;
+    // the bar across the top is controls and the grip that moves the side column, never a place a pan starts
+    if (event.target.closest('button, a, .bar2d') || !M.cam) return;
     drag = {x: event.clientX, y: event.clientY, cam: {...M.cam}, moving: false};
   });
   host.addEventListener('pointermove', event => {
