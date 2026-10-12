@@ -474,7 +474,7 @@ if (FRAMED) {
 }
 const S = {
   projects: [], project: null, bases: [], base: null, layers: [], view: null,
-  elements: new Map(), joins: [], items: new Map(), selected: null, neighbors: new Set(), trail: [], history: [], at: -1, loading: 0, opening: 0,
+  elements: new Map(), joins: [], items: new Map(), selected: null, neighbors: new Set(), trail: [], history: [], at: -1, loading: 0, opening: 0, shown: false,
   cleared: false,  // the person let go of the selection, VIEW-008, so a map read again selects nothing in its place
   whole: null,  // the last map read whole, {elements, joins}, put back when a read of it fails
   memory: {entities: new Map(), relations: [], joins: [], at: new Map(), age: 0, orphaned: 0},  // LAYER-013
@@ -1056,7 +1056,7 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   linkColors: () => G ? G.graphData().links.map(link => ({join: link.join || null, k: link.k,
     target: link.target?.id ?? link.target, color: linkColor(link)})) : [],
   layouts: () => V3.layouts, drawnWork: id => (G?.graphData().nodes.find(node => node.id === id)?.work || []).length,
-  loaded: () => !S.loading && !S.opening, editor: () => P.editor, live: () => LIVE.layer, changes: () => LIVE.done,
+  loaded: () => S.shown && !S.loading && !S.opening, editor: () => P.editor, live: () => LIVE.layer, changes: () => LIVE.done,
   inside: () => IN.length && M.drawn === IN.at(-1) ? [...M.nodes.keys()] : [], vertical: () => M.vertical,
   at2d: id => M.nodes.has(id) ? {x: M.nodes.get(id).x, y: M.nodes.get(id).y} : null,
   // What the base 2D map draws, by address: its nodes and each edge, from, to and its arrow as Mermaid writes it, P063.
@@ -13832,6 +13832,7 @@ async function main() {
 }
 /* The page shown once it is laid out, two frames after the map is drawn, `booting` in theme.js. */
 function revealed() {
+  S.shown = true;  // the first project is drawn, or there is none; before it, the page has not loaded
   requestAnimationFrame(() => requestAnimationFrame(() => document.documentElement.classList.remove('booting')));
 }
 // What a browser check reads of the page's controls, the overlays open, bottom to top, and the controls themselves,
