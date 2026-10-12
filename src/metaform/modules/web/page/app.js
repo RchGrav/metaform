@@ -4749,7 +4749,7 @@ function prepare3d() {
  * camera. The selected node's edges in the 2D map carry the same, `flows2d`. The graph library's own particle, one to
  * a link, is never drawn while the page draws the flow: `held`, a share of the way, shows it held there instead,
  * `dots3d`, so a browser check can read a dot over a node. */
-const FLOW = {clock: 0, last: 0, held: null, count: 0, ask: 0.45, reply: 0.5, send: 0.8, burst: 0.55, mean: 1,
+const FLOW = {clock: 0, last: 0, held: null, count: 0, ask: 0.45, reply: 0.9, send: 0.8, burst: 0.55, mean: 3,
   streak: 0.3, trail: 0.06, bright: 1.35, live: [], net: null, mode: null, fades: new Map(), liveFade: 1, ease: 6};
 const cycles = new Map();  // each join's current cycle: when it began on FLOW.clock, its wait, and whether it answered
 /* A join's cycle at this moment; `active` is how long a cycle shows. A `driven` join sends its records only when its
@@ -4768,12 +4768,12 @@ function cycleOf(join, active, driven = false) {
   }
   return cycle;
 }
-// how much data a reply carries, a fresh amount each cycle: it runs (random + random) / 2 seconds, bunched about half
-// a second like the waits, and carries as many dots as that time holds, so a long reply is plainly more data than the
-// one spark of its request and the way the data goes can be read
+// how much data a reply carries, a fresh amount each cycle: it runs (random + random) times `reply` seconds, bunched
+// about it like the waits, slow enough to read, and carries as many dots as that time holds, so a long reply is
+// plainly more data than the one spark of its request and the way the data goes can be read
 function replyData() {
-  const reply = Math.max(0.12, (Math.random() + Math.random()) / 2);
-  return {reply, amount: Math.max(2, Math.round(reply * 14))};
+  const reply = Math.max(0.3, (Math.random() + Math.random()) * FLOW.reply);
+  return {reply, amount: Math.max(2, Math.round(reply * 8))};
 }
 const asksOf = join => join?.ifd === 'receives' || join?.ifd === 'both';
 // the usual wait between a join's cycles, web_pulse_ms, `mean` until the page has read it
