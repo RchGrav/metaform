@@ -8096,6 +8096,27 @@ def test_a_dispatched_sessions_thread_opens_in_the_dock_with_its_messages_and_to
         run('dispatch', 'stop', work, cwd=mapped, ok=False)
 
 
+@pytest.mark.req('VIEW-005')
+def test_choosing_flat_turns_the_camera_to_face_the_plane_and_a_selection_keeps_it_facing(run, web, mapped, browser):
+    """Flat lays the map on one plane; choosing it turns the camera square on to that plane, so the map is seen flat
+    at once, and choosing a node there keeps it facing the plane instead of swinging round to the node's side."""
+    import math
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.cameraAt()')
+    page.evaluate('window.metaform.view3d({x: 300, y: 120, z: 40}, {x: 0, y: 0, z: 0})')  # seen from the side
+    square = 'Math.abs(Math.sin(window.metaform.cameraAt().tilt) * Math.cos(window.metaform.cameraAt().turn)) > 0.99'
+    assert not page.evaluate(square)
+    page.locator('body').press('l')
+    assert page.evaluate('window.metaform.physics()') == 'flat'
+    page.wait_for_function(f'() => {square}', timeout=5000)
+    page.evaluate('window.metaform.look(window.metaform.selected())')
+    page.wait_for_timeout(1800)
+    at = page.evaluate('window.metaform.cameraAt()')
+    assert abs(math.sin(at['tilt']) * math.cos(at['turn'])) > 0.99, at
+    assert not problems
+
+
 @pytest.mark.req('VIEW-008')
 def test_the_2d_map_is_laid_out_by_elk_the_way_that_fits_its_pane_and_again_when_the_pane_turns(
         run, web, mapped, browser):

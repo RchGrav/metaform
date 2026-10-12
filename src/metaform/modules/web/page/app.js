@@ -1070,7 +1070,7 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   // What the base 2D map draws, by address: its nodes and each edge, from, to and its arrow as Mermaid writes it, P063.
   drawn2d: () => { const at = id => S.elements.get(id)?.element.address; return M.base ? {nodes: [...M.base.nodes.keys()].map(at),
     edges: M.base.edges.map(edge => [...ends2d(edge.join, edge.provider).map(at), edge.join.ifd === 'both' ? '<-->' : '-->'])} : null; },
-  look: id => look(id), fit: () => setMode('all'), mode2d: name => setMode(name), peek: () => peek(), embodyState: () => ({target: DOCK.target, session: DOCK.session, open: EMBODY.open, hooks: embodyHooks(), setting: VIEW.embody, turns: VIEW.embodyTurns}), fov3d: () => G ? Math.round(G.camera().fov * 10) / 10 : null, lens: () => LENS.name, agentsWindow: count => agentsWindow(count), physics: () => PHYS.name,
+  look: id => look(id), fit: () => setMode('all'), mode2d: name => setMode(name), peek: () => peek(), embodyState: () => ({target: DOCK.target, session: DOCK.session, open: EMBODY.open, hooks: embodyHooks(), setting: VIEW.embody, turns: VIEW.embodyTurns}), fov3d: () => G ? Math.round(G.camera().fov * 10) / 10 : null, cameraAt: () => G ? cameraNow() : null, lens: () => LENS.name, agentsWindow: count => agentsWindow(count), physics: () => PHYS.name,
   // the screen middles of the 3D map's join edges in view, and the edge a pointer at x, y would take
   links3d: () => !G ? [] : G.graphData().links.filter(link => link.join && link.source.x !== undefined).map(link => {
     const box = $('#stage').getBoundingClientRect(), mid = new THREE.Vector3((link.source.x + link.target.x) / 2,
@@ -5452,6 +5452,7 @@ function fit3d(time = 700, room = 60) {
  * layout put it. */
 const TILT = 0.85;  // the most the camera rises above or falls below level, in radians, when it turns to a node
 function facingOf(node, balls) {
+  if (flatNow()) return flatFacing();  // the plane is faced square on, whichever node is chosen
   const middle = balls.reduce((sum, one) => ({x: sum.x + one.x / balls.length, y: sum.y + one.y / balls.length,
     z: sum.z + one.z / balls.length}), {x: 0, y: 0, z: 0});
   const dx = node.x - middle.x, dy = node.y - middle.y, dz = node.z - middle.z, away = Math.hypot(dx, dy, dz);
@@ -6066,9 +6067,19 @@ function applyPhysics(name, warm = true) {
   G.d3VelocityDecay(PHYS.decay);
   if (warm) G.d3ReheatSimulation();
 }
+/* Flat lays the map on one plane, z = 0. Choosing it turns the camera to face that plane square on, from whichever
+ * side it is nearer, so the map is seen flat at once; a drag turns it from there as ever. */
+const flatNow = () => Boolean(PHYSICS.find(([name]) => name === PHYS.name)?.[3].flat);
+const flatFacing = () => ({turn: Math.cos(cameraNow().turn) >= 0 ? 0 : Math.PI, tilt: Math.PI / 2});
+function faceFlat() {
+  if (!G) return;
+  const balls = fitBalls(G.graphData()).map(one => ({...one, z: 0}));  // where Flat is taking them
+  if (balls.length) flyTo(framed(balls, {mass: fitTrim(), facing: flatFacing()}));
+}
 function choosePhysics(name) {
   if (name === PHYS.name) return peek('key');
   applyPhysics(name);
+  if (flatNow()) faceFlat();
   peek('key');
   saveView('web_physics', name);
 }
