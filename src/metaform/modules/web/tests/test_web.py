@@ -8264,6 +8264,7 @@ def test_d_steps_the_flow_through_hover_selection_and_all_then_each_with_the_edg
     hidden = lambda: page.evaluate('document.querySelector("#map2d").classList.contains("noedges")')
     seen = []
     assert (page.evaluate('window.metaform.flowMode()'), hidden()) == ('selected', False)  # the default
+    reads = page.evaluate('window.metaform.changes()')
     for _ in range(5):
         page.keyboard.press('d')
         seen.append((page.evaluate('window.metaform.flowMode()'), hidden(), note()))
@@ -8275,11 +8276,20 @@ def test_d_steps_the_flow_through_hover_selection_and_all_then_each_with_the_edg
     while (kept()['web_flow_mode'], kept()['web_flow_edges']) != ('hover', True) and time.monotonic() < deadline:
         page.wait_for_timeout(200)
     assert (kept()['web_flow_mode'], kept()['web_flow_edges']) == ('hover', True)
+    page.wait_for_timeout(1000)
+    assert page.evaluate('window.metaform.changes()') == reads  # a saved view choice reads no map again
     _, at = keys_of(web)
     page.evaluate(f'window.metaform.select("{at["code.timer.kitchen"]}")')  # selected, but the flow follows the pointer
     box = page.locator('#map2d svg g.node[data-title="code.alarm.audible"]').bounding_box()
     page.mouse.move(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2)
     page.wait_for_function('() => window.metaform.flow().shapes2d.length > 0', timeout=10000)
+    # in all, every join flows in both maps, with nothing selected
+    page.evaluate('window.metaform.flowMode("all")')
+    page.keyboard.press('Escape')
+    edges = page.evaluate('document.querySelectorAll("#map2d svg .edgePaths path").length')
+    page.wait_for_function('() => window.metaform.flow().points > 0', timeout=10000)
+    page.wait_for_function('n => new Set(window.metaform.flow().shapes2d.map(() => 1)).size > 0 && '
+                           'document.querySelectorAll("#map2d svg g.flows2d .ask").length >= n', arg=edges, timeout=10000)
     assert problems == []
 
 

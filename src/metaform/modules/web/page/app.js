@@ -5806,6 +5806,7 @@ function flowNow() {
 function chooseFlow(name) {
   FLOWSET.name = name;
   if (typeof window.metaform?.flowMode === 'function') window.metaform.flowMode(name);
+  flows2d();  // the 2D map's edges that carry it follow the choice
   for (const [one, button] of FLOWSET.buttons) button.setAttribute('aria-checked', String(one === name));
   if ($('#flowat')) $('#flowat').value = name;
   peek('key');
@@ -5905,11 +5906,18 @@ function stepFlow() {
   const word = FLOW_MODES.find(([one]) => one === name)?.[1];
   note2d(`Flow: ${word}${edges ? '' : ', edges hidden'}`);
 }
-/* The joins' lines drawn or hidden, web_flow_edges, in both maps; hidden, the flow still runs where they were. */
+/* The joins' lines drawn or hidden, web_flow_edges, in both maps; hidden, the flow still runs where they were. Only a
+ * change does anything, and in 3D it shows or hides the lines already drawn: handing the graph its link rule again
+ * would have it rebuild and restart its layout, and the map would shift for seconds after each key. */
 function showEdges(on) {
+  if (VIEW.edges === on) return;
   VIEW.edges = on;
   $('#map2d')?.classList.toggle('noedges', !on);
-  if (G) G.linkVisibility(G.linkVisibility());
+  if (!G) return;
+  for (const link of G.graphData().links) {
+    if (link.__lineObj) link.__lineObj.visible = on && shownNode(link.source) && shownNode(link.target);
+  }
+  wake3d();
 }
 function showFlow(name = flowNow()) {
   FLOWSET.name = name;
@@ -8026,9 +8034,10 @@ const color2d = id => { const node = G?.graphData().nodes.find(one => one.id ===
 function flows2d() {
   for (const old of M.svg?.querySelectorAll('g.flows2d') || []) old.remove();
   FLOW2D.edges = [];
-  const hover = flowModeNow() === 'hover' ? HOVER2D.on : null;  // in hover, the edges of the node the pointer is on
-  const on = M.edges.filter(edge => edge.join && (hover ? edge.join.receiver === hover || edge.provider === hover
-    : edge.path?.classList.contains('on')));
+  // in all, every edge; in hover, the edges of the node the pointer is on; else the selection's
+  const mode = flowModeNow(), hover = mode === 'hover' ? HOVER2D.on : null;
+  const on = M.edges.filter(edge => edge.join && (mode === 'all' || (hover ? edge.join.receiver === hover
+    || edge.provider === hover : edge.path?.classList.contains('on'))));
   if (!on.length) return;
   // a group of their own just over the edges, so the edges stay what they are
   const flows = document.createElementNS(SVG, 'g'), edges = on[0].path.closest('.edgePaths') || on[0].path.parentNode;
@@ -13223,6 +13232,9 @@ async function changed(event) {
   if (agents) agentsChanged(!linesOnly(event.payload));
   // an agent's own tables, its thread, sessions and settings, change no map
   if (named === 'dispatch' || Array.isArray(named) && named.length && named.every(table => String(table).startsWith('dispatch.'))) return;
+  // nor do the settings, the page's own view choices among them, each read where it is used: a key that steps a view
+  // choice saves it, and a map read again for every save faded the edges out and in as the keys were pressed
+  if (Array.isArray(named) && named.length && named.every(table => /(^|\.)settings$/.test(String(table)))) return;
   const tickets = ticketsOnly(event.payload);
   if (tickets && event.payload.base_id && event.payload.base_id !== S.base) return;  // another metaform's
   if (!tickets) { LIVE.whole = true; LIVE.named = LIVE.named && opsOnly(LIVE.named) ? [...LIVE.named, ...(named || [])] : named || null; }
