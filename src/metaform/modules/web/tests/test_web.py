@@ -593,7 +593,7 @@ def test_the_page_draws_each_join_as_its_path_and_both_views_select_together(run
     cook = next(entry['element'] for entry in expected['elements'] if entry['element']['address'] == 'exterior.cook')
     assert page.evaluate('window.metaform.selected()') == cook['id']
     assert page.text_content('#p-object h2') == 'cook'
-    page.evaluate("window.metaform.mode2d('all')")
+    page.evaluate("window.metaform.fit2d('all')")
     page.wait_for_timeout(300)
     assert problems == [] and remote == []
 
@@ -1410,7 +1410,7 @@ def test_inside_a_node_the_graph_keeps_the_maps_orientation_and_a_mode_still_zoo
         assert held['x'] > center['x']
     width = lambda: float(page.get_attribute('#map2d svg', 'viewBox').split()[2])
     whole = width()
-    page.evaluate("window.metaform.mode2d('large')")  # Large
+    zoomed_to(page, 2 * page.evaluate(HEADING))  # the selection at twice the heading's size
     still2d(page)  # the camera eases for 700 ms
     assert width() < whole * 0.8  # zoomed in
     assert problems == []
@@ -1683,9 +1683,13 @@ def held(page, key):
 
 
 def mode(page):
-    """The 2D map's mode, the one checked on its bar."""
-    return page.eval_on_selector_all('.peekpart.two .modes2d button[aria-checked="true"]',
-                                     'found => found.map(one => one.getAttribute("aria-label"))')
+    """The 2D map's fit, all, width or height, VIEW-041."""
+    return page.evaluate('window.metaform.view2d().fit')
+
+
+def zoomed_to(page, px):
+    """The 2D map's zoom set to the distance at which its text is drawn `px` high, for the selection, VIEW-041."""
+    page.evaluate(f"window.metaform.zoom2d('distance'); window.metaform.distance2d({px})")
 
 
 # The panel heading's size on the screen, which Medium draws the 2D map's text at, VIEW-041.
@@ -1798,12 +1802,14 @@ def press(page, selector):
 @pytest.mark.req('VIEW-041')
 def test_all_keeps_the_whole_map_fitted_and_eases_to_each_new_fit(run, web, mapped, browser):
     """All, the mode the page opens in, keeps the whole map fitted and eases to each new fit as nodes arrive or go and
-    as the area changes size, so an intake can be watched filling in without the camera jumping; 9, Home and a
-    Ctrl-click anywhere on the map go back to it from another mode."""
+    as the area changes size, so an intake can be watched filling in without the camera jumping; 2 steps on to it,
+    and Home and a Ctrl-click anywhere on the map go back to it from another fit. With its zoom off a selection keeps
+    the fit."""
     from metaform.data import Store
     thirty(Store('proj'))
     page, problems = opened_on(browser, web, run)
-    assert fitted(page) and mode(page) == ['All']
+    acted(page, lambda: page.evaluate("window.metaform.zoom2d('off')"), must=False)
+    assert fitted(page) and mode(page) == 'all'
     acted(page, lambda: arrives(run, mapped), until=arrival(page))  # a node arrives: it eases out to hold it too
     assert page.evaluate('[...document.querySelectorAll("#map2d svg g.node")].some(g => g.dataset.title === "code.part.added")')
     assert fitted(page)
@@ -1821,12 +1827,15 @@ def test_all_keeps_the_whole_map_fitted_and_eases_to_each_new_fit(run, web, mapp
     # the map's corner where it is at the click: the large map's bar, out after a key, moves the map down below it
     corner = lambda: page.evaluate('(() => { const box = document.querySelector("#viewport").getBoundingClientRect();'
                                    ' return [box.left + 4, box.top + 4]; })()')
-    for back in (lambda: page.keyboard.press('1'), lambda: page.keyboard.press('Home'),
+    for back in (lambda: [page.keyboard.press('2'), page.keyboard.press('2')], lambda: page.keyboard.press('Home'),
                  lambda: modified_click(page, ALL_CLICK, *corner())):
-        acted(page, lambda: page.keyboard.press('5'))
-        assert mode(page) == ['Medium'] and not fitted(page)
-        acted(page, back)                                 # eased back to the whole map
-        assert fitted(page) and mode(page) == ['All']
+        acted(page, lambda: page.keyboard.press('2'), must=False)
+        assert mode(page) == 'width'
+        acted(page, back, must=False)                     # eased back to the whole map
+        assert mode(page) == 'all'
+        page.evaluate("window.metaform.zoom2d('off')")    # Home also puts the zoom back to neighbors
+        still2d(page)
+        assert fitted(page)
     assert page.evaluate('window.metaform.selected()') == kitchen  # a Ctrl-click changes nothing else
     assert problems == []
 
@@ -1880,26 +1889,31 @@ def test_inside_a_node_each_purpose_box_shows_its_purpose_with_the_elements_that
 
 @pytest.mark.req('VIEW-041')
 @pytest.mark.req('VIEW-008')
-def test_the_2d_map_opens_in_all_and_its_mode_holds_the_zoom_through_every_selection(run, web, mapped, browser):
-    """The map zoomed further in at each selection and slid about. It opens in All with the whole map in view, All
-    checked among the seven modes on its bar; 5 eases until its text is the panel heading's size, and a click in the
-    3D map, a click, the arrow keys and a selection by id then each center their node as far as the 40 pixel margin
-    allows and never change the zoom. No node carries a hover title: the readout names what the pointer is on."""
+def test_the_2d_map_frames_each_selection_by_its_zoom_and_goes_back_to_its_fit(run, web, mapped, browser):
+    """The 2D map's framing has three keys, VIEW-041: 2 steps its fit, 3 its zoom on a selection, 1 sets the zoom's
+    distance by example, and 0 puts the fit and the zoom back; each choice is said at the map's top right and kept.
+    With zoom off, a click in the 3D map, a click, the arrow keys and a selection by id each center their node as far
+    as the 40 pixel margin allows and never change the zoom; Neighbors frames the node with every part one join away;
+    Distance draws the map's text at the distance set; letting go of the selection goes back to the fit. No node
+    carries a hover title: the readout names what the pointer is on."""
     from metaform.data import Store
     thirty(Store('proj'))
     page, problems = opened_on(browser, web, run)
-    _, at = keys_of(web)
+    expected, at = keys_of(web)
     part = lambda number: at[f'code.part.number{number}']
-    assert page.eval_on_selector_all('.peekpart.two .modes2d button', 'found => found.map(one => [one.getAttribute("aria-label"),'
+    assert page.eval_on_selector_all('.peekpart.two .modes2d button', 'found => found.map(one => [one.textContent,'
                                      ' one.getAttribute("aria-keyshortcuts")])') == [
-        ['All', '1'], ['Width', '2'], ['Height', '3'], ['Small', '4'], ['Medium', '5'], ['Large', '6'], ['Free', '0']]
-    assert mode(page) == ['All'] and page.evaluate(ALL_IN)
+        ['Fit all2', '2'], ['Zoom: neighbors3', '3'], ['Set zoom1', '1']]
+    assert page.evaluate('window.metaform.view2d()')['zoom'] == 'neighbors'
     tips = '[...document.querySelectorAll("#map2d svg g.node")].filter(g => g.querySelector(":scope > title")).length'
     # the readout at the top of the map names what the pointer is on at every size, so no node carries a hover title
-    assert page.evaluate(TEXT_PX) < 8 and page.evaluate(tips) == 0
-    acted(page, lambda: page.keyboard.press('5'))
-    assert mode(page) == ['Medium'] and page.evaluate(TEXT_PX) == pytest.approx(page.evaluate(HEADING), abs=1)
-    assert page.evaluate(tips) == 0                       # and none at a size the map is read at
+    assert page.evaluate(tips) == 0
+    note = lambda: page.evaluate('document.querySelector("#note2d.on")?.textContent || ""')
+    for word in ('Zoom: distance', 'Zoom off'):
+        page.keyboard.press('3')
+        assert note() == word
+    still2d(page)
+    assert mode(page) == 'all' and page.evaluate('window.metaform.view2d().zoom') == 'off'
     zoom = view_box(page)[2:]
     selected = lambda: page.evaluate('window.metaform.selected()')
     for act in (lambda: page.evaluate(f'window.metaform.click3d("{part(5)}")'),
@@ -1911,6 +1925,38 @@ def test_the_2d_map_opens_in_all_and_its_mode_holds_the_zoom_through_every_selec
         assert selected() != before
         assert view_box(page)[2:] == pytest.approx(zoom, rel=1e-6), selected()
         assert held(page, selected()), (selected(), margins(page))
+    # Neighbors: the node and every part one join away fill the view, closer than the fit
+    acted(page, lambda: page.keyboard.press('3'), must=False)
+    assert note() == 'Zoom: neighbors'
+    near = {part(27)} | {join['receiver'] for join in expected['joins']
+                         if part(27) in [held['element_id'] for held in join['elements']]} | {
+        held['element_id'] for join in expected['joins'] if join['receiver'] == part(27) for held in join['elements']}
+    assert view_box(page)[2] < zoom[0]
+    inside = lambda key: page.evaluate(f"""(() => {{ const view = document.querySelector('#viewport').getBoundingClientRect(),
+        box = window.metaform.box2d("{key}"); return box.left >= view.left - 1 && box.right <= view.right + 1
+        && box.top >= view.top - 1 && box.bottom <= view.bottom + 1; }})()""")
+    assert all(inside(key) for key in near), near
+    # Distance: the text at the distance set; 1, the wheel and 1 again set it by example
+    acted(page, lambda: page.keyboard.press('3'), must=False)
+    assert page.evaluate(TEXT_PX) == pytest.approx(page.evaluate('window.metaform.view2d().distance'), abs=1)
+    page.keyboard.press('1')
+    assert note() == 'Zoom: scroll, then 1 saves' and page.evaluate('window.metaform.view2d().setting')
+    turn(page, -300)
+    drawn = page.evaluate(TEXT_PX)
+    page.keyboard.press('1')
+    assert note() == 'Zoom saved' and not page.evaluate('window.metaform.view2d().setting')
+    assert page.evaluate('window.metaform.view2d().distance') == pytest.approx(drawn, abs=1)
+    # letting go of the selection goes back to the fit; 0 puts the fit and the zoom back
+    acted(page, lambda: page.keyboard.press('Escape'), must=False)
+    assert view_box(page)[2:] == pytest.approx(zoom, rel=1e-6)
+    acted(page, lambda: page.keyboard.press('2'), must=False)
+    assert mode(page) == 'width' and note() == 'Fit width'
+    page.keyboard.press('0')
+    assert page.evaluate('window.metaform.view2d()') | {'distance': 0} == {
+        'fit': 'all', 'zoom': 'neighbors', 'distance': 0, 'setting': False}
+    rows = {row['key']: row['value'] for row in api(web, '/api/settings?project=proj')[1]['settings']}
+    assert (rows['web_map_fit'], rows['web_map_zoom']) == ('all', 'neighbors')  # kept
+    assert rows['web_map_distance'] == pytest.approx(drawn, abs=1)
     assert problems == []
 
 
@@ -1919,11 +1965,12 @@ def test_the_wheel_scrolls_only_where_the_map_runs_past_and_no_further_than_fort
         run, web, mapped, browser):
     """A wheel that moved a map with nothing beyond its edges only lost it. In All the wheel moves nothing; in Width,
     on a map far taller than the pane, it scrolls up and down and stops with 40 pixels past the map's edge, and the
-    map's width refits exactly when the pane changes size; a digit typed in a text field chooses no mode. The row of
+    map's width refits exactly when the pane changes size; a digit typed in a text field chooses nothing. The row of
     thirty runs left to right in the wide large area, P043, so it stands as a column far taller than the pane."""
     from metaform.data import Store
     thirty(Store('proj'))
     page, problems = opened_on(browser, web, run)
+    acted(page, lambda: page.evaluate("window.metaform.zoom2d('off')"), must=False)  # the fit, whatever is selected
     assert page.get_attribute('#map2d svg', 'data-direction') == 'LR'
     whole = view_box(page)
     turn(page, 400)
@@ -1947,7 +1994,7 @@ def test_the_wheel_scrolls_only_where_the_map_runs_past_and_no_further_than_fort
     page.wait_for_selector('#search:not([hidden])')
     page.keyboard.type('5')
     page.wait_for_timeout(300)
-    assert mode(page) == ['Width'] and page.input_value('#search .query') == '5'
+    assert mode(page) == 'width' and page.input_value('#search .query') == '5'
     assert problems == []
 
 
@@ -1955,16 +2002,16 @@ def test_the_wheel_scrolls_only_where_the_map_runs_past_and_no_further_than_fort
 @pytest.mark.req('VIEW-008')
 def test_in_the_small_area_the_mode_holds_through_selections_a_drag_and_a_redraw_and_every_move_eases(
         run, web, mapped, browser):
-    """The modes hold in the small area as in the large one: 5 eases there, and a run of selections each centers its
-    node within the limits at the zoom the mode set, every move easing; a drag stops 40 pixels past the map's edge;
+    """The framing holds in the small area as in the large one: with the zoom at a distance, a run of selections each
+    centers its node within the limits at that zoom, every move easing; a drag stops 40 pixels past the map's edge;
     and the map drawn again as a node arrives keeps the zoom, the node selected centered again."""
     from metaform.data import Store
     thirty(Store('proj'))
     page, problems = opened_on(browser, web, run, large=False)
     _, at = keys_of(web)
-    assert mode(page) == ['All'] and page.evaluate(ALL_IN)
-    acted(page, lambda: page.evaluate("window.metaform.mode2d('medium')"))
-    assert mode(page) == ['Medium'] and page.evaluate(TEXT_PX) == pytest.approx(page.evaluate(HEADING), abs=1)
+    assert mode(page) == 'all'
+    acted(page, lambda: zoomed_to(page, page.evaluate(HEADING)), must=False)
+    assert page.evaluate(TEXT_PX) == pytest.approx(page.evaluate(HEADING), abs=1)
     zoom = view_box(page)[2:]
     for address in ('code.part.number3', 'code.part.number27', 'code.timer.kitchen', 'code.part.number14'):
         acted(page, lambda address=address: page.evaluate(f'window.metaform.select("{at[address]}")'), must=False)
@@ -1994,7 +2041,7 @@ def test_a_drag_interrupts_an_eased_2d_camera_move(run, web, mapped, browser):
     thirty(Store('proj'))
     page, problems = opened_on(browser, web, run, large=False)
     _, at = keys_of(web)
-    page.evaluate("window.metaform.mode2d('medium')")  # Medium, where the map runs past the pane and so can be dragged, VIEW-041
+    zoomed_to(page, page.evaluate(HEADING))  # where the map runs past the pane and so can be dragged, VIEW-041
     still2d(page)
     page.clock.pause_at(page.evaluate('Date.now()') / 1000 + 1)
     try:
@@ -2024,9 +2071,9 @@ def test_a_drag_interrupts_an_eased_2d_camera_move(run, web, mapped, browser):
 @pytest.mark.req('VIEW-016')
 @pytest.mark.req('VIEW-041')
 def test_inside_a_node_the_graph_opens_framed_by_the_maps_mode_and_keeps_it_on_the_way_out(run, web, mapped, browser):
-    """A node's own graph opened at a size of its own, and the map came back at another. It opens in the mode the map
-    is in: in All the whole graph in view; in Medium its text at the panel heading's size, the node entered in view;
-    and the map keeps the mode on the way back out."""
+    """A node's own graph opened at a size of its own, and the map came back at another. It opens framed as the map
+    is: with zoom off, the whole graph in view; at a distance, its text at that size, the node entered in view; and
+    the map keeps its framing on the way back out."""
     from metaform.data import Store
     store = Store('proj')
     for index in range(14):
@@ -2039,13 +2086,14 @@ def test_inside_a_node_the_graph_opens_framed_by_the_maps_mode_and_keeps_it_on_t
     kitchen = at['code.timer.kitchen']
     page.evaluate(f'window.metaform.select("{kitchen}")')
     heading = page.evaluate(HEADING)
+    page.evaluate("window.metaform.zoom2d('off')")
     page.keyboard.press('Enter')
     page.wait_for_function('() => window.metaform.inside().length > 14')
     still2d(page)
-    assert mode(page) == ['All'] and page.evaluate(ALL_IN)
+    assert mode(page) == 'all' and page.evaluate(ALL_IN)
     page.keyboard.press('Shift+Enter')
     page.wait_for_function('() => window.metaform.inside().length === 0')
-    page.evaluate("window.metaform.mode2d('medium')")
+    zoomed_to(page, heading)
     page.keyboard.press('Enter')
     page.wait_for_function('() => window.metaform.inside().length > 14')
     still2d(page)
@@ -2058,7 +2106,7 @@ def test_inside_a_node_the_graph_opens_framed_by_the_maps_mode_and_keeps_it_on_t
     page.keyboard.press('Shift+Enter')
     page.wait_for_function('() => window.metaform.inside().length === 0')
     still2d(page)
-    assert mode(page) == ['Medium'] and page.evaluate(TEXT_PX) == pytest.approx(heading, abs=1)
+    assert page.evaluate(TEXT_PX) == pytest.approx(heading, abs=1)
     assert problems == []
 
 
@@ -2385,13 +2433,15 @@ def test_3d_zoom_keys_belong_to_the_large_map_and_yield_to_fields_and_windows(ru
     assert_met_sign_share(page, 0.75)
     page.click('#swap3dBtn')
     assert_met_sign_fits(page)
-    for key in ('6', '5', '4', '1', '0'):  # the small area takes no keys
+    for key in ('6', '5', '4'):  # the small area takes no zoom keys
         page.keyboard.press(key)
         assert_met_sign_fits(page)
     page.click('#swap3dBtn')
     assert_met_sign_share(page, 0.75)
     page.evaluate('key => window.metaform.select(key)', at['code.loop.tick'])
     assert_met_sign_share(page, 0.75)  # ignored keys must not change the large view's next selection
+    page.keyboard.press('0')  # the reset puts the large 3D map's zoom back to its farthest, a quarter of the width
+    assert_met_sign_share(page, 0.25)
     assert problems == []
 
 
@@ -4090,11 +4140,11 @@ def test_each_view_has_its_own_zoom_controls_and_swap_and_the_messages_button_is
     assert swaps() == [True] * 2 and larger() == '2d'                 # each keeps its Swap in either place
     assert bar() == [True, False, False]                              # the small 3D map has no modes and no Fit
     still(page, '() => window.metaform.away3d()')                     # the swap's flight over
-    page.evaluate('window.metaform.mode2d("medium")')                 # the 2D map opens in All; in another mode, All has a move to make
+    zoomed_to(page, 3 * page.evaluate(HEADING))                       # zoomed in, the fit has a move to make
     still2d(page)
     whole, chart = page.evaluate('window.metaform.away3d()'), page.evaluate('document.querySelector("#map2d svg").getAttribute("viewBox")')
     peeked(page)
-    page.click('.peekpart.two .modes2d button[aria-label="All"]')             # the 2D map's All
+    page.click('.peekpart.two .modes2d button[aria-keyshortcuts="3"]')     # the 2D map's zoom, on to off
     still2d(page)
     assert abs(page.evaluate('window.metaform.away3d()') - whole) < 1  # the 3D map did not move
     assert page.evaluate('document.querySelector("#map2d svg").getAttribute("viewBox")') != chart
@@ -4977,7 +5027,7 @@ def test_dragging_the_2d_map_or_the_task_chart_moves_it_and_selects_no_label_tex
             assert after[0] > before[0] and after[1] > before[1]  # dragged up and left, the view moves down and right
             page.wait_for_timeout(300)
 
-    page.evaluate("window.metaform.mode2d('large')")  # Large, where the map runs past the pane and a drag has somewhere to take it, VIEW-041
+    zoomed_to(page, 2 * page.evaluate(HEADING))  # where the map runs past the pane and a drag has somewhere to take it, VIEW-041
     still2d(page)
     label = page.evaluate("""(() => { const box = document.querySelector('#map2d svg g.node.sel text').getBoundingClientRect();
         return [box.left + box.width / 2, box.top + box.height / 2]; })()""")
@@ -7400,12 +7450,13 @@ def test_a_spec_code_and_a_ticket_id_in_a_question_open_what_they_refer_to(run, 
 @pytest.mark.req('VIEW-041')
 @pytest.mark.kind('fixture')
 def test_the_mouse_wheel_zooms_the_2d_map_at_once_and_nothing_eases_after_it(run, web, mapped, browser):
-    """In Free, VIEW-041, the wheel zooms as it turns, by how far it turned; nothing moves after the wheel stops. An
-    eased zoom that lags the wheel and lands after it, far in or far out, is not how a mouse works."""
+    """While the zoom's distance is being set, VIEW-041, the wheel zooms as it turns, by how far it turned; nothing moves
+    after the wheel stops. An eased zoom that lags the wheel and lands after it, far in or far out, is not how a mouse
+    works."""
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
-    page.evaluate("window.metaform.mode2d('free')")
+    page.keyboard.press('1')
     still2d(page)
     before = view_box(page)[2]
     page.mouse.move(*page.evaluate('(() => { const box = document.querySelector("#viewport").getBoundingClientRect();'

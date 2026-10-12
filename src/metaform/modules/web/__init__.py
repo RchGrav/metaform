@@ -144,7 +144,7 @@ settings.choice('web_flow_mode', ['off', 'selected', 'all', 'live'], 'selected',
                 details="selected draws the flow on the selected node's joins only, so a large map costs nothing; all "
                         "draws it on every join; live draws only what agents really do; off draws nothing, agents' "
                         'activity included. A change eases the dots in or out.')
-settings.number('web_pulse_ms', 5000, min=200, max=30000, scope='global',
+settings.number('web_pulse_ms', 3000, min=200, max=30000, scope='global',
                 help='The usual wait, in milliseconds, between one request and reply on a join and the next.',
                 details='Each join waits (random + random) times this after each cycle, a fresh wait every time, so '
                         'the flow bunches about this pace and never pulses in step, in the 3D and the 2D map.')
@@ -186,6 +186,23 @@ settings.choice('web_map_direction', ['auto', 'across', 'down'], 'auto', scope='
                         'columns when it is long, and keeps the one its pane shows largest with the whole map in '
                         'view; it is laid out again when the pane changes shape. across and down hold it to that '
                         'direction, unfolded.')
+# How the 2D map is framed, the same in the large area and the small one: 2 steps its fit, 3 its zoom on a selection,
+# and 1 sets the zoom's distance by example; 0 puts the fit and the zoom back.
+settings.choice('web_map_fit', ['all', 'width', 'height'], 'all', scope='global',
+                help="The 2D map's fit: all, width or height.",
+                details="all fits the whole map in its pane; width fits its width, and the wheel scrolls up and "
+                        "down; height fits its height, and the wheel scrolls across. 2 steps through them.")
+settings.choice('web_map_zoom', ['neighbors', 'distance', 'off'], 'neighbors', scope='global',
+                help="What the 2D map does on a selection: neighbors, distance or off.",
+                details='neighbors zooms in until the node and every part one join away fill the view, no closer '
+                        'than the distance; distance zooms the node in to the distance set with 1; off keeps the fit, '
+                        'centering the node only as far as the map runs past its pane. Letting go of the selection '
+                        'goes back to the fit. 3 steps through them.')
+settings.number('web_map_distance', 0, min=0, scope='global',
+                help="The 2D map's zoom distance, as the height in pixels its text is drawn at; 0 for twice the "
+                     "page's smallest text.",
+                details='Set on the page by example: 1, the wheel to the distance that reads well from where the '
+                        'map is watched, and 1 again to keep it.')
 # Node zoom: each node selected in the 3D map is flown to, framed close with its neighbours, in either pane and
 # whatever framing or physics is in force; it is what shows a part in its place. Off, a selection never moves the
 # camera; Whole and Free then hold the view.
@@ -214,7 +231,7 @@ PHYSICS = ('organic', 'flat')
 settings.choice('web_physics', list(PHYSICS), 'organic', scope='global',
                 help="The 3D map's layout: organic, or flat.",
                 details='organic is the natural layout; flat lays the map on one plane with its names facing you. '
-                        'Alt+1 and Alt+2 choose them in the web GUI.')
+                        'L switches between them in the web GUI.')
 # The page's developer detail: off shows none of it. info adds the browser-console lines of what the page reads and
 # writes and the developer panes, among them the prompts Metaform and each enabled module would send; verbose adds
 # the events heard and the panes drawn; trace adds every raw response.
