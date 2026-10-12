@@ -2218,3 +2218,7 @@ body:has(.window.mcpwin > .bar:active) .appframe{pointer-events:none}  /* a pane
 .bar3d .peekpart[hidden], .bar2d .peekpart[hidden]{display:none}
 .bar3d .mapbtns, .bar2d .mapbtns{display:flex;align-items:center;gap:var(--s3)}
 .bar3d .peeklabel, .bar2d .peeklabel{font:600 var(--t-xs)/1 var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);white-space:nowrap}
+
+/* Out of sight until laid out, then in once: `booting`, theme.js. */
+html.booting body > *{opacity:0}
+body > *{transition:opacity .28s var(--ease-arrive, ease-out)}

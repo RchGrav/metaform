@@ -998,6 +998,9 @@ class Session:
         self.heard = stamp()  # the last session update or prompt, the earliest a tool call first seen next began
         self.turns = 0
         self.active_turn: ActiveTurn | None = None
+        # a conversation's opening turn, its greeting: what the person sends during it waits for it to end rather than
+        # being steered in, so the agent greets once and then answers, in order, never twice in one reply
+        self.opening = False
         self.interrupt_lock = asyncio.Lock()  # cancellation cannot spill into the next queued prompt
         self.pending: deque[str] = deque()  # prompts wait in arrival order while one turn is in flight
         self.voiced: deque[Any] = deque()  # beside each, the person's recording as an ACP audio block, or None
@@ -2802,6 +2805,7 @@ class Session:
         # and one sentence, data rather than procedure, so it is not.
         text = await self.checked(text) if text is not None else await asyncio.to_thread(self.handed)
         if not self.ending:
+            self.opening = self.system
             self.turn(text)
 
     def handed(self) -> str:
@@ -2994,6 +2998,7 @@ class Session:
                 self.hush()
                 async with self.interrupt_lock:
                     self.active_turn = None
+                self.opening = False
                 async with self.lock:
                     await self.flush()
                     await self.note('turn', 'turn', f'The turn ended: {reason}.')
@@ -3235,7 +3240,8 @@ class Session:
                 # it waits its turn, in order.
                 current = self.active_turn
                 steered = (await self.steer(text) if self.turns and not self.pending and current is not None
-                           and current.sent and not current.cancel_requested and audio is None else False)
+                           and current.sent and not current.cancel_requested and audio is None
+                           and not self.opening else False)
                 if steered is not False:
                     async with self.lock:
                         await self.note(None, 'steered', 'Delivered into the running turn.' if steered else

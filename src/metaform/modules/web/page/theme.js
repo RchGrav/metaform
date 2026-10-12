@@ -8,3 +8,8 @@ try {
   const size = Number(localStorage.getItem('metaform.textSize'));
   if (size >= 0.75 && size <= 1.75) document.documentElement.style.setProperty('--ui', String(size));
 } catch (error) { /* storage can be blocked; the page opens at the default size */ }
+/* The page stays out of sight until it is laid out as this browser left it, side column, swap, sizes and the map
+ * drawn, so a reload never shows another layout first; it fades in once, `revealed` in app.js, or after four seconds
+ * whatever happens. */
+document.documentElement.classList.add('booting');
+setTimeout(() => document.documentElement.classList.remove('booting'), 4000);
