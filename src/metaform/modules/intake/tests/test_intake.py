@@ -352,6 +352,18 @@ def test_refs_that_are_not_text_are_kept_in_the_extra_and_counted_in_words(run, 
     assert kept.extra is not None and kept.extra['refs'] == [['line', 12], ['col', 3]]
 
 
+@pytest.mark.req('STORE-041')
+def test_a_new_intake_is_named_for_what_it_is_for(run, project, tmp_path, home):
+    """The agent names a new intake from the person's request, such as a refactor of the web interface, and the name
+    opens it at once in a metaform of that name; a name that is no name is refused with the form it takes."""
+    submit(run, project, FIXTURE, tmp_path)
+    refused = run('intake', 'start', 'name=web interface!', cwd=project, ok=False)
+    assert 'is not a name for an intake' in refused.stderr
+    started = json.loads(run('intake', 'start', 'name=web-interface-refactor', '--json', cwd=project).stdout)
+    assert started['base'] == 'web-interface-refactor'
+    assert any(base.name == 'web-interface-refactor' for base in metaform_home.bases('timer'))
+
+
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('MAP-045')
 @pytest.mark.req('STORE-041')

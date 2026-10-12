@@ -245,12 +245,17 @@ def _building(store: Store) -> Recording | None:
     return Recording(Store(store.project_id, base=found.base_id), found.layer, found.base, found.active)
 
 
-def _open(ctx: Context, store: Store, notices: Notices) -> Recording:
-    """A new building intake layer: in the active metaform, or in a new one when that one has an intake."""
+def _open(ctx: Context, store: Store, notices: Notices, named: str = '') -> Recording:
+    """A new building intake layer: in the active metaform, or in a new one when that one has an intake, named
+    `named` when `intake start` was given a name for what the intake is for."""
     active = store.active_base()
     target, name, is_active = store, active.name if active is not None else 'main', True
     if active is not None and store.has_intake():
-        fresh = store.add_base(f'intake-{_stamp()}', activate=False)
+        # named from what the intake is for, as the agent gives it at start, else by when it began
+        if named and not BASE_NAME.fullmatch(named):
+            raise Stop(f'{named!r} is not a name for an intake: use 1 to 64 letters, digits, ., _ and -.',
+                       'metaform intake start name=web-interface-refactor')
+        fresh = store.add_base(named or f'intake-{_stamp()}', activate=False)
         target, name, is_active = Store(store.project_id, base=fresh.id), fresh.name, False
         notices.append({'where': 'base', 'message': f'This project already has an intake in base '
                                                         f'{active.name}. This one is recorded in the new base '
@@ -280,6 +285,7 @@ def _active_map(store: Store) -> Recording | None:
 
 
 SHAPE_FIELDS = ('name_length', 'name', 'role')  # an element's fields that are its shape
+BASE_NAME = re.compile(r'[A-Za-z0-9._-]{1,64}')  # what an intake's metaform may be named, `intake start name=`
 
 
 def _recording(ctx: Context, notices: Notices) -> Recording:
@@ -306,14 +312,14 @@ def start(ctx: Context) -> Any:
         # What the layer lacks of its provenance is filled in; what it holds is kept, LAYER-010.
         _note(notices, found.store.complete(found.layer.name, {name: ctx.nouns.get(name) for name in ('model', 'role')},
                                             result_id=str(ctx.nouns['result']) if ctx.nouns.get('result') else None))
-    elif (mapped := _active_map(store)) is not None:
+    elif (mapped := _active_map(store)) is not None and not ctx.nouns.get('name'):  # a name asks for a new intake
         notices.append({'where': 'intake', 'message': f'The active metaform {mapped.metaform} has a finished intake. '
                         'Conditions, their notes and refs recorded on its elements and joins are written onto it. '
                         'Recording a new element or join, or changing a field of one, starts a new intake in a new '
                         'base, kept apart until it finishes.'})
         return {'layer': mapped.layer.name, 'project': store.project_id, 'base': mapped.metaform, 'notices': notices}
     else:
-        found = _open(ctx, store, notices)
+        found = _open(ctx, store, notices, str(ctx.nouns.get('name') or '').strip())
     return {'layer': found.layer.name, 'project': store.project_id, 'base': found.metaform, 'notices': notices}
 
 
@@ -777,6 +783,10 @@ MODULE = Module(
                              'metaform, keeping the earlier one untouched. Returns its name; the existing web GUI '
                              'follows it live.',
              nouns=(Noun('result', 'The result id the intake procedure generates and gives at start, kept with the intake.', required=False),
+                    Noun('name', "On a project that has an intake already, the new intake's metaform is named for what it is "
+                                 "for, from the person's request, such as web-interface-refactor: 1 to 64 letters, digits, "
+                                 "., _ and -. Given, it opens that new intake at once; with none, intake-<UTC timestamp>.",
+                         required=False),
                     Noun('model', 'The model that performs the intake.', required=False),
                     Noun('role', 'The role of the agent that performs it.', required=False))),
         Verb('element', element, 'Record one element of the intake at its address; recording it again replaces the '
