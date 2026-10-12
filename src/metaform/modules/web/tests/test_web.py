@@ -7946,22 +7946,25 @@ def test_the_text_size_buttons_scale_the_page_and_reset_puts_every_size_back(run
 
 @pytest.mark.req('VIEW-028')
 def test_the_side_column_moves_to_the_right_by_its_top_bar_and_stays_there(run, web, mapped, browser):
-    """Dragging the side column's top bar to the right half of the page puts the column on the right, and a reload
-    keeps it there; its edge is grabbed only where it crosses that bar."""
+    """Dragging the side column's top bar to the right edge of the page puts the column on the right, and a reload
+    keeps it there; its edge is grabbed anywhere along the column."""
     started(run)
     page, problems, _ = opened(browser, web)
-    page.evaluate("localStorage.removeItem('metaform.sideAt')")
+    page.evaluate("localStorage.setItem('metaform.sideAt', 'left')")  # it opens on the right unless left is chosen
     page.reload()
     page.wait_for_function('() => window.metaform.loaded()')
+    assert not page.evaluate("document.querySelector('.app').classList.contains('side-right')")
     bar = page.evaluate("(() => { const bar = document.querySelector('aside .bar2d, aside .bar3d'), r = bar.getBoundingClientRect();"
                         " const y = r.top + r.height / 2;"  # an empty part of the bar: a press on a button stays a click
                         " for (let x = r.left + 4; x < r.right; x += 4) if (document.elementFromPoint(x, y) === bar) return [x, y, r.height];"
                         " return null; })()")
     edge = page.locator('#sideSplit').bounding_box()
-    assert edge['height'] == pytest.approx(bar[2], abs=1)
+    assert edge['height'] == pytest.approx(page.locator('aside').bounding_box()['height'], abs=1)
     page.mouse.move(bar[0], bar[1])
     page.mouse.down()
     page.mouse.move(page.viewport_size['width'] - 100, bar[1], steps=10)
+    assert not page.evaluate("document.querySelector('.app').classList.contains('side-right')")  # not near enough
+    page.mouse.move(page.viewport_size['width'] - 10, bar[1], steps=4)
     page.mouse.up()
     page.reload()
     page.wait_for_function('() => window.metaform.loaded()')

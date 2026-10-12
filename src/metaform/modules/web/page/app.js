@@ -551,14 +551,20 @@ function splitter(handle, which, measure) {
   try { kept = localStorage.getItem(SIZES[which][0]); } catch (error) { /* storage can be blocked */ }
   if (kept) sized(which, Number(kept));
 }
-/* The side column's splitter resizes it; dragged on past the middle of the window, away from the column's own side, it
- * moves the column to that side, keeping the width it had when the drag began, as dragging its top bar does, and back
- * again if the pointer returns. While held the splitter shows its grip, the cursor says resize, and past the middle,
- * move. */
-const SIDE_DRAG = {width: 0, right: true};
+/* The side column moves to the other side only when a drag brings the pointer to that edge of the window, within
+ * FLIP_SIDE pixels of it, so a wide resize never flips it by surprise; once moved, it goes back only when the pointer
+ * returns past the middle. */
+const FLIP_SIDE = 40;
+const nearRight = x => x > innerWidth - FLIP_SIDE, nearLeft = x => x < FLIP_SIDE;
+/* The side column's splitter resizes it; dragged on to the far edge, away from the column's own side, it moves the
+ * column to that side, keeping the width it had when the drag began, as dragging its top bar does, and back again if
+ * the pointer returns past the middle. While held the splitter shows its grip, the cursor says resize, and once
+ * across, move. */
+const SIDE_DRAG = {width: 0, right: true, across: false};
 $('#sideSplit').addEventListener('pointerdown', () => {
   SIDE_DRAG.width = $('aside').getBoundingClientRect().width;
   SIDE_DRAG.right = document.querySelector('.app').classList.contains('side-right');
+  SIDE_DRAG.across = false;
   document.body.classList.add('sizing-side');
   const end = () => {
     document.body.classList.remove('sizing-side', 'moving-side-split');
@@ -569,7 +575,8 @@ $('#sideSplit').addEventListener('pointerdown', () => {
 }, true);
 splitter($('#sideSplit'), 'side', moved => {
   const right = document.querySelector('.app').classList.contains('side-right');
-  const across = SIDE_DRAG.right ? moved.clientX < innerWidth / 2 : moved.clientX > innerWidth / 2;
+  const x = moved.clientX, back = SIDE_DRAG.right ? x > innerWidth / 2 : x < innerWidth / 2;
+  const across = SIDE_DRAG.across = SIDE_DRAG.across ? !back : SIDE_DRAG.right ? nearLeft(x) : nearRight(x);
   $('#sideSplit').classList.toggle('across', across);
   document.body.classList.toggle('moving-side-split', across);
   const want = across ? !SIDE_DRAG.right : SIDE_DRAG.right;
@@ -579,7 +586,7 @@ splitter($('#sideSplit'), 'side', moved => {
   return want ? edge.right - moved.clientX : moved.clientX - edge.left;
 });
 /* The side column goes on the left or the right of the page: its top bar, whichever map is in the small area, is
- * dragged across and the column follows the pointer to the half of the page it is in; a press that does not move is
+ * dragged across and the column follows the pointer once it reaches the other edge, `FLIP_SIDE`; a press that does not move is
  * an ordinary click. The View menu chooses the side too. The side is kept in this browser. */
 const SIDE_AT = 'metaform.sideAt';
 function sideAt(right, ease = false) {
@@ -608,7 +615,8 @@ $('aside').addEventListener('pointerdown', event => {
     if (!moving && Math.abs(moved.clientX - from) < 6) return;
     moving = true;
     document.body.classList.add('moving-side');
-    sideAt(moved.clientX > innerWidth / 2, true);
+    const right = document.querySelector('.app').classList.contains('side-right'), x = moved.clientX;
+    sideAt(right ? !nearLeft(x) : nearRight(x), true);
   };
   // a drag ends however the pointer is let go: released, cancelled by the system, or the window losing focus
   const end = () => {

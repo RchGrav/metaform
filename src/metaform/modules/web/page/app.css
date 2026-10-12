@@ -414,12 +414,12 @@ header{grid-area:top;display:flex;align-items:center;gap:var(--s2);min-height:ca
 .toolbar .grow{flex:1}
 aside{grid-area:side;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0;min-width:0;position:relative}
 .splitter{flex:none;background:transparent;z-index:5}
-/* The side column's edge is grabbed only where it crosses the bar at the top, and nothing on it changes under the
- * pointer but the cursor; below the bar it is the plain line of the column's border. */
-.splitter.side{position:absolute;top:0;height:var(--bar);right:-4px;width:8px;cursor:col-resize}
+/* The side column's edge is grabbed anywhere along its length, and nothing on it changes under the pointer but the
+ * cursor; it looks the plain line of the column's border. */
+.splitter.side{position:absolute;top:0;bottom:0;right:-4px;width:8px;cursor:col-resize}
 .splitter.split{height:6px;margin-top:-3px;cursor:row-resize}
-/* The side column on either side of the page: its top bar is dragged across, and the column goes to the half of the
- * page the pointer is in; the bar looks the same under the pointer, only the cursor says it can be dragged. */
+/* The side column on either side of the page: its top bar is dragged across, and the column goes to the other side
+ * once the pointer nears that edge; the bar looks the same under the pointer, only the cursor says it can be dragged. */
 aside .bar2d,aside .bar3d{cursor:grab}
 aside .bar2d button,aside .bar3d button,aside .bar2d nav{cursor:pointer}
 body.moving-side,body.moving-side *{cursor:grabbing!important}
@@ -427,8 +427,8 @@ body.moving-side,body.moving-side *{cursor:grabbing!important}
 .app.side-right aside{border-right:0;border-left:1px solid var(--line)}
 .app.side-right .splitter.side{right:auto;left:-4px}
 .app.side-right .splitter.side::after{left:4px}
-/* While the side column's splitter is held: a quiet grip of three dots at its centre, the resize cursor, and past the
- * middle of the window, where letting go leaves the column on the other side, the move cursor. */
+/* While the side column's splitter is held: a quiet grip of three dots at its centre, the resize cursor, and near the
+ * far edge of the window, where letting go leaves the column on the other side, the move cursor. */
 .splitter.side.dragging::before{content:"";position:absolute;left:50%;top:50%;width:3px;height:15px;translate:-50% -50%;
   background:radial-gradient(circle,var(--muted) 1.2px,transparent 1.6px) center top/3px 6px repeat-y;opacity:.9}
 .splitter.side.dragging.across::before{background-image:radial-gradient(circle,var(--signal) 1.2px,transparent 1.6px)}
