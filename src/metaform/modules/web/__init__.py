@@ -139,11 +139,15 @@ settings.number('web_flow_seconds', 30, min=0, max=3600, scope='global',
 # In milliseconds, since a setting's number is whole.
 # Which joins the dots flow along: off draws none, and no agents' activity either; selected, the selected node's joins;
 # all, every join; live, only what agents really do. The map's bar, the View menu and the key D choose it on the page.
-settings.choice('web_flow_mode', ['off', 'selected', 'all', 'live'], 'selected', scope='global',
-                help="Which joins the dots flow along: off, selected (the selection's joins), all, or live.",
-                details="selected draws the flow on the selected node's joins only, so a large map costs nothing; all "
-                        "draws it on every join; live draws only what agents really do; off draws nothing, agents' "
-                        'activity included. A change eases the dots in or out.')
+settings.choice('web_flow_mode', ['off', 'hover', 'selected', 'all', 'live'], 'selected', scope='global',
+                help="Which joins the dots flow along: off, hover (the node under the pointer), selected, all, or live.",
+                details="hover draws the flow on the joins of the node the pointer is on; selected on the selected "
+                        "node's joins only, so a large map costs nothing; all on every join; live only what agents "
+                        "really do; off draws nothing, agents' activity included. A change eases the dots in or out. "
+                        'D steps through hover, selected and all, with the edges drawn and then hidden.')
+settings.boolean('web_flow_edges', True, scope='global',
+                 help="Draw the joins' lines on the maps; off hides them, and only what flows along them shows.",
+                 details='D steps it with the flow: hover, selected and all with the edges, then the three without.')
 settings.number('web_pulse_ms', 3000, min=200, max=30000, scope='global',
                 help='The usual wait, in milliseconds, between one request and reply on a join and the next.',
                 details='Each join waits (random + random) times this after each cycle, a fresh wait every time, so '

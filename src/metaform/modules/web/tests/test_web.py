@@ -1926,8 +1926,9 @@ def test_the_2d_map_frames_each_selection_by_its_zoom_and_goes_back_to_its_fit(r
         assert view_box(page)[2:] == pytest.approx(zoom, rel=1e-6), selected()
         assert held(page, selected()), (selected(), margins(page))
     # Neighbors: the node and every part one join away fill the view, closer than the fit
-    acted(page, lambda: page.keyboard.press('3'), must=False)
-    assert note() == 'Zoom: neighbors'
+    said = []
+    acted(page, lambda: [page.keyboard.press('3'), said.append(note())], must=False)
+    assert said == ['Zoom: neighbors']
     near = {part(27)} | {join['receiver'] for join in expected['joins']
                          if part(27) in [held['element_id'] for held in join['elements']]} | {
         held['element_id'] for join in expected['joins'] if join['receiver'] == part(27) for held in join['elements']}
@@ -1954,7 +1955,11 @@ def test_the_2d_map_frames_each_selection_by_its_zoom_and_goes_back_to_its_fit(r
     page.keyboard.press('0')
     assert page.evaluate('window.metaform.view2d()') | {'distance': 0} == {
         'fit': 'all', 'zoom': 'neighbors', 'distance': 0, 'setting': False}
-    rows = {row['key']: row['value'] for row in api(web, '/api/settings?project=proj')[1]['settings']}
+    kept = lambda: {row['key']: row['value'] for row in api(web, '/api/settings?project=proj')[1]['settings']}
+    deadline = time.monotonic() + 10                      # each setting's saves land one after another, in order
+    while (kept()['web_map_fit'], kept()['web_map_zoom']) != ('all', 'neighbors') and time.monotonic() < deadline:
+        page.wait_for_timeout(200)
+    rows = kept()
     assert (rows['web_map_fit'], rows['web_map_zoom']) == ('all', 'neighbors')  # kept
     assert rows['web_map_distance'] == pytest.approx(drawn, abs=1)
     assert problems == []
@@ -8245,6 +8250,37 @@ def test_a_dispatched_sessions_thread_opens_in_the_dock_with_its_messages_and_to
         assert problems == []
     finally:
         run('dispatch', 'stop', work, cwd=mapped, ok=False)
+
+
+@pytest.mark.req('VIEW-005')
+def test_d_steps_the_flow_through_hover_selection_and_all_then_each_with_the_edges_hidden(run, web, mapped, browser):
+    """D steps the flow through hover, the selection and all with the joins' lines drawn, then the three again with the
+    lines hidden so only what flows shows; each step is said at the 2D map's corner and kept in web_flow_mode and
+    web_flow_edges. In hover the 2D map's flow runs on the edges of the node the pointer is on."""
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    note = lambda: page.evaluate('document.querySelector("#note2d.on")?.textContent || ""')
+    hidden = lambda: page.evaluate('document.querySelector("#map2d").classList.contains("noedges")')
+    seen = []
+    assert (page.evaluate('window.metaform.flowMode()'), hidden()) == ('selected', False)  # the default
+    for _ in range(5):
+        page.keyboard.press('d')
+        seen.append((page.evaluate('window.metaform.flowMode()'), hidden(), note()))
+    assert seen == [('all', False, 'Flow: All'), ('hover', True, 'Flow: Hover, edges hidden'),
+                    ('selected', True, 'Flow: Selection, edges hidden'), ('all', True, 'Flow: All, edges hidden'),
+                    ('hover', False, 'Flow: Hover')]
+    kept = lambda: {row['key']: row['value'] for row in api(web, '/api/settings?project=proj')[1]['settings']}
+    deadline = time.monotonic() + 10                      # each setting's saves land one after another, in order
+    while (kept()['web_flow_mode'], kept()['web_flow_edges']) != ('hover', True) and time.monotonic() < deadline:
+        page.wait_for_timeout(200)
+    assert (kept()['web_flow_mode'], kept()['web_flow_edges']) == ('hover', True)
+    _, at = keys_of(web)
+    page.evaluate(f'window.metaform.select("{at["code.timer.kitchen"]}")')  # selected, but the flow follows the pointer
+    box = page.locator('#map2d svg g.node[data-title="code.alarm.audible"]').bounding_box()
+    page.mouse.move(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2)
+    page.wait_for_function('() => window.metaform.flow().shapes2d.length > 0', timeout=10000)
+    assert problems == []
 
 
 @pytest.mark.req('VIEW-005')

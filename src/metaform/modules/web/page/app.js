@@ -3931,7 +3931,7 @@ function create3D() {
     .nodeThreeObject(node => nodeObject(node))
     .nodeColor(node => dimmed(node) ? dim(colorOf(node)) : colorOf(node))
     .nodeVisibility(shownNode)
-    .linkVisibility(link => shownNode(link.source) && shownNode(link.target))
+    .linkVisibility(link => VIEW.edges !== false && shownNode(link.source) && shownNode(link.target))
     .nodeOpacity(0.95)
     .nodeResolution(16)
     .nodeLabel(() => '')  // the page shows its own tooltip, anchored above the node, not under the pointer
@@ -4768,18 +4768,22 @@ const pulseMean = () => (Number(WS.view().pulse_ms) || FLOW.mean * 1000) / 1000;
 /* Whether a join's flow is drawn: only the selected node's joins, those it receives on and those it serves, through
  * their purpose vertex, as the 2D map draws them; with nothing selected no join flows, so a large map costs nothing. */
 function flowShown(join) {
-  const mode = flowModeNow(), chosen = S.selected;
+  const mode = flowModeNow(), chosen = mode === 'hover' ? hoveredNow() : S.selected;
   if (mode === 'all') return Boolean(join);
-  if (mode !== 'selected') return false;
+  if (mode !== 'selected' && mode !== 'hover') return false;
   return Boolean(chosen && join && (join.receiver === chosen || join.providers.includes(chosen) || chosen === 'p:' + join.id));
 }
-/* Which joins flow, web_flow_mode: off, none and no agents' activity either; selected, the selected node's joins, the
- * default; all, every join; live, only what agents really do. `window.metaform.flowMode` changes it for the page, and
+/* Which joins flow, web_flow_mode: off, none and no agents' activity either; hover, the joins of the node the pointer
+ * is on, in either map; selected, the selected node's joins, the default; all, every join; live, only what agents
+ * really do. `window.metaform.flowMode` changes it for the page, and
  * the mode bar and the View menu offer it; a change eases the dots in or out, `FLOW.fades`, never cutting them. */
 const FLOW_MODE_LIST = [{name: 'off', label: 'Off', help: 'No dots flow, and agents\' activity is not drawn.'},
+  {name: 'hover', label: 'Hover', help: "Dots flow along the joins of the node the pointer is on, and agents' activity shows."},
   {name: 'selected', label: 'Selection', help: "Dots flow along the selected node's joins, and agents' activity shows."},
   {name: 'all', label: 'All', help: "Dots flow along every join, and agents' activity shows."},
   {name: 'live', label: 'Live', help: 'Only what agents really do is drawn.'}];
+// the node the pointer is on, in the 3D map or the 2D one, for the hover flow
+const hoveredNow = () => hovered?.id ?? HOVER2D.on ?? null;
 const flowModeNow = () => FLOW.mode || (FLOW_MODE_LIST.some(one => one.name === WS.view().flow_mode) ? WS.view().flow_mode : 'selected');
 function flowMode(name) {
   if (FLOW_MODE_LIST.some(one => one.name === name) && name !== FLOW.mode) {
@@ -5691,6 +5695,7 @@ function readView() {
     const physics = value('web_physics', 'organic');
     if (physics !== PHYS.name) applyPhysics(physics);
     showFlow(String(value('web_flow_mode', flowNow())));
+    showEdges(value('web_flow_edges', true) !== false);
     VIEW.nodeZoom = value('web_node_zoom', true) !== false;
     showNodeZoom();
     VIEW.hoverInfo = String(value('web_hover_info', 'name+summary'));
@@ -5700,10 +5705,17 @@ function readView() {
   })();
   return VIEW.reading;
 }
-async function saveView(key, value) {
-  const done = await posted('/api/settings', {key, value});
-  if (!done.ok) toast(done.body.error || 'That choice was not kept.');
-  return done.ok;
+/* A view choice kept in its setting; the saves of one setting go one after another, so quick presses of a key that
+ * steps it are kept in the order they were made. */
+const SAVING = new Map();
+function saveView(key, value) {
+  const save = (SAVING.get(key) || Promise.resolve()).then(async () => {
+    const done = await posted('/api/settings', {key, value});
+    if (!done.ok) toast(done.body.error || 'That choice was not kept.');
+    return done.ok;
+  });
+  SAVING.set(key, save);
+  return save;
 }
 
 /* Each map's own controls, in its bar row beside Swap and always in view, so nothing slides out over the map: the 2D
@@ -5779,7 +5791,8 @@ function chooseAgents(choice) {
 /* Which joins the dots flow along, web_flow_mode, the flow's own setting: off, the selection's joins, all of them, or
  * live, only what agents really do. The flow draws it, `window.metaform.flowMode`; this is its choice in the map's bar,
  * the View menu and the key D, which steps through them, the new one shown as the bar peeks. */
-const FLOW_MODES = [['off', 'Off', 'No dots flow'], ['selected', 'Selection', "Dots flow along the selection's joins"],
+const FLOW_MODES = [['off', 'Off', 'No dots flow'], ['hover', 'Hover', 'Dots flow along the joins of the node under the pointer'],
+  ['selected', 'Selection', "Dots flow along the selection's joins"],
   ['all', 'All', 'Dots flow along every join'], ['live', 'Live', 'Dots show only what agents really do']];
 function flowModes() {
   const offered = window.metaform?.flowModes;
@@ -5879,9 +5892,24 @@ NODEZOOM.button = h('button', {class: 'btn sm quiet nodezoom', type: 'button', '
   onclick: event => { event.stopPropagation(); toggleNodeZoom(); }}, h('span', {class: 'state'}, 'On'), h('kbd', {}, 'Z'));
 $('#nodezoomat').onchange = event => toggleNodeZoom(event.target.checked);
 $('#flowat').onchange = event => chooseFlow(event.target.value);
+/* D steps the flow through hover, the selection and all, with the edges drawn, then the three again with the edges
+ * hidden, so only what flows shows; off and live stay in the View menu and the bar. The edges' choice is
+ * web_flow_edges, said at the corner as the flow's is. */
+const FLOW_STEPS = [['hover', true], ['selected', true], ['all', true], ['hover', false], ['selected', false], ['all', false]];
 function stepFlow() {
-  const modes = flowModes().map(([name]) => name), now = modes.indexOf(flowNow());
-  chooseFlow(modes[(now + 1) % modes.length]);
+  const now = FLOW_STEPS.findIndex(([name, edges]) => name === flowNow() && edges === (VIEW.edges !== false));
+  const [name, edges] = FLOW_STEPS[(now + 1) % FLOW_STEPS.length];
+  chooseFlow(name);
+  showEdges(edges);
+  saveView('web_flow_edges', edges);
+  const word = FLOW_MODES.find(([one]) => one === name)?.[1];
+  note2d(`Flow: ${word}${edges ? '' : ', edges hidden'}`);
+}
+/* The joins' lines drawn or hidden, web_flow_edges, in both maps; hidden, the flow still runs where they were. */
+function showEdges(on) {
+  VIEW.edges = on;
+  $('#map2d')?.classList.toggle('noedges', !on);
+  if (G) G.linkVisibility(G.linkVisibility());
 }
 function showFlow(name = flowNow()) {
   FLOWSET.name = name;
@@ -7931,6 +7959,7 @@ function pickNode2d(key) {
   EDGE_PICK.node2d = key;
   M.nodes.get(key)?.g.classList.add('pick');
   HOVER2D.on = key;
+  if (flowModeNow() === 'hover') flows2d();
   if (key) readout('2d', readoutOf(key, '2d'));
 }
 function pickEdge2d(edge) {
@@ -7997,7 +8026,9 @@ const color2d = id => { const node = G?.graphData().nodes.find(one => one.id ===
 function flows2d() {
   for (const old of M.svg?.querySelectorAll('g.flows2d') || []) old.remove();
   FLOW2D.edges = [];
-  const on = M.edges.filter(edge => edge.path?.classList.contains('on') && edge.join);
+  const hover = flowModeNow() === 'hover' ? HOVER2D.on : null;  // in hover, the edges of the node the pointer is on
+  const on = M.edges.filter(edge => edge.join && (hover ? edge.join.receiver === hover || edge.provider === hover
+    : edge.path?.classList.contains('on')));
   if (!on.length) return;
   // a group of their own just over the edges, so the edges stay what they are
   const flows = document.createElementNS(SVG, 'g'), edges = on[0].path.closest('.edgePaths') || on[0].path.parentNode;
@@ -8033,7 +8064,7 @@ function frame2d(now) {
   const resting = reduced() || (FRAMES.rest !== null && performance.now() - FRAMES.active > FRAMES.idle);
   flowTick(now);
   // the flow mode, web_flow_mode: off and live draw none of it here; a change eases it in or out
-  const wanted = flowModeNow() === 'selected' || flowModeNow() === 'all' ? 1 : 0, was = FLOW2D.fade ?? wanted;
+  const wanted = ['hover', 'selected', 'all'].includes(flowModeNow()) ? 1 : 0, was = FLOW2D.fade ?? wanted;
   FLOW2D.fade = was + (wanted - was) * (1 - Math.exp(-Math.max(0, FLOW.clock - (FLOW2D.at ?? FLOW.clock)) * FLOW.ease));
   FLOW2D.at = FLOW.clock;
   const group = shown[0].ask.parentNode;
@@ -8363,7 +8394,7 @@ const KEYS = [
   {group: 'Zoom', keys: ['7', '8', '9'], what: '2D direction', match: ['7', '8', '9'], run: largeKey},
   {group: 'Looks', keys: ['L'], what: 'Layout: Organic or Flat', match: ['l', 'L'],
     run: () => choosePhysics(PHYS.name === 'flat' ? 'organic' : 'flat')},
-  {group: 'Looks', keys: ['D'], what: 'Flow: Off, Selection, All, Live', match: ['d', 'D'], run: () => stepFlow()},
+  {group: 'Looks', keys: ['D'], what: 'Flow: hover, selection, all, then each with edges hidden', match: ['d', 'D'], run: () => stepFlow()},
   {group: 'Looks', keys: ['U'], what: 'Space theme on/off', match: ['u', 'U'],  // the space theme or the last plain one
     run: () => setTheme(document.documentElement.dataset.theme === 'space' ? PLAIN.last : 'space')},
   {group: 'Chat', keys: ['C'], what: 'Open or hide chat', match: ['c', 'C'],
