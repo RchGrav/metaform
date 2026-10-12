@@ -4741,7 +4741,7 @@ function prepare3d() {
  * camera. The selected node's edges in the 2D map carry the same, `flows2d`. The graph library's own particle, one to
  * a link, is never drawn while the page draws the flow: `held`, a share of the way, shows it held there instead,
  * `dots3d`, so a browser check can read a dot over a node. */
-const FLOW = {clock: 0, last: 0, held: null, count: 0, ask: 0.45, reply: 1.6, send: 0.8, burst: 0.55, mean: 3,
+const FLOW = {clock: 0, last: 0, held: null, count: 0, ask: 0.45, reply: 0.5, send: 0.8, burst: 0.55, mean: 1,
   streak: 0.3, trail: 0.06, bright: 1.35, live: [], net: null, mode: null, fades: new Map(), liveFade: 1, ease: 6};
 const cycles = new Map();  // each join's current cycle: when it began on FLOW.clock, its wait, and whether it answered
 /* A join's cycle at this moment; `active` is how long a cycle shows. A `driven` join sends its records only when its
@@ -4750,18 +4750,23 @@ function cycleOf(join, active, driven = false) {
   let cycle = cycles.get(join);
   if (!cycle || cycle.driven !== driven) cycles.set(join, cycle = driven
     ? {at: -Infinity, wait: Infinity, driven, answered: true}
-    : {at: FLOW.clock - Math.random() * 2 * pulseMean(), wait: 0, driven, answered: false, amount: dataAmount()});
-  while (FLOW.clock - cycle.at > active + cycle.wait) {
-    cycle.at += active + cycle.wait;
+    : {at: FLOW.clock - Math.random() * 2 * pulseMean(), wait: 0, driven, answered: false, ...replyData()});
+  // a request's cycle is its request and its reply, the reply as long as the data it carries
+  while (FLOW.clock - cycle.at > active + (cycle.reply || 0) + cycle.wait) {
+    cycle.at += active + (cycle.reply || 0) + cycle.wait;
     cycle.wait = (Math.random() + Math.random()) * pulseMean();
     cycle.answered = false;
-    cycle.amount = dataAmount();
+    Object.assign(cycle, replyData());
   }
   return cycle;
 }
-// how much data a reply carries, a fresh amount each cycle: 6 to 18 dots, bunched about 12, like the waits, so a
-// reply is plainly more than the one spark of its request and the way the data goes can be read
-const dataAmount = () => 6 + Math.floor((Math.random() + Math.random()) * 6.5);
+// how much data a reply carries, a fresh amount each cycle: it runs (random + random) / 2 seconds, bunched about half
+// a second like the waits, and carries as many dots as that time holds, so a long reply is plainly more data than the
+// one spark of its request and the way the data goes can be read
+function replyData() {
+  const reply = Math.max(0.12, (Math.random() + Math.random()) / 2);
+  return {reply, amount: Math.max(3, Math.round(reply * 24))};
+}
 const asksOf = join => join?.ifd === 'receives' || join?.ifd === 'both';
 // the usual wait between a join's cycles, web_pulse_ms, `mean` until the page has read it
 const pulseMean = () => (Number(WS.view().pulse_ms) || FLOW.mean * 1000) / 1000;
@@ -4810,13 +4815,13 @@ function flowNet() {
 function flowAt(join) {
   const net = flowNet();
   if (asksOf(join)) {
-    const cycle = cycleOf(join.id, FLOW.ask + FLOW.reply), since = FLOW.clock - cycle.at;
+    const cycle = cycleOf(join.id, FLOW.ask), since = FLOW.clock - cycle.at;
     if (since >= FLOW.ask && !cycle.answered) {
       cycle.answered = true;
-      if (since < FLOW.ask + FLOW.reply)
+      if (since < FLOW.ask + cycle.reply)
         for (const id of join.providers) for (const sent of net.sends.get(id) || []) recorded(sent);
     }
-    return {asks: true, since, amount: cycle.amount};
+    return {asks: true, since, amount: cycle.amount, reply: cycle.reply};
   }
   const cycle = cycleOf(join.id, FLOW.send + FLOW.burst, net.answering.has(join.receiver));
   return {asks: false, since: FLOW.clock - cycle.at};
@@ -5113,13 +5118,13 @@ function flow3d(now, data) {
       FLOW.fades.set(id, fade);
       FX.fade = fade;
       FLOW.count++;
-      const {asks, since, amount} = flowAt(join);
+      const {asks, since, amount, reply} = flowAt(join);
       for (const to of way.providers) {
         const path = [way.receiver, way.purpose, to];
         if (!asks) fxRecord(path, since, colors.record, false);
         else if (since < FLOW.ask) fxRequest(path, since / FLOW.ask, false);
-        else if (since < FLOW.ask + FLOW.reply) for (const back of join.ifd === 'both' ? [true, false] : [true])
-          fxTrain(path, (since - FLOW.ask) / FLOW.reply, back, tintOf(colorOf(back ? to : way.receiver)), false, amount);
+        else if (since < FLOW.ask + reply) for (const back of join.ifd === 'both' ? [true, false] : [true])
+          fxTrain(path, (since - FLOW.ask) / reply, back, tintOf(colorOf(back ? to : way.receiver)), false, amount);
       }
     }
     FLOW.liveFade += ((flowModeNow() === 'off' ? 0 : 1) - FLOW.liveFade) * ease;
@@ -8087,7 +8092,7 @@ function frame2d(now) {
     const put = (shape, point) => { shape.style.display = ''; shape.setAttribute('transform', `translate(${point.x} ${point.y})`); };
     for (const shape of [ask, record, ring, ...trains.flatMap(train => train.beads)]) shape.style.display = 'none';
     if (resting) continue;
-    const {asks, since, amount = 7} = flowAt(join);
+    const {asks, since, amount = 7, reply = FLOW.reply} = flowAt(join);
     if (!asks) {
       if (since < FLOW.send) { const t = since / FLOW.send; put(record, at(t * t * (3 - 2 * t))); }
       else if (since < FLOW.send + FLOW.burst) {
@@ -8097,8 +8102,8 @@ function frame2d(now) {
         ring.style.opacity = String(Math.pow(1 - u, 1.5));
       }
     } else if (since < FLOW.ask) put(ask, at(since / FLOW.ask));
-    else if (since < FLOW.ask + FLOW.reply) {  // the reply: a train of dots the way the data goes
-      const t = (since - FLOW.ask) / FLOW.reply;
+    else if (since < FLOW.ask + reply) {  // the reply: a train of dots the way the data goes
+      const t = (since - FLOW.ask) / reply;
       (join.ifd === 'both' ? [true, false] : [true]).forEach((back, index) => {
         const {beads, color} = trains[index], spacing = Math.max(0.03, 2.6 * 2 * 2.3 / Math.max(1, length));
         const shown = Math.max(3, Math.min(beads.length, amount, Math.floor(0.9 / spacing) + 1)), head = t * (1 + spacing * (shown - 1));
