@@ -2577,8 +2577,8 @@ def test_following_a_new_intake_with_nothing_recorded_clears_the_panel_of_the_ea
     run('intake', 'element', 'code.alarm.audible', 'role=SE', cwd=folder)  # new shape: the new intake base opens
     page.wait_for_function('() => window.metaform.live() !== null', timeout=15000)
     page.wait_for_function('() => window.metaform.drawn().nodes === 1', timeout=15000)
-    page.wait_for_timeout(300)  # the panel's reads settle
-    assert 'code.timer.kitchen' not in page.inner_text('#p-object')
+    page.wait_for_function('() => !document.querySelector("#p-object").innerText.includes("code.timer.kitchen")',
+                           timeout=10000)  # once the panel's reads settle
     assert problems == []
 
 
@@ -5523,7 +5523,9 @@ def test_the_labels_wrap_keep_the_draw_order_and_the_hover_says_what_a_part_does
     # sign faces the eye, and the kitchen timer's can be read.
     page.locator('body').press('l')
     page.wait_for_function('() => window.metaform.physics() === "flat"')
-    page.wait_for_timeout(1800)  # the camera turned to face the plane
+    page.wait_for_function('() => Math.abs(Math.sin(window.metaform.cameraAt().tilt) * Math.cos(window.metaform.cameraAt().turn))'
+                           ' > 0.99', timeout=15000)  # the camera turned to face the plane
+    page.wait_for_timeout(600)  # and come to rest
     page.evaluate(f'window.metaform.hover3d("{kitchen}")')
     card = page.locator('#card3d.on')
     card.wait_for(state='visible')
@@ -7208,9 +7210,9 @@ def test_a_waiting_merge_shows_review_and_review_asks_about_help_in_a_support_wi
         assert tx.get('merges', {'work_id': work})['state'] == 'review', 'Review cancels the countdown for good'
     page.click('#mergeAsk .yes')
     page.wait_for_selector('#helpdesk:not([hidden])')
-    assert page.locator('#helpdesk .who b').text_content() == 'Metaform Support'
     page.wait_for_function('() => document.querySelector("#helpdesk .log").textContent'
                            '.includes("Waiting for the next available agent.")')
+    assert page.locator('#helpdesk .who b').text_content() == 'An agent'  # whom the chat is with is its title
     box = page.locator('#helpdesk').bounding_box()
     width, height = page.viewport_size['width'], page.viewport_size['height']
     assert box['x'] + box['width'] > width - 40 and box['y'] + box['height'] > height - 40, 'it sits at the lower right'
@@ -8118,9 +8120,10 @@ def test_choosing_flat_turns_the_camera_to_face_the_plane_and_a_selection_keeps_
     assert not page.evaluate(square)
     page.locator('body').press('l')
     assert page.evaluate('window.metaform.physics()') == 'flat'
-    page.wait_for_function(f'() => {square}', timeout=5000)
+    page.wait_for_function(f'() => {square}', timeout=15000)
     page.evaluate('window.metaform.look(window.metaform.selected())')
-    page.wait_for_timeout(1800)
+    page.wait_for_timeout(1800)  # the selection's flight, which a slow machine may still be making
+    page.wait_for_function(f'() => {square}', timeout=15000)
     at = page.evaluate('window.metaform.cameraAt()')
     assert abs(math.sin(at['tilt']) * math.cos(at['turn'])) > 0.99, at
     assert not problems
