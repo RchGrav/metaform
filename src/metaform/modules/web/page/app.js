@@ -5442,7 +5442,9 @@ function fit3d(time = 700, room = 60) {
   const balls = fitBalls(G.graphData());
   Object.assign(V3, {auto: true, asked: true});
   if (!balls.length) return;
-  flyTo(framed(balls, {room, mass: fitTrim()}), {length: time / 1000, done: () => { V3.whole = away3d(); V3.fits++; }});
+  // in Flat a fit faces the plane, so the fits that follow the nodes as they flatten finish the turn instead of ending it
+  flyTo(framed(balls, {room, mass: fitTrim(), facing: flatNow() ? flatFacing() : null}),
+    {length: time / 1000, done: () => { V3.whole = away3d(); V3.fits++; }});
 }
 /* A selected node is turned to face the eye: the camera swings round the map's middle to the side the node stands
  * out on, so the node is in front, its sign turned to the eye, VIEW-038, as if the whole map had turned to present it.
