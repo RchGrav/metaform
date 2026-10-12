@@ -23,7 +23,7 @@ In Windows PowerShell, replace the activation line with:
 
 The base package declares `prompt_toolkit`; the MCP module separately declares `mcp>=2.2`. Installing only the base package can therefore leave the MCP module reported as an error because its dependency is absent. `uv` supplies the build and wheel-backed host-launch path. These requirements come from the supplied [package metadata](../../pyproject.toml), [MCP module](../../src/metaform/modules/mcp/__init__.py), and [builder](../../src/metaform/build.py).
 
-`list modules` reports where each module was found and whether it is on, off, or failed to load. Intake, map, memory, MCP, web and voice are the operating modules in this edition. Voice lets a person talk to agents on the web GUI with Whisper in their browser; `python -m pip install -e ".[voice]"` (or `.[voice-gpu]` with an NVIDIA GPU) adds the faster engine on the server, and `metaform voice status` says which engine hears and why. Template and hello ship disabled. A dependency or import error is a reported module condition, not evidence that all of Metaform failed to start.
+`list modules` reports where each module was found and whether it is on, off, or failed to load. Intake, map, memory, MCP, web, voice, fork, ElevenLabs, Twilio, cloud and node ship on; dispatch, workflow, packet, Paperclip, template and hello ship off, and `metaform enable <module>` turns one on. Voice lets a person talk to agents on the web GUI with Whisper in their browser; `python -m pip install -e ".[voice]"` (or `.[voice-gpu]` with an NVIDIA GPU) adds the faster engine on the server, and `metaform voice status` says which engine hears and why. Template and hello ship disabled. A dependency or import error is a reported module condition, not evidence that all of Metaform failed to start.
 
 ### Running an existing build instead
 
@@ -33,7 +33,7 @@ A Metaform-built wheel is both installable and directly runnable. Substitute the
 python /path/to/metaform-2026.9.30.2-py3-none-any.whl list modules
 ```
 
-In later examples, replace `metaform` with `python /path/to/the.whl` when using this form. Direct execution uses the normal home, `~/.metaform`, the same as an installed command or a host's `uvx --from ... metaform` launch. `METAFORM_HOME` chooses another home for any of them.
+In later examples, replace `metaform` with `python /path/to/the.whl` when using this form. `python /path/to/the.whl install <tool>` installs Metaform from the wheel with uv and then sets the tools up with the installed copy: run straight from a wheel, the modules whose compiled dependencies it cannot carry, MCP among them, are left out, and the installed copy has them. Direct execution uses the normal home, `~/.metaform`, the same as an installed command or a host's `uvx --from ... metaform` launch. `METAFORM_HOME` chooses another home for any of them.
 
 The repository holds no built application wheel. Use the repository source or a wheel produced from it with `metaform build`.
 
@@ -54,17 +54,17 @@ A named installation selects its adapter directly:
 metaform install claude
 ```
 
-The supplied installer has configured adapters for **Claude Code** (`claude`), **Codex** (`codex`), **Gemini CLI** (`gemini`), **Cursor** (`cursor`), and **VS Code** (`vscode`). Its entries for Copilot CLI, Factory, Antigravity, and Claude Desktop are marked unverified and do not provide the same installation path. This is the adapter set in the documented source snapshot, not a claim about every current client version.
+The supplied installer has configured adapters for **Claude Code** (`claude`), **Codex** (`codex`), **Gemini CLI** (`gemini`), **Cursor** (`cursor`), and **VS Code** (`vscode`), and registers Metaform as an ACP agent in **Zed** (`zed`) and **JetBrains IDEs** (`jetbrains`), which start it through the dispatch module, so those two need `metaform enable dispatch` first. Its entries for Copilot CLI, Factory, Antigravity, and Claude Desktop are marked unverified and do not provide the same installation path. This is the adapter set in the documented source snapshot, not a claim about every current client version.
 
 Installation reports the files it changes, makes backups, registers the server, and probes the server's server/discover and tools/list exchange in MCP 2026-07-28. Where the adapter supplies a skill location, it also copies the skill material. Server probing and copying a skill are distinct from proving that the client's native skill loader has used it.
 
-The registered transport is **stdio**. Its command shape is:
+The registered transport is **stdio** by default. Its command shape is:
 
 ```text
 uvx --from /absolute/path/to/the-built-wheel.whl metaform mcp serve
 ```
 
-The host starts that process. There is no HTTP MCP endpoint to invent or configure for this path. Start the agent in the registered workpiece folder, or provide its project explicitly in tool calls. The next section creates that project.
+The host starts that process. With `metaform set --mcp-transport http`, tools are registered at `http://127.0.0.1:<mcp_port>/mcp` instead (port 7434 unless `--mcp-port` says otherwise), and the server is started with `metaform mcp serve --http`. Start the agent in the registered workpiece folder, or provide its project explicitly in tool calls. The next section creates that project.
 
 Installer implementation: [install.py](../../src/metaform/install.py). Detailed packaging and lifecycle: [extension guide](extending-metaform.md#packaging-and-distribution).
 
