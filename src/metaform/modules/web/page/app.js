@@ -4928,8 +4928,8 @@ function fxMake() {
         vec3 color = vTint.rgb;
         if (vShape < 0.5) {
           // a light, not a ball: a small white-hot core in a wide soft glow of its colour
-          a = max(smoothstep(0.3, 0.1, d), 0.55 * pow(max(0.0, 1.0 - d), 2.2));
-          color = mix(color, vec3(1.0), 0.15 + 0.85 * smoothstep(0.3, 0.0, d));
+          a = max(smoothstep(0.34, 0.12, d), 0.9 * pow(max(0.0, 1.0 - d), 1.6));
+          color = mix(color, vec3(1.0), 0.15 + 0.85 * smoothstep(0.34, 0.0, d));
         } else if (vShape < 1.5) {
           vec2 q = abs(c) / vec2(0.86, 0.64);
           float edge = max(q.x, q.y);
@@ -5014,7 +5014,7 @@ function fxRequest(way, t, live) {  // tiny, white, glimmering, with a short fai
  * never confused. `count` is how much data it carries. The dots are spaced on the screen at least a little more than
  * twice their size apart, so the burst reads as dots at any zoom; a join too short for all of them shows fewer. */
 function fxTrain(way, t, back, color, live, count = 12) {
-  const k = live ? FLOW.bright : 1, dot = 9 * k;
+  const k = live ? FLOW.bright : 1, dot = 15 * k;
   color = LIT.copy(color).lerp(WHITE, 0.35);  // a little lighter than the element, so it reads over the fibers
   let long = 0;
   for (let i = 1; i < way.length; i++) long += Math.hypot(way[i].x - way[i - 1].x, way[i].y - way[i - 1].y, way[i].z - way[i - 1].z);
@@ -5027,7 +5027,7 @@ function fxTrain(way, t, back, color, live, count = 12) {
     const s = head - spacing * i;
     if (s < 0 || s > 1) continue;
     const fade = i < shown - 3 ? 1 : 1 - (i - (shown - 4)) / 4;  // the last few fade
-    fxDot(wayAt(way, back ? 1 - s : s, TAIL[0]), 1.0 * k, color, fade, 0, dot, dot * 1.15);  // held near its size zoomed in
+    fxDot(wayAt(way, back ? 1 - s : s, TAIL[0]), 1.6 * k, color, fade, 0, dot, dot * 1.2);  // held near its size zoomed in
   }
 }
 function fxBurst(node, u, color, live) {  // a ring that opens on a node as something lands on it, and a brief flash
