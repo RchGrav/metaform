@@ -4922,8 +4922,9 @@ function fxMake() {
         float d = length(c), a = 1.0;
         vec3 color = vTint.rgb;
         if (vShape < 0.5) {
-          a = max(smoothstep(0.6, 0.35, d), 0.7 * pow(max(0.0, 1.0 - d), 1.5));
-          color = mix(color, vec3(1.0), 0.25 + 0.75 * smoothstep(0.6, 0.1, d));
+          // a light, not a ball: a small white-hot core in a wide soft glow of its colour
+          a = max(smoothstep(0.3, 0.1, d), 0.55 * pow(max(0.0, 1.0 - d), 2.2));
+          color = mix(color, vec3(1.0), 0.15 + 0.85 * smoothstep(0.3, 0.0, d));
         } else if (vShape < 1.5) {
           vec2 q = abs(c) / vec2(0.86, 0.64);
           float edge = max(q.x, q.y);
@@ -5008,7 +5009,7 @@ function fxRequest(way, t, live) {  // tiny, white, glimmering, with a short fai
  * never confused. `count` is how much data it carries. The dots are spaced on the screen at least a little more than
  * twice their size apart, so the burst reads as dots at any zoom; a join too short for all of them shows fewer. */
 function fxTrain(way, t, back, color, live, count = 12) {
-  const k = live ? FLOW.bright : 1, dot = 10 * k;
+  const k = live ? FLOW.bright : 1, dot = 9 * k;
   color = LIT.copy(color).lerp(WHITE, 0.35);  // a little lighter than the element, so it reads over the fibers
   let long = 0;
   for (let i = 1; i < way.length; i++) long += Math.hypot(way[i].x - way[i - 1].x, way[i].y - way[i - 1].y, way[i].z - way[i - 1].z);
@@ -5021,7 +5022,7 @@ function fxTrain(way, t, back, color, live, count = 12) {
     const s = head - spacing * i;
     if (s < 0 || s > 1) continue;
     const fade = i < shown - 3 ? 1 : 1 - (i - (shown - 4)) / 4;  // the last few fade
-    fxDot(wayAt(way, back ? 1 - s : s, TAIL[0]), 1.3 * k, color, fade, 0, dot, dot * 1.4);
+    fxDot(wayAt(way, back ? 1 - s : s, TAIL[0]), 1.0 * k, color, fade, 0, dot, dot * 1.15);  // held near its size zoomed in
   }
 }
 function fxBurst(node, u, color, live) {  // a ring that opens on a node as something lands on it, and a brief flash
@@ -8055,7 +8056,7 @@ function flows2d() {
     FLOW2D.edges.push({edge, length: edge.path.getTotalLength(),
       // a reply's train of dots each way, in the colour of the element it comes from, `fxTrain`
       trains: [0, 1].map(way => ({color: color2d(way === 0 ? edge.provider : edge.join.receiver),
-        beads: Array.from({length: 18}, () => made('circle', 'bead', {r: 3.4}))})),
+        beads: Array.from({length: 18}, () => made('circle', 'bead', {r: 2.6}))})),
       ask: made('circle', 'ask', {r: 1.9}), record: made('rect', 'record', {x: -4.5, y: -3.2, width: 9, height: 6.4, rx: 1.4}),
       ring: made('circle', 'ring', {r: 4})});
   }
@@ -8099,13 +8100,13 @@ function frame2d(now) {
     else if (since < FLOW.ask + FLOW.reply) {  // the reply: a train of dots the way the data goes
       const t = (since - FLOW.ask) / FLOW.reply;
       (join.ifd === 'both' ? [true, false] : [true]).forEach((back, index) => {
-        const {beads, color} = trains[index], spacing = Math.max(0.03, 3.4 * 2 * 2.3 / Math.max(1, length));
+        const {beads, color} = trains[index], spacing = Math.max(0.03, 2.6 * 2 * 2.3 / Math.max(1, length));
         const shown = Math.max(3, Math.min(beads.length, amount, Math.floor(0.9 / spacing) + 1)), head = t * (1 + spacing * (shown - 1));
         beads.forEach((bead, i) => {
           const s = head - spacing * i;
           if (i >= shown || s < 0 || s > 1) return;
           put(bead, at(back ? 1 - s : s));
-          bead.style.fill = color;
+          bead.style.fill = bead.style.color = color;  // its glow, a drop shadow of currentColor, in its own colour
           bead.style.opacity = String(i < shown - 3 ? 1 : 1 - (i - (shown - 4)) / 4);
         });
       });
