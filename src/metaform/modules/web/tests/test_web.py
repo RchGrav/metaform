@@ -620,8 +620,8 @@ def test_the_layers_list_opens_from_the_header_and_back_and_forward_sit_clear_of
     page.keyboard.press('Escape')
     assert not page.is_visible('#layerlist')
     page.evaluate('() => { const svg = document.querySelector("#map2d svg"); svg.setAttribute("viewBox", "-400 -400 1600 1600"); }')
-    peeked(page)  # the mode bar comes out only after the pointer rests in its strip, and holds the large map's modes
-    for name in ('#backBtn', '#forwardBtn', '#peek'):
+    peeked(page)  # the large map's modes, in its bar
+    for name in ('#backBtn', '#forwardBtn', '.peekpart:not([hidden])'):
         hit = page.evaluate(f"""(() => {{ const box = document.querySelector('{name}').getBoundingClientRect();
             const found = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
             return found && found.closest('{name}') !== null; }})()""")
@@ -1574,10 +1574,14 @@ ALL_IN = '''() => { const view = document.querySelector("#viewport").getBounding
     return nodes.length > 0 && nodes.every(node => { const box = node.getBoundingClientRect();
         return box.left >= view.left - 1 && box.right <= view.right + 1 && box.top >= view.top - 1
             && box.bottom <= view.bottom + 1; }); }'''
+# The 2D map's area a fit uses: the pane above the room kept at its foot for the hover card, `foot2d`.
+USABLE = '''(() => { const pane = document.querySelector("#viewport").getBoundingClientRect();
+    return {left: pane.left, right: pane.right, top: pane.top, bottom: pane.bottom - window.metaform.foot2d(),
+            width: pane.width, height: pane.height - window.metaform.foot2d()}; })()'''
 # How much of the 2D map's area the drawn diagram spans, across or down, whichever is more.
-SPAN = '''() => { const view = document.querySelector("#viewport").getBoundingClientRect();
+SPAN = f'''() => {{ const view = {USABLE};
     const scene = document.querySelector("#map2d svg > g").getBoundingClientRect();
-    return Math.max(scene.width / view.width, scene.height / view.height); }'''
+    return Math.max(scene.width / view.width, scene.height / view.height); }}'''
 FILLS = 0.75  # the whole diagram fitted to the area spans at least this much of it, its margin included
 FRAME = 16       # ms of the page's clock in one step, one frame
 EASE = 700       # ms, the 2D camera's eased move
@@ -1647,9 +1651,9 @@ def fitted(page):
 
 
 def margins(page):
-    """How far in from each side of the 2D map's area the map's drawing stands, by its own bounds as the page reads
+    """How far in from each side of the 2D map's area above its foot room, `USABLE`, the map's drawing stands, by its own bounds as the page reads
     them, in screen pixels; negative on a side it runs past, VIEW-041."""
-    return page.evaluate("""(() => { const view = document.querySelector('#viewport').getBoundingClientRect();
+    return page.evaluate("""(() => { const view = """ + USABLE + """;
         const scene = document.querySelector('#map2d svg > g'), box = scene.getBBox(), screen = scene.getScreenCTM();
         const from = new DOMPoint(box.x, box.y).matrixTransform(screen);
         const to = new DOMPoint(box.x + box.width, box.y + box.height).matrixTransform(screen);
@@ -1660,8 +1664,7 @@ def margins(page):
 def held(page, key):
     """VIEW-041: along each axis the map either fits and is centered, or the node is centered unless that would show
     more than 40 pixels past the map's edge, where 40 pixels show."""
-    edges, off = margins(page), page.evaluate(f"""(() => {{ const view = document.querySelector('#viewport')
-        .getBoundingClientRect(), box = window.metaform.box2d("{key}");
+    edges, off = margins(page), page.evaluate(f"""(() => {{ const view = {USABLE}, box = window.metaform.box2d("{key}");
         return [(box.left + box.right - view.left - view.right) / 2, (box.top + box.bottom - view.top - view.bottom) / 2];
         }})()""")
     for (near, far), away in ((('left', 'right'), off[0]), (('top', 'bottom'), off[1])):
@@ -1675,7 +1678,7 @@ def held(page, key):
 
 def mode(page):
     """The 2D map's mode, the one checked on its bar."""
-    return page.eval_on_selector_all('#peek .modes2d button[aria-checked="true"]',
+    return page.eval_on_selector_all('.peekpart.two .modes2d button[aria-checked="true"]',
                                      'found => found.map(one => one.getAttribute("aria-label"))')
 
 
@@ -1775,12 +1778,8 @@ def arrival(page):
 
 
 def peeked(page):
-    """The large map's peekaboo bar brought out, as the pointer near its corner brings it, and still."""
-    page.evaluate('window.metaform.peek()')
-    # it slides in by the CSS translate property, and is still once that is nothing and it is opaque
-    page.wait_for_function('() => { const style = getComputedStyle(document.querySelector("#peek"));'
-                           ' return /^(none|0px( 0px)?)$/.test(style.translate) && style.transform === "none"'
-                           ' && style.opacity === "1"; }')
+    """The large map's controls in view in its own bar row, where they always stand."""
+    page.wait_for_selector('.peekpart.two:not([hidden]), .peekpart.three:not([hidden])')
 
 
 def press(page, selector):
@@ -1885,7 +1884,7 @@ def test_the_2d_map_opens_in_all_and_its_mode_holds_the_zoom_through_every_selec
     page, problems = opened_on(browser, web, run)
     _, at = keys_of(web)
     part = lambda number: at[f'code.part.number{number}']
-    assert page.eval_on_selector_all('#peek .modes2d button', 'found => found.map(one => [one.getAttribute("aria-label"),'
+    assert page.eval_on_selector_all('.peekpart.two .modes2d button', 'found => found.map(one => [one.getAttribute("aria-label"),'
                                      ' one.getAttribute("aria-keyshortcuts")])') == [
         ['All', '1'], ['Width', '2'], ['Height', '3'], ['Small', '4'], ['Medium', '5'], ['Large', '6'], ['Free', '0']]
     assert mode(page) == ['All'] and page.evaluate(ALL_IN)
@@ -2161,24 +2160,17 @@ def test_pointing_at_a_node_shows_its_name_above_the_node_clear_of_the_pointer(r
     assert problems == []
 
 
-def test_each_menu_of_the_large_maps_bar_opens_on_the_first_click_as_the_bar_comes_out(run, web, mapped, browser):
-    """The bar's compact choices, Physics, Info, Lens, Signs and Ultra, each open their menu on the first click made as
-    soon as the bar shows after the pointer rests in its corner: a press in the bar names its parts again, which once
-    made a button's contents anew between the press and the release, so the first click was lost; and the bar slid in
-    from off the map, so a button was not yet where it showed."""
+def test_the_layout_menu_of_the_large_maps_bar_opens_on_the_first_click(run, web, mapped, browser):
+    """The bar's Layout choice opens its menu on the first click: a press in the bar names its parts again, which once
+    made a button's contents anew between the press and the release, so the first click was lost."""
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
-    main = page.locator('main').bounding_box()
-    page.mouse.move(main['x'] + main['width'] - 60, main['y'] + 60)
-    page.mouse.move(main['x'] + main['width'] - 58, main['y'] + 62)  # the pointer rests in the bar's corner
-    page.wait_for_function('() => document.querySelector("#peek").classList.contains("out")')
-    for button, menu in (('physicsbtn', 'physicsmenu'), ('infobtn', 'infomenu'), ('lensbtn', 'lensmenu'),
-                         ('signsbtn', 'signsmenu'), ('ultrabtn', 'ultramenu')):
-        press(page, f'#peek .{button} .value')  # on its words, the part a press once lost
-        page.wait_for_function(f'() => !document.querySelector("#{menu}").hidden', timeout=2000)
-        page.keyboard.press('Escape')
-        page.wait_for_function(f'() => document.querySelector("#{menu}").hidden')
+    peeked(page)
+    press(page, '.peekpart.three .physicsbtn')
+    page.wait_for_function('() => !document.querySelector("#physicsmenu").hidden', timeout=2000)
+    page.keyboard.press('Escape')
+    page.wait_for_function('() => document.querySelector("#physicsmenu").hidden')
     assert problems == []
 
 
@@ -2257,7 +2249,7 @@ def test_selecting_a_node_turns_the_3d_map_to_it_and_comes_in_close(run, web, ma
     seen = page.evaluate(f'window.metaform.screen3d("{cook}")')
     off = math.hypot(seen['x'] - stage['x'] - stage['width'] / 2, seen['y'] - stage['y'] - stage['height'] / 2)
     assert off < 0.1 * min(stage['width'], stage['height']), (seen, stage)
-    whole = page.locator('#peek .modes3d button').filter(has_text='Whole')
+    whole = page.locator('.peekpart.three .modes3d button').filter(has_text='Whole')
     peeked(page)
     whole.click()
     still(page, '() => window.metaform.away3d()')
@@ -2340,8 +2332,8 @@ def test_3d_selection_frames_different_names_and_join_titles_at_the_chosen_width
         page.evaluate('key => window.metaform.select(key)', names[1])
         assert_met_sign_share(page, share)
         if level == '4':  # Fit frames the whole map once and leaves the mode, Zoom, as it is
-            zoom = page.locator('#peek .modes3d button').filter(has_text='Zoom')
-            whole = page.locator('#peek .modes3d button').filter(has_text='Whole')
+            zoom = page.locator('.peekpart.three .modes3d button').filter(has_text='Zoom')
+            whole = page.locator('.peekpart.three .modes3d button').filter(has_text='Whole')
             assert zoom.get_attribute('aria-checked') == 'true'
             peeked(page)
             page.click('#fit3dBtn')
@@ -3677,7 +3669,7 @@ def test_the_two_views_change_places_on_demand_and_each_works_in_either_place(ru
     assert swapped['#map2d'] == first['#big3d'] and swapped['#stage canvas'] == swapped['#stage']
     assert swapped['#big3d'][0] == first['#map2d'][0]
     peeked(page)                                          # the large map's bar, brought out, holds the 2D modes
-    assert page.locator('#map2d svg g.node').count() > 0 and page.is_visible('#peek .modes2d') and page.is_visible('#swapBtn')
+    assert page.locator('#map2d svg g.node').count() > 0 and page.is_visible('.peekpart.two .modes2d') and page.is_visible('#swapBtn')
     page.evaluate(f'window.metaform.select("{kitchen}")')
     page.evaluate(f'window.metaform.click3d("{alarm}")')  # the small 3D map takes a click
     page.wait_for_function(f'() => window.metaform.selected() === "{alarm}"')
@@ -4072,7 +4064,7 @@ def test_each_view_has_its_own_zoom_controls_and_swap_and_the_messages_button_is
     def bar():
         """What the large map's bar holds once it is out: the 2D modes, the 3D modes, the 3D map's Fit."""
         peeked(page)
-        return [page.is_visible(name) for name in ('#peek .modes2d', '#peek .modes3d', '#fit3dBtn')]
+        return [page.is_visible(name) for name in ('.peekpart.two .modes2d', '.peekpart.three .modes3d', '#fit3dBtn')]
     assert swaps() == [True] * 2 and larger() == '3d' and bar() == [False, True, True]
     assert page.evaluate('Boolean(document.querySelector("#messages").closest("header"))') and page.is_visible('#messages')
     page.click('#swap3dBtn')                                          # the 3D view's own Swap
@@ -4085,7 +4077,7 @@ def test_each_view_has_its_own_zoom_controls_and_swap_and_the_messages_button_is
     still2d(page)
     whole, chart = page.evaluate('window.metaform.away3d()'), page.evaluate('document.querySelector("#map2d svg").getAttribute("viewBox")')
     peeked(page)
-    page.click('#peek .modes2d button[aria-label="All"]')             # the 2D map's All
+    page.click('.peekpart.two .modes2d button[aria-label="All"]')             # the 2D map's All
     still2d(page)
     assert abs(page.evaluate('window.metaform.away3d()') - whole) < 1  # the 3D map did not move
     assert page.evaluate('document.querySelector("#map2d svg").getAttribute("viewBox")') != chart
@@ -7919,9 +7911,9 @@ def test_an_intake_is_started_from_the_page_with_the_agent_the_person_chose(run,
 
 @pytest.mark.req('VIEW-023')
 def test_the_text_size_buttons_scale_the_page_and_reset_puts_every_size_back(run, web, mapped, browser):
-    """Alt and = or Alt and - make the whole page's text larger or smaller, header and panel alike, as the View menu's
-    Text size list does, and the size is kept in this browser; Alt and 0 puts the default back and forgets the choice.
-    There is no button for it in the header: a button that grows with the text it sizes moves out from under the mouse."""
+    """The View menu's Text size list makes the whole page's text larger or smaller, header and panel alike, and the size
+    is kept in this browser; the default puts every size back and forgets the choice. There is no button for it in the
+    header: a button that grows with the text it sizes moves out from under the mouse."""
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
@@ -7930,15 +7922,14 @@ def test_the_text_size_buttons_scale_the_page_and_reset_puts_every_size_back(run
     before = ui(), size('#boardBtn'), size('#p-object h2')
     assert before[0] == '1.08'                                          # one step larger than the sizes were drawn at
     assert page.locator('#textUp, #textDown, #sizesReset').count() == 0
-    page.keyboard.press('Alt+Equal')
-    page.keyboard.press('Alt+Equal')
+    page.locator('#textsize').select_option('5', force=True)  # its list, in the View menu
     assert float(ui()) > 1.08 and size('#boardBtn') > before[1] and size('#p-object h2') > before[2]
     assert page.evaluate('localStorage.getItem("metaform.textSize")') == ui()
     assert page.evaluate('document.querySelector("#textsize").value') == '5'  # the View menu's list says so
     page.reload()
     page.wait_for_function('() => window.metaform && window.metaform.loaded()')
     assert float(ui()) > 1.08                                           # kept in this browser
-    page.keyboard.press('Alt+Digit0')
+    page.locator('#textsize').select_option('3', force=True)  # the default
     assert ui() == '1.08' and size('#boardBtn') == before[1]
     assert page.evaluate('localStorage.getItem("metaform.textSize")') is None
     assert problems == []

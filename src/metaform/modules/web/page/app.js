@@ -1070,7 +1070,7 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   // What the base 2D map draws, by address: its nodes and each edge, from, to and its arrow as Mermaid writes it, P063.
   drawn2d: () => { const at = id => S.elements.get(id)?.element.address; return M.base ? {nodes: [...M.base.nodes.keys()].map(at),
     edges: M.base.edges.map(edge => [...ends2d(edge.join, edge.provider).map(at), edge.join.ifd === 'both' ? '<-->' : '-->'])} : null; },
-  look: id => look(id), fit: () => setMode('all'), mode2d: name => setMode(name), peek: () => peek(), embodyState: () => ({target: DOCK.target, session: DOCK.session, open: EMBODY.open, hooks: embodyHooks(), setting: VIEW.embody, turns: VIEW.embodyTurns}), fov3d: () => G ? Math.round(G.camera().fov * 10) / 10 : null, cameraAt: () => G ? cameraNow() : null, lens: () => LENS.name, agentsWindow: count => agentsWindow(count), physics: () => PHYS.name,
+  look: id => look(id), fit: () => setMode('all'), mode2d: name => setMode(name), peek: () => peek(), embodyState: () => ({target: DOCK.target, session: DOCK.session, open: EMBODY.open, hooks: embodyHooks(), setting: VIEW.embody, turns: VIEW.embodyTurns}), fov3d: () => G ? Math.round(G.camera().fov * 10) / 10 : null, cameraAt: () => G ? cameraNow() : null, foot2d: () => Math.min(foot2d(), area2d().height / 3), lens: () => LENS.name, agentsWindow: count => agentsWindow(count), physics: () => PHYS.name,
   // the screen middles of the 3D map's join edges in view, and the edge a pointer at x, y would take
   links3d: () => !G ? [] : G.graphData().links.filter(link => link.join && link.source.x !== undefined).map(link => {
     const box = $('#stage').getBoundingClientRect(), mid = new THREE.Vector3((link.source.x + link.target.x) / 2,
@@ -5983,14 +5983,10 @@ function showFlow(name = flowNow()) {
   for (const [one, button] of FLOWSET.buttons) { button.hidden = !offered.has(one); button.setAttribute('aria-checked', String(one === name)); }
   if ($('#flowat')) $('#flowat').value = name;
 }
-/* The 3D map's physics, web_physics, chosen with Alt and a digit wherever the 3D map is, VIEW-005. Each is a named way
- * for its layout to move, with what it helps the reader see. The forces are d3-force-3d's, which the graph runs: a
- * change is only new forces and a warmed layout, so the nodes ease to their new places from where they stand and the
- * camera stays, unless its mode asks for a fit. The chains of service, down, across, radial and depth, pull each node
- * toward its step from the parts that serve no one, along the joins from each receiver to the parts serving it.
- * Alt and the key's place, never its character, so a Mac's Option, which types characters, works too; Alt and 0 stays
- * the default text size. Chrome and Firefox on Linux switch tabs with Alt and a digit, which the page takes while it
- * has the focus. */
+/* The 3D map's layout, web_physics, VIEW-005: Organic or Flat, chosen in the bar's Layout menu, and L switches between
+ * them. Each is a named way for the layout to move, with what it helps the reader see. The forces are d3-force-3d's,
+ * which the graph runs: a change is only new forces and a warmed layout, so the nodes ease to their new places from
+ * where they stand. */
 const PHYSICS = [
   ['organic', 'Organic', 'The natural layout', {}],
   ['flat', 'Flat', 'Everything on one plane', {flat: true, facing: true}],
@@ -6083,22 +6079,21 @@ function choosePhysics(name) {
   peek('key');
   saveView('web_physics', name);
 }
-/* The physics in the bar: one button naming the preset in force with its key, opening the list of all of them, each
- * by its name, what it helps the reader see, and its key, so the bar stays one quiet row. */
-const ALT_SIGN = /Mac|iPhone|iPad/.test(navigator.userAgentData?.platform || navigator.platform || '') ? '⌥' : 'Alt ';
-PHYS.list = h('div', {class: 'menu physicsmenu', id: 'physicsmenu', role: 'menu', hidden: true, 'aria-label': "The 3D map's physics"},
-  PHYSICS.map(([name, word, why], index) => {
-    const key = String(index + 1), button = h('button', {type: 'button', role: 'menuitemradio', 'aria-checked': String(name === PHYS.name),
-      'aria-keyshortcuts': `Alt+${key}`, title: `${why} (${ALT_SIGN}${key})`,
+/* The layout in the bar: one button naming the layout in force, opening the list of both, each by its name and what it
+ * helps the reader see, so the bar stays one quiet row; L switches between them. */
+PHYS.list = h('div', {class: 'menu physicsmenu', id: 'physicsmenu', role: 'menu', hidden: true, 'aria-label': "The 3D map's layout"},
+  PHYSICS.map(([name, word, why]) => {
+    const button = h('button', {type: 'button', role: 'menuitemradio', 'aria-checked': String(name === PHYS.name),
+      'aria-keyshortcuts': 'L', title: `${why} (L)`,
       onclick: event => { event.stopPropagation(); PHYS.list.hidden = true; choosePhysics(name); }},
-    h('span', {class: 'wsitem'}, h('i', {class: 'i i-check wscheck', 'aria-hidden': 'true'}), word), h('kbd', {}, `${ALT_SIGN}${key}`));
+    h('span', {class: 'wsitem'}, h('i', {class: 'i i-check wscheck', 'aria-hidden': 'true'}), word));
     PHYS.buttons.set(name, button);
     return button;
   }));
 document.body.append(PHYS.list);
 overlay(PHYS.list, {kind: 'menu'});
 PHYS.shown = h('button', {class: 'btn sm quiet physicsbtn', type: 'button', 'aria-haspopup': 'menu', 'aria-controls': 'physicsmenu',
-  'aria-expanded': 'false', title: `How the 3D map's layout moves; ${ALT_SIGN}1 to ${ALT_SIGN}9 choose one`,
+  'aria-expanded': 'false', title: "How the 3D map is laid out, Organic or Flat; L switches between them",
   onclick: event => {
     event.stopPropagation();
     if (!PHYS.list.hidden) { PHYS.list.hidden = true; return; }
