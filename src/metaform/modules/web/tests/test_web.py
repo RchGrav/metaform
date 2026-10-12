@@ -2752,7 +2752,10 @@ def test_the_server_loop_wakes_only_for_a_connection_and_the_module_never_sleeps
     assert woke.wait(5) and len(wakes) == 1
     stopping = threading.Thread(target=server.shutdown, daemon=True)
     stopping.start()
-    socket.create_connection(('127.0.0.1', server.port), timeout=5).close()
+    try:  # a connection wakes the loop to see the shutdown; one the closing server refuses is as good
+        socket.create_connection(('127.0.0.1', server.port), timeout=5).close()
+    except OSError:
+        pass
     serving.join(10)
     assert not serving.is_alive()
     assert 'time.sleep' not in Path(gui.__file__).read_text(encoding='utf-8')
