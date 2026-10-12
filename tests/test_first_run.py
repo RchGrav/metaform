@@ -30,7 +30,8 @@ def text(result):
 
 
 async def call(client, tool, command, arguments=None):
-    return await client.call_tool(tool, {'command': command, 'arguments': arguments or {}})
+    """Run a command as an agent does: its own tool, `<module>_<command>` or `metaform_<command>`."""
+    return await client.call_tool(f'{tool}_{command}', arguments or {})
 
 
 def test_a_first_run_in_an_unregistered_folder_goes_from_the_question_to_a_recorded_intake(run, home, tmp_path):
@@ -47,11 +48,8 @@ def test_a_first_run_in_an_unregistered_folder_goes_from_the_question_to_a_recor
         assert said.index('FIRST RUN.') < 200  # near the top, inside what every host shows
         # every command and resource the onboarding names exists on the surface
         tools = {tool.name for tool in (await client.list_tools()).tools}
-        assert {'metaform', 'web', 'intake'} <= tools
-        commands = {name: [one['command'] for one in json.loads(text(await client.call_tool(name, {}))[-1])['commands']]
-                    for name in ('metaform', 'web', 'intake')}
-        assert 'register' in commands['metaform'] and 'start' in commands['web']
-        assert {'prompt', 'schema'} <= set(commands['intake'])  # the hand-off reads both through the intake tool
+        assert {'metaform_register', 'web_start'} <= tools
+        assert {'intake_prompt', 'intake_schema'} <= tools  # the hand-off reads both through the intake tools
         uris = {str(one.uri) for one in (await client.list_resources()).resources}
         assert {'metaform://intake/procedure', 'metaform://intake/schema'} <= uris
         # step 3a: the folder is registered under its own name, and the answer brings the onboarding without it
@@ -87,4 +85,4 @@ def test_an_intake_command_in_an_unregistered_folder_names_the_register_command(
             return await call(client, 'intake', 'start')
     refused = asyncio.run(go())
     assert refused.is_error
-    assert text(refused)[-1].splitlines()[-1] == 'Next: call metaform with command register'
+    assert text(refused)[-1].splitlines()[-1] == 'Next: call metaform_register'

@@ -1,0 +1,1 @@
+Bash: metaform map where join:9611631d2f11442a88801bf853c39a17 full=true 2>/dev/null | grep -E '^(work|open_work|join):' | cut -c1-1500 → tool_result: "(Bash completed with no output)". Earlier, the element read printed "provides: [{...}]" with join ids and "join_layers:" carrying sources items, which the agent parsed per line.

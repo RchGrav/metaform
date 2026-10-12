@@ -26,25 +26,19 @@ SPEC = ROOT / 'src' / 'metaform' / 'modules' / 'intake' / 'resources' / 'intake.
 FIXTURE = json.loads((ROOT / 'tests' / 'fixtures' / 'intake_timer.json').read_text(encoding='utf-8'))
 TOOLS = {'intake_prompt', 'intake_start', 'intake_element', 'intake_join', 'intake_remove',
          'intake_show', 'intake_finish', 'memory_create_entities', 'memory_open_nodes', 'map_select', 'map_mask',
-         'map_clear', 'map_node', 'map_layers', 'map_tag', 'map_untag', 'map_knowledge', 'map_work', 'feedback',
-         'list_reports', 'read_report', 'set'}
-ENTERED = ('intake', 'map', 'memory', 'web')
+         'map_clear', 'map_node', 'map_layers', 'map_tag', 'map_untag', 'map_knowledge', 'map_work', 'metaform_feedback',
+         'metaform_list_reports', 'metaform_read_report', 'metaform_set'}
+OWN = ('feedback', 'list_reports', 'read_report', 'set')  # the chassis's own commands, each the tool metaform_<name>
 
 
 def asked(host, name, arguments, *, limit):
-    """Run a command as an agent does, CLI-037: the tool it belongs to, its command, and its arguments."""
-    tool = next((one for one in ENTERED if name.startswith(one + '_')), 'metaform')
-    return host.call(tool, {'command': name if tool == 'metaform' else name[len(tool) + 1:], 'arguments': arguments},
-                     limit=limit)
+    """Run a command as an agent does, MCP-003: the tool named for it, with its arguments."""
+    return host.call(f'metaform_{name}' if name in OWN else name, arguments, limit=limit)
 
 
 def commands(host):
-    """Every command the server offers, by the name it runs under, read by entering each tool."""
-    found = set()
-    for tool in host.request('tools/list', {}, deadline=_deadline())['tools']:
-        for one in last_json(host.call(tool['name'], {}, limit=LIMIT))['commands']:
-            found.add(one['command'] if tool['name'] == 'metaform' else f"{tool['name']}_{one['command']}")
-    return found
+    """Every command the server offers: the tools it lists, one for each command."""
+    return {tool['name'] for tool in host.request('tools/list', {}, deadline=_deadline())['tools']}
 
 
 REPORT = 'The alarm pin is never released after stop.'
@@ -130,9 +124,9 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
     # 4: the agent's connection exposes the module tools.
     host, _ = connect()
     try:
-        tools = {tool['name'] for tool in host.request('tools/list', {}, deadline=_deadline())['tools']}
-        assert tools == {'intake', 'map', 'memory', 'web', 'fork', 'metaform'}  # fork ships enabled, BASE-017
         listed = commands(host)
+        modules = {name.split('_', 1)[0] for name in listed}
+        assert modules == {'intake', 'map', 'memory', 'web', 'fork', 'metaform'}  # fork ships enabled, BASE-017
         assert TOOLS <= listed and not any(name.startswith(('hello_', 'template_')) for name in listed)
 
         # 5 and 6: the subagent reads its instructions by name, unaltered.
@@ -202,11 +196,13 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
         at_element = asked(first, 'memory_create_entities', {
             'node': 'element:code.timer.kitchen',
             'entities': [{'name': 'countdown drift', 'entityType': 'behavior',
-                          'observations': ['The countdown drifts under load.']}]}, limit=LIMIT)
+                          'observations': ['The countdown drifts under load.'],
+                          'why': 'The cook relies on the countdown.'}]}, limit=LIMIT)
         at_join = asked(first, 'memory_create_entities', {
             'node': f'join:{join_id}',
             'entities': [{'name': 'quiet tone', 'entityType': 'behavior',
-                          'observations': ['The tone is too quiet in a loud kitchen.']}]}, limit=LIMIT)
+                          'observations': ['The tone is too quiet in a loud kitchen.'],
+                          'why': 'The cook must hear it.'}]}, limit=LIMIT)
         assert at_element.get('isError') is not True and at_join.get('isError') is not True
 
         # 9: a second agent, on its own connection, reads both back at their nodes.

@@ -17,6 +17,7 @@ def test_question_ticket_link_survives_answer_move_and_reopen(store, run, projec
     ticket = store.add_work(Node('element', first.id), 'unbuilt', task='Build it.')
     asked = json.loads(run('map', 'ask', 'code.first', 'Which approach?',
                            f'work={ticket.id}', 'suggestions=["Use the existing approach", "Replace it"]', 'by=builder',
+                           'title=Which approach', 'why=It decides what is built.',
                            '--json', cwd=project_folder).stdout)
     assert asked['work_id'] == ticket.id
     store.reply(asked['id'], 'Use the existing approach')

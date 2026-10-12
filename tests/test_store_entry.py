@@ -70,8 +70,9 @@ def test_a_work_record_is_its_own_row_apart_from_the_map_and_reads_back_on_its_o
                                                                                True)
     after = dump(store_file(home, store))
     assert len(after['work']) == 2
-    assert {name: rows for name, rows in after.items() if name != 'work'} == {name: rows for name, rows in before.items()
-                                                                              if name != 'work'}, 'the map changed'
+    beside = ('work', 'map.numbered', 'map.numbering')  # each record's number at its address is kept beside it, MCP-037
+    assert {name: rows for name, rows in after.items() if name not in beside} == {
+        name: rows for name, rows in before.items() if name not in beside}, 'the map changed'
     listed = json.loads(run('map', 'work', 'condition=broken', '--json', cwd=folder).stdout)['results']
     assert [(row['node_kind'], row['receiver_address'], row['provider_address'], row['condition'])
             for row in listed] == [('join', 'code.timer.kitchen', 'code.alarm.audible', 'broken')]
@@ -126,7 +127,7 @@ def test_a_work_record_that_does_not_fit_is_stored_as_given_with_a_notice(run, t
     assert sorted(row.condition for row in store.work().results) == ['broken', 'unbuilt']
     edited = store.edit_work(nowhere.id, {'task': 'decide it', 'color': 'red'})
     assert edited.task == 'decide it' and [notice.where for notice in edited.notices] == ['color']
-    assert json.loads(run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'condition=broken',
+    assert json.loads(run('map', 'work', 'op=add', 'title=Old probe', 'node=element:code.alarm.audible', 'condition=broken',
                           'note=old probe', '--json', cwd=folder).stdout)['condition'] == 'broken'
     assert [row['condition'] for row in json.loads(run('map', 'work', 'node=element:code.alarm.audible', '--json',
                                                        cwd=folder).stdout)['results']] == ['broken', 'broken']

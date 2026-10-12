@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Allow access to Metaform</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1d1d1f; --bg: #fafafa; --muted: #5f6368; --accent: #2457c5; --warn: #9a5b00; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #ececec; --bg: #17181a; --muted: #a0a4a8; --accent: #7aa2ff; --warn: #f0b35a; } }
+  body { font: 16px/1.5 system-ui, sans-serif; color: var(--fg); background: var(--bg); margin: 0; }
+  main { max-width: 32rem; margin: 10vh auto; padding: 0 16px; }
+  h1 { font-size: 1.4rem; margin: 0 0 .5rem; }
+  dt { color: var(--muted); margin-top: .6rem; }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  .warn { color: var(--warn); }
+  .row { display: flex; gap: .75rem; margin-top: 1.5rem; flex-wrap: wrap; }
+  button { font: inherit; padding: .6rem 1.2rem; border-radius: .5rem; border: 1px solid var(--accent); background: transparent; color: var(--fg); cursor: pointer; }
+  button[value=approve] { background: var(--accent); color: #fff; border-color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Allow {{client}} to use your Metaform?</h1>
+  <p>Signed in as <strong>{{account}}</strong>.</p>
+  <dl>
+    <dt>Client</dt><dd>{{client}} <small>({{client_id}})</small></dd>
+    <dt>The result goes to</dt><dd><strong>{{redirect_host}}</strong></dd>
+    <dt>For</dt><dd><code>{{resource}}</code></dd>
+    <dt>It may</dt><dd><ul>{{scopes}}</ul></dd>
+  </dl>
+  {{warning}}
+  <form method="post" action="/node/consent">
+    <input type="hidden" name="request" value="{{request}}">
+    <input type="hidden" name="csrf" value="{{csrf}}">
+    <div class="row">
+      <button type="submit" name="decision" value="approve">Allow</button>
+      <button type="submit" name="decision" value="deny">Deny</button>
+    </div>
+  </form>
+</main>
+</body>
+</html>

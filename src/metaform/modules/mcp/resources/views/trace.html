@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Metaform agent trace</title>
+<!-- The trace view, ui://metaform/trace: a ticket's agent sessions and the thread of each, the agent's words, its
+     thinking, its tool calls and plan, followed while the agent works. Shown by an AI tool that renders MCP Apps when
+     dispatch_sessions or dispatch_start is called; with no ticket named, it lists every session to pick one. It reads
+     through metaform_view's `trace` every two seconds while it is on screen, and the server answers `unchanged` when
+     nothing moved, so a quiet ticket costs one short answer. It only reads: messages, stops and resumes stay with the
+     agent's tools and the web GUI. The server fills the marked blocks when it serves the view. -->
+<style id="metaform-tokens"></style>
+<style>/*view*/</style>
+<script type="application/json" id="metaform-view">{}</script>
+<style>
+  .sessions { display: flex; gap: var(--s1); flex-wrap: wrap; }
+  /* Inline the thread keeps a height of its own and scrolls, since the frame grows with the view; full screen and
+   * floating, the host's size holds it. */
+  .thread { display: grid; gap: var(--s2); overflow: auto; max-height: 480px; }
+  html[data-display="fullscreen"] .thread, html[data-display="pip"] .thread { max-height: none; }
+  .line { display: grid; gap: 2px; }
+  .line .who { font-size: var(--t-xs); color: var(--color-text-tertiary, var(--faint)); }
+  .line .text { white-space: pre-wrap; word-break: break-word; }
+  .line.thought .text { color: var(--color-text-secondary, var(--muted)); font-style: italic; }
+  .line.tool .text, .line.small .text { font: var(--t-sm)/1.45 var(--font-mono, var(--mono)); }
+  .line.small .text { color: var(--color-text-secondary, var(--muted)); }
+  .line.turn { border-top: 1px dashed var(--color-border-primary, var(--line)); padding-top: var(--s1); }
+  .line.person .text { border-left: 2px solid var(--signal); padding-left: var(--s2); }
+  .pick { display: grid; grid-template-columns: auto 1fr auto; gap: var(--s2); width: 100%; text-align: left;
+    border: 1px solid var(--color-border-primary, var(--line)); border-radius: var(--border-radius-md, var(--r));
+    background: var(--color-background-secondary, var(--panel-2)); color: inherit; font: inherit;
+    padding: var(--s2) var(--s3); cursor: pointer; }
+  .live { font-size: var(--t-xs); color: var(--signal); }
+  .live::before { content: "● "; }
+</style>
+<script>/*sdk*/</script>
+<script>/*bridge*/</script>
+</head>
+<body>
+<main>
+  <div class="bar" id="bar">
+    <span class="live" id="live" hidden>following</span>
+    <button type="button" id="web" hidden title="Open the project in the web GUI, which metaform web start serves">Web GUI</button>
+    <button type="button" id="float" hidden>Float</button>
+    <button type="button" id="mode" hidden>Full screen</button>
+  </div>
+  <div class="head">
+    <h1 id="title">Agent trace</h1>
+    <div><button class="address" type="button" id="address" hidden
+                 title="Tell the agent you are looking at this node"></button>
+      <span class="muted" id="state"></span></div>
+  </div>
+  <p class="notice" id="notice" hidden></p>
+  <section id="sessionsSection" hidden><h2>Sessions</h2><div class="sessions" id="sessions"></div></section>
+  <section id="pickSection" hidden><h2>Agent sessions</h2><ul id="picks"></ul></section>
+  <section id="threadSection" hidden><h2>Thread</h2><div class="thread" id="thread" aria-live="polite"></div></section>
+  <section id="signalsSection" hidden><h2>Signals</h2><ul id="signals"></ul></section>
+</main>
+<script>
+'use strict';
+(function () {
+  const view = window.MetaformView;
+  const $ = id => document.getElementById(id);
+  const state = {id: '', digest: '', chosen: '', data: null, stop: null};
+  const say = text => { $('notice').textContent = text; $('notice').hidden = !text; };
+  const el = (tag, cls, text) => {
+    const made = document.createElement(tag);
+    if (cls) made.className = cls;
+    if (text !== undefined) made.textContent = text;
+    return made;
+  };
+
+  /* What each kind of thread line is shown as: who said it, and how. The kinds are the agent's own updates, ACP's
+   * sessionUpdate names, and the lines the runner adds. */
+  const KINDS = {
+    agent_message_chunk: ['agent', 'Agent'], agent_thought_chunk: ['thought', 'Thinking'],
+    user_message_chunk: ['person', 'Prompt'], person: ['person', 'Person'], message: ['person', 'Message'],
+    tool_call: ['tool', 'Tool'], tool_call_update: ['tool', 'Tool'], plan: ['tool', 'Plan'], turn: ['turn', ''],
+  };
+  function line(one) {
+    const [cls, who] = KINDS[one.kind] || ['small', one.kind.replace(/_/g, ' ')];
+    const row = el('div', `line ${cls}`);
+    if (who) row.append(el('span', 'who', who));
+    let text = one.text;
+    if (one.data && typeof one.data === 'object' && !String(one.name).startsWith('tool:')) {
+      const data = one.data;
+      text = data.title || data.message || data.description || data.text || text;
+    }
+    row.append(el('span', 'text', text));
+    return row;
+  }
+
+  /* The ticket's head: its title, the node it is at, which the person can select, and where it stands. */
+  function head(ticket, sessions) {
+    const work = ticket || {};
+    $('title').textContent = work.map?.title || work.task || work.note || (state.id ? `Ticket ${state.id}` : 'Agent sessions');
+    const address = work.address || work.receiver_address || '';
+    $('address').hidden = !address;
+    $('address').textContent = address;
+    const last = sessions[sessions.length - 1];
+    const parts = [];
+    if (work.done) parts.push('done'); else if (work.taken) parts.push('taken'); else if (ticket) parts.push('open');
+    if (last) parts.push(`${last.agent}: ${last.state}`);
+    $('state').textContent = parts.length ? ` · ${parts.join(' · ')}` : '';
+  }
+
+  /* The sessions as chips, the latest chosen unless the person chose one; the chosen one's thread, kept at its foot
+   * while the person reads at its foot. */
+  function draw(data) {
+    state.data = data;
+    const sessions = data.sessions || [];
+    head(data.ticket, sessions);
+    if (!state.id) {  // no ticket named: every session, to pick one
+      $('pickSection').hidden = false;
+      const picks = $('picks');
+      picks.replaceChildren(...sessions.slice().reverse().map(one => {
+        const row = el('button', 'pick');
+        row.type = 'button';
+        row.append(el('span', 'mono', one.work_id.slice(0, 8)), el('span', '', one.agent), el('span', 'muted', one.state));
+        row.onclick = () => { state.id = one.work_id; state.digest = ''; $('pickSection').hidden = true; follow(); };
+        const entry = el('li');
+        entry.append(row);
+        return entry;
+      }));
+      if (!sessions.length) say('No agent has worked here yet.');
+      return;
+    }
+    if (!state.chosen || !sessions.some(one => one.session_id === state.chosen)) {
+      state.chosen = sessions[sessions.length - 1]?.session_id || '';
+    }
+    $('sessionsSection').hidden = sessions.length < 2;
+    $('sessions').replaceChildren(...sessions.map(one => {
+      const chip = el('button', 'chip', `${one.agent} · ${one.state}`);
+      chip.type = 'button';
+      chip.setAttribute('aria-pressed', String(one.session_id === state.chosen));
+      chip.onclick = () => { state.chosen = one.session_id; draw(state.data); };
+      return chip;
+    }));
+    const thread = $('thread');
+    const atFoot = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 24;
+    const lines = (data.lines || []).filter(one => one.session_id === state.chosen);
+    thread.replaceChildren(...lines.map(line));
+    $('threadSection').hidden = !state.chosen;
+    if (!lines.length && state.chosen) thread.append(el('p', 'notice', 'The agent has written nothing yet.'));
+    if (!state.chosen) say('No agent has worked on this ticket yet; dispatch_start starts one.');
+    else say('');
+    if (atFoot) thread.scrollTop = thread.scrollHeight;
+    const signals = data.signals || [];
+    $('signalsSection').hidden = !signals.length;
+    $('signals').replaceChildren(...signals.map(one => el('li', 'notice',
+      [one.kind || one.signal, one.message || one.text || ''].filter(Boolean).join(': '))));
+    const running = sessions.some(one => one.state === 'running');
+    $('live').hidden = !running;
+  }
+
+  /* Read the trace again while the view is on screen; an unchanged answer redraws nothing. */
+  async function once() {
+    const found = await view.call(view.config.tool, {read: 'trace', params: {id: state.id, digest: state.digest}});
+    if (found.unchanged) return;
+    state.digest = found.digest;
+    draw(found);
+  }
+  function follow() {
+    state.stop?.();
+    state.stop = view.poll(() => once().catch(error => say(error.message)), 2000);
+  }
+
+  function bar() {
+    const offered = view.modes();
+    $('mode').hidden = !offered.includes('fullscreen');
+    $('float').hidden = !offered.includes('pip');
+    $('mode').textContent = view.host().displayMode === 'fullscreen' ? 'Inline' : 'Full screen';
+    $('float').textContent = view.host().displayMode === 'pip' ? 'Inline' : 'Float';
+    $('web').hidden = !view.can('openLinks') || !view.config.web;
+  }
+  const toggle = mode => async () => {
+    await view.display(view.host().displayMode === mode ? 'inline' : mode);
+    bar();
+  };
+  $('mode').onclick = toggle('fullscreen');
+  $('float').onclick = toggle('pip');
+  $('web').onclick = () => view.web();
+  $('address').onclick = () => view.selected($('address').textContent);
+
+  const named = args => String((args || {}).id ?? '').trim();
+  view.on('toolinputpartial', params => { if (named(params.arguments)) $('title').textContent = `Ticket ${named(params.arguments)}`; });
+  view.on('toolinput', params => { state.id = named(params.arguments); });
+  view.on('toolresult', result => {
+    if (result.isError) {
+      say((result.content || []).filter(block => block.type === 'text').map(block => block.text).join('\n'));
+    }
+    follow();  // the call's own result is the sessions as they were; the trace is read and followed from here
+  });
+  view.on('hostcontextchanged', bar);
+  view.on('toolcancelled', () => say('The call was cancelled.'));
+  view.connect('metaform-trace').then(bar).catch(() => {});
+})();
+</script>
+</body>
+</html>

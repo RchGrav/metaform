@@ -1,13 +1,12 @@
-"""CLI and MCP use the same stored workflow and nonce call transport."""
+"""CLI and MCP use the same stored workflow and run-record call transport."""
 import json
 import re
 
 import pytest
 
-from metaform import nonce
 from metaform.data import Store
-from metaform.modules.mcp.server import enter
-from metaform.modules.workflow import catalog
+from metaform.modules.mcp.server import run_tool
+from metaform.modules.workflow import catalog, runs
 from tests.storekit import small_map
 
 pytestmark = [pytest.mark.req('BASE-051'), pytest.mark.req('MCP-030'), pytest.mark.kind('fixture')]
@@ -44,38 +43,44 @@ def test_cli_stored_call_fresh_handoff_frozen_text_and_return(run, store, projec
     read(run, project_folder, 'workflow', 'add_logic', ADDRESS, 'procedures', 'review', SCRIPT)
     started = read(run, project_folder, 'workflow', 'run',
                    '({ok}, {address}) := workflow.quality.code.improve(target=code.timer.kitchen)')
-    word = started['nonce']
+    word = started['run']
     assert started['arguments']['target']['address'] == 'code.timer.kitchen'
-    child = read(run, project_folder, word, 'handoff',
-                 '({ok}, {address}) := workflow.quality.code.review(target={target})')['nonce']
+    handed = read(run, project_folder, 'workflow', 'handoff',
+                  '({ok}, {address}) := workflow.quality.code.review(target={target})', f'run={word}')
+    child = handed['run']
+    assert f'metaform workflow resume run={child} --project proj' in handed['handoff']
     read(run, project_folder, 'workflow', 'add_logic', ADDRESS, 'procedures', 'review', SCRIPT + '# revised\n')
-    redeemed = read(run, project_folder, child)
+    elsewhere = project_folder.parent / 'fresh-agent'  # a fresh agent's own folder reaches the run by project
+    redeemed = read(run, elsewhere, 'workflow', 'resume', f'run={child}', '--project', 'proj')
     assert redeemed['logic']['content'] == SCRIPT
     assert 'frames' not in redeemed and 'parent' not in redeemed
-    returned = read(run, project_folder, child, 'complete', 'RETURN (TRUE, {target}.address)')
+    returned = read(run, project_folder, 'workflow', 'complete', 'RETURN (TRUE, {target}.address)', f'run={child}')
     assert returned['resume'] == word
     assert 'variables' not in returned and 'logic' not in returned
-    assert read(run, project_folder, word)['variables']['address'] == 'code.timer.kitchen'
-    root = read(run, project_folder, word, 'complete', 'RETURN ({ok}, {address})')
+    assert read(run, project_folder, 'workflow', 'resume', f'run={word}')['variables']['address'] == \
+        'code.timer.kitchen'
+    root = read(run, project_folder, 'workflow', 'complete', 'RETURN ({ok}, {address})', f'run={word}')
     assert root['value'] == [True, 'code.timer.kitchen']
-    assert not nonce.read(word).open and not nonce.read(child).open
+    held = Store('proj', module='workflow')
+    assert runs.read(held, word).state == runs.read(held, child).state == 'completed'
+    assert runs.read(held, child).value['parent'] == word
 
 
-def test_mcp_explicit_nonce_redeems_and_returns_the_same_call(store, project_folder):
+def test_mcp_run_id_resumes_and_returns_the_same_call(store, project_folder):
     small_map(store)
     catalog.submit_workflow(store, ADDRESS, 'procedures')
     catalog.submit_logic(store, ADDRESS, 'procedures', 'review', SCRIPT)
     def invoke(name, args):
         import asyncio
-        failed, blocks = asyncio.run(enter(project_folder, 'workflow', {'command': name, 'arguments': args}))
+        failed, blocks = asyncio.run(run_tool(project_folder, f'workflow_{name}', args))
         assert not failed, blocks
         return json.loads(blocks[-1])
 
     started = invoke('run', {'call': '( {ok}, {address} ) := workflow.quality.code.review(target=this)',
                             'element': 'code.timer.kitchen'})
-    redeemed = invoke('resume', {'nonce': started['nonce']})
+    redeemed = invoke('resume', {'run': started['run']})
     assert redeemed['arguments']['target']['address'] == 'code.timer.kitchen'
-    result = invoke('complete', {'nonce': started['nonce'], 'return': 'RETURN (TRUE, {target}.address)'})
+    result = invoke('complete', {'run': started['run'], 'return': 'RETURN (TRUE, {target}.address)'})
     assert result['variables'] == {'ok': True, 'address': 'code.timer.kitchen'}
 
 
@@ -115,7 +120,7 @@ def test_preprocess_cli_mcp_and_setting_prepare_the_same_context(run, store, pro
     import asyncio
 
     from metaform.data import Node, prompts
-    from metaform.modules.mcp.server import enter
+    from metaform.modules.mcp.server import run_tool
     from tests.storekit import PROVENANCE
 
     small_map(store)
@@ -129,8 +134,7 @@ def test_preprocess_cli_mcp_and_setting_prepare_the_same_context(run, store, pro
     assert prepared['prompt'].startswith(text)
     assert 'Timer practice.' in prepared['prompt'] and 'Alarm practice.' not in prepared['prompt']
     assert prepared['scope'] == 'context'
-    failed, blocks = asyncio.run(enter(project_folder, 'workflow', {
-        'command': 'preprocess', 'arguments': {'text': text, 'addresses': addresses}}))
+    failed, blocks = asyncio.run(run_tool(project_folder, 'workflow_preprocess', {'text': text, 'addresses': addresses}))
     assert not failed, blocks
     assert json.loads(blocks[-1]) == prepared
     saved = json.loads(run('prompt', 'save', 'prepared-review', prepared['prompt'], '--json',
@@ -189,7 +193,7 @@ def test_existing_prompt_versions_are_kept_and_libs_name_the_shipped_section_ver
     assert prompts.prompt_version('metaform-tools', 1).text == old.text
 
 
-def test_nonce_calls_remain_bound_when_active_metaform_changes(store, project_folder):
+def test_run_calls_remain_bound_when_active_metaform_changes(store, project_folder):
     from metaform.module import Context
     from metaform.modules.workflow import call, complete, run
     from metaform.modules.workflow.executor import view
@@ -205,15 +209,15 @@ def test_nonce_calls_remain_bound_when_active_metaform_changes(store, project_fo
     catalog.ensure_layer(bound, 'standards')
     catalog.submit_workflow(bound, ADDRESS, 'procedures', layers=('standards',))
     context = Context('workflow', project_folder, nouns={
-        'nonce': initial['nonce'], 'call': '{ok} := workflow.quality.code.review(target={target})'})
+        'run': initial['run'], 'call': '{ok} := workflow.quality.code.review(target={target})'})
     # Selecting accompanying knowledge must retain the original metaform.
     context.store = Store('proj', module='workflow')
     child = call(context)
     assert child['context']['metaform'] == old_metaform
     assert child['logic']['content'] == SCRIPT
-    context.nouns = {'nonce': initial['nonce'], 'return': 'RETURN TRUE'}
+    context.nouns = {'run': initial['run'], 'return': 'RETURN TRUE'}
     complete(context)
-    assert view(initial['nonce'])['context']['metaform'] == old_metaform
+    assert view(Store('proj', module='workflow'), initial['run'])['context']['metaform'] == old_metaform
 
 
 def test_workflow_ships_and_runs_in_direct_wheel_without_other_feature_modules(run, home, project_folder):
@@ -269,6 +273,5 @@ def test_a_call_or_export_that_does_not_bind_is_the_callers_error_with_its_next_
         failed = run(*arguments, cwd=project_folder, ok=False)
         assert failed.returncode == 2, failed.stderr
         assert failed.stderr.count('\nNext: ') == 1 and 'StopIteration' not in failed.stderr
-    failed, blocks = asyncio.run(enter(project_folder, 'workflow', {'command': 'run',
-                                                                   'arguments': {'call': f'{ADDRESS}.review()'}}))
+    failed, blocks = asyncio.run(run_tool(project_folder, 'workflow_run', {'call': f'{ADDRESS}.review()'}))
     assert failed and 'Missing required parameter: target' in blocks[-1] and 'feedback' not in blocks[-1]

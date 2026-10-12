@@ -8,13 +8,14 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
 pytestmark = pytest.mark.kind('fixture')
 
 MODULES = Path(__file__).parents[1] / 'src' / 'metaform' / 'modules'
-PUBLIC = {'metaform.module', 'metaform.settings', 'metaform.data', 'metaform.events', 'metaform.nonce',
+PUBLIC = {'metaform.module', 'metaform.settings', 'metaform.data', 'metaform.events', 'metaform.jev',
           'metaform.prompt_files', 'metaform.axiom', 'metaform.home', 'metaform.outline', 'metaform.finish_xml'}
 OS = "SUPPORTED_OS = ('linux', 'macos', 'windows')"
 
@@ -760,3 +761,336 @@ def test_an_async_publish_never_blocks_its_loop_and_a_sync_one_there_is_refused(
     deliveries = asyncio.run(main())
     assert sorted(delivery['result'] for delivery in deliveries) == ['async heard', 'sync heard']
     assert len(ticks) >= 15
+
+
+@pytest.mark.req('BASE-035')
+def test_a_toolbar_item_and_a_pane_are_checked_where_they_are_declared():
+    from metaform.module import Pane, ToolbarItem
+    tool = ToolbarItem('brief', 'Brief', 'Read everything held at a node.', icon='brief', pane='brief',
+                       shortcut='Alt+B')
+    assert tool.action == 'pane'
+    assert Pane('notes', 'Notes', 'Read the notes kept here.', resource='resources/notes.md').content == 'resource'
+    assert ToolbarItem('svg', 'Own icon', 'Show it with an icon of its own.', icon='resources/icons/own.svg',
+                       page='search').icon == 'resources/icons/own.svg'
+    refusals = [
+        (lambda: ToolbarItem('Brief', 'Brief', 'Why.', page='search'), 'lowercase'),
+        (lambda: ToolbarItem('brief', 'Brief', '', page='search'), 'one line'),
+        (lambda: ToolbarItem('brief', 'Brief', 'Read it.\nAnd more.', page='search'), 'one line'),
+        (lambda: ToolbarItem('brief', 'Brief', 'Brief.', page='search'), 'not its title'),
+        (lambda: ToolbarItem('brief', 'Brief', 'Read it.', icon='unicorn', page='search'), 'built-in icon'),
+        (lambda: ToolbarItem('brief', 'Brief', 'Read it.', icon='resources/a.png', page='search'), 'SVG'),
+        (lambda: ToolbarItem('brief', 'Brief', 'Read it.'), 'exactly one'),
+        (lambda: ToolbarItem('brief', 'Brief', 'Read it.', page='search', pane='brief'), 'exactly one'),
+        (lambda: ToolbarItem('brief', 'Brief', 'Read it.', page='search', arguments={'a': 1}), 'arguments'),
+        (lambda: ToolbarItem('brief', 'Brief', 'Read it.', link='../secret.txt'), 'resources folder'),
+        (lambda: ToolbarItem('brief', 'Brief', 'Read it.', link='https://x.example', selection='address'),
+         'no selection'),
+        (lambda: ToolbarItem('brief', 'Brief', 'Read it.', page='search', shortcut='Hyper+B'), 'shortcut'),
+        (lambda: Pane('notes', 'Notes', 'Read it.', resource='resources/notes.py'), '.md'),
+        (lambda: Pane('notes', 'Notes', 'Read it.', resource='resources/../x.md'), 'resources folder'),
+        (lambda: Pane('notes', 'Notes', 'Read it.', page='notes', area=cast(Any, 'top')), 'area'),
+    ]
+    for make, said in refusals:
+        with pytest.raises(ValueError, match=said):
+            make()
+
+
+@pytest.mark.req('BASE-035')
+def test_a_module_checks_its_toolbar_and_panes_against_its_verbs():
+    from metaform.module import Module, Noun, Pane, ToolbarItem, Verb
+
+    def read(ctx):
+        return None
+    verbs = (Verb('where', read, 'Read a node.', nouns=(Noun('address', 'An address.'),), effect='read'),
+             Verb('write', read, 'Write a node.'), Verb('call', read, 'Call an agent.', open_world=True))
+
+    def module(toolbar=(), panes=()):
+        return Module(id='mine', summary='Mine.', purpose='Mine.', verbs=verbs, toolbar=toolbar, panes=panes)
+    tool = ToolbarItem('brief', 'Brief', 'Read a node.', verb='where', selection='address')
+    pane = Pane('brief', 'Brief', 'Read a node.', verb='where', selection='address')
+    assert module((tool,), (pane,)).toolbar == (tool,)
+    refusals = [
+        (lambda: module((tool, tool)), 'share the id brief'),
+        (lambda: module((ToolbarItem('x', 'X', 'Do it.', verb='gone'),)), 'not declared'),
+        (lambda: module((ToolbarItem('x', 'X', 'Do it.', verb='where', arguments={'depth': 2}),)), 'depth'),
+        (lambda: module((ToolbarItem('x', 'X', 'Do it.', verb='where', selection='node'),)), 'node'),
+        (lambda: module(panes=(Pane('x', 'X', 'See it.', verb='write'),)), 'only reads'),
+        (lambda: module((ToolbarItem('x', 'X', 'Do it.', verb='call'),)), 'agents or the network'),
+        (lambda: module((ToolbarItem('x', 'X', 'Do it.', pane='missing'),)), 'pane missing, not declared'),
+    ]
+    for make, said in refusals:
+        with pytest.raises(ValueError, match=said):
+            make()
+    assert module((ToolbarItem('x', 'X', 'Show another module\'s pane.', pane='memory.memories'),)).toolbar
+
+
+@pytest.mark.req('BASE-035')
+def test_a_modules_tools_and_panes_follow_the_surface_and_a_file_it_lacks_is_refused(run, home, user_module,
+                                                                                     module_row):
+    from metaform import loader
+    from metaform.module import contributions
+    folder = user_module('tooled', f'''
+        from metaform.module import Module, Pane, ToolbarItem
+        {OS}
+        MODULE = Module(id='tooled', summary='Tools.', purpose='Tools. Details: metaform help tooled.',
+                        toolbar=(ToolbarItem('about', 'About', 'Read what it is for.', pane='about'),),
+                        panes=(Pane('about', 'About', 'Read what it is for.', resource='resources/about.md'),))
+    ''')
+    (folder / 'resources').mkdir()
+    (folder / 'resources' / 'about.md').write_text('# About\n', encoding='utf-8')
+    user_module('lacking', f'''
+        from metaform.module import Module, Pane
+        {OS}
+        MODULE = Module(id='lacking', summary='Lacks.', purpose='Lacks. Details: metaform help lacking.',
+                        panes=(Pane('about', 'About', 'Read what it is for.', resource='resources/gone.md'),))
+    ''')
+    loader.reset()
+    found = {owner: (toolbar, panes) for owner, toolbar, panes in contributions(home)}
+    assert [item.id for item in found['tooled'][0]] == ['about'] and 'chassis' in found and 'lacking' not in found
+    row = module_row('lacking')
+    assert row[1] == 'error' and 'resources/gone.md' in row[3]
+    run('disable', 'tooled')
+    loader.reset()
+    assert 'tooled' not in {owner for owner, _, _ in contributions(home)}
+
+
+# Jev, the optional decision service, P185: a faked Jev answers as the API does, so nothing leaves the machine.
+
+def _fake_jev(monkeypatch, project_folder):
+    """Turn Jev on for the project with a fake key, and answer each request: a choice picks the option whose meaning
+    says 'best', a noul is 0.9 when the item its instructions point at says 'yes', else 0.1. Returns the requests."""
+    import re
+
+    from metaform import jev, settings
+    monkeypatch.setenv('OPENROUTER_API_KEY', 'test-key')
+    monkeypatch.setattr(jev, '_down_until', 0.0)
+    settings.put('jev', True, project_folder)
+    sent: list[dict[str, Any]] = []
+
+    def at(state: Any, path: str) -> Any:
+        for part in path.split('.'):
+            state = state[part]
+        return state
+
+    def answer(state: Any, question: dict[str, Any]) -> dict[str, Any]:
+        if question['type'] == 'choice':
+            options = list(question['criteria'])
+            best = next((key for key, meaning in question['criteria'].items() if 'best' in (meaning or '')), options[0])
+            rest = (1 - 0.9) / max(len(options) - 1, 1)
+            return {'type': 'choice', 'choice': best, 'confidence': 0.8,
+                    'probabilities': {key: 0.9 if key == best else rest for key in options}}
+        pointed = re.search(r'`((?:items|options|messages|parts|calls|steps|tickets)\.[A-Za-z0-9_]+)`',
+                            question['instructions'])
+        said = str(at(state, pointed.group(1))) if pointed else json.dumps(state)
+        return {'type': 'noul', 'noul': 0.9 if 'yes' in said else 0.1}
+
+    def post(cfg: Any, body: dict[str, Any]) -> dict[str, Any]:
+        sent.append(body)
+        return {'model': cfg.model, 'usage': {'input_tokens': 100, 'output_tokens': 0, 'cost': 0.000004},
+                'answers': {name: answer(body['state'], question) for name, question in body['questions'].items()}}
+
+    monkeypatch.setattr(jev, 'post', post)
+    return sent
+
+
+@pytest.mark.req('BASE-004')
+def test_jev_is_off_by_default_and_every_decision_is_none(home, project_folder, monkeypatch):
+    from metaform import jev
+
+    def refuse(cfg: Any, body: dict[str, Any]) -> dict[str, Any]:
+        raise AssertionError('nothing is sent while jev is off')
+    monkeypatch.setenv('OPENROUTER_API_KEY', 'test-key')
+    monkeypatch.setattr(jev, 'post', refuse)
+    assert jev.choose_agent(project_folder, {'id': 't1', 'task': 'x'}, {'claude': 'best'}) is None
+    assert jev.rank_items(project_folder, 'code.a', {'code.a#1': 'yes'}, {'address': 'code.a'}) is None
+
+
+@pytest.mark.req('MCP-037')
+def test_jev_ranks_a_pile_in_one_request_keeps_no_item_and_never_pays_twice(home, project_folder, monkeypatch):
+    from metaform import jev
+    from metaform.module import item_read
+    sent = _fake_jev(monkeypatch, project_folder)
+    items = {'code.a#1': 'no: background', 'code.a#2': 'yes: a constraint', 'code.a#3': 'no: superseded'}
+    node = {'address': 'code.a', 'op': 'Route requests.'}
+    assert jev.rank_items(project_folder, 'code.a', items, node, cached_only=True) is None and not sent  # a read waits on nothing
+    decided = jev.rank_items(project_folder, 'code.a', items, node)
+    assert decided is not None and decided.answer[0] == 'code.a#2' and decided.sure
+    assert len(sent) == 1 and len(sent[0]['questions']) == 3  # one state, every question, one request
+    assert decided.item is None and item_read(project_folder, 'code.a', 1) is None  # an order is a view, not an item
+    assert decided.cost == pytest.approx(0.000004)
+    again = jev.rank_items(project_folder, 'code.a', items, node, cached_only=True)
+    assert again is not None and again.cached and again.answer == decided.answer and len(sent) == 1
+
+
+@pytest.mark.req('MCP-037')
+def test_jev_choice_that_flips_with_the_order_stays_unsure_from_the_cache_and_is_kept_once(home, project_folder,
+                                                                                           monkeypatch):
+    from metaform import jev
+    from metaform.module import item_read
+    sent = _fake_jev(monkeypatch, project_folder)
+
+    def first(cfg: Any, body: dict[str, Any]) -> dict[str, Any]:  # Jev's lean toward the option that comes first
+        sent.append(body)
+        picked = {name: next(iter(question['criteria'])) for name, question in body['questions'].items()}
+        return {'model': cfg.model, 'usage': {'input_tokens': 10, 'output_tokens': 0, 'cost': 0.000001},
+                'answers': {name: {'type': 'choice', 'choice': choice, 'confidence': 0.9,
+                                   'probabilities': {key: 0.9 if key == choice else 0.1
+                                                     for key in body['questions'][name]['criteria']}}
+                            for name, choice in picked.items()}}
+    monkeypatch.setattr(jev, 'post', first)
+    options = {'claude': 'design', 'codex': 'edits'}
+    asked = {'title': 'Agent for t1', 'why': 'Agents differ.', 'address': 'code.a'}
+    decided = jev.pick_one(project_folder, 'Which agent?', options, {'task': 'x'}, **asked)
+    assert decided is not None and decided.answer == 'claude' and not decided.sure and decided.item == 'code.a#1'
+    again = jev.pick_one(project_folder, 'Which agent?', options, {'task': 'x'}, **asked)
+    assert again is not None and again.cached and len(sent) == 1
+    assert again.answer == 'claude' and not again.sure and again.item == 'code.a#1'
+    kept = item_read(project_folder, 'code.a', 1)
+    assert kept is not None and kept['module'] == 'jev' and kept['sure'] is False and kept['why']
+
+
+@pytest.mark.req('BASE-004')
+def test_jev_chooses_agent_model_and_effort_for_many_tickets_and_their_start_order_in_one_request(
+        home, project_folder, monkeypatch):
+    from metaform import jev
+    from metaform.module import item_read
+    sent = _fake_jev(monkeypatch, project_folder)
+    tickets = {'t1': {'task': 'Fix a typo.', 'address': 'code.a'}, 't2': {'task': 'yes: unblocks t3'},
+               't3': {'task': 'Build on t2.'}}
+    options = {'claude': {'model': {'opus': 'deep work', 'haiku': 'best for small edits'},
+                          'thought_level': {'high': 'best for most', 'low': 'quick'}}}
+    got = jev.choose_agents(project_folder, tickets, {'claude': 'best at design', 'codex': 'fast edits'}, options,
+                            unplaced={'t2', 't3'})
+    assert got is not None and len(sent) == 1  # one paid state, every question on it
+    assert set(sent[0]['state']['tickets']) == {'t1', 't2', 't3'}
+    assert all(decided.answer == {'agent': 'claude', 'model': 'haiku', 'thought_level': 'high'} and decided.sure
+               for decided in got.decisions.values())
+    assert {name.split('__', 1)[1] for name in sent[0]['questions']} >= {
+        'agent', 'agent__r', 'claude__model', 'claude__model__r', 'claude__thought_level', 'first'}
+    assert got.order is not None and got.order.answer == ['t2', 't3'] and got.order.item is None  # placed t1 stays out
+    assert got.decisions['t1'].item == 'code.a#1' and item_read(project_folder, 'code.a', 1) is not None
+
+
+@pytest.mark.req('BASE-004')
+def test_jev_answers_that_break_the_schema_and_failures_leave_the_fallback(home, project_folder, monkeypatch):
+    from metaform import jev
+    _fake_jev(monkeypatch, project_folder)
+
+    def wrong(cfg: Any, body: dict[str, Any]) -> dict[str, Any]:
+        return {'model': cfg.model, 'usage': {'input_tokens': 1, 'output_tokens': 0},
+                'answers': {name: {'type': 'noul', 'noul': 1.7} for name in body['questions']}}
+    monkeypatch.setattr(jev, 'post', wrong)
+    assert jev.triage(project_folder, {'m1': 'yes, pick a vendor'}) is None
+
+    def down(cfg: Any, body: dict[str, Any]) -> dict[str, Any]:
+        raise OSError('HTTP 529 from openrouter')
+    monkeypatch.setattr(jev, 'post', down)
+    assert jev.session_drift(project_folder, 's1', ['Read README.md'], 'Fix the parser.') is None
+
+
+@pytest.mark.req('BASE-004')
+def test_jev_triage_coverage_and_drift_read_their_answers(home, project_folder, monkeypatch):
+    from metaform import jev, settings
+    sent = _fake_jev(monkeypatch, project_folder)
+    sorted_to = jev.triage(project_folder, {'m1': 'yes: may I spend $40?', 'm2': 'no: the test failed',
+                                            'q1': 'no: which vendor?'}, questions={'q1'})
+    assert sorted_to is not None and sorted_to.answer == {'m1': 'person', 'm2': 'agent', 'q1': 'person'}
+    assert set(sent[-1]['state']['messages']) == {'m1', 'm2'}  # a question to the person is never sent to be judged
+    covered = jev.intake_coverage(project_folder, {'src': 'yes: code', 'docs': 'no: guides'}, '# Map')
+    assert covered is not None and covered.answer == ['docs']
+    calls = ['Read artifacts/REVIEW.md', 'Edit src/a.py yes', 'Read src/b.py', 'Read docs/c.md', 'Read src/d.py']
+    drift = jev.session_drift(project_folder, 's1', calls, 'Fix the parser.', address='code.a')
+    assert drift is not None and drift.item == 'code.a#1'
+    assert drift.answer == {'conclusions': True, 'off_task': True, 'repeating': None}  # 4 of 5 calls surely off
+    questions = sent[-1]['questions']
+    assert len(questions) == len(calls) + 1  # a question per call, and one for the one conclusion read
+    assert not any('Most' in question['instructions'] for question in questions.values())  # Jev never counts
+    assert [call['kind'] for call in sent[-1]['state']['calls'].values()] == ['conclusion', 'other', 'other', 'other',
+                                                                             'other']
+    assert jev.call_kind('Read src/metaform/data/log.py') == 'other'  # a source file is never a conclusion
+    settings.put('jev_decisions', ['triage'], project_folder)  # a decision point left out asks nothing
+    assert jev.session_drift(project_folder, 's2', ['Read a.py'], 'Fix a.') is None
+
+
+@pytest.mark.req('BASE-004')
+def test_jev_gives_up_within_its_deadline_and_rests_after_a_failure(home, project_folder, monkeypatch):
+    import io
+    import time
+    import urllib.error
+    from email.message import Message
+
+    from metaform import jev
+    real = jev.post
+    _fake_jev(monkeypatch, project_folder)
+    monkeypatch.setattr(jev, 'post', real)
+    tried: list[float] = []
+
+    def overloaded(request: Any, timeout: float) -> Any:
+        tried.append(timeout)
+        headers = Message()
+        headers['Retry-After'] = '30'
+        raise urllib.error.HTTPError(request.full_url, 529, 'Overloaded', headers, io.BytesIO(b'{}'))
+    monkeypatch.setattr(jev.urllib.request, 'urlopen', overloaded)
+    started = time.monotonic()
+    with jev.within(1.0):
+        assert jev.yes_no(project_folder, 'Is it?', {'x': 1}, true='yes', false='no', title='t', why='w') is None
+    assert time.monotonic() - started < 1.0 and len(tried) == 1 and tried[0] <= 1.0  # Retry-After past the deadline
+    assert jev.yes_no(project_folder, 'Is it?', {'x': 2}, true='yes', false='no', title='t', why='w') is None
+    assert len(tried) == 1  # off for a minute after the failure: nothing more is sent
+
+
+@pytest.mark.req('BASE-004')
+def test_jev_within_bounds_a_decision_split_into_many_requests(home, project_folder, monkeypatch):
+    import time
+
+    from metaform import jev, settings
+    sent = _fake_jev(monkeypatch, project_folder)
+    fake = jev.post
+
+    def slow(cfg: Any, body: dict[str, Any]) -> dict[str, Any]:
+        time.sleep(0.6)
+        return fake(cfg, body)
+    monkeypatch.setattr(jev, 'post', slow)
+    settings.put('jev_max_context', 1000, project_folder)
+    items = {f'code.a#{n}': 'x' * 2000 for n in range(3)}  # one item to a request: three requests
+    started = time.monotonic()
+    with jev.within(1.0):
+        assert jev.rank_items(project_folder, 'code.a', items, {'address': 'code.a'}) is None
+    assert len(sent) == 2 and time.monotonic() - started < 1.5  # the third is never sent
+    assert jev.config(project_folder) is not None  # time spent by the caller is no fault of Jev's
+
+
+@pytest.mark.req('BASE-004')
+def test_jev_finds_an_agent_repeating_its_steps_from_their_meaning(home, project_folder, monkeypatch):
+    from metaform import jev
+    sent = _fake_jev(monkeypatch, project_folder)
+    fake = jev.post
+
+    def repeats(cfg: Any, body: dict[str, Any]) -> dict[str, Any]:
+        reply = fake(cfg, body)
+        for name, question in body['questions'].items():
+            if '`steps.' in question['instructions']:
+                reply['answers'][name] = {'type': 'noul', 'noul': 0.95}
+        return reply
+    monkeypatch.setattr(jev, 'post', repeats)
+    steps = [f'Re-verified the parser, step {n}.' for n in range(12)]
+    drift = jev.session_drift(project_folder, 's1', ['Read src/a.py yes'], 'Fix the parser.', steps=steps)
+    assert drift is not None and drift.answer['repeating'] is True and drift.answer['off_task'] is False
+    windows = sent[-1]['state']['steps']
+    assert list(windows) == ['w0', 'w6'] and all(len(window) == 6 for window in windows.values())
+    assert len(sent) == 1 and sum('`steps.' in q['instructions'] for q in sent[-1]['questions'].values()) == 2
+
+
+@pytest.mark.req('MCP-037')
+def test_a_decision_newly_kept_at_an_address_is_announced_as_a_change_to_its_table(home, project_folder, monkeypatch):
+    from metaform import changes, jev
+    _fake_jev(monkeypatch, project_folder)
+    changes.take()
+    asked = {'title': 'Agent for t1', 'why': 'Agents differ.', 'address': 'code.a'}
+    options = {'claude': 'best at design', 'codex': 'edits'}
+    decided = jev.pick_one(project_folder, 'Which agent?', options, {'task': 'x'}, **asked)
+    assert decided is not None and decided.item == 'code.a#1'
+    named = [tables for bases in changes.take().values() for tables in bases.values()]
+    assert any(tables and jev.TABLE in tables for tables in named)    # an open brief of code.a reads it again
+    jev.pick_one(project_folder, 'Which agent?', options, {'task': 'x'}, **asked)  # kept already: nothing new
+    assert not any(tables and jev.TABLE in tables for bases in changes.take().values() for tables in bases.values())

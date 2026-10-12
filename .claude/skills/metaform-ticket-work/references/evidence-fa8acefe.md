@@ -1,0 +1,3 @@
+{"name":"Bash","input":{"command":"metaform memory delete_observations '[{\"entityName\":\"session identity and child environment (2026-10-11)\",\"observations\":[\"runner.role(nouns, work_id): intake_id -> intake; system with sentinel -> sentinel, with talk -> talk, else system; prep -> prep; else worker. Never from Session.prep, which is true for intake and the summoned agents too.\"]}]' node=code.dispatcher.task 2>&1 | tail -2; ..."}}
+tool_result: message: Observations deleted successfully
+assistant: I made a mistake there: that call deleted a still-true observation (the `runner.role` line), not the stale one. Restoring it now, then replacing the line that really is stale.

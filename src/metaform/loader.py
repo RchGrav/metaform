@@ -36,8 +36,8 @@ from tempfile import TemporaryDirectory
 from types import ModuleType
 from typing import Any
 
-from . import home, module_metadata, settings
-from .module import Context, Module, call
+from . import home, module_metadata, prompt_files, settings
+from .module import Context, Module, call, resource_problems
 
 RESERVED = {'help', 'add', 'list', 'set', 'unset', 'config', 'enable', 'disable', 'activate', 'import', 'export',
             'query', 'build', 'install', 'uninstall', 'feedback', 'read', 'extract', 'prompts', 'prompt', 'clear', 'restore', 'remove', 'chassis',
@@ -212,6 +212,12 @@ def _import(item: Found) -> Module:
         tool = f'{declared.id}_{name}'
         if not TOOL_NAME.fullmatch(tool) or '__' in tool:
             raise ValueError(f'The tool name {tool!r} must be 1 to 64 letters, digits, _ and -, with no double _.')
+    problems = resource_problems(declared, importlib.resources.files(imported.__name__)) \
+        if declared.toolbar or declared.panes else []
+    if problems:  # an icon or a pane's file it does not carry would show as nothing on the page
+        raise ValueError(problems[0])
+    # A rule an agent is handed without its reason cannot be applied to a case it does not name, MCP-031.
+    prompt_files.rules(importlib.resources.files(imported.__name__))
     return declared
 
 

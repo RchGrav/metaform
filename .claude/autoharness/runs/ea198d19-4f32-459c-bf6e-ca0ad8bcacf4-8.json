@@ -1,0 +1,21 @@
+{
+  "run_id": "ea198d19-4f32-459c-bf6e-ca0ad8bcacf4-8",
+  "verdicts": [
+    {
+      "action": "patch",
+      "name": "codebase-memory",
+      "ok": false,
+      "findings": [
+        "self_produced"
+      ],
+      "notes": []
+    },
+    {
+      "action": "patch",
+      "name": "metaform-ticket-work",
+      "ok": true,
+      "findings": [],
+      "notes": []
+    }
+  ]
+}

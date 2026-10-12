@@ -1,0 +1,6 @@
+Could not start the waiting tickets: spawn() missing 3 required positional arguments: 'agent', 'extra', and 'name'
+...
+A name collision: the dispatch module already has a `spawn` function defined later, which replaced mine. Renaming mine to `run_reserved`.
+...
+1421:def spawn(store: Store, work_id: str, agent: str, extra: list[str], name: str) -> dict[str, Any]:
+834:def spawn(ctx: Context, reservation: str) -> dict[str, Any]:

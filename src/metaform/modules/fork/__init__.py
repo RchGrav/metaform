@@ -16,9 +16,10 @@ DEPENDENCIES = ()
 SHIPS_DISABLED = False
 REMOTE_AGENT = False  # it sets up a repository of the person's own modules, which is work done at home
 
-settings.choice('fork_agent', ['codex', 'claude', 'gemini'], 'codex',
+# Which agent CI runs and which secret it is handed are the person's to choose, never an agent's over MCP, CLI-011.
+settings.choice('fork_agent', ['codex', 'claude', 'gemini'], 'codex', person_only=True,
                 help='The dispatched agent for CI muster and template upkeep.')
-settings.text('fork_secret', 'OPENAI_API_KEY',
+settings.text('fork_secret', 'OPENAI_API_KEY', person_only=True,
               help='The CI environment variable holding the selected agent\'s API key.',
               details='The workflow passes the repository secret to the agent. Its value is never put in a ticket.')
 
@@ -41,14 +42,15 @@ MODULE = Module(
             'The agent owns its credentials. A dispatched upkeep agent opens a pull request through the repository\'s '
             'own authenticated GitHub CLI. The install-stage trigger is not connected yet.',
     verbs=(
-        Verb('init', init, 'Create a module repository in a new or empty folder.',
+        Verb('init', init, 'Create a repository for your own Metaform modules, in a new or empty folder.',
              nouns=(Noun('folder', 'The local repository folder.'), Noun('module', 'The first module identifier.')),
              switches=('fork_agent', 'fork_secret')),
         Verb('check', check, 'Run type checking, lint and tests for each module, and save this matrix job\'s report.',
              surfaces=('cli',)),
         Verb('wheel', wheel, 'Dispatch a quality review per module, then build a wheel with those that passed.',
              switches=('fork_agent', 'fork_secret'), surfaces=('cli',)),
-        Verb('upkeep', upkeep, 'Dispatch template updates for older modules, each as a pull request.',
-             switches=('fork_agent',)),
+        Verb('upkeep', upkeep, 'Bring the older modules of a module repository up to the current template, each as a '
+                               'pull request.',
+             switches=('fork_agent',), open_world=True),
     ),
 )

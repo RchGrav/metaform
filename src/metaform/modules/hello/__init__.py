@@ -11,9 +11,6 @@
   todo      writes a work record, the condition of this module's own element kept apart from the map, MAP-046;
             done resolves it, and the status line counts what is still to do
   beep      a verb that runs on one system only, BASE-016
-  noncedemo walks an agent through a nonce, BASE-050: run directly it issues one, run through it as
-            metaform <nonce> it does the step the nonce's value holds, or next or complete when named after it;
-            complete closes the nonce and hands on a new one
   status    a status hook that adds one line to `metaform` status
   visit     counts a name in hello's own table beside the map, which goes with the metaform, STORE-045
   note      keeps a note in hello's own project-level table, which a clear of the project's metaforms keeps;
@@ -49,7 +46,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from metaform import home, nonce, settings
+from metaform import home, settings
 from metaform import module as chassis
 from metaform.data import (
     Column,
@@ -177,36 +174,6 @@ def forget(ctx: Context) -> str:
 
 def beep(ctx: Context) -> str:
     return '\a'
-
-
-def noncedemo(ctx: Context) -> str:
-    """The nonce demonstration, BASE-050. Run directly, it issues a nonce whose function is this same verb. Run
-    through that nonce, it does the step named after the nonce, `next` or `complete`, or with none named the step
-    the nonce's value in the chassis holds."""
-    held = nonce.reached()
-    if held is None:
-        return f"Please run metaform {nonce.request('hello', 'noncedemo', {'step': 'hello'})}\n"
-    said = f'metaform {held.nonce}'
-    given = ctx.nouns.get('step', ())  # the words after the nonce, or one text written step=<word>
-    word = given if isinstance(given, str) else ' '.join(given)
-    if word not in ('', 'next', 'complete'):
-        raise Stop(f'The nonce demo has no step {word}.', said)
-    step = word or held.value['step']
-    if step == 'hello':
-        return f'Hello World! Now type the command again, but this time with {said} next\n'
-    if step == 'next':
-        nonce.update(held.nonce, value={'step': 'next'})
-        return (f'This is a next message for the agent. Try running {said}. You will notice you get this same '
-                f'message, because {said} is updating the db in the chassis for this nonce and using it to control '
-                f'the module. After you did the step, run {said} complete\n')
-    nonce.close(held.nonce)
-    if step == 'complete':
-        handed = nonce.request('hello', 'noncedemo', {'step': 'over'})
-        return ('Congratulations, now you know how nonces work. The dev can recall the nonce, update the existing '
-                'nonce, and generate new ones. So imagine it was time to pass to the main agent. The plugin could '
-                f"say: tell the main agent to run metaform {handed}. But don't really, just do it to see what will "
-                'happen.\n')
-    return 'Congrats, the nonce demo is over. We already cleaned up the nonce you just used. Try it again to see.\n'
 
 
 def _own_element(store: Store) -> Layer:
@@ -449,27 +416,24 @@ MODULE = Module(
              nouns=(Noun('name', 'The name to greet.'),), switches=('loud',),
              examples=(('metaform hello greet world', 'Prints hello, world.'),
                        ('metaform hello greet world --loud', 'Prints HELLO, WORLD!'))),
-        Verb('wait', wait, 'Wait a number of seconds. Shows an async verb.',
-             nouns=(Noun('seconds', 'How long to wait.', kind='int'),)),
-        Verb('basedemo', basedemo, 'Show the shared home, project, layer and query services.'),
+        Verb('wait', wait, 'Wait a number of seconds. Shows an async verb, and a task over MCP.',
+             nouns=(Noun('seconds', 'How long to wait.', kind='int'),), effect='read', task=True),
+        Verb('basedemo', basedemo, 'Show the shared home, project, layer and query services.', effect='read'),
         Verb('base-restore', base_restore, 'Restore a clear backup through the public base.',
              nouns=(Noun('name', 'The backup name, newest when omitted.', required=False),),
-             caution="This restores the selected project's clear backup, backing up what it holds now."),
+             caution="This restores the selected project's clear backup, backing up what it holds now.", effect='remove'),
         Verb('base-remove', base_remove, "Remove the selected empty project's registration through the public base.",
-             caution="This removes the selected empty project's registration, keeping its files and backups."),
-        Verb('history', history, 'List the names greeted so far.'),
-        Verb('forget', forget, 'Delete the greeting history.', caution='This deletes the greeting history.'),
+             caution="This removes the selected empty project's registration, keeping its files and backups.", effect='remove'),
+        Verb('history', history, 'List the names greeted so far.', effect='read'),
+        Verb('forget', forget, 'Delete the greeting history.', caution='This deletes the greeting history.', effect='remove'),
         Verb('beep', beep, 'Sound the terminal bell. Shows a verb that runs on one system.',
-             supported_os=('windows',)),
+             supported_os=('windows',), effect='read'),
         Verb('todo', todo, "Write a work record on this module's own element: something still to do.",
              nouns=(Noun('task', 'What it needs.'),),
              examples=(('metaform hello todo "greet in every language"', 'Records a missing work record.'),)),
         Verb('done', done, 'Mark one of those work records done, keeping its resolution.',
              nouns=(Noun('id', 'The work record id todo returned.'), Noun('resolution', 'How it was resolved.'))),
-        Verb('noncedemo', noncedemo, 'Walk through a nonce: issue it, update it, close it and hand on a new one.',
-             nouns=(Noun('step', 'next or complete, after the nonce.', required=False, many=True),),
-             examples=(('metaform hello noncedemo', 'Prints the nonce to run.'),)),
-        Verb('count', count, 'Count the names greeted. Shows ctx.say beside the data a verb returns.'),
+        Verb('count', count, 'Count the names greeted. Shows ctx.say beside the data a verb returns.', effect='read'),
         Verb('welcome', welcome, 'Greet a name from an async verb. Shows ctx.publish_async.',
              nouns=(Noun('name', 'The name to greet.'),)),
         Verb('later', later, 'Greet a name after some seconds, from a task hello owns. Shows ctx.spawn.',
@@ -483,10 +447,10 @@ MODULE = Module(
                      'the change and ends. A module whose process runs on, such as the web GUI\'s server, listens '
                      'the same way for as long as it runs.'),
         Verb('greet-favorite', greet_favorite, 'Greet the favorite name. Shows Stop when none is set.'),
-        Verb('uptime', uptime, 'How long ago hello started in this process. Shows the start and stop hooks.'),
+        Verb('uptime', uptime, 'How long ago hello started in this process. Shows the start and stop hooks.', effect='read'),
         Verb('repeat', repeat, 'Say the greeting --times times. Shows a number setting.',
              nouns=(Noun('name', 'The name to greet.'),), switches=('times',),
-             examples=(('metaform hello repeat world --times 3', 'Prints hello, world three times.'),)),
+             examples=(('metaform hello repeat world --times 3', 'Prints hello, world three times.'),), effect='read'),
         Verb('greet-friends', greet_friends, 'Greet each name in --friends. Shows an items setting.',
              switches=('friends',),
              examples=(('metaform hello greet-friends --friends ada,bob', 'Greets ada and bob.'),)),
@@ -494,14 +458,14 @@ MODULE = Module(
              nouns=(Noun('text', 'The report.'),)),
         Verb('feedback', send_feedback, 'Save feedback on the Metaform process. Shows feedback.',
              nouns=(Noun('text', 'The feedback.'),)),
-        Verb('reports', reports, "List this project's report, feedback and shape files. Shows list_reports."),
+        Verb('reports', reports, "List this project's report, feedback and shape files. Shows list_reports.", effect='read'),
         Verb('read-report', read_one_report, 'Print one report file exactly. Shows read_report.',
-             nouns=(Noun('name', 'The file name reports lists.'),)),
+             nouns=(Noun('name', 'The file name reports lists.'),), effect='read'),
         Verb('visit', visit, "Count a visit by a name in hello's own table beside the map. Shows Module.tables.",
              nouns=(Noun('name', 'The name visiting.'),)),
         Verb('note', note, "Keep a note in hello's own project-level table, which a clear keeps.",
              nouns=(Noun('text', 'The note.'),)),
-        Verb('notes', notes, "List hello's notes in time order, read through the table's index."),
+        Verb('notes', notes, "List hello's notes in time order, read through the table's index.", effect='read'),
     ),
     subscriptions=(Subscription('hello.greeted', record),),
     start=start,

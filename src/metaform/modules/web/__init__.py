@@ -29,7 +29,9 @@ from tempfile import TemporaryDirectory
 from typing import Any, cast
 
 from metaform import home, settings
-from metaform.module import Context, Module, Noun, Stop, Verb
+from metaform.module import Context, Module, Noun, Pane, Stop, ToolbarItem, Verb, child_environment
+
+from .workspace import DEFAULT, check_layout, check_toolbar, check_workspaces, workspace_choices
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -43,15 +45,68 @@ IN_USE = {errno.EADDRINUSE, errno.EACCES, 10048, 10013}  # 10048 and 10013 are W
 settings.number('web_port', 7433, min=1, max=65535, scope='global',
                 help='The port the web GUI listens on.',
                 details='One server per Metaform home listens here, so the address stays the same across restarts.')
-settings.text('web_bind', '127.0.0.1', scope='global',
+settings.text('web_bind', '127.0.0.1', scope='global', person_only=True,  # who reaches the page that permits agents
               help='The address the web GUI binds to. Any address but loopback also needs the token.',
               details='At 127.0.0.1 only this machine can reach the web GUI. Another address opens it to that '
                       'network, and then every request needs the token that metaform web prints.')
-settings.text('agent_command', 'claude -p',
+settings.text('agent_command', 'claude -p', person_only=True,  # the command an agent is started with
               help='The command the web GUI starts an agent with, the task given as its last argument.',
               details='It is run in the project\'s folder when a person asks for an agent from the web GUI, as when '
                       'an element added by hand is to be validated. Where it cannot be run the task waits on the '
                       'map for an agent to take it.')
+
+# The workspace the person arranges on the page, kept for the whole home so every project opens the same way. Each is
+# the JSON text of its shape, workspace.py; empty is the defaults the modules declare, so unset returns to them. The
+# page is where they are arranged; config, set and the settings screen show and take the JSON text.
+settings.text('web_toolbar', '', scope='global', check=check_toolbar,
+              help='The web GUI\'s toolbar as the person arranged it, as JSON; empty is the declared defaults.',
+              details='{"toolbar": [[id, ...], ...], "extra": [id, ...]}: each inner list is one slot, its first tool '
+                      'shown and the others behind it; extra holds the tools behind the toolbar\'s last slot. An id '
+                      'is <module>.<id>, or chassis.<id>. A tool not named lands in its declared place. metaform '
+                      'unset --web-toolbar restores the defaults.')
+settings.text('web_layout', '', scope='global', check=check_layout,
+              help='The web GUI\'s panes as the person arranged them, as JSON; empty is the declared defaults.',
+              details='{"areas": {"left"|"main"|"right"|"bottom": {"size": px, "groups": [{"id", "tabs": [id, ...], '
+                      '"active", "size"}]}}, "floating": [{"pane", "x", "y", "w", "h"}], "off": [id, ...]}. A pane '
+                      'in off keeps its place and is not shown. A pane not named lands in its declared group and '
+                      'area. metaform unset --web-layout restores the defaults.')
+settings.text('web_workspaces', '', scope='global', check=check_workspaces,
+              help='The person\'s named workspaces, each a saved toolbar and layout, as JSON.',
+              details='{"<name>": {"toolbar": ..., "layout": ...}}. Default is never stored: it is the declared '
+                      'defaults, so it cannot be deleted. The page saves, selects, resets and deletes them.')
+# How the 3D map is drawn. Shapes tell an element's artifact type before any text is read: code, document, media,
+# data, collection, upstream and downstream each have their own, in 2D and in 3D; off draws every element as before.
+settings.boolean('web_node_shapes', True, scope='global',
+                 help='Draw each element in the shape of its artifact type, the first segment of its address.',
+                 details='code is a box, document a page, media a screen, data a cylinder, collection a stack, '
+                         'upstream an input and downstream an output, in the 2D and the 3D map. Off draws every '
+                         'element in one shape, as the maps did before.')
+# The dots that flow along the joins are the 3D map's one motion that never ends by itself; drawing them costs the
+# machine every frame. They flow for this long after the map was last touched or changed, then the map draws nothing
+# until the next act, so a page left open costs nothing.
+settings.number('web_flow_seconds', 30, min=0, max=3600, scope='global',
+                help='Seconds the dots along the joins keep flowing after the map was last touched or changed.',
+                details='After this the 3D map draws no frame until something on it moves or the person acts. 0 '
+                        'stops the flow as soon as nothing else moves. With reduced motion nothing flows at all.')
+settings.boolean('web_idle_flow', False, scope='global',
+                 help='Keep the dots flowing slowly for as long as the page is open, past web_flow_seconds.',
+                 details='On, an idle 3D map is still drawn 15 times a second so the flow never stops, as the map '
+                         'was drawn before; off, it stops and the machine rests.')
+# The page's developer detail: off shows none of it. info adds the browser-console lines of what the page reads and
+# writes and the developer panes, among them the prompts Metaform and each enabled module would send; verbose adds
+# the events heard and the panes drawn; trace adds every raw response.
+DEBUG_LEVELS = ('off', 'info', 'verbose', 'trace')
+settings.choice('web_debug', list(DEBUG_LEVELS), 'off', scope='global',
+                help='Developer detail in the web GUI: off, info, verbose or trace.',
+                details='info logs each read and write of the page to the browser console and adds the developer '
+                        'panes: the prompts Metaform and each enabled module would send, read-only, what an agent '
+                        'sees, and the traces; verbose adds the events heard and each pane drawn; trace adds every '
+                        'raw response. metaform web start --web-debug <level> starts the page with it for that run.')
+settings.choice('web_workspace', workspace_choices, DEFAULT, scope='global',
+                help='The workspace the web GUI opens with; Reset returns the toolbar and panes to it as saved.',
+                details='Default is the declared defaults. Choosing a workspace on the page copies its toolbar and '
+                        'layout into web_toolbar and web_layout, which then hold the person\'s changes until the '
+                        'next reset or save.')
 
 
 def run_dir() -> Path:
@@ -82,6 +137,24 @@ def opened(project: str | None) -> None:
             opened_file().unlink(missing_ok=True)
     except OSError:
         pass  # the page then opens on the project it remembers, or the first; nothing else depends on it
+
+
+def debug_file() -> Path:
+    """The developer level the last `metaform web start` asked for, `--web-debug`, so a one-run choice reaches the
+    server already running as well as one it starts."""
+    return run_dir() / 'web-debug'
+
+
+def debug_level() -> str:
+    """The page's developer level: the more detailed of the setting and what the last start asked for; off shows
+    nothing of it."""
+    try:
+        asked = debug_file().read_text(encoding='utf-8').strip()
+    except OSError:
+        asked = 'off'
+    kept = str(settings.value('web_debug', home.home()) or 'off')
+    known = [one for one in (asked, kept) if one in DEBUG_LEVELS]
+    return max(known, key=DEBUG_LEVELS.index, default='off')
 
 
 def opened_project() -> str | None:
@@ -183,7 +256,8 @@ def check_free(bind: str, port: int) -> None:
 
 def spawn(bind: str, port: int, nonce: str) -> subprocess.Popen[bytes]:
     """The server as a process detached from the terminal, so it runs until stopped, VIEW-002. Its standard output
-    is a pipe back to `start`, on which it writes one line once it listens; its standard error is the log."""
+    is a pipe back to `start`, on which it writes one line once it listens; its standard error is the log. It is the
+    person's page, so the role of an agent that ran `start` never passes to it, BASE-052."""
     folder = run_dir()
     folder.mkdir(parents=True, exist_ok=True)
     command = [sys.executable, '-m', 'metaform.modules.web.server', '--bind', bind, '--port', str(port),
@@ -192,9 +266,9 @@ def spawn(bind: str, port: int, nonce: str) -> subprocess.Popen[bytes]:
         if os.name == 'nt':
             flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
             return subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=log,
-                                    cwd=home.home(), creationflags=flags)
+                                    cwd=home.home(), env=child_environment(), creationflags=flags)
         return subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=log,
-                                cwd=home.home(), start_new_session=True)
+                                cwd=home.home(), env=child_environment(), start_new_session=True)
 
 
 def ready_line(process: subprocess.Popen[bytes]) -> bytes | None:
@@ -223,6 +297,11 @@ def log_tail() -> str:
 def start(ctx: Context) -> dict[str, Any]:
     bind, port = str(ctx.setting('web_bind')), int(ctx.setting('web_port'))
     opened(ctx.project)
+    try:
+        run_dir().mkdir(parents=True, exist_ok=True)
+        debug_file().write_text(str(ctx.setting('web_debug') or 'off'), encoding='utf-8')
+    except OSError:
+        pass  # the page then follows the setting alone
     record = recorded()
     if record is not None:
         if answering(record):
@@ -257,6 +336,7 @@ def stop(ctx: Context) -> dict[str, Any]:
     if not answering(record):
         run_file().unlink(missing_ok=True)
         return {'state': 'not running'}
+    debug_file().unlink(missing_ok=True)
     stream = held_open(record)
     os.kill(int(record['pid']), signal.SIGTERM)
     if stream is not None:
@@ -327,8 +407,11 @@ MODULE = Module(
             'that start prints. metaform web runs start.',
     default='start',
     verbs=(
-        Verb('start', start, 'Start the web GUI, or show the address it already runs at.'),
-        Verb('stop', stop, 'Stop the web GUI.'),
+        # Starting the GUI writes the server's record under the home and starts its process; it reaches no agent and
+        # nothing past this machine on its own, and stop ends that process. Neither changes the map.
+        Verb('start', start, 'Start the web GUI, or show the address it already runs at.', switches=('web_debug',),
+             effect='write', open_world=False),
+        Verb('stop', stop, 'Stop the web GUI.', effect='write', open_world=False),
         Verb('serve', serve, 'Serve reconstructed web variants together, each on its own local port.',
              nouns=(Noun('origin', 'The origin id; the latest origin when omitted.', required=False),
                     Noun('variants', 'Variant ids, or all to serve every variant of the origin.', many=True)),
@@ -338,5 +421,22 @@ MODULE = Module(
              examples=(('metaform web serve v000001 v000002', 'Compare two variants.'),
                        ('metaform web serve all origin=<id>', 'Serve every variant of one origin.')),
              surfaces=('cli',)),
+    ),
+    # The page's two views of the map. The default layout keeps the maps on the left and in the main area, and
+    # everything a person reads or types into on the right, where the reading starts.
+    # The workflow runs of the project, read and answered by the person: a run paused on the person shows what stopped
+    # it, takes the answer and can tell its agent to resume, without the command line. Declared here, the page's own
+    # view, beside the chat where answers are typed.
+    toolbar=(
+        ToolbarItem('runs', 'Workflow runs', 'See the workflow runs at work, answer one waiting on you and resume it, '
+                    'or cancel one.', icon='play', pane='runs', placement='extra', order=310),
+    ),
+    panes=(
+        Pane('map2d', '2D map', 'See the whole map flat, and walk it node by node with the keys.', icon='map',
+             page='map2d', area='left', visible=True, order=10, min_width=280, min_height=200),
+        Pane('map3d', '3D map', 'See the map in depth, with the agents at work on it.', icon='cube', page='map3d',
+             area='main', group='stage', visible=True, order=10, min_width=320, min_height=240),
+        Pane('runs', 'Workflow runs', 'See the workflow runs at work, answer one waiting on you and resume it, or '
+             'cancel one.', icon='play', page='runs', area='right', group='chat', order=130, min_width=320),
     ),
 )

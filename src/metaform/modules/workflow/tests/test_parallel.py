@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
+from metaform.data import Store
 from metaform.modules.workflow import executor
 from metaform.modules.workflow.binding import Logic
 from metaform.modules.workflow.element import ElementValue
@@ -14,26 +15,28 @@ from metaform.modules.workflow.element import ElementValue
 pytestmark = [pytest.mark.req('BASE-051'), pytest.mark.kind('fixture')]
 
 
-def test_simultaneous_branch_returns_keep_all_results(home):
+def test_simultaneous_branch_returns_keep_all_results(home, run, project_folder):
+    run('enable', 'workflow')
+    store = Store('proj', module='workflow')
     script = '@STATE_INIT:\n@CONSTRAINT:\n'
     lookup = lambda address, name: (Logic('logic', name, name, script), ElementValue({'address': address}))
-    parent = executor.start('workflow.quality.code.run()', {}, None, lookup, {})
-    words = executor.parallel(parent, [f'{{result{i}}} := workflow.quality.code.branch()' for i in range(4)],
+    parent = executor.start(store, 'workflow.quality.code.run()', {}, None, lookup, {})
+    words = executor.parallel(store, parent, [f'{{result{i}}} := workflow.quality.code.branch()' for i in range(4)],
                               {}, lookup)
     ready = home / 'return-now'
     code = '''import json, sys, time
 from pathlib import Path
-from metaform.modules.workflow import executor
-from metaform import nonce
+from metaform.modules.workflow import executor, runs
+from metaform.data import Store
 from metaform.data.records import plain
-real = nonce.update
+real = runs.close
 def slow(*args, **kwargs):
     time.sleep(0.1)
     return real(*args, **kwargs)
-nonce.update = slow
+runs.close = slow
 while not Path(sys.argv[2]).exists():
     time.sleep(0.01)
-print(json.dumps(plain(executor.complete(sys.argv[1], "RETURN TRUE", {}))))
+print(json.dumps(plain(executor.complete(Store("proj", module="workflow"), sys.argv[1], "RETURN TRUE", {}))))
 '''
     processes = [subprocess.Popen([sys.executable, '-c', code, word, str(ready)],
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for word in words]
@@ -45,7 +48,7 @@ print(json.dumps(plain(executor.complete(sys.argv[1], "RETURN TRUE", {}))))
         assert all(process.returncode == 0 for process in processes), outputs
         results = [json.loads(out) for out, _ in outputs]
         assert sum('resume' in result for result in results) == 1
-        resumed = executor.view(parent)
+        resumed = executor.view(store, parent)
         assert resumed['state'] == 'running'
         assert resumed['variables'] == {f'result{i}': True for i in range(4)}
     finally:

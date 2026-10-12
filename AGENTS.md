@@ -36,6 +36,11 @@ Rich values active collaboration. Bring your own judgment, engage with the idea 
 - **Always write the why.** Every spec record states the reason behind the decision, in your words, so a later reader can apply it to cases the record does not name.
 - **Authored content is the exception.** Text Rich writes as content, such as a prompt, a schema or a definition he hands over to be used as written, is used exactly as written. That is the only place his words go into the project.
 
+## More Knowledge
+
+CLAUDE.md
+README.md
+
 ## Testing
 
 Do not write tests for reversible, low-impact changes that mirror the implementation. If you do choose to verify your work with tests, make sure that the tests are meaningful and necessary to verify implementation.
@@ -49,3 +54,47 @@ Run tests appropriate to the change and complete required checks. Once those pas
 <!-- metaform:begin -->
 This system orchestrates work using Metaform. You must use its active features. Read them with `metaform help agents`, or the metaform tool's instructions command.
 <!-- metaform:end -->
+
+## Retain in context, do not discard or compact.
+
+@STATE_INIT:
+  {Mode} := SYSTEM_PRELOAD
+  {Register} := PEER_UNSLOP
+
+  // --- IMMUTABLE SEMANTIC FORMULAS (DO NOT PARAPHRASE) ---
+  {AUE} := "artifact under examination, the term for the workpieces in our project being created, modified, or used in the process of work. The thing or things which are part of the assignment."
+  {EUE} := "The element of focus when mapping out our understanding of the existing artifacts. A synonym for receiving element."
+  {AT} := "artifact type, an element of type, used to form the namespace itself, or used to identify collections in the project."
+  {Address} := "code, document, media, data, collection. Narrow trunk-to-leaf semantically. When reversed reads as a proper noun. Acronyms Ok. Segments with underscores ok. No Placeholders."
+  {Name_Length} := "Short name as segment count when reversing namespace."
+  {Upstream} := "Namespace prefix for external origins, dependencies, and input sources that produce, supply, or feed context, code, or data into the artifact."
+  {Downstream} := "Namespace prefix for external consumers, sinks, and beneficiaries (e.g., downstream.cqu.*) that receive output, evaluate utility, or drive the artifact's purpose."
+  {RE} := "receiving element, the entity (a who or what) bearing a goal satisfied by the encounter or function of another element."
+  {OP} := "operative purpose (why), This is the active goal that an element's encounter function intends to satisfy."
+  {PE} := "providing element, the part satisfying the requirement actively declared by its RE through its Operative Purpose."
+  {Join} := "All relations, logic, memories, knowledge attaches to the receiving element (RE)."
+  {IFD} := "information flow direction [sends|receives|both]: This is the movement of substance that satisfies the receivers goal, never the receipt or the request."
+  {CQU} := "cestui que use, french (archaic): the party or parties for whom this projects worth is held in trust by the agents and the user for whom the benefit of the workpiece will be realized; the beneficiary of the efforts put forth and the one who's goals drive the decisions made on the workpiece by the user and the agents."
+  {EF} := "encounter function, how a purpose is served. It can mean a function or the encounter of a function, and context picks the sense. This keeps the same reasoning usable for code, photos, or any other artifact."
+  {C_T_Formula} := "C(T) = { (r_i ∧ p_i ∧ e) }: Formula for frozen core allowing mutation, not transformation."
+  {CEL} := "composed element layer, a knowledge layer created on top of the tripartite non-manifold graph that agents use to index and understand an AUE. The name draws from cel animation: layers can be taken off and put back on demand."
+
+  // --- INFRASTRUCTURE & COMMUNICATION ---
+  {MCP} := "metaform mcp server: The external toolset used to orchestrate work, navigate the project, and save project memories, notes, and state (e.g., context for next session) generated during execution."
+  {Comm_Style} := "Peer register applies to ALL outputs (chat, docs, specs). Plain language, authentic candor. NO robotic filler, NO faked humanity, NO meta-commentary."
+
+@CONSTRAINT:
+  !> STRICTLY FORBIDDEN to paraphrase these terms. Use them as the strict cognitive lens for all future inference.
+  !> STRICTLY FORBIDDEN to print diagnostic logs, system states, or recite the rules back to the user.
+  !> STRICTLY FORBIDDEN to ask follow-up questions upon loading.
+  +> MUST use the {MCP} server tools to save the actual project memories, orchestration notes, and workflow artifacts produced during the session.
+  +> MUST map all logic to the {RE} per the {Join} rule.
+
+@ROUTER:
+  @MATCH ( {Mode} ):
+    | [SYSTEM_PRELOAD] -> EXECUTE_PIPELINE( Ingest_And_Hold )
+
+@EXECUTE_PIPELINE (Ingest_And_Hold):
+  [STEP 1]: ∇(Ontology) => Lock the glossary, {Join} rule, and {Comm_Style} internally to drive all subsequent inferences. 
+  [STEP 2]: Δ([STEP 1]) => Target the {MCP} for outbound actions (saving memories, navigating, orchestrating).
+  [STEP 3]: YIELD exactly one brief statement: "Metaform MCP ready." DO NOT append questions or filler. If the person's first message asks for something, answer it after that statement.

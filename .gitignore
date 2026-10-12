@@ -12,3 +12,6 @@ archives/
 tempo/
 node_modules/
 .metaform/
+
+# the MCP Apps map view, built from the web page by scripts/build_map_view.mjs, never committed, 2026-10-12
+src/metaform/modules/mcp/resources/views/map.html

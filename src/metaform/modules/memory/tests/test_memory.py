@@ -37,7 +37,21 @@ def mapped(run, tmp_path):
 
 
 def m(run, verb, *args, cwd, ok=True):
-    return run('memory', verb, *args, '--json', cwd=cwd, ok=ok)
+    return run('memory', verb, *(kept(arg) if verb == 'create_entities' else arg for arg in args), '--json', cwd=cwd,
+               ok=ok)
+
+
+def kept(arg):
+    """A create_entities argument with what a new memory carries, MCP-037: a why, and a title when its first
+    observation is not one short line to stand as its title. Each test's own entities stay as the reference has them."""
+    if not isinstance(arg, str) or not arg.startswith('['):
+        return arg
+    given = json.loads(arg)
+    for one in given:
+        one.setdefault('why', 'Kept for the next agent here.')
+        if not one['observations'] or '\n' in one['observations'][0]:
+            one.setdefault('title', one['name'])
+    return json.dumps(given)
 
 
 def mj(run, verb, *args, cwd):
@@ -53,7 +67,9 @@ def J(value):
 
 
 def where(run, address, cwd, *more):
-    return json.loads(run('map', 'where', address, *more, '--json', cwd=cwd).stdout)
+    """A node's read with what is held there in full, which carries memory's node read; the read an agent orients
+    from counts it instead, MCP-039."""
+    return json.loads(run('map', 'where', address, 'contents=true', *more, '--json', cwd=cwd).stdout)
 
 
 @pytest.mark.req('LAYER-013')
@@ -72,7 +88,8 @@ def test_memory_offers_the_nine_commands_with_the_reference_names_and_argument_s
         return schema
     reference = {
         'create_entities': {'entities': {'type': 'array', 'items': {'type': 'object', 'properties': {
-            'name': text, 'entityType': text, 'observations': texts}, 'required': ['name', 'entityType', 'observations']}}},
+            'name': text, 'entityType': text, 'observations': texts, 'title': text, 'why': text},
+            'required': ['name', 'entityType', 'observations']}}},
         'create_relations': {'relations': {'type': 'array', 'items': {'type': 'object', 'properties': {
             'from': text, 'to': text, 'relationType': text}, 'required': ['from', 'to', 'relationType']}}},
         'add_observations': {'observations': {'type': 'array', 'items': {'type': 'object', 'properties': {
@@ -104,17 +121,17 @@ def test_memory_offers_the_nine_commands_with_the_reference_names_and_argument_s
 def test_the_whole_graph_behaves_as_the_reference_memory_server(run, mapped):
     made = mj(run, 'create_entities', J([entity('route', 'part', 'Drifts.'), entity('probe', 'part'),
                                          entity('route', 'again')]), cwd=mapped)
-    assert made == {'entities': [entity('route', 'part', 'Drifts.'), entity('probe', 'part')]}
+    assert made['entities'] == [entity('route', 'part', 'Drifts.'), entity('probe', 'part')]
     assert mj(run, 'create_entities', J([entity('route', 'part')]), cwd=mapped) == {'entities': []}
     missing = m(run, 'create_relations', J([{'from': 'route', 'to': 'ghost', 'relationType': 'uses'}]), cwd=mapped,
                 ok=False)
     assert missing.returncode == 2 and 'Entity with name ghost not found' in missing.stderr
     relation = {'from': 'probe', 'to': 'route', 'relationType': 'checks'}
-    assert mj(run, 'create_relations', J([relation, relation]), cwd=mapped) == {'relations': [relation]}
+    assert mj(run, 'create_relations', J([relation, relation]), cwd=mapped)['relations'] == [relation]
     assert mj(run, 'create_relations', J([relation]), cwd=mapped) == {'relations': []}
     added = mj(run, 'add_observations', J([{'entityName': 'route', 'contents': ['Drifts.', 'Holds 25 routes.']}]),
                cwd=mapped)
-    assert added == {'results': [{'entityName': 'route', 'addedObservations': ['Holds 25 routes.']}]}
+    assert added['results'] == [{'entityName': 'route', 'addedObservations': ['Holds 25 routes.']}]
     refused = m(run, 'add_observations', J([{'entityName': 'ghost', 'contents': ['x']}]), cwd=mapped, ok=False)
     assert 'Entity with name ghost not found' in refused.stderr
     assert mj(run, 'read_graph', cwd=mapped) == {
@@ -156,7 +173,8 @@ def test_a_memory_entity_is_never_an_element_of_the_map(run, mapped):
 def test_at_a_node_the_commands_act_on_that_nodes_memories_tied_by_a_join_of_type_memory(run, mapped):
     made = mj(run, 'create_entities', J([entity('route ejection', 'behavior', 'Routes are ejected.')]), ROUTE,
               cwd=mapped)
-    assert made == {'entities': [entity('route ejection', 'behavior', 'Routes are ejected.')]}
+    assert made == {'entities': [entity('route ejection', 'behavior', 'Routes are ejected.')],
+                    'items': ['code.manager.route#1  Routes are ejected.']}  # its number at the node, MCP-037
     assert mj(run, 'open_nodes', J(['route ejection']), ROUTE, cwd=mapped)['entities'] == [
         entity('route ejection', 'behavior', 'Routes are ejected.')]
     assert mj(run, 'read_graph', PROBE, cwd=mapped) == {'entities': [], 'relations': []}
@@ -261,18 +279,19 @@ def test_memory_is_kept_as_the_reference_keeps_it_in_the_order_it_was_made(run, 
                                    {'from': 'probe', 'to': 'route', 'relationType': 'checks'}]), cwd=mapped)
     whole = mj(run, 'graph', cwd=mapped)
     assert whole['entities'] == [
-        {'name': 'route', 'entityType': 'part', 'observations': [{'content': 'Drifts.'}, {'content': 'Holds.'}]},
+        {'name': 'route', 'entityType': 'part', 'observations': [{'content': 'Drifts.', 'by': None},
+                                                                 {'content': 'Holds.', 'by': None}]},
         {'name': 'probe', 'entityType': 'part', 'observations': []}]
     assert whole['relations'] == [{'from': 'route', 'to': 'probe', 'relationType': 'uses'},
                                   {'from': 'probe', 'to': 'route', 'relationType': 'checks'}]
-    assert [sorted(one) for one in whole['joins']] == [['address', 'entity', 'join_id', 'orphaned', 'shows']] * 2
+    assert [sorted(one) for one in whole['joins']] == [['address', 'by', 'entity', 'join_id', 'orphaned', 'shows']] * 2
     assert mj(run, 'read_graph', cwd=mapped)['relations'] == whole['relations']
     from metaform.modules.memory import TABLES
     columns = {table.name: [column.name for column in table.columns] for table in TABLES.tables}
-    assert columns['entities'] == ['name', 'entity_type', 'seq']
-    assert columns['observations'] == ['entity', 'content', 'seq']
+    assert columns['entities'] == ['name', 'entity_type', 'seq', 'title', 'why']
+    assert columns['observations'] == ['entity', 'content', 'seq', 'by', 'session', 'at']
     assert columns['relations'] == ['source', 'target', 'relation_type', 'seq']
-    assert columns['joins'] == ['join_id', 'entity', 'receiver', 'provider']
+    assert columns['joins'] == ['join_id', 'entity', 'receiver', 'provider', 'by', 'session', 'at', 'number']
 
 
 def memory_v1():
@@ -339,10 +358,11 @@ def test_memory_kept_with_times_is_upgraded_keeping_every_memory_relation_join_a
         recorded = json.loads(db.execute("SELECT value FROM meta WHERE key='module:memory'").fetchone()[0])
         held = {table: [row[1] for row in db.execute(f'PRAGMA table_info("memory.{table}")')]
                 for table in ('entities', 'observations', 'relations', 'joins')}
-    assert recorded['version'] == 2
-    assert held == {'entities': ['name', 'entity_type', 'seq'], 'observations': ['entity', 'content', 'seq'],
+    assert recorded['version'] == 5
+    assert held == {'entities': ['name', 'entity_type', 'seq', 'title', 'why'],
+                    'observations': ['entity', 'content', 'seq', 'by', 'session', 'at'],
                     'relations': ['source', 'target', 'relation_type', 'seq'],
-                    'joins': ['join_id', 'entity', 'receiver', 'provider']}
+                    'joins': ['join_id', 'entity', 'receiver', 'provider', 'by', 'session', 'at', 'number']}
     mj(run, 'create_entities', J([entity('echo', 'part')]), cwd=mapped)
     assert [one['name'] for one in mj(run, 'read_graph', cwd=mapped)['entities']][-1] == 'echo'
 
@@ -715,12 +735,17 @@ def test_rekey_transfers_exact_addresses_at_both_ends_and_preserves_the_graph(ru
     assert result == {'old': old, 'new': new, 'joins': 4, 'notes': 4}
     with store.tables(write=False) as tx:
         after = {table: list(tx.rows(table, limit=0).results) for table in ('joins', 'notes')}
+    def unnumbered(row):  # a join moved to a new address takes the next number there, MCP-037
+        return {key: value for key, value in row.items() if key != 'number'}
     for table, rows in before.items():
         expected = [{**row, **{end: new if row[end] == old else row[end] for end in ('receiver', 'provider')}}
                     for row in rows]
         def sort_key(row):
             return row['receiver'], row['provider']
-        assert sorted(after[table], key=sort_key) == sorted(expected, key=sort_key)
+        assert [unnumbered(row) for row in sorted(after[table], key=sort_key)] == [
+            unnumbered(row) for row in sorted(expected, key=sort_key)]
+    moved = [row['number'] for row in after['joins'] if row['receiver'] == new]
+    assert len(set(moved)) == len(moved) and all(moved)
     assert mj(run, 'read_graph', cwd=mapped) == before_graph
     assert mj(run, 'read_graph', f'address={new}', cwd=mapped) == before_graph
     assert not any(one.get('address') == old for one in mj(run, 'joins', cwd=mapped)['joins'])
@@ -775,3 +800,173 @@ def test_a_bare_address_names_the_element_at_it(run, mapped):
       'node=code.manager.route', cwd=mapped)
     assert mj(run, 'read_graph', 'node=code.manager.route', cwd=mapped) == mj(run, 'read_graph', ROUTE, cwd=mapped)
     assert mj(run, 'read_graph', ROUTE, cwd=mapped)['entities'][0]['name'] == 'route ejection'
+
+
+@pytest.mark.req('BASE-040')
+def test_an_unscoped_write_lands_and_says_no_node_will_show_it(run, mapped):
+    """Without a node the entity is still written, BASE-044, and the notice names it and says how to place it."""
+    said = mj(run, 'create_entities', J([entity('probe timeout', 'behavior', 'Echo waits 2 s.')]), cwd=mapped)
+    assert said['entities'][0]['name'] == 'probe timeout'
+    assert any(n['message'] == 'Written to the whole memory graph; no node will show probe timeout. '
+               'To tie it to a node, pass node or address.' for n in said['notices'])
+    assert mj(run, 'open_nodes', '["probe timeout"]', cwd=mapped)['entities'][0]['observations'] == ['Echo waits 2 s.']
+
+
+@pytest.mark.req('BASE-040')
+def test_an_unscoped_write_to_an_entity_a_node_shows_carries_no_notice(run, mapped):
+    """Observations added without a node to an entity joined at a node show there, so nothing is said."""
+    m(run, 'create_entities', J([entity('route ejection', 'behavior', 'Routes are ejected.')]), ROUTE, cwd=mapped)
+    said = mj(run, 'add_observations', J([{'entityName': 'route ejection', 'contents': ['Ejection waits.']}]),
+              cwd=mapped)
+    assert said['results'][0]['addedObservations'] == ['Ejection waits.'] and 'notices' not in said
+
+
+@pytest.mark.req('BASE-040')
+@pytest.mark.req('STORE-020')
+def test_a_memory_write_records_by_the_session_the_server_runs_for(run, mapped):
+    """A dispatcher tells whether its session recorded at its node by the by on the join and on each observation,
+    since add_observations writes no join. A join already there keeps who made it."""
+    session = {'METAFORM_SESSION': 'r1'}
+    run('memory', 'create_entities', kept(J([entity('route', 'part', 'Drifts.')])), ROUTE, '--json', cwd=mapped,
+        env=session)
+    run('memory', 'add_observations', J([{'entityName': 'route', 'contents': ['Holds.']}]), ROUTE, '--json',
+        cwd=mapped, env={'METAFORM_SESSION': 'r2'})
+    run('memory', 'create_entities', kept(J([entity('route', 'part', 'Slips.')])), ROUTE, '--json', cwd=mapped,
+        env={'METAFORM_SESSION': 'r3'})
+    whole = mj(run, 'graph', cwd=mapped)
+    assert whole['entities'][0]['observations'] == [{'content': 'Drifts.', 'by': 'r1'}, {'content': 'Holds.', 'by': 'r2'},
+                                                    {'content': 'Slips.', 'by': 'r3'}]
+    assert [(one['entity'], one['by']) for one in mj(run, 'joins', ROUTE, cwd=mapped)['joins']] == [('route', 'r1')]
+
+
+@pytest.mark.req('STORE-029')
+@pytest.mark.req('STORE-020')
+def test_memory_kept_at_version_2_is_upgraded_keeping_every_row_with_no_by(run, mapped):
+    """by may be empty, so the tables of version 2 are upgraded in place, every row kept with no by, and the store
+    records that version 2's code still reads them."""
+    from dataclasses import replace
+
+    from metaform.data import Tables
+    from metaform.data.tables import TableTx, ensure, project_store, project_transaction
+    from metaform.modules.memory import TABLES
+    declared = Tables(version=2, tables=tuple(
+        replace(table, columns=tuple(column for column in table.columns if column.name != 'by'))
+        if table.name in ('observations', 'joins') else table for table in TABLES.tables))
+    path = project_store('proj', 'memory')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with project_transaction(path, write=True) as db:
+        ensure(db, path, 'memory', declared, 'project')
+        tx = TableTx('memory', declared, write=True, opener=lambda _: (db, path, True), bound='project')
+        tx.insert('entities', {'name': 'route', 'entity_type': 'part', 'seq': 1})
+        tx.insert('observations', {'entity': 'route', 'content': 'Drifts.', 'seq': 1})
+        tx.insert('joins', {'join_id': 'j1', 'entity': 'route', 'receiver': 'code.manager.route', 'provider': ''})
+    whole = mj(run, 'graph', cwd=mapped)
+    assert whole['entities'] == [{'name': 'route', 'entityType': 'part', 'observations': [{'content': 'Drifts.', 'by': None}]}]
+    assert [(one['join_id'], one['by']) for one in whole['joins']] == [('j1', None)]
+    with project_transaction(path, write=False) as db:
+        recorded = json.loads(db.execute("SELECT value FROM meta WHERE key='module:memory'").fetchone()[0])
+    assert (recorded['version'], recorded['compatible_from']) == (5, 2)
+
+
+def item(run, reference, cwd, ok=True):
+    return run('map', 'item', reference, '--json', cwd=cwd, ok=ok)
+
+
+@pytest.mark.req('BASE-040')
+@pytest.mark.req('MCP-037')
+def test_each_memory_at_a_node_takes_the_next_number_there_and_a_number_is_never_reused(run, mapped):
+    """One counter per address: a memory joined at a node takes its next number, shown in lowercase hex and read in
+    either case; deleting a memory leaves a gap, and the next memory takes the number after the last one taken."""
+    made = mj(run, 'create_entities', J([entity('first', 'fact', 'One.'), entity('second', 'fact', 'Two.')]), ROUTE,
+              cwd=mapped)
+    assert made['items'] == ['code.manager.route#1  One.', 'code.manager.route#2  Two.']
+    mj(run, 'delete_entities', J(['second']), cwd=mapped)
+    assert item(run, 'code.manager.route#2', mapped, ok=False).returncode == 2
+    again = mj(run, 'create_entities', J([entity('third', 'fact', 'Three.')]), ROUTE, cwd=mapped)
+    assert again['items'] == ['code.manager.route#3  Three.']
+    assert json.loads(item(run, 'code.manager.route', mapped).stdout)['item'] == 'code.manager.route#3'  # the latest
+    for number in range(4, 12):
+        mj(run, 'create_entities', J([entity(f'fact {number}', 'fact', f'Fact {number}.')]), ROUTE, cwd=mapped)
+    read = json.loads(item(run, 'code.manager.route#B', mapped).stdout)
+    assert (read['item'], read['title'], read['why']) == ('code.manager.route#b', 'Fact 11.', 'Kept for the next agent here.')
+    assert mj(run, 'create_entities', J([entity('elsewhere', 'fact', 'Else.')]), PROBE, cwd=mapped)['items'] == [
+        'code.probe.echo#1  Else.']  # each address counts on its own
+
+
+@pytest.mark.req('BASE-040')
+@pytest.mark.req('MCP-037')
+def test_a_new_memory_without_its_title_or_why_is_refused_naming_which_and_nothing_is_written(run, mapped):
+    """A memory records knowledge, so a new one carries a short title and why; a first observation that is one short
+    line is its title. The refusal's next step names what is missing, and nothing of the call is written."""
+    def given(*entities):
+        return run('memory', 'create_entities', J(list(entities)), ROUTE, '--json', cwd=mapped, ok=False)
+    no_why = given({'name': 'a', 'entityType': 'fact', 'observations': ['One line.']})
+    assert no_why.returncode == 2 and 'Next: add why: one line' in no_why.stderr
+    neither = given({'name': 'b', 'entityType': 'fact', 'observations': ['Two lines.\nOf it.']},
+                    {'name': 'c', 'entityType': 'fact', 'observations': ['Fine.'], 'why': 'Kept.'})
+    assert 'Next: add title: one line saying what this is; add why' in neither.stderr
+    assert mj(run, 'read_graph', cwd=mapped) == {'entities': [], 'relations': []}
+    titled = given({'name': 'd', 'entityType': 'fact', 'observations': ['One line.'], 'why': 'Kept.'})
+    assert titled.returncode == 0 and json.loads(titled.stdout)['items'] == ['code.manager.route#1  One line.']
+
+
+@pytest.mark.req('STORE-045')
+@pytest.mark.req('MCP-037')
+def test_memories_kept_before_numbers_are_numbered_in_the_order_they_were_made_with_titles_from_their_first_line(
+        run, mapped):
+    """Memory tables version 5 numbers the joins already held, those kept before joins had times first, then by when
+    each was made, and titles each memory from the first line of its first observation; version 4 code still reads
+    the tables."""
+    from dataclasses import replace
+
+    from metaform.data import Tables
+    from metaform.data.tables import TableTx, ensure, project_store, project_transaction
+    from metaform.modules.memory import TABLES
+    new = {'title', 'why', 'number'}
+    declared = Tables(version=4, compatible_from=2, tables=tuple(
+        replace(table, columns=tuple(column for column in table.columns if column.name not in new),
+                indexes=tuple(index for index in table.indexes if 'number' not in index.columns))
+        for table in TABLES.tables))
+    path = project_store('proj', 'memory')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with project_transaction(path, write=True) as db:
+        ensure(db, path, 'memory', declared, 'project')
+        tx = TableTx('memory', declared, write=True, opener=lambda _: (db, path, True), bound='project')
+        for seq, name in enumerate(('late', 'early', 'untimed'), start=1):
+            tx.insert('entities', {'name': name, 'entity_type': 'fact', 'seq': seq})
+            tx.insert('observations', {'entity': name, 'content': f'{name.title()} memory.\nMore.', 'seq': 1})
+        tx.insert('joins', {'join_id': 'j1', 'entity': 'late', 'receiver': 'code.manager.route',
+                            'at': '2026-10-05T00:00:00.000000Z'})
+        tx.insert('joins', {'join_id': 'j2', 'entity': 'early', 'receiver': 'code.manager.route',
+                            'at': '2026-10-01T00:00:00.000000Z'})
+        tx.insert('joins', {'join_id': 'j3', 'entity': 'untimed', 'receiver': 'code.manager.route'})
+    read = [json.loads(item(run, f'code.manager.route#{number}', mapped).stdout) for number in (1, 2, 3)]
+    assert [(one['name'], one['title']) for one in read] == [
+        ('untimed', 'Untimed memory.'), ('early', 'Early memory.'), ('late', 'Late memory.')]
+    after = mj(run, 'create_entities', J([entity('next', 'fact', 'Next.')]), ROUTE, cwd=mapped)
+    assert after['items'] == ['code.manager.route#4  Next.']
+    with project_transaction(path, write=False) as db:
+        recorded = json.loads(db.execute("SELECT value FROM meta WHERE key='module:memory'").fetchone()[0])
+    assert (recorded['version'], recorded['compatible_from']) == (5, 2)
+
+
+@pytest.mark.req('MCP-039')
+def test_a_memory_cites_its_evidence_and_a_read_flags_it_stale_once_the_cited_lines_change(run, mapped):
+    """cite on create_entities is kept as what the cited lines read as; reads say which citations no longer hold,
+    with where the text went, the node's counts count the memory as stale, and a citation naming nothing is refused."""
+    source = mapped / 'route.py'
+    source.write_text('def route():\n    return eject()\n')
+    m(run, 'create_entities', J([{**entity('ejection', 'behavior', 'Routes are ejected.'),
+                                 'cite': ['route.py:2', 'route.py:route']}]), ROUTE, cwd=mapped)
+    held = mj(run, 'read_graph', ROUTE, cwd=mapped)['entities'][0]
+    assert held['cites'] == ['route.py:2', 'route.py:route'] and 'stale' not in held
+    source.write_text('# moved down\ndef route():\n    return eject()\n')  # the same text, a line lower
+    held = mj(run, 'read_graph', ROUTE, cwd=mapped)['entities'][0]
+    assert held['stale'] == ['route.py:2: line 2 changed; the cited text is now at line 3']
+    counted = run('map', 'where', 'code.manager.route', cwd=mapped).stdout
+    assert '1 stale memory' in counted, counted
+    item = json.loads(run('map', 'item', 'code.manager.route', '1', '--json', cwd=mapped).stdout)
+    assert 'STALE: route.py:2: line 2 changed' in item['body']
+    refused = m(run, 'create_entities', J([{**entity('ghost', 'behavior', 'Nothing.'), 'cite': 'nowhere.py:3'}]),
+                ROUTE, cwd=mapped, ok=False)
+    assert refused.returncode != 0 and 'names no file' in refused.stderr + refused.stdout

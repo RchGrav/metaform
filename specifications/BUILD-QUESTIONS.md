@@ -211,6 +211,7 @@ Blocks: nothing.
 The repository wheel carries every repo module, BASE-022, but the chassis's `[project].dependencies` must stay pure Python, BASE-026, and is copied as `CHASSIS_DEPENDENCIES`, which a `metaform build` without the `mcp` module must not list, BASE-041. So a wheel built by hatchling from `pyproject.toml` carries the `mcp` module without `mcp` in its `Requires-Dist`, and `uvx --from` it cannot start the server. Adding each repo module's `DEPENDENCIES` to the repository wheel means making the dependency list dynamic, which changes where `CHASSIS_DEPENDENCIES` comes from.
 Meanwhile: `mcp>=2.2` stays in the `dev` extra; the installer registers the wheel `metaform build` writes, whose `Requires-Dist` names `mcp`; and discovery now reads each module's `DEPENDENCIES` before import and reports a missing one as the module's load problem, so `list modules` and `mcp serve` say what is missing instead of raising an import error.
 Blocks: publishing a repository wheel that serves MCP.
+Answered, 2026-10-11: the repository wheel's dependencies are dynamic, the chassis's list from `[tool.metaform] chassis-dependencies` plus every repo module's `DEPENDENCIES`, set by `hatch_build.py`; `mcp` and `agent-client-protocol` leave the `dev` extra. BASE-022, BASE-026 and BASE-041 say so.
 
 ## Step 12, notices everywhere and the data access object split
 

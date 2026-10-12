@@ -1,7 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- template's prompts, MCP-031. What is between an element's tags is what is served. A copy renames the module in
-     its instructions prompt. -->
+<!-- The template module's prompts: the text Metaform sends to agents for the template module.
+     Each element is one prompt, named by its tag. What is between the tags is sent exactly as written.
+     An empty element inside a prompt, such as <name/>, would mark a place the code fills in; this file has none.
+     metaform fork init starts each new module from a copy of this file, with the module's name changed throughout.
+     Comments are never sent. -->
 <prompts>
-<!-- template's line in the instructions agents read while template is on, MCP-029. -->
+<!-- template's line in the connect message: one short phrase saying what an agent uses the module for, written
+     after the module's name, '– template: <what it is for>', in the project's terms. Sent to every agent when it
+     connects over MCP, one line per enabled module under mcp's <instructions>, and listed in the compact
+     command-line guide, metaform help agents. Empty, as here, sends nothing. Off until the module is enabled, and
+     when the folder's modules setting leaves it out. -->
+<connect></connect>
+<!-- template's instructions. Returned by metaform_instructions with module template, at metaform://instructions/template, and printed by
+     metaform help agents template and by the full form of the command-line guide. Empty sends nothing.
+     Off until the module is enabled. -->
 <instructions>template is active.</instructions>
+<!-- The line under the counts an agent is told at its node, MCP-039, when this module counts what it holds there with
+     node_count: what is counted and the command that reads it, with <address> written as it is for the agent to fill,
+     such as "Read them: metaform template read node=<address>". Shown once per agent session, with the counts.
+     Empty, as here, leaves the line out; a module with no node_count never shows it. -->
+<counts></counts>
+<!-- template's rules, MCP-031: one sentence each that an agent keeps while it works with this module, each with its
+     reason in why="...", so a later reader can apply it to a case it does not name. The MCP server gathers the rules of
+     every enabled module on the folder's surface into one block at the end of metaform://tools, which an agent
+     reads once, each line "[template] <rule> Why: <why>". Write each as
+     <rule why="The next agent reads the title to decide whether to open the record.">Give every record a title.</rule>
+     A rule without a why, or with no sentence, stops the module loading. Empty, as here, sends nothing. -->
+<rules></rules>
 </prompts>

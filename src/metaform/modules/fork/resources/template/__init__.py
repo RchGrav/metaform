@@ -5,14 +5,11 @@ module's purpose, and enable it with `metaform enable <id>`. Every field
 hello declares is here, empty. CHANGELOG.md records each change to the
 module contract, so a copy can follow it.
 
-A module imports `metaform.nonce` to hand work to an agent by nonce, BASE-050.
-`request(module, function, value=None)` issues a nonce, `read(nonce)` returns
-its record, `update` changes the value or the function its next run is sent,
-and `close` ends it and keeps its record, so its number is never issued
-again. `reached()` is the nonce the running command came through, or None
-when it did not come through one, and `current()` is that nonce, stopping
-the command when there is none. `metaform <nonce>` runs the module's
-function for it. hello's `noncedemo` shows it.
+A verb declares what it does with `effect=`: `read` changes nothing, `write`,
+the default, adds or changes and keeps what was there, `remove` deletes or
+replaces what cannot be had back; and `open_world=True` when it reaches past
+the home and the map, to agents or the network. The MCP server gives them
+to hosts as the tool's annotations, MCP-003. hello's verbs show each.
 
 A module that keeps data of its own declares its tables with `metaform.data`'s
 `Tables`, `Table`, `Column` and `Index` and sets `tables=` below; a verb reads
@@ -43,17 +40,60 @@ data, shown under the module's id, or None for nothing, BASE-035. hello's
 of its own keyed by the work id, STORE-045, and shows them in `map work id=<id>`
 with `work_read=`: a function of the context and the work record, which returns
 plain data under the module's id, or None for nothing. hello's `work_read`
-shows it.
+shows it. A module says how much it holds at a node, never what, with
+`node_count=`: a function of the context and a tuple of element addresses,
+which returns a `Count` of `metaform.module`, the word for one and for several,
+at each address how many, how many the last session there wrote and how many
+this session wrote, and the line from its `counts` prompt saying how to read
+them, MCP-039. An agent orienting on a node is told them once per session, the
+node's and its direct neighbours'. memory's `node_count` shows it.
+
+A module numbers each item it writes at an address with `store.number(address)`,
+one counter per address that never reuses a number, keeps the number with the
+item, and refuses a write without its short title, or its why when it records
+knowledge or a decision, with `metaform.module.titled`, MCP-037. It reads one
+item back with `item_read=`: a function of the context, an address and a
+number, which returns plain data, `kind`, `title`, `why`, `body` and `links`,
+or None, served at `metaform://<address>#<n>`. memory's `item_read` shows it.
+It lists them with `items_at=`: a function of the context, an address, a number
+or None and a limit, which returns those numbered below the number, newest
+first, at most the limit, each `number`, `kind`, `title` and `why`, in one read.
+`item_kinds=` names the kinds it numbers, so a list of other kinds skips it.
+`metaform.module.node_items` merges every module's into one list for the brief
+of a node; a module without it is read number by number. memory's shows it.
 
 Every prompt an agent reads is in `resources/prompts.xml`, an element named
 for the prompt, never in Python, MCP-031. A module reads one with
 `prompt_files.text(resources.files(__name__), name)`, or `prompt_files.required`
 when a missing prompt is a defect. `instructions` is listed in the
 instructions agents read; a copy writes its own name in place of `template`.
+Its `rules` hold the module's rules, `<rule why="the reason">One sentence.</rule>`
+each; the MCP server lists every enabled module's at the end of
+metaform://tools, and a rule without a why stops the module loading.
+
+A verb that can take long declares `task=True`: an AI tool that declares the
+MCP tasks extension is answered with a task it polls, BASE-030. hello's `wait`
+shows it. A cancel stops an `async` verb at its next `await`; a verb run in a
+thread finishes, and its task completes with its result. A verb returning
+`{'run': <run id>}`, a workflow run record the server itself advances to its
+end, declares `task='run'`: the run is the task until it ends. A task only for
+work the server advances by itself: a verb whose result the calling agent must
+act on, such as workflow's `assign`, declares neither.
+
+A module adds tools to the web GUI's toolbar with `toolbar=`, `ToolbarItem`s,
+and panes to its workspace with `panes=`, `Pane`s, both of `metaform.module`.
+A tool runs one of the module's verbs with fixed arguments, shows a pane,
+runs a command of the page, or opens a link; a pane shows a read verb's
+result, a view the page draws, or a `.md`, `.txt` or `.html` file under
+`resources/`. Each has an id, a title, a one-line description saying why a
+person uses it, its tooltip, and an icon, a name from `ICONS` or an SVG
+under `resources/`. They are defaults: the person arranges the toolbar and
+the panes and saves workspaces on the page. The tool and the pane below show
+`resources/pane.md`; a copy writes its own.
 """
 from __future__ import annotations
 
-from metaform.module import Module
+from metaform.module import Module, Pane, ToolbarItem
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -74,5 +114,17 @@ MODULE = Module(
     tables=None,
     data=None,
     node_read=None,
+    node_count=None,
     work_read=None,
+    item_read=None,
+    items_at=None,
+    item_kinds=(),
+    toolbar=(
+        ToolbarItem('about', 'About template', 'Read what this module is for before turning it on.', icon='file',
+                    pane='about', placement='extra'),
+    ),
+    panes=(
+        Pane('about', 'About template', 'Read what this module is for before turning it on.', icon='file',
+             resource='resources/pane.md', area='right'),
+    ),
 )

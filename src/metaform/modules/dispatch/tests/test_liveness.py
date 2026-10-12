@@ -10,7 +10,7 @@ import sys
 import pytest
 
 from metaform import home as homes
-from metaform import nonce, relay, sqlite
+from metaform import relay, sqlite
 from metaform.data import DataConnection, Store
 from metaform.modules.dispatch import sessions, work_read
 from metaform.modules.dispatch.tests.test_dispatch import Dispatch, alive, eventually
@@ -47,7 +47,7 @@ def test_mid_turn_messages_wait_in_order_and_cannot_replace_a_prompt(dispatch, r
         assert prompts[-1]['params']['prompt'] == [{'type': 'text', 'text': text}]
         assert prompts[-1]['params']['sessionId'] == 'fake-session-1'
     if done:
-        run('map', 'work', 'op=done', f'id={dispatch.id}', 'resolution=Finished', cwd=dispatch.folder)
+        run('map', 'work', 'op=done', 'why=Closed by the test.', f'id={dispatch.id}', 'resolution=Finished', cwd=dispatch.folder)
     (gates / '3').touch()
     if done:
         assert dispatch.process.wait(15) == 0, dispatch.process.stderr.read().decode()
@@ -241,7 +241,6 @@ def test_schema_change_cannot_strand_a_runner_or_its_resources(dispatch, trigger
         with pytest.raises(OSError):
             socket.create_connection(('127.0.0.1', held['port']), timeout=1)
         assert not list((dispatch.home / 'run' / 'listeners').glob(f'dispatch-{held["pid"]}-*.json'))
-        assert not nonce.read(held['nonce']).open
     finally:
         with DataConnection(path) as db:
             db.execute(VERSIONS, (sqlite.SCHEMA_VERSION,))
@@ -283,7 +282,6 @@ def test_automatic_recovery_stops_orphans_before_returning_ticket_and_preserves_
     dispatch.start('hold', FAKE_ACP_ORPHAN_HOLD='1')
     eventually(lambda: dispatch.logged('grandchild'))
     before = dispatch.ticket()
-    held = dispatch.session().extra
     dispatch.process.kill()
     dispatch.process.wait()
     transcript = [(item.extra, item.value) for item in dispatch.items('note')]
@@ -302,7 +300,6 @@ def test_automatic_recovery_stops_orphans_before_returning_ticket_and_preserves_
     assert [(item.extra, item.value) for item in dispatch.items('note') if item.extra['kind'] != 'signal'] == transcript
     assert {'not-smooth', 'requeue'} <= {json.loads(item.value)['signal'] for item in dispatch.items('note')
                                         if item.extra['kind'] == 'signal'}
-    assert not nonce.read(held['nonce']).open
     again = json.loads(run('dispatch', 'recover', '--json', cwd=dispatch.folder).stdout)
     assert again['released'] == []
 
@@ -332,18 +329,20 @@ def test_automatic_recovery_keeps_tickets_when_safe_cleanup_cannot_be_proved(dis
     held = dispatch.session().extra
     dispatch.process.kill()
     dispatch.process.wait()
-    if unsafe == 'legacy':
-        value = nonce.read(held['nonce']).value
-        nonce.update(held['nonce'], value={key: value[key] for key in ('work_id', 'agent', 'session_id')})
+    def evidence(change):  # the session row's private recovery evidence, as the runner wrote it
+        with Store('proj', module='dispatch').tables() as tx:
+            row = tx.get('sessions', {'session_id': held['session_id']})
+            tx.update('sessions', {'session_id': held['session_id']}, {'recovery': change(row['recovery'])})
+
+    if unsafe == 'legacy':  # a session recorded before the evidence was kept has none
+        evidence(lambda kept: None)
     elif unsafe == 'changed_owner':
         dispatch.store.move_work(dispatch.id, 'todo')
         dispatch.store.take_work(dispatch.id, None, 'another agent')
     elif unsafe == 'unknown_process':
         monkeypatch.setattr(recovery, 'identity', lambda pid: None)
     else:
-        value = nonce.read(held['nonce']).value
-        value['recovery']['adapter_identity'] = 'a different process birth'
-        nonce.update(held['nonce'], value=value)
+        evidence(lambda kept: {**kept, 'adapter_identity': 'a different process birth'})
     before = dispatch.ticket()
     result = recovery.recover(context('dispatch', dispatch.folder, project='proj'))
     assert result['released'] == []
@@ -519,13 +518,13 @@ def test_autostart_can_select_recovered_ticket_only_after_old_workers_are_stoppe
     dispatch.process.wait()
     selected = []
 
-    def start(ctx):
+    def start(ctx, reservation):
         assert not any(alive(pid) for pid in dispatch.logged('pid') + dispatch.logged('grandchild'))
-        assert dispatch.ticket().taken is None
+        assert dispatch.ticket().taken_by == reservation
         selected.append(ctx.nouns['id'])
         return {'work_id': ctx.nouns['id']}
 
-    monkeypatch.setattr(module, 'start', start)
+    monkeypatch.setattr(module, 'run_reserved', start)
     result = module.autostart(context('dispatch', dispatch.folder, project='proj'))
     assert selected == [dispatch.id] and result['started'] == [{'work_id': dispatch.id}]
 
@@ -619,7 +618,6 @@ def test_termination_during_adapter_creation_waits_for_startup_resources(dispatc
             assert result['ended'] == TERMINATED
             assert held.process.returncode is not None, 'startup must not leave an adapter after cleanup'
             assert dispatch.ticket().taken is None  # terminated before it took the ticket
-            assert held.number is None or not nonce.read(held.number).open
             assert not held.recorded or dispatch.session().extra['state'] == 'ended'
         finally:
             resume.set()
@@ -652,7 +650,7 @@ def test_completed_ticket_and_runner_death_have_one_status_on_every_surface(disp
         mcp = session(dispatch.home, dispatch.folder, read)
         record = work_read(SimpleNamespace(store=Store('proj', module='dispatch')), dispatch.ticket())['sessions']
         assert cli == mcp == record
-        assert not {'pid', 'port', 'token', 'nonce'} & set(cli[0])
+        assert not {'pid', 'port', 'token', 'nonce', 'recovery'} & set(cli[0])
         return cli[0]
 
     assert shown()['state'] == 'running'
@@ -660,7 +658,7 @@ def test_completed_ticket_and_runner_death_have_one_status_on_every_surface(disp
     dispatch.process.kill()
     dispatch.process.wait()
     assert shown()['state'] == 'ended'
-    run('map', 'work', 'op=done', f'id={dispatch.id}', 'resolution=closed elsewhere', cwd=dispatch.folder)
+    run('map', 'work', 'op=done', 'why=Closed by the test.', f'id={dispatch.id}', 'resolution=closed elsewhere', cwd=dispatch.folder)
     assert shown()['state'] == 'ended'
     assert raw['state'] == 'running'  # reads do not rewrite history
     from metaform.modules.dispatch import end_group
@@ -856,3 +854,33 @@ def test_working_turn_end_and_resume_publish_activity_without_an_adapter_restart
         assert dispatch.ticket().done is None
 
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize('rest', ['elsewhere', None])
+def test_the_agent_process_finds_this_install_first_on_path(dispatch, monkeypatch, rest):
+    from types import SimpleNamespace
+
+    from metaform.modules.dispatch.runner import Session
+
+    if rest is None:
+        monkeypatch.delenv('PATH', raising=False)
+    else:
+        monkeypatch.setenv('PATH', rest)
+    given = {}
+
+    async def exercise():
+        loop = asyncio.get_running_loop()
+
+        async def launch(*args, **kwargs):
+            given.update(kwargs)
+            raise OSError('not started')
+
+        monkeypatch.setattr(loop, 'subprocess_exec', launch)
+        held = Session(SimpleNamespace(nouns={}), Store('proj', module='dispatch'), dispatch.ticket(), 'claude',
+                       ['agent'])
+        with pytest.raises(OSError):
+            await held.begin()
+
+    asyncio.run(exercise())
+    first = os.path.dirname(sys.executable)
+    assert given['env']['PATH'] == (os.pathsep.join([first, rest]) if rest else first)

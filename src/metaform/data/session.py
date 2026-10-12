@@ -105,6 +105,12 @@ class Tx:
         from .selection import all_layers
         return all_layers(self.base)
 
+    def number(self, address: str) -> int:
+        """The next number at an address, from the project's counter, for an item this transaction writes there; taken
+        in a transaction of its own, so a write that fails leaves a gap and never reuses a number, `numbers.py`."""
+        from . import numbers
+        return numbers.take(numbers.project_folder(self.project_id), address)
+
 
 _ATOMIC: ContextVar[Tx | None] = ContextVar('metaform_atomic', default=None)
 

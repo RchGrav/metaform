@@ -115,7 +115,7 @@ def switch_page(name: str, folder: Any = None) -> str:
             lines += [setting.details, '']
         lines += ['Usage', f'  metaform set {setting.switch}' + ('' if setting.kind == 'bool' else ' <value>'),
                   f'  metaform unset {setting.switch}', '']
-        if setting.kind == 'select':
+        if setting.kind == 'select' or setting.kind == 'list' and setting.choices is not None:
             try:
                 options = setting.options(folder)
             except Exception:  # noqa: BLE001  a module's failing choices function leaves its help without choices

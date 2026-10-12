@@ -17,7 +17,7 @@ from typing import cast
 
 from . import home
 
-# A home made before this table existed is given it on the first harness recorded, as with the nonces, BASE-050.
+# A home made before this table existed is given it on the first harness recorded.
 HARNESSES = """CREATE TABLE IF NOT EXISTS harnesses(
   path_key TEXT PRIMARY KEY,
   binary   TEXT NOT NULL,
@@ -181,3 +181,22 @@ def done(binary: Path | str) -> None:
         db.execute('INSERT INTO harnesses(path_key, binary, done) VALUES (?, ?, ?) '
                    'ON CONFLICT(path_key) DO UPDATE SET binary=excluded.binary, done=excluded.done',
                    (found, str(binary), home.now()))
+
+
+# What a session Metaform starts is told it is, by its runner, BASE-052: its role, its runner's id, its ticket and its
+# node. They describe one agent's session, so no other process may carry them on. So do the names a Paperclip run is
+# given (server/src/adapters/process/execute.ts and each local adapter): its run token in PAPERCLIP_API_KEY acts as
+# that Paperclip agent for that run, and an agent Metaform starts from it is neither, COOPERATION-DESIGN C8 P-1.
+IDENTITY = ('METAFORM_ROLE', 'METAFORM_SESSION', 'METAFORM_WORK', 'METAFORM_NODE', 'METAFORM_WITHHELD',
+            'PAPERCLIP_API_KEY', 'PAPERCLIP_RUN_ID', 'PAPERCLIP_AGENT_ID', 'PAPERCLIP_COMPANY_ID', 'PAPERCLIP_API_URL',
+            'PAPERCLIP_TASK_ID', 'PAPERCLIP_WAKE_REASON', 'PAPERCLIP_WAKE_COMMENT_ID')
+
+
+def child_environment(**own: str) -> dict[str, str]:
+    """The environment of a process Metaform starts: this process's own, without the identity of the session it may
+    serve, then `own`, which always wins. A process started with no identity of its own therefore has none, and an
+    agent's role never reaches a page server or a runner it starts. Windows keeps names upper case in `os.environ`,
+    so the names match on every system."""
+    env = {name: value for name, value in os.environ.items() if name not in IDENTITY}
+    env.update(own)
+    return env

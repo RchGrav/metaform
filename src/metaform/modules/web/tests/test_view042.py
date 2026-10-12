@@ -123,7 +123,7 @@ def test_autostart_checkbox_reads_each_project_and_only_changes_on_a_click(run, 
     page.route('**/api/dispatch-autostart*', setting)
     page.goto(f'http://127.0.0.1:{web}/#p=proj')
     page.wait_for_function('() => window.metaform.loaded()')
-    control = page.get_by_role('checkbox', name='Autostart')
+    control = page.get_by_role('switch', name='Autostart')  # a checkbox shown as a switch, role="switch"
     assert control.is_visible() and not control.is_checked()
     assert writes == []
     control.check()

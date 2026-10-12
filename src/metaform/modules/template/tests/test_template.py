@@ -60,3 +60,17 @@ def test_template_declares_node_read_empty_and_hello_demonstrates_it(home):
     assert 'node_read' in keywords('hello') and declaration('hello').MODULE.node_read is not None
     assert isinstance(written.get('work_read'), ast.Constant) and written['work_read'].value is None
     assert 'work_read' in keywords('hello') and declaration('hello').MODULE.work_read is not None
+
+
+@pytest.mark.req('BASE-019')
+@pytest.mark.req('BASE-035')
+def test_template_shows_one_tool_and_one_pane_and_the_fork_copy_carries_them(home):
+    from metaform.module import resource_problems
+    template = declaration('template').MODULE
+    assert [(item.id, item.pane) for item in template.toolbar] == [('about', 'about')]
+    assert [(pane.id, pane.resource) for pane in template.panes] == [('about', 'resources/pane.md')]
+    copy = MODULES / 'fork' / 'resources' / 'template'
+    for folder in (MODULES / 'template', copy):
+        assert resource_problems(template, folder) == []
+    assert 'ToolbarItem(' in (copy / '__init__.py').read_text(encoding='utf-8')
+    assert 'Pane(' in (copy / '__init__.py').read_text(encoding='utf-8')

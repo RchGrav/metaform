@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Sign in to Metaform</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1d1d1f; --bg: #fafafa; --muted: #5f6368; --accent: #2457c5; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #ececec; --bg: #17181a; --muted: #a0a4a8; --accent: #7aa2ff; } }
+  body { font: 16px/1.5 system-ui, sans-serif; color: var(--fg); background: var(--bg); margin: 0; }
+  main { max-width: 26rem; margin: 12vh auto; padding: 0 16px; }
+  h1 { font-size: 1.4rem; margin: 0 0 .5rem; }
+  p { color: var(--muted); }
+  button { font: inherit; padding: .6rem 1.2rem; border-radius: .5rem; border: 0; background: var(--accent); color: #fff; cursor: pointer; }
+  #said { min-height: 1.5em; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Sign in to Metaform</h1>
+  <p>Use the passkey you enrolled on this Metaform. There are no passwords here.</p>
+  <button id="go" type="button">Sign in with a passkey</button>
+  <p id="said" role="status"></p>
+</main>
+<script src="/node/passkey.js"></script>
+<script>
+  document.getElementById('go').addEventListener('click', () => metaformPasskey.signIn('{{next}}'));
+</script>
+</body>
+</html>

@@ -48,7 +48,8 @@ def mapped(store):
     mem_store = Store(store.project_id, module='memory')
     ctx = Context('memory', Path(store.project().path), store=mem_store, nouns={
         'node': 'element:code.timer.kitchen', 'entities': [
-            {'name': 'drift', 'entityType': 'behavior', 'observations': ['Drifts under load.']}]})
+            {'name': 'drift', 'entityType': 'behavior', 'observations': ['Drifts under load.'],
+             'why': 'The timer is read under load.'}]})
     memory_module.create_entities(ctx)
     return store, layer, inner
 

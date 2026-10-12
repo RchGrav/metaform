@@ -1,0 +1,13 @@
+{
+  "name": "metaform-build-scripts",
+  "private": true,
+  "description": "Builds Metaform's MCP Apps views: the official ext-apps SDK as one script, and the map view from the web GUI's page.",
+  "type": "module",
+  "scripts": {
+    "build:map-view": "node build_map_view.mjs"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/ext-apps": "2.0.3",
+    "esbuild": "0.25.10"
+  }
+}

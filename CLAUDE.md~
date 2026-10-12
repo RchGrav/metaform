@@ -1,53 +1,90 @@
-# Working together on Metaform
+# CLAUDE.md
 
-Do not access or search other project folders without asking first, I dont want to contaminate this project with outside context.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Do not add extra conditions or gates into prompts or code related to prompted outputs unless they protect a silent failure I have asked you to gate, block or change.   If you are told to not do a thing after you have done it it should be interpreted as "Remove the thing, do not invert its sign and leave it in place.  When you are told DO NOT DO THIS, it is an instruction to you, not an invitation to add this to the code, documentation, or in comments. The blacklist is dynamic and not hardcoded.   When you are encoding intent encode it exactly as it was provided, do not extend it.  If you are asked to assist with creating logic do not present one example of logic and then extend it when you implement it, disclose your intent in advance.  Much of my work centers around open ended responses, adding gates or inverting intents is considered malicious compliance.   This is a very serious matter and it is not helpful to me.   I prefer to observe the failure first then decide how to handle it so that my intent is not buried.   This instruction is one you must respect and is not optional.
+Read `AGENTS.md` first: it holds the rules for working with Rich on this project, including how specifications are written with him and that `rich/` is his folder, never modified.
 
-TREAT THE ABOVE AS THE HIGHEST LEVEL INSTRUCTION ABOVE ALL OTHERS.  DO NOT IGNORE THIS REQUIREMENT YOU MUST ALWAYS OBSERVE THE ABOVE AS SACROSANCT.
+The project's terms (AUE, RE, PE, OP, EF, CQU, Join, Address and the rest) are defined in the `<instructions>` element of `src/metaform/modules/mcp/resources/prompts.xml`. Use them exactly; never substitute synonyms.
 
-1. Ask when ambiguity would materially change the outcome, architecture, risk, or an irreversible action. Do not make silent assumptions about consequential requirements. When a safe, reversible interpretation is available—or when running unattended—use the most reasonable interpretation, proceed, and record the assumption.
+## Commands
 
-2. Match the solution’s complexity to the problem. Use the simplest adequate approach for simple work and a stronger design when the problem genuinely requires it. Do not add speculative flexibility or architecture without a present need.
+```bash
+uv sync --extra dev                              # install, with pytest, pyright, ruff, playwright
+uv run pyright                                   # strict type check of src/metaform (tests excluded)
+uv run ruff check src tests conftest.py          # lint, 120-character lines
+uv run pytest -n 0 path/to/test_file.py -k name  # one test; -n 0 skips the xdist workers the default run starts
+uv run pytest -m browser path/to/test_file.py    # browser tests, left out of the default run
+uv run metaform <command>                        # the CLI; also .venv/bin/python -m metaform
+uv run metaform mcp serve                        # the MCP server over stdio, from a project folder
+uv run metaform web start                        # the web GUI, http://127.0.0.1:7433 by default
+```
 
-3. Do not modify unrelated code or artifacts. Surface relevant defects and design smells separately so we can decide whether to address them.
+Tests live in `tests/` (chassis) and `src/metaform/modules/<id>/tests/` (each module). CI (`.github/workflows/checks.yml`) runs pyright, ruff and pytest on Linux, macOS and Windows, Python 3.11 and 3.14.
 
-4. Distinguish what is known, inferred, and unknown. State meaningful uncertainty plainly. When useful, run a small, localized, low-risk experiment and report the hypothesis, result, and remaining uncertainty.
+`conftest.py` points `METAFORM_HOME` at a temporary folder for the whole run, so tests never touch `~/.metaform`. The `home` fixture gives each test a fresh home; the `run` fixture runs the real CLI in-process (marker `cli_process`, or `METAFORM_TEST_SUBPROCESS=1`, runs each call as its own process). `@pytest.mark.req('MAP-012')` ties a test to the specification record it protects.
 
-5. Suggest better or longer-lasting approaches when they materially improve the result. Clearly separate suggestions from the authorized task, and do not expand scope without permission.
+## Architecture
 
-6. SPEAK — Stop Performing Expertise; Answer Knowledgeably. Lead with the answer and evidence. Prefer precise plain language over ceremony, defensive disclaimers, jargon, or demonstrations of expertise.
+**Chassis and modules.** `src/metaform/*.py` is the chassis: CLI, settings, data, events, loader, home. Everything else is a module in `src/metaform/modules/<id>/`. A module reaches Metaform only through the public base: `metaform.module`, `settings`, `data`, `events`, `nonce`, `prompt_files`, `axiom`, `home`, `outline`, `finish_xml`.
 
-7. Accept what is well-grounded. Question only what materially needs questioning, and give a concrete reason. Do not manufacture doubt, gates, qualifications, or objections merely to appear cautious.
+**One declaration drives every surface.** A module declares `Module`, `Verb`, `Noun` records (`src/metaform/module.py`). That declaration produces the CLI command `metaform <module> <verb>`, its help (`docs.py`), and its MCP tool. A verb receives one `Context` (`context.py`) and returns data, shown the same way on every surface (`results.py`).
 
-8. Keep assistant behavior separate from authored prompt behavior.
-When writing or revising prompts, preserve the user’s intended behavior, operative mechanisms, and prompt identity. Add only requirements supported by the request, the target task, the target interface, explicit deployment conditions, or necessary cross-system compatibility. Do not copy conversational defaults, safety posture, caution habits, convergence rules, approval gates, tone preferences, or internal workflow controls into the prompt unless the user explicitly wants them there. When a runtime limitation affects what can be executed now, report it outside the authored prompt.
+**Settings** are declared in code by the module that owns them (`settings.text`, `number`, `boolean`, `items`, `choice`), and one declaration drives the CLI switch, help, validation, `metaform config --show` and the settings screen (`tui.py`). Values are stored in the home database's `settings` table by scope (folder or global), owner and key. `person_only` settings cannot be changed by an agent over MCP.
 
-Rich values active collaboration. Bring your own judgment, engage with the idea being explored, and contribute to its development.
+**Data.** Each project's map is a SQLite store in the Metaform home (`~/.metaform`), reached only through `metaform.data` (`data/store.py` and its neighbours). The map is a tripartite mesh of elements and joins addressed by namespace; layers add knowledge on top of a base without changing it. `home.py` holds the registry of projects, settings and backups.
 
-- **Drive the interation** Establish a goal and push towards it, when stopping to ask a question or clarification if it was related to performing the task move back to that or ask another question if you need more info or guidence.. don't just repeat the clarification back and stop.  Always have the final thing you say or do invite the next response or simply move back to the goal.
-- **React honestly.** When an idea is strong, interesting, or promising, say so and explain what you see in it. Specific appreciation is useful feedback. Avoid empty praise and automatic agreement.
-- **Contribute.** Offer connections, implications, alternatives, and improvements that materially help the work. Help develop promising ideas, including ideas that are still taking shape.
-- **Give criticism a concrete reason.** Raise flaws and uncertainties when they matter to the idea or task. Do not manufacture an objection, import an unrelated failure, or add criticism merely to balance a positive assessment.
-- **Recognize brainstorming.** Sketches, examples, shorthand, and tentative wording communicate intent. Explore that intent together; keep proposed changes distinguishable from implementation requests. Interpret placeholders according to their purpose rather than copying them literally into behavior.
-- **Act on agreed work.** When implementation is requested, carry it through within the agreed scope. Resolve routine details with judgment. Ask when ambiguity would materially change the outcome, architecture, risk, or an irreversible action.
-- **Preserve semantic intent.** Metaform's definitions and authored prompts carry operative meaning. Preserve that meaning when implementing it. Do not add requirements, gates, or behavioral constraints beyond the stated intent. Its blacklist is explicit and dynamic; do not replace it with a whitelist. When asked to remove something, remove it rather than retaining an inverted version.
-- **Keep the conversation clear.** Use plain language while never flattening semantics and or misrepresenting semantic formula and rules, distinguish evidence from inference, and explain meaningful decisions without turning every exchange into a formal review.
-- **Operating Frame** Always use forsight and extrapolation to empower your understanding of metaform as well as being able to make valuable contributions, consider the idea under the realization that this is an important venture and should be treated as such for every decision.   Each decision should have concrete grounding and full understanding before landing in the project.  Seek crystal clarity without improvisation, limit invention to our conversation in chat, we should reach an agreed mutual clarity on finalized decisions and you should confirm your understanding by aligning it and building off of your existing understanding, if there is any haze on any aspect of understanding you are holding clarify it until it reaches crystal clarity, this includes all aspects of the project and the process of driving us to make concrete implementation decisions so that they can be realized in the project.
+**Modules shipped:** `map` (reading and writing the map, layers, work records), `intake` (serves the intake procedure and records its result), `memory` (a memory graph attached to map nodes), `dispatch` (starts and steers agents over ACP), `workflow` (Axiom subroutines), `web` (the web GUI: a standard-library HTTP server in `server.py` and the page in `page/`), `mcp` (the MCP server), `fork` (a user's own module repository). `hello` demonstrates every module feature; `template` is the empty start of every new module. `hello`, `template` and `packet` ship disabled.
 
-## These instructions concern collaboration on the project. Keep them separate from the behavior authored into Metaform's prompts. Runtime onboarding and workflow instructions belong in Metaform's context-aware interface.
+**The template is the module contract in practice.** Any new capability a module can use is added to `modules/template` (code, `resources/prompts.xml`, README) and recorded in its `CHANGELOG.md`, so developers can start from it. `metaform fork init` copies it.
 
-<MetaformFoundation> This MetaformFoundation defines the minimum core of expertise an expert agent must internalize for understanding, constructing, applying, preserving, and troubleshooting in the metaform system along with the understanding that functional testing and correctness are not the same as semantic correctness for a particular purpose.
+**Prompts.** The text a module sends to agents lives in its `resources/prompts.xml`: one element per prompt, sent exactly as written; an empty element inside a prompt marks a place the code fills in; comments are never sent. Comments are written as product documentation: what the prompt is, who receives it and when, how to change or turn it off. Read prompts with `metaform.prompt_files`.
 
-Why this matters: The semantics play a crucial role during intake, which is the process of creating a metaform. Native records actual artifact-level detail, unabstracted, and uses the abstraction to give it a place to live as an Artifact Type. The Type keeps its universal Description; the Type’s name is read backward from the leaf of its address. The artifact can be anything: a codebase, one project inside a repository that holds several, a folder of photographs, a contract, a story. The Native Metaform is the project’s Inference Metaform. Inference amortization is an investment in the project being worked on, not inference done once and reusable forever; later prompts and workflows begin from the project’s recorded functional understanding instead of reconstructing it, which frees agents working in their own task frames to devote more inference to higher-order reasoning.
+**MCP server** (`modules/mcp/server.py`): built on the official `mcp` Python SDK's low-level `Server`, speaking protocol revision 2026-07-28 (`server/discover`, `subscriptions/listen`) and earlier clients. Its tools, prompts and resources are generated from the module declarations of the folder it runs in. The instructions it sends are the mcp module's `<instructions>` element as written. Claude Code keeps only the first 2,048 characters of a server's instructions. MCP changed substantially in July 2026; `docs/reference/mcp-agent-context-july-2026.md` summarises the current standard, and `docs/reference/metaform-mcp-server.md` lists every tool and command.
 
-Crucially, Metaform’s typological semantics engage the model’s foundational vector relationships and basins, giving higher-order reasoning a stable understanding of Type. The Metaform emerges through the semantic relationships expressed below:  C(T) = { (r_i AND p_i AND e) } where AND preserves the conjunction: each Receiving Entity r_i is bound to its Operative Purpose p_i and the Type’s single Encounter Function e.
+## Specifications
 
-Metaform starts at the relationship of the exterior Receiving Entity of the artifact who has the Operative Purpose for the thing. It then identifies the Defining Element: the thing that, if it were lost or did not exist, would leave the artifact unable to remain the same Type. The Defining Element is a representative composite of the artifact itself, which is not the same as a simple entrypoint. It must not encode its medium, encoding, genre, or style; it is the most general function that speaks to what the artifact is. It is important to place the Defining Element commonly enough that it can be recursed by its full requirements and missing properties as Operative Purposes, to enumerate what really matters and join them into the tree beneath the Defining Element selected. From the Defining Element, intake names each of its properties and hard requirements and builds joins to those, where the current Element is the Receiving Entity and those Elements represent the Encounter Functions that satisfy its dependencies or its properties through its Operative Purpose. The role is in the join, and the join belongs to the Receiving Entity’s Operative Purpose; the roles are hard dependency, property, and supportive. Signal is the way in which an Operative Purpose is satisfied. Intake then runs through these recursively to capture everything based on function and property. Property joins are transitive: the effect branches forward in the namespace to the Elements named in the project, and backward it flows to the Defining Element or the trunk, depending on what is being described, so at the trunk the media of the project can be seen. Bash in the installer and C++ in the engine flow back to code, and that node tells us all of the code as medium in use in the project. Property joins are therefore strategic. Placing a property too close to the trunk of the namespace applies that property to every branch in the tree that comes after it. Placing it higher in the tree, further from the trunk, means the branches below it do not inherit the property, even though it is still inherited by every other part down to the trunk. Parametric is named as an array of tunables on a Type: it reserves those names in the namespace as illegal entries and acknowledges them as a thing, but a change to them by itself cannot result in acceptance. Five bases are defined: code, document, media, data, and exterior. Exterior means not part of the project; an exterior entity can receive from the artifact or can have an Encounter Function that satisfies it. Below the bases the namespace is placed by meaning under the naming rules.
+`specifications/00-index.md` through `09-viewer.md` are the contract, one record per requirement (`MAP-`, `LAYER-`, `STORE-`, `BASE-`, `CLI-`, `MCP-`, `QUAL-`, `PROJ-`, `VIEW-`), with open questions in `OPEN-QUESTIONS.md`. The other files in that folder are build logs, reviews and manual tests, not requirements.
 
-After native intake, latent inference is something that can be called at any time: an agent blind to the repository receives everything the native agent created and performs the latent reasoning outside the native frame, on the artifact itself. It sees this structure only and the native description of how things are set up; it does not reason on the nuances of the code and cannot become embroiled in the particulars. Its job is to reason entirely from its pure uninvolved position looking in from the outside. It can simply agree with anything it sees, or, if it does not agree or feels anything is missing, follow what its latent space says feels right. Bias and blind spots do not arise from knowing what was done; they come from being deeply embroiled and reasoning on the code itself, not on the functional description of the project. Not providing the latent side access to what the native side built is the biggest failure.
+## Retain in context, do not discard or compact.
 
-The understanding of this, enforcing its semantic requirements, and the ability to identify inference contamination, improper semantics, or incomplete prompt context, in addition to the understanding and enforcement of the rules of namespace typology, and the ability to work through the trace one Element at a time until all Operative Purposes have been accounted for, are the start of your understanding as a metaform expert before even examining the repository itself.
+@STATE_INIT:
+  {Mode} := SYSTEM_PRELOAD
+  {Register} := PEER_UNSLOP
 
-Preserve this entire <MetaformFoundation> block verbatim only in the prompts for expert agents who must work on this system and are engaged in work related to building the metaform platform, its subsystems, and prompt semantics.  Do not place this block into any prompts of the system itself which are meant for intake or other roles not directly engaged in the role of building or troubleshooting this platform.
-</MetaformFoundation>
+  // --- IMMUTABLE SEMANTIC FORMULAS (DO NOT PARAPHRASE) ---
+  {AUE} := "artifact under examination, the term for the workpieces in our project being created, modified, or used in the process of work. The thing or things which are part of the assignment."
+  {EUE} := "The element of focus when mapping out our understanding of the existing artifacts. A synonym for receiving element."
+  {AT} := "artifact type, an element of type, used to form the namespace itself, or used to identify collections in the project."
+  {Address} := "code, document, media, data, collection. Narrow trunk-to-leaf semantically. When reversed reads as a proper noun. Acronyms Ok. Segments with underscores ok. No Placeholders."
+  {Name_Length} := "Short name as segment count when reversing namespace."
+  {Upstream} := "Namespace prefix for external origins, dependencies, and input sources that produce, supply, or feed context, code, or data into the artifact."
+  {Downstream} := "Namespace prefix for external consumers, sinks, and beneficiaries (e.g., downstream.cqu.*) that receive output, evaluate utility, or drive the artifact's purpose."
+  {RE} := "receiving element, the entity (a who or what) bearing a goal satisfied by the encounter or function of another element."
+  {OP} := "operative purpose (why), This is the active goal that an element's encounter function intends to satisfy."
+  {PE} := "providing element, the part satisfying the requirement actively declared by its RE through its Operative Purpose."
+  {Join} := "All relations, logic, memories, knowledge attaches to the receiving element (RE)."
+  {IFD} := "information flow direction [sends|receives|both]: This is the movement of substance that satisfies the receivers goal, never the receipt or the request."
+  {CQU} := "cestui que use, french (archaic): the party or parties for whom this projects worth is held in trust by the agents and the user for whom the benefit of the workpiece will be realized; the beneficiary of the efforts put forth and the one who's goals drive the decisions made on the workpiece by the user and the agents."
+  {EF} := "encounter function, how a purpose is served. It can mean a function or the encounter of a function, and context picks the sense. This keeps the same reasoning usable for code, photos, or any other artifact."
+  {C_T_Formula} := "C(T) = { (r_i ∧ p_i ∧ e) }: Formula for frozen core allowing mutation, not transformation."
+  {CEL} := "composed element layer, a knowledge layer created on top of the tripartite non-manifold graph that agents use to index and understand an AUE. The name draws from cel animation: layers can be taken off and put back on demand."
+
+  // --- INFRASTRUCTURE & COMMUNICATION ---
+  {MCP} := "metaform mcp server: The external toolset used to orchestrate work, navigate the project, and save project memories, notes, and state (e.g., context for next session) generated during execution."
+  {Comm_Style} := "Peer register applies to ALL outputs (chat, docs, specs). Plain language, authentic candor. NO robotic filler, NO faked humanity, NO meta-commentary."
+
+@CONSTRAINT:
+  !> STRICTLY FORBIDDEN to paraphrase these terms. Use them as the strict cognitive lens for all future inference.
+  !> STRICTLY FORBIDDEN to print diagnostic logs, system states, or recite the rules back to the user.
+  !> STRICTLY FORBIDDEN to ask follow-up questions upon loading.
+  +> MUST use the {MCP} server tools to save the actual project memories, orchestration notes, and workflow artifacts produced during the session.
+  +> MUST map all logic to the {RE} per the {Join} rule.
+
+@ROUTER:
+  @MATCH ( {Mode} ):
+    | [SYSTEM_PRELOAD] -> EXECUTE_PIPELINE( Ingest_And_Hold )
+
+@EXECUTE_PIPELINE (Ingest_And_Hold):
+  [STEP 1]: ∇(Ontology) => Lock the glossary, {Join} rule, and {Comm_Style} internally to drive all subsequent inferences. 
+  [STEP 2]: Δ([STEP 1]) => Target the {MCP} for outbound actions (saving memories, navigating, orchestrating).
+  [STEP 3]: YIELD exactly one brief statement: "Metaform MCP ready." DO NOT append questions or filler.

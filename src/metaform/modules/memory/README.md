@@ -46,11 +46,11 @@ Every verb is a plain function.
 
 ## Tables
 
-Project-level, in `projects/<project>/modules/memory.sqlite3`, STORE-020: `entities`, `observations`, `relations`, `joins`, `notes` and `carried`, at version 2. Entities, observations and relations are kept as the reference server keeps them, in the order they were made, with no time on them or on the joins; version 1's times are dropped by the chassis's upgrade, which keeps every row. A join of type memory is keyed by the node's namespace address, so a new intake with the same address reconnects it; one whose address the map no longer holds is orphaned and listed by `orphaned`.
+Project-level, in `projects/<project>/modules/memory.sqlite3`, STORE-020: `entities`, `observations`, `relations`, `joins`, `notes` and `carried`, at version 4, readable by version 2's code. Observations and joins keep `by`, who wrote them, and `session` and `at`, the agent session that wrote them and when, so the counts can say which memories the last session at a node wrote, MCP-039. Entities, observations and relations are kept as the reference server keeps them, in the order they were made, with no time on them or on the joins; version 1's times are dropped by the chassis's upgrade, which keeps every row. A join of type memory is keyed by the node's namespace address, so a new intake with the same address reconnects it; one whose address the map no longer holds is orphaned and listed by `orphaned`.
 
 ## Node read
 
-`node_read` adds under `memory` in `map where` and `map node`: the node's `note`, and while memory shows there, its `entities` and `relations`, and for an element the `joins` it receives and provides that carry memories.
+`node_read` adds under `memory` in `map node` and in `map where` with `contents=true`: the node's `note`, and while memory shows there, its `entities` and `relations`, and for an element the `joins` it receives and provides that carry memories. `node_count` tells an agent orienting on a node, in `map where`, the ticket read and dispatch's hand-off, how many memories are joined at the node and at each direct neighbour, how many of them the last session there wrote, and whether the person left a note, with the `counts` and `note_counts` prompts naming the calls that read them, MCP-039; never what they say.
 
 ## Lifecycle and cleanup
 

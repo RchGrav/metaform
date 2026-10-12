@@ -202,47 +202,6 @@ def test_todo_writes_a_work_record_on_the_modules_own_element_and_done_resolves_
     assert 'Hello: 1 greeted' in run(cwd=hello).stdout.splitlines()
 
 
-@pytest.mark.req('BASE-019')
-@pytest.mark.req('BASE-050')
-def test_noncedemo_walks_an_agent_through_a_nonce_recalled_updated_closed_and_handed_on(run, hello):
-    """The nonce demonstration's flow, every message as written. noncedemo run directly issues the first nonce; run
-    through a nonce it does the step the nonce's value in the chassis says, or the step named after the nonce."""
-    import re
-
-    from metaform import nonce
-    unknown = (2, '', 'Error: Invalid or Unknown Nonce\n')
-    said = run('hello', 'noncedemo', cwd=hello).stdout
-    first = said.split()[-1]
-    assert re.fullmatch(r'[1-9][0-9]{6}', first)
-    assert said == f'Please run metaform {first}\n'
-    held = nonce.read(first)
-    assert (held.module, held.function, held.open) == ('hello', 'noncedemo', True)
-
-    assert run(first, cwd=hello).stdout == \
-        f'Hello World! Now type the command again, but this time with metaform {first} next\n'
-    step = (f'This is a next message for the agent. Try running metaform {first}. You will notice you get this same '
-            f'message, because metaform {first} is updating the db in the chassis for this nonce and using it to '
-            f'control the module. After you did the step, run metaform {first} complete\n')
-    assert run(first, 'next', cwd=hello).stdout == step
-    assert nonce.read(first).value != held.value                # the step is kept in the nonce's value
-    assert run(first, cwd=hello).stdout == step
-
-    completed = run(first, 'complete', cwd=hello).stdout
-    second = re.search(r'run metaform ([1-9][0-9]{6})\.', completed).group(1)
-    assert second != first
-    assert completed == ("Congratulations, now you know how nonces work. The dev can recall the nonce, update the "
-                         "existing nonce, and generate new ones. So imagine it was time to pass to the main agent. The "
-                         f"plugin could say: tell the main agent to run metaform {second}. But don't really, just do "
-                         "it to see what will happen.\n")
-    refused = run(first, cwd=hello, ok=False)
-    assert (refused.returncode, refused.stdout, refused.stderr) == unknown
-
-    assert run(second, cwd=hello).stdout == \
-        'Congrats, the nonce demo is over. We already cleaned up the nonce you just used. Try it again to see.\n'
-    refused = run(second, cwd=hello, ok=False)
-    assert (refused.returncode, refused.stdout, refused.stderr) == unknown
-
-
 # Each public import a module can use, shown once, BASE-019.
 
 @pytest.fixture
@@ -445,14 +404,14 @@ def test_visit_and_note_keep_hellos_own_tables_beside_the_map_and_in_the_project
 def test_node_read_adds_hellos_count_to_the_read_of_its_own_element_and_nothing_elsewhere(run, hello):
     run('hello', 'greet', 'ada', cwd=hello)
     run('hello', 'greet', 'bob', cwd=hello)
-    read = json.loads(run('map', 'where', 'code.module.hello', '--json', cwd=hello).stdout)
+    read = json.loads(run('map', 'where', 'code.module.hello', 'contents=true', '--json', cwd=hello).stdout)
     assert read['hello'] == {'greeted': 2} and read['element']['address'] == 'code.module.hello'
     node = json.loads(run('map', 'node', 'element:code.module.hello', '--json', cwd=hello).stdout)
     assert node['hello'] == {'greeted': 2}
     from metaform.data import Store
     with Store('proj').atomic():
         Store('proj').add_element('hello.greetings', 'code.module.other')
-    assert 'hello' not in json.loads(run('map', 'where', 'code.module.other', '--json', cwd=hello).stdout)
+    assert 'hello' not in json.loads(run('map', 'where', 'code.module.other', 'contents=true', '--json', cwd=hello).stdout)
 
 
 @pytest.mark.req('BASE-035')

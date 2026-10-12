@@ -1,0 +1,2 @@
+{"name":"Bash","input":{"command":"cat >> src/metaform/modules/dispatch/tests/test_dispatch.py <<'EOF' ... TRIAL = FAKE.with_name('trial_prompts.xml')  # carries a stand-in on_ticket_done, which ships empty ... dispatch.start('done', METAFORM_PROMPTS=str(TRIAL)) ..."}}
+spec line: `on_ticket_done` ships empty: its wording is the owner's to accept, and an empty prompt turns the feature off whatever the setting.

@@ -1,20 +1,17 @@
 # Metaform examples
 
-Nothing in this folder loads on its own. Load a sample module by path when you want it.
-
 ## Sample modules
 
-| Module | What it shows |
-| --- | --- |
-| [showcase](modules/showcase/README.md) | Each chassis service in use: settings, records and their revisions, events, background jobs and assignments. |
-| [event_requester](modules/event_requester/README.md) | Sending work to `harness_runner` over the event bus and keeping the reply. |
-| [record_demo](modules/record_demo/README.md) | The smallest module. It stores one record and shows what produced it. |
-
-Load one with its path:
+The [hello module](../src/metaform/modules/hello/README.md) demonstrates the current
+module contract and public services. Enable it in a registered project:
 
 ```sh
-metaform modules load examples/modules/showcase
+metaform enable hello
+metaform hello greet world
 ```
+
+Start a new module from the [template](../src/metaform/modules/template/__init__.py).
+The [extension guide](../docs/guides/extending-metaform.md) explains the contract.
 
 ## Workflows
 

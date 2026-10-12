@@ -1,0 +1,33 @@
+{
+  "run_id": "b2a800ee-15d0-4732-8655-cd44695206ab-66",
+  "verdicts": [
+    {
+      "action": "patch",
+      "name": "metaform-ticket-work",
+      "ok": true,
+      "findings": [],
+      "notes": []
+    },
+    {
+      "action": "patch",
+      "name": "metaform-ticket-work",
+      "ok": true,
+      "findings": [],
+      "notes": []
+    },
+    {
+      "action": "patch",
+      "name": "metaform-module-development",
+      "ok": true,
+      "findings": [],
+      "notes": []
+    },
+    {
+      "action": "patch",
+      "name": "metaform-module-development",
+      "ok": true,
+      "findings": [],
+      "notes": []
+    }
+  ]
+}

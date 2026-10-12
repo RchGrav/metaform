@@ -1,4 +1,5 @@
 <!-- Test-only stand-ins for prompts not written yet; never shipped text. -->
 <prompts>
 <talk>Test talk prompt. About: <about/>. Read: <read/>.</talk>
+<on_ticket_done>Test record prompt. Node: <node/>.</on_ticket_done>
 </prompts>

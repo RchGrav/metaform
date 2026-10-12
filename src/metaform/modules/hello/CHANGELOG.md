@@ -4,6 +4,8 @@ Each change to the module contract, newest first, so a module copied from the te
 
 ## Unreleased
 
+- `noncedemo` is gone with the nonce service, BASE-050: work is handed to an agent over ACP, the hand-off as its first prompt and its identity in `METAFORM_ROLE`, `METAFORM_SESSION`, `METAFORM_WORK` and `METAFORM_NODE`, or by its ticket id, so hello has no nonce to show. `metaform <nonce>` no longer runs anything.
+
 - Public chassis services, BASE-004 and QUAL-016: `basedemo` reads shared home/project, layer, query and record conversion services and shows project backups and the removal preview. `base-restore [name]` restores a backup and `base-remove` removes an empty project's registration, both with the existing `Verb.caution` confirmation. Existing `follow` demonstrates `Context.listen`. These examples keep user modules on the same public services as shipped modules.
 
 - Public module-owned DAO operations: `Module.data` declares `Data` with named `Operation` handlers, record contributions and item-write contributions. `DataTx.tables()` joins an operation's metaform tables to its current transaction. Hello's existing `visit` uses `count_visit`; the template includes `data=`. `Table.from_sql` adopts an existing table layout, with persisted `on_remove` rules and module-owned historical upgrade callbacks.

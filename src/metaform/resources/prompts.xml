@@ -1,52 +1,65 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The chassis's prompts, MCP-031. What is between an element's tags is what is served. An empty element inside a
-     prompt marks where the code fills in what it names: <modules/> the surfaced modules' instructions, one per line;
-     <projects/> the registered projects. -->
+<!-- The chassis's prompts: the text Metaform sends to agents for Metaform itself, apart from any module.
+     Each element is one prompt, named by its tag. What is between the tags is sent exactly as written.
+     An empty element inside a prompt, such as <modules/>, marks a place the code fills in: <surface/> the opening line
+     and the order-of-work steps; <modules/> one line per module; <module/> a module's id; <projects/> the ids of the
+     registered projects; <wheel/> a project wheel's file name; <layer/> the working layer; <archive/> the returned
+     archive's path. remote_wrapper and remote_onboarding write their places in braces instead: {wheel} the wheel's file
+     name, {project} the project's id, {task} the person's task.
+     Comments are never sent. -->
 <prompts>
-<!-- The slash commands the chassis declares, MCP-032 and MCP-033: each runs the command line named in verb. -->
+<!-- Three slash commands, offered to the person in every MCP session whatever modules are on. Each child's tag is the
+     command's name and its verb attribute the metaform command line it runs; the output is sent as the person's message.
+     Delete a child to remove that command. An empty <commands/> offers none. -->
 <commands><status verb="" summary="This folder's project, its metaform and the modules on."/><config verb="config --show"/><prompt verb="prompt &lt;name&gt; [&lt;version&gt;]"/></commands>
-<!-- The base of the instructions an agent reads when it connects over MCP and from metaform help agents. <surface/>
-     is filled with surface_mcp when the MCP server serves them and with surface_cli everywhere else, such as metaform
-     help agents and a project wheel's first run, so the opening line is true where it is read, MCP-031. <modules/>
-     is filled with one line per surfaced module: its active line by default, its whole instructions prompt with
-     connect_instructions=full, MCP-029. -->
+<!-- The frame of the command-line guide for agents, printed by metaform help agents, metaform instructions and a project
+     wheel's first run. The MCP server sends the mcp module's instructions instead, unless that element is missing.
+     <surface/> takes the opening line and the order-of-work steps; <modules/> takes one line per module: its <connect>
+     line in the compact form, its whole instructions with the setting connect_instructions set to full. Must be present. -->
 <instructions><surface/>
 modules available.
 <modules/>
 </instructions>
-<!-- Opens the instructions the MCP server serves. -->
+<!-- The guide's opening line when the MCP server sends the guide, which it does only if the mcp module's prompts have no
+     <instructions> element. Must be present: the code requires it. -->
 <surface_mcp>Metaform MCP server is active.</surface_mcp>
-<!-- Opens the instructions served anywhere but the MCP server: the command line and a project wheel's run. -->
+<!-- The guide's opening line on the command line and in a project wheel's first run.
+     Must be present: the code requires it. -->
 <surface_cli>Metaform is active.</surface_cli>
-<!-- The compact instructions' line for a module that has no connect line of its own, connect_instructions=compact,
-     MCP-029 as amended 2026-10-10: its id in place of <module/>, and where to go when the agent needs it. -->
-<active><module/>: when you need it, call its tool with no command.</active>
-<!-- Follows the module list in the compact instructions, the default connect_instructions=compact, and tells the
-     agent where a module's full instructions are, MCP-029. -->
-<more>A module's instructions: call its tool with no command. A command's arguments: call its tool with help and the command.</more>
-<!-- Added to the instructions when the folder is in no registered project and other projects are registered;
-     <projects/> is filled with their ids. -->
+<!-- The guide's line for a module whose prompts have no <connect> element; <module/> takes the module's id. Printed in
+     the compact form only, once for each such module that is enabled. A module's own <connect> element replaces it.
+     Must be present: the code requires it whenever such a module is listed. -->
+<active><module/>: when you need it, call metaform_instructions with module <module/>.</active>
+<!-- Tells the agent where a module's instructions and a command's arguments are. Printed after the module list, in the
+     compact form of the guide only. Must be present: the code requires it. -->
+<more>A module's instructions: call metaform_instructions with module and its id. A command's arguments: the input schema of its tool, &lt;module&gt;_&lt;command&gt;.</more>
+<!-- The list of registered projects; <projects/> takes their ids. Printed in the guide when the folder is in no
+     registered project and at least one project is registered. Must be present: the code requires it. -->
 <registered>Registered projects: <projects/>.</registered>
-<!-- Added to the instructions when the folder is in no registered project, after the registered list, and tells the
-     agent how to register it; the onboarding that asks the person first is the intake module's, MCP-009. -->
-<no_project>This folder is not in a registered project. To register it: call metaform with command register, or run metaform add project &lt;id&gt; &lt;path&gt;.</no_project>
-<!-- The pointer metaform provision and install write into a harness's global instructions file, such as
-     ~/.claude/CLAUDE.md, so an agent opened directly in its harness knows to read Metaform's instructions; the
-     provision help prints it for other harnesses, MCP-036. -->
-<global_instructions>This system orchestrates work using Metaform. You must use its active features. Read them with `metaform help agents`, or the metaform tool's instructions command.</global_instructions>
-<!-- The passive reminder provision installs as a hook: Claude Code shows it before an Agent, Task, Workflow or
-     AskUserQuestion call, Gemini after invoke_agent, delegate_to_agent or ask_user, MCP-036; the orchestrator hands
-     the map at the moment it hands out work, MCP-029 as amended 2026-10-10. -->
+<!-- Tells the agent that the folder is in no registered project, and how to register it. Printed in the guide, after
+     <registered>, when the folder is in no registered project. Must be present: the code requires it. -->
+<no_project>This folder is not in a registered project. To register it: call metaform_register, or run metaform add project &lt;id&gt; &lt;path&gt;.</no_project>
+<!-- The pointer that metaform install and metaform provision write into a harness's global instructions file, such as
+     ~/.claude/CLAUDE.md, ~/.codex/AGENTS.md or ~/.gemini/GEMINI.md; every agent that harness starts reads it, and
+     metaform help provision prints it for other harnesses. Edits reach those files when metaform provision runs again;
+     metaform uninstall removes the pointer. Must be present: the code requires it. -->
+<global_instructions>This system orchestrates work using Metaform. You must use its active features. Read them with `metaform help agents`, or the metaform_instructions tool.</global_instructions>
+<!-- The reminder that metaform install and metaform provision install as a hook: Claude Code shows it before each Agent,
+     Task, Workflow or AskUserQuestion call, Gemini CLI after invoke_agent, delegate_to_agent or ask_user. Edits reach the
+     hook when metaform provision runs again. Turned off for Gemini CLI with the setting gemini_reminder, then provision;
+     for Claude Code, metaform uninstall claude removes it. Must be present: the code requires it. -->
 <work_reminder>If this hands work to an agent: give it map where &lt;address&gt; for the node its work is in, and tell it to record what it learns at that node.</work_reminder>
-<!-- Served, in this order, only while the debug setting is on, MCP-031. -->
-<stop>If you cannot continue, stop and submit a trouble report: call the metaform tool with command feedback, attaching what you have in its shape field. Do not retry.</stop>
-<!-- Follows stop in the instructions while the debug setting is on, and asks the agent for feedback on the Metaform
-     process, MCP-031 and CLI-034. -->
+<!-- Tells the agent to stop and submit a trouble report when it cannot continue. Printed near the end of the guide,
+     followed by <debug>, only while the setting debug is on. Turned off with the setting debug, which is off by default.
+     Must be present while debug is on. -->
+<stop>If you cannot continue, stop and submit a trouble report: call metaform_feedback, attaching what you have in its shape field. Do not retry.</stop>
+<!-- Asks the agent for feedback on the Metaform process. Printed last in the guide, after <stop>, only while the setting
+     debug is on. Turned off with the setting debug. Must be present while debug is on. -->
 <debug>Submit feedback on the Metaform process with the same command: bad semantics, a command that did not match what it said it takes, where you got stuck.</debug>
-<!-- The remote agent's prompts, BASE-060. remote_wrapper and remote_onboarding are prompts of the prompt store, edited
-     in the prompt editor, so their slots are written as text the build fills in: {wheel}, the wheel's file name;
-     {project}, the project's id; {task}, the person's task as written, or remote_onboarding when the person gives
-     none. A project build wraps the task in remote_wrapper, and the wheel carries the result. -->
+<!-- The message given to a hosted agent with a project wheel; the person's task, or <remote_onboarding> when there is
+     none, goes in at {task}. Written by metaform build kind=project and the web GUI's build page to prompt.md beside the
+     wheel, and printed by the wheel's first run. A build uses the prompt store's copy, edited in the web GUI's prompt
+     editor; this element fills the store the first time it is used. Must be present: the code requires it. -->
 <remote_wrapper>You are working on the project {project} with Metaform. Metaform holds the project's functional map: what each part of the project is for, and how the parts serve one another.
 
 The file uploaded with this message, {wheel}, is Metaform carrying the project. It is a Python wheel that runs directly with Python 3.11 or newer, with no install and no network.
@@ -59,8 +72,9 @@ The file uploaded with this message, {wheel}, is Metaform carrying the project. 
 Your task:
 
 {task}</remote_wrapper>
-<!-- The task a project build gives the remote agent when the person writes none, BASE-060: learn the project, tell the
-     person about it, and wait for instructions. Its slots are remote_wrapper's. -->
+<!-- The task a hosted agent is given when a project build has none: learn the project, describe it to the person, then
+     follow the person's instructions. Placed in <remote_wrapper> at {task}. Edited in the prompt store, as
+     <remote_wrapper> is; giving the build a task replaces it. Must be present: the code requires it. -->
 <remote_onboarding>Get to know this project, then follow the person's instructions.
 
 1. Run the wheel and read everything it prints.
@@ -68,11 +82,82 @@ Your task:
 3. Tell the person what the project is and what it is for, as the map shows it, in a few short paragraphs.
 4. Tell the person which Metaform commands you have, and that your work comes back to them through `python {wheel} return` as an archive they download.
 5. Then follow the person's instructions in chat.</remote_onboarding>
-<!-- The description of the working layer a project wheel's first run opens, its variable, LAYER-002 and BASE-060. -->
+<!-- The description of the working layer a project wheel's first run opens. Shown to anyone who lists or reads that
+     layer, including the person after importing the returned archive. Must be present: the code requires it. -->
 <remote_layer>What a remote agent learned, decided and changed while it worked on the project from a hosted sandbox, returned to the person in one archive.</remote_layer>
-<!-- Ends what a project wheel's run prints, BASE-060: how the remote agent returns its work. <wheel/> is the wheel's
-     file name and <layer/> the working layer. -->
+<!-- Tells a hosted agent how to return its work. Printed last by a project wheel's first run; <wheel/> takes the wheel's
+     file name and <layer/> the working layer. Must be present: the code requires it. -->
 <remote_return>When your work is ready, or the person asks for it, run `python <wheel/> return note="&lt;what you did, and what is left&gt;"`. It writes one archive of your working layer, your file changes against the files the wheel carried, and your note, and prints where the archive is. Offer that archive to the person as a download. A write that names no layer goes to your working layer, <layer/>.</remote_return>
-<!-- What return prints after the archive's path, BASE-060. <archive/> is the archive's path. -->
+<!-- Tells a hosted agent to offer the returned archive to the person. Printed each time the agent runs return on a
+     project wheel; <archive/> takes the archive's path. Must be present: the code requires it. -->
 <remote_returned>Offer this archive to the person as a download: <archive/>. It holds your working layer, your file changes and your note. The person adds it to their Metaform with `metaform import &lt;file&gt;`.</remote_returned>
+<!-- What Jev reads, CHANGE-ORDER-2026-10-07 item 6 (P185). Jev is the optional decision model of metaform.jev, asked
+     only when the person turns on the setting jev; it answers typed questions about a state and never writes text.
+     Each child of <jev> is one decision point other modules call, named as in the setting jev_decisions; turn one off
+     there rather than deleting it here. In each: <title> and <why> are what the decision is kept under at its Address,
+     read by agents and the person at metaform://<address>#<n>, when the code keeps it (choose_agent always, at the
+     ticket's Address; intake_coverage when a part is missing; session_drift when it finds something; rank_items,
+     triage and start_order never); <ask> is the question Jev reads, sent exactly as written; <true> and <false> say
+     what a yes and a no mean, and Jev reads them literally, so boundary cases belong there. Every question is about
+     one thing, never a share of many, since Jev does not count: the code asks it once per thing and adds up the
+     answers. A word in backticks, such as `task`, names a part of the state the code sends with the question. The
+     places the code fills in: <ticket/> a ticket's id; <address/> a node's Address; <session/> an agent session's id;
+     <item/> the state path of the one thing a question is about; <agent/> an agent's name. Must be present: the code
+     requires each element it reads. -->
+<jev>
+<choose_agent>
+<title>Agent, model and thinking level for ticket <ticket/></title>
+<why>Agents and models differ in what they do well and what they cost, so the choice is made once per ticket and kept where the person can see it.</why>
+<ask>Which agent in `agents` should work the ticket `<item/>`, judged by what each agent's description says it does well?</ask>
+<model>If the agent <agent/> works the ticket `<item/>`, which of its models in `options.<agent/>.model` should it run? Prefer the lighter model when the ticket is small and well defined, and the stronger one when it needs design, wide reading or care with risk.</model>
+<thought_level>If the agent <agent/> works the ticket `<item/>`, which thinking level in `options.<agent/>.thought_level` should it use? Prefer the lower level when the ticket is small and well defined, and the higher one when it needs design, wide reading or care with risk.</thought_level>
+</choose_agent>
+<start_order>
+<title>Tickets ordered for starting</title>
+<why>Agents start the tickets the person has not placed on the board in this order; the ones the person placed keep their place.</why>
+<ask>Should the ticket `<item/>` be started before the other tickets in `tickets`?</ask>
+<true>It unblocks other tickets in `tickets`, fixes a fault other work waits on, or is small, clear and ready to start.</true>
+<false>It builds on other tickets in `tickets`, waits on an answer from the person, or can wait without holding other work up.</false>
+</start_order>
+<rank_items>
+<title>Items ranked for the brief of <address/></title>
+<why>A node's brief holds about 2 KB, so the items an agent at the node needs most are named first.</why>
+<ask>Will an agent about to work at the node in `node` need the item `<item/>` to do that work well?</ask>
+<true>The item records a decision, a constraint, a fault, open work or a finding that bears on the node's operative purpose or on how the node is realized now.</true>
+<false>The item is about another node, has been superseded by a later item, or is background the agent can do without.</false>
+</rank_items>
+<triage>
+<title>Messages sorted for the person or an agent</title>
+<why>Every message stays on the person's list; those that need the person come first, and the rest are marked as ones an agent may answer.</why>
+<ask>Does the message `<item/>` need the person, rather than an agent, to act on it or answer it?</ask>
+<true>It needs a decision only the person can make: a choice between options they care about, a permission, spending, a credential, a change of scope or of the CQU's goals, or knowledge only the person holds.</true>
+<false>An agent with the project's map, tools and source can act on it or answer it, however large the work.</false>
+</triage>
+<intake_coverage>
+<title>Top-level parts of the AUE checked against the map</title>
+<why>Every top-level part of the AUE is represented in the map, so no part is worked on without its purpose known.</why>
+<ask>Is the top-level part `<item/>` of the AUE represented in the map in `map`?</ask>
+<true>An element in `map` stands for this part, for what it does, or for a collection that holds it.</true>
+<false>Nothing in `map` stands for this part or for what it does.</false>
+</intake_coverage>
+<session_drift>
+<title>Session <session/> checked for conclusion-reading, drift and repeats</title>
+<why>An agent that acts on earlier conclusions in place of the AUE inherits their errors, one that strays spends the person's budget on work nobody asked for, and one that repeats itself spends it on nothing.</why>
+<conclusions>
+<ask>Do later calls in `calls` open the source that the document read in `<item/>` describes?</ask>
+<true>A later call opens, runs or changes the files, nodes or data the document describes.</true>
+<false>No later call opens what the document describes; the agent goes on from the document alone.</false>
+</conclusions>
+<off_task>
+<ask>Does the call `<item/>` read or change what the work in `task` needs?</ask>
+<true>It opens, runs or changes something the work in `task` needs, including reading to understand it.</true>
+<false>It touches files, nodes or questions the work in `task` does not need.</false>
+</off_task>
+<repeating>
+<ask>Do the steps in `<item/>` repeat work or checks already reported earlier in `steps`?</ask>
+<true>The steps re-read, re-verify or re-state the same things without new results.</true>
+<false>Each step adds something new toward the work in `task`.</false>
+</repeating>
+</session_drift>
+</jev>
 </prompts>

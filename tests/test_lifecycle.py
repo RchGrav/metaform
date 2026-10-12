@@ -193,8 +193,10 @@ def test_hidden_and_masked_memory_reaches_no_read_path(run, tmp_path, monkeypatc
         store.add_element(layer.name, 'code.probe.echo', role='SE')
     route, probe = 'node=element:code.manager.route', 'node=element:code.probe.echo'
     run('memory', 'create_entities', json.dumps([{'name': 'route', 'entityType': 'part',
-                                                  'observations': ['Routes are ejected.']}]), route, cwd=folder)
-    run('memory', 'create_entities', json.dumps([{'name': 'probe', 'entityType': 'part', 'observations': []}]),
+                                                  'observations': ['Routes are ejected.'], 'why': 'Routes go.'}]),
+        route, cwd=folder)
+    run('memory', 'create_entities', json.dumps([{'name': 'probe', 'entityType': 'part', 'observations': [],
+                                                  'title': 'The probe', 'why': 'It checks routes.'}]),
         probe, cwd=folder)
     run('memory', 'create_relations', json.dumps([{'from': 'probe', 'to': 'route', 'relationType': 'checks'}]),
         cwd=folder)
@@ -211,7 +213,7 @@ def test_hidden_and_masked_memory_reaches_no_read_path(run, tmp_path, monkeypatc
             return command('memory', *args)
         graph, found = memory('read_graph'), memory('search_nodes', 'ejected')
         opened = memory('open_nodes', json.dumps(['route']))
-        node = command('map', 'where', 'code.manager.route').get('memory', {})
+        node = command('map', 'where', 'code.manager.route', 'contents=true').get('memory', {})
         return (graph['entities'], found['entities'], opened['entities'], opened['relations'],
                 memory('read_graph', route)['entities'], node.get('entities'))
     assert all(reads())

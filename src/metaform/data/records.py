@@ -333,8 +333,8 @@ class Where(Record):
     relies on, every join it receives with the elements each holds; its open work records, STORE-042; what the layers in
     context hold at it, as `node` gives them, the sources layer's refs among them; and the properties that apply at its
     address and those visible there, as `context` gives them, LAYER-005. Kind `join` is the read of a join, which a
-    ticket on a join gets, MAP-048. `to_dict()` leaves ids and empty fields out unless `full`, all but each ticket's work
-    id, which an agent needs to take it, and each open message's message id, which an agent needs to answer it."""
+    ticket on a join gets, MAP-048. `to_dict()` leaves ids and empty fields out unless `full`, all but the element's id,
+    which `map history` takes, each ticket's work id, which an agent needs to take it, and each open message's message id, which an agent needs to answer it."""
     kind: str
     element: Element | None = None
     join: Join | None = None
@@ -347,6 +347,7 @@ class Where(Record):
     visible: tuple[Property, ...] = ()
     messages: tuple[Message, ...] = ()  # the open questions and unread messages at it, MAP-050
     past_work: tuple[PastWork, ...] = ()  # references only; the log is read by work id, MAP-051
+    join_layers: tuple[tuple[str, tuple[LayerGroup, ...]], ...] = ()  # what the layers hold at each join, by join id
 
     def to_dict(self) -> dict[str, Any]:
         if self.full:
@@ -355,16 +356,20 @@ class Where(Record):
                     'provides': plain(self.provides), 'receives': plain(self.receives), 'work': plain(self.work),
                     'layers': plain(self.layers),
                     'properties': {'applying': plain(self.applying), 'visible': plain(self.visible)},
-                    'messages': plain(self.messages), 'past_work': plain(self.past_work)}
+                    'messages': plain(self.messages), 'past_work': plain(self.past_work),
+                    'join_layers': {join_id: plain(groups) for join_id, groups in self.join_layers}}
         data: dict[str, Any] = {'kind': self.kind}
         if self.element is not None:
-            data['element'] = small(plain(self.element))
+            data['element'] = {'id': self.element.id, **small(plain(self.element))}
         if self.kind == 'join' and self.join is not None:
             data['join'] = self._join(plain(self.join), True)
+        held = dict(self.join_layers)
+        def with_layers(join: Join, shown: dict[str, Any]) -> dict[str, Any]:
+            return {**shown, 'layers': small(plain(held[join.id]))} if join.id in held else shown
         if self.provides:
-            data['provides'] = [self._join(plain(join), True) for join in self.provides]
+            data['provides'] = [with_layers(join, self._join(plain(join), True)) for join in self.provides]
         if self.receives:
-            data['receives'] = [self._join(plain(join), False) for join in self.receives]
+            data['receives'] = [with_layers(join, self._join(plain(join), False)) for join in self.receives]
         if self.work:
             data['work'] = [{'id': record.id, **small({'condition': record.condition, 'note': record.note,
                                                                  'task': record.task, 'taken': record.taken,
@@ -549,6 +554,9 @@ class WorkRecord(Record):
     position: int | None = None  # its place in its column
     links: tuple[WorkLink, ...] = ()  # the other nodes it links for reference
     kind: str = ''  # a ticket's kind: broken, flawed, enhancement, or empty for a plain task
+    # How it ended, a terminal state of `status.py`: completed, cancelled or failed; None while it is open. A record
+    # done before the state was kept reads as completed.
+    outcome: str | None = None
 
     @property
     def column(self) -> str:

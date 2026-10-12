@@ -18,7 +18,7 @@ Started from template 0.2.0.
 
 `basedemo` returns the package source metadata fingerprint as `code_print`, using the public `metaform.module.code_print()` service. Long-running modules use it to detect changed code before attempting schema recovery; it does not guarantee that a replacement can open the store, STORE-029 and QUAL-016.
 
-`metaform.module` for the declaration, `Context`, `Stop`, and the report functions `save_report`, `feedback`, `list_reports` and `read_report`. `metaform.settings` for its five settings, one of each kind. `metaform.data` for its layer, its work records and its own tables. `metaform.nonce` for `noncedemo`.
+`metaform.module` for the declaration, `Context`, `Stop`, and the report functions `save_report`, `feedback`, `list_reports` and `read_report`. `metaform.settings` for its five settings, one of each kind. `metaform.data` for its layer, its work records and its own tables.
 
 `basedemo` also uses `metaform.home` for the active home, project lookup and project previews, `settings.toggled_layers` for the folder's layers, and `refresh_modules` from `metaform.module`. It uses `metaform.data` for named reads, `plain` and `NewerStore`. `base-restore` and `base-remove` call the project services of `metaform.home`. These examples show that user modules can use the same capabilities as shipped modules without importing private chassis code, BASE-004 and QUAL-016.
 
@@ -35,7 +35,6 @@ Started from template 0.2.0.
 - `beep`: rings the terminal bell, on Windows only.
 - `todo <task>`: writes a `missing` work record on the module's own element, `code.module.hello`, with the task, and keeps how many names hello had greeted then in its own table `todos`, keyed by the work id; returns the record id. `metaform map work id=<id>` shows that count under `hello`, through `work_read`, BASE-035. Tool `hello_todo`.
 - `done <id> <resolution>`: marks that record done, its resolution kept beside it. Tool `hello_done`.
-- `noncedemo`: walks an agent through a nonce, BASE-050. Run directly it requests a nonce whose function is `noncedemo` itself and prints `Please run metaform <nonce>`. Run through that nonce, `nonce.reached()` holds it, and `noncedemo` does the step the nonce's value in the chassis holds, or the step written after the nonce, `next` or `complete`. `next` updates the value, so the nonce run alone gives the same message again. `complete` closes the nonce and requests a new one, the nonce an agent would pass to the main agent. That one, run, closes itself and ends the demo; run again, it prints `Error: Invalid or Unknown Nonce`. Tool `hello_noncedemo`.
 - `count`: says `hello has greeted <n> names.` with `ctx.say` and returns `{"greeted": n}`. With `--json` the sentence goes to standard error and only the data to standard output; over MCP it is a line of the result. Tool `hello_count`.
 - `welcome <name>`: an async verb that publishes `hello.greeted` with `await ctx.publish_async(...)`; `ctx.publish` inside a running loop is refused, BASE-009. Returns `welcome, <name>`. Tool `hello_welcome`.
 - `follow`: waits for the next change to the map made in another process and shows it, `{"changed": [<payload>]}`. It listens with `ctx.listen`, BASE-053, whose handler runs in the listener's own thread and hands the payload to the verb's loop with `call_soon_threadsafe`; the listener closes when the verb returns. Only on the command line, since over MCP it would hold the tool call until the map changed.
@@ -110,26 +109,6 @@ metaform hello basedemo
 metaform hello todo "greet in every language"
 metaform hello done <id> "greets in Latin now"
 metaform hello forget --confirm
-metaform hello noncedemo
-```
-
-The nonce demo, with the nonces the service issued in one run:
-
-```
-$ metaform hello noncedemo
-Please run metaform 6984268
-$ metaform 6984268
-Hello World! Now type the command again, but this time with metaform 6984268 next
-$ metaform 6984268 next
-This is a next message for the agent. Try running metaform 6984268. You will notice you get this same message, because metaform 6984268 is updating the db in the chassis for this nonce and using it to control the module. After you did the step, run metaform 6984268 complete
-$ metaform 6984268
-This is a next message for the agent. Try running metaform 6984268. You will notice you get this same message, because metaform 6984268 is updating the db in the chassis for this nonce and using it to control the module. After you did the step, run metaform 6984268 complete
-$ metaform 6984268 complete
-Congratulations, now you know how nonces work. The dev can recall the nonce, update the existing nonce, and generate new ones. So imagine it was time to pass to the main agent. The plugin could say: tell the main agent to run metaform 9772227. But don't really, just do it to see what will happen.
-$ metaform 9772227
-Congrats, the nonce demo is over. We already cleaned up the nonce you just used. Try it again to see.
-$ metaform 9772227
-Error: Invalid or Unknown Nonce
 ```
 
 Each public import a module can use, and the command that shows it:

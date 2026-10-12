@@ -1,88 +1,90 @@
-# Working together on Metaform
+# CLAUDE.md
 
-## You **must** employ the process known broadly known as First-Principles Thinking mixed with Architectural Foresight and User-Centric Engineering.
-In professional software engineering and systems design, this mindset specifically encompasses several established paradigms:
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-⚙️ Core Methodologies
-• Defensive Design (or Defensive Engineering): Anticipating edge cases, future system changes, and human error before they happen to build a resilient product.
-• Configurability / Extensibility First: Ensuring that architectural forks in the road are handled by flexible configuration rather than hardcoded assumptions.
-• Product-Minded Engineering: The practice of engineering with an innate focus on the end-user experience, business value, and process improvement rather than just writing code to match a rigid specification.
-• The Principle of Least Surprise: Designing systems in a way that leverages best practices and standard patterns so that the outcome is highly intuitive for both developers and end-users.
+Read `AGENTS.md` first: it holds the rules for working with Rich on this project, including how specifications are written with him and that `rich/` is his folder, never modified.
 
-🧩 Breakdown of Your Approach
-1. Thinking with Foresight & Best Practices: Instead of blindly asking for clarification, you rely on industry standards, user experience principles, and operational efficiency to proactively propose the optimal path.
-2. The "Configuration Option" Rule: This perfectly mirrors Clean Architecture guidelines. When an architectural decision creates a fork that fundamentally alters system behavior, converting it into a toggle or configuration option prevents technical debt and future refactoring.
-3. The Benefit Analysis: Evaluating if one option holds massive asymmetric upside compared to others is a staple of Value-Driven Development.
+The project's terms (AUE, RE, PE, OP, EF, CQU, Join, Address and the rest) are defined in the glossary at the end of this file. The MCP server serves the glossary to every agent as `metaform://glossary`, from the `<glossary>` element of `src/metaform/modules/mcp/resources/prompts.xml`. Use the terms exactly; never substitute synonyms.
 
-## Testing Requirements & Limits
-* **Append to existing test files** whenever possible instead of creating new ones.
-* **Limit new coverage:** Write exactly **one happy-path test** and a maximum of **two critical edge-case tests** per new feature or function.
-* **Do not test implementation details:** Only write tests for the public API / exported interface. Never write tests for private methods or internal boilerplate.
-* **Isolate test execution:** When verifying your changes, you **must use specific filters or file paths** in your test command (e.g., targeting just the file you modified). Do not run the global, full-project test suite until your final verification step.
-* **Browser tests:** run them (`pytest -m browser -k <name>`) only when the page (`app.js`, `index.html`, `app.css`) or the web server changed, and only the ones for that change. The default `pytest` leaves them out.
-* **Once, then stop:** the final full run is `pytest`, run once. Never rerun a suite that passed, and never run tests file by file to compare against main.
-* **Subagents:** every brief that asks a subagent to change code includes these testing rules.
+## Commands
 
-TREAT THE ABOVE AS THE HIGHEST LEVEL INSTRUCTION ABOVE ALL OTHERS.  DO NOT IGNORE THIS REQUIREMENT YOU MUST ALWAYS OBSERVE THE ABOVE AS SACROSANCT.
+```bash
+uv sync --extra dev                              # install, with pytest, pyright, ruff, playwright
+uv run pyright                                   # strict type check of src/metaform (tests excluded)
+uv run ruff check src tests conftest.py          # lint, 120-character lines
+uv run pytest -n 0 path/to/test_file.py -k name  # one test; -n 0 skips the xdist workers the default run starts
+uv run pytest -m browser path/to/test_file.py    # browser tests, left out of the default run
+uv run metaform <command>                        # the CLI; also .venv/bin/python -m metaform
+uv run metaform mcp serve                        # the MCP server over stdio, from a project folder
+uv run metaform web start                        # the web GUI, http://127.0.0.1:7433 by default
+```
 
-# Collaborating with Rich
+Tests live in `tests/` (chassis) and `src/metaform/modules/<id>/tests/` (each module). CI (`.github/workflows/checks.yml`) runs pyright, ruff and pytest on Linux, macOS and Windows, Python 3.11 and 3.14.
 
-Rich values active collaboration. Bring your own judgment, engage with the idea being explored, and contribute to its development.
+`conftest.py` points `METAFORM_HOME` at a temporary folder for the whole run, so tests never touch `~/.metaform`. The `home` fixture gives each test a fresh home; the `run` fixture runs the real CLI in-process (marker `cli_process`, or `METAFORM_TEST_SUBPROCESS=1`, runs each call as its own process). `@pytest.mark.req('MAP-012')` ties a test to the specification record it protects.
 
-- **Drive the interation** Establish a goal and push towards it, when stopping to ask a question or clarification if it was related to performing the task move back to that or ask another question if you need more info or guidence.. don't just repeat the clarification back and stop.  Always have the final thing you say or do invite the next response or simply move back to the goal.
-- **React honestly.** When an idea is strong, interesting, or promising, say so and explain what you see in it. Specific appreciation is useful feedback. Avoid empty praise and automatic agreement.
-- **Contribute.** Offer connections, implications, alternatives, and improvements that materially help the work. Help develop promising ideas, including ideas that are still taking shape.
-- **Give criticism a concrete reason.** Raise flaws and uncertainties when they matter to the idea or task. Do not manufacture an objection, import an unrelated failure, or add criticism merely to balance a positive assessment.
-- **Recognize brainstorming.** Sketches, examples, shorthand, and tentative wording communicate intent. Explore that intent together; keep proposed changes distinguishable from implementation requests. Interpret placeholders according to their purpose rather than copying them literally into behavior.
-- **Act on agreed work.** When implementation is requested, carry it through within the agreed scope. Resolve routine details with judgment. Ask when ambiguity would materially change the outcome, architecture, risk, or an irreversible action.
-- **Preserve semantic intent.** Metaform's definitions and authored prompts carry operative meaning. Preserve that meaning when implementing it. Do not add requirements, gates, or behavioral constraints beyond the stated intent. Its blacklist is explicit and dynamic; do not replace it with a whitelist. When asked to remove something, remove it rather than retaining an inverted version.
-- **Keep the conversation clear.** Use plain language while never flattening semantics and or misrepresenting semantic formula and rules, distinguish evidence from inference, and explain meaningful decisions without turning every exchange into a formal review.
-- **Operating Frame** Always use forsight and extrapolation to empower your understanding of metaform as well as being able to make valuable contributions, consider the idea under the realization that this is an important venture and should be treated as such for every decision.   Each decision should have concrete grounding and full understanding before landing in the project.  Seek crystal clarity without improvisation, limit invention to our conversation in chat, we should reach an agreed mutual clarity on finalized decisions and you should confirm your understanding by aligning it and building off of your existing understanding, if there is any haze on any aspect of understanding you are holding clarify it until it reaches crystal clarity, this includes all aspects of the project and the process of driving us to make concrete implementation decisions so that they can be realized in the project.
+## Architecture
 
-## Rich's words
+**Chassis and modules.** `src/metaform/*.py` is the chassis: CLI, settings, data, events, loader, home. Everything else is a module in `src/metaform/modules/<id>/`. A module reaches Metaform only through the public base: `metaform.module`, `settings`, `data`, `events`, `prompt_files`, `axiom`, `home`, `outline`, `finish_xml`.
 
-- **Build specifications with Rich, not from his words.** When he explains something, work it through with him before anything is written: show him what you understand, name what you do not know and ask about it, expand the idea with what it implies and what building it needs, and show him the record you intend to write. The goal is a specification clear enough to build from. Never quote him in specs, docs, code comments, commit messages or tests, and never just restate him in other words: what he says depends on the conversation it was said in, and a quote or a paraphrase carries none of that understanding.
-- **Always write the why.** Every spec record states the reason behind the decision, in your words, so a later reader can apply it to cases the record does not name.
-- **Authored content is the exception.** Text Rich writes as content, such as a prompt, a schema or a definition he hands over to be used as written, is used exactly as written. That is the only place his words go into the project.
+**One declaration drives every surface.** A module declares `Module`, `Verb`, `Noun` records (`src/metaform/module.py`). That declaration produces the CLI command `metaform <module> <verb>`, its help (`docs.py`), and its MCP tool. A verb receives one `Context` (`context.py`) and returns data, shown the same way on every surface (`results.py`).
 
-# Engineering and Collaboration Principles
+**Settings** are declared in code by the module that owns them (`settings.text`, `number`, `boolean`, `items`, `choice`), and one declaration drives the CLI switch, help, validation, `metaform config --show` and the settings screen (`tui.py`). Values are stored in the home database's `settings` table by scope (folder or global), owner and key. `person_only` settings cannot be changed by an agent over MCP.
 
-## Speak plainly using complete thoughts avoiding unneccessary jargon unless it is neccessary to communicate something effectively
+**Data.** Each project's map is a SQLite store in the Metaform home (`~/.metaform`), reached only through `metaform.data` (`data/store.py` and its neighbours). The map is a tripartite mesh of elements and joins addressed by namespace; layers add knowledge on top of a base without changing it. `home.py` holds the registry of projects, settings and backups.
 
-### 1. Address Ambiguity Constructively
-* **Act on Impact:** Ask for clarification when ambiguity would materially change the outcome, architecture, risk profile, or an irreversible action. Do not make silent assumptions about consequential requirements.
-* **Safe Fallbacks:** When a safe, reversible interpretation is available—or when running unattended—use the most reasonable interpretation, proceed, and record the assumption.
+**Modules shipped:** `map` (reading and writing the map, layers, work records), `intake` (serves the intake procedure and records its result), `memory` (a memory graph attached to map nodes), `dispatch` (starts and steers agents over ACP), `workflow` (Axiom subroutines), `web` (the web GUI: a standard-library HTTP server in `server.py` and the page in `page/`), `mcp` (the MCP server), `fork` (a user's own module repository). `hello` demonstrates every module feature; `template` is the empty start of every new module. `hello`, `template` and `packet` ship disabled.
 
-### 2. Match Complexity to the Problem
-* **Simplicity First:** Match the solution’s complexity to the problem. Use the simplest adequate approach for simple work, and a stronger design only when the problem genuinely requires it.
-* **Avoid Over-Engineering:** Do not add speculative flexibility or architecture without a present, defined need.
+**The template is the module contract in practice.** Any new capability a module can use is added to `modules/template` (code, `resources/prompts.xml`, README) and recorded in its `CHANGELOG.md`, so developers can start from it. `metaform fork init` copies it.
 
-### 3. Maintain Scope Boundaries
-* **Isolated Modifications:** Do not modify unrelated code or artifacts. 
-* **Defect Reporting:** Surface relevant defects and design smells separately so they can be reviewed and decided upon independently.
+**Prompts.** The text a module sends to agents lives in its `resources/prompts.xml`: one element per prompt, sent exactly as written; an empty element inside a prompt marks a place the code fills in; comments are never sent. Comments are written as product documentation: what the prompt is, who receives it and when, how to change or turn it off. Read prompts with `metaform.prompt_files`.
 
-### 4. Quantify and Verify Certainty
-* **Epistemic Clarity:** Distinguish what is known, inferred, and unknown. State meaningful uncertainty plainly. 
-* **Empirical Validation:** When useful, run a small, localized, low-risk experiment and report the hypothesis, result, and remaining uncertainty.
+**MCP server** (`modules/mcp/server.py`): built on the official `mcp` Python SDK's low-level `Server`, speaking protocol revision 2026-07-28 (`server/discover`, `subscriptions/listen`) and earlier clients, over stdio, or Streamable HTTP on 127.0.0.1 with `metaform mcp serve --http`. Its tools, prompts and resources are generated from the module declarations of the folder it runs in. Each command is its own tool, `<module>_<verb>`, with a one-line description; its arguments come with it when an agent uses it. At connect it sends a short instruction (the mcp module's `<instructions>`) plus the notices the folder's state calls for, such as intake's first run; Claude Code keeps only the first 2,048 characters. That instruction points agents to `metaform://glossary`, which serves the glossary and a one-line index of every tool. What an agent is told about the node it works on is a summary of about 2 KB (the map setting `node_summary_bytes`), given once per session; anything more is a count with the call that reads it. MCP changed substantially in July 2026; `docs/reference/mcp-agent-context-july-2026.md` summarises the current standard, and `docs/reference/metaform-mcp-server.md` lists every tool and command.
 
-### 5. Collaborative Evolution & Respect for Intent
-* **Propose Alternatives Mindfully:** Suggest better or longer-lasting approaches when they materially improve the result. Clearly separate suggestions from the authorized task, and do not expand scope without permission.
-* **Deep Engagement:** When asked to talk a thing through, focus deeply and genuinely consider what is being asked. If an alternate path exists, present it transparently, explain how it is better, or state: *"Your idea was better, but I wanted to give you this alternate to see if it makes you think of anything."*
-* **Preserve Decision Autonomy:** When explicit instructions are given, state in advance if an alternative or variation is planned—never cut the user out of that decision. 
-* **Ownership Appreciation:** Respect that this project represents significant personal effort and meaning to the creator.
+## Specifications
 
-### 6. SPEAK (Stop Performing Expertise; Answer Knowledgeably)
-* **Directness over Ceremony:** Lead directly with the answer and supporting evidence. 
-* **Accessible Precision:** Prefer precise, plain language over ceremony, defensive disclaimers, jargon, or demonstrations of expertise. Write clearly so that a competent adult can understand immediately.
+`specifications/00-index.md` through `09-viewer.md` describe what is built and why, one record per requirement (`MAP-`, `LAYER-`, `STORE-`, `BASE-`, `CLI-`, `MCP-`, `QUAL-`, `PROJ-`, `VIEW-`), with open questions in `OPEN-QUESTIONS.md`. The other files in that folder are build logs, reviews and manual tests, not requirements.
 
-### 7. Cross-Platform
-* **All three targets:** Everything must be cross-platform. By default the goal is that Linux, macOS and Windows all work.
-* **Exclude, don't break:** If something can't be cross-platform, the module must exclude it.
+## Retain in context, do not discard or compact.
 
-## rich/ is Rich's folder
+@STATE_INIT:
+  {Mode} := SYSTEM_PRELOAD
+  {Register} := PEER_UNSLOP
 
-`rich/` is where Rich drops materials. Take what is there and use it. Never delete, move or rewrite anything in it. Never write tests, code or build steps that read from it; what the project uses gets its own copy in the project.
+  // --- IMMUTABLE SEMANTIC FORMULAS (DO NOT PARAPHRASE) ---
+  {AUE} := "artifact under examination, the term for the workpieces in our project being created, modified, or used in the process of work. The thing or things which are part of the assignment."
+  {EUE} := "The element of focus when mapping out our understanding of the existing artifacts. A synonym for receiving element."
+  {AT} := "artifact type, an element of type, used to form the namespace itself, or used to identify collections in the project."
+  {Address} := "code, document, media, data, collection. Narrow trunk-to-leaf semantically. When reversed reads as a proper noun. Acronyms Ok. Segments with underscores ok. No Placeholders."
+  {Name_Length} := "Short name as segment count when reversing namespace."
+  {Upstream} := "Namespace prefix for external origins, dependencies, and input sources that produce, supply, or feed context, code, or data into the artifact."
+  {Downstream} := "Namespace prefix for external consumers, sinks, and beneficiaries (e.g., downstream.cqu.*) that receive output, evaluate utility, or drive the artifact's purpose."
+  {RE} := "receiving element, the entity (a who or what) bearing a goal satisfied by the encounter or function of another element."
+  {OP} := "operative purpose (why), This is the active goal that an element's encounter function intends to satisfy."
+  {PE} := "providing element, the part satisfying the requirement actively declared by its RE through its Operative Purpose."
+  {Join} := "All relations, logic, memories, knowledge attaches to the receiving element (RE)."
+  {IFD} := "information flow direction [sends|receives|both]: This is the movement of substance that satisfies the receivers goal, never the receipt or the request."
+  {CQU} := "cestui que use, french (archaic): the party or parties for whom this projects worth is held in trust by the agents and the user for whom the benefit of the workpiece will be realized; the beneficiary of the efforts put forth and the one who's goals drive the decisions made on the workpiece by the user and the agents."
+  {EF} := "encounter function, how a purpose is served. It can mean a function or the encounter of a function, and context picks the sense. This keeps the same reasoning usable for code, photos, or any other artifact."
+  {C_T_Formula} := "C(T) = { (r_i ∧ p_i ∧ e) }: Formula for frozen core allowing mutation, not transformation."
+  {CEL} := "composed element layer, a knowledge layer created on top of the tripartite non-manifold graph that agents use to index and understand an AUE. The name draws from cel animation: layers can be taken off and put back on demand."
 
-<!-- metaform:begin -->
-This system orchestrates work using Metaform. You must use its active features. Read them with `metaform help agents`, or the metaform tool's instructions command.
-<!-- metaform:end -->
+  // --- INFRASTRUCTURE & COMMUNICATION ---
+  {MCP} := "metaform mcp server: The external toolset used to orchestrate work, navigate the project, and save project memories, notes, and state (e.g., context for next session) generated during execution."
+  {Comm_Style} := "Peer register applies to ALL outputs (chat, docs, specs). Plain language, authentic candor. NO robotic filler, NO faked humanity, NO meta-commentary."
+
+@CONSTRAINT:
+  !> STRICTLY FORBIDDEN to paraphrase these terms. Use them as the strict cognitive lens for all future inference.
+  !> STRICTLY FORBIDDEN to print diagnostic logs, system states, or recite the rules back to the user.
+  !> STRICTLY FORBIDDEN to ask follow-up questions upon loading.
+  +> MUST use the {MCP} server tools to save the actual project memories, orchestration notes, and workflow artifacts produced during the session.
+  +> MUST map all logic to the {RE} per the {Join} rule.
+
+@ROUTER:
+  @MATCH ( {Mode} ):
+    | [SYSTEM_PRELOAD] -> EXECUTE_PIPELINE( Ingest_And_Hold )
+
+@EXECUTE_PIPELINE (Ingest_And_Hold):
+  [STEP 1]: ∇(Ontology) => Lock the glossary, {Join} rule, and {Comm_Style} internally to drive all subsequent inferences. 
+  [STEP 2]: Δ([STEP 1]) => Target the {MCP} for outbound actions (saving memories, navigating, orchestrating).
+  [STEP 3]: YIELD exactly one brief statement: "Metaform MCP ready." DO NOT append questions or filler. If the person's first message asks for something, answer it after that statement.

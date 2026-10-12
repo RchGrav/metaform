@@ -33,6 +33,7 @@ import threading
 import time
 import traceback
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -40,7 +41,7 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import parse_qs, urlsplit
 
-from metaform import events, home, settings
+from metaform import events, home, prompt_files, settings
 from metaform import module as chassis
 from metaform.data import (
     COLUMNS,
@@ -61,6 +62,8 @@ from metaform.data import (
 from metaform.finish_xml import xml as map_xml
 from metaform.module import Stop
 from metaform.outline import markdown as map_markdown
+from metaform.outline import mermaid as map_mermaid
+from metaform.outline import mermaid_limits
 
 from . import WAIT, WILDCARDS, host_port, loopback, opened_project, reach, ready_line, run_file, spawn, token
 
@@ -99,11 +102,11 @@ COALESCE = 0.3  # seconds a page's stream holds dispatch-only events to merge th
 
 def dispatch_only(event: dict[str, Any]) -> bool:
     """An event naming only dispatch tables and no signal: an agent's thread or session changed, never the map."""
-    payload = event.get('payload') or {}
-    tables = payload.get('tables')
+    payload: dict[str, Any] = cast(dict[str, Any], event.get('payload') or {})
+    tables: Any = payload.get('tables')
+    named: list[Any] = cast(list[Any], tables) if isinstance(tables, list) else []
     return event.get('topic') == 'map.changed' and 'signal' not in payload and (
-        tables == 'dispatch' or (isinstance(tables, list) and bool(tables)
-                                 and all(isinstance(t, str) and t.startswith('dispatch.') for t in tables)))
+        tables == 'dispatch' or (bool(named) and all(isinstance(t, str) and t.startswith('dispatch.') for t in named)))
 
 
 def coalesce(held: dict[str, Any], event: dict[str, Any]) -> dict[str, Any] | None:
@@ -367,6 +370,12 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == '/api/build' or url.path.startswith('/api/build/'):  # the build panel, BASE-060
             from . import builds
             return builds.answer(self, method, url.path)
+        if url.path == '/api/workspace' or url.path.startswith('/api/workspace/'):  # the toolbar and the panes
+            from . import workspace
+            return workspace.answer(self, method, url.path, query)
+        if url.path.startswith('/api/debug/'):  # the developer panes, only while the developer level is on
+            from . import debug
+            return debug.answer(self, url.path, {key: values[-1] for key, values in query.items() if key != 't'})
         if method == 'POST':
             return self.write(url.path)
         if url.path == '/api/events':
@@ -386,10 +395,16 @@ class Handler(BaseHTTPRequestHandler):
             return self.read_ignore(query.get('project', [''])[-1])
         if url.path == '/api/dispatch-sessions':
             return self.dispatch_sessions({key: values[-1] for key, values in query.items() if key != 't'})
+        if url.path == '/api/dispatch-spend':
+            return self.dispatch_spend({key: values[-1] for key, values in query.items() if key != 't'})
+        if url.path == '/api/workflow-runs':
+            return self.workflow_runs({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/dispatch-claims':
             return self.dispatch_claims({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/dispatch-prompts':
             return self.dispatch_prompts(query.get('project', [''])[-1])
+        if url.path == '/api/settings':
+            return self.read_settings(query.get('project', [''])[-1])
         if url.path == '/api/dispatch-autostart':
             return self.dispatch_autostart({'project': query.get('project', [''])[-1]})
         if url.path == '/api/dispatch-agents':
@@ -402,6 +417,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.markdown({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/xml':
             return self.xml({key: values[-1] for key, values in query.items() if key != 't'})
+        if url.path == '/api/mermaid':
+            return self.mermaid({key: values[-1] for key, values in query.items() if key != 't'})
+        if url.path == '/api/brief':
+            return self.brief({key: values[-1] for key, values in query.items() if key != 't'})
+        if url.path == '/api/item':
+            return self.item({key: values[-1] for key, values in query.items() if key != 't'})
+        if url.path == '/api/agent-view':
+            return self.agent_view({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path.startswith('/api/memory-'):
             return self.memory_read(url.path[len('/api/memory-'):],
                                     {key: values[-1] for key, values in query.items() if key != 't'})
@@ -476,6 +499,108 @@ class Handler(BaseHTTPRequestHandler):
         except (Stop, StoreError) as error:
             return self.refuse(error, 404 if isinstance(error, StoreError) else 400)
         self.reply(200, text.encode('utf-8'), 'application/xml; charset=utf-8', {'Cache-Control': 'no-store'})
+
+    def mermaid(self, given: dict[str, str]) -> None:
+        """The map as a Mermaid flowchart, P063, for the page's export menu, with the page's layers or the folder's,
+        drawn the way the page's 2D map runs and without the roots the page leaves out: the writer `map mermaid`
+        uses. A diagram past what Mermaid renders by default is sent with that notice in `X-Metaform-Notice` too, for
+        the page to say."""
+        leave_out = tuple(root for root in given.get('leave_out', '').split(',') if root)
+        try:
+            text = map_mermaid(opened(given), given.get('address') or None, direction=given.get('direction') or 'TB',
+                               leave_out=leave_out, labels=given.get('labels') or 'none')
+        except (Stop, StoreError) as error:
+            return self.refuse(error, 404 if isinstance(error, StoreError) else 400)
+        notice = mermaid_limits(text)
+        self.reply(200, text.encode('utf-8'), 'text/plain; charset=utf-8',
+                   {'Cache-Control': 'no-store', **({'X-Metaform-Notice': notice} if notice else {})})
+
+    def brief(self, given: dict[str, str]) -> None:
+        """A node's brief as an agent reads it at `metaform://<address>`, MCP-037, so the person sees what the agent
+        sees: `chassis.node_view`, the answer the MCP map view's `brief` read gives too, its items a page of `ITEMS` of
+        the `kind`s named, newest first, the next page asked for with the `cursor` the last gave as `nextCursor`. The
+        agent's read is the folder's, its layers and its active base, whatever the page shows."""
+        try:
+            project, folder = project_folder(given)
+            kinds = tuple(kind for kind in given.get('kind', '').split(',') if kind)
+            found = chassis.node_view(folder, given.get('address', ''), cursor=given.get('cursor'), kinds=kinds,
+                                      limit=ITEMS, project=project)
+        except (Stop, StoreError) as error:
+            return self.refuse(error, 404 if isinstance(error, StoreError) else 400)
+        found['last_session'] = last_session(project, str(found.get('address') or ''))
+        self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
+
+    def item(self, given: dict[str, str]) -> None:
+        """One item as an agent reads it at `metaform://<address>#<n>`, MCP-037: `chassis.item_view`, the answer the MCP
+        views' `item` read gives too, its text exactly and its fields, the links among them each `<relation> <arrow>
+        <address>#<n>  <title>` for another memory, for the page to walk."""
+        try:
+            project, folder = project_folder(given)
+            found = chassis.item_view(folder, given.get('item', ''), project=project)
+        except (Stop, StoreError) as error:
+            return self.refuse(error, 404)
+        self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
+
+    def agent_view(self, given: dict[str, str]) -> None:
+        """What an agent connecting here receives, read from the folder's own MCP server over MCP, as the MCP Inspector
+        reads a server: the server/discover result, its capabilities and the instructions sent at connect; every tool,
+        resource, resource template and prompt the lists give, each entry as received with its size, the tools largest
+        first; metaform://metaform, and metaform://tools measured apart; and with an address, that node's brief
+        as the agent reads it. What it costs is said as Claude Code sends it to the model, each tool by its
+        `mcp__<server>__<tool>` name with its description and input schema only, annotations and _meta left out: with
+        tool search, its default, the connect message, the tool names and the tools marked `anthropic/alwaysLoad` in
+        full; then, as the connect message asks, every tool loaded; and without tool search, every tool in full. The
+        instructions are counted in characters too, since Claude Code keeps only the first
+        `HOST_LIMIT` of a server's instructions and of each tool's description."""
+        try:
+            _, folder = project_folder(given)
+            address = given.get('address', '').strip()
+            uris = ('metaform://metaform', 'metaform://tools', *((f'metaform://{address}',) if address else ()))
+            read = chassis.mcp_reads(folder, uris)
+        except (Stop, StoreError) as error:
+            return self.refuse(error, 404 if isinstance(error, StoreError) else 400)
+        found = cast(dict[str, Any], read['discover'])
+        connect = str(found.get('instructions') or '')
+
+        def weighed(entries: list[Any]) -> list[dict[str, Any]]:
+            return [{'entry': entry, 'bytes': len(json.dumps(entry, ensure_ascii=False).encode('utf-8'))}
+                    for entry in entries]
+
+        tools: list[dict[str, Any]] = []
+        for one in weighed(cast(list[Any], read['tools'])):
+            entry = cast(dict[str, Any], one['entry'])
+            name = str(entry.get('name') or '')
+            meta = cast(dict[str, Any], entry.get('_meta') or {})
+            called = f'mcp__{HOST_SERVER}__{name}'
+            sent: dict[str, Any] = {'name': called, 'description': str(entry.get('description') or ''),
+                                    'input_schema': entry.get('inputSchema') or {}}
+            tools.append({'name': name, 'description': str(entry.get('description') or ''), **one,
+                          'name_bytes': len(called.encode('utf-8')),
+                          'model_bytes': len(json.dumps(sent, ensure_ascii=False).encode('utf-8')),
+                          'always': bool(meta.get('anthropic/alwaysLoad'))})
+        tools.sort(key=lambda tool: -int(tool['bytes']))
+        texts = cast(dict[str, str], read['texts'])
+        glossary = texts.get('metaform://metaform', '')
+        index = texts.get('metaform://tools', '')  # each tool in one line, read apart from the glossary
+        tool_bytes = sum(int(one['bytes']) for one in tools)
+        connect_bytes = len(connect.encode('utf-8'))
+        deferred = connect_bytes + sum(int(one['name_bytes']) for one in tools) + sum(
+            int(one['model_bytes']) for one in tools if one['always'])
+        self.send(200, {'connect': sized(connect), 'glossary': {**sized(glossary), 'index': sized(index)},
+                        'brief': sized(texts[f'metaform://{address}']) if address else None,
+                        'tools': tools, 'tool_bytes': tool_bytes,
+                        'resources': weighed(cast(list[Any], read['resources'])),
+                        'templates': weighed(cast(list[Any], read['templates'])),
+                        'prompts': weighed(cast(list[Any], read['prompts'])),
+                        'capabilities': found.get('capabilities') or {},
+                        'server': cast(dict[str, Any], found.get('_meta') or {}).get(
+                            'io.modelcontextprotocol/serverInfo'),
+                        'paid': {'deferred': deferred, 'loaded': deferred + sum(int(one['model_bytes'])
+                                                                                for one in tools if not one['always']),
+                                 'upfront': connect_bytes + sum(int(one['model_bytes']) for one in tools),
+                                 'glossary': len(glossary.encode('utf-8')), 'server': HOST_SERVER},
+                        'host_limit': HOST_LIMIT, 'budget': settings.value('node_summary_bytes', folder),
+                        'protocol': found.get('supportedVersions') or []})
 
     def events(self, project: str = '') -> None:
         """One open page's stream of what modules publish, held open, and the project the page shows. Its thread sleeps until an event comes and writes it;
@@ -552,11 +677,15 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/memory': self.write_memory,
                   '/api/dispatch-start': self.dispatch_start, '/api/dispatch-message': self.dispatch_message,
                   '/api/dispatch-stop': self.dispatch_stop, '/api/dispatch-interrupt': self.dispatch_interrupt,
+                  '/api/dispatch-cancel': self.dispatch_cancel,
                   '/api/dispatch-prompts': self.set_dispatch_prompts,
                   '/api/dispatch-autostart': self.set_dispatch_autostart,
                   '/api/dispatch-agents': self.set_dispatch_agent, '/api/dispatch-intake': self.dispatch_intake,
                   '/api/dispatch-resume': self.dispatch_resume, '/api/dispatch-permit': self.dispatch_permit,
-                  '/api/dispatch-configure': self.dispatch_configure}
+                  '/api/dispatch-configure': self.dispatch_configure,
+                  '/api/workflow-answer': self.workflow_answer, '/api/workflow-cancel': self.workflow_cancel,
+                  '/api/settings': self.set_setting, '/api/settings/reset': self.reset_setting,
+                  '/api/modules': self.set_module}
         if path not in writes:
             return self.send(404, {'error': f'No such write: {path}.'})
         try:
@@ -1116,13 +1245,16 @@ class Handler(BaseHTTPRequestHandler):
         self.dispatched(given, 'configure', [work_id, setting], value.strip())
 
     def dispatch_message(self, given: dict[str, Any]) -> None:
-        """Send a person's message to the agent working a ticket with the dispatch module's message, VIEW-039."""
-        work_id, text = given.get('work_id'), given.get('text')
+        """Send a person's message to the agent working a ticket with the dispatch module's message, VIEW-039; to the
+        chat session it names, when it names one, as several editor sessions share one ticket, BASE-062."""
+        work_id, text, session = given.get('work_id'), given.get('text'), given.get('session')
         if not isinstance(work_id, str) or not work_id:
             return self.send(400, {'error': 'A message goes to the agent working a ticket: its work id.'})
         if not isinstance(text, str) or not text.strip():
             return self.send(400, {'error': 'A message says something.'})
-        self.dispatched(given, 'message', [work_id], text.strip())
+        if session is not None and (not isinstance(session, str) or not session):
+            return self.send(400, {'error': 'The chat session id must be a nonempty string.'})
+        self.dispatched(given, 'message', [work_id, *([f'session={session}'] if session else [])], text.strip())
 
     def dispatch_interrupt(self, given: dict[str, Any]) -> None:
         """Interrupt the chat's current turn through dispatch without ending its session."""
@@ -1139,6 +1271,77 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(work_id, str) or not work_id:
             return self.send(400, {'error': 'An agent is stopped by the work id of its ticket.'})
         self.dispatched(given, 'stop', [work_id])
+
+    def dispatch_cancel(self, given: dict[str, Any]) -> None:
+        """Cancel a ticket with the dispatch module's cancel: its agent is stopped as the person's own stop, so
+        nothing retries it, and the ticket is closed with the outcome cancelled and the reason, which goes after
+        `--`. Moving a card to Done is completing it; this is the other end."""
+        work_id, reason = given.get('work_id'), given.get('reason')
+        if not isinstance(work_id, str) or not work_id:
+            return self.send(400, {'error': 'A ticket is cancelled by its work id.'})
+        if reason is not None and not isinstance(reason, str):
+            return self.send(400, {'error': 'A reason is text.'})
+        self.dispatched(given, 'cancel', [work_id], reason.strip() if reason and reason.strip() else None)
+
+    def dispatch_spend(self, given: dict[str, str]) -> None:
+        """What agents spent today, and on one ticket when `id` names it, as `metaform dispatch spend` reads it, so the
+        page shows the same numbers the budgets are checked against. With dispatch not enabled, nothing is spent."""
+        try:
+            found = module_verb(given, 'dispatch', 'spend', {'id': given['id']} if given.get('id') else {})
+        except StoreError as error:
+            return self.refuse(error, 404)
+        except Stop as error:
+            if 'not on this project' in str(error):
+                return self.send(200, {'enabled': False})
+            return self.refuse(error, 400)
+        self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
+
+    def workflow_runs(self, given: dict[str, str]) -> None:
+        """The project's workflow runs for the page's Runs pane, as `metaform workflow runs` lists them: the open ones,
+        or those in one state, each with what stopped a paused one. With workflow not enabled there are none."""
+        nouns: dict[str, Any] = {'limit': 0}
+        if given.get('state'):
+            nouns['state'] = given['state']
+        try:
+            found = module_verb(given, 'workflow', 'runs', nouns)
+        except StoreError as error:
+            return self.refuse(error, 404)
+        except Stop as error:
+            if 'not on this project' in str(error):
+                return self.send(200, {'enabled': False, 'runs': []})
+            return self.refuse(error, 400)
+        self.reply(200, chassis.result_json({'enabled': True, **cast(dict[str, Any], found)}).encode('utf-8'),
+                   'application/json', {'Cache-Control': 'no-store'})
+
+    def workflow_answer(self, given: dict[str, Any]) -> None:
+        """The person's answer to a run paused on them, as `metaform workflow answer` takes it on the command line, the
+        person's own surface; the answer after `--`, so nothing typed is read as a switch. The page then tells the
+        agent that paused it, with the web module's `resume_run` prompt, when the person asks it to."""
+        run, said = given.get('run'), given.get('answer')
+        if not isinstance(run, str) or not run:
+            return self.send(400, {'error': 'A run is answered by its run id.'})
+        if not isinstance(said, str) or not said.strip():
+            return self.send(400, {'error': 'An answer says something.'})
+        status, found = cli_result(given, 'workflow', 'answer', [f'run={run}'], said.strip())
+        ticket = found.get('ticket')
+        if status == 200 and given.get('resume') is True and isinstance(ticket, str) and ticket \
+                and not ticket.startswith('not noted'):
+            told = prompt_files.module('web', 'resume_run', run=run) or ''
+            sent, reply = cli_result(given, 'dispatch', 'message', [ticket], told)
+            found['resumed'] = sent == 200
+            if sent != 200:
+                found['resume_error'] = reply.get('error')
+        self.send(status, found)
+
+    def workflow_cancel(self, given: dict[str, Any]) -> None:
+        """Cancel a run and every run below it, as `metaform workflow cancel` does, with the person's reason."""
+        run, reason = given.get('run'), given.get('reason')
+        if not isinstance(run, str) or not run:
+            return self.send(400, {'error': 'A run is cancelled by its run id.'})
+        if reason is not None and not isinstance(reason, str):
+            return self.send(400, {'error': 'A reason is text.'})
+        nouns = [f'run={run}', *([f'reason={reason.strip()}'] if reason and reason.strip() else [])]
+        self.dispatched(given, 'cancel', nouns, module_id='workflow')
 
     def dispatch_sessions(self, given: dict[str, str]) -> None:
         """The agent sessions and their threads, from the dispatch module's own tables, VIEW-039 and VIEW-036. With
@@ -1201,31 +1404,115 @@ class Handler(BaseHTTPRequestHandler):
         self.send(400, {'error': next((line[len('Error: '):] for line in said if line.startswith('Error: ')), ' '.join(said)),
                         'next': next((line[len('Next: '):] for line in said if line.startswith('Next: ')), None)})
 
-    def dispatched(self, given: dict[str, Any], verb: str, nouns: list[str], text: str | None = None) -> None:
-        """Run one dispatch verb as `metaform dispatch` runs it in the project's folder, and answer with its result,
-        or with its error and next step. It runs as the command line, so dispatch enabled after this server started
-        is found, and the person's environment reaches the agent unchanged, BASE-052. A message's text comes after
-        `--`, so no text a person writes is read as a switch."""
-        project = home.project(str(given.get('project', '')))
+    def read_settings(self, project_id: str) -> None:
+        """The settings screen's read: every setting of the project's folder and every module with whether it is on,
+        as `configured` reads them."""
+        project = home.project(project_id)
+        if project is None:
+            return self.send(404, {'error': f'No project {project_id} is registered.', 'next': 'metaform list projects'})
+        try:
+            self.send(200, configured(Path(project.path)))
+        except Stop as error:
+            self.refuse(error, 400)
+
+    def set_setting(self, given: dict[str, Any]) -> None:
+        """Save one setting as `metaform set` saves it, run in the project's folder: the same switch, the same checks,
+        and its refusal with the next step; with `glue` true, glued as `--glue` glues it. A boolean is true or false,
+        a list is a list of its items or its comma-separated text, any other value its text; an empty list of a setting
+        shown as all when empty is sent as the word all, which clears it. Answers with every setting as it is now and
+        the notices `set` gave for what it kept."""
+        project, key, value = home.project(str(given.get('project', ''))), given.get('key'), given.get('value')
         if project is None:
             return self.send(404, {'error': f'No project {given.get("project", "")} is registered.',
                                    'next': 'metaform list projects'})
-        command = [sys.executable, '-m', 'metaform', 'dispatch', verb, *nouns, '--json', '--project',
-                   project.project_id, *(['--', text] if text is not None else [])]
+        folder = Path(project.path)
         try:
-            done = subprocess.run(command, cwd=project.path, capture_output=True, text=True, encoding='utf-8',
-                                  stdin=subprocess.DEVNULL, timeout=DISPATCH_LIMIT, check=False)
-        except (OSError, subprocess.TimeoutExpired) as error:
-            return self.send(500, {'error': f'metaform dispatch {verb} did not finish: {error}'})
-        if done.returncode == 0:
-            try:
-                return self.send(200, json.loads(done.stdout))
-            except ValueError:
-                return self.send(200, {'said': done.stdout.strip()})
-        said = (done.stderr + done.stdout).strip().splitlines()
-        error = next((line[len('Error: '):] for line in said if line.startswith('Error: ')), ' '.join(said))
-        found = next((line[len('Next: '):] for line in said if line.startswith('Next: ')), None)
-        self.send(400, {'error': error, 'next': found})
+            found = switch_of(folder, key)
+        except Stop as error:
+            return self.refuse(error, 400)
+        if found is None:
+            return self.send(404, {'error': f'No setting {key} here.', 'next': 'metaform config --show'})
+        switch, negative, kind = found
+        if kind == 'list' and isinstance(value, str):
+            value = value.split(',')
+        if kind == 'bool':
+            if not isinstance(value, bool):
+                return self.send(400, {'error': f'{switch} is on or off: true or false.', 'key': key})
+            argument = switch if value else negative
+        elif kind == 'list' and isinstance(value, list):
+            listed = cast(list[Any], value)
+            if not all(isinstance(item, str) for item in listed):
+                return self.send(400, {'error': f'{switch} is a list of names.', 'key': key})
+            text = ','.join(item.strip() for item in cast(list[str], listed) if item.strip())
+            argument = f'{switch}={text or ("all" if key in settings.EMPTY_IS_ALL else "")}'
+        elif isinstance(value, (str, int)) and not isinstance(value, bool):
+            argument = f'{switch}={value}'
+        else:
+            return self.send(400, {'error': f'{switch} takes its value as text.', 'key': key})
+        try:
+            done = metaform_cli(folder, 'set', *(['--glue'] if given.get('glue') is True else []), argument)
+        except Stop as error:
+            return self.refuse(error, 500)
+        if done.returncode != 0:
+            return self.send(400, {**refusal(done), 'key': key})
+        said = f'Notice: {key}: '  # what set kept and says of this setting, apart from notices of the run itself
+        notices = [line[len(said):] for line in done.stdout.splitlines() if line.startswith(said)]
+        try:
+            self.send(200, {**configured(folder), 'key': key, 'notices': notices})
+        except Stop as error:
+            self.refuse(error, 400)
+
+    def reset_setting(self, given: dict[str, Any]) -> None:
+        """Return one setting to its default as `metaform unset` does, run in the project's folder; a glued setting is
+        kept unless `unglue` is true, which unglues and resets it as `--unglue` does. Answers with every setting as it
+        is now."""
+        project, key = home.project(str(given.get('project', ''))), given.get('key')
+        if project is None:
+            return self.send(404, {'error': f'No project {given.get("project", "")} is registered.',
+                                   'next': 'metaform list projects'})
+        folder = Path(project.path)
+        try:
+            found = switch_of(folder, key)
+            if found is None:
+                return self.send(404, {'error': f'No setting {key} here.', 'next': 'metaform config --show'})
+            done = metaform_cli(folder, 'unset', *(['--unglue'] if given.get('unglue') is True else []), found[0])
+        except Stop as error:
+            return self.refuse(error, 400)
+        if done.returncode != 0:
+            return self.send(400, {**refusal(done), 'key': key})
+        if any(line.startswith('Skipped (glued)') for line in done.stdout.splitlines()):
+            return self.send(400, {'error': f'{key} is glued, and a reset keeps a glued setting.', 'key': key,
+                                   'next': f'metaform unset --unglue {found[0]}', 'glued': True})
+        try:
+            self.send(200, {**configured(folder), 'key': key})
+        except Stop as error:
+            self.refuse(error, 400)
+
+    def set_module(self, given: dict[str, Any]) -> None:
+        """Turn a module on or off as `metaform enable` and `disable` do, run in the project's folder. It answers with
+        the module and its state; the settings it brings or takes away are read again by the next read, in which this
+        server has followed the change."""
+        project, module_id, enabled = home.project(str(given.get('project', ''))), given.get('module'), given.get('enabled')
+        if project is None:
+            return self.send(404, {'error': f'No project {given.get("project", "")} is registered.',
+                                   'next': 'metaform list projects'})
+        if not isinstance(module_id, str) or not MODULE_ID.match(module_id) or not isinstance(enabled, bool):
+            return self.send(400, {'error': 'A module is turned on or off: its id, and enabled true or false.'})
+        try:
+            done = metaform_cli(Path(project.path), 'enable' if enabled else 'disable', module_id)
+        except Stop as error:
+            return self.refuse(error, 500)
+        if done.returncode != 0:
+            return self.send(400, {**refusal(done), 'module': module_id})
+        self.send(200, {'module': module_id, 'enabled': enabled})
+
+    def dispatched(self, given: dict[str, Any], verb: str, nouns: list[str], text: str | None = None,
+                   module_id: str = 'dispatch') -> None:
+        """Run one dispatch verb as `metaform dispatch` runs it in the project's folder, and answer with its result,
+        or with its error and next step. It runs as the command line, so dispatch enabled after this server started
+        is found, and the person's environment reaches the agent unchanged, BASE-052. A message's text comes after
+        `--`, so no text a person writes is read as a switch. `module_id` runs another module's verb the same way."""
+        self.send(*cli_result(given, module_id, verb, nouns, text))
 
     def read_ignore(self, project: str) -> None:
         """The intake's ignore list, `.metaform/ignore.txt` in the project, as the person edits it."""
@@ -1369,6 +1656,13 @@ PROMPT_READS: dict[str, Callable[[dict[str, str]], Any]] = {
 
 DISPATCH_LIMIT = 120.0  # the one wait for a dispatch verb; its own waits for an agent are at most 30 s each
 ATTACH_LIMIT = 25 * 1024 * 1024  # the largest file the chat dock takes
+ITEMS = 40  # the items of a node's brief listed at a time, newest first; the page asks for the next ones below
+# The characters Claude Code keeps of a server's instructions and of each tool's description by default, MCP-029: its
+# MCP documentation, https://code.claude.com/docs/en/mcp, under tool search for server authors.
+HOST_LIMIT = 2048
+# The name metaform install registers the MCP server under, so Claude Code names its tools mcp__metaform__<tool>, the
+# names it lists to the model with tool search on: https://code.claude.com/docs/en/mcp, Scale with MCP tool search.
+HOST_SERVER = 'metaform'
 MEMORY_READS = ('graph', 'orphaned', 'note')  # the memory module's reads the page makes, VIEW-031 and VIEW-034
 MEMORY_WRITES = ('create_entities', 'create_relations', 'add_observations', 'delete_entities', 'delete_observations',
                  'delete_relations', 'unjoin')  # the memory commands a person manages the graph with, VIEW-031
@@ -1513,6 +1807,29 @@ def referenced(project: Any, ref: str) -> dict[str, Any] | None:
     return {'kind': 'file', 'title': ref, 'text': '\n'.join(shown), 'lines': len(shown)}
 
 
+def cli_result(given: dict[str, Any], module_id: str, verb: str, nouns: list[str],
+               text: str | None = None) -> tuple[int, dict[str, Any]]:
+    """One module verb run as `metaform <module> <verb>` runs it in the project's folder, the person's own surface:
+    the status to answer with and its result, or its error and next step. A text goes after `--`."""
+    project = home.project(str(given.get('project', '')))
+    if project is None:
+        return 404, {'error': f'No project {given.get("project", "")} is registered.', 'next': 'metaform list projects'}
+    command = [sys.executable, '-m', 'metaform', module_id, verb, *nouns, '--json', '--project',
+               project.project_id, *(['--', text] if text is not None else [])]
+    try:
+        done = subprocess.run(command, cwd=project.path, capture_output=True, text=True, encoding='utf-8',
+                              stdin=subprocess.DEVNULL, timeout=DISPATCH_LIMIT, check=False)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return 500, {'error': f'metaform {module_id} {verb} did not finish: {error}'}
+    if done.returncode == 0:
+        try:
+            found: Any = json.loads(done.stdout)
+        except ValueError:
+            return 200, {'said': done.stdout.strip()}
+        return 200, cast(dict[str, Any], found) if isinstance(found, dict) else {'result': found}
+    return 400, refusal(done)
+
+
 def run_dispatch(project_id: str, verb: str, nouns: list[str]) -> tuple[bool, dict[str, Any]]:
     """One dispatch verb run as the command line runs it, in the project's folder: whether it succeeded, and its
     result."""
@@ -1529,6 +1846,97 @@ def run_dispatch(project_id: str, verb: str, nouns: list[str]) -> tuple[bool, di
         return done.returncode == 0, json.loads(done.stdout) if done.returncode == 0 else {}
     except ValueError:
         return done.returncode == 0, {}
+
+
+MODULE_ID = re.compile(r'^[A-Za-z0-9_][A-Za-z0-9_-]*$')  # a module's id as `enable` and `disable` take it
+MODULE_ROW = re.compile(r'^(\S+)\s+(on|off|error)\s+(\S+)(?:\s+(.*))?$')  # one line of `metaform list modules`
+
+
+def metaform_cli(folder: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    """One chassis command run as the command line runs it, in `folder`, so what it reads is that folder's: its
+    settings, and the modules enabled now, a module enabled since this server started and the project's own among
+    them. Raises Stop when it cannot be run or does not finish."""
+    try:
+        return subprocess.run([sys.executable, '-m', 'metaform', *args], cwd=folder, capture_output=True, text=True,
+                              encoding='utf-8', stdin=subprocess.DEVNULL, timeout=DISPATCH_LIMIT, check=False)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise Stop(f'metaform {args[0]} did not finish: {error}', f'metaform {args[0]}, in {folder}') from None
+
+
+def refusal(done: subprocess.CompletedProcess[str]) -> dict[str, Any]:
+    """A command's refusal as the page shows it: its error and its next step."""
+    said = (done.stderr + done.stdout).strip().splitlines()
+    return {'error': next((line[len('Error: '):] for line in said if line.startswith('Error: ')), ' '.join(said)),
+            'next': next((line[len('Next: '):] for line in said if line.startswith('Next: ')), None)}
+
+
+def refused(done: subprocess.CompletedProcess[str]) -> Stop:
+    """A command's refusal as a Stop, with its next step or else the command that shows the settings."""
+    said = refusal(done)
+    return Stop(said['error'], said['next'] or 'metaform config --show')
+
+
+def configured(folder: Path) -> dict[str, Any]:
+    """Every setting of a folder as `metaform config --show --json` describes it, each with what its declaration adds
+    for the settings screen, and every module as `metaform list modules` lists it, with whether it is on and its
+    summary or the reason it did not load. Both are read as the command line in the folder; when the folder's modules
+    setting leaves the chassis's own commands out, the modules cannot be listed there, and `modules_refused` says why
+    and how to restore them."""
+    with ThreadPoolExecutor(2) as pool:
+        described, listed = (pool.submit(metaform_cli, folder, 'config', '--show', '--json'),
+                             pool.submit(metaform_cli, folder, 'list', 'modules'))
+        shown, found = described.result(), listed.result()
+    if shown.returncode != 0:
+        raise refused(shown)
+    try:
+        rows = cast(list[dict[str, Any]], json.loads(shown.stdout))
+    except ValueError:
+        raise Stop('metaform config --show --json did not answer with JSON.', 'metaform config --show') from None
+    chassis.surface(folder)  # this server's own declarations, for what describe leaves out
+    for row in rows:
+        row.update(declared(row))
+    modules: list[dict[str, Any]] = []
+    for line in found.stdout.splitlines() if found.returncode == 0 else []:
+        matched = MODULE_ROW.match(line.strip())
+        if matched is None:
+            continue
+        module_id, state, place, text = matched.groups()
+        stored = home.module_state(module_id)
+        modules.append({'id': module_id, 'enabled': state == 'on' or (state == 'error' and stored is not False),
+                        'place': place, 'summary': '' if state == 'error' else (text or ''),
+                        'problem': (text or '') if state == 'error' else ''})
+    return {'folder': str(folder), 'settings': rows, 'modules': modules, 'all_when_empty': list(settings.EMPTY_IS_ALL),
+            **({'modules_refused': refusal(found)} if found.returncode != 0 else {})}
+
+
+def declared(row: dict[str, Any]) -> dict[str, Any]:
+    """What a setting's declaration says beyond what describe gives: its label and longer details, its bounds, its
+    `--no-` form, and whether only the person changes it. A setting this server has not loaded, a module's in the
+    project's own place, is given its label from its key and no more; the command that saves it still checks it."""
+    setting = settings.SCHEMA.get(str(row.get('key')))
+    if setting is None or setting.owner != row.get('owner'):
+        return {'label': str(row.get('key', '')).replace('_', ' ').capitalize(), 'details': '', 'min': None,
+                'max': None, 'negative': None, 'person_only': None, 'exclusive': None}
+    return {'label': setting.label, 'details': setting.details, 'min': setting.min, 'max': setting.max,
+            'negative': setting.negative, 'person_only': setting.person_only, 'exclusive': setting.exclusive}
+
+
+def switch_of(folder: Path, key: Any) -> tuple[str, str, str] | None:
+    """A setting's switch, its `--no-` form and its kind, from this server's declarations, or else from the folder's
+    `metaform config`, which has every module enabled now; None when the folder has no such setting."""
+    if not isinstance(key, str) or not key:
+        return None
+    setting = settings.SCHEMA.get(key)
+    if setting is not None:
+        return setting.switch, setting.negative or f'--no-{setting.switch[2:]}', setting.kind
+    done = metaform_cli(folder, 'config', '--show', '--json')
+    if done.returncode != 0:
+        raise refused(done)
+    try:
+        row = next((one for one in json.loads(done.stdout) if one.get('key') == key), None)
+    except ValueError:
+        row = None
+    return None if row is None else (str(row['switch']), f'--no-{str(row["switch"])[2:]}', str(row['kind']))
 
 
 def module_verb(given: dict[str, Any], module_id: str, name: str, arguments: dict[str, Any], *,
@@ -1569,6 +1977,35 @@ def _stage(store: Store, target: Node, condition: str) -> Any:
                    for record in stated]  # every stated record changes; the first answers
         return changed[0]
     return store.add_work(target, kept, note='Set by the person on the page.') if kept else None
+
+
+def last_session(project: str, address: str) -> dict[str, Any] | None:
+    """What the last agent session to write at an address numbered there, as the brief's line under the node says it:
+    its session, the first and last number it took and how many, so the page shows the same range the agent reads;
+    None when no session is known to have taken one there, or it cannot be read."""
+    if not address:
+        return None
+    try:
+        found = Store(project).last_session(address)
+    except (StoreError, OSError, ValueError):
+        return None
+    if found is None:
+        return None
+    session, first, end, count = found
+    return {'session': session, 'first': first, 'last': end, 'count': count}
+
+
+def sized(text: str) -> dict[str, Any]:
+    """A text the page shows as an agent receives it, with its size in bytes and in characters."""
+    return {'text': text, 'bytes': len(text.encode('utf-8')), 'chars': len(text)}
+
+
+def project_folder(given: dict[str, str]) -> tuple[str, Path]:
+    """The registered project a read names, and its folder, whose settings and surface an agent there reads by."""
+    project = home.project(given.get('project', ''))
+    if project is None:
+        raise StoreError(f'No project {given.get("project", "")} is registered.', 'metaform list projects')
+    return project.project_id, Path(project.path)
 
 
 def opened(given: dict[str, str]) -> Store:

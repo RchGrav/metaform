@@ -668,6 +668,7 @@ class TableTx:
         self._found = found  # an upgrade's: each table as the version found declared it, and the table holding it
         self._place: Place | None = None
         self._db: sqlite3.Connection | None = None
+        self._path: Path | None = None
         self._present = False
         if bound is not None:
             self._bind(bound)
@@ -679,8 +680,19 @@ class TableTx:
         return self._place
 
     def _bind(self, place: Place) -> None:
-        self._db, _, self._present = self._opener(place)
+        self._db, self._path, self._present = self._opener(place)
         self._place = place
+
+    def number(self, address: str) -> int:
+        """The next number at an address, from the project's counter, for an item this transaction writes there, as
+        `DataTx.number` gives it; a module's upgrade numbers the items it already holds with it. The transaction must
+        have touched a table, so it knows its store and the project it belongs to."""
+        from . import numbers
+        folder = numbers.folder_of(self._path) if self._path is not None else None
+        if folder is None:
+            raise StoreError('This transaction reaches no project store, so it has no counters.',
+                             'touch one of the module\'s tables first, or number with store.number(address)')
+        return numbers.take(folder, address)
 
     def _table(self, name: str) -> Table:
         table = self.declared.table(name)

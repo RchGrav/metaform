@@ -1,6 +1,8 @@
 """BASE-057 reports trouble from events without giving detection code recovery authority."""
 import asyncio
 import json
+import subprocess
+import sys
 
 import pytest
 
@@ -121,9 +123,8 @@ def test_signals_verb_is_available_to_a_real_mcp_client(dispatch, home):
             {'work_id': dispatch.id, 'attempts': 3, 'limit': 3})
     async def check(client, init):
         offered = {tool.name: tool for tool in (await client.list_tools()).tools}
-        assert 'dispatch' in offered
-        assert 'signals' in offered['dispatch'].input_schema['properties']['command']['enum']
-        response = await client.call_tool('dispatch', {'command': 'signals', 'arguments': {'id': dispatch.id}})
+        assert 'dispatch_signals' in offered
+        response = await client.call_tool('dispatch_signals', {'id': dispatch.id})
         assert not response.is_error
         assert 'rework-limit' in ''.join(block.text for block in response.content if hasattr(block, 'text'))
     session(home, dispatch.folder, check)
@@ -207,3 +208,44 @@ def test_release_clears_permission_signal_after_a_crashed_runner(dispatch, run):
             session_id='crashed', key='permission', message_id='permission')
     release(own, dispatch.id, 'claude crashed', True, 'crashed', 'crash cleanup')
     assert not [row for row in signals(dispatch, run) if row['signal'] == 'permission-waiting']
+
+
+def test_a_talk_first_turn_is_checked_like_the_handoff(dispatch, run):
+    from metaform import axiom
+    dispatch.process = subprocess.Popen(
+        [sys.executable, '-m', 'metaform', 'dispatch', 'run', dispatch.id, 'claude', 'system=true',
+         f'talk=ticket:{dispatch.id}'], cwd=dispatch.folder, env=dispatch.env('plain'),
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    [sent] = eventually(lambda: dispatch.received('session/prompt'))
+    expected = axiom.notices('prompt', sent['params']['prompt'][0]['text'])
+    assert expected, 'the talk draft lacks @CONDITION today, so its first turn is flagged'
+    eventually(lambda: [row for row in dispatch.items('note') if row.extra['update'] == 'notice'] or None)
+    [notice] = [row.value for row in dispatch.items('note') if row.extra['update'] == 'notice']
+    assert notice == ' '.join(one['message'] for one in expected)
+    [raised] = [row for row in signals(dispatch, run) if row['signal'] == axiom.SIGNAL]
+    assert raised['work_id'] == dispatch.id and raised['notices'] == expected
+
+
+def test_a_turn_that_stops_with_the_ticket_open_raises_stopped_open(dispatch, run):
+    from metaform.modules.dispatch import tell
+    dispatch.start('plain')
+    held = dispatch.session().extra
+    eventually(lambda: tell(held, 'status')['activity'] == 'idle' or None)
+    [raised] = eventually(lambda: [row for row in signals(dispatch, run) if row['signal'] == 'stopped-open'])
+    assert raised['work_id'] == dispatch.id and raised['stop_reason'] == 'end_turn'
+    dispatch.stop()
+    assert dispatch.process.wait(15) == 0
+    found = {row['signal'] for row in signals(dispatch, run)}
+    assert 'stopped-open' not in found and 'not-smooth' in found, 'the ended session hands over to not-smooth'
+
+
+def test_stopped_open_is_cleared_by_the_next_turn(dispatch, run):
+    from metaform.modules.dispatch import tell
+    dispatch.start('plain', FAKE_ACP_HOLD_LATER='1')
+    held = dispatch.session().extra
+    eventually(lambda: [row for row in signals(dispatch, run) if row['signal'] == 'stopped-open'])
+    assert tell(held, 'message', text='Carry on with the ticket.')['sent'] is True
+    eventually(lambda: tell(held, 'status')['activity'] == 'working' or None)
+    eventually(lambda: not [row for row in signals(dispatch, run) if row['signal'] == 'stopped-open'] or None)
+    assert [row for row in signals(dispatch, run, False) if row['signal'] == 'stopped-open']
+    dispatch.stop()

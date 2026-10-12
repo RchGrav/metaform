@@ -18,7 +18,7 @@ Every design decision goes into this spec when it is decided, in the record that
 
 - The owner's design, drawn into requirements and settled in conversation, is carried by the records here. TRACE.md maps every requirement to them.
 - `../src/metaform/modules/intake/resources/intake.xml`: the current intake procedure, the digital typology intake as its author wrote it, served by the intake module, BASE-039, with its schema `metaform.axiom` beside it. Earlier intakes are in the history.
-- The owner's design of workflows, 2026-10-03: the `workflow` root, logic requirements called by address and name, control flow, handoffs by nonce, workflow layers, ingest and authoring, and what is left to build. It is carried by the workflow records in sections 01, 02 and 04. How an address and its prefixes carry inference is carried by section 01.
+- The owner's design of workflows, 2026-10-03: the `workflow` root, logic requirements called by address and name, control flow, handoffs to a fresh agent, workflow layers, ingest and authoring, and what is left to build. It is carried by the workflow records in sections 01, 02 and 04. How an address and its prefixes carry inference is carried by section 01.
 - `code_quality_standards.md`: the quality bar, carried by section 7.
 
 ## Sections
@@ -28,7 +28,7 @@ Every design decision goes into this spec when it is decided, in the record that
 | 01-map.md | MAP | C(T), the receiver, purpose and encounter mesh, namespace and Types, element identity, roles, joins, subtypes, how an intake result becomes records and how it is judged, work records, tasks, the work queue, questions and past work, the map written out as Markdown or XML |
 | 02-layers.md | LAYER | Layers and their one variable, layer properties, select and mask, direct reads, provenance, memory, corrections, the two types of blind spot analysis, the blind-spot challenge, knowledge layers built node by node, item flags, reading from the roots, layer names as namespace roots |
 | 03-storage.md | STORE | SQLite tables, keys and indexes, the data access object, import, export and query |
-| 04-chassis-modules.md | BASE | The chassis, the common base, the module contract, the template, discovery, compatibility, lifecycle, versioning, wheels and packaging, the nonce service, the workflow module, the roles of the work, the workflow agent, the loop controller, the signals the orchestrator reads |
+| 04-chassis-modules.md | BASE | The chassis, the common base, the module contract, the template, discovery, compatibility, lifecycle, versioning, wheels and packaging, handing work to an agent, the workflow module, the roles of the work, the workflow agent, the loop controller, the signals the orchestrator reads |
 | 05-cli-settings.md | CLI | Command grammar, help, errors, the settings schema, glue, booleans, context and the command surface, the top menu and entering a module, the working folder, aliases, the settings screen |
 | 06-mcp-install.md | MCP | The MCP module, uvx launch, the installer, the skill, agent instructions and what they tell an agent to do, the slash commands, the workflow agent served as a skill, complete prompts, the first working test |
 | 07-quality.md | QUAL | The quality bar, tests, type checking, lint, three-system CI, reviews, the cold build check |

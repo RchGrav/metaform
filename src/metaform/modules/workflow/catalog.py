@@ -9,13 +9,24 @@ from metaform.module import Context
 
 from .binding import Logic
 from .element import ElementValue, element_value
+from .runs import TABLE as RUNS
+from .runs import upgrade as upgrade_runs
 
 FORMAT = 'metaform-workflow:1'  # the portable document `export` writes and `import` reads
-TABLES = Tables(version=1, tables=(
+# Version 1 is the last committed, 2026-10-10. Versions 2 and 3 were only ever in the working tree, from 2026-10-11, so
+# a database opened from it may hold either; each step is kept so such a database still upgrades. Version 2 adds
+# `runs`, the workflow run record at project level, BASE-051; it only adds a table, so version 1's code still reads and
+# writes the tables, STORE-029. Version 3 gives runs the one status vocabulary, metaform.data.status: a run may be
+# `input_required` or `cancelled`, with `message` and `updated`, columns that may be empty; `runs.upgrade` dates each
+# existing row. Version 4 adds `ticket` and `session`, who paused a run, both may be empty. Version 1's code, which has
+# no runs, still reads the tables, and version 2's takes a run in either new state as ended and refuses it, which is
+# safe.
+TABLES = Tables(version=4, compatible_from=1, upgrade=upgrade_runs, tables=(
     Table('logic_versions', key=('logic_id', 'number'), columns=(
         Column('logic_id', required=True), Column('number', 'int', required=True),
         Column('name', required=True), Column('content', required=True)),
         on_remove=(('item', 'logic_id', 'delete'),)),
+    RUNS,
 ))
 
 

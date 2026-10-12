@@ -118,11 +118,19 @@ def where(tx: Tx, res: Resolver, raw: bool, address: str, full: bool) -> Where |
         return None
     at = node(tx, res, Node('element', found.id), raw)
     reaching = reaching_at(tx, res, address)
-    return operations.decorate(tx, Where('element', found, None,
-                 joins(tx, context, found.id, 'provider', 0, None).results,
-                 joins(tx, context, found.id, 'receiver', 0, None).results,
+    provides = joins(tx, context, found.id, 'provider', 0, None).results
+    receives = joins(tx, context, found.id, 'receiver', 0, None).results
+    # the sources layer at each of its purpose joins, the code that realizes each purpose, so the one read an agent
+    # orients from carries both halves; only that layer, so the read never fills with every layer's items, STORE-025
+    held: dict[str, tuple[LayerGroup, ...]] = {}
+    for one in (*provides, *receives):
+        got = node(tx, res, Node('join', one.id), raw)
+        code = tuple(group for group in got.layers if group.layer == 'sources') if got is not None else ()
+        if code:
+            held[one.id] = code
+    return operations.decorate(tx, Where('element', found, None, provides, receives,
                  layers=() if at is None else at.layers, full=full, applying=reaching.applying,
-                 visible=reaching.visible))
+                 visible=reaching.visible, join_layers=tuple(held.items())))
 
 
 def node_where(tx: Tx, res: Resolver, raw: bool, target: Node) -> Where | None:

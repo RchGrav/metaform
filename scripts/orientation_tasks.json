@@ -1,0 +1,191 @@
+{
+  "about": "The task set of the orientation-cost evaluation, scripts/orientation_eval.py. Requests are written as the person the work is for would put them, with none of the code's own names; --dry-run refuses a task whose target one grep of its words finds, or whose answer the repository gives away. Each task names the Address a person would place it at, the oracle node arm metaform is handed; a null Address leaves only the node arm metaform_chosen places. Localization tasks are graded by the marker comment the agent leaves; ticket fixes by a check run on the end state, proven to fail on the start and pass on the reference. A task may name a seed: another task at the same Address that arm metaform_warm works first in the same folder and home, so the task starts from what the seed recorded there.",
+  "instructions": {
+    "localize": "Answer by editing the code: put the comment `# ORIENT-HERE` on its own line directly above that definition, and change nothing else.",
+    "localize-unnamed": "Answer by editing the code: put the comment `# ORIENT-HERE` on its own line directly above it, and change nothing else.",
+    "ticket": "Fix it in the code with the smallest change that corrects the behaviour. Do not add or change tests."
+  },
+  "placement_prompt": "Someone asks for the work below on this project. Without reading any file, use the map, through the metaform tools, to find the one element of the map where this work belongs. End your reply with that element's Address alone on its last line.\n\nThe work: {request}",
+  "agents_md_prompt": "Write an AGENTS.md file at the root of this repository: the overview a coding agent should read before working here. Say what the project is, how it is laid out and where its main parts live, how to build and test it, and its conventions. Keep it under 150 lines. Write only that file.",
+  "repos": {
+    "metaform": {
+      "source": "local",
+      "path": ".",
+      "ref": "HEAD",
+      "exclude": [
+        "rich",
+        ".claude",
+        "*.zip",
+        "AGENTS.md",
+        "CLAUDE.md",
+        "CLAUDE.md~",
+        "**/AGENTS.md",
+        "**/CLAUDE.md"
+      ],
+      "python_path": [
+        "src"
+      ],
+      "map": {
+        "import": "src/metaform/resources/metaform.json"
+      }
+    },
+    "itsdangerous": {
+      "source": "git",
+      "url": "https://github.com/pallets/itsdangerous",
+      "ref": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "exclude": [
+        "AGENTS.md",
+        "CLAUDE.md",
+        ".claude"
+      ],
+      "python_path": [
+        "src"
+      ],
+      "map": {
+        "intake": true
+      }
+    },
+    "humanize": {
+      "source": "git",
+      "url": "https://github.com/python-humanize/humanize",
+      "ref": "785e5dcc0d0308ad0dff3f6cc0faa7085ad0375b",
+      "exclude": [
+        "AGENTS.md",
+        "CLAUDE.md",
+        ".claude"
+      ],
+      "python_path": [
+        "src"
+      ],
+      "prepare": [
+        {
+          "write": "src/humanize/_version.py",
+          "text": "__version__ = '0.0.0'\n"
+        }
+      ],
+      "map": {
+        "intake": true
+      }
+    }
+  },
+  "tasks": [
+    {
+      "id": "mf-localize-probe",
+      "repo": "metaform",
+      "kind": "localize",
+      "address": "code.installer.package",
+      "request": "After someone sets Metaform up for their coding assistant, Metaform tells them whether that assistant will really be able to reach it, before they ever open the assistant. Find the function that does the actual checking.",
+      "grade": {
+        "type": "marker",
+        "marker": "ORIENT-HERE",
+        "file": "src/metaform/probe.py",
+        "anchor": "^def probe\\(",
+        "within": 3
+      },
+      "seed": "mf-unnamed-launcher"
+    },
+    {
+      "id": "mf-unnamed-launcher",
+      "repo": "metaform",
+      "kind": "localize-unnamed",
+      "address": "code.installer.package",
+      "request": "When someone starts Metaform from inside their coding assistant, Metaform knows which assistant it is without being told. Find the function that works that out.",
+      "grade": {
+        "type": "marker",
+        "marker": "ORIENT-HERE",
+        "file": "src/metaform/harness.py",
+        "anchor": "^def running\\(",
+        "within": 3
+      },
+      "seed": "mf-localize-probe"
+    },
+    {
+      "id": "mf-ticket-short-name",
+      "repo": "metaform",
+      "kind": "ticket",
+      "address": "code.store.graph",
+      "request": "On the map page, an item whose full name reads \"prompt manager code\" should be shown by its last two words, \"prompt manager\", but the page shows \"manager code\". Items meant to be shown by their whole name show correctly.",
+      "setup": [
+        {
+          "file": "src/metaform/data/names.py",
+          "find": "return _words(segments[-name_length:])",
+          "replace": "return _words(segments[:name_length])"
+        }
+      ],
+      "grade": {
+        "type": "python",
+        "file": "src/metaform/data/names.py",
+        "code": "from metaform.data.names import short_name, reading\nassert short_name('code.manager.prompt', 2) == 'prompt manager', short_name('code.manager.prompt', 2)\nassert short_name('code.manager.prompt', 1) == 'prompt'\nassert short_name('code.interface.command_line', 1) == 'command line'\nassert short_name('code.manager.prompt', 3) == reading('code.manager.prompt') == 'prompt manager code'\nassert short_name('code.manager.prompt', None) == 'prompt manager code'\n"
+      }
+    },
+    {
+      "id": "its-unnamed-expiry",
+      "repo": "itsdangerous",
+      "kind": "localize-unnamed",
+      "address": null,
+      "request": "My site emails people a link that should stop working after a day. Find the statement in this library that turns such a link away once it is too old.",
+      "grade": {
+        "type": "marker",
+        "marker": "ORIENT-HERE",
+        "file": "src/itsdangerous/timed.py",
+        "anchor": "^\\s*if age > max_age:",
+        "within": 2
+      },
+      "control": true
+    },
+    {
+      "id": "its-ticket-padding",
+      "repo": "itsdangerous",
+      "kind": "ticket",
+      "address": null,
+      "request": "Since the last change, every link my site signs for password resets is rejected as tampered with when it comes back, though nobody touched it and the secret key is the same.",
+      "setup": [
+        {
+          "file": "src/itsdangerous/encoding.py",
+          "find": "string += b\"=\" * (-len(string) % 4)",
+          "replace": "string += b\"=\" * (-len(string) % 3)"
+        }
+      ],
+      "grade": {
+        "type": "python",
+        "file": "src/itsdangerous/encoding.py",
+        "code": "from itsdangerous import URLSafeSerializer\nfrom itsdangerous.encoding import base64_decode, base64_encode\nfor n in range(40):\n    assert base64_decode(base64_encode(b'x' * n)) == b'x' * n, n\n    s = URLSafeSerializer('key')\n    assert s.loads(s.dumps('y' * n)) == 'y' * n, n\n"
+      }
+    },
+    {
+      "id": "hum-localize-size",
+      "repo": "humanize",
+      "kind": "localize",
+      "address": null,
+      "request": "My app shows how big each upload is as a raw count, like 3145728; this library can show it as something people read at a glance instead. Find the function that does that.",
+      "grade": {
+        "type": "marker",
+        "marker": "ORIENT-HERE",
+        "file": "src/humanize/filesize.py",
+        "anchor": "^def naturalsize\\(",
+        "within": 3
+      },
+      "control": true
+    },
+    {
+      "id": "hum-ticket-ordinal",
+      "repo": "humanize",
+      "kind": "ticket",
+      "address": null,
+      "request": "In my race results, 112th place shows as \"112nd\" and 1011th as \"1011st\", though 12th and 11th show correctly.",
+      "setup": [
+        {
+          "file": "src/humanize/number.py",
+          "find": "digit = 0 if value % 100 in (11, 12, 13) else value % 10",
+          "replace": "digit = 0 if value in (11, 12, 13) else value % 10"
+        }
+      ],
+      "grade": {
+        "type": "python",
+        "file": "src/humanize/number.py",
+        "code": "from humanize import ordinal\nfor value, said in ((1, '1st'), (2, '2nd'), (3, '3rd'), (11, '11th'), (12, '12th'), (13, '13th'), (21, '21st'), (101, '101st'), (111, '111th'), (112, '112th'), (1011, '1011th'), (1022, '1022nd')):\n    assert ordinal(value) == said, (value, ordinal(value))\n"
+      },
+      "control": true
+    }
+  ]
+}

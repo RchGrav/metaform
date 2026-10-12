@@ -23,6 +23,10 @@ def home(tmp_path, monkeypatch):
     loader.reset()
     path = tmp_path / 'home'
     monkeypatch.setenv('METAFORM_HOME', str(path))
+    # A test run from a dispatched agent's session would otherwise sign each memory written with it, and be refused
+    # the tickets the agent's role may not write, MAP-050.
+    for name in ('METAFORM_ROLE', 'METAFORM_SESSION', 'METAFORM_WORK', 'METAFORM_NODE'):
+        monkeypatch.delenv(name, raising=False)
     yield path
     loader.reset()
 
@@ -296,30 +300,17 @@ def module_row(run):
     return row
 
 
-def _spec_ids():
-    import re
-    folder = Path(__file__).parent / 'specifications'
-    ids = set()
-    for path in folder.glob('0*.md'):
-        ids.update(re.findall(r'^### ([A-Z]+-\d{3})\b', path.read_text(encoding='utf-8'), re.MULTILINE))
-    return ids
-
-
 @pytest.hookimpl(tryfirst=True)  # before xdist reads the browser groups below
 def pytest_collection_modifyitems(config, items):
-    """Every test names the requirement it protects and what kind of run it is, QUAL-009, QUAL-014 and E4."""
-    known = _spec_ids()
+    """Every test says what kind of run it is. The README's philosophy governs Metaform, not a specification, so a
+    test is no longer required to name a specification record; a req marker that remains is an inert label."""
     problems = []
     for item in items:
-        requirements = [mark.args[0] for mark in item.iter_markers('req')]
         kinds = [mark.args[0] for mark in item.iter_markers('kind')]
-        if not requirements:
-            problems.append(f'{item.nodeid}: no @pytest.mark.req')
-        problems += [f'{item.nodeid}: {name} is not a record of the spec' for name in requirements if name not in known]
         if not kinds or any(kind not in ('fixture', 'simulation', 'real') for kind in kinds):
             problems.append(f'{item.nodeid}: no @pytest.mark.kind of fixture, simulation or real')
     if problems:
-        raise pytest.UsageError('Tests without a traced requirement:\n' + '\n'.join(problems))
+        raise pytest.UsageError('Tests without a kind of run:\n' + '\n'.join(problems))
     # Each browser test draws WebGL in software, which is heavy on the processor; spread over every core at once
     # they time out, so they run in BROWSERS groups, at most that many at a time, beside everything else.
     # They are also marked browser, and the default run leaves them out (addopts -m "not browser"): they take most of a

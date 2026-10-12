@@ -1,7 +1,8 @@
 """Opt-in crash recovery, MAP-049 and BASE-052. Display liveness never authorizes a release.
 
-Process births and resource ownership live in the existing handoff nonce, so deploying this feature does not
-upgrade dispatch's tables beneath live runners. Missing evidence, including legacy nonces, requires manual recovery.
+Process births and resource ownership live in the session's own row, its private `recovery`, written with the row
+when the ticket is taken. Missing evidence, including a session recorded before the column existed, requires manual
+recovery.
 """
 from __future__ import annotations
 
@@ -15,7 +16,6 @@ import sys
 from pathlib import Path
 from typing import Any, cast
 
-from metaform import nonce
 from metaform.module import Context
 
 from .signals import own_store
@@ -88,7 +88,7 @@ def _windows_identity(pid: int) -> str | None:
 
 
 def resources(project: str, work_id: str, session_id: str, adapter_pid: int) -> dict[str, Any]:
-    """Evidence acquired before taking the ticket, kept privately in its nonce rather than public session reads."""
+    """Evidence acquired before taking the ticket, kept privately in its session row, never in public session reads."""
     return {'project': project, 'work_id': work_id, 'session_id': session_id, 'runner_pid': os.getpid(),
             'runner_identity': identity(os.getpid()), 'adapter_pid': adapter_pid,
             'adapter_identity': identity(adapter_pid)}
@@ -186,13 +186,8 @@ def recover(ctx: Context) -> dict[str, Any]:
         if record.done or not record.taken or record.taken_by != owner:
             continue
         try:
-            number = row.get('nonce')
-            kept = nonce.read(number) if isinstance(number, str) else None
-            value: Any = kept.value if kept is not None else None
-            raw: Any = cast(dict[str, Any], value).get('recovery') if isinstance(value, dict) else None
-            if kept is None or kept.module != 'dispatch' or kept.function != 'handoff' or not isinstance(raw, dict):
-                raise ValueError('this session has no verified recovery metadata')
-            held = cast(dict[str, Any], raw)
+            raw: Any = row.get('recovery')  # none on a session recorded before the evidence was kept
+            held = cast(dict[str, Any], raw) if isinstance(raw, dict) else {}
             if (held.get('project') != store.project_id or held.get('work_id') != work_id
                     or held.get('session_id') != row['session_id'] or held.get('runner_pid') != row.get('pid')):
                 raise ValueError('this session has no verified recovery metadata')
@@ -207,10 +202,9 @@ def recover(ctx: Context) -> dict[str, Any]:
                 raise ValueError('runner death cannot be verified')
             if ticket(own, work_id).taken_by != owner:
                 continue
-            # Process cleanup never holds the project's write lock. It owns only this nonce's verified resources.
+            # Process cleanup never holds the project's write lock. It owns only this session's verified resources.
             # A short final transaction preserves any ownership or session changes made while cleanup ran.
             stop_adapter(held)
-            nonce.close(str(number))
             with own.atomic():
                 fresh = ticket(own, work_id)
                 with own.tables(write=False) as tx:

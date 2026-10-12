@@ -1,0 +1,12 @@
+{
+  "run_id": "12f467d1-db8c-45f7-90d4-495e7a229b31-1",
+  "verdicts": [
+    {
+      "action": "create",
+      "name": "cross-session-messaging",
+      "ok": true,
+      "findings": [],
+      "notes": []
+    }
+  ]
+}

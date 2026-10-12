@@ -6,6 +6,7 @@ import pytest
 from metaform.modules.web.tests.test_web import (
     api,
     browser,  # noqa: F401 -- pytest fixture used by argument name
+    choose_agent,
     mapped,  # noqa: F401 -- pytest fixture used by argument name
     opened,
     own_write,
@@ -58,6 +59,7 @@ def test_task_editor_and_card_choose_multiple_agents_and_return_to_any(run, web,
     from metaform.data import Store
 
     store = Store('proj')
+    run('enable', 'dispatch')  # dispatch ships disabled; the pickers list the agents it knows
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
@@ -73,6 +75,7 @@ def test_task_editor_and_card_choose_multiple_agents_and_return_to_any(run, web,
     work_id = saved.value.json()['results'][0]['id']
     page.click('#boardBtn')
     card = page.locator(f'#board .card[data-id="{work_id}"]')
+    card.locator('.ticket-settings > summary').click()  # the card keeps its agent, eligibility and glyph folded away
     assert card.locator('.eligible summary').inner_text() == 'Eligible agents: Claude Code, Gemini CLI'
     card.locator('.eligible summary').click()
     with page.expect_response(lambda response: '/api/eligible' in response.url):
@@ -96,6 +99,7 @@ def test_start_window_skips_ineligible_first_ticket_without_losing_its_glyph(run
     run('map', 'work', 'op=edit', f'id={later}', 'eligible=["codex"]', cwd=mapped)
     for position, work_id in enumerate((first, later, any_agent)):
         store.move_work(work_id, 'todo', position=position)
+    run('enable', 'dispatch')  # dispatch ships disabled; the start window is its
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
@@ -103,13 +107,13 @@ def test_start_window_skips_ineligible_first_ticket_without_losing_its_glyph(run
     page.route('**/api/dispatch-start', lambda route: (sent.append(route.request.post_data_json), route.fulfill(json={'state': 'starting'})))
     page.click('#boardBtn')
     page.locator(f'#board .card[data-id="{first}"] .start').click()
-    page.select_option('#dispatch select.agent', 'codex')
+    choose_agent(page, '#dispatch', 'codex')
     assert page.locator('#dispatch .ticket button.start').is_disabled()
-    page.select_option('#dispatch select.agent', 'claude')
+    choose_agent(page, '#dispatch', 'claude')
     assert page.locator('#dispatch .ticket button.start').is_enabled()
     page.click('#dispatch .close')
     page.click('#board .start-all')
-    page.select_option('#dispatch select.agent', 'codex')
+    choose_agent(page, '#dispatch', 'codex')
     assert page.eval_on_selector_all('#dispatch .ticket', 'rows => rows.map(row => row.dataset.id)') == [later, any_agent]
     page.click('#dispatch .start-all')
     page.wait_for_selector('#dispatch', state='hidden')

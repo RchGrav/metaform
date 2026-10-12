@@ -1,6 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- packet's prompts, MCP-031. What is between an element's tags is what is served. -->
+<!-- The packet module's prompts: the text Metaform sends to agents for the packet module.
+     Each element is one prompt, named by its tag. What is between the tags is sent exactly as written.
+     An empty element inside a prompt, such as <name/>, would mark a place the code fills in; this file has none.
+     Comments are never sent. -->
 <prompts>
-<!-- packet's line in the instructions agents read while packet is on, MCP-029. -->
+<!-- packet's line in the connect message: what an agent uses packet for, one short phrase after its name, in the
+     project's terms. Sent to every agent when it connects over MCP, one line per enabled module under mcp's
+     <instructions>, and listed in the compact command-line guide, metaform help agents. Empty sends nothing for
+     packet. Off when the module is disabled or the folder's modules setting leaves it out. -->
+<connect>– packet: carry work to another home as a sealed packet, and check one that arrives</connect>
+<!-- packet's instructions. Returned by metaform_instructions with module packet, at metaform://instructions/packet, and printed by
+     metaform help agents packet and by the full form of the command-line guide. Empty sends nothing. The module
+     ships disabled: nothing here is sent until it is enabled. -->
 <instructions>packet is active.</instructions>
 </prompts>

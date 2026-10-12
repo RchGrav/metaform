@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Metaform glossary</title>
+<!-- The glossary view, ui://metaform/glossary: the terms every agent on this project works by, each as the mcp
+     module's glossary prompt defines it, word for word, then the tools on the folder's surface and the rules of its
+     modules, as metaform://metaform and metaform://tools hold them; searchable, with the prompt whole at the foot. Shown by an AI tool
+     that renders MCP Apps when metaform_instructions or map_glossary is called, so the person sees the vocabulary the
+     agent was just handed; the call's own answer, map_glossary's project terms or the guide, is shown above it as it
+     was returned. It reads through metaform_view's `glossary`. The server fills the marked blocks when it serves the view. -->
+<style id="metaform-tokens"></style>
+<style>/*view*/</style>
+<script type="application/json" id="metaform-view">{}</script>
+<style>
+  input[type="search"] { width: 100%; box-sizing: border-box; font: inherit; color: inherit;
+    background: var(--color-background-secondary, var(--panel-2));
+    border: 1px solid var(--color-border-primary, var(--line)); border-radius: var(--border-radius-md, var(--r));
+    padding: var(--s2) var(--s3); }
+  dl { margin: 0; display: grid; grid-template-columns: minmax(6em, auto) 1fr; gap: var(--s1) var(--s3); }
+  dt { font: 600 var(--t-sm) var(--font-mono, var(--mono)); color: var(--signal); }
+  dd { margin: 0; font-size: var(--t-sm); }
+  .tool dt { font-weight: 500; }
+  .rule { font-size: var(--t-sm); }
+  .rule .why { color: var(--color-text-secondary, var(--muted)); }
+  details { display: grid; gap: var(--s2); }
+  summary { cursor: pointer; font-size: var(--t-sm); color: var(--color-text-secondary, var(--muted)); }
+  pre { max-height: 50vh; overflow: auto; }
+  @media (max-width: 480px) { dl { grid-template-columns: 1fr; } }
+</style>
+<script>/*sdk*/</script>
+<script>/*bridge*/</script>
+</head>
+<body>
+<main>
+  <div class="bar"><button type="button" id="mode" hidden>Full screen</button></div>
+  <h1>Glossary</h1>
+  <details id="answerSection" hidden><summary id="answerTitle">What the call returned</summary><pre id="answer"></pre></details>
+  <input type="search" id="find" placeholder="Find a term, a tool or a rule" aria-label="Find a term, a tool or a rule">
+  <p class="notice" id="notice" hidden></p>
+  <div id="terms"></div>
+  <details id="toolsSection" hidden><summary id="toolsTitle">Tools</summary><dl class="tool" id="tools"></dl></details>
+  <section id="rulesSection" hidden><h2>Rules</h2><ul id="rules"></ul></section>
+  <details id="wholeSection" hidden><summary>The glossary prompt as written</summary><pre id="whole"></pre></details>
+</main>
+<script>
+'use strict';
+(function () {
+  const view = window.MetaformView;
+  const $ = id => document.getElementById(id);
+  const say = text => { $('notice').textContent = text; $('notice').hidden = !text; };
+  const el = (tag, cls, text) => {
+    const made = document.createElement(tag);
+    if (cls) made.className = cls;
+    if (text !== undefined) made.textContent = text;
+    return made;
+  };
+  let data = null;
+
+  /* Everything that holds every word of the search, drawn again on each key. */
+  function draw() {
+    if (!data) return;
+    const words = $('find').value.toLowerCase().split(/\s+/).filter(Boolean);
+    const holds = (...texts) => words.every(word => texts.join(' ').toLowerCase().includes(word));
+    const sections = new Map();
+    for (const one of data.terms || []) {
+      if (!holds(one.term, one.definition)) continue;
+      if (!sections.has(one.section)) sections.set(one.section, []);
+      sections.get(one.section).push(one);
+    }
+    $('terms').replaceChildren(...[...sections].map(([title, terms]) => {
+      const section = el('section');
+      if (title) section.append(el('h2', '', title));
+      const list = el('dl');
+      for (const one of terms) list.append(el('dt', '', `{${one.term}}`), el('dd', '', one.definition));
+      section.append(list);
+      return section;
+    }));
+    const tools = (data.tools || []).filter(one => holds(one.name, one.summary));
+    $('tools').replaceChildren(...tools.flatMap(one => [el('dt', '', one.name), el('dd', '', one.summary)]));
+    $('toolsSection').hidden = !tools.length;
+    $('toolsTitle').textContent = `Tools (${tools.length})`;
+    $('toolsSection').open = words.length > 0;  // a search shows the tools it finds
+    const rules = (data.rules || []).filter(one => holds(one.module, one.rule, one.why));
+    $('rules').replaceChildren(...rules.map(one => {
+      const row = el('li', 'rule');
+      row.append(el('span', 'mono', `[${one.module}] `), el('span', '', `${one.rule} `), el('span', 'why', `Why: ${one.why}`));
+      return row;
+    }));
+    $('rulesSection').hidden = !rules.length;
+    say(words.length && !sections.size && !tools.length && !rules.length ? 'Nothing here holds every word.' : '');
+  }
+
+  function bar() {
+    $('mode').hidden = !view.modes().includes('fullscreen');
+    $('mode').textContent = view.host().displayMode === 'fullscreen' ? 'Inline' : 'Full screen';
+  }
+  $('mode').onclick = async () => {
+    await view.display(view.host().displayMode === 'fullscreen' ? 'inline' : 'fullscreen');
+    bar();
+  };
+  $('find').oninput = draw;
+  view.on('hostcontextchanged', bar);
+  view.on('toolresult', async result => {
+    const said = (result.content || []).filter(block => block.type === 'text').map(block => block.text).join('\n');
+    const tool = view.host().toolInfo?.tool?.name || '';
+    $('answer').textContent = said;
+    $('answerSection').hidden = !said;
+    $('answerTitle').textContent = tool === 'map_glossary' ? 'This project’s glossary' : `What ${tool || 'the call'} returned`;
+    $('answerSection').open = tool === 'map_glossary';
+    try {
+      data = await view.call(view.config.tool, {read: 'glossary'});
+      $('whole').textContent = data.text || '';
+      $('wholeSection').hidden = !data.text;
+      draw();
+    } catch (error) { say(error.message); }
+  });
+  view.connect('metaform-glossary').then(bar).catch(() => {});
+})();
+</script>
+</body>
+</html>

@@ -12,7 +12,7 @@ from __future__ import annotations
 import inspect
 import re
 from collections.abc import Callable, Generator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -50,6 +50,13 @@ class Setting:
     default_from: Callable[[Path], Any] | None = field(default=None, compare=False)
     check: Callable[[Any, Path], list[str] | None] | None = field(default=None, compare=False)
     boundary: Callable[[Path], Path | None] | None = field(default=None, compare=False)
+    # Written only by the person, on the command line or the page: a setting that decides what agents may do or how
+    # they are started and overseen. Over MCP, set and a per-call switch refuse it, so an agent cannot widen its own
+    # control, CLI-011.
+    person_only: bool = False
+    # A list whose entries are `<name><exclusive><value>`, such as `claude.model=opus` with `=`, holds one value per
+    # name: two are refused, and a picker that checks one unchecks the others of its name.
+    exclusive: str | None = None
 
     @property
     def switch(self) -> str:
@@ -246,7 +253,14 @@ def parse(setting: Setting, raw: str, folder: Path | None = None) -> Any:
     if setting.kind == 'bool':
         raise SettingError(f'{setting.switch} takes no value: use {setting.switch} or {setting.negative}.')
     if setting.kind == 'list':
-        return [item.strip() for item in raw.split(',') if item.strip()]
+        items = [item.strip() for item in raw.split(',') if item.strip()]
+        if setting.exclusive:
+            names = [item.partition(setting.exclusive)[0].strip() for item in items]
+            twice = sorted({name for name in names if names.count(name) > 1})
+            if twice:
+                raise SettingError(f'{setting.switch} holds one value for each name; {", ".join(twice)} '
+                                   f'{"is" if len(twice) == 1 else "are"} given more than one.')
+        return items
     if setting.kind == 'select':
         options = setting.options(folder)
         if not options and setting.needs_project():
@@ -267,7 +281,7 @@ class Assigned(NamedTuple):
     notices: tuple[str, ...] = ()
 
 
-EMPTY_IS_ALL = ('modules', 'layers')  # shown as all when empty, CLI-031, and cleared when set to the word all
+EMPTY_IS_ALL = ('modules', 'layers', 'jev_decisions')  # shown as all when empty, CLI-031, and cleared when set to the word all
 
 
 def assign(key: str, raw: Any, folder: Path, *, glue: bool = False) -> Assigned:
@@ -346,9 +360,9 @@ def describe(folder: Path) -> list[dict[str, Any]]:
         entry = {'key': key, 'switch': setting.switch, 'owner': setting.owner, 'kind': setting.kind,
                  'scope': setting.scope, 'value': value(key, folder), 'default': default(setting, folder),
                  'state': state(key, folder), 'help': setting.help}
-        choices = setting.choices
-        if setting.kind == 'select' and isinstance(choices, list):
-            entry['choices'] = list(cast(list[str], choices))
+        if setting.kind in ('select', 'list') and setting.choices is not None:
+            with suppress(Exception):  # a module's failing choices function leaves the entry without them
+                entry['choices'] = setting.options(folder)
         described.append(entry)
     return described
 
@@ -360,9 +374,14 @@ def _project_root(folder: Path) -> Path | None:
     return Path(record.path) if record else None
 
 
-def _check_modules(groups: Any, folder: Path) -> list[str] | None:
+def _module_choices(ctx: Any = None) -> list[str]:
+    """The groups `modules` can name: the chassis and every discovered module, enabled or not."""
     from . import loader
-    known = ['chassis', *sorted({item.id for item in loader.discover()})]
+    return ['chassis', *sorted({item.id for item in loader.discover()})]
+
+
+def _check_modules(groups: Any, folder: Path) -> list[str] | None:
+    known = _module_choices()
     for group in groups:
         if group not in known:
             raise SettingError(f"--modules has no group {group!r}. Groups: {', '.join(known)}.",
@@ -399,7 +418,7 @@ project = choice('project', choices=_project_choices,
                  details="Defaults to the registered project that contains this folder. Set it to work on another "
                          "project from here. Unset it to return to the folder's own project.")
 
-modules = items('modules', check=_check_modules,
+modules = items('modules', choices=_module_choices, check=_check_modules,
                 help='Narrows which modules\' commands this folder shows and runs. It does not enable or disable '
                      'modules; use metaform enable and disable for that.')
 
@@ -428,13 +447,102 @@ connect_instructions = choice('connect_instructions', ['compact', 'full'], 'comp
                                    'gives every module\'s whole instructions.',
                               details='Claude Code shows the first 2,048 characters of a server\'s instructions and '
                                       'drops the rest, so compact keeps them whole there, and each module\'s full '
-                                      'instructions come when its tool is called with no command, or with metaform '
-                                      'help agents <module>. full serves them all at once, for hosts that show more.')
+                                      'instructions come from metaform_instructions with module set, at '
+                                      'metaform://instructions/<module>, or with metaform help agents <module>. full serves them all at once, for hosts that show more.')
 
 report = boolean('report', True, help='Ask the intake agent for a report on the project it examined.')
+
+agents_may_set_control = boolean(
+    'agents_may_set_control', False, person_only=True,
+    help='Let agents change the settings that control agents, such as the permission policy, over MCP.',
+    details='Off, the default: over MCP an agent is refused the settings marked as the person\'s, and says what it '
+            'needs in its ticket. On: an agent may set them, through the person\'s own permission policy like any '
+            'other call. Only the person turns this on or off, on the command line or the page; it is a permission '
+            'the person holds and can change, never a rule the person cannot get past, CLI-011.')
+
+# The roles a dispatch runner gives the agent it starts, BASE-052: the intake, the agents the person summons, a merge
+# preparation and a worker on its ticket. A session with no role is one the person runs outside dispatch.
+AGENT_ROLES = ('intake', 'system', 'sentinel', 'talk', 'prep', 'worker')
+
+
+def _check_roles(names: Any, folder: Path) -> list[str] | None:
+    """A misspelt role would hold no agent back while seeming to, so it is refused, MAP-050. `none` alone holds back
+    no role: an empty list is not stored apart from no choice, so the default would come back."""
+    if list(names) == ['none']:
+        return None
+    for name in names:
+        if name not in AGENT_ROLES:
+            raise SettingError(f"--roles-without-authority has no role {name!r}. Roles: {', '.join(AGENT_ROLES)}.",
+                               'metaform help --roles-without-authority')
+    return None
+
+
+roles_without_authority = items(
+    'roles_without_authority', ('worker', 'prep'), person_only=True, check=_check_roles,
+    help='The roles of the agents Metaform starts that may not write tickets or start, stop or message agents.',
+    details='The default holds back a worker on its ticket and a merge preparation, so an agent at work does not '
+            'assign itself or others work; the person, the agents that serve them (intake, system, sentinel, talk) '
+            'and a session the person runs outside dispatch keep it. The page is the person\'s and is never held. '
+            'Set to none, no role is held back. Only the person changes this, on the command line or the page; it is a '
+            'permission the person holds, never a rule they cannot get past, MAP-050 and CLI-011.')
 
 gemini_reminder = choice('gemini_reminder', ['after-tool', 'off'], 'after-tool', scope='global',
                          help='Gemini setup installs a passive reminder after delegation and questioning, or none.',
                          details='BeforeTool cannot deliver passive context. after-tool reinforces later decisions. '
                                  'off keeps global instructions alone. Apply changes with metaform provision gemini '
                                  'or metaform install gemini.')
+
+# Jev, the optional decision service, CHANGE-ORDER-2026-10-07 item 6 (P185): off until the person turns it on, since
+# it sends project text over the network. The decision points `metaform.jev` offers other modules, each named in
+# jev_decisions; a module's own decision point is named `<module>.<point>`.
+JEV_DECISIONS = ('choose_agent', 'start_order', 'rank_items', 'triage', 'intake_coverage', 'session_drift')
+MODULE_DECISION = re.compile(r'[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*')
+
+
+def _check_jev_decisions(names: Any, folder: Path) -> list[str] | None:
+    for name in names:
+        if name not in JEV_DECISIONS and not MODULE_DECISION.fullmatch(str(name)):
+            raise SettingError(f"--jev-decisions has no decision {name!r}. Decisions: {', '.join(JEV_DECISIONS)}, "
+                               "or a module's own as <module>.<point>.", 'metaform help --jev-decisions')
+    return None
+
+
+jev = boolean(
+    'jev', False, person_only=True,
+    help='Let Metaform ask Jev, a decision model reached over the network, for typed decisions.',
+    details='Off, the default: no decision is asked and every caller keeps its plain fallback. On: the decision '
+            'points named in jev_decisions send the text they decide about to the endpoint jev_endpoint names, '
+            'OpenRouter or TypeSafe, and act on the answer only when it is sure enough, jev_confidence. The key is read '
+            'from the environment, OPENROUTER_API_KEY or TYPESAFE_API_KEY, and never stored; with no key nothing is '
+            'sent. A decision that is acted on is kept at the Address it concerns, with its question, choices, answer, '
+            'reason, model and cost. No decision hides anything from the person. Only the person turns this on, since '
+            'it sends project text to a third party.')
+
+jev_endpoint = choice('jev_endpoint', ['openrouter', 'typesafe'], 'openrouter', person_only=True,
+                      help='Where Jev is asked: OpenRouter with OPENROUTER_API_KEY, or TypeSafe with TYPESAFE_API_KEY.')
+
+# The model, the decision points and the confidence decide which agent runs a ticket, how agents are watched and what
+# reaches the person first, and what project text is sent, so only the person sets them, CLI-011.
+jev_model = text('jev_model', '', person_only=True,
+                 help="The Jev model asked. Empty means the endpoint's default: typesafe/jev-1.13-20260917 on OpenRouter, "
+                      'jev-1.13.0 on TypeSafe.',
+                 details='An answer is cached under the model asked and the model that answered; when a name such as '
+                         'typesafe/jev-1.13 starts answering as a newer snapshot, the answers of the older one are '
+                         'asked again.')
+
+jev_max_context = number('jev_max_context', 8000, min=1000, max=32000,
+                         help='The tokens of state, plus its longest question, one Jev request may carry.',
+                         details="Jev's accuracy falls as a state fills with detail the question does not need, so the "
+                                 'default is well below its limit of 32,000 tokens of state plus the longest question, '
+                                 '64,000 in a whole request. A pile of items larger than this is split across requests; '
+                                 'a state that cannot fit is not sent, and the caller keeps its fallback.')
+
+jev_decisions = items('jev_decisions', choices=list(JEV_DECISIONS), check=_check_jev_decisions, person_only=True,
+                      help='Narrows which decision points ask Jev. Empty means every one.',
+                      details="A module's own decision point is named <module>.<point>, as the module's README says.")
+
+jev_confidence = number('jev_confidence', 50, min=0, max=100, person_only=True,
+                        help='The confidence, in percent, below which a Jev answer is not acted on.',
+                        details="A choice's confidence is Jev's own; a yes or no is as confident as its probability "
+                                'is far from even, so 50 leaves out answers between 0.25 and 0.75. Below it the '
+                                'caller keeps its fallback; a kept decision is marked unsure.')

@@ -1,7 +1,7 @@
 """The Metaform home: the chassis database and one folder per project, STORE-001, STORE-002 and PROJ-026.
 
 The chassis database, `metaform.sqlite3`, holds what belongs to no project: module state, what the installer set up,
-nonces, and the settings of the global scope and of folders outside every project. No database lists the projects.
+and the settings of the global scope and of folders outside every project. No database lists the projects.
 Each project is one folder under `projects/`, named by its source's path, holding `source.txt`, its own
 `project.sqlite3` with its registration, bases and the settings of folders inside its source, one store per
 base, and everything else of the project. A project is found by looking where its name says. Nothing is ever
@@ -39,16 +39,7 @@ CHASSIS_SCHEMA_VERSION = '3'  # 2 holds no project; 3 backfills installed harnes
 CHASSIS_COMPATIBLE_FROM = '3'  # code at 2 would install harnesses without the records 3 backfilled, STORE-029
 PROJECT_SCHEMA_VERSION = '2'  # a project's own project.sqlite3, PROJ-026; 2 names its bases, the change order of 2026-10-07
 PROJECT_COMPATIBLE_FROM = '2'  # 2 renamed the tables and columns code at 1 reads, STORE-029
-# The nonce table, BASE-050. A home made before it existed is given it on the first write of a nonce.
-NONCES = """CREATE TABLE IF NOT EXISTS nonces(
-  nonce     TEXT PRIMARY KEY,
-  module_id TEXT NOT NULL,
-  function  TEXT NOT NULL,
-  value     TEXT NOT NULL,
-  created   TEXT NOT NULL,
-  closed    TEXT
-);
-"""
+# A home made while work was handed by nonce keeps its `nonces` table; nothing reads or writes it now, BASE-050.
 _SETTINGS_TABLES = """
 CREATE TABLE IF NOT EXISTS folders(
   path_key TEXT PRIMARY KEY,
@@ -80,7 +71,14 @@ ALIASES = """CREATE TABLE IF NOT EXISTS aliases(
 );
 """
 SETTINGS_SCHEMA = _SETTINGS_TABLES + ALIASES
-CHASSIS_SCHEMA = NONCES + """
+# The counter of item numbers at each address of a project, `data/numbers.py`: the last number taken there, so a number
+# is never reused. A project database made before it is given the table on the first number taken, as with aliases.
+NUMBERS = """CREATE TABLE IF NOT EXISTS numbers(
+  address TEXT PRIMARY KEY,
+  last    INTEGER NOT NULL
+);
+"""
+CHASSIS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 """ + SETTINGS_SCHEMA + """
 CREATE TABLE IF NOT EXISTS module_state(
@@ -119,7 +117,7 @@ CREATE TABLE IF NOT EXISTS active_bases(
   project_id TEXT PRIMARY KEY REFERENCES projects(project_id),
   base_id    TEXT NOT NULL REFERENCES bases(id)
 );
-"""
+""" + NUMBERS
 
 PROJECT_ID = re.compile(r'^[a-z0-9][a-z0-9_-]{0,63}$')
 NAME = re.compile(r'^[A-Za-z0-9._-]{1,128}$')

@@ -30,6 +30,9 @@
         <div class="menu" id="exportbox" hidden role="menu" aria-label="Export">
           <button id="exportMarkdown" type="button" role="menuitem" title="The map as a short Markdown document">Markdown</button>
           <button id="exportXml" type="button" role="menuitem" title="The map as an XML document with every field">XML</button>
+          <div class="sep" role="separator"></div>
+          <button id="exportMermaid" type="button" role="menuitem" title="The 2D map as a Mermaid flowchart, a .mmd file GitHub, VS Code and Obsidian draw">Mermaid (.mmd)</button>
+          <button id="copyMermaid" type="button" role="menuitem" title="The 2D map as Mermaid code, copied to paste into a document or a chat">Copy as Mermaid</button>
         </div>
       </div>
       <button class="btn quiet" id="buildBtn" type="button" aria-controls="build" title="Build a file to download: the project as an archive, the project with Metaform for a remote agent, or the installer">Build</button>
@@ -45,6 +48,8 @@
           <div class="menu-field default-agent"><span class="name">Default agent</span><div id="defaultAgentPick"></div></div>
           <p class="menu-hint">Chats, issues and intakes start with the default unless you choose another. Autostart starts each ticket with the agent its card prefers.</p>
           <button id="promptsBtn" type="button" role="menuitem" title="How agents' permission prompts are answered">Agent prompts</button>
+          <button id="agentViewBtn" type="button" role="menuitem" aria-controls="agentview" title="Exactly what an agent connecting to this project receives: the connect message, the glossary with its tools, and the selected node's brief, each with its size">What an agent sees…</button>
+          <button id="allSettingsBtn" type="button" role="menuitem" aria-controls="settings" title="Every setting of this project's folder and its modules, and which modules are on, as metaform config shows them">All settings…</button>
           <div class="sep" role="separator"></div>
           <button id="resetAgentsBtn" class="danger" type="button" role="menuitem" title="After crashes: every ticket a dead agent still holds goes back on the board, and dead sessions are closed. Working agents are left alone; nothing is deleted">Reset agents</button>
         </div>
@@ -97,6 +102,7 @@
             <select id="sideat"><option value="left">Left</option><option value="right">Right</option></select>
           </div>
           <div class="sep" role="separator"></div>
+          <button id="viewAllSettingsBtn" type="button" aria-controls="settings" title="Every setting of this project's folder and its modules, and which modules are on, as metaform config shows them">All settings…</button>
           <button id="shortcutsBtn" type="button" title="Every key the map and the page take">Keyboard shortcuts <kbd aria-hidden="true">?</kbd></button>
         </div>
       </div>
@@ -121,10 +127,15 @@
          aria-label="The split between the small map and the panes" title="Drag to resize; double-click to reset"></div>
     <div class="tabs" role="tablist" aria-label="The selected object">
       <button role="tab" id="t-object" type="button" aria-selected="true" aria-controls="p-object">Object</button>
+      <button role="tab" id="t-brief" type="button" aria-selected="false" aria-controls="p-brief" tabindex="-1" title="What an agent reads about the selected node, and the items numbered there">Brief</button>
       <button role="tab" id="t-prov" type="button" aria-selected="false" aria-controls="p-prov" tabindex="-1">Provenance</button>
       <button role="tab" id="t-prompt" type="button" aria-selected="false" aria-controls="p-prompt" tabindex="-1">Prompt</button>
     </div>
     <section class="pane" id="p-object" role="tabpanel" aria-labelledby="t-object" tabindex="-1"><p class="loading">Reading the map…</p></section>
+    <!-- The node's brief, MCP-037: what an agent reads at metaform://<address>, exactly, with its size against the
+         node_summary_bytes setting, and the memories, messages and work numbered at the address, opened and walked
+         by their links as address#n. -->
+    <section class="pane" id="p-brief" role="tabpanel" aria-labelledby="t-brief" hidden></section>
     <section class="pane" id="p-prov" role="tabpanel" aria-labelledby="t-prov" hidden></section>
     <section class="pane" id="p-prompt" role="tabpanel" aria-labelledby="t-prompt" hidden>
       <div class="toolbar">
@@ -142,6 +153,11 @@
   </aside>
 
   <main>
+    <!-- The agents deployed stand at the top right of the large area, whichever map is there, VIEW-039. -->
+    <div class="agents" id="agents" hidden aria-label="The agents deployed in this project">
+      <div class="title">Agent deployed</div>
+      <div class="list"></div>
+    </div>
     <div id="big3d">
     <div class="bar3d">
       <div class="navbtns"><button id="pauseBtn" class="btn sm quiet" type="button" data-paused="false">Pause layout</button><button id="relayoutBtn" class="btn sm quiet" type="button">Re-run layout</button></div>
@@ -152,10 +168,6 @@
     <div class="tip3d" id="tip3d" hidden></div>
     <div class="legend" id="legend"></div>
     <div class="count" id="count"></div>
-    <div class="agents" id="agents" hidden aria-label="The agents deployed in this project">
-      <div class="title">Agent deployed</div>
-      <div class="list"></div>
-    </div>
     </div>
     </div>
     <div id="intakeBar" class="intakebar" hidden role="status" aria-live="polite"></div>
@@ -225,19 +237,22 @@
 <div id="dock" class="resting">
   <div id="dockTab" role="button" tabindex="0" aria-label="Open the chat with an agent"><span>Chat</span></div>
   <div id="helpdesk" hidden role="dialog" aria-label="Support chat">
-    <div class="head"><span class="avatar" aria-hidden="true">M</span><div class="who"><b>Metaform Support</b><small><span class="dot"></span> <span class="with">Online</span></small><small class="status" role="status">Online</small></div><button class="big" type="button" title="Make the chat large, and back" aria-label="Make the chat large"><i class="i i-expand" aria-hidden="true"></i></button><button class="min" type="button" title="Put the chat away" aria-label="Put the chat away"><i class="i i-minus" aria-hidden="true"></i></button></div>
+    <div class="head"><span class="avatar" aria-hidden="true">M</span><div class="who"><b>Metaform Support</b><small><span class="dot"></span> <span class="with">Online</span></small><small class="status" role="status">Online</small></div><button class="place" type="button" title="Dock the chat at the side of the page" aria-label="Dock the chat at the side of the page"><i class="i i-dock" aria-hidden="true"></i></button><button class="big" type="button" title="Make the chat large, and back" aria-label="Make the chat large"><i class="i i-expand" aria-hidden="true"></i></button><button class="min" type="button" title="Put the chat away" aria-label="Put the chat away"><i class="i i-minus" aria-hidden="true"></i></button></div>
     <div class="tabs" role="tablist" aria-label="Open chats" hidden></div>
+    <!-- The thread on view: where it comes from, its agent's glyph and task, and what can be done with it. -->
+    <div class="threadbar" hidden><img class="icon" alt="" hidden><span class="source"></span><p class="task"></p><button class="locate btn sm quiet" type="button" hidden title="Select its part on the map, with its agent">Show on map</button><button class="again btn sm" type="button" hidden title="An agent that reads this thread first goes on with it">Continue</button><button class="stop btn sm danger" type="button" hidden title="Stop the agent, and end its session">Stop</button></div>
     <div class="sessionbar" hidden></div>
     <div class="planbox" hidden></div>
     <div class="proposals" aria-label="The sentinel's proposals" hidden></div>
     <div class="log" aria-live="polite"></div>
+    <div class="asked"></div>
     <div class="files"></div>
     <form class="compose">
       <label class="clip" title="Attach a file: it is saved in the project and the agent is told where"><input type="file" multiple hidden>&#128206;</label>
       <textarea class="say" rows="1" placeholder="Type a message, or / for commands&#8230;" aria-label="Your message"></textarea>
       <button class="send" type="submit">Send</button>
     </form>
-    <div class="calls"><button class="interrupt" type="button" disabled title="Interrupt the current turn and keep the conversation available">Interrupt</button><div class="summon"></div><button class="call" type="button" title="Start a chat with your system agent; while one is on, Dismiss ends it">Call</button></div>
+    <div class="calls"><button class="interrupt" type="button" disabled title="Interrupt the current turn and keep the conversation available">Interrupt</button><div class="summon"></div><label class="resume" title="Call and Chat go on with your last conversation about the same thing, so the agent keeps its memory of it; unchecked starts a new one"><input type="checkbox" checked> Resume</label><button class="call" type="button" title="Start a chat with your system agent; while one is on, Dismiss ends it">Call</button></div>
   </div>
 </div>
 <div id="qa" class="window dialog wide" hidden role="dialog" aria-label="A question, read in full" aria-modal="true">
@@ -285,20 +300,6 @@
     <p class="saved" role="status"></p>
   </div>
 </div>
-<div id="agent" class="window movable beside" hidden role="dialog" aria-label="An agent at work">
-  <div class="bar"><img class="icon" alt=""><span class="title"></span><button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button></div>
-  <div class="body">
-    <p class="task"></p>
-    <div class="sessionbar" hidden></div>
-    <div class="planbox" hidden></div>
-    <div class="eyebrow">What it is doing</div>
-    <ol class="activity"></ol>
-    <div class="asked"></div>
-    <p class="state" role="status" hidden></p>
-    <div class="saybox"><textarea class="say" placeholder="A message to the agent, or / for its commands" aria-label="A message to the agent"></textarea></div>
-    <div class="acts"><button class="send btn primary" type="button" title="Send it to the agent">Send</button><button class="chat btn" type="button" title="Talk with this agent in the chat at the lower right; an ended one gets a new agent that reads its thread first">Chat</button><button class="interrupt btn" type="button" disabled title="Interrupt the current turn and keep the conversation available">Interrupt</button><span class="grow"></span><button class="stop btn danger" type="button" title="Stop the agent, and end its session">Stop</button></div>
-  </div>
-</div>
 <!-- The intake started from the page, VIEW-045: the agent, a note for it, and Start; a refusal with its next step. -->
 <div id="intake" class="window dialog" hidden role="dialog" aria-modal="true" aria-labelledby="intakeTitle">
   <div class="bar"><span class="title" id="intakeTitle">Map the project</span><button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button></div>
@@ -330,6 +331,21 @@
     <div class="preview" hidden></div>
   </div>
   <div class="foot"><button class="revert btn" type="button" hidden>Revert</button><button class="save btn" type="button" hidden>Save as new version</button><span class="grow"></span><button class="done btn primary" type="button">Done</button></div>
+</div>
+<!-- The settings screen: the modules, on or off, and every setting of the project's folder, the chassis's and each
+     module's, each saved as metaform set saves it. -->
+<div id="settings" class="window dialog wide settingspanel" hidden role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+  <div class="bar"><span class="title" id="settingsTitle">Settings</span>
+    <input class="search" type="search" placeholder="Find a setting" aria-label="Find a setting" autocomplete="off" spellcheck="false">
+    <button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button></div>
+  <div class="body"></div>
+</div>
+<!-- What an agent connecting here receives, read from the project folder's own MCP server as an agent reads it: the
+     instructions sent at connect, metaform://metaform and metaform://tools, every tool, and the selected node's brief,
+     each with its size against what holds it. -->
+<div id="agentview" class="window dialog wide agentview" hidden role="dialog" aria-modal="true" aria-labelledby="agentviewTitle">
+  <div class="bar"><span class="title" id="agentviewTitle">What an agent sees here</span><button class="again btn sm quiet" type="button" title="Read it again from the MCP server">Read again</button><button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button></div>
+  <div class="body"></div>
 </div>
 <!-- The page's own dialogs: a confirmation, the search of the map, and the keyboard shortcuts. -->
 <div id="confirm" class="window dialog" hidden role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle">

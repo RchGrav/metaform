@@ -12,6 +12,7 @@ The Inference Metaform prepares substantive understanding before work and retain
 | Find a part or relationship, retain knowledge, or choose context | [Working with Metaform](guides/working-with-metaform.md) |
 | Understand what an address, purpose, Encounter, or held element means | [Reading an Inference Metaform](guides/reading-a-metaform.md) |
 | Add a capability as a community module | [Extending Metaform](guides/extending-metaform.md) |
+| Run Metaform on a host of your own, reachable from the internet behind your own sign-in | [The Metaform Node](guides/metaform-node.md) |
 | See a project's recorded map used to orient a task | [The module-system walkthrough](examples/project-walkthrough.md) |
 | Follow the complete causal explanation | [Preprint](preprint/inference-metaform.md) / [PDF](preprint/inference-metaform.pdf) |
 

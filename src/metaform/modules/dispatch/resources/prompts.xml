@@ -1,12 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- dispatch's prompts, MCP-031. What is between an element's tags is what is served; an empty element inside one is
-     filled with the value of its name. -->
+<!-- Dispatch's prompts: the text Metaform sends to agents for this module.
+     Each element is one prompt, named by its tag. What is between the tags is sent exactly as written.
+     An empty element inside a prompt, such as <work_id/>, marks a place the code fills in: <work_id/> with the ticket's
+     id, <record/> with the record prompt while the memory module is on, <project/> with
+     the project's id, <about/> with what the person clicked, <read/> with the commands that read it, <branch/> with
+     the merge's branch, <dev/> with the dev branch, and <node/> with where a finished worker records what it learned.
+     Comments are never sent. -->
 <prompts>
-<!-- dispatch's line in the compact instructions every agent reads at connect, MCP-029 as amended 2026-10-10: when the
-     agent needs dispatch, and where to go then; the instructions themselves are read there, on demand. -->
-<connect>To give work to an agent: dispatch start on its ticket.</connect>
+<!-- dispatch's line in the connect message: what an agent uses dispatch for, one short phrase after its name, in the
+     project's terms. Sent to every agent when it connects over MCP, one line per enabled module under mcp's
+     <instructions>, and listed in the compact command-line guide, metaform help agents. Empty sends nothing for
+     dispatch. Off when the module is disabled or the folder's modules setting leaves it out. -->
+<connect>– dispatch: start an agent on a ticket, follow its work and stop it</connect>
 
-<!-- dispatch's line in the instructions agents read while dispatch is on, MCP-029. -->
+<!-- Dispatch's instructions: how agent slots are shared and why work on a busy part of the map waits in a queue.
+     Returned by metaform_instructions with module dispatch, at metaform://instructions/dispatch, and by metaform instructions dispatch; printed in
+     the command-line guide while connect_instructions is full.
+     Empty sends nothing. Off when the module is disabled or hidden in the folder. -->
 <instructions>
 @STATE_INIT:
   {Dispatch}:=ACTIVE
@@ -41,13 +51,18 @@
   :ELSE -> CORRECT
 </instructions>
 
-<!-- The handoff's line on recording what the agent learns, filled in only while the memory module is on the folder's
-     surface, so an agent is never told to use a command it does not have; the owner's sentence, MCP-029 and
-     BASE-052, 2026-10-11. A ticket on a join records on the join, by its receiver and provider, BASE-040. -->
+<!-- One line of the full worker's brief below: store what you learn with the memory tools, at the ticket's node, or
+     at the receiver and provider of a ticket on a join.
+     Placed in the brief's <record/> only while the memory module is on in the folder, and read only with the brief,
+     on demand. Must not be deleted: the code requires it. Empty leaves a blank line in the brief. -->
 <record>+&gt; Use Metaform's memory tool to store what you learn under the functional namespace of your assignment, so future agents working there can retrieve it: `metaform memory create_entities '&lt;entities&gt;' node=&lt;the address under at in the ticket read&gt;`, or for a ticket on a join, receiver=&lt;its receiver&gt; provider=&lt;its provider&gt; in place of node.
 </record>
-<!-- The first turn the dispatch runner sends an agent it starts on a ticket, and what an agent reads when it runs a
-     dispatch handoff nonce; <work_id/> is the ticket, BASE-052 and BASE-050. -->
+<!-- The full worker's brief: read the ticket, report the plan and each step, decide what can be undone, close with a
+     resolution. No longer sent to agents: how to work a ticket is on the map_work tool's description and its op
+     argument, read when the agent uses the tool, and the handoff is the node brief with the work line below.
+     Read on demand only, with dispatch handoff id=<work id> full=true, which returns it ahead of the handoff.
+     Kept as written while three of its rules, which attach to no tool, wait on a decision.
+     Must not be deleted: the code requires it. -->
 <handoff>
 @STATE_INIT:
   {Work_ID}:=[<work_id/>]; {Ticket}:=NULL; {Steps}:=UNRESOLVED; {State}:=READ
@@ -115,68 +130,59 @@
   :ELSE -&gt; CORRECT
 </handoff>
 
-<!-- Follows the handoff prompt when an agent runs a dispatch handoff nonce, ahead of the ticket's at and linked nodes
-     as JSON, BASE-050 and BASE-052. -->
-<nodes>
-@STATE_INIT:
-  {Nodes}:=[namespace nodes supplied here]
+<!-- One more message to a worker after it closes its ticket, asking it to record what it learned at <node/>.
+     Sent when the setting dispatch_record_on_finish asks for it and the memory module is on; <node/> is the element's
+     address, or join:<id> for a ticket on a join.
+     Empty sends nothing, whatever the setting. Turned off with dispatch_record_on_finish set to off. -->
+<on_ticket_done>Use Metaform's memory tool to store what you learn under the functional namespace of your assignment, <node/>, so future agents working there can retrieve it.</on_ticket_done>
 
-@CONSTRAINT:
-  +> Treat {Nodes} as the namespace nodes of this work as held by the map.
+<!-- One more message to a worker whose turn ended with its ticket still open, asking it to record what it learned at
+     <node/> before it waits for the person; once per session. <node/> is as in on_ticket_done.
+     Sent when the setting dispatch_record_on_stop asks for it and the memory module is on. The wording is the owner's
+     sentence on recording, as on_ticket_done has it. Empty sends nothing, whatever the setting. Turned off with
+     dispatch_record_on_stop set to off. -->
+<on_stopped_open>Use Metaform's memory tool to store what you learn under the functional namespace of your assignment, <node/>, so future agents working there can retrieve it.</on_stopped_open>
 
-@CONDITION:
-  ?IF ({Nodes}!=NULL) -> {State}:=AVAILABLE
-  :ELSE -> {State}:=EMPTY
+<!-- One more message to a worker whose turn ended in an error while its agent still runs, asking it to record what it
+     learned at <node/> before the session is left for the person; once per session. <node/> is as in on_ticket_done.
+     Sent when the setting dispatch_record_on_failure asks for it and the memory module is on. Empty sends nothing,
+     whatever the setting. Turned off with dispatch_record_on_failure set to off. -->
+<on_failure>Use Metaform's memory tool to store what you learn under the functional namespace of your assignment, <node/>, so future agents working there can retrieve it.</on_failure>
 
-@ROUTER:
-  @MATCH({State}):
-    | [AVAILABLE] -> EXECUTE_PIPELINE(Use)
-    | [EMPTY] -> EXECUTE_PIPELINE(None)
+<!-- One line sent to an intake agent that has made no Metaform call within dispatch_intake_first_record seconds of
+     its first turn, so what it has examined is on the map before it reads further. Once per session: into the turn
+     in flight when the agent offers steering, otherwise as its next turn. A draft, awaiting the owner's approval of
+     its wording. <seconds/> is the setting's value. Empty sends nothing; set dispatch_intake_first_record to 0 to
+     turn it off. -->
+<intake_first_record>You have worked <seconds/> seconds without a Metaform call: record what you have examined so far with the intake tools now, then go on.</intake_first_record>
 
-@EXECUTE_PIPELINE(Use):
-  ∇({Nodes}) => make node context available to the work.
-  YIELD
+<!-- The first line of a hand-off, ahead of the ticket's fields, what its node is for, the node's brief with the call
+     that reads each count, and the metaform:// links of the node and the ticket, MCP-039. How to work the ticket,
+     plan, steps, choices and closing, is on the map_work tool's description, so it is not said here.
+     <work_id/> is the ticket's id; <record/> is the work_record element while the memory module is on in the folder,
+     and nothing otherwise, so no agent is told to use a tool it does not have.
+     Sent as the first message to every agent dispatch starts on a ticket, and returned by dispatch handoff with the
+     ticket's id. Must not be deleted: the code requires it. -->
+<work>Work ticket <work_id/> with the map_work tool. <record/></work>
 
-@EXECUTE_PIPELINE(None):
-  YIELD
+<!-- The owner's sentence on recording what is learned, 2026-10-11, MCP-029 and BASE-052, as the <record> line of the
+     full brief has it, with the node filled in and the command left out, since the agent calls the memory tool over
+     MCP. Draft placement, awaiting the owner's approval of this form: he may keep it, change it or replace it.
+     <node/> is the element's address, or the join's receiver and provider for a ticket on a join.
+     Follows the work sentence only while the memory module is on in the folder. Empty leaves the work sentence
+     alone. -->
+<work_record>Use Metaform's memory tool to store what you learn under the functional namespace of your assignment, <node/>, so future agents working there can retrieve it.</work_record>
 
-@VERIFY:
-  {Valid}:=TRUE
-  ?IF ({Valid}) -> YIELD
-  :ELSE -> CORRECT
-</nodes>
+<!-- The message a worker's session is resumed with when the supervisor retries it, after it stopped without the
+     person's stop and before its ticket was done: go on where it left off. <work_id/> is the ticket's id.
+     A draft, written with the supervisor and awaiting the owner's approval of its wording.
+     Sent only while dispatch_autostart is on and dispatch_retries allows a retry; set dispatch_retries to 0 to send
+     none. Must not be deleted: the code requires it. -->
+<retry>Your session stopped before ticket <work_id/> was done; go on with it where you left off.</retry>
 
-<!-- Returned by metaform dispatch handoff with a work id to the agent handing the ticket on, telling it to give the
-     next agent the nonce in <nonce/>, BASE-050. -->
-<handed>
-@STATE_INIT:
-  {Nonce}:=[<nonce/>]; {State}:=HANDOFF
-
-@CONSTRAINT:
-  +> Give the receiving agent this command to run: `metaform <nonce/>`.
-
-@CONDITION:
-  ?IF ({Nonce}!=NULL) -> {State}:=HANDOFF
-  :ELSE -> {State}:=UNRESOLVED
-
-@ROUTER:
-  @MATCH({State}):
-    | [HANDOFF] -> EXECUTE_PIPELINE(Handoff)
-    | [UNRESOLVED] -> EXECUTE_PIPELINE(None)
-
-@EXECUTE_PIPELINE(Handoff):
-  YIELD `metaform <nonce/>`
-
-@EXECUTE_PIPELINE(None):
-  YIELD
-
-@VERIFY:
-  {Valid}:=(handoff command contains {Nonce})
-  ?IF ({Valid}) -> YIELD
-  :ELSE -> CORRECT
-</handed>
-
-<!-- The person's system agent, the +1: a conversation in the project's folder, with no ticket work. -->
+<!-- The person's project assistant: answers questions about the project and turns requests for work into tickets.
+     Sent as the first message to the person's system agent, started from the web page's chat or with dispatch system.
+     Must not be deleted: the code requires it. Off when the module is disabled. -->
 <system>
 @STATE_INIT:
   {Project}:=[<project/>]; {State}:=LISTEN
@@ -188,6 +194,11 @@
   +> When the person asks for work, write it as a ticket with `metaform map work op=add` so an agent takes it, and say so.
   +> Stay and answer each message until the person closes the chat.
   !> Do not change code or files yourself unless the person explicitly asks you to.
+
+@CONDITION:
+  ?IF ( the person asks for work ) -&gt; write it as a ticket with `metaform map work op=add` and say so
+  :ELSE ?IF ( the person asks about the project ) -&gt; answer it, grounded in the map and the specifications
+  :ELSE -&gt; {State}:=LISTEN
 
 @ROUTER:
   EXECUTE_PIPELINE(Greet)
@@ -201,12 +212,11 @@
   :ELSE -> CORRECT
 </system>
 
-<!-- VIEW-042: the person clicked something on the page to talk about it: a ticket, open or done, a node, a question or
-     an ended agent's session. A conversation, never ticket work. -->
+<!-- A conversation about one item the person clicked on the web page: a ticket, a node, a question or an ended session.
+     Sent as the first message to the agent started from an item's Chat button on the web page, or with dispatch talk.
+     Must not be deleted: the code requires it. If it is empty, dispatch talk refuses to start. -->
 <talk>
-<!-- A draft so Talk works, until the authored prompt replaces it. Variables: <about/>, what was clicked in words (a ticket with
-     its state and task, a question with its text, a node's address, or an ended agent's session and ticket); <read/>,
-     the metaform commands that read it. -->
+
 @STATE_INIT:
   {About}:=[<about/>]; {Read}:=[<read/>]; {State}:=LISTEN
 
@@ -216,6 +226,10 @@
   +> Answer what they ask about it plainly and completely; validate what you say against the map and the specifications.
   +> Stay and answer each message until the person closes the chat.
   !> This is a conversation, never ticket work: do not take, reopen or close any ticket, and do not change code or files unless the person explicitly asks you to.
+
+@CONDITION:
+  ?IF ( {About} has not been read ) -&gt; read it with {Read} first
+  :ELSE -&gt; {State}:=LISTEN
 
 @ROUTER:
   EXECUTE_PIPELINE(Greet)
@@ -230,7 +244,9 @@
 </talk>
 
 
-<!-- VIEW-044: an agent the person asked to help prepare a merge under review. -->
+<!-- Prepares a merge under review: bring the branch up to date with the dev branch, run the tests, commit, explain.
+     Sent as the first message to the agent started from a merge under review on the web page, or with dispatch prep.
+     Must not be deleted: the code requires it. Merges wait for review only while dispatch_worktrees is on. -->
 <prep>
 @STATE_INIT:
   {Work_ID}:=[<work_id/>]; {Branch}:=[<branch/>]; {Dev}:=[<dev/>]; {State}:=PREPARE
@@ -243,6 +259,10 @@
   +> Stay and answer the person's messages until they are done.
   !> Do not merge into <dev/>: the person does that.
   !> Do not push, and do not touch the project folder outside this worktree.
+
+@CONDITION:
+  ?IF ( <branch/> does not hold <dev/> OR the tests have not run since the last change ) -&gt; {State}:=PREPARE
+  :ELSE -&gt; explain it to the person, then {State}:=LISTEN
 
 @ROUTER:
   EXECUTE_PIPELINE(Prepare)
@@ -257,5 +277,42 @@
   ?IF ({Valid}) -> YIELD
   :ELSE -> CORRECT
 </prep>
+
+<!-- What Metaform answers in an editor when it serves alone, with no agent behind it, and the person writes something
+     that is not one of its slash commands. Shown to the person in the editor's agent panel, never sent to a model.
+     <why/> is filled with why no agent is behind it when the agent the settings name was not found, and is empty
+     otherwise. <commands/> is filled with serve_commands while Metaform offers slash commands in the session's
+     folder, and is empty when it offers none, with dispatch_serve_commands off or no command enabled there, so the
+     person is never told to type / for commands that are not there. Sent by metaform dispatch serve with no agent: set
+     dispatch_serve_agent, or give it an adapter command, and free text goes to that agent instead. -->
+<serve_free_text><why/>Metaform is serving here on its own<commands/>. To talk with an agent through Metaform, set an agent with metaform set --dispatch-serve-agent claude (or codex, gemini), or register metaform dispatch serve -- &lt;adapter command&gt; with your editor.</serve_free_text>
+
+<!-- The clause serve_free_text gains while Metaform offers its commands to editors as slash commands. It goes with
+     what is offered: with the dispatch_serve_commands setting off, or no enabled module giving a command in the
+     folder, no command is offered and the clause is left out. -->
+<serve_commands>, so it answers its own commands: type / to list them</serve_commands>
+
+<!-- The title of the notice an editor shows when metaform dispatch serve cannot find the agent the
+     dispatch_serve_agent setting names (or the dispatch_agent setting, when that one is default), and so serves alone.
+     Shown to the person once, when a session opens, as an ACP Session Notice where the editor takes them and as a
+     message otherwise; never sent to a model. Set the agent's start
+     command, or set dispatch_serve_agent to none to serve alone on purpose and see no notice. -->
+<serve_alone_title>Metaform is serving alone</serve_alone_title>
+
+<!-- The text of that notice, under serve_alone_title: why the agent was not found, filled into <why/>, and what still
+     works: <commands/> is filled with serve_alone_commands while Metaform offers slash commands in the session's
+     folder, and is empty when it offers none, as serve_free_text's commands are. Shown and turned off as
+     serve_alone_title says. -->
+<serve_alone_notice><why/><commands/>Free text needs an agent behind it.</serve_alone_notice>
+
+<!-- The sentence serve_alone_notice gains while Metaform offers slash commands in the session's folder: they are
+     answered without an agent. Left out with dispatch_serve_commands off or no command enabled there. -->
+<serve_alone_commands>Its slash commands work. </serve_alone_commands>
+
+<!-- The title of the notice an editor shows when metaform dispatch serve could not add Metaform's MCP server to a
+     session, as when no enabled module serves MCP in the folder; the notice's text is the reason and its next step.
+     Shown to the person when the session opens, never sent to a model. Enable the mcp module in the folder and the
+     server is added again. -->
+<serve_server_title>Metaform's MCP server was not added</serve_server_title>
 
 </prompts>

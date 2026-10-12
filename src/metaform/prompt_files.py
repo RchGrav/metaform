@@ -80,3 +80,35 @@ def commands(folder: Traversable) -> list[tuple[str, dict[str, str], str, str, b
         after = (mark.tail or '') if mark is not None else ''
         held.append((element.tag, dict(element.attrib), before, after, mark is not None))
     return held
+
+
+def rules(folder: Traversable) -> list[tuple[str, str]]:
+    """The rules this package folder declares, MCP-031: each `<rule why="...">` of `<rules>` in its prompts.xml, as its
+    one sentence and its why, in the order written. A rule is kept only with its reason, so a later reader can apply it
+    to a case it does not name: a rule with no sentence or no why raises ValueError naming it, and the loader refuses
+    the module, as it refuses any other faulty declaration."""
+    path = folder / 'resources' / FILE
+    if not path.is_file():
+        return []
+    found = ET.fromstring(path.read_text(encoding='utf-8')).find('rules')
+    held: list[tuple[str, str]] = []
+    if found is None:
+        return held
+    for element in found:
+        if element.tag != 'rule':
+            raise ValueError(f'{path}: <rules> holds only <rule> elements, not <{element.tag}>.')
+        said = ' '.join(''.join(element.itertext()).split())
+        why = ' '.join(element.get('why', '').split())
+        if not said:
+            raise ValueError(f'{path}: a <rule> has no sentence.')
+        if not why:
+            raise ValueError(f'{path}: the rule "{said}" has no why; write <rule why="the reason">.')
+        held.append((said, why))
+    return held
+
+
+def module_rules(identifier: str) -> list[tuple[str, str]]:
+    """The rules of the loaded module `identifier`, as `rules` reads them, or none when it is not found."""
+    from . import loader
+    found = loader.get(identifier)
+    return [] if found is None else rules(found.path)

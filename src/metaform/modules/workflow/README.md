@@ -5,7 +5,7 @@
 Workflow stores reusable Axiom subroutines in ordinary knowledge layers. The
 agent reading a subroutine interprets its conditions, routing, Map, Retry,
 Catch and verification. The module carries calls, bound values, errors and
-returns, including fresh-agent nonce handoffs. It starts no model.
+returns, including fresh-agent handoffs by run id. It starts no model.
 
 ## Template version
 
@@ -16,14 +16,14 @@ The Unreleased module contract after 0.3.0.
 `SUPPORTED_OS` is Linux, macOS and Windows; `DEPENDENCIES` is empty;
 `SHIPS_DISABLED` is true; enable it with `metaform enable workflow`.
 `MODULE` declares the CLI/MCP verbs, the logic-version
-table and the node-read contribution.
+and run tables and the node-read contribution.
 
 ## Common base used
 
 `metaform.module` declares commands and context. `metaform.data` supplies
 knowledge layers, elements, items, provenance, module tables and bound reads.
-`metaform.nonce` persists call continuations and atomically combines branch
-returns. `metaform.prompt_files` serves the module's authored XML resources.
+Its `runs` table, through `metaform.data`, persists call continuations and
+atomically combines branch returns. `metaform.prompt_files` serves the module's authored XML resources.
 `metaform.axiom` checks each stored subroutine, MCP-035 and BASE-057.
 
 ## Prompts
@@ -36,7 +36,7 @@ in the prompt store lazily; previous prompt versions remain available.
 The same file holds the workflow agent's libs and skills, MCP-034. `lib_axiom`,
 `lib_metaform` and `lib_workflow` are composed at serve time from the newest
 stored version of each shared section they carry, so an edit saved in the
-prompt store reaches them. `lib_quality` and the seven skills are held whole.
+prompt store reaches them. `lib_quality` and the skills are held whole.
 Each skill is a child of `<commands>`, so it is a slash command,
 `/metaform:<skill>`, as well as a command.
 
@@ -52,6 +52,12 @@ metaform workflow skill write_workflow
 metaform workflow skill import_workflow
 ```
 
+Tie the project's code to the map up front with `code_links`: it walks the
+Addresses no code serves and the code no Address claims, after `map
+code-import`, and proposes which symbols provide for which purpose, each with
+its why, for the person or another agent to accept with `map code-link
+op=accept`. It writes proposals only.
+
 Prepare incoming work with `workflow_builder`, which follows `write_workflow`
 and seeds its detailed rules at the affected map nodes. Judge results that
 need judgement with `workflow_evaluator` on a separate fresh agent. The
@@ -64,7 +70,7 @@ metaform workflow assign workflow_builder input="<request and target layer>"
 metaform workflow assign workflow_evaluator input="<result, criteria, nodes and evidence>"
 ```
 
-Give each returned nonce to the agent holding that role. The same skills are
+Give each returned run id to the agent holding that role. The same skills are
 MCP prompts `/metaform:workflow_builder` and `/metaform:workflow_evaluator`.
 All incoming work, including small fixes, goes through the builder under
 D117; a small fix may use a single pass so it receives its rules with little
@@ -150,40 +156,105 @@ metaform workflow run '({ok}, {issues}) := workflow.quality.code.review(target=c
 metaform workflow run '({ok}, {issues}) := workflow.quality.code.review(target=this)' element=code.engine.game
 ```
 
-The returned nonce holds the call's frozen content, arguments, element values
-and continuation. `metaform <nonce>` redeems it; on MCP call the `workflow`
-tool with `command: "resume"` and `arguments: {"nonce": "<nonce>"}`. It works
-from a fresh agent's folder because the nonce carries the original project
-and metaform context. Reading a call reveals its current subroutine and values,
-without its private caller stack.
+The returned `run` is the id of the call's run record, which holds its frozen
+content, arguments, element values and continuation. `metaform workflow resume
+run=<run id>` reads it; over MCP call `workflow_resume` with `run`. The record
+is kept in the project, so an agent in another folder adds `--project <id>`;
+it keeps the original metaform and layer context, whichever metaform is active
+later. Reading a call reveals its current subroutine and values, without its
+private caller stack.
 
 While interpreting a call:
 
 ```sh
-metaform <nonce> call '{fixed} := workflow.quality.code.fix(target={target})'
-metaform <nonce> handoff '({ok}, {issues}) := workflow.quality.code.review(target={target})'
-metaform <nonce> complete 'RETURN ({ok}, {issues})' variables='{"ok":true,"issues":[]}'
-metaform <nonce> fail SourceUnreadable message="src/game.py"
+metaform workflow call '{fixed} := workflow.quality.code.fix(target={target})' run=<run id>
+metaform workflow handoff '({ok}, {issues}) := workflow.quality.code.review(target={target})' run=<run id>
+metaform workflow complete 'RETURN ({ok}, {issues})' run=<run id> variables='{"ok":true,"issues":[]}'
+metaform workflow fail SourceUnreadable run=<run id> message="src/game.py"
 ```
 
 `call` pushes a same-agent frame. `handoff` suspends the caller and returns only
-the nonce to give a fresh agent, directly where the host supports it or through
-the orchestrator otherwise. The fresh agent sees only its callee's instructions
-and values. Its `complete` closes the child nonce and resumes the caller with
-the result bound to the call's targets. `fail` delivers the error unchanged;
+the child run's id to give a fresh agent, directly where the host supports it or
+through the orchestrator otherwise. The fresh agent sees only its callee's
+instructions and values. Its `complete` closes the child run and resumes the
+caller with the result bound to the call's targets. `fail` delivers the error unchanged;
 the caller interprets its authored Retry or Catch. At the top of the calls,
 results or errors return to the orchestrator. Returns become prompt values,
 without implicit writes to the functional map or knowledge layers.
 
+A run that something neither its ticket nor its logic decides stops pauses on
+the person, and a run that is no longer wanted is cancelled:
+
+```sh
+metaform workflow pause run=<run id> The target code.timer.kitchen is gone from the map and the logic names no other.
+metaform workflow answer run=<run id> Use code.timer.oven; the kitchen timer was merged into it.
+metaform workflow cancel run=<run id> reason="superseded by ticket 80cafcd9"
+metaform workflow runs state=input_required
+```
+
+Agents do not ask, MAP-050 as amended 2026-10-08: a choice an agent can undo
+is its own to make and record, and is never a pause. `pause` is how an agent
+stops a run on something its ticket and its logic leave to the person. An
+agent working a ticket has the line added to the ticket's note first, where
+the person reads it; if that cannot be written the run is not paused, and the
+agent is told to write the note itself. The run is then `input_required`, with
+what stopped it as its message and the agent's ticket and session kept on it.
+The agent ends its turn; nothing starts again by itself, VIEW-042. A call and
+an assignment pause the same way.
+
+`answer` is the person's: on the command line only, and refused whenever a
+runner's identity (`METAFORM_ROLE`, `METAFORM_SESSION`, `METAFORM_WORK`) is
+set, so no agent answers a run, however it was started. It puts the answer
+beside what stopped the run, in a call's current frame or on an assignment,
+and `resume` shows both. It adds `Answered <time>: <answer>` to the ticket's
+note, and its next step is the `dispatch message` that tells the ticket's
+agent to resume the run. An agent told the answer in a message is told, by
+every refusal on the paused run, to have the person run `answer`.
+
+`cancel` cancels the run and every open run below it, each keeping its row
+with the reason; a run handed from another delivers the error `cancelled` to
+its caller in the same transaction, as `fail` would, so the caller's Catch
+decides what follows. An agent whose role `roles_without_authority` holds back
+cancels no run: a running one it fails, and one waiting or paused it leaves to
+the person, with what stopped it in its ticket's note. `runs` lists the open
+runs, oldest first, or those in one state, the newest first for an ended
+state, 20 at a time with the command for the next page in `more`.
+
+### Run states
+
+A run's `state` is one of the one status vocabulary of work at a node,
+`metaform.data.status`, which maps each to the MCP Tasks extension (`io.modelcontextprotocol/tasks`, schema
+2026-07-28) and A2A 1.0 task states:
+
+| Run state | Meaning | MCP Tasks | A2A |
+|---|---|---|---|
+| `running` | its agent is working the current subroutine | `working` | `TASK_STATE_WORKING` |
+| `waiting` | waiting on the runs it handed out | `working` | `TASK_STATE_WORKING` |
+| `input_required` | paused on the person: something only they decide | `input_required` | `TASK_STATE_INPUT_REQUIRED` |
+| `completed` | returned, its result kept | `completed` | `TASK_STATE_COMPLETED` |
+| `failed` | returned a named error | `failed` | `TASK_STATE_FAILED` |
+| `cancelled` | cancelled, its reason kept | `cancelled` | `TASK_STATE_CANCELED` |
+
+The vocabulary's `submitted` (A2A `TASK_STATE_SUBMITTED`) is for work received
+and not yet taken; a run starts running. Workflow runs are the vocabulary's only
+user today; tickets and agent sessions are to report it next. Two A2A states
+are a state with a reason, `status.a2a`: `input_required` for a login the
+person must give is `TASK_STATE_AUTH_REQUIRED`, and `failed` for work refused
+before it starts is `TASK_STATE_REJECTED`. `waiting` and `input_required` both pause a run,
+but children returning resume a waiting run on their own, while only the person
+resumes one paused on them. The last three are terminal. `status.TRANSITIONS`
+names every move, and a move it does not name is refused.
+
 `variables=` carries values computed by the interpreter; omitted values keep
 the saved scope. Each subroutine's parameters and `this` stay separate from
 its caller's scope. `None` uses a PARAM default; without a default it fails
-the call. Tuple returns keep their shape across nonce persistence.
+the call. Tuple returns keep their shape across the run record.
 
 For authored Parallel, `parallel calls='["<call>","<call>"]'` returns fresh-agent
-nonces. It resumes the caller after every branch returns, including named
-errors, and binds the results in the supplied call order. Atomic nonce updates
-preserve simultaneous branch returns across processes. Serial Map, acceptance
+run ids. It resumes the caller after every branch returns, including named
+errors, and binds the results in the supplied call order. Each branch's return
+changes the caller's run in one transaction, so simultaneous branch returns
+across processes are all kept. Serial Map, acceptance
 loops, retry limits, conditions and error routes remain the interpreting
 agent's work, as the authored Axiom language defines.
 
@@ -218,21 +289,22 @@ its description in the host's menu, held in its `summary=` attribute; a test
 keeps the two equal. `scan` serves the scan skill with the workflow and its
 task bound as data.
 
-Hand a skill to a fresh agent by nonce:
+Hand a skill to a fresh agent by run id:
 
 ```sh
 metaform workflow assign write_workflow input='Review the kitchen timer'
-metaform <nonce>
-metaform <nonce> complete
+metaform workflow resume run=<run id>
+metaform workflow complete run=<run id>
 ```
 
-`assign` returns `metaform <nonce>`. Run through it, on MCP as `resume` with
-the nonce, it serves the skill's libs once each, then the skill, then the
-input. `complete` closes an assignment with no `RETURN`; a call nonce still
-needs its `RETURN`.
+`assign` returns the run id of an assignment and the command that reads it.
+`resume` with that id, on MCP `workflow_resume`, serves the skill's libs once
+each, then the skill, then the input. `complete` closes an assignment with no
+`RETURN`; a call still needs its `RETURN`. An agent dispatch starts over ACP is
+sent its skill whole as its first prompt, `workflow serve`, and needs no run.
 
 All commands are available on CLI and MCP from the module's one declaration.
-Run `metaform help workflow` or open the MCP `workflow` tool for the command
+Run `metaform help workflow` or read the MCP `workflow_*` tools for the command
 list and each command's arguments.
 
 ## Settings
@@ -242,7 +314,7 @@ No module-specific settings. Existing project and layer selection apply.
 ## Events
 
 The chassis publishes map changes after storage commands. Workflow declares
-no event handler; call transport is kept in nonce records.
+no event handler; call transport is kept in run records.
 
 ## Sync and async
 
@@ -253,14 +325,34 @@ its standard worker-thread path. Parallel work is handed to independent agents.
 
 The caller chooses ordinary knowledge layers. Newly created layers are mutable,
 hideable and ready; existing layers retain their lifecycle. Logic is attached
-as native layer items with four-field callable records. The module's version-1
+as native layer items with four-field callable records. The module's
 `logic_versions` table lives beside the metaform, keyed by `(logic_id, number)`,
 and holds name and exact content. Native item deletion removes its history.
+
+Version 2 adds `runs`, at project level so a clear of the metaforms or a change
+of the active one keeps it: one row per run, keyed by `run_id`, with its `kind`
+(`call` or `assign`), its `state` (`running`, `waiting`, `completed` or
+`failed` in version 2; see Run states), its `parent` run, its call `frames`, its caller scope, the children
+it waits on and their `branches`, an assignment's skill and input, its
+`result`, and when it was made and closed. A returned run keeps its row and
+accepts nothing more. Version 1's code still reads and writes the tables.
+
+Version 3 gives runs the one status vocabulary: a run may also be
+`input_required` or `cancelled`, `message` holds what stopped it or the reason
+for cancelling, and `updated` is when its state last changed, an MCP task's
+`lastUpdatedAt`. Every state a version 2 row holds keeps its name and meaning;
+the upgrade sets each row's `updated` to its close, or else its creation.
+Version 4 adds `ticket` and `session`, the ticket and agent session that
+paused a run. The new columns may be empty, so `compatible_from` stays 1:
+version 1's code has no runs, and version 2's takes a run in either new state
+as ended and refuses it. Version 1 is the last committed; versions 2 and 3
+were only in the working tree from 2026-10-11, and their steps are kept so a
+database opened from it still upgrades.
 
 ## Lifecycle and cleanup
 
 No start/stop hooks or spawned tasks. Storage survives unload. Each completed
-call closes its nonce; closed numbers stay reserved by the nonce service.
+call closes its run, which keeps its row and result.
 
 ## Modules relied on
 
@@ -270,12 +362,12 @@ The chassis and MCP module expose the declared verbs.
 
 ## Systems supported
 
-Linux, macOS and Windows, using Python, SQLite and the public nonce service.
+Linux, macOS and Windows, using Python, SQLite and the public data access object.
 
 ## Resources owned
 
-Packaged prompts, layer records, the declared history table and requested
-nonces. Export writes only the named destination. No agent process or server
+Packaged prompts, layer records, the declared history table and the run
+records. Export writes only the named destination. No agent process or server
 is started by workflow.
 
 ## Installed and direct wheel
@@ -286,5 +378,5 @@ home and selected project's DAO in either packaging form.
 ## Demonstration
 
 Submit a workflow element and a named Axiom subroutine, then run its call and
-redeem the returned nonce. Complete with its RETURN expression; the examples
+resume the returned run id. Complete with its RETURN expression; the examples
 under Verbs show same-agent calls, fresh-agent calls and portable export.

@@ -1,0 +1,6 @@
+Error: --roles-without-authority has no role 'workr'. Roles: intake, system, sentinel, talk, prep, worker.
+Next: metaform help --roles-without-authority
+...
+src/metaform/modules/dispatch/__init__.py:1134:83 - error: Argument of type "str" cannot be assigned to parameter "limit" of type "float" in function "tell"
+...
+15 errors, 0 warnings, 0 informations

@@ -44,9 +44,9 @@ def test_screen_edits_and_glues_through_its_own_keys(home, tmp_path):
             await screen.refresh()
             screen._focus('settings')
             screen.setting_index = [item.key for item in screen.declared_settings].index('project')
-            screen._edit()
-            screen.editor.text = 'other'
-            screen._apply_edit()
+            screen._edit()  # a choice setting opens the picker on its choices
+            screen.pick_index = screen.pick_choices.index('other')
+            screen._pick_apply()
             screen._toggle_glue()
             screen._save_changes()
             await screen.last_task
@@ -145,3 +145,47 @@ def test_the_screen_loads_and_turns_off_a_module_whose_start_and_stop_are_async(
         asyncio.run(drive())
     assert marks.read_text().splitlines() == ['start', 'stop']
     assert next(item for item in loader.discover() if item.id == 'asyncer').problem == ''
+
+
+@pytest.mark.req('CLI-031')
+def test_choices_are_picked_from_a_list_and_stepped_with_left_and_right(home, tmp_path):
+    work, other = tmp_path / 'work', tmp_path / 'other'
+    work.mkdir(); other.mkdir()
+    metaform_home.add_project('work', work)
+    metaform_home.add_project('other', other)
+    pipe, screen = _screen(work)
+    with pipe:
+        async def drive():
+            await screen.refresh()
+            screen._focus('settings')
+            keys = [item.key for item in screen.declared_settings]
+            screen.setting_index = keys.index('modules')
+            screen._edit()  # the modules setting opens as a checklist of every group, all checked while empty
+            assert screen.picking and 'map' in screen.pick_choices and screen.pick_checked == set(screen.pick_choices)
+            screen._pick_check(everything=True)
+            screen.pick_index = screen.pick_choices.index('map')
+            screen._pick_check()
+            screen._pick_apply()
+            screen.setting_index = keys.index('project')
+            screen._side(1)  # → steps a choice setting instead of switching panels
+            assert screen.panel == 'settings'
+            screen._save_changes()
+            await screen.last_task
+        asyncio.run(drive())
+    assert settings.value('modules', work) == ['map']
+    assert settings.value('project', work) == 'other'
+
+
+@pytest.mark.req('CLI-019')
+def test_a_list_of_one_value_per_name_unchecks_the_others_of_a_name_when_one_is_checked(home, tmp_path):
+    pipe, screen = _screen(tmp_path)
+    with pipe:
+        listed = settings.Setting(key='probe_options', kind='list', exclusive='=')
+        screen.pick_target = ('probe', listed)
+        screen.pick_choices = ['claude.model=small', 'claude.model=large', 'codex.model=small']
+        screen.pick_checked = {'claude.model=small', 'codex.model=small'}
+        screen.pick_index = 1
+        screen._pick_check()
+        assert screen.pick_checked == {'claude.model=large', 'codex.model=small'}
+        screen._pick_check()
+        assert screen.pick_checked == {'codex.model=small'}, 'unchecking leaves the name with none'

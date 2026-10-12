@@ -77,18 +77,33 @@ def _installed_pointer(content: bytes, path: Path) -> bytes | None:
                'Metaform left it unchanged.', 'metaform help provision')
 
 
+# The hook's program: the reminder once per host session, MCP-039. The host sends the session's id on standard input;
+# the first call of a session marks it in a file under the system's temporary folder and prints the reminder, and later
+# calls of that session print nothing. A call naming no session prints it every time, as before.
+ONCE = """import hashlib, json, os, sys, tempfile
+try:
+    session = str(json.loads(sys.stdin.read() or '{{}}').get('session_id') or '')
+except Exception:
+    session = ''
+mark = os.path.join(tempfile.gettempdir(), 'metaform-reminder-' + hashlib.sha256(session.encode()).hexdigest()[:24])
+if not session or not os.path.exists(mark):
+    if session:
+        open(mark, 'a').close()
+    sys.stdout.write(bytes.fromhex({payload!r}).decode())
+"""
+
+
 def _hook(tool: str) -> dict[str, Any]:
     event = 'PreToolUse' if tool == 'claude' else 'AfterTool'
     payload = json.dumps({'hookSpecificOutput': {
         'hookEventName': event, 'additionalContext': prompt_files.chassis('work_reminder')}})
-    code = f'import sys; sys.stdout.write({(payload + chr(10))!r})' + HOOK_MARK
+    # Hex keeps quotes and line breaks out of argument passing, and JSON quotes out of Windows PowerShell 5.1's.
+    program = ONCE.format(payload=(payload + '\n').encode('utf-8').hex())
+    code = f'import sys;exec(bytes.fromhex({program.encode("utf-8").hex()!r}).decode())' + HOOK_MARK
     if tool == 'claude':
         return {'matcher': '^(Agent|Task|Workflow|AskUserQuestion)$',
                 'hooks': [{'type': 'command', 'command': sys.executable, 'args': ['-c', code], 'timeout': 5}]}
     # Gemini runs hooks in Bash on POSIX and PowerShell on Windows, not a direct argument vector.
-    # Hex keeps JSON quotes out of native argument passing in Windows PowerShell 5.1.
-    encoded = (payload + '\n').encode('utf-8').hex()
-    code = f'import sys;sys.stdout.write(bytes.fromhex({encoded!r}).decode())' + HOOK_MARK
     words = [sys.executable, '-c', code]
     command = ('& ' + ' '.join("'" + word.replace("'", "''") + "'" for word in words) if os.name == 'nt'
                else shlex.join(words))

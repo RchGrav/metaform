@@ -1,0 +1,34 @@
+/* What the trace and glossary views share: the page's roles, at the host's style variables where it gives them, and
+ * the host's container size. The page's own tokens (the web module's app.css :root rules) are put in before this by
+ * the server. */
+:root[data-theme="light"] { color-scheme: light; --panel: #ffffff; --panel-2: #f3f5f7; --line: #d8dde3;
+  --line-2: #b6bdc6; --text: #14181d; --muted: #4f5864; --faint: #5f6873; --signal: #00756c; }
+html, body { margin: 0; background: var(--color-background-primary, var(--panel));
+  color: var(--color-text-primary, var(--text));
+  font: var(--font-text-md-size, var(--t-base))/1.45 var(--font-sans, var(--sans)); }
+html[data-sized="fixed"] body { height: var(--view-height); overflow: auto; }
+html[data-sized="flexible"] body { max-height: var(--view-max-height, none); overflow: auto; }
+[hidden] { display: none !important; }
+main { padding: calc(var(--s3) + var(--safe-top, 0px)) var(--s4) var(--s4); display: grid; gap: var(--s3); }
+h1 { margin: 0; font: 600 var(--t-lg) var(--font-sans, var(--sans)); }
+h2 { margin: 0; font: 600 var(--t-sm) var(--font-sans, var(--sans)); text-transform: uppercase; letter-spacing: .04em;
+  color: var(--color-text-secondary, var(--muted)); }
+.muted, .notice { color: var(--color-text-secondary, var(--muted)); }
+.notice { font-size: var(--t-sm); margin: 0; }
+.mono, .address { font-family: var(--font-mono, var(--mono)); }
+.address { font-weight: 500; color: var(--signal); border: 0; background: none; padding: 0; cursor: pointer;
+  font-size: inherit; text-align: left; }
+.address:focus-visible, button:focus-visible, input:focus-visible {
+  outline: var(--ring) solid var(--color-ring-primary, var(--signal)); outline-offset: 2px; }
+.bar { display: flex; gap: var(--s2); justify-content: flex-end; flex-wrap: wrap; align-items: center; }
+.bar button, .chip { border: 1px solid var(--color-border-primary, var(--line)); background: none; color: inherit;
+  border-radius: var(--border-radius-sm, var(--r)); font: var(--t-xs) var(--font-sans, var(--sans));
+  padding: 2px var(--s2); cursor: pointer; }
+.bar button:hover, .chip:hover { border-color: var(--color-border-secondary, var(--line-2)); }
+.chip[aria-pressed="true"] { border-color: var(--signal); color: var(--signal); }
+.head { display: grid; gap: var(--s1); }
+pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: var(--t-sm)/1.5 var(--font-mono, var(--mono));
+  color: inherit; background: var(--color-background-secondary, var(--panel-2));
+  border: 1px solid var(--color-border-primary, var(--line)); border-radius: var(--border-radius-md, var(--r));
+  padding: var(--s3); }
+ul, ol { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s1); }

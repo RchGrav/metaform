@@ -29,6 +29,13 @@ jobs:
         run: uv sync --extra dev
       - name: Browser for the web GUI's checks, VIEW-012
         run: uv run playwright install --with-deps chromium
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: MCP Apps map view, built from the web page as the wheel build builds it, MCP-037
+        run: |
+          npm --prefix scripts ci
+          node scripts/build_map_view.mjs
       - name: Type check, QUAL-004
         if: ${{ !cancelled() }}  # each check reports on its own, whatever the one before it did
         run: uv run pyright
@@ -37,4 +44,6 @@ jobs:
         run: uv run ruff check src tests conftest.py
       - name: Tests
         if: ${{ !cancelled() }}  # each check reports on its own, whatever the one before it did
+        env:
+          METAFORM_BUILD_VIEWS: '1'  # the map view was built above, so the views' test requires it current
         run: uv run pytest -q

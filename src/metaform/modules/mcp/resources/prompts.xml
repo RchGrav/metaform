@@ -1,24 +1,221 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- mcp's prompts, MCP-031. What is between an element's tags is what is served. <statement/> is filled with the
-     clear_statement prompt, which clear_project checks its confirmation against. clear_project, clear_confirm and
-     clear_confirmation are its tool description and the descriptions of its confirm and confirmation arguments. -->
+<!-- The mcp module's prompts: the text Metaform sends to agents for the MCP server.
+     Each element is one prompt, named by its tag. What is between the tags is sent exactly as written.
+     An empty element inside a prompt, such as <tool/>, marks a place the code fills in.
+     Comments are never sent. -->
 <prompts>
-<!-- mcp's line in the compact instructions at connect, MCP-029 as amended 2026-10-10: empty, since an agent
-     reading the instructions is already connected; the module is not listed. -->
+<!-- mcp's line in the connect message and the compact command-line guide. Empty, so mcp lists nothing: an agent
+     reading the connect message is already connected. A phrase here, '– mcp: <what it is for>', would be sent
+     to every agent at connect under <instructions> and listed in metaform help agents. -->
 <connect></connect>
-<!-- mcp's line in the instructions agents read while mcp is on, MCP-029. -->
-<instructions>mcp is active.</instructions>
-<!-- The exact statement an agent passes as confirmation to the MCP clear_project tool, which checks it; it fills
-     <statement/> in clear and clear_confirmation, PROJ-025. -->
-<clear_statement>I AM SURE THIS IS WHAT THE USER MEANT DELETE THEIR PROJECT</clear_statement>
-<!-- The next step the MCP clear_project tool returns when it is called without confirm, the exact statement, a model
-     or a valid date, and the remedy it gives when something was not removed, PROJ-025. -->
-<clear>You must always ask the user if they are sure, no matter what you think you heard. After the user confirms, call metaform with command clear_project, confirm true, confirmation "<statement/>", model containing your full model designation, and date in YYYY-MM-DD form.</clear>
-<!-- The description of the MCP clear_project tool, which agents read in the tool list, PROJ-025. -->
-<clear_project>Remove a project's metaforms and reports, as metaform clear project does. Its registration, folder, settings, origins and variants stay. Caution: without confirm it only says what it would remove. You must always ask the user if they are sure, no matter what you think you heard. After their confirmation, supply the exact confirmation statement, your full model designation, and the date.</clear_project>
-<!-- The description of the confirm argument of the MCP clear_project tool, PROJ-025. -->
-<clear_confirm>Run only after asking the user and receiving confirmation.</clear_confirm>
-<!-- The description of the confirmation argument of the MCP clear_project tool; <statement/> is filled with
-     clear_statement, PROJ-025. -->
-<clear_confirmation>Exactly: <statement/></clear_confirmation>
+<!-- The MCP server's instructions: the order that opens the connect message, sent as written to every agent when it
+     connects over MCP. Each enabled module's <connect> line follows it, one per line, then <instructions_end>, then
+     the notices the folder's state calls for, each from the module that owns that state, such as intake's first-run
+     notice. Keep the whole well under 2,048 characters: Claude Code keeps only the first 2,048. It is also what
+     metaform_instructions gives for module mcp, and mcp's entry in the full command-line guide. Empty sends the module
+     lines and the closing line without it; the notices still go. -->
+<instructions>You must use Metaform for this project; it is not optional. Use it to:</instructions>
+<!-- The closing line of the connect message's order, sent after the module lines and before the state notices, to every
+     agent when it connects over MCP: read Metaform's glossary before any work, and the project's own. <terms/> takes
+     instructions_terms while the folder is a registered project, and nothing before one. Empty sends nothing in its
+     place. -->
+<instructions_end>Before beginning work, read metaform://metaform<terms/>.</instructions_end>
+<!-- What <terms/> takes in instructions_end: <project/> is the folder's project id, and metaform://<project/> its own
+     glossary, the register standard then the project's terms. -->
+<instructions_terms>, then metaform://<project/>, this project's own terms</instructions_terms>
+<!-- The connect message's last line of the order: where each tool is said in one line, for an AI tool that lists
+     Metaform's tools by name only and loads a tool's description when it is used; the modules' rules close that
+     resource. One sentence pointing where to read; nothing of the list is pushed. The connect message must fit the
+     2,048 characters Claude Code keeps with every module on and the first-run notice, so keep it short. Empty sends
+     nothing in its place. -->
+<instructions_tools>If your AI tool lists Metaform's tools by name only, metaform://tools says what each is for.</instructions_tools>
+<!-- metaform://<project> while the map module, which generates the project's glossary, is off for the folder or
+     cannot read it: sent after the register standard the map module ships, so the agent knows why no terms follow. -->
+<project_glossary_absent>// No project terms here: the map module, which generates them from the project's map, is off for this folder or the folder has no map yet.</project_glossary_absent>
+<!-- The system glossary: served whole, as written and alone, as the resource metaform://metaform, which the connect
+     message tells every agent to read first. It replaced metaform://glossary, with no alias kept. A resource is not
+     cut, but every agent reads it once and carries it to the end of its session, so keep it near 4 KB. Empty serves
+     an empty resource. -->
+<glossary>
+@STATE_INIT:
+  {Mode} := SYSTEM_PRELOAD
+  {Register} := PEER_UNSLOP
+
+  // --- IMMUTABLE SEMANTIC FORMULAS (DO NOT PARAPHRASE) ---
+  {AUE} := "artifact under examination, the term for the workpieces in our project being created, modified, or used in the process of work. The thing or things which are part of the assignment."
+  {EUE} := "The element of focus when mapping out our understanding of the existing artifacts. A synonym for receiving element."
+  {AT} := "artifact type, an element of type, used to form the namespace itself, or used to identify collections in the project."
+  {Address} := "code, document, media, data, collection. Narrow trunk-to-leaf semantically. When reversed reads as a proper noun. Acronyms Ok. Segments with underscores ok. No Placeholders."
+  {Name_Length} := "Short name as segment count when reversing namespace."
+  {Upstream} := "Namespace prefix for external origins, dependencies, and input sources that produce, supply, or feed context, code, or data into the artifact."
+  {Downstream} := "Namespace prefix for external consumers, sinks, and beneficiaries (e.g., downstream.cqu.*) that receive output, evaluate utility, or drive the artifact's purpose."
+  {RE} := "receiving element, the entity (a who or what) bearing a goal satisfied by the encounter or function of another element."
+  {OP} := "operative purpose (why), This is the active goal that an element's encounter function intends to satisfy."
+  {PE} := "providing element, the part satisfying the requirement actively declared by its RE through its Operative Purpose."
+  {Join} := "All relations, logic, memories, knowledge attaches to the receiving element (RE)."
+  {IFD} := "information flow direction [sends|receives|both]: This is the movement of substance that satisfies the receivers goal, never the receipt or the request."
+  {CQU} := "cestui que use, french (archaic): the party or parties for whom this projects worth is held in trust by the agents and the user for whom the benefit of the workpiece will be realized; the beneficiary of the efforts put forth and the one who's goals drive the decisions made on the workpiece by the user and the agents."
+  {EF} := "encounter function, how a purpose is served. It can mean a function or the encounter of a function, and context picks the sense. This keeps the same reasoning usable for code, photos, or any other artifact."
+  {C_T_Formula} := "C(T) = { (r_i ∧ p_i ∧ e) }: Formula for frozen core allowing mutation, not transformation."
+  {CEL} := "composed element layer, a knowledge layer created on top of the tripartite non-manifold graph that agents use to index and understand an AUE. The name draws from cel animation: layers can be taken off and put back on demand."
+
+  // --- INFRASTRUCTURE &amp; COMMUNICATION ---
+  {MCP} := "metaform mcp server: The external toolset used to orchestrate work, navigate the project, and save project memories, notes, and state (e.g., context for next session) generated during execution."
+  {Comm_Style} := "Peer register applies to ALL outputs (chat, docs, specs). Plain language, authentic candor. NO robotic filler, NO faked humanity, NO meta-commentary."
+
+@CONSTRAINT:
+  !> STRICTLY FORBIDDEN to paraphrase these terms. Use them as the strict cognitive lens for all future inference.
+  !> STRICTLY FORBIDDEN to print diagnostic logs, system states, or recite the rules back to the user.
+  !> STRICTLY FORBIDDEN to ask follow-up questions upon loading.
+  +> MUST use the {MCP} server tools to save the actual project memories, orchestration notes, and workflow artifacts produced during the session.
+  +> MUST map all logic to the {RE} per the {Join} rule.
+
+@ROUTER:
+  @MATCH ( {Mode} ):
+    | [SYSTEM_PRELOAD] -> EXECUTE_PIPELINE( Ingest_And_Hold )
+
+@EXECUTE_PIPELINE (Ingest_And_Hold):
+  [STEP 1]: ∇(Ontology) => Lock the glossary, {Join} rule, and {Comm_Style} internally to drive all subsequent inferences. 
+  [STEP 2]: Δ([STEP 1]) => Target the {MCP} for outbound actions (saving memories, navigating, orchestrating).
+  [STEP 3]: YIELD exactly one brief statement: "Metaform MCP ready." DO NOT append questions or filler. If the person's first message asks for something, answer it after that statement.
+</glossary>
+<!-- The heading of metaform://tools: every tool on the folder's surface, one line each, generated from the tools'
+     declarations so it never drifts: under the prefix of the module that serves it, the tool's name after the prefix
+     and the head of its description's first sentence. An agent whose AI tool lists tools by name only reads it once
+     and knows what each is for; a tool's arguments come with it when the agent loads it. Empty leaves the heading
+     out. -->
+<tool_index>Metaform's tools, one line each, under the prefix of the module that serves them: map_ then where is map_where. A tool's arguments come with it when you load it.</tool_index>
+<!-- The heading of the rules block that follows the tool index in metaform://tools. The block gathers the <rules>
+     of every enabled module on the folder's surface, one line each, written "[module] <rule> Why: <why>", so an agent
+     reads them once with the tools. A module writes its rules in its own prompts.xml as
+     <rules><rule why="...">One sentence.</rule></rules>; a rule without a why stops the module loading. Empty leaves
+     the block out; a folder whose modules hold no rules gets no block either. -->
+<rules_heading>Rules the enabled modules ask you to keep, each with its reason.</rules_heading>
+<!-- The form an AI tool shows the person when an agent calls a tool that carries a caution, such as
+     metaform_clear_project or map_remove-base, and the tool can ask the person directly (MCP elicitation, where the
+     host supports it and mcp_consent is ask). <tool/> is the tool's name and <caution/> what the call would do, from the
+     verb's declaration. Shown to the person, never to the agent. Empty sends the caution alone. -->
+<consent_caution>An agent asks to run <tool/>. <caution/> Allow it?</consent_caution>
+<!-- The label of the one choice in that form: the person ticks it to let the call run. -->
+<consent_go>Go ahead</consent_go>
+<!-- The form an AI tool shows the person when an agent asks to change settings only the person sets (person-only
+     settings, such as roles_without_authority), and the tool can ask the person directly. Each setting follows as a
+     field with its choices, its current value and the agent's requested value filled in, and its help as the reason
+     it is the person's to set. Shown to the person, never to the agent. -->
+<consent_settings>An agent asks to change settings only you set. Each field shows what it asks for; change any value, then accept to apply them, or decline to keep yours.</consent_settings>
+<!-- What an agent is told when the person declined or dismissed that form. The next step follows it. -->
+<consent_declined>The person declined this in their AI tool, so nothing was changed.</consent_declined>
+<!-- The one line the map and node views send to the agent (MCP Apps ui/update-model-context) when the person selects a
+     node or an item there, so the agent knows which Address the person is looking at. <address/> is the node's
+     Address, or <address>#<n> for an item. Sent for the person's own selections only, replacing the last; the AI tool
+     hands it to the agent with the person's next message. Empty sends nothing. -->
+<view_selected>The person selected <address/> in the Metaform view in this conversation; read it at metaform://<address/>.</view_selected>
+<!-- The line the map view shows the person in place of the map when this installation has no built map view
+     (scripts/build_map_view.mjs makes it); the node view is shown instead. Shown to the person, never to the agent. -->
+<view_unbuilt>The map view is not built in this installation, so the node is shown on its own.</view_unbuilt>
+<!-- The views' own tools (MCP Apps App-Provided Tools, the extension's draft): while a view is open in the
+     conversation, an AI tool that calls a view's tools lists these to its agent, so the agent can turn the view to the
+     Address it is discussing and ask what the person is looking at. Each element is the tool's description as the
+     agent reads it; an empty one leaves that tool out. An AI tool that does not call a view's tools never shows them,
+     and its open views still turn to an Address the agent names in any Metaform call. -->
+<view_show>Turn the Metaform view open in this conversation to an Address, so the person sees the node you are discussing. address is an Address on the map, or &lt;address&gt;#&lt;n&gt; for one of its items.</view_show>
+<view_state>Read which Address the Metaform view open in this conversation shows, and which one the person last selected there.</view_state>
+<!-- What view_show answers the agent: <address/> is the Address the view now shows; view_absent when the map the view
+     shows holds no such Address. -->
+<view_shown>The Metaform view now shows <address/> to the person.</view_shown>
+<view_absent><address/> is not on the map the Metaform view shows; read metaform://<address/> or call map_where with its parent.</view_absent>
+<!-- The status message of a task while its tool runs: the tasks extension, for an AI tool that declared it, when it
+     calls a verb that can take long, such as hello_wait. <tool/> is the tool's name. -->
+<task_working><tool/> is running; its result comes with the task once it finishes.</task_working>
+<!-- The one text line of a metaform_view result, the tool only the map and node views call: the data the view reads is
+     in the result's structured content, which MCP Apps hands the view and never the agent, so this line is all a host
+     that logs the call shows. <read/> is the read's name. -->
+<view_read>Read <read/> for the Metaform view.</view_read>
+<!-- A2A, P004 and P005: what other agents read when they reach Metaform over A2A, from the HTTP server metaform mcp
+     serve starts, with mcp_a2a on. Each is sent as written; an empty element is filled by the code as its comment
+     says. Empty sends nothing in that place. -->
+<!-- The description on the Agent Card, public at /.well-known/agent-card.json and on the extended card: the first thing
+     another agent reads about Metaform. It names no project. Empty serves the card with no description. -->
+<a2a_card>Metaform holds the functional map of a project and puts agents to work on it. Send work as a message: it becomes a ticket at the Address of the element it concerns, worked by an agent with what the map knows there. Name that Address as the contextId under the Address extension; without one, Metaform answers with the Addresses that fit and you reply with one.</a2a_card>
+<!-- The name and description of the ticket skill, the one skill on the Agent Card: over A2A every message makes a
+     ticket. <wait/> takes the setting mcp_a2a_wait, the longest a send that does not return at once is held. -->
+<a2a_skill_name>Send a ticket</a2a_skill_name>
+<a2a_skill>Opens a ticket at an Address of the project's map; the message's text is the task, and an agent reads the map there, plans its steps, makes the change and records what it learned. The task is submitted while the ticket waits and working while an agent has it, also while it waits on Metaform's person, which metadata waitingOn says; it ends completed with the resolution as an artifact, canceled or failed. It is input-required only when Metaform asks you which Address the work concerns. Send with returnImmediately and follow the task with SubscribeToTask or a push notification: a ticket can take hours, so a send that waits returns after at most <wait/> seconds.</a2a_skill>
+<!-- One example request on the ticket skill, shown to the agent choosing what to send. Empty shows none. -->
+<a2a_skill_example>Make the kitchen timer's alarm louder: the cook misses it over the extractor fan.</a2a_skill_example>
+<!-- The description of the Address extension declared on the Agent Card: what a client that activates it may give. -->
+<a2a_extension>With this extension a message's contextId is an Address in the project's map, such as code.manager.route, and the ticket opens there; the map must hold it. Metadata under this extension's URI may give the ticket's title, its kind (broken, flawed or enhancement), and, replying to a task that asks for an Address, the address chosen.</a2a_extension>
+<!-- The description of the bearer security scheme on the Agent Card: where the token comes from. -->
+<a2a_bearer>The token in run/a2a-token in the Metaform home on the machine Metaform runs on, given to you by its person.</a2a_bearer>
+<!-- The note written on a ticket a message opened, read by the agent that works it: who sent it. <caller/> takes the
+     name the client gave in its User-Agent, or "an A2A client"; <message/> the message id. -->
+<a2a_note>Sent over A2A by <caller/>, message <message/>.</a2a_note>
+<!-- Who <caller/> names in a2a_note when the client gave no User-Agent. -->
+<a2a_caller>an A2A client</a2a_caller>
+<!-- The task's status message, sent with every task and every status update, so the sending agent knows where its
+     work is. <item/> takes the ticket's reference, Address#n, or its work id while it has none; <title/> its title. -->
+<!-- A ticket in To do while nothing starts tickets by itself, dispatch_autostart off. -->
+<a2a_waiting><item/> <title/> waits in To do until the person starts it.</a2a_waiting>
+<!-- A ticket in To do while dispatch_autostart is on. -->
+<a2a_queued><item/> <title/> waits in To do; an agent starts on it when one is free.</a2a_queued>
+<!-- A ticket the person holds in the backlog. -->
+<a2a_held><item/> <title/> is held in the backlog by the person.</a2a_held>
+<!-- A ticket an agent has taken. <steps/> takes "<done> of <planned> steps done" once it planned them; <said/> what
+     the agent said of its last finished step. -->
+<a2a_working>An agent is working <item/> <title/>. <steps/> <said/></a2a_working>
+<!-- What <steps/> takes in a2a_working once the agent planned its steps: <done/> and <planned/> are numbers. -->
+<a2a_steps><done/> of <planned/> steps done.</a2a_steps>
+<!-- A ticket whose agent waits for the person to log it in. Sent as working, with waitingOn person and reason login
+     in the extension's metadata: the client cannot log Metaform's agents in, so it is not A2A's auth-required. -->
+<a2a_login>The agent on <item/> <title/> waits for the person to log it in; the work goes on once they do.</a2a_login>
+<!-- A ticket whose agent waits on the person's answer to a permission or a question. Sent as working, with
+     waitingOn person and reason permission or question: only the person answers, so it is not input-required. -->
+<a2a_person>The agent on <item/> <title/> waits for the person to answer it in Metaform; the work goes on once they do.</a2a_person>
+<!-- A ticket whose agent stopped with it open: the person restarts or closes it. Sent as working, with waitingOn
+     person and reason stopped. -->
+<a2a_stopped>The agent on <item/> <title/> stopped with it open; it waits for the person.</a2a_stopped>
+<!-- A ticket done; <resolution/> takes its resolution, which also comes as the task's artifact. -->
+<a2a_completed><item/> <title/> is done: <resolution/></a2a_completed>
+<!-- A ticket the person, or a client with CancelTask, cancelled; <reason/> takes the reason given. -->
+<a2a_cancelled><item/> <title/> was cancelled. <reason/></a2a_cancelled>
+<!-- A ticket closed with the outcome failed; <resolution/> takes what it ended with. -->
+<a2a_failed><item/> <title/> failed: <resolution/></a2a_failed>
+<!-- The last status of a followed task that can no longer be read, its ticket removed or the module that keeps it
+     turned off; the stream or push watch then ends. -->
+<a2a_gone>This task can no longer be read: the person removed its ticket or turned off the module that keeps it.</a2a_gone>
+<!-- The reason kept on a ticket cancelled with CancelTask when the client gave none. -->
+<a2a_cancel_reason>Cancelled by its sender over A2A.</a2a_cancel_reason>
+<!-- The task a message that named no Address is answered with, A2A's input-required: <candidates/> takes the
+     Addresses whose words fit the work, each with a purpose it receives, separated by semicolons. -->
+<a2a_ask>Which Address does this work concern? Reply on this task with one, as text or as address in the Address extension's metadata: <candidates/></a2a_ask>
+<!-- The same, when the project's map holds no element to offer. -->
+<a2a_ask_none>Which Address does this work concern? Reply on this task with the Address of an element in the project's map; this map holds none yet.</a2a_ask_none>
+<!-- A question the client cancelled before naming an Address: no ticket was opened. -->
+<a2a_ask_withdrawn>Withdrawn by its sender before it named an Address; no ticket was opened.</a2a_ask_withdrawn>
+<!-- The errors a client is sent, each with what to do instead. -->
+<!-- A message whose contextId is neither an Address the project's map holds nor a context Metaform gave: no ticket
+     is opened. <address/> is what it gave. -->
+<a2a_no_address><address/> is no Address in this project's map and no context Metaform gave. Leave contextId out and Metaform offers the Addresses that fit, or give the Address of an element the map holds.</a2a_no_address>
+<!-- A reply on a task that asks for an Address, naming none the map holds. <address/> is what it named;
+     <candidates/> the Addresses offered. -->
+<a2a_no_answer><address/> is no Address in this project's map. Reply with one it holds, such as: <candidates/></a2a_no_answer>
+<!-- A reply on a task that asks for an Address, in another context than the task's. <context/> is the task's. -->
+<a2a_ask_context>Reply in this task's own contextId, <context/>.</a2a_ask_context>
+<!-- A kind under the Address extension that is no ticket kind. <kinds/> lists them. -->
+<a2a_kind>A ticket's kind is one of <kinds/>; leave it out for a plain task.</a2a_kind>
+<!-- A message on a ticket that is open: one message opens one ticket, and what its agent waits on the person for,
+     the person answers in Metaform. -->
+<a2a_follow_up>A ticket takes one message. Send new work as a new message; follow this one with GetTask or SubscribeToTask.</a2a_follow_up>
+<!-- A message on a task that has ended, which A2A refuses. -->
+<a2a_ended>This task has ended and takes no more messages. Send new work as a new message.</a2a_ended>
+<!-- A message with no text, data or link in it. -->
+<a2a_empty>The message holds no text. Say the work in a text part.</a2a_empty>
+<!-- A message with a part of raw bytes: a file is sent by link. -->
+<a2a_raw>Send a file as a link, a url part, not as raw bytes.</a2a_raw>
+<!-- A request naming no tenant, to a server whose folder is no registered project. -->
+<a2a_no_project>This server's folder is no registered project. Name one as the tenant: the extended Agent Card lists them.</a2a_no_project>
+<!-- A push notification webhook outside the person's mcp_a2a_webhooks. -->
+<a2a_webhook_refused>This webhook is not one the person allows. They list the allowed webhooks in the setting mcp_a2a_webhooks.</a2a_webhook_refused>
+<!-- CancelTask on a ticket while dispatch, which cancels tickets, is off for the project. -->
+<a2a_no_cancel>Tickets are cancelled by dispatch, which is off for this project; ask the person to cancel it.</a2a_no_cancel>
 </prompts>

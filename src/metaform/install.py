@@ -3,8 +3,9 @@
 Checks come first and change nothing. Each chosen tool is registered through
 its own command where it has one, or by merging one entry into its user-level
 JSON config, always with the uvx entry of MCP-010; every file that changes is
-backed up first. The one skill is copied to the shared folders and each
-chosen tool's folder. Then the exact registered command is started and proved,
+backed up first. The metaform skill is copied to the shared folders and each
+chosen tool's folder; Claude Code also gets the metaform-node skill while map
+is enabled and on the folder's surface. Then the exact registered command is started and proved,
 and the run ends with one next step.
 """
 from __future__ import annotations
@@ -24,10 +25,10 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, cast
 
-from . import __version__, _build_info, agent_setup, harness, home, loader, settings
+from . import __version__, _build_info, agent_setup, harness, home, instructions, loader, settings
 from .errors import Stop
 from .module import on_this_system
-from .probe import probe
+from .probe import probe, probe_http
 
 UV_INSTALL = {'windows': 'powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"'}
 UV_INSTALL_POSIX = 'curl -LsSf https://astral.sh/uv/install.sh | sh'
@@ -63,9 +64,16 @@ class Tool:
     skills: Callable[[], Path | None]
     add: Callable[[list[str]], list[str]] | None = None
     remove: list[str] = field(default_factory=list[str])
+    add_url: Callable[[str], list[str]] | None = None  # the registration of a Streamable HTTP server, MCP-002
     merge: bool = False
     verified: bool = True
     key: str = 'mcpServers'  # where the tool's JSON config holds its servers
+    # An editor that mounts Metaform as its ACP agent, BASE-062: its entry for the `dispatch serve` command, merged
+    # under `key` in place of an MCP server.
+    agent: Callable[[list[str]], dict[str, Any]] | None = None
+    # A config the tool writes as JSON with comments and trailing commas, as Zed's settings.json: changed in place, so
+    # its comments and layout stay, BASE-062.
+    jsonc: bool = False
 
 
 def _on_path(command: str) -> Callable[[], bool]:
@@ -95,26 +103,72 @@ def _desktop_config() -> Path:
     return user_home() / 'Library' / 'Application Support' / 'Claude' / 'claude_desktop_config.json'
 
 
+def _zed_config() -> Path | None:
+    """Zed's user settings: ~/.config/zed/settings.json on macOS and Linux, under XDG_CONFIG_HOME when it is set
+    (zed.dev/docs/ai/external-agents), and %APPDATA%\\Zed\\settings.json on Windows, as Zed's own config_dir and
+    settings_file give it (crates/paths/src/paths.rs)."""
+    if system() == 'windows':
+        appdata = os.environ.get('APPDATA')
+        return Path(appdata) / 'Zed' / 'settings.json' if appdata else None
+    base = os.environ.get('XDG_CONFIG_HOME') if system() == 'linux' else None
+    return (Path(base) if base else user_home() / '.config') / 'zed' / 'settings.json'
+
+
+def _zed_present() -> bool:
+    config = _zed_config()
+    return config is not None and config.parent.is_dir()
+
+
+def _jetbrains_present() -> bool:
+    """A JetBrains IDE here: the folder of its ACP file, ~/.jetbrains (jetbrains.com/help/ai-assistant/acp.html), which
+    the IDE makes only once an agent is added by hand, or the folder every JetBrains IDE keeps its configuration in:
+    %APPDATA%\\JetBrains on Windows, ~/Library/Application Support/JetBrains on macOS, ~/.config/JetBrains on Linux.
+    Setting it up makes ~/.jetbrains/acp.json when there is none."""
+    if (user_home() / '.jetbrains').is_dir():
+        return True
+    if system() == 'windows':
+        appdata = os.environ.get('APPDATA')
+        return bool(appdata) and (Path(str(appdata)) / 'JetBrains').is_dir()
+    if system() == 'macos':
+        return (user_home() / 'Library' / 'Application Support' / 'JetBrains').is_dir()
+    base = os.environ.get('XDG_CONFIG_HOME')
+    return ((Path(base) if base else user_home() / '.config') / 'JetBrains').is_dir()
+
+
+def _zed_agent(command: list[str]) -> dict[str, Any]:
+    """A custom agent server in Zed's agent_servers, as Zed's external agents page gives it."""
+    return {'type': 'custom', 'command': command[0], 'args': command[1:], 'env': {}}
+
+
+def _jetbrains_agent(command: list[str]) -> dict[str, Any]:
+    """An agent server in a JetBrains IDE's acp.json agent_servers, as its ACP page gives it."""
+    return {'command': command[0], 'args': command[1:], 'env': {}}
+
+
 def tools() -> dict[str, Tool]:
     return {tool.name: tool for tool in (
         Tool('claude', 'Claude Code', _on_path('claude'), 'claude on PATH', lambda: user_home() / '.claude.json',
              lambda: user_home() / '.claude' / 'skills',
              add=lambda entry: ['claude', 'mcp', 'add', '--transport', 'stdio', '--scope', 'user', 'metaform', '--',
                                 *entry],
-             remove=['claude', 'mcp', 'remove', '--scope', 'user', 'metaform']),
+             remove=['claude', 'mcp', 'remove', '--scope', 'user', 'metaform'],
+             add_url=lambda url: ['claude', 'mcp', 'add', '--transport', 'http', '--scope', 'user', 'metaform', url]),
         Tool('codex', 'Codex', _on_path('codex'), 'codex on PATH', _codex_config,
              lambda: user_home() / '.codex' / 'skills',
              add=lambda entry: ['codex', 'mcp', 'add', 'metaform', '--', *entry],
-             remove=['codex', 'mcp', 'remove', 'metaform']),
+             remove=['codex', 'mcp', 'remove', 'metaform'],
+             add_url=lambda url: ['codex', 'mcp', 'add', 'metaform', '--url', url]),
         Tool('gemini', 'Gemini CLI', _on_path('gemini'), 'gemini on PATH', lambda: user_home() / '.gemini' /
              'settings.json', lambda: user_home() / '.gemini' / 'skills',
              add=lambda entry: ['gemini', 'mcp', 'add', '--scope', 'user', 'metaform', *entry],
-             remove=['gemini', 'mcp', 'remove', '--scope', 'user', 'metaform']),
+             remove=['gemini', 'mcp', 'remove', '--scope', 'user', 'metaform'],
+             add_url=lambda url: ['gemini', 'mcp', 'add', '--scope', 'user', '--transport', 'http', 'metaform', url]),
         Tool('cursor', 'Cursor', _folder('.cursor'), 'the folder ~/.cursor', lambda: user_home() / '.cursor' /
              'mcp.json', lambda: user_home() / '.cursor' / 'skills', merge=True),
         Tool('vscode', 'VS Code', _on_path('code'), 'code on PATH', _vscode_config, lambda: None, key='servers',
              add=lambda entry: ['code', '--add-mcp', json.dumps({'name': 'metaform', 'command': entry[0],
-                                                                  'args': entry[1:]})]),
+                                                                  'args': entry[1:]})],
+             add_url=lambda url: ['code', '--add-mcp', json.dumps({'name': 'metaform', 'type': 'http', 'url': url})]),
         Tool('copilot', 'Copilot CLI', _on_path('copilot'), 'copilot on PATH', lambda: None,
              lambda: user_home() / '.copilot' / 'skills', verified=False),
         Tool('factory', 'Factory', _on_path('droid'), 'droid on PATH', lambda: None, lambda: None, verified=False),
@@ -122,6 +176,11 @@ def tools() -> dict[str, Tool]:
              lambda: user_home() / '.gemini' / 'config' / 'skills', verified=False),
         Tool('claude-desktop', 'Claude Desktop', lambda: _desktop_config().parent.is_dir(), 'its config folder',
              _desktop_config, lambda: None, merge=True, verified=False),
+        Tool('zed', 'Zed', _zed_present, 'its config folder', _zed_config, lambda: None, merge=True,
+             key='agent_servers', agent=_zed_agent, jsonc=True),
+        Tool('jetbrains', 'JetBrains IDEs', _jetbrains_present, 'its config folder',
+             lambda: user_home() / '.jetbrains' / 'acp.json', lambda: None, merge=True, key='agent_servers',
+             agent=_jetbrains_agent),
     )}
 
 
@@ -159,6 +218,89 @@ def entry(wheel: Path, command: list[str]) -> list[str]:
     return ['uvx', '--from', str(wheel), *command]
 
 
+SERVE = ['metaform', 'dispatch', 'serve']  # what an editor starts as its ACP agent, BASE-062
+
+
+def editor_entry(chosen: list[Tool], everything: bool, say: Callable[[str], None]) -> tuple[list[str], Path] | None:
+    """The command editors start Metaform with, `uvx --from <wheel> metaform dispatch serve`, and its wheel, when an
+    editor is chosen; it needs uv and the dispatch module, which serves it, BASE-062. With `all`, editors are left out
+    while dispatch is off, and said so; named, they stop with the next step."""
+    editors = [tool.name for tool in chosen if tool.agent is not None]
+    if not editors:
+        return None
+    if not any(module.id == 'dispatch' for module in loader.enabled()):
+        if everything:
+            say(f'  {", ".join(editors)}: left out; editors start Metaform through dispatch, which is off. Next: '
+                'metaform enable dispatch')
+            return None
+        raise Stop('Editors start Metaform through dispatch, which is off.', 'metaform enable dispatch')
+    if shutil.which('uv') is None or shutil.which('uvx') is None:
+        raise Stop('uv or uvx is not installed; editors start Metaform with uvx.',
+                   UV_INSTALL.get(system(), UV_INSTALL_POSIX))
+    wheel = source()
+    command = entry(wheel, SERVE)
+    say(f'Editor agent: {" ".join(command)}')
+    return command, wheel
+
+
+def behind(folder: Path) -> str:
+    """The agent an editor reaches through `dispatch serve` with the settings as they are, and whether its start
+    command is found here, so the person sees what the registration starts, BASE-062."""
+    try:
+        chosen = str(settings.value('dispatch_serve_agent', folder) or 'default')
+        if chosen == 'default':
+            chosen = str(settings.value('dispatch_agent', folder))
+        if chosen == 'none':
+            return 'Metaform alone, starting no model (dispatch_serve_agent is none)'
+        start = str(settings.value(f'dispatch_{chosen}', folder))
+    except (KeyError, Stop):
+        return 'unknown; the dispatch settings are not readable here'
+    try:
+        words = shlex.split(start, posix=os.name != 'nt')
+    except ValueError:
+        words = []
+    found = bool(words) and (shutil.which(words[0].strip('"')) is not None or Path(words[0].strip('"')).is_file())
+    return (f'{chosen} ({start}), ' + ('found' if found else 'not found here, so Metaform serves alone until it is') +
+            '; metaform set --dispatch-serve-agent none starts no model')
+
+
+def prove_agent(command: list[str]) -> str | None:
+    """Start the editors' command alone, `agent=none`, so no model starts, and send ACP's `initialize`; None when it
+    answers with a protocol version, else why not, MCP-017 and BASE-062."""
+    resolved = [shutil.which(command[0]) or command[0], *command[1:], 'agent=none']
+    asked = json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize',
+                        'params': {'protocolVersion': 1, 'clientCapabilities': {},
+                                   'clientInfo': {'name': 'metaform-install', 'version': '1'}}}) + '\n'
+    try:
+        done = subprocess.run(resolved, input=asked, capture_output=True, text=True, encoding='utf-8',
+                              timeout=TOOL_TIMEOUT, cwd=user_home(), check=False)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return f'it did not start: {error}'
+    for line in done.stdout.splitlines():
+        try:
+            found: Any = json.loads(line)
+        except ValueError:
+            continue
+        answer = cast(dict[str, Any], found) if isinstance(found, dict) else {}
+        if answer.get('id') == 1:
+            result = answer.get('result')
+            if isinstance(result, dict) and 'protocolVersion' in result:
+                return None
+            return f'initialize was answered with {json.dumps(answer)[:200]}'
+    return done.stderr.strip()[-300:] or f'no answer to initialize, exit code {done.returncode}'
+
+
+def http_url(folder: Path, command: list[str] | None) -> str | None:
+    """The address AI tools are registered with when the mcp module's `mcp_transport` setting is http, or None for
+    stdio, the default, MCP-010 and MCP-002. Only the mcp module's server has the setting; another provider is
+    registered over stdio."""
+    if command is None or command[1:2] != ['mcp'] or 'mcp_transport' not in settings.SCHEMA:
+        return None
+    if settings.value('mcp_transport', folder) != 'http':
+        return None
+    return f'http://127.0.0.1:{settings.value("mcp_port", folder)}/mcp'
+
+
 def provision_mcp(folder: Path) -> str:
     """The MCP line of `metaform help provision`. A help page always shows: a provider choice that cannot be made
     is said on it, with its next step, instead of failing the page."""
@@ -168,12 +310,77 @@ def provision_mcp(folder: Path) -> str:
         return f'MCP registration: none chosen yet. {undecided} Next: {undecided.next_step}. '
     if command is None:
         return 'MCP registration: skipped; no enabled module declares an MCP server. '
+    url = http_url(folder, command)
+    if url is not None:
+        return (f'MCP registration: add an HTTP MCP server named metaform at {url}, wherever the tool keeps its MCP '
+                'servers, and start it with metaform mcp serve --http. ')
     return ('MCP registration: add a stdio MCP server named metaform whose command is ' +
             ' '.join(command) + ', wherever the tool keeps its MCP servers. ')
 
 
 def skill_text() -> bytes:
     return (resources.files('metaform') / 'skill' / 'SKILL.md').read_bytes()
+
+
+NODE_SKILL = 'metaform-node'  # the person-invoked node read, `/metaform-node <address>`, Claude Code only
+
+
+def node_skill_path() -> Path:
+    """Where Claude Code loads a personal skill. Claude Code alone gets the node skill: it fills `$ARGUMENTS` and keeps
+    a skill person-invoked with `disable-model-invocation`. Codex and Gemini CLI read the shared ~/.agents/skills, do
+    neither, and would list it to their model as one more description, so it is never written there."""
+    return user_home() / '.claude' / 'skills' / NODE_SKILL / 'SKILL.md'
+
+
+def node_skill_wanted(folder: Path) -> bool:
+    """The node skill runs `metaform map where`, so it exists only while map is enabled and on the folder's command
+    surface; a skill whose command answers that map is off is never left behind."""
+    return any(module.id == 'map' for module in loader.enabled()) and instructions.on_surface('map', folder)
+
+
+def _node_plan(folder: Path, *, remove: bool = False) -> tuple[Path, bytes | None] | None:
+    """What Claude Code's node skill needs: the path with the text to write, the path with None to remove it, or None
+    when it is already as it should be."""
+    path = node_skill_path()
+    if not remove and node_skill_wanted(folder):
+        text = (resources.files('metaform') / 'skill' / NODE_SKILL / 'SKILL.md').read_bytes()
+        return None if path.is_file() and path.read_bytes() == text else (path, text)
+    return (path, None) if path.is_file() else None
+
+
+def _say_node(plan: tuple[Path, bytes | None] | None, say: Callable[[str], None], *, remove: bool = False) -> None:
+    if plan is not None and plan[1] is not None:
+        say(f'  skill: {plan[0]}')
+    elif plan is not None:
+        say(f'  skill: remove {plan[0]}' + ('' if remove else "; map is off or not on this folder's surface"))
+
+
+def _apply_node(plan: tuple[Path, bytes | None] | None, backups: Path) -> None:
+    if plan is None:
+        return
+    path, text = plan
+    if text is None:
+        _remove_file(path, backups)
+        return
+    _backup(path, backups)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(text)
+
+
+def node_skill_follows(identifier: str, folder: Path, say: Callable[[str], None]) -> None:
+    """After map is enabled or disabled, Claude Code's node skill follows it, where Metaform set Claude Code up by
+    install or provision; a tool Metaform never set up gets no skill."""
+    if identifier != 'map':
+        return
+    path = node_skill_path()
+    if not (path.is_file() or 'claude' in _installed() or
+            agent_setup.owned('claude', user_home(), _codex_config().parent)):
+        return
+    plan = _node_plan(folder)
+    if plan is None:
+        return
+    _apply_node(plan, home.home() / 'backups' / 'skills' / datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ'))
+    say(f'Skill: {"wrote" if plan[1] is not None else "removed"} {path}')
 
 
 def _python_ok() -> bool:
@@ -218,28 +425,52 @@ def provision(tool: str, say: Callable[[str], None]) -> None:
         raise Stop(f'{tool} has no global instruction setup.', 'metaform help provision')
     changes = _agent_changes([tool])
     backups = home.home() / 'backups' / 'provision' / datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')
+    node = _node_plan(Path.cwd()) if tool == 'claude' else None
     say('Changes:')
     _preview_agent_changes(changes, backups, say)
+    _say_node(node, say)
     _apply_agent_changes(changes[tool], backups)
+    _apply_node(node, backups)
     say(f'Backups: {backups}' if backups.exists() else 'Backups: none needed')
     say('Next: finish the other supported features in metaform help provision, then metaform provision done')
 
 
-def _merge(path: Path, command: list[str], backup: Path | None, key: str = 'mcpServers') -> None:
+def _merge(path: Path, server: dict[str, Any], backup: Path | None, key: str = 'mcpServers',
+           jsonc: bool = False) -> None:
     """Add Metaform's server to a tool's JSON config. A config that is not a JSON object is left as it is and
-    refused, naming it and its backup; the merged file replaces the old one whole, so a crash never leaves half."""
+    refused, naming it and its backup; the merged file replaces the old one whole, so a crash never leaves half. A
+    config written as JSON with comments has only Metaform's entry written into its text, keeping the rest."""
+    kept = f' A copy is at {backup}.' if backup else ''
+    next_step = f'add "metaform": {json.dumps(server)} to {key} in {path}'
+    if jsonc and path.is_file():
+        text = _read_text(path)
+        changed = _jsonc_put(text, key, 'metaform', server) if text is not None else None
+        if changed is None:
+            raise Stop(f'{path} is not a JSON object, even read with comments and trailing commas, or its {key} is '
+                       f'not an object, so Metaform did not change it.{kept}', next_step)
+        _write_text(path, changed)
+        return
     data: Any = {}
     if path.is_file():
         data = _read_json(path)
     servers = cast(dict[str, Any], data).get(key, {}) if isinstance(data, dict) else None
     if not isinstance(servers, dict):
-        kept = f' A copy is at {backup}.' if backup else ''
-        raise Stop(f'{path} is not a JSON object with a {key} object, so Metaform did not change it.{kept}',
-                   f'add "metaform": {json.dumps({"command": command[0], "args": command[1:]})} to {key} in '
-                   f'{path}')
+        why = 'is not valid JSON' if data is None else f'is not a JSON object with a {key} object'
+        raise Stop(f'{path} {why}, so Metaform did not change it.{kept}', next_step)
     data = cast(dict[str, Any], data)
-    data[key] = {**cast(dict[str, Any], servers), 'metaform': {'command': command[0], 'args': command[1:]}}
+    data[key] = {**cast(dict[str, Any], servers), 'metaform': server}
     _write_json(path, data)
+
+
+def _adding(tool: Tool, command: list[str], url: str | None) -> list[str]:
+    """The command that registers Metaform's server with a tool: its HTTP form when the server is registered by
+    address, MCP-002, otherwise its stdio form. A tool that does not merge a config has both; the catalogue
+    guarantees it."""
+    if url is not None:
+        assert tool.add_url is not None
+        return tool.add_url(url)
+    assert tool.add is not None
+    return tool.add(command)
 
 
 def _read_json(path: Path) -> Any:
@@ -252,15 +483,228 @@ def _read_json(path: Path) -> Any:
 
 
 def _write_json(path: Path, data: Any) -> None:
-    """Write a tool's JSON config beside the old one and move it into place, so a crash never leaves half a file;
-    the temporary file never outlives a failed move, such as onto a file another program holds open on Windows."""
+    _write_text(path, json.dumps(data, indent=2) + '\n')
+
+
+def _write_text(path: Path, text: str) -> None:
+    """Write a tool's config beside the old one and move it into place, so a crash never leaves half a file; the
+    temporary file never outlives a failed move, such as onto a file another program holds open on Windows."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f'.{path.name}.metaform-{os.getpid()}')
     try:
-        temporary.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+        temporary.write_text(text, encoding='utf-8')
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _read_text(path: Path) -> str | None:
+    try:
+        return path.read_bytes().decode('utf-8-sig')
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+# JSON with comments, as Zed writes its settings.json: `//` and `/* */` comments and trailing commas. It is read with
+# a small parser that keeps where each member of an object is, so one member is written or removed in the text and
+# every comment and the layout around it stay as the person left them.
+
+@dataclass
+class _Member:
+    name: str
+    start: int  # where its key begins
+    value_start: int
+    value_end: int
+    inner: _Object | None  # its value, when that is an object
+
+
+@dataclass
+class _Object:
+    opened: int  # the index of `{`
+    closed: int  # the index of `}`
+    members: list[_Member]
+
+
+_LITERAL = re.compile(r'-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|true|false|null')
+
+
+def _skip(text: str, at: int) -> int:
+    """The index after any whitespace and comments from `at`."""
+    while at < len(text):
+        if text[at] in ' \t\r\n':
+            at += 1
+        elif text.startswith('//', at):
+            ended = text.find('\n', at)
+            at = len(text) if ended < 0 else ended + 1
+        elif text.startswith('/*', at):
+            ended = text.find('*/', at + 2)
+            if ended < 0:
+                raise ValueError('an unclosed comment')
+            at = ended + 2
+        else:
+            break
+    return at
+
+
+def _string_end(text: str, at: int) -> int:
+    if text[at] != '"':
+        raise ValueError(f'a string expected at {at}')
+    at += 1
+    while text[at] != '"':
+        at += 2 if text[at] == '\\' else 1
+    return at + 1
+
+
+def _value(text: str, at: int) -> tuple[int, _Object | None]:
+    """Where the value at `at` ends, and its members when it is an object."""
+    if text[at] == '{':
+        opened, members = at, list[_Member]()
+        at = _skip(text, at + 1)
+        while text[at] != '}':
+            start, key_end = at, _string_end(text, at)
+            name = json.loads(text[start:key_end])
+            at = _skip(text, key_end)
+            if text[at] != ':':
+                raise ValueError(f'a colon expected at {at}')
+            value_start = _skip(text, at + 1)
+            value_end, inner = _value(text, value_start)
+            members.append(_Member(str(name), start, value_start, value_end, inner))
+            at = _skip(text, value_end)
+            if text[at] == ',':
+                at = _skip(text, at + 1)
+            elif text[at] != '}':
+                raise ValueError(f'a comma expected at {at}')
+        return at + 1, _Object(opened, at, members)
+    if text[at] == '[':
+        at = _skip(text, at + 1)
+        while text[at] != ']':
+            at = _skip(text, _value(text, at)[0])
+            if text[at] == ',':
+                at = _skip(text, at + 1)
+            elif text[at] != ']':
+                raise ValueError(f'a comma expected at {at}')
+        return at + 1, None
+    if text[at] == '"':
+        return _string_end(text, at), None
+    found = _LITERAL.match(text, at)
+    if found is None:
+        raise ValueError(f'a value expected at {at}')
+    return found.end(), None
+
+
+def _jsonc(text: str) -> _Object | None:
+    """The top-level object of a JSON-with-comments text, or None when it is not one."""
+    try:
+        at = _skip(text, 0)
+        end, found = _value(text, at)
+        return found if found is not None and _skip(text, end) == len(text) else None
+    except (ValueError, IndexError):
+        return None
+
+
+def _indent(text: str, at: int) -> str:
+    line = text.rfind('\n', 0, at) + 1
+    return text[line:line + len(text[line:at]) - len(text[line:at].lstrip(' \t'))]
+
+
+def _dumped(value: Any, indent: str) -> str:
+    return json.dumps(value, indent=2).replace('\n', '\n' + indent)
+
+
+def _blank(text: str, at: int) -> int:
+    """The index after any spaces and tabs from `at`."""
+    while at < len(text) and text[at] in ' \t':
+        at += 1
+    return at
+
+
+def _tail(text: str, member: _Member) -> tuple[int | None, int | None]:
+    """After a member's value: where its comma is, if it has one, and where its line ends when nothing but that comma
+    and a comment follow the value on its line, else None."""
+    at = _blank(text, member.value_end)
+    comma = at if at < len(text) and text[at] == ',' else None
+    at = _blank(text, at + 1) if comma is not None else at
+    if text.startswith('//', at):
+        ended = text.find('\n', at)
+        at = len(text) if ended < 0 else ended - (1 if text[ended - 1] == '\r' else 0)
+    elif text.startswith('/*', at) and '\n' not in text[at:text.find('*/', at + 2)]:
+        at = _blank(text, text.find('*/', at + 2) + 2)
+    return comma, (at if at == len(text) or text[at] in '\r\n' else None)
+
+
+def _inserted(text: str, into: _Object, name: str, value: Any) -> str:
+    """`name: value` added as the last member of an object, on a line of its own after the last member's line, so a
+    comment on that line stays with it; with a trailing comma when the last member has one, as the file writes."""
+    if into.members:
+        last = into.members[-1]
+        indent = _indent(text, last.start)
+        member = f'{indent}{json.dumps(name)}: {_dumped(value, indent)}'
+        comma, line_end = _tail(text, last)
+        if line_end is None:  # more on the value's line: right after the value, as compact JSON writes it
+            return text[:last.value_end] + f',\n{member}' + text[last.value_end:]
+        newline = '\r\n' if text.startswith('\r\n', line_end) else '\n'
+        if comma is None:
+            return text[:last.value_end] + ',' + text[last.value_end:line_end] + newline + member + text[line_end:]
+        return text[:line_end] + newline + member + ',' + text[line_end:]
+    outer = _indent(text, into.opened)
+    indent = outer + '  '
+    member = f'\n{indent}{json.dumps(name)}: {_dumped(value, indent)}'
+    if not text[into.opened + 1:into.closed].strip():
+        return text[:into.opened + 1] + member + f'\n{outer}' + text[into.closed:]
+    return text[:into.opened + 1] + member + ',' + text[into.opened + 1:]
+
+
+def _jsonc_put(text: str, key: str, name: str, value: Any) -> str | None:
+    """The text with `key.name` set to `value`, or None when the text is not an object or its `key` is no object."""
+    top = _jsonc(text)
+    if top is None:
+        return None
+    outer = next((member for member in top.members if member.name == key), None)
+    if outer is None:
+        return _inserted(text, top, key, {name: value})
+    if outer.inner is None:
+        return None
+    found = next((member for member in outer.inner.members if member.name == name), None)
+    if found is None:
+        return _inserted(text, outer.inner, name, value)
+    return text[:found.value_start] + _dumped(value, _indent(text, found.start)) + text[found.value_end:]
+
+
+def _removed(text: str, members: list[_Member], at: int) -> str:
+    """The text without member `at`: its whole lines when it has lines of its own, and the comma before it when it
+    was the last member and had none, so what `_inserted` added comes out as it went in."""
+    found = members[at]
+    line = text.rfind('\n', 0, found.start) + 1
+    comma, line_end = _tail(text, found)
+    if text[line:found.start].strip() == '' and line_end is not None:
+        start = line
+        end = line_end + (2 if text.startswith('\r\n', line_end) else 1 if line_end < len(text) else 0)
+    elif at > 0:  # on a line with others: from the end of the member before it, its comma going with it
+        return text[:members[at - 1].value_end] + text[found.value_end:]
+    else:
+        start, end = found.start, _skip(text, comma + 1) if comma is not None else found.value_end
+    kept = text[:start] + text[end:]
+    if comma is None and at > 0 and at == len(members) - 1:  # the last one, after a comma it no longer follows
+        before, _ = _tail(text, members[at - 1])
+        if before is not None:
+            kept = kept[:before] + kept[before + 1:]
+    return kept
+
+
+def _jsonc_drop(text: str, key: str, name: str) -> str | None:
+    """The text without `key.name`, and without `key` too when nothing else was in it; the same text when it has no
+    `key.name`; None when it is not an object with `key` one."""
+    top = _jsonc(text)
+    outer = next((member for member in top.members if member.name == key), None) if top is not None else None
+    if top is None or outer is None or outer.inner is None:
+        return None
+    members = outer.inner.members
+    at = next((index for index, member in enumerate(members) if member.name == name), None)
+    if at is None:
+        return text
+    if len(members) == 1:  # the object held only Metaform's member, as when Metaform made it: it goes too
+        return _removed(text, top.members, top.members.index(outer))
+    return _removed(text, members, at)
 
 
 TOOL_TIMEOUT = 120  # seconds for one command of a tool, such as claude mcp add, M6
@@ -433,9 +877,13 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
         raise Stop(f'Python {platform.python_version()} is older than Metaform needs.',
                    f'install Python {_build_info.REQUIRES_PYTHON.lstrip(">=")} or newer')
     server_command = server(Path.cwd())
+    url = http_url(Path.cwd(), server_command)
     wheel = None
     command = None
-    if server_command is not None:
+    if url is not None:
+        say(f'Server: {url}, started with metaform mcp serve --http')
+        command = server_command
+    elif server_command is not None:
         uv, uvx = shutil.which('uv'), shutil.which('uvx')
         say(f'uv: {uv or "missing"}')
         if uv is None or uvx is None:
@@ -458,6 +906,11 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
     chosen = _choose(names, everything, detected, say)
     if not chosen:
         raise Stop('No tool was chosen.', BOTH_FORMS)
+    editors = editor_entry(chosen, everything, say)
+    if editors is None:
+        chosen = [tool for tool in chosen if tool.agent is None]
+        if not chosen:
+            raise Stop('No tool was chosen.', BOTH_FORMS)
     agent_changes = _agent_changes([tool.name for tool in chosen])
     stamp = datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')
     backups = home.home() / 'backups' / 'install' / stamp
@@ -466,48 +919,67 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
               'SKILL.md']
     say('Changes:')
     for tool in chosen:
+        if tool.agent is not None and editors is not None:
+            say(f'  {tool.name}: merge {tool.key}.metaform, the ACP agent, into {tool.config()}; backed up under '
+                f'{backups}')
+            continue
         if command is None:
             continue
         config = tool.config()
         # A tool that does not merge a config always has an add command; the catalogue guarantees it.
-        how = f'merge mcpServers.metaform into {config}' if tool.merge else ' '.join(tool.add(command))  # type: ignore[misc]
+        how = f'merge mcpServers.metaform into {config}' if tool.merge else ' '.join(_adding(tool, command, url))
         say(f'  {tool.name}: {how}; changes {config}, backed up under {backups}')
     _preview_agent_changes(agent_changes, backups, say)
     skill_files = list(shared) + [folder / 'metaform' / 'SKILL.md' for tool in chosen if (folder := tool.skills())]
     for path in skill_files:
         say(f'  skill: {path}')
+    node = _node_plan(Path.cwd()) if any(tool.name == 'claude' for tool in chosen) else None
+    _say_node(node, say)
     if asking and input('Apply these changes? [y/N] ').strip().lower() not in ('y', 'yes'):
         raise Stop('Nothing was changed.', BOTH_FORMS)
     recorded = _recorded()
+    unmerged: dict[str, Stop] = {}  # the tools whose config Metaform could not change, with why
     for tool in chosen:
         config = tool.config()
-        backup = _backup(config, backups) if command is not None and config is not None else None
+        backup = _backup(config, backups) if (command is not None or tool.agent is not None) and config is not None \
+            else None
         folder = tool.skills()
         # Gemini's registration command also edits settings.json. Install the previewed hooks first,
         # so its own config merge retains them and no prepared edit overwrites the new MCP entry.
         if tool.name == 'gemini':
             _apply_agent_changes(agent_changes[tool.name], backups)
-        if command is None:
+        if tool.agent is not None and editors is not None and config is not None:
+            try:
+                _merge(config, tool.agent(editors[0]), backup, tool.key, tool.jsonc)
+            except Stop as stop:  # this editor is left out; the other tools are still set up and proven
+                unmerged[tool.name] = stop
+                continue
+        elif command is None:
             pass  # Skills and instruction pointers remain useful through the CLI.
         elif tool.merge and config is not None:
-            _merge(config, command, backup, tool.key)
+            registered = {'url': url} if url else {'command': command[0], 'args': command[1:]}
+            try:
+                _merge(config, registered, backup, tool.key)
+            except Stop as stop:  # this tool is left out; the others are still set up and proven, BASE-062
+                unmerged[tool.name] = stop
+                continue
         else:
             removed = ''
             if tool.name in recorded and tool.remove:
                 result = _run(tool.name, tool.remove)
                 if result.returncode != 0:
                     removed = f' Removing the earlier entry also failed: {_said(result)}'
-            assert tool.add is not None
-            result = _run(tool.name, tool.add(command))
+            result = _run(tool.name, _adding(tool, command, url))
             # An entry the record does not know of, left by an earlier home, is replaced as the one entry, MCP-019.
             if (result.returncode != 0 and tool.remove and tool.name not in recorded
                     and _run(tool.name, tool.remove).returncode == 0):
-                result = _run(tool.name, tool.add(command))
+                result = _run(tool.name, _adding(tool, command, url))
             if result.returncode != 0:
                 raise Failed(f'{tool.name} registration failed: {_said(result)}{removed}',
                              f'metaform install {tool.name}')
         # Recorded as soon as it is registered, so a later failure never hides it from the next run, MCP-019.
-        _record(tool.name, wheel, folder / 'metaform' / 'SKILL.md' if folder else None)
+        _record(tool.name, editors[1] if tool.agent is not None and editors is not None else wheel,
+                folder / 'metaform' / 'SKILL.md' if folder else None)
         if tool.name != 'gemini':
             _apply_agent_changes(agent_changes[tool.name], backups)
         # The harness of the binary that registered it never sees the first-run notice, D96; a merged config
@@ -518,26 +990,63 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
         _backup(path, backups)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(skill)
+    _apply_node(node, backups)
     failed: list[str] = []
-    if command is not None:
+    servers = [tool for tool in chosen if tool.agent is None]
+    reached = [tool for tool in servers if tool.name not in unmerged]
+    if editors is not None:
         say('Proof:')
-        proof = probe(command, cwd=user_home())  # the same command for every tool: one start, one answer
+        why = prove_agent(editors[0])
         for tool in chosen:
-            if proof.ok:
+            if tool.agent is not None and tool.name in unmerged:
+                failed.append(tool.name)
+                say(f'  {tool.name}: not registered: {unmerged[tool.name]} Next: {unmerged[tool.name].next_step}')
+            elif tool.agent is not None and why:
+                failed.append(tool.name)
+                say(f'  {tool.name}: failed: {why}')
+            elif tool.agent is not None:
+                say(f'  {tool.name}: the ACP agent answers initialize')
+        say(f'  behind it: {behind(Path.cwd())}')
+    if command is not None and servers:
+        say('Proof:')
+        # the same command or address for every tool: one start, one answer
+        proof = (probe_http(url) if url else probe(command, cwd=user_home())) if reached else None
+        for tool in servers:
+            if proof is None or tool.name in unmerged:
+                stop = unmerged[tool.name]
+                say(f'  {tool.name}: not registered: {stop} Next: {stop.next_step}')
+            elif proof.ok:
                 say(f'  {tool.name}: server starts, {proof.tools} tools')
             else:
                 failed.append(tool.name)
                 say(f'  {tool.name}: failed: {proof.reason}')
     say(f'Backups: {backups}' if backups.exists() else 'Backups: none needed')
+    if unmerged:
+        first = next(iter(unmerged.values()))
+        raise Failed(f'{", ".join(unmerged)} could not be registered; every other tool was set up.', first.next_step)
     if failed:
+        if url:
+            raise Failed(f'Nothing answered at {url} for {", ".join(failed)}; the registration is kept.',
+                         'metaform mcp serve --http')
         raise Failed(f'The server did not start for {", ".join(failed)}.', f'metaform install {failed[0]}')
     say('Next: open your AI tool in a project folder, or run metaform')
 
 
-def _unmerge(path: Path, key: str) -> bool:
-    """Take Metaform's entry out of a tool's JSON config and leave every other entry as it is, MCP-020."""
+def _unmerge(path: Path, key: str, jsonc: bool = False) -> bool:
+    """Take Metaform's entry out of a tool's JSON config and leave every other entry as it is, MCP-020; in the text of
+    a config written with comments, so they stay."""
     if not path.is_file():
         return False
+    if jsonc:
+        text = _read_text(path)
+        changed = _jsonc_drop(text, key, 'metaform') if text is not None else None
+        if changed is None:
+            raise Stop(f'{path} is not a JSON object with a {key} object, even read with comments, so Metaform did '
+                       'not change it.', f'remove "metaform" from {key} in {path}')
+        if changed == text:
+            return False
+        _write_text(path, changed)
+        return True
     data = _read_json(path)
     servers = cast(dict[str, Any], data).get(key) if isinstance(data, dict) else None
     if not isinstance(servers, dict):
@@ -552,12 +1061,12 @@ def _unmerge(path: Path, key: str) -> bool:
 
 
 def _remove_file(path: Path, backups: Path) -> bool:
-    """Back up and remove one skill file, and its `metaform` folder when that is left empty."""
+    """Back up and remove one skill file, and its `metaform` or `metaform-node` folder when that is left empty."""
     if not path.is_file():
         return False
     _backup(path, backups)
     path.unlink()
-    if path.parent.name == 'metaform' and not any(path.parent.iterdir()):
+    if path.parent.name in ('metaform', NODE_SKILL) and not any(path.parent.iterdir()):
         path.parent.rmdir()
     return True
 
@@ -607,6 +1116,8 @@ def uninstall(words: list[str], say: Callable[[str], None]) -> None:
     skill_files = [Path(path) for tool in chosen if (path := installed.get(tool.name))] + shared
     for path in skill_files:
         say(f'  skill: remove {path}')
+    node = _node_plan(Path.cwd(), remove=True) if any(tool.name == 'claude' for tool in chosen) else None
+    _say_node(node, say, remove=True)
     if not names and not everything and input('Apply these changes? [y/N] ').strip().lower() not in ('y', 'yes'):
         raise Stop('Nothing was changed.', BOTH_UNINSTALL)
     for tool in chosen:
@@ -621,7 +1132,7 @@ def uninstall(words: list[str], say: Callable[[str], None]) -> None:
                 raise Failed(f'{tool.name}: removing the registration failed: {_said(result)}',
                              f'metaform uninstall {tool.name}')
         elif tool.name in registered and config is not None:
-            _unmerge(config, tool.key)
+            _unmerge(config, tool.key, tool.jsonc)
         if tool.name != 'gemini':
             _apply_agent_changes(agent_changes[tool.name], backups)
         skill = installed.get(tool.name)
@@ -632,5 +1143,6 @@ def uninstall(words: list[str], say: Callable[[str], None]) -> None:
         say(f'Removed: {tool.name}')
     for path in shared:
         _remove_file(path, backups)
+    _apply_node(node, backups)
     say(f'Backups: {backups}' if backups.exists() else 'Backups: none needed')
     say(f"Data: Metaform's projects and maps stay in {home.home()}.")

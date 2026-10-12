@@ -16,19 +16,27 @@ address, so select, mask and the folder's --layers turn it off.
 
 Each node also holds one note, of at most 2048 characters, which an agent and a person edit alike; it never expires.
 
+A memory joined at a node takes the next number of that address's counter, the receiver's for a join of the map, kept
+on its join, MCP-037; a new memory carries a short title and why, kept on its entity, and an agent's write without them
+is refused naming which. `item_read` serves one by its number, `<address>#<n>`, with the memories it is related to.
+
 What the memory layer held before this graph, observations, relations and the person's notes, is carried into the
 graph and the notes once, by each command, and left where it was.
 """
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from metaform.data import Column, Index, Item, Node, Store, StoreError, Table, Tables, TableTx
-from metaform.module import Context, Module, Noun, Stop, Verb
+from metaform import prompt_files
+from metaform.data import Column, Index, Item, Node, Store, StoreError, Table, Tables, TableTx, reference
+from metaform.module import Context, Count, Module, Noun, Pane, Stop, ToolbarItem, Verb, first_line, titled
+
+from .citations import Checker, root_of, stamp
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -41,14 +49,51 @@ NOTE_LIMIT = 2048
 
 # Version 2 keeps no time on entities, observations, relations or joins: an entity's and a relation's `seq` is its place
 # in the order they were made. Rows from version 1 take seq 0 and keep the order of their key, before every later one.
-TABLES = Tables(version=2, tables=(
+# Version 3 adds `by` to observations and joins, who wrote the row; it may be empty, so version 2 still reads and writes
+# the tables, STORE-029, and a row written before it, or by version 2's code, has none.
+# Version 4 adds `session` and `at` to observations and joins: the agent session that wrote the row and when, so an
+# agent told the counts at its node hears which memories the last session there wrote, MCP-039. Both may be empty, so
+# versions 2 and 3 still read and write the tables, and a row they write, or one written before, names no session.
+# Version 5 adds an entity's `title` and `why`, and a join's `number`: the memory's number at the join's receiver
+# address, from the project's counter there, MCP-037. All may be empty, so versions 2 to 4 still read and write the
+# tables; the upgrade numbers the joins already held in the order they were made and titles each entity from the first
+# line of its first observation. A join written by older code has no number.
+# Version 6 adds the citations table: the evidence a memory cites, a file and its lines or a symbol, with what they read
+# as when it was cited, so a read flags a memory whose evidence changed as stale. Older code does not read the table and
+# reads and writes the rest as before.
+TABLES_VERSION = 6
+
+
+def _upgrade(tx: TableTx, found: int) -> None:
+    """Version 5: number every memory join at its receiver's address in the order the joins were made, those kept
+    before joins had times first in the order of their entities, and title each entity from its first observation."""
+    if found >= 5:
+        return
+    entities = {row['name']: row for row in tx.rows('entities', limit=0).results}
+    first: dict[str, Row] = {}
+    for row in tx.rows('observations', limit=0).results:
+        held = first.get(row['entity'])
+        if held is None or row['seq'] < held['seq']:
+            first[row['entity']] = row
+    for name in entities:
+        title = first_line(first[name]['content'], 0) if name in first else None
+        if title:
+            tx.update('entities', {'name': name}, {'title': title})
+    joins = list(tx.rows('joins', limit=0).results)
+    joins.sort(key=lambda row: (row['at'] is not None, row['at'] or '',
+                                entities[row['entity']]['seq'] if row['entity'] in entities else 0, row['join_id']))
+    for row in joins:
+        tx.update('joins', {'join_id': row['join_id']}, {'number': tx.number(row['receiver'])})
+
+
+TABLES = Tables(version=TABLES_VERSION, compatible_from=2, upgrade=_upgrade, tables=(
     Table('entities', place='project', key=('name',),
           columns=(Column('name', required=True), Column('entity_type', required=True),
-                   Column('seq', 'int', required=True, default=0)),
+                   Column('seq', 'int', required=True, default=0), Column('title'), Column('why')),
           indexes=(Index(('seq',)),)),
     Table('observations', place='project', key=('entity', 'content'),
           columns=(Column('entity', required=True), Column('content', required=True),
-                   Column('seq', 'int', required=True)),
+                   Column('seq', 'int', required=True), Column('by'), Column('session'), Column('at')),
           indexes=(Index(('entity', 'seq')),)),
     Table('relations', place='project', key=('source', 'target', 'relation_type'),
           columns=(Column('source', required=True), Column('target', required=True),
@@ -56,14 +101,20 @@ TABLES = Tables(version=2, tables=(
           indexes=(Index(('target',)), Index(('seq',)))),
     Table('joins', place='project', key=('join_id',),
           columns=(Column('join_id', required=True), Column('entity', required=True),
-                   Column('receiver', required=True), Column('provider', required=True, default='')),
+                   Column('receiver', required=True), Column('provider', required=True, default=''), Column('by'),
+                   Column('session'), Column('at'), Column('number', 'int')),
           indexes=(Index(('entity', 'receiver', 'provider'), unique=True), Index(('receiver', 'provider')),
-                   Index(('provider',)))),
+                   Index(('provider',)), Index(('receiver', 'number')))),
     Table('notes', place='project', key=('receiver', 'provider'),
           columns=(Column('receiver', required=True), Column('provider', required=True, default=''),
                    Column('text', required=True), Column('by'), Column('at', required=True))),
     Table('carried', place='project', key=('item_id',),
           columns=(Column('item_id', required=True), Column('at', required=True))),
+    Table('citations', place='project', key=('entity', 'cite'),
+          columns=(Column('entity', required=True), Column('cite', required=True), Column('path', required=True),
+                   Column('start', 'int'), Column('end', 'int'), Column('symbol'), Column('digest'),
+                   Column('size', 'int'), Column('mtime', 'int'), Column('at')),
+          indexes=(Index(('entity',)),)),
 ))
 
 Row = dict[str, Any]
@@ -182,10 +233,14 @@ class Graph:
     entities: dict[str, Row] = field(default_factory=dict[str, Row])
     observations: dict[str, list[Row]] = field(default_factory=dict[str, list[Row]])
     relations: list[Row] = field(default_factory=list[Row])
+    citations: dict[str, list[Row]] = field(default_factory=dict[str, list[Row]])
+    checker: Checker | None = None  # set by a read, so each memory it gives says which of its citations are stale
 
     @classmethod
-    def read(cls, tx: TableTx) -> Graph:
-        graph = cls()
+    def read(cls, tx: TableTx, checker: Checker | None = None) -> Graph:
+        graph = cls(checker=checker)
+        for row in tx.rows('citations', limit=0).results:
+            graph.citations.setdefault(row['entity'], []).append(row)
         for row in tx.rows('entities', by=('seq',), limit=0).results:
             graph.entities[row['name']] = row
             graph.observations[row['name']] = []
@@ -198,18 +253,52 @@ class Graph:
 
     def entity(self, name: str) -> dict[str, Any]:
         row = self.entities[name]
-        return {'name': name, 'entityType': row['entity_type'],
-                'observations': [one['content'] for one in self.observations.get(name, [])]}
+        said: dict[str, Any] = {'name': name, 'entityType': row['entity_type'],
+                                'observations': [one['content'] for one in self.observations.get(name, [])]}
+        cited = self.citations.get(name)
+        if cited:
+            said['cites'] = [one['cite'] for one in cited]
+            stale = self.stale(name)
+            if stale:
+                said['stale'] = stale
+        return said
+
+    def stale(self, name: str) -> list[str]:
+        """Each citation of the memory whose evidence no longer holds, with why, as `<cite>: <why>`; empty when every
+        one holds or the read checks none."""
+        if self.checker is None:
+            return []
+        found = [(one['cite'], self.checker.stale(one)) for one in self.citations.get(name, [])]
+        return [f'{cite}: {why}' for cite, why in found if why]
+
+    def cite(self, tx: TableTx, name: str, rows: list[Row], written: Row | None = None) -> None:
+        """Keep the citations a write gives for the memory, each once; a citation given again is kept as it was
+        first seen, and an updated one is given under its new path or lines."""
+        held = {one['cite'] for one in self.citations.get(name, [])}
+        for row in rows:
+            if row['cite'] in held:
+                continue
+            held.add(row['cite'])
+            self.citations.setdefault(name, []).append(
+                tx.insert('citations', {'entity': name, **row, 'at': (written or {}).get('at')}))
 
     @staticmethod
     def relation(row: Row) -> dict[str, Any]:
         return {'from': row['source'], 'to': row['target'], 'relationType': row['relation_type']}
 
-    def made(self, tx: TableTx, name: str, kind: str) -> None:
-        """A new entity, after every entity the graph holds."""
+    def made(self, tx: TableTx, name: str, kind: str, title: str | None = None, why: str | None = None) -> None:
+        """A new entity, after every entity the graph holds, with its title and why when given."""
         seq = max((row['seq'] for row in self.entities.values()), default=0) + 1
-        self.entities[name] = tx.insert('entities', {'name': name, 'entity_type': kind, 'seq': seq})
+        self.entities[name] = tx.insert('entities', {'name': name, 'entity_type': kind, 'seq': seq, 'title': title,
+                                                     'why': why})
         self.observations[name] = []
+
+    def title(self, name: str) -> str:
+        """What a memory is called where it is listed by number: its title, else its first observation's first line,
+        else its name."""
+        row = self.entities.get(name) or {}
+        held = self.observations.get(name) or []
+        return row.get('title') or (first_line(held[0]['content'], 0) if held else None) or name
 
     def related(self, tx: TableTx, source: str, target: str, kind: str) -> None:
         """A new relation, after every relation the graph holds."""
@@ -248,37 +337,59 @@ def _joined(tx: TableTx, key: Key) -> list[Row]:
     return list(tx.rows('joins', {'receiver': key.receiver, 'provider': key.provider}, limit=0).results)
 
 
-def _view(tx: TableTx, key: Key | None) -> View:
-    graph = Graph.read(tx)
+def _view(tx: TableTx, key: Key | None, checker: Checker | None = None) -> View:
+    graph = Graph.read(tx, checker)
     if key is None:
         return View(graph, list(graph.entities))
     joined = {row['entity'] for row in _joined(tx, key)}
     return View(graph, [name for name in graph.entities if name in joined])
 
 
-def _join(tx: TableTx, entity: str, key: Key) -> None:
+def _by(ctx: Context) -> str | None:
+    """Who writes, kept on each join and observation a write makes, so a dispatcher can tell whether its session
+    recorded at its nodes and the page can show who recorded a memory: the session the serving process runs for,
+    METAFORM_SESSION, or else the MCP client that called. A write from the page is the person's whatever session
+    started its server, so it names no one; neither does a command line with no session."""
+    if ctx.surface == 'web':
+        return None
+    return os.environ.get('METAFORM_SESSION') or ctx.client or None
+
+
+def _written(ctx: Context) -> Row:
+    """What a write keeps of who made it: `by`, the agent session that wrote it and when, MCP-039. The page's writes
+    are the person's and name no session."""
+    return {'by': _by(ctx), 'session': None if ctx.surface == 'web' else ctx.session, 'at': _now()}
+
+
+def _join(tx: TableTx, entity: str, key: Key, written: Row | None = None) -> int | None:
+    """Join the entity to the node, with the next number at the node's address, the receiver's for a join of the map,
+    MCP-037; returns that number. A join already there is kept as it is, with who made it and its number."""
     held = tx.rows('joins', {'entity': entity, 'receiver': key.receiver, 'provider': key.provider}).results
-    if not held:
-        tx.insert('joins', {'join_id': uuid.uuid4().hex, 'entity': entity, 'receiver': key.receiver,
-                            'provider': key.provider})
+    if held:
+        return None
+    number = tx.number(key.address)
+    tx.insert('joins', {'join_id': uuid.uuid4().hex, 'entity': entity, 'receiver': key.receiver,
+                        'provider': key.provider, 'number': number, **(written or {})})
+    return number
 
 
-def _observe(tx: TableTx, graph: Graph, entity: str, contents: list[str]) -> list[str]:
-    """Add each content the entity does not hold yet, in order; returns those added."""
+def _observe(tx: TableTx, graph: Graph, entity: str, contents: list[str], written: Row | None = None) -> list[str]:
+    """Add each content the entity does not hold yet, in order, kept with who wrote it; returns those added."""
     held = graph.observations.setdefault(entity, [])
     added: list[str] = []
     for content in contents:
         if any(one['content'] == content for one in held):
             continue
         row = tx.insert('observations', {'entity': entity, 'content': content,
-                                         'seq': (held[-1]['seq'] + 1) if held else 1})
+                                         'seq': (held[-1]['seq'] + 1) if held else 1, **(written or {})})
         held.append(row)
         added.append(content)
     return added
 
 
 def _forget(tx: TableTx, graph: Graph, name: str) -> None:
-    """Delete an entity with its observations, every relation touching it and every join of it."""
+    """Delete an entity with its observations, its citations, every relation touching it and every join of it."""
+    tx.delete('citations', {'entity': name})
     tx.delete('observations', {'entity': name})
     tx.delete('relations', {'source': name})
     tx.delete('relations', {'target': name})
@@ -286,6 +397,7 @@ def _forget(tx: TableTx, graph: Graph, name: str) -> None:
     tx.delete('entities', {'name': name})
     graph.entities.pop(name, None)
     graph.observations.pop(name, None)
+    graph.citations.pop(name, None)
     graph.relations = [row for row in graph.relations if name not in (row['source'], row['target'])]
 
 
@@ -459,41 +571,108 @@ def _not_found(name: str, nouns: dict[str, Any]) -> Stop:
     return Stop(f'Entity with name {name} not found', f'metaform memory read_graph{named}')
 
 
+def _nodes_of(tx: TableTx, entity: str) -> set[tuple[str, str]]:
+    return {(row['receiver'], row['provider']) for row in tx.rows('joins', {'entity': entity}, limit=0).results}
+
+
+def _unshown(given: _Given, written: list[str]) -> None:
+    """A write without a node still lands, BASE-044, but what it wrote that no node shows is named in a notice, so an
+    agent learns at once that no map where will return it and how to place it, BASE-040."""
+    if written:
+        given.notices.append({'where': 'node', 'message': (
+            f'Written to the whole memory graph; no node will show {", ".join(written)}. '
+            'To tie it to a node, pass node or address.')})
+
+
 def _layered(store: Store) -> None:
     """The memory layer, made on the first write so the orchestrator can turn memory off, LAYER-012."""
     with store.atomic():
         _memory(store, create=True)
 
 
+def _titles(ctx: Context, given: _Given, one: dict[str, Any], name: str,
+            observations: list[str]) -> tuple[str | None, str | None]:
+    """A new memory's title and why, MCP-037. A memory records knowledge, so it carries both; a memory whose first
+    observation is one short line may leave out its title, which is that line. Refused on an agent's surface when
+    either is missing; from the page, the person's, the title is the first observation's first line."""
+    title = given.text(one['title'], 'title').strip() if one.get('title') is not None else None
+    why = given.text(one['why'], 'why').strip() if one.get('why') is not None else None
+    if not title and observations:
+        title = first_line(observations[0], 0) if ctx.surface == 'web' else first_line(observations[0])
+    titled(ctx, f'The memory {name!r}', title, why, why_needed=True,
+           why_step='add why: one line saying why this is worth keeping, to each new entity')
+    return title or None, why or None
+
+
 def create_entities(ctx: Context) -> Any:
     given = _Given(ctx)
     store, key = _scope(ctx, given.notices)
-    entities = [(given.text(one['name'], 'name'), given.text(one['entityType'], 'entityType'),
+    entities = [(one, given.text(one['name'], 'name'), given.text(one['entityType'], 'entityType'),
                  given.texts(one['observations'], 'observations'))
                 for one in given.objects('entities', ('name', 'entityType', 'observations'))]
+    cited = {name: _cites(ctx, one) for one, name, _, _ in entities}  # checked before anything is written
     made: list[dict[str, Any]] = []
+    written: list[str] = []
+    numbered: list[str] = []
+    by = _written(ctx)
     with store.tables() as tx:
         graph = Graph.read(tx)
+        # Every new memory's title and why are checked before anything is written, so a refusal writes nothing.
+        fresh: dict[str, tuple[str | None, str | None]] = {}
+        for one, name, _, observations in entities:
+            if name not in graph.entities and name not in fresh:
+                fresh[name] = _titles(ctx, given, one, name, observations)
         seen: set[str] = set()
-        for name, kind, observations in entities:
+        for _, name, kind, observations in entities:
             if name in graph.entities or name in seen:
                 # An existing name is not made again, but what was learned is never dropped: its new observations
                 # are added to it, and the agent is told where they went, BASE-040 and BASE-044.
-                added = _observe(tx, graph, name, observations)
+                added = _observe(tx, graph, name, observations, by)
+                graph.cite(tx, name, cited[name], by)
                 if added:
                     given.notices.append({'where': 'entities', 'message': (
                         f'{name} already exists; {len(added)} new observation(s) were added to it.')})
-                if key is not None:
-                    _join(tx, name, key)
+                    written.append(name)
+                if key is not None and (number := _join(tx, name, key, by)) is not None:
+                    numbered.append(f'{reference(key.address, number)}  {graph.title(name)}')
                 continue
             seen.add(name)
-            graph.made(tx, name, kind)
-            _observe(tx, graph, name, observations)
-            if key is not None:
-                _join(tx, name, key)
+            graph.made(tx, name, kind, *fresh[name])
+            _observe(tx, graph, name, observations, by)
+            graph.cite(tx, name, cited[name], by)
+            if key is not None and (number := _join(tx, name, key, by)) is not None:
+                numbered.append(f'{reference(key.address, number)}  {graph.title(name)}')
             made.append({'name': name, 'entityType': kind, 'observations': observations})
+            written.append(name)
+        if key is None:
+            _unshown(given, [name for name in dict.fromkeys(written) if not _nodes_of(tx, name)])
     _layered(store)
-    return given.said({'entities': made})
+    if ctx.surface == 'mcp':  # to an agent, one line: what it just sent is not handed back, MCP-037
+        recorded = numbered or [name for name in dict.fromkeys(written)]
+        line = (_prompt('recorded', items='; '.join(numbered)) if numbered else
+                _prompt('recorded_unjoined', names=', '.join(recorded)) if recorded else _prompt('recorded_nothing'))
+        return _line(line, given.notices)
+    # Each memory joined at the node by this call, by its number there and its title, so the agent can cite it.
+    return given.said({'entities': made, **({'items': numbered} if numbered else {})})
+
+
+def _cites(ctx: Context, one: dict[str, Any]) -> list[Row]:
+    """The citations a write gives for one memory, `cite` as one text or a list, each checked against the project's
+    files and kept as `citations.stamp` keeps it; Stop for one that names nothing the project holds."""
+    given = one.get('cite')
+    if given is None or given == '' or given == []:
+        return []
+    root = root_of(ctx)
+    return [stamp(str(each), root) for each in (cast(list[Any], given) if isinstance(given, list) else [given])]
+
+
+def _prompt(name: str, **fills: str) -> str:
+    return prompt_files.module('memory', name, **fills) or ''
+
+
+def _line(line: str, notices: list[dict[str, str]]) -> str:
+    """A write's one line to an agent, then each notice on a line of its own."""
+    return '\n'.join([line, *(f"{one['where']}: {one['message']}" for one in notices)])
 
 
 def _relations(given: _Given) -> list[tuple[str, str, str]]:
@@ -521,24 +700,41 @@ def create_relations(ctx: Context) -> Any:
             held.add(triple)
             view.graph.related(tx, *triple)
             made.append({'from': triple[0], 'to': triple[1], 'relationType': triple[2]})
+        if key is None:
+            # A node shows a relation only when both its ends are joined there.
+            _unshown(given, [f'{one["from"]} {one["relationType"]} {one["to"]}' for one in made
+                             if not _nodes_of(tx, one['from']) & _nodes_of(tx, one['to'])])
     _layered(store)
+    if ctx.surface == 'mcp':  # to an agent, one line, MCP-037
+        return _line(_prompt('related', count=str(len(made))), given.notices)
     return given.said({'relations': made})
 
 
 def add_observations(ctx: Context) -> Any:
     given = _Given(ctx)
     store, key = _scope(ctx, given.notices)
-    observations = [(given.text(one['entityName'], 'entityName'), given.texts(one['contents'], 'contents'))
-                    for one in given.objects('observations', ('entityName', 'contents'))]
+    members = given.objects('observations', ('entityName', 'contents'))
+    observations = [(given.text(one['entityName'], 'entityName'), given.texts(one['contents'], 'contents'),
+                     _cites(ctx, one)) for one in members]
     results: list[dict[str, Any]] = []
+    by = _written(ctx)
     with store.tables() as tx:
         view = _view(tx, key)
         known = view.known
-        for name, contents in observations:
+        for name, _, _ in observations:
             if name not in known:
                 raise _not_found(name, ctx.nouns)
-            results.append({'entityName': name, 'addedObservations': _observe(tx, view.graph, name, contents)})
+        for name, contents, cited in observations:
+            results.append({'entityName': name, 'addedObservations': _observe(tx, view.graph, name, contents, by)})
+            view.graph.cite(tx, name, cited, by)
+        if key is None:
+            _unshown(given, [name for name in dict.fromkeys(one['entityName'] for one in results
+                                                            if one['addedObservations'])
+                             if not _nodes_of(tx, name)])
     _layered(store)
+    if ctx.surface == 'mcp':  # to an agent, one line, MCP-037
+        added = '; '.join(f"{one['entityName']} +{len(one['addedObservations'])}" for one in results)
+        return _line(_prompt('observed', added=added), given.notices)
     return given.said({'results': results})
 
 
@@ -615,10 +811,11 @@ def _read(ctx: Context, notices: list[dict[str, str]]) -> View | None:
     store, key = _scope(ctx, notices, carry=False)
     if key is not None and not _reaches(store, key.address):
         return None
+    checker = Checker(root_of(ctx))  # a read says which citations no longer hold
     with store.tables(write=False) as tx:
         if key is not None:
-            return _view(tx, key)
-        return _shown(store, tx, _view(tx, None))
+            return _view(tx, key, checker)
+        return _shown(store, tx, _view(tx, None, checker))
 
 
 EMPTY: dict[str, list[Any]] = {'entities': [], 'relations': []}
@@ -655,7 +852,7 @@ def open_nodes(ctx: Context) -> Any:
 
 def _join_said(row: Row, held: bool) -> dict[str, Any]:
     return {'join_id': row['join_id'], 'entity': row['entity'],
-            **Key(row['receiver'], row['provider']).said(), 'orphaned': not held}
+            **Key(row['receiver'], row['provider']).said(), 'by': row['by'], 'orphaned': not held}
 
 
 def joins(ctx: Context) -> Any:
@@ -701,7 +898,8 @@ def unjoin(ctx: Context) -> Any:
 
 def rekey(ctx: Context) -> Any:
     """Transfer memory attachments and notes at an exact address, including either end of a map join. The old
-    address may already be absent from the map; existing unique keys make a collision roll the whole transfer back."""
+    address may already be absent from the map; existing unique keys make a collision roll the whole transfer back. A
+    memory whose address changes takes the next number at the new one, MCP-037; its old number is not reused."""
     store = ctx.require_store()
     old, new = ctx.nouns['old'], ctx.nouns['new']
     counts = {'joins': 0, 'notes': 0}
@@ -709,9 +907,11 @@ def rekey(ctx: Context) -> Any:
         with store.tables() as tx:
             for table, key in (('joins', ('join_id',)), ('notes', ('receiver', 'provider'))):
                 for row in tx.rows(table, limit=0).results:
-                    changes = {end: new for end in ('receiver', 'provider') if row[end] == old}
+                    changes: dict[str, Any] = {end: new for end in ('receiver', 'provider') if row[end] == old}
                     if not changes:
                         continue
+                    if table == 'joins' and 'receiver' in changes:  # moved to a new address, it takes its next number
+                        changes['number'] = tx.number(new)
                     try:
                         tx.update(table, {name: row[name] for name in key}, changes)
                     except StoreError as error:  # the destination already holds this key; the transaction rolls back
@@ -744,7 +944,8 @@ def graph(ctx: Context) -> Any:
             reach[key.address] = _reaches(store, key.address)
         return {**_join_said(row, held), 'shows': held and reach[key.address]}
     return {'entities': [{'name': name, 'entityType': row['entity_type'],
-                          'observations': [{'content': one['content']} for one in whole.observations.get(name, [])]}
+                          'observations': [{'content': one['content'], 'by': one['by']}
+                                           for one in whole.observations.get(name, [])]}
                          for name, row in whole.entities.items()],
             'relations': [Graph.relation(row) for row in whole.relations],
             'joins': [said(row) for row in rows]}
@@ -800,7 +1001,7 @@ def node_read(ctx: Context, node: Node) -> Any:
             found['note'] = held
         if not shows:
             return found or None
-        view = _view(tx, key)
+        view = _view(tx, key, Checker(root_of(ctx)))
         if view.names:
             found.update(view.whole())
         if node.kind == 'element':
@@ -816,6 +1017,111 @@ def node_read(ctx: Context, node: Node) -> Any:
     return found or None
 
 
+def node_count(ctx: Context, addresses: tuple[str, ...]) -> tuple[Count, ...] | None:
+    """How many memories are joined at each element address while memory shows there, and whether the person left a
+    note there, MCP-039, never what they say. `new` are the memories the last session that wrote there wrote, a join or
+    an observation of one, other than this call's own session; `mine` are those this session wrote. A row written
+    before sessions were kept names none, so with none known no memory is new."""
+    store = ctx.store
+    if store is None or store.active_base() is None:
+        return None
+    at: dict[str, tuple[int, int, int]] = {}
+    notes: dict[str, tuple[int, int, int]] = {}
+    stale: dict[str, tuple[int, int, int]] = {}
+    checker = Checker(root_of(ctx))
+    with store.tables(write=False) as tx:
+        for address in dict.fromkeys(addresses):
+            if tx.get('notes', {'receiver': address, 'provider': ''}) is not None:
+                notes[address] = (1, 0, 0)
+            joins = list(tx.rows('joins', {'receiver': address, 'provider': ''}, limit=0).results)
+            if not joins or not _reaches(store, address):
+                continue
+            names = {row['entity'] for row in joins}
+            # A memory whose cited evidence no longer holds is counted as stale, never passed on as sound.
+            flagged = sum(1 for name in names if any(checker.stale(row) for row in tx.rows(
+                'citations', {'entity': name}, limit=0).results))
+            if flagged:
+                stale[address] = (flagged, 0, 0)
+            writes = [(row['at'], row['session'], row['entity']) for row in joins if row['session'] and row['at']]
+            for name in names:
+                writes += [(row['at'], row['session'], name)
+                           for row in tx.rows('observations', {'entity': name}, limit=0).results
+                           if row['session'] and row['at']]
+            others = [one for one in writes if one[1] != ctx.session]
+            last = max(others)[1] if others else None
+            new = {entity for _, session, entity in writes if last is not None and session == last}
+            mine = {entity for _, session, entity in writes if ctx.session is not None and session == ctx.session}
+            at[address] = (len(names), len(new), len(mine))
+    return (Count('memory', 'memories', at, legend=prompt_files.module('memory', 'counts') or ''),
+            Count('note', 'notes', notes, legend=prompt_files.module('memory', 'note_counts') or ''),
+            Count(_prompt('stale_one'), _prompt('stale_many'), stale, legend=_prompt('stale_counts')))
+
+
+def _cited(tx: TableTx, graph: Graph, name: str, address: str) -> str:
+    """How a memory is cited from another: `<address>#<n>  <title>` by its join at this address when it has a numbered
+    one, else its first numbered join; by its name when no join of it has a number."""
+    joins = [row for row in tx.rows('joins', {'entity': name}, limit=0).results if row['number']]
+    if not joins:
+        return name
+    chosen = min(joins, key=lambda row: (row['receiver'] != address, row['number']))
+    return f"{reference(chosen['receiver'], chosen['number'])}  {graph.title(name)}"
+
+
+def item_read(ctx: Context, address: str, number: int) -> dict[str, Any] | None:
+    """The memory numbered `number` at `address`, read as `<address>#<n>`, MCP-037: its title, why, its name and type
+    with its observations, and the memories it is related to, each cited by number and title. None when no memory
+    holds that number there, or memory does not show there, LAYER-012."""
+    store = ctx.store
+    if store is None or not _reaches(store, address):
+        return None
+    with store.tables(write=False) as tx:
+        found = list(tx.rows('joins', {'receiver': address, 'number': number}, limit=0).results)
+        if not found:
+            return None
+        graph = Graph.read(tx, Checker(root_of(ctx)))
+        name = found[0]['entity']
+        if name not in graph.entities:
+            return None
+        row = graph.entities[name]
+        observations = [one['content'] for one in graph.observations.get(name, [])]
+        cites = [one['cite'] for one in graph.citations.get(name, [])]
+        stale = graph.stale(name)
+        links = [f"{relation['relation_type']} → {_cited(tx, graph, relation['target'], address)}"
+                 for relation in graph.relations if relation['source'] == name]
+        links += [f"{relation['relation_type']} ← {_cited(tx, graph, relation['source'], address)}"
+                  for relation in graph.relations if relation['target'] == name]
+    body = '\n'.join([f"{name} ({row['entity_type']})", *(f'- {one}' for one in observations),
+                      *([_prompt('cites', cites=', '.join(cites))] if cites else []),
+                      *(_prompt('stale', stale=one) for one in stale)])
+    return {'kind': 'memory', 'title': graph.title(name), 'why': row.get('why'), 'body': body, 'links': links,
+            'name': name, 'entityType': row['entity_type'], 'observations': observations,
+            **({'cites': cites} if cites else {}), **({'stale': stale} if stale else {}),
+            **({'provider': found[0]['provider']} if found[0]['provider'] else {})}
+
+
+def items_at(ctx: Context, address: str, before: int | None, limit: int) -> list[dict[str, Any]]:
+    """The memories numbered at `address` below `before`, newest first, at most `limit`, as items are listed, MCP-037:
+    each one's number, title and why, titled as `item_read` titles it, from one read of the address's joins. Empty when
+    memory does not show there, LAYER-012."""
+    store = ctx.store
+    if store is None or not _reaches(store, address):
+        return []
+    found: list[dict[str, Any]] = []
+    with store.tables(write=False) as tx:
+        joins = [row for row in tx.rows('joins', {'receiver': address}, by=('receiver', 'number'), limit=0).results
+                 if row['number'] and (before is None or row['number'] < before)]
+        for row in reversed(joins):
+            if len(found) >= limit:
+                break
+            entity = tx.get('entities', {'name': row['entity']})
+            if entity is None:
+                continue
+            first = tx.rows('observations', {'entity': row['entity']}, by=('entity', 'seq'), limit=1).results
+            title = entity.get('title') or (first_line(first[0]['content'], 0) if first else None) or row['entity']
+            found.append({'number': int(row['number']), 'kind': 'memory', 'title': title, 'why': entity.get('why')})
+    return found
+
+
 # ------------------------------------------------------------------------------------------------ the declaration
 
 NODE = ('The map element whose memories the command acts on, element:<address>. Without node, receiver, provider or '
@@ -825,11 +1131,18 @@ PROVIDER = 'A purpose whose memories the command acts on: the address of the ele
 ADDRESS = 'An element, by address; with receiver and provider, the element at that address the join holds.'
 NAMED = (Noun('receiver', RECEIVER, required=False), Noun('provider', PROVIDER, required=False),
          Noun('address', ADDRESS, required=False))
+CITE = {'type': 'array', 'items': {'type': 'string'},
+        'description': 'Optional: the evidence, path:line, path:start-end or path:symbol relative to the project; a '
+                       'read flags the memory stale once it no longer matches.'}
 ENTITY = {'type': 'object', 'properties': {
     'name': {'type': 'string', 'description': 'The name of the entity'},
     'entityType': {'type': 'string', 'description': 'The type of the entity'},
     'observations': {'type': 'array', 'items': {'type': 'string'},
-                     'description': 'An array of observation contents associated with the entity'}},
+                     'description': 'An array of observation contents associated with the entity'},
+    'title': {'type': 'string', 'description': 'A new entity: one line saying what this memory is. Left out, it is '
+                                               'the first observation when that is one short line.'},
+    'why': {'type': 'string', 'description': 'A new entity, required: one line saying why this is worth keeping.'},
+    'cite': CITE},
     'required': ['name', 'entityType', 'observations']}
 RELATION = {'type': 'object', 'properties': {
     'from': {'type': 'string', 'description': 'The name of the entity where the relation starts'},
@@ -838,7 +1151,8 @@ RELATION = {'type': 'object', 'properties': {
     'required': ['from', 'to', 'relationType']}
 OBSERVATIONS = {'type': 'array', 'items': {'type': 'object', 'properties': {
     'entityName': {'type': 'string', 'description': 'The name of the entity to add the observations to'},
-    'contents': {'type': 'array', 'items': {'type': 'string'}, 'description': 'An array of observation contents to add'}},
+    'contents': {'type': 'array', 'items': {'type': 'string'}, 'description': 'An array of observation contents to add'},
+    'cite': CITE},
     'required': ['entityName', 'contents']}}
 DELETIONS = {'type': 'array', 'items': {'type': 'object', 'properties': {
     'entityName': {'type': 'string', 'description': 'The name of the entity containing the observations'},
@@ -848,7 +1162,8 @@ NAMES = {'type': 'array', 'items': {'type': 'string'}}
 
 
 EXAMPLE = ('metaform memory create_entities \'[{"name":"route ejection","entityType":"behavior",'
-           '"observations":["Routes are ejected, never packed on delete."]}]\' node=element:code.manager.route')
+           '"observations":["Routes are ejected, never packed on delete."],'
+           '"why":"Packing on delete lost routes."}]\' node=element:code.manager.route')
 
 
 def _at(*nouns: Noun) -> tuple[Noun, ...]:
@@ -870,49 +1185,55 @@ MODULE = Module(
             'a node show nothing while the layer named memory is turned off there, with select, mask or --layers. Each '
             'node also holds one note of at most 2048 characters.',
     verbs=(
-        Verb('create_entities', create_entities, 'Create multiple new entities in the knowledge graph.',
+        Verb('create_entities', create_entities, 'Record what you learned at a node of the map: new memory entities '
+                                                 'with their observations. Without node, they go in the memory graph '
+                                                 'joined to no node.',
              nouns=_at(Noun('entities', 'The entities to create.', kind='json',
                             schema={'type': 'array', 'items': ENTITY})),
              examples=((EXAMPLE, 'Create an entity in the memories of the route manager.'),)),
         Verb('create_relations', create_relations,
-             'Create multiple new relations between entities in the knowledge graph. Relations should be in active '
-             'voice.',
+             'Relate memory entities to one another, at a node or in the whole memory graph. Relations should be in '
+             'active voice.',
              nouns=_at(Noun('relations', 'The relations to create.', kind='json',
                             schema={'type': 'array', 'items': RELATION}))),
-        Verb('add_observations', add_observations, 'Add new observations to existing entities in the knowledge graph.',
+        Verb('add_observations', add_observations, 'Add observations to memory entities that already exist, at a node '
+                                                   'or in the whole memory graph.',
              nouns=_at(Noun('observations', 'The observations to add, by entity.', kind='json', schema=OBSERVATIONS))),
         Verb('delete_entities', delete_entities,
-             'Delete multiple entities and their associated relations from the knowledge graph.',
-             nouns=_at(Noun('entityNames', 'An array of entity names to delete', kind='json', schema=NAMES))),
+             'Delete memory entities and their relations, at a node or in the whole memory graph.',
+             nouns=_at(Noun('entityNames', 'An array of entity names to delete', kind='json', schema=NAMES)), effect='remove'),
         Verb('delete_observations', delete_observations,
-             'Delete specific observations from entities in the knowledge graph.',
-             nouns=_at(Noun('deletions', 'The observations to delete, by entity.', kind='json', schema=DELETIONS))),
-        Verb('delete_relations', delete_relations, 'Delete multiple relations from the knowledge graph.',
+             'Delete observations from memory entities, at a node or in the whole memory graph.',
+             nouns=_at(Noun('deletions', 'The observations to delete, by entity.', kind='json', schema=DELETIONS)), effect='remove'),
+        Verb('delete_relations', delete_relations, 'Delete relations between memory entities, at a node or in the '
+                                                   'whole memory graph.',
              nouns=_at(Noun('relations', 'An array of relations to delete', kind='json',
-                            schema={'type': 'array', 'items': RELATION}))),
-        Verb('read_graph', read_graph, 'Read the entire knowledge graph.', nouns=_at()),
-        Verb('search_nodes', search_nodes, 'Search for nodes in the knowledge graph based on a query.',
+                            schema={'type': 'array', 'items': RELATION})), effect='remove'),
+        Verb('read_graph', read_graph, 'Read the memories at a node of the map, or the whole memory graph without one.',
+             nouns=_at(), effect='read'),
+        Verb('search_nodes', search_nodes, 'Search memory entities by name, type and observation text, at a node or in '
+                                           'the whole memory graph.',
              nouns=_at(Noun('query', 'The search query to match against entity names, types, and observation '
-                                     'content'))),
-        Verb('open_nodes', open_nodes, 'Open specific nodes in the knowledge graph by their names.',
-             nouns=_at(Noun('names', 'An array of entity names to retrieve', kind='json', schema=NAMES))),
-        Verb('note', note, "Read a node's one note, the person's; only the web page writes it.",
+                                     'content')), effect='read'),
+        Verb('open_nodes', open_nodes, 'Read memory entities by name, at a node or in the whole memory graph.',
+             nouns=_at(Noun('names', 'An array of entity names to retrieve', kind='json', schema=NAMES)), effect='read'),
+        Verb('note', note, "Read the person's one note at a node of the map; only the web page writes it.",
              nouns=(Noun('node', 'An element, element:<address>; with provider, the purpose it holds as receiver.'),
                     Noun('provider', 'A purpose node holds as its receiver: the address of the element that serves '
                                      'it.', required=False),
                     Noun('address', 'With provider: the element at that address the join holds.', required=False),
                     Noun('text', f'The note, at most {NOTE_LIMIT} characters; only the web page writes it.', required=False),
                     Noun('by', 'Who wrote it.', required=False)),
-             examples=(('metaform memory note element:code.manager.route', "Read the route manager's note."),)),
-        Verb('joins', joins, 'The joins of type memory: at a node, of an entity, or all, each with whether it is '
-                             'orphaned.',
+             examples=(('metaform memory note element:code.manager.route', "Read the route manager's note."),), effect='read'),
+        Verb('joins', joins, 'List the memory joins that tie entities to map nodes: at a node, of an entity, or all. '
+                             'Each comes with who made it and whether it is orphaned.',
              nouns=(Noun('node', 'element:<address>.', required=False), *NAMED,
-                    Noun('entity', 'An entity name.', required=False))),
-        Verb('orphaned', orphaned, 'The memory joins whose address the active map does not hold, with what each was '
-                                   'attached to.'),
-        Verb('unjoin', unjoin, 'Take one memory join away by its id; the entity stays in the graph.',
-             nouns=(Noun('id', 'The join id joins or orphaned gives.'),)),
-        Verb('rekey', rekey, 'Transfer memory joins and notes from an old address to a new address.',
+                    Noun('entity', 'An entity name.', required=False)), effect='read'),
+        Verb('orphaned', orphaned, 'List the memory joins whose address the active map no longer holds, with what each '
+                                   'was attached to.', effect='read'),
+        Verb('unjoin', unjoin, 'Detach one memory join from its node by its id; the entity stays in the memory graph.',
+             nouns=(Noun('id', 'The join id joins or orphaned gives.'),), effect='remove'),
+        Verb('rekey', rekey, 'Move the memory joins and notes at an old address to the address that replaced it.',
              nouns=(Noun('old', 'The exact old namespace address, including one no longer held by the map.'),
                     Noun('new', 'The replacement namespace address.')),
              details='Replaces the exact address in receivers and providers of memory joins and notes in one '
@@ -920,9 +1241,25 @@ MODULE = Module(
                      'key collision rolls back the whole transfer. Returns the number of joins and notes changed.',
              examples=(('metaform memory rekey code.manager.route code.manager.table',
                         'Transfer the route manager\'s memory to its replacement address.'),)),
-        Verb('graph', graph, 'The whole graph with every join, and whether each join\'s memory shows at its '
-                             'node.'),
+        Verb('graph', graph, 'Read the whole memory graph with its joins to the map: who wrote each, and whether each '
+                             'shows at its node.', effect='read'),
     ),
     node_read=node_read,
+    node_count=node_count,
+    item_read=item_read,
+    items_at=items_at,
+    item_kinds=('memory',),
     tables=TABLES,
+    # What agents learned at a node, read beside the node it belongs to: knowledge attaches to the receiving element.
+    toolbar=(
+        ToolbarItem('memories', 'Memories', 'Read what agents learned at the selected node: its entities, '
+                    'observations and relations.', icon='memory', pane='memories', order=80, shortcut='Alt+M'),
+        ToolbarItem('orphaned', 'Orphaned memories', 'Find the memories whose node the map no longer holds, and '
+                    'move or detach them.', icon='memory', page='orphaned', placement='extra', order=400),
+    ),
+    panes=(
+        Pane('memories', 'Memories', 'Read what agents learned at the selected node: its entities, observations and '
+             'relations.', icon='memory', verb='read_graph', selection='node', area='right', group='node',
+             visible=True, order=60, min_width=320),
+    ),
 )

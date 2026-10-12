@@ -3,6 +3,7 @@ fake_agent.py, so no model is called."""
 from __future__ import annotations
 
 import ast
+import asyncio
 import json
 import os
 import shlex
@@ -21,7 +22,7 @@ HERE = Path(__file__).parent
 MODULE = HERE.parent
 FAKE = HERE / 'fake_agent.py'
 ROOT = Path(__file__).parents[5]
-PUBLIC = {'metaform.module', 'metaform.settings', 'metaform.data', 'metaform.events', 'metaform.nonce',
+PUBLIC = {'metaform.module', 'metaform.settings', 'metaform.data', 'metaform.events',
           'metaform.prompt_files', 'metaform.axiom', 'metaform.home'}
 NODE = 'code.engine'
 LINKED = 'code.store'
@@ -200,7 +201,7 @@ def test_dispatch_is_made_from_the_template_and_imports_only_the_public_base_and
     assert (MODULE / '.github' / 'workflows' / 'checks.yml').read_text(encoding='utf-8') == \
         (MODULE.parent / 'template' / '.github' / 'workflows' / 'checks.yml').read_text(encoding='utf-8')
     assert any(requirement.startswith('agent-client-protocol') for requirement in dispatch.DEPENDENCIES)
-    chassis = tomllib.loads((ROOT / 'pyproject.toml').read_text(encoding='utf-8'))['project']['dependencies']
+    chassis = tomllib.loads((ROOT / 'pyproject.toml').read_text(encoding='utf-8'))['tool']['metaform']['chassis-dependencies']
     assert not any('agent-client-protocol' in requirement for requirement in chassis)
     for source in MODULE.rglob('*.py'):
         if 'tests' in source.parts:
@@ -285,14 +286,26 @@ def test_session_new_is_in_the_project_folder_with_metaform_mcp_and_the_person_e
 
 
 @pytest.mark.req('BASE-052')
+def test_the_mcp_server_is_named_metaform_variables_and_codex_runs_it_over_its_own_config(dispatch):
+    dispatch.start('hold', METAFORM_PROBE='kept')
+    [server] = eventually(lambda: dispatch.received('session/new'))[0]['params']['mcpServers']
+    given = {entry['name']: entry['value'] for entry in server['env']}
+    assert given['METAFORM_HOME'] == str(dispatch.home) and given['METAFORM_PROBE'] == 'kept'
+    assert all(name.startswith('METAFORM_') for name in given), 'only Metaform variables are named'
+    assert (given['METAFORM_ROLE'], given['METAFORM_WORK'], given['METAFORM_NODE']) == ('worker', dispatch.id, NODE)
+    assert given['METAFORM_SESSION'] == dispatch.session().extra['runner'], 'the identity reaches the server itself'
+    assert {entry['filtering'] for entry in dispatch.entries() if 'filtering' in entry} == {'true'}
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
 @pytest.mark.req('BASE-050')
-def test_the_ticket_is_taken_for_the_agent_with_a_nonce_and_one_prompt(dispatch, run):
-    from metaform import nonce
+def test_the_ticket_is_taken_for_the_agent_with_one_prompt_and_its_handoff_read_by_ticket_id(dispatch, run):
     dispatch.start('hold')
     [prompt] = eventually(lambda: dispatch.received('session/prompt'))
     blocks = prompt['params']['prompt']
-    assert len(blocks) == 1 and blocks[0]['type'] == 'text'
-    assert f'metaform map work id={dispatch.id}' in blocks[0]['text']
+    assert [block['type'] for block in blocks] == ['text', 'resource_link', 'resource_link'], 'one prompt, its links typed'
+    assert blocks[0]['text'].startswith(f'Work ticket {dispatch.id} with the map_work tool')
     assert prompt['params']['sessionId'] == 'fake-session-1'
     ticket = dispatch.ticket()
     assert ticket.taken and ticket.taken_by == 'claude fake-session-1'
@@ -302,16 +315,13 @@ def test_the_ticket_is_taken_for_the_agent_with_a_nonce_and_one_prompt(dispatch,
     on_record = json.loads(run('map', 'work', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)
     [shown] = on_record['dispatch']['sessions']
     assert (shown['session_id'], shown['agent'], shown['state']) == ('fake-session-1', 'claude', 'running')
-    assert not {'port', 'token', 'pid', 'nonce'} & set(shown)
-    held = nonce.read(session['nonce'])
-    assert held is not None and held.module == 'dispatch' and held.function == 'handoff'
-    assert held.value['work_id'] == dispatch.id
-    read = run(session['nonce'], cwd=dispatch.folder).stdout
-    assert read.startswith(blocks[0]['text'].strip())
-    assert NODE in read and LINKED in read, 'the nonce hands the agent the namespace nodes of its work'
+    assert not {'port', 'token', 'pid', 'nonce', 'recovery'} & set(shown)
+    assert session['nonce'] is None, 'the session and its identity carry the work; no nonce is requested'
+    assert (session['recovery']['work_id'], session['recovery']['session_id']) == (dispatch.id, 'fake-session-1')
+    read = run('dispatch', 'handoff', f'id={dispatch.id}', cwd=dispatch.folder).stdout
+    assert read.partition('\n')[0] == blocks[0]['text'].partition('\n')[0], 'the same work line on every surface'
+    assert NODE in read and LINKED in read, 'the handoff gives the agent the namespace nodes of its work'
     dispatch.stop()
-    closed = run(session['nonce'], cwd=dispatch.folder, ok=False)
-    assert (closed.stdout + closed.stderr).strip() == 'Error: Invalid or Unknown Nonce'
 
 
 @pytest.mark.req('BASE-052')
@@ -519,15 +529,9 @@ def test_message_and_stop_name_the_next_step_when_no_agent_runs(dispatch, run):
 
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('BASE-050')
-def test_an_agent_makes_a_handoff_nonce_that_hands_the_next_agent_the_work_and_its_nodes(dispatch, run):
-    from metaform import nonce
-    made = run('dispatch', 'handoff', f'id={dispatch.id}', cwd=dispatch.folder).stdout
-    [number] = {word for word in made.replace('`', ' ').split() if len(word) == 7 and word.isdigit()}
-    held = nonce.read(number)
-    assert held is not None and held.module == 'dispatch' and held.function == 'handoff'
-    assert held.value['work_id'] == dispatch.id
-    read = run(number, cwd=dispatch.folder).stdout
-    assert f'metaform map work id={dispatch.id}' in read
+def test_an_agent_hands_work_on_by_ticket_id_and_the_next_agent_reads_the_work_and_its_nodes(dispatch, run):
+    read = run('dispatch', 'handoff', f'id={dispatch.id}', cwd=dispatch.folder).stdout
+    assert f'Work ticket {dispatch.id} with the map_work tool' in read
     assert NODE in read and LINKED in read
     assert not dispatch.ticket().taken, 'making a hand-off takes nothing'
 
@@ -687,7 +691,7 @@ def test_an_issue_raised_on_a_node_in_use_waits_until_that_work_is_complete(disp
     queued = json.loads(run('dispatch', 'raise', NODE, '--json', '--', 'It drifts.', cwd=dispatch.folder,
                             env=dispatch.env('hold')).stdout)
     assert (queued['state'], queued['waiting_on']) == ('queued', [dispatch.id])
-    run('map', 'work', 'op=done', f'id={dispatch.id}', 'resolution=landed', cwd=dispatch.folder)
+    run('map', 'work', 'op=done', 'why=Closed by the test.', f'id={dispatch.id}', 'resolution=landed', cwd=dispatch.folder)
     run('dispatch', 'autostart', cwd=dispatch.folder, env=dispatch.env('hold'))
     from metaform.data import Store
     with Store('proj', module='dispatch').tables(write=False) as tx:
@@ -718,7 +722,7 @@ def test_a_session_ends_when_its_ticket_is_done_whatever_turn_closed_it(dispatch
     closed elsewhere while the agent waits on a permission prompt; when that turn ends the session ends as done."""
     dispatch.start('ask')
     [question] = eventually(dispatch.questions)
-    run('map', 'work', 'op=done', f'id={dispatch.id}', 'resolution=closed elsewhere', cwd=dispatch.folder)
+    run('map', 'work', 'op=done', 'why=Closed by the test.', f'id={dispatch.id}', 'resolution=closed elsewhere', cwd=dispatch.folder)
     run('map', 'reply', question.id, 'answer=Allow once', cwd=dispatch.folder)
     assert eventually(lambda: dispatch.session().extra['state'] == 'ended' or None)
     assert dispatch.session().extra['how'] == 'the ticket is done'
@@ -886,7 +890,8 @@ def test_autostart_starts_each_ticket_with_an_agent_eligible_for_it(dispatch, ru
     eligible(dispatch, run, claude_only, 'claude')
     run('set', '--dispatch-autostart', '--dispatch-agent', 'codex', cwd=dispatch.folder)
     launched = []
-    monkeypatch.setattr(module, 'start', lambda ctx: launched.append((ctx.nouns['id'], ctx.nouns['agent'])) or
+    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation: launched.append((ctx.nouns['id'],
+                                                                                    ctx.nouns['agent'])) or
                         {'work_id': ctx.nouns['id']})
     module.autostart(context('dispatch', dispatch.folder, project='proj'))
     assert launched == [(dispatch.id, 'codex'), (claude_only, 'claude')]
@@ -895,7 +900,6 @@ def test_autostart_starts_each_ticket_with_an_agent_eligible_for_it(dispatch, ru
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('VIEW-039')
 def test_interrupt_keeps_the_session_and_delivers_queued_messages_in_order(dispatch, run, tmp_path):
-    from metaform import nonce
     from metaform.modules.dispatch import tell
     gates = tmp_path / 'interrupt-turns'
     gates.mkdir()
@@ -919,7 +923,7 @@ def test_interrupt_keeps_the_session_and_delivers_queued_messages_in_order(dispa
     assert tell(held, 'status')['activity'] == 'working'
     (gates / '3').touch()
     eventually(lambda: tell(held, 'status')['activity'] == 'idle')
-    assert nonce.read(held['nonce']).open and alive(dispatch.logged('pid')[0])
+    assert alive(dispatch.logged('pid')[0])
     assert dispatch.ticket().taken_by == before.taken_by
     assert dispatch.session().extra['state'] == 'running'
     idle = json.loads(run('dispatch', 'interrupt', dispatch.id, '--json', cwd=dispatch.folder).stdout)
@@ -981,7 +985,7 @@ def test_the_session_state_and_each_edit_are_structured_and_a_file_is_placed_on_
     assert state['agent_info']['name'] == 'fake-agent' and state['capabilities']['load'] is False
     assert Path(state['cwd']).resolve() == dispatch.folder.resolve()
     assert [(one['id'], one['source'], one['current']) for one in state['settings']] == \
-        [('mode', 'mode', 'default'), ('model', 'option', 'small')]
+        [('mode', 'mode', 'default'), ('model', 'option', 'small'), ('reasoning', 'option', 'low')]
     assert state['commands'] == [{'name': 'review', 'description': 'Review the changes', 'hint': 'what to review'}]
     assert state['usage'] == {'used': 1200, 'size': 200000, 'cost': None}
     assert [entry['status'] for entry in state['plan']] == ['completed', 'pending']
@@ -1012,7 +1016,7 @@ def test_the_person_sets_a_running_sessions_mode_and_model_and_a_choice_it_does_
     assert dispatch.received('session/set_mode')[0]['params']['modeId'] == 'plan'
     settings = eventually(lambda: state if (state := read(run, dispatch)['states']['fake-session-1'])['settings'][0][
         'current'] == 'plan' else None)['settings']
-    assert [one['current'] for one in settings] == ['plan', 'large']
+    assert [one['current'] for one in settings] == ['plan', 'large', 'low']
     assert [line['text'] for line in read(run, dispatch)['lines'] if line['kind'] == 'setting'] == \
         ['Model set to Large.', 'Mode set to Plan.']
     refused = run('dispatch', 'configure', dispatch.id, 'model', '--', 'huge', cwd=dispatch.folder, ok=False)
@@ -1122,6 +1126,10 @@ def test_an_intake_agent_follows_the_served_intake_holds_no_ticket_and_one_runs_
     [prompt] = eventually(lambda: dispatch.received('session/prompt'))
     [block] = prompt['params']['prompt']
     assert block['type'] == 'text' and block['text'].strip() == served.strip(), 'the intake as served, nothing added'
+    from metaform.data import Store
+    with Store(dispatch.store.project_id, module='dispatch').tables(write=False) as tx:
+        kept = tx.get('raised', {'work_id': work_id})
+    assert kept is None or kept['asked'] is None, 'what the person asked is cleared from the launch once read'
     assert dispatch.store.work(open=True, limit=0).results == (dispatch.ticket(),), 'no ticket is written or taken'
     assert not dispatch.ticket().taken
     [line] = eventually(lambda: [one for one in read(run, dispatch, work_id)['lines'] if one['kind'] == 'permission'])
@@ -1166,3 +1174,1097 @@ def test_the_handoff_asks_to_record_at_the_node_only_while_memory_is_on(tmp_path
     assert 'node=<the address under at in the ticket read>' in text and 'receiver=<its receiver>' in text
     with mock.patch('metaform.instructions.surfaced', return_value=[]):
         assert 'memory tool' not in handoff_prompt('w1', tmp_path)
+
+
+def waiter(dispatch, *nouns):
+    """`metaform dispatch wait` in a process of its own, returned once its listener is recorded, so a change made
+    after this is heard through BASE-053 rather than found by the first read."""
+    process = subprocess.Popen([sys.executable, '-m', 'metaform', 'dispatch', 'wait', *nouns, '--json'],
+                               cwd=dispatch.folder, env=dispatch.env('done'), stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, text=True, encoding='utf-8')
+    listeners = dispatch.home / 'run' / 'listeners'
+    eventually(lambda: process.poll() is not None or list(listeners.glob(f'dispatch-{process.pid}-*.json')))
+    return process
+
+
+def answered(process):
+    try:
+        out, err = process.communicate(timeout=LIMIT)
+    finally:
+        process.kill()
+    assert process.returncode == 0, err
+    return json.loads(out)
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.req('QUAL-015')
+def test_dispatch_wait_answers_done_when_the_agent_finishes_its_ticket(dispatch):
+    waiting = waiter(dispatch, 'until=done', f'id={dispatch.id}')
+    assert waiting.poll() is None  # it blocks while the ticket is open
+    dispatch.start('done')
+    answer = answered(waiting)
+    assert answer['state'] == 'done' and answer['work_id'] == dispatch.id and answer['next'] is None
+    assert dispatch.ticket().done
+
+
+@pytest.mark.req('BASE-052')
+def test_dispatch_wait_with_no_id_names_the_second_of_two_tickets_that_woke_it(dispatch, run):
+    from metaform.data import Node
+    second = dispatch.store.add_work(Node('element', LINKED), 'unbuilt', task='Write more.txt').id
+    waiting = waiter(dispatch, 'until=done')
+    assert waiting.poll() is None
+    run('map', 'work', 'op=done', 'why=Closed by the test.', f'id={second}', 'resolution=written', cwd=dispatch.folder)
+    answer = answered(waiting)
+    assert answer['work_id'] == second and [found['work_id'] for found in answer['woke']] == [second]
+    assert answer['next'].startswith('metaform dispatch wait until=done since=')
+
+
+@pytest.mark.req('BASE-052')
+def test_dispatch_wait_answers_pending_with_the_next_call_at_its_limit(dispatch, run):
+    run('set', '--dispatch-wait-seconds', '1', cwd=dispatch.folder)
+    answer = answered(waiter(dispatch, 'until=stopped', f'id={dispatch.id}'))
+    assert answer['state'] == 'pending' and answer['next'] == f'metaform dispatch wait until=stopped id={dispatch.id}'
+
+
+@pytest.mark.req('BASE-052')
+def test_session_identity_reaches_the_agent_and_its_mcp_server(dispatch):
+    dispatch.start('hold')
+    [server] = eventually(lambda: dispatch.received('session/new'))[0]['params']['mcpServers']
+    given = {entry['name']: entry['value'] for entry in server['env']}
+    runner = eventually(lambda: dispatch.session().extra['runner'])
+    assert given['METAFORM_HOME'] == str(dispatch.home)
+    assert [given[name] for name in ('METAFORM_ROLE', 'METAFORM_SESSION', 'METAFORM_WORK', 'METAFORM_NODE')] == \
+        ['worker', runner, dispatch.id, NODE]
+    assert {(entry['role'], entry['runner']) for entry in dispatch.entries() if 'role' in entry} == {('worker', runner)}
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.req('MAP-050')
+def test_dispatch_authority_refuses_a_worker_and_marks_an_agents_message_as_its_own(dispatch, run):
+    """A worker stops no other ticket's agent, by the role its runner gave it; the system agent may message one, and
+    its words are its own line in the thread, never the person's."""
+    dispatch.start('hold')
+    eventually(lambda: dispatch.received('session/prompt'))
+    refused = run('dispatch', 'stop', dispatch.id, cwd=dispatch.folder, ok=False, env={'METAFORM_ROLE': 'worker'})
+    assert refused.returncode != 0 and 'A worker agent starts, stops and messages no agent' in \
+        refused.stdout + refused.stderr
+    run('dispatch', 'message', dispatch.id, 'Look', 'again', cwd=dispatch.folder, env={'METAFORM_ROLE': 'system'})
+    told = eventually(lambda: [line for line in dispatch.items('note') if line.extra['update'] in ('message', 'person')])
+    assert [(line.extra['update'], line.value) for line in told] == [('message', 'From the system agent: Look again')]
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+def test_session_identity_the_runner_inherited_is_replaced_with_its_own(dispatch):
+    dispatch.start('hold', METAFORM_ROLE='system', METAFORM_SESSION='x', METAFORM_NODE='code.ledger')
+    [server] = eventually(lambda: dispatch.received('session/new'))[0]['params']['mcpServers']
+    given = {entry['name']: entry['value'] for entry in server['env']}
+    runner = eventually(lambda: dispatch.session().extra['runner'])
+    assert runner != 'x' and (given['METAFORM_ROLE'], given['METAFORM_SESSION']) == ('worker', runner)
+    assert given['METAFORM_NODE'] == NODE
+    assert {(entry['role'], entry['runner']) for entry in dispatch.entries() if 'role' in entry} == {('worker', runner)}
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.req('MCP-010')
+def test_session_identity_needs_a_chosen_server_and_a_refused_start_leaves_the_ticket_in_to_do(dispatch, run,
+                                                                                               user_module):
+    user_module('bridge', '''
+        from metaform.module import Module, Verb
+        SUPPORTED_OS = ('linux', 'macos', 'windows')
+        MODULE = Module(id='bridge', summary='A server.', purpose='A server.', mcp_server='listen',
+                        verbs=(Verb('listen', lambda ctx: None, 'Serve.', surfaces=('cli',), transport=True),))
+    ''')
+    refused = run('dispatch', 'start', dispatch.id, 'claude', cwd=dispatch.folder, ok=False)
+    assert refused.returncode != 0 and 'metaform set --install-server' in refused.stdout + refused.stderr
+    assert dispatch.ticket().column == 'todo'
+    dispatch.store.take_work(dispatch.id, by='dispatch starting r')
+    ran = subprocess.run([sys.executable, '-m', 'metaform', 'dispatch', 'run', dispatch.id, 'claude',
+                          'reservation=dispatch starting r'], cwd=dispatch.folder, env=dispatch.env('hold'),
+                         capture_output=True, text=True, check=False)
+    assert ran.returncode != 0 and 'metaform set --install-server' in ran.stdout + ran.stderr
+    assert dispatch.ticket().column == 'todo' and not dispatch.log.exists()
+
+
+TRIAL = FAKE.with_name('trial_prompts.xml')  # carries a stand-in on_ticket_done, which ships empty
+
+
+def turns(dispatch):
+    return [prompt['params']['prompt'][0]['text'] for prompt in dispatch.received('session/prompt')]
+
+
+@pytest.mark.req('BASE-052')
+def test_record_on_finish_gives_a_worker_that_recorded_nothing_one_more_turn(dispatch):
+    dispatch.start('done', METAFORM_PROMPTS=str(TRIAL))
+    assert dispatch.process.wait(30) == 0
+    assert dispatch.ticket().done
+    assert turns(dispatch)[1:] == [f'Test record prompt. Node: {NODE}.']
+
+
+@pytest.mark.req('BASE-052')
+def test_record_on_finish_sends_nothing_once_the_session_recorded_at_its_node(dispatch):
+    dispatch.start('done', METAFORM_PROMPTS=str(TRIAL), FAKE_ACP_RECORD=NODE)
+    assert dispatch.process.wait(30) == 0
+    assert dispatch.logged('recorded') == [0]
+    assert len(turns(dispatch)) == 1
+
+
+@pytest.mark.req('BASE-052')
+def test_record_on_finish_off_sends_nothing(dispatch, run):
+    run('set', '--dispatch-record-on-finish', 'off', cwd=dispatch.folder)
+    dispatch.start('done', METAFORM_PROMPTS=str(TRIAL))
+    assert dispatch.process.wait(30) == 0
+    assert len(turns(dispatch)) == 1
+
+
+@pytest.mark.req('MCP-039')
+@pytest.mark.req('BASE-050')
+def test_the_handoff_is_the_brief_the_ticket_its_node_and_counts_under_three_kilobytes(dispatch, run):
+    """The hand-off informs and does not dump: the work line with the owner's sentence on memory at the node, then the
+    ticket's fields, the nodes it links by address, the node's brief with the counts there and the MCP calls that
+    read them, and the metaform:// links of the node and the ticket, never the JSON of what is held. The full
+    worker's brief is no longer sent; full=true reads it on demand."""
+    from metaform.modules.dispatch import handoff_prompt
+    dispatch.start('hold')
+    [sent] = eventually(lambda: dispatch.received('session/prompt'))
+    text = sent['params']['prompt'][0]['text']
+    first, _, rest = text.partition('\n\n')
+    assert first == (f'Work ticket {dispatch.id} with the map_work tool. Use Metaform\'s memory tool to store what you '
+                     f'learn under the functional namespace of your assignment, {NODE}, so future agents working there '
+                     'can retrieve it.')
+    assert f'ticket: {dispatch.id}' in rest and f'linked: {LINKED}' in rest
+    assert f'▶ {NODE}' in rest and f'map_work node={NODE}' in rest and 'metaform map work' not in text, \
+        'the reads are named as the MCP calls the agent makes'
+    assert f'Links: metaform://{NODE}  metaform://{NODE}/items/1' in rest
+    assert [(one['type'], one['uri']) for one in sent['params']['prompt'][1:]] == [
+        ('resource_link', f'metaform://{NODE}'), ('resource_link', f'metaform://{NODE}/items/1')], \
+        'the links go as ACP resource links beside the text too'
+    assert rest.count('engine code') == 1, 'the node is named once in its brief'
+    assert '{' not in rest, 'counts with calls, never what is held'
+    assert len(rest.encode('utf-8')) < 3000
+    dispatch.stop()
+    read = run('dispatch', 'handoff', f'id={dispatch.id}', cwd=dispatch.folder).stdout
+    brief = handoff_prompt(dispatch.id, Path(dispatch.folder))
+    assert read.startswith(first) and brief not in read and f'metaform map work node={NODE}' in read, \
+        'read on the command line, the same hand-off with its reads named as commands'
+    full = run('dispatch', 'handoff', f'id={dispatch.id}', 'full=true', cwd=dispatch.folder).stdout
+    assert full.startswith(brief) and full.endswith(read)
+
+
+# ------------------------------------------------------------------ the ACP harness in full, Phase 2
+
+@pytest.mark.req('BASE-052')
+def test_an_agents_options_are_kept_offered_as_settings_and_applied_with_the_tickets_own(dispatch, run):
+    """P199 and P015: what session/new offered is kept per agent and version and offered as the choices of
+    dispatch_agent_options; the agent's default and the ticket's own effort are set with session/set_config_option
+    when the session starts, and a choice already current is not sent again."""
+    empty = json.loads(run('dispatch', 'options', 'agent=claude', '--json', cwd=dispatch.folder).stdout)['agents'][0]
+    assert empty['version'] is None and empty['next'] == 'metaform dispatch options agent=claude prime=true'
+    run('set', '--dispatch-agent-options', 'claude.model=large,claude.thought_level=low', cwd=dispatch.folder)
+    run('dispatch', 'tune', dispatch.id, 'effort=high', cwd=dispatch.folder)
+    dispatch.start('hold', **rich(dispatch))
+    eventually(lambda: dispatch.logged('grandchild'))
+    sent = [(one['params']['configId'], one['params']['value']) for one in dispatch.received('session/set_config_option')]
+    assert sent == [('model', 'large'), ('reasoning', 'high')], 'the ticket\'s effort goes over the agent\'s default'
+    listed = json.loads(run('dispatch', 'options', 'agent=claude', '--json', cwd=dispatch.folder).stdout)['agents'][0]
+    assert listed['version'] == '1.0' and listed['next'] is None
+    effort = next(one for one in listed['settings'] if one['key'] == 'thought_level')
+    assert (effort['name'], effort['chosen'], [one['value'] for one in effort['choices']]) == ('Effort', 'low',
+                                                                                              ['low', 'high'])
+    from metaform import settings
+    assert 'claude.thought_level=high' in settings.SCHEMA['dispatch_agent_options'].options(dispatch.folder)
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+def test_priming_reads_an_agents_options_without_a_prompt(dispatch, run):
+    primed = json.loads(run('dispatch', 'options', 'agent=claude', 'prime=true', '--json', cwd=dispatch.folder,
+                            env=dispatch.env('hold', FAKE_ACP_CLOSE='1', **rich(dispatch))).stdout)['agents'][0]
+    assert [one['key'] for one in primed['settings']] == ['mode', 'model', 'thought_level']
+    assert dispatch.received('session/new')[0]['params']['mcpServers'] == []
+    made = dispatch.received('session/new')[0]
+    assert [one['params']['sessionId'] for one in dispatch.received('session/close')] == ['fake-session-1']
+    assert [one['params']['sessionId'] for one in dispatch.received('session/delete')] == ['fake-session-1'], \
+        'the throwaway session is not left in the person\'s own session list'
+    assert made['params']['mcpServers'] == []
+    assert not dispatch.received('session/prompt'), 'priming spends no tokens'
+    assert gone(dispatch.logged('pid')), 'the primed agent is ended'
+
+
+@pytest.mark.req('BASE-052')
+def test_stderr_steering_and_subagents_reach_the_thread(dispatch, run):
+    """P014, P016: the agent's stderr is a line of its thread with a secret redacted; a message to a turn in flight
+    is steered into it with _session/steering when advertised; a subagent is a child session with its own thread."""
+    dispatch.start('hold', FAKE_ACP_STDERR='1', FAKE_ACP_STEER='1', FAKE_ACP_SUBAGENT='1')
+    eventually(lambda: dispatch.logged('grandchild'))
+    assert dispatch.received('initialize')[0]['params']['clientCapabilities']['subagents'] == {}
+    found = eventually(lambda: got if (got := read(run, dispatch))['subagents'] and
+                       any(line['kind'] == 'stderr' for line in got['lines']) else None)
+    [stderr] = [line['text'] for line in found['lines'] if line['kind'] == 'stderr']
+    assert 'fake agent starting' in stderr and 'api_key=[redacted]' in stderr and 'sk-abc' not in stderr
+    [child] = found['subagents']
+    assert (child['session_id'], child['name'], child['parent']) == ('child-1', 'Explorer', 'fake-session-1')
+    eventually(lambda: [one for one in read(run, dispatch)['subagents'][0]['lines'] if one['text'] == 'Child words'])
+    assert eventually(lambda: read(run, dispatch)['subagents'][0]['state'] == 'completed')
+    sent = json.loads(run('dispatch', 'message', dispatch.id, '--json', '--', 'also check the tests',
+                          cwd=dispatch.folder).stdout)
+    assert sent['steered'] is True
+    assert eventually(lambda: dispatch.logged('steered')) == ['also check the tests']
+    assert len(dispatch.received('session/prompt')) == 1, 'steered into the turn, not queued behind it'
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+def test_a_logged_out_agent_raises_login_needed_and_the_person_logs_it_in(dispatch, run):
+    """P031: authStatus pushed as logged out raises login-needed naming dispatch login; login calls authenticate."""
+    dispatch.start('hold', FAKE_ACP_AUTH='1')
+    eventually(lambda: dispatch.logged('grandchild'))
+    signal = eventually(lambda: [one for one in json.loads(run('dispatch', 'signals', '--json',
+                                                                cwd=dispatch.folder).stdout)['signals']
+                                 if one['signal'] == 'login-needed'])[0]
+    assert signal['next'] == 'metaform dispatch login claude'
+    dispatch.stop()
+    listed = json.loads(run('dispatch', 'login', 'claude', '--json', cwd=dispatch.folder,
+                            env=dispatch.env('hold', FAKE_ACP_AUTH='1')).stdout)
+    assert [one['id'] for one in listed['methods']] == ['fake-login', 'fake-terminal'], \
+        'asked as a client that can run a terminal login, so every method is listed'
+    refused = run('dispatch', 'login', 'claude', 'method=fake-terminal', cwd=dispatch.folder, ok=False,
+                  env=dispatch.env('hold', FAKE_ACP_AUTH='1'))
+    assert refused.returncode != 0 and 'run this command in a terminal' in refused.stdout + refused.stderr
+    logged = json.loads(run('dispatch', 'login', 'claude', 'method=fake-login', '--json', cwd=dispatch.folder,
+                            env=dispatch.env('hold', FAKE_ACP_AUTH='1')).stdout)
+    assert (logged['method'], logged['state']) == ('fake-login', 'logged in')
+    assert dispatch.received('authenticate')[-1]['params']['methodId'] == 'fake-login'
+
+
+@pytest.mark.req('BASE-052')
+def test_cancel_sends_session_cancel_and_records_the_ticket_cancelled_not_done(dispatch, run):
+    """P232: the turn is cancelled with session/cancel, the session ends as the person's, never to be retried, and
+    the ticket reads as cancelled with its reason."""
+    dispatch.start('hold')
+    eventually(lambda: dispatch.logged('grandchild'))
+    run('dispatch', 'cancel', dispatch.id, '--', 'No longer needed', cwd=dispatch.folder)
+    assert dispatch.received('session/cancel')
+    assert dispatch.process.wait(LIMIT) == 0
+    assert dispatch.session().extra['how'] == 'cancelled by the person'
+    ticket = dispatch.ticket()
+    assert ticket.done and ticket.resolution == 'Cancelled: No longer needed' and ticket.outcome == 'cancelled'
+    shown = json.loads(run('map', 'work', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)
+    assert shown['outcome'] == 'cancelled', 'the ticket read itself says cancelled'
+    listed = json.loads(run('map', 'work', 'open=false', '--json', cwd=dispatch.folder).stdout)
+    rows = listed['results'] if isinstance(listed, dict) else listed
+    assert [one['outcome'] for one in rows if one['id'] == dispatch.id] == ['cancelled'], 'and so does the list'
+    waited = json.loads(run('dispatch', 'wait', 'until=done', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)
+    assert (waited['state'], waited['next']) == ('cancelled', None)
+    from metaform.modules import dispatch as module
+    assert next(verb for verb in module.MODULE.verbs if verb.name == 'cancel').effect == 'remove', \
+        'hosts confirm it, as destructive'
+
+
+@pytest.mark.req('BASE-052')
+def test_a_turns_tokens_are_spent_against_the_budgets(dispatch, run):
+    """M01: each turn's tokens are summed per ticket, run and day; a budget reached raises the budget signal and
+    refuses the next start."""
+    run('set', '--dispatch-budget-ticket=500', cwd=dispatch.folder)
+    dispatch.start('hold', FAKE_ACP_USAGE='800')
+    eventually(lambda: dispatch.logged('grandchild'))
+    run('dispatch', 'interrupt', dispatch.id, cwd=dispatch.folder)
+    spend = eventually(lambda: got if (got := json.loads(run('dispatch', 'spend', f'id={dispatch.id}', '--json',
+                                                               cwd=dispatch.folder).stdout))['ticket']['tokens'] else None)
+    assert (spend['ticket']['tokens'], spend['ticket']['budgets']['ticket'], spend['ticket']['unmetered']['tokens']) \
+        == (800, 500, [])
+    assert len(spend['ticket']['unmetered']['cost']) == 1, 'it reports tokens and no cost'
+    run('set', '--dispatch-budget-cost-ticket=5', cwd=dispatch.folder)
+    assert 'Codex' in json.loads(run('dispatch', 'spend', f'id={dispatch.id}', '--json',
+                                     cwd=dispatch.folder).stdout)['notices'][0]
+    assert eventually(lambda: [one for one in json.loads(run('dispatch', 'signals', '--json', cwd=dispatch.folder)
+                                                         .stdout)['signals'] if one['signal'] == 'budget'])
+    dispatch.stop()
+    refused = run('dispatch', 'start', dispatch.id, 'claude', cwd=dispatch.folder, ok=False)
+    assert refused.returncode != 0 and 'budget per ticket' in refused.stdout + refused.stderr
+
+
+@pytest.mark.req('BASE-052')
+def test_the_supervisor_resumes_a_stopped_session_with_backoff_then_hands_it_over(dispatch, monkeypatch):
+    """P012: a worker's session that ended without the person's stop is resumed in place after the wait, up to
+    dispatch_retries, then handed to the person; one the person stopped is never retried."""
+    from metaform.data import Store
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    dispatch.store.take_work(dispatch.id, None, 'claude s1')
+    with Store('proj', module='dispatch').tables() as tx:
+        tx.insert('sessions', {'session_id': 's1', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'ended',
+                               'how': 'the agent ended with exit code 1', 'started': '2026-10-11T00:00:00Z', 'seq': 1})
+        tx.insert('lines', {'session_id': 's1', 'name': 'state', 'work_id': dispatch.id, 'kind': 'state', 'seq': 1,
+                            'text': json.dumps({'capabilities': {'load': True}, 'cwd': str(dispatch.folder)})})
+    spawned = []
+    monkeypatch.setattr(module, 'spawn', lambda store, work_id, agent, extra, name: spawned.append(extra) or {'pid': 0})
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    first = module.retry(ctx, dispatch.store)
+    assert first['retried'] == [] and first['retry_due'] > time.time(), 'the first retry waits'
+
+    def due():
+        with Store('proj', module='dispatch').tables() as tx:
+            tx.update('attempts', {'work_id': dispatch.id}, {'next_at': 0.0})
+    due()
+    assert [one['retry'] for one in module.retry(ctx, dispatch.store)['retried']] == [1]
+    assert spawned == [['resume=s1', 'retry=true']]
+    due()
+    module.retry(ctx, dispatch.store)
+    due()
+    assert module.retry(ctx, dispatch.store)['retried'] == [], 'dispatch_retries is 2'
+    [handed] = [one for one in module.read_signals(ctx)['signals'] if one['signal'] == 'handed-over']
+    assert handed['next'] == f'metaform dispatch resume {dispatch.id} session=s1'
+    with Store('proj', module='dispatch').tables() as tx:
+        tx.delete('attempts', {'work_id': dispatch.id})
+        tx.update('sessions', {'session_id': 's1'}, {'how': 'stopped by the person'})
+    assert module.retry(ctx, dispatch.store) == {'retried': []}, 'never a session the person stopped'
+
+
+@pytest.mark.req('BASE-052')
+def test_an_agents_question_is_put_to_the_person_and_the_answer_reaches_it_as_acp_elicitation(dispatch, run):
+    """ACP's elicitation: the runner advertises both modes; a form question is asked at the ticket's node with its
+    choices, never answered by dispatch_prompts, and the person's answer reaches the agent as accept with content
+    its schema asks for. Asked in a terminal-free way: a question, not a permission."""
+    run('set', '--dispatch-prompts', 'approve-all', cwd=dispatch.folder)
+    dispatch.start('hold', FAKE_ACP_ELICIT='form')
+    init = eventually(lambda: dispatch.received('initialize'))[0]['params']['clientCapabilities']
+    assert init['elicitation'] == {'form': {}, 'url': {}} and init['session']['notices'] == {}
+    [question] = eventually(dispatch.questions)
+    assert 'Which colour?' in question.text and list(question.suggestions) == ['Red', 'Blue', 'decline']
+    assert not dispatch.logged('elicited'), 'approve-all answers permissions, never a question'
+    run('map', 'reply', question.id, 'answer=Blue', cwd=dispatch.folder)
+    assert eventually(lambda: dispatch.logged('elicited')) == [{'action': 'accept', 'content': {'colour': 'blue'}}]
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+def test_a_page_to_open_is_shown_with_its_host_and_consent_is_the_persons_answer(dispatch, run):
+    """URL-mode elicitation, as an MCP server's sign-in asks it: the full address and its host are put to the person,
+    Metaform opens nothing, accept is their consent, and elicitation/complete marks the line done. A session notice is
+    a line of its own."""
+    dispatch.start('hold', FAKE_ACP_ELICIT='url', FAKE_ACP_NOTICE='1')
+    [question] = eventually(dispatch.questions)
+    assert 'https://auth.example.com/login?state=x' in question.text and 'Host: auth.example.com' in question.text
+    [line] = [one['data'] for one in read(run, dispatch)['lines'] if one['kind'] == 'elicitation']
+    assert (line['url'], line['host'], line['state']) == ('https://auth.example.com/login?state=x',
+                                                          'auth.example.com', 'waiting')
+    run('dispatch', 'permit', dispatch.id, question.id, '--', 'accept', cwd=dispatch.folder)
+    assert eventually(lambda: dispatch.logged('elicited')) == [{'action': 'accept'}]
+    assert eventually(lambda: [one for one in read(run, dispatch)['lines']
+                               if one['kind'] == 'elicitation' and one['data']['state'] == 'completed'])
+    notices = [one['data'] for one in read(run, dispatch)['lines'] if one['kind'] == 'agent_notice']
+    assert notices == [{'severity': 'warning', 'title': 'MCP server unavailable',
+                        'description': 'Continuing without it.'}]
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+def test_claudes_ask_user_question_is_one_question_with_its_choices_offered(dispatch, run):
+    """claude-agent-acp sends AskUserQuestion as a choice field and an optional free-text "Other" beside it, nothing
+    required: it is one question, its choices are the suggestions, and a choice named reaches the choice field."""
+    dispatch.start('hold', FAKE_ACP_ELICIT='ask')
+    [question] = eventually(dispatch.questions)
+    assert list(question.suggestions) == ['Red', 'Blue', 'decline']
+    [line] = [one['data'] for one in read(run, dispatch)['lines'] if one['kind'] == 'elicitation']
+    assert line['tool_call_id'] == 't-ask'
+    run('map', 'reply', question.id, 'answer=Blue', cwd=dispatch.folder)
+    assert eventually(lambda: dispatch.logged('elicited')) == [{'action': 'accept', 'content': {'question_0': 'Blue'}}]
+    dispatch.stop()
+
+
+def test_a_bare_answer_fills_a_choice_or_the_free_text_companion_and_an_unreadable_one_is_never_an_empty_accept():
+    """The answer's reading, against the shapes the adapters send: own words go to the companion, a choice and words
+    to both, a form of several questions takes name: value, and an answer that fills no field is refused."""
+    from metaform.modules.dispatch.runner import elicit_answer, elicit_fields
+    claude = elicit_fields({'type': 'object', 'properties': {
+        'question_0': {'type': 'string', 'title': 'Colour', 'oneOf': [{'const': 'Red', 'title': 'Red'},
+                                                                       {'const': 'Blue', 'title': 'Blue'}]},
+        'question_0_custom': {'type': 'string', 'title': 'Other'}}})
+    assert elicit_answer(claude, 'I think blue') == ('accept', {'question_0_custom': 'I think blue'})
+    assert elicit_answer(claude, 'Blue, but darker') == ('accept', {'question_0': 'Blue',
+                                                                    'question_0_custom': 'but darker'})
+    codex = elicit_fields({'type': 'object', 'required': ['q'], 'properties': {
+        'q': {'type': 'string', 'title': 'Which?', 'oneOf': [{'const': 'pg', 'title': 'pg'},
+                                                             {'const': 'None of the above', 'title': 'None of the above'}]},
+        'q_note': {'type': 'string', 'title': 'Additional answer or note',
+                   '_meta': {'codex': {'questionId': 'q', 'role': 'user_note', 'isSecret': True}}}}})
+    assert codex[1]['note_of'] == 'q' and codex[1]['secret']
+    assert elicit_answer(codex, 'None of the above: sqlite') == ('accept', {'q': 'None of the above',
+                                                                             'q_note': 'sqlite'})
+    with pytest.raises(ValueError, match='begin the answer'):
+        elicit_answer(codex, 'sqlite')
+    three = elicit_fields({'type': 'object', 'properties': {
+        'a': {'type': 'string'}, 'b': {'type': 'integer', 'minimum': 1},
+        'c': {'type': 'string', 'format': 'email', 'default': 'x@y.z'}}})
+    with pytest.raises(ValueError, match='fills none'):
+        elicit_answer(three, 'blah')
+    with pytest.raises(ValueError, match='at least 1'):
+        elicit_answer(three, 'a: hi; b: 0')
+    assert elicit_answer(three, 'a: hi; b: 3') == ('accept', {'a': 'hi', 'b': 3, 'c': 'x@y.z'})
+
+
+@pytest.mark.req('BASE-052')
+def test_a_question_the_agent_withdraws_is_closed_and_the_silence_clock_goes_on(dispatch, run):
+    """ACP's request cancellation: the agent's `$/cancel_request` for its waiting question closes the question at the
+    node, clears question-waiting, marks the line withdrawn, answers the request with -32800, and the silence clock,
+    paused while it waited, runs again."""
+    run('set', '--dispatch-silence-seconds', '1', cwd=dispatch.folder)
+    dispatch.start('hold', FAKE_ACP_ELICIT='withdraw')
+    [answer] = eventually(lambda: dispatch.logged('elicited'))
+    assert answer['error']['code'] == -32800
+    assert not dispatch.questions() and dispatch.questions(open=False)
+
+    def signals(name, active):
+        said = run('dispatch', 'signals', f'active={str(active).lower()}', '--json', cwd=dispatch.folder).stdout
+        return [one for one in json.loads(said)['signals'] if one['signal'] == name]
+    assert eventually(lambda: signals('question-waiting', False)) and not signals('question-waiting', True)
+    assert eventually(lambda: [one for one in read(run, dispatch)['lines']
+                               if one['kind'] == 'elicitation' and one['data']['state'] == 'withdrawn'])
+    assert eventually(lambda: signals('silent', True))
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+def test_a_page_completed_out_of_band_closes_its_question(dispatch, run):
+    """An MCP server's sign-in that finished in the browser before the person answered: elicitation/complete closes
+    the waiting question, the agent gets accept, and the line says completed."""
+    dispatch.start('hold', FAKE_ACP_ELICIT='complete')
+    assert eventually(lambda: dispatch.logged('elicited')) == [{'action': 'accept'}]
+    assert not dispatch.questions()
+    assert eventually(lambda: [one for one in read(run, dispatch)['lines']
+                               if one['kind'] == 'elicitation' and one['data']['state'] == 'completed'])
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+def test_a_token_budget_stops_a_turn_part_way_on_the_provisional_meter(dispatch, run):
+    """M01: the adapters report a turn's tokens only at its end, but its context in use after each model call; the
+    turn's estimate from those is held against the token budgets, so interrupt cancels a runaway turn part way."""
+    run('set', '--dispatch-budget-ticket=1000', cwd=dispatch.folder)
+    run('set', '--dispatch-budget-action', 'interrupt', cwd=dispatch.folder)
+    dispatch.start('hold', FAKE_ACP_USED='5000,9000')
+    eventually(lambda: dispatch.received('session/cancel'))
+    [budget] = [one for one in json.loads(run('dispatch', 'signals', '--json', cwd=dispatch.folder).stdout)['signals']
+                if one['signal'] == 'budget']
+    assert (budget['measure'], budget['provisional']) == ('tokens', 5500)
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+def test_a_turn_silent_twice_is_signalled_twice(dispatch, run):
+    """P040: the silence clock starts again whenever the agent speaks, so a turn that falls silent, speaks and falls
+    silent again raises the silent signal, has it cleared, and raises it again."""
+    run('set', '--dispatch-silence-seconds', '1', cwd=dispatch.folder)
+    dispatch.start('hold', FAKE_ACP_SILENT='3')
+
+    def silent(active):
+        said = run('dispatch', 'signals', f'active={str(active).lower()}', '--json', cwd=dispatch.folder).stdout
+        return [one for one in json.loads(said)['signals'] if one['signal'] == 'silent']
+    eventually(lambda: silent(True))
+    assert not dispatch.logged('spoke'), 'raised while the agent was silent'
+    eventually(lambda: silent(False))
+    assert dispatch.logged('spoke'), 'cleared when it spoke'
+    eventually(lambda: silent(True))  # raised again when it fell silent again
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+def test_a_cost_budget_counts_each_reports_addition_and_interrupts_the_turn_when_asked(dispatch, run):
+    """M01: usage_update's cost is the session's running total, so only what each report adds is kept; a cost
+    budget reached during a turn raises the budget signal, and with dispatch_budget_action interrupt the turn is
+    cancelled with session/cancel. The token and run budgets ship off."""
+    from metaform import settings
+    assert all(settings.SCHEMA[key].default == 0 for key in ('dispatch_budget_ticket', 'dispatch_budget_run',
+                                                            'dispatch_budget_day', 'dispatch_budget_cost_day'))
+    run('set', '--dispatch-budget-cost-ticket=5', cwd=dispatch.folder)
+    run('set', '--dispatch-budget-action', 'interrupt', cwd=dispatch.folder)
+    dispatch.start('hold', FAKE_ACP_COST='0.02,0.07')
+    eventually(lambda: dispatch.received('session/cancel'))
+    spend = json.loads(run('dispatch', 'spend', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)
+    assert (spend['ticket']['cost'], spend['ticket']['currency']) == (0.07, 'USD'), 'never the totals summed'
+    [budget] = [one for one in json.loads(run('dispatch', 'signals', '--json', cwd=dispatch.folder).stdout)['signals']
+                if one['signal'] == 'budget']
+    assert (budget['measure'], budget['spent'], budget['limit']) == ('cost', 7, 5)
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.req('CLI-011')
+def test_cancel_and_tune_are_the_persons_and_tune_takes_only_what_the_agent_offers(dispatch, run):
+    """P232 and P015: over MCP an agent is refused cancel and tune while agents_may_set_control is off; tune refuses
+    a value the ticket's agent did not offer at its last session, and the ticket read shows what it keeps; one value
+    per agent and setting in dispatch_agent_options."""
+    from metaform.data import Store
+    from metaform.module import Stop, context
+    from metaform.modules import dispatch as module
+    for verb, nouns in ((module.cancel, {'id': dispatch.id}), (module.tune, {'id': dispatch.id, 'model': 'large'})):
+        with pytest.raises(Stop, match='the person'):
+            verb(context('dispatch', dispatch.folder, project='proj', nouns=nouns, surface='mcp'))
+    assert not dispatch.ticket().done
+    with Store('proj', module='dispatch').tables() as tx:
+        tx.insert('catalog', {'agent': 'codex', 'version': '9', 'name': 'Codex', 'seen': '2026-10-12T00:00:00Z',
+                              'seq': 1, 'settings': [{'id': 'model', 'category': 'model', 'type': 'select',
+                                                      'options': [{'value': 'small'}, {'value': 'large'}]}]})
+    refused = run('dispatch', 'tune', dispatch.id, 'model=bogus', cwd=dispatch.folder, ok=False)
+    assert refused.returncode != 0 and 'small, large' in refused.stdout + refused.stderr
+    run('dispatch', 'tune', dispatch.id, 'model=large', cwd=dispatch.folder)
+    shown = json.loads(run('map', 'work', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)
+    assert shown['dispatch']['options'] == {'model': 'large'}
+    twice = run('set', '--dispatch-agent-options', 'claude.model=a,claude.model=b', cwd=dispatch.folder, ok=False)
+    assert twice.returncode != 0 and 'one value for each name' in twice.stdout + twice.stderr
+
+
+@pytest.mark.req('BASE-052')
+def test_the_supervisor_hands_a_logged_out_session_over_at_once_and_keeps_its_run(dispatch, monkeypatch):
+    """P012 and M01: a session whose agent needs a login is handed to the person with no retry, since only they can
+    log it in; a retry goes on spending against the run of the session it resumes."""
+    from metaform.data import Node, Store
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    other = dispatch.store.add_work(Node('element', LINKED), 'unbuilt', task='Write more.txt').id
+    dispatch.store.take_work(dispatch.id, None, 'claude s1')
+    dispatch.store.take_work(other, None, 'claude s2')
+    state = json.dumps({'capabilities': {'load': True}, 'cwd': str(dispatch.folder)})
+    with Store('proj', module='dispatch').tables() as tx:
+        for session, work, how in (('s1', dispatch.id, 'it failed: Claude Code needs a login before it makes a session'),
+                                   ('s2', other, 'the agent ended with exit code 1')):
+            tx.insert('sessions', {'session_id': session, 'work_id': work, 'agent': 'claude', 'state': 'ended',
+                                   'how': how, 'started': '2026-10-11T00:00:00Z', 'seq': 1})
+            tx.insert('lines', {'session_id': session, 'name': 'state', 'work_id': work, 'kind': 'state', 'seq': 1,
+                                'text': state})
+        tx.insert('spend', {'session_id': 's2', 'seq': 1, 'work_id': other, 'run': 'run-a', 'day': '2026-10-11',
+                            'tokens': 10})
+    spawned = []
+    monkeypatch.setattr(module, 'spawn', lambda store, work_id, agent, extra, name: spawned.append(extra) or {'pid': 0})
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    module.retry(ctx, dispatch.store)
+    with Store('proj', module='dispatch').tables() as tx:
+        tx.update('attempts', {'work_id': other}, {'next_at': 0.0})
+    module.retry(ctx, dispatch.store)
+    assert spawned == [['resume=s2', 'retry=true', 'run=run-a']], 'the logged-out session is never retried'
+    [handed] = [one for one in module.read_signals(ctx)['signals'] if one['signal'] == 'handed-over']
+    assert handed['work_id'] == dispatch.id and 'login' in handed['reason']
+
+
+# ------------------------------------------------------------------ dispatch serve: an editor's ACP agent, BASE-062
+
+class Editor:
+    """An editor's side of ACP, as the official SDK's client: it keeps what the agent sends and allows what it asks."""
+
+    def __init__(self):
+        self.updates, self.asked = [], []
+
+    async def session_update(self, session_id, update, **kwargs):
+        self.updates.append(update.model_dump(mode='json', by_alias=True, exclude_none=True))
+
+    async def request_permission(self, options, session_id, tool_call, **kwargs):
+        from acp.schema import AllowedOutcome, RequestPermissionResponse
+        self.asked.append(tool_call.title)
+        return RequestPermissionResponse(outcome=AllowedOutcome(outcome='selected', option_id=options[0].option_id))
+
+    def on_connect(self, conn):
+        pass
+
+    def said(self, kind='agent_message_chunk'):
+        return [one['content'].get('text', '') for one in self.updates if one.get('sessionUpdate') == kind]
+
+    def commands(self):
+        offered = [one for one in self.updates if one.get('sessionUpdate') == 'available_commands_update']
+        return [command['name'] for command in offered[-1]['availableCommands']] if offered else []
+
+
+async def until(check, limit=LIMIT):
+    deadline = time.monotonic() + limit
+    while not (found := check()):
+        if time.monotonic() > deadline:
+            raise AssertionError(f'not within {limit} s')
+        await asyncio.sleep(0.05)
+    return found
+
+
+def served(dispatch, words, body, env=None):
+    """Run `metaform dispatch serve <words>` in the project folder, driven over stdio by the SDK's ACP client."""
+    import acp
+    from acp.schema import AuthCapabilities, ClientCapabilities, FileSystemCapabilities, Implementation
+
+    async def session():
+        editor = Editor()
+        async with acp.spawn_agent_process(editor, sys.executable, '-m', 'metaform', 'dispatch', 'serve', *words,
+                                           cwd=dispatch.folder, env=env or dispatch.env('ask'),
+                                           transport_kwargs={'stderr': None}) as (conn, _):
+            init = await conn.initialize(
+                protocol_version=1, client_info=Implementation(name='editor', version='1'),
+                client_capabilities=ClientCapabilities(fs=FileSystemCapabilities(read_text_file=True,
+                                                                                 write_text_file=True), terminal=True,
+                                                       auth=AuthCapabilities(terminal=True)))
+            await body(conn, editor, init)
+    asyncio.run(session())
+
+
+@pytest.mark.req('BASE-062')
+@pytest.mark.req('BASE-003')
+def test_serve_alone_answers_its_commands_lists_and_loads_dispatch_sessions_and_cancels(dispatch):
+    import acp
+
+    from metaform.data import Store
+    with Store('proj', module='dispatch').tables() as tx:
+        tx.insert('sessions', {'session_id': 'page-1', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'ended',
+                               'how': 'the ticket is done', 'started': '2026-10-11T00:00:00Z', 'seq': 1})
+        tx.insert('lines', {'session_id': 'page-1', 'name': 'line:1', 'work_id': dispatch.id, 'kind': 'person',
+                            'text': 'Write it.', 'seq': 1})
+        tx.insert('lines', {'session_id': 'page-1', 'name': 'flow:1', 'work_id': dispatch.id,
+                            'kind': 'agent_message_chunk', 'text': 'Written.', 'seq': 2})
+
+    async def body(conn, editor, init):
+        caps = init.agent_capabilities
+        assert init.agent_info.name == 'metaform' and caps.load_session and caps.session_capabilities.list is not None
+        made = await conn.new_session(cwd=str(dispatch.folder), mcp_servers=[])
+        names = await until(editor.commands)
+        assert {'map_work', 'dispatch_claims'} <= set(names), 'the verbs, named as their MCP tools'
+        assert 'dispatch_serve' not in names and 'mcp_serve' not in names, 'no transport'
+        answered = await conn.prompt(session_id=made.session_id, prompt=[acp.text_block('/dispatch_claims')])
+        assert answered.stop_reason == 'end_turn' and 'claims' in editor.said()[-1]
+        await conn.prompt(session_id=made.session_id, prompt=[acp.text_block('What is the alarm for?')])
+        assert 'answers its own commands' in editor.said()[-1], 'free text is told it needs an agent'
+        listed = await conn.list_sessions(cwd=str(dispatch.folder))
+        assert [(one.session_id, one.title) for one in listed.sessions] == [('page-1', 'claude on Write notes.txt')]
+        assert listed.sessions[0].cwd == str(dispatch.folder.resolve()), 'the folder it worked in'
+        assert not (await conn.list_sessions(cwd=str(dispatch.folder / 'elsewhere'))).sessions, 'only that folder'
+        assert 'page-1' in [one.session_id for one in (await conn.list_sessions()).sessions], 'every project'
+        editor.updates.clear()
+        await conn.load_session(cwd=str(dispatch.folder), session_id='page-1', mcp_servers=[])
+        assert editor.said('user_message_chunk') == ['Write it.'] and editor.said() == ['Written.']
+        waiting = asyncio.ensure_future(conn.prompt(session_id=made.session_id, prompt=[
+            acp.text_block(f'/dispatch_wait until=done id={dispatch.id}')]))
+        await asyncio.sleep(1)
+        await conn.cancel(session_id=made.session_id)
+        assert (await asyncio.wait_for(waiting, 30)).stop_reason == 'cancelled'
+    served(dispatch, ['agent=none'], body)
+
+
+@pytest.mark.req('BASE-062')
+@pytest.mark.req('BASE-052')
+def test_serve_passes_an_agent_through_with_metaforms_server_and_records_it_for_the_page(dispatch):
+    import acp
+
+    async def body(conn, editor, init):
+        assert init.agent_capabilities.session_capabilities.list is not None, 'Metaform lists sessions it can load'
+        [login] = [one.model_dump(by_alias=True, exclude_none=True) for one in init.auth_methods]
+        assert login['id'] == 'fake-terminal' and not login.get('args'), 'no argument the serve command would refuse'
+        assert login['env'] == {'FAKE_LOGIN': 'yes', 'METAFORM_SERVE_LOGIN': '["--login", "now"]'}
+        found['login'] = login
+        made = await conn.new_session(cwd=str(dispatch.folder), mcp_servers=[])
+        answered = await conn.prompt(session_id=made.session_id, prompt=[acp.text_block('Write notes.txt')])
+        assert answered.stop_reason == 'end_turn' and editor.asked == ['Write notes.txt'], 'the editor answers'
+        row = await until(lambda: next((one.extra for one in dispatch.items('session')
+                                         if one.extra['session_id'] == made.session_id), None))
+        assert row['agent'] == 'claude' and row['state'] == 'running'
+        assert dispatch.store.ticket(row['work_id']).work.task == 'Sessions from editors'
+        await asyncio.to_thread(dispatch.run, 'dispatch', 'message', row['work_id'], 'Look again', cwd=dispatch.folder)
+        await until(lambda: len(dispatch.received('session/prompt')) == 2)
+        await until(lambda: 'Look again' in editor.said('user_message_chunk'))
+        listed = await conn.list_sessions(cwd=str(dispatch.folder))
+        assert made.session_id in [one.session_id for one in listed.sessions]
+    found = {}
+    served(dispatch, ['agent=claude'], body, dispatch.env('ask', FAKE_ACP_LOAD='1'))
+    # The editor's login terminal: the configured command again, with the method's environment; Metaform becomes the
+    # agent's adapter with the agent's own login arguments, ACP's terminal authentication.
+    logged_in = subprocess.run([sys.executable, '-m', 'metaform', 'dispatch', 'serve', 'agent=claude'],
+                               cwd=dispatch.folder, env={**dispatch.env('ask'), **found['login']['env']},
+                               stdin=subprocess.DEVNULL, capture_output=True, timeout=LIMIT, check=False)
+    assert logged_in.returncode == 0, logged_in.stderr.decode()
+    assert dispatch.logged('login') == [['--login', 'now']] and dispatch.logged('login_env') == ['yes']
+    assert dispatch.logged('login_leak') == [None]
+    initialize = dispatch.received('initialize')[0]['params']
+    assert initialize['clientCapabilities']['fs'] == {'readTextFile': True, 'writeTextFile': True}
+    assert initialize['clientCapabilities']['terminal'] is True, "the editor's capabilities, passed through"
+    [server] = dispatch.received('session/new')[0]['params']['mcpServers']
+    assert server['name'] == 'metaform' and server['args'][1:] == ['metaform', 'mcp', 'serve']
+    assert 'METAFORM_SESSION' in {one['name'] for one in server['env']}
+    assert eventually(lambda: dispatch.items('session')[-1].extra['state'] == 'ended')
+
+
+class Lines:
+    """An editor that speaks ACP as plain JSON-RPC lines, for what the SDK's client does not carry yet: Session
+    Notices, request cancellation and message ids."""
+
+    def __init__(self, dispatch, *words, env=None):
+        import queue
+        import threading
+        self.process = subprocess.Popen([sys.executable, '-m', 'metaform', 'dispatch', 'serve', *words],
+                                        cwd=dispatch.folder, env=env or dispatch.env('ask'), stdin=subprocess.PIPE,
+                                        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        self.heard = queue.Queue()
+        self.seen = []
+        threading.Thread(target=lambda: [self.heard.put(json.loads(line)) for line in self.process.stdout],
+                         daemon=True).start()
+
+    def send(self, message):
+        self.process.stdin.write(json.dumps({'jsonrpc': '2.0', **message}).encode() + b'\n')
+        self.process.stdin.flush()
+
+    def until(self, check):
+        deadline = time.monotonic() + LIMIT
+        while True:
+            found = next((one for one in self.seen if check(one)), None)
+            if found is not None:
+                return found
+            self.seen.append(self.heard.get(timeout=max(0.1, deadline - time.monotonic())))
+
+    def answer(self, ident):
+        return self.until(lambda one: one.get('id') == ident and 'method' not in one)
+
+    def updates(self, kind):
+        return [one['params']['update'] for one in self.seen if one.get('method') == 'session/update'
+                and one['params']['update'].get('sessionUpdate') == kind]
+
+    def close(self):
+        self.process.stdin.close()
+        self.process.wait(LIMIT)
+
+
+@pytest.mark.req('BASE-062')
+def test_serve_alone_tells_the_editor_by_notice_marks_its_messages_and_cancels_a_request(dispatch, run):
+    run('set', '--dispatch-serve-agent', 'gemini', '--dispatch-gemini', 'no-such-adapter-anywhere', cwd=dispatch.folder)
+    editor = Lines(dispatch)
+    try:
+        editor.send({'id': 1, 'method': 'initialize', 'params': {'protocolVersion': 1, 'clientCapabilities': {
+            'session': {'notices': {}}}}})
+        caps = editor.answer(1)['result']['agentCapabilities']
+        assert caps['sessionCapabilities'] == {'list': {}, 'close': {}, 'delete': {}}, 'answered, so advertised'
+        assert caps['mcpCapabilities'] == {'http': False, 'sse': False}, 'no key of an unpublished draft'
+        editor.send({'id': 2, 'method': 'session/new', 'params': {'cwd': str(dispatch.folder), 'mcpServers': []}})
+        session = editor.answer(2)['result']['sessionId']
+        notice = editor.until(lambda one: one.get('method') == 'session/update'
+                              and one['params']['update'].get('sessionUpdate') == 'notice')['params']['update']
+        assert notice['severity'] == 'warning' and 'serving alone' in notice['title']
+        assert 'no-such-adapter-anywhere' in notice['description']
+        editor.send({'id': 3, 'method': 'session/prompt', 'params': {'sessionId': session, 'prompt': [
+            {'type': 'text', 'text': 'Hello'}]}})
+        assert editor.answer(3)['result']['stopReason'] == 'end_turn'
+        [said] = editor.updates('agent_message_chunk')
+        assert said['messageId'].startswith('metaform-'), 'a message of its own, never joined to a neighbour'
+        editor.send({'id': 4, 'method': 'session/prompt', 'params': {'sessionId': session, 'prompt': [
+            {'type': 'text', 'text': f'/dispatch_wait until=done id={dispatch.id}'}]}})
+        time.sleep(1)
+        editor.send({'method': '$/cancel_request', 'params': {'requestId': 4}})
+        assert editor.answer(4)['result']['stopReason'] == 'cancelled'
+        editor.send({'id': 5, 'method': 'session/list', 'params': {}})
+        editor.send({'id': 6, 'method': 'session/close', 'params': {'sessionId': session}})
+        assert editor.answer(6)['result'] == {}
+    finally:
+        editor.close()
+
+
+@pytest.mark.req('BASE-062')
+@pytest.mark.req('BASE-052')
+def test_serve_steers_each_editor_session_by_its_id_in_turn_and_takes_no_agent_slot(dispatch, run, monkeypatch):
+    import acp
+
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    run('set', '--dispatch-autostart', '--dispatch-agents', '1', cwd=dispatch.folder)
+    launched = []
+    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation: launched.append(ctx.nouns['id']) or
+                        {'work_id': ctx.nouns['id']})
+
+    def message(work, *words, env=None):
+        return dispatch.run('dispatch', 'message', work, *words, cwd=dispatch.folder, env=env)
+
+    async def body(conn, editor, init):
+        first = await conn.new_session(cwd=str(dispatch.folder), mcp_servers=[])
+        await conn.prompt(session_id=first.session_id, prompt=[acp.text_block('Write notes.txt')])
+        second = await conn.new_session(cwd=str(dispatch.folder), mcp_servers=[])
+        rows = await until(lambda: [one.extra for one in dispatch.items('session')] if len(
+            [one for one in dispatch.items('session') if one.extra['state'] == 'running']) == 2 else None)
+        work = rows[0]['work_id']
+        assert {row['work_id'] for row in rows} == {work}, 'editor sessions share their held ticket'
+        state = await until(lambda: next((json.loads(one.value) for one in dispatch.items('note')
+                                          if one.extra['name'] == 'state' and one.extra['session_id'] ==
+                                          second.session_id and 'commands' in json.loads(one.value)), None))
+        assert state['commands'] == [], "the agent's own commands, as the runner keeps them"
+        # the page's message to the first session goes to it, not to the latest
+        await asyncio.to_thread(message, work, f'session={first.session_id}', 'For the first')
+        prompted = await until(lambda: dispatch.received('session/prompt')[1:])
+        assert prompted[0]['params']['sessionId'] == first.session_id
+        interrupted = await asyncio.to_thread(dispatch.run, 'dispatch', 'interrupt', work,
+                                              f'session={first.session_id}', '--json', cwd=dispatch.folder)
+        assert json.loads(interrupted.stdout)['session_id'] == first.session_id
+        await until(lambda: dispatch.received('session/cancel'))
+        # an editor session is not one of dispatch's agents: the one slot is free for the ticket in To do
+        await asyncio.to_thread(module.autostart, context('dispatch', dispatch.folder, project='proj'))
+        assert launched == [dispatch.id]
+        stopped = await asyncio.to_thread(dispatch.run, 'dispatch', 'stop', work, cwd=dispatch.folder, ok=False)
+        assert stopped.returncode != 0 and 'runs in an editor' in stopped.stderr, 'ended in the editor, said so'
+        # turns take their turn: the page's held turn, then the editor's prompt, which the editor's cancel ends unsent
+        await asyncio.to_thread(message, f'{work}', f'session={second.session_id}', 'Look again',
+                                env={'METAFORM_ROLE': 'talk'})
+        await until(lambda: len(dispatch.received('session/prompt')) == 3)
+        await until(lambda: 'From the talk agent: Look again' in editor.said('user_message_chunk'))
+        assert 'Look again' not in editor.said('user_message_chunk')
+        waiting = asyncio.ensure_future(conn.prompt(session_id=second.session_id, prompt=[acp.text_block('Next')]))
+        await asyncio.sleep(1)
+        assert len(dispatch.received('session/prompt')) == 3, 'no second prompt beside the turn in flight'
+        await conn.cancel(session_id=second.session_id)
+        assert (await asyncio.wait_for(waiting, LIMIT)).stop_reason == 'cancelled'
+        assert len(dispatch.received('session/prompt')) == 3
+    served(dispatch, ['agent=claude'], body, dispatch.env('ask', FAKE_ACP_HOLD_LATER='1'))
+
+
+@pytest.mark.req('BASE-062')
+def test_serve_keeps_the_agents_order_pages_its_list_deletes_forks_and_reaches_the_live_session(dispatch):
+    from metaform.data import Store
+    with Store('proj', module='dispatch').tables() as tx:
+        for n in range(60):
+            tx.insert('sessions', {'session_id': f'seed-{n:02}', 'work_id': dispatch.id, 'agent': 'claude',
+                                   'state': 'ended', 'how': 'the ticket is done', 'seq': n,
+                                   'started': f'2026-10-11T00:{n:02}:00Z'})
+    editor = Lines(dispatch, 'agent=claude', env=dispatch.env('ask', FAKE_ACP_LOAD='1', FAKE_ACP_INFO='1',
+                                                                FAKE_ACP_FORK='1', FAKE_ACP_CLOSE='1'))
+    folder = str(dispatch.folder)
+    try:
+        editor.send({'id': 1, 'method': 'initialize', 'params': {'protocolVersion': 1, 'clientCapabilities': {}}})
+        editor.answer(1)
+        # the agent writes its answer and an update of the new session in one write: the editor hears them in order
+        editor.send({'id': 2, 'method': 'session/new', 'params': {'cwd': folder, 'mcpServers': []}})
+        info = editor.until(lambda one: one.get('method') == 'session/update'
+                            and one['params']['update'].get('sessionUpdate') == 'session_info_update')
+        made = editor.answer(2)
+        assert editor.seen.index(made) < editor.seen.index(info), 'the session id before an update of it'
+        session = made['result']['sessionId']
+        row = eventually(lambda: next((one.extra for one in dispatch.items('session')
+                                       if one.extra['session_id'] == session), None))
+        eventually(lambda: any(one.extra['name'] == 'state' and 'Fake title' in one.value
+                               for one in dispatch.items('note') if one.extra['session_id'] == session))
+
+        asked = [100]
+
+        def walk():
+            pages, cursor = [], None
+            while True:
+                asked[0] += 1
+                editor.send({'id': asked[0], 'method': 'session/list',
+                             'params': {'cwd': folder, **({'cursor': cursor} if cursor else {})}})
+                page = editor.answer(asked[0])['result']
+                pages.append(page)
+                cursor = page.get('nextCursor')
+                if not cursor:
+                    return pages
+        pages = walk()
+        assert pages[0]['nextCursor'] == 'metaform:50' and len(pages) == 2
+        listed = [one['sessionId'] for page in pages for one in page['sessions']]
+        assert len(listed) == len(set(listed)) == 61, 'every session once, across the pages'
+        first = pages[0]['sessions'][0]
+        assert (first['sessionId'], first['title'], first['updatedAt']) == (session, 'Fake title 1',
+                                                                          '2030-01-01T00:00:00Z'), 'as the agent named it'
+        # a deleted session leaves every later list
+        editor.send({'id': 3, 'method': 'session/delete', 'params': {'sessionId': 'seed-05'}})
+        assert editor.answer(3)['result'] == {}
+        listed = [one['sessionId'] for page in walk() for one in page['sessions']]
+        assert 'seed-05' not in listed and len(listed) == 60
+        # a fork is a session like a new one: Metaform's server, its commands and its record
+        editor.send({'id': 4, 'method': 'session/fork', 'params': {'sessionId': session, 'cwd': folder,
+                                                                   'mcpServers': []}})
+        forked = editor.answer(4)['result']['sessionId']
+        [fork] = dispatch.received('session/fork')
+        assert [one['name'] for one in fork['params']['mcpServers']] == ['metaform']
+        offered = editor.until(lambda one: one.get('method') == 'session/update' and one['params']['sessionId'] ==
+                               forked and one['params']['update'].get('sessionUpdate') == 'available_commands_update')
+        assert 'dispatch_claims' in [one['name'] for one in offered['params']['update']['availableCommands']]
+        eventually(lambda: any(one.extra['session_id'] == forked for one in dispatch.items('session')))
+        # a row a killed process left, the latest on the ticket, is passed over for the live session before it
+        with Store('proj', module='dispatch').tables() as tx:
+            tx.insert('sessions', {'session_id': 'dead-1', 'work_id': row['work_id'], 'agent': 'claude',
+                                   'state': 'running', 'pid': 2 ** 22 + 7, 'port': 9, 'token': 'x', 'seq': 10 ** 15,
+                                   'started': '2026-10-12T00:00:00Z'})
+        dispatch.run('dispatch', 'message', row['work_id'], 'hello', cwd=dispatch.folder)
+        assert eventually(lambda: [one for one in dispatch.received('session/prompt')
+                                   if one['params']['prompt'][0]['text'] == 'hello'])
+    finally:
+        editor.close()
+
+
+@pytest.mark.req('BASE-062')
+def test_a_serve_that_answers_late_keeps_its_editor_session_running(dispatch, monkeypatch):
+    from metaform.data import Store
+    from metaform.modules import dispatch as module
+    monkeypatch.setattr(module, 'runner_of', lambda pid: module.SERVED)
+    monkeypatch.setattr(module, 'tell', lambda *args, **kwargs: (_ for _ in ()).throw(TimeoutError()))
+    row = {'session_id': 's', 'work_id': 'held', 'state': 'running', 'pid': 123, 'port': 9, 'token': 't'}
+    assert module.session_status(Store('proj', module='dispatch'), row, done=False)['state'] == 'running'
+
+
+@pytest.mark.req('BASE-062')
+def test_serve_as_a_proxy_of_a_conductors_chain_carries_metaforms_mcp_server_over_acp(dispatch):
+    """Initialized with the reference conductor's `_proxy/initialize`, serve starts no agent: it reaches its successor
+    through `_proxy/successor`, gives the agent that advertises MCP-over-ACP Metaform's server as `type: "acp"`,
+    answers the agent's `mcp/message` itself, and passes another provider's on with every id mapped back."""
+    editor = Lines(dispatch, 'agent=claude')
+    folder = str(dispatch.folder)
+
+    def wrapped(method):
+        return editor.until(lambda one: one.get('method') == '_proxy/successor' and one['params']['method'] == method)
+    try:
+        editor.send({'id': 1, 'method': '_proxy/initialize', 'params': {'protocolVersion': 1, 'clientCapabilities': {}}})
+        asked = wrapped('initialize')
+        editor.send({'id': asked['id'], 'result': {'protocolVersion': 1, 'agentInfo': {'name': 'chained', 'version': '1'},
+                                                   'agentCapabilities': {'mcpCapabilities': {'acp': True}}}})
+        assert editor.answer(1)['result']['agentCapabilities']['mcpCapabilities'] == {'acp': True}
+        editor.send({'id': 2, 'method': 'session/new', 'params': {'cwd': folder, 'mcpServers': []}})
+        made = wrapped('session/new')
+        [server] = made['params']['params']['mcpServers']
+        assert server['type'] == 'acp' and server['name'] == 'metaform', 'over ACP, as the agent takes it'
+        editor.send({'id': made['id'], 'result': {'sessionId': 'chained-1'}})
+        assert editor.answer(2)['result'] == {'sessionId': 'chained-1'}
+        meta = {'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+                'io.modelcontextprotocol/clientCapabilities': {},
+                'io.modelcontextprotocol/clientInfo': {'name': 'chained', 'version': '1'}}
+        editor.send({'id': 77, 'method': '_proxy/successor', 'params': {'method': 'mcp/message', 'params': {
+            'serverId': server['serverId'], 'requestId': 'r-1', 'method': 'tools/list', 'params': {'_meta': meta}}}})
+        tools = editor.answer(77)['result']['result']['tools']
+        assert any(tool['name'].startswith('map_') for tool in tools), 'answered by Metaform\'s own MCP server'
+        editor.send({'id': 78, 'method': '_proxy/successor', 'params': {'method': 'mcp/message', 'params': {
+            'serverId': 'another', 'requestId': 'r-2', 'method': 'tools/list'}}})
+        passed = editor.until(lambda one: one.get('method') == 'mcp/message')
+        assert passed['params']['serverId'] == 'another' and passed['id'] != 78, 'its own id on this hop'
+        editor.send({'id': passed['id'], 'result': {'result': {'tools': []}}})
+        assert editor.answer(78)['result'] == {'result': {'tools': []}}
+        editor.send({'method': '_proxy/successor', 'params': {'method': 'session/update', 'params': {
+            'sessionId': 'chained-1', 'update': {'sessionUpdate': 'agent_message_chunk', 'messageId': 'm-1',
+                                                 'content': {'type': 'text', 'text': 'from the chain'}}}}})
+        assert editor.until(lambda one: one.get('method') == 'session/update' and one['params']['update']
+                            .get('messageId') == 'm-1')['params']['sessionId'] == 'chained-1'
+        row = eventually(lambda: next((one.extra for one in dispatch.items('session')
+                                       if one.extra['session_id'] == 'chained-1'), None))
+        assert row['agent'] == 'chained', 'recorded under the name its initialize gave'
+        assert dispatch.received('initialize') == [], 'no agent of its own started'
+    finally:
+        editor.close()
+
+
+@pytest.mark.req('BASE-062')
+def test_serve_alone_names_slash_commands_only_while_it_offers_them(dispatch, run):
+    run('set', '--dispatch-serve-agent', 'gemini', '--dispatch-gemini', 'no-such-adapter-anywhere', cwd=dispatch.folder)
+    for offered in (False, True):
+        run('set', '--dispatch-serve-commands' if offered else '--no-dispatch-serve-commands', cwd=dispatch.folder)
+        editor = Lines(dispatch)
+        try:
+            editor.send({'id': 1, 'method': 'initialize', 'params': {'protocolVersion': 1, 'clientCapabilities': {
+                'session': {'notices': {}}}}})
+            editor.answer(1)
+            editor.send({'id': 2, 'method': 'session/new', 'params': {'cwd': str(dispatch.folder), 'mcpServers': []}})
+            session = editor.answer(2)['result']['sessionId']
+            notice = editor.until(lambda one: one.get('method') == 'session/update'
+                                  and one['params']['update'].get('sessionUpdate') == 'notice')['params']['update']
+            editor.send({'id': 3, 'method': 'session/prompt', 'params': {'sessionId': session, 'prompt': [
+                {'type': 'text', 'text': 'Hello'}]}})
+            editor.answer(3)
+            [said] = editor.updates('agent_message_chunk')
+            assert ('slash commands work' in notice['description']) is offered
+            assert ('type / to list them' in said['content']['text']) is offered
+            assert 'Free text needs an agent behind it.' in notice['description']
+        finally:
+            editor.close()
+
+
+@pytest.mark.req('BASE-062')
+def test_serve_lists_the_agents_pages_then_its_own_each_session_once(dispatch):
+    from metaform.data import Store
+    with Store('proj', module='dispatch').tables() as tx:
+        for n in range(60):
+            tx.insert('sessions', {'session_id': f'seed-{n:02}', 'work_id': dispatch.id, 'agent': 'claude',
+                                   'state': 'ended', 'how': 'the ticket is done', 'seq': n,
+                                   'started': f'2026-10-11T00:{n:02}:00Z'})
+    editor = Lines(dispatch, 'agent=claude', env=dispatch.env('ask', FAKE_ACP_LOAD='1', FAKE_ACP_LIST='1'))
+    try:
+        editor.send({'id': 1, 'method': 'initialize', 'params': {'protocolVersion': 1, 'clientCapabilities': {}}})
+        editor.answer(1)
+        pages, cursor, asked = [], None, 10
+        while True:
+            asked += 1
+            editor.send({'id': asked, 'method': 'session/list',
+                         'params': {'cwd': str(dispatch.folder), **({'cursor': cursor} if cursor else {})}})
+            page = editor.answer(asked)['result']
+            pages.append(page)
+            if not (cursor := page.get('nextCursor')):
+                break
+        assert [page.get('nextCursor') for page in pages] == ['fake-page-2', 'metaform:50', None]
+        listed = [one['sessionId'] for page in pages for one in page['sessions']]
+        assert len(listed) == len(set(listed)) == 63, 'the agent\'s four, then the 59 it did not list, each once'
+        assert listed[:4] == ['fake-listed-1', 'fake-listed-2', 'fake-listed-3', 'seed-03']
+    finally:
+        editor.close()
+
+
+@pytest.mark.req('BASE-062')
+def test_serve_speaks_acp_v2_with_an_agent_that_negotiates_it(dispatch):
+    """A v2 agent: its capabilities read from `capabilities`, Metaform's server typed stdio, a prompt answered at
+    insertion, and the record keyed by message and tool call ids, so a replaced message is one line."""
+    editor = Lines(dispatch, 'agent=claude', env=dispatch.env('ask', FAKE_ACP_V2='1'))
+    folder = str(dispatch.folder)
+    try:
+        editor.send({'id': 1, 'method': 'initialize', 'params': {'protocolVersion': 2, 'capabilities': {},
+                                                                 'info': {'name': 'editor', 'version': '1'}}})
+        assert editor.answer(1)['result']['protocolVersion'] == 2
+        editor.send({'id': 2, 'method': 'session/new', 'params': {'cwd': folder, 'mcpServers': []}})
+        session = editor.answer(2)['result']['sessionId']
+        [server] = dispatch.received('session/new')[0]['params']['mcpServers']
+        assert server['type'] == 'stdio' and server['name'] == 'metaform'
+        editor.send({'id': 3, 'method': 'session/prompt', 'params': {'sessionId': session, 'prompt': [
+            {'type': 'text', 'text': 'hi'}]}})
+        assert editor.answer(3)['result'] == {'messageId': 'fake-user-1'}
+        lines = eventually(lambda: (found := {one.extra['name']: one.value for one in dispatch.items('note')
+                                              if one.extra['session_id'] == session}).get('turn') and found)
+        assert lines['message:fake-agent-1'] == 'Hello v2', 'the upsert replaced the streamed text'
+        assert lines['message:fake-user-1'] == 'hi', 'the person\'s message once, as the agent reported it'
+        assert lines['tool:fake-edit'] == ('Edit config (completed): modify /work/config.json; '
+                                           'move /work/a.txt -> /work/b.txt')
+        assert lines['turn'] == 'The turn ended: end_turn.'
+        editor.send({'id': 4, 'method': 'session/prompt', 'params': {'sessionId': session, 'prompt': [
+            {'type': 'text', 'text': '/dispatch_claims'}]}})
+        assert editor.answer(4)['result']['messageId'].startswith('metaform-'), 'answered at insertion'
+        idle = editor.until(lambda one: one.get('method') == 'session/update' and one['params']['update']
+                            .get('state') == 'idle' and one['params']['update'].get('stopReason') == 'end_turn')
+        assert idle['params']['sessionId'] == session
+    finally:
+        editor.close()
+
+
+class Conducted(Lines):
+    """An editor of the reference conductor (crates.io agent-client-protocol-conductor), which runs serve as a proxy
+    before the fake agent; METAFORM_ACP_CONDUCTOR names the conductor's program."""
+
+    def __init__(self, dispatch, conductor, env):
+        import queue
+        import threading
+        serve = f'{sys.executable} -m metaform dispatch serve'
+        self.process = subprocess.Popen([conductor, 'agent', serve, f'{sys.executable} {FAKE}'], cwd=dispatch.folder,
+                                        env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                        stderr=subprocess.DEVNULL)
+        self.heard = queue.Queue()
+        self.seen = []
+        threading.Thread(target=lambda: [self.heard.put(json.loads(line)) for line in self.process.stdout],
+                         daemon=True).start()
+
+
+@pytest.mark.req('BASE-062')
+@pytest.mark.skipif(not os.environ.get('METAFORM_ACP_CONDUCTOR'), reason='the reference conductor is not installed')
+def test_serve_in_the_reference_conductors_chain_answers_the_agents_mcp_over_acp(dispatch):
+    editor = Conducted(dispatch, os.environ['METAFORM_ACP_CONDUCTOR'], dispatch.env('ask', FAKE_ACP_MCP_ACP='1'))
+    try:
+        editor.send({'id': 1, 'method': 'initialize', 'params': {'protocolVersion': 1, 'clientCapabilities': {}}})
+        assert editor.answer(1)['result']['agentCapabilities']['mcpCapabilities']['acp'] is True
+        editor.send({'id': 2, 'method': 'session/new', 'params': {'cwd': str(dispatch.folder), 'mcpServers': []}})
+        session = editor.answer(2)['result']['sessionId']
+        [declared] = dispatch.received('session/new')[0]['params']['mcpServers']
+        assert declared['type'] == 'acp' and declared['name'] == 'metaform'
+        [answer] = eventually(lambda: dispatch.logged('mcp_acp'))
+        assert any(tool['name'].startswith('map_') for tool in answer['result']['tools'])
+        editor.send({'id': 3, 'method': 'session/prompt', 'params': {'sessionId': session, 'prompt': [
+            {'type': 'text', 'text': '/dispatch_claims'}]}})
+        assert editor.answer(3)['result']['stopReason'] == 'end_turn', 'Metaform answers its command in the chain'
+    finally:
+        editor.close()

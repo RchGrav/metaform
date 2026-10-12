@@ -1,0 +1,3 @@
+{"name":"Bash","input":{"command":"cp src/metaform/modules/dispatch/runner.py /tmp/runner.bak && python3 - <<'EOF' ... s.replace(a,\"if any(row['by'] == 'x' for row in joined):\") ... EOF\nuv run pytest src/metaform/modules/dispatch/tests/test_dispatch.py -k recorded_at_its_node -q 2>&1 | tail -3; cp /tmp/runner.bak src/metaform/modules/dispatch/runner.py; git diff --stat src/metaform/modules/dispatch/runner.py"}}
+tool_result: FAILED src/metaform/modules/dispatch/tests/test_dispatch.py::test_record_on_finish_sends_nothing_once_the_session_recorded_at_its_node
+assistant: The file is restored; the large diff stat also includes other tickets' uncommitted work in `runner.py`.

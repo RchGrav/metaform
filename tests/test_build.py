@@ -108,7 +108,7 @@ def test_a_build_with_no_modules_is_pure_python(run):
 @pytest.mark.req('BASE-026')
 def test_the_chassis_depends_only_on_pure_python_packages():
     from metaform import _build_info
-    declared = tomllib.loads((ROOT / 'pyproject.toml').read_text())['project']['dependencies']
+    declared = tomllib.loads((ROOT / 'pyproject.toml').read_text())['tool']['metaform']['chassis-dependencies']
     assert list(_build_info.CHASSIS_DEPENDENCIES) == declared
     assert not any(name.split('>')[0].split('=')[0].strip() == 'mcp' for name in declared)
 
@@ -375,3 +375,30 @@ def test_a_project_archive_never_carries_what_a_link_reaches_outside_the_project
     except OSError:
         pytest.skip('this system does not let the test make a link')
     assert set(archive.project_files(folder)) == {'main.py'}
+
+
+@pytest.mark.req('BASE-022')
+@pytest.mark.req('BASE-041')
+def test_the_repository_wheel_requires_every_shipped_modules_dependencies(tmp_path):
+    """The release carries every repo module, so installing it must bring what each module declares; the chassis's
+    own list still names no module's requirement."""
+    from packaging.requirements import Requirement
+    from packaging.utils import canonicalize_name
+
+    from metaform import module_metadata
+    done = subprocess.run(['uv', 'build', '--wheel', '--out-dir', str(tmp_path), str(ROOT)],
+                          capture_output=True, text=True, encoding='utf-8', check=False)
+    assert done.returncode == 0, done.stderr
+    wheel = next(tmp_path.glob('*.whl'))
+
+    def key(text):
+        requirement = Requirement(text)
+        return canonicalize_name(requirement.name), str(requirement.specifier)
+    requires = {key(line.split(': ', 1)[1]) for line in metadata(wheel).splitlines()
+                if line.startswith('Requires-Dist: ') and 'extra ==' not in line}
+    modules = [folder for folder in sorted((ROOT / 'src' / 'metaform' / 'modules').iterdir())
+               if (folder / '__init__.py').is_file()]
+    declared = [dependency for folder in modules for dependency in module_metadata.read(folder).dependencies]
+    assert requires == {key(text) for text in [*_build_info.CHASSIS_DEPENDENCIES, *declared]}
+    assert {'mcp', 'agent-client-protocol'} <= {name for name, _ in requires}
+    assert not {'mcp', 'agent-client-protocol'} & {key(text)[0] for text in _build_info.CHASSIS_DEPENDENCIES}

@@ -1,4 +1,5 @@
-"""A small standard-library MCP client that proves a registered command starts a server, MCP-017.
+"""A small standard-library MCP client that proves a registered command starts a server, MCP-017, or that a
+registered Streamable HTTP address answers, MCP-002.
 
 It speaks MCP 2026-07-28: there is no handshake, and every request carries the
 per-request `_meta`, the protocol version, the client's capabilities and its
@@ -17,6 +18,7 @@ import shutil
 import subprocess
 import threading
 import time
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -75,8 +77,9 @@ class Session:
         `subscriptions/listen`, whose answer is a stream."""
         self.next_id += 1
         given = dict(params or {})
-        given['_meta'] = {**given.get('_meta', {}), 'io.modelcontextprotocol/protocolVersion': PROTOCOL,
-                          'io.modelcontextprotocol/clientCapabilities': {},
+        # The capabilities a caller gives in `_meta` are kept, so a check can declare an extension; none by default.
+        given['_meta'] = {'io.modelcontextprotocol/clientCapabilities': {}, **given.get('_meta', {}),
+                          'io.modelcontextprotocol/protocolVersion': PROTOCOL,
                           'io.modelcontextprotocol/clientInfo': CLIENT}
         self._send({'id': self.next_id, 'method': method, 'params': given})
         return self.next_id
@@ -165,3 +168,44 @@ def probe(command: list[str], *, cwd: Path, env: dict[str, str] | None = None, l
         return Proof(False, reason=f'{error}' + (f' ({detail})' if detail else ''))
     finally:
         session.close()
+
+
+def _post(url: str, method: str, params: dict[str, Any], limit: float) -> dict[str, Any]:
+    """One request over Streamable HTTP, with the per-request `_meta` and the method and version headers of MCP
+    2026-07-28. The answer is one JSON body, or a stream whose `data:` lines carry it."""
+    body = {'jsonrpc': '2.0', 'id': 1, 'method': method,
+            'params': {**params, '_meta': {'io.modelcontextprotocol/protocolVersion': PROTOCOL,
+                                           'io.modelcontextprotocol/clientCapabilities': {},
+                                           'io.modelcontextprotocol/clientInfo': CLIENT}}}
+    request = urllib.request.Request(url, data=json.dumps(body).encode('utf-8'), method='POST', headers={
+        'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream', 'Mcp-Method': method,
+        'MCP-Protocol-Version': PROTOCOL})
+    with urllib.request.urlopen(request, timeout=limit) as response:
+        text = response.read().decode('utf-8')
+    lines = [line[5:].strip() for line in text.splitlines() if line.startswith('data:')] or [text]
+    for line in lines:
+        message = json.loads(line) if line else None
+        if isinstance(message, dict) and cast(dict[str, Any], message).get('id') == 1:
+            answer = cast(dict[str, Any], message)
+            if 'error' in answer:
+                raise RuntimeError(f'{method} failed: {answer["error"]}')
+            return dict(cast(dict[str, Any], answer.get('result') or {}))
+    raise ValueError(f'{method} had no answer in what the server sent')
+
+
+def probe_http(url: str, *, limit: float = LIMIT) -> Proof:
+    """Pass when the Streamable HTTP server at `url` answers server/discover supporting 2026-07-28, and tools/list
+    completely with at least one tool, as `probe` asks a command it starts."""
+    try:
+        found = _post(url, 'server/discover', {}, limit)
+        if PROTOCOL not in cast(list[Any], found.get('supportedVersions') or []):
+            return Proof(False, reason=f'the server does not support MCP {PROTOCOL}')
+        listed = _post(url, 'tools/list', {}, limit)
+        if listed.get('resultType', 'complete') != 'complete':
+            return Proof(False, reason=f'tools/list answered {listed.get("resultType")}, not complete')
+        tools = cast(list[Any], listed.get('tools') or [])
+        if not tools:
+            return Proof(False, reason='the server lists no tools')
+        return Proof(True, len(tools), instructions=str(found.get('instructions') or ''))
+    except (OSError, ValueError, RuntimeError) as error:  # a refused connection or an HTTP error is an OSError
+        return Proof(False, reason=f'nothing answered at {url}: {error}')

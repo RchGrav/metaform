@@ -26,7 +26,7 @@ from typing import Any, TypeVar, cast
 
 from .. import changes, home, loader
 from ..errors import StoreError
-from . import history, layering, log, operations, promotion, reads, rows, tables, views, writes
+from . import history, layering, log, numbers, operations, promotion, reads, rows, tables, views, writes
 from .paging import LIMIT, sliced
 from .records import (
     Citation,
@@ -289,6 +289,22 @@ class Store:
         with self._write() as tx:
             return layering.refine(tx, thing, changes, remove=remove, reason=reason, evidence=evidence)
 
+
+    # ------------------------------------------------------- item numbers
+
+    def number(self, address: str) -> int:
+        """The next number at an address, for an item written there: one counter per address in the project's own
+        database, counting up from 1 and never reused, `numbers.py`."""
+        return numbers.take(numbers.project_folder(self.project_id), address)
+
+    def latest_number(self, address: str) -> int:
+        """The last number taken at an address, 0 when none has been."""
+        return numbers.latest(numbers.project_folder(self.project_id), address)
+
+    def last_session(self, address: str, *, besides: str | None = None) -> tuple[str, int, int, int] | None:
+        """What the last agent session other than `besides` numbered at an address: its session, the first and last
+        number it took there and how many, `numbers.last_session`; None when no session is known to have taken one."""
+        return numbers.last_session(numbers.project_folder(self.project_id), address, besides=besides)
 
     # ------------------------------------------------------- a module's own tables
 

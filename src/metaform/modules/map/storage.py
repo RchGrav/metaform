@@ -49,7 +49,9 @@ from metaform.data import (
     new_id,
     now,
     paged,
+    reference,
     sliced,
+    status,
 )
 from metaform.data import (
     DataTx as Tx,
@@ -57,6 +59,8 @@ from metaform.data import (
 
 Row = DataRow
 ANSWERS = ("A", "B", "C")
+# The kinds of item map numbers at an address, MCP-037: a work record, and a question or message, by their own ids.
+NUMBERED = ("work", "message")
 WORK_FIELDS = ("condition", "kind", "note", "task", "held", "reviewed")
 REPORT_KINDS = ("report", "feedback", "shape")
 
@@ -131,12 +135,15 @@ def add_work(
     reviewed: Any = False,
     links: Any = (),
     kind: Any = None,
+    title: Any = None,
 ) -> WorkRecord:
     """Write the condition of an element or join as its own record, apart from the map, STORE-042; a ticket carries
-    its kind beside it."""
+    its kind beside it. It takes the next number at its node's address with its title, MCP-037: the title given, else
+    the first line of its task or note."""
     notices: list[Notice] = []
     stage, ticket_kind = _condition(condition, notices), _kind(kind)  # both checked before anything is written
     target_kind, thing = work_target(tx, node, notices)
+    _backfill(tx)
     work_id = new_id()
     tx.execute(
         "INSERT INTO work(work_id, target_kind, target_id, condition, note, task, held, reviewed, created, kind) "
@@ -155,6 +162,7 @@ def add_work(
         ),
     )
     _link(tx, work_id, links, notices)
+    _number(tx, "work", work_id, target_kind, thing, _titled(title, task, note))
     return work_record(tx, _work_row(tx, work_id), tuple(notices))
 
 
@@ -172,17 +180,23 @@ def _link(tx: Tx, work_id: str, links: Any, notices: list[Notice]) -> None:
 def edit_work(tx: Tx, work_id: str, changes: Any) -> WorkRecord:
     """Change a work record's fields, attachment or reference links in place, preserving its identity and progress."""
     notices: list[Notice] = []
-    _work_row(tx, work_id)
+    before = _work_row(tx, work_id)
     given = as_object(changes)
     if given is None:
         raise StoreError("The changes to a work record are an object of its fields.", "metaform help map work")
     for key in sorted(given):
         if key == "node":
             kind, thing = work_target(tx, given[key], notices)
+            moved = (kind, thing) != (str(before["target_kind"]), str(before["target_id"]))
             tx.execute("UPDATE work SET target_kind=?, target_id=? WHERE work_id=?", (kind, thing, work_id))
+            if moved:  # at a new address it takes the next number there, MCP-037; its old number is not reused
+                _number(tx, "work", work_id, kind, thing)
             continue
         if key == "links":
             _link(tx, work_id, given[key], notices)
+            continue
+        if key == "title":
+            _retitle(tx, "work", work_id, given[key])
             continue
         if key not in WORK_FIELDS:
             notices.append(Notice(key, f"A work record has no field {key}; it was not stored."))
@@ -207,11 +221,14 @@ def _message_row(tx: Tx, message_id: str) -> Any:
     return row
 
 
-def add_message(tx: Tx, node: Any, kind: str, text: Any, *, suggestions: Any = None, by: Any = None) -> Message:
+def add_message(tx: Tx, node: Any, kind: str, text: Any, *, suggestions: Any = None, by: Any = None,
+                title: Any = None, why: Any = None) -> Message:
     """What an agent says to the user at a node, MAP-050: a question, with the answers it suggests, or a message.
-    Nothing is refused: a question with no suggestions is stored, and the agent is told to suggest."""
+    Nothing is refused: a question with no suggestions is stored, and the agent is told to suggest. It takes the next
+    number at its node's address with its title, the first line of its text when none is given, and its why, MCP-037."""
     notices: list[Notice] = []
     target_kind, thing = work_target(tx, node, notices)
+    _backfill(tx)
     suggested: list[str] = []
     if isinstance(suggestions, (list, tuple)):
         suggested = [
@@ -246,6 +263,7 @@ def add_message(tx: Tx, node: Any, kind: str, text: Any, *, suggestions: Any = N
             now(),
         ),
     )
+    _number(tx, "message", message_id, target_kind, thing, _titled(title, text), why)
     return message(tx, _message_row(tx, message_id), tuple(notices))
 
 
@@ -275,10 +293,12 @@ def close_message(tx: Tx, message_id: str, answer: Any = None, *, agent: bool = 
 
 def move_message(tx: Tx, message_id: str, node: Node) -> Message:
     """Move a question or message to another node, keeping its identity, suggestions, answer and closed state."""
-    _message_row(tx, message_id)
+    row = _message_row(tx, message_id)
     notices: list[Notice] = []
     kind, thing = work_target(tx, node, notices)
     tx.execute("UPDATE messages SET target_kind=?, target_id=? WHERE message_id=?", (kind, thing, message_id))
+    if (kind, thing) != (str(row["target_kind"]), str(row["target_id"])):
+        _number(tx, "message", message_id, kind, thing)  # the next number at its new address, MCP-037
     return message(tx, _message_row(tx, message_id), tuple(notices))
 
 
@@ -386,14 +406,14 @@ def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any =
         tx.execute("UPDATE work SET done=COALESCE(done, ?), held=0 WHERE work_id=?", (now(), work_id))
     elif column == "doing":
         tx.execute(
-            "UPDATE work SET done=NULL, held=0, taken=COALESCE(taken, ?), taken_by=COALESCE(?, taken_by) "
+            "UPDATE work SET done=NULL, outcome=NULL, held=0, taken=COALESCE(taken, ?), taken_by=COALESCE(?, taken_by) "
             "WHERE work_id=?",
             (now(), _work_text(by, "by", notices), work_id),
         )
         _building(tx, work_id)  # moved to doing on the board is taken, as take_work takes it
     else:
         tx.execute(
-            "UPDATE work SET done=NULL, taken=NULL, taken_by=NULL, held=? WHERE work_id=?",
+            "UPDATE work SET done=NULL, outcome=NULL, taken=NULL, taken_by=NULL, held=? WHERE work_id=?",
             (int(column == "backlog"), work_id),
         )
     del row
@@ -419,17 +439,27 @@ def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any =
     return work_record(tx, _work_row(tx, work_id), tuple(notices))
 
 
-def finish_work(tx: Tx, work_id: str, resolution: Any = None) -> WorkRecord:
-    """Mark a work record done, keeping its resolution beside it; a record already done keeps its first resolution."""
+def finish_work(tx: Tx, work_id: str, resolution: Any = None, why: Any = None, outcome: str = "completed") -> WorkRecord:
+    """Mark a work record done, keeping its resolution beside it, the why of that resolution with its number, MCP-037,
+    and how it ended, `outcome`: a terminal state of the one status vocabulary, completed unless the person cancelled
+    it or it failed, so a cancelled ticket never reads as completed, P232; a record already done keeps its first
+    resolution and outcome."""
+    ended = status.known(outcome, "map work op=done id=<id>")
+    if ended not in status.TERMINAL:
+        raise StoreError(f"A work record ends {', '.join(status.TERMINAL)}, not {ended}.", "map work op=done id=<id>")
     notices: list[Notice] = []
     row = _work_row(tx, work_id)
     if row["done"] is not None:
         notices.append(Notice("id", f"This work record was done at {row['done']}; its resolution was kept."))
         return work_record(tx, row, tuple(notices))
     tx.execute(
-        "UPDATE work SET done=?, resolution=? WHERE work_id=?",
-        (now(), _work_text(resolution, "resolution", notices), work_id),
+        "UPDATE work SET done=?, resolution=?, outcome=? WHERE work_id=?",
+        (now(), _work_text(resolution, "resolution", notices), ended, work_id),
     )
+    if isinstance(why, str) and why.strip():
+        tables = tx.tables()
+        if tables.get("numbered", {"kind": "work", "item_id": work_id}) is not None:
+            tables.update("numbered", {"kind": "work", "item_id": work_id}, {"why": why.strip()})
     return work_record(tx, _work_row(tx, work_id), tuple(notices))
 
 
@@ -632,6 +662,7 @@ def work_record(tx: Tx, row: Row, notices: tuple[Notice, ...] = ()) -> WorkRecor
         row["position"],
         links,
         str(row["kind"] or ""),
+        (row["outcome"] or "completed") if row["done"] is not None else None,
     )
 
 
@@ -903,7 +934,8 @@ CREATE TABLE IF NOT EXISTS work(
   taken       TEXT,
   taken_by    TEXT,
   position    INTEGER,
-  kind        TEXT NOT NULL DEFAULT ''
+  kind        TEXT NOT NULL DEFAULT '',
+  outcome     TEXT
 );
 CREATE INDEX IF NOT EXISTS work_by_target ON work(target_kind, target_id, row);
 CREATE INDEX IF NOT EXISTS work_by_condition ON work(condition, row);
@@ -980,18 +1012,170 @@ CREATE INDEX IF NOT EXISTS reports_by_time ON reports(created, report_id);
 
 
 def ask(tx: Tx, node: Node, text: Any, *, suggestions: Any = None, by: Any = None,
-        work: str | None = None) -> Message:
+        work: str | None = None, title: Any = None, why: Any = None) -> Message:
     if work is not None:
         _work_row(tx, work)
-    asked = add_message(tx, node, "question", text, suggestions=suggestions, by=by)
+    asked = add_message(tx, node, "question", text, suggestions=suggestions, by=by, title=title, why=why)
     if work is not None:
         tx.tables().insert('question_work', {'message_id': asked.id, 'work_id': work})
         asked = dataclasses.replace(asked, work_id=work)
     return asked
 
 
-def tell(tx: Tx, node: Node, text: Any, *, by: Any = None) -> Message:
-    return add_message(tx, node, "message", text, by=by)
+def tell(tx: Tx, node: Node, text: Any, *, by: Any = None, title: Any = None) -> Message:
+    return add_message(tx, node, "message", text, by=by, title=title)
+
+
+# ------------------------------------------------------------------------------------------------ item numbers
+
+def _first(text: Any) -> str | None:
+    """The first line of a text that holds something, stripped: the title an item takes when none is given."""
+    if not isinstance(text, str):
+        return None
+    return next((line.strip() for line in text.splitlines() if line.strip()), None)
+
+
+def _titled(title: Any, *texts: Any) -> str | None:
+    """An item's title: the one given, else the first line of the first of its texts that has one."""
+    if isinstance(title, str) and title.strip():
+        return title.strip()
+    return next((found for found in (_first(text) for text in texts) if found), None)
+
+
+def _number(tx: Tx, kind: str, item_id: str, target_kind: str, thing: str, title: str | None = None,
+            why: Any = None) -> int | None:
+    """Give an item the next number at the address of the node it is at, MCP-037: an element's address, a join's
+    receiver's. A node with no current address takes none. An item numbered before keeps its title and why, and moves
+    to the new number at its new address."""
+    address = tx.rows.node_address(target_kind, thing)
+    if address is None:
+        return None
+    number = tx.number(address)
+    tables = tx.tables()
+    key = {"kind": kind, "item_id": item_id}
+    if tables.update("numbered", key, {"address": address, "number": number}) is None:
+        tables.insert("numbered", {**key, "address": address, "number": number, "title": title,
+                                   "why": why.strip() if isinstance(why, str) and why.strip() else None})
+    return number
+
+
+def _retitle(tx: Tx, kind: str, item_id: str, title: Any) -> None:
+    if isinstance(title, str) and title.strip():
+        tables = tx.tables()
+        if tables.get("numbered", {"kind": kind, "item_id": item_id}) is not None:
+            tables.update("numbered", {"kind": kind, "item_id": item_id}, {"title": title.strip()})
+
+
+def _backfill(tx: Tx) -> None:
+    """Number the work records and messages written before items were numbered, once, in the order they were made,
+    each titled from the first line of its task, note or text, MCP-037. Map tables version 10 adds the numbers; the
+    addresses come from the map, so this runs in the first map transaction that writes after the upgrade."""
+    tables = tx.tables()
+    if tables.get("numbering", {"name": "items"}) is not None:
+        return
+    found: list[tuple[str, int, str, str, str, str, str | None]] = []
+    for row in tx.execute("SELECT row, work_id, target_kind, target_id, created, task, note FROM work"):
+        if tables.get("numbered", {"kind": "work", "item_id": str(row["work_id"])}) is None:
+            found.append((str(row["created"]), int(row["row"]), "work", str(row["work_id"]), str(row["target_kind"]),
+                          str(row["target_id"]), _titled(None, row["task"], row["note"])))
+    for row in tx.execute("SELECT row, message_id, target_kind, target_id, created, text FROM messages"):
+        if tables.get("numbered", {"kind": "message", "item_id": str(row["message_id"])}) is None:
+            found.append((str(row["created"]), int(row["row"]), "message", str(row["message_id"]),
+                          str(row["target_kind"]), str(row["target_id"]), _titled(None, row["text"])))
+    for _, _, kind, item_id, target_kind, thing, title in sorted(found, key=lambda one: one[:3]):
+        _number(tx, kind, item_id, target_kind, thing, title)
+    tables.insert("numbering", {"name": "items", "at": now()})
+
+
+def items_numbered(tx: Tx) -> bool:
+    """Whether the work records and messages written before numbering have been numbered, MCP-037."""
+    return tx.tables().get("numbering", {"name": "items"}) is not None
+
+
+def number_items(tx: Tx) -> None:
+    """Number the work records and messages written before numbering, once, MCP-037."""
+    _backfill(tx)
+
+
+def numbers_of(tx: Tx, kind: str, item_ids: Sequence[str]) -> dict[str, tuple[str, str | None, str | None]]:
+    """Each numbered item's reference `<address>#<n>`, title and why, by its id; an item with none is left out."""
+    tables = tx.tables()
+    found: dict[str, tuple[str, str | None, str | None]] = {}
+    for item_id in item_ids:
+        row = tables.get("numbered", {"kind": kind, "item_id": item_id})
+        if row is not None:
+            found[item_id] = (reference(row["address"], row["number"]), row["title"], row["why"])
+    return found
+
+
+def item_at(tx: Tx, address: str, number: int) -> dict[str, Any] | None:
+    """The work record or message numbered `number` at `address`, as an item an agent reads, MCP-037: its kind,
+    title, why, body and links. None when map holds none there."""
+    rows = tx.tables().rows("numbered", {"address": address, "number": number}, limit=0).results
+    if not rows:
+        return None
+    held = rows[0]
+    if held["kind"] == "code":  # a link of the code layer, `code.py`: the symbol and the node whose purpose it serves
+        try:
+            found = tx.views.item_by_id(held["item_id"])
+        except KeyError:
+            return None
+        if found.orphaned:
+            return None
+        value: dict[str, Any] = as_object(found.value) or {}
+        parts = [f"{key}: {value[key]}" for key in ("symbol", "label", "file", "count", "state", "by") if value.get(key)]
+        if value.get("files"):  # one decision naming several symbols, `code.py`: its files, then its first symbols
+            parts.append("files: " + ", ".join(str(one) for one in value["files"]))
+        parts += [f"{ref.key}: {ref.value}" for ref in found.refs if ref.key == "qn"]
+        return {"kind": "code", "title": held["title"], "why": held["why"], "body": "\n".join(parts), "links": [],
+                "id": found.id}
+    if held["kind"] == "work":
+        row = tx.execute("SELECT * FROM work WHERE work_id=?", (held["item_id"],)).fetchone()
+        if row is None:
+            return None
+        record = work_record(tx, row)
+        parts = [f"task: {record.task}" if record.task else None, f"note: {record.note}" if record.note else None,
+                 f"condition: {record.condition}" if record.condition else None,
+                 f"done {record.done}: {record.resolution or ''}".rstrip() if record.done else "open",
+                 f"id: {record.id}"]
+        links = [link.address or f"{link.kind}:{link.id}" for link in record.links]
+        return {"kind": "work", "title": held["title"], "why": held["why"],
+                "body": "\n".join(part for part in parts if part), "links": links, "id": record.id}
+    row = tx.execute("SELECT * FROM messages WHERE message_id=?", (held["item_id"],)).fetchone()
+    if row is None:
+        return None
+    said = message(tx, row)
+    parts = [said.text or "", *(f"- {one}" for one in said.suggestions),
+             (f"answered {said.closed}: {said.answer or ''}".rstrip() if said.closed else "waiting"), f"id: {said.id}"]
+    return {"kind": said.kind, "title": held["title"], "why": held["why"],
+            "body": "\n".join(part for part in parts if part), "links": [], "id": said.id}
+
+
+def listed_items(tx: Tx, address: str, before: int | None = None, limit: int = 40) -> list[dict[str, Any]]:
+    """The work records, messages and code links numbered at `address` below `before`, newest first, at most `limit`,
+    as items are listed, MCP-037: each one's number, kind, title and why, from one read of the address's numbers. One
+    whose record is gone is left out, as `item_at` leaves it out."""
+    rows = sorted((row for row in tx.tables().rows("numbered", {"address": address}, limit=0).results
+                   if before is None or row["number"] < before), key=lambda row: -row["number"])
+    found: list[dict[str, Any]] = []
+    for held in rows:
+        if len(found) >= limit:
+            break
+        kind: str | None = None
+        if held["kind"] == "code":
+            try:
+                kind = None if tx.views.item_by_id(held["item_id"]).orphaned else "code"
+            except KeyError:
+                kind = None
+        elif held["kind"] == "work":
+            row = tx.execute("SELECT 1 FROM work WHERE work_id=?", (held["item_id"],)).fetchone()
+            kind = "work" if row is not None else None
+        else:
+            row = tx.execute("SELECT kind FROM messages WHERE message_id=?", (held["item_id"],)).fetchone()
+            kind = str(row[0]) if row is not None else None
+        if kind is not None:
+            found.append({"number": int(held["number"]), "kind": kind, "title": held["title"], "why": held["why"]})
+    return found
 
 
 def decorate(tx: Tx, record: Any) -> Any:
@@ -1091,10 +1275,64 @@ def upgrade(tx: Any, found: int) -> None:
         for row in tx.rows('work', limit=0).results:
             if row['condition'] in renamed:
                 tx.update('work', {'row': row['row']}, {'condition': renamed[row['condition']]})
+    if 11 <= found < 14:
+        # Version 13 names a SCIP symbol by its descriptors, as the other providers name theirs, and version 14 keys a
+        # symbol by its file and qualified name and records the names a file's calls did not find: every file is read
+        # again at the next map code-import, and the links the layer holds as items are taken into code_links then.
+        for row in tx.rows('code_files', limit=0).results:
+            tx.delete('code_files', {'layer_id': row['layer_id'], 'path': row['path']})
+
+
+# The code layer's index, `code.py`: each file a provider was read for with its stamp, the hash of its bytes, the git
+# commit it was read at and the names its calls did not find, the symbols it declares, each by its file and qualified
+# name, the calls, imports, uses, bases and tests that start in it with the file each reaches, and the links that tie
+# a symbol to the node whose purpose it provides for, at a join with the provider it is the code of when one is named.
+# Kept under the code layer, so taking the layer off takes its index with it. A link an agent decided is also held by
+# an item of the layer at its node, numbered, MCP-037, one item for each decision however many symbols it names;
+# taking that item off takes its links.
+CODE_TABLES = (Table(
+    'code_files', place='metaform', key=('layer_id', 'path'),
+    columns=(Column('layer_id', required=True), Column('path', required=True), Column('stamp'), Column('hash'),
+             Column('provider'), Column('symbols', 'int', default=0), Column('read', required=True), Column('commit'),
+             Column('unresolved', 'json')),
+    on_remove=(('layer', 'layer_id', 'delete'),),
+), Table(
+    'code_symbols', place='metaform', key=('layer_id', 'path', 'qn'),
+    columns=(Column('layer_id', required=True), Column('qn', required=True), Column('name', required=True),
+             Column('label', required=True), Column('path', required=True), Column('start_line', 'int', default=0),
+             Column('end_line', 'int', default=0), Column('symbol')),
+    indexes=(Index(('layer_id', 'qn')),),
+    on_remove=(('layer', 'layer_id', 'delete'),),
+), Table(
+    'code_edges', place='metaform', key=('layer_id', 'path', 'source', 'target_path', 'target', 'kind'),
+    columns=(Column('layer_id', required=True), Column('source', required=True), Column('target', required=True),
+             Column('kind', required=True), Column('path', required=True), Column('line', 'int', default=0),
+             Column('target_path')),
+    indexes=(Index(('layer_id', 'target', 'kind')), Index(('layer_id', 'path')), Index(('layer_id', 'target_path'))),
+    on_remove=(('layer', 'layer_id', 'delete'),),
+), Table(
+    'code_links', place='metaform', key=('layer_id', 'node_kind', 'node_id', 'path', 'qn'),
+    columns=(Column('layer_id', required=True), Column('node_kind', required=True), Column('node_id', required=True),
+             Column('qn', required=True), Column('link_id', required=True), Column('name'), Column('label'),
+             Column('path'), Column('state', required=True), Column('by'), Column('why'), Column('item_id'),
+             Column('proposal', 'json'), Column('provider')),
+    indexes=(Index(('link_id',)), Index(('layer_id', 'qn')), Index(('item_id',))),
+    on_remove=(('layer', 'layer_id', 'delete'), ('item', 'item_id', 'delete')),
+))
 
 
 TABLES = Tables(
-    version=9,  # 9: a ticket's kind beside the part's state; 8: a part's state is a stage or broken; 7: no foreign keys
+    # 10: the number, title and why of each work record and message at its address, MCP-037, in tables of their own,
+    # so version 9 still reads and writes the store; 9: a ticket's kind beside the part's state; 8: a part's state is a
+    # stage or broken; 7: no foreign keys; 11: the code layer's index, P167, in tables of their own, so version 9
+    # still reads and writes the store; 12: how a done work record ended, completed, cancelled or failed, P232, in a
+    # column version 9 never names, so it still reads and writes the store, and a record it closes reads as completed;
+    # 13: the code layer's links in a table of their own, a symbol's provider form beside its qualified name, and the
+    # file each edge reaches, P167, which version 9 never names; 14: a code symbol keyed by its file and qualified name,
+    # a file's commit and unresolved names, and the provider a join's link is the code of, P167; 15: the project's
+    # glossary terms, in a table of its own, so version 9 still reads and writes the store
+    version=15,
+    compatible_from=9,
     upgrade=upgrade,
     legacy_upgrade=legacy_upgrade,
     legacy_fold=legacy_fold,
@@ -1112,6 +1350,25 @@ TABLES = Tables(
         'question_work', place='metaform', key=('message_id',),
         columns=(Column('message_id', required=True), Column('work_id', required=True)),
         indexes=(Index(('work_id',)),),
+    ), Table(
+        # each work record's and message's number at its address, from the project's counter, with its title and why
+        'numbered', place='metaform', key=('kind', 'item_id'),
+        columns=(Column('kind', required=True), Column('item_id', required=True), Column('address', required=True),
+                 Column('number', 'int', required=True), Column('title'), Column('why')),
+        indexes=(Index(('address', 'number')),),
+    ), Table(
+        # `items` once the records written before numbering are numbered
+        'numbering', place='metaform', key=('name',),
+        columns=(Column('name', required=True), Column('at', required=True)),
+    ), *CODE_TABLES, Table(
+        # the project's glossary terms the person and agents add, edit or remove, `glossary.py`, in the project's own
+        # database so a new intake keeps them; an element's own name is read from the map and kept here only when
+        # edited or removed. A term added at a node holds its number there.
+        'terms', place='project', key=('key',),
+        columns=(Column('key', required=True), Column('term', required=True), Column('state', required=True),
+                 Column('definition'), Column('why'), Column('source'), Column('address'), Column('number', 'int'),
+                 Column('by'), Column('session'), Column('at', required=True)),
+        indexes=(Index(('address', 'number')),),
     )),
 )
 
@@ -1135,11 +1392,13 @@ DATA = Data(
                 save_report,
                 ask,
                 tell,
+                number_items,
             )
         },
         "reply": Operation(close_message, write=True),
         "reopen": Operation(reopen_message, write=True),
-        **{fn.__name__: Operation(fn, retained=True) for fn in (work, messages, ticket, reports, report)},
+        **{fn.__name__: Operation(fn, retained=True) for fn in (work, messages, ticket, reports, report, items_numbered,
+                                                                numbers_of, item_at, listed_items)},
     },
     decorate=decorate,
     item_write=item_write,

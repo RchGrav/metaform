@@ -1,12 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- web's prompts, MCP-031. What is between an element's tags is what is served. Starting the web GUI before an
-     intake is a step of the onboarding, the intake module's no_intake, MCP-009 and VIEW-015. -->
+<!-- The web module's prompts: the text Metaform sends to agents for the web module.
+     Each element is one prompt, named by its tag. What is between the tags is sent exactly as written.
+     An empty element inside a prompt, such as <name/>, would mark a place the code fills in; this file has none.
+     Comments are never sent. -->
 <prompts>
-<!-- web's line in the compact instructions every agent reads at connect, MCP-029 as amended 2026-10-10: when the
-     agent needs web, and where to go then; the instructions themselves are read there, on demand. -->
-<connect>To show the person the map: web start, then give them its address.</connect>
+<!-- web's line in the connect message: what an agent uses web for, one short phrase after its name, in the
+     project's terms. Sent to every agent when it connects over MCP, one line per enabled module under mcp's
+     <instructions>, and listed in the compact command-line guide, metaform help agents. Empty sends nothing for
+     web. Off when the module is disabled or the folder's modules setting leaves it out. -->
+<connect>– web: show the person the map, at the address web start gives</connect>
 
-<!-- web's line in the instructions agents read while web is on, MCP-029. -->
+<!-- web's instructions. Returned by metaform_instructions with module web, at metaform://instructions/web, and by
+     metaform instructions web; printed by metaform help agents web and by the full form of the command-line guide.
+     Each of web's commands is its own tool, web_start and web_stop, described where the tool is listed. Empty sends
+     nothing. Off when the module is disabled. -->
 <instructions>
 @STATE_INIT:
   {Web}:=ACTIVE
@@ -35,6 +42,14 @@
   :ELSE -> CORRECT
 </instructions>
 
-<!-- web's slash command, /metaform:web, which runs web start, MCP-032 and MCP-033. -->
+<!-- The message the web GUI sends the agent whose workflow run waited on the person, once the person has answered it
+     in the Runs pane with "Tell its agent to resume" ticked. <run/> is the run's id. Sent as the person's message to
+     the agent working the ticket that paused the run, through metaform dispatch message, since nothing starts again by
+     itself. Empty sends nothing and leaves telling the agent to the person. -->
+<resume_run>Run <run/> is answered; resume it with metaform workflow resume run=<run/></resume_run>
+
+<!-- One slash command, web, offered to the person in MCP sessions while web is on; its verb attribute names the web
+     command it runs, and the output, the map page's address, is sent as the person's message. An empty <commands/>
+     offers none. Off when the module is disabled. -->
 <commands><web verb="start"/></commands>
 </prompts>

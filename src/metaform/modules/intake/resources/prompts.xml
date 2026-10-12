@@ -1,19 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- intake's prompts, MCP-031. What is between an element's tags is what is served. An empty element inside a prompt
-     marks where the code fills in what it names. -->
+<!-- Intake's prompts: the text Metaform sends to agents for this module.
+     Each element is one prompt, named by its tag. What is between the tags is sent exactly as written.
+     An empty element inside a prompt, such as <register/>, marks a place the code fills in: <register/> with the
+     register_step prompt while the folder is not registered, and with nothing once it is.
+     Comments are never sent. -->
 <prompts>
-<!-- intake's line in the compact instructions every agent reads at connect, MCP-029 as amended 2026-10-10: when the
-     agent needs intake, and where to go then; the instructions themselves are read there, on demand. -->
-<connect>When you are assigned an intake: intake.</connect>
-<!-- intake's line in the instructions agents read while intake is on, MCP-029; its status hook adds no_intake or
-     unfinished after it, MCP-009. -->
+<!-- intake's line in the connect message: what an agent uses intake for, one short phrase after its name, in the
+     project's terms. Sent to every agent when it connects over MCP, one line per enabled module under mcp's
+     <instructions>, and listed in the compact command-line guide, metaform help agents. Empty sends nothing for
+     intake. Off when the module is disabled or the folder's modules setting leaves it out. -->
+<connect>– intake: map the AUE into its elements and joins when you are assigned an intake</connect>
+<!-- Intake's instructions: where the intake procedure and its forms are.
+     Returned by metaform_instructions with module intake, at metaform://instructions/intake, and by metaform instructions intake; printed in the
+     command-line guide while connect_instructions is full. no_intake or unfinished follows it when the folder's state calls for it.
+     Empty sends nothing. Off when the module is disabled or hidden in the folder. -->
 <instructions>intake is active.
 When assigned an intake, follow the procedure at resource metaform://intake/procedure, or the intake tool's
 prompt command; the forms it records are at resource metaform://intake/schema.</instructions>
-<!-- The onboarding, MCP-009: added to the instructions while the folder has no intake, registered or not, since the
-     instructions are sent once at connect and are the only place a first run learns what to do. Approved text, used as
-     written. <register/> is filled with register_step while the folder is not registered yet, and is empty once it
-     is. -->
+<!-- The first-run onboarding: ask the person once whether to analyse the project, then start the intake.
+     Follows intake's line in the command-line guide and intake's instructions while the folder has no intake and
+     none is being recorded, whether or not the folder is registered. It stops by itself once an intake starts.
+     Must not be deleted: the code requires it. Empty sends nothing. -->
 <no_intake>FIRST RUN. Metaform has not analysed this project yet. Handle this first,
 even if the person asked for something else; tell them you'll get to their
 request right after.
@@ -24,27 +31,34 @@ request right after.
    it build live in a browser view on this machine. Want me to start?"
 2. If they say no, drop it and help with what they asked.
 3. If they say yes, do all of this in order without asking again:
-<register/>   b. Start the browser view: web tool, command start. Give them the
+<register/>   b. Start the browser view: the web_start tool. Give them the
       address. If it fails, tell them what it said and stop.
-   c. Read the procedure (intake tool, command prompt) and the schema
-      (intake tool, command schema). Start ONE fresh subagent and give it
+   c. Read the procedure (the intake_prompt tool) and the schema
+      (the intake_schema tool). Start ONE fresh subagent and give it
       both texts, exactly as written, as its task. Do not summarize or
       reword them, do not split the work, and do not do the analysis
       yourself unless you cannot start a subagent.
    d. When it finishes, tell them it's done and invite their questions.</no_intake>
-<!-- Fills no_intake's <register/> while the folder is not registered, MCP-009; the code indents it as a step. -->
-<register_step>a. Register this folder: metaform tool, command register.</register_step>
-<!-- Follows the served procedure, so an agent handed only the procedure finds the schema it binds, MCP-009. -->
-<schema_pointer>The schema this procedure binds, metaform.axiom, is at resource metaform://intake/schema, or the intake tool's schema command.</schema_pointer>
-<!-- Added to the instructions while an intake layer is building and unfinished, MCP-009. -->
+<!-- The registration step, placed in no_intake's <register/> while the folder is not registered; the code indents it.
+     Must not be deleted: the code requires it. Empty leaves a blank line in its place. -->
+<register_step>a. Register this folder: the metaform_register tool.</register_step>
+<!-- Tells an agent given only the intake procedure where its schema is.
+     Added to the end of the procedure wherever it is sent (intake prompt, metaform://intake/procedure, /metaform:intake,
+     dispatch intake) unless the procedure already names metaform://intake/schema.
+     Must not be deleted: the code requires it. Empty adds nothing. -->
+<schema_pointer>The schema this procedure binds, metaform.axiom, is at resource metaform://intake/schema, or the intake_schema tool.</schema_pointer>
+<!-- Says that an intake is waiting to be finished.
+     Follows intake's line in the command-line guide and intake's instructions while an intake layer is being recorded.
+     Must not be deleted: the code requires it. Empty sends nothing. -->
 <unfinished>An intake was started but aborted and still remains to be completed.</unfinished>
-<!-- intake's slash command, /metaform:intake, which serves what metaform intake prompt prints, MCP-032 and MCP-033.
+<!-- Intake's slash command: /metaform:intake runs intake prompt and puts the procedure into the conversation.
+     Offered to the person in MCP clients that show server prompts. Delete the child, or empty the element, to drop it.
      -->
 <commands><intake verb="prompt"/></commands>
-<!-- Read by intake's code when it loads, never served whole: each child's text is the description every intake
-     recording tool shows for that field, <element> for an element and <join> for a join, MAP-040. Each says what the
-     field takes and its allowed values; what a term means is defined once, in the intake procedure. A test checks the
-     allowed values listed here against what the tools accept. -->
+<!-- The field descriptions of the intake recording commands, never sent as one block: each child describes one
+     argument, under <element> for elements and <join> for joins, in the commands' help and argument schemas.
+     Read once when the module loads. A missing child leaves that field without a description; a test checks the
+     allowed values named here against what the commands accept. -->
 <fields>
   <element>
     <namespace_address>The element's dotted address, formed as the intake procedure says, such as code.timer.kitchen.</namespace_address>

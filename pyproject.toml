@@ -7,17 +7,37 @@ name = "metaform"
 version = "2026.9.30.2"
 description = "Functional maps that give agents a project's purpose before they work on it."
 requires-python = ">=3.11"
-dependencies = ["prompt_toolkit>=3.0", "networkx>=3.3", "grand-cypher>=0.12"]
+# The chassis's list plus every shipped module's DEPENDENCIES, written by hatch_build.py, BASE-022 and BASE-041.
+dynamic = ["dependencies"]
 
 [project.scripts]
 metaform = "metaform.cli:main"
 
 [project.optional-dependencies]
 # The checkers and the browser driver are pinned, so CI is repeatable.
-dev = ["pytest>=8", "pytest-xdist>=3.8", "mcp>=2.2,<3", "agent-client-protocol>=0.12.1,<0.13", "pyright==1.1.414", "ruff==0.16.9", "playwright==1.63.0"]
+dev = ["pytest>=8", "pytest-xdist>=3.8", "pyright==1.1.414", "ruff==0.16.9", "playwright==1.63.0"]
+
+[tool.metaform]
+# The chassis's own dependencies, pure Python only, BASE-026; copied into metaform/_build_info.py, BASE-041.
+chassis-dependencies = ["prompt_toolkit>=3.0", "networkx>=3.3", "grand-cypher>=0.12"]
+
+[tool.hatch.metadata.hooks.custom]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/metaform"]
+# The MCP Apps map view, built from the web page by scripts/build_map_view.mjs and not kept in git: carried when built.
+artifacts = ["src/metaform/modules/mcp/resources/views/map.html"]
+
+[tool.hatch.build.targets.sdist]
+artifacts = ["src/metaform/modules/mcp/resources/views/map.html"]
+
+# Builds the map view before a wheel or sdist when it is missing or older than the page, MCP-037.
+[tool.hatch.build.hooks.custom]
+path = "scripts/hatch_views.py"
+
+[tool.uv]
+# The dependencies are dynamic, so a changed module declaration must refresh the environment too.
+cache-keys = [{ file = "pyproject.toml" }, { file = "hatch_build.py" }, { file = "src/metaform/modules/*/__init__.py" }, { file = "src/metaform/modules/*/manifest.py" }]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "src/metaform/modules"]

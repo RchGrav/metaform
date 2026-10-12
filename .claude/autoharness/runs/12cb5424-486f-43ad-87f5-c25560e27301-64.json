@@ -1,0 +1,35 @@
+{
+  "run_id": "12cb5424-486f-43ad-87f5-c25560e27301-64",
+  "verdicts": [
+    {
+      "action": "patch",
+      "name": "metaform-ticket-work",
+      "ok": true,
+      "findings": [],
+      "notes": []
+    },
+    {
+      "action": "patch",
+      "name": "metaform-ticket-work",
+      "ok": true,
+      "findings": [],
+      "notes": []
+    },
+    {
+      "action": "patch",
+      "name": "codebase-memory",
+      "ok": false,
+      "findings": [
+        "self_produced"
+      ],
+      "notes": []
+    },
+    {
+      "action": "patch",
+      "name": "metaform-ticket-work",
+      "ok": true,
+      "findings": [],
+      "notes": []
+    }
+  ]
+}

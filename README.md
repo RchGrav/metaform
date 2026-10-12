@@ -12,6 +12,110 @@
 
 [Documentation](docs/README.md) · [Getting started](docs/guides/getting-started.md) · [Worked project example](docs/examples/project-walkthrough.md) · [Technical](#technical)
 
+### An Inference-First Context Management Platform for Agentic Development
+
+**Metaform is a modular context management and orchestration platform designed to move reusable inference out of individual agent workflows and into shared, persistent infrastructure.**
+
+Its central premise is simple: much of the reasoning required to understand a project does not need to be repeated by every agent performing work on it. A substantial portion can be performed in advance, organized into reusable context, and maintained as the project evolves.
+
+Metaform is built around **amortizing inference**—performing the work of understanding a project once, then making that understanding available to the agents, developers, and systems that need it.
+
+Rather than requiring agents to repeatedly reconstruct project structure, rediscover relationships, interpret prior decisions, and establish context, Metaform provides a common functional model of the project, contextual memory, and the tools needed to work within that model.
+
+The objective is not to make an agent's decisions in advance. It is to eliminate redundant inference so the agent can devote its reasoning capacity to the decisions that actually belong to the work it is performing.
+
+## Design Philosophy
+
+Metaform draws a deliberate distinction between **inference that can be performed independently of a task** and **reasoning that must remain with the agent executing that task**.
+
+Project structure, functional relationships, established conventions, existing state, prior work, and accumulated knowledge can often be understood before a particular assignment begins.
+
+These are opportunities to amortize inference.
+
+The system therefore favors procedures that establish, refine, and preserve reusable understanding independently of the agents consuming it.
+
+An agent should not need to rediscover what is already known. Nor should its ability to make decisions be constrained by conclusions unnecessarily imposed in advance.
+
+Metaform seeks to prepare the environment for reasoning, not replace reasoning itself.
+
+## A Functional Model of the Project
+
+At the foundation of Metaform is a structured representation of project functionality.
+
+Rather than organizing knowledge exclusively around files, documents, or conversations, Metaform models a project in terms of its functional elements, their purposes, their relationships, and the capabilities they provide to one another.
+
+This establishes a shared language for describing not merely *what a system contains*, but *what its components do, why they exist, and how they contribute to the larger system*.
+
+In that language, every part of a project has an address, read from trunk to leaf, such as `code.dispatcher.task`. A receiving element (RE) has an operative purpose (OP), the why; providing elements (PE) serve it through their encounter function (EF), the how; each join records its information flow direction (IFD); and chains of purposes lead to the CQU, the party for whom the project's worth is held in trust.
+
+The model is applicable at any stage of development:
+
+- **Greenfield:** Understanding intended functionality, requirements, and the relationships a system is expected to establish.
+- **Brownfield:** Examining an existing implementation to identify its functional structure, dependencies, and operational state.
+- **Continuous evolution:** Maintaining and refining that understanding as implementation, requirements, and project knowledge change.
+
+The resulting functional namespace provides a common frame of reference for agents, developers, and orchestration systems.
+
+It becomes a persistent foundation upon which additional context can be organized without requiring each participant to reconstruct the project from its raw artifacts.
+
+## Context, Memory, and Communication
+
+Metaform is not fundamentally a retrieval-augmented generation (RAG) system.
+
+Retrieval can provide an agent with information. Metaform is concerned with the broader problem of establishing and managing the context in which that information has meaning.
+
+Its functional model provides the organizational foundation for persistent, contextually situated memory.
+
+Agents can record discoveries, observations, decisions, progress, and other knowledge in association with the functionality and work they concern.
+
+This supports continuity between agents, across sessions, and throughout the lifetime of a project.
+
+It also gives developers, agents, and orchestration components a common language for referring to project functionality and communicating about work.
+
+Instead of treating each agent session as an isolated encounter with a collection of documents, Metaform treats agent activity as part of a continuing process of project understanding.
+
+**Agents consume existing context, contribute new knowledge, and leave the environment better informed for subsequent work.**
+
+## Pipelines for Continuous Understanding
+
+Metaform provides a foundation for procedures and workflows that build and maintain project understanding.
+
+These include project ingestion, functional analysis, state documentation, memory management, context preparation, and orchestration.
+
+The pipelines are intended to perform useful inference independently of individual assignments, preparing context that can be reused across agents and workflows.
+
+As projects evolve, the platform can incorporate new observations, track changing state, and preserve relevant accumulated knowledge.
+
+This makes context management a continuous part of the development environment rather than an operation repeated from scratch whenever an agent begins work.
+
+## A Modular and Extensible Platform
+
+Metaform is designed as a platform rather than a closed application or a fixed collection of agent tools.
+
+Its architecture is a modular chassis that exposes shared capabilities to independently developed modules.
+
+Core functionality, integrations, workflows, context services, and user-facing interfaces can be extended through a common platform architecture.
+
+Module templates and established interfaces provide developers with a starting point for creating capabilities tailored to their own environments.
+
+The intention is to make the platform itself a development surface—one that individuals and communities can adapt, extend, and build upon without redesigning the underlying infrastructure.
+
+Metaform is also intended to operate across development environments, integrating with IDEs, agent harnesses, orchestration systems, and other compatible tools through established protocols and standards, while remaining usable independently.
+
+This separates the persistent project context from any particular agent, model, interface, or development environment.
+
+## The Larger Objective
+
+Metaform approaches agentic development as a problem of managing and distributing understanding.
+
+As agents become more capable, the challenge is not simply providing them with more information. It is ensuring they receive meaningful context, retain useful knowledge, communicate through a consistent representation of the work, and avoid repeating inference that has already been performed.
+
+Metaform is designed to provide that infrastructure.
+
+Its philosophy is to **infer what can be inferred in advance, preserve what has been learned, share what is useful, and leave the work-specific reasoning to the agents performing the work.**
+
+The intended result is a development environment in which understanding accumulates, context becomes reusable, and each new agent can build upon the work of those that came before it.
+
 ## What is Metaform?
 
 Metaform uses the concept of *meta* to abstract your ideas into their purest
@@ -97,265 +201,3 @@ flowchart LR
 The prompt directs an operation; the Metaform supplies the semantic orientation through which it is interpreted. Selected knowledge can provide information or, when that is the layer's purpose, additional imperatives. Memory is attached to elements and joins, rather than detached from the functionality it concerns.
 
 It also lets a critic find gaps in the design: functions and Encounters the system should have and does not. Code alone shows how a system behaves, not what it is for, so the recorded purposes are what make a missing piece visible. The critic examines the Metaform on its own, or the Metaform together with the code. Each gap becomes a blindspot challenge, which asks the project for substantive reasoning: why a concern was already considered and adds no benefit, why an unexplored concern matters, or where another part of the system already fulfills the apparent omission.
-
-## What it looks like
-
-A kitchen timer's firmware, mapped. The home cook receives the kitchen timer, which the project calls the dish clock. The timer receives the audible alarm's Encounter, the buzzer. The tick loop is annealed into the cook's join: it is one more element that join holds. The cook holds a join, the join holds the elements that serve the cook's purpose, and each join is its own object, drawn here as a circle:
-
-```mermaid
-graph TB
-    cook["stakeholder.cook.home<br/>home cook"] -- "holds" --> j1(("join<br/>Know when each dish is done"))
-    j1 -- "holds" --> timer["code.timer.kitchen<br/>kitchen timer, the dish clock"]
-    j1 -- "holds" --> tick["code.loop.tick<br/>tick loop, the ticker"]
-    timer -- "holds" --> j2(("join<br/>Get the cook's attention"))
-    j2 -- "holds" --> alarm["code.alarm.audible<br/>audible alarm, the buzzer"]
-```
-
-An agent handed the address `code.timer.kitchen` reads it once, with `metaform map where code.timer.kitchen --json` or the `map_where` tool, and receives the stored record: `provides`, the joins that hold the timer and so what relies on it, `receives`, the joins the timer holds as receiver and so what it relies on, and what the `sources` layer, a review layer and memory hold at it. The record below is the real output for this map, with `memory` after `layers`:
-
-```json
-{
-  "kind": "element",
-  "element": {
-    "address": "code.timer.kitchen",
-    "layer": "intake",
-    "reading": "kitchen timer code",
-    "short_name": "kitchen timer",
-    "name_length": 2,
-    "role": "DE",
-    "name": "dish clock"
-  },
-  "provides": [
-    {
-      "receiver": "stakeholder.cook.home",
-      "layer": "intake",
-      "type": "purpose",
-      "purpose": "Know when each dish is done without watching the clock.",
-      "ef": "tells the cook when a dish is done",
-      "ifd": "receives",
-      "elements": [
-        {
-          "address": "code.timer.kitchen",
-          "short_name": "kitchen timer",
-          "name_length": 2,
-          "name": "dish clock",
-          "role": "DE"
-        },
-        {
-          "address": "code.loop.tick",
-          "short_name": "tick loop",
-          "name_length": 2,
-          "name": "ticker",
-          "role": "SE"
-        }
-      ]
-    }
-  ],
-  "receives": [
-    {
-      "layer": "intake",
-      "type": "purpose",
-      "purpose": "Get the cook's attention the moment a countdown ends.",
-      "ef": "sounds the end of a countdown through the speaker",
-      "ifd": "receives",
-      "elements": [
-        {
-          "address": "code.alarm.audible",
-          "short_name": "audible alarm",
-          "name_length": 2,
-          "name": "buzzer",
-          "role": "SE"
-        }
-      ]
-    }
-  ],
-  "layers": [
-    {
-      "layer": "sources",
-      "kind": "layer",
-      "items": [
-        {
-          "layer": "sources",
-          "value": "code.timer.kitchen",
-          "refs": [
-            {
-              "key": "path",
-              "value": "src/main.c"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "layer": "review-notes",
-      "kind": "layer",
-      "items": [
-        {
-          "layer": "review-notes",
-          "value": {
-            "finding": "Each dish keeps its own countdown."
-          }
-        }
-      ]
-    }
-  ],
-  "memory": {
-    "entities": [
-      {
-        "name": "countdown drift",
-        "entityType": "behavior",
-        "observations": ["The countdown drifts one second an hour on the first board."]
-      }
-    ],
-    "relations": []
-  }
-}
-```
-
-Ids and empty fields are left out; `full=true` keeps them. Every agent that touches this element, this session, next month, a different model from a different vendor — sees the same stored purpose. [Getting started](docs/guides/getting-started.md#record-a-small-map-by-hand) records this map by hand, without a model, and [Working with Metaform](docs/guides/working-with-metaform.md) adds the memory and the review layer.
-
-The web GUI draws the same map:
-
-![The Metaform web GUI: the kitchen timer selected in the Object panel on the left, with its sources path, a review-notes item, its memory and the joins it holds and serves; the 2D map above it zoomed in on the kitchen timer and the tick loop; and the 3D graph of every element, join and item on the right, the audible alarm red for its open broken work record.](docs/images/gui-map.png)
-
-### Extending Metaform itself
-
-The earlier map of this repository, recorded on September 26, 2026 and kept as an [export](docs/examples/project-metaform.json), records **the module contract and loader** as a provider. One of its receivers is **the module author**, whose recorded purpose is:
-
-> Add a capability to Metaform as a module, declared once in its own folder, that runs as a metaform command and an MCP tool with its own settings, events, status line and lifecycle, without changing the chassis.
-
-The join explains how a `MODULE = Module(...)` declaration supplies those surfaces. In that snapshot, two subtype joins hold **template** and **hello**. The snapshot has the shape of its day; in the current shape the module author's join holds **template** and **hello** as elements beside the module contract. Either way they are part of the relationship, not extra top-level subsystems inferred from their filenames.
-
-An agent asked to add a module can receive the provider's project name, this receiving purpose, the template and example, and the source references for the declaration and loader. It can then implement against the existing shared facilities rather than invent separate command registration, settings storage, or an event mechanism. The same provider also has relationships to the command line, MCP server, package builder, chassis, and agent instructions. Those relationships make the consequences of a change available from the receivers' perspectives, and `metaform map where` on the provider's address returns all of them in one read.
-
-A **derived illustration of project-grounded lexicalization** uses the request:
-
-```text
-Review error handling in the plugin system.
-```
-
-The project-grounded request becomes:
-
-```text
-Review error handling in the module contract and loader.
-```
-
-A separate mapping connects `module contract and loader` to the provider's namespace address, with directions to the relevant joins and selected knowledge. The operation remains a review of error handling. The preprocessing does not perform the review or add a new assignment.
-
-The graph reads and addressed memory are implemented. The lexicalization producer described here is intended functionality, not a shipped command. [Follow the complete example](docs/examples/project-walkthrough.md) for the records, the reads that return them, and the distinction between recorded material and derived use.
-
-### Refactoring legacy code
-
-A capability smeared across twelve files gets one coherent functional shape,
-bound back to the exact locations where it lives. Ask "what is the
-authentication flow" and get an answer that spans files, references exact
-lines, and describes purposes and encounters — not which class calls which
-method. The map is generated from what the code *does*, not from its AST, so it
-stays stable while the implementation moves under it.
-
-### Porting across languages
-
-**Before:** elements carry layers of C++ best practices and memory-management
-concerns, injected into prompts when agents work on those elements.
-**During:** a "porting to Rust" layer attaches — ownership semantics, lifetime
-annotations, error handling — while the C++ layers mask out.
-**After:** the C++ layers hide (kept and still readable, never deleted); the
-Rust layers activate. Addresses unchanged. Purposes unchanged. The knowledge
-swapped. Past prompts remain exactly as issued; future prompts receive the new
-layers.
-
-## What it makes possible
-
-Metaform connects several parts of the work process rather than treating them as unrelated utilities:
-
-| During the work | What the prepared understanding contributes |
-|---|---|
-| Understand a whole system | Functional parts, receiving purposes, and relationships that cross file or medium boundaries. |
-| Prepare a task | Project names and functional addresses through which a reusable operation can be interpreted. |
-| Retain findings | Meaningful locations for observations about a part or a relationship. |
-| Change perspective | Reason from a receiver's need, a provider's effects, a broader type, or a particular Encounter. |
-| Find gaps | Functions and Encounters the design lacks, found from the Metaform alone or with the code, each answered with the project's reasoning or the place that already handles it. |
-| Shape the workpiece | Preserve relevant identity while changing a realization, or deliberately transform the purposes and effects that define it. |
-
-A workpiece can be software, a document, a narrative, an image, a collection, or an idea under construction. The same method asks what the artifact is doing in its context. A photograph used as an asset has a different relationship to the surrounding work from the same photograph examined on its own; a functional type does not erase its particular subject or occasion.
-
-## Community-extensible by construction
-
-The implementation is a Python chassis with discoverable modules. A module declares its verbs, input nouns, settings, event subscriptions, lifecycle hooks, and purpose. The chassis uses those declarations to expose commands, MCP tools, help, settings, and agent instructions.
-
-Modules receive a per-call context with the selected project, store, folder, settings, and output facilities. Shared facilities include graph and knowledge storage, addressed memory operations, work records for the condition of an element or a join, event delivery, owned asynchronous work, reports, and packaging. Modules are discovered from the bundled module directory, the user's Metaform home, and installed entry points.
-
-The current modules provide intake, map operations, memory, MCP service, and a web interface. The disabled-by-default **hello** module exercises the contract; **template** supplies its empty starting shape. The existence of a shared facility is distinct from how many modules currently use it. A new inference producer can use the existing chassis without rebuilding those facilities.
-
-[Extend Metaform](docs/guides/extending-metaform.md) explains the actual contract, scheduling, lifecycle, and packaging behavior.
-
-## Begin using it
-
-From a source checkout, use Python 3.11 or newer. These commands install the local project and the dependencies needed for the MCP/build path in this source edition:
-
-```sh
-python -m venv .venv
-. .venv/bin/activate
-python -m pip install -e . "mcp>=2.2" uv
-metaform list modules
-```
-
-On Windows PowerShell, activate with `.\.venv\Scripts\Activate.ps1` instead.
-
-### Install from the repository onto your path
-
-To have the `metaform` command on your path, and the MCP server agents launch, run the code in a checkout, install the checkout as an editable [uv](https://docs.astral.sh/uv/) tool, with the MCP and agent-protocol packages beside it:
-
-```sh
-uv tool install --editable /path/to/metaform --with "mcp>=2.2" --with "agent-client-protocol>=0.12.1,<0.13" --force
-```
-
-The command lands in uv's tool folder, `~/.local/bin` on Linux and macOS, and imports Metaform from the checkout's `src/`. Every command then runs the checkout as it is now: after a pull or an edit, nothing is installed again. Processes already running keep the code they started with:
-
-- each agent session reconnects its MCP server, with `/mcp` in Claude Code, or starts again;
-- the web GUI restarts with `metaform web stop` and then `metaform web start`, and an open page reloads;
-- an agent dispatch started keeps the code it started with until its session ends.
-
-Run the install again only when `pyproject.toml` changes Metaform's dependencies or entry points.
-
-Register an existing workpiece folder:
-
-```sh
-cd /path/to/workpiece
-metaform add project example .
-metaform intake prompt
-```
-
-The last command serves the intake instructions, the Digital Typology procedure; **the agent performs the intake**. It examines the workpiece, follows the served method, and records the map one object at a time as it reasons it, through the intake tools, then reads it back, proofs it and finishes it with `intake_finish`. `metaform web` draws the map live while it is recorded. You choose the workpiece and direct the work; Metaform retains the resulting functional representation. Start reading it with `metaform map roots`, read one address with `metaform map where <address>`, or open `metaform web`. `metaform clear project <project> --confirm` removes the project's metaforms and reports so the intake can be taken again from nothing.
-
-For an agent connection, build the selected modules with `metaform build`, then run `metaform install` to choose a detected supported client. The installer registers a wheel-backed stdio MCP server and probes it. [Getting started](docs/guides/getting-started.md) covers the source and wheel paths, supported installer adapters, how the intake is recorded, retained data, and first useful inspection. It also records a small map by hand, without a model.
-
-## Documentation
-
-The [documentation index](docs/README.md) connects the complete set:
-
-- [Getting started](docs/guides/getting-started.md): install, connect, register, perform intake, and inspect the first result.
-- [Working with Metaform](docs/guides/working-with-metaform.md): relationships, memory, layers, refining the metaform, project context, GUI, and exchange.
-- [Reading an Inference Metaform](docs/guides/reading-a-metaform.md): types, names, receiving purposes, joins, and the project's own functional map.
-- [Extending Metaform](docs/guides/extending-metaform.md): build a module using the template, example, and shared facilities.
-
-## Technical
-
-The [preprint](docs/preprint/inference-metaform.md) develops the complete causal account, including exact relational identity, Encounter propagation, lexicalization, provenance, and formation through intent. A [typeset PDF](docs/preprint/inference-metaform.pdf) and [citation information](docs/preprint/CITATION.md) accompany it.
-
-The technical-reference set supplies the deeper engineering account:
-
-| Document | Use it for |
-|---|---|
-| [REFERENCE.md](docs/inference-metaform/REFERENCE.md) | Full mechanisms, terminology, connected walkthroughs, and functional commitments. |
-| [IMPLEMENTATION_MAP.md](docs/inference-metaform/IMPLEMENTATION_MAP.md) | Source correspondence, present behavior, tests, and localized implementation boundaries. |
-| [EXAMPLES_TO_COLLECT.md](docs/inference-metaform/EXAMPLES_TO_COLLECT.md) | Original traces and measurements that would make preparation and reuse inspectable. |
-| [IDEAS.md](docs/inference-metaform/IDEAS.md) | Separate proposals for additional tools and views. |
-
-This documentation describes the `chassis` branch after step 58 of the [build log](specifications/BUILD-LOG.md). [Edition and validation notes](docs/EDITION.md) record the documentation edition of September 26, 2026, the source it was written against and the checks made on it, and what has changed since.
-
-## Authorship and independent development
-
-Inference Metaform is the independently developed work of **Rich**. The method grew through six years of hands-on work with AI models, including self-authored context management and semantic rules for inference predating GPT-3's completions API. Rich manually exercised and measured the method and spent six months refining and encoding the present design.
-
-The research connections in the preprint are subsequent comparisons, not the origin of the design. The project is intended for release with its operative intake. Intake integrity concerns preserving how the method operates; it does not depend on a claim that the procedure is unpublished.

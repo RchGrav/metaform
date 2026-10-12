@@ -12,7 +12,7 @@ import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from prompt_toolkit import Application
 from prompt_toolkit.data_structures import Point
@@ -110,11 +110,13 @@ STYLE = Style.from_dict({
 
 HELP = ('SETUP KEYS\n\n'
         '↑ / ↓             Select a module or setting\n'
-        '← / →, Tab        Switch between panels\n'
+        '← / →, Tab        Switch between panels; on a choice, on/off or\n'
+        '                  number setting, ← / → change its value\n'
         'Shift+Tab         Switch back\n'
         'Home / End        First / last item\n'
         'Page Up / Down    Move one page\n'
-        'Enter             Open settings or edit a value\n'
+        'Enter             Open settings or edit a value; a setting with\n'
+        '                  choices opens a list to pick from\n'
         'Space             Stage module or boolean toggle\n'
         'F2                Selected module help from its declaration\n'
         'F5                Read the stored values again\n'
@@ -164,6 +166,12 @@ class ChassisTUI:
         self.exit_requested = False
         self.last_task: asyncio.Task[None] | None = None
         self._edit_target: tuple[str, settings.Setting] | None = None
+        # The picker: a setting's choices to pick one of (a choice setting) or check several of (a list)
+        self.picking = False
+        self.pick_target: tuple[str, settings.Setting] | None = None
+        self.pick_choices: list[str] = []
+        self.pick_checked: set[str] = set()
+        self.pick_index = 0
         self.modules_control = FormattedTextControl(self._module_lines, focusable=True,
                                                     get_cursor_position=lambda: Point(0, self.module_index))
         self.settings_control = FormattedTextControl(self._setting_lines, focusable=True,
@@ -183,7 +191,7 @@ class ChassisTUI:
             Frame(details, title='Selection details'),
             Window(FormattedTextControl(lambda: self.message), height=2, wrap_lines=True,
                    style=lambda: 'class:error' if self.error else 'class:status'),
-            Window(FormattedTextControl('  ↑↓ Select   ←→ / Tab Panel   Enter Edit   Space Toggle'),
+            Window(FormattedTextControl('  ↑↓ Select   ←→ Panel or value   Tab Panel   Enter Edit   Space Toggle'),
                    height=1, style='class:footer'),
             Window(FormattedTextControl('  F1 Keys  F2 Help  / Filter  G Glue  R Reset  P Preview  S Save  '
                                         'F10 Save/Exit'), height=1, style='class:footer'),
@@ -194,6 +202,14 @@ class ChassisTUI:
             Window(FormattedTextControl(lambda: self.edit_error or 'Enter Stage change    Esc Cancel'),
                    height=2, wrap_lines=True),
         ]), padding=1), title='Edit setting', width=Dimension(preferred=66))
+        self.pick_window = Window(FormattedTextControl(self._pick_lines, focusable=True,
+                                                       get_cursor_position=lambda: Point(0, self.pick_index)),
+                                  wrap_lines=False, always_hide_cursor=True, height=Dimension(max=16))
+        pick_dialog = Frame(Box(HSplit([
+            Window(FormattedTextControl(self._pick_label), height=2, wrap_lines=True),
+            self.pick_window,
+            Window(FormattedTextControl(self._pick_keys), height=2, wrap_lines=True),
+        ]), padding=1), title='Choose', width=Dimension(preferred=60))
         self.help_text = TextArea(text=HELP, read_only=True, scrollbar=True, wrap_lines=True)
         help_dialog = Frame(self.help_text, title='Keyboard help · ↑↓ scroll',
                             width=Dimension(preferred=64), height=Dimension(preferred=26))
@@ -209,6 +225,7 @@ class ChassisTUI:
                                    width=Dimension(preferred=80), height=Dimension(preferred=24))
         container = FloatContainer(content, floats=[
             Float(content=ConditionalContainer(edit_dialog, Condition(lambda: self.editing))),
+            Float(content=ConditionalContainer(pick_dialog, Condition(lambda: self.picking))),
             Float(content=ConditionalContainer(help_dialog, Condition(lambda: self.help_open))),
             Float(content=ConditionalContainer(quit_dialog, Condition(lambda: self.quit_open))),
             Float(content=ConditionalContainer(preview_dialog, Condition(lambda: self.preview_open))),
@@ -414,6 +431,8 @@ class ChassisTUI:
         if setting.type is bool:
             self._stage(row.id, setting, not value)
             return
+        if self._open_pick(row.id, setting, value):
+            return
         self._edit_target = (row.id, setting)
         self.editor.text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
         self.editor.buffer.cursor_position = len(self.editor.text)
@@ -483,6 +502,8 @@ class ChassisTUI:
                 self.pending_glue.pop(identity)
             for module, enabled in list(self.pending_modules.items()):
                 await asyncio.to_thread(loader.set_enabled, module, enabled)
+                from . import install
+                install.node_skill_follows(module, folder, noted.append)  # Claude Code's metaform-node follows map
                 self.pending_modules.pop(module)
             if exit_after:
                 self.exit_requested = True
@@ -536,12 +557,118 @@ class ChassisTUI:
         self.edit_error = ''
         self.app.layout.focus(self.editor)
 
-    def _step(self, amount: int) -> None:
+    def _step(self, amount: int) -> bool:
+        """Change the selected setting's value by one step: a number up or down, on/off switched, a choice to the
+        next or previous of its choices. False when the setting has no steps, such as text."""
         row = self.selected
-        if row is not None and self.panel == 'settings' and self.declared_settings:
-            setting = self.declared_settings[self.setting_index]
-            if setting.type is int:
-                self._stage(row.id, setting, self._value(row.id, setting) + amount)
+        if row is None or self.panel != 'settings' or not self.declared_settings:
+            return False
+        setting = self.declared_settings[self.setting_index]
+        value = self._value(row.id, setting)
+        if setting.type is int:
+            self._stage(row.id, setting, value + amount)
+        elif setting.type is bool:
+            self._stage(row.id, setting, not value)
+        elif setting.kind == 'select':
+            choices = self._choices(setting)
+            if not choices:
+                return False
+            index = choices.index(value) + amount if value in choices else (0 if amount > 0 else -1)
+            self._stage(row.id, setting, choices[index % len(choices)])
+        else:
+            return False
+        return True
+
+    def _side(self, amount: int) -> None:
+        """← and →: on a setting with steps they change its value; elsewhere they switch panels."""
+        if self.panel == 'settings' and self._step(amount):
+            return
+        self._focus('modules' if amount < 0 else 'settings')
+
+    def _choices(self, setting: settings.Setting) -> list[str]:
+        if setting.choices is None:
+            return []
+        try:
+            return setting.options(self.backend.folder)
+        except Exception:  # noqa: BLE001  a module's failing choices function leaves the setting to be typed
+            return []
+
+    def _open_pick(self, module: str, setting: settings.Setting, value: Any) -> bool:
+        """Open the picker for a choice setting or a list with choices; False when the setting has no choices."""
+        if setting.kind not in ('select', 'list'):
+            return False
+        choices = self._choices(setting)
+        if not choices:
+            return False
+        self.pick_target, self.pick_choices = (module, setting), choices
+        if setting.kind == 'list':
+            chosen = [str(item) for item in cast(list[Any], value)] if isinstance(value, list) else []
+            # An empty list means every group for the settings that read empty as all, CLI-031
+            self.pick_checked = set(choices) if not chosen and setting.key in settings.EMPTY_IS_ALL else set(chosen)
+            self.pick_index = 0
+        else:
+            self.pick_checked = {value} if value in choices else set()
+            self.pick_index = choices.index(value) if value in choices else 0
+        self.picking = True
+        self.app.layout.focus(self.pick_window)
+        return True
+
+    def _pick_label(self) -> str:
+        if not self.pick_target:
+            return ''
+        module, setting = self.pick_target
+        return f'{module}.{setting.key}\n{setting.help}'
+
+    def _pick_keys(self) -> str:
+        if self.pick_target and self.pick_target[1].kind == 'list':
+            return '↑↓ Select   Space / ←→ Check   A All   Enter Stage   Esc Cancel'
+        return '↑↓ Select   Enter Stage   Esc Cancel'
+
+    def _pick_lines(self) -> StyleAndTextTuples:
+        many = bool(self.pick_target and self.pick_target[1].kind == 'list')
+        result: StyleAndTextTuples = []
+        for index, choice in enumerate(self.pick_choices):
+            mark = ('[x]' if choice in self.pick_checked else '[ ]') if many else \
+                ('(•)' if choice in self.pick_checked else '( )')
+            style = 'class:selection' if index == self.pick_index else ''
+            result.append((style, f' {mark} {choice}\n'))
+        return result
+
+    def _pick_move(self, amount: int) -> None:
+        if self.pick_choices:
+            self.pick_index = max(0, min(len(self.pick_choices) - 1, self.pick_index + amount))
+
+    def _pick_check(self, everything: bool = False) -> None:
+        if not self.pick_target or self.pick_target[1].kind != 'list' or not self.pick_choices:
+            return
+        if everything:
+            whole = set(self.pick_choices)
+            self.pick_checked = set() if self.pick_checked == whole else whole
+            return
+        choice = self.pick_choices[self.pick_index]
+        mark = self.pick_target[1].exclusive
+        if mark and choice not in self.pick_checked:  # one value per name: the others of its name are unchecked
+            self.pick_checked = {one for one in self.pick_checked
+                                 if one.partition(mark)[0] != choice.partition(mark)[0]}
+        self.pick_checked ^= {choice}
+
+    def _pick_apply(self) -> None:
+        if not self.pick_target:
+            return
+        module, setting = self.pick_target
+        if setting.kind == 'list':
+            chosen = [choice for choice in self.pick_choices if choice in self.pick_checked]
+            if setting.key in settings.EMPTY_IS_ALL and len(chosen) == len(self.pick_choices):
+                chosen = []  # every group checked is stored as all, CLI-031
+            self._stage(module, setting, chosen)
+        elif self.pick_choices:
+            self._stage(module, setting, self.pick_choices[self.pick_index])
+        self._pick_close()
+
+    def _pick_close(self) -> None:
+        self.picking = False
+        self.pick_target = None
+        self._focus('settings')
 
     def _module_help(self) -> None:
         row = self.selected
@@ -562,7 +689,9 @@ class ChassisTUI:
             self._focus(self.panel)
 
     def _back(self) -> None:
-        if self.module_help_open:
+        if self.picking:
+            self._pick_close()
+        elif self.module_help_open:
             self.module_help_open = False
             self._focus(self.panel)
         elif self.quit_open:
@@ -590,10 +719,11 @@ class ChassisTUI:
     def _bindings(self) -> KeyBindings:
         keys = KeyBindings()
         browsing = Condition(lambda: not self.editing and not self.help_open and not self.quit_open
-                             and not self.preview_open and not self.module_help_open)
+                             and not self.preview_open and not self.module_help_open and not self.picking)
         editable = browsing & Condition(lambda: not self.busy)
         dialogs_closed = Condition(lambda: not self.editing and not self.quit_open and not self.preview_open
-                                   and not self.module_help_open)
+                                   and not self.module_help_open and not self.picking)
+        picking = Condition(lambda: self.picking)
         quitting = Condition(lambda: self.quit_open)
 
         def bind(key: str, callback: Callable[[], object], filter: FilterOrBool = editable) -> None:
@@ -610,8 +740,8 @@ class ChassisTUI:
         bind('end', lambda: self._move(end=True))
         bind('pageup', lambda: self._page(-1))
         bind('pagedown', lambda: self._page(1))
-        bind('left', lambda: self._focus('modules'))
-        bind('right', lambda: self._focus('settings'))
+        bind('left', lambda: self._side(-1))
+        bind('right', lambda: self._side(1))
         for key in ('tab', 's-tab'):
             bind(key, lambda: self._focus('settings' if self.panel == 'modules' else 'modules'))
         bind('enter', lambda: self._focus('settings') if self.panel == 'modules' else self._edit())
@@ -633,6 +763,15 @@ class ChassisTUI:
         bind('f1', self._help_toggle, dialogs_closed)
         bind('?', self._help_toggle, dialogs_closed)
         bind('enter', self._apply_edit, Condition(lambda: self.editing))
+        for key, step in (('up', -1), ('k', -1), ('down', 1), ('j', 1)):
+            bind(key, lambda step=step: self._pick_move(step), picking)
+        bind('home', lambda: self._pick_move(-len(self.pick_choices)), picking)
+        bind('end', lambda: self._pick_move(len(self.pick_choices)), picking)
+        for key in (' ', 'left', 'right'):
+            bind(key, self._pick_check, picking)
+        for key in ('a', 'A'):
+            bind(key, lambda: self._pick_check(everything=True), picking)
+        bind('enter', self._pick_apply, picking)
         bind('escape', self._back, True)
         bind('q', self._exit)
         bind('Q', self._exit)

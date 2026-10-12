@@ -32,7 +32,6 @@ from . import (
     home,
     instructions,
     loader,
-    nonce,
     prompt_files,
     query,
     reports,
@@ -43,6 +42,8 @@ from .data import Store, export_document, history, import_document, prompts
 from .docs import Command, Switch
 from .errors import Stop, StoreError
 from .module import Verb, call, on_this_system
+from .shown import session as agent_session
+from .shown import swap as told_before
 from .wording import count, counted
 
 EMPTY_IS_ALL = settings.EMPTY_IS_ALL
@@ -386,7 +387,7 @@ def restore(args: list[str], folder: Path) -> None:
         out(f'What it held was backed up as {restored.held_before}.')
 
 
-def _toggle(args: list[str], on: bool) -> None:
+def _toggle(args: list[str], on: bool, folder: Path) -> None:
     verb = 'enable' if on else 'disable'
     if len(args) != 1:
         raise Stop(f'{verb} needs one module id.', f'metaform {verb} <module>')
@@ -395,14 +396,16 @@ def _toggle(args: list[str], on: bool) -> None:
         raise Stop(f'No module {identifier}.', 'metaform list modules')
     loader.set_enabled(identifier, on)
     out(f"Module {identifier}: {'on' if on else 'off'}")
+    from . import install
+    install.node_skill_follows(identifier, folder, out)  # Claude Code's metaform-node skill exists only with map on
 
 
 def enable(args: list[str], folder: Path) -> None:
-    _toggle(args, True)
+    _toggle(args, True, folder)
 
 
 def disable(args: list[str], folder: Path) -> None:
-    _toggle(args, False)
+    _toggle(args, False, folder)
 
 
 # Settings -----------------------------------------------------------------------------
@@ -963,32 +966,6 @@ def _run_async(function: Callable[..., Any], ctx: Any, label: str) -> Any:
             loop.close()
 
 
-def run_nonce(held: nonce.Nonce, rest: list[str], folder: Path) -> None:
-    """`metaform <nonce>`: the module's function for the nonce, its commands with help, or one of them, BASE-050.
-
-    Words after the nonce that do not name one of the module's commands are the words of the nonce's function, so
-    `metaform <nonce> next` runs the function with `next` as `metaform <module> <function> next` would.
-    """
-    said = f'metaform {held.nonce}'
-    found = loader.get(held.module)
-    if found is None or found.module is None:
-        raise Stop(f'Nonce {held.nonce} belongs to module {held.module}, which is not loaded.',
-                   'metaform list modules')
-    if rest[:1] in (['help'], ['-h'], ['--help']):
-        out('\n'.join(f'{said} {verb.name}  {verb.summary}' for verb in found.module.verbs))
-        return
-    if rest and _verb(found, rest[0]) is None:
-        function = _verb(found, held.function)
-        if function is None or not function.nouns:
-            raise Stop(f'{held.module} has no command {rest[0]}.', f'{said} help')
-        rest = [held.function, *rest]
-    token = nonce.entered(held)
-    try:
-        run_module(held.module, rest or [held.function], folder)
-    finally:
-        nonce.left(token)
-
-
 def run_alias(name: str, rest: list[str], folder: Path) -> None:
     """`metaform <alias>`: the commands of each module it stands for that this folder shows, CLI-039."""
     if rest not in ([], ['-h'], ['--help']):
@@ -1148,7 +1125,13 @@ docs.command(Command('install', 'Set up your AI tools to use Metaform.',
                              'force=true allows a downgrade; the default is false. '
                              'With no enabled MCP server provider, setup writes skills and supported instruction '
                              'pointers and reminders and skips registration and proof. '
-                             'Use metaform set --install-server <module> to choose among several providers.',
+                             'Use metaform set --install-server <module> to choose among several providers. '
+                             'Claude Code also gets the metaform-node skill, ~/.claude/skills/metaform-node/SKILL.md, '
+                             'while the map module is enabled and on the folder\'s surface: a person types '
+                             '/metaform-node <address> and Claude runs metaform map where for that Address, so the '
+                             'node brief arrives without the MCP server. Claude never invokes it on its own. Enabling '
+                             'or disabling map adds or removes it; no other tool gets it, since only Claude Code '
+                             'passes it the typed Address and keeps it person-invoked.',
                      see_also=('build',)))
 _provision_skill = resources.files('metaform') / 'skill' / 'SKILL.md'
 _provision_skill_source = (f'extract {_provision_skill.at} from {_provision_skill.root.filename}'
@@ -1164,6 +1147,9 @@ docs.command(Command('provision', 'Give an AI tool the installer does not know w
                              'Global instructions: run metaform provision claude, codex or gemini to preview '
                              'and back up additions to ~/.claude/CLAUDE.md, ~/.codex/AGENTS.md '
                              '(under CODEX_HOME when set), or ~/.gemini/GEMINI.md. '
+                             'Provision claude also writes the metaform-node skill into '
+                             '~/.claude/skills/metaform-node/SKILL.md while map is enabled and on this folder\'s '
+                             'surface, and removes it when map is not; other harnesses do not get it. '
                              'Hooks: provision claude also merges a passive PreToolUse reminder for Agent, Task, '
                              'Workflow and AskUserQuestion into ~/.claude/settings.json. It changes no permissions '
                              'or tool arguments. Codex receives no hook. Gemini receives an AfterTool reminder '
@@ -1201,9 +1187,9 @@ docs.command(Command('prompt', "Show a stored prompt's text, its newest version 
                              'parent= names one. Use - to read text from standard input. Text is kept verbatim. '
                              'format= applies only to a new prompt, default text. Identical text returns its '
                              'parent with a notice. Older versions and provenance links stay unchanged. '
-                             'Over MCP use save_prompt with name, text, optional format and parent. register adds a prompt kept '
-                             'in any file to the review, metaform prompts review, by its owner and name; element= names the '
-                             'XML element inside the file when it holds several.',
+                             'Over MCP use metaform_save_prompt with name, text, optional format and parent. register '
+                             'adds a prompt kept in any file to the review, metaform prompts review, by its owner and '
+                             'name; element= names the XML element inside the file when it holds several.',
                      see_also=('prompts',)))
 docs.command(Command('uninstall', 'Remove Metaform from your AI tools.',
                      ('metaform uninstall', 'metaform uninstall <tool>...', 'metaform uninstall all'),
@@ -1336,8 +1322,9 @@ def _command(args: list[str], folder: Path) -> int:
                  if args[:1] == ['install'] and not any(word in ('-h', '--help') for word in args[1:])
                  else False)
         install.backstage(force)
-        if first_run := harness.notice():
-            sys.stderr.write(f'Notice: {first_run}\n')  # under a harness the home has not recorded, D96
+        # Under a harness the home has not recorded, D96: told on stderr, once in an agent session, MCP-039.
+        if (first_run := harness.notice()) and told_before(agent_session(), 'harness-notice', first_run) != first_run:
+            sys.stderr.write(f'Notice: {first_run}\n')
         loader.discover()
         if not args:
             from . import archive
@@ -1351,13 +1338,6 @@ def _command(args: list[str], folder: Path) -> int:
             out(docs.overview())
             return 0
         if verb not in VERBS:
-            if loader.get(verb) is None and nonce.FORM.fullmatch(verb):
-                held = nonce.read(verb)
-                if held is None or not held.open:
-                    sys.stderr.write('Error: Invalid or Unknown Nonce\n')  # closed or never issued, BASE-050
-                    return 2
-                run_nonce(held, rest, folder)
-                return 0
             if loader.get(verb) is None and verb in aliases.defined(folder):
                 run_alias(verb, rest, folder)
                 return 0

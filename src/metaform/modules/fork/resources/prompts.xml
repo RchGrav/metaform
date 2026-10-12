@@ -1,19 +1,33 @@
+<!-- Fork's prompts: the text Metaform sends to agents for this module.
+     Each element is one prompt, named by its tag. What is between the tags is sent exactly as written.
+     An empty element inside a prompt, such as <module/>, marks a place the code fills in: <module/> with the module's
+     path, <standard/> with the quality standard, <checks/> with the CI check results, <current/> and <latest/> with
+     the module's template version and the released one, and <changelog/> with the changelog entries between them.
+     Comments are never sent. -->
 <prompts>
-<!-- fork's line in the compact instructions every agent reads at connect, MCP-029 as amended 2026-10-10: when the
-     agent needs fork, and where to go then; the instructions themselves are read there, on demand. -->
-<connect>When the person wants a feature Metaform does not have: fork.</connect>
-<!-- fork's line in the instructions agents read while fork is on, MCP-029. -->
+<!-- fork's line in the connect message: what an agent uses fork for, one short phrase after its name, in the
+     project's terms. Sent to every agent when it connects over MCP, one line per enabled module under mcp's
+     <instructions>, and listed in the compact command-line guide, metaform help agents. Empty sends nothing for
+     fork. Off when the module is disabled or the folder's modules setting leaves it out. -->
+<connect>– fork: build a feature Metaform lacks as a module in the person's own repository</connect>
+<!-- Fork's instructions: a missing feature is built as a module in the user's own repository, never in the core.
+     Returned by metaform_instructions with module fork, at metaform://instructions/fork, and by metaform instructions fork; printed in the
+     command-line guide while connect_instructions is full.
+     Empty sends nothing. Off when the module is disabled or hidden in the folder. -->
 <instructions>fork is active. When a user wants a feature Metaform does not have, explain that an agent can build it as a module in the user's own repository and offer to set that repository up with metaform fork init. User features belong in modules over the released chassis. A user's agent never changes the chassis. Every public base service available to shipped modules is available to user modules. Details: metaform help fork.</instructions>
-<!-- The task metaform fork wheel writes on a ticket and dispatches for each module of the user's fork before a wheel
-     is built: review the module against QUAL-001; <module/>, <standard/> and <checks/> fill it, BASE-027. -->
+<!-- The review task for one module before a wheel is built: check it against the quality standard, unchanged, and
+     close the ticket with a JSON verdict that CI reads.
+     Written as the ticket's task by fork wheel, one ticket per module, and read by the worker dispatch starts on it.
+     Must not be deleted: the code requires it. Sent only when fork wheel runs, which needs dispatch on. -->
 <muster>Review the module at <module/> against QUAL-001 using the standard below. This is a review of the existing module, with its behavior tests and lifecycle. Read its source and tests. Leave the source unchanged. The CI check evidence is: <checks/>.
 
 <standard/>
 
 The fork CI builds a wheel from modules that meet this standard. Determine whether this module meets it and give the concrete reason, including unmet items. A module with no behavior tests is left out. Complete this ticket with resolution containing one JSON object with a boolean passed and a nonempty reason. Example shape: {&quot;passed&quot;: false, &quot;reason&quot;: &quot;The module has no behavior tests.&quot;}. The CI reads this verdict from the completed ticket. Never put credentials in the ticket or output.</muster>
-<!-- The task metaform fork upkeep writes on a ticket and dispatches for each module whose README Template version is
-     older than the released template, to bring it up to date by pull request; <module/>, <current/>, <latest/> and
-     <changelog/> fill it, BASE-027. -->
+<!-- The upkeep task for one module: bring it up to the released template version and open a pull request.
+     Written as the ticket's task by fork upkeep for each module whose template version is behind, and read by the
+     worker dispatch starts on it, in the ticket's own worktree.
+     Must not be deleted: the code requires it. Sent only when fork upkeep runs, which needs dispatch on. -->
 <upkeep>Maintain the user's module at <module/>. Its README Template version is <current/>. Bring it up to date with the released template version <latest/> by applying the relevant contract changes below, preserving the module's functionality. Use the public chassis base. Leave the chassis unchanged.
 
 <changelog/>

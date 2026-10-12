@@ -144,6 +144,7 @@ The declaration uses [Module, Verb, Noun, Subscription, and Status](../../src/me
 | `Module.default` | The verb invoked by the bare module command. |
 | `Module.mcp_server` | Optional name of this module's stdio MCP transport verb for installation and provisioning. |
 | `Module.node_read` | What the module adds to `map where` and `map node` of a node, under its id. |
+| `Module.item_read`, `items_at`, `item_kinds` | The items the module numbered at an address: one by its number, a page of them newest first, and the kinds it numbers. |
 
 Required nouns are positional on the CLI; optional nouns use `name=value`. Nouns can be text, integer, boolean, or JSON. Only the last noun may accept multiple values. Verb names use lowercase letters, digits, hyphens and underscores.
 
@@ -169,7 +170,7 @@ Source: [context.py](../../src/metaform/context.py), [module.py](../../src/metaf
 
 ## Use the same public services as shipped modules
 
-The public base is `metaform.module`, `metaform.settings`, `metaform.data`, `metaform.events`, `metaform.nonce`, `metaform.prompt_files`, `metaform.axiom` and `metaform.home`. Shipped modules and user modules use the same services, BASE-004. This gives extensions the existing project and transport behavior without importing private chassis code or rebuilding those resources. Importing these public names creates no project, database or process state. Services resolve the active context when called.
+The public base is `metaform.module`, `metaform.settings`, `metaform.data`, `metaform.events`, `metaform.prompt_files`, `metaform.axiom` and `metaform.home`. Shipped modules and user modules use the same services, BASE-004. This gives extensions the existing project and transport behavior without importing private chassis code or rebuilding those resources. Importing these public names creates no project, database or process state. Services resolve the active context when called.
 
 Import the following functions from `metaform.module`:
 
@@ -355,6 +356,8 @@ MODULE = Module(id='hello', ..., node_read=node_read)
 ```
 
 The hook gets a context of its own module, with the call's project and toggled layers, and the node read: `Node('element', <address>)` from `where`, the node given to `node`. What it returns appears under the module's id, `hello: {greeted: 2}`; None adds nothing, and with nothing added the read is as it was. A field the read holds already is never replaced. A hook that raises adds `{"failed": "<ExceptionType>: <message>"}` under its id and the read goes on. The memory module adds a node's note and its memories this way, under `memory`, and leaves the memories out where the layer named memory does not reach. Hello's `node_read` shows the capability.
+
+A module that numbers what it writes at an address, MCP-037, reads one item back with `item_read(ctx, address, number)`, plain data with `kind`, `title`, `why`, `body` and `links` or None, served at `metaform://<address>#<n>`. It lists them with `items_at(ctx, address, before, limit)`: those numbered below `before` (all when None), newest first, at most `limit`, each `number`, `kind`, `title` and `why`, in one read. `item_kinds` names the kinds it numbers, so a list asked for other kinds does not read it. `metaform.module.node_items` merges every module's list, and the web GUI's brief and the MCP views page it with `items_page`, MCP's opaque `cursor` and `nextCursor`. A module with `item_read` and no `items_at` is still listed, read number by number, slowly. Memory's `items_at` shows it.
 
 ## Events and asynchronous work have distinct behavior
 

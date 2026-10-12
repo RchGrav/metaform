@@ -1,52 +1,70 @@
-"""The MCP server, MCP-002: the official SDK's low-level Server over stdio.
+"""The MCP server, MCP-002: the official SDK's low-level Server, over stdio or Streamable HTTP.
 
-Tools are computed on every request from the live module declarations and the
-folder's command surface, MCP-003 and MCP-004, plus the chassis tools that
-always run, `set`, `feedback`, `list_reports`, `read_report` and
-`instructions`, CLI-022 and BASE-045. Opening a tool lists its commands with
-their summaries; a command's arguments come when it is asked for with `help`,
-CLI-037. The instructions are composed again for each request that carries
-them, and a change to the tools or slash commands is announced where the
-protocol allows, MCP-007 and MCP-004. Each call gets its own Context, BASE-028,
-with its arguments checked as the command line checks them, MCP-005: a
-coroutine verb is awaited in the server's loop, so the host's cancellation
-reaches it; a plain function runs in a worker thread. The result is one text block of `say` lines, when there are
-any, and one block holding the result, BASE-036.
+Every command is its own tool, MCP-003 and CLI-037: each surfaced module verb is
+`<module>_<verb>`, and the chassis's own commands are `metaform_<command>`, `set`,
+`feedback`, `list_reports`, `read_report`, `instructions` and `register` always,
+CLI-022 and BASE-045, and the history, prompt and clear commands while the chassis
+is on the folder's surface, MCP-004. A tool is described once, where it is listed:
+its description is the verb's summary, its input schema is built from the verb's
+declaration as its command line is, and its annotations follow the effect the verb
+declares, BASE-006. The list is computed on every request from the live
+declarations and the folder's command surface, sorted, and a change to it is
+announced where the protocol allows, MCP-004. Each call gets its own Context,
+BASE-028, with its arguments checked as the command line checks them, MCP-005: a
+coroutine verb is awaited in the server's loop, so the host's cancellation reaches
+it; a plain function runs in a worker thread. The result is one text block of
+`say` lines, when there are any, and one block holding the result, BASE-036, with
+an object result also given as structured content.
 """
 from __future__ import annotations
 
 import dataclasses
 import functools
+import hashlib
 import inspect
 import json
 import re
 import subprocess
 import sys
-from collections.abc import Callable
-from datetime import date
+from collections.abc import AsyncGenerator, Callable, Iterable
 from importlib import resources
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import anyio
 
 from metaform import events, home, prompt_files, settings
-from metaform.data import NewerStore, Store, StoreError, prompts
+from metaform.data import (
+    NewerStore,
+    Store,
+    StoreError,
+    plain,
+    prompts,
+    query_read,
+    query_reads,
+    reference,
+)
 from metaform.module import (
     Context,
+    Effect,
     Module,
     Noun,
     Stop,
     Verb,
-    aliases,
     call,
     chassis_version,
     command_summary,
     context,
     feedback,
     instructions,
+    item_read,
+    item_text,
+    item_view,
+    items_page,
     list_reports,
     module_instructions,
+    node_brief,
+    node_view,
     on_surface,
     on_this_system,
     project_for,
@@ -54,14 +72,18 @@ from metaform.module import (
     refresh_modules,
     request_scope,
     result_json,
+    serve_session,
     setting_value,
+    startup_instructions,
     surface,
     tool_arguments,
 )
 
-PROJECT = {'type': 'string', 'description': "A registered project id; overrides the folder's project for this call."}
-LAYERS = {'type': 'array', 'items': {'type': 'string'},
-          'description': 'The layers, by name or tag, toggled on for this call only.'}
+from . import consent
+
+# On every tool, MCP-025 and CLI-033, so said in as few words as hold the meaning: each is paid once per tool listed.
+PROJECT = {'type': 'string', 'description': "A registered project id, in place of the folder's, for this call."}
+LAYERS = {'type': 'array', 'items': {'type': 'string'}, 'description': 'Layers, by name or tag, on for this call.'}
 NOUN_TYPES: dict[str, dict[str, Any]] = {'str': {'type': 'string'}, 'int': {'type': 'integer'},
                                          'bool': {'type': 'boolean'}}
 PER_CALL = ('project', 'layers', 'confirm')
@@ -94,7 +116,11 @@ def _setting_type(setting: settings.Setting, folder: Path) -> dict[str, Any]:
     if setting.kind == 'int':
         return {'type': 'integer'}
     if setting.kind == 'list':
-        return {'type': 'array', 'items': {'type': 'string'}}
+        try:
+            choices = setting.options(folder) if setting.choices is not None else []
+        except Exception:  # noqa: BLE001  a module's failing choices function gives plain strings
+            choices = []
+        return {'type': 'array', 'items': {'type': 'string', 'enum': choices} if choices else {'type': 'string'}}
     if setting.kind == 'select':
         try:
             choices = setting.options(folder)
@@ -115,7 +141,7 @@ def verb_schema(verb: Verb, folder: Path) -> dict[str, Any]:
             required.append(noun.name)
     for key in verb.switches:
         setting = settings.SCHEMA.get(key)
-        if setting is not None:
+        if setting is not None and not setting.person_only:  # an agent is not offered what only the person sets
             properties[key] = setting_schema(setting, folder)
     if verb.caution:
         properties['confirm'] = {'type': 'boolean', 'description': 'Run it. Without it the tool only explains.'}
@@ -130,14 +156,29 @@ def tools(folder: Path) -> dict[str, tuple[Module, Verb]]:
 
 
 def set_schema(folder: Path) -> dict[str, Any]:
-    properties = {key: setting_schema(setting, folder) for key, setting in settings.SCHEMA.items()}
+    properties = {key: setting_schema(setting, folder) for key, setting in settings.SCHEMA.items()
+                  if not setting.person_only}
     properties['glue'] = {'type': 'boolean', 'description': 'Keep these settings through unset all.'}
     return {'type': 'object', 'properties': properties, 'additionalProperties': False}
 
 
+def refuse_person_only(keys: Iterable[str], folder: Path | None = None) -> None:
+    """A setting only the person writes, on the command line or the page, is refused over MCP, stored with `set` or
+    given for one call alike, so an agent cannot widen its own permissions or control, CLI-011 and MCP-006; unless the
+    person has turned `agents_may_set_control` on, since control is a permission the person holds and can change."""
+    if settings.value('agents_may_set_control', folder or Path.cwd()):
+        return
+    held = sorted(key for key in keys if (setting := settings.SCHEMA.get(key)) is not None and setting.person_only)
+    if held:
+        raise Stop(f'{", ".join(held)} {"is" if len(held) == 1 else "are"} set only by the person, on the command '
+                   'line or the page, never by an agent. Say what you need in your ticket\'s note.',
+                   'metaform map work op=edit id=<your work id> note="..."')
+
+
 CHASSIS: dict[str, tuple[str, dict[str, Any]]] = {
-    'feedback': (('Save feedback on the Metaform process, with a report and the shape you could not submit when you '
-                 'have them. Always available.'),
+    'feedback': (('Save feedback on the Metaform process: a problem, bad semantics, or a trouble report when you '
+                  'cannot continue. Attach your report and the shape you could not submit when you have them. Always '
+                  'available.'),
                  {'type': 'object', 'required': ['text'], 'additionalProperties': False,
                   'properties': {
                       'text': _text('Feedback on the Metaform process: a problem with the process, bad semantics, a '
@@ -147,7 +188,7 @@ CHASSIS: dict[str, tuple[str, dict[str, Any]]] = {
                       'shape': _text('The result you could not submit, as it stands, so a person can review and fix '
                                      'it.'),
                       'project': PROJECT}}),
-    'list_reports': ('List the report, feedback and shape files of this project. Always available.',
+    'list_reports': ('List the report, feedback and shape files saved for this project. Always available.',
                      {'type': 'object', 'additionalProperties': False,
                       'properties': {'kind': {'type': 'string', 'enum': ['report', 'feedback', 'shape'],
                                               'description': 'Only files of this kind.'},
@@ -155,31 +196,33 @@ CHASSIS: dict[str, tuple[str, dict[str, Any]]] = {
                                      'limit': {'type': 'integer', 'description': 'How many results, 0 for all.'},
                                      'after': _text('The cursor the previous page returned.'),
                                      'project': PROJECT}}),
-    'read_report': ('Read one report, feedback or shape file exactly. Always available.',
+    'read_report': ('Read one saved report, feedback or shape file exactly. Always available.',
                     {'type': 'object', 'required': ['name'], 'additionalProperties': False,
                      'properties': {'name': _text('The file name, as list_reports gives it.'), 'project': PROJECT}}),
-    'instructions': (('The instructions agents read, composed now for this folder, as metaform help agents prints '
-                      'them; with module, that module\'s full instructions. Always available.'),
+    'instructions': (('Read how to use Metaform here: the guide to this folder\'s modules and state, or one module\'s '
+                      'instructions. As metaform instructions prints it; with module, that module\'s full '
+                      'instructions. Always available.'),
                      {'type': 'object', 'additionalProperties': False,
                       'properties': {'module': _text('A module on this folder\'s surface, by id.'),
                                      'project': PROJECT}}),
-    'register': (('Register this folder as a project, as metaform add project does, so Metaform can work on it. A '
-                  'folder already in a project is left as it is. Returns the project and the instructions for it '
-                  'now. Always available.'),
+    'register': (('Register this folder as a Metaform project, so its map can be recorded and read. As metaform add '
+                  'project does; a folder already in a project is left as it is. Returns the project and the '
+                  'instructions for it now. Always available.'),
                  {'type': 'object', 'additionalProperties': False,
                   'properties': {'id': _text('The project id: lowercase letters, digits, - and _. Without it, the '
                                              "folder's name.")}}),
 }
 ORIGIN = _text('The origin, by its short id; without it, the project\'s selected origin, the one established last.')
-# The clear_project prompts, MCP-031; clear_project checks its confirmation against the statement.
-PROMPTS = resources.files('metaform.modules.mcp')
-CLEAR_STATEMENT = prompt_files.required(PROMPTS, 'clear_statement')
+CONFIRM = {'type': 'boolean', 'description': 'Run it. Without it the tool only explains.'}
 SURFACED: dict[str, tuple[str, dict[str, Any]]] = {
-    'add_origin': ("Establish an origin from the project's current state, as metaform add origin does.",
+    'add_origin': (("Establish an origin from the project's current state: the baseline that variants of work are "
+                    'stored against. As metaform add origin does.'),
                    {'type': 'object', 'additionalProperties': False, 'properties': {'project': PROJECT}}),
-    'list_origins': ("The project's origins, as metaform list origins lists them.",
+    'list_origins': (("List the project's origins, the baselines variants are stored against, as metaform list "
+                      'origins lists them.'),
                      {'type': 'object', 'additionalProperties': False, 'properties': {'project': PROJECT}}),
-    'add_variant': ('Collect a folder as a variant of an origin, as metaform add variant does.',
+    'add_variant': (("Collect a folder, such as a worker's worktree, as a variant of an origin: the work's changes "
+                     'against it. As metaform add variant does.'),
                     {'type': 'object', 'required': ['folder'], 'additionalProperties': False,
                      'properties': {
                          'folder': _text('The folder to collect, such as a worker\'s worktree.'),
@@ -193,18 +236,18 @@ SURFACED: dict[str, tuple[str, dict[str, Any]]] = {
                          'role': _text('The role of the agent that did the work.'),
                          'blinded': {'type': 'boolean', 'description': 'Whether the agent saw only the map.'},
                          'project': PROJECT}}),
-    'list_variants': ("An origin's variants, as metaform list variants lists them.",
+    'list_variants': ("List an origin's variants, as metaform list variants lists them.",
                       {'type': 'object', 'additionalProperties': False,
                        'properties': {'origin': ORIGIN, 'project': PROJECT}}),
-    'prompts': ('The stored prompts, each with its newest version number, as metaform prompts lists them.',
+    'prompts': ('List the stored prompts, each with its newest version number, as metaform prompts lists them.',
                 {'type': 'object', 'additionalProperties': False, 'properties': {}}),
-    'prompt': ("A stored prompt's text and version, the newest unless a number is given.",
+    'prompt': ("Read a stored prompt's text and version, the newest unless a number is given.",
                {'type': 'object', 'required': ['name'], 'additionalProperties': False,
                 'properties': {'name': _text('The prompt, by name.'),
                                'number': {'type': 'integer', 'description': 'The version number; without it, the '
                                                                             'newest.'}}}),
-    'save_prompt': (('Save a named prompt, creating its first version or adding an edit without changing earlier '
-                     'versions.'),
+    'save_prompt': (('Save a named prompt as a new version, creating it or adding an edit; earlier versions stay '
+                     'unchanged.'),
                     {'type': 'object', 'required': ['name', 'text'], 'additionalProperties': False,
                      'properties': {
                          'name': _text('The prompt, by name; a new name creates a prompt.'),
@@ -215,16 +258,13 @@ SURFACED: dict[str, tuple[str, dict[str, Any]]] = {
                          'parent': {'type': 'integer', 'minimum': 1,
                                     'description': 'The existing version this edit came from; without it, the '
                                                    'newest. Omit this when creating a prompt.'}}}),
-    'clear_project': (prompt_files.required(PROMPTS, 'clear_project'),
+    'clear_project': (("Clear the project's map, as metaform clear project does: remove its bases and reports. A "
+                       'backup is made first, and metaform restore project brings it back; its registration, folder, '
+                       'settings, origins and variants stay. Without confirm it only says what it would remove.'),
                       {'type': 'object', 'additionalProperties': False,
-                       'properties': {'confirm': {'type': 'boolean',
-                                                  'description': prompt_files.required(PROMPTS, 'clear_confirm')},
-                                      'confirmation': _text(prompt_files.required(PROMPTS, 'clear_confirmation',
-                                                                                  statement=CLEAR_STATEMENT)),
-                                      'model': _text('Your full model designation.'),
-                                      'date': _text('Date of confirmation, YYYY-MM-DD.'),
-                                      'project': PROJECT}}),
-    'extract': ('Write variants out to folders with Python alone, as metaform extract does.',
+                       'properties': {'confirm': CONFIRM, 'project': PROJECT}}),
+    'extract': (('Write variants out to folders as files you can read or run, with Python alone, as metaform '
+                 'extract does.'),
                 {'type': 'object', 'required': ['variants', 'folder'], 'additionalProperties': False,
                  'properties': {
                      'variants': {'type': 'array', 'items': {'type': 'string'},
@@ -233,11 +273,16 @@ SURFACED: dict[str, tuple[str, dict[str, Any]]] = {
                                      'its id.'),
                      'origin': ORIGIN, 'project': PROJECT}}),
 }
+# What each of the chassis's own tools does, declared as a module verb declares its effect, BASE-006, for the tool's
+# annotations, MCP-003. add_variant can remove the worktree it collects.
+CHASSIS_EFFECTS: dict[str, Effect] = {
+    'set': 'write', 'feedback': 'write', 'list_reports': 'read', 'read_report': 'read', 'instructions': 'read',
+    'register': 'write', 'add_origin': 'write', 'list_origins': 'read', 'add_variant': 'remove',
+    'list_variants': 'read', 'prompts': 'read', 'prompt': 'read', 'save_prompt': 'write', 'clear_project': 'remove',
+    'extract': 'write'}
+# The chassis tools whose result is text, not data, so it has no structured form.
+CHASSIS_TEXT = ('instructions', 'read_report')
 JSON_TYPES: dict[str, type] = {'string': str, 'integer': int, 'boolean': bool, 'array': list}
-
-
-CLEAR = prompt_files.required(PROMPTS, 'clear', statement=CLEAR_STATEMENT)
-CLEAR_AGAIN = CLEAR
 
 
 # A command line's next step, read over MCP as the tool call or resource it stands for, MCP-038. Modules write
@@ -246,7 +291,12 @@ CLEAR_AGAIN = CLEAR
 HELP_AGENTS = re.compile(r'\bmetaform help agents(?: (?P<module>[a-z0-9_-]+))?')
 HELP_VERB = re.compile(r'\bmetaform help (?P<module>[a-z0-9_-]+)(?: (?P<verb>[a-z0-9_-]+))?')
 VERB = re.compile(r'\bmetaform (?P<module>[a-z0-9_-]+) (?P<verb>[a-z0-9_-]+)(?P<help> --help)?')
-ADD_PROJECT = re.compile(r'\bmetaform add project <id> <path>')  # registering this folder is a command over MCP
+ADD_PROJECT = re.compile(r'\bmetaform add project <id> <path>')  # registering this folder is a tool over MCP
+
+
+def schema_step(tool: str) -> str:
+    """The next step for a call that did not give what a tool takes: the tool again, as its input schema says."""
+    return f'call {tool} with the arguments its input schema lists'
 
 
 def mcp_next(text: str, folder: Path) -> str:
@@ -260,24 +310,24 @@ def mcp_next(text: str, folder: Path) -> str:
     def help_verb(match: re.Match[str]) -> str:
         module, verb = match.group('module'), match.group('verb')
         if module == 'commands':
-            return 'list the tools; each lists its commands when called with no command'
+            return 'list the tools' + (f' {verb}' if verb else '')
         if module == 'switches':
-            return f'read resource metaform://tools/{OWN}/set'
+            return schema_step(f'{OWN}_set') + (f' {verb}' if verb else '')
         if module not in verbs:
             return match.group(0)
         if verb in verbs[module]:
-            return f'read resource metaform://tools/{module}/{verb}'
-        return f'call {module} with no command'
+            return schema_step(f'{module}_{verb}')
+        return f'read resource metaform://instructions/{module}' + (f' {verb}' if verb else '')
 
     def verb(match: re.Match[str]) -> str:
         module, name = match.group('module'), match.group('verb')
         if name not in verbs.get(module, ()):
             return match.group(0)
         if match.group('help'):
-            return f'read resource metaform://tools/{module}/{name}'
-        return f'call {module} with command {name}'
+            return schema_step(f'{module}_{name}')
+        return f'call {module}_{name}'
 
-    text = ADD_PROJECT.sub(f'call {OWN} with command register', text)
+    text = ADD_PROJECT.sub(f'call {OWN}_register', text)
     return VERB.sub(verb, HELP_VERB.sub(help_verb, HELP_AGENTS.sub(agents, text)))
 
 
@@ -293,31 +343,34 @@ def _checked(name: str, arguments: dict[str, Any], schema: dict[str, Any],
     properties: dict[str, Any] = schema['properties']
     for key in schema.get('required', []):
         if key not in arguments:
-            raise Stop(f'{name} needs {key}.', f'read resource metaform://tools/{OWN}/{name}')
+            raise Stop(f'{name} needs {key}.', schema_step(f'{OWN}_{name}'))
     checked: dict[str, Any] = {}
     for key, value in arguments.items():
         expected = properties.get(key)
         if expected is None:
-            raise Stop(f'{name} has no argument {key}.', f'read resource metaform://tools/{OWN}/{name}')
+            raise Stop(f'{name} has no argument {key}.', schema_step(f'{OWN}_{name}'))
         wanted = JSON_TYPES[expected['type']]
         if wanted is str and not isinstance(value, str):
             value = json.dumps(value, ensure_ascii=False)
             notices.append(f'Notice: {key}: {key} is text; what was sent was kept as its JSON text.')
         elif not isinstance(value, wanted) or (isinstance(value, bool) and wanted is not bool):
             kind = {str: 'text', int: 'a whole number', bool: 'true or false', list: 'a list'}[wanted]
-            raise Stop(f'{key} is {kind}, not {value!r}.', f'read resource metaform://tools/{OWN}/{name}')
+            raise Stop(f'{key} is {kind}, not {value!r}.', schema_step(f'{OWN}_{name}'))
         checked[key] = value
     return checked
 
 
-def run_set(folder: Path, arguments: dict[str, Any]) -> Outcome:
-    """The `set` tool stores settings for the server's folder, as `metaform set` would, PROJ-005 and CLI-033."""
+def run_set(folder: Path, arguments: dict[str, Any], consented: bool = False) -> Outcome:
+    """The `set` tool stores settings for the server's folder, as `metaform set` would, PROJ-005 and CLI-033.
+    `consented`: the person gave the person-only values among them in their AI tool, so they are not refused."""
     glue = arguments.pop('glue', False)
     changes: list[dict[str, Any]] = []
     notices: list[dict[str, str]] = []
     try:
         if not isinstance(glue, bool):
-            raise Stop('glue is true or false.', f'read resource metaform://tools/{OWN}/set')
+            raise Stop('glue is true or false.', schema_step(f'{OWN}_set'))
+        if not consented:
+            refuse_person_only(arguments, folder)
         read: list[tuple[str, str]] = []
         typed = {key: setting_value(key, value, folder, read) for key, value in arguments.items()}
         notices += [{'where': key, 'message': message} for key, message in read]
@@ -356,7 +409,7 @@ def run_chassis(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
             result = module_instructions(folder, given['module'], project)
             if result is None:
                 raise Stop(f'No module {given["module"]} with instructions on this folder\'s surface.',
-                           'call metaform with command instructions and no module')
+                           f'call {OWN}_instructions with no module')
         elif name == 'instructions':
             result = instructions(folder, project, surface='mcp')
         elif name == 'register':
@@ -386,23 +439,23 @@ def register(folder: Path, given: str | None = None) -> dict[str, Any]:
         try:
             said = home.add_project(chosen, folder)
         except StoreError as error:
-            raise Stop(str(error), f'call {OWN} with command register and another id') from None
+            raise Stop(str(error), f'call {OWN}_register with another id') from None
         held = chosen
     return {'project': held, 'said': said, 'instructions': instructions(folder, surface='mcp')}
 
 
-def run_history(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
+def run_history(folder: Path, name: str, arguments: dict[str, Any], consented: bool = False) -> Outcome:
     """The history, prompt and clear commands as tools, on the surface while the chassis is, PROJ-024, STORE-044,
-    PROJ-025 and MCP-004."""
+    PROJ-025 and MCP-004. `consented`: the person said yes to the call's caution in their AI tool."""
     notices: list[str] = []
     try:
-        error, blocks = _history(folder, name, _checked(name, arguments, SURFACED[name][1], notices))
+        error, blocks = _history(folder, name, _checked(name, arguments, SURFACED[name][1], notices), consented)
     except (Stop, StoreError) as stop:
         return _error(stop, folder)
     return error, (['\n'.join(notices)] if notices else []) + blocks
 
 
-def _history(folder: Path, name: str, given: dict[str, Any]) -> Outcome:
+def _history(folder: Path, name: str, given: dict[str, Any], consented: bool = False) -> Outcome:
     """The history, prompt and clear tools once their arguments are read."""
     if name == 'prompts':
         return False, [result_json(list(prompts.prompts()))]
@@ -412,20 +465,14 @@ def _history(folder: Path, name: str, given: dict[str, Any]) -> Outcome:
         return False, [result_json(prompts.save_prompt(**given))]
     if name == 'clear_project':
         project = project_for(folder, given.pop('project', None)) or _no_project()
-        caution = home.to_clear(project).caution
-        confirmation_date = given.get('date', '')
-        try:
-            valid_date = date.fromisoformat(confirmation_date).isoformat() == confirmation_date
-        except ValueError:
-            valid_date = False
-        if (not given.get('confirm', False) or given.get('confirmation') != CLEAR_STATEMENT
-                or not given.get('model', '').strip() or not valid_date):
-            raise Stop(caution, CLEAR)
+        again = f'call {OWN}_clear_project with confirm true'
+        if not (given.get('confirm', False) or consented):  # the person's yes, as confirm or through the form
+            raise Stop(home.to_clear(project).caution, f'If you are sure: {again}')
         cleared = home.clear_project(project)
         result = cleared.to_dict()
         if cleared.not_removed:  # still on disk, and what to do, as a notice and never an error, BASE-044
             result['notices'] = [{'where': 'not_removed', 'message': f'{cleared.left} '
-                                  f'{cleared.remedy(CLEAR_AGAIN)}'}]
+                                  f'{cleared.remedy(again + " again")}'}]
         return False, [result_json(result)]
     store = Store(project_for(folder, given.pop('project', None)) or _no_project())
     if name == 'add_origin':
@@ -455,11 +502,11 @@ def _within(folder: Path, given: Any) -> Path:
 
 
 def _no_project() -> str:
-    raise Stop('No project for this folder.', f'call {OWN} with command register')
+    raise Stop('No project for this folder.', f'call {OWN}_register')
 
 
 def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dict[str, Any],
-             lines: list[str], client: str | None = None) -> Context:
+             lines: list[str], client: str | None = None, consented: bool = False) -> Context:
     project = arguments.get('project')
     layers = arguments.get('layers')
     confirmed = arguments.get('confirm', False)
@@ -467,11 +514,13 @@ def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dic
         raise Stop('project is a registered project id, as text.', "omit project for the folder's own project")
     if layers is not None and (not isinstance(layers, list)
                                or not all(isinstance(item, str) for item in cast(list[Any], layers))):
-        raise Stop('layers is a list of layer names or tags.', 'call map with command layers for their names')
+        raise Stop('layers is a list of layer names or tags.', 'call map_layers for their names')
     if not isinstance(confirmed, bool):
-        raise Stop('confirm is true or false.', f'If you are sure: call {name} and confirm true in its arguments')
-    if verb.caution and not confirmed:
-        raise Stop(verb.caution, f'If you are sure: call {name} and confirm true in its arguments')
+        raise Stop('confirm is true or false.', f'If you are sure: call {name} with confirm true')
+    if verb.caution and not (confirmed or consented):
+        raise Stop(verb.caution, f'If you are sure: call {name} with confirm true')
+    if not consented:
+        refuse_person_only((key for key in arguments if key in verb.switches), folder)
     nouns, switches, notices = tool_arguments(module.id, verb, arguments, ignore=PER_CALL, folder=folder)
     lines.extend(f'Notice: {key}: {message}' for key, message in notices)
     if layers is not None:
@@ -480,161 +529,200 @@ def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dic
                    surface='mcp', client=client)
 
 
-OWN = 'metaform'  # the tool that holds the chassis's own commands
-COMMAND = 'The command to run. Leave it out for the commands and their summaries.'
-ARGUMENTS = "The command's arguments, by name, as help gives them."
-HELP = "A command's name, sent without command, for what it takes."
-Commands = dict[str, tuple[str, Callable[[], dict[str, Any]]]]
+OWN = 'metaform'  # the prefix of the chassis's own tools, metaform_<command>, as a module's are <module>_<verb>
+# How long a client may keep a list before asking again, the cache hints of MCP 2026-07-28. The lists change only when
+# a person enables, disables or narrows modules, and a change is announced, MCP-004; a minute bounds what a client that
+# does not listen keeps. Private, since what is listed is this folder's.
+CACHE_TTL_MS = 60_000
 
 
 def _fixed(schema: dict[str, Any]) -> Callable[[], dict[str, Any]]:
     return lambda: schema
 
 
-def entries(folder: Path) -> dict[str, tuple[str, Commands]]:
-    """The tools the server lists, CLI-037: one for each module on the surface, named for the module, and one for
-    the chassis's own commands. Each holds its commands, with the summary of each and what builds its arguments'
-    schema; a command is `<module> <command>` on the command line, and over MCP the tool's name and its `command`.
-    Opening a tool shows the summaries; a command's arguments are built and read with `help`."""
-    found: dict[str, tuple[str, Commands]] = {}
-    for module in surface(folder):
-        commands: Commands = {verb.name: (verb.summary + (f' Caution: {verb.caution}' if verb.caution else ''),
-                                          functools.partial(verb_schema, verb, folder))
-                              for verb in module.verbs if _here(verb)}
-        if commands:
-            found[module.id] = (module.summary, commands)
-    for name, held in aliases(folder).items():
-        # An alias is one more tool, CLI-039; its commands are written as the command line writes them.
-        ids = [module.id for module in held if module.id in found]
-        if ids and name not in found and name != OWN:
-            found[name] = (f'An alias for {", ".join(ids)}: their commands under one name.',
-                           {f'{module} {command}': listed for module in ids
-                            for command, listed in found[module][1].items()})
-    own: Commands = {'set': ("Save settings for the server's folder, as metaform set does.",
-                             functools.partial(set_schema, folder)),
-                     **{name: (said, _fixed(schema)) for name, (said, schema) in CHASSIS.items()}}
+@dataclasses.dataclass(frozen=True)
+class Listed:
+    """One tool as the server lists it, MCP-003: its name, its description, what builds its input schema from the
+    declaration, and what it declares it does, for its annotations."""
+    name: str
+    description: str
+    schema: Callable[[], dict[str, Any]]
+    effect: Effect
+    open_world: bool = False
+    task: bool | Literal['run'] = False  # the verb can take long, so a client declaring tasks gets a task; 'run': its run
+
+    def annotations(self) -> dict[str, bool]:
+        """The four hints, each set from the declared effect. None is left out, since an absent hint falls back on
+        the protocol's defaults, which take a tool to be a destructive write that reaches the open world."""
+        return {'read_only_hint': self.effect == 'read', 'destructive_hint': self.effect == 'remove',
+                'idempotent_hint': self.effect == 'read', 'open_world_hint': self.open_world}
+
+
+SENTENCE = re.compile(r'(?<=\.)\s')  # where a description's first sentence ends
+
+
+def glossary(folder: Path) -> str:
+    """metaform://metaform: the system glossary, the mcp module's glossary prompt exactly as written and nothing more,
+    how to operate in Metaform; the same for every folder, and for a project named metaform too. The tools and the
+    modules' rules are metaform://tools, the project's own terms metaform://<project>, each read once on its own."""
+    written = (prompt_files.module('mcp', 'glossary') or '').strip()
+    return written + '\n' if written else ''
+
+
+def tool_index(folder: Path) -> list[tuple[str, str]]:
+    """Every tool on the folder's surface by name with the first sentence of its description, its caution left out:
+    the glossary view's list."""
+    return [(name, SENTENCE.split(one.description.split(' Caution:')[0], maxsplit=1)[0])
+            for name, one in listing(folder).items()]
+
+
+CLAUSE = re.compile(r'(?<=[\w>)])[:;]\s')  # where a first sentence's head ends and its details begin
+AS_DOES = re.compile(r',? as metaform [\w -]+? (?:does|gives|lists|prints)(?: them| it)?(?=[,.:;]|$)')
+LINE = 80  # the characters a tool's line is cut back toward, at a comma
+
+
+def short_line(description: str) -> str:
+    """One tool's line in metaform://tools: the head of its description's first sentence, what it does, before the
+    details a colon or semicolon opens, with the command it matches left out; the details come with the tool."""
+    first = SENTENCE.split(description.split(' Caution:')[0], maxsplit=1)[0]
+    head = CLAUSE.split(AS_DOES.sub('', first), maxsplit=1)[0].strip().rstrip('.')
+    while len(head) > LINE and ', ' in head:  # a long head keeps its leading phrases, each whole
+        head = head.rsplit(', ', 1)[0]
+    return head
+
+
+def tools_text(folder: Path) -> str:
+    """metaform://tools: every tool on the folder's surface in one line, grouped under the prefix of the module that
+    serves it (`map_`, then `  where: ...` for map_where), for a host that lists tools by name only; then the rules of
+    the modules on the surface, MCP-031. Read once, when the agent needs it; nothing here is pushed."""
+    named = tools(folder)
+    groups: dict[str, list[str]] = {}
+    for name, one in listing(folder).items():
+        module = named[name][0].id if name in named else OWN
+        groups.setdefault(module, []).append(f'  {name.removeprefix(module + "_")}: {short_line(one.description)}')
+    heading = prompt_files.module('mcp', 'tool_index')
+    index = '\n'.join(f'{module}_\n' + '\n'.join(lines) for module, lines in groups.items())
+    parts = [part for part in ((heading + '\n' if heading else '') + index, rules(folder)) if part]
+    return '\n\n'.join(parts) + '\n'
+
+
+def rules(folder: Path) -> str:
+    """The rules block that closes metaform://tools: mcp's `rules_heading`, then each rule of each module on the
+    folder's surface, in module id order, as `[module] <rule> Why: <why>`; empty when no module there holds a rule, so
+    an agent is handed each rule once, with its reason and the module it comes from."""
+    heading = prompt_files.module('mcp', 'rules_heading')
+    lines = [f'[{module.id}] {said} Why: {why}' for module in surface(folder)
+             for said, why in prompt_files.module_rules(module.id)]
+    return heading + '\n' + '\n'.join(lines) if heading and lines else ''
+
+
+def listing(folder: Path) -> dict[str, Listed]:
+    """Every tool the server lists, by name in order, CLI-037 and MCP-003: each surfaced module verb as
+    `<module>_<verb>`, described by its summary and its caution, and the chassis's own commands as
+    `metaform_<command>`, the history, prompt and clear commands only while the chassis is on the folder's surface,
+    MCP-004. Each command is described once, here, with its arguments' schema built from its declaration, so an agent
+    plans a call from the list alone and the list is the same on every connection to the folder."""
+    found = {name: Listed(name, verb.summary + (f' Caution: {verb.caution}' if verb.caution else ''),
+                          functools.partial(verb_schema, verb, folder), verb.effect, verb.open_world, verb.task)
+             for name, (_, verb) in tools(folder).items()}
+    own: dict[str, tuple[str, Callable[[], dict[str, Any]]]] = {
+        'set': ("Save Metaform settings for the server's folder, as metaform set does.",
+                functools.partial(set_schema, folder)),
+        **{name: (said, _fixed(schema)) for name, (said, schema) in CHASSIS.items()}}
     if on_surface('chassis', folder):
         own.update({name: (said, _fixed(schema)) for name, (said, schema) in SURFACED.items()})
-    found[OWN] = ("Metaform's own commands: settings, feedback and reports, and the project's history and prompts.",
-                  own)
-    return found
+    found.update({f'{OWN}_{name}': Listed(f'{OWN}_{name}', said, build, CHASSIS_EFFECTS[name])
+                  for name, (said, build) in own.items()})
+    return dict(sorted(found.items()))
 
 
-def entry_schema(commands: Commands, folder: Path | None = None) -> dict[str, Any]:
-    """A tool's input schema, CLI-037 and MCP-037. With mcp_schemas on_demand, the default, it lists the commands
-    only, about 2,000 tokens for the whole menu, and a command's argument schema is read with `help` or at
-    metaform://tools/<tool>/<command> when the command is used: an agent pays for what its role touches. With inline
-    every command's schema is in it, `arguments` an `anyOf` of each command's schema titled with its command, about
-    28,000 tokens for every agent. A combinator nested in a property is kept by a host; one at the top of the schema
-    Claude Code reduces to a sentence."""
-    schema: dict[str, Any] = {
-        'type': 'object', 'additionalProperties': False,
-        'properties': {'command': {'type': 'string', 'enum': list(commands), 'description': COMMAND},
-                       'arguments': {'type': 'object', 'description': ARGUMENTS},
-                       'help': {'type': 'string', 'description': HELP}}}
-    if folder is None or settings.value('mcp_schemas', folder) != 'inline':
-        return schema
-    schema['properties']['arguments'] = {
-        'description': ARGUMENTS + ' One of these, the one titled with the command.',
-        'anyOf': [{'title': name, 'description': described, **build()} for name, (described, build) in commands.items()]}
-    return schema
+def needs(folder: Path, name: str, arguments: dict[str, Any]) -> consent.Ask | None:
+    """The form a call needs the person to answer before it runs, CLI-011: the caution it carries, and the person-only
+    settings it asks to change; None when it needs neither, or names no tool here, so the call answers as it does."""
+    own = name[len(OWN) + 1:] if name.startswith(OWN + '_') else ''
+    if own == 'set':
+        return consent.form(name, None, consent.held({key: value for key, value in arguments.items()
+                                                      if key != 'glue'}, folder), folder)
+    if own == 'clear_project':
+        named = arguments.get('project')
+        try:
+            project = project_for(folder, named if isinstance(named, str) else None) \
+                if on_surface('chassis', folder) else None
+        except (Stop, StoreError):
+            return None  # the call says what is wrong with the project it names
+        return None if project is None else consent.form(name, home.to_clear(project).caution, {}, folder)
+    found = None if own else tools(folder).get(name)
+    if found is None:
+        return None
+    verb = found[1]
+    return consent.form(name, verb.caution or None, consent.held(
+        {key: value for key, value in arguments.items() if key in verb.switches}, folder), folder)
 
 
-def entry_description(tool: str, summary: str, commands: Commands, *, alias: bool = False) -> str:
-    """What a tool says of itself in the list, MCP-037: its summary, where its instructions are, and its commands.
-    An alias has no instructions of its own, CLI-039; the modules it stands for have."""
-    uri = 'metaform://instructions' if tool == OWN else f'metaform://instructions/{tool}'
-    where = ('' if alias else f' Read resource {uri} before the first call, or call this tool with no command for the '
-                              'same text and the commands.')
-    return f'{summary}{where} Commands: {", ".join(commands)}.'
+async def run_tool(folder: Path, name: str, arguments: dict[str, Any], *, client: str | None = None) -> Outcome:
+    """A call to one listed tool by its name: whether it failed, and its text blocks."""
+    error, blocks, _ = await answer(folder, name, arguments, client=client)
+    return error, blocks
 
 
-def inner(tool: str, command: str) -> str:
-    """The name a command runs under: the chassis's own by its name, a module's as `<module>_<command>`. An alias's
-    command is written `<module> <command>`, and runs as that module's, CLI-039."""
-    if tool == OWN:
-        return command
-    return command.replace(' ', '_', 1) if ' ' in command else f'{tool}_{command}'
-
-
-def said(tool: str, command: str) -> str:
-    """How an agent is told to call a command."""
-    return f'{tool} with command {command}'
-
-
-async def enter(folder: Path, tool: str, given: dict[str, Any], *, client: str | None = None) -> Outcome:
-    """A call to one of the listed tools. With no command it enters the tool: it returns the tool's commands with
-    the summary of each. With help and no command it returns what that one command takes, CLI-037. With a command it
-    runs it with its arguments."""
-    known = await anyio.to_thread.run_sync(entries, folder)
-    if tool not in known:
-        return True, [f'Error: No tool {tool} on this surface.\nNext: list the tools']
-    summary, commands = known[tool]
-    asked = given.get('help')
-    # help asks what a command takes; sent with that command and nothing to run it with, it is still that question
-    if asked is not None and not given.get('arguments'):
-        if not isinstance(asked, str) or asked not in commands:
-            return True, [f'Error: {tool} has no command {asked}.\nNext: call {tool} with no command for its commands']
-        described, schema = commands[asked]
-        built = await anyio.to_thread.run_sync(schema)
-        return False, [result_json({'tool': tool, 'command': asked, 'summary': described, 'arguments': built})]
-    unread = sorted(key for key in given if key not in ('command', 'arguments', 'help'))
-    if unread and isinstance(given.get('command'), str) and isinstance(given.get('arguments') or {}, dict):
-        # The command's arguments sent beside the command are its arguments; what is inside arguments wins.
-        given = {'command': given['command'],
-                 'arguments': {**{key: given[key] for key in unread}, **(given.get('arguments') or {})}}
-    elif unread:
-        return True, [(f'Error: {tool} takes command and arguments, not {", ".join(unread)}.\n'
-                      f'Next: call {tool} with command and the command\'s own arguments inside arguments')]
-    command, arguments = given.get('command'), given.get('arguments')
-    if command is None:
-        # Entering a module's tool gives its full instructions, which the compact connect-time text leaves out, MCP-029.
-        own = None if tool == OWN else await anyio.to_thread.run_sync(module_instructions, folder, tool)
-        return False, [result_json({'tool': tool, 'summary': summary,
-                                    **({'instructions': own} if own else {}),
-                                    'commands': [{'command': name, 'summary': described}
-                                                 for name, (described, _) in commands.items()],
-                                    'next': f"call {tool} with help and a command's name for what it takes"})]
-    if not isinstance(command, str) or command not in commands:
-        return True, [f'Error: {tool} has no command {command}.\nNext: call {tool} with no command for its commands']
-    if arguments is not None and not isinstance(arguments, dict):
-        return True, [(f'Error: arguments is an object of the command\'s arguments by name.\n'
-                      f'Next: call {tool} with help {command} for what it takes')]
-    return await run_tool(folder, inner(tool, command), cast(dict[str, Any], arguments or {}), said(tool, command),
-                          client=client)
-
-
-async def run_tool(folder: Path, name: str, arguments: dict[str, Any], called: str | None = None,
-                   *, client: str | None = None) -> Outcome:
-    if name == 'set':
-        return await anyio.to_thread.run_sync(run_set, folder, dict(arguments))
-    if name in CHASSIS:
-        return await anyio.to_thread.run_sync(run_chassis, folder, name, dict(arguments))
-    if name in SURFACED and await anyio.to_thread.run_sync(on_surface, 'chassis', folder):
-        return await anyio.to_thread.run_sync(run_history, folder, name, dict(arguments))
+async def answer(folder: Path, name: str, arguments: dict[str, Any], *, client: str | None = None,
+                 consented: bool = False) -> tuple[bool, list[str], dict[str, Any] | None]:
+    """A call to one listed tool, as `run_tool`, with the result's structured form when it is an object, BASE-036:
+    the same data as the text block holding it, for a host that reads tool output as data. `consented`: the person
+    said yes to the call in their AI tool, so its caution and its person-only settings need no more from the agent."""
+    own = name[len(OWN) + 1:] if name.startswith(OWN + '_') else ''
+    if own == 'set':
+        error, blocks = await anyio.to_thread.run_sync(run_set, folder, dict(arguments), consented)
+        return error, blocks, _structured(error, blocks)
+    if own in CHASSIS:
+        error, blocks = await anyio.to_thread.run_sync(run_chassis, folder, own, dict(arguments))
+        return error, blocks, None if own in CHASSIS_TEXT else _structured(error, blocks)
+    if own in SURFACED and await anyio.to_thread.run_sync(on_surface, 'chassis', folder):
+        error, blocks = await anyio.to_thread.run_sync(run_history, folder, own, dict(arguments), consented)
+        return error, blocks, _structured(error, blocks)
     known = await anyio.to_thread.run_sync(tools, folder)
     if name not in known:
-        return True, [f'Error: No tool {name} on this surface.\nNext: list the tools']
+        return True, [f'Error: No tool {name} on this surface.\nNext: list the tools'], None
     module, verb = known[name]
     lines: list[str] = []
     try:
-        ctx = await anyio.to_thread.run_sync(_prepare, folder, module, verb, called or name, dict(arguments), lines,
-                                            client)
+        ctx = await anyio.to_thread.run_sync(_prepare, folder, module, verb, name, dict(arguments), lines, client,
+                                             consented)
         if inspect.iscoroutinefunction(verb.run):
             result = await verb.run(ctx)
         else:
-            result = await anyio.to_thread.run_sync(call, verb.run, ctx)
+            result = await _threaded(verb.run, ctx)
     except Stop as stop:
-        return _error(stop, folder)
+        error, blocks = _error(stop, folder)
+        return error, blocks, None
     except Exception as error:  # noqa: BLE001  any failure of a module's verb goes back to the host, MCP-006
-        return True, [(f'Error: {type(error).__name__}: {error}\nNext: call metaform with command feedback and say '
-                       'what you called')]
+        return True, [(f'Error: {type(error).__name__}: {error}\nNext: call {OWN}_feedback and say what you '
+                       'called')], None
     if lines and isinstance(result, str):  # one block, so no host's way of joining blocks runs the lines into the text
-        return False, ['\n'.join(lines) + '\n' + result]
+        return False, ['\n'.join(lines) + '\n' + result], None
     blocks = ['\n'.join(lines)] if lines else []
     if result is not None:
         blocks.append(result if isinstance(result, str) else result_json(result))
-    return False, blocks
+    data = None if result is None or isinstance(result, str) else plain(result)
+    return False, blocks, cast(dict[str, Any], data) if isinstance(data, dict) else None
+
+
+async def _threaded(run: Any, ctx: Any) -> Any:
+    """A verb run in a thread, shielded: a thread cannot be stopped, so a cancel waits for it either way, and its
+    result is kept for the caller rather than dropped after its effect landed; the cancel takes effect after."""
+    with anyio.CancelScope(shield=True):
+        return await anyio.to_thread.run_sync(call, run, ctx)
+
+
+def _structured(error: bool, blocks: list[str]) -> dict[str, Any] | None:
+    """A chassis tool's result block as data, when it is a JSON object, as the tool wrote it with `result_json`."""
+    if error or not blocks:
+        return None
+    try:
+        data = json.loads(blocks[-1])
+    except ValueError:
+        return None
+    return cast(dict[str, Any], data) if isinstance(data, dict) else None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -715,27 +803,118 @@ def slash_text(folder: Path, slash: Slash, given: dict[str, str]) -> str:
 
 
 # Resources, MCP-037: the texts an agent reads at discovery, before any tool runs. The chassis serves the instructions,
-# each module's instructions, each command's argument schema, the stored prompts and the reports; a module serves
-# what it declares, each read through one of its verbs with no arguments.
+# each module's instructions, the stored prompts and the reports; a module serves what it declares, each read through
+# one of its verbs with no arguments. A command's arguments are in its tool's input schema, MCP-003. Every address of
+# the map resolves too: `metaform://<address>` is that node's brief, and `metaform://<address>/items/<n>` the one
+# item numbered n there, so any agent, and the person, reads any node at any time. The item's number is in the path,
+# not in a fragment, which RFC 3986 leaves to the client and a client may strip before resources/read; the fragment
+# form `metaform://<address>#<n>`, as items are named, is still read.
 INSTRUCTIONS_URI = 'metaform://instructions'
+# The system glossary, the mcp module's glossary prompt, which the connect instructions tell every agent to read first.
+# It replaced metaform://glossary, with no alias kept (Phase 1c, item 8).
+GLOSSARY_URI = 'metaform://metaform'
+TOOLS_URI = 'metaform://tools'  # each tool in one line and the modules' rules, for a host that defers tool descriptions
 TEMPLATES: tuple[tuple[str, str, str], ...] = (
     ('metaform://instructions/{module}', "A module's instructions",
-     "One module's full instructions, as entering its tool gives them. module is a tool's name."),
-    ('metaform://tools/{tool}/{command}', "A command's arguments",
-     ("The JSON Schema of one command's arguments, as help gives it. tool is a tool's name and command one of its "
-      'commands.')),
+     "One module's full instructions, as metaform_instructions gives them with module. module is a module's id."),
     ('metaform://prompts/{name}', 'A stored prompt', "A stored prompt's newest text and version, by name."),
     ('metaform://reports/{name}', 'A report file', ('One report, feedback or shape file exactly, by the name '
                                                     'list_reports gives.')),
 )
 TEMPLATE_PATTERNS = {uri: re.compile('^' + re.sub(r'\{(\w+)\}', r'(?P<\1>[^/]+)', uri) + '$')
                      for uri, _, _ in TEMPLATES}
+# The address templates, listed after the fixed ones: an address holds no `/`, so it never reads as a templated URI,
+# and a fixed resource, the project's glossary or a module's resource is served first, so `metaform://metaform`,
+# `metaform://<project>` and `metaform://instructions` are never read as addresses.
+BRIEF_TEMPLATE = 'metaform://{address}'
+ITEM_TEMPLATE = 'metaform://{address}/items/{n}'
+ITEM_ALIAS = 'metaform://{address}#{n}'  # the fragment form, read and completed, not listed
+ADDRESS_TEMPLATES: tuple[tuple[str, str, str, str], ...] = (
+    (BRIEF_TEMPLATE, "A node's brief", ("One node of the map by its address, such as metaform://code.manager.route: "
+                                        "the element, what relies on it and what it relies on, with how much is held "
+                                        "at it and around it and the call that reads each."), 'application/json'),
+    (ITEM_TEMPLATE, 'One item at a node', ("The one memory, ticket, question or message numbered n at an address, n "
+                                           "in hex as it is shown, such as metaform://code.manager.route/items/1f: its "
+                                           "title, why, body and links."), 'text/plain'),
+)
+ADDRESS = re.compile(r'^metaform://(?P<address>[^/#?\s]+)'
+                     r'(?:/items/(?P<path>[0-9A-Fa-f]{1,15})|#(?P<number>[0-9A-Fa-f]{1,15}))?$')
+
+
+class Missing(Exception):
+    """A resource whose address or item does not exist: refused with the protocol's code for a missing resource,
+    -32602, and a next step."""
+
+    def __init__(self, message: str, next_step: str) -> None:
+        super().__init__(message)
+        self.next_step = next_step
+
+
+def brief(folder: Path, address: str, client: str | None = None) -> str:
+    """`metaform://<address>`: the node's brief as the chassis gives it, the map module's own `where` read, given whole
+    every time; the web GUI shows the same brief."""
+    try:
+        text = node_brief(folder, address, client=client)
+    except Stop as stop:
+        raise Missing(f'No node {address} here: {stop}', f'call map_where with the address\'s parent, or read '
+                                                          f'{GLOSSARY_URI} for what an address is') from None
+    if text is None:
+        raise Missing(f'No map is served here, so {address} does not resolve.', 'list the resources')
+    return text
+
+
+def item(folder: Path, address: str, number: int) -> str:
+    """`metaform://<address>#<n>`: the one item numbered n at the address, from the module that wrote it."""
+    found = item_read(folder, address, number)
+    if found is None:
+        raise Missing(f'No item {reference(address, number)} here.',
+                      f'read metaform://{address}, whose counts name what is held there, or call map_item '
+                      f'with {address} for its latest number')
+    return item_text(found)
+
+
+def project_uri(folder: Path) -> str | None:
+    """`metaform://<project>`, the folder's project's own glossary, or None when the folder is no registered project.
+    A project named metaform has its terms at metaform://metaform's side, never in its place: that URI always serves
+    Metaform's own glossary."""
+    project = project_for(folder)
+    return None if project is None or f'metaform://{project}' == GLOSSARY_URI else f'metaform://{project}'
+
+
+def project_glossary_text(folder: Path, client: str | None = None) -> str:
+    """`metaform://<project>`: the project's own glossary as the map module generates it, the register standard then
+    the project's terms in the form of Metaform's own glossary, called through `metaform.module.project_glossary`;
+    while the map module is off here, the register standard the map module ships, exactly as written, and mcp's
+    `project_glossary_absent` note saying why there are no terms."""
+    from metaform import module as chassis
+    generate = getattr(chassis, 'project_glossary', None)  # the map module's generator, Phase 1c item 8
+    try:
+        text = generate(folder, client=client) if generate is not None else None
+    except Stop:
+        text = None
+    if text:
+        return text if text.endswith('\n') else text + '\n'
+    standard = prompt_files.module('map', 'register_standard') or ''
+    note = prompt_files.module('mcp', 'project_glossary_absent') or ''
+    return '\n\n'.join(part for part in (standard, note) if part) + '\n'
 
 
 def resource_list(folder: Path) -> list[dict[str, Any]]:
-    """The fixed resources: the instructions, then each surfaced module's declared resources."""
-    listed = [{'uri': INSTRUCTIONS_URI, 'name': 'Agent instructions',
-               'description': 'The instructions agents read, composed now for this folder. Read first.',
+    """The fixed resources: Metaform's glossary, the project's own, the tools in one line each, the instructions, then
+    each surfaced module's declared resources."""
+    own = project_uri(folder)
+    listed = [{'uri': GLOSSARY_URI, 'name': 'Metaform glossary',
+               'description': 'Read first: the terms every agent works by in Metaform, the mcp module\'s glossary '
+                              'prompt as written.',
+               'mime_type': 'text/plain'},
+              *([{'uri': own, 'name': 'Project glossary',
+                  'description': "This project's own terms after the peer register standard, generated from its map.",
+                  'mime_type': 'text/plain'}] if own else []),
+              {'uri': TOOLS_URI, 'name': 'Tools',
+               'description': "Each Metaform tool in one line, by module, then the rules the modules ask you to keep.",
+               'mime_type': 'text/plain'},
+              {'uri': INSTRUCTIONS_URI, 'name': 'Agent instructions',
+               'description': "The guide to this folder's modules and state, as metaform instructions prints it.",
                'mime_type': 'text/plain'}]
     for module in surface(folder):
         listed += [{'uri': held.uri, 'name': held.name, 'description': held.description, 'mime_type': held.mime_type}
@@ -744,7 +923,10 @@ def resource_list(folder: Path) -> list[dict[str, Any]]:
 
 
 async def read_resource_text(folder: Path, uri: str, *, client: str | None = None) -> tuple[str, str] | None:
-    """A resource's text and media type, or None when this folder serves no such resource."""
+    """A resource's text and media type, or None when this folder serves no such resource. metaform://metaform is
+    read first, so it is Metaform's own glossary whatever the folder's project or modules are called."""
+    if uri == GLOSSARY_URI:
+        return await anyio.to_thread.run_sync(glossary, folder), 'text/plain'
     for module in await anyio.to_thread.run_sync(surface, folder):
         for held in module.resources:
             if held.uri == uri:
@@ -752,51 +934,318 @@ async def read_resource_text(folder: Path, uri: str, *, client: str | None = Non
                 if error:
                     raise Stop(blocks[0], 'read resource ' + INSTRUCTIONS_URI)
                 return '\n'.join(blocks), held.mime_type
+    if uri == TOOLS_URI:
+        return await anyio.to_thread.run_sync(tools_text, folder), 'text/plain'
     if uri == INSTRUCTIONS_URI:
         return await anyio.to_thread.run_sync(functools.partial(instructions, folder, surface='mcp')), 'text/plain'
+    if uri == await anyio.to_thread.run_sync(project_uri, folder):
+        return await anyio.to_thread.run_sync(project_glossary_text, folder, client), 'text/plain'
     matched = next(((name, held.groupdict()) for name, pattern in TEMPLATE_PATTERNS.items()
                     if (held := pattern.match(uri))), None)
     if matched is None:
-        return None
+        addressed = ADDRESS.match(uri)
+        if addressed is None:
+            return None
+        given = addressed.group('path') or addressed.group('number')
+        if given is None:
+            text = await anyio.to_thread.run_sync(brief, folder, addressed.group('address'), client)
+            return text, 'application/json' if text.startswith('{') else 'text/plain'
+        number = int(given, 16)
+        return await anyio.to_thread.run_sync(item, folder, addressed.group('address'), number), 'text/plain'
     template, fields = matched
     if template.startswith('metaform://instructions/'):
         text = await anyio.to_thread.run_sync(module_instructions, folder, fields['module'])
         return (text, 'text/plain') if text is not None else None
-    if template.startswith('metaform://tools/'):
-        known = await anyio.to_thread.run_sync(entries, folder)
-        if fields['tool'] not in known or fields['command'] not in known[fields['tool']][1]:
-            return None
-        commands = known[fields['tool']][1]
-        built = await anyio.to_thread.run_sync(commands[fields['command']][1])
-        return result_json(built), 'application/json'
     if template.startswith('metaform://prompts/'):
         return result_json(await anyio.to_thread.run_sync(prompts.prompt_version, fields['name'], None)), 'application/json'
     return await anyio.to_thread.run_sync(read_report, folder, fields['name']), 'text/plain'
 
 
-def serve(folder: Path) -> None:
+def run_verb(folder: Path, module_id: str, verb_name: str, nouns: dict[str, Any]) -> Any:
+    """One module verb run for the person through the server, whatever its surfaces: the answer a person gave in a
+    form their AI tool showed, or a read a view makes. Stops when the module is not on the folder's surface."""
+    found = next((module for module in surface(folder) if module.id == module_id), None)
+    verb = None if found is None else next((one for one in found.verbs if one.name == verb_name), None)
+    if verb is None:
+        raise Stop(f'No {module_id} {verb_name} on this folder\'s surface.', f'metaform enable {module_id}')
+    return call(verb.run, context(module_id, folder, nouns=nouns, surface='mcp'))
+
+
+VIEW_LIMIT = 200  # the most items a view lists at a node, newest first
+VIEW_SCHEMA: dict[str, Any] = {
+    'type': 'object', 'required': ['read'], 'additionalProperties': False,
+    'properties': {'read': _text('What the view reads: brief, items or item at an address, trace for a ticket\'s '
+                                 'sessions, glossary, focus for the Address the agent last named, or one of the '
+                                 'map\'s named reads, as the web GUI reads it.'),
+                   'params': {'type': 'object', 'additionalProperties': {'type': ['string', 'number', 'boolean']},
+                              'description': 'The read\'s arguments, as the web GUI passes them.'}}}
+
+
+def view_read(folder: Path, name: str, params: dict[str, Any]) -> Any:
+    """What the map and node views read through metaform_view, MCP-037: a node's brief, the items numbered at it, one
+    item, the memory graph, or one of the map's named reads with the web GUI's arguments. Only the folder's own
+    project is read; a view asks nothing else of the server."""
+    project = project_for(folder) or _no_project()
+    given = {str(key): str(value).lower() if isinstance(value, bool) else str(value)
+             for key, value in params.items() if value is not None}
+    if given.get('project', project) != project:
+        raise Stop(f'This view shows {project} only.', f'open the web GUI for {given["project"]}')
+    if name == 'projects':
+        return {'projects': [{'id': project}], 'opened': project}
+    if name == 'brief':  # what the web GUI's /api/brief gives, so the map view draws the same brief
+        kinds = tuple(kind for kind in given.get('kind', '').split(',') if kind)
+        return node_view(folder, given.get('address', ''), cursor=given.get('cursor'), kinds=kinds, project=project)
+    if name == 'items':
+        return items_at(folder, project, given.get('address', ''), given.get('cursor'))
+    if name == 'item':  # what the web GUI's /api/item gives
+        return item_view(folder, given.get('item', ''), project=project)
+    if name.startswith('memory-'):
+        nouns = {'node': given['node']} if name == 'memory-note' and given.get('node') else {}
+        return run_verb(folder, 'memory', name[len('memory-'):], nouns)
+    if name == 'glossary':
+        return glossary_view(folder)
+    if name == 'trace':
+        return trace_view(folder, given.get('id', ''), given.get('digest', ''))
+    if name not in query_reads():
+        raise Stop(f'The view does not read {name}.', 'open the web GUI for the rest of the page')
+    record = home.project(project)
+    chosen = given.get('layers')
+    toggled = [one for one in chosen.split(',') if one] if chosen is not None else \
+        settings.toggled_layers(Path(record.path)) if record is not None else []
+    store = Store(project, toggled=toggled, base=given.get('base') or None)
+    return query_read(store, name, {key: value for key, value in given.items() if key not in VIEW_RESERVED})
+
+
+VIEW_RESERVED = ('project', 'metaform', 'layers')  # what picks the store and its layers, as the web GUI reads them
+TERM = re.compile(r'^\s*\{(?P<term>[^{}]+)\}\s*:=\s*(?P<definition>.+?)\s*$')
+SECTION = re.compile(r'^\s*//\s*-*\s*(?P<title>.+?)\s*-*\s*$')
+
+
+def glossary_view(folder: Path) -> dict[str, Any]:
+    """What the glossary view draws, MCP-037: the mcp module's glossary prompt as written, `text`, with each term
+    defined in it (`{TERM} := "definition"`, quoted) taken out with the section it stands in, its definition exactly as
+    written inside its quotes; then the tools on the folder's surface and the rules of its modules, as metaform://tools
+    gives them. Nothing is reworded: a term the view shows is the prompt's own line."""
+    written = prompt_files.module('mcp', 'glossary') or ''
+    terms: list[dict[str, str]] = []
+    section = ''
+    for line in written.splitlines():
+        heading = SECTION.match(line)
+        if heading:
+            section = heading.group('title')
+            continue
+        found = TERM.match(line)
+        if found is None:
+            continue
+        said = found.group('definition')
+        if len(said) > 1 and said[0] == said[-1] == '"':  # a defined term; `{Mode} := SYSTEM_PRELOAD` sets a state
+            terms.append({'term': found.group('term'), 'definition': said[1:-1], 'section': section})
+    tools = [{'name': name, 'summary': said} for name, said in tool_index(folder)]
+    ruled = [{'module': module.id, 'rule': said, 'why': why} for module in surface(folder)
+             for said, why in prompt_files.module_rules(module.id)]
+    return {'text': written, 'terms': terms, 'tools': tools, 'rules': ruled, 'uri': GLOSSARY_URI}
+
+
+def trace_view(folder: Path, work_id: str, seen: str = '') -> dict[str, Any]:
+    """What the trace view draws, MCP-037: the ticket, as map_work reads it, and its agent sessions with their threads,
+    as dispatch_sessions reads them; with no ticket, every session without its thread, to pick one from. `digest`
+    names what was read, so a view that already holds it is answered with `unchanged` alone: the view reads again
+    every few seconds while it is on screen, and a line the agent is still writing changes in place."""
+    nouns: dict[str, Any] = {'id': work_id} if work_id else {'thread': False}
+    found = plain(run_verb(folder, 'dispatch', 'sessions', nouns))
+    ticket: Any = None
+    if work_id:
+        try:
+            ticket = plain(run_verb(folder, 'map', 'work', {'id': work_id}))
+        except (Stop, StoreError):
+            ticket = None
+    digest = hashlib.sha256(json.dumps([found, ticket], sort_keys=True, default=str).encode()).hexdigest()[:20]
+    if seen and seen == digest:
+        return {'digest': digest, 'unchanged': True}
+    return {'digest': digest, 'id': work_id or None, 'ticket': ticket, **cast(dict[str, Any], found)}
+
+
+def items_at(folder: Path, project: str, address: str, cursor: str | None = None) -> dict[str, Any]:
+    """The items numbered at an address, newest first, a page of `VIEW_LIMIT`, each with its reference, number, title,
+    kind, why and module, MCP-037: `items_page`, the list the web GUI's brief reads too, paged as MCP pages a list,
+    `cursor` the `nextCursor` the page before gave."""
+    if not address:
+        raise Stop('items needs an address.', 'read items with params.address')
+    listed = items_page(folder, address, cursor=cursor, limit=VIEW_LIMIT, project=project)
+    try:
+        reading = plain(query_read(Store(project), 'element', {'ref': address})).get('reading')
+    except (Stop, StoreError, AttributeError):
+        reading = None
+    return {'address': address, 'reading': reading, 'latest': Store(project).latest_number(address),
+            **listed}
+
+
+COMPLETE_LIMIT = 100  # the most values one completion carries, as the protocol allows
+ADDRESS_ARGUMENTS = ('address', 'node', 'item')  # a prompt argument named so takes an Address or <address>#<n>
+
+
+def completions(folder: Path, kind: str, ref: str, argument: str, value: str,
+                known: dict[str, str] | None = None) -> list[str]:
+    """What completes an argument, MCP-037: an Address one segment at a time, from the map's own children read; a
+    number at an address, or `<address>#<n>`, from the items numbered there; a module for the instructions template;
+    a stored prompt's name. `kind` is `resource` for a resource template, `prompt` for a slash command. Empty when the
+    argument takes nothing known here."""
+    known = known or {}
+    if kind == 'resource' and ref in (BRIEF_TEMPLATE, ITEM_TEMPLATE, ITEM_ALIAS) and argument == 'address':
+        return _addresses(folder, value, items=False)
+    if kind == 'resource' and ref in (ITEM_TEMPLATE, ITEM_ALIAS) and argument == 'n':
+        return [number for number in _numbers(folder, known.get('address', ''), value)]
+    if kind == 'resource' and ref == 'metaform://instructions/{module}' and argument == 'module':
+        return sorted(module.id for module in surface(folder) if module.id.startswith(value))
+    if kind == 'resource' and ref == 'metaform://prompts/{name}' and argument == 'name':
+        return sorted(one.name for one in prompts.prompts() if one.name.startswith(value))
+    if kind == 'prompt' and argument in ADDRESS_ARGUMENTS:
+        return _addresses(folder, value, items=True)
+    return []
+
+
+def _addresses(folder: Path, value: str, *, items: bool) -> list[str]:
+    """Addresses that complete `value`: the children of its parent that start with it, and, when it names a node,
+    that node's children; with `items`, a value holding `#` completes the numbers at its address."""
+    project = project_for(folder)
+    if project is None:
+        return []
+    if items and '#' in value:
+        address, _, prefix = value.partition('#')
+        return [f'{address}#{number}' for number in _numbers(folder, address, prefix)]
+    store = Store(project)
+
+    def children(of: str) -> list[str]:
+        try:
+            return [str(one) for one in plain(query_read(store, 'children', {'address': of})).get('results', [])]
+        except (Stop, StoreError):
+            return []
+    parent = value.rsplit('.', 1)[0] if '.' in value else ''
+    found = [one for one in children(parent) if one.startswith(value)]
+    if value and value in found:
+        found += children(value)
+    return sorted(dict.fromkeys(found))
+
+
+def _numbers(folder: Path, address: str, prefix: str) -> list[str]:
+    """The numbers taken at an address, newest first, in hex as they are shown, that start with `prefix`: from the
+    address's counter alone, no item read, since a completion is a hint; a number whose item was deleted is said so
+    when it is read."""
+    project = project_for(folder)
+    if project is None or not address:
+        return []
+    try:
+        top = Store(project).latest_number(address)
+    except StoreError:
+        return []
+    asked = prefix.lower()
+    if asked.strip('0123456789abcdef'):
+        return []
+    found: list[str] = []
+    for number in range(top, 0, -1):
+        shown = f'{number:x}'
+        if shown.startswith(asked):
+            found.append(shown)
+            if len(found) == COMPLETE_LIMIT:
+                break
+    return found
+
+
+def serve(folder: Path, *, http: bool = False, port: int = 0, bind: str | None = None, public_url: str | None = None,
+          introspection: str | None = None) -> None:
+    """Serve the folder over stdio, the host's own connection, or with `http` over Streamable HTTP on 127.0.0.1 at
+    `port`, one server any number of clients connect to, MCP-002. Both run the one server built here; the transport
+    is the only difference. Over HTTP the SDK checks every request's Host and Origin against 127.0.0.1 and localhost,
+    so a web page cannot reach the server through DNS rebinding, and there is no relay: an HTTP client reconnects.
+
+    Beside the core it serves the extensions a client declares, each only to a client that declares it: MCP Apps, the
+    map and node views; the tasks extension, for verbs that can take long; and elicitation, by multi round-trip
+    requests on the July 2026 wire, for what only the person says yes to. Completion fills Address arguments and
+    `#n` references, and a client listening for a node's brief hears when items are added there."""
+    from contextlib import asynccontextmanager
+
     from mcp import types
     from mcp.server import Server
+    from mcp.server.caching import CacheHint
     from mcp.server.lowlevel import NotificationOptions
+    from mcp.server.request_state import RequestStateBoundary, RequestStateSecurity
     from mcp.server.stdio import stdio_server
     from mcp.server.subscriptions import (
         InMemorySubscriptionBus,
         ListenHandler,
         PromptsListChanged,
         ResourcesListChanged,
+        ResourceUpdated,
         ToolsListChanged,
     )
     from mcp.shared.exceptions import MCPError
+    from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
+    from . import tasks as tasked
+    from . import views
     from .transport import RETRY, Relay
 
-    relay = Relay(folder, settings.value('mcp_recovery', folder) == 'relay')
+    relay = Relay(folder, not http and settings.value('mcp_recovery', folder) == 'relay')
+    apps_on = bool(settings.value('mcp_apps', folder))
+    apps_always = settings.value('mcp_apps_offer', folder) == 'always'
+    tasks_on = bool(settings.value('mcp_tasks', folder))
+    tokens = consent.Tokens()  # the forms asked and not yet answered, each answer taken once
+    running = tasked.Running()  # the tool calls this process runs as tasks
+    held: dict[str, Any] = {}  # the task group tasks run in, while the server runs
 
-    def build() -> list[Any]:
-        ids = {module.id for module in surface(folder)} | {OWN}
-        return [types.Tool(name=name, description=entry_description(name, summary, commands, alias=name not in ids),
-                           input_schema=entry_schema(commands, folder))
-                for name, (summary, commands) in entries(folder).items()]
+    def capabilities(ctx: Any) -> Any:
+        return ctx.session.client_capabilities
+
+    def apps(ctx: Any) -> bool:
+        """Whether this request's client renders MCP Apps, and the person lets the views be offered: to a client that
+        declares the extension, or, with mcp_apps_offer always, to every client, for a host that renders them without
+        saying so, as the specification's reference host does."""
+        return apps_on and (apps_always or views.supported(capabilities(ctx)))
+
+    # The Address the agent last named in a call, per viewer: an open view reads it (`focus`) and turns to it, so
+    # what the agent discusses is what the person sees. `seq` grows with each call, so a view turns once per call. On
+    # a Metaform Node the viewer is the signed-in account its authorization server named, so two people using the
+    # same AI tool never turn each other's views; elsewhere it is the client's name, oauth.viewer.
+    focus: dict[str, dict[str, Any]] = {}
+
+    def viewer(ctx: Any) -> str:
+        from .oauth import viewer as signed_in
+        return signed_in(ctx) or client_of(ctx) or ''
+
+    def discussed(ctx: Any, name: str, arguments: dict[str, Any]) -> None:
+        said = views.discussed(arguments)
+        if said is None or not apps(ctx):
+            return
+        held = focus.get(viewer(ctx), {})
+        focus[viewer(ctx)] = {'address': said, 'tool': name, 'seq': int(held.get('seq', 0)) + 1}
+
+    def client_of(ctx: Any) -> str | None:
+        initialized = ctx.session.client_params
+        return initialized.client_info.name if initialized is not None else None
+
+    def tool(one: Listed, shown: bool) -> Any:
+        hints = one.annotations()
+        view = views.SHOWN_BY.get(one.name) if shown else None
+        made = types.Tool(name=one.name, description=one.description, input_schema=one.schema(),
+                          annotations=types.ToolAnnotations(
+                              read_only_hint=hints['read_only_hint'], destructive_hint=hints['destructive_hint'],
+                              idempotent_hint=hints['idempotent_hint'], open_world_hint=hints['open_world_hint']))
+        if view:
+            made.meta = {'ui': {'resourceUri': view}}
+        return made
+
+    # The views' own tool, listed only to a client that renders the views and hidden from its model, MCP Apps'
+    # visibility ["app"]: a view calls it through its host for what it draws.
+    view_tool = types.Tool(
+        name=views.TOOL, description='Read what the map and node views draw. Called by the views, not the model.',
+        input_schema=VIEW_SCHEMA,
+        annotations=types.ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True,
+                                          open_world_hint=False))
+    view_tool.meta = {'ui': {'visibility': ['app']}}
+
+    def build(shown: bool) -> list[Any]:
+        listed = [tool(one, shown) for one in listing(folder).values()]
+        return sorted([*listed, view_tool], key=lambda one: one.name) if shown else listed
 
     def build_prompts() -> list[Any]:
         return [types.Prompt(name=slash.name, description=slash.summary or None, arguments=[
@@ -811,10 +1260,9 @@ def serve(folder: Path) -> None:
     shown: dict[str, Any] = {'tools': None, 'prompts': None, 'resources': None}
 
     def current() -> dict[str, Any]:
-        """What each list follows: the tools also follow the folder's aliases, CLI-039."""
+        """What each list follows: the tools are the names listed, which change with the modules on the surface."""
         both = tuple(module.id for module in surface(folder)), on_surface('chassis', folder)
-        named = tuple((name, tuple(module.id for module in held)) for name, held in aliases(folder).items())
-        return {'tools': (*both, named), 'prompts': both, 'resources': both[0]}
+        return {'tools': tuple(listing(folder)), 'prompts': both, 'resources': both[0]}
 
     async def announce(ctx: Any) -> None:
         now = await anyio.to_thread.run_sync(current)
@@ -832,23 +1280,124 @@ def serve(folder: Path) -> None:
                 else:
                     await bus.publish(ResourcesListChanged())
                     await ctx.session.send_resource_list_changed()
+        await watch.check()
 
     async def list_tools(ctx: Any, params: Any) -> Any:
-        tools = await anyio.to_thread.run_sync(build)
+        tools = await anyio.to_thread.run_sync(build, apps(ctx))
         shown['tools'] = (await anyio.to_thread.run_sync(current))['tools']
         return types.ListToolsResult(tools=tools)
 
+    def declined(name: str) -> Any:
+        said = prompt_files.module('mcp', 'consent_declined') or 'The person declined.'
+        return types.CallToolResult(content=[types.TextContent(
+            type='text', text=f'Error: {said}\nNext: call {name} again if the person changes their mind')],
+            is_error=True)
+
+    async def consented(ctx: Any, params: Any, name: str,
+                        arguments: dict[str, Any]) -> tuple[dict[str, Any] | None, Any]:
+        """The arguments the person let the call run with, the person-only values they chose among them; or the
+        result the call answers with now: the form to fill on the July wire, or the refusal when they declined.
+        `(arguments, None)` unchanged when the call needs no form or none can be shown."""
+        if not await anyio.to_thread.run_sync(consent.can_ask, capabilities(ctx), folder):
+            return arguments, None
+        ask = await anyio.to_thread.run_sync(needs, folder, name, arguments)
+        if ask is None:
+            return arguments, None
+        if ctx.protocol_version in MODERN_PROTOCOL_VERSIONS:  # multi round-trip: ask, then read the retry's answer
+            raw = cast(dict[str, Any], dict(ctx.params or {}))
+            responses: Any = raw.get('inputResponses') or {}
+            answer_given: Any = cast(dict[str, Any], responses).get(consent.FORM) if isinstance(responses, dict) else None
+            if not isinstance(answer_given, dict) or not tokens.spend(params.request_state):
+                return None, types.InputRequiredResult(input_requests={consent.FORM: types.ElicitRequest(
+                    params=types.ElicitRequestFormParams(message=ask.message, requested_schema=ask.schema))},
+                    request_state=tokens.mint())
+            answered = cast(dict[str, Any], answer_given)
+            action, content = str(answered.get('action')), answered.get('content')
+        else:  # the 2025 handshake: the form is a request of the server's while the call waits
+            try:
+                got = await ctx.session.elicit_form(ask.message, ask.schema, related_request_id=ctx.request_id)
+            except Exception:  # noqa: BLE001  a client that cannot show it keeps the plain rule
+                return arguments, None
+            action, content = got.action, got.content
+        values = ask.accepted(action, cast(dict[str, Any] | None, content))
+        if values is None:
+            return None, declined(name)
+        return {**arguments, **values}, True
+
+    def outcome(error: bool, blocks: list[str], structured: dict[str, Any] | None) -> Any:
+        return types.CallToolResult(content=[types.TextContent(type='text', text=block) for block in blocks],
+                                    structured_content=structured, is_error=error)
+
     async def call_tool(ctx: Any, params: Any) -> Any:
+        name, arguments = params.name, dict(params.arguments or {})
+        client = client_of(ctx)
+        if name == views.TOOL and apps(ctx):
+            return await view_call(arguments, viewer(ctx))
+        given, answered = await consented(ctx, params, name, arguments)
+        if given is None:
+            return answered
+        approved = answered is True
+        listed = (await anyio.to_thread.run_sync(listing, folder)).get(name)
+        tasked_as = listed.task if tasks_on and listed is not None and tasked.declared(capabilities(ctx)) else False
+        if tasked_as is True and 'group' in held:
+            project = await anyio.to_thread.run_sync(tasked.owning, folder)
+            if project is not None:  # a folder that is no project's keeps no task, so its call is answered as ever
+                return await start_task(project, name, given, client, approved)
         try:
-            initialized = ctx.session.client_params
-            client = initialized.client_info.name if initialized is not None else None
-            error, blocks = await enter(folder, params.name, params.arguments or {}, client=client)
+            error, blocks, structured = await answer(folder, name, given, client=client, consented=approved)
         finally:  # what the tool changed, fired on the event bus from a worker thread, VIEW-018; a module enabled or
             # disabled since this server started is loaded or dropped first, BASE-037
             await anyio.to_thread.run_sync(events.announce, folder, 'mcp')
         await announce(ctx)
-        return types.CallToolResult(content=[types.TextContent(type='text', text=block) for block in blocks],
-                                    is_error=error)
+        if not error:
+            discussed(ctx, name, given)
+        if tasked_as == 'run' and not error and isinstance((structured or {}).get('run'), str):
+            seeded = await anyio.to_thread.run_sync(run_task, str(cast(dict[str, Any], structured)['run']))
+            if seeded is not None:
+                return seeded
+        return outcome(error, blocks, structured)
+
+    def run_task(run_id: str) -> dict[str, Any] | None:
+        """The task a verb declared `task='run'` answers with: the workflow run it just made, by its run id."""
+        found = tasked.store(folder)
+        return None if found is None else tasked.seed_run(found, run_id)
+
+    async def start_task(project: str, name: str, given: dict[str, Any], client: str | None, approved: bool) -> Any:
+        """A tool call answered with a task: the task is written first, so tasks/get finds it at once, then the call
+        runs in this process and the task keeps its result."""
+        said = prompt_files.module('mcp', 'task_working', tool=name) or f'{name} is running.'
+        made = await anyio.to_thread.run_sync(tasked.create, running, project, name, said)
+
+        async def work() -> dict[str, Any]:
+            try:
+                error, blocks, structured = await answer(folder, name, given, client=client, consented=approved)
+            finally:  # shielded, so a cancel after the verb finished leaves its result to the task
+                with anyio.CancelScope(shield=True):
+                    await anyio.to_thread.run_sync(events.announce, folder, 'mcp')
+            return outcome(error, blocks, structured).model_dump(by_alias=True, mode='json', exclude_none=True)
+        running.scopes[made['taskId']] = anyio.CancelScope()  # made here, in the loop, so a cancel finds it at once
+        held['group'].start_soon(tasked.run, running, project, made['taskId'], work)
+        return made
+
+    async def view_call(arguments: dict[str, Any], seen_by: str) -> Any:
+        read = arguments.get('read')
+        given: Any = arguments.get('params') or {}
+        if not isinstance(read, str) or not isinstance(given, dict):
+            return outcome(True, [f'Error: read is text and params an object.\nNext: {schema_step(views.TOOL)}'],
+                           None)
+        said = prompt_files.module('mcp', 'view_read', read=read) or f'Read {read} for the view.'
+        if read == 'focus':  # the Address the agent last named, kept in this process; nothing is read for it
+            return outcome(False, [said], {'address': None, 'tool': None, 'seq': 0, **focus.get(seen_by, {})})
+        try:
+            found = await anyio.to_thread.run_sync(view_read, folder, read, cast(dict[str, Any], given))
+        except (Stop, StoreError) as stop:
+            return outcome(*_error(stop, folder), None)
+        data = plain(found)
+        if not isinstance(data, dict):
+            return outcome(False, [result_json(data)], None)
+        # Under MCP Apps a result's structured content is the view's data and never the model's, so the data goes
+        # once, there, and the text is one line for a host that logs the call.
+        return outcome(False, [said], cast(dict[str, Any], data))
 
     async def list_prompts(ctx: Any, params: Any) -> Any:
         found = await anyio.to_thread.run_sync(build_prompts)
@@ -869,33 +1418,137 @@ def serve(folder: Path) -> None:
     async def list_resources(ctx: Any, params: Any) -> Any:
         listed = await anyio.to_thread.run_sync(resource_list, folder)
         shown['resources'] = (await anyio.to_thread.run_sync(current))['resources']
-        return types.ListResourcesResult(resources=[
-            types.Resource(uri=one['uri'], name=one['name'], description=one['description'], mime_type=one['mime_type'])
-            for one in listed])
+        found = [types.Resource(uri=one['uri'], name=one['name'], description=one['description'],
+                                mime_type=one['mime_type']) for one in listed]
+        if apps(ctx):  # the views, each with its _meta.ui, so a host can review what they ask before one is shown
+            for uri, (name, description) in views.NAMES.items():
+                view = types.Resource(uri=uri, name=name, description=description, mime_type=views.MIME)
+                view.meta = views.meta(uri)
+                found.append(view)
+        return types.ListResourcesResult(resources=found)
 
     async def list_resource_templates(ctx: Any, params: Any) -> Any:
+        addressed = [types.ResourceTemplate(uri_template=uri, name=name, description=description, mime_type=mime)
+                     for uri, name, description, mime in ADDRESS_TEMPLATES]
+        if apps(ctx):  # where a node or an item is shown: the node view, the one map_item and map_node open
+            for template in addressed:
+                template.meta = {'ui': {'resourceUri': views.NODE}}
         return types.ListResourceTemplatesResult(resource_templates=[
-            types.ResourceTemplate(uri_template=uri, name=name, description=description, mime_type='text/plain')
-            for uri, name, description in TEMPLATES])
+            *(types.ResourceTemplate(uri_template=uri, name=name, description=description, mime_type='text/plain')
+              for uri, name, description in TEMPLATES), *addressed])
+
+    def web_address(project: str | None) -> str:
+        """The web GUI's address on this machine, open at the folder's project, for a view's link to the full page;
+        empty when the web module is not installed here."""
+        try:
+            port = settings.value('web_port', folder)
+        except LookupError:
+            return ''
+        return f'http://127.0.0.1:{port}/' + (f'#p={project}' if project else '')
+
+    def view_config(uri: str) -> dict[str, Any]:
+        """What a view is told when it is served: its project, its tool, the line it tells the agent about a
+        selection, the version it names itself with in the handshake, whether it follows the host's look (the node
+        view does; the map keeps the page's own theme), and for the map view not built here, the line saying so."""
+        map_built = uri == views.MAP and views.built()
+        kind = uri.rsplit('/', 1)[-1]
+        project = project_for(folder)
+        config: dict[str, Any] = {
+            'view': kind if uri != views.MAP or map_built else 'node', 'tool': views.TOOL, 'project': project,
+            'version': chassis_version(), 'themed': not map_built, 'modes': views.MODES[uri],
+            'selected': prompt_files.module('mcp', 'view_selected', address='{address}') or '',
+            # the view's own tools, which a host that calls them lists to its agent while the view is open
+            'show': prompt_files.module('mcp', 'view_show') or '',
+            'state': prompt_files.module('mcp', 'view_state') or '',
+            'shown': prompt_files.module('mcp', 'view_shown', address='{address}') or '',
+            'absent': prompt_files.module('mcp', 'view_absent', address='{address}') or '',
+            'web': web_address(project)}
+        if uri == views.MAP and not map_built:
+            config['notice'] = prompt_files.module('mcp', 'view_unbuilt') or ''
+        return config
 
     async def read_resource(ctx: Any, params: Any) -> Any:
         uri = str(params.uri)
-        initialized = ctx.session.client_params
-        client = initialized.client_info.name if initialized is not None else None
+        if apps_on and uri in views.NAMES:  # a view, read by a client that renders MCP Apps
+            config = await anyio.to_thread.run_sync(view_config, uri)
+            text = await anyio.to_thread.run_sync(views.html, uri, config)
+            page = types.TextResourceContents(uri=uri, text=text, mime_type=views.MIME)
+            page.meta = views.meta(uri)
+            # A view changes only with the installation and the folder's project, so a host keeps it for the list
+            # hint's time, not more, so a rebuilt map view reaches the next call.
+            return types.ReadResourceResult(contents=[page], ttl_ms=CACHE_TTL_MS, cache_scope='private')
         try:
-            found = await read_resource_text(folder, uri, client=client)
+            found = await read_resource_text(folder, uri, client=client_of(ctx))
+        except Missing as missing:  # the July 2026 revision's code for a resource that does not exist
+            raise MCPError(-32602, f'Error: {missing}\nNext: {missing.next_step}') from None
         except (Stop, StoreError) as stop:
             raise MCPError(-32603, f'Error: {stop}\nNext: {mcp_next(str(stop.next_step), folder)}') from None
         if found is None:
-            raise MCPError(-32002, f'No resource {uri} on this surface.\nNext: list the resources and their templates')
+            raise MCPError(-32602, f'No resource {uri} on this surface.\nNext: list the resources and their templates')
         text, mime = found
+        await watch.seen(uri)
         return types.ReadResourceResult(contents=[types.TextResourceContents(uri=uri, text=text, mime_type=mime)])
 
+    async def complete(ctx: Any, params: Any) -> Any:
+        ref = params.ref
+        kind = 'resource' if getattr(ref, 'type', '') == 'ref/resource' else 'prompt'
+        named = str(getattr(ref, 'uri', None) or getattr(ref, 'name', ''))
+        known = dict(params.context.arguments or {}) if params.context is not None else {}
+        found = await anyio.to_thread.run_sync(completions, folder, kind, named, params.argument.name,
+                                               params.argument.value or '', known)
+        return types.CompleteResult(completion=types.Completion(
+            values=found[:COMPLETE_LIMIT], total=len(found), has_more=len(found) > COMPLETE_LIMIT))
+
+    watch = Watch(folder, bus, ResourceUpdated)
     subscriptions = ListenHandler(bus)
-    server = Server('metaform', version=chassis_version(), on_list_tools=list_tools, on_call_tool=call_tool,
+
+    async def listen(ctx: Any, params: Any) -> Any:
+        """A subscriptions/listen stream, MCP-004: the SDK serves it; the nodes whose briefs it names are watched for
+        items added there while it is open."""
+        uris = [str(uri) for uri in params.notifications.resource_subscriptions or ()]
+        await watch.open(uris)
+        try:
+            return await subscriptions(ctx, params)
+        finally:
+            await watch.close(uris)
+
+    async def subscribe(ctx: Any, params: Any) -> Any:
+        await watch.open([str(params.uri)], ctx.session)
+        return types.EmptyResult()
+
+    async def unsubscribe(ctx: Any, params: Any) -> Any:
+        await watch.close([str(params.uri)], ctx.session)
+        return types.EmptyResult()
+
+    @asynccontextmanager
+    async def lifespan(_: Any) -> AsyncGenerator[dict[str, Any]]:
+        """The task group the tasks run in, open while the server runs; a stop cancels what is still running, and
+        each such task is marked failed, so none waits for ever."""
+        async with anyio.create_task_group() as group:
+            held['group'] = group
+            if tasks_on:
+                group.start_soon(tasked.beat, running, folder)
+            try:
+                yield {}
+            finally:
+                held.pop('group', None)
+                group.cancel_scope.cancel()
+                watch.stop()
+
+    hint = CacheHint(ttl_ms=CACHE_TTL_MS, scope='private')
+    server = Server('metaform', version=chassis_version(), lifespan=lifespan, on_list_tools=list_tools,
+                    on_call_tool=call_tool,
+                    cache_hints={'tools/list': hint, 'prompts/list': hint, 'resources/list': hint,
+                                 'resources/templates/list': hint},
                     on_list_prompts=list_prompts, on_get_prompt=get_prompt,
                     on_list_resources=list_resources, on_list_resource_templates=list_resource_templates,
-                    on_read_resource=read_resource, on_subscriptions_listen=subscriptions)
+                    on_read_resource=read_resource, on_subscriptions_listen=listen, on_completion=complete,
+                    on_subscribe_resource=subscribe, on_unsubscribe_resource=unsubscribe)
+    if apps_on:
+        server.extensions[views.EXTENSION] = {}
+    if tasks_on:
+        server.extensions[tasked.EXTENSION] = {}
+        add_tasks(server, folder, running, types, MCPError)
 
     def prepare(ctx: Any) -> None:
         """Prove schema compatibility before dispatch: construction alone does not open a Store.
@@ -909,10 +1562,7 @@ def serve(folder: Path) -> None:
         arguments: Any = parameters.get('arguments') or {}
         if not isinstance(arguments, dict):
             return  # the regular argument path supplies its error
-        given: Any = cast(dict[str, Any], arguments).get('arguments') or {}
-        if not isinstance(given, dict):
-            return
-        project = cast(dict[str, Any], given).get('project', cast(dict[str, Any], arguments).get('project'))
+        project = cast(dict[str, Any], arguments).get('project')
         if project is not None and not isinstance(project, str):
             return
         try:
@@ -947,10 +1597,45 @@ def serve(folder: Path) -> None:
             except NewerStore as error:
                 return refused(ctx, error)
             if ctx.method in ('initialize', 'server/discover') and isinstance(result, dict):
-                composed = await anyio.to_thread.run_sync(functools.partial(instructions, folder, surface='mcp'))
+                composed = await anyio.to_thread.run_sync(startup_instructions, folder)
                 result = {**cast(dict[str, Any], result), 'instructions': composed}
             return result
     server.middleware.append(live)
+    # The state a form's answer comes back with is sealed by the SDK and bound to the call and its arguments, MRTR's
+    # integrity requirement; this server's own tokens make each answer count once.
+    server.middleware.append(RequestStateBoundary(RequestStateSecurity.ephemeral(ttl=consent.EXPIRES_S),
+                                                  default_audience='metaform'))
+
+    if http:
+        import uvicorn
+
+        from . import oauth
+        bind = bind or str(settings.value('mcp_bind', folder) or '127.0.0.1')
+        # Beyond this machine only with the Node's authorization server checking every caller, oauth.py.
+        exposed = oauth.exposure(
+            public_url if public_url is not None else str(settings.value('mcp_public_url', folder) or ''), bind,
+            introspection or str(settings.value('mcp_introspection', folder) or oauth.DEFAULT_INTROSPECTION))
+        if exposed is None:
+            app = server.streamable_http_app(host='127.0.0.1')  # the SDK turns Host and Origin checks on for loopback
+            where = f'http://127.0.0.1:{port}/mcp'
+        else:
+            app = server.streamable_http_app(host=bind, transport_security=oauth.transport_security(exposed),
+                                             auth=oauth.auth_settings(exposed),
+                                             token_verifier=oauth.Introspection(exposed, exposed.mcp))
+
+            def tool_scope(name: str) -> str | None:
+                one = listing(folder).get(name)  # a tool not listed is asked of as a write, or a dispatch by name
+                return oauth.required_scope(name, one.effect if one else 'write', one.open_world if one else False)
+            oauth.protect(app, exposed, tool_scope)
+            where = exposed.mcp
+        print(f'Metaform MCP server for {folder} at {where}', file=sys.stderr, flush=True)
+        if settings.value('mcp_a2a', folder):  # A2A on the same port, P004 and P005
+            from .a2a import attach
+            print(attach(app, folder, port, exposed), file=sys.stderr, flush=True)
+        uvicorn.Server(uvicorn.Config(app, host=bind, port=port, log_level='warning')).run()
+        return
+
+    serve_session()  # one host conversation per process over stdio, so what it was told is told once, MCP-039
 
     async def main() -> None:
         async with stdio_server() as (read, write):
@@ -964,3 +1649,142 @@ def serve(folder: Path) -> None:
                 # the process exit, as MCP's stdio transport expects, instead of waiting to be killed.
                 await write.aclose()
     anyio.run(main)
+
+
+class Watch:
+    """The nodes clients are listening on, MCP-004: each brief URI, `metaform://<address>`, named in an open
+    subscriptions/listen stream or a resources/subscribe, with the last number taken at its address when it was
+    watched or read. After every call this server answers, and on every `map.changed` another process of the home
+    publishes, each watched node is checked; one with a higher number now is announced with
+    `notifications/resources/updated` for its URI, a notice the client reads the brief again for, never the items
+    themselves."""
+
+    def __init__(self, folder: Path, bus: Any, updated: Any) -> None:
+        self.folder, self.bus, self.updated = folder, bus, updated
+        self.latest: dict[str, int] = {}
+        self.listeners: dict[str, int] = {}  # how many open streams name each URI
+        self.sessions: dict[str, list[Any]] = {}  # the 2025-handshake sessions subscribed to each URI
+        self.listener: Any = None
+        self.token: Any = None
+
+    def _number(self, uri: str) -> int | None:
+        found = ADDRESS.match(uri)
+        if found is None or found.group('number') is not None:
+            return None
+        project = project_for(self.folder)
+        return None if project is None else Store(project).latest_number(found.group('address'))
+
+    async def open(self, uris: list[str], session: Any = None) -> None:
+        for uri in uris:
+            number = await anyio.to_thread.run_sync(self._number, uri)
+            if number is None:
+                continue
+            self.latest.setdefault(uri, number)
+            if session is None:
+                self.listeners[uri] = self.listeners.get(uri, 0) + 1
+            elif session not in self.sessions.setdefault(uri, []):
+                self.sessions[uri].append(session)
+        if self.latest and self.listener is None:
+            self.token = anyio.lowlevel.current_token()
+            self.listener = events.listen('mcp', self._heard)
+
+    async def close(self, uris: list[str], session: Any = None) -> None:
+        for uri in uris:
+            if session is None and uri in self.listeners:
+                self.listeners[uri] -= 1
+                if self.listeners[uri] <= 0:
+                    del self.listeners[uri]
+            elif session is not None and session in self.sessions.get(uri, []):
+                self.sessions[uri].remove(session)
+                if not self.sessions[uri]:
+                    del self.sessions[uri]
+            if uri not in self.listeners and uri not in self.sessions:
+                self.latest.pop(uri, None)
+
+    async def seen(self, uri: str) -> None:
+        """A brief read anew: what it showed is what the client has, so only items added after it are news."""
+        if uri in self.latest:
+            number = await anyio.to_thread.run_sync(self._number, uri)
+            if number is not None:
+                self.latest[uri] = number
+
+    async def check(self) -> None:
+        for uri, last in list(self.latest.items()):
+            number = await anyio.to_thread.run_sync(self._number, uri)
+            if number is None or number <= last or uri not in self.latest:
+                continue
+            self.latest[uri] = number
+            if uri in self.listeners:
+                await self.bus.publish(self.updated(uri=uri))
+            for session in list(self.sessions.get(uri, ())):
+                try:
+                    await session.send_resource_updated(uri)
+                except Exception:  # noqa: BLE001  a session gone since it subscribed hears nothing more
+                    self.sessions[uri].remove(session)
+
+    def _heard(self, payload: dict[str, Any]) -> None:
+        """A `map.changed` from another process, heard on the listener's thread: the check runs in the server's loop."""
+        try:
+            anyio.from_thread.run(self.check, token=self.token)
+        except Exception:  # noqa: BLE001, S110  a server that stopped has nothing left to tell
+            pass
+
+    def stop(self) -> None:
+        if self.listener is not None:
+            self.listener.close()
+            self.listener = None
+
+
+def add_tasks(server: Any, folder: Path, running: Any, types: Any, error_type: Any) -> None:
+    """`tasks/get`, `tasks/update` and `tasks/cancel` of the tasks extension, BASE-030, on the tool calls kept as
+    tasks and the workflow run records; each refused to a client that does not declare the extension, -32021, and for
+    an unknown task, -32602."""
+    from pydantic import Field
+
+    from . import tasks as tasked
+
+    class TaskParams(types.RequestParams):
+        task_id: str
+
+    class UpdateParams(TaskParams):
+        input_responses: dict[str, Any] = Field(default_factory=dict[str, Any])
+
+    def required(ctx: Any) -> tuple[str | None, Any]:
+        """The project whose store keeps the tool-call tasks and the workflow runs' store, each None where there is
+        none; refused to a client without the extension."""
+        if not tasked.declared(ctx.session.client_capabilities):
+            raise error_type(-32021, 'Missing required client capability',
+                             {'requiredCapabilities': {'extensions': {tasked.EXTENSION: {}}}})
+        return tasked.owning(folder), tasked.store(folder)
+
+    def missing() -> Any:
+        return error_type(-32602, 'Failed to retrieve task: Task not found')
+
+    async def verb(module_id: str, verb_name: str, nouns: dict[str, Any]) -> Any:
+        try:
+            return await anyio.to_thread.run_sync(run_verb, folder, module_id, verb_name, nouns)
+        finally:
+            await anyio.to_thread.run_sync(events.announce, folder, 'mcp')
+
+    async def get(ctx: Any, params: Any) -> Any:
+        project, found = await anyio.to_thread.run_sync(required, ctx)
+        detail = await anyio.to_thread.run_sync(tasked.detailed, project, found, params.task_id)
+        if detail is None:
+            raise missing()
+        return {**detail, 'resultType': 'complete'}
+
+    async def update(ctx: Any, params: Any) -> Any:
+        project, found = await anyio.to_thread.run_sync(required, ctx)
+        if not await tasked.update(project, found, params.task_id, dict(params.input_responses), verb):
+            raise missing()
+        return {'resultType': 'complete'}
+
+    async def cancel(ctx: Any, params: Any) -> Any:
+        project, found = await anyio.to_thread.run_sync(required, ctx)
+        if not await tasked.cancel(running, project, found, params.task_id, verb):
+            raise missing()
+        return {'resultType': 'complete'}
+
+    server.add_request_handler('tasks/get', TaskParams, get)
+    server.add_request_handler('tasks/update', UpdateParams, update)
+    server.add_request_handler('tasks/cancel', TaskParams, cancel)

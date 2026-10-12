@@ -52,7 +52,7 @@ def upgrade(installation, changed=True):
 
 # One durable write an agent may make over the tool, MAP-050: a ticket is the person's to write, so the write under
 # test is a tag on the intake layer, one op in the log.
-REQUEST = {'command': 'tag', 'arguments': {'layer': 'intake', 'tag': 'recovered'}}
+REQUEST = {'layer': 'intake', 'tag': 'recovered'}
 WRITTEN = "SELECT count(*) FROM ops WHERE data LIKE '%recovered%'"
 
 
@@ -66,12 +66,12 @@ def test_live_connection_recovers_only_when_newer_code_is_available(run, install
         async with stdio_client(parameters) as (read, write), ClientSession(read, write, 10) as client:
             await client.initialize()
             # Force the live process to read the original project's schema before replacing its source.
-            before = await client.call_tool('map', {'command': 'work', 'arguments': {'open': True}})
+            before = await client.call_tool('map_work', {'open': True})
             assert not before.is_error
             upgrade(installation, changed)
             async with asyncio.timeout(20):
-                result = await client.call_tool('map', REQUEST)
-                following = await client.call_tool('map', {'command': 'work', 'arguments': {'open': True}})
+                result = await client.call_tool('map_tag', REQUEST)
+                following = await client.call_tool('map_work', {'open': True})
             if changed and recovery == 'relay':
                 assert not result.is_error, result
                 assert not following.is_error, following
@@ -102,11 +102,11 @@ def test_failed_replacement_keeps_the_connection_and_independent_commands_usable
         try:
             discover(client, limit=10)
             damage()
-            refusal = client.call('map', REQUEST, limit=10)
+            refusal = client.call('map_tag', REQUEST, limit=10)
             assert refusal.get('isError'), refusal
             assert 'schema version' in refusal['content'][0]['text']
-            assert not client.call('metaform', {'command': 'instructions'}, limit=10).get('isError')
-            assert client.call('map', REQUEST, limit=10).get('isError')
+            assert not client.call('metaform_instructions', {}, limit=10).get('isError')
+            assert client.call('map_tag', REQUEST, limit=10).get('isError')
             with closing(sqlite.connect(database)) as db:
                 assert db.execute('SELECT count(*) FROM work').fetchone()[0] == 0
         finally:
@@ -117,12 +117,12 @@ def test_failed_replacement_keeps_the_connection_and_independent_commands_usable
         async with stdio_client(parameters) as (read, write), ClientSession(read, write, 10) as client:
             await client.initialize()
             damage()
-            refusal = await client.call_tool('map', REQUEST)
+            refusal = await client.call_tool('map_tag', REQUEST)
             assert refusal.is_error
             assert 'schema version' in refusal.content[0].text
-            following = await client.call_tool('metaform', {'command': 'instructions'})
+            following = await client.call_tool('metaform_instructions', {})
             assert not following.is_error, following
-            assert (await client.call_tool('map', REQUEST)).is_error
+            assert (await client.call_tool('map_tag', REQUEST)).is_error
             with closing(sqlite.connect(database)) as db:
                 assert db.execute('SELECT count(*) FROM work').fetchone()[0] == 0
 
@@ -150,13 +150,13 @@ def test_hand_over_finishes_an_active_call_without_repeating_its_committed_write
     async def check():
         async with stdio_client(parameters) as (read, write), ClientSession(read, write, 10) as client:
             await client.initialize()
-            first = asyncio.create_task(client.call_tool('delayed', {'command': 'commit'}))
+            first = asyncio.create_task(client.call_tool('delayed_commit', {}))
             try:
                 async with asyncio.timeout(10):
                     while not (folder / 'committed').exists():
                         await asyncio.sleep(0.01)
                 upgrade(installation)
-                second = asyncio.create_task(client.call_tool('map', REQUEST))
+                second = asyncio.create_task(client.call_tool('map_tag', REQUEST))
                 # The committed call remains active when the newer-schema refusal reaches the relay.
                 await asyncio.sleep(0.1)
                 (folder / 'finish').touch()
@@ -182,9 +182,9 @@ def test_july_connection_and_subscription_finish_across_an_upgrade(installation)
         discover(client, limit=10)
         client.open('subscriptions/listen', {'notifications': {'tools_list_changed': True}})
         upgrade(installation)
-        result = client.call('map', REQUEST, limit=10)
+        result = client.call('map_tag', REQUEST, limit=10)
         assert not result.get('isError'), result
-        assert not client.call('map', {'command': 'work', 'arguments': {'open': True}}, limit=10).get('isError')
+        assert not client.call('map_work', {'open': True}, limit=10).get('isError')
         with closing(sqlite.connect(database)) as db:
             assert db.execute(WRITTEN).fetchone()[0] == 1
     finally:
@@ -212,19 +212,19 @@ def test_cancellation_settles_active_and_buffered_calls_before_hand_over(install
     client = Session([parameters.command, *parameters.args], cwd=folder, env=parameters.env)
     try:
         discover(client, limit=10)
-        active = client.open('tools/call', {'name': 'waiting', 'arguments': {'command': 'wait'}})
+        active = client.open('tools/call', {'name': 'waiting_wait', 'arguments': {}})
         deadline = time.monotonic() + 10
         while not (folder / 'waiting').exists():
             assert time.monotonic() < deadline
             time.sleep(0.01)
         upgrade(installation)
-        client.open('tools/call', {'name': 'map', 'arguments': REQUEST})
+        client.open('tools/call', {'name': 'map_tag', 'arguments': REQUEST})
         time.sleep(0.1)  # the waiting call prevents replacement while another request is buffered
-        cancelled = client.open('tools/call', {'name': 'map', 'arguments': {
-            **REQUEST, 'arguments': {**REQUEST['arguments'], 'tag': 'cancelled'}}})
+        cancelled = client.open('tools/call', {'name': 'map_tag', 'arguments': {
+            **REQUEST, 'tag': 'cancelled'}})
         client.notify('notifications/cancelled', {'requestId': cancelled})
         client.notify('notifications/cancelled', {'requestId': active})
-        result = client.call('map', {'command': 'work', 'arguments': {'open': True}}, limit=10)
+        result = client.call('map_work', {'open': True}, limit=10)
         assert not result.get('isError'), result
         assert (folder / 'settled').exists()
         with closing(sqlite.connect(database)) as db:
@@ -245,7 +245,7 @@ def test_flat_project_override_recovers_the_selected_store(run, installation):
         async with stdio_client(parameters) as (read, write), ClientSession(read, write, 10) as client:
             await client.initialize()
             upgrade(installation)
-            result = await client.call_tool('map', {**REQUEST, 'project': 'proj'})
+            result = await client.call_tool('map_tag', {**REQUEST, 'project': 'proj'})
             assert not result.is_error, result
             with closing(sqlite.connect(database)) as db:
                 assert db.execute(WRITTEN).fetchone()[0] == 1

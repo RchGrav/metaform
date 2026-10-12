@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The node module's prompts. Every node verb is the person's own, on the command line, so nothing here is sent to
+     agents by default. Each element is one prompt, named by its tag, sent exactly as written; comments are never
+     sent. -->
+<prompts>
+<!-- node's line in the connect message, after '– node: '. Empty sends nothing: agents do not run node verbs. -->
+<connect></connect>
+<!-- node's instructions, returned by metaform_instructions with module node and printed by metaform help agents node.
+     Empty sends nothing. -->
+<instructions></instructions>
+<!-- The line under the counts at a node; node counts nothing, so it stays empty. -->
+<counts></counts>
+<!-- node's rules, one sentence each with its why; empty sends nothing. -->
+<rules></rules>
+</prompts>

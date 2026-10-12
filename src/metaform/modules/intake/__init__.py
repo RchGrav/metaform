@@ -21,6 +21,7 @@ BASE-045.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from datetime import UTC, datetime
@@ -30,7 +31,7 @@ from typing import Any, Literal, cast
 
 from metaform import home, prompt_files, settings
 from metaform.data import Element, GraphPage, Item, Join, Layer, Node, Notice, Store, StoreError
-from metaform.module import Context, Module, Noun, Resource, Status, Stop, Verb, save_report
+from metaform.module import Context, Module, Noun, Resource, Status, Stop, ToolbarItem, Verb, save_report
 
 from .schema import ELEMENTS, IFD, NAME_LENGTH, REFS, ROLE
 
@@ -694,8 +695,11 @@ def finish(ctx: Context) -> Any:
     # The open work records on what this intake recorded, MAP-046: the condition of an object is apart from the map.
     recorded_ids = {element.id for element in elements} | {held.id for held in joins}
     work = sum(1 for row in found.store.work(open=True, limit=0).results if row.node_id in recorded_ids)
+    # A map with a code trunk is ready for its code: the map module reads it into its own layer, P167.
+    code = any(element.address.split('.', 1)[0] == 'code' for element in elements)
     return {'layer': found.layer.name, 'project': store.project_id, 'base': found.metaform,
-            'elements': len(elements), 'joins': len(joins), 'work': work, 'notices': notices}
+            'elements': len(elements), 'joins': len(joins), 'work': work, 'notices': notices,
+            **({'next': [ctx.calls('metaform map code-import')]} if code else {})}
 
 
 def status_verb(ctx: Context) -> str:
@@ -714,6 +718,12 @@ def status_verb(ctx: Context) -> str:
 
 def status(ctx: Context) -> Status:
     here = resources.files(__name__)
+    if os.environ.get('METAFORM_ROLE') not in (None, '', 'none'):
+        # An agent a dispatch runner started has its work, given as its first turn: the intake's onboarding, which
+        # asks an agent to handle it first, is for the person's own agent, never for one dispatched, BASE-052.
+        if ctx.store is None:
+            return Status()
+        return Status(lines=('Intake: complete' if ctx.store.has_intake() else 'Intake: none yet',))
     if ctx.store is None:
         # A folder not registered yet gets the onboarding too, with registering as its first step: the instructions
         # are sent once at connect, so a notice that waited for registration would never arrive, MCP-009.
@@ -754,27 +764,30 @@ MODULE = Module(
             'only for new shape. Nothing is refused for its content: what does not fit is stored as given and named '
             'in a notice.',
     verbs=(
-        Verb('prompt', prompt, 'The intake instructions for this project.',
+        Verb('prompt', prompt, "Read the intake instructions an agent follows to record this project's map.",
              nouns=(Noun('text', 'path to the target for the intake process; leaving this blank means this project',
-                         required=False),)),
-        Verb('schema', schema, 'The shape of the metaform: the namespace roots, the upstream and downstream links, '
-                               'and the element and join forms the intake records.'),
-        Verb('start', start, 'Resume the intake being recorded, or start a fresh one. On a project whose intake is '
-                            'finished it stays on that map: conditions, notes and refs are written onto it, and '
-                            'recording a new element or join opens a separate intake-<UTC timestamp> metaform, '
-                            'keeping the earlier one untouched. Returns its name; the existing web GUI follows it live.',
+                         required=False),), effect='read'),
+        Verb('schema', schema, 'Read the shape the intake records: namespace roots, Upstream and Downstream links, '
+                               'element and join forms.', effect='read'),
+        Verb('start', start, "Start recording this project's intake, or resume the one being recorded. On a project "
+                             'whose intake is finished it stays on that map: conditions, notes and refs are written '
+                             'onto it, and recording a new element or join opens a separate intake-<UTC timestamp> '
+                             'metaform, keeping the earlier one untouched. Returns its name; the existing web GUI '
+                             'follows it live.',
              nouns=(Noun('result', 'The result id the intake procedure generates and gives at start, kept with the intake.', required=False),
                     Noun('model', 'The model that performs the intake.', required=False),
                     Noun('role', 'The role of the agent that performs it.', required=False))),
-        Verb('element', element, 'Record one element, or record it again; the fields given replace the ones it had.',
+        Verb('element', element, 'Record one element of the intake at its address; recording it again replaces the '
+                                 'fields given.',
              nouns=(Noun(ADDRESS, E(ADDRESS, '')),
                     Noun('name_length', E('name_length', ''), required=False, schema=NAME_LENGTH),
                     Noun('name', E('name', ''), required=False),
                     Noun('role', E('role', ''), required=False, schema=ROLE),
                     Noun('refs', E('refs', ''), required=False, schema=REFS),
                     *_condition_nouns(E))),
-        Verb('join', join, "Record one purpose join: the receiver's purpose served by the elements it holds. Recorded again "
-                           'with an element it holds, the fields given replace its own and new elements are added.',
+        Verb('join', join, "Record one purpose join: a receiver's OP and the elements that serve it, with its EF. "
+                           'Recorded again with an element it holds, the fields given replace its own and new elements '
+                           'are added.',
              nouns=(Noun('receiver', J('receiver', '')),
                     Noun('elements', J('elements', ''), schema=ELEMENTS),
                     Noun('purpose', J('purpose', ''), required=False),
@@ -782,21 +795,23 @@ MODULE = Module(
                     Noun('ifd', J('ifd', ''), required=False, schema=IFD),
                     Noun('refs', J('refs', ''), required=False, schema=REFS),
                     *_condition_nouns(J))),
-        Verb('show', show, 'The intake being recorded, whole or one receiver at a time.',
-             nouns=(Noun('receiver', J('receiver', ''), required=False),)),
-        Verb('remove', remove, 'Remove one recorded element, one join, or one element from a join, named by addresses.',
+        Verb('show', show, 'Read the intake being recorded, whole or one receiver at a time.',
+             nouns=(Noun('receiver', J('receiver', ''), required=False),), effect='read'),
+        Verb('remove', remove, 'Remove one element, one join, or one element from a join, from the intake being '
+                               'recorded. Each is named by addresses.',
              nouns=(Noun('receiver', J('receiver', ''), required=False),
                     Noun('provider', J('provider', ''), required=False),
-                    Noun(ADDRESS, E(ADDRESS, ''), required=False))),
-        Verb('finish', finish, 'Finish and activate the recorded metaform, keeping the earlier one whole. Switch '
-                               'back with metaform map activate <previous-name>. After finish the metaform changes '
-                               'by refining, metaform map refine, or by another intake.',
+                    Noun(ADDRESS, E(ADDRESS, ''), required=False)), effect='remove'),
+        Verb('finish', finish, 'Finish the intake and make its base the active map, keeping the earlier one whole. '
+                               'Switch back with metaform map activate <previous-name>. After finish the metaform '
+                               'changes by refining, metaform map refine, or by another intake.',
              nouns=(Noun('report', 'Your report on the project you examined: broken code, things that need fixing, '
                                    'anything not working or partially working. On the command line a file is read '
                                    'and - is standard input.', required=False),
                     Noun('feedback', 'Feedback on the Metaform process: bad semantics, a tool that did not match its '
                                      'schema, where you got stuck.', required=False))),
-        Verb('status', status_verb, 'Whether this project has an intake, and whether one is being recorded.'),
+        Verb('status', status_verb, 'Say whether this project has an intake, and whether one is being recorded.',
+             effect='read'),
     ),
     status=status,
     resources=(
@@ -806,5 +821,10 @@ MODULE = Module(
         Resource('metaform://intake/schema', 'Intake forms',
                  'The shape of the metaform: the namespace roots, the links, and the element and join forms intake '
                  'element and intake join record.', 'schema'),
+    ),
+    # A map starts with an intake and is checked against the project with another; the page's dialog starts it.
+    toolbar=(
+        ToolbarItem('intake', 'Run an intake', 'Start an agent recording the map as it reads the project, or checking '
+                    'the map against it.', icon='spark', page='intake', order=90),
     ),
 )

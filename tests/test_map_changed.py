@@ -96,7 +96,7 @@ def test_a_write_to_a_modules_project_level_tables_is_announced_as_a_change_to_t
     folder, log = watched
     noted(run, folder, 'Counts down.')
     active = metaform_home.active_base('proj')
-    run('memory', 'create_entities', '[{"name":"tone","entityType":"behavior","observations":["Rings."]}]',
+    run('memory', 'create_entities', '[{"name":"tone","entityType":"behavior","observations":["Rings."],"why":"It rings."}]',
         cwd=folder)
     heard(log)
     run('memory', 'add_observations', '[{"entityName":"tone","contents":["Too quiet."]}]', cwd=folder)

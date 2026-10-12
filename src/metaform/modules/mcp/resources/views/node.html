@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Metaform node</title>
+<!-- The node view, ui://metaform/node: one node, what relies on it and what it relies on, with its numbered items,
+     shown by an AI tool that renders MCP Apps when map_item or map_node is called, and by map_where where the map view
+     is not built. It turns to the Address the agent names in a later call, or asks it to through the view's own tool. The server fills the blocks below when it serves the view: the page's own theme tokens, from the web
+     module's app.css, the view's settings, the MCP Apps SDK (ext-apps.js) and the views' bridge (bridge.js). The view
+     follows the host's theme and style variables; the page's tokens are what it falls back on. -->
+<style id="metaform-tokens"></style>
+<script type="application/json" id="metaform-view">{}</script>
+<style>
+  /* A light conversation with no style variables of its own: the page's roles at their light-background contrast. */
+  :root[data-theme="light"] { color-scheme: light; --panel: #ffffff; --panel-2: #f3f5f7; --line: #d8dde3;
+    --line-2: #b6bdc6; --text: #14181d; --muted: #4f5864; --faint: #5f6873; --signal: #00756c; }
+  html, body { margin: 0; background: var(--color-background-primary, var(--panel));
+    color: var(--color-text-primary, var(--text));
+    font: var(--font-text-md-size, var(--t-base))/1.45 var(--font-sans, var(--sans)); }
+  [hidden] { display: none !important; }
+  main { padding: var(--s3) var(--s4) var(--s4); display: grid; gap: var(--s3); }
+  .node { display: flex; align-items: baseline; gap: var(--s2); flex-wrap: wrap; cursor: pointer; border: 0;
+    background: none; color: inherit; padding: 0; text-align: left; font: inherit; }
+  .node:focus-visible, .row:focus-visible, summary:focus-visible {
+    outline: var(--ring) solid var(--color-ring-primary, var(--signal)); outline-offset: 2px; }
+  .address { font: 500 var(--t-lg) var(--font-mono, var(--mono)); color: var(--signal); }
+  .reading, .notice, .empty, .why, h2, summary { color: var(--color-text-secondary, var(--muted)); }
+  .notice { font-size: var(--t-sm); margin: 0; }
+  h2 { margin: 0; font: 600 var(--t-sm) var(--font-sans, var(--sans)); text-transform: uppercase;
+    letter-spacing: .04em; }
+  section { display: grid; gap: var(--s1); }
+  ul, ol { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s1); }
+  .join { display: grid; grid-template-columns: minmax(0, auto) 1fr; gap: var(--s2); align-items: baseline; }
+  .join .to { font: 500 var(--t-sm) var(--font-mono, var(--mono)); color: var(--signal); }
+  .join .purpose { color: var(--color-text-secondary, var(--muted)); font-size: var(--t-sm); }
+  pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: var(--t-sm)/1.5 var(--font-mono, var(--mono));
+    color: inherit; background: var(--color-background-secondary, var(--panel-2));
+    border: 1px solid var(--color-border-primary, var(--line)); border-radius: var(--border-radius-md, var(--r));
+    padding: var(--s3); max-height: 40vh; overflow: auto; }
+  details { display: grid; gap: var(--s2); }
+  summary { cursor: pointer; font-size: var(--t-sm); }
+  .row { display: grid; grid-template-columns: auto 1fr auto; gap: var(--s2); align-items: baseline; width: 100%;
+    border: 1px solid var(--color-border-primary, var(--line)); border-radius: var(--border-radius-md, var(--r));
+    background: var(--color-background-secondary, var(--panel-2)); color: inherit; font: inherit;
+    padding: var(--s2) var(--s3); text-align: left; cursor: pointer; }
+  .row:hover { border-color: var(--color-border-secondary, var(--line-2)); }
+  .row.chosen { border-color: var(--signal); }
+  .number { font: 500 var(--t-sm) var(--font-mono, var(--mono)); color: var(--signal); }
+  .title { overflow: hidden; text-overflow: ellipsis; }
+  .kind { color: var(--color-text-tertiary, var(--faint)); font-size: var(--t-xs); }
+  .why { grid-column: 2 / 4; font-size: var(--t-sm); }
+  .empty { margin: 0; }
+  /* The host's container: a fixed height the view fills and scrolls in, or a most it grows to. */
+  html[data-sized="fixed"] body { height: var(--view-height); overflow: auto; }
+  html[data-sized="flexible"] body { max-height: var(--view-max-height, none); overflow: auto; }
+  main { padding-top: calc(var(--s3) + var(--safe-top, 0px)); }
+  .bar { display: flex; gap: var(--s2); justify-content: flex-end; flex-wrap: wrap; }
+  .bar button { border: 1px solid var(--color-border-primary, var(--line)); background: none; color: inherit;
+    border-radius: var(--border-radius-sm, var(--r)); font: var(--t-xs) var(--font-sans, var(--sans));
+    padding: 2px var(--s2); cursor: pointer; }
+  .bar button:hover { border-color: var(--color-border-secondary, var(--line-2)); }
+</style>
+<script>/*sdk*/</script>
+<script>/*bridge*/</script>
+</head>
+<body>
+<main>
+  <div class="bar" id="bar" hidden>
+    <button type="button" id="copy" hidden>Copy address</button>
+    <button type="button" id="web" hidden title="Open the project in the web GUI, which metaform web start serves">Web GUI</button>
+    <button type="button" id="mode" hidden>Full screen</button>
+  </div>
+  <button class="node" type="button" id="node" title="Tell the agent you are looking at this node">
+    <span class="address" id="address">…</span><span class="reading" id="reading"></span>
+  </button>
+  <p class="notice" id="notice" hidden></p>
+  <section id="reliedOn" hidden><h2>Relied on by</h2><ul id="reliedOnList"></ul></section>
+  <section id="reliesOn" hidden><h2>Relies on</h2><ul id="reliesOnList"></ul></section>
+  <section id="itemsSection" hidden><h2>Items here</h2><ol id="items"></ol></section>
+  <pre id="item" hidden></pre>
+  <details id="agentBrief" hidden><summary>What an agent reads at this node</summary><pre id="brief"></pre></details>
+</main>
+<script>
+'use strict';
+(function () {
+  const view = window.MetaformView;
+  const $ = id => document.getElementById(id);
+  const state = {address: '', args: {}};
+  const say = text => { $('notice').textContent = text; $('notice').hidden = !text; };
+  if (view.config.notice) say(view.config.notice);
+
+  /* The node a call names: map_where's address, map_node's node, or map_item's <address>#<n>, whose item the result
+   * is. */
+  function named(args) {
+    const given = String(args.address ?? args.item ?? args.node ?? '').trim().replace(/^(element|type):/, '');
+    const [address, number] = given.split('#');
+    return {address, number: number ? number.toLowerCase() : null};
+  }
+  const read = (name, params) => view.call(view.config.tool, {read: name, params});
+
+  /* The node as the map reads it, `where`: its reading, and the joins to what relies on it and what it relies on,
+   * each with the Operative Purpose it serves. The text an agent is handed at the node is kept apart, labelled. */
+  function drawNode(found) {
+    const element = found.element || {};
+    $('reading').textContent = element.reading || element.short_name || '';
+    const joins = (list, id, to) => {
+      const holder = $(id + 'List');
+      holder.replaceChildren();
+      for (const one of list || []) {
+        const row = document.createElement('li');
+        row.className = 'join';
+        const where = document.createElement('span');
+        where.className = 'to';
+        where.textContent = to(one).join(', ');
+        const purpose = document.createElement('span');
+        purpose.className = 'purpose';
+        purpose.textContent = one.purpose || '';
+        row.append(where, purpose);
+        holder.append(row);
+      }
+      $(id).hidden = !holder.children.length;
+    };
+    joins(found.provides, 'reliedOn', one => [one.receiver]);
+    joins(found.receives, 'reliesOn', one => one.providers || (one.elements || []).map(part => part.address));
+    $('brief').textContent = typeof found.around === 'string' ? found.around : '';
+    $('agentBrief').hidden = !$('brief').textContent;
+  }
+
+  function drawItems(items) {
+    const list = $('items');
+    list.replaceChildren();
+    $('itemsSection').hidden = false;
+    if (!items.length) {
+      const none = document.createElement('p');
+      none.className = 'empty'; none.textContent = 'Nothing is numbered here yet.';
+      list.append(none);
+      return;
+    }
+    for (const one of items) {
+      const row = document.createElement('button');
+      row.type = 'button'; row.className = 'row'; row.dataset.item = one.item;
+      const parts = [['number', '#' + one.item.split('#')[1]], ['title', one.title || '(deleted)'], ['kind', one.kind || '']];
+      if (one.why) parts.push(['why', one.why]);
+      for (const [name, value] of parts) {
+        const span = document.createElement('span');
+        span.className = name; span.textContent = value;
+        row.append(span);
+      }
+      row.onclick = () => open(one.item);
+      const entry = document.createElement('li');
+      entry.append(row);
+      list.append(entry);
+    }
+  }
+
+  /* An item shown: its title, why and body, as the call's result or a read of it gives them. */
+  function drawItem(found) {
+    const text = found.text ?? [found.title, found.why && `Why: ${found.why}`, found.body].filter(Boolean).join('\n\n');
+    $('item').textContent = text || '';
+    $('item').hidden = !text;
+    for (const row of document.querySelectorAll('.row')) row.classList.toggle('chosen', row.dataset.item === found.item);
+  }
+
+  async function open(reference) {
+    try {
+      drawItem({...await read('item', {item: reference}), item: reference});
+      view.selected(reference);
+    } catch (error) { say(error.message); }
+  }
+
+  /* The first paint is the call's own result, where it is map_where's node or map_item's item; only what it does not
+   * hold is read: the node, and the items numbered at it. */
+  async function show(result) {
+    const {address, number} = named(state.args);
+    const data = result.structuredContent || {};
+    if (result.isError) {
+      say((result.content || []).filter(block => block.type === 'text').map(block => block.text).join('\n'));
+      return false;
+    }
+    if (number) drawItem(data); else if (data.element) drawNode(data);
+    if (!address) return true;
+    try {
+      if (number || !data.element) drawNode(await read('where', {address}));
+      const listed = await read('items', {address});
+      drawItems(listed.items || []);
+      if (number) drawItem(data);  // the call's own item marked in the list, not the person's choice
+      return true;
+    } catch (error) { say(error.message); return false; }
+  }
+
+  /* A node named, at once in the header; the rest follows the call's result or the reads. */
+  function name(args) {
+    state.args = args || {};
+    state.address = named(state.args).address;
+    $('address').textContent = state.address || 'the map’s entry';
+  }
+
+  /* Turned to an Address the agent names, read as map_item or map_where would give it. */
+  async function turn(given) {
+    say('');
+    $('item').hidden = true;
+    const {number} = named({address: given});
+    name(number ? {item: given} : {address: given});
+    try {
+      const result = number ? await read('item', {item: given}) : null;
+      return await show({structuredContent: result ? {...result, item: given} : {}});
+    } catch (error) { say(error.message); return false; }
+  }
+
+  /* The bar: what the host lets the view do, each shown only where it can. */
+  function bar() {
+    const toggles = view.modes().filter(mode => mode !== 'inline').length > 0;
+    $('mode').hidden = !toggles;
+    $('web').hidden = !view.can('openLinks') || !view.config.web;
+    $('copy').hidden = !navigator.clipboard;
+    $('bar').hidden = $('mode').hidden && $('web').hidden && $('copy').hidden;
+    $('mode').textContent = view.host().displayMode === 'fullscreen' ? 'Inline' : 'Full screen';
+  }
+  $('mode').onclick = async () => {
+    await view.display(view.host().displayMode === 'fullscreen' ? 'inline' : 'fullscreen');
+    bar();
+  };
+  $('web').onclick = () => view.web();
+  $('copy').onclick = async () => { if (await view.copy(state.address)) $('copy').textContent = 'Copied'; };
+
+  $('node').onclick = () => view.selected(state.address);
+  view.on('toolinputpartial', params => name(params.arguments));  // the address as the agent writes it
+  view.on('toolinput', params => name(params.arguments));
+  view.on('toolresult', result => { show(result); });
+  view.on('hostcontextchanged', bar);
+  view.turner(turn);
+  view.connect('metaform-node').then(bar).catch(() => {});
+})();
+</script>
+</body>
+</html>

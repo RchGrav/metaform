@@ -386,7 +386,7 @@ def test_a_report_and_feedback_are_saved_and_a_work_record_on_the_intake_is_coun
     # The record is written while the intake is being recorded, through the map tool, never through an intake field.
     run('intake', 'start', '--json', cwd=project)
     run('intake', 'element', 'code.alarm.audible', 'role=SE', '--json', cwd=project)
-    made = json.loads(run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'condition=broken',
+    made = json.loads(run('map', 'work', 'op=add', 'title=A broken alarm', 'node=element:code.alarm.audible', 'condition=broken',
                           'note=alarm.c conflicts with specifications/alarm.md:12', 'task=review the code against the linked specification', '--json',
                           cwd=project).stdout)
     assert made['condition'] == 'broken'
@@ -471,10 +471,9 @@ def test_an_intake_started_and_not_finished_is_named_in_the_instructions(run, pr
     import xml.etree.ElementTree as ET
     prompts = ET.fromstring(RESOURCE.with_name('prompts.xml').read_text(encoding='utf-8'))
     notice, line = onboarding(), prompts.findtext('unfinished', '').strip()
-    record = (ROOT / 'specifications' / '06-mcp-install.md').read_text(encoding='utf-8')
-    assert line == 'An intake was started but aborted and still remains to be completed.' and line in record
-    assert notice.startswith('FIRST RUN.') and notice in record.replace('\n  ', '\n')  # as fenced in the record
-    assert 'command prompt' in notice  # the procedure, named where an agent reads it, MCP-037
+    assert line == 'An intake was started but aborted and still remains to be completed.'
+    assert notice.startswith('FIRST RUN.')
+    assert 'intake_prompt' in notice  # the procedure, named where an agent reads it, MCP-037
     agents = lambda: run('help', 'agents', cwd=project).stdout
     shown = agents()
     assert notice in shown and line not in shown
@@ -491,16 +490,24 @@ def test_an_intake_started_and_not_finished_is_named_in_the_instructions(run, pr
 
 
 @pytest.mark.req('MCP-009')
+def test_a_dispatched_agent_is_never_given_the_first_run_onboarding(run, project, monkeypatch):
+    """An agent a dispatch runner started has its work as its first turn: the onboarding, which asks an agent to
+    handle the intake first, is not in what it reads, BASE-052."""
+    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    assert onboarding() not in run('help', 'agents', cwd=project).stdout
+
+
+@pytest.mark.req('MCP-009')
 @pytest.mark.req('MCP-027')
 def test_the_no_intake_notice_asks_once_starts_the_web_gui_and_runs_the_intake_while_the_person_watches(run, project):
     """MCP-009: on a first run the agent asks the person once, and on a yes starts the browser view and gives its
     address, hands the intake to one fresh subagent with only the procedure's resource, then invites questions. A
     registered folder skips the register step. The notice leaves once an intake is finished."""
     notice = onboarding()
-    ask, web = notice.index('Want me to start?'), notice.index('web tool, command start')
+    ask, web = notice.index('Want me to start?'), notice.index('the web_start tool')
     delegate, questions = notice.index('Start ONE fresh subagent'), notice.index('invite their questions')
     assert ask < web < delegate < questions
-    assert 'command prompt' in notice and 'Register this folder' not in notice
+    assert 'intake_prompt' in notice and 'Register this folder' not in notice
     assert 'blind spot' not in notice and 'best practices' not in notice
     assert notice in run('help', 'agents', cwd=project).stdout
     run('intake', 'start', cwd=project)

@@ -13,6 +13,9 @@ from . import history, prompts
 from .exchange import export_document, import_document
 from .ids import as_object, new_id
 from .names import reading, roots, short_name
+from .numbers import parse as parse_reference
+from .numbers import reference
+from .numbers import shown as shown_number
 from .operations import Data, Operation
 from .paging import LIMIT, paged, sliced
 from .projection import Projection
@@ -92,6 +95,27 @@ def query_read(store: Store, name: str, arguments: Mapping[str, str]) -> Any:
     from .. import query
     return query.call(store, name, arguments)
 
+
+def private_database(path: Any) -> DataConnection:
+    """A SQLite file a module keeps for itself outside every project, such as the Metaform Node's accounts and tokens
+    in the home: autocommit with the chassis's busy timeout, write-ahead logging, usable from any thread (the module
+    serializes its writes), and readable by its owner alone. Its tables are the module's; nothing in it is part of a
+    map or travels with a project, STORE-023."""
+    from pathlib import Path
+
+    from ..sqlite import BUSY_SECONDS
+    file = Path(path)
+    file.parent.mkdir(parents=True, exist_ok=True)
+    db = _sqlite3.connect(str(file), isolation_level=None, timeout=BUSY_SECONDS, check_same_thread=False)
+    db.execute(f'PRAGMA busy_timeout={BUSY_SECONDS * 1000}')
+    db.execute('PRAGMA journal_mode=WAL')
+    db.execute('PRAGMA foreign_keys=ON')
+    try:
+        file.chmod(0o600)
+    except OSError:
+        pass
+    return db
+
 __all__ = [
     'COLUMNS',
     'CONDITIONS',
@@ -164,12 +188,16 @@ __all__ = [
     'new_id',
     'now',
     'paged',
+    'parse_reference',
     'plain',
+    'private_database',
     'prompts',
     'query_read',
     'query_reads',
     'reading',
+    'reference',
     'roots',
     'short_name',
+    'shown_number',
     'sliced',
 ]

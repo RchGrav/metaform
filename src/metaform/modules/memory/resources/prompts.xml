@@ -1,13 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- memory's prompts, MCP-031. What is between an element's tags is what is served. -->
+<!-- The memory module's prompts: the text Metaform sends to agents for the memory module.
+     Each element is one prompt, named by its tag. What is between the tags is sent exactly as written.
+     An empty element inside a prompt, such as <name/>, would mark a place the code fills in; this file has none.
+     Comments are never sent. -->
 <prompts>
-<!-- memory's step in the order every agent follows at connect, MCP-029 as amended 2026-10-10: served under the
-     opening line, before the modules, in module id order. -->
-<orient>2. Read the memories on that element, which map where lists. Use Metaform's memory tool to store what you learn under the functional namespace of your assignment, so future agents working there can retrieve it: memory create_entities with node set to that address.</orient>
-<!-- memory's line in the compact instructions at connect, MCP-029 as amended 2026-10-10: empty, since its step
-     in the order of work already says when and where. -->
-<connect></connect>
-<!-- memory's line in the instructions agents read while memory is on, MCP-029. -->
+<!-- memory's step in the order of work: read the memories at the node and record findings there. Printed under the
+     opening line of the compact command-line guide, after the map module's step, once the project has a finished intake.
+     Empty sends nothing. Off when the module is disabled or the folder's setting modules leaves it out. -->
+<orient>2. Read the memories on that element, which map where lists. Use Metaform's memory tool to store what you learn under the functional namespace of your assignment, so future agents working there can retrieve it: memory create_entities with node set to that address, each new entity with a short title and why.</orient>
+<!-- The line under the counts an agent is told at its node, MCP-039: what a new memory is, and the call that reads the
+     memories at one address. Shown once per agent session under the counts in map where, the ticket read and the
+     handoff, wherever any memory is counted; over MCP the command is named as its tool. <address> is written
+     as it is, for the agent to fill. Empty leaves the line out and the counts stand alone. -->
+<counts>New = recorded by the last session here. Read them: metaform memory read_graph node=&lt;address&gt;</counts>
+<!-- The line under the same counts when the person left a note at one of the nodes counted: the call that reads it.
+     A note is the person's, at most 2048 characters, written from the page. Empty leaves the line out. -->
+<note_counts>The person's note: metaform memory note node=&lt;address&gt;</note_counts>
+<!-- memory's rules, MCP-031: each one sentence an agent keeps while it works that memory's own refusals cannot teach,
+     with why="..." giving its reason; a title and a why on every memory are not here, since memory refuses a write
+     without them and says so at that moment. The MCP
+     server gathers every enabled module's rules into one block at the end of metaform://tools, each line
+     "[memory] <rule> Why: <why>", read once with the tools. A rule without a why stops the module loading. Empty
+     <rules></rules> sends nothing. -->
+<rules>
+<rule why="The Join rule attaches all knowledge to the RE, so the next agent finds a memory where the goal it serves is borne, and memory cannot tell an RE from a PE for you.">Record each memory at the RE whose goal it serves, never at a PE that provides for it.</rule>
+</rules>
+<!-- memory's line in the connect message: what an agent uses memory for, one short phrase after its name, in the
+     project's terms. Sent to every agent when it connects over MCP, one line per enabled module under mcp's
+     <instructions>, and listed in the compact command-line guide, metaform help agents. Empty sends nothing for
+     memory. Off when the module is disabled or the folder's modules setting leaves it out. -->
+<connect>– memory: read what agents learned at a node and record what you learn there, on its RE</connect>
+<!-- memory's instructions: how to read, record and relate findings. Returned by metaform_instructions with module memory, at metaform://instructions/memory, and printed by metaform help agents memory and by the full form of the command-line guide.
+     Empty sends nothing. Off when the module is disabled. -->
 <instructions>
 @STATE_INIT:
 {Task}:=[current user task]; {Memory}:=NULL; {Findings}:=[]; {State}:=RETRIEVE; {Valid}:=FALSE
@@ -81,4 +105,26 @@ AND (prohibited memory content is excluded)
 AND (observations are not promoted into unsupported requirements)
 AND (unresolved disagreement is not silently erased)
 </instructions>
+<!-- What a memory write answers an agent over MCP, one line, MCP-037: the memories are a read away, so what the agent
+     just sent is not handed back. <items/> is each memory joined at the node, "<address>#<n>  <title>", separated by
+     semicolons; <names/> the memories written to the whole graph at no node; <added/> each entity with the count of
+     observations added, "name +n"; <count/> the relations made. Notices follow, a line each. The command line and the
+     page still get the reference server's results. -->
+<recorded>Recorded <items/>.</recorded>
+<recorded_unjoined>Recorded <names/> in the whole memory graph, at no node.</recorded_unjoined>
+<recorded_nothing>Nothing new to record: each memory and observation was held already.</recorded_nothing>
+<observed>Observations added: <added/>.</observed>
+<related><count/> relation(s) made.</related>
+<!-- In a memory read at metaform://<address>#<n>: the evidence the memory cites, <cites/> each citation; then one
+     line per citation that no longer holds, <stale/> the citation and why, so the agent checks it before relying on
+     it. A citation is path:line, path:start-end or path:symbol, given with cite on create_entities or
+     add_observations. -->
+<cites>Cites: <cites/></cites>
+<stale>STALE: <stale/>. Check it against the code before relying on this memory.</stale>
+<!-- The count of stale memories at a node, in the counts an agent is told there (map where, the brief, the ticket read),
+     MCP-039: the word for one and for several, and the line under the counts saying what stale means and where to
+     read them. -->
+<stale_one>stale memory</stale_one>
+<stale_many>stale memories</stale_many>
+<stale_counts>Stale = a memory whose cited file or lines changed since it was written; read it before relying on it: metaform memory read_graph node=&lt;address&gt;</stale_counts>
 </prompts>

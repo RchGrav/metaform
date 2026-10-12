@@ -79,7 +79,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
   - A second server started in a registered project's folder serves that project without any call to `set`.
 - Relates to: MCP-011, MCP-025, CLI-021, PROJ-003, BASE-028.
 - Status: confirmed as the rule. The per-call resolution, the stop text and listing projects in status are recommended.
-- Amendment, 2026-10-09: with no project for the folder, the next step names registering this folder first, `metaform add project <id> <path>`, and selecting a registered one second when there are any; over MCP it is `call metaform with command register`, the `metaform` tool's register command, MCP-009. Why: the folder an agent is opened in is almost always the one the person wants worked on, and a first run's next step should take them there.
+- Amendment, 2026-10-09: with no project for the folder, the next step names registering this folder first, `metaform add project <id> <path>`, and selecting a registered one second when there are any; over MCP it is `call metaform_register`, the `metaform_register` tool, MCP-009. Why: the folder an agent is opened in is almost always the one the person wants worked on, and a first run's next step should take them there.
 
 ### PROJ-006 A worktree is its own working folder wherever it lives
 - Requirement: A git worktree, inside the project folder or anywhere else, is a working folder with its own context, and it reaches the same project data as every other folder.
@@ -413,7 +413,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
   - `.metaform/` holds the provenance written when the project is registered: the source path, its commit or content hash, the time and the Metaform version. It is written once and never changed.
   - `origin/` holds the source as it was when the project was registered: for a git source the files of its current commit, as `git archive` gives them; for a plain folder a copy of it, leaving out `.git` and what is built from the source. Diffs of work are written only when a variant is collected, question 15, each in its folder named by its commit as above.
   - `history.sqlite3` and `reports/` stay in the folder as they are.
-  - The chassis database, STORE-002, holds nothing of any project: module state, what the installer set up, nonces, and the settings of folders outside every project and of the global scope, the `project` setting among them.
+  - The chassis database, STORE-002, holds nothing of any project: module state, what the installer set up, and the settings of folders outside every project and of the global scope, the `project` setting among them.
   - Clear, backup, restore, remove, export and import act on the project's folder. Metaform holds no conversion of its own: a project under the earlier layout is not read, and upgrading one is a separate utility, not built.
 - Why no list: a list of projects in one database is a file every project depends on, so one fault reaches all of them, and a project copied without it is not whole. Named by its path, a project is found by looking where its name says, and the folder is all there is.
 - Acceptance: Open with the build. It will hold that a project's folder copied to an empty home reads back whole.

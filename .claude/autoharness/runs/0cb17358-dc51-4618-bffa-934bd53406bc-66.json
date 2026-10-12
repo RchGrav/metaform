@@ -1,0 +1,23 @@
+{
+  "run_id": "0cb17358-dc51-4618-bffa-934bd53406bc-66",
+  "verdicts": [
+    {
+      "action": "patch",
+      "name": "metaform",
+      "ok": false,
+      "findings": [
+        "self_produced"
+      ],
+      "notes": []
+    },
+    {
+      "action": "create",
+      "name": "metaform-agent-write-gates",
+      "ok": false,
+      "findings": [
+        "structure"
+      ],
+      "notes": []
+    }
+  ]
+}

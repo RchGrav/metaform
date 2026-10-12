@@ -1,0 +1,63 @@
+@STATE_INIT:
+  {Input}   := [SKILL.md text OR skill request]
+  {Dir}     := [parent directory name]
+  {FM}      := [YAML frontmatter block between leading "---" fences]
+  {Mode}    := VALIDATE
+  {Errors}  := []
+
+@CONSTRAINT:
+  !> Fields outside {name, description, license, compatibility, metadata, allowed-tools}.
+  !> name: uppercase | chars outside [a-z0-9-] | leading/trailing "-" | "--" | len ∉ [1,64] | name ≠ {Dir}.
+  !> description: empty | len > 1024.
+  !> compatibility: len ∉ [1,500] when present.
+  !> metadata: non-string keys or values.
+  +> Frontmatter opens SKILL.md; Markdown body follows.
+  +> name, description present.
+  +> description states WHAT the skill does AND WHEN to use it.
+  +> allowed-tools := space-separated string (e.g. "Bash(git:*) Read").
+  ~> description carries task keywords agents can match ("Helps with PDFs." = weak).
+  ~> license short: license name OR bundled file ref.
+  ~> compatibility only if real env requirements exist; most skills omit it.
+  ~> metadata keys distinctive to avoid collisions.
+  ~> allowed-tools experimental; support varies by agent.
+  ~> name + description ≈ 100 tokens (loaded at startup for all skills).
+
+@CONDITION (MODE_EVALUATION):
+  ?IF ( {Input} contains {FM} ) -> {Mode} := VALIDATE
+  :ELSE -> {Mode} := GENERATE
+
+@ROUTER:
+  @MATCH ( {Mode} ):
+    | [VALIDATE] -> EXECUTE_PIPELINE( Check_Frontmatter )
+    | [GENERATE] -> EXECUTE_PIPELINE( Build_Frontmatter )
+
+@EXECUTE_PIPELINE (Check_Frontmatter):
+  [STEP 1]: ∇({FM}) => Isolate each key/value. Flag unknown keys.
+  [STEP 2]: ∇(name, description) => Test required fields against !> rules. Append failures to {Errors}.
+  [STEP 3]: ∇(license, compatibility, metadata, allowed-tools) => Test present optionals against !> / +> rules.
+  [STEP 4]: Δ({Errors}, ~> heuristics) => Report: hard errors first, then advisory notes. YIELD.
+
+@EXECUTE_PIPELINE (Build_Frontmatter):
+  [STEP 1]: ∇({Input}) => Extract skill purpose, trigger conditions, env needs, author/version.
+  [STEP 2]: Δ(name) => Kebab-case, ≤ 64 chars, = {Dir}.
+  [STEP 3]: Δ(description) => "<What it does>. Use when <triggers/keywords>." ≤ 1024 chars.
+  [STEP 4]: Δ(optionals) => Emit only fields with supporting data from [STEP 1]. YIELD.
+
+  TEMPLATE:
+    ---
+    name: <kebab-name>
+    description: <what>. Use when <when>.
+    license: <optional>
+    compatibility: <optional, 1-500 chars>
+    metadata:
+      <key>: "<string>"
+    allowed-tools: <optional, space-separated>
+    ---
+
+@VERIFY:
+  name ∈ /^[a-z0-9]+(-[a-z0-9]+)*$/ ∧ len(name) ≤ 64 ∧ name = {Dir}
+  ∧ 1 ≤ len(description) ≤ 1024 ∧ description covers WHAT + WHEN
+  ∧ (compatibility absent ∨ 1 ≤ len ≤ 500)
+  ∧ metadata ⊆ (string → string)
+  ∧ no unknown keys
+  ?IF ( any FALSE ) -> RECURSE to failing STEP :ELSE -> YIELD.

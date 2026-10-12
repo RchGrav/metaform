@@ -202,6 +202,7 @@ def test_install_claude_touches_only_claude_and_shared_skills(run, machine, home
     assert calls(machine['bin'], 'codex') == []
     changed = {name for name, data in tree(machine['user']).items() if before.get(name) != data}
     assert changed == {str(Path('.claude/skills/metaform/SKILL.md')), str(Path('.agents/skills/metaform/SKILL.md')),
+                       str(Path('.claude/skills/metaform-node/SKILL.md')),
                        str(Path('.claude/CLAUDE.md')), str(Path('.claude/settings.json'))}
     for copy in (machine['user'] / '.claude' / 'skills' / 'metaform' / 'SKILL.md',
                  home / 'skills' / 'metaform' / 'SKILL.md'):
@@ -704,7 +705,7 @@ def test_global_pointer_preserves_authored_bytes_and_has_a_backup(run, machine, 
     path.write_bytes(original)
     out = run('install', tool, cwd=machine['folder'], env=machine['env']).stdout
     pointer = ('This system orchestrates work using Metaform. You must use its active features. '
-               'Read them with `metaform help agents`, or the metaform tool\'s instructions command.')
+               'Read them with `metaform help agents`, or the metaform_instructions tool.')
     assert path.read_bytes().startswith(original)
     assert pointer in path.read_text()
     assert str(path) in out and pointer in out
@@ -741,6 +742,11 @@ def test_provision_installs_an_executable_passive_claude_hook_and_preserves_othe
     assert result.returncode == 0 and not result.stderr
     assert json.loads(result.stdout) == {'hookSpecificOutput': {
         'hookEventName': 'PreToolUse', 'additionalContext': prompt_files.chassis('work_reminder')}}
+    # Once per host session, which the host names on standard input; a call naming none gets it each time, MCP-039.
+    named = json.dumps({'session_id': f'test-{os.getpid()}-{time.time_ns()}'})
+    told = [subprocess.run([handler['command'], *handler['args']], cwd=machine['folder'], input=named, text=True,
+                           capture_output=True, check=False).stdout for _ in range(2)]
+    assert json.loads(told[0]) == json.loads(result.stdout) and told[1] == ''
     assert calls(machine['bin'], 'claude') == []
     assert not (home / 'metaform.sqlite3').exists() or not recorded_installs(home)
     backups = list((home / 'backups' / 'provision').rglob('settings.json'))
@@ -944,3 +950,178 @@ def test_invalid_gemini_hooks_leave_global_instructions_unchanged(run, machine, 
     assert result.returncode == 2 and str(settings) in result.stderr
     assert settings.read_text() == content
     assert not (settings.parent / 'GEMINI.md').exists()
+
+
+ACP_AGENT = '''
+import json, sys, pathlib
+# An ACP agent that answers initialize, as metaform dispatch serve does; each start's arguments are kept.
+with pathlib.Path(__file__).with_suffix('.log').open('a', encoding='utf-8') as out:
+    out.write(json.dumps(sys.argv[1:]) + '\\n')
+for line in sys.stdin:
+    message = json.loads(line)
+    if message.get('method') == 'initialize':
+        print(json.dumps({'jsonrpc': '2.0', 'id': message['id'], 'result': {'protocolVersion': 1,
+                          'agentCapabilities': {}, 'authMethods': []}}), flush=True)
+'''
+
+
+@pytest.mark.req('BASE-062')
+@pytest.mark.req('MCP-020')
+def test_install_registers_metaform_as_the_acp_agent_of_editors_and_uninstall_removes_only_it(run, machine):
+    from fakes import executable
+    executable(machine['bin'], 'uvx', ACP_AGENT)
+    user = machine['user']
+    env = {**machine['env'], 'XDG_CONFIG_HOME': str(user / '.config'), 'APPDATA': str(user / 'AppData' / 'Roaming')}
+    zed = (user / 'AppData' / 'Roaming' / 'Zed' if os.name == 'nt' else user / '.config' / 'zed') / 'settings.json'
+    jetbrains = user / '.jetbrains' / 'acp.json'
+    jetbrains.parent.mkdir()
+    jetbrains.write_text(json.dumps({'default_mcp_settings': {'use_custom_mcp': True},
+                                     'agent_servers': {'Other': {'command': 'other'}}}), encoding='utf-8')
+    editors = ['jetbrains', 'zed']
+    zed.parent.mkdir(parents=True)
+    zed.write_text(ZED_SETTINGS, encoding='utf-8')  # as Zed writes it first: comments and trailing commas
+    refused = run('install', *editors, cwd=machine['folder'], env=env, ok=False)
+    assert refused.returncode == 2 and 'metaform enable dispatch' in refused.stderr, 'dispatch serves editors'
+    run('enable', 'dispatch')
+    out = run('install', *editors, cwd=machine['folder'], env=env).stdout
+    command = ['uvx', '--from', str(machine['wheel']), 'metaform', 'dispatch', 'serve']
+    registered = json.loads(jetbrains.read_text())
+    assert registered['agent_servers']['metaform'] == {'command': 'uvx', 'args': command[1:], 'env': {}}
+    assert registered['agent_servers']['Other'] == {'command': 'other'} and registered['default_mcp_settings']
+    merged = zed.read_text(encoding='utf-8')
+    assert merged.startswith(ZED_SETTINGS.split('{')[0]) and '"mode": "system",' in merged, 'its comments stay'
+    assert jsonc(merged) == {**jsonc(ZED_SETTINGS), 'agent_servers': {
+        'metaform': {'type': 'custom', 'command': 'uvx', 'args': command[1:], 'env': {}}}}
+    assert all(f'{name}: the ACP agent answers initialize' in out for name in editors)
+    assert 'behind it: ' in out, 'the agent an editor reaches is named'
+    assert calls(machine['bin'], 'uvx')[-1] == [*command[1:], 'agent=none'], 'the proof starts no model'
+    run('uninstall', *editors, cwd=machine['folder'], env=env)
+    assert 'metaform' not in json.loads(jetbrains.read_text())['agent_servers']
+    left = zed.read_text(encoding='utf-8')
+    assert left == ZED_SETTINGS, 'Zed settings come back as they were, the agent_servers Metaform made gone with it'
+
+
+# Zed's settings.json as Zed first writes it, assets/settings/initial_user_settings.json
+ZED_SETTINGS = """// Zed settings
+//
+// For information on how to configure Zed, see the Zed
+// documentation: https://zed.dev/docs/configuring-zed
+//
+// To see all of Zed's default settings without changing your
+// custom settings, run `zed: open default settings` from the
+// command palette (cmd-shift-p / ctrl-shift-p)
+{
+  "ui_font_size": 16,
+  "buffer_font_size": 15,
+  "theme": {
+    "mode": "system",
+    "light": "One Light",
+    "dark": "One Dark",
+  },
+}
+"""
+
+
+def jsonc(text):
+    """JSON with whole-line comments and trailing commas, as these tests write it, read as JSON."""
+    import re
+    kept = '\n'.join(line for line in text.splitlines() if not line.lstrip().startswith('//'))
+    return json.loads(re.sub(r',(\s*[}\]])', r'\1', kept))
+
+
+@pytest.mark.req('BASE-062')
+def test_install_finds_a_jetbrains_ide_by_its_config_folder_and_an_unreadable_config_spares_the_other_tools(
+        run, machine):
+    from fakes import executable
+    executable(machine['bin'], 'uvx', ACP_AGENT)
+    user = machine['user']
+    env = {**machine['env'], 'XDG_CONFIG_HOME': str(user / '.config'), 'APPDATA': str(user / 'AppData' / 'Roaming')}
+    ide = {'nt': user / 'AppData' / 'Roaming'}.get(os.name) or (
+        user / 'Library' / 'Application Support' if sys.platform == 'darwin' else user / '.config')
+    (ide / 'JetBrains').mkdir(parents=True)  # an IDE that has never had an ACP agent: no ~/.jetbrains yet
+    zed = (user / 'AppData' / 'Roaming' / 'Zed' if os.name == 'nt' else user / '.config' / 'zed') / 'settings.json'
+    zed.parent.mkdir(parents=True, exist_ok=True)
+    zed.write_text('{"theme": ', encoding='utf-8')
+    run('enable', 'dispatch')
+    done = run('install', 'zed', 'jetbrains', cwd=machine['folder'], env=env, ok=False)
+    assert done.returncode == 1 and 'zed: not registered' in done.stdout
+    assert 'jetbrains: the ACP agent answers initialize' in done.stdout, 'the other editor is still set up and proven'
+    made = json.loads((user / '.jetbrains' / 'acp.json').read_text(encoding='utf-8'))
+    assert made == {'agent_servers': {'metaform': {'command': 'uvx', 'args': [
+        '--from', str(machine['wheel']), 'metaform', 'dispatch', 'serve'], 'env': {}}}}
+    assert zed.read_text(encoding='utf-8') == '{"theme": ', 'left as it was'
+
+
+@pytest.mark.req('BASE-062')
+def test_an_unreadable_mcp_config_spares_the_editors_and_zeds_comments_come_back_as_they_were(run, machine):
+    from fakes import executable
+
+    from metaform.install import _jsonc_drop, _jsonc_put
+    executable(machine['bin'], 'uvx', ACP_AGENT)
+    user = machine['user']
+    env = {**machine['env'], 'XDG_CONFIG_HOME': str(user / '.config'), 'APPDATA': str(user / 'AppData' / 'Roaming')}
+    (user / '.cursor').mkdir(exist_ok=True)
+    (user / '.cursor' / 'mcp.json').write_text('{"mcpServers": ', encoding='utf-8')
+    zed = (user / 'AppData' / 'Roaming' / 'Zed' if os.name == 'nt' else user / '.config' / 'zed') / 'settings.json'
+    zed.parent.mkdir(parents=True, exist_ok=True)
+    zed.write_text('{\n  "theme": "One" // my theme\n}\n', encoding='utf-8')
+    run('enable', 'dispatch')
+    done = run('install', 'cursor', 'zed', cwd=machine['folder'], env=env, ok=False)
+    assert done.returncode == 1 and 'cursor: not registered' in done.stdout and 'cursor' in done.stderr
+    assert 'zed: the ACP agent answers initialize' in done.stdout, 'the editor after it is still set up and proven'
+    written = zed.read_text(encoding='utf-8')
+    assert '"theme": "One", // my theme\n' in written and '"metaform"' in written, 'the comment stays on its line'
+    # put, then drop, gives back the text as it was, comments and trailing commas included
+    for text in ('{\n  "theme": "One" // my theme\n}\n',
+                 '{\n  "agent_servers": {\n    "claude": {"command": "x"}, // keep me\n  },\n}\n'):
+        put = _jsonc_put(text, 'agent_servers', 'metaform', {'command': 'metaform'})
+        assert put is not None and _jsonc_drop(put, 'agent_servers', 'metaform') == text
+
+
+NODE_SKILL = ROOT / 'src' / 'metaform' / 'skill' / 'metaform-node' / 'SKILL.md'
+
+
+def node_copies(user: Path) -> list[str]:
+    return sorted(str(path.relative_to(user)) for path in user.rglob('SKILL.md') if 'metaform-node' in path.parts)
+
+
+def test_the_node_skill_goes_to_claude_code_alone_and_leaves_with_its_uninstall(run, machine, home):
+    run('install', 'claude', 'codex', 'cursor', cwd=machine['folder'], env=machine['env'])
+    assert node_copies(machine['user']) == [str(Path('.claude/skills/metaform-node/SKILL.md'))]
+    assert not (home / 'skills' / 'metaform-node').exists()
+    copy = machine['user'] / '.claude' / 'skills' / 'metaform-node' / 'SKILL.md'
+    assert copy.read_bytes() == NODE_SKILL.read_bytes()
+    run('uninstall', 'codex', 'cursor', cwd=machine['folder'], env=machine['env'])
+    assert copy.is_file()
+    out = run('uninstall', 'claude', cwd=machine['folder'], env=machine['env']).stdout
+    assert f'skill: remove {copy}' in out and node_copies(machine['user']) == []
+    assert not copy.parent.exists() and list((home / 'backups' / 'uninstall').rglob('metaform-node/SKILL.md'))
+
+
+def test_the_node_skill_exists_only_while_map_is_on(run, machine):
+    copy = machine['user'] / '.claude' / 'skills' / 'metaform-node' / 'SKILL.md'
+    run('enable', 'map', cwd=machine['folder'], env=machine['env'])
+    assert not copy.exists()  # Claude Code was never set up, so nothing is written for it
+    run('disable', 'map', cwd=machine['folder'], env=machine['env'])
+    out = run('install', 'claude', cwd=machine['folder'], env=machine['env']).stdout
+    assert not copy.exists() and 'metaform-node' not in out
+    assert 'Skill: wrote' in run('enable', 'map', cwd=machine['folder'], env=machine['env']).stdout
+    assert copy.read_bytes() == NODE_SKILL.read_bytes()
+    assert 'Skill: removed' in run('disable', 'map', cwd=machine['folder'], env=machine['env']).stdout
+    assert not copy.parent.exists()
+    run('enable', 'map', cwd=machine['folder'], env=machine['env'])
+    run('set', '--modules', 'chassis', cwd=machine['folder'], env=machine['env'])
+    out = run('install', 'claude', cwd=machine['folder'], env=machine['env']).stdout
+    assert f'skill: remove {copy}' in out and not copy.exists()  # map is off this folder's surface
+
+
+def test_provision_claude_writes_or_removes_the_node_skill_with_map(run, machine):
+    copy = machine['user'] / '.claude' / 'skills' / 'metaform-node' / 'SKILL.md'
+    run('provision', 'claude', cwd=machine['folder'], env=machine['env'])
+    assert copy.read_bytes() == NODE_SKILL.read_bytes()
+    run('disable', 'map', cwd=machine['folder'], env=machine['env'])
+    assert not copy.exists()
+    run('enable', 'map', cwd=machine['folder'], env=machine['env'])
+    assert copy.is_file()  # provision set Claude Code up, so map's return brings the skill back
+    run('provision', 'codex', cwd=machine['folder'], env=machine['env'])
+    assert node_copies(machine['user']) == [str(Path('.claude/skills/metaform-node/SKILL.md'))]

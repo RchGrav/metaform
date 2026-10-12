@@ -1,0 +1,19 @@
+{
+  "run_id": "531eae61-845d-42cc-a828-cd639f803e18-93",
+  "verdicts": [
+    {
+      "action": "patch",
+      "name": "metaform-module-development",
+      "ok": true,
+      "findings": [],
+      "notes": []
+    },
+    {
+      "action": "patch",
+      "name": "metaform-ticket-work",
+      "ok": true,
+      "findings": [],
+      "notes": []
+    }
+  ]
+}

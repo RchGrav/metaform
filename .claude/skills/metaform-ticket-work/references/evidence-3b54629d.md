@@ -1,0 +1,1 @@
+Assigned ticket 499ce0fdd14540329185617bbb913d99: "note: Source pass: agents, the MCP server, install and build" and "task: The source pass, the seam between purpose and structure ... Record the seam: metaform map knowledge op=add-item layer=sources node=join:<join id>".

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import re
 import time
 from collections.abc import Callable
@@ -28,14 +29,47 @@ from metaform.data import (
     Outcome,
     Page,
     Store,
+    StoreError,
     WorkRecord,
     plain,
 )
 from metaform.finish_xml import xml as map_xml
-from metaform.module import Context, Module, Noun, NounKind, Status, Stop, Verb, node_reads, work_reads
+from metaform.module import (
+    Context,
+    Module,
+    Noun,
+    NounKind,
+    Pane,
+    Status,
+    Stop,
+    ToolbarItem,
+    Verb,
+    held_role,
+    item_read,
+    latest_item,
+    node_reads,
+    titled,
+    work_reads,
+)
 from metaform.outline import markdown as map_markdown
+from metaform.outline import mermaid as map_mermaid
+from metaform.outline import mermaid_limits
 
+from .around import told
+from .code import VERBS as CODE_VERBS
+from .code import brief as code_brief
+from .code import node_line as code_node_line
+from .code import scoped as code_scoped
+from .code import start_line as code_start_line
+from .glossary import PANES as GLOSSARY_PANES
+from .glossary import VERBS as GLOSSARY_VERBS
+from .glossary import item_read as term_read
+from .glossary import items_at as terms_at
+from .scoped import is_scoped
+from .scoped import resolve as resolve_scoped
 from .storage import DATA, TABLES
+
+SOURCES = 'sources'  # the layer an element's refs go in, naming the code that realizes a part, STORE-025
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -48,6 +82,9 @@ settings.boolean('critic', False, help='map critic: the critic also reads the co
                  'fast mode, blind to the code, when off.')
 settings.boolean('tasks', True, help='Assign and track work on the map like a kanban. Turn it off when the project '
                  'keeps its own board.')
+settings.number('node_summary_bytes', 2048, min=512,
+                help='The bytes an agent is given about the node it works on, in map where, a ticket read and the '
+                     'hand-off. What does not fit, code paths first, is counted with the call that reads it.')
 
 REFS_SCHEMA = {'type': 'array', 'items': {'type': 'array', 'items': {'type': 'string'}, 'minItems': 2, 'maxItems': 2}}
 # What edit and refine change; ifd and verb among them, which were dropped before, an intake found.
@@ -96,8 +133,11 @@ PAGING = (Noun('limit', 'How many results, 0 for all.', kind='int', required=Fal
 
 
 def roots(ctx: Context) -> Any:
-    """The map's entry: the CQU and the DE with their joins, and every root element, STORE-025."""
-    return _store(ctx).roots(**_reading(ctx), **_paging(ctx))
+    """The map's entry: the CQU and the DE with their joins, and every root element, STORE-025; while the code is not
+    read into its layer, the call that reads it."""
+    found = _store(ctx).roots(**_reading(ctx), **_paging(ctx))
+    line = None if ctx.nouns.get('after') else code_start_line(ctx)
+    return found if line is None else {**found.to_dict(), 'code': line}
 
 
 def _with_modules(ctx: Context, found: Any, node: Node) -> Any:
@@ -113,24 +153,208 @@ def _with_modules(ctx: Context, found: Any, node: Node) -> Any:
 
 
 def _with_work_modules(ctx: Context, found: Any) -> Any:
-    """A ticket's read with modules' memories at its nodes and their fields on the work record, MAP-048 and
-    BASE-035; a field the read holds already is never replaced."""
+    """A ticket's read, MAP-048: its fields, its node's read with the counts at it and around it once per session,
+    MCP-039, each linked node by its address, and the modules' fields on the work record, BASE-035; a field the read
+    holds already is never replaced. What is held at its nodes is read with the calls the counts name."""
     added = work_reads(ctx.folder, found.work, project=ctx.project)
     data = cast(dict[str, Any], found.to_dict())
-    data['at'] = _with_modules(ctx, found.at, Node.of(found.work.node_kind, found.work.node_id))
-    data['linked'] = [_with_modules(ctx, read, Node.of(link.kind, link.id))
+    data['at'] = _oriented(ctx, found.at, Node.of(found.work.node_kind, found.work.node_id))
+    data['linked'] = [None if read is None else (link.address or _compact(read.to_dict()))
                       for link, read in zip(found.work.links, found.linked)]
     for module, value in added.items():
         data.setdefault(module, value)
     return data
 
 
+def _refs(groups: Any) -> list[str]:
+    """The refs the sources layer holds in a small read's layers, each `key=value`: where the code is, which an agent
+    reads itself, so they are pointers and not contents."""
+    return list(dict.fromkeys(f"{ref['key']}={ref['value']}" for group in cast(list[dict[str, Any]], groups or [])
+                              if group.get('layer') == SOURCES for item in group.get('items', [])
+                              for ref in item.get('refs', [])))
+
+
+def _compact(data: dict[str, Any]) -> dict[str, Any]:
+    """A node's read as an agent orients from it, MCP-039: the element, and each join by its addresses with its
+    purpose, from the small read STORE-025 gives, each with the sources layer's refs, which point to the code that
+    realizes it. What else is held at the node is counted by `around`, not carried."""
+    def kept_join(join: dict[str, Any], *pairs: tuple[str, Any]) -> dict[str, Any]:
+        return {key: value for key, value in (*pairs, ('purpose', join.get('purpose')),
+                                              ('sources', _refs(join.get('layers')))) if value}
+    kept: dict[str, Any] = {'kind': data['kind']}
+    if 'element' in data:
+        kept['element'] = data['element']
+    refs = _refs(data.get('layers'))
+    if refs:
+        kept['sources'] = refs
+    if 'join' in data:
+        join = data['join']
+        kept['join'] = {**kept_join(join, ('receiver', join.get('receiver')),
+                                    ('providers', [held.get('address') for held in join.get('elements', [])])),
+                        **({'ef': join['ef']} if join.get('ef') else {})}
+    if data.get('provides'):
+        kept['provides'] = [kept_join(join, ('receiver', join.get('receiver'))) for join in data['provides']]
+    if data.get('receives'):
+        kept['receives'] = [kept_join(join, ('providers', [held.get('address') for held in join.get('elements', [])]))
+                            for join in data['receives']]
+    return kept
+
+
+def _prompt(name: str, **fills: str) -> str:
+    return prompt_files.text(resources.files(__package__ or 'metaform.modules.map'), name, **fills) or ''
+
+
+def _size(data: dict[str, Any]) -> int:
+    return len(json.dumps(data, ensure_ascii=False).encode('utf-8'))
+
+
+def _fitted(ctx: Context, found: Any, data: dict[str, Any], said: dict[str, Any], budget: int, *,
+            calls: bool = False) -> dict[str, Any]:
+    """A compact read of a node with the counts told, kept within `budget` bytes, MCP-039. What an agent needs most
+    stays: the node itself and the purposes it serves, then its neighbours with their counts, then the counts at the
+    node, then the code paths. So the code paths go first, those on the joins it receives, then on the joins it
+    provides for, then the node's own; then the joins it receives, and the joins it provides for after the first, last
+    first; and only then is the tree drawn smaller, by `told`. Code paths that fit again in the room a join left come back.
+    Each kind left out is said in `more` as a count with the call that reads it, so nothing is lost, only not sent;
+    with `calls`, each call as this surface names it."""
+    provides = [dict(one) for one in cast(list[dict[str, Any]], data.get('provides') or [])]
+    receives = [dict(one) for one in cast(list[dict[str, Any]], data.get('receives') or [])]
+    join = dict(cast(dict[str, Any], data.get('join') or {}))
+    own = list(cast(list[str], data.get('sources') or []))
+    element = cast(dict[str, Any], data.get('element') or {})
+    address = element.get('address') if data.get('kind') == 'element' else None
+    left: list[str] = []
+    taken: list[tuple[dict[str, Any] | None, list[str]]] = []  # the code paths taken off, from where, in order
+    cut = {'provides': 0, 'receives': 0}
+
+    def drawn(calls: bool = False) -> dict[str, Any]:
+        shown = {*own, *join.get('sources', ()),
+                 *(ref for one in (*provides, *receives) for ref in one.get('sources', ()))}
+        unshown = len([ref for ref in dict.fromkeys(left) if ref not in shown])
+        sources = (f'metaform map where address={address} contents=true' if address else
+                   f'metaform map node node=join:{found.join.id}' if found.join is not None else '')
+        more = [line for line in (
+            _prompt('summary_sources', count=str(unshown), read=sources) if unshown and sources else '',
+            _prompt('summary_provides', count=str(cut['provides']),
+                    read=f'metaform map joins element={address} as=provider') if cut['provides'] else '',
+            _prompt('summary_receives', count=str(cut['receives']),
+                    read=f'metaform map joins element={address}') if cut['receives'] else '') if line]
+        kept: dict[str, Any] = {}
+        for key, value in data.items():
+            value = {'sources': own, 'join': join, 'provides': provides, 'receives': receives}.get(key, value)
+            if value:
+                kept[key] = value
+        if more:
+            kept['more'] = [ctx.calls(line) for line in more] if calls else more
+        return {**kept, **said}
+
+    def steps() -> Any:
+        for one in (*reversed(receives), *reversed(provides), join):
+            if one.get('sources'):
+                taken.append((one, one['sources']))
+                left.extend(one.pop('sources'))
+                yield
+        if own:
+            taken.append((None, list(own)))
+            left.extend(own)
+            own.clear()
+            yield
+        while receives and address:
+            receives.pop()
+            cut['receives'] += 1
+            yield
+        while len(provides) > 1 and address:
+            provides.pop()
+            cut['provides'] += 1
+            yield
+
+    if _size(drawn()) > budget:
+        for _ in steps():
+            if _size(drawn()) <= budget:
+                break
+        # Code paths taken off before a join went may fit again in the room it left: the node's own first.
+        for one, refs in reversed(taken):
+            if one is not None and not any(one is held for held in (*provides, *receives, join)):
+                continue
+            (own if one is None else one.setdefault('sources', [])).extend(refs)
+            if _size(drawn()) > budget:
+                del (own if one is None else one['sources'])[-len(refs):]
+                if one is not None:
+                    one.pop('sources')
+    return drawn(calls=calls)
+
+
+def _oriented(ctx: Context, found: Any, node: Node, *, contents: bool = False) -> Any:
+    """A node's read for an agent: the element and its joins with the counts at it and around it, once per session,
+    MCP-039, within the node_summary_bytes setting; with `contents`, or with full, everything held at it as well, as
+    `map node` reads it, whatever its size."""
+    if found is None:
+        return None
+    if contents or found.full:
+        data = cast(dict[str, Any], plain(_with_modules(ctx, found, node)))
+        code_line = code_brief(ctx, found)  # the code layer counted, its links read with the call it names
+        return {**data, **({'code': code_line} if code_line else {}), **told(ctx, found)}
+    data = _compact(cast(dict[str, Any], found.to_dict()))
+    code_line = code_brief(ctx, found)  # the code layer's one line: its counts here and the call that reads them
+    if code_line:
+        data['code'] = code_line
+    budget = int(ctx.setting('node_summary_bytes'))
+    said = told(ctx, found, lambda part: _size(_fitted(ctx, found, data, part, budget)) <= budget)
+    return _fitted(ctx, found, data, said, budget, calls=True)
+
+
 def where(ctx: Context) -> Any:
-    """One read of an address: what relies on it and what it relies on, STORE-025; the entry with no address."""
+    """One read of an address: what relies on it and what it relies on, with the counts at it and around it,
+    STORE-025 and MCP-039; the entry with no address. `<scope>@<layer>` reads what that layer holds at the scope, P165,
+    `scoped.py`."""
     if not ctx.nouns['address']:
         return roots(ctx)
-    found = _store(ctx).where(ctx.nouns['address'], full=bool(ctx.nouns.get('full', False)), **_reading(ctx))
-    return _with_modules(ctx, found, Node('element', ctx.nouns['address']))
+    address = ctx.nouns['address']
+    if is_scoped(str(address)):
+        return scoped_read(ctx, str(address))
+    found = _store(ctx).where(address, full=bool(ctx.nouns.get('full', False)), **_reading(ctx))
+    if found is None:
+        raise Stop(f'No element {address} in context here.', f'metaform map children {address}')
+    return _oriented(ctx, found, Node('element', address), contents=bool(ctx.nouns.get('contents', False)))
+
+
+def scoped_read(ctx: Context, text: str) -> Any:
+    """What a layer holds at a scope, `<scope>@<layer>`, P165: the scope's element as the map gives it, its name and
+    role, and what the layer holds there; for the code layer, the code at the Address, or at the join named
+    `<receiver>:<provider>`, as code-context reads it, each symbol with the Address it is the code of. A layer's items
+    are read in context, so a mask at the address leaves them out as every read does."""
+    store = _store(ctx)
+    found = resolve_scoped(store, text)
+    read: dict[str, Any] = {'scope': found.text, 'layer': found.layer}
+    if found.address is not None:
+        element = store.element(found.address)
+        if element is not None:
+            read['element'] = {key: value for key, value in (
+                ('address', element.address), ('name', element.name), ('short_name', element.short_name),
+                ('role', element.role), ('reading', element.reading)) if value}
+    if found.layer == str(ctx.setting('code_layer') or 'code'):
+        if found.address is None:
+            raise Stop(f'The code layer is read at an Address: {found.text} names the whole project.',
+                       'metaform map code-gaps')
+        return {**read, **code_scoped(ctx, found.address, found.provider)}
+    node: Node | None = None
+    if found.address is not None and found.provider:
+        try:
+            node = store.purpose(found.address, found.provider)
+        except StoreError as error:
+            raise Stop(f'{found.text} does not resolve: {error}', f'metaform map joins element={found.address}') from None
+    elif found.address is not None:
+        element = store.element(found.address)
+        node = Node('element', element.id) if element is not None else None
+    page = store.layer_items(found.layer, node, in_context=node is not None, **_paging(ctx))
+    held: list[dict[str, Any]] = []
+    for one in page.results:  # each as an agent reads it: its id, to edit it by, its value, refs and link
+        data = cast(dict[str, Any], plain(one))
+        kept = {key: data[key] for key in ('id', 'value', 'link') if data.get(key) is not None}
+        refs = [f"{ref['key']}={ref['value']}" for ref in cast(list[dict[str, Any]], data.get('refs') or [])]
+        held.append({**kept, **({'refs': refs} if refs else {}), **({'kind': 'property'} if 'element_id' in data
+                                                                   else {})})
+    return {**read, 'items': held, **({'next': page.next} if page.next else {})}
 
 
 def _document(ctx: Context, verb: str, text: str) -> Any:
@@ -150,6 +374,20 @@ def _document(ctx: Context, verb: str, text: str) -> Any:
 def markdown(ctx: Context) -> Any:
     """The map, or the part around one address, as a short Markdown document to find one's way by, MAP-052."""
     return _document(ctx, 'markdown', map_markdown(_store(ctx), ctx.nouns.get('address') or None, **_reading(ctx)))
+
+
+def mermaid(ctx: Context) -> Any:
+    """The map, or one element and those one join away, as a Mermaid flowchart, P063: the writer of the web GUI's
+    Mermaid export, so a diagram pasted in GitHub, VS Code, Obsidian or a chat holds the elements and joins the page's
+    2D map draws, each join pointing the way its information goes, and asks for the page's ELK layout."""
+    leave_out = tuple(root for root in str(ctx.nouns.get('leave_out') or '').split(',') if root)
+    text = map_mermaid(_store(ctx), ctx.nouns.get('address') or None, direction=str(ctx.nouns.get('direction') or 'TB'),
+                       leave_out=leave_out, labels=str(ctx.nouns.get('labels') or 'none'), **_reading(ctx))
+    done = _document(ctx, 'mermaid', text)
+    notice = mermaid_limits(text)
+    if notice and isinstance(done, dict):  # written to a file: the notice the printed diagram carries in its comment
+        return {**cast(dict[str, Any], done), 'notices': [{'where': 'mermaid', 'message': notice}]}
+    return done
 
 
 def xml(ctx: Context) -> Any:
@@ -204,7 +442,12 @@ def node(ctx: Context) -> Any:
     found = _store(ctx).node(target, **_reading(ctx))
     if found is None:
         raise Stop(f'No node {ctx.nouns["node"]} in context here.', 'metaform map node <node> --raw')
-    return _with_modules(ctx, found, target)
+    read = _with_modules(ctx, found, target)
+    code_line = code_node_line(ctx, target)  # the code layer's links are counted, not listed: read with the call named
+    if not code_line:
+        return read
+    data = cast(dict[str, Any], read if isinstance(read, dict) else read.to_dict())
+    return {**data, 'code': code_line}
 
 
 def context(ctx: Context) -> Any:
@@ -248,7 +491,8 @@ def cypher(ctx: Context) -> Any:
     """A Cypher query over the base's graph in memory, for agents, STORE-046: reads only, seeing what the layers in
     view show, or the layers named. The answer is each returned column with its values in order."""
     given: Any = ctx.nouns['query']
-    query = ' '.join(str(word) for word in given) if isinstance(given, (list, tuple)) else str(given)
+    query = (' '.join(str(word) for word in cast(list[Any], given)) if isinstance(given, (list, tuple))
+             else str(given))
     named = [name for name in str(ctx.nouns.get('layers') or '').split(',') if name]
     try:
         found = _store(ctx).cypher(query, named or None)
@@ -619,9 +863,8 @@ def _knowledge(ctx: Context, op: str, notices: list[Notice]) -> Any:
     if op == 'add-property':
         (value,) = _empty(ctx, notices, 'value')
         return store.add_property(name, _element(nouns['element']), value, **_optional(ctx, 'refs', 'extra'))
-    if op == 'add-item' and ctx.nouns.get('task') and ctx.surface == 'mcp':
-        raise Stop('Tickets are written by the person, or by the sentinel for them; an agent at work writes what it '
-                   'found in its own ticket\'s note.', 'metaform map work op=edit id=<your work id> note="..."')
+    if op == 'add-item' and ctx.nouns.get('task'):
+        _may_write_ticket(ctx)
     if op == 'add-item':
         (value,) = _empty(ctx, notices, 'value')
         link = _node(nouns['link']) if 'link' in nouns else None
@@ -646,8 +889,6 @@ def _knowledge(ctx: Context, op: str, notices: list[Notice]) -> Any:
         return store.discard(name)
     raise Stop(f'{op!r} is not a knowledge operation.', 'metaform help map knowledge')
 
-
-SOURCES = 'sources'  # the layer an element's refs go in
 
 
 def _sources(store: Store, element_id: str, address: str, refs: Any, notices: list[Notice]) -> None:
@@ -765,10 +1006,10 @@ WORK_READS: dict[str, frozenset[str]] = {
                        'hold'}),
     'read': frozenset({'id'}),
     'add': frozenset({'node', 'receiver', 'provider', 'address', 'condition', 'kind', 'note', 'task', 'held', 'reviewed',
-                      'links', 'agent', 'hold', 'eligible'}),
+                      'links', 'agent', 'hold', 'eligible', 'title'}),
     'edit': frozenset({'id', 'node', 'receiver', 'provider', 'address', 'condition', 'kind', 'note', 'task', 'held',
-                       'reviewed', 'glyph', 'links', 'agent', 'hold', 'eligible'}),
-    'done': frozenset({'id', 'resolution'}),
+                       'reviewed', 'glyph', 'links', 'agent', 'hold', 'eligible', 'title'}),
+    'done': frozenset({'id', 'resolution', 'why'}),
     'take': frozenset({'id', 'steps', 'by'}),
     'move': frozenset({'id', 'column', 'position', 'by'}),
     'plan': frozenset({'id', 'steps'}),
@@ -837,16 +1078,47 @@ def _held(store: Store, nouns: dict[str, Any], notices: list[Notice]) -> Node:
 
 def ask(ctx: Context) -> Any:
     """The person asks a question at a node, MAP-050, for the record and for the agent they talk to there. Agents do
-    not ask: the verb is the person's, on the command line and the page."""
+    not ask: the verb is the person's, on the command line and the page. A question records a decision to be made, so
+    it carries a short title and why, and takes the next number at its node, MCP-037."""
+    titled(ctx, 'The question', ctx.nouns.get('title'), ctx.nouns.get('why'), why_needed=True,
+           why_step='add why: one line saying why it is asked')
     store, notices = _store(ctx), list[Notice]()
+    _numbering(store)
     asked = store.ask(_held(store, ctx.nouns, notices), ctx.nouns['question'], suggestions=ctx.nouns.get('suggestions'),
-                      by=ctx.nouns.get('by'), work=ctx.nouns.get('work'))
-    return _with_notices(asked, notices)
+                      by=ctx.nouns.get('by'), work=ctx.nouns.get('work'), title=ctx.nouns.get('title'),
+                      why=ctx.nouns.get('why'))
+    return _with_notices(_numbered_messages(store, asked), notices)
+
+
+def _numbering(store: Store) -> None:
+    """Number the work records and messages written before items were numbered, the first time map reads or writes
+    them after its tables reach version 10, MCP-037."""
+    if not store.items_numbered():
+        store.number_items()
+
+
+def _numbered_messages(store: Store, result: Any) -> Any:
+    """A message, or a page of them, each with its `item`, `<address>#<n>`, and `title` when it has a number."""
+    page = cast(Page[Any], result) if isinstance(result, Page) else None
+    records: list[Any] = list(page.results) if page is not None else [result]
+    found = store.numbers_of('message', [record.id for record in records])
+    if not found:
+        return cast(Any, result)
+
+    def one(record: Any) -> Any:
+        if record.id not in found:
+            return record
+        item, title, _ = found[record.id]
+        return {**record.to_dict(), 'item': item, 'title': title}
+    if page is not None:
+        return {**page.to_dict(), 'results': [one(record) for record in records]}
+    return one(records[0])
 
 
 def reply(ctx: Context) -> Any:
     """Answer a question, or mark a message read, MAP-050. Over MCP a question linked to a ticket is not answered:
-    it is a dispatched agent's permission request, the person's to answer, BASE-052."""
+    it is a dispatched agent's permission request, the person's to answer, BASE-052. This goes by surface and not by
+    role on purpose: no agent answers a permission, however it was started."""
     return _store(ctx).reply(ctx.nouns['id'], ctx.nouns.get('answer'), agent=ctx.surface == 'mcp')
 
 
@@ -867,24 +1139,27 @@ def messages(ctx: Context) -> Any:
     for name in sorted(nouns):
         if name != 'op' and name not in reads:
             notices.append(Notice(name, f'op={op} does not read {name}; it was ignored.'))
+    _numbering(store)
     if op == 'move':
         _need(ctx, 'id', 'node', verb='messages')
-        return _with_notices(store.move_message(nouns['id'], _held(store, nouns, notices)), notices)
+        return _with_notices(_numbered_messages(store, store.move_message(nouns['id'], _held(store, nouns, notices))),
+                             notices)
     node = _work_node(nouns['node']) if 'node' in nouns else None
-    return _with_notices(store.messages(node, nouns.get('kind'), nouns.get('open'), **_paging(ctx)), notices)
+    return _with_notices(_numbered_messages(store, store.messages(node, nouns.get('kind'), nouns.get('open'),
+                                                                  **_paging(ctx))), notices)
 
 
 def work(ctx: Context) -> Any:
     """The work records: the condition of an element or a join, apart from the map, MAP-046 and STORE-042.
     op=list, the default, reads them, and an id with no op reads one; add, edit, take, plan, step, move and done
     write one each, and distribute gives the open tickets the glyphs of N agents, VIEW-040. A ticket is written by
-    the person, or by the sentinel and the system agent for them on the command line, never by a worker over the
-    agents' tool, MAP-050, work is planned before a ticket exists."""
+    the person, by the agents that serve them and by a session the person runs outside dispatch; the roles the
+    person's `roles_without_authority` names, a worker and a merge preparation by default, write none, MAP-050:
+    work is planned before a ticket exists."""
     # An id with no op reads that one ticket with what the map holds at its node and its links, MAP-048.
     op = str(ctx.nouns.get('op', 'read' if 'id' in ctx.nouns else 'list'))
-    if op == 'add' and ctx.surface == 'mcp':
-        raise Stop('Tickets are written by the person, or by the sentinel for them; an agent at work writes what it '
-                   'found in its own ticket\'s note.', 'metaform map work op=edit id=<your work id> note="..."')
+    if op == 'add':
+        _may_write_ticket(ctx)
     if op not in WORK_READS or op == 'read' and 'op' in ctx.nouns:
         raise Stop(f'{op!r} is not a work operation: op=list, glyphs, add, edit, take, plan, step, move, distribute or done; '
                    'with id= and '
@@ -892,13 +1167,14 @@ def work(ctx: Context) -> Any:
     _need(ctx, *WORK_NEEDS[op], verb='work')
     unread = sorted(name for name in ctx.nouns if name != 'op' and name not in WORK_READS[op])
     notices = [Notice(name, f'op={op} does not read {name}; it was ignored.') for name in unread]
-    if op == 'edit' and 'condition' in ctx.nouns and ctx.surface == 'mcp':  # the part's state is not a worker's to set
+    role = held_role(ctx) if op == 'edit' else None
+    if role and 'condition' in ctx.nouns:  # the part's state is not a worker's to set
         ctx.nouns.pop('condition')
-        notices.append(Notice('condition', 'The state of a part is set by the intake and the person, not by an agent '
-                                           'at work; it was ignored. Say what you found in the note.'))
-    if op == 'edit' and 'kind' in ctx.nouns and ctx.surface == 'mcp':  # what sort of ticket it is was decided with it
+        notices.append(Notice('condition', f'The state of a part is set by the intake and the person, not by a {role} '
+                                           'agent; it was ignored. Say what you found in the note.'))
+    if role and 'kind' in ctx.nouns:  # what sort of ticket it is was decided with it
         ctx.nouns.pop('kind')
-        notices.append(Notice('kind', 'A ticket\'s kind is set by whoever wrote it, not by an agent at work; it was '
+        notices.append(Notice('kind', f'A ticket\'s kind is set by whoever wrote it, not by a {role} agent; it was '
                                       'ignored. Say what you found in the note.'))
     for name in unread:
         ctx.nouns.pop(name)
@@ -906,6 +1182,7 @@ def work(ctx: Context) -> Any:
     if op == 'glyphs':
         return {'glyphs': list(AGENT_GLYPHS)}
     if op == 'list':
+        _numbering(store)
         node = _named(store, nouns, notices)
         # An element's list holds the tickets on the joins it receives or provides too, so an agent told its node
         # finds its ticket, ticket dd2a9caf.
@@ -925,13 +1202,15 @@ def work(ctx: Context) -> Any:
         node = _named(store, nouns, notices)
         if node is None:
             raise Stop('work op=add needs node, or receiver and provider.', 'metaform help map work')
+        titled(ctx, 'The ticket', nouns.get('title'))  # it takes the next number at its node, MCP-037
+        _numbering(store)
         # A missing condition is stored empty, and the store names it in its notice, STORE-042.
         with store.atomic():
             added = store.add_work(node, nouns.get('condition'),
                                    links=[_link(store, link) for link in nouns.get('links') or ()],
-                                   **_optional(ctx, 'kind', 'note', 'task', 'held', 'reviewed'))
+                                   **_optional(ctx, 'kind', 'note', 'task', 'held', 'reviewed', 'title'))
             _keep(store, added.id, nouns, notices)
-        return _with_notices(_glyphed(store, added), notices)
+        return _written(ctx, store, added, 'add', notices)
     if op == 'distribute':
         return _with_notices(_glyphed(store, _distribute(store, nouns['agents'])), notices)
     work_id = nouns['id']
@@ -941,7 +1220,7 @@ def work(ctx: Context) -> Any:
         with store.atomic():
             _claim(ctx, store, work_id, nouns.get('by'))
             taken = store.take_work(work_id, nouns.get('steps'), nouns.get('by'))
-        return _with_notices(_glyphed(store, taken), notices)
+        return _written(ctx, store, taken, 'take', notices)
     if op == 'move':
         with store.atomic():
             previous = store.ticket(work_id).work.column
@@ -949,13 +1228,13 @@ def work(ctx: Context) -> Any:
         if previous != 'todo' and moved.column == 'todo':
             ctx.publish('work.requeued', {'project': store.project_id, 'work_id': work_id,
                                          'previous': previous, 'revision': time.time_ns()})
-        return _with_notices(_glyphed(store, moved), notices)
+        return _written(ctx, store, moved, 'move', notices)
     if op == 'plan':
-        return _with_notices(_glyphed(store, store.plan_work(work_id, nouns['steps'])), notices)
+        return _written(ctx, store, store.plan_work(work_id, nouns['steps']), 'plan', notices)
     if op == 'step':
-        return _with_notices(_glyphed(store, store.step_work(work_id, nouns.get('said'))), notices)
+        return _written(ctx, store, store.step_work(work_id, nouns.get('said')), 'step', notices)
     if op == 'edit':
-        changes = {name: nouns[name] for name in WORK_FIELDS if name in nouns}
+        changes = {name: nouns[name] for name in (*WORK_FIELDS, 'title') if name in nouns}
         node = _named(store, nouns, notices)
         if node is not None:
             changes['node'] = node
@@ -966,8 +1245,28 @@ def work(ctx: Context) -> Any:
             if 'glyph' in nouns:
                 _assign(store, {work_id: _glyph(nouns['glyph'], notices)})
             _keep(store, work_id, nouns, notices)
-        return _with_notices(_glyphed(store, edited), notices)
-    return _with_notices(_glyphed(store, store.finish_work(work_id, nouns.get('resolution'))), notices)
+        return _written(ctx, store, edited, 'edit', notices)
+    # A resolution records a decision, so it carries a short why, kept with the ticket's number, MCP-037.
+    titled(ctx, 'The resolution', None, nouns.get('why'), why_needed=True, title_needed=False,
+           why_step='add why: one line saying why it was resolved this way')
+    return _written(ctx, store, store.finish_work(work_id, nouns.get('resolution'), nouns.get('why')), 'done',
+                    notices)
+
+
+def _written(ctx: Context, store: Store, record: WorkRecord, op: str, notices: list[Notice]) -> Any:
+    """What a ticket write answers. To an agent over MCP, one line, MCP-037: the ticket's `<address>#<n>` and title
+    and what the write did, from the map module's `work_<op>` prompt, then each notice on a line of its own; the
+    record is a read away, `map_work id=<id>`, so the agent is not handed back what it just sent. Elsewhere the record
+    with what the map keeps on it, as every read gives it."""
+    if ctx.surface != 'mcp':
+        return _with_notices(_glyphed(store, record), notices)
+    numbered = _work_numbers(store, [record.id]).get(record.id, {})
+    fills = {'item': str(numbered.get('item') or record.id), 'title': str(numbered.get('title') or ''),
+             'id': record.id, 'by': str(record.taken_by or ''), 'column': record.column,
+             'done': str(record.steps_done), 'steps': str(record.steps or record.steps_done)}
+    line = ' '.join(_prompt(f'work_{op}', **fills).split())
+    return '\n'.join([line, *(_prompt('work_notice', where=one.where, message=one.message)
+                              for one in (*notices, *record.notices))])
 
 
 def _glyph(value: Any, notices: list[Notice]) -> str | None:
@@ -1013,8 +1312,25 @@ def _settings(store: Store, work_ids: list[str]) -> dict[str, dict[str, Any]]:
     return kept
 
 
+def _may_write_ticket(ctx: Context) -> None:
+    """A ticket is not written by an agent whose role the person holds back, MAP-050; on the page it always is. A
+    worker may open a child of the ticket it holds, BASE-061: the branch waits for `op=add` to read `parent`, so until
+    BASE-061 is built no call reaches it."""
+    role = held_role(ctx)
+    if role is None:
+        return
+    parent = ctx.nouns.get('parent')
+    if 'parent' in WORK_READS['add'] and parent and parent == os.environ.get('METAFORM_WORK'):
+        return
+    raise Stop(f'A {role} agent writes no ticket: tickets are written by the person and the agents that serve them. '
+               'Write what you found in your own ticket\'s note.',
+               'metaform map work op=edit id=<your work id> note="..."')
+
+
 def _claim(ctx: Context, store: Store, work_id: str, by: Any) -> None:
-    """A restricted claim uses the transport's client name, or the CLI owner's first word, never the environment."""
+    """A restricted claim uses the transport's client name, or the CLI owner's first word, never the environment, which
+    an agent's harness may have mixed with its runner's. Ticket authority does read the runner's role from it,
+    `held_role`, since that guards against an agent's mistakes and is no boundary, MAP-050."""
     kept = _settings(store, [work_id]).get(work_id, {})
     if 'eligible' not in kept:
         return
@@ -1070,13 +1386,13 @@ def _glyphed(store: Store, result: Any) -> Any:
     page = cast(Page[WorkRecord], result) if isinstance(result, Page) else None
     records = list(page.results) if page is not None else [cast(WorkRecord, result)]
     ids = [record.id for record in records]
-    glyphs, settings = _glyphs(store, ids), _settings(store, ids)
-    if not glyphs and not settings:
+    glyphs, settings, numbers = _glyphs(store, ids), _settings(store, ids), _work_numbers(store, ids)
+    if not glyphs and not settings and not numbers:
         return page if page is not None else records[0]
 
     def one(record: WorkRecord) -> Any:
         kept = {**({'glyph': glyphs[record.id]} if record.id in glyphs else {}),
-                **settings.get(record.id, {})}
+                **settings.get(record.id, {}), **numbers.get(record.id, {})}
         if not kept:
             return record
         data = record.to_dict()
@@ -1103,25 +1419,79 @@ def _distribute(store: Store, agents: Any) -> Page[WorkRecord]:
     return Page(tuple(waiting), None)
 
 
+def _work_numbers(store: Store, work_ids: list[str]) -> dict[str, dict[str, Any]]:
+    """Each numbered ticket's `item`, `<address>#<n>`, its title and, once resolved, its why, MCP-037."""
+    found = store.numbers_of('work', work_ids)
+    return {work_id: {'item': item, 'title': title, **({'why': why} if why else {})}
+            for work_id, (item, title, why) in found.items()}
+
+
 def work_read(ctx: Context, record: WorkRecord) -> dict[str, Any] | None:
-    """The agent glyph the map module keeps on a work record, VIEW-040; nothing when it keeps none. The chassis puts
-    it under `map` in `map work id=<id>`, BASE-035."""
+    """The agent glyph the map module keeps on a work record, VIEW-040, and its number, title and why at its address,
+    MCP-037; nothing when it keeps none. The chassis puts it under `map` in `map work id=<id>`, BASE-035."""
     if ctx.store is None:
         return None
     glyph = _glyphs(ctx.store, [record.id]).get(record.id)
-    kept = {**({'glyph': glyph} if glyph else {}), **_settings(ctx.store, [record.id]).get(record.id, {})}
+    kept = {**({'glyph': glyph} if glyph else {}), **_settings(ctx.store, [record.id]).get(record.id, {}),
+            **_work_numbers(ctx.store, [record.id]).get(record.id, {})}
     return kept or None
 
 
+def map_item_read(ctx: Context, address: str, number: int) -> dict[str, Any] | None:
+    """The work record, question, message, code link or glossary term numbered `number` at `address`, MCP-037: its
+    kind, title, why, body and links; None when map holds none there."""
+    if ctx.store is None:
+        return None
+    _numbering(ctx.store)
+    return ctx.store.item_at(address, number) or term_read(ctx.store, address, number)
+
+
+def map_items_at(ctx: Context, address: str, before: int | None, limit: int) -> list[dict[str, Any]]:
+    """The work records, questions, messages, code links and glossary terms numbered at `address` below `before`,
+    newest first, at most `limit`, MCP-037: each one's number, kind, title and why, in one read of each."""
+    if ctx.store is None:
+        return []
+    _numbering(ctx.store)
+    merged = [*ctx.store.listed_items(address, before, limit), *terms_at(ctx.store, address, before, limit)]
+    return sorted(merged, key=lambda one: -int(one['number']))[:limit]
+
+
+def item(ctx: Context) -> Any:
+    """One item at an address by its number, `<address>#<n>`, as `metaform://<address>#<n>` serves it, MCP-037: the
+    memory, ticket, question or message any module numbered there, with its title, why, body and links."""
+    from metaform.data import parse_reference
+    given = str(ctx.nouns['item']).strip()
+    if '#' not in given:  # an address alone: its latest number, with that item when it is still there
+        latest = latest_item(ctx.folder, given, project=ctx.project)
+        if latest is None:
+            raise Stop(f'Nothing is numbered at {given}.', f'metaform map where {given}')
+        return item_read(ctx.folder, given, latest['number'], project=ctx.project) or {
+            **latest, 'notices': [{'where': 'item', 'message': f"{latest['item']} was deleted; its number is not "
+                                                               'reused.'}]}
+    parsed = parse_reference(given)
+    if parsed is None:
+        raise Stop(f'{given!r} is not an item: an item is <address>#<n>, its number in hex.',
+                   'metaform map item code.manager.route#1')
+    found = item_read(ctx.folder, *parsed, project=ctx.project)
+    if found is None:
+        latest = _store(ctx).latest_number(parsed[0])
+        raise Stop(f'{given} holds no item: ' + (f'the numbers there run to #{latest:x}, and this one was never taken '
+                                                  'or its item was deleted.' if latest else 'nothing is numbered there.'),
+                   f'metaform map where {parsed[0]}')
+    return found
+
+
 WORK_NOUNS = (
-    _noun('op', 'list, the default; add; edit; take, which says an agent has started on the task; plan, which says '
-                'how many steps the agent plans; step, which says it finished one; move, which puts it in a column '
-                'of the board; distribute, which gives the open tickets the glyphs of N agents; glyphs, which reads '
-                'the available agent glyph names; or done.',
+    _noun('op', 'list, the default; add; edit, which, when you stop with your ticket open, sets its note to what is '
+                'true now and where; take, which says an agent has started on the task; plan, which says how many '
+                'steps you plan, first, and again when the plan changes; step, which says you finished one, with what '
+                'you did and any choice you made and why; move, which puts it in a column of the board; distribute, '
+                'which gives the open tickets the glyphs of N agents; glyphs, which reads the available agent glyph '
+                'names; or done, which closes it with its resolution and why once the work is complete.',
           schema={'type': 'string', 'enum': ['list', 'add', 'edit', 'take', 'plan', 'step', 'move', 'distribute',
                                              'glyphs', 'done']}),
     _noun('steps', 'take and plan: how many steps you plan for the task. Say it again when your plan changes.', 'int'),
-    _noun('said', 'step: what you did in the step you finished, in a sentence.'),
+    _noun('said', 'step: what you did in the step you finished, in a sentence, with any choice you made and its why.'),
     _noun('node', 'list, add and edit: an element, by address; edit moves the ticket there, keeping its progress. '
                   'list gives its own records and those on the joins it receives or provides.'),
     _noun('receiver', 'list, add and edit: a join, by the address of the element that holds it, with provider.'),
@@ -1169,6 +1539,9 @@ WORK_NOUNS = (
                 'questions, knowledge layers and modules\' memories. '
                 'past_work lists completed tickets with their age; read one with id= to see its log.'),
     _noun('resolution', 'done: how it was resolved, kept beside the record.'),
+    _noun('title', 'add, required, and edit: one short line saying what the ticket is. The ticket takes the next '
+                   'number at its node, shown as <address>#<n>.'),
+    _noun('why', 'done, required: one short line saying why it was resolved this way.'),
     _noun('open', 'list: true, the default, for records not done; false for those done. A listed record leaves out '
                   'its task, said and resolution; read them with id=.', 'bool'),
     *PAGING,
@@ -1189,12 +1562,15 @@ MODULE = Module(
     tables=TABLES,
     data=DATA,
     work_read=work_read,
+    item_read=map_item_read,
+    items_at=map_items_at,
+    item_kinds=('work', 'question', 'message', 'code', 'term'),
     summary="Read and write this project's functional map and its layers.",
     purpose="Reads and writes this project's functional map. Handed an address, start with where: one read of "
-            'the address returns the element, what relies on it, every join it provides with the receiver and its '
-            'purpose, what it relies on, every join it receives with the elements it holds and its function, its '
-            'open work records and what the layers in context hold at it, the sources layer\'s refs among them; '
-            'full=true keeps ids. With '
+            'the address returns the element, what relies on it, every join it provides with its receiver and '
+            'purpose, what it relies on, every join it receives with its providers and purpose, and, once per '
+            'session, how much is held at it and around it, memories, open work, messages, layer items, with the '
+            'call that reads each; contents=true returns what is held there in full, full=true keeps ids too. With '
             "no address, start with roots: the map's entry, the CQU and the DE with their joins, and the root "
             'elements. The receiver holds the purpose, the provider delivers the function. '
             'Record what you learn at a node with the memory tools; to build or improve a knowledge layer, use '
@@ -1202,63 +1578,81 @@ MODULE = Module(
             'time, and finish it when the task is done. Details: metaform help map.',
     details='Every read that returns a join shows the layer it comes from. --raw reads every stored layer.',
     verbs=(
-        Verb('roots', roots, "The map's entry: the CQU and the DE with their joins, and every root element.",
-             nouns=PAGING, switches=RAW),
-        Verb('where', where, 'One read of an address: the element, what relies on it, what it relies on, its open '
-                             "work records and the layers in context at it; with an empty address, the map's entry.",
-             nouns=(Noun('address', 'A dotted namespace address, or empty for the entry.'),
-                    _noun('full', 'true keeps ids and empty fields, which are left out by default.', 'bool')),
-             switches=RAW),
+        Verb('roots', roots, "Read the map's entry: the CQU and the DE with their joins, and every root element.",
+             nouns=PAGING, switches=RAW, effect='read'),
+        Verb('where', where, 'Read one address on the map: its element, what relies on it, and what it relies on, each '
+                             'with its purpose. How much is held at it and around it is counted, with the calls that '
+                             "read it; with an empty address, the map's entry.",
+             nouns=(Noun('address', 'A dotted namespace address, or empty for the entry; <scope>@<layer> reads '
+                                    'what that layer holds there, such as code.timer.kitchen@code.'),
+                    _noun('contents', 'true returns what the layers, memories and modules hold at it in full; '
+                                      'by default each is counted, with the call that reads it.', 'bool'),
+                    _noun('full', 'true keeps ids and empty fields, which are left out by default, with the '
+                                  'contents.', 'bool')),
+             switches=RAW, effect='read'),
         Verb('markdown', markdown, 'The map, or the part around one address, as a short Markdown document.',
              nouns=(_noun('address', 'A dotted namespace address; without one, the whole map.'),
                     _noun('file', 'A file to write the document to; without one, it is printed.')),
+             switches=RAW, surfaces=('cli',)),
+        Verb('mermaid', mermaid, 'The map, or one element and those one join away, as a Mermaid flowchart.',
+             nouns=(_noun('address', 'A dotted namespace address; without one, the whole map.'),
+                    _noun('direction', 'TB, top to bottom, the default, or LR, left to right.'),
+                    _noun('leave_out', 'Roots whose elements are not drawn, comma-separated, such as '
+                                       'upstream,downstream.'),
+                    _noun('labels', 'What each edge says: none, the default; purpose, its join\'s purpose; or ef, '
+                                    'its encounter function.'),
+                    _noun('file', 'A file to write the flowchart to, such as map.mmd; without one, it is printed.')),
              switches=RAW, surfaces=('cli',)),
         Verb('xml', xml, 'The map, or one element and all it receives, as an XML document with every field.',
              nouns=(_noun('address', 'A dotted namespace address; without one, the whole map.'),
                     _noun('file', 'A file to write the document to; without one, it is printed.')),
              switches=RAW, surfaces=('cli',)),
-        Verb('element', element, 'One element: its address, name_length, name, role and short name.',
-             nouns=(Noun('element', 'An address or element id.'),), switches=RAW),
-        Verb('joins', joins, 'The joins an element receives, or with as=provider those that hold it.',
+        Verb('element', element, 'Read one element: its address, name_length, name, role and short name.',
+             nouns=(Noun('element', 'An address or element id.'),), switches=RAW, effect='read'),
+        Verb('joins', joins, 'List the joins an element receives, or with as=provider the joins it provides for.',
              nouns=(Noun('element', 'An address or element id.'), _noun('as', 'receiver or provider.'), *PAGING),
-             switches=RAW),
-        Verb('identity', identity, 'Every join an element provides for: who receives it, why and how.',
-             nouns=(Noun('element', 'An address or element id.'), *PAGING), switches=RAW),
-        Verb('children', children, 'The next types toward the leaves.',
-             nouns=(Noun('address', 'A dotted namespace address.'), *PAGING)),
-        Verb('layers', layers, 'The layers, with their kind, tags, state and whether each is on here.',
+             switches=RAW, effect='read'),
+        Verb('identity', identity, 'List every join an element provides for: the receiver, its OP, and the EF that '
+                                   'serves it.',
+             nouns=(Noun('element', 'An address or element id.'), *PAGING), switches=RAW, effect='read'),
+        Verb('children', children, 'List the artifact types one segment toward the leaves from an address.',
+             nouns=(Noun('address', 'A dotted namespace address.'), *PAGING), effect='read'),
+        Verb('layers', layers, 'List the layers with their kind, tags and state, and whether each is on here.',
              nouns=(_noun('tag', 'Only layers with this tag.'), _noun('kind', 'Only layers of this kind.'),
-                    _noun('module', 'Only layers of this module.'), *PAGING)),
-        Verb('tag', tag, 'Add a tag to a layer.', nouns=(Noun('layer', 'A layer.'), Noun('tag', 'The tag.'))),
+                    _noun('module', 'Only layers of this module.'), *PAGING), effect='read'),
+        Verb('tag', tag, 'Tag a layer, so it can be named by the tag wherever layers are named.',
+             nouns=(Noun('layer', 'A layer.'), Noun('tag', 'The tag.'))),
         Verb('untag', untag, 'Remove a tag from a layer.', nouns=(Noun('layer', 'A layer.'), Noun('tag', 'The tag.'))),
-        Verb('layer', layer, 'Everything one layer holds, or what it holds at one node.',
-             nouns=(Noun('layer', 'A layer.'), _noun('node', 'A node, such as element:code.engine.'), *PAGING)),
-        Verb('node', node, "Every layer's items at one node, grouped by layer.",
+        Verb('layer', layer, 'Read everything one layer holds, or what it holds at one node.',
+             nouns=(Noun('layer', 'A layer.'), _noun('node', 'A node, such as element:code.engine.'), *PAGING), effect='read'),
+        Verb('node', node, "Read every layer's items at one node, grouped by layer.",
              nouns=(Noun('node', 'element:<address or id> or join:<id>.'),),
-             switches=RAW),
-        Verb('context', context, 'The properties that apply at an address, and those attached toward the leaves from '
-                                 'it that are visible there.',
-             nouns=(Noun('address', 'A dotted namespace address.'), *PAGING)),
-        Verb('links', links, 'Items that link to a node.',
-             nouns=(Noun('node', 'A node.'), _noun('layer', 'Only this layer.'), *PAGING), switches=RAW),
-        Verb('citing', citing, 'Everything whose refs hold a key and value.',
-             nouns=(Noun('key', 'The ref key, such as path.'), Noun('value', 'The ref value.'), *PAGING)),
-        Verb('history', history, 'Every version of a thing, in the order it was written.',
-             nouns=(Noun('id', 'An id.'), *PAGING)),
-        Verb('bases', bases, "The project's bases.", nouns=(_noun('project', 'A project id.'), *PAGING)),
-        Verb('add-base', add_base, 'Start a new, empty base and make it active.',
+             switches=RAW, effect='read'),
+        Verb('context', context, 'Read the properties that apply at an address, and those attached toward the leaves '
+                                 'that are visible there.',
+             nouns=(Noun('address', 'A dotted namespace address.'), *PAGING), effect='read'),
+        Verb('links', links, 'List the layer items that link to a node.',
+             nouns=(Noun('node', 'A node.'), _noun('layer', 'Only this layer.'), *PAGING), switches=RAW, effect='read'),
+        Verb('citing', citing, 'Find everything on the map whose refs hold a key and value, such as a file path.',
+             nouns=(Noun('key', 'The ref key, such as path.'), Noun('value', 'The ref value.'), *PAGING), effect='read'),
+        Verb('history', history, 'Read every version of a thing on the map by its id, from the row that added it '
+                                 'through each refinement.',
+             nouns=(Noun('id', 'An id.'), *PAGING), effect='read'),
+        Verb('bases', bases, "List the project's bases, the maps it keeps, and which one is active.",
+             nouns=(_noun('project', 'A project id.'), *PAGING), effect='read'),
+        Verb('add-base', add_base, 'Start a new, empty base for the project and make it the active map.',
              nouns=(Noun('name', 'The base name.'), _noun('project', 'A project id.'))),
-        Verb('activate', activate, 'Make a base the active one.',
+        Verb('activate', activate, "Make one of the project's bases the active map.",
              nouns=(Noun('name', 'The base name.'), _noun('project', 'A project id.'))),
         Verb('remove-base', remove_base, 'Take one base out of the project; a copy of its store is kept.',
              nouns=(Noun('name', 'The base name.'), _noun('project', 'A project id.')),
              caution='Removes the base and its store; a copy is kept under backups/remove-base. The active base '
-                     'is refused.'),
-        Verb('collapse', collapse, 'Write the current map as a new base of one base layer, each element and '
-                                   'join once with the same ids, and make it active; the old one is kept whole.',
+                     'is refused.', effect='remove'),
+        Verb('collapse', collapse, 'Rewrite the current map as a new base of one base layer and make it active; the '
+                                   'old one is kept whole. Each element and join is written once, with the same ids.',
              nouns=(Noun('name', 'The new base name.'), _noun('project', 'A project id.'))),
-        Verb('promote', promote, 'Give a join an ordinary element by address, keeping the original join and its '
-                                 'history, memories and work.',
+        Verb('promote', promote, 'Give a join an element of its own at an address, keeping the join and its history, '
+                                 'memories and work.',
              nouns=(_noun('receiver', 'The address of the element that holds the join.'),
                     _noun('provider', 'The address of an element the join holds.'),
                     _noun('address', 'The address of the element to create or reuse for the join.'),
@@ -1271,8 +1665,8 @@ MODULE = Module(
                      'in its own layer; a knowledge join follows its existing edit rules. Repeating the same '
                      'association adds no version. An existing element keeps its authored fields; a different '
                      'address for an already promoted join returns a notice and writes nothing.'),
-        Verb('cypher', cypher, 'Ask the map a question in Cypher: a read over the graph in memory, of the layers '
-                               'in view or the ones named, nothing written.',
+        Verb('cypher', cypher, 'Ask the map a question in Cypher: a read-only query over the graph of the layers in '
+                               'view or named.',
              nouns=(_noun('layers', 'The layers to see, by name, comma separated; left out, the layers turned on.'),
                     Noun('query', 'The Cypher query: MATCH, WHERE, RETURN, ORDER BY, LIMIT; strings in double quotes.',
                          many=True)),
@@ -1288,12 +1682,15 @@ MODULE = Module(
              examples=(('metaform map cypher MATCH \'(e) WHERE e.kind = "element" AND e.role = "DE" RETURN e.address, e.name\'',
                         'The defining elements.'),
                        (('metaform map cypher \'MATCH (r)-[j]->(e) WHERE r.address = "code.store" AND j.kind = "join" '
-                         'RETURN e.address, j.purpose\''), 'What the store relies on, with the purpose of each join.'))),
-        Verb('search', search, 'Items whose value holds every word of the text.',
-             nouns=(Noun('text', 'The words to find.'), _noun('layer', 'Only this layer.'), *PAGING)),
-        Verb('work', work, 'The work records, the condition of an element or a join apart from the map: list them, '
-                           'read one by its id, add or edit one, take one, plan its steps and report each, move it '
-                           'on the board, or mark it done.',
+                         'RETURN e.address, j.purpose\''), 'What the store relies on, with the purpose of each join.')), effect='read'),
+        Verb('search', search, 'Find the layer items whose value holds every word of the text.',
+             nouns=(Noun('text', 'The words to find.'), _noun('layer', 'Only this layer.'), *PAGING), effect='read'),
+        Verb('work', work, 'Work with tickets, the work records on map elements and joins: list, read, add, edit, take '
+                           'and finish them. To work a ticket handed to you: read it with id=; op=plan with the steps '
+                           'you plan; op=step as each finishes, saying what you did and any choice you made with its '
+                           'why; op=done with a resolution and a why when it is complete; when you stop with it open, '
+                           'op=edit its note to say what is true now and where. A ticket never changes the map, and it '
+                           'moves across the board as it is worked.',
              nouns=WORK_NOUNS,
              details='A work record is attached to one element or join and never changes the map. Its '
                      'condition is the state of that part, never the kind of ticket: most tasks carry none. A '
@@ -1312,13 +1709,14 @@ MODULE = Module(
                      'the sentinel and the system agent for them on the command line, held=true until agents take '
                      'it; over the agents\' tool op=add is refused, and an agent at work says what it found in its '
                      'own ticket\'s note.',
-             examples=(('metaform map work op=add node=element:code.alarm.audible condition=unbuilt task="build it"',
+             examples=((('metaform map work op=add node=element:code.alarm.audible condition=unbuilt '
+                         'title="Build the alarm" task="build it"'),
                         'Record that the alarm is not built yet, with the task that builds it.'),
                        ('metaform map work op=edit id=<work id> node=code.alarm.audible',
                         'Move a ticket to the alarm, keeping its progress and reference links.'),
                        ('metaform map work condition=broken open=true', 'List the parts recorded broken, with their open tasks.'),
-                       ('metaform map work id=<work id>', ('Read one ticket with what the map holds at its node and '
-                                                           'at each node it links.')),
+                       ('metaform map work id=<work id>', ('Read one ticket with its node, how much is held there, '
+                                                           'and the nodes it links.')),
 )),
         Verb('ask', ask, 'Write a question at a node, for the record: the person asks, never an agent.',
              nouns=(Noun('node', 'Where the question applies: an element, by address; with provider, the purpose '
@@ -1328,9 +1726,12 @@ MODULE = Module(
                     _noun('suggestions', 'Possible answers, as a JSON list.', 'json',
                           {'type': 'array', 'items': {'type': 'string'}}),
                     _noun('by', 'Who asks.'),
-                    _noun('work', 'The ticket it belongs to, by its work id.')),
+                    _noun('work', 'The ticket it belongs to, by its work id.'),
+                    _noun('title', 'Required: one short line saying what the question is. It takes the next number at '
+                                   'the node, shown as <address>#<n>.'),
+                    _noun('why', 'Required: one short line saying why it is asked.')),
              surfaces=('cli',)),
-        Verb('reply', reply, 'Answer a question, or mark a message read.',
+        Verb('reply', reply, 'Answer a question at a node, or mark a message read.',
              nouns=(Noun('id', 'The id of the question or the message.'),
                     _noun('answer', 'The answer to a question.')),
              examples=(('metaform map reply <id> answer="No, make it louder"', 'Answer a question.'),)),
@@ -1338,7 +1739,8 @@ MODULE = Module(
              nouns=(Noun('id', 'The id of the question.'),),
              examples=(('metaform map reopen <id>', 'Clear the answer; the question waits again.'),),
              surfaces=('cli',)),
-        Verb('messages', messages, 'List the questions and messages left for the user, or move one to another node.',
+        Verb('messages', messages, 'List the questions and messages left for the person at nodes, or move one to '
+                                   'another node.',
              nouns=(_noun('op', 'list, the default, oldest first; move changes one record\'s node, keeping its answer '
                                'and closed state.', schema={'type': 'string', 'enum': ['list', 'move']}),
                     _noun('id', 'move: the id of the question or message.'),
@@ -1349,13 +1751,21 @@ MODULE = Module(
                     *PAGING),
              examples=(('metaform map messages op=move id=<message id> node=code.alarm.audible',
                         'Move a question or message to the alarm, keeping its suggestions and answer.'),)),
-        Verb('knowledge', knowledge, 'Create, build, edit and finish a knowledge layer.',
+        Verb('item', item, 'One item at an address by its number, <address>#<n>: its title, why, body and links.',
+             nouns=(Noun('item', 'The item, <address>#<n>, its number in hex as it is shown, such as '
+                                 'code.manager.route#1f; upper case is read as well. An address alone reads the '
+                                 'latest item numbered there.'),),
+             examples=(('metaform map item code.manager.route#1', 'Read the first item numbered at the route manager.'),),
+             effect='read'),
+        Verb('knowledge', knowledge, 'Build a knowledge layer, a CEL on top of the map that agents use to index and '
+                                     'understand the AUE. Create it, add, edit and remove its objects one at a time, '
+                                     'and finish it.',
              nouns=KNOWLEDGE_NOUNS,
              details='Every call names its layer with layer=. op=create makes the layer; the add, edit and remove '
                      'operations change one object each; op=finish marks it ready. The base grows by the add '
                      'operations with layer=base; it changes by refine.',
              examples=((('metaform map knowledge op=create layer=practices-cpp variable="C++ practice here." '
-                         'mutable=true hideable=true'), 'Start a knowledge layer.'),)),
+                         'mutable=true hideable=true'), 'Start a knowledge layer.'),), effect='remove'),
         Verb('refine', refine, 'Refine the base: change or remove one of its elements or joins as a new version, '
                                'keeping every earlier one.',
              nouns=REFINE_NOUNS,
@@ -1366,16 +1776,17 @@ MODULE = Module(
                         'Refine one join\'s purpose, the join named by its receiver and an element it holds.'),)),
         Verb('select', select, 'Turn a layer on at an address and at every address toward the leaves from it.',
              nouns=(Noun('address', 'An address.'), Noun('layer', 'A layer.'))),
-        Verb('mask', mask, 'Stop a layer flowing into an address and every address toward the leaves from it.',
+        Verb('mask', mask, 'Stop a layer reaching an address and every address toward the leaves from it.',
              nouns=(Noun('address', 'An address.'), Noun('layer', 'A layer.'))),
-        Verb('clear', clear, 'Remove a select or mask.',
+        Verb('clear', clear, 'Remove a select or mask set at an address.',
              nouns=(Noun('address', 'An address.'), Noun('layer', 'A layer.'), Noun('kind', 'select or mask.'))),
         Verb('hide', hide, 'Hide a layer from every read in context.', nouns=(Noun('layer', 'A layer.'),),
              caution='This hides the layer, and every layer built from it, from every agent.'),
         Verb('unhide', unhide, 'Show a hidden layer again.', nouns=(Noun('layer', 'A layer.'),)),
-        Verb('reexamined', reexamined, 'Clear the re-examination mark of a layer.',
+        Verb('reexamined', reexamined, "Clear a layer's re-examination mark once its knowledge has been checked "
+                                       'against the changed base.',
              nouns=(Noun('layer', 'A layer.'),)),
-        Verb('answer', answer, 'Answer a blind-spot challenge: A, B or C.',
+        Verb('answer', answer, 'Answer a blind-spot challenge the critic raised: A, B or C.',
              nouns=(Noun('challenge', 'The challenge item id.'), Noun('answer', 'A, B or C.'),
                     _noun('link', 'For C: the element or join that already handles it.'))),
         Verb('approve', approve, 'Approve a challenge answered B, making it a plan.',
@@ -1386,7 +1797,58 @@ MODULE = Module(
              details='Fast mode by default: the critic reads the base and the specifications, not the code. '
                      '--critic also lets it read the code and write tickets. Each run creates its own blind-spot '
                      'layer, with provenance role critic and blinded true unless --critic, LAYER-014.'),
-        Verb('challenges', challenges, "The answer prompt with each challenge of a blind-spot layer and its state.",
-             nouns=(Noun('layer', 'The blind-spot layer.'),)),
+        Verb('challenges', challenges, 'Read the answer prompt with each challenge of a blind-spot layer and its '
+                                       'state.',
+             nouns=(Noun('layer', 'The blind-spot layer.'),), effect='read'),
+        *CODE_VERBS,
+        *GLOSSARY_VERBS,
+    ),
+    # The map's tools on the web GUI's toolbar. The brief and what the agent sees are what an agent reads, drawn by
+    # the page from the MCP server's own reads: the node's brief with what is numbered there, and everything an agent
+    # connecting here receives, counted, so the person sees what the agent sees and what it costs.
+    toolbar=(
+        ToolbarItem('brief', 'Node brief', 'Read the brief an agent at the selected node is handed, and the '
+                    'memories, messages and work numbered there.', icon='brief', pane='brief', order=20,
+                    shortcut='Alt+B'),
+        ToolbarItem('agent-view', 'What the agent sees', 'See everything an agent connecting here receives, '
+                    'read from the MCP server, and how much of its context that takes.', icon='eye',
+                    pane='agent-view', order=30, shortcut='Alt+A'),
+        ToolbarItem('layers', 'Layers', 'Choose the layers of knowledge shown on the map, and apply them to the '
+                    'folder agents read.', icon='layers', page='layers', order=40, shortcut='Alt+L'),
+        ToolbarItem('board', 'Board', "Prioritize the project's tickets and see which agent holds each.",
+                    icon='board', pane='board', order=50, shortcut='Alt+K'),
+        ToolbarItem('add-task', 'Add task', 'Write a ticket on the selected node, for an agent to take.', icon='pen',
+                    page='add-task', selection='address', group='write', order=60),
+        ToolbarItem('add-element', 'Add element', 'Add a part the map lacks by hand, for an agent to validate.',
+                    icon='box', page='add-element', group='write', order=61),
+        ToolbarItem('export-mermaid', 'Export Mermaid', 'Save the map as a Mermaid flowchart, to draw it in docs '
+                    'and reviews.', icon='download', page='export-mermaid', group='export', placement='extra',
+                    order=120),
+        ToolbarItem('copy-mermaid', 'Copy as Mermaid', 'Copy the map as Mermaid, to paste into a document or a '
+                    'chat.', icon='copy', page='copy-mermaid', group='export', placement='extra', order=121),
+    ),
+    # The node panel's tabs and the board. Each is read or typed into, so each starts on the right or in the main
+    # area, never on the left beside the maps.
+    panes=(
+        Pane('object', 'Object', 'Read the selected node: its purpose, its joins, its work and its questions.',
+             icon='file', page='object', area='right', group='node', visible=True, order=10, min_width=320),
+        Pane('provenance', 'Provenance', 'See who recorded the selected node, when, from which prompt and layer.',
+             icon='archive', page='provenance', area='right', group='node', visible=True, order=20, min_width=320),
+        Pane('brief', 'Brief', 'Read the brief an agent at the selected node is handed, and the memories, messages '
+             'and work numbered there.', icon='brief', page='brief', selection='address', area='right',
+             group='node', visible=True, order=15, min_width=320),
+        Pane('agent-view', 'What the agent sees', 'See everything an agent connecting here receives, read from the '
+             'MCP server, and how much of its context that takes.', icon='eye', page='agent-view',
+             selection='address', area='float', min_width=560, min_height=420),
+        Pane('messages', 'Messages', 'Answer the questions agents left for you at nodes, oldest first.', icon='send',
+             page='messages', area='right', group='chat', order=110, min_width=320),
+        Pane('board', 'Board', "Prioritize the project's tickets and see which agent holds each.", icon='board',
+             page='board', area='main', group='stage', order=20, min_width=640, min_height=320),
+        # The code layer at the selected node, `<address>@code`, P165: its symbols, the calls in and out with the
+        # Address at the other end, and the code serving it, as code-context reads it.
+        Pane('code', 'Code', 'Read the code that serves the selected node, and the Addresses its calls reach.',
+             icon='code', verb='code-context', selection='address', area='right', group='node', order=25,
+             min_width=320),
+        *GLOSSARY_PANES,
     ),
 )

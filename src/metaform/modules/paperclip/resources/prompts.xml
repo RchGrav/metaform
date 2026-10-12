@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The paperclip module's prompts: the text Metaform sends to agents, and to people, for the paperclip module.
+     Each element is one prompt, named by its tag. What is between the tags is sent exactly as written; an empty
+     element inside a prompt marks a place the code fills in. Comments are never sent.
+     The issue document the module keeps on each Paperclip issue, keyed metaform, is data, one line each (address,
+     brief, ticket), and is not written here. What is written here is the prose Paperclip's people and agents read on
+     an issue's thread, and the questions Jev is asked. -->
+<prompts>
+<!-- paperclip's line in the connect message: one short phrase saying what an agent uses the module for, written
+     after the module's name, '– paperclip: <what it is for>', in the project's terms. Sent to every agent when it
+     connects over MCP, one line per enabled module under mcp's <instructions>, and listed in the compact
+     command-line guide, metaform help agents. Empty, as here, sends nothing: the person writes it. Off until the
+     module is enabled, and when the folder's modules setting leaves it out. -->
+<connect></connect>
+<!-- paperclip's instructions. Returned by metaform_instructions with module paperclip, at
+     metaform://instructions/paperclip, and printed by metaform help agents paperclip and by the full form of the
+     command-line guide. Empty sends nothing. Off until the module is enabled. -->
+<instructions>paperclip is active.</instructions>
+<!-- The line under the counts an agent is told at its node, MCP-039. paperclip declares no node_count, so this is
+     never shown. -->
+<counts></counts>
+<!-- paperclip's rules, MCP-031, gathered at the end of metaform://tools, each "[paperclip] <rule> Why: <why>".
+     Write each as <rule why="the reason">One sentence.</rule>. Empty, as here, sends nothing. -->
+<rules></rules>
+<!-- The comment `heartbeat` posts on a Paperclip issue it takes for a Metaform agent, once, in the same heartbeat.
+     Read by the issue's people and by Paperclip's agents on its thread; Paperclip's heartbeat protocol asks for a
+     comment on work left in progress (docs/guides/agent-developer/heartbeat-protocol.md). The places: <ticket/> the
+     ticket's reference, <address>#<n>; <address/> the Address; <state/> one of the two sentences of <taken_state>
+     below; <minutes/> how often Paperclip wakes the agent to check, the setting paperclip_check_minutes. Through
+     Paperclip's tool gateway the map_where tool is named mcp.<connection>:map-where, since the gateway turns _ into -
+     (server/src/services/tool-gateway.ts). Change the words freely; it cannot be turned off, since Paperclip treats
+     an in-progress issue with no comment and no monitor as a stuck run. -->
+<taken>Taken by Metaform as ticket <ticket/> at <address/>. <state/> Its brief is read with Metaform's map_where tool (map-where through Paperclip's tool gateway) and the address <address/>. Comments here are written at that Address for the person, and the questions asked there for this ticket come here to be answered. Paperclip wakes this agent every <minutes/> minutes to check until the ticket ends.</taken>
+<!-- The <state/> of <taken>: <started> when dispatch's Autostart is on and heartbeat has asked dispatch to start the
+     ticket's agent, <waiting> when Autostart is off and the ticket waits in To do for the person. -->
+<taken_state>
+<started>Metaform's dispatch starts an agent on it.</started>
+<waiting>It waits for the person to start it in Metaform.</waiting>
+</taken_state>
+<!-- The comment `heartbeat` posts, once, on a Paperclip issue assigned to the Metaform agent that it cannot take
+     because no Address is named for it and Jev chose none. Paperclip asks a run woken for an assignment to leave a
+     comment, and retries the run once when it does not (server/src/services/heartbeat/queue.ts). `metaform paperclip
+     link` is not offered here: it ties an issue a Paperclip agent works, which heartbeat then leaves alone. The
+     place: <issue/> the issue's identifier. -->
+<unrouted>Metaform could not tell where in the map <issue/>'s work lands. Add the line address: &lt;address&gt; to this issue's document keyed metaform, naming the Address it works on; the next heartbeat takes it.</unrouted>
+<!-- The comment `sync` posts on a Paperclip issue when the Metaform ticket working it ends, with the issue's status
+     set in the same call: done, cancelled, or in_review for a failed ticket, which also gets the <failed> question.
+     The places: <ticket/> the ticket's reference; <outcome/> completed, cancelled or failed; <resolution/> the
+     ticket's resolution as the agent wrote it. -->
+<ended>Metaform ticket <ticket/> ended <outcome/>: <resolution/></ended>
+<!-- The question card `sync` puts on a Paperclip issue whose Metaform ticket failed, as an ask_user_questions
+     interaction only a person may answer, so the issue waits in in_review on a real path (skills/paperclip/SKILL.md:
+     "Human-input waits use a saved pending interaction and in_review"). <title> is the card's title, <ask> its
+     question; <retry> and <close> are its two answers: retry moves the issue to todo, and the next heartbeat takes it
+     as a new ticket at the same Address; close cancels the issue. The places: <ticket/> the ticket's reference;
+     <address/> the Address; <resolution/> the ticket's resolution. -->
+<failed>
+<title>Metaform ticket <ticket/> failed</title>
+<ask>Metaform ticket <ticket/> at <address/> ended failed: <resolution/> What should happen to this issue?</ask>
+<retry>Try again: Metaform takes it as a new ticket at the same Address.</retry>
+<close>Close it: cancel this issue.</close>
+</failed>
+<!-- The title of the map message `sync` writes at a ticket's Address for each comment on its Paperclip issue, so the
+     Metaform agent working the ticket reads what Paperclip's people and agents said; the message's text is the comment
+     as written. The places: <issue/> the issue's identifier, such as PAP-12; <author/> who wrote it, agent or person
+     and their Paperclip id. -->
+<comment>Comment on <issue/> from <author/></comment>
+<!-- What Jev is asked when a Paperclip issue assigned to the Metaform agent names no Address in its metaform document:
+     which of the map's Addresses its work lands on. Asked only when the setting jev is on and paperclip_jev_route is
+     on; a sure answer is kept at the chosen Address as a numbered item, metaform://<address>#<n>, and the issue is
+     taken there; any other answer leaves the issue as it is. <title> and <why> name the kept decision; <ask> is the
+     question Jev reads, about the state's `issue` and `addresses`; <none> is the way out, what it means that no
+     Address fits. The place: <issue/> the issue's identifier. -->
+<jev_route>
+<title>Address for Paperclip issue <issue/></title>
+<why>A Paperclip issue is worked at one Address, so the agent reads that node's brief and leaves what it learns there.</why>
+<ask>Which Address in `addresses` is the part of the work that the Paperclip issue in `issue` asks to be changed, judged by what each Address's purposes say?</ask>
+<none>None of these Addresses is where this issue's work lands, or the issue is too vague to tell.</none>
+</jev_route>
+</prompts>

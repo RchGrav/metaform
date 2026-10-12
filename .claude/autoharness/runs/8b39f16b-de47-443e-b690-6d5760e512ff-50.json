@@ -1,0 +1,21 @@
+{
+  "run_id": "8b39f16b-de47-443e-b690-6d5760e512ff-50",
+  "verdicts": [
+    {
+      "action": "patch",
+      "name": "metaform",
+      "ok": false,
+      "findings": [
+        "self_produced"
+      ],
+      "notes": []
+    },
+    {
+      "action": "create",
+      "name": "metaform-module-development",
+      "ok": true,
+      "findings": [],
+      "notes": []
+    }
+  ]
+}
