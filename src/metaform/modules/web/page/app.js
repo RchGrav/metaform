@@ -5535,8 +5535,10 @@ function fly3d(id, close = true) {
       // How near the agents circling the node come to the eye: their orbit, its rise and fall, and a figure's size.
       const size = ROAM.drawn || sizeOf(data), ring = (ballOf(node) + size * ROAM.orbit) * 1.05 + size * 1.3;
       MEET.back = {id, far: view.far};
-      flyTo({x: sign.position.x, y: sign.position.y, z: sign.position.z, turn: Math.atan2(face.x, face.z),
-        tilt: Math.acos(Math.max(-1, Math.min(1, face.y))), far: Math.log(reach)},
+      // in Flat the sign stands above its node and faces the eye, so the camera meets it facing the plane
+      const square = flatNow() ? flatFacing()
+        : {turn: Math.atan2(face.x, face.z), tilt: Math.acos(Math.max(-1, Math.min(1, face.y)))};
+      flyTo({x: sign.position.x, y: sign.position.y, z: sign.position.z, ...square, far: Math.log(reach)},
       {done: () => meetBegins(reach, reach + out - ring)});
       V3.focus = id;
       return true;

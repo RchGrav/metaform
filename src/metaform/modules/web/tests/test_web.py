@@ -5525,7 +5525,10 @@ def test_the_labels_wrap_keep_the_draw_order_and_the_hover_says_what_a_part_does
     page.wait_for_function('() => window.metaform.physics() === "flat"')
     page.wait_for_function('() => Math.abs(Math.sin(window.metaform.cameraAt().tilt) * Math.cos(window.metaform.cameraAt().turn))'
                            ' > 0.99', timeout=15000)  # the camera turned to face the plane
-    page.wait_for_timeout(600)  # and come to rest
+    page.evaluate(f'window.metaform.select("{kitchen}")')  # and comes in close to it, where its sign can be read
+    page.wait_for_timeout(1800)
+    page.wait_for_function('() => Math.abs(Math.sin(window.metaform.cameraAt().tilt) * Math.cos(window.metaform.cameraAt().turn))'
+                           ' > 0.99', timeout=15000)
     page.evaluate(f'window.metaform.hover3d("{kitchen}")')
     card = page.locator('#card3d.on')
     card.wait_for(state='visible')
@@ -8121,7 +8124,8 @@ def test_choosing_flat_turns_the_camera_to_face_the_plane_and_a_selection_keeps_
     page.locator('body').press('l')
     assert page.evaluate('window.metaform.physics()') == 'flat'
     page.wait_for_function(f'() => {square}', timeout=15000)
-    page.evaluate('window.metaform.look(window.metaform.selected())')
+    page.evaluate('window.metaform.select(window.metaform.graph().nodes.find(node => node.t === "el"'
+                  ' && node.id !== window.metaform.selected()).id)')
     page.wait_for_timeout(1800)  # the selection's flight, which a slow machine may still be making
     page.wait_for_function(f'() => {square}', timeout=15000)
     at = page.evaluate('window.metaform.cameraAt()')
