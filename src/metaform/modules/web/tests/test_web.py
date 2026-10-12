@@ -2288,7 +2288,8 @@ def test_u_draws_the_3d_map_in_outer_space_keeps_the_choice_and_an_idle_map_stil
     page.wait_for_timeout(1500)
     assert page.evaluate('window.metaform.frames3d()') == drawn  # an idle map in outer space rests too
     assert page.evaluate('window.ultra.stats().clock') == 0  # the sky never moved
-    page.keyboard.press('?')  # U is in the page's key table, so the reference lists it
+    page.keyboard.press('?')  # U is in the page's key table, so the reference lists it, with the looks
+    page.click('#help .helptabs button:has-text("Visuals")')
     assert 'Space theme' in page.locator('#help .keys').inner_text()
     assert problems == []
 

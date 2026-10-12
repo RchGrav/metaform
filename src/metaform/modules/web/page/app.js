@@ -8361,10 +8361,10 @@ const KEYS = [
     run: () => { if (G && !small3d()) { fit3d(); peek('key'); } }},
   {group: 'Zoom', keys: ['Z'], what: 'Node zoom on/off', match: ['z', 'Z'], run: () => toggleNodeZoom()},
   {group: 'Zoom', keys: ['7', '8', '9'], what: '2D direction', match: ['7', '8', '9'], run: largeKey},
-  {group: 'Zoom', keys: ['L'], what: 'Layout: Organic or Flat', match: ['l', 'L'],
+  {group: 'Looks', keys: ['L'], what: 'Layout: Organic or Flat', match: ['l', 'L'],
     run: () => choosePhysics(PHYS.name === 'flat' ? 'organic' : 'flat')},
-  {group: 'Zoom', keys: ['D'], what: 'Flow: Off, Selection, All, Live', match: ['d', 'D'], run: () => stepFlow()},
-  {group: 'Zoom', keys: ['U'], what: 'Space theme on/off', match: ['u', 'U'],  // the space theme or the last plain one
+  {group: 'Looks', keys: ['D'], what: 'Flow: Off, Selection, All, Live', match: ['d', 'D'], run: () => stepFlow()},
+  {group: 'Looks', keys: ['U'], what: 'Space theme on/off', match: ['u', 'U'],  // the space theme or the last plain one
     run: () => setTheme(document.documentElement.dataset.theme === 'space' ? PLAIN.last : 'space')},
   {group: 'Chat', keys: ['C'], what: 'Open or hide chat', match: ['c', 'C'],
     run: () => ($('#dock').className.startsWith('open') && !chatDocked() && !dockGoingAway() ? putChatAway() : dockState('open'))},
@@ -8374,20 +8374,30 @@ const KEYS = [
   {group: 'Chat', keys: [MAC ? '⌥' : 'Ctrl', 'Space'], what: 'Talk'},
 ];
 const KEY_RUN = new Map(KEYS.filter(entry => entry.run).flatMap(entry => entry.match.map(key => [key, entry])));
-/* The reference, drawn from `KEYS`: a group to a section, and a search that keeps the keys whose words match. */
+/* The reference, drawn from `KEYS`, centered over the page: its tabs, the everyday keys first, then the developer's,
+ * then the looks and the zoom; each group a card of what a key does with its keys beside it; and a search that keeps
+ * the keys whose words match, across every tab. A tab with no keys is not offered. */
+const HELP_TABS = [['Shortcuts', ['Anywhere', 'Maps', 'Chat', 'Tools']], ['Dev keys', ['Developer']],
+  ['Visuals', ['Zoom', 'Looks']]];
+const HELP = {tab: 'Shortcuts'};
 function openHelp() {
   $('#settingsbox').hidden = true;
-  const find = $('#help .keyfind'), box = $('#help .keys');
+  const find = $('#help .keyfind'), box = $('#help .keys'), tabs = $('#help .helptabs');
   const draw = () => {
     const words = find.value.trim().toLowerCase();
     // the toolbar's tools with a key, as the modules declare them and the workspace runs them, in the same reference
     const tools = WS.active ? WS.toolKeys().map(tool => ({group: 'Tools', keys: tool.shortcut.split('+'), what: `${tool.title}: ${tool.description}`})) : [];
-    const rows = [...KEYS, ...tools].filter(entry => !words || `${entry.group} ${entry.keys.join(' ')} ${entry.what}`.toLowerCase().includes(words));
+    const all = [...KEYS, ...tools], offered = HELP_TABS.filter(([, groups]) => all.some(entry => groups.includes(entry.group)));
+    if (!offered.some(([name]) => name === HELP.tab)) HELP.tab = offered[0]?.[0];
+    fill(tabs, offered.map(([name]) => h('button', {type: 'button', role: 'tab', 'aria-selected': String(!words && name === HELP.tab),
+      onclick: () => { HELP.tab = name; find.value = ''; draw(); }}, name)));
+    const shown = words ? null : HELP_TABS.find(([name]) => name === HELP.tab)?.[1];
+    const rows = all.filter(entry => words ? `${entry.group} ${entry.keys.join(' ')} ${entry.what}`.toLowerCase().includes(words)
+      : shown?.includes(entry.group));
     const groups = [...new Set(rows.map(entry => entry.group))];
-    fill(box, groups.length ? groups.map(group => h('section', {}, h('h3', {}, group),
-      h('dl', {}, rows.filter(entry => entry.group === group).flatMap(entry => [
-        h('dt', {}, entry.keys.flatMap((key, at) => [at ? ' ' : null, /^(Click|click)$/.test(key) ? key : h('kbd', {}, key)])),
-        h('dd', {}, entry.what)]))))
+    fill(box, groups.length ? groups.map(group => h('section', {class: 'keycard'}, h('h3', {}, group),
+      rows.filter(entry => entry.group === group).map(entry => h('div', {class: 'keyrow'}, h('span', {class: 'what'}, entry.what),
+        h('span', {class: 'chips'}, entry.keys.map(key => /^(Click|click)$/.test(key) ? h('span', {}, key) : h('kbd', {}, key)))))))
       : h('p', {class: 'empty'}, 'No key does that.'));
   };
   find.oninput = draw;

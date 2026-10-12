@@ -909,11 +909,21 @@ span.ref-link{color:var(--signal);text-decoration:underline dotted;cursor:pointe
 #search .results > .empty,#search .results > .loading{padding:var(--s4) var(--s3)}
 #search .searchfoot{display:flex;gap:var(--s4);padding:var(--s2) var(--s4);border-top:1px solid var(--line);font:var(--t-xs) var(--sans);color:var(--muted)}
 #search .searchfoot span{display:inline-flex;align-items:center;gap:var(--s1)}
-#help .keys{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:var(--s5)}
-#help h3{margin:0 0 var(--s2);font:600 var(--t-xs)/1.2 var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
-#help dl{display:grid;grid-template-columns:max-content 1fr;gap:var(--s2) var(--s3);margin:0;align-items:baseline}
-#help dt{display:flex;gap:var(--s1);white-space:nowrap}
-#help dd{margin:0;color:var(--text)}
+/* The keys' reference, centered over the page: its tabs, then each group a card, a row to a key, what it does to the
+ * left and its keys as chips to the right. */
+#help.window.dialog{top:50%;transform:translate(-50%,-50%)}
+#help .helptabs{margin:0 0 var(--s3)}
+#help .keys{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:var(--s3);align-items:start}
+#help .keycard{border:1px solid var(--line-2);border-radius:var(--r-lg);overflow:hidden}
+#help .keycard h3{margin:0;padding:var(--s2) var(--s3);background:var(--panel-2);border-bottom:1px solid var(--line);
+  font:600 var(--t-sm)/1.3 var(--sans);color:var(--text)}
+#help .keyrow{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);padding:var(--s2) var(--s3);
+  border-top:1px solid var(--line)}
+#help .keycard h3 + .keyrow{border-top:0}
+#help .keyrow .what{color:var(--text)}
+#help .keyrow .chips{display:flex;align-items:center;gap:4px;flex:none;color:var(--muted)}
+#help .keyrow kbd{display:inline-grid;place-items:center;min-width:22px;height:22px;padding:0 6px;border:1px solid var(--line-2);
+  border-radius:6px;background:var(--panel-2);font:500 var(--t-xs)/1 var(--mono);color:var(--text)}
 /* The prompt editor fills the screen on its button, VIEW-013. */
 #p-prompt.full{position:fixed;inset:0;z-index:1500;background:var(--panel);padding:var(--s4) var(--s5)}
 #p-prompt.full .CodeMirror{height:calc(100vh - 140px)}
