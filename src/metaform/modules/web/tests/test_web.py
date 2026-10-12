@@ -486,15 +486,18 @@ def browser():
         launched.close()
 
 
-def opened(browser, port, clock=False):
+def opened(browser, port, clock=False, plain=False):
     """The page open on the project; with `clock`, on Playwright's clock, which runs as time does until a test holds
-    it and steps it."""
+    it and steps it; with `plain`, in a plain theme, Black, where the 3D map is drawn clean, glass in the page's own
+    light, rather than in Space, the theme it opens in, where outer space draws it."""
     page = browser.new_page(viewport={'width': 1280, 'height': 800})
     if clock:
         page.clock.install()
     # the checks are written with the 3D map in the large area, as the page opened before the 2D map took it, VIEW-028;
     # a choice a check makes is kept through its reloads
     page.add_init_script("try { if (localStorage.getItem('metaform.swapped') === null) localStorage.setItem('metaform.swapped', '') } catch (error) {}")
+    if plain:
+        page.add_init_script("try { if (localStorage.getItem('metaform.theme') === null) localStorage.setItem('metaform.theme', 'black') } catch (error) {}")
     own = f'http://127.0.0.1:{port}/'
     problems, remote = [], []
     page.on('console', lambda message: problems.append(message.text) if message.type == 'error' else None)
@@ -1459,7 +1462,7 @@ def test_the_page_files_are_checked_with_the_server_on_every_load(run, web):
 @pytest.mark.req('VIEW-025')
 @pytest.mark.req('VIEW-003')
 def test_in_every_theme_the_elements_are_glass_and_the_page_loads_nothing_from_outside(run, web, mapped, browser):
-    """A node is made of a material that lets light through, in each theme alike, with no mode to choose. The glass
+    """A node is made of a material that lets light through, in each plain theme alike, with no mode to choose. The glass
     comes from the copy of three.js the page carries, so it works with no network."""
     started(run)
     page, problems, _ = opened(browser, web)
@@ -1469,14 +1472,17 @@ def test_in_every_theme_the_elements_are_glass_and_the_page_loads_nothing_from_o
     page.wait_for_function('() => window.metaform.loaded()')
     _, at = keys_of(web)
     themes = page.evaluate('[...document.querySelectorAll("#theme option")].map(option => option.value)')
+    themes = [theme for theme in themes if theme != 'space']  # Space draws the map in outer space, ultra.js
     assert len(themes) > 1
     checked = (at['code.timer.kitchen'], at['code.alarm.audible'], at['code.loop.tick'])
-    made = f'() => {json.dumps(checked)}.every(node => window.metaform.look(node).material)'
+    pick_theme(page, themes[0])
+    # a node's object can be missing, or still drawn in outer space's own material, a moment after the theme changes
+    made = f'() => {json.dumps(checked)}.every(node => window.metaform.look(node).material === "MeshTransmissionMaterial")'
     page.wait_for_function(made, timeout=10000)
     for theme in themes:
         pick_theme(page, theme)
         page.wait_for_timeout(250)
-        page.wait_for_function(made, timeout=10000)  # a node's object can be missing a moment after the theme changes
+        page.wait_for_function(made, timeout=10000)
         for node in checked:
             seen = page.evaluate(f'window.metaform.look("{node}")')
             # drei's glass, it lets light through, parts its colors, bends it and draws its far wall
@@ -1503,7 +1509,7 @@ def test_what_is_behind_a_node_reaches_its_glass_through_the_pictures_the_page_d
         store.finish_work(record.id, 'done')
     cook = store.element('exterior.cook').id
     started(run)
-    page, problems, _ = opened(browser, web)
+    page, problems, _ = opened(browser, web, plain=True)
     page.emulate_media(reduced_motion='reduce')           # the distortion is still
     page.reload()
     page.wait_for_function('() => window.metaform && window.metaform.loaded() && window.metaform.linkColors().length > 0')
@@ -2195,23 +2201,34 @@ def test_an_idle_3d_map_draws_no_frames_until_something_on_it_moves(run, web, ma
 
 
 def test_u_draws_the_3d_map_in_outer_space_keeps_the_choice_and_an_idle_map_still_rests(run, web, mapped, browser):
-    """Ultra graphics, web_graphics, page/ultra.js: U fades the 3D map into outer space, where ultra's own bloom
-    takes the place of the page's, and keeps the choice in the setting. With motion reduced its sky stands still and
-    the map, once it rests, draws nothing, as in clean. U again brings clean back."""
+    """The theme is the one choice of look: Space, the theme the page opens in, draws the 3D map in outer space,
+    page/ultra.js, where ultra's own bloom takes the place of the page's. U switches to the last plain theme, drawn
+    clean with the page's bloom, and back, and keeps the choice in web_graphics. With motion reduced the sky stands
+    still and the map, once it rests, draws nothing, as in clean."""
     started(run)
     page, problems, _ = opened(browser, web)
     page.emulate_media(reduced_motion='reduce')
-    page.wait_for_function('() => window.metaform.loaded()')
+    page.reload()  # it opens in outer space, so with motion reduced from the first frame
+    page.wait_for_function('() => window.metaform && window.metaform.loaded()')
     page.evaluate("async () => { window.ultra = await import('/page/ultra.js'); }")
     graphics = lambda: {row['key']: row['value'] for row in api(web, '/api/settings?project=proj')[1]['settings']}[
         'web_graphics']
-    assert page.evaluate('window.ultra.stats().drawn') == 'clean' and graphics() == 'clean'
+    look = 'window.ultra.stats().drawn'
+    assert page.evaluate('document.documentElement.dataset.theme') == 'space'
+    page.wait_for_function(f"() => {look} === 'ultra'")
     stage = page.locator('#stage').bounding_box()
     page.mouse.move(stage['x'] + stage['width'] / 2, stage['y'] + stage['height'] / 2)
     page.keyboard.press('u')
-    page.wait_for_function("() => window.ultra.stats().drawn === 'ultra'")
+    page.wait_for_function(f"() => {look} === 'clean'")
+    assert page.evaluate('document.documentElement.dataset.theme') != 'space'
+    assert not page.evaluate('window.ultra.stats().bloom') and page.evaluate('window.metaform.bloom().on')
+    page.wait_for_timeout(300)
+    assert graphics() == 'clean'
+    page.keyboard.press('u')
+    page.wait_for_function(f"() => {look} === 'ultra'")
     shown = page.evaluate('window.ultra.stats()')
     assert shown['bloom'] and shown['stars'] > 0 and not page.evaluate('window.metaform.bloom().on')
+    assert page.evaluate('document.documentElement.dataset.theme') == 'space'
     page.wait_for_function("() => document.querySelector('.ultra-veil') && "
                            "getComputedStyle(document.querySelector('.ultra-veil')).opacity === '0'")
     assert graphics() == 'ultra'
@@ -2221,13 +2238,8 @@ def test_u_draws_the_3d_map_in_outer_space_keeps_the_choice_and_an_idle_map_stil
     page.wait_for_timeout(1500)
     assert page.evaluate('window.metaform.frames3d()') == drawn  # an idle map in outer space rests too
     assert page.evaluate('window.ultra.stats().clock') == 0  # the sky never moved
-    page.keyboard.press('u')
-    page.wait_for_function("() => window.ultra.stats().drawn === 'clean'")
-    assert not page.evaluate('window.ultra.stats().bloom')
-    page.wait_for_timeout(300)
-    assert graphics() == 'clean'
     page.keyboard.press('?')  # U is in the page's key table, so the reference lists it
-    assert 'Ultra graphics' in page.locator('#help .keys').inner_text()
+    assert 'Space theme' in page.locator('#help .keys').inner_text()
     assert problems == []
 
 
@@ -3710,7 +3722,7 @@ def test_a_node_that_needs_attention_gives_off_light_in_both_views_and_no_other_
     broken = [record for record in store.work(Node('element', 'code.timer.kitchen'), 'broken', True).results]
     assert broken  # the fixture's kitchen is broken
     started(run)
-    page, problems, _ = opened(browser, web)
+    page, problems, _ = opened(browser, web, plain=True)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
     own = page.evaluate(f'window.metaform.look("{cook}").light3d')
     assert 0 < own < 1                                    # a node with no record: the glass's own little light
@@ -3822,7 +3834,7 @@ def hovered(page, x, y):
 
 def staged_pair(run, web, browser, alarm, kitchen):
     started(run)
-    page, problems, _ = opened(browser, web)
+    page, problems, _ = opened(browser, web, plain=True)
     page.wait_for_function('() => window.metaform && window.metaform.loaded()', timeout=30000)
     staged(page, {alarm: (2000, 0, 0), kitchen: (2300, 0, 0)},
            ({'x': 2150, 'y': 0, 'z': 900}, {'x': 2150, 'y': 0, 'z': 0}))
@@ -3869,7 +3881,7 @@ def test_the_light_of_a_node_spreads_past_its_outline_and_stays_behind_a_node_ne
     kitchen = store.element('code.timer.kitchen').id
     broken = store.work(Node('element', 'code.timer.kitchen'), 'broken', True).results
     started(run)
-    page, problems, _ = opened(browser, web)
+    page, problems, _ = opened(browser, web, plain=True)
     page.emulate_media(reduced_motion='reduce')           # the light is steady
     page.reload()
     page.wait_for_function('() => window.metaform && window.metaform.loaded() && window.metaform.linkColors().length > 0')
@@ -3958,7 +3970,7 @@ def test_a_dot_passing_through_the_white_node_never_turns_it_dark(run, web, mapp
     started(run)
     _, at = keys_of(web)
     kitchen = at['code.timer.kitchen']
-    page, problems, _ = opened(browser, web)
+    page, problems, _ = opened(browser, web, plain=True)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
     # The join the kitchen timer receives: its dots leave the timer's center for the purpose vertex, set in front of the
     # timer, above it and nearer the eye.
