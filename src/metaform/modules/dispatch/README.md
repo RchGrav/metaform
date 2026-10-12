@@ -156,10 +156,10 @@ Each session keeps a few lines whose text is JSON, read back structured by `sess
 - `agent_notice`: one per ACP session notice, `severity`, `title` and `description`, live only, never replayed; the client advertises `clientCapabilities.session.notices`.
 
 - `stderr`: the agent's standard error, batched each second into one line, anything that looks like a credential replaced by `[redacted]`, up to `dispatch_stderr_kb` a session; the runner's log has it all, redacted, and a failure note carries its last lines.
-- `subagent`: one per subagent session the agent started, P016, with `data`: its `session_id`, `name`, `task`, `state` and when it `started`. Its own thread is kept under its session id, and `sessions` returns each with its `lines` under `subagents`. The client advertises `clientCapabilities.subagents`, so claude-agent-acp and codex-acp send `subagent_spawned` and `subagent_state_update` and give a subagent's updates its own session id; the SDK's schema does not know the two updates yet, so the runner reads them as they arrive, through the connection's observer.
+- `subagent`: one per subagent session the agent started, P016, with `data`: its `session_id`, `name`, `task`, `state`, when it `started`, and `fork`, true only for a fork made with `session/fork`. Its own thread is kept under its session id, and `sessions` returns each with its `lines` under `subagents`. The client advertises `clientCapabilities.subagents`, so claude-agent-acp and codex-acp send `subagent_spawned` and `subagent_state_update` and give a subagent's updates its own session id; the SDK's schema does not know the two updates yet, so the runner reads them as they arrive, through the connection's observer.
 - `state` also holds `spent`, the session's tokens and cost so far, and `auth`, the login the agent pushes with `_auth/status_update` when it advertises authStatus; `capabilities` adds `steering`, `auth_status` and `logout`.
 
-The client offers no file system and no terminal of its own, takes boolean config options and takes subagent sessions.
+The client offers its own file reads and writes, ACP's `fs/*`, and its own terminals, `terminal/*`, while `dispatch_client_files` and `dispatch_client_terminal` are on, as they are by default, each confined to the folder the session works in; it takes boolean config options and takes subagent sessions.
 
 ## Supervisor and budgets
 

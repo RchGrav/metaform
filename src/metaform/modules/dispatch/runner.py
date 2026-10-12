@@ -1061,6 +1061,7 @@ class Session:
         self.terminal_count = 0
         self.servers: list[McpServerStdio] = []  # the MCP servers its session was given, given again to a fork
         self.stop_record_asked = False  # the turn asking a stopped or failed worker to record was decided, P033
+        self.interrupted = False  # the last turn ended by the person's interrupt, so no recording turn follows it
         # An intake agent's first Metaform call and first record, M04: when its first turn began, the seconds each
         # took, and whether it was steered; and its clock, which steers it once when no call has come in time.
         self.intake: dict[str, Any] | None = {'phase': 'starting'} if self.role == 'intake' else None
@@ -1556,7 +1557,8 @@ class Session:
             await self.note(None, 'agent_notice', json.dumps(said, ensure_ascii=False))
 
     async def child_line(self, child: str) -> None:
-        """A subagent's line in its parent's thread, kept at its latest: its session id, name, task and state."""
+        """A subagent's line in its parent's thread, kept at its latest: its session id, name, task and state, and
+        whether it is a fork made by session/fork rather than the agent's own subagent."""
         held = self.children[child]
         async with self.lock:
             flow = cast(dict[str, Any] | None, held['flow'])
@@ -1565,7 +1567,8 @@ class Session:
                 held['flow'] = None
             await self.flush()
             await self.note(f'subagent:{child}', 'subagent', json.dumps(
-                {key: held[key] for key in ('session_id', 'name', 'task', 'state', 'started')}, ensure_ascii=False))
+                {**{key: held[key] for key in ('session_id', 'name', 'task', 'state', 'started')},
+                 'fork': bool(held.get('fork'))}, ensure_ascii=False))
 
     async def child_note(self, child: str, key: str | None, kind: str, text: str) -> None:
         """A line of a subagent's own thread, under its session id: a new one, or the one kept for `key`."""
@@ -2645,6 +2648,33 @@ class Session:
             with contextlib.suppress(Exception):
                 await self.elicit_answered(request, None)
 
+    async def waits_moved(self, session_id: str) -> None:
+        """The session is made, `session_id`: every question or permission request the agent put while it was being
+        made, its signal raised under no session and its line kept from a thread that did not exist yet, is moved to
+        it, the caller holding the lock so none is answered meanwhile. Its signal is cleared where it was raised and
+        raised again under the session, so it is read and cleared against the session the person sees, and its line
+        is written, as stderr gathered before the session is."""
+        for request, (_, _, title) in self.asked.items():
+            await self.raise_signal('permission-waiting', key=request, active=False,
+                                    message_id=self.permissions.get(request, {}).get('message_id'), request=request,
+                                    tool=title)
+        for request, held in self.elicited.items():
+            await self.raise_signal('question-waiting', key=request, active=False,
+                                    message_id=self.elicitations.get(f'elicitation:{request}', {}).get('message_id'),
+                                    request=request, question=held['message'])
+        self.session_id = session_id
+        for request, (_, _, title) in self.asked.items():
+            await self.permission(request)
+            await self.raise_signal('permission-waiting', key=request,
+                                    message_id=self.permissions.get(request, {}).get('message_id'), request=request,
+                                    tool=title)
+        for request, held in self.elicited.items():
+            line = self.elicitations.get(f'elicitation:{request}', {})
+            await self.note(f'elicitation:{request}', 'elicitation', json.dumps(line, ensure_ascii=False))
+            await self.raise_signal('question-waiting', key=request, message_id=line.get('message_id'),
+                                    request=request, question=held['message'], url=held['url'],
+                                    tool_call_id=cast(dict[str, Any], held['scope']).get('tool_call_id'))
+
     # ------------------------------------------------------------------ the session
 
     async def run(self) -> dict[str, Any]:
@@ -2722,7 +2752,8 @@ class Session:
             else:
                 made = await asyncio.wait_for(self.conn.new_session(cwd=self.folder, mcp_servers=servers),
                                               START_LIMIT)
-                self.session_id = str(made.session_id)
+                async with self.lock:  # what the agent asked while the session was made moves to it
+                    await self.waits_moved(str(made.session_id))
         except acp.RequestError as error:
             if error.code == AUTH_REQUIRED:  # the agent needs a login first: the person's, never Metaform's, P031
                 await self.raise_signal('login-needed', key=self.agent, agent=self.agent,
@@ -2874,12 +2905,16 @@ class Session:
                 protocol_version=asked.protocol_version, client_capabilities=asked.client_capabilities,
                 client_info=asked.client_info), START_LIMIT)
             self.raw_init = init.model_dump(mode='json', by_alias=True, exclude_none=True)
-            self.capture(init, self.raw_init)
-            return init
-        raw: Any = await asyncio.wait_for(connection.send_request('initialize', params), START_LIMIT)
-        self.raw_init = cast(dict[str, Any], raw) if isinstance(raw, dict) else {}
-        init = InitializeResponse.model_validate(self.raw_init)
+        else:
+            raw: Any = await asyncio.wait_for(connection.send_request('initialize', params), START_LIMIT)
+            self.raw_init = cast(dict[str, Any], raw) if isinstance(raw, dict) else {}
+            init = InitializeResponse.model_validate(self.raw_init)
         self.capture(init, self.raw_init)
+        # An agent that answers with a version the runner does not speak is closed before any session, as ACP's
+        # initialization asks; run() says why it did not start.
+        if init.protocol_version != acp.PROTOCOL_VERSION:
+            raise RuntimeError(f'{self.name} answered initialize with ACP protocol version {init.protocol_version}; '
+                               f'Metaform speaks version {acp.PROTOCOL_VERSION}')
         return init
 
     def asked_for(self) -> str:
@@ -2978,6 +3013,7 @@ class Session:
                     text = self.pending.popleft()
                     audio = self.voiced.popleft() if self.voiced else None
                 self.heard = stamp()  # a tool call of this turn began no earlier than its prompt
+                began_ns: int | None = None
                 try:
                     await self.changed(tables='dispatch')
                     if self.ending:
@@ -3004,9 +3040,12 @@ class Session:
                         self.trace(answer.usage, reason, began_ns)
                 except Exception as error:  # noqa: BLE001  the turn's end is noted whatever ended it
                     reason = f'error: {error}'
+                    if began_ns is not None:  # a turn sent and failed is reported too, as an error
+                        self.trace(None, 'error', began_ns, error=str(error) or type(error).__name__)
                 self.hush()
                 async with self.interrupt_lock:
                     self.active_turn = None
+                    self.interrupted = current.cancel_requested  # a turn sent since the interrupt clears it
                 self.opening = False
                 async with self.lock:
                     await self.flush()
@@ -3031,7 +3070,8 @@ class Session:
             # since the session no longer ends, BASE-057; the next turn or the session's end clears it. Once per
             # session a worker is first given a turn to record what it learned, P033, on_stopped_open or, after a
             # turn that failed, on_failure; the signal is raised when that turn ends.
-            if await self.record_before_stop(reason):
+            # A turn the person interrupted is not followed by one: they stopped it to say something.
+            if not self.interrupted and await self.record_before_stop(reason):
                 return
             async with self.lock:
                 if not self.turns and not self.ending:  # a message that came meanwhile has started the next turn
@@ -3083,15 +3123,16 @@ class Session:
         self.turn(text)
         return True
 
-    def trace(self, usage: Any, reason: str, began_ns: int) -> None:
-        """The turn as an OpenTelemetry invoke_agent span with its usage, while dispatch_usage_traces is on."""
+    def trace(self, usage: Any, reason: str, began_ns: int, error: str | None = None) -> None:
+        """The turn as an OpenTelemetry invoke_agent span with its usage, while dispatch_usage_traces is on; a turn
+        that failed carries its error."""
         if not self.option('dispatch_usage_traces', False):
             return
         info = cast(dict[str, Any], self.acp.get('agent_info') or {})
         model = next((str(one.get('current')) for one in self.settings() if one.get('category') == 'model'
                       and one.get('current')), None)
         traced(usage_attributes(self.agent, self.name, cast(str | None, info.get('version')), self.session_id, usage,
-                                reason, model), began_ns)
+                                reason, model), began_ns, error)
 
     def record_prompt(self, setting: str = 'dispatch_record_on_finish', name: str = 'on_ticket_done') -> str:
         """The turn asking a worker to record at its node, `on_ticket_done` by default, with where to record, when one

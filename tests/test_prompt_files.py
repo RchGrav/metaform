@@ -67,7 +67,7 @@ def test_the_full_instructions_are_the_instructions_prompt_with_the_surfaced_mod
     def line(module):  # a module's instructions prompt; a project with no intake also gets the notice, MCP-009
         own = (prompt(SOURCE / 'modules' / module / 'resources' / 'prompts.xml', 'instructions').text or '').strip()
         notice = prompt_text(SOURCE / 'modules' / module, 'no_intake')
-        return own if notice is None else f'{own} {notice}'
+        return own if notice is None else f'{own}\n{notice}'  # the status hook's line starts on its own line
     listed = '\n'.join(filter(None, (line(module) for module in sorted(on))))  # an empty one sends nothing
     assert [child.tag for child in element] == ['surface', 'modules']
     opening = prompt(SOURCE / 'resources' / 'prompts.xml', 'surface_cli').text.strip()  # no server claimed on the CLI

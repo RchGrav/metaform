@@ -1,18 +1,19 @@
 """The instructions agents read, composed live, MCP-031 and MCP-029.
 
-The chassis's instructions prompt, with each surfaced module listed in module id
-order where it marks. With connect_instructions=compact, the default, each module
-is listed in one line, the chassis's `active` prompt and the instruction its
-status hook gives for the folder's state, and the `more` prompt says where each
-module's full instructions are; hosts keep only so much, and Claude Code drops
-everything past 2,048 characters. With full, each module's whole instructions
-prompt is listed. With no project for the folder, the registered projects and
-the way to register one follow; with debug on, the trouble report and debug
-prompts end it. Every word is from the prompt files, never from here.
-`metaform help agents` and the MCP server's instructions are this same text, but
-for its opening line: the MCP server's names the server, and every other surface's,
-the command line and a project wheel's run, names only Metaform, since no server
-is known to be connected there.
+The chassis's instructions prompt, with each surfaced module listed in module
+id order where it marks. With connect_instructions=compact, the default, each
+module gets one line, its `connect` prompt or else the chassis's `active`
+prompt, and the instruction its status hook gives for the folder's state
+follows on the next line; the `more` prompt says where each module's full
+instructions are. Hosts keep only so much, and Claude Code drops everything
+past 2,048 characters. With full, each module's whole instructions prompt is
+listed. With no project for the folder, the registered projects and the way
+to register one follow; with debug on, the trouble report and debug prompts
+end it. Every word is from the prompt files, never from here.
+`metaform help agents` and the MCP server's instructions are this same text,
+but for its opening line: the MCP server's names the server, and every other
+surface's, the command line and a project wheel's run, names only Metaform,
+since no server is known to be connected there.
 """
 from __future__ import annotations
 
@@ -49,14 +50,14 @@ def _added(module: Module, folder: Path, project: str | None, *, full: bool) -> 
 def _listed(module: Module, folder: Path, project: str | None, *, full: bool = True) -> str | None:
     """A module's line under "modules available.": its instructions prompt, or with full off its `connect` line, when
     to need it and where to go then, MCP-029; a module with no `connect` line gets the chassis's `active` line, and
-    an empty one lists nothing of its own. Then the instruction its status hook gives."""
+    an empty one lists nothing of its own. Then, on its own line, the instruction its status hook gives."""
     if full:
         own = prompt_files.module(module.id, 'instructions')
     else:
         own = prompt_files.module(module.id, 'connect')
         if own is None:
             own = prompt_files.chassis('active', module=module.id)
-    return ' '.join(part for part in (own, _added(module, folder, project, full=full)) if part) or None
+    return '\n'.join(part for part in (own, _added(module, folder, project, full=full)) if part) or None
 
 
 def _mapped(folder: Path, project: str | None) -> bool:
@@ -70,7 +71,11 @@ def _mapped(folder: Path, project: str | None) -> bool:
 
 
 def module_text(folder: Path, identifier: str, project: str | None = None) -> str | None:
-    """One surfaced module's full instructions, as the full form lists them, or None when it is not on the surface."""
+    """One surfaced module's full instructions, as the full form lists them, or None when it is not on the surface.
+    'metaform' names Metaform itself: the mcp module's glossary prompt as written, metaform://metaform, MCP-003."""
+    if identifier == 'metaform':
+        written = (prompt_files.module('mcp', 'glossary') or '').strip()
+        return written + '\n' if written else None
     found = next((module for module in surfaced(folder) if module.id == identifier), None)
     if found is None:
         return None

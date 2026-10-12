@@ -86,3 +86,15 @@ def test_an_intake_command_in_an_unregistered_folder_names_the_register_command(
     refused = asyncio.run(go())
     assert refused.is_error
     assert text(refused)[-1].splitlines()[-1] == 'Next: call metaform_register'
+
+
+def test_the_first_run_notice_stands_on_its_own_line_in_the_guide(run, home, tmp_path):
+    folder = tmp_path / 'unseen'
+    lines = run('help', 'agents', cwd=folder).stdout.splitlines()
+    assert prompt_files.required(INTAKE, 'connect') in lines
+    assert any(line.startswith('FIRST RUN.') for line in lines)
+
+
+def test_the_metaform_instructions_are_the_glossary(run, home, tmp_path):
+    written = (prompt_files.module('mcp', 'glossary') or '').strip()
+    assert run('instructions', 'metaform').stdout == written + '\n'

@@ -1,9 +1,11 @@
 """The harnesses Metaform knows, MCP-028.
 
 A harness is known by the parent folder of its binary, since its path may carry its version and some harnesses run
-from an install folder of their own; a binary under the system's temporary folder is ignored. Once the agent says
-it is done provisioning a harness, the home records it, and it is never asked again. Under a harness not
-recorded, every command gives the notice on stderr, D96.
+from an install folder of their own; a binary inside an npm package is known by its package folder, so a launcher
+and the vendor binary it starts are one harness, and a harness run by node, bun or deno is known by its script, not
+the interpreter. A binary under the system's temporary folder is ignored. Once the agent says it is done provisioning
+a harness, the home records it, and it is never asked again. Under a harness not recorded, every command gives the
+notice on stderr, D96.
 """
 from __future__ import annotations
 
@@ -54,8 +56,53 @@ def running() -> Path | None:
             if applet.removeprefix('-') in wrappers:
                 name = applet.removeprefix('-')
         if name not in wrappers and not re.fullmatch(r'(pythonw?|pypy)(\d+(\.\d+)*)?', name):
+            # An npm launcher runs under its interpreter, so the harness is the script it was started with.
+            if name in INTERPRETERS and (script := _script_of(pid)) is not None:
+                return script.resolve()
             return binary
         pid = parent
+    return None
+
+
+INTERPRETERS = {'node', 'bun', 'deno'}
+# The interpreters' own options that take the next argument as their value.
+VALUED = {'-r', '--require', '--import', '--loader', '--experimental-loader', '-C', '--conditions', '--env-file',
+          '--input-type', '--title', '--inspect-port', '--preload', '--cwd', '--config', '--import-map'}
+
+
+def _script_of(pid: int) -> Path | None:
+    """The script an interpreter process runs, read from its arguments on Linux; None elsewhere, or when it runs
+    code given inline or on stdin."""
+    if sys.platform != 'linux':
+        return None
+    process = Path('/proc') / str(pid)
+    try:
+        arguments = [os.fsdecode(part) for part in (process / 'cmdline').read_bytes().split(b'\0')[:-1]]
+        script = _script(arguments)
+        if script is None:
+            return None
+        # A script named relative to where the interpreter started.
+        return Path(script) if Path(script).is_absolute() else (process / 'cwd').readlink() / script
+    except OSError:
+        return None
+
+
+def _script(arguments: list[str]) -> str | None:
+    """The script in an interpreter's command line, past its own options and a leading `run`; None for code given
+    with -e or -p, on stdin, or no script at all."""
+    rest = iter(arguments[1:])
+    command = True
+    for argument in rest:
+        if argument in ('-e', '--eval', '-p', '--print', '-') or (command and argument == 'eval'):
+            return None
+        if argument == '--':
+            return next(rest, None)
+        if argument in VALUED:
+            next(rest, None)
+        elif command and argument == 'run':
+            command = False
+        elif not argument.startswith('-'):
+            return argument
     return None
 
 
@@ -151,13 +198,24 @@ def notice() -> str | None:
 
 
 def key(binary: Path | str) -> str | None:
-    """The harness a binary belongs to: the parent folder of the binary a link points to, or None under the
-    temporary folder."""
-    folder = Path(home.path_key(Path(binary).expanduser().resolve().parent))
+    """The harness a binary belongs to: the parent folder of the binary a link points to, or the outermost npm
+    package it is in, or None under the temporary folder."""
+    resolved = Path(binary).expanduser().resolve()
+    folder = Path(home.path_key(_package(resolved) or resolved.parent))
     temporary = Path(home.path_key(tempfile.gettempdir()))
     if folder == temporary or temporary in folder.parents:
         return None
     return str(folder)
+
+
+def _package(path: Path) -> Path | None:
+    """The outermost node_modules/<package> or node_modules/@scope/<package> folder a binary is in."""
+    parts = path.parts
+    if 'node_modules' not in parts:
+        return None
+    at = parts.index('node_modules') + 1
+    end = at + 2 if at < len(parts) and parts[at].startswith('@') else at + 1
+    return Path(*parts[:end]) if end < len(parts) else None
 
 
 def known(binary: Path | str) -> bool:

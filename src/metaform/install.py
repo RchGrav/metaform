@@ -154,7 +154,7 @@ def tools() -> dict[str, Tool]:
              remove=['claude', 'mcp', 'remove', '--scope', 'user', 'metaform'],
              add_url=lambda url: ['claude', 'mcp', 'add', '--transport', 'http', '--scope', 'user', 'metaform', url]),
         Tool('codex', 'Codex', _on_path('codex'), 'codex on PATH', _codex_config,
-             lambda: user_home() / '.codex' / 'skills',
+             lambda: _codex_config().parent / 'skills',
              add=lambda entry: ['codex', 'mcp', 'add', 'metaform', '--', *entry],
              remove=['codex', 'mcp', 'remove', 'metaform'],
              add_url=lambda url: ['codex', 'mcp', 'add', 'metaform', '--url', url]),

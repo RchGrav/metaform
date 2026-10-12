@@ -26,6 +26,7 @@ import json
 import re
 import subprocess
 import sys
+from collections import OrderedDict
 from collections.abc import AsyncGenerator, Callable, Iterable
 from importlib import resources
 from pathlib import Path
@@ -203,7 +204,8 @@ CHASSIS: dict[str, tuple[str, dict[str, Any]]] = {
                       'instructions. As metaform instructions prints it; with module, that module\'s full '
                       'instructions. Always available.'),
                      {'type': 'object', 'additionalProperties': False,
-                      'properties': {'module': _text('A module on this folder\'s surface, by id.'),
+                      'properties': {'module': _text('A module on this folder\'s surface, by id, or metaform for '
+                                                     'Metaform\'s glossary, as metaform://metaform.'),
                                      'project': PROJECT}}),
     'register': (('Register this folder as a Metaform project, so its map can be recorded and read. As metaform add '
                   'project does; a folder already in a project is left as it is. Returns the project and the '
@@ -534,6 +536,10 @@ OWN = 'metaform'  # the prefix of the chassis's own tools, metaform_<command>, a
 # a person enables, disables or narrows modules, and a change is announced, MCP-004; a minute bounds what a client that
 # does not listen keeps. Private, since what is listed is this folder's.
 CACHE_TTL_MS = 60_000
+# The connections whose last shown lists are kept, MCP-004: the SDK says nothing when an HTTP session ends, so the record
+# is bounded, the least recently heard from dropped first; such a connection takes the lists it asks for next unannounced.
+CONNECTIONS = 256
+STDIO = 'stdio'  # the one connection a stdio server has, its process serving one host
 
 
 def _fixed(schema: dict[str, Any]) -> Callable[[], dict[str, Any]]:
@@ -564,9 +570,9 @@ SENTENCE = re.compile(r'(?<=\.)\s')  # where a description's first sentence ends
 def glossary(folder: Path) -> str:
     """metaform://metaform: the system glossary, the mcp module's glossary prompt exactly as written and nothing more,
     how to operate in Metaform; the same for every folder, and for a project named metaform too. The tools and the
-    modules' rules are metaform://tools, the project's own terms metaform://<project>, each read once on its own."""
-    written = (prompt_files.module('mcp', 'glossary') or '').strip()
-    return written + '\n' if written else ''
+    modules' rules are metaform://tools, the project's own terms metaform://<project>, each read once on its own. The
+    text is `metaform instructions metaform`'s, MCP-003, made in one place."""
+    return module_instructions(folder, 'metaform') or ''
 
 
 def tool_index(folder: Path) -> list[tuple[str, str]]:
@@ -1244,7 +1250,11 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
     from mcp import types
     from mcp.server import Server
     from mcp.server.caching import CacheHint
+    from mcp.server.lowlevel import NotificationOptions
+    from mcp.server.models import InitializationOptions
     from mcp.server.request_state import RequestStateBoundary, RequestStateSecurity
+    from mcp.server.session import ServerSession
+    from mcp.server.streamable_http import MCP_SESSION_ID_HEADER
     from mcp.server.subscriptions import (
         InMemorySubscriptionBus,
         ListenHandler,
@@ -1337,39 +1347,74 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
                     types.PromptArgument(name=noun.name, description=noun.help or None, required=noun.required)
                     for noun in slash.nouns]) for slash in slashes(folder).values()]
 
-    # What this session was last shown, so a change made since, by any process, is announced, MCP-004: on the
-    # connection to a client that connected with initialize, and on the subscriptions/listen streams of a
-    # 2026-07-28 client, which is the only way that revision allows. The SDK drops whichever does not apply.
+    # What was last shown, so a change made since, by any process, is announced, MCP-004, once to each client: on the
+    # subscriptions/listen streams of a 2026-07-28 client, which is the only way that revision allows, by the bus and
+    # what it last told; and on the connection of each client that connected with initialize, by what that connection
+    # was last shown. The SDK makes a session for every request, so a connection is known by its transport: the one a
+    # stdio process serves, or an HTTP client's Mcp-Session-Id. The SDK drops whichever does not apply.
     # Both lists follow from the modules on the folder's surface and whether the chassis is on it, CLI-022.
     bus = InMemorySubscriptionBus()
-    shown: dict[str, Any] = {'tools': None, 'prompts': None, 'resources': None}
+    bus_shown: dict[str, Any] = {'tools': None, 'prompts': None, 'resources': None}
+    connections: OrderedDict[str, dict[str, Any]] = OrderedDict()
+    notices: dict[str, tuple[Any, Callable[[ServerSession], Any]]] = {
+        'tools': (ToolsListChanged, ServerSession.send_tool_list_changed),
+        'prompts': (PromptsListChanged, ServerSession.send_prompt_list_changed),
+        'resources': (ResourcesListChanged, ServerSession.send_resource_list_changed)}
 
     def current() -> dict[str, Any]:
         """What each list follows: the tools are the names listed, which change with the modules on the surface."""
         both = tuple(module.id for module in surface(folder)), on_surface('chassis', folder)
         return {'tools': tuple(listing(folder)), 'prompts': both, 'resources': both[0]}
 
+    def conn_key(ctx: Any) -> str | None:
+        """The caller's connection; None on the July wire, which has none to announce on, and for an HTTP request
+        that names no session."""
+        if ctx.protocol_version in MODERN_PROTOCOL_VERSIONS:
+            return None
+        if ctx.request is None:
+            return STDIO
+        return ctx.request.headers.get(MCP_SESSION_ID_HEADER)
+
+    def connection(ctx: Any) -> dict[str, Any] | None:
+        """What the caller's connection was last shown, kept for the CONNECTIONS heard from last."""
+        key = conn_key(ctx)
+        if key is None:
+            return None
+        own = connections.pop(key, None) or {'tools': None, 'prompts': None, 'resources': None}
+        connections[key] = own
+        while len(connections) > CONNECTIONS:
+            connections.popitem(last=False)
+        return own
+
+    async def to_bus(kind: str, now: Any) -> None:
+        """Publish a change from what the bus last told, for the listen streams; the first value is taken unsaid."""
+        if bus_shown[kind] is not None and bus_shown[kind] != now:
+            await bus.publish(notices[kind][0]())
+        bus_shown[kind] = now
+
     async def announce(ctx: Any) -> None:
         now = await anyio.to_thread.run_sync(current)
+        own = connection(ctx)
         for kind in ('tools', 'prompts', 'resources'):
-            if shown[kind] is None:
-                shown[kind] = now[kind]
-            elif shown[kind] != now[kind]:
-                shown[kind] = now[kind]
-                if kind == 'tools':
-                    await bus.publish(ToolsListChanged())
-                    await ctx.session.send_tool_list_changed()
-                elif kind == 'prompts':
-                    await bus.publish(PromptsListChanged())
-                    await ctx.session.send_prompt_list_changed()
-                else:
-                    await bus.publish(ResourcesListChanged())
-                    await ctx.session.send_resource_list_changed()
+            await to_bus(kind, now[kind])
+            if own is not None:
+                if own[kind] is not None and own[kind] != now[kind]:
+                    await notices[kind][1](ctx.session)
+                own[kind] = now[kind]
         await watch.check()
+
+    async def listed_now(ctx: Any, kind: str) -> None:
+        """A list was just given: the listen streams hear a change first, and the caller's own connection has seen
+        it, while every other connection's record waits for that connection's next request."""
+        now = (await anyio.to_thread.run_sync(current))[kind]
+        await to_bus(kind, now)
+        own = connection(ctx)
+        if own is not None:
+            own[kind] = now
 
     async def list_tools(ctx: Any, params: Any) -> Any:
         tools = await anyio.to_thread.run_sync(build, apps(ctx))
-        shown['tools'] = (await anyio.to_thread.run_sync(current))['tools']
+        await listed_now(ctx, 'tools')
         return types.ListToolsResult(tools=tools)
 
     def declined(name: str) -> Any:
@@ -1501,7 +1546,7 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
 
     async def list_prompts(ctx: Any, params: Any) -> Any:
         found = await anyio.to_thread.run_sync(build_prompts)
-        shown['prompts'] = await anyio.to_thread.run_sync(current)
+        await listed_now(ctx, 'prompts')
         return types.ListPromptsResult(prompts=found)
 
     async def get_prompt(ctx: Any, params: Any) -> Any:
@@ -1517,7 +1562,7 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
 
     async def list_resources(ctx: Any, params: Any) -> Any:
         listed = await anyio.to_thread.run_sync(resource_list, folder)
-        shown['resources'] = (await anyio.to_thread.run_sync(current))['resources']
+        await listed_now(ctx, 'resources')
         found = [types.Resource(uri=one['uri'], name=one['name'], description=one['description'],
                                 mime_type=one['mime_type']) for one in listed]
         if apps(ctx):  # the views, each with its _meta.ui, so a host can review what they ask before one is shown
@@ -1577,14 +1622,17 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
             # A view changes only with the installation and the folder's project, so a host keeps it for the list
             # hint's time, not more, so a rebuilt map view reaches the next call.
             return types.ReadResourceResult(contents=[page], ttl_ms=CACHE_TTL_MS, cache_scope='private')
+        # A resource that does not exist: -32602 on the July 2026 wire, which moved it there, -32002 before it.
+        missing_code = -32602 if ctx.protocol_version in MODERN_PROTOCOL_VERSIONS else -32002
         try:
             found = await read_resource_text(folder, uri, client=client_of(ctx))
-        except Missing as missing:  # the July 2026 revision's code for a resource that does not exist
-            raise MCPError(-32602, f'Error: {missing}\nNext: {missing.next_step}') from None
+        except Missing as missing:
+            raise MCPError(missing_code, f'Error: {missing}\nNext: {missing.next_step}') from None
         except (Stop, StoreError) as stop:
             raise MCPError(-32603, f'Error: {stop}\nNext: {mcp_next(str(stop.next_step), folder)}') from None
         if found is None:
-            raise MCPError(-32602, f'No resource {uri} on this surface.\nNext: list the resources and their templates')
+            raise MCPError(missing_code,
+                           f'No resource {uri} on this surface.\nNext: list the resources and their templates')
         text, mime = found
         await watch.seen(uri)
         return types.ReadResourceResult(contents=[types.TextResourceContents(uri=uri, text=text, mime_type=mime)])
@@ -1644,6 +1692,16 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
                     on_list_resources=list_resources, on_list_resource_templates=list_resource_templates,
                     on_read_resource=read_resource, on_subscriptions_listen=listen, on_completion=complete,
                     on_subscribe_resource=subscribe, on_unsubscribe_resource=unsubscribe)
+    made_options = server.create_initialization_options
+
+    def initialization_options(notification_options: NotificationOptions | None = None,
+                               experimental_capabilities: dict[str, dict[str, Any]] | None = None,
+                               extensions: dict[str, dict[str, Any]] | None = None) -> InitializationOptions:
+        """What initialize declares, on every transport: the lists change and the change is announced, MCP-004. The
+        Streamable HTTP session manager asks with no options, which would declare none."""
+        return made_options(notification_options or NotificationOptions(
+            prompts_changed=True, tools_changed=True, resources_changed=True), experimental_capabilities, extensions)
+    server.create_initialization_options = initialization_options
     if apps_on:
         server.extensions[views.EXTENSION] = {}
     if tasks_on:

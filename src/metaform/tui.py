@@ -27,7 +27,7 @@ from prompt_toolkit.output import Output
 from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import Box, Frame, TextArea
 
-from . import home, loader, settings
+from . import docs, home, loader, settings
 
 Key = tuple[str, str]  # (module or chassis, setting key)
 
@@ -118,7 +118,8 @@ HELP = ('SETUP KEYS\n\n'
         'Enter             Open settings or edit a value; a setting with\n'
         '                  choices opens a list to pick from\n'
         'Space             Stage module or boolean toggle\n'
-        'F2                Selected module help from its declaration\n'
+        'F2                Selected module or setting help from its\n'
+        '                  declaration\n'
         'F5                Read the stored values again\n'
         'r / F9            Reset selected setting; R resets group\n'
         '+ / -             Increase/decrease numeric setting\n'
@@ -221,7 +222,7 @@ class ChassisTUI:
         preview_dialog = Frame(self.preview_text, title='Pending changes · Esc closes',
                                width=Dimension(preferred=76), height=Dimension(preferred=22))
         self.module_help_text = TextArea(read_only=True, scrollbar=True, wrap_lines=True)
-        module_help_dialog = Frame(self.module_help_text, title='Module help · Esc closes',
+        module_help_dialog = Frame(self.module_help_text, title='Help · Esc closes',
                                    width=Dimension(preferred=80), height=Dimension(preferred=24))
         container = FloatContainer(content, floats=[
             Float(content=ConditionalContainer(edit_dialog, Condition(lambda: self.editing))),
@@ -678,6 +679,12 @@ class ChassisTUI:
         self.module_help_text.text = row.id + '\n\n' + ((definition.help or definition.description) if definition
                                                         else 'Enable and save this module to load its help and '
                                                              'settings.')
+        if self.panel == 'settings' and self.declared_settings:
+            # A setting's own help page, its details and the folder's choices with it, as `metaform help <switch>`
+            setting = self.declared_settings[self.setting_index]
+            found = settings.by_switch(setting.switch) if setting.switches else None
+            if found is not None and (found[0].owner, found[0].key) == (setting.owner, setting.key):
+                self.module_help_text.text = docs.switch_page(setting.switch, self.backend.folder)
         self.module_help_open = True
         self.app.layout.focus(self.module_help_text)
 

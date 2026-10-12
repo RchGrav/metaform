@@ -35,7 +35,9 @@ elicitation/complete; FAKE_ACP_ELICIT=ask asks as claude-agent-acp's AskUserQues
 with its optional free-text "Other" companion, nothing required, and logs the answer; FAKE_ACP_ELICIT=withdraw asks
 that question and withdraws it with `$/cancel_request` half a second later, and FAKE_ACP_ELICIT=complete asks a page
 to be opened and sends elicitation/complete for it half a second later, and FAKE_ACP_ELICIT=complete-first sends
-elicitation/complete before it asks, each logging what its request was answered with. FAKE_ACP_USED=<a,b,...> sends a usage update with each context size in use and no cost in its first turn, as
+elicitation/complete before it asks, each logging what its request was answered with; FAKE_ACP_ELICIT=setup asks a
+page to be opened while it makes its session, scoped to session/new's request, answers session/new half a second
+later, and logs what the question was answered with. FAKE_ACP_USED=<a,b,...> sends a usage update with each context size in use and no cost in its first turn, as
 the adapters do after each model call. FAKE_ACP_COST=<a,b,...> sends a usage update with each cumulative cost in USD in its first turn;
 FAKE_ACP_NOTICE=1 sends a session notice when the client advertises them; FAKE_ACP_CLOSE=1 advertises session/close
 and session/delete and takes them; FAKE_ACP_FORK=1 advertises session/fork and answers it with fake-fork-<n>;
@@ -427,7 +429,9 @@ def main():
                 count = sum(json.loads(line).get('message', {}).get('method') == 'session/new' for line in handle)
             SESSION = f'fake-session-{count}'
             answer = {'jsonrpc': '2.0', 'id': ident, 'result': {'sessionId': SESSION, **made()}}
-            if os.environ.get('FAKE_ACP_INFO') == '1':  # the answer and an update of its session, in one write
+            if os.environ.get('FAKE_ACP_ELICIT') == 'setup':  # a sign-in asked before the session is made
+                threading.Thread(target=setup, args=(ident, answer), daemon=True).start()
+            elif os.environ.get('FAKE_ACP_INFO') == '1':  # the answer and an update of its session, in one write
                 info = {'jsonrpc': '2.0', 'method': 'session/update', 'params': {'sessionId': SESSION, 'update': {
                     'sessionUpdate': 'session_info_update', 'title': f'Fake title {count}',
                     'updatedAt': '2030-01-01T00:00:00Z'}}}
@@ -489,6 +493,20 @@ def main():
             send({'jsonrpc': '2.0', 'id': ident, 'result': {}})
         else:
             send({'jsonrpc': '2.0', 'id': ident, 'error': {'code': -32601, 'message': 'Method not found'}})
+
+
+def setup(ident, answer):
+    """A question scoped to session/new's request, asked before it is answered: session/new is answered half a second
+    later whether or not the question was, and the question's answer logged once it comes."""
+    event = threading.Event()
+    ANSWERS[956] = event
+    send({'jsonrpc': '2.0', 'id': 956, 'method': 'elicitation/create', 'params': {
+        'requestId': ident, 'mode': 'url', 'elicitationId': 'e-setup', 'message': 'Sign in to the server',
+        'url': 'https://auth.example.com/login?state=s'}})
+    event.wait(0.5)
+    send(answer)
+    event.wait()
+    log({'elicited': RESULTS.pop(956)})
 
 
 def over_acp(server_id):

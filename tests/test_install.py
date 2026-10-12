@@ -785,6 +785,14 @@ def test_codex_pointer_uses_codex_home(run, machine):
     assert not (machine['user'] / '.codex').exists()
 
 
+@pytest.mark.req('MCP-036')
+def test_codex_skill_uses_codex_home(run, machine):
+    alternate = machine['folder'] / 'ch'
+    run('install', 'codex', cwd=machine['folder'], env={**machine['env'], 'CODEX_HOME': str(alternate)})
+    assert (alternate / 'skills' / 'metaform' / 'SKILL.md').read_bytes() == SKILL.read_bytes()
+    assert not (machine['user'] / '.codex' / 'skills').exists()
+
+
 @pytest.mark.req('MCP-036', 'MCP-015', 'MCP-020')
 @pytest.mark.parametrize('action', ['provision', 'uninstall'])
 def test_pointer_revision_preserves_existing_rules_and_remains_owned(home, machine, monkeypatch, action):

@@ -983,6 +983,29 @@ def test_interrupt_cancels_waiting_permission_without_ending_the_session(dispatc
     dispatch.stop()
 
 
+@pytest.mark.req('BASE-052')
+def test_an_interrupted_turn_is_not_followed_by_a_recording_turn(dispatch, run):
+    """P033: the person interrupts to say something, so no on_stopped_open turn follows; their next message gets its
+    turn, and when that one stops with the ticket open the one recording turn of the session follows it."""
+    from metaform.modules.dispatch import prompt
+
+    def stopped_open():
+        said = run('dispatch', 'signals', '--json', cwd=dispatch.folder).stdout
+        return [one for one in json.loads(said)['signals'] if one['signal'] == 'stopped-open']
+    run('set', '--dispatch-record-on-stop', 'always', cwd=dispatch.folder)
+    dispatch.start('hold')
+    eventually(lambda: dispatch.logged('grandchild'))
+    run('dispatch', 'interrupt', dispatch.id, cwd=dispatch.folder)
+    eventually(stopped_open)
+    assert len(turns(dispatch)) == 1, 'no recording turn after the interrupt'
+    run('dispatch', 'message', dispatch.id, 'Carry on', cwd=dispatch.folder)
+    eventually(lambda: len(turns(dispatch)) == 3)
+    assert turns(dispatch)[1:] == ['Carry on', prompt('on_stopped_open', node=NODE)]
+    eventually(stopped_open)
+    assert len(turns(dispatch)) == 3
+    dispatch.stop()
+
+
 # ------------------------------------------------------------------ what ACP gives beyond text
 
 def rich(dispatch):
@@ -1454,6 +1477,8 @@ def test_stderr_steering_and_subagents_reach_the_thread(dispatch, run):
     assert (child['session_id'], child['name'], child['parent']) == ('child-1', 'Explorer', 'fake-session-1')
     eventually(lambda: [one for one in read(run, dispatch)['subagents'][0]['lines'] if one['text'] == 'Child words'])
     assert eventually(lambda: read(run, dispatch)['subagents'][0]['state'] == 'completed')
+    [line] = [json.loads(one.value) for one in dispatch.items('note') if one.extra['name'] == 'subagent:child-1']
+    assert line['fork'] is False, 'the agent\'s own subagent is no fork'
     sent = json.loads(run('dispatch', 'message', dispatch.id, '--json', '--', 'also check the tests',
                           cwd=dispatch.folder).stdout)
     assert sent['steered'] is True
@@ -1619,6 +1644,22 @@ def test_claudes_ask_user_question_is_one_question_with_its_choices_offered(disp
     run('map', 'reply', question.id, 'answer=Blue', cwd=dispatch.folder)
     assert eventually(lambda: dispatch.logged('elicited')) == [{'action': 'accept', 'content': {'question_0': 'Blue'}}]
     dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+def test_a_question_asked_while_the_session_is_made_moves_to_the_session(dispatch, run):
+    """A sign-in the agent asks for before it answers session/new: once the session is made, its line is in the
+    session's thread and its question-waiting signal is the session's, so the session's end clears it."""
+    def waiting():
+        said = run('dispatch', 'signals', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout
+        return [one for one in json.loads(said)['signals'] if one['signal'] == 'question-waiting']
+    dispatch.start('hold', FAKE_ACP_ELICIT='setup')
+    [line] = eventually(lambda: [one['data'] for one in read(run, dispatch)['lines'] if one['kind'] == 'elicitation'])
+    assert (line['url'], line['state']) == ('https://auth.example.com/login?state=s', 'waiting')
+    [signal] = eventually(lambda: [one for one in waiting() if one['session_id']])
+    assert signal['session_id'] == 'fake-session-1' and len(waiting()) == 1, 'raised once, under the session'
+    dispatch.stop()
+    assert not waiting()
 
 
 def test_a_bare_answer_fills_a_choice_or_the_free_text_companion_and_an_unreadable_one_is_never_an_empty_accept():
@@ -2402,6 +2443,17 @@ def test_serve_speaks_acp_v2_with_an_agent_that_negotiates_it(dispatch):
         editor.close()
 
 
+@pytest.mark.req('BASE-052')
+def test_an_agent_that_answers_another_protocol_version_is_closed_before_any_session(dispatch):
+    """ACP's initialization: an agent that answers with a version the runner does not speak is not used; the runner
+    says which versions, and asks for no session and sends no prompt."""
+    dispatch.start('hold', FAKE_ACP_V2='1')
+    said = dispatch.process.communicate(timeout=30)[1].decode('utf-8')
+    assert 'did not start' in said and 'protocol version 2' in said and 'speaks version 1' in said
+    assert dispatch.received('initialize') and not dispatch.received('session/new')
+    assert not dispatch.received('session/prompt')
+
+
 class Conducted(Lines):
     """An editor of the reference conductor (crates.io agent-client-protocol-conductor), which runs serve as a proxy
     before the fake agent; METAFORM_ACP_CONDUCTOR names the conductor's program."""
@@ -2492,6 +2544,8 @@ def test_a_fork_keeps_the_sessions_identity_and_has_a_thread_of_its_own(dispatch
     assert env['METAFORM_WORK'] == dispatch.id and env['METAFORM_ROLE'] == 'worker'
     assert forked['identity']['METAFORM_SESSION'] == env['METAFORM_SESSION']
     child = forked['fork']
+    [line] = [json.loads(one.value) for one in dispatch.items('note') if one.extra['name'] == f'subagent:{child}']
+    assert line['fork'] is True, 'the page tells a fork from the agent\'s own subagent'
     assert eventually(lambda: any(one.value == 'The turn ended: end_turn.' for one in dispatch.items('note')
                                   if one.extra['session_id'] == child))
     prompted = [one['params'] for one in dispatch.received('session/prompt') if one['params']['sessionId'] == child]
@@ -2527,6 +2581,35 @@ def test_a_turns_usage_is_one_invoke_agent_span_with_cached_input_counted(monkey
     runner.traced(found, 7)
     assert spans[0][0] == 'invoke_agent Claude Code' and spans[0][1]['start_time'] == 7 and spans[1] == 'ended'
     assert spans[0][1]['kind'] == trace.SpanKind.CLIENT and spans[0][1]['attributes'] is found
+
+
+@pytest.mark.req('BASE-052')
+def test_a_turn_that_fails_is_traced_with_its_error(dispatch, monkeypatch):
+    """dispatch_usage_traces reports every turn: one whose prompt fails is a span too, its finish reason error and
+    its error given, so error.type is set."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from metaform.data import Store
+    from metaform.modules.dispatch import runner
+    spans = []
+    monkeypatch.setattr(runner, 'traced', lambda attributes, started_ns, error=None: spans.append((attributes, error)))
+
+    async def exercise():
+        held = runner.Session(SimpleNamespace(nouns={}), Store('proj', module='dispatch'), dispatch.ticket(), 'claude',
+                              [])
+        held.session_id = 'failing-turn'
+        held.prep = True
+        held.option = lambda key, default: True if key == 'dispatch_usage_traces' else default
+        held.conn = SimpleNamespace(prompt=AsyncMock(side_effect=RuntimeError('the agent fell over')))
+        held.note = AsyncMock()
+        held.changed = AsyncMock()
+        held.turn('First turn')
+        await asyncio.wait_for(asyncio.gather(*tuple(held.tasks)), 5)
+
+    asyncio.run(exercise())
+    [(attributes, error)] = spans
+    assert error == 'the agent fell over' and attributes['gen_ai.response.finish_reasons'] == ['error']
 
 
 # ------------------------------------------------------------------ the ACP Registry, P013 and P030

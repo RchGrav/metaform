@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -59,6 +60,52 @@ def test_busybox_shells_and_wrappers_are_passed_over_and_other_applets_are_progr
     command_lines = {Path('/proc/20/cmdline'): arguments, Path('/proc/21/cmdline'): os.fsencode(OTHER) + b'\0'}
     monkeypatch.setattr(Path, 'read_bytes', lambda path: command_lines[path])
     assert harness.running() == (OTHER if shell else binary)
+
+
+def test_a_harness_run_by_node_is_known_by_its_script_as_install_records_it(tmp_path, monkeypatch):
+    from metaform import harness
+    monkeypatch.setattr(tempfile, 'tempdir', str(tmp_path / 'temp'))
+    script = tmp_path / 'lib' / 'node_modules' / '@x' / 'y' / 'bin' / 'y.js'
+    script.parent.mkdir(parents=True)
+    script.write_text('#!/usr/bin/env node\n')
+    script.chmod(0o755)
+    # Windows finds a command on PATH by its extension.
+    link = tmp_path / 'bin' / ('y.cmd' if sys.platform == 'win32' else 'y')
+    link.parent.mkdir()
+    try:
+        link.symlink_to(script)
+    except OSError:
+        pytest.skip('this system does not let the test make a link')
+    monkeypatch.setenv('PATH', str(link.parent))
+    monkeypatch.setattr(os, 'getppid', lambda: 20)
+    monkeypatch.setattr(harness, '_process', lambda pid: (0, ROOT / 'opt' / 'node' / 'bin' / 'node'))
+    monkeypatch.setattr(harness, '_script_of', lambda pid: link)
+    which = shutil.which('y')
+    assert which is not None and harness.key(which) is not None
+    assert harness.key(harness.running()) == harness.key(which)
+    monkeypatch.setattr(harness, '_script_of', lambda pid: None)
+    assert harness.running() == ROOT / 'opt' / 'node' / 'bin' / 'node'
+
+
+@pytest.mark.parametrize(('arguments', 'script'), [(['node', '--no-warnings', 's.js'], 's.js'),
+                                                   (['node', '--require', 'r.js', 's.js', 'x'], 's.js'),
+                                                   (['bun', 'run', 's.js'], 's.js'),
+                                                   (['node', '-e', 'code'], None),
+                                                   (['node', '-p', 'x'], None),
+                                                   (['node', '-'], None),
+                                                   (['node'], None)])
+def test_an_interpreters_script_is_read_past_its_own_options(arguments, script):
+    from metaform import harness
+    assert harness._script(arguments) == script
+
+
+def test_a_binary_inside_an_npm_package_is_known_by_the_package():
+    from metaform import harness, home
+    package = ROOT / 'opt' / 'lib' / 'node_modules' / '@x' / 'y'
+    assert harness.key(package / 'vendor' / 'z' / 'bin' / 'y') == harness.key(package / 'bin' / 'y.js')
+    assert harness.key(package / 'node_modules' / 'z' / 'bin' / 'z') == harness.key(package / 'bin' / 'y.js')
+    assert harness.key(package / 'bin' / 'y.js') == home.path_key(package)
+    assert harness.key(OTHER) == home.path_key(OTHER.parent)
 
 
 @pytest.mark.kind('simulation')

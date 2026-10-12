@@ -439,13 +439,25 @@ Said = tuple[status.State, str | None, str]
 
 def ticket_state(work: WorkRecord, kept: dict[str, Any], starts: bool) -> Said:
     """A ticket in the status vocabulary of work. Done ends as its work record says, completed, cancelled or failed,
-    P232. An agent waiting on the person to log it in, or to answer its permission or question, or stopped with the
-    ticket open, is `input_required` with what it waits for: the person acts, then the work goes on. Taken is running;
-    otherwise it is submitted."""
+    P232. Otherwise it is the status dispatch gives the ticket, its `ticket_work_status`, when dispatch keeps anything
+    on it: an agent waiting on the person to log it in, or to answer its permission or question, stopped with the
+    ticket open, or held by a runner that died, is `input_required` with what it waits for: the person acts, then the
+    work goes on. A session idle between turns works on, as it reads to the A2A client. Taken is running; otherwise it
+    is submitted."""
     if work.done:
         ended = status.known(work.outcome or 'completed', f'metaform map work id={work.id}')
         return ended, None, {'cancelled': 'a2a_cancelled', 'failed': 'a2a_failed'}.get(ended, 'a2a_completed')
     dispatch = _dict(kept.get('dispatch'))
+    given, reason = dispatch.get('status'), dispatch.get('reason')
+    if given == 'input_required' and reason not in (None, 'person'):
+        said_by = {'login': 'a2a_login', 'stopped': 'a2a_stopped', 'runner died': 'a2a_stopped'}
+        return 'input_required', str(reason), said_by.get(str(reason), 'a2a_person')
+    if given in ('input_required', 'running'):  # starting, an intake's phase, or idle between turns (person)
+        return 'running', None, 'a2a_working'
+    if given == 'submitted':
+        if reason == 'held' or _dict(kept.get('map')).get('hold'):
+            return 'submitted', None, 'a2a_held'
+        return 'submitted', None, 'a2a_queued' if starts else 'a2a_waiting'
     raised = {str(_dict(one).get('signal')) for one in cast(list[Any], dispatch.get('signals') or [])}
     for signal, why in WAITS.items():
         if signal in raised:
@@ -748,15 +760,19 @@ class Pushes:
         try:
             async for event in follow(self.changes, project, folder, first, through_input=True):
                 await sender.send_notification(first.task.id, event)
+            # The task ended or can no longer be read: its configurations end with it, as A2A asks.
+            await _off(records.delete_push, project, first.task.id, refresh=False)
         except Exception:  # a watch that fails is logged; the task is still read on request
             log.exception('A2A push watch on %s stopped', first.task.id)
         finally:
             self.watching.pop((project, first.task.id), None)
 
     async def resume(self) -> None:
-        """Watch again every task that kept a configuration through a restart."""
-        def kept() -> list[tuple[str, Path, Read]]:
-            found: list[tuple[str, Path, Read]] = []
+        """Watch again every task that kept a configuration through a restart. Each is first sent where it stands
+        now, its artifacts and its status, since what it reached while the server was down was never pushed; one that
+        ended, or can no longer be read, is told so and its configurations are deleted."""
+        def kept() -> list[tuple[str, Path, str, Read | None, str | None]]:
+            found: list[tuple[str, Path, str, Read | None, str | None]] = []
             for project in home.projects():
                 try:
                     tasks = {push.work_id for push in records.pushes(project.project_id)}
@@ -764,12 +780,29 @@ class Pushes:
                     continue
                 for task_id in tasks:
                     now = read(project.project_id, Path(project.path), task_id, 0)
-                    if now is not None:
-                        found.append((project.project_id, Path(project.path), now))
+                    known = None if now else (records.sent(project.project_id, task_id)
+                                              or records.asked(project.project_id, task_id))
+                    found.append((project.project_id, Path(project.path), task_id, now,
+                                  known.context_id if known else None))
             return found
         try:
-            for project, folder, now in await _off(kept):
-                self.watch(project, folder, now)
+            for project, folder, task_id, now, context_id in await _off(kept):
+                sender = self.sender(project)
+                if now is None:
+                    if context_id is not None:
+                        await sender.send_notification(task_id, TaskStatusUpdateEvent(
+                            task_id=task_id, context_id=context_id,
+                            status=_status(task_id, context_id, 'failed', None, prompt('a2a_gone'), None)))
+                    await _off(records.delete_push, project, task_id, refresh=False)
+                    continue
+                for event in changes(Read(now.task, now.state, now.said), now):  # its artifacts, then its status
+                    await sender.send_notification(task_id, event)
+                await sender.send_notification(task_id, TaskStatusUpdateEvent(
+                    task_id=task_id, context_id=now.task.context_id, status=now.task.status))
+                if now.ended:
+                    await _off(records.delete_push, project, task_id, refresh=False)
+                else:
+                    self.watch(project, folder, now)
         except Exception:  # the server serves without the watches it could not resume
             log.exception('A2A push watches were not resumed')
 

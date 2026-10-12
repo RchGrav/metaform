@@ -1073,6 +1073,94 @@ def test_a_change_to_the_surface_reaches_a_running_session_as_a_list_change(run,
     assert heard.count('notifications/prompts/list_changed') == 1
 
 
+@pytest.mark.req('MCP-004')
+@pytest.mark.cli_process
+def test_listing_the_prompts_then_calling_a_tool_announces_no_change(run, home, mapped):
+    """The prompts listed were kept in another shape than the one compared, so every call announced a change."""
+    heard = []
+
+    async def check(client, init):
+        await client.list_prompts()
+        await client.call_tool('map_layers', {})
+        await client.call_tool('map_layers', {})
+    session(home, mapped, check, heard)
+    assert 'notifications/prompts/list_changed' not in heard
+
+
+class Served:
+    """`metaform mcp serve --http`'s app for the folder, on 127.0.0.1 in a thread of its own."""
+
+    def __init__(self, folder):
+        import socket
+        import threading
+
+        import uvicorn
+
+        from metaform.modules.mcp.server import http_app
+        with socket.socket() as held:
+            held.bind(('127.0.0.1', 0))
+            port = held.getsockname()[1]
+        self.url = f'http://127.0.0.1:{port}/mcp'
+        self.server = uvicorn.Server(uvicorn.Config(http_app(folder), host='127.0.0.1', port=port,
+                                                    log_level='warning'))
+        self.thread = threading.Thread(target=self.server.run, daemon=True)
+        self.thread.start()
+        deadline = time.monotonic() + 10
+        while not self.server.started and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert self.server.started
+
+    def stop(self):
+        self.server.should_exit = True
+        self.thread.join(10)
+
+
+async def heard_until(heard, method, count, limit=5):
+    """Wait for `count` of `method` in `heard`, written by the client's GET stream task, or the limit."""
+    deadline = time.monotonic() + limit
+    while heard.count(method) < count and time.monotonic() < deadline:
+        await asyncio.sleep(0.05)
+
+
+@pytest.mark.req('MCP-002')
+@pytest.mark.req('MCP-004')
+def test_over_http_each_client_that_connected_with_initialize_hears_a_list_change_once(run, home, mapped):
+    """Over HTTP one server answers every client. Its initialize declared no list changes, and what was last shown
+    was one record for all of them, so the first client to list again took the change from every other."""
+    from contextlib import AsyncExitStack
+
+    from mcp.client.streamable_http import streamable_http_client
+    served = Served(mapped)
+    heard = {'a': [], 'b': []}
+
+    async def go():
+        async with AsyncExitStack() as stack:
+            clients = {}
+            for name in ('a', 'b'):
+                async def hear(message, name=name):
+                    method = getattr(message, 'method', None)
+                    if method:
+                        heard[name].append(method)
+                read, write = await stack.enter_async_context(streamable_http_client(served.url))
+                clients[name] = await stack.enter_async_context(ClientSession(read, write, message_handler=hear))
+                init = await clients[name].initialize()
+                assert init.capabilities.tools.list_changed is True
+                assert init.capabilities.prompts.list_changed is True
+                await clients[name].list_tools()
+            run('set', '--modules', 'intake,map,mcp', cwd=mapped)
+            await clients['a'].list_tools()
+            await clients['a'].call_tool('map_layers', {})
+            await clients['b'].call_tool('map_layers', {})
+            await clients['b'].call_tool('map_layers', {})
+            await heard_until(heard['b'], 'notifications/tools/list_changed', 2, limit=2)
+    try:
+        asyncio.run(go())
+    finally:
+        served.stop()
+    assert heard['b'].count('notifications/tools/list_changed') == 1
+    assert heard['a'].count('notifications/tools/list_changed') <= 1
+
+
 @pytest.mark.req('MCP-002')
 @pytest.mark.req('MCP-004')
 def test_on_the_july_wire_a_listen_stream_hears_the_list_change(run, home, mapped):
@@ -1091,6 +1179,7 @@ def test_on_the_july_wire_a_listen_stream_hears_the_list_change(run, home, mappe
         listen = july.open('subscriptions/listen', {'notifications': {'toolsListChanged': True}})
         assert july.call('map_layers', {})['resultType'] == 'complete'
         run('set', '--modules', 'intake,map,mcp', cwd=mapped)
+        july.request('tools/list', {}, deadline=time.monotonic() + 30)  # the stream hears it though this client listed
         july.call('map_layers', {})
 
         def changed():
@@ -1289,6 +1378,19 @@ def test_connect_points_to_the_glossary_and_the_glossary_resource_serves_it_whol
     assert served == glossary.strip() + '\n' and len(served) > 2048  # whole and alone, past the connect text's cut
 
 
+@pytest.mark.req('MCP-003')
+def test_the_glossary_is_one_text_by_tool_resource_and_command_line(run, home, mapped):
+    """metaform_instructions with module metaform is the glossary the resource serves and the command line prints."""
+    async def check(client, init):
+        tool = await called(client, 'metaform_instructions', {'module': 'metaform'})
+        assert not tool.is_error, text(tool)
+        described = (await listed(client))['metaform_instructions'].input_schema['properties']['module']['description']
+        return ''.join(text(tool)), (await client.read_resource('metaform://metaform')).contents[0].text, described
+    by_tool, by_resource, described = session(home, mapped, check)
+    assert by_tool == by_resource == run('instructions', 'metaform', cwd=mapped).stdout
+    assert 'metaform://metaform' in described  # found in the tool's schema by a model that cannot read resources
+
+
 SHIPPED = ('dispatch', 'fork', 'hello', 'intake', 'map', 'mcp', 'memory', 'packet', 'template', 'web', 'workflow')
 
 
@@ -1329,7 +1431,8 @@ def test_every_address_resolves_to_its_brief_and_each_numbered_item_with_the_jul
                                                                                                     mapped):
     """metaform://<address> is the node's brief, map's first where read; metaform://<address>#<n> the one item numbered
     n there, upper-case hex read too, its links shown as <address>#<n> and title; a missing address or item is
-    refused with -32602 and a next step; the fixed resources are never read as addresses."""
+    refused with a next step, -32602 on the July wire and -32002 on the 2025 handshake, whose resources page names it;
+    the fixed resources are never read as addresses."""
     run('memory', 'create_entities', json.dumps([
         {'name': 'tone', 'entityType': 'finding', 'observations': ['The tone is too quiet.'],
          'why': 'The cook misses it.'},
@@ -1368,7 +1471,15 @@ def test_every_address_resolves_to_its_brief_and_each_numbered_item_with_the_jul
                                                                         'work']
     assert read['metaform://metaform'].startswith('@STATE_INIT')
     for uri, (code, said) in refused.items():
-        assert code == -32602 and 'Next:' in said, (uri, said)
+        assert code == -32002 and 'Next:' in said, (uri, said)
+    july = july_wire(home, mapped)
+    try:
+        from metaform.probe import discover
+        discover(july)
+        with pytest.raises(RuntimeError, match='-32602'):
+            july.request('resources/read', {'uri': 'metaform://code.nosuch.node'}, deadline=time.monotonic() + 30)
+    finally:
+        july.close()
 
 
 def a2a(folder, calls):
@@ -1472,6 +1583,59 @@ def test_a2a_push_webhooks_are_only_those_the_person_allows(run, home, mapped):
     assert not allowed('http://agent.example/hooks/a2a', mapped)
     assert not allowed('https://agent.example/hooksmith', mapped)
     assert not allowed('file:///etc/passwd', mapped)
+
+
+@pytest.mark.req('MCP-002')
+def test_a2a_push_resume_sends_where_an_ended_task_stands_and_drops_its_configuration(run, home, mapped, monkeypatch):
+    """A task that ended while the server was down was never pushed, and its configuration was kept for ever. A task
+    whose ticket is gone is told as failed; a watched task that ends while the server runs drops its configuration."""
+    import anyio
+    import httpx
+    from starlette.applications import Starlette
+
+    from metaform.modules.mcp import a2a as served
+    from metaform.modules.mcp import a2a_records as records
+    run('set', '--mcp-a2a-webhooks', 'https://agent.example/hooks/', cwd=mapped)
+    run('map', 'work', 'op=add', 'node=code.alarm.audible', 'task=Make it louder.', 'title=Louder', cwd=mapped)
+    work_id = next(one.id for one in Store('proj').work(limit=0).results if one.task == 'Make it louder.')
+    records.record('proj', work_id, 'm-1', 'code.alarm.audible', None)
+    records.set_push('proj', records.Push(work_id, 'c-1', 'https://agent.example/hooks/a2a', None, None, None, None))
+    run('map', 'work', 'op=take', f'id={work_id}', cwd=mapped)
+    run('map', 'work', 'op=done', f'id={work_id}', 'resolution=Louder now', 'why=The cook hears it', cwd=mapped)
+    records.record('proj', 'w-gone', 'm-2', 'code.alarm.audible', None)  # its ticket no longer exists
+    records.set_push('proj', records.Push('w-gone', 'c-2', 'https://agent.example/hooks/a2a', None, None, None, None))
+    run('map', 'work', 'op=add', 'node=code.alarm.audible', 'task=Make it flash.', 'title=Flash', cwd=mapped)
+    watched = next(one.id for one in Store('proj').work(limit=0).results if one.task == 'Make it flash.')
+    records.record('proj', watched, 'm-3', 'code.alarm.audible', None)
+    records.set_push('proj', records.Push(watched, 'c-3', 'https://agent.example/hooks/a2a', None, None, None, None))
+    posted = []
+
+    async def post(self, url, json=None, headers=None):
+        posted.append(json)
+        return httpx.Response(200, request=httpx.Request('POST', url))
+    monkeypatch.setattr(httpx.AsyncClient, 'post', post)
+    app = Starlette()
+    served.attach(app, mapped, 7434)
+
+    async def go():
+        async with app.router.lifespan_context(app):
+            # done from another process, as a person or agent does it, heard through the home's change relay
+            await anyio.to_thread.run_sync(lambda: run('map', 'work', 'op=done', f'id={watched}', 'resolution=Flashing',
+                                                       'why=The cook sees it', cwd=mapped, isolated=True))
+            with anyio.fail_after(15):
+                while records.pushes('proj', watched):
+                    await anyio.sleep(0.05)
+    asyncio.run(go())
+
+    def told(task_id):
+        return [one['statusUpdate']['status']['state'] for one in posted
+                if one.get('statusUpdate', {}).get('taskId') == task_id]
+    assert [one['artifactUpdate']['artifact']['parts'][0]['text'] for one in posted
+            if one.get('artifactUpdate', {}).get('taskId') == work_id] == ['Louder now']
+    assert told(work_id) == ['TASK_STATE_COMPLETED']
+    assert records.pushes('proj', work_id) == []
+    assert told('w-gone') == ['TASK_STATE_FAILED'] and records.pushes('proj', 'w-gone') == []
+    assert told(watched)[-1] == 'TASK_STATE_COMPLETED' and records.pushes('proj', watched) == []
 
 
 def july_wire(home, folder, **extra_env):
@@ -1977,8 +2141,21 @@ def test_a2a_reaches_only_its_own_tickets_reads_a_cancel_as_canceled_and_a_wait_
         login = (await client.post('/a2a', json=rpc('GetTask', {'id': waiting}), headers=headers)).json()
         theirs = [(await client.post('/a2a', json=rpc(method, {'id': one}), headers=headers)).json()
                   for method in ('GetTask', 'CancelTask') for one in (own, a_run)]
-        return streamed['response'].text, cancel, asking.text, listed, every, login, theirs
-    stream, cancel, asking, listed, every, login, theirs = a2a(mapped, calls)
+        # a ticket whose runner died holding it, one the person holds, and one taken with no session yet
+        died, held, taken = [(await send(f'Make it {how}', number, contextId='code.alarm.audible'))['result']['task']['id']
+                             for number, how in ((4, 'ring'), (5, 'buzz'), (6, 'chime'))]
+        run('map', 'work', 'op=take', f'id={died}', cwd=mapped)
+        with Store('proj', module='dispatch').tables() as tx:
+            tx.insert('sessions', {'session_id': 's-died', 'work_id': died, 'agent': 'claude', 'state': 'ended',
+                                   'how': 'the runner is no longer running', 'started': '2026-10-11T00:00:00Z',
+                                   'seq': 1})
+        run('map', 'work', 'op=edit', f'id={held}', 'held=true', cwd=mapped)
+        run('map', 'work', 'op=take', f'id={taken}', cwd=mapped)
+        read = {one: (await client.post('/a2a', json=rpc('GetTask', {'id': one}), headers=headers)).json()['result']
+                for one in (died, held, taken)}
+        return streamed['response'].text, cancel, asking.text, listed, every, login, theirs, [read[died], read[held],
+                                                                                              read[taken]]
+    stream, cancel, asking, listed, every, login, theirs, (died, held, taken) = a2a(mapped, calls)
     told = [json.loads(line[5:])['result'] for line in stream.splitlines() if line.startswith('data:')]
     assert told[-1]['statusUpdate']['status']['state'] == 'TASK_STATE_CANCELED'  # and then the stream closed
     ended = cancel['result']
@@ -1994,6 +2171,24 @@ def test_a2a_reaches_only_its_own_tickets_reads_a_cancel_as_canceled_and_a_wait_
     assert 'log it in' in shown['status']['message']['parts'][0]['text']
     assert [one['error']['code'] for one in theirs] == [-32001] * 4  # TaskNotFoundError: the person's, not A2A's
     assert Store('proj').ticket(own).work.done is None and runs.read(Store('proj'), a_run).state == 'running'
+    # dispatch's own reason for the ticket, not one worked out again from its last session
+    assert died['status']['state'] == 'TASK_STATE_WORKING'
+    assert died['metadata'][extension]['reason'] == 'runner died' and died['metadata'][extension]['waitingOn'] == 'person'
+    assert held['status']['state'] == 'TASK_STATE_SUBMITTED' and taken['status']['state'] == 'TASK_STATE_WORKING'
+    assert 'waitingOn' not in held['metadata'][extension] and 'waitingOn' not in taken['metadata'][extension]
+    from metaform.modules.dispatch import ticket_work_status
+    from metaform.modules.mcp.a2a import ticket_state
+    work = Store('proj').ticket(taken['id']).work
+    idle = ticket_work_status(work, [{'session_id': 's-idle', 'state': 'running', 'activity': 'idle'}], [])
+    assert ticket_state(work, {'dispatch': idle}, False) == ('running', None, 'a2a_working')  # idle between turns
+    # dispatch's own status for a ticket it keeps nothing on yet: taken and starting, or held, wait on no one
+    starting = ticket_work_status(work, [], [])
+    assert starting == {'status': 'running', 'reason': 'starting'}
+    assert ticket_state(work, {'dispatch': starting}, False) == ('running', None, 'a2a_working')
+    kept = Store('proj').ticket(held['id']).work
+    holding = ticket_work_status(kept, [], [])
+    assert holding == {'status': 'submitted', 'reason': 'held'}
+    assert ticket_state(kept, {'dispatch': holding}, False) == ('submitted', None, 'a2a_held')
 
 
 @pytest.mark.browser

@@ -33,6 +33,19 @@ def test_screen_shows_every_setting_in_the_schema(home, tmp_path):
     assert shown == {key for key, item in settings.SCHEMA.items() if item.owner in loaded}
 
 
+def test_help_key_on_a_setting_shows_its_details(home, tmp_path):
+    pipe, screen = _screen(tmp_path)
+    with pipe:
+        async def drive():
+            await screen.refresh()
+            screen._focus('settings')
+            screen.setting_index = next(index for index, item in enumerate(screen.declared_settings) if item.details)
+            screen._module_help()  # F2
+            return screen.declared_settings[screen.setting_index], screen.module_help_text.text
+        setting, shown = asyncio.run(drive())
+    assert setting.details in shown and shown.startswith(setting.switch)
+
+
 def test_screen_edits_and_glues_through_its_own_keys(home, tmp_path):
     work, other = tmp_path / 'work', tmp_path / 'other'
     work.mkdir(); other.mkdir()
