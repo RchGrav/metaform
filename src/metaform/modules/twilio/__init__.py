@@ -552,7 +552,7 @@ MODULE = Module(
             'webhook URLs metaform twilio status shows into the number\'s settings in Twilio\'s console.',
     verbs=(
         Verb('status', status, "Show whether the phone is set up and why not, the webhook URLs to paste into Twilio, "
-                               'and which credentials are in the environment, by name only.', effect='read'),
+                               'and which credentials are in the environment, by name only.', effect='read', surfaces=('cli',)),
         Verb('serve', serve, 'Run the phone bridge on 127.0.0.1 until stopped, answering your Twilio number with your '
                              'system agent.',
              switches=('twilio_port', 'twilio_public_url'), surfaces=('cli',), effect='write', open_world=True),

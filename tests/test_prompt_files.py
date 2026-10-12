@@ -65,10 +65,10 @@ def test_the_full_instructions_are_the_instructions_prompt_with_the_surfaced_mod
     element = prompt(SOURCE / 'resources' / 'prompts.xml', 'instructions')
     on = [line.split()[0] for line in run('list', 'modules', cwd=folder).stdout.splitlines() if line.split()[1] == 'on']
     def line(module):  # a module's instructions prompt; a project with no intake also gets the notice, MCP-009
-        own = prompt(SOURCE / 'modules' / module / 'resources' / 'prompts.xml', 'instructions').text.strip()
+        own = (prompt(SOURCE / 'modules' / module / 'resources' / 'prompts.xml', 'instructions').text or '').strip()
         notice = prompt_text(SOURCE / 'modules' / module, 'no_intake')
         return own if notice is None else f'{own} {notice}'
-    listed = '\n'.join(line(module) for module in sorted(on))
+    listed = '\n'.join(filter(None, (line(module) for module in sorted(on))))  # an empty one sends nothing
     assert [child.tag for child in element] == ['surface', 'modules']
     opening = prompt(SOURCE / 'resources' / 'prompts.xml', 'surface_cli').text.strip()  # no server claimed on the CLI
     expected = (element.text or '') + opening + (element[0].tail or '') + listed + (element[1].tail or '')

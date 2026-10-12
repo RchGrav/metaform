@@ -234,11 +234,11 @@ MODULE = Module(
     details='Its advanced settings, elevenlabs_*, shape the sound: model, stability, similarity, style, speaker '
             'boost, speed, streaming latency, and the formats for the page and for a phone call.',
     verbs=(
-        Verb('status', status, 'Show whether the ElevenLabs key is present and the settings in use.', effect='read'),
+        Verb('status', status, 'Show whether the ElevenLabs key is present and the settings in use.', effect='read', surfaces=('cli',)),
         Verb('models', list_models, 'List the text-to-speech models your ElevenLabs account can use.', effect='read',
-             open_world=True),
+             open_world=True, surfaces=('cli',)),
         Verb('voices', list_voices, "List each mascot character's voice and the voices on your ElevenLabs account.",
-             effect='read', open_world=True),
+             effect='read', open_world=True, surfaces=('cli',)),
         Verb('speak', speak, 'Speak text with ElevenLabs into an audio file; ElevenLabs receives the text.',
              nouns=(Noun('character', 'The mascot character whose voice speaks it.', required=False),
                     Noun('format', 'The output format, such as mp3_44100_128, pcm_16000 or ulaw_8000.', required=False),

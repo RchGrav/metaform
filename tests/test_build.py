@@ -116,7 +116,9 @@ def test_the_chassis_depends_only_on_pure_python_packages():
 @pytest.mark.req('BASE-041')
 @pytest.mark.req('BASE-022')
 def test_a_build_carries_only_the_enabled_modules_and_their_dependencies(run, home):
-    wheel, _ = build(run, 'mcp', 'memory', 'intake', 'web', 'fork')  # fork ships enabled, BASE-017
+    # every module that ships enabled, BASE-017, turned off but map, read from the list so a new module is counted too
+    on = [line.split()[0] for line in run('list', 'modules').stdout.splitlines() if line.split()[1:2] == ['on']]
+    wheel, _ = build(run, *[module for module in on if module != 'map'])
     assert re.fullmatch(r'metaform-.+-py3-none-any\.whl', wheel.name)
     assert wheel.parent.parent == home / 'builds'
     with zipfile.ZipFile(wheel) as archive:
