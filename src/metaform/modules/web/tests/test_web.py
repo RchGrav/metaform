@@ -2216,6 +2216,8 @@ def test_u_draws_the_3d_map_in_outer_space_keeps_the_choice_and_an_idle_map_stil
     look = 'window.ultra.stats().drawn'
     assert page.evaluate('document.documentElement.dataset.theme') == 'space'
     page.wait_for_function(f"() => {look} === 'ultra'")
+    page.wait_for_timeout(300)
+    assert graphics() == 'ultra'  # the look it opens in is recorded, so the settings say what the map shows
     stage = page.locator('#stage').bounding_box()
     page.mouse.move(stage['x'] + stage['width'] / 2, stage['y'] + stage['height'] / 2)
     page.keyboard.press('u')

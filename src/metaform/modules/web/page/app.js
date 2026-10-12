@@ -5640,11 +5640,11 @@ function easeCurve([x1, y1, x2, y2]) {
 }
 window.metaformEase = {...EASE, durFor, curve: name => easeCurve(EASE[name])};  // for the flow's figures, the same curves
 
-/* The view settings of the web module that the page follows, read once a project is shown: the large map's bar,
- * web_mode_bar; the agents window, web_agents_window; the 3D map's physics, web_physics; the 2D map's direction,
+/* The view settings of the web module that the page follows, read once a project is shown: the agents window,
+ * web_agents_window; the 3D map's physics, web_physics; the 2D map's direction,
  * web_map_direction. Whether the page is drawn from its workspace is web_panes, which the workspace reads itself. A
  * change made here is saved to the setting, so every project and every reload opens the same way. */
-const VIEW = {modeBar: 'auto', barBefore: null, agents: 'auto', physics: 'organic', read: null, reading: null};
+const VIEW = {agents: 'auto', physics: 'organic', read: null, reading: null};
 const INFOSET = {buttons: new Map()};  // the bar's Info choice, web_hover_info, `showInfo`, drawn as the view is read
 // declared before the view settings are read, which shows them: the flow modes and the node zoom switch
 const FLOWSET = {name: null, buttons: new Map()};
@@ -5667,7 +5667,6 @@ function readView() {
     try { rows = (await read('settings')).settings || []; } catch { return; }
     if (S.project !== project) return;
     const value = (key, otherwise) => rows.find(row => row.key === key)?.value ?? otherwise;
-    VIEW.modeBar = value('web_mode_bar', 'auto');
     VIEW.agents = value('web_agents_window', 'auto');
     PEEK.direction = value('web_map_direction', 'auto');
     VIEW.signs = String(value('web_signs', 'outward'));
@@ -5678,7 +5677,10 @@ function readView() {
     LENS.name = String(value('web_lens', 'natural'));
     lens3d(LENS.name);
     showLens();
-    ULTRA.setting(document.documentElement.dataset.theme === 'space' ? 'ultra' : 'clean');  // the theme decides
+    // the theme decides the look, and web_graphics records it, so the settings say what the map shows
+    const look = document.documentElement.dataset.theme === 'space' ? 'ultra' : 'clean';
+    ULTRA.setting(look);
+    if (value('web_graphics', 'clean') !== look) saveView('web_graphics', look);
     const physics = value('web_physics', 'organic');
     if (physics !== PHYS.name) applyPhysics(physics);
     showFlow(String(value('web_flow_mode', flowNow())));
@@ -5686,7 +5688,6 @@ function readView() {
     showNodeZoom();
     VIEW.hoverInfo = String(value('web_hover_info', 'name+summary'));
     showInfo();
-    barFollows();
     agentsWindow();
     peekParts();
   })();
@@ -5698,19 +5699,14 @@ async function saveView(key, value) {
   return done.ok;
 }
 
-/* The large map's bar: the modes with their keys, Fit, the 2D map's direction and the 3D map's physics, at the top
- * right of the large area, web_mode_bar. auto brings it out as the pointer nears that corner and puts it away ten
- * seconds after the pointer was last near it, the last key or the last use of it; shown keeps it out; keys, the
- * default and the cleanest, keeps it away and lets it peek for a moment when a key changes what it shows, the new
- * choice checked. Tab reaches it whatever the choice. M and the quiet handle at the corner's edge toggle shown. It
- * holds no room while it is away: what stands in that corner, the agents window, moves down by its height while it is
- * out and back as it goes. It is never in the small area, which is not configured. */
-const PEEK = {el: null, two: null, three: null, physics: null, timer: 0, out: false, direction: null, handle: null};
-const FIT3D = $('#fit3dBtn');  // held before the bar takes it out of the page, where $ no longer finds it
-PEEK.el = h('div', {id: 'peek', class: 'peek', role: 'toolbar', 'aria-label': "The large map's modes, direction and physics"},
-  PEEK.two = h('div', {class: 'peekpart two'}),
-  PEEK.three = h('div', {class: 'peekpart three'}, MODES3D.box, FIT3D),
-  PEEK.physics = h('div', {class: 'peekpart physics'}));
+/* Each map's own controls, in its bar row beside Swap and always in view, so nothing slides out over the map: the 2D
+ * map's modes and direction, and the 3D map's framings, Fit and layout. Only the large map's show; the small area is
+ * not configured. */
+const PEEK = {two: null, three: null, physics: null, direction: null};
+const FIT3D = $('#fit3dBtn');
+PEEK.two = h('div', {class: 'peekpart two'});
+PEEK.three = h('div', {class: 'peekpart three'}, MODES3D.box, FIT3D);
+PEEK.physics = h('div', {class: 'peekpart physics'});
 FIT3D.title = 'Fit the whole map in view once, leaving the mode as it is (F)';
 FIT3D.setAttribute('aria-keyshortcuts', 'F');
 PEEK.directions = new Map();
@@ -5723,10 +5719,6 @@ PEEK.two.append(h('div', {class: 'segmented directions', role: 'radiogroup', 'ar
     PEEK.directions.set(direction, button);
     return button;
   })));
-PEEK.handle = h('button', {class: 'peekhandle', type: 'button', 'aria-label': "The large map's bar", 'aria-keyshortcuts': 'M',
-  'aria-pressed': 'false', title: "Show or put away the large map's bar: its modes, direction and physics (M)",
-  onclick: event => { event.stopPropagation(); toggleBar(); }});
-// Each map's controls stand in its own bar row, beside Swap, always in view: nothing slides out over the map.
 $('#big3d .bar3d .mapbtns').prepend(PEEK.three);
 $('.bar2d .mapbtns').prepend(PEEK.two);
 PEEK.three.append(PEEK.physics);
@@ -5737,107 +5729,10 @@ function peekParts() {
   for (const [name, button] of PHYS.buttons) button.setAttribute('aria-checked', String(name === PHYS.name));
   if (PHYS.shown) showPhysics();
   if (PEEK.ultra) showUltra();  // U pressed elsewhere: the bar names the look the map has now
-  PEEK.handle.setAttribute('aria-pressed', String(VIEW.modeBar === 'shown'));
-  $('#modebarat').value = VIEW.modeBar;
 }
-/* The bar drawn as small as it can be: one row, as wide as what it holds, while the map is wide enough; on a narrower
- * map its controls wrap, `narrow`, and the bar is drawn as narrow as keeps that many rows, so the rows are even and
- * no empty room stands beside a short one. The map below it is then shorter by the bar's height as drawn, `--peek-h`. */
-function fitPeek() {
-  const bar = PEEK.el;
-  bar.classList.remove('narrow');
-  bar.style.width = '';
-  const controls = () => [...bar.querySelectorAll(':scope > .peekpart:not([hidden]) > *')]
-    .filter(one => one.getClientRects().length).map(one => one.getBoundingClientRect());
-  const edge = bar.getBoundingClientRect(), shown = controls();
-  // too wide for one row: a control stands past either edge of the bar
-  if (shown.some(box => box.left < edge.left - 0.5 || box.right > edge.right + 0.5)) {
-    bar.classList.add('narrow');
-    const rows = () => new Set(controls().map(box => Math.round(box.top))).size;
-    const count = rows();
-    let low = Math.floor(bar.getBoundingClientRect().width / count), high = Math.ceil(bar.getBoundingClientRect().width);
-    while (high - low > 2) {  // the narrowest width that keeps the rows it has
-      const middle = Math.round((low + high) / 2);
-      bar.style.width = `${middle}px`;
-      if (rows() <= count) high = middle; else low = middle;
-    }
-    bar.style.width = `${high}px`;
-  }
-  if (PEEK.out) $('main').style.setProperty('--peek-h', `${PEEK.el.offsetHeight + PEEK.gap()}px`);
-}
-addEventListener('resize', () => { if (PEEK.out) fitPeek(); });
-/* Out, for `why`: 'near' the pointer, 'key' a key that changed it, 'use' a click or the focus in it. */
-function peek(why = 'use') {
-  peekParts();
-  return;  // the controls are always in their bar now; nothing comes out
-  if (FRAMED || (why === 'near' && VIEW.modeBar !== 'auto')) return;
-  peekParts();
-  if (!PEEK.out) {
-    PEEK.out = true;
-    PEEK.el.classList.add('out');
-    $('main').classList.add('peeking');
-  }
-  fitPeek();
-  clearTimeout(PEEK.timer);
-  // away again: a key's peek after a moment with keys; otherwise fifteen seconds after the pointer leaves its strip,
-  // and not while the pointer is in it, `PEEK.inside`
-  if (VIEW.modeBar !== 'shown' && !PEEK.inside) PEEK.timer = setTimeout(unpeek, why === 'key' && VIEW.modeBar === 'keys' ? 2600 : PEEK.stay);
-}
-function unpeek(now = false) {
-  return;  // the controls are always in their bar now; nothing goes away
-  if (VIEW.modeBar === 'shown') return;
-  if (!now && (PEEK.el.contains(document.activeElement) || PEEK.inside)) { PEEK.timer = setTimeout(unpeek, PEEK.stay); return; }
-  clearTimeout(PEEK.timer);
-  PEEK.out = false;
-  PEEK.el.classList.remove('out');
-  $('main').classList.remove('peeking');
-}
-function barFollows() { if (VIEW.modeBar === 'shown') peek(); else if (PEEK.out) unpeek(true); peekParts(); }
-function toggleBar() {
-  if (VIEW.modeBar === 'shown') VIEW.modeBar = VIEW.barBefore || 'auto';
-  else { VIEW.barBefore = VIEW.modeBar; VIEW.modeBar = 'shown'; }
-  barFollows();
-  if (VIEW.modeBar !== 'shown') unpeek(true);
-  saveView('web_mode_bar', VIEW.modeBar);
-}
-$('#modebarat').onchange = event => {
-  VIEW.modeBar = event.target.value;
-  barFollows();
-  saveView('web_mode_bar', VIEW.modeBar);
-};
+/* A choice changed, by a key or a click: the bars name it at once. */
+function peek() { peekParts(); }
 $('#agentsat').onchange = event => chooseAgents(event.target.value);
-PEEK.el.addEventListener('focusin', () => peek());
-PEEK.el.addEventListener('pointerdown', () => peek());
-PEEK.el.addEventListener('pointermove', () => { if (PEEK.out) peek(); }, {passive: true});
-/* With web_mode_bar auto the bar comes out when the pointer rests in the strip it occupies, at the top right of the
- * large area under the map's own bar, for `dwell` ms; passing through does nothing. It stays while the pointer is in
- * that strip and goes `stay` ms after the pointer leaves it; coming back in stops the count. While it is out the map
- * below it is shorter by its height, `main.peeking`, so it covers nothing. */
-// `gap`, the room above and below the bar in its strip: its offset under the map's own bar, twice
-Object.assign(PEEK, {dwell: 800, stay: 15000, inside: false, resting: 0,
-  gap: () => 2 * Math.max(0, PEEK.el.offsetTop - ($('main .bar3d, main .bar2d')?.offsetHeight || PEEK.el.offsetTop))});
-function inStrip(x, y) {
-  const area = $('main').getBoundingClientRect(), bar = $('main .bar3d, main .bar2d')?.offsetHeight || 38;
-  if (!area.width) return false;
-  const top = area.top + bar, width = PEEK.el.offsetWidth + 2 * PEEK.gap(), height = PEEK.el.offsetHeight + PEEK.gap();
-  return x <= area.right && x >= area.right - width && y >= top && y <= top + height;
-}
-document.addEventListener('pointermove', event => {
-  if (VIEW.modeBar !== 'auto' || FRAMED) return;
-  const inside = inStrip(event.clientX, event.clientY);
-  if (inside === PEEK.inside) return;
-  PEEK.inside = inside;
-  clearTimeout(PEEK.resting);
-  if (inside && !PEEK.out) PEEK.resting = setTimeout(() => { if (PEEK.inside) peek('near'); }, PEEK.dwell);
-  else if (inside) clearTimeout(PEEK.timer);  // back in: the count to put it away stops
-  else if (PEEK.out) { clearTimeout(PEEK.timer); PEEK.timer = setTimeout(unpeek, PEEK.stay); }
-}, {passive: true});
-document.addEventListener('pointerleave', () => {
-  if (!PEEK.inside) return;
-  PEEK.inside = false;
-  clearTimeout(PEEK.resting);
-  if (PEEK.out && VIEW.modeBar === 'auto') { clearTimeout(PEEK.timer); PEEK.timer = setTimeout(unpeek, PEEK.stay); }
-});
 
 /* The window of the agents at work, web_agents_window: auto slides it out as an agent starts work and keeps it while
  * any is at work, and slides it away completely a few seconds after the last one stops; open pins it out, saying when

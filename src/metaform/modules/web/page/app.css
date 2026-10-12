@@ -1745,41 +1745,17 @@ body.ws-dragging,body.ws-dragging *{cursor:grabbing!important;user-select:none}
 .map2d :is(.node.work-question,.node.work-message) :is(polygon,path.label-container,.label-container > path,.label-container > g > path){stroke:var(--question)!important;stroke-width:2px}
 .map2d :is(.node.work-broken,.node.work-trouble) :is(polygon,path.label-container,.label-container > path,.label-container > g > path){stroke:var(--broken)!important;animation:flash var(--pace,1s) ease-in-out infinite}
 @media (prefers-reduced-motion: reduce){.map2d :is(.node.work-broken,.node.work-trouble) :is(polygon,path.label-container,.label-container > path,.label-container > g > path){animation:none;fill:var(--node-broken)!important}}
-/* The large map's bar, web_mode_bar, at the top right of the large area: away off its right edge, holding no room,
- * until the pointer nears, Tab reaches it, a key changes it or M or the handle pins it out. While it is out what stands
- * in that corner, the agents window, moves down by its height, `--peek-h`, and back as it goes. */
-.peek{position:absolute;top:calc(var(--bar) + var(--s1));right:var(--s2);z-index:7;display:flex;align-items:center;
-  justify-content:flex-end;flex-wrap:wrap;gap:var(--s2);max-width:calc(100% - 2 * var(--s3) - 6px);padding:var(--s1) var(--s2);
-  background:color-mix(in srgb,var(--panel) 94%,transparent);border:1px solid var(--line-2);border-radius:var(--r-lg);box-shadow:var(--lift-2);
-  translate:var(--s4) 0;opacity:0;pointer-events:none;  /* a short slide: its controls stand where they will be as it shows */
-  transition:translate var(--dur-2) var(--ease-leave),opacity var(--dur-2) var(--ease-leave)}
-.peek.out,.peek:focus-within{translate:0 0;opacity:1;pointer-events:auto;
-  transition:translate var(--dur-2) var(--ease-arrive),opacity var(--dur-2) var(--ease-arrive)}
+/* Each map's own controls, in parts of its bar row: the large map's show, the small area's do not. */
 .peekpart{display:flex;align-items:center;gap:var(--s1)}
 .peekpart[hidden]{display:none}
 .peekpart + .peekpart:not([hidden]){padding-left:var(--s2);border-left:1px solid var(--line)}
-.peek .segmented button{display:inline-flex;align-items:center;gap:var(--s1)}
-.peek kbd{font:500 var(--t-xs)/1 var(--mono);color:var(--faint);background:none;border:0;padding:0;min-width:0;height:auto}
-.peek [aria-checked="true"] kbd{color:var(--muted)}
-.peek .physicsset button kbd{color:inherit;font-size:var(--t-sm)}
-.peek .peeklabel{font:600 var(--t-xs)/1 var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
-.peek .modes2d .short{display:none}
-/* The handle: a quiet grip at the corner's very edge, beside nothing, that pins the bar out or lets it go. */
-.peekhandle{position:absolute;top:calc(var(--bar) + var(--s2));right:0;z-index:8;width:6px;height:var(--ctl);padding:0;border:0;
-  border-radius:var(--r) 0 0 var(--r);background:color-mix(in srgb,var(--muted) 35%,transparent);cursor:pointer;
-  transition:width var(--dur-1) var(--ease-arrive),background var(--dur-1) var(--ease-arrive)}
-.peekhandle:hover,.peekhandle:focus-visible{width:10px;background:var(--muted)}
-.peekhandle[aria-pressed="true"]{background:var(--signal)}
-.small .peek,.small .peekhandle{display:none}
-/* The agents window slides in from the right as an agent starts work and away completely after; the bar pushes it
- * down while it is out. Its slide is `translate`, the bar's push its `transform`, so the two never fight. */
+/* The agents window slides in from the right as an agent starts work and away completely after. */
 main #agents{transition:translate var(--dur-2) var(--ease-arrive),opacity var(--dur-2) var(--ease-arrive),transform var(--dur-2) var(--ease-arrive)}
 main #agents.away{translate:calc(100% + var(--s5)) 0;opacity:0;pointer-events:none;
   transition:translate var(--dur-2) var(--ease-leave),opacity var(--dur-2) var(--ease-leave),transform var(--dur-2) var(--ease-arrive)}
-main.peeking #agents{transform:translateY(var(--peek-h,0px))}
 #agents .none{margin:0;color:var(--muted);font:var(--t-sm) var(--sans)}
 #help .keyfind{width:100%;margin-bottom:var(--s3)}
-@media (prefers-reduced-motion: reduce){.peek,.peek.out,.peek:focus-within,.peekhandle,main #agents,main #agents.away{transition:none}}
+@media (prefers-reduced-motion: reduce){main #agents,main #agents.away{transition:none}}
 #stage.picking canvas{cursor:pointer}
 /* What is new at a node in its brief: the latest item and the last session's range, one quiet line each. */
 .newhere{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:2px var(--s3);margin:0;font:var(--t-sm)/1.5 var(--sans);color:var(--muted)}
@@ -1866,23 +1842,9 @@ html.frame .viewslot #viewbar{position:static}
 .voice-ask.shown,.voice-note.shown{opacity:1;translate:0 0}
 .voice-ask.leaving{opacity:0;translate:0 6px;transition:opacity .2s var(--ease-leave),translate .2s var(--ease-leave)}
 @media (prefers-reduced-motion:reduce){.voice-mic,.voice-mic .voice-ring,.voice-mic .voice-halo,.voice-ask,.voice-note,.voice-ask .voice-bar span{transition:none;transform:none;translate:none}}
-/* While the large map's bar is out the map below it is shorter by the bar's height, `--peek-h`, so the bar covers
- * nothing: the map's viewport, its fit and its framing take the reduced height, and grow back as it goes, both eased. */
-.peekhandle{display:none!important}
-main .view3d,main .map2d .viewport{transition:top var(--dur-2) var(--ease-leave)}
-main.peeking .view3d,main.peeking .map2d .viewport{top:calc(var(--bar) + var(--peek-h,0px));transition:top var(--dur-2) var(--ease-arrive)}
-main.peeking .readout{top:calc(var(--bar) + var(--peek-h,0px))}
-@media (prefers-reduced-motion: reduce){main .view3d,main .map2d .viewport{transition:none}}
 #helpdesk .compose textarea.voice-live{field-sizing:content}  /* a spoken message grows its box as it is heard, where the browser can */
-/* The large map's bar, compact: right-aligned and only as wide as what it holds, one row while it fits and wrapping only
- * on a narrow map; one quiet label style for every part, and the physics as one button naming the preset in force. */
-.peek{width:max-content;max-width:calc(100% - 2 * var(--s2));row-gap:var(--s1)}
 .peekpart{flex-wrap:nowrap}
-.peek .nodezoom,.peek .physicsbtn{gap:var(--s1);height:var(--ctl-sm);padding:0 var(--s2);color:var(--muted)}
-.peek .nodezoom[aria-pressed="true"]{color:var(--text)}
-.peek .nodezoom[aria-pressed="true"] .state{color:var(--signal)}
-.peek .physicsbtn{color:var(--text)}
-.peek .physicsbtn kbd,.physicsmenu kbd{font:500 var(--t-xs)/1 var(--mono);color:var(--faint);background:none;border:0;padding:0;min-width:0;height:auto}
+.physicsmenu kbd{font:500 var(--t-xs)/1 var(--mono);color:var(--faint);background:none;border:0;padding:0;min-width:0;height:auto}
 .physicsmenu{position:fixed;z-index:1200;min-width:200px}
 .physicsmenu [role="menuitemradio"]{display:flex;align-items:center;justify-content:space-between;gap:var(--s4);min-height:var(--ctl);
   padding:0 var(--s3);border:0;border-radius:var(--r);background:transparent;color:var(--text);font:var(--t-md)/1.3 var(--sans);text-align:left;cursor:pointer}
@@ -1949,7 +1911,6 @@ main.peeking .readout{top:calc(var(--bar) + var(--peek-h,0px))}
   max-width:min(70%,640px);padding:.16em .45em;border-radius:var(--r);background:color-mix(in srgb,var(--ground) 62%,transparent);
   font:600 clamp(18px,2.2vw,30px)/1.22 var(--sans);letter-spacing:-.005em;text-shadow:0 1px 2px var(--ground),0 0 8px var(--ground)}
 .small .readout,.small #tip3d.readout{font-size:clamp(15px,1.3vw,18px);max-width:calc(100% - 2 * var(--hover-inset))}
-main.peeking .readout,main.peeking #tip3d.readout{top:calc(var(--bar) + var(--peek-h,0px) + var(--hover-inset))!important}
 .readout .said{grid-area:1/1;-webkit-line-clamp:2;line-clamp:2}
 /* the old tooltip's rule for its spans, `.tip3d span`, set them in mono; the readout's words are in its own sans */
 .readout :is(.said,.line){font-family:inherit;color:inherit;word-break:normal}
@@ -1961,25 +1922,8 @@ main.peeking .readout,main.peeking #tip3d.readout{top:calc(var(--bar) + var(--pe
 .hovercard :is(.text,.more,.work){overflow-wrap:anywhere;-webkit-line-clamp:3;line-clamp:3}
 .small .hovercard .text{-webkit-line-clamp:2;line-clamp:2}
 @media (prefers-reduced-motion: reduce){.readout .said.leaving{transition:none}.readout .said.arriving{animation:none}}
-/* The bar keeps one row while the map is wide enough for it. Its parts lend their controls to the bar itself, so on a
- * map too narrow for one row, `narrow`, the controls wrap as one right-aligned line of controls, and `fitPeek` draws
- * the bar as narrow as keeps that many rows, so the rows are even and no empty room stands beside a short one. */
-.peek{flex-wrap:nowrap;column-gap:var(--s1);row-gap:var(--s1)}
+/* A part lends its controls to the bar row it stands in, so they wrap with the row's own. */
 .peekpart:not([hidden]){display:contents}
-.peek > .peekpart > *{flex-shrink:0}
-.peek.narrow{flex-wrap:wrap}
-.peek .peeklabel{margin-left:var(--s1)}
-.peek .peekpair{display:inline-flex;align-items:center;gap:var(--s1)}  /* a label never wraps away from its control */
-.peek .segmented button{padding:0 6px}
-.peek .peeklabel{white-space:nowrap;letter-spacing:.04em}
-/* The bar's less frequent choices, `barPick`, and the physics: one compact button each, a quiet label, the value in
- * force, its key and a chevron for the small menu it opens. */
-.peek .barpick,.peek .physicsbtn{display:inline-flex;align-items:center;gap:4px;height:var(--ctl-sm);padding:0 6px;
-  color:var(--text);white-space:nowrap}
-.peek .barpick .value,.peek .physicsbtn .value{font:500 var(--t-sm)/1 var(--sans)}
-.peek .barpick kbd{font:500 var(--t-xs)/1 var(--mono);color:var(--faint);background:none;border:0;padding:0;min-width:0;height:auto}
-.peek .barpick .i-chev,.peek .physicsbtn .i-chev{margin-left:-2px;color:var(--faint)}
-.peek .barpick[aria-expanded="true"],.peek .physicsbtn[aria-expanded="true"]{background:color-mix(in srgb,var(--text) 7%,transparent)}
 /* The agent's settings in the chat: one quiet line under the head, its controls a popover over the thread, which
  * keeps its room. */
 #helpdesk .sessionbar{gap:var(--s2);padding:var(--s1) var(--s3)}

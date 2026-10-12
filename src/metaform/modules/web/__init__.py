@@ -186,15 +186,6 @@ settings.choice('web_map_direction', ['auto', 'across', 'down'], 'auto', scope='
                         'columns when it is long, and keeps the one its pane shows largest with the whole map in '
                         'view; it is laid out again when the pane changes shape. across and down hold it to that '
                         'direction, unfolded.')
-# The large map's bar, with its modes, Fit, the 2D map's direction and the 3D map's physics, at the top right of the
-# large area. auto keeps the display clean, since nothing shows until the person rests the pointer where the bar sits.
-settings.choice('web_mode_bar', ['auto', 'shown', 'keys'], 'auto', scope='global',
-                help="When the large map's bar shows: auto, shown or keys.",
-                details='auto brings it out when the pointer rests under a second in the strip it occupies at the top '
-                        'right of the large map, and puts it away fifteen seconds after the pointer leaves that '
-                        'strip; while it is out the map below it is that much shorter, so it covers nothing. shown '
-                        'keeps it out; keys keeps it away and lets it peek only when a key changes the mode, the '
-                        'direction or the physics. M toggles between shown and the other choice.')
 # Node zoom: each node selected in the 3D map is flown to, framed close with its neighbours, in either pane and
 # whatever framing or physics is in force; it is what shows a part in its place. Off, a selection never moves the
 # camera; Whole and Free then hold the view.
