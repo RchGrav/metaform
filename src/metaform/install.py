@@ -184,9 +184,13 @@ def tools() -> dict[str, Tool]:
     )}
 
 
+HANDED = 'METAFORM_INSTALL_WHEEL'  # the wheel a run from it handed the setup over with, `hand_over`
+
+
 def source() -> Path:
-    """The wheel to register: the running wheel, else the last build, MCP-010."""
-    running = os.environ.get('METAFORM_WHEEL')
+    """The wheel to register: the running wheel, or the one a run from it handed the setup over with, else the last
+    build, MCP-010."""
+    running = os.environ.get('METAFORM_WHEEL') or os.environ.get(HANDED)
     if running:
         return Path(running)
     last = home.meta('last_build')
@@ -857,6 +861,22 @@ def stage(wheel: Path, uv: str, force: bool, say: Callable[[str], None], retry: 
     say(f'Installed: Metaform {__version__} from {wheel}')
 
 
+def hand_over(uv: str, wheel: Path, words: list[str]) -> None:
+    """Set the tools up with the Metaform the wheel has just installed. Run straight from the wheel, the modules whose
+    compiled dependencies it cannot carry are left out, mcp among them, BASE-042, so this process would register no
+    server; the installed copy has them all, and registers the same wheel."""
+    found = _run('uv', [uv, 'tool', 'dir', '--bin'])
+    installed = shutil.which('metaform', path=found.stdout.strip()) if found.returncode == 0 else None
+    retry = 'metaform install ' + ' '.join(words) if words else BOTH_FORMS
+    if installed is None:
+        raise Failed('Metaform is installed, but its command was not found to set the tools up.', retry)
+    environment = {key: value for key, value in os.environ.items() if key != 'METAFORM_WHEEL'}
+    sys.stdout.flush()  # what this process said comes before what the installed copy says
+    done = subprocess.run([installed, 'install', *words], env={**environment, HANDED: str(wheel)}, check=False)
+    if done.returncode != 0:
+        raise Failed('The installed Metaform did not finish setting the tools up.', retry)
+
+
 def install(words: list[str], say: Callable[[str], None]) -> None:
     names, everything, force = install_options(words)
     asking = not names and not everything
@@ -871,6 +891,8 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
             retry_words.append('force=true')
         retry = subprocess.list2cmdline(retry_words) if os.name == 'nt' else shlex.join(retry_words)
         stage(wheel, uv, force, say, retry)
+        if loader.withdrawn():
+            return hand_over(uv, wheel, [word for word in words if not word.startswith('force=')])
     say(f'System: {system()}')
     say(f'Python: {platform.python_version()} (needs {_build_info.REQUIRES_PYTHON})')
     if not _python_ok():

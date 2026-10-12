@@ -1125,3 +1125,23 @@ def test_provision_claude_writes_or_removes_the_node_skill_with_map(run, machine
     assert copy.is_file()  # provision set Claude Code up, so map's return brings the skill back
     run('provision', 'codex', cwd=machine['folder'], env=machine['env'])
     assert node_copies(machine['user']) == [str(Path('.claude/skills/metaform-node/SKILL.md'))]
+
+
+@pytest.mark.req('BASE-042')
+def test_a_wheel_that_leaves_modules_out_hands_the_setup_to_the_metaform_it_installed(run, machine, monkeypatch):
+    """Run straight from a wheel, modules whose compiled dependencies it cannot carry are left out, mcp among them, so
+    it would register no server; once installed, the installed Metaform sets the tools up with the same wheel."""
+    from fakes import executable
+
+    from metaform import loader
+    installed = machine['folder'] / 'tools-bin'
+    executable(machine['bin'], 'uv', f'import sys\nprint({str(installed)!r}) if sys.argv[1:3] == ["tool", "dir"] else None\n')
+    executable(installed, 'metaform', 'import json, os, sys\n'
+               'print("metaform 0.0.1") if sys.argv[1:] == ["--version"] else open(os.path.join(os.path.dirname('
+               '__file__), "handed.json"), "w").write(json.dumps([sys.argv[1:], os.environ.get("METAFORM_WHEEL"), '
+               'os.environ.get("METAFORM_INSTALL_WHEEL")]))\n')
+    monkeypatch.setattr(loader, 'withdrawn', lambda: frozenset({'mcp'}))
+    run('install', 'claude', 'force=true', cwd=machine['folder'], env=machine['env'])
+    assert json.loads((installed / 'handed.json').read_text(encoding='utf-8')) == [
+        ['install', 'claude'], None, str(machine['wheel'])]
+    assert calls(machine['bin'], 'claude') == []  # the wheel's own run registered nothing

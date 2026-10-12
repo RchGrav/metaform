@@ -62,6 +62,7 @@ class Found:
 
 _cache: list[Found] | None = None
 _cache_project: str | None = None
+_withdrawn: frozenset[str] = frozenset()  # the enabled modules a run straight from a wheel left out, `withdrawn`
 # Discovery imports modules and runs their start hooks, and the web and MCP servers reach it from several threads:
 # one thread discovers, the others wait and read its result. Re-entrant, since a module may ask for another as it loads.
 _discovering = threading.RLock()
@@ -263,7 +264,7 @@ def missing_dependencies(requirements: tuple[str, ...]) -> list[str]:
 
 def discover() -> list[Found]:
     """Every module Metaform can see, loaded when enabled and compatible, with the reason when it is not."""
-    global _cache, _cache_project
+    global _cache, _cache_project, _withdrawn
     if _cache is not None:
         return _cache
     with _discovering:
@@ -310,6 +311,7 @@ def discover() -> list[Found]:
                 _withdraw_settings(item.id)
                 _forget(item.import_name)
                 item.problem = f'{type(error).__name__}: {error}'
+        _withdrawn = frozenset(item.id for item in found if item.problem == 'withdrawn')
         found = [item for item in found if item.problem != 'withdrawn']
         _cache = found
         _register_exit()
@@ -521,6 +523,13 @@ def _follow_enabled() -> None:
 def set_enabled(identifier: str, on: bool) -> None:
     home.set_module_state(identifier, on)
     reset()
+
+
+def withdrawn() -> frozenset[str]:
+    """The enabled modules this run left out because it runs straight from a wheel that cannot carry their
+    dependencies, BASE-042; none in an installed Metaform."""
+    discover()
+    return _withdrawn
 
 
 def reset() -> None:
