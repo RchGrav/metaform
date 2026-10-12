@@ -111,20 +111,27 @@ AND (unresolved disagreement is not silently erased)
      observations added, "name +n"; <count/> the relations made. Notices follow, a line each. The command line and the
      page still get the reference server's results. -->
 <recorded>Recorded: <items/></recorded>
+<!-- What a memory write answers over MCP when the memories went to the whole graph, at no node. -->
 <recorded_unjoined>Recorded <names/> in the whole memory graph, at no node.</recorded_unjoined>
+<!-- What a memory write answers over MCP when everything it carried was held already. -->
 <recorded_nothing>Nothing new to record: each memory and observation was held already.</recorded_nothing>
+<!-- What adding observations answers over MCP, one line with each memory and how many were added. -->
 <observed>Observations added: <added/>.</observed>
+<!-- What relating memories answers over MCP, one line with the count made. -->
 <related><count/> relation(s) made.</related>
 <!-- In a memory read at metaform://<address>#<n>: the evidence the memory cites, <cites/> each citation; then one
      line per citation that no longer holds, <stale/> the citation and why, so the agent checks it before relying on
      it. A citation is path:line, path:start-end or path:symbol, given with cite on create_entities or
      add_observations. -->
 <cites>Cites: <cites/></cites>
+<!-- The line a read shows under a memory whose cited code changed, so the agent checks it before relying on it. -->
 <stale>STALE: <stale/>. Check it against the code before relying on this memory.</stale>
 <!-- The count of stale memories at a node, in the counts an agent is told there (map where, the brief, the ticket read),
      MCP-039: the word for one and for several, and the line under the counts saying what stale means and where to
      read them. -->
 <stale_one>stale memory</stale_one>
+<!-- The word for several stale memories in the counts an agent is told at a node. -->
 <stale_many>stale memories</stale_many>
+<!-- The line under the counts saying what a stale memory is and where to read it. -->
 <stale_counts>Stale = a memory whose cited file or lines changed since it was written; read it before relying on it: metaform memory read_graph node=&lt;address&gt;</stale_counts>
 </prompts>

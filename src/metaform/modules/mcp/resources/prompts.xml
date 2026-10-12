@@ -119,10 +119,12 @@
      agent reads it; an empty one leaves that tool out. An AI tool that does not call a view's tools never shows them,
      and its open views still turn to an Address the agent names in any Metaform call. -->
 <view_show>Turn the Metaform view open in this conversation to an Address, so the person sees the node you are discussing. address is an Address on the map, or &lt;address&gt;#&lt;n&gt; for one of its items.</view_show>
+<!-- The description of the tool that reads which Address the person's open Metaform view shows. -->
 <view_state>Read which Address the Metaform view open in this conversation shows, and which one the person last selected there.</view_state>
 <!-- What view_show answers the agent: <address/> is the Address the view now shows; view_absent when the map the view
      shows holds no such Address. -->
 <view_shown>The Metaform view now shows <address/> to the person.</view_shown>
+<!-- What view_show answers when the map the view shows holds no such Address, with where to read it instead. -->
 <view_absent><address/> is not on the map the Metaform view shows; read metaform://<address/> or call map_where with its parent.</view_absent>
 <!-- The status message of a task while its tool runs: the tasks extension, for an AI tool that declared it, when it
      calls a verb that can take long, such as hello_wait. <tool/> is the tool's name. -->

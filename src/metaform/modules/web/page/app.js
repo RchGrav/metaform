@@ -724,14 +724,7 @@ for (const [index, step] of TEXTSIZE.steps.entries()) {
     + (index === TEXTSIZE.start ? ' (default)' : '')));
 }
 $('#textsize').onchange = event => textSize(Number(event.target.value));
-// By the key's place, not its character: on a Mac, Alt turns = into another character.
-const TEXTKEYS = {Equal: 1, NumpadAdd: 1, Minus: -1, NumpadSubtract: -1, Digit0: 0, Numpad0: 0};
-addEventListener('keydown', event => {
-  if (!event.altKey || event.ctrlKey || event.metaKey || !(event.code in TEXTKEYS)) return;
-  event.preventDefault();
-  const by = TEXTKEYS[event.code];
-  textSize(by ? textStep() + by : TEXTSIZE.start);
-});
+// The text size is chosen in the View menu; no Alt shortcut, which the system takes on some machines.
 textSize(textStep());
 /* The header folds its rest behind the menu button below 1100 px, by the styles, and on a wider window whenever its
  * one row does not hold everything, as at a larger text size: it is measured unfolded, in the same frame, so nothing
@@ -6132,15 +6125,7 @@ function showPhysics() {
   PHYS.shown.setAttribute('aria-label', `Physics: ${preset[1]}`);
 }
 showPhysics();
-addEventListener('keydown', event => {
-  if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || !/^Digit[1-9]$/.test(event.code)) return;
-  const target = event.target instanceof Element ? event.target : document.body;
-  if (target.closest('input, textarea, select, .CodeMirror, [contenteditable="true"]') || overlayHolds(target)) return;
-  const preset = PHYSICS[Number(event.code.slice(5)) - 1];
-  if (!preset) return;
-  event.preventDefault();
-  choosePhysics(preset[0]);
-});
+// No Alt shortcuts: Alt with a digit is taken by the system on some machines; L switches the layout.
 function setMode3d(mode, level = null) {
   if (!G || small3d()) return;
   V3.mode = mode;
@@ -8330,7 +8315,6 @@ const KEYS = [
   {group: 'Anywhere', keys: ['?'], what: 'Keyboard shortcuts', match: ['?'], run: () => openHelp()},
   {group: 'Anywhere', keys: ['V'], what: 'View menu', match: ['v', 'V'], run: () => $('#settingsBtn').click()},
   {group: 'Anywhere', keys: ['Esc'], what: 'Close, or deselect'},
-  {group: 'Anywhere', keys: ['Alt', '+', '−'], what: 'Text size'},
   {group: 'Maps', keys: ['↑', '↓', '←', '→'], what: 'Move between nodes'},
   {group: 'Maps', keys: ['Enter'], what: 'Go inside'},
   {group: 'Maps', keys: ['Shift', 'Enter'], what: 'Go out'},
@@ -8342,6 +8326,9 @@ const KEYS = [
     run: () => { if (G && !small3d()) { fit3d(); peek('key'); } }},
   {group: 'Zoom', keys: ['Z'], what: 'Node zoom on/off', match: ['z', 'Z'], run: () => toggleNodeZoom()},
   {group: 'Zoom', keys: ['7', '8', '9'], what: '2D direction', match: ['7', '8', '9'], run: largeKey},
+  {group: 'Zoom', keys: ['L'], what: 'Layout: Organic or Flat', match: ['l', 'L'],
+    run: () => choosePhysics(PHYS.name === 'flat' ? 'organic' : 'flat')},
+  {group: 'Zoom', keys: ['D'], what: 'Flow: Off, Selection, All, Live', match: ['d', 'D'], run: () => stepFlow()},
   {group: 'Zoom', keys: ['U'], what: 'Space theme on/off', match: ['u', 'U'],  // the space theme or the last plain one
     run: () => setTheme(document.documentElement.dataset.theme === 'space' ? PLAIN.last : 'space')},
   {group: 'Chat', keys: ['C'], what: 'Open or hide chat', match: ['c', 'C'],

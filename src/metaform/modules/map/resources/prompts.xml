@@ -416,16 +416,24 @@ The metaform:
      title, <id/> its id, <by/> who took it, <column/> the board column it moved to, <done/> and <steps/> the steps
      done and planned. The command line and the page still get the record. -->
 <work_add><item/> <title/>: added, id <id/>.</work_add>
+<!-- What taking a ticket answers an agent over MCP, one line: the item, its title and who took it. -->
 <work_take><item/> <title/>: taken by <by/>.</work_take>
+<!-- What planning a ticket answers an agent over MCP, one line: the item, its title and the steps planned. -->
 <work_plan><item/> <title/>: <steps/> steps planned.</work_plan>
+<!-- What recording a ticket step answers an agent over MCP, one line. -->
 <work_step><item/> <title/>: step <done/> of <steps/> recorded.</work_step>
+<!-- What closing a ticket answers an agent over MCP, one line. -->
 <work_done><item/> <title/>: done.</work_done>
+<!-- What editing a ticket answers an agent over MCP, one line. -->
 <work_edit><item/> <title/>: edited.</work_edit>
+<!-- What moving a ticket to another board column answers an agent over MCP, one line. -->
 <work_move><item/> <title/>: moved to <column/>.</work_move>
 <!-- What a term write answers an agent over MCP, one line, MCP-037: <term/> the term, <at/> " at <address>#<n>" when
      it is numbered at a node. The command line and the page still get the term with its fields. -->
 <term_add><term/>: added<at/>.</term_add>
+<!-- What editing a term answers an agent over MCP, one line. -->
 <term_edit><term/>: edited<at/>.</term_edit>
+<!-- What removing a term answers an agent over MCP, one line. -->
 <term_remove><term/>: removed.</term_remove>
 <!-- A notice under a ticket write's line: what did not fit the write and what happened to it, BASE-044. -->
 <work_notice><where/>: <message/></work_notice>
