@@ -892,9 +892,10 @@ function filament(color, kind) {
   const quiet = kind === 'tree' || kind === 'layer' || kind === 'item', key = `${color}|${quiet}`;
   if (!U.fibers.has(key)) U.fibers.set(key, new THREE.ShaderMaterial({transparent: true, depthWrite: false,
     blending: THREE.AdditiveBlending,
-    uniforms: {tint: {value: new THREE.Color(color)}, strength: {value: quiet ? 0.5 : 0.95}},
-    vertexShader: `varying vec3 vNormal; varying vec3 vView;
-      void main() { vec4 at = modelViewMatrix * vec4(position, 1.0); vNormal = normalize(normalMatrix * normal);
+    // widened as the page's fibers are, `widen`, so a filament seen from far stays at least a pixel and a half wide
+    uniforms: {tint: {value: new THREE.Color(color)}, strength: {value: quiet ? 0.5 : 0.95}, pixel: U.ctx.pixel},
+    vertexShader: `varying vec3 vNormal; varying vec3 vView; ${U.ctx.widen}
+      void main() { vNormal = normalize(normalMatrix * normal); vec4 at = widened(modelViewMatrix * vec4(position, 1.0), vNormal);
         vView = normalize(-at.xyz); gl_Position = projectionMatrix * at; }`,
     fragmentShader: `uniform vec3 tint; uniform float strength; varying vec3 vNormal; varying vec3 vView;
       void main() { float facing = abs(dot(normalize(vNormal), normalize(vView)));
