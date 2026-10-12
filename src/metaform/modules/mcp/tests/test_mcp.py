@@ -1076,7 +1076,8 @@ def test_a_change_to_the_surface_reaches_a_running_session_as_a_list_change(run,
 @pytest.mark.req('MCP-002')
 @pytest.mark.req('MCP-004')
 def test_on_the_july_wire_a_listen_stream_hears_the_list_change(run, home, mapped):
-    """MCP 2026-07-28 has no connection to announce on: change notifications ride a subscriptions/listen stream."""
+    """MCP 2026-07-28 has no connection to announce on: change notifications ride a subscriptions/listen stream, and
+    each list says how long a client may keep it before asking again."""
     from metaform.probe import Session, discover
     july = Session([sys.executable, '-m', 'metaform', 'mcp', 'serve'], cwd=mapped,
                    env={**os.environ, 'METAFORM_HOME': str(home)})
@@ -1084,6 +1085,9 @@ def test_on_the_july_wire_a_listen_stream_hears_the_list_change(run, home, mappe
         found = discover(july)
         assert found['capabilities']['tools']['listChanged'] is True
         assert '2026-07-28' in found['supportedVersions']
+        for method in ('tools/list', 'prompts/list', 'resources/list', 'resources/templates/list'):
+            listed = july.request(method, {}, deadline=time.monotonic() + 30)  # a client may keep it a minute
+            assert (listed['ttlMs'], listed['cacheScope']) == (60_000, 'private'), method
         listen = july.open('subscriptions/listen', {'notifications': {'toolsListChanged': True}})
         assert july.call('map_layers', {})['resultType'] == 'complete'
         run('set', '--modules', 'intake,map,mcp', cwd=mapped)
