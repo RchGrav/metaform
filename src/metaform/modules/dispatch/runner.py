@@ -1039,6 +1039,8 @@ class Session:
         # each as an action and its content, ACP's accept, decline or cancel.
         self.elicited: dict[str, dict[str, Any]] = {}
         self.elicitations: dict[str, dict[str, Any]] = {}  # each question's line, by its name, kept at its latest
+        # elicitation/complete for a page whose question is not asked yet, by its elicitation id, `complete_elicitation`
+        self.completed_early: set[str] = set()
         self.run_id = str(ctx.nouns.get('run') or RUN)  # the run it spends against, a retry's the run it goes on, M01
         self.cost: float | None = None  # the session's cumulative cost as last reported, to count what each adds
         self.metered = False  # the agent has reported some usage in this session
@@ -2427,10 +2429,13 @@ class Session:
         waiting: asyncio.Future[tuple[str, dict[str, Any]]] = asyncio.get_running_loop().create_future()
         async with self.lock:
             await self.flush()
-            request = await self.elicit(waiting, message, fields, url,
-                                        cast(str | None, getattr(mode, 'elicitation_id', None)), scope=scope,
-                                        deadline=deadline)
+            elicitation_id = cast(str | None, getattr(mode, 'elicitation_id', None))
+            request = await self.elicit(waiting, message, fields, url, elicitation_id, scope=scope, deadline=deadline)
             await self.bind(rpc, 'elicit', request)
+            if elicitation_id is not None and elicitation_id in self.completed_early:
+                # its page was done with before the question was asked, as a sign-in that finishes at once
+                self.completed_early.discard(elicitation_id)
+                await self.elicit_closed(request, 'completed', ('accept', {}))
         action, content = await waiting
         self.incoming.pop(rpc, None)
         await self.changed(tables='dispatch')
@@ -2445,8 +2450,9 @@ class Session:
     async def complete_elicitation(self, elicitation_id: str, **kwargs: Any) -> None:
         """ACP's elicitation/complete: the agent says the page it asked the person to open is done with, as when an
         MCP server's sign-in finished in the browser before the person answered. A question still waiting is closed
-        as completed and the agent gets accept; its line says completed either way. An id it never asked, or one
-        already done, is ignored, as the RFD says."""
+        as completed and the agent gets accept; its line says completed either way. One done already is ignored, as
+        the RFD says; one not asked yet is remembered, since the question can still be on its way, its settings read
+        while the page it names is done with, and is closed as it is asked. A few are remembered at most."""
         for name in [name for name in self.named if name.startswith('elicitation:')]:
             held = self.elicitations.get(name)
             if held is None or held.get('elicitation_id') != elicitation_id or held.get('state') == 'completed':
@@ -2459,6 +2465,9 @@ class Session:
                     await self.note(name, 'elicitation', json.dumps(held, ensure_ascii=False))
             await self.changed(tables='dispatch', dispatch_tables=['dispatch.lines'])
             return
+        if len(self.completed_early) >= 32:
+            self.completed_early.pop()
+        self.completed_early.add(elicitation_id)
 
     async def bind(self, rpc: Any, kind: str, request: str | None) -> None:
         """Note which question or permission request an agent's request is asked as, the caller holding the lock, so

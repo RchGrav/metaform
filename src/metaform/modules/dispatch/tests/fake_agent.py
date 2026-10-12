@@ -34,8 +34,8 @@ Red or Blue, and logs the answer as `elicited`; FAKE_ACP_ELICIT=url asks it to o
 elicitation/complete; FAKE_ACP_ELICIT=ask asks as claude-agent-acp's AskUserQuestion does, a choice of Red or Blue
 with its optional free-text "Other" companion, nothing required, and logs the answer; FAKE_ACP_ELICIT=withdraw asks
 that question and withdraws it with `$/cancel_request` half a second later, and FAKE_ACP_ELICIT=complete asks a page
-to be opened and sends elicitation/complete for it half a second later, each logging what its request was answered
-with. FAKE_ACP_USED=<a,b,...> sends a usage update with each context size in use and no cost in its first turn, as
+to be opened and sends elicitation/complete for it half a second later, and FAKE_ACP_ELICIT=complete-first sends
+elicitation/complete before it asks, each logging what its request was answered with. FAKE_ACP_USED=<a,b,...> sends a usage update with each context size in use and no cost in its first turn, as
 the adapters do after each model call. FAKE_ACP_COST=<a,b,...> sends a usage update with each cumulative cost in USD in its first turn;
 FAKE_ACP_NOTICE=1 sends a session notice when the client advertises them; FAKE_ACP_CLOSE=1 advertises session/close
 and session/delete and takes them; FAKE_ACP_FORK=1 advertises session/fork and answers it with fake-fork-<n>;
@@ -237,6 +237,11 @@ def first_turn(prompt_id, text):
             'sessionId': SESSION, 'mode': 'url', 'elicitationId': 'e2', 'message': 'Sign in to the server',
             'url': 'https://auth.example.com/login?state=y'},
             {'jsonrpc': '2.0', 'method': 'elicitation/complete', 'params': {'elicitationId': 'e2'}})})
+    elif elicit == 'complete-first':  # the page done with before its question is asked, as a sign-in done at once
+        send({'jsonrpc': '2.0', 'method': 'elicitation/complete', 'params': {'elicitationId': 'e3'}})
+        log({'elicited': request(955, 'elicitation/create', {
+            'sessionId': SESSION, 'mode': 'url', 'elicitationId': 'e3', 'message': 'Sign in to the server',
+            'url': 'https://auth.example.com/login?state=z'})})
     if elicit == 'form':
         answer = request(950, 'elicitation/create', {
             'sessionId': SESSION, 'mode': 'form', 'message': 'Which colour?',

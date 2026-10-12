@@ -1686,6 +1686,19 @@ def test_a_page_completed_out_of_band_closes_its_question(dispatch, run):
 
 
 @pytest.mark.req('BASE-052')
+def test_a_page_completed_before_its_question_is_asked_closes_it_as_it_is_asked(dispatch, run):
+    """A sign-in done at once: elicitation/complete can reach the runner before the question it closes is asked, while
+    the runner still reads its settings; the question is closed as completed the moment it is asked, and the agent
+    gets accept instead of waiting on a question already done with."""
+    dispatch.start('hold', FAKE_ACP_ELICIT='complete-first')
+    assert eventually(lambda: dispatch.logged('elicited')) == [{'action': 'accept'}]
+    assert not dispatch.questions()
+    assert eventually(lambda: [one for one in read(run, dispatch)['lines']
+                               if one['kind'] == 'elicitation' and one['data']['state'] == 'completed'])
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
 def test_a_token_budget_stops_a_turn_part_way_on_the_provisional_meter(dispatch, run):
     """M01: the adapters report a turn's tokens only at its end, but its context in use after each model call; the
     turn's estimate from those is held against the token budgets, so interrupt cancels a runaway turn part way."""
