@@ -27,7 +27,8 @@ SYMBOL = re.compile(r'^[A-Za-z_][\w.]*$')
 
 
 def root_of(ctx: Context) -> Path:
-    """The folder a citation's path is read from: the project's registered source path, else the call's folder."""
+    """The folder a citation's path is read from: the project's registered source path, else the call's folder. The
+    registry remembers where it found the project, so finding it again opens no other project's database."""
     project = ctx.store.project_id if ctx.store is not None else ctx.project
     found = home.project(str(project)) if project else None
     return Path(found.path) if found is not None and found.path else ctx.folder

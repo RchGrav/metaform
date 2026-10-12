@@ -2786,7 +2786,7 @@ def test_the_log_dates_each_start_stop_and_error_and_leaves_out_pages_that_went_
     [server] = instances
     for _ in range(4):
         with socket.create_connection(('127.0.0.1', server.port), timeout=5) as asking:
-            asking.sendall(f'GET / HTTP/1.1\r\nHost: 127.0.0.1:{server.port}\r\n\r\n'.encode())
+            asking.sendall(f'GET /api/projects HTTP/1.1\r\nHost: 127.0.0.1:{server.port}\r\n\r\n'.encode())
             asking.recv(1)  # the server closes it once the error is handled
     threading.Thread(target=server.shutdown, daemon=True).start()
     serving.join(10)
@@ -3852,7 +3852,7 @@ def test_with_the_bloom_off_a_glass_node_is_drawn_to_its_sphere_and_takes_the_po
     alarm = store.element('code.alarm.audible').id
     kitchen = store.element('code.timer.kitchen').id
     run('set', '--no-web-node-shapes')  # the glass sphere every node was; with shapes on, code is a box
-    page, problems, names = staged_pair(run, web, browser, alarm, kitchen)
+    page, problems, _names = staged_pair(run, web, browser, alarm, kitchen)
     page.wait_for_timeout(500)
     assert page.evaluate('window.metaform.bloom().on') is False
     at, far = reach_drawn(page, kitchen)
@@ -5988,7 +5988,8 @@ def test_the_page_reads_the_memory_graph_and_writes_it_through_the_memory_comman
                              'node': 'element:code.alarm.audible'}),
         ('create_relations', {'relations': [{'from': 'drift', 'to': 'tone', 'relationType': 'delays'}]}))
     assert status == 200 and said['done'][0] == {'entities': [
-        {'name': 'drift', 'entityType': 'behavior', 'observations': ['Drifts under load.']}]}
+        {'name': 'drift', 'entityType': 'behavior', 'observations': ['Drifts under load.']}],
+        'items': ['code.timer.kitchen#2  Drifts under load.']}  # each observation numbered at its node
     assert memory_write(web, ('create_entities', {'entities': []}), origin='http://rebound.example')[0] == 403
     status, said = memory_write(web, ('read_graph', {}))
     assert status == 400 and 'create_entities' in said['error']  # only the commands that write
@@ -8403,9 +8404,14 @@ def test_the_page_reads_a_nodes_brief_and_items_exactly_as_an_agent_reads_them(r
 
 
 @pytest.mark.req('MCP-037')
-def test_the_page_shows_what_an_agent_connecting_here_receives_from_the_folders_own_mcp_server(run, web, mapped):
+def test_the_page_shows_what_an_agent_connecting_here_receives_from_the_folders_own_mcp_server(run, web, mapped,
+                                                                                                monkeypatch):
+    from metaform import loader, settings
     from metaform import module as chassis
     from metaform.modules.mcp import server as mcp
+    loaded = {'chassis', *(module.id for module in loader.enabled())}
+    for key in [key for key, setting in settings.SCHEMA.items() if setting.owner not in loaded]:
+        monkeypatch.delitem(settings.SCHEMA, key)  # declared by a test's own import of a module that ships disabled
     started(run)
     status, body = api(web, '/api/agent-view?project=proj&address=code.timer.kitchen')
     assert status == 200, body

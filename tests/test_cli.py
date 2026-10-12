@@ -851,10 +851,10 @@ def test_a_module_page_leaves_out_an_empty_section_and_keeps_its_rows_narrow(run
     assert page[0] == 'quiet: Declares nothing.' and 'Verbs' not in page
     rows = run('help', 'map').stdout.splitlines()
     roots = next(line for line in rows if line.strip().startswith('roots'))
-    assert roots.index("The map's entry") <= 2 + 40 + 2
+    assert roots.index("Read the map's entry") <= 2 + 40 + 2
     knowledge = next(index for index, line in enumerate(rows) if line.strip().startswith('knowledge '))
-    assert len(rows[knowledge].strip()) > 40 and rows[knowledge + 1].strip().startswith('Create, build')
-    assert rows[knowledge + 1].index('Create, build') == roots.index("The map's entry")
+    assert len(rows[knowledge].strip()) > 40 and rows[knowledge + 1].strip().startswith('Build a knowledge')
+    assert rows[knowledge + 1].index('Build a knowledge') == roots.index("Read the map's entry")
 
 
 @pytest.mark.req('CLI-029')

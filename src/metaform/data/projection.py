@@ -393,7 +393,7 @@ class Projection:
     def cypher(self, query: str, graph: Any = None) -> Any:
         """A Cypher query over the graph, or over a view of it, through grandcypher."""
         from grandcypher import GrandCypher  # type: ignore[import-untyped]  loaded for the query only
-        return GrandCypher(self.graph if graph is None else graph).run(query)
+        return cast(Any, GrandCypher(self.graph if graph is None else graph)).run(query)
 
     # ------------------------------------------------------------------ snapshots
 

@@ -385,6 +385,8 @@ class Handler(BaseHTTPRequestHandler):
         self.answer('POST')
 
     def answer(self, method: str) -> None:
+        if method == 'GET' and self.static():
+            return
         try:
             with chassis.request_scope(fresh=True):
                 chassis.refresh_modules()
@@ -392,14 +394,39 @@ class Handler(BaseHTTPRequestHandler):
         except NewerStore as error:  # the base database, read before any handler's own error answer
             self.refuse(error, 404)
 
-    def route(self, method: str) -> None:
-        if not self.gui.own_host(self.headers.get('Host')):
-            return self.send(403, {'error': "This request is not for the web GUI's own address."})
+    def static(self) -> bool:
+        """Answer a file of the page or a bundled library, and say whether this request was one. A file reads no
+        module, setting or project, so it is answered without the request's module refresh; a page load asks for
+        hundreds of them, and the refresh on each would make a reload take seconds."""
         url = urlsplit(self.path)
+        top, _, rest = url.path.lstrip('/').partition('/')
+        if url.path != '/' and not (top in STATIC and rest):
+            return False
         query = parse_qs(url.query, keep_blank_values=True)
+        if self.refused(query):
+            return True
+        if url.path == '/':
+            self.file(STATIC['page'], 'index.html', set_cookie='t' in query)
+        else:
+            self.file(STATIC[top], rest)
+        return True
+
+    def refused(self, query: dict[str, list[str]]) -> bool:
+        """Refuse a request for another address or without the token, and say whether it was refused."""
+        if not self.gui.own_host(self.headers.get('Host')):
+            self.send(403, {'error': "This request is not for the web GUI's own address."})
+            return True
         given = self.given_token(query)
         if self.gui.token is not None and not (given and hmac.compare_digest(given, self.gui.token)):
-            return self.send(403, {'error': 'This request needs the token that metaform web prints.'})
+            self.send(403, {'error': 'This request needs the token that metaform web prints.'})
+            return True
+        return False
+
+    def route(self, method: str) -> None:
+        url = urlsplit(self.path)
+        query = parse_qs(url.query, keep_blank_values=True)
+        if self.refused(query):
+            return
         if url.path == '/api/build' or url.path.startswith('/api/build/'):  # the build panel, BASE-060
             from . import builds
             return builds.answer(self, method, url.path)
@@ -471,11 +498,6 @@ class Handler(BaseHTTPRequestHandler):
                                     {key: values[-1] for key, values in query.items() if key != 't'})
         if url.path.startswith('/api/'):
             return self.read(url.path[5:], {key: values[-1] for key, values in query.items() if key != 't'})
-        if url.path == '/':
-            return self.file(STATIC['page'], 'index.html', set_cookie='t' in query)
-        top, _, rest = url.path.lstrip('/').partition('/')
-        if top in STATIC and rest:
-            return self.file(STATIC[top], rest)
         return self.send(404, {'error': f'Nothing at {url.path}.'})
 
     def read(self, name: str, given: dict[str, str]) -> None:

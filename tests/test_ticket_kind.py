@@ -69,4 +69,4 @@ def test_a_store_whose_tickets_have_steps_upgrades_to_the_kind_column_keeping_ev
     assert (found.id, found.kind, found.steps_done) == (ticket.id, '', 1)
     check = sqlite3.connect(path)
     assert check.execute('PRAGMA foreign_key_check').fetchall() == []
-    assert json.loads(check.execute("SELECT value FROM meta WHERE key='module:map'").fetchone()[0])['version'] == 9
+    assert json.loads(check.execute("SELECT value FROM meta WHERE key='module:map'").fetchone()[0])['version'] >= 9  # upgraded on to the current layout

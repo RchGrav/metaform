@@ -1023,7 +1023,8 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
     say(f'Backups: {backups}' if backups.exists() else 'Backups: none needed')
     if unmerged:
         first = next(iter(unmerged.values()))
-        raise Failed(f'{", ".join(unmerged)} could not be registered; every other tool was set up.', first.next_step)
+        raise Failed(f'{", ".join(unmerged)} could not be registered; every other tool was set up. {first.message}',
+                     first.next_step)
     if failed:
         if url:
             raise Failed(f'Nothing answered at {url} for {", ".join(failed)}; the registration is kept.',

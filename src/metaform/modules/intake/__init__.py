@@ -558,7 +558,9 @@ def _map(elements: list[Element], joins: list[Join], store: Store | None = None)
         listed.append({**entry, **marks.get(found.id, {})})
     serves: dict[str, set[str]] = {}  # each receiver, and the elements its joins hold
     for held in joins:
-        serves.setdefault(held.receiver_address, set()).update(each.address for each in held.elements)
+        if held.receiver_address is not None:  # an orphaned join's receiver is gone, so it reaches nothing
+            serves.setdefault(held.receiver_address, set()).update(each.address for each in held.elements
+                                                                   if each.address is not None)
     # the map comes off the root joins, each a CQU receiving from the DE; what they do not reach is disconnected
     roots = [found.address for found in elements if found.role == 'CQU' and found.address in serves]
     reached, waiting = set(roots), list(roots)

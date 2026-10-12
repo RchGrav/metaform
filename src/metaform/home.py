@@ -569,9 +569,12 @@ def register(record: Project) -> Path:
 
 @_cached
 def project_at(path: str) -> str | None:
-    """The project registered with this folder."""
+    """The project registered with this folder. Its project folder is remembered for its id too, so finding the same
+    project by id next opens no other project's database, STORE-005."""
     folder = _folder_at(path)
     record = _record_in(folder) if folder is not None else None
+    if record is not None and folder is not None:
+        _FOUND[(str(projects_dir()), record.project_id)] = folder
     return None if record is None else record.project_id
 
 

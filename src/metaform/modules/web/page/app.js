@@ -2101,7 +2101,7 @@ function ringMascot(size, on) {
   if (!MASCOT.mesh) return;
   if (!MASCOT.ring) {
     MASCOT.ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.5, 40), new THREE.MeshBasicMaterial({
-      color: new THREE.Color(css('--signal') || '#00e5d4'), transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide}));
+      color: new THREE.Color(css('--signal')), transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide}));
     MASCOT.ring.rotation.x = -Math.PI / 2;
     MASCOT.ring.raycast = () => {};
   }
@@ -2822,8 +2822,8 @@ function eyeDebug3d() {  // the eye anchor and the gaze ray of every figure, dra
     if (!mesh) continue;
     eyeOf(mesh, EYE.at, EYE.dir);
     const far = mesh.scale.x * 6, tip = {x: EYE.at.x + EYE.dir.x * far, y: EYE.at.y + EYE.dir.y * far, z: EYE.at.z + EYE.dir.z * far};
-    fxLine(EYE.at, tip, tintOf('#ff3dd2'), 1, 0.4);
-    fxDot(EYE.at, mesh.scale.x * 0.12, tintOf('#ff3dd2'), 1, 0, 6, 10);
+    fxLine(EYE.at, tip, tintOf(css('--debug')), 1, 0.4);
+    fxDot(EYE.at, mesh.scale.x * 0.12, tintOf(css('--debug')), 1, 0, 6, 10);
   }
 }
 /* Chat with the mascot: a click on it, where no node takes the click, opens a small reply field under its bubble. What
@@ -4878,7 +4878,7 @@ function flowTickets(tickets) {
 const FX = {scene: null, points: null, lines: null, n: 0, m: 0, cap: 0, capL: 0, tints: new Map(), fade: 1};
 const WHITE = new THREE.Color(1, 1, 1), LIT = new THREE.Color();
 function tintOf(color) {
-  if (!FX.tints.has(color)) FX.tints.set(color, new THREE.Color(color || '#ffffff'));
+  if (!FX.tints.has(color)) FX.tints.set(color, color ? new THREE.Color(color) : WHITE.clone());
   return FX.tints.get(color);
 }
 function fxMake() {
@@ -12019,7 +12019,7 @@ async function appMessage(entry, message) {
   }
   if (message.method === 'ui/open-link') {
     const url = String(params.url || '');
-    if (!/^https?:\/\//i.test(url)) return fail(-32602, 'Only a web address is opened.');
+    if (!/^https?:[/][/]/i.test(url)) return fail(-32602, 'Only a web address is opened.');
     const sure = await confirmAct({title: 'Open this link?', verb: 'Open it', cancel: 'Stay here', danger: false,
       text: [`${appName(entry.app.uri)} asks to open a page in a new tab:`, h('code', {class: 'url'}, url)]});
     if (sure) window.open(url, '_blank', 'noopener,noreferrer');

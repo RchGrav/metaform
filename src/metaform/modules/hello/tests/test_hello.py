@@ -438,5 +438,5 @@ def test_work_read_shows_hellos_own_field_on_its_work_record_and_the_store_layou
     work_table = TABLES.table('work').schema.split('CREATE TABLE IF NOT EXISTS work(')[1].split(');')[0]
     assert [line.split()[0] for line in work_table.strip().splitlines()] == [
         'row', 'work_id', 'target_kind', 'target_id', 'condition', 'note', 'task', 'held', 'reviewed', 'created',
-        'done', 'resolution', 'steps', 'steps_done', 'taken', 'taken_by', 'position', 'kind'], \
+        'done', 'resolution', 'steps', 'steps_done', 'taken', 'taken_by', 'position', 'kind', 'outcome'], \
         'the work record layout is the map\'s own, a ticket\'s kind included, MAP-046; hello adds no column'

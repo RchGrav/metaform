@@ -26,6 +26,8 @@
   --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --cond:"IBM Plex Sans Condensed","IBM Plex Sans",system-ui,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  --debug:#ff3dd2;  /* the eye check's rays, seen on every theme */
+  --spark:#fff;  /* a request's dot in the 2D flow, light on every theme */
 }
 /* The themes, VIEW-023: each block defines the same colors. A role keeps its hue in every theme; its lightness is the
  * one at which it holds its contrast on that theme's background, a link as it is seen at --link-opacity. --signal is
@@ -1398,14 +1400,14 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
 :root{--record:#ffbe55}
 .map2d .flows2d *{pointer-events:none}
 .map2d .flows2d .bead{stroke:none;filter:drop-shadow(0 0 1.5px currentColor)}
-.map2d .flows2d .ask{fill:#fff;filter:drop-shadow(0 0 1.5px #fff)}
-.map2d .flows2d .record{fill:var(--record);stroke:#fff;stroke-width:.6px}
+.map2d .flows2d .ask{fill:var(--spark);filter:drop-shadow(0 0 1.5px var(--spark))}
+.map2d .flows2d .record{fill:var(--record);stroke:var(--spark);stroke-width:.6px}
 .map2d .flows2d .ring{fill:none;stroke:var(--record);stroke-width:1.4px}
 /* The mascot's word bubble, over the figure wherever it is drawn: eased in and out, one line or two, never in the way
  * unless it has something to click. */
 .mascot-bubble{position:fixed;left:0;top:0;z-index:40;max-width:260px;padding:6px 10px;border-radius:12px;
   background:var(--panel-2);border:1px solid var(--line-2);color:var(--text);font:500 var(--t-sm,13px)/1.35 var(--sans);
-  box-shadow:var(--lift-2,0 4px 14px rgba(0,0,0,.4));pointer-events:none;opacity:0;
+  box-shadow:var(--lift-2);pointer-events:none;opacity:0;
   transform:translate(-50%,calc(-100% - 10px)) scale(.92);transform-origin:50% 100%;
   transition:opacity .22s var(--ease),transform .28s var(--ease)}
 .mascot-bubble::after{content:'';position:absolute;left:50%;bottom:-6px;width:10px;height:10px;margin-left:-5px;
@@ -1418,7 +1420,7 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
 /* The note card the mascot brings when something needs the person, set down near the pointer: a click on its words
  * goes there, its × puts it away. Eased in and out. */
 .mascot-card{position:fixed;z-index:41;display:flex;align-items:center;gap:4px;padding:4px 4px 4px 10px;border-radius:10px;
-  background:var(--panel-2);border:1px solid var(--record,#ffbe55);box-shadow:var(--lift-2,0 4px 14px rgba(0,0,0,.4));
+  background:var(--panel-2);border:1px solid var(--record);box-shadow:var(--lift-2);
   opacity:0;transform:translate(-50%,-50%) scale(.6) rotate(-4deg);
   transition:left .7s var(--ease),top .7s var(--ease),opacity .3s var(--ease),transform .5s var(--ease)}
 .mascot-card.on{opacity:1;transform:translate(-50%,-50%) scale(1) rotate(-1.5deg)}

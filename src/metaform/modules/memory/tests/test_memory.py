@@ -425,7 +425,7 @@ def test_one_graph_read_opens_the_project_databases_of_the_home_as_often_whateve
     """The web page reads the whole graph on every reload. A read's cost follows its answer, STORE-005, so the home's
     project databases it opens do not grow with the number of projects the home holds: finding one project's folder
     does not open every other project's database."""
-    from metaform import cli
+    from metaform import changes, cli
     from metaform import home as metaform_home
     from metaform import sqlite as metaform_sqlite
     store = Store('proj')
@@ -457,6 +457,7 @@ def test_one_graph_read_opens_the_project_databases_of_the_home_as_often_whateve
         other = tmp_path / f'other-{number}'
         other.mkdir()
         metaform_home.add_project(f'other-{number}', other)
+    changes.take()  # announced when an add command ends; added here outside one, so the read would announce them
     among, many = graph()
     assert among == alone
     assert many == few, f'{few} opens with one project, {many} with twelve'

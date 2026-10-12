@@ -101,10 +101,10 @@ CASES: dict[str, tuple[Callable, Callable, dict]] = {
     # A work record is one row of `work` and nothing else: no identity row, no layer row, no change to the map,
     # STORE-042; its work_id is an identity id in form and stability, STORE-007, and the `work` row is its identity.
     'add_work': (lambda s, w: None, lambda s, w, c: s.add_work(Node('element', 'code.k.b'), 'unbuilt', task='build b'),
-                 {'work': (1, 0)}),
+                 {'work': (1, 0), 'map.numbered': (1, 0)}),  # and its number at the node, MCP-037
     'add_work on a join': (lambda s, w: None,
                            lambda s, w, c: s.add_work(Node('join', w.k_join.id), 'broken', held=True),
-                           {'work': (1, 0)}),
+                           {'work': (1, 0), 'map.numbered': (1, 0)}),
     'edit_work': (lambda s, w: None, lambda s, w, c: s.edit_work(w.work.id, {'reviewed': True, 'task': 'b'}),
                   {'work': (1, 1)}),
     'finish_work': (lambda s, w: None, lambda s, w, c: s.finish_work(w.work.id, 'built'), {'work': (1, 1)}),
