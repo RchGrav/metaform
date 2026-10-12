@@ -4,7 +4,7 @@ Metaform's one web GUI for the user: one server per Metaform home, serving every
 
 ## Purpose
 
-People see the map in a browser. `metaform web` starts the server and prints its address; run again from any folder, it prints the address it already runs at. `metaform web stop` stops it. Before an intake, agents start it and tell the user the address, while `--web-autostart` is on, so the map can be watched as it is recorded. It ships enabled.
+People see the map in a browser. `metaform web` starts the server and prints its address; run again from any folder, it prints the address it already runs at. `metaform web stop` stops it. Before an intake, the intake's own instructions have the agent start it with the `web_start` tool and tell the user the address, so the map can be watched as it is recorded. It ships enabled.
 
 `metaform web serve v000001 v000002` reconstructs saved web variants and serves their static files together, each from its own temporary folder on an OS-assigned port at `127.0.0.1`, PROJ-019. It prints `<variant id>  http://127.0.0.1:<port>/` for each; open those addresses in browser tabs. `metaform web serve all` serves every variant of the latest origin, or add `origin=<id>` to select an earlier origin. The command runs in the terminal until Ctrl+C, then closes its listeners and removes its temporary folders. The Metaform GUI remains its own server on its fixed port.
 
@@ -32,7 +32,7 @@ Started from template 0.3.0.
 
 ## Declaration
 
-`SUPPORTED_OS = ('linux', 'macos', 'windows')`, `DEPENDENCIES = ()`, `SHIPS_DISABLED = False`. `MODULE` declares `start`, its default verb, `stop`, the CLI-only `serve`, and a status hook. It subscribes to nothing. Its panes are the page's two views of the map, `map2d` on the left and `map3d` in the main area; the other modules declare the rest, under Toolbar and panes.
+`SUPPORTED_OS = ('linux', 'macos', 'windows')`, `DEPENDENCIES = ()`, `SHIPS_DISABLED = False`. `MODULE` declares `start`, its default verb, `stop`, the CLI-only `serve`, and a status hook. It subscribes to nothing. Its panes are the page's two views of the map, `map2d` in the main area and `map3d` above the node's tabs on the right, and the workflow runs, `runs`; the other modules declare the rest, under Toolbar and panes.
 
 ## Common base used
 
@@ -40,7 +40,7 @@ Started from template 0.3.0.
 
 ## Prompts
 
-`resources/prompts.xml` holds `instructions`, `web is active.`, listed in the instructions agents read under "modules available.", and `autostart`, which follows it on web's line while `web_autostart` is on and which `metaform status` shows before the intake, VIEW-015 and MCP-031.
+`resources/prompts.xml` holds `connect`, web's line in the connect message; `instructions`, returned by `metaform_instructions` with module web; `resume_run`, the message the page sends the agent of a workflow run the person answered with Tell its agent to resume; the mascots' personas, `persona_<character>`; and `commands`, the `web` slash command.
 
 ## Verbs
 
@@ -52,9 +52,15 @@ Started from template 0.3.0.
 
 - `--web-port`, a number, default 7433, for the whole home.
 - `--web-bind`, text, default `127.0.0.1`, for the whole home. At a wildcard address, `0.0.0.0` or `::`, the printed address uses the machine's host name.
-- `--web-autostart`, on or off, default on, per folder. While on, the status hook's notice tells agents to start the GUI before an intake and give the user its address.
 - `--web-toolbar`, `--web-layout` and `--web-workspaces`, JSON text, default empty, for the whole home: the toolbar and the panes as the person arranged them, and the person's named workspaces. Empty is the defaults the modules declare; `metaform unset --web-toolbar` returns to them. Their shapes are under Toolbar and panes. `config --show` and the settings screen show the JSON text in a text field, and `set` takes it checked against its shape; the page is where they are arranged.
 - `--web-workspace`, a choice of `Default` and the saved workspaces, default `Default`, for the whole home: the workspace the page opens with and resets to.
+- `--web-panes`, on or off, default on, for the whole home: lay the page out by the workspace, its toolbar, docked and floating panes and Window menu. The workspace's Default is the page as written, drawn by the page itself with the toolbar's row above it, so turning it on changes nothing until the person arranges something else. Off keeps the page as written with no toolbar and no Window menu.
+- `--web-node-shapes`, on or off, default on: each element drawn in the shape of its artifact type, the first segment of its address, in 2D (Mermaid shapes) and 3D (geometry, the same glass): code a box, document a page, media a screen, data a cylinder, collection a stack, upstream and downstream cones.
+- `--web-flow-seconds`, a number, default 30, and `--web-idle-flow`, on or off, default off: how long the dots along the joins flow after the map was last touched or changed; after that the 3D map draws no frame until something moves, so an idle page costs nothing. On, the slow flow goes on for as long as the page is open, as before.
+- `--web-node-zoom`, on or off, default on: each 3D selection flown to and framed with its neighbours, in either pane; in Whole the map turns round the node at the whole map's distance; Free leaves the camera. Off, a selection never moves the camera. Z, the map bar and the View menu toggle it.
+- `--web-hover-info`, a choice of `name+summary`, `name`, `summary` and `off`, default `name+summary`: the hovered thing's name across the top of the map where the map shows none that can be read, and its card of details at the lower left, the legend easing out while it shows. I steps through them.
+- `--web-mode-bar` (`auto`, `shown`, `keys`, default `auto`), `--web-agents-window`, `--web-physics`, `--web-map-direction`, `--web-signs`: the large map's bar, the agents window, the 3D layout's physics, the 2D map's direction and how the 3D names stand; each is chosen on the page too, and the key reference `?` lists their keys.
+- `--web-debug`, a choice of `off`, `info`, `verbose` and `trace`, default off: the page's developer detail. `metaform web start --web-debug <level>` starts the page with it for that run, as written to `run/web-debug`; the page takes the more detailed of that and the setting. Off shows none of it. `info` logs each read and write of the page to the browser console and adds the developer panes, under the workspace: Prompts sent, every prompt Metaform and each enabled module would send, read-only, with the comment above it saying when it is sent, its size and the budget it is held to, from `GET /api/debug/prompts`; and Traces, the page's reads and writes with their status and time. `verbose` adds the events heard; `trace` adds each raw response. `--debug` stays the chassis's switch that asks agents to report, so the web module's is `--web-debug`.
 
 ## The server
 
@@ -103,20 +109,26 @@ The page reads `/api/workspace` once its project is chosen, and draws from it al
 - Panes: four docking areas around the main one, left, right and bottom, and floating windows. Each area holds its groups stacked, each group a tab strip over one pane; the tabs follow `tabs`, showing those not in `off`. Drag a tab onto another group's strip to join it, onto an area's edge to start a group there, where blue drop zones show while dragging, or away from every zone to float it; Ctrl while dragging keeps it from docking. A tab's context menu has Move to Left, Main, Right, Bottom and Float, and Close, which turns it off. A pane is never drawn smaller than its `min_width` and `min_height`. An area with no group shown takes no room. Swap, today's button on each map, now exchanges the places of `web.map2d` and `web.map3d` and saves the layout.
 - Views the page draws, by `page`: `map2d` (today's small 2D map), `map3d` (the 3D stage), `object`, `provenance` and `prompt` (today's side panel tabs), `settings` (today's settings dialog, as a pane), `dock` (the chat), `board` (the Kanban), `messages` (the questions waiting for the person).
 - Commands the page runs, by `page`: `search`, `export-markdown`, `export-xml`, `build`, `shortcuts`, `layers` (the layer list), `add-task` and `add-element` (their windows, at the selected node), `dispatch-node` (Add Task at the selected node with Start an agent now checked), `agents` (the Agents menu), `intake` (Run an intake), `orphaned` (Orphaned memories).
-- Built-in icons the page's set does not draw yet, to add as the others are drawn: `board`, `brief`, `chat`, `code`, `cube`, `eye`, `gauge`, `layers`, `map`, `memory`.
+- Views the page draws only as panes, `page/views.js`: `messages`, the questions and messages waiting for the person, oldest first, each opening its node; `runs`, the workflow runs (`web.runs`), with a run paused on the person showing what stopped it, an answer box and Tell its agent to resume, which answers through `metaform workflow answer` and then sends the agent the `resume_run` prompt with `metaform dispatch message`, and Cancel run…, asked first; and, with `--web-debug`, `dev-prompts` and `dev-trace`.
+- A verb pane's content, `content.kind` `verb`, is drawn by the workspace from `/api/workspace/pane`: the result as every surface shows it, text as text, a list as a list, an object as its fields, with its length in characters, what an agent is handed, and the JSON as an agent reads it folded below; read again as the pane shows, when the selection changes for a pane that follows it, and on each `map.changed`. A `resource` pane shows its file, an HTML one in a sandboxed frame.
+- A verb tool whose verb takes nouns its fixed arguments and the selection leave open carries them as `action.form`, each `{name, help, kind, required, many, choices?}`; the page opens a small form typed by them, and `/run` takes the person's `values`, only those fields, the fixed arguments and the selection staying the tool's. A tool's `shortcut` runs it from the keyboard, by the key's place, and is listed under Tools in the `?` reference.
+- The page's own parts: `page/workspace.js` draws the toolbar, the Window menu, the areas and groups, floating panes, Edit Toolbar… and the forms; app.js lends it the views, commands and windows, and a window of the page shown as a pane leaves the overlay stack while docked. Every built-in icon of `module.ICONS` is drawn.
 - On a screen narrower than 820 px the areas stack in the order main, right, left, bottom, and the layout is left as saved.
 
 ### The Default workspace
 
-The maps are on the left and in the main area; everything a person reads or types into is on the right. A person reads from the right and turning to the left to read is uncomfortable, so nothing text-heavy or interactive starts on the left. Today the side panel stands on the left; Default moves it to the right.
+Default is the page as written. The 2D map fills the main area, where its names are read; on the right, the side column holds the 3D map, keeping the whole in view, over the node's tabs, where everything a person reads or types into is, since turning to the left to read is uncomfortable; the board, the settings and What the agent sees open as the page's own windows; the chat rests in its own dock. Arranging nothing else changes nothing a person knew, and every check written for the page holds with the workspace on.
 
 | Area | Group | Tabs, in order (off at first in brackets) |
 | --- | --- | --- |
-| left, 360 px | map2d | 2D map |
-| main | stage | 3D map, (Board) |
-| right, 420 px | node | Object, Provenance, Prompt, Brief, What the agent sees, Memories, (Settings) |
-| right | chat | Chat, (Messages) |
+| main | stage | 2D map |
+| right, the side column's width | overview | 3D map |
+| right | node | Object, Brief, Provenance, (Code), Prompt, (Memories) |
+| right | chat | (Messages), (Glossary), (Chat), (Workflow runs) |
+| float | | (Board), (Settings), (What the agent sees) |
 | bottom, 280 px | none | |
+
+While the arrangement is that one, one map in the main area and at one side the other map over a group of the node's tabs, `workspace.js` leaves it to the page as written, `classicFrame`: its side column, its splitters, its tabs and its windows work as they always have, the toolbar's row stands under the header and the Window menu in it, and which map takes the large area stays this browser's choice, as Swap made it. The board, the settings and What the agent sees open there as the page's own windows, and their tools and Window checks follow them opening and closing. Turning one of the node's tabs off takes it out of the strip; dragging the side column to the left moves the side's groups to the left area. Any other arrangement, a pane turned on beside them, such as Memories or the chat, or a tab moved with its menu, is drawn in the workspace's areas, with the maps where this browser had them; back to that arrangement, the page as written comes back, every element where it stood.
 
 The default toolbar, in order: Search; Node brief; What the agent sees; Layers; Board; Add task with Add element behind it; Chat; Agent on this node; Memories; Run an intake; Settings. Extra tools: Export Markdown, Export XML, Export Mermaid and Copy as Mermaid, the export group, each a command of the page, Build, Agents, Orphaned memories, Keyboard shortcuts. Each, and why it earns its place:
 
@@ -140,6 +152,8 @@ A code map pane is to come from the module that builds it; the tools and the lay
 Automatic dispatch is checked when the server starts, when its page saves the dispatch settings, and on selection-relevant `map.changed` events. One worker coalesces changes and starts batches sequentially, so page reads remain responsive and simultaneous changes do not launch competing batches. Questions do not block selection or park unfinished tickets, which return to To do. Answers change no board placement because a question records a dependency within the task, not evidence that the whole task is unavailable. `/api/dispatch-autostart` reads and saves these project settings through GET and POST; `/api/dispatch-chat` starts or reopens a question's chat through POST.
 
 Hears `map.changed`, which the chassis fires after any command that changes a project's map, VIEW-018, through the base's listener, BASE-053: the server opens it with `events.listen('web', ...)` once it listens, and each `map.changed` published in another process, a command, the MCP server or a dispatch runner, reaches it and is pushed to every open page, which redraws without a reload. The changes of the page's own writes are pushed from what `events.announce` returns. A change to a project no longer registered is not pushed, since a page has nothing of it to read. With no server running nothing listens, and nothing is sent.
+
+Publishes `web.started` from `web start`, with `project`, `folder` and `state` (`started` or `running`), once the page answers, so a module that serves beside the page starts with it: the twilio module starts its phone bridge then, when the person has turned it on with `twilio_enabled`. A subscriber's failure never fails the start.
 
 ## Sync and async
 

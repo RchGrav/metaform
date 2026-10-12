@@ -9,6 +9,10 @@ and serves Protected Resource Metadata at `/.well-known/oauth-protected-resource
 by introspection (RFC 7662) at the Node's authorization server on loopback, with a credential of the resource
 server's own, so a revoked token stops working at once and no signing key is shared.
 
+A Metaform reached through the cloud broker (the cloud module's tunnel) checks no bearer token from a host at all: the
+broker keeps the host's token and sends, for each request, an assertion it signed (`Asserted`), which this side
+checks against the key set saved at login, its own resource URL, the account it signed in as, and the request body.
+
 A tool call also needs the scope its tool's effect calls for: `mcp:read` for a read, `mcp:write` for a write or a
 removal, `mcp:dispatch` for a tool that starts or steers agents. A call short of it is answered 403
 `insufficient_scope` naming the scope, the step-up challenge of the MCP authorization specification of 2026-07-28.
@@ -18,6 +22,7 @@ from __future__ import annotations
 import base64
 import ipaddress
 import json
+import time
 import urllib.parse
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -55,14 +60,16 @@ def secret() -> str | None:
 
 @dataclass(frozen=True)
 class Exposure:
-    """A server reached from outside: its public origin and where it checks tokens."""
+    """A server reached from outside: its public origin and where it checks tokens; `path` is its resource's path,
+    `/mcp`, or `/mcp/<instance>` for a named instance behind the cloud broker."""
     public: str
     introspection: str
     credential: str
+    path: str = '/mcp'
 
     @property
     def mcp(self) -> str:
-        return self.public + '/mcp'
+        return self.public + self.path
 
     @property
     def a2a(self) -> str:
@@ -149,6 +156,96 @@ class Introspection:
                            claims={'iss': claims.get('iss'), 'username': claims.get('username')})
 
 
+class Asserted:
+    """The SDK's `TokenVerifier` for a Metaform reached through the cloud broker: the bearer is the broker's assertion
+    for this one request (typ `mf-assert+jwt`, EdDSA), checked against the broker's key set (`keys`, by key id), its
+    issuer, this instance's resource URL, and the account this machine signed in as, so a request meant for another
+    account or another machine is refused here even if the broker routed it wrongly. The scopes are capped again by
+    what this machine allows (cloud_capability). `check` also matches the body's hash and spends the assertion's id,
+    once; the tunnel calls it before the request reaches the app.
+
+    Its times are judged by `clock`, the broker's time as this machine reckons it (the offset measured when the
+    tunnel opened), with LEEWAY either side, so a machine whose own clock is off is not refused for it; `late` says
+    when a refusal was for the time alone, so the person can be told to look at the clock."""
+
+    TYP = 'mf-assert+jwt'
+    LEEWAY = 30
+
+    def __init__(self, issuer: str, audience: str, subject: str, keys: Callable[[str], Any],
+                 allowed: tuple[str, ...], clock: Callable[[], float] | None = None) -> None:
+        self.issuer = issuer
+        self.audience = audience
+        self.subject = subject
+        self.keys = keys
+        self.allowed = allowed
+        self.clock = clock or time.time
+        self.spent: dict[str, float] = {}
+        self.late = 0.0  # how far off the last assertion refused for its time alone was, in seconds
+
+    def claims(self, token: str) -> dict[str, Any] | None:
+        import jwt
+        self.late = 0.0
+        try:
+            header = jwt.get_unverified_header(token)
+        except jwt.PyJWTError:
+            return None
+        if header.get('typ') != self.TYP or header.get('alg') != 'EdDSA':
+            return None
+        key = self.keys(str(header.get('kid') or ''))
+        if key is None:
+            return None
+        try:
+            claims: dict[str, Any] = jwt.decode(token, key, algorithms=['EdDSA'], issuer=self.issuer,
+                                                audience=self.audience, options={
+                                                    'verify_exp': False, 'verify_iat': False, 'verify_nbf': False,
+                                                    'require': ['exp', 'iat', 'iss', 'aud', 'sub', 'jti']})
+        except jwt.PyJWTError:
+            return None
+        if claims.get('sub') != self.subject:
+            return None
+        try:
+            issued, expires = float(claims['iat']), float(claims['exp'])
+        except (TypeError, ValueError):
+            return None
+        now = self.clock()
+        if issued > now + self.LEEWAY or expires < now - self.LEEWAY:
+            self.late = issued - now
+            return None
+        return claims
+
+    def check(self, token: str, body: bytes) -> dict[str, Any] | None:
+        import hashlib
+        claims = self.claims(token)
+        if claims is None:
+            return None
+        hashed = base64.urlsafe_b64encode(hashlib.sha256(body).digest()).decode().rstrip('=')
+        if claims.get('bh') != hashed:
+            return None
+        now = time.time()
+        self.spent = {jti: until for jti, until in self.spent.items() if until > now}
+        if str(claims['jti']) in self.spent:
+            return None
+        self.spent[str(claims['jti'])] = now + float(claims['exp']) - float(claims['iat']) + 2 * self.LEEWAY
+        return claims
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        claims = self.claims(token)
+        if claims is None:
+            return None
+        scopes = [scope for scope in str(claims.get('scope') or '').split() if scope in self.allowed]
+        return AccessToken(token=token, client_id=str(claims.get('client_id') or ''), scopes=scopes,
+                           expires_at=int(claims['exp']), resource=str(claims['aud']), subject=str(claims['sub']),
+                           claims={'iss': claims['iss'], 'username': claims.get('username'),
+                                   'client_name': claims.get('client_name')})
+
+
+def scopes_up_to(capability: str) -> tuple[str, ...]:
+    """The MCP scopes a capability level allows: read, then write, then dispatch."""
+    order = (READ, WRITE, DISPATCH)
+    level = {'read': 1, 'write': 2, 'dispatch': 3}.get(capability, 1)
+    return order[:level]
+
+
 def transport_security(found: Exposure) -> Any:
     """Host and Origin checks for the public name, as the SDK makes them for loopback: a browser page elsewhere
     cannot reach the server through DNS rebinding, and loopback stays allowed for the health check."""
@@ -173,10 +270,12 @@ class ScopeGate:
     """Before a tool call reaches the server: a token short of the tool's scope gets 403 `insufficient_scope` with
     the scope it needs and the resource metadata's URL, so the client can step up, RFC 6750 section 3.1."""
 
-    def __init__(self, app: Any, needs: Callable[[str], str | None], metadata_url: str) -> None:
+    def __init__(self, app: Any, needs: Callable[[str], str | None], metadata_url: str,
+                 ceiling: tuple[str, ...] | None = None) -> None:
         self.app = app
         self.needs = needs
         self.metadata_url = metadata_url
+        self.ceiling = ceiling  # what this machine allows at most, behind the cloud broker (cloud_capability)
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         if scope['type'] != 'http' or scope.get('method') != 'POST':
@@ -192,10 +291,14 @@ class ScopeGate:
         auth = scope.get('auth')
         held: set[str] = {str(one) for one in getattr(auth, 'scopes', ()) or ()}
         if needed and scope.get('user') is not None and needed not in held:
+            said = f'This tool needs {needed}'
+            if self.ceiling is not None and needed not in self.ceiling:  # no sign-in can give it: the owner decides
+                said += (f', and this Metaform lets cloud AI tools have {" ".join(self.ceiling) or "nothing"} at most; '
+                         'its owner can raise cloud_capability')
             challenge = (f'Bearer error="insufficient_scope", scope="{needed}", '
                          f'resource_metadata="{self.metadata_url}", '
-                         f'error_description="This tool needs {needed}"')
-            payload = json.dumps({'error': 'insufficient_scope', 'error_description': f'This tool needs {needed}.',
+                         f'error_description="{said}"')
+            payload = json.dumps({'error': 'insufficient_scope', 'error_description': said + '.',
                                   'scope': needed}).encode()
             await send({'type': 'http.response.start', 'status': 403,
                         'headers': [(b'content-type', b'application/json'), (b'www-authenticate', challenge.encode()),
@@ -230,7 +333,8 @@ class ScopeGate:
         return next((scope for scope in order if scope in found), None)
 
 
-def protect(app: Any, found: Exposure, needs: Callable[[str], str | None]) -> None:
+def protect(app: Any, found: Exposure, needs: Callable[[str], str | None],
+            ceiling: tuple[str, ...] | None = None) -> None:
     """Put the scope gate in front of the `/mcp` route the SDK built, outside its bearer check, and have the
     resource's metadata offer read and write, the scopes an agent's ordinary work needs, so it asks for both at
     once; the authorization server grants what the Node's capability allows of them, and dispatch is asked for only
@@ -239,7 +343,7 @@ def protect(app: Any, found: Exposure, needs: Callable[[str], str | None]) -> No
     from mcp.server.auth.routes import cors_middleware
     from mcp.shared.auth import ProtectedResourceMetadata
     from starlette.routing import Route
-    path = '/.well-known/oauth-protected-resource/mcp'
+    path = '/.well-known/oauth-protected-resource' + found.path
     metadata_url = found.public + path
     document = ProtectedResourceMetadata.model_validate({
         'resource': found.mcp, 'authorization_servers': [found.public], 'scopes_supported': [READ, WRITE],
@@ -250,6 +354,6 @@ def protect(app: Any, found: Exposure, needs: Callable[[str], str | None]) -> No
     for index, route in enumerate(routes):
         path = getattr(route, 'path', None)
         if path == '/mcp':
-            route.app = ScopeGate(route.app, needs, metadata_url)
-        elif path == '/.well-known/oauth-protected-resource/mcp':
+            route.app = ScopeGate(route.app, needs, metadata_url, ceiling)
+        elif path == '/.well-known/oauth-protected-resource' + found.path:
             routes[index] = described[0]

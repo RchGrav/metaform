@@ -9,6 +9,10 @@ One image serves every mode; only this configuration changes:
   certificate is obtained through that passthrough with TLS-ALPN-01, so its key never leaves the instance.
 - `internal`: Caddy's own local CA, for a stand-in on a test machine; never for a public name.
 
+A Node has one of two roles. `node`, the default, serves a Metaform of its own: its maps, MCP, A2A and the page. `broker`
+is metaform.ing's: it serves no Metaform at all, only accounts, sign-in and the broker that carries AI hosts' MCP to the
+Metaform on each person's own machine (broker.py), so it runs Caddy and one process and mounts no project.
+
 Every Metaform process binds 127.0.0.1 inside one network namespace, Caddy's, so only Caddy is reachable. Discovery
 and sign-in answer before any credential; `/mcp` and A2A check their own bearer tokens; the page passes the
 authorization server's session gate first. The later one-port service mounts the same pieces in one ASGI app, so
@@ -35,10 +39,12 @@ FRPS_IMAGE = 'fatedier/frps:v0.71.0@sha256:cd8b947ba61678b200baa4f71ccc33f3c52e4
 IMAGE = 'metaform-node:local'  # built on the host from the wheel beside the Dockerfile; never pushed
 
 WEB_PORT, MCP_PORT, AUTH_PORT, GATE_PORT = 7433, 7434, 7435, 7440
+TWILIO_PORT = 7441  # the twilio module's phone bridge, `metaform twilio serve`, when the person runs it here
 UID = 10001
 HOME_IN_IMAGE = '/data/home'
 PROJECTS_IN_IMAGE = '/srv/projects'
 MODES = ('acme', 'dns', 'relay', 'internal')
+ROLES = ('node', 'broker')
 CAPABILITIES = ('read', 'write', 'dispatch')
 INVITE_DAYS = 7
 LABEL = re.compile(r'^(?!-)[a-z0-9-]{1,63}(?<!-)$')
@@ -61,6 +67,7 @@ class NodeSpec:
     relay_name: str = ''
     dcr: bool = False
     owner: str = 'owner'
+    role: str = 'node'
     extra: dict[str, Any] = field(default_factory=dict[str, Any])
 
     @property
@@ -117,6 +124,12 @@ def problems(spec: NodeSpec) -> list[str]:
     names = [PurePosixPath(folder).name for folder in spec.projects]
     if len(set(names)) != len(names):
         found.append('Two project folders share a name; each is mounted under /srv/projects/<name>.')
+    if spec.role not in ROLES:
+        found.append(f'The role must be one of {", ".join(ROLES)}, not {spec.role!r}.')
+    if spec.role == 'broker' and spec.mode == 'relay':
+        found.append('A broker is the public end machines dial; it cannot itself sit behind a relay.')
+    if spec.role == 'broker' and spec.projects:
+        found.append('A broker serves no project: the maps stay on each person\'s own machine.')
     if not LABEL.match(spec.owner.lower()):
         found.append(f'{spec.owner!r} cannot be an account name: lowercase letters, digits and hyphens.')
     return found
@@ -141,6 +154,22 @@ def scopes_for(capability: str) -> dict[str, tuple[str, ...]]:
 
 # ---------------------------------------------------------------------------------------------------- the files
 
+BROKER_ROUTES = """
+	# Everything the broker answers is one process on 127.0.0.1: the authorization server and its pages, the key set,
+	# the AI hosts' MCP endpoint with each instance's resource metadata, and the machines' tunnel. Streams are flushed
+	# as they come. Caddy writes no access log here: what passes is nobody's to keep.
+	@broker path /.well-known/oauth-authorization-server /.well-known/oauth-authorization-server/* /.well-known/oauth-protected-resource/* /.well-known/jwks.json /oauth/* /node/* /device /account /account/* /mcp /mcp/* /cloud/*
+	handle @broker {{
+		reverse_proxy 127.0.0.1:{port} {{
+			flush_interval -1
+		}}
+	}}
+	handle {{
+		respond "Metaform. Sign in to your account at /account; AI tools connect at /mcp." 200
+	}}
+"""
+
+
 def caddyfile(spec: NodeSpec) -> str:
     domain = spec.domain.lower()
     protocols = 'h1 h2' if spec.mode == 'relay' else 'h1 h2 h3'  # a relay carries TCP only
@@ -151,6 +180,23 @@ def caddyfile(spec: NodeSpec) -> str:
            'relay': '\ttls {\n\t\tissuer acme {\n\t\t\tdisable_http_challenge\n\t\t}\n\t}\n',
            'internal': '\ttls internal\n'}[spec.mode]
     site = f'{domain} {{\n{tls}\timport metaform_node\n}}\n'
+    if spec.role == 'broker':
+        body = BROKER_ROUTES.format(port=AUTH_PORT)
+        return f"""# The Metaform broker's front door, written by metaform node init for {domain}. Caddy terminates TLS and
+# routes to the one broker process on 127.0.0.1.
+{{
+{chr(10).join(globals_)}
+}}
+
+(metaform_node) {{
+	header {{
+		Strict-Transport-Security "max-age=63072000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}}{body}}}
+
+{site}"""
     if spec.wildcard:  # one certificate for every name under the base, this instance answering for its own
         site = (f'*.{spec.wildcard.lower()} {{\n{tls}\t@this host {domain}\n\thandle @this {{\n'
                 f'\t\timport metaform_node\n\t}}\n\thandle {{\n\t\tabort\n\t}}\n}}\n')
@@ -177,6 +223,15 @@ def caddyfile(spec: NodeSpec) -> str:
 	@protocols path /mcp /mcp/* /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/* /a2a /a2a/* /.well-known/agent-card.json
 	handle @protocols {{
 		reverse_proxy 127.0.0.1:{MCP_PORT} {{
+			flush_interval -1
+		}}
+	}}
+	# The twilio module's phone bridge, while it runs: Twilio's webhooks and the call's audio stream. Twilio has no
+	# sign-in, so no session gate: the bridge checks Twilio's signature on every request, and accepts only the owner's
+	# numbers.
+	@twilio path /phone/*
+	handle @twilio {{
+		reverse_proxy 127.0.0.1:{TWILIO_PORT} {{
 			flush_interval -1
 		}}
 	}}
@@ -272,9 +327,12 @@ def compose(spec: NodeSpec) -> dict[str, Any]:
         caddy['ports'] = ['80:80', '443:443', '443:443/udp']
     public = f'https://{domain}'
     auth = _service(['node', 'auth', '--node-domain', domain, '--node-capability', spec.capability,
-                     *(['--node-dcr'] if spec.dcr else [])], 'auth',
-                    mounts=['./bootstrap:/run/metaform-bootstrap:ro'], depends=False)
+                     *(['--node-dcr'] if spec.dcr else []), *(['--node-role', 'broker'] if spec.role == 'broker' else [])],
+                    'auth', mounts=['./bootstrap:/run/metaform-bootstrap:ro'], depends=False)
     auth['build'] = {'context': '.'}
+    if spec.role == 'broker':  # no Metaform is served here: no mcp, no page, no project
+        return {'name': 'metaform-node', 'services': {'caddy': caddy, 'auth': auth},
+                'volumes': {'home': {}, 'caddy-data': {}, 'caddy-config': {}}}
     mcp = _service(['mcp', 'serve', '--http', '--mcp-port', str(MCP_PORT), '--mcp-bind', '127.0.0.1',
                     '--mcp-public-url', public], 'mcp', mounts=projects)
     if spec.capability != 'dispatch':
@@ -334,7 +392,8 @@ def node_env(spec: NodeSpec) -> str:
     return json.dumps({'domain': spec.domain.lower(), 'mode': spec.mode, 'capability': spec.capability,
                        'projects': list(spec.projects), 'relay_server': spec.relay_server,
                        'relay_name': spec.relay_name, 'dns_provider': spec.dns_provider, 'wildcard': spec.wildcard,
-                       'email': spec.email, 'dcr': spec.dcr, 'owner': spec.owner}, indent=2) + '\n'
+                       'email': spec.email, 'dcr': spec.dcr, 'owner': spec.owner, 'role': spec.role},
+                      indent=2) + '\n'
 
 
 def spec_from(folder: Path) -> NodeSpec:
@@ -343,7 +402,7 @@ def spec_from(folder: Path) -> NodeSpec:
                     capability=data['capability'], projects=tuple(data.get('projects', ())),
                     dns_provider=data.get('dns_provider', ''), wildcard=data.get('wildcard', ''),
                     relay_server=data.get('relay_server', ''), relay_name=data.get('relay_name', ''),
-                    dcr=bool(data.get('dcr')), owner=data.get('owner', 'owner'))
+                    dcr=bool(data.get('dcr')), owner=data.get('owner', 'owner'), role=data.get('role', 'node'))
 
 
 COMPOSE_HEAD = ('# The Metaform Node, written by metaform node init. Caddy is the only service with ports; the others share\n'

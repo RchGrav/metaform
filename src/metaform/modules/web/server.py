@@ -76,6 +76,9 @@ TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=u
          '.json': 'application/json', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.md': 'text/plain; charset=utf-8',
          '.txt': 'text/plain; charset=utf-8'}  # fixed, since Windows's registry can give .js a type browsers refuse
 PAGE_POLICY = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'"
+# Scripts come only from the server; WebAssembly may be compiled, for the voice module's in-browser Whisper, whose
+# runtime is WebAssembly. 'wasm-unsafe-eval' allows compiling WebAssembly and nothing else: no eval of script text.
+SCRIPTS = "script-src 'self' 'wasm-unsafe-eval'"
 # Each static file's validator, VIEW-003: a hash of its bytes, kept for as long as the file's size and modification
 # time are unchanged, so a page load re-sends nothing unchanged and an edited file is sent again at once.
 _TAGS: dict[str, tuple[int, int, str]] = {}
@@ -98,6 +101,11 @@ def dispatch_change(payload: dict[str, Any]) -> bool:
 
 
 COALESCE = 0.3  # seconds a page's stream holds dispatch-only events to merge them, VIEW-018
+# The acts of the person's mascot a page takes, VIEW-005; those that ask the page something wait this long for it
+MASCOT_ACTS = {'say', 'go', 'turn', 'point', 'emote', 'look', 'see', 'select', 'camera', 'tab', 'open', 'swap',
+               'flow', 'physics', 'viewing', 'embody', 'move', 'push', 'drag', 'drop', 'take', 'release'}
+MASCOT_ASKS = {'look', 'see', 'viewing', 'embody'}
+MASCOT_WAIT = 5.0
 
 
 def dispatch_only(event: dict[str, Any]) -> bool:
@@ -132,9 +140,9 @@ def policy(body: bytes, kind: str) -> str:
     no other inline script is allowed."""
     found = IMPORT_MAP.search(body) if kind.startswith('text/html') else None
     if found is None:
-        return PAGE_POLICY
+        return f'{PAGE_POLICY}; {SCRIPTS}'
     digest = base64.b64encode(hashlib.sha256(found.group(1)).digest()).decode('ascii')
-    return f"{PAGE_POLICY}; script-src 'self' 'sha256-{digest}'"
+    return f"{PAGE_POLICY}; {SCRIPTS} 'sha256-{digest}'"
 
 
 code_print = chassis.code_print
@@ -163,6 +171,9 @@ class Server(ThreadingHTTPServer):
         self.dispatch_busy = False
         self.dispatch_errors: dict[str, str] = {}  # each project's last automatic-dispatch error, logged once
         self.merge_timers: dict[tuple[str, str], threading.Timer] = {}  # VIEW-044: one per merge waiting for review
+        self.retry_timers: dict[str, tuple[float, threading.Timer]] = {}  # P012: each project's next retry, when due
+        # the mascot's questions to the open pages waiting for their answer, by id: what it sees, VIEW-005
+        self.mascot_waiting: dict[str, dict[str, Any]] = {}
         self.code = code_print()
         self.handing = threading.Lock()
         self.stopping, self.handed = threading.Event(), threading.Event()
@@ -203,6 +214,9 @@ class Server(ThreadingHTTPServer):
         such as the removal of one, is not pushed, since a page has nothing of it to read."""
         if home.project(str(payload.get('project', ''))) is None:
             return 0
+        if payload.get('flow'):  # where an agent's tool calls reached, drawn on the map as they happen, VIEW-005
+            payload = dict(payload)
+            self.push({'topic': 'map.flow', 'payload': {'project': payload['project'], 'flows': payload.pop('flow')}})
         if dispatch_change(payload):
             self.schedule_dispatch(str(payload['project']))
         return self.push({'topic': 'map.changed', 'payload': payload})
@@ -241,6 +255,23 @@ class Server(ThreadingHTTPServer):
             for payload in events.announce(Path(found.path), 'web'):
                 self.changed(dict(payload))
 
+    def schedule_retry(self, project: str, due: Any) -> None:
+        """The supervisor's next retry, P012, when one waits: one timer per project, at the earliest time due, runs the
+        agent starter again, so a session whose runner is gone, as after a restart, is still resumed; nothing polls,
+        QUAL-015. A runner that saw its own session stop comes back for it as well; a second pass finds it done."""
+        if not isinstance(due, (int, float)):
+            return
+        with self.dispatch_lock:
+            held = self.retry_timers.get(project)
+            if held is not None and held[1].is_alive() and held[0] <= due:
+                return
+            if held is not None:
+                held[1].cancel()
+            timer = threading.Timer(max(0.0, float(due) - time.time()) + 0.5, self.schedule_dispatch, (project,))
+            timer.daemon = True
+            self.retry_timers[project] = (float(due), timer)
+            timer.start()
+
     def cancel_merge(self, project: str, work_id: str) -> None:
         timer = self.merge_timers.pop((project, work_id), None)
         if timer is not None:
@@ -261,7 +292,9 @@ class Server(ThreadingHTTPServer):
                     continue
                 self.schedule_merges(project_id)
                 try:
-                    module_verb({'project': project_id}, 'dispatch', 'autostart', {})
+                    started = module_verb({'project': project_id}, 'dispatch', 'autostart', {})
+                    self.schedule_retry(project_id, cast(dict[str, Any], started).get('retry_due')
+                                        if isinstance(started, dict) else None)
                 except StoreError as error:
                     if self.dispatch_errors.get(project_id) != str(error):  # once until it changes, not on every change
                         self.dispatch_errors[project_id] = str(error)
@@ -373,9 +406,15 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == '/api/workspace' or url.path.startswith('/api/workspace/'):  # the toolbar and the panes
             from . import workspace
             return workspace.answer(self, method, url.path, query)
+        if url.path.startswith('/api/voice/'):  # speech to text through the voice module's commands
+            from . import voice
+            return voice.answer(self, method, url.path, query)
         if url.path.startswith('/api/debug/'):  # the developer panes, only while the developer level is on
             from . import debug
             return debug.answer(self, url.path, {key: values[-1] for key, values in query.items() if key != 't'})
+        if url.path in ('/api/mcp-apps', '/api/mcp-app', '/api/mcp-call'):  # the chat as an MCP Apps host
+            from . import apps
+            return apps.answer(self, method, url.path, query)
         if method == 'POST':
             return self.write(url.path)
         if url.path == '/api/events':
@@ -395,6 +434,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.read_ignore(query.get('project', [''])[-1])
         if url.path == '/api/dispatch-sessions':
             return self.dispatch_sessions({key: values[-1] for key, values in query.items() if key != 't'})
+        if url.path == '/api/dispatch-options':
+            return self.dispatch_options({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/dispatch-spend':
             return self.dispatch_spend({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/workflow-runs':
@@ -527,7 +568,6 @@ class Handler(BaseHTTPRequestHandler):
                                       limit=ITEMS, project=project)
         except (Stop, StoreError) as error:
             return self.refuse(error, 404 if isinstance(error, StoreError) else 400)
-        found['last_session'] = last_session(project, str(found.get('address') or ''))
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
     def item(self, given: dict[str, str]) -> None:
@@ -675,6 +715,7 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/activate-base': self.activate_base,
                   '/api/remove-base': self.remove_base, '/api/ignore': self.write_ignore,
                   '/api/memory': self.write_memory,
+                  '/api/mascot': self.mascot_request, '/api/mascot-result': self.mascot_result,
                   '/api/dispatch-start': self.dispatch_start, '/api/dispatch-message': self.dispatch_message,
                   '/api/dispatch-stop': self.dispatch_stop, '/api/dispatch-interrupt': self.dispatch_interrupt,
                   '/api/dispatch-cancel': self.dispatch_cancel,
@@ -703,6 +744,43 @@ class Handler(BaseHTTPRequestHandler):
             project = home.project(str(given.get('project', '')))
             for payload in events.announce(Path(project.path) if project is not None else home.home(), 'web'):
                 self.gui.changed(dict(payload))
+
+    def mascot_request(self, given: dict[str, Any]) -> None:
+        """An act of the person's mascot, from the web module's verbs, VIEW-005: handed to every open page of the
+        project as a `mascot` event with an id of its own. An act that asks something, what the mascot sees or a
+        picture from its eyes, or what the person is looking at, waits up to MASCOT_WAIT seconds for the first page's
+        answer, `mascot_result`; the rest answer at once. With no page open on the project it is refused plainly."""
+        project, act = str(given.get('project') or ''), str(given.get('act') or '')
+        if act not in MASCOT_ACTS:
+            return self.send(400, {'error': f'{act or "Nothing"} is not an act of the mascot.'})
+        with self.gui.listening:
+            pages = [waiting for waiting, shown in self.gui.watching.items() if shown == project]
+        if not pages:
+            return self.send(409, {'error': f'No page shows {project or "the project"}, so the mascot is on no map.',
+                                   'next': 'open the page, at the address metaform web prints, on this project'})
+        ident = secrets.token_hex(8)
+        asks = act in MASCOT_ASKS
+        if asks:
+            self.gui.mascot_waiting[ident] = {'event': threading.Event(), 'result': None}
+        for waiting in pages:
+            waiting.put({'topic': 'mascot', 'payload': {**given, 'id': ident}})
+        if not asks:
+            return self.send(200, {'act': act, 'pages': len(pages)})
+        held = self.gui.mascot_waiting[ident]
+        answered = held['event'].wait(MASCOT_WAIT)
+        self.gui.mascot_waiting.pop(ident, None)
+        if not answered:
+            return self.send(504, {'error': f'The page did not answer within {MASCOT_WAIT:g} seconds.',
+                                   'next': 'bring the page to the front, then ask again'})
+        return self.send(200, held['result'])
+
+    def mascot_result(self, given: dict[str, Any]) -> None:
+        """A page's answer to one of the mascot's questions, by its id; the first answer is the one kept."""
+        held = self.gui.mascot_waiting.get(str(given.get('id') or ''))
+        if held is not None and not held['event'].is_set():
+            held['result'] = given.get('result') if isinstance(given.get('result'), dict) else {'answer': given.get('result')}
+            held['event'].set()
+        self.send(200, {'kept': held is not None})
 
     def save_prompt(self, given: dict[str, Any]) -> None:
         """Save an edited prompt as its next version, edited from `parent`; no version ever changes, VIEW-013."""
@@ -1254,7 +1332,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {'error': 'A message says something.'})
         if session is not None and (not isinstance(session, str) or not session):
             return self.send(400, {'error': 'The chat session id must be a nonempty string.'})
-        self.dispatched(given, 'message', [work_id, *([f'session={session}'] if session else [])], text.strip())
+        # a spoken message's recording, kept by /api/voice/clip, for an agent that takes audio
+        from .voice import clip_path
+        clip = clip_path(given['audio']) if isinstance(given.get('audio'), str) else None
+        self.dispatched(given, 'message', [work_id, *([f'session={session}'] if session else []),
+                                           *([f'audio={clip}'] if clip else [])], text.strip())
 
     def dispatch_interrupt(self, given: dict[str, Any]) -> None:
         """Interrupt the chat's current turn through dispatch without ending its session."""
@@ -1282,6 +1364,20 @@ class Handler(BaseHTTPRequestHandler):
         if reason is not None and not isinstance(reason, str):
             return self.send(400, {'error': 'A reason is text.'})
         self.dispatched(given, 'cancel', [work_id], reason.strip() if reason and reason.strip() else None)
+
+    def dispatch_options(self, given: dict[str, str]) -> None:
+        """What an agent offered at its last session in this project, its model, effort, mode and the rest, with the
+        value dispatch_agent_options gives each, as `metaform dispatch options` lists them, so the chat offers them
+        before the agent is called; it never primes an agent. With dispatch not enabled, none."""
+        try:
+            found = module_verb(given, 'dispatch', 'options', {'agent': given['agent']} if given.get('agent') else {})
+        except StoreError as error:
+            return self.refuse(error, 404)
+        except Stop as error:
+            if 'not on this project' in str(error):
+                return self.send(200, {'agents': []})
+            return self.refuse(error, 400)
+        self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
     def dispatch_spend(self, given: dict[str, str]) -> None:
         """What agents spent today, and on one ticket when `id` names it, as `metaform dispatch spend` reads it, so the
@@ -1457,6 +1553,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {**refusal(done), 'key': key})
         said = f'Notice: {key}: '  # what set kept and says of this setting, apart from notices of the run itself
         notices = [line[len(said):] for line in done.stdout.splitlines() if line.startswith(said)]
+        if key == 'dispatch_stay_connected':  # turned on, the system agent connects now, not at the next change
+            self.gui.schedule_dispatch(project.project_id)
         try:
             self.send(200, {**configured(folder), 'key': key, 'notices': notices})
         except Stop as error:
@@ -1977,22 +2075,6 @@ def _stage(store: Store, target: Node, condition: str) -> Any:
                    for record in stated]  # every stated record changes; the first answers
         return changed[0]
     return store.add_work(target, kept, note='Set by the person on the page.') if kept else None
-
-
-def last_session(project: str, address: str) -> dict[str, Any] | None:
-    """What the last agent session to write at an address numbered there, as the brief's line under the node says it:
-    its session, the first and last number it took and how many, so the page shows the same range the agent reads;
-    None when no session is known to have taken one there, or it cannot be read."""
-    if not address:
-        return None
-    try:
-        found = Store(project).last_session(address)
-    except (StoreError, OSError, ValueError):
-        return None
-    if found is None:
-        return None
-    session, first, end, count = found
-    return {'session': session, 'first': first, 'last': end, 'count': count}
 
 
 def sized(text: str) -> dict[str, Any]:

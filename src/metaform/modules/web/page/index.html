@@ -14,6 +14,9 @@
 <button class="skip btn primary" type="button" data-skip="map">Skip to the map</button>
 <button class="skip btn primary" type="button" data-skip="panel">Skip to the panel</button>
 <div class="app">
+  <!-- The view's own bar in an AI tool's frame, MCP Apps: the host's controls (full screen, the web GUI) sit here, in
+       the row the header takes in the web GUI, so they cover no map. Empty and not shown in the web GUI. -->
+  <div id="viewslot" class="viewslot" role="toolbar" aria-label="The view's own controls"></div>
   <!-- The header: the project and its base on the left, what acts on the project, the Messages button in the middle,
        and what sets the view on the right. Below 820 px wide everything but the project, Messages and Search folds into
        the menu button's rows. -->
@@ -55,6 +58,12 @@
         </div>
       </div>
       <button class="btn quiet" id="boardBtn" type="button" title="The project's tickets as a kanban board">Board</button>
+      <!-- The Window menu: a check for each pane, the workspaces and Edit Toolbar…, web/README.md "Toolbar and panes".
+           Shown once the workspace is read; the page as written has none. -->
+      <div class="windowpick pick" id="windowPick" hidden>
+        <button class="btn quiet" id="windowBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="windowbox" title="The panes, the workspaces and the toolbar">Window<i class="i i-chev" aria-hidden="true"></i></button>
+        <div class="menu" id="windowbox" hidden role="menu" aria-label="Window"></div>
+      </div>
       <div class="clearpick pick">
         <button class="btn quiet" id="adminBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="adminbox" title="Acts on the project as a whole">Administration<i class="i i-chev" aria-hidden="true"></i></button>
         <div class="menu right" id="adminbox" hidden role="menu" aria-label="Administration">
@@ -80,13 +89,14 @@
         </div>
       </div>
       <div class="settingspick pick">
-        <button class="btn icon quiet" id="settingsBtn" type="button" aria-label="View settings" aria-expanded="false" aria-controls="settingsbox" title="View settings: colors and keyboard shortcuts"><i class="i i-gear" aria-hidden="true"></i></button>
+        <!-- The View menu: how this page draws the maps, its colors and its keys (V). -->
+        <button class="btn quiet viewbtn" id="settingsBtn" type="button" aria-label="View settings" aria-expanded="false" aria-controls="settingsbox" aria-keyshortcuts="V" title="View settings (V)"><i class="i i-more" aria-hidden="true"></i><span class="lbl">View</span></button>
         <div class="menu right" id="settingsbox" hidden role="dialog" aria-label="View settings">
           <div class="label">View</div>
           <div class="menu-field themepick"><label for="theme">Colors</label>
             <select id="theme">
               <option value="space">space</option>
-              <option value="midnight">midnight</option>
+              <option value="black">black</option><option value="midnight">midnight</option>
               <option value="graphite">graphite</option>
               <option value="plum">plum</option>
               <option value="forest">forest</option>
@@ -99,7 +109,28 @@
             <select id="textsize" aria-keyshortcuts="Alt+= Alt+- Alt+0"></select>
           </div>
           <div class="menu-field themepick" title="Or drag the side column's top bar across the page"><label for="sideat">Side column</label>
-            <select id="sideat"><option value="left">Left</option><option value="right">Right</option></select>
+            <select id="sideat"><option value="right">Right</option><option value="left">Left</option></select>
+          </div>
+          <div class="menu-field themepick" title="Out while agents work, pinned out, or pinned away (A)"><label for="agentsat">Agents window</label>
+            <select id="agentsat" aria-keyshortcuts="A"><option value="auto">While at work</option><option value="open">Pinned out</option><option value="hidden">Pinned away</option></select>
+          </div>
+          <div class="menu-field themepick" title="Keys only, near the pointer, or always out (M)"><label for="modebarat">Map bar</label>
+            <select id="modebarat" aria-keyshortcuts="M"><option value="auto">When the pointer rests there</option><option value="keys">Peeks at keys</option><option value="shown">Always out</option></select>
+          </div>
+          <div class="menu-field themepick" title="The 3D map's names: outward from its middle, or facing you (S)"><label for="signsat">Signs</label>
+            <select id="signsat" aria-keyshortcuts="S"><option value="outward">Outward</option><option value="facing">Facing</option></select>
+          </div>
+          <div class="menu-field themepick" title="How far the 3D map's view opens as its pane grows tall (L)"><label for="lensat">Lens</label>
+            <select id="lensat" aria-keyshortcuts="L"><option value="natural">Natural</option><option value="wide">Wide</option><option value="fisheye">Fisheye</option></select>
+          </div>
+          <div class="menu-field themepick" title="What the maps say of what the pointer is on: the name where it cannot be read, and a card of its details (I)"><label for="infoat">Info</label>
+            <select id="infoat" aria-keyshortcuts="I"><option value="name+summary">Name and card</option><option value="name">Name</option><option value="summary">Card</option><option value="off">Off</option></select>
+          </div>
+          <div class="menu-field themepick" title="Fly the 3D camera to each node selected, framed with its neighbours (Z)"><label for="nodezoomat">Node zoom</label>
+            <input id="nodezoomat" type="checkbox" role="switch" checked aria-keyshortcuts="Z">
+          </div>
+          <div class="menu-field themepick" title="Which joins the dots flow along: none, the selection's, all of them, or only what agents really do (D)"><label for="flowat">Flow</label>
+            <select id="flowat" aria-keyshortcuts="D"><option value="off">Off</option><option value="selected">The selection's</option><option value="all">All joins</option><option value="live">Agents' activity</option></select>
           </div>
           <div class="sep" role="separator"></div>
           <button id="viewAllSettingsBtn" type="button" aria-controls="settings" title="Every setting of this project's folder and its modules, and which modules are on, as metaform config shows them">All settings…</button>
@@ -109,6 +140,8 @@
     </div>
     <button class="btn icon quiet" id="moreBtn" type="button" aria-label="More controls" aria-expanded="false" title="More controls"><i class="i i-menu" aria-hidden="true"></i></button>
   </header>
+  <!-- The toolbar: one row of the tools modules declare, as the person arranged them; drawn from /api/workspace. -->
+  <nav id="toolbar" class="toolbar-row" role="toolbar" aria-label="Tools" hidden></nav>
 
   <aside>
     <div class="splitter side" id="sideSplit" role="separator" aria-orientation="vertical" aria-label="The side column's width"
@@ -157,6 +190,7 @@
     <div class="agents" id="agents" hidden aria-label="The agents deployed in this project">
       <div class="title">Agent deployed</div>
       <div class="list"></div>
+      <p class="none" hidden>No agent is at work.</p>
     </div>
     <div id="big3d">
     <div class="bar3d">
@@ -182,6 +216,7 @@
     </div>
   </main>
 </div>
+<div id="wsworkspaces" class="menu wsfloatmenu" hidden role="menu" aria-label="Workspaces"></div>
 <div class="toast" id="toast" hidden role="status" aria-live="polite"></div>
 <div id="menu" class="menu" hidden role="menu" aria-label="What can be done with this node"></div>
 <div id="float" class="window movable beside" hidden role="dialog" aria-label="Messages">
@@ -237,22 +272,30 @@
 <div id="dock" class="resting">
   <div id="dockTab" role="button" tabindex="0" aria-label="Open the chat with an agent"><span>Chat</span></div>
   <div id="helpdesk" hidden role="dialog" aria-label="Support chat">
-    <div class="head"><span class="avatar" aria-hidden="true">M</span><div class="who"><b>Metaform Support</b><small><span class="dot"></span> <span class="with">Online</span></small><small class="status" role="status">Online</small></div><button class="place" type="button" title="Dock the chat at the side of the page" aria-label="Dock the chat at the side of the page"><i class="i i-dock" aria-hidden="true"></i></button><button class="big" type="button" title="Make the chat large, and back" aria-label="Make the chat large"><i class="i i-expand" aria-hidden="true"></i></button><button class="min" type="button" title="Put the chat away" aria-label="Put the chat away"><i class="i i-minus" aria-hidden="true"></i></button></div>
+    <!-- The head: who the chat is with and one quiet status; dragged it moves the chat, double-clicked it goes back to
+         its corner at its first size. The menu holds what is used now and then: the agent's body, the size, the keys. -->
+    <div class="head" title="Drag to move; double-click to put it back in its corner"><span class="avatar" aria-hidden="true">M</span><div class="who"><b class="title">Metaform Support</b><small class="line"><span class="dot" aria-hidden="true"></span><span class="with">Online</span><span class="status" role="status" hidden></span></small></div><button class="more" type="button" title="More: the agent's body, size and place, keys" aria-label="More chat options" aria-haspopup="menu" aria-expanded="false" aria-controls="dockMenu"><i class="i i-menu" aria-hidden="true"></i></button><button class="place" type="button" title="Dock the chat at the side of the page" aria-label="Dock the chat at the side of the page"><i class="i i-dock" aria-hidden="true"></i></button><button class="big" type="button" title="Make the chat large, and back" aria-label="Make the chat large"><i class="i i-expand" aria-hidden="true"></i></button><button class="min" type="button" title="Put the chat away" aria-label="Put the chat away"><i class="i i-minus" aria-hidden="true"></i></button></div>
+    <div id="dockMenu" class="dockmenu" role="menu" aria-label="Chat options" hidden></div>
     <div class="tabs" role="tablist" aria-label="Open chats" hidden></div>
     <!-- The thread on view: where it comes from, its agent's glyph and task, and what can be done with it. -->
     <div class="threadbar" hidden><img class="icon" alt="" hidden><span class="source"></span><p class="task"></p><button class="locate btn sm quiet" type="button" hidden title="Select its part on the map, with its agent">Show on map</button><button class="again btn sm" type="button" hidden title="An agent that reads this thread first goes on with it">Continue</button><button class="stop btn sm danger" type="button" hidden title="Stop the agent, and end its session">Stop</button></div>
     <div class="sessionbar" hidden></div>
     <div class="planbox" hidden></div>
     <div class="proposals" aria-label="The sentinel's proposals" hidden></div>
-    <div class="log" aria-live="polite"></div>
+    <div class="log" role="log" aria-live="polite" aria-label="The conversation" tabindex="-1"></div>
+    <!-- Shown while the person reads further up and something new arrives below: a click, or Alt+End, goes to it. -->
+    <button class="latest" type="button" hidden title="Go to the newest message (Alt+End)"><i class="i i-chev" aria-hidden="true"></i><span>New messages</span></button>
     <div class="asked"></div>
     <div class="files"></div>
     <form class="compose">
-      <label class="clip" title="Attach a file: it is saved in the project and the agent is told where"><input type="file" multiple hidden>&#128206;</label>
-      <textarea class="say" rows="1" placeholder="Type a message, or / for commands&#8230;" aria-label="Your message"></textarea>
-      <button class="send" type="submit">Send</button>
+      <label class="clip" title="Attach a file: it is saved in the project and the agent is told where" aria-label="Attach a file"><input type="file" multiple hidden><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M20.5 11.5l-8.3 8.3a5 5 0 0 1-7.1-7.1l8.6-8.6a3.4 3.4 0 0 1 4.8 4.8l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></label>
+      <!-- Enter sends and Shift+Enter starts a new line; the arrow shows only on a touch screen, which has no Enter. -->
+      <textarea class="say" rows="1" placeholder="Message&#8230; (Enter to send)" aria-label="Your message, sent with Enter" aria-keyshortcuts="Enter"></textarea>
+      <button class="send" type="submit" aria-label="Send" title="Send (Enter)"><i class="i i-forward" aria-hidden="true"></i></button>
     </form>
-    <div class="calls"><button class="interrupt" type="button" disabled title="Interrupt the current turn and keep the conversation available">Interrupt</button><div class="summon"></div><label class="resume" title="Call and Chat go on with your last conversation about the same thing, so the agent keeps its memory of it; unchecked starts a new one"><input type="checkbox" checked> Resume</label><button class="call" type="button" title="Start a chat with your system agent; while one is on, Dismiss ends it">Call</button></div>
+    <!-- One quiet line under the box: Resume and Stay connected, then Interrupt while a turn runs, and Call or Dismiss.
+         The agent a call starts is chosen in the settings line at the top. -->
+    <div class="calls"><label class="resume" title="Call and Chat go on with your last conversation about the same thing, so the agent keeps its memory of it; unchecked starts a new one"><input type="checkbox" checked> Resume</label><label class="resume stay" title="Keep your system agent running for this project: it starts when the web GUI starts or this page opens, and comes back with its memory when it ends without your stop; Dismiss turns this off"><input type="checkbox"> Stay connected</label><span class="grow"></span><button class="interrupt" type="button" disabled hidden title="Interrupt the current turn and keep the conversation available (Ctrl+.)" aria-keyshortcuts="Control+.">Interrupt</button><button class="call" type="button" title="Start a chat with your system agent; while one is on, Dismiss ends it">Call</button></div>
   </div>
 </div>
 <div id="qa" class="window dialog wide" hidden role="dialog" aria-label="A question, read in full" aria-modal="true">
@@ -361,23 +404,9 @@
 <div id="help" class="window dialog wide" hidden role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
   <div class="bar"><span class="title">Keyboard shortcuts</span><button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button></div>
   <div class="body">
-    <div class="keys">
-      <section><h3>Anywhere</h3>
-        <dl><dt><kbd>/</kbd></dt><dd>Search the map</dd><dt><kbd>?</kbd></dt><dd>These shortcuts</dd><dt><kbd>Esc</kbd></dt><dd>Close the window or menu on top; with none open, let go of the selection, and with nothing selected, back out one level</dd></dl></section>
-      <section><h3>The maps</h3>
-        <dl><dt><kbd>↓</kbd></dt><dd>Deeper, to the provider drawn nearest below</dd><dt><kbd>↑</kbd></dt><dd>Back to the parent</dd>
-          <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Across the parent's nodes, then on to the next row</dd>
-          <dt><kbd>Enter</kbd></dt><dd>Inside the selected node</dd><dt><kbd>Shift</kbd> <kbd>Enter</kbd></dt><dd>Out one level</dd>
-          <dt>Click</dt><dd>Select; on the selected node, inside it; on empty space, let go of the selection</dd>
-          <dt><kbd>Shift</kbd> click</dt><dd>Out one level</dd></dl></section>
-      <section><h3>The 2D map's zoom</h3>
-        <dl><dt><kbd>4</kbd> <kbd>5</kbd> <kbd>6</kbd></dt><dd>Small, Medium, Large: the map's text at the page's smallest text, the panel's headings, twice those</dd>
-          <dt><kbd>7</kbd> <kbd>8</kbd></dt><dd>Height, Width: the map fitted one way; the wheel scrolls the other</dd>
-          <dt><kbd>9</kbd> <kbd>Home</kbd></dt><dd>All: the whole map</dd>
-          <dt><span class="ctrlclick"><kbd>Ctrl</kbd></span> click</dt><dd>All, from anywhere on the 2D map</dd>
-          <dt><kbd>0</kbd></dt><dd>Free: the wheel zooms</dd></dl></section>
-    </div>
-    <p class="hint">The keys reach the maps while no window is open over them and no text field has the focus.</p>
+    <!-- Drawn from the page's one key table, KEYS in app.js, which the keys run from too. -->
+    <input class="keyfind" type="search" placeholder="Find a key by what it does" aria-label="Find a key by what it does" autocomplete="off">
+    <div class="keys"></div>
   </div>
 </div>
 <div id="draw" aria-hidden="true"></div>

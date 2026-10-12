@@ -6,10 +6,19 @@
 // The graph, glass and figures share the import map's one local Three.js runtime, VIEW-003 and VIEW-025.
 import * as THREE from 'three';
 import ForceGraph3D from '3d-force-graph';
-import {createAgent, drawGlyph, releaseGlyph, orientAgent} from '/page/agents3d.js';
+import {createAgent, drawGlyph, releaseGlyph, orientAgent, motionOf, strokeOf, reserveGlyph, eyeOf, GLYPHS, MOTION} from '/page/agents3d.js';
 // drei's transmission material in its vanilla form, the glass itself, VIEW-025. It imports three.js as `three`, which
 // the page's import map names as the same file, so both share one three.js.
 import {MeshTransmissionMaterial} from '/vendor/drei-vanilla/MeshTransmissionMaterial.js';
+import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js';
+// the forces the 3D map's physics presets add, from the same library the graph runs, `applyPhysics`
+import {forceX, forceY, forceZ, forceRadial} from 'd3-force-3d';
+// The toolbar, the panes and their places, and the views the page draws only as panes.
+import {createWorkspace} from '/page/workspace.js';
+import {createViews} from '/page/views.js';
+import {voiceAudio} from '/page/voice.js';  // speech to text in the boxes a person writes to agents in, the voice module
+// Ultra graphics, web_graphics: the 3D map in outer space, drawn by its own module through the hooks marked ULTRA.
+import * as ULTRA from '/page/ultra.js';
 
 const $ = selector => document.querySelector(selector);
 const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -457,6 +466,12 @@ document.addEventListener('scroll', event => {
 /* The page in an AI tool's frame, the MCP Apps map view, MCP-037: it shows the maps and the panel only, so the agents,
  * their merges and autostart, which it does not show, are not read. */
 const FRAMED = document.documentElement.classList.contains('frame');
+// In a frame, the view's bar the host's code adds to the page, #viewbar, stands in the frame's header slot, #viewslot.
+if (FRAMED) {
+  const adopt = () => { const bar = document.getElementById('viewbar'); if (bar && bar.parentElement !== $('#viewslot')) $('#viewslot').append(bar); };
+  new MutationObserver(adopt).observe(document.body, {childList: true});
+  adopt();
+}
 const S = {
   projects: [], project: null, bases: [], base: null, layers: [], view: null,
   elements: new Map(), joins: [], items: new Map(), selected: null, neighbors: new Set(), trail: [], history: [], at: -1, loading: 0, opening: 0,
@@ -511,7 +526,8 @@ const ROOTS = ['upstream', 'downstream'];
 /* The side column's width and the split between its small map and its panes are dragged: each is
  * remembered by this browser, and a double-click puts it back. The maps follow the new size as they follow the window. */
 const SIZES = {side: ['metaform.sideWidth', '--side-width', 320, () => innerWidth - 320],  // never narrower than a phone
-  small: ['metaform.smallHeight', '--small-height', 120, () => $('aside').clientHeight - 140]};
+  // the small area never shorter than its bar and 160 px of map, so a selected name has room to be read in it
+  small: ['metaform.smallHeight', '--small-height', 200, () => $('aside').clientHeight - 140]};
 function sized(which, pixels) {
   const [key, name, least, most] = SIZES[which];
   const app = document.querySelector('.app');
@@ -535,20 +551,51 @@ function splitter(handle, which, measure) {
   try { kept = localStorage.getItem(SIZES[which][0]); } catch (error) { /* storage can be blocked */ }
   if (kept) sized(which, Number(kept));
 }
+/* The side column's splitter resizes it; dragged on past the middle of the window, away from the column's own side, it
+ * moves the column to that side, keeping the width it had when the drag began, as dragging its top bar does, and back
+ * again if the pointer returns. While held the splitter shows its grip, the cursor says resize, and past the middle,
+ * move. */
+const SIDE_DRAG = {width: 0, right: true};
+$('#sideSplit').addEventListener('pointerdown', () => {
+  SIDE_DRAG.width = $('aside').getBoundingClientRect().width;
+  SIDE_DRAG.right = document.querySelector('.app').classList.contains('side-right');
+  document.body.classList.add('sizing-side');
+  const end = () => {
+    document.body.classList.remove('sizing-side', 'moving-side-split');
+    $('#sideSplit').classList.remove('across');
+    for (const type of ['pointerup', 'pointercancel', 'blur']) removeEventListener(type, end);
+  };
+  for (const type of ['pointerup', 'pointercancel', 'blur']) addEventListener(type, end);
+}, true);
 splitter($('#sideSplit'), 'side', moved => {
+  const right = document.querySelector('.app').classList.contains('side-right');
+  const across = SIDE_DRAG.right ? moved.clientX < innerWidth / 2 : moved.clientX > innerWidth / 2;
+  $('#sideSplit').classList.toggle('across', across);
+  document.body.classList.toggle('moving-side-split', across);
+  const want = across ? !SIDE_DRAG.right : SIDE_DRAG.right;
+  if (want !== right) sideAt(want, true);
+  if (across) return SIDE_DRAG.width;
   const edge = $('aside').getBoundingClientRect();
-  return document.querySelector('.app').classList.contains('side-right') ? edge.right - moved.clientX : moved.clientX - edge.left;
+  return want ? edge.right - moved.clientX : moved.clientX - edge.left;
 });
 /* The side column goes on the left or the right of the page: its top bar, whichever map is in the small area, is
  * dragged across and the column follows the pointer to the half of the page it is in; a press that does not move is
  * an ordinary click. The View menu chooses the side too. The side is kept in this browser. */
 const SIDE_AT = 'metaform.sideAt';
-function sideAt(right) {
+function sideAt(right, ease = false) {
   const app = document.querySelector('.app');
   $('#sideat').value = right ? 'right' : 'left';
   if (app.classList.contains('side-right') === right) return;
+  // with `ease`, the column and the maps glide from where they stood to their new places, on the shared move curve
+  const moving = ease && !reduced() ? [$('aside'), $('main')].filter(Boolean) : [];
+  const before = moving.map(one => one.getBoundingClientRect().left);
   app.classList.toggle('side-right', right);
   try { localStorage.setItem(SIDE_AT, right ? 'right' : 'left'); } catch { /* storage can be blocked; it moves for now */ }
+  moving.forEach((one, index) => {
+    const by = before[index] - one.getBoundingClientRect().left;
+    if (by) one.animate([{transform: `translateX(${by}px)`}, {transform: 'translateX(0)'}],
+      {duration: durFor(Math.abs(by)), easing: `cubic-bezier(${EASE.move.join(',')})`});
+  });
   dispatchEvent(new Event('resize'));
 }
 $('aside').addEventListener('pointerdown', event => {
@@ -561,7 +608,7 @@ $('aside').addEventListener('pointerdown', event => {
     if (!moving && Math.abs(moved.clientX - from) < 6) return;
     moving = true;
     document.body.classList.add('moving-side');
-    sideAt(moved.clientX > innerWidth / 2);
+    sideAt(moved.clientX > innerWidth / 2, true);
   };
   // a drag ends however the pointer is let go: released, cancelled by the system, or the window losing focus
   const end = () => {
@@ -572,8 +619,9 @@ $('aside').addEventListener('pointerdown', event => {
   addEventListener('pointermove', move);
   for (const type of ['pointerup', 'pointercancel', 'blur']) addEventListener(type, end);
 });
-$('#sideat').onchange = event => sideAt(event.target.value === 'right');
-try { if (localStorage.getItem(SIDE_AT) === 'right') sideAt(true); } catch { /* storage can be blocked; it opens on the left */ }
+$('#sideat').onchange = event => sideAt(event.target.value === 'right', true);
+/* The reading column opens on the right, where the person reads without turning to the left; left only when chosen. */
+sideAt((() => { try { return localStorage.getItem(SIDE_AT) !== 'left'; } catch { return true; } })());
 splitter($('#smallSplit'), 'small', moved => moved.clientY - $('#small').getBoundingClientRect().top);
 const rootsOff = () => { try { return new Set(JSON.parse(localStorage.getItem('metaform.rootsOff') || '[]')); } catch { return new Set(); } };
 const rootOf = address => (address || '').split('.')[0];
@@ -642,7 +690,15 @@ overlay($('#layerlist'), {kind: 'popover', focus: () => $('#layerlist input:not(
 toggler($('#layersBtn'), $('#layerlist'));
 overlay($('#settingsbox'), {kind: 'popover', focus: '#theme'});
 toggler($('#settingsBtn'), $('#settingsbox'));
-$('#shortcutsBtn').onclick = () => { $('#settingsbox').hidden = true; $('#help').hidden = false; };
+/* Where the header ends, `--head-bottom`, kept as the header changes height, as when it folds: the configuration
+ * surfaces, the View panel and the settings screen, open at the window's right edge just below it, wherever the side
+ * column, the maps or the workspace's panes stand. */
+const headBottom = () => document.documentElement.style.setProperty('--head-bottom',
+  `${Math.round($('header').getBoundingClientRect().bottom)}px`);
+new ResizeObserver(headBottom).observe($('header'));
+addEventListener('resize', headBottom);
+headBottom();
+$('#shortcutsBtn').onclick = () => openHelp();
 overlay($('#help'), {kind: 'dialog', close: () => { $('#help').hidden = true; }});
 $('#help .close').onclick = () => { $('#help').hidden = true; };
 /* The page's text size, VIEW-023: chosen from the View menu's list or stepped with Alt and =, Alt and -, and Alt and 0
@@ -712,6 +768,16 @@ $('#stage').addEventListener('pointerleave', () => { $('#tip3d').hidden = true; 
  * this one among them, follows it by the push, VIEW-018. */
 /* The Administration menu, VIEW-019: acts on the project as a whole, reached on purpose; what reads first, then what
  * changes something, and what removes something last and in the danger color. */
+// The Window menu and its Workspaces submenu, drawn by the workspace, workspace.js; Left closes the submenu.
+overlay($('#windowbox'), {kind: 'menu'});
+toggler($('#windowBtn'), $('#windowbox'));
+overlay($('#wsworkspaces'), {kind: 'menu'});
+$('#wsworkspaces').addEventListener('keydown', event => {
+  if (event.key !== 'ArrowLeft') return;
+  event.preventDefault();
+  $('#wsworkspaces').hidden = true;
+  $('#workspacesBtn')?.focus();
+});
 function showAdmin(open) { $('#adminbox').hidden = !open; }
 overlay($('#adminbox'), {kind: 'menu'});
 toggler($('#adminBtn'), $('#adminbox'), async () => {
@@ -976,7 +1042,20 @@ const addressOf = id => {
   const join = id.startsWith('p:') ? joinOf(id) : null;
   return join ? join.receiver_address : S.elements.get(id)?.element.address;
 };
+/* What a view that hosts the page waits on, MCP Apps among them: `ready`, a promise kept once the first map is drawn,
+ * and `selectAddress`, which selects the node at an Address once it is, as `select` selects a node by its id. */
+const READY = {done: null};
+READY.promise = new Promise(resolve => { READY.done = () => { READY.done = null; resolve(true); }; });
 window.metaform = {graph: () => graphData(), selected: () => S.selected, select: id => select(id, true),
+  ready: READY.promise,
+  selectAddress: async address => {
+    await READY.promise;
+    const wanted = String(address || '').replace(/^metaform:\/\//, '').split('#')[0];
+    const found = [...S.elements.values()].find(entry => entry.element.address === wanted)?.element.id;
+    if (found) select(found, true);
+    return Boolean(found);
+  },
+  viewSlot: () => $('#viewslot'),
   find: address => [...S.elements.values()].find(entry => entry.element.address === address)?.element.id ?? null,
   click3d: id => clicked3d(G?.graphData().nodes.find(node => node.id === id)),
   drawn: () => G ? {nodes: G.graphData().nodes.length, links: G.graphData().links.length} : null,
@@ -990,7 +1069,15 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   // What the base 2D map draws, by address: its nodes and each edge, from, to and its arrow as Mermaid writes it, P063.
   drawn2d: () => { const at = id => S.elements.get(id)?.element.address; return M.base ? {nodes: [...M.base.nodes.keys()].map(at),
     edges: M.base.edges.map(edge => [...ends2d(edge.join, edge.provider).map(at), edge.join.ifd === 'both' ? '<-->' : '-->'])} : null; },
-  look: id => look(id), fit: () => setMode('all'), menu: id => menu(id), task: id => giveWork(id), element: id => addElement(id), note: id => notesAt(id),
+  look: id => look(id), fit: () => setMode('all'), mode2d: name => setMode(name), peek: () => peek(), embodyState: () => ({target: DOCK.target, session: DOCK.session, open: EMBODY.open, hooks: embodyHooks(), setting: VIEW.embody, turns: VIEW.embodyTurns}), fov3d: () => G ? Math.round(G.camera().fov * 10) / 10 : null, lens: () => LENS.name, agentsWindow: count => agentsWindow(count), physics: () => PHYS.name,
+  // the screen middles of the 3D map's join edges in view, and the edge a pointer at x, y would take
+  links3d: () => !G ? [] : G.graphData().links.filter(link => link.join && link.source.x !== undefined).map(link => {
+    const box = $('#stage').getBoundingClientRect(), mid = new THREE.Vector3((link.source.x + link.target.x) / 2,
+      (link.source.y + link.target.y) / 2, (link.source.z + link.target.z) / 2).project(G.camera());
+    return [box.left + (mid.x + 1) / 2 * box.width, box.top + (1 - mid.y) / 2 * box.height];
+  }).filter(([x, y]) => { const box = $('#stage').getBoundingClientRect(); return x > box.left + 30 && x < box.right - 30 && y > box.top + 60 && y < box.bottom - 30; }),
+  edgeAt: (x, y) => { const edge = edgeAt2d(x, y); return edge ? 'p:' + edge.join.id : null; },
+  linkAt3d: (x, y) => { const link = linkAt3d(x, y); return link ? purposeOf(link) : null; }, mode3d: (name, level) => setMode3d(name, level), menu: id => menu(id), task: id => giveWork(id), element: id => addElement(id), note: id => notesAt(id),
   // The memory network of a node, VIEW-031: opened as the menu's entry opens it, and what both views draw of it, or
   // null on the map.
   memories: id => memories(id),
@@ -1043,6 +1130,19 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
     .filter(name => name.startsWith('work-')),
   // The dots that travel the joins held still at a share of the way along each link, and where on the page each
   // link's dots are, so a browser check can read a picture of a dot passing through a node.
+  // What the flow draws this frame, `FLOW`: the 3D map's points and line ends, the agents' trips under way, and the
+  // shapes shown on the 2D map's selected edges; `live` draws one trip as the event stream would, `flowLive`.
+  flow: () => ({points: FX.n, lines: FX.m, live: FLOW.live.length, clock: FLOW.clock,
+    shapes2d: M.svg ? [...M.svg.querySelectorAll('g.flows2d > *')].filter(shape => shape.style.display !== 'none')
+      .map(shape => shape.getAttribute('class')) : []}),
+  flowLive: (kind, from, to, edit) => flowLive(kind, from, to, edit),
+  // which joins flow, web_flow_mode: read with no name, or changed for the page with one; and the modes offered
+  flowMode: name => flowMode(name),
+  get flowModes() { return FLOW_MODE_LIST.map(one => ({...one})); },
+  // each node's reach on the screen, `REACH`, in the 3D map or the 2D one: its centre, its box in 2D, and its reach
+  reaches: which => (which === '2d' ? (M.svg ? reaches2d() : []).map(one => ({id: one.key, x: one.x, y: one.y, reach: one.reach,
+    left: one.box.left, top: one.box.top, right: one.box.right, bottom: one.box.bottom}))
+    : (G ? reaches3d() : []).map(one => ({id: one.node.id, x: one.x, y: one.y, r: one.r, reach: one.reach}))),
   dots3d: along => {
     if (!G) return [];
     FLOW.held = along;
@@ -1067,14 +1167,37 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   showLabels3d: (on, only = null) => { LABELS.on = Boolean(on); LABELS.only = only ? new Set(only) : null;
     if (LABELS.group) LABELS.group.visible = LABELS.on; wake3d(); },
   hover3d: id => { const node = G?.graphData().nodes.find(item => item.id === id); hovered = node || null;
-    $('#tip3d').hidden = !hovered; if (hovered) { fill($('#tip3d'), tipFor(hovered)); placeTip(); } },
+    readout('3d', hovered ? readoutOf(hovered) : null); },
   figures2d: () => [...ROAM2D.figures.values()].map(figure => ({work_id: figure.id, glyph: figure.glyph, stage: figure.stage,
     target: figure.target, home: figure.home, x: figure.x, y: figure.y, size: figure.size, angle: figure.angle,
     shown: Boolean(figure.g.isConnected && M.svg && M.svg.contains(figure.g)), icon: figure.g.querySelector('image').getAttribute('href')})),
   figures: () => [...ROAM.figures.values()].map(figure => ({work_id: figure.id, glyph: figure.glyph, stage: figure.stage,
     target: figure.target, home: figure.home, x: figure.mesh.position.x, y: figure.mesh.position.y, z: figure.mesh.position.z,
     scale: figure.mesh.scale.x, angle: figure.angle, clock: figure.clock, px: onScreen(figure.mesh),
-    focused: ROAM.focus === figure.id})),
+    focused: ROAM.focus === figure.id, mood: figure.mood, act: figure.act?.kind || null, lane: figure.lane})),
+  // the person's mascot, `MASCOT`: its character, where it is in 3D and on the screen, and in 2D
+  mascot: () => ({glyph: mascotGlyph(), shown: Boolean(MASCOT.mesh), sleeping: MASCOT.sleeping,
+    driven: mascotDriven(), held: MASCOT.held?.reason ?? null, job: MASCOT.job?.kind || null, holding: MASCOT.holding?.id || null,
+    x: MASCOT.pos.x, y: MASCOT.pos.y, z: MASCOT.pos.z, px: MASCOT.mesh ? onScreen(MASCOT.mesh) : 0,
+    shown2d: Boolean(MASCOT2D.g?.isConnected), x2d: MASCOT2D.x, y2d: MASCOT2D.y, ...mascotScreen(),
+    bubble: BUBBLE.el?.classList.contains('on') ? BUBBLE.el.textContent : null,
+    cards: [...document.querySelectorAll('.mascot-card')].map(card => card.textContent), told: [...ATTN.seen]}),
+  // the voice's hooks into the mascot, `MASCOT`: what it says, shown in its bubble, and whether it is speaking now,
+  // which makes it talk in its own way; and a feeling or a walk as its system agent asks, as the event stream does
+  mascotSaid: text => say(String(text || '').slice(0, 280), Math.min(12, 3 + String(text || '').length / 18)),
+  mascotSpeaking: on => { MASCOT.speaking = Boolean(on); wake3d(); },
+  mascotEvent: payload => mascotEvent({project: S.project, ...payload}),
+  // a body for a conversation agent, `BODIES`: give one, list them, and the characters to choose among
+  embody: (workId, glyph) => embody(workId, glyph, 'person'), bodies: () => bodies(), characters: () => characters(),
+  // the large 3D view through the mascot's eyes and back, E; the eye anchors and gazes drawn, for a check of look
+  mascotEyes: on => mascotEyes(on), eyeDebug: on => { EYE.debug = Boolean(on); wake3d(); return EYE.debug; },
+  // the keys the mascot and the flow add, for the page's list of keys
+  mascotKeys: [{key: 'E', label: "Mascot's eyes", help: "See the 3D map through the mascot's eyes, and back"},
+    {key: 'X', label: 'Scissors', help: 'Cut an edge with a click; the mascot mends it. Escape puts it back'}],
+  // the scissors, `CUT`: on or off, and a cut of the join edge between two nodes, as a click on it with them out
+  scissors: on => cutMode(on), cut: (source, target) => cutLink(G?.graphData().links.find(link =>
+    endOf(link.source) === source && endOf(link.target) === target)),
+  cutStage: () => CUT.job?.stage || (CUT.saved ? 'restoring' : null),
   // the figure under a point of the screen, as a click there finds it
   figureAt: (x, y) => figureAt(x, y),
   at3d: id => { const node = G ? G.graphData().nodes.find(item => item.id === id) : null;
@@ -1139,10 +1262,14 @@ const CONDITIONS = ['missing', 'unbuilt', 'under-construction', 'broken', 'troub
  * not built, shows how far along the work is. A figure is big enough to see what it is with the whole map in view:
  * its size is a share of the drawn map's span, and never less than ROAM.size. A ticket that was finished before its
  * figure got there is still touched, and then the figure walks back. A figure is one of the seventeen characters of
- * agents3d.js, drawn so that no two at work look alike. It moves as a body does: along a smooth curve through the
- * nodes of its way, setting off and arriving gently and slowing into sharp turns, facing the way it goes and, if it
- * flies or swims, leaning into its turns; it swings out onto its orbit carrying on the way it came, and leaves it from
- * where it is. With reduced motion it stands at the node. */
+ * agents3d.js, drawn so that no two at work look alike, or the one the person chose for its agent's type,
+ * web_agent_glyphs. It moves as its body would, its character's motion profile, `MOTION` in agents3d.js, varied a
+ * little by its ticket so two of one character still differ: its own pace and acceleration, how it takes a corner,
+ * its gait (a fish's bursts and glides, a hopper's arcs, a walker's steps in time with the ground it covers), its
+ * orbit, lap and way round, how it comes and goes, and its temper, from serious to mischievous. Along a smooth curve
+ * through the nodes of its way it sets off and arrives gently and slows into sharp turns, facing the way it goes and,
+ * if it flies or swims, leaning into its turns. On its node it does what its session is doing, `onNode`. With reduced
+ * motion it stands at the node. */
 const ROAM = {figures: new Map(), seen: new Set(), last: 0, speed: 70, size: 2.6, share: 0.11, orbit: 1.5, lap: 12,
   recent: 120, appear: 0.8, touch: 0.9, vanish: 0.6,
   // how it moves along its way: units a second it speeds up and slows down by, and how much of its speed a turn
@@ -1150,7 +1277,9 @@ const ROAM = {figures: new Map(), seen: new Set(), last: 0, speed: 70, size: 2.6
   // fast the size it is drawn at follows the map's span, so a layout that spreads never makes it jump
   accel: 70, corner: 0.6, settle: 1.1, grow: 10, drawn: 0, sized: 0,
   // the work whose thread the person chose in the chat dock: its figure is drawn this much larger, moving as if busy
-  focus: null, focused: 1.4};
+  focus: null, focused: 1.4,
+  // the most pixels a figure stands on the screen, however near the camera is
+  most: 110};
 const nodeById = (data, id) => data.nodes.find(node => node.id === id);
 const primaryOf = data => data.nodes.find(node => node.t === 'el' && node.role === 'DE') || data.nodes.find(node => node.t === 'el');
 const ticketNode = ticket => ticket.node_kind === 'join' ? 'p:' + ticket.node_id : ticket.node_id;
@@ -1180,31 +1309,188 @@ function routeOf(data, from, to) {  // the fewest edges of the drawn map from on
 /* The figures, VIEW-035: one for each ticket an agent is working in a live session, the agents key's own list, so an
  * agent that is not active is not on the map, whatever its ticket says; when its session ends the figure walks back
  * and is gone. */
-const liveWork = () => new Set(D.sessions.filter(one => one.activity === 'working')
-  .map(one => one.work_id));
+const liveWork = () => new Set(D.sessions.filter(one => one.state === 'running'
+  && (one.activity === 'working' || one.activity === 'waiting')).map(one => one.work_id));
 function figures(tickets) {
   figures2d(tickets);
+  flowTickets(tickets);  // a work record written lands on its node as a record, `FLOW`
   if (!G) return;
   const data = G.graphData(), home = primaryOf(data);
   if (!home) return;
   const live = liveWork();
   for (const ticket of tickets) {
-    const figure = ROAM.figures.get(ticket.id), target = ticketNode(ticket);
-    if (figure) { figure.done = Boolean(ticket.done) || !live.has(ticket.id); continue; }
-    const working = live.has(ticket.id) && !ticket.done;
-    if (working && !ROAM.seen.has(ticket.id) && nodeById(data, target)) {
-      const glyph = drawGlyph(ticket.id, ownGlyph(ticket)), mesh = createAgent(glyph);
+    const figure = ROAM.figures.get(ticket.id), target = ticket.held ? talkTarget(ticket, data) : ticketNode(ticket);
+    const working = drawnWorking(ticket, live);
+    if (figure) {
+      figure.done = !working;
+      reglyph(figure);
+      continue;
+    }
+    if (working && (!ROAM.seen.has(ticket.id) || ticket.held) && nodeById(data, target)) {
+      const glyph = glyphFor(ticket.id), mesh = createAgent(glyph), motion = motionOf(glyph, ticket.id);
+      mesh.userData.motion = motion;
       mesh.scale.setScalar(0.001);
       G.scene().add(mesh);
       ROAM.seen.add(ticket.id);
-      ROAM.figures.set(ticket.id, {id: ticket.id, glyph, mesh, home: home.id, target, stage: 'arriving',
-        way: routeOf(data, home.id, target).map(id => ({id})), u: 0, speed: 0, clock: 0, angle: Math.random() * Math.PI * 2,
-        points: [], curve: new THREE.CatmullRomCurve3([], false, 'centripetal'), from: new THREE.Vector3(),
-        heading: new THREE.Vector3(0, 0, 1), done: Boolean(ticket.done)});
+      flowLive('start', home.id, [target]);  // the session's request goes ahead of the figure, `FLOW`
+      ROAM.figures.set(ticket.id, {id: ticket.id, glyph, mesh, motion, home: home.id, target, stage: 'arriving',
+        way: routeOf(data, home.id, target).map(id => ({id})), u: 0, speed: 0, clock: 0,
+        angle: motion.phase * Math.PI * 2, points: [], curve: new THREE.CatmullRomCurve3([], false, 'centripetal'),
+        from: new THREE.Vector3(), heading: new THREE.Vector3(0, 0, 1), done: Boolean(ticket.done),
+        stride: 0, steps: 0, pos: new THREE.Vector3(), vel: new THREE.Vector3(), mood: 'working', act: null,
+        nextAct: 4 + motion.phase * 6, reach: null, glance: null, nextGlance: 0, lane: 0, talk: Boolean(ticket.held)});
     }
   }
   for (const [id, figure] of ROAM.figures) if (!tickets.some(ticket => ticket.id === id)) figure.done = true;
   wake3d();
+}
+/* A body for a conversation agent, VIEW-005: the person's system agent, from Call, or an agent the person chats with
+ * about a node or a ticket. Unembodied, it is drawn as it always was: no figure while the person has a mascot, else a
+ * plain one while it works. Given a body, `embody`, by the person from the chat dock's offer or by the agent itself
+ * with web_embody, it walks out from the map's primary node in that character, with its motion and its temper: the
+ * system agent to what the person has selected, or beside the mascot, and an agent chatting about something to it.
+ * It sees from its own eyes, `seer`, and speaks in its own bubble. The system agent given the mascot's character is
+ * the mascot. A body is kept for the conversation, by its ticket, so a resumed conversation comes back in the same
+ * body; the person's choice stands over the agent's, and no two figures at work share a character. */
+const SYSTEM_TALK = 'Conversation with the system agent';  // the system agent's ticket, dispatch's SYSTEM_TASK
+const BODIES = {chosen: (() => { try { return JSON.parse(localStorage.getItem('metaform.bodies') || '{}'); } catch { return {}; } })()};
+const bodyKey = work => `${S.project}|${work}`;
+// a body is the conversation's it was given in: that session, and the same session resumed; a new conversation has none
+function bodyOf(work) {
+  const held = BODIES.chosen[bodyKey(work)];
+  if (!held?.glyph) return null;
+  const live = held.session ? D.sessions.filter(one => one.work_id === work && one.state === 'running').at(-1) : null;
+  return !live || live.session_id === held.session ? held.glyph : null;
+}
+const isSystemTalk = ticket => Boolean(ticket?.held && ticket.task === SYSTEM_TALK);
+const talking = ticket => D.sessions.some(one => one.work_id === ticket.id && one.state === 'running');
+/* Whether a ticket's agent is drawn as a figure now. */
+function drawnWorking(ticket, live = liveWork()) {
+  if (ticket.done) return false;
+  if (!ticket.held) return live.has(ticket.id);
+  if (isSystemTalk(ticket)) return false;  // the system agent is drawn only as the mascot, once it has a body
+  const body = bodyOf(ticket.id);
+  if (body) return talking(ticket);
+  return live.has(ticket.id) && !mascotGlyph();
+}
+/* Where an embodied conversation agent goes: the system agent to the selection, or beside the mascot; another to what
+ * it talks about. */
+function talkTarget(ticket, data) {
+  if (!isSystemTalk(ticket)) return ticketNode(ticket);
+  if (S.selected && nodeById(data, S.selected)) return S.selected;
+  if (MASCOT.mesh) {
+    let best = null, nearest = Infinity;
+    for (const node of data.nodes) {
+      if (node.t !== 'el' || node.x === undefined) continue;
+      const away = MASCOT.pos.distanceTo(AT.set(node.x, node.y, node.z));
+      if (away < nearest) { nearest = away; best = node.id; }
+    }
+    if (best) return best;
+  }
+  return ticketNode(ticket);
+}
+/* An embodied conversation figure follows what it is about: it walks on to a new selection, along the map's edges. */
+function retarget(figure, data) {
+  if (!figure.talk || figure.stage !== 'circling' || figure.done) return;
+  const ticket = ticketOf(figure.id), wanted = ticket && talkTarget(ticket, data);
+  if (!wanted || wanted === figure.target || !nodeById(data, wanted)) return;
+  const way = routeOf(data, figure.target, wanted);
+  Object.assign(figure, {target: wanted, stage: 'going', u: 0, clock: 0,
+    way: [{point: figure.mesh.position.clone()}, ...(way.length > 1 ? way.slice(1) : [wanted]).map(id => ({id}))]});
+}
+/* Give a conversation agent a body: `by` the person, whose choice stands, or the agent, `web_embody`. */
+function embody(work, glyph, by = 'person') {
+  const ticket = ticketOf(work), key = bodyKey(work), held = BODIES.chosen[key];
+  if (!GLYPHS.includes(glyph)) return {error: `${glyph} is not a character.`};
+  if (!ticket) return {error: 'There is no such conversation on this page.'};
+  if (by === 'agent' && held?.by === 'person' && held.glyph !== glyph) return {error: `The person gave you the ${held.glyph}; it stays.`};
+  // the system agent's body is the mascot; the mascot's character is no other agent's while it is drawn
+  const mascot = isSystemTalk(ticket);
+  if (glyph === mascotGlyph() && !mascot) return {error: `The ${glyph} is the person's mascot.`};
+  const other = [...ROAM.figures.values()].find(figure => figure.id !== work && figure.glyph === glyph && figure.stage !== 'leaving');
+  if (other) return {error: `The ${glyph} is at work already on this map.`};
+  // kept with the session it was given in, so the same conversation resumed comes back in it and a new one is asked
+  const live = D.sessions.filter(one => one.work_id === work && one.state === 'running').at(-1);
+  BODIES.chosen[key] = {glyph, by, session: live?.session_id || null};
+  try { localStorage.setItem('metaform.bodies', JSON.stringify(BODIES.chosen)); } catch { /* kept for this page only */ }
+  releaseGlyph(work);
+  const figure = ROAM.figures.get(work);
+  if (figure) { if (mascot) figure.done = true; else reglyph(figure); }
+  figures(S.tickets || []);
+  // the mascot walks out from the map's primary node and greets the person
+  say(by === 'agent' ? 'A body of my own. Thank you.' : 'Here I am.', 3, null, mascot ? null : work, mascot ? glyph : '');
+  wake3d(3000);
+  if (typeof wake2d === 'function') wake2d();
+  return {character: glyph, mascot, figure: !mascot};
+}
+/* Each conversation agent and its body, for the chat dock's offer. */
+function bodies() {
+  return (S.tickets || []).filter(ticket => ticket.held && talking(ticket)).map(ticket => ({work: ticket.id,
+    system: isSystemTalk(ticket), character: bodyOf(ticket.id), by: bodyOf(ticket.id) ? BODIES.chosen[bodyKey(ticket.id)]?.by || null : null,
+    drawn: isSystemTalk(ticket) ? Boolean(MASCOT.mesh) && Boolean(bodyOf(ticket.id)) : ROAM.figures.has(ticket.id),
+    mascot: isSystemTalk(ticket) && Boolean(bodyOf(ticket.id))}));
+}
+/* The characters a body can be, for the picker: each with its name, its temper and a word for it, how it moves, whether
+ * it is free now, and `preview(canvas)`, which draws it moving in its own way on a small canvas until the function it
+ * returns is called; with reduced motion it stands still. */
+const TEMPERS = [[0.2, 'serious'], [0.45, 'steady'], [0.7, 'playful'], [1.01, 'mischievous']];
+function characters() {
+  const busy = new Set([...ROAM.figures.values()].map(figure => figure.glyph));
+  return GLYPHS.map(name => ({name, temper: MOTION[name].temper, temperament: TEMPERS.find(([most]) => MOTION[name].temper < most)[1],
+    moves: MOTION[name].go, free: !busy.has(name) && name !== mascotGlyph(), mascot: name === mascotGlyph(),
+    preferred: name === preferredGlyph(),  // web_mascot: the person's own character, suggested first
+    preview: canvas => previewOf(canvas, name)}));
+}
+function previewOf(canvas, name) {
+  const pen = canvas.getContext('2d'), image = new Image(), motion = {...MOTION[name], phase: 0};
+  image.src = `/page/agent-glyphs/${name}.svg`;
+  let id = 0, stride = 0, last = performance.now(), landed = 9, was = 0;
+  const draw = now => {
+    const passed = Math.min(0.1, (now - last) / 1000), w = canvas.width, h = canvas.height, size = Math.min(w, h) * 0.7;
+    last = now;
+    stride += reduced() ? 0 : passed * motion.speed * 1.4;
+    const stroke = strokeOf(motion, stride);
+    if (was < 0.75 && stroke.phase >= 0.75) landed = 0;
+    landed += passed; was = stroke.phase;
+    let lift = 0, squash = 0, lean = 0;
+    if (motion.go === 'hop') {
+      lift = stroke.air * motion.lift * 0.5;
+      squash = (stroke.phase >= 0.75 ? Math.sin((stroke.phase - 0.75) / 0.25 * Math.PI) * 0.2 : 0) + Math.exp(-landed * 14) * 0.12;
+    } else if (motion.go === 'walk' || motion.go === 'creep') lift = Math.abs(Math.sin(stroke.phase * Math.PI * 2)) * 0.05;
+    else if (motion.go === 'swim' || motion.go === 'pulse') lean = Math.sin(stroke.phase * Math.PI * 2) * 0.12 * stroke.thrust;
+    else lift = Math.sin(now / 1000 * 2.2) * 0.04;
+    pen.clearRect(0, 0, w, h);
+    if (image.complete && image.naturalWidth) {
+      pen.save();
+      pen.translate(w / 2, h * 0.9 - lift * h);
+      pen.rotate(lean);
+      pen.scale(1 + squash * 0.6, 1 - squash);
+      pen.drawImage(image, -size / 2, -size, size, size);
+      pen.restore();
+    }
+    if (!reduced()) id = requestAnimationFrame(draw);
+  };
+  image.onload = () => { cancelAnimationFrame(id); id = requestAnimationFrame(draw); };
+  id = requestAnimationFrame(draw);
+  return () => cancelAnimationFrame(id);
+}
+/* A figure drawn before the page knew its agent's type takes the character chosen for the type, web_agent_glyphs,
+ * where it stands, in both maps. */
+function reglyph(figure) {
+  const glyph = glyphFor(figure.id);
+  if (glyph === figure.glyph) return;
+  const mesh = createAgent(glyph), motion = motionOf(glyph, figure.id);
+  mesh.userData.motion = motion;
+  mesh.position.copy(figure.mesh.position); mesh.quaternion.copy(figure.mesh.quaternion); mesh.scale.copy(figure.mesh.scale);
+  G.scene().remove(figure.mesh);
+  G.scene().add(mesh);
+  Object.assign(figure, {glyph, mesh, motion});
+  const flat = ROAM2D.figures.get(figure.id);
+  if (flat) {
+    Object.assign(flat, {glyph, motion: motionOf(glyph, figure.id)});
+    flat.g.dataset.glyph = glyph;
+    flat.g.querySelector('image')?.setAttribute('href', `/page/agent-glyphs/${glyph}.svg`);
+  }
 }
 /* The places a figure's way passes: each node a little above its center, or the point where the figure left its orbit.
  * Read again each frame, so a figure on its way moves with the map as the layout moves it. False while a node of the
@@ -1228,19 +1514,28 @@ function placed(figure, data, lift) {
  * turns at once. Its place on the way is its leg and how far along that leg it is, so it keeps to the edge it is on
  * while the layout moves the nodes. Says whether it has arrived. */
 const HEAD = new THREE.Vector3(), NEXT = new THREE.Vector3();
-function walk(figure, passed) {
-  const points = figure.points, legs = points.length - 1, lengths = [];
+// How each way of taking a corner slows a figure into it, and how quickly it turns to face its way, `MOTION`
+const CORNERS = {bank: {slow: 0.35, turn: 0.16}, pivot: {slow: 0.9, turn: 0.45}, drift: {slow: 0.25, turn: 0.08},
+  flit: {slow: 0.5, turn: 0.3}, bend: {slow: 0.45, turn: 0.14}, hop: {slow: 0.6, turn: 0.35}};
+function walk(figure, passed, size = ROAM.size) {
+  const points = figure.points, legs = points.length - 1, lengths = [], motion = figure.motion;
+  const top = ROAM.speed * (motion?.speed ?? 1), accel = ROAM.accel * (motion?.accel ?? 1);
+  const corner = CORNERS[motion?.corner]?.slow ?? ROAM.corner;
   let total = 0;
   for (let k = 0; k < legs; k++) { lengths.push(Math.max(1e-3, points[k].distanceTo(points[k + 1]))); total += lengths[k]; }
   const leg = Math.min(legs - 1, Math.floor(figure.u));
   let done = (figure.u - leg) * lengths[leg];
   for (let k = 0; k < leg; k++) done += lengths[k];
-  const least = ROAM.speed * 0.12, reach = (limit, away) => Math.sqrt(limit * limit + 2 * ROAM.accel * Math.max(0, away));
-  let speed = Math.min(ROAM.speed, reach(least, done), reach(least, total - done));
+  const least = top * 0.12, reach = (limit, away) => Math.sqrt(limit * limit + 2 * accel * Math.max(0, away));
+  let speed = Math.min(top, reach(least, done), reach(least, total - done));
   for (let k = 1, at = lengths[0]; k < legs; at += lengths[k], k++) {
     const turn = HEAD.subVectors(points[k], points[k - 1]).normalize().dot(NEXT.subVectors(points[k + 1], points[k]).normalize());
-    speed = Math.min(speed, reach(ROAM.speed * (1 - ROAM.corner * (1 - turn) / 2), Math.abs(at - done)));
+    speed = Math.min(speed, reach(top * (1 - corner * (1 - turn) / 2), Math.abs(at - done)));
   }
+  // a swimmer surges on each push and glides between, a hopper covers ground in the air, `strokeOf`
+  if (motion) speed *= strokeOf(motion, figure.stride || 0).pace;
+  figure.top = top;
+  figure.stride = (figure.stride || 0) + speed * passed / size;
   let step = speed * passed;
   while (step > 0 && figure.u < legs) {
     const now = Math.min(legs - 1, Math.floor(figure.u)), room = (now + 1 - figure.u) * lengths[now];
@@ -1256,21 +1551,238 @@ function onOrbit(figure, target) {
   const across = Math.hypot(figure.heading.x, figure.heading.z);
   if (across > 1e-3) figure.angle = Math.atan2(-figure.heading.x / across, figure.heading.z / across);
 }
-const AHEAD = new THREE.Vector3(), ORBIT = new THREE.Vector3();
+const AHEAD = new THREE.Vector3(), ORBIT = new THREE.Vector3(), WANT = new THREE.Vector3(), PULL = new THREE.Vector3();
+const TOWARD = new THREE.Vector3(), SPOT = new THREE.Vector3();
 const easeBoth = k => k * k * (3 - 2 * k);  // from rest to rest
+/* How each figure behaves on its node, VIEW-035, in its character's way, `MOTION` in agents3d.js. Where it means to be
+ * is worked out each frame and it follows that place on a critically damped spring, `springTo`, so every move eases in
+ * and out and any of them can be turned aside at once; how stiffly it follows is its character's, `STIFF`: a comet
+ * snaps, a wisp drifts. What it does there comes from its session, `moodOf`:
+ *  - working: it circles in its own orbit, lap and direction, and every so often does something with the node in its
+ *    own way, its `act`: perches on top, pokes it, nudges it so the node sways, peeks in close;
+ *  - a tool call, told by the event stream, `figureReached`: a quick, purposeful move toward the part touched, a lean and a
+ *    reach, and back; on its own node, a poke;
+ *  - waiting for the person: it settles beside the node and turns toward the chat dock, idling patiently;
+ *  - a spinning or stuck signal: restless, uneven circling, kept calm;
+ *  - done: a small flourish of its own before it walks home.
+ * Two figures on one node take lanes apart, notice each other with a glance and a pause, and make room. Figures leave
+ * a faint trail on the way, footprints, ripples or hop marks, that fades within seconds, `MARKS`. */
+const STIFF = {dart: 40, roll: 30, walk: 26, hover: 24, flutter: 30, flap: 20, glide: 14, float: 10, pulse: 12, swim: 14,
+  creep: 18, hop: 22};
+const RESTLESS = ['spinning-calls', 'spinning-time', 'repeated-failure', 'drift'];
+const ACTS = {perch: 4.5, peek: 3, poke: 1.6, nudge: 2.2, circle: 0};  // how long each act lasts, in seconds
+// The wait before a figure's next act with its node, by its temper: a serious one keeps to its task and plays now and
+// then, about every 25 seconds; a mischievous one about every 6.
+const actGap = (motion, clock) => (6 + 20 * (1 - (motion.temper ?? 0.5))) * (0.6 + 0.8 * ((motion.phase * 7.13 + clock * 0.37) % 1));
+function moodOf(workId) {
+  const session = D.sessions.filter(one => one.work_id === workId && one.state === 'running').at(-1);
+  if (!session) return 'working';
+  if ((D.signals || []).some(one => one.session_id === session.session_id && one.active !== false
+    && RESTLESS.includes(one.signal))) return 'restless';
+  return session.activity === 'waiting' ? 'waiting' : 'working';
+}
+// the person chose a character for an agent's type, web_agent_glyphs: entries such as claude=owl
+function typeGlyph(workId) {
+  const agent = String(D.sessions.filter(one => one.work_id === workId).at(-1)?.agent || '');
+  if (!agent) return null;
+  for (const entry of (WS.view().agent_glyphs || []).flatMap(one => String(one).split(/[,\s]+/))) {
+    const [type, glyph] = String(entry).split('=').map(part => part.trim());
+    if (type && glyph && (agent === type || agent.startsWith(type + '-'))) return glyph;
+  }
+  return null;
+}
+/* A tool call of a running agent reached these nodes, `flowEvent`: its figure reaches toward the first. */
+function figureReached(workId, to) {
+  const figure = ROAM.figures.get(workId), figure2d = ROAM2D.figures.get(workId);
+  if (figure && to) figure.reach = {to, at: figure.clock};
+  if (figure2d && to) figure2d.reach = {to, at: figure2d.clock};
+}
+function springTo(figure, want, passed, stiff) {  // a critically damped spring toward where it means to be
+  const damp = 2 * Math.sqrt(stiff);
+  PULL.subVectors(want, figure.pos).multiplyScalar(stiff).addScaledVector(figure.vel, -damp);
+  figure.vel.addScaledVector(PULL, passed);
+  figure.pos.addScaledVector(figure.vel, passed);
+}
+/* A node a figure pokes or nudges sways a little and settles; only the drawn object turns, the layout is untouched. */
+const SWAYS = new Map();
+function nudgeNode(node, k) {
+  const object = node?.__threeObj;
+  if (!object || reduced()) return;
+  const held = SWAYS.get(node.id);
+  SWAYS.set(node.id, {node, k, at: performance.now() / 1000, base: held?.base || {x: object.rotation.x, z: object.rotation.z}});
+}
+function sway3d() {
+  const now = performance.now() / 1000;
+  for (const [id, one] of SWAYS) {
+    const object = one.node.__threeObj, t = now - one.at;
+    if (!object) { SWAYS.delete(id); continue; }
+    if (t > 2.6) { object.rotation.x = one.base.x; object.rotation.z = one.base.z; SWAYS.delete(id); continue; }
+    const swing = one.k * Math.exp(-t * 2.2) * Math.sin(t * 9);
+    object.rotation.z = one.base.z + swing;
+    object.rotation.x = one.base.x + swing * 0.4;
+  }
+}
+/* The trail a figure leaves: a mark where each step, push or hop lands, faint and gone within seconds, drawn with the
+ * flow, `fxMarks`. Fliers leave none. */
+const MARKS = [];
+function markTrail(figure, size) {
+  const m = figure.motion, steps = Math.floor((figure.stride || 0) / Math.max(0.05, m.stride));
+  if (steps === figure.steps) return;
+  figure.steps = steps;
+  const kind = m.go === 'walk' || m.go === 'creep' || m.go === 'roll' ? 'step' : m.go === 'swim' || m.go === 'pulse' ? 'ripple'
+    : m.go === 'hop' ? 'hop' : null;
+  if (!kind) return;
+  const p = figure.mesh.position, side = steps % 2 ? 1 : -1;
+  AHEAD.set(-figure.heading.z, 0, figure.heading.x).normalize().multiplyScalar(kind === 'step' ? side * size * 0.18 : 0);
+  MARKS.push({x: p.x + AHEAD.x, y: p.y - size * 0.55, z: p.z + AHEAD.z, kind, size, at: FLOW.clock});
+  if (MARKS.length > 90) MARKS.shift();
+}
+function fxMarks(color) {
+  while (MARKS.length && FLOW.clock - MARKS[0].at > 2.6) MARKS.shift();
+  for (const one of MARKS) {
+    const u = (FLOW.clock - one.at) / 2.6, fade = Math.pow(1 - u, 2) * 0.4;
+    if (one.kind === 'step') fxDot(one, one.size * 0.22, color, fade, 0, 2, 5);
+    else fxDot(one, one.size * (one.kind === 'hop' ? 0.5 + 0.4 * u : 0.4 + 1.1 * u), color, fade, 2, 4, 40);
+  }
+}
+/* Where the chat dock is, as a point in the scene at the depth of `near`, so a figure waiting on the person faces it. */
+const DOCKAT = new THREE.Vector3();
+function dockPoint(near) {
+  const area = G.renderer().domElement.getBoundingClientRect(), dock = $('#helpdesk');
+  const box = dock && !dock.hidden ? dock.getBoundingClientRect() : null;
+  const x = box && box.width ? box.left + box.width / 2 : area.right - 40, y = box && box.height ? box.top + box.height / 2 : area.bottom - 20;
+  DOCKAT.set(near.x, near.y, near.z).project(G.camera());
+  DOCKAT.x = (x - area.left) / area.width * 2 - 1;
+  DOCKAT.y = -(y - area.top) / area.height * 2 + 1;
+  return DOCKAT.unproject(G.camera());
+}
+/* Where a figure means to be on its node this frame, and what it looks at, if anything but the way it goes. */
+function onNode(figure, target, size, data) {
+  const m = figure.motion, ball = ballOf(target), c = figure.clock;
+  // the angle always grows at its lap's pace; which way round it goes is its character's, `dir`
+  let rate = 2 * Math.PI / m.lap, reach = ball + size * (m.orbit + figure.lane * 0.8);
+  if (figure.mood === 'restless') {  // uneven, never frantic
+    rate *= 1 + 0.55 * Math.sin(c * 1.7) * Math.sin(c * 0.63 + 1);
+    reach *= 1 + 0.12 * Math.sin(c * 1.1);
+  }
+  if (figure.glance && c < figure.glance.until) rate *= 0.15;
+  if (figure.mood === 'waiting') rate = 0;
+  figure.angle += rate * figure.passed;
+  const turn = m.dir * figure.angle + figure.lane * Math.PI;
+  WANT.set(target.x + Math.cos(turn) * reach, target.y + Math.sin(turn * 2) * reach * 0.18 + size * 0.3,
+    target.z + Math.sin(turn) * reach);
+  let face = null;
+  if (figure.mood === 'waiting') {  // beside its node, toward the chat dock, patient
+    const dock = dockPoint(target);
+    TOWARD.subVectors(dock, AT.set(target.x, target.y, target.z)).normalize();
+    WANT.set(target.x, target.y + size * 0.2, target.z).addScaledVector(TOWARD, ball + size * (1.1 + figure.lane * 0.8));
+    face = SPOT.copy(dock);
+  }
+  // now and then while it works, something of its own with the node
+  if (figure.mood === 'working' && !figure.act && c > figure.nextAct && ACTS[m.act])
+    figure.act = {kind: m.act, at: c, long: ACTS[m.act], hit: false};
+  const act = figure.act;
+  if (act) {
+    const u = (c - act.at) / act.long;
+    if (u >= 1 || figure.mood !== 'working') {
+      figure.act = null;
+      figure.nextAct = c + actGap(m, c);
+    } else {
+      const k = Math.sin(Math.PI * u), center = AT.set(target.x, target.y, target.z);
+      TOWARD.subVectors(WANT, center).normalize();
+      if (act.kind === 'perch') {  // it settles on top and looks about
+        WANT.lerp(SPOT.set(target.x, target.y + ball + size * 0.42, target.z), easeBoth(Math.min(1, k * 1.6)));
+      } else if (act.kind === 'peek') {  // in close at its side, looking in
+        WANT.lerp(SPOT.copy(center).addScaledVector(TOWARD, ball + size * 0.6), easeBoth(Math.min(1, k * 1.5)));
+        face = AT.set(target.x, target.y, target.z);
+      } else {  // a poke darts in to touch it; a nudge leans in and pushes, and the node sways
+        WANT.lerp(SPOT.copy(center).addScaledVector(TOWARD, ball + size * 0.35), k * k);
+        face = AT.set(target.x, target.y, target.z);
+        if (!act.hit && u > 0.45) { act.hit = true; nudgeNode(target, act.kind === 'nudge' ? 0.14 : 0.07); }
+      }
+    }
+  }
+  // a tool call: a quick, purposeful reach toward what it touched, and back
+  if (figure.reach) {
+    const u = (c - figure.reach.at) / 1.3, to = nodeById(data, figure.reach.to);
+    if (u >= 1 || !to || to.x === undefined) figure.reach = null;
+    else {
+      const k = Math.sin(Math.PI * Math.min(1, u)) ** 2;
+      if (to === target) {
+        TOWARD.subVectors(WANT, AT.set(target.x, target.y, target.z)).normalize();
+        WANT.lerp(SPOT.set(target.x, target.y, target.z).addScaledVector(TOWARD, ball + size * 0.4), k);
+        if (u > 0.45 && !figure.reach.hit) { figure.reach.hit = true; nudgeNode(target, 0.05); }
+      } else WANT.lerp(SPOT.set(to.x, to.y, to.z), 0.32 * k);
+      face = AT.set(to.x, to.y, to.z);
+    }
+  }
+  if (figure.lookAt && c < figure.lookAt.until) {  // asked to look at something, `sight`
+    const toward = nodeById(data, figure.lookAt.node);
+    if (toward && toward.x !== undefined) face = AT.set(toward.x, toward.y, toward.z);
+  }
+  if (figure.glance && c < figure.glance.until) {
+    const loose = CUT.job?.loose && CUT.job.bodies.get(CUT.job.loose);
+    const other = ROAM.figures.get(figure.glance.other)?.mesh.position || (figure.glance.other === 'mascot' ? MASCOT.mesh?.position
+      : figure.glance.other === 'cut' && loose ? AT.set(loose.x, loose.y, loose.z) : null);
+    if (other) face = AT.copy(other);
+  }
+  return face;
+}
+/* A figure's flourish when its work is done, before it walks home: where it is this moment, around where it stood. */
+const FLOURISH = 1.4;
+function flourish(figure, size, u) {
+  const kind = figure.motion.flourish, k = Math.sin(Math.PI * u), spin = easeBoth(u) * Math.PI * 2;
+  WANT.copy(figure.from);
+  let turn = 0, scale = 1;
+  if (kind === 'spin' || kind === 'twirl') { turn = spin; if (kind === 'twirl') WANT.y += k * size * 0.8; }
+  else if (kind === 'loop') { WANT.y += (1 - Math.cos(spin)) * size * 0.7; WANT.addScaledVector(figure.heading, Math.sin(spin) * size * 0.7); }
+  else if (kind === 'hop' || kind === 'flap') { WANT.y += k * size * (kind === 'hop' ? 1.2 : 0.8); figure.stride += figure.passed * 3; }
+  else if (kind === 'puff') scale = 1 + 0.3 * k;
+  else if (kind === 'bow') turn = 0;
+  return {turn, scale, bow: kind === 'bow' ? k * 0.6 : 0};
+}
+/* How a figure comes and goes, its character's `arrive`: where it is and how large, a share `k` of the way in. */
+function arrival(figure, at, size, k, leaving) {
+  const style = figure.motion.arrive, e = leaving ? 1 - easeBoth(1 - k) : easeBoth(k);
+  WANT.copy(at);
+  let scale = 1, tall = 1;
+  if (style === 'drop') { WANT.y += (1 - e) * size * 5; scale = Math.min(1, k * 3); }
+  else if (style === 'swoop') { WANT.y += (1 - e) * size * 4; WANT.x += (1 - e) * size * 3; scale = Math.min(1, k * 2); }
+  else if (style === 'rise') { WANT.y -= (1 - e) * size * 3; scale = Math.min(1, k * 2.5); }
+  else if (style === 'sprout') { tall = Math.max(0.001, e); WANT.y -= (1 - e) * size * 0.5; }
+  else if (style === 'fade') scale = Math.max(0.001, e);
+  else scale = Math.max(0.001, leaving ? 1 - (1 - k) * (1 - k) : 1 + 1.7 * Math.pow(k - 1, 3) + 0.7 * Math.pow(k - 1, 2));
+  return {scale, tall};
+}
 function roam3d(data) {
   const now = performance.now() / 1000, passed = Math.min(0.1, Math.max(0, now - (ROAM.last || now)));
   ROAM.last = now;
   // The size follows the map's span gently, so a layout still spreading never makes a figure jump in size.
   const real = Math.min(1, Math.max(0, now - (ROAM.sized || now)));
   ROAM.sized = now;
-  const size = ROAM.drawn = ROAM.figures.size
+  const size = ROAM.drawn = ROAM.figures.size || mascotGlyph() || MASCOT.mesh
     ? (ROAM.drawn ? ROAM.drawn + (sizeOf(data) - ROAM.drawn) * (1 - Math.exp(-real * ROAM.grow)) : sizeOf(data)) : 0;
   const lift = size * 0.6;
+  sway3d();
+  // figures on one node take lanes apart, and notice each other as they pass
+  const lanes = new Map();
+  for (const figure of [...ROAM.figures.values()].sort((one, two) => one.id < two.id ? -1 : 1)) {
+    if (figure.stage !== 'circling') continue;
+    figure.lane = lanes.get(figure.target) || 0;
+    lanes.set(figure.target, figure.lane + 1);
+  }
+  for (const one of ROAM.figures.values()) for (const two of ROAM.figures.values()) {
+    if (one.id >= two.id || one.stage !== 'circling' || two.stage !== 'circling' || one.target !== two.target) continue;
+    if (one.clock < one.nextGlance || one.mesh.position.distanceTo(two.mesh.position) > size * 3) continue;
+    one.glance = {other: two.id, until: one.clock + 1.1}; two.glance = {other: one.id, until: two.clock + 1.1};
+    one.nextGlance = one.clock + 9; two.nextGlance = two.clock + 9;
+  }
   for (const [id, figure] of ROAM.figures) {
-    const {mesh} = figure;
+    if ((figure.checked = (figure.checked || 0) + passed) > 1) { figure.checked = 0; reglyph(figure); retarget(figure, data); }
+    const {mesh} = figure, m = figure.motion;
     const gone = () => { G.scene().remove(mesh); releaseGlyph(id); ROAM.figures.delete(id); };
     figure.clock += passed;
+    figure.passed = passed;
     const target = nodeById(data, figure.target), home = nodeById(data, figure.home);
     if (!target || target.x === undefined || !home || home.x === undefined) continue;
     const grown = ROAM.focus === id ? ROAM.focused : 1;
@@ -1280,66 +1792,1121 @@ function roam3d(data) {
       if (figure.done) gone();
       continue;
     }
-    if (figure.stage === 'arriving') {  // it materializes on the most primary node
-      const grown = Math.min(1, figure.clock / ROAM.appear), over = 1 + 1.7 * Math.pow(grown - 1, 3) + 0.7 * Math.pow(grown - 1, 2);
-      mesh.position.set(home.x, home.y + lift, home.z);
-      mesh.scale.setScalar(size * Math.max(0.001, over));
-      if (grown >= 1) Object.assign(figure, {stage: 'going', u: 0, clock: 0});
+    figure.mood = moodOf(id);
+    let state = 'travel', scale = 1, tall = 1, turn = 0, bow = 0, face = null;
+    if (figure.stage === 'arriving') {  // it comes onto the most primary node in its own way
+      const k = Math.min(1, figure.clock / ROAM.appear);
+      ({scale, tall} = arrival(figure, AT.set(home.x, home.y + lift, home.z), size, k, false));
+      mesh.position.copy(WANT);
+      if (k >= 1) Object.assign(figure, {stage: 'going', u: 0, clock: 0});
     } else if (figure.stage === 'going' || figure.stage === 'returning') {  // along the map's own edges
       const going = figure.stage === 'going';
       if (!placed(figure, data, lift)) {  // a node of its way left the map: it goes on to what comes next
-        onOrbit(figure, target);
-        Object.assign(figure, going ? {stage: figure.done ? 'touching' : 'circling'} : {stage: 'leaving'}, {clock: 0});
+        figure.pos.copy(mesh.position); figure.vel.set(0, 0, 0);
+        figure.from.copy(mesh.position);
+        Object.assign(figure, going ? {stage: figure.done ? 'flourish' : 'circling'} : {stage: 'leaving'}, {clock: 0});
         continue;
       }
-      const arrived = walk(figure, passed), along = figure.u / (figure.points.length - 1);
+      const arrived = walk(figure, passed, size), along = figure.u / (figure.points.length - 1);
       figure.curve.getPoint(along, mesh.position);
       figure.curve.getTangent(along, AHEAD);
       if (AHEAD.lengthSq() > 1e-8) figure.heading.copy(AHEAD);
-      mesh.scale.setScalar(size);
-      orientAgent(mesh, figure.heading, 0.25, passed);
+      if (m.corner === 'flit') {  // a moth jinks from side to side as it goes
+        TOWARD.set(-figure.heading.z, 0, figure.heading.x).normalize();
+        mesh.position.addScaledVector(TOWARD, Math.sin(figure.stride * 5.3) * size * 0.25 * Math.min(1, figure.speed / figure.top));
+      }
+      // a mischievous one takes a little detour as it goes, pokes a node it passes, and teases a figure it meets
+      const temper = m.temper ?? 0.5;
+      if (temper > 0.55 && m.corner !== 'flit') {
+        TOWARD.set(-figure.heading.z, 0, figure.heading.x).normalize();
+        mesh.position.addScaledVector(TOWARD, Math.sin(figure.stride * 0.9 + m.phase * 6) * size * 0.45 * (temper - 0.5)
+          * Math.min(1, figure.speed / figure.top));
+      }
+      if (temper > 0.6 && figure.clock > (figure.poked || 0)) {
+        const brush = data.nodes.find(node => node.t === 'el' && node.x !== undefined && node.id !== figure.target
+          && mesh.position.distanceTo(AT.set(node.x, node.y, node.z)) < ballOf(node) + size * 0.7);
+        if (brush) { nudgeNode(brush, 0.05 * temper); figure.poked = figure.clock + 12 - 6 * temper; }
+      }
+      if (temper > 0.6 && figure.clock > (figure.teased || 0)) for (const other of ROAM.figures.values()) {
+        if (other === figure || mesh.position.distanceTo(other.mesh.position) > size * 2.5) continue;
+        figure.glance = {other: other.id, until: figure.clock + 0.8};
+        figure.stride += m.stride * 0.6;  // a little hop at it
+        figure.teased = figure.clock + 15;
+        break;
+      }
+      markTrail(figure, size);
+      // an agent passing the mascot notices it
+      if (MASCOT.mesh && mesh.position.distanceTo(MASCOT.mesh.position) < size * 4 && figure.clock > (figure.noticed || 0)) {
+        figure.noticed = figure.clock + 12;
+        figure.glance = {other: 'mascot', until: figure.clock + 0.9};
+      }
+      if (figure.glance?.other === 'mascot' && figure.clock < figure.glance.until && MASCOT.mesh)
+        face = AT.copy(MASCOT.mesh.position);
       if (arrived) {
-        if (going) onOrbit(figure, target);
-        Object.assign(figure, {clock: 0, stage: !going ? 'leaving' : figure.done ? 'touching' : 'circling'});
+        figure.pos.copy(mesh.position); figure.vel.copy(figure.heading).multiplyScalar(figure.speed * 0.5);
+        figure.from.copy(mesh.position);
+        // onto its orbit from where it arrived, so it swings straight out onto it
+        figure.angle = m.dir * Math.atan2(mesh.position.z - target.z, mesh.position.x - target.x) - figure.lane * Math.PI;
+        Object.assign(figure, {clock: 0, stage: !going ? 'leaving' : figure.done ? 'flourish' : 'circling'});
       }
-    } else if (figure.stage === 'circling') {  // on the node, around it, slowly at one steady pace
-      figure.angle += passed * 2 * Math.PI / ROAM.lap;
-      const turn = figure.angle, reach = ballOf(target) + size * ROAM.orbit;
-      // It swings out from where it arrived onto its orbit, carrying on the way it came, and then holds the orbit.
-      const settled = easeBoth(Math.min(1, figure.clock / ROAM.settle));
-      ORBIT.set(Math.cos(turn) * reach, Math.sin(turn * 2) * reach * 0.18 + size * 0.3, Math.sin(turn) * reach);
-      ORBIT.lerpVectors(figure.from, ORBIT, settled);
-      mesh.position.set(target.x, target.y, target.z).add(ORBIT);
-      mesh.scale.setScalar(size);
-      AHEAD.set(-Math.sin(turn), Math.cos(turn * 2) * 0.36, Math.cos(turn));
-      figure.heading.lerp(AHEAD, settled);
-      orientAgent(mesh, figure.heading, 0.3, passed);
-      if (figure.done) {  // it leaves its orbit from where it is, on the fewest edges back
+    } else if (figure.stage === 'circling') {  // on its node, in its own way, `onNode`
+      face = onNode(figure, target, size, data);
+      springTo(figure, WANT, passed, STIFF[m.go] || 20);
+      mesh.position.copy(figure.pos);
+      state = figure.mood === 'waiting' ? 'wait' : figure.mood;
+      if (figure.vel.lengthSq() > 1e-4) figure.heading.lerp(AHEAD.copy(figure.vel).normalize(), 0.2);
+      figure.stride += figure.vel.length() * passed / size;
+      // a hopper hops in place now and then while it idles
+      if (m.go === 'hop' && figure.vel.length() < size * 0.3 && Math.sin(figure.clock * 0.6 + m.phase * 6) > 0.2)
+        figure.stride += passed * m.stride * 0.8;
+      markTrail(figure, size);
+      if (figure.done) { figure.from.copy(mesh.position); Object.assign(figure, {stage: 'flourish', clock: 0}); }
+    } else if (figure.stage === 'flourish') {  // done: a little flourish of its own, then home
+      const u = Math.min(1, figure.clock / FLOURISH);
+      ({turn, scale, bow} = flourish(figure, size, u));
+      springTo(figure, WANT, passed, 40);
+      mesh.position.copy(figure.pos);
+      state = 'flourish';
+      if (u >= 1) {
         const back = routeOf(data, figure.target, figure.home);
         Object.assign(figure, {stage: 'returning', u: 0, clock: 0,
-          way: [{point: mesh.position.clone()}, ...(back.length > 1 ? back.slice(1) : [figure.home]).map(id => ({id}))]});
+          way: [{point: mesh.position.clone()}, ...(back.length > 1 ? back.slice(1) : [figure.home]).map(one => ({id: one}))]});
       }
-    } else if (figure.stage === 'touching') {  // finished before it got there: it still touches the node, then leaves
-      const dip = Math.sin(Math.PI * Math.min(1, figure.clock / ROAM.touch));
-      ORBIT.copy(figure.from);
-      ORBIT.y += (ballOf(target) * 0.4 + size * 0.4 - ORBIT.y) * dip;
-      mesh.position.set(target.x, target.y, target.z).add(ORBIT);
-      if (figure.clock >= ROAM.touch) {
-        const back = routeOf(data, figure.target, figure.home);
-        Object.assign(figure, {stage: 'returning', u: 0, clock: 0,
-          way: [{point: mesh.position.clone()}, ...(back.length > 1 ? back.slice(1) : [figure.home]).map(id => ({id}))]});
-      }
-    } else if (figure.stage === 'leaving') {  // home again, it is gone
-      const faded = Math.min(1, figure.clock / ROAM.vanish);
-      mesh.position.set(home.x, home.y + lift, home.z);
-      mesh.scale.setScalar(size * Math.max(0.001, 1 - faded * faded));
-      if (faded >= 1) { gone(); continue; }
+    } else if (figure.stage === 'leaving') {  // home again, it goes in its own way
+      const k = Math.min(1, figure.clock / ROAM.vanish);
+      ({scale, tall} = arrival(figure, AT.set(home.x, home.y + lift, home.z), size, 1 - k, true));
+      mesh.position.copy(WANT);
+      if (k >= 1) { gone(); continue; }
     }
-    // the figure of the thread on view stands out; one touching its node keeps the size it was last given
-    if (grown !== 1 && figure.stage !== 'touching') mesh.scale.multiplyScalar(grown);
-    mesh.userData.update(passed, {busy: grown !== 1 ? 1 : 0});
+    // how large it is drawn: its size, its arrival, the thread on view drawn larger
+    mesh.scale.set(size * scale * grown, size * scale * tall * grown, size * scale * grown);
+    // never more than ROAM.most pixels tall close up, so a figure the camera has flown near stays a figure
+    const far = Math.max(1, G.camera().position.distanceTo(mesh.position));
+    const most = ROAM.most * 2 * far * Math.tan((G.camera().fov || 50) * Math.PI / 360)
+      / Math.max(1, G.renderer().domElement.clientHeight) / 1.6;
+    if (mesh.scale.x > most) mesh.scale.multiplyScalar(most / mesh.scale.x);
+    // which way it faces: what it looks at, or the way it goes; turned by a flourish's spin and tipped by a bow
+    if (face) AHEAD.subVectors(face, mesh.position); else AHEAD.copy(figure.heading);
+    if (turn) AHEAD.applyAxisAngle(THREE.Object3D.DEFAULT_UP, turn);
+    orientAgent(mesh, AHEAD, CORNERS[m.corner]?.turn ?? 0.25, passed);
+    if (bow) mesh.rotateX(bow);
+    const top = figure.top || ROAM.speed * m.speed;
+    const speed = figure.stage === 'circling' || figure.stage === 'flourish' ? figure.vel.length() : figure.speed;
+    mesh.userData.update(passed, {busy: grown !== 1 ? 1 : 0,
+      move: {speed: Math.min(1, speed / Math.max(1, top)), stride: figure.stride, state}});
+  }
+  cut3d(size, passed);
+  mascot3d(data, size, passed);
+  eyes3d(passed);  // the person watching through the mascot's eyes, `EYE`
+  placeBubble();
+}
+/* The person's mascot, web_mascot: one of the characters, standing for the person on the map, never given to an agent
+ * and never picked by a click. It goes to what the person selects, in its own way, and waits beside it, on the side
+ * away from its name; when the person chats with an agent at work it goes to that agent and the two greet each other;
+ * agents passing notice it. Left alone, it wanders now and then, web_mascot_mischief playful or chaotic, nudging a
+ * node it passes, and dodges a pointer that chases it; calm, it only goes where it is needed. Once the page has been
+ * left alone as long as the flow lasts, web_flow_seconds, it falls asleep where it is, and wakes with the person. It
+ * moves by steering, setting off and arriving gently at its own pace, and with reduced motion it just stands there. */
+const MASCOT = {glyph: null, mesh: null, motion: null, pos: new THREE.Vector3(), vel: new THREE.Vector3(),
+  heading: new THREE.Vector3(0, 0, 1), stride: 0, clock: 0, state: 'idle', greeted: null, wander: null, nextWander: 20,
+  nudged: 0, dodge: null, pointer: {x: -1e4, y: -1e4, at: 0, speed: 0}, sleeping: false, most: 64};
+const ASIDE = new THREE.Vector3(), UPWARD = new THREE.Vector3(), FACEAT = new THREE.Vector3();
+/* web_mascot is the person's preferred character, the one the body picker suggests first; it draws nothing. The
+ * mascot is the person's system agent once it has a body: no figure is on the map until the system agent offers to
+ * take one and the person accepts, or the person gives it one. It is drawn while that conversation runs, and a
+ * resumed conversation, the same session again, comes back in the same body; a new one is offered a body afresh. */
+const preferredGlyph = () => { const chosen = WS.view().mascot; return GLYPHS.includes(chosen) ? chosen : null; };
+function mascotGlyph() {
+  const ticket = (S.tickets || []).find(isSystemTalk);
+  const held = ticket ? BODIES.chosen[bodyKey(ticket.id)] : null;
+  if (!held || !GLYPHS.includes(held.glyph)) return null;
+  const live = D.sessions.filter(one => one.work_id === ticket.id && one.state === 'running').at(-1);
+  return live && (!held.session || held.session === live.session_id) ? held.glyph : null;
+}
+/* The mascot as it is drawn: its body while its conversation runs, then, once that ends, the same body walking home
+ * for a few seconds before it goes; with reduced motion it goes at once. */
+const MASCOT_GONE = {glyph: null, since: 0};
+function mascotFigure() {
+  const glyph = mascotGlyph();
+  if (glyph) { Object.assign(MASCOT_GONE, {glyph, since: 0}); return {glyph, leaving: false}; }
+  if (!MASCOT_GONE.glyph) return {glyph: null, leaving: false};
+  if (!MASCOT_GONE.since) MASCOT_GONE.since = performance.now();
+  if (reduced() || performance.now() - MASCOT_GONE.since > 7000) { MASCOT_GONE.glyph = null; return {glyph: null, leaving: false}; }
+  return {glyph: MASCOT_GONE.glyph, leaving: true};
+}
+/* Who leads the mascot: its own will, wandering, following the selection and going where it is needed, by its
+ * temper; or its system agent, through its body's verbs. Each verb holds it for DRIVE_HOLD after the last, or until
+ * the agent's turn ends; web_take holds it longer, with a reason, until web_release. While the agent drives, the
+ * person's selection waits for it, and nothing else sends the mascot anywhere. Let go, it takes up its own way again
+ * from where it stands. */
+const DRIVE_HOLD = 20000, DRIVE_TAKEN = 600000;
+function mascotDriven() {
+  const now = performance.now();
+  if (!MASCOT.driven || now >= MASCOT.driven) { if (MASCOT.driven) releaseMascot(); return false; }
+  if (!MASCOT.held && now - (MASCOT.drivenAt || 0) > 3000) {  // its turn has ended: the agent let it go
+    const ticket = (S.tickets || []).find(isSystemTalk);
+    const live = ticket && D.sessions.filter(one => one.work_id === ticket.id && one.state === 'running').at(-1);
+    if (!live || live.activity !== 'working') { releaseMascot(); return false; }
+  }
+  return true;
+}
+function driveMascot(take = null) {
+  const now = performance.now();
+  if (take) MASCOT.held = {reason: take.reason || '', at: now};
+  MASCOT.drivenAt = now;
+  MASCOT.driven = Math.max(MASCOT.driven || 0, now + (MASCOT.held ? DRIVE_TAKEN : DRIVE_HOLD));
+}
+function releaseMascot() {
+  Object.assign(MASCOT, {driven: 0, held: null, facing: null});
+  if (MASCOT.call?.agent) MASCOT.call = null;  // where the agent sent it; what the person selected meanwhile is next
+  wake3d(1500);
+  if (typeof wake2d === 'function') wake2d();
+}
+const mischief = () => WS.view().mascot_mischief || 'playful';
+function mascotAwake() {  // it keeps the 3D map drawing only while it is up and about
+  return Boolean(MASCOT.mesh) && !reduced() && !MASCOT.sleeping;
+}
+function steer(body, want, passed, top, accel) {  // toward a place, as fast as it can still stop there gently
+  TOWARD.subVectors(want, body.pos);
+  const away = TOWARD.length(), speed = Math.min(top, Math.sqrt(2 * accel * Math.max(0, away - 0.05)));
+  TOWARD.multiplyScalar(away > 1e-4 ? speed / away : 0);
+  PULL.subVectors(TOWARD, body.vel);
+  const most = accel * passed * 1.5;
+  if (PULL.length() > most) PULL.setLength(most);
+  body.vel.add(PULL);
+  body.pos.addScaledVector(body.vel, passed);
+  return away;
+}
+function besideNode(node, size, out) {  // beside a node on the screen's right, below where its name is drawn
+  const camera = G.camera();
+  ASIDE.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+  UPWARD.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+  // below and to the right, clear of the name drawn across the node
+  return out.set(node.x, node.y, node.z).addScaledVector(ASIDE, ballOf(node) + size * 0.6).addScaledVector(UPWARD, -(ballOf(node) + size * 0.7));
+}
+/* Where a call sends the mascot: beside its node, or a viewpoint as far from it and as high as asked, facing it. */
+function callSpot(data, size) {
+  const node = nodeById(data, MASCOT.call?.node), call = MASCOT.call;
+  if (!node || node.x === undefined) return null;
+  if (call.distance == null && call.height == null) return {want: besideNode(node, size, SPOT), face: null};
+  TOWARD.subVectors(MASCOT.pos, AT.set(node.x, node.y, node.z)).setY(0);
+  if (TOWARD.lengthSq() < 1e-6) TOWARD.set(1, 0, 0);
+  const want = SPOT.set(node.x, node.y + Number(call.height || 0), node.z)
+    .addScaledVector(TOWARD.normalize(), Math.max(ballOf(node) + size, Number(call.distance ?? size * 3)));
+  return {want, face: FACEAT.set(node.x, node.y, node.z)};
+}
+/* A wander of its own: anywhere in the scene around the map, not only beside a node, as its character moves there,
+ * a flyer through the air, a swimmer through the water, a walker hopping or floating; now and then to a node. */
+function wanderTo(data, size) {
+  const nodes = data.nodes.filter(node => node.t === 'el' && node.x !== undefined);
+  if (!nodes.length) return null;
+  if (Math.random() < 0.35) return {id: nodes[Math.floor(Math.random() * nodes.length)].id, until: MASCOT.clock + 9};
+  const low = [Infinity, Infinity, Infinity], high = [-Infinity, -Infinity, -Infinity];
+  for (const node of nodes) [node.x, node.y, node.z].forEach((at, axis) => { low[axis] = Math.min(low[axis], at); high[axis] = Math.max(high[axis], at); });
+  const point = new THREE.Vector3(...[0, 1, 2].map(axis => low[axis] - size * 2 + Math.random() * (high[axis] - low[axis] + size * 4)));
+  return {point, until: MASCOT.clock + 9};
+}
+/* Its own mischief, by its temper: now and then a wander anywhere in the scene, rarer while it keeps the person
+ * company beside a selection, and now and then a shove at a node, more often the more mischievous it is. Returns
+ * whether it is on a wander now. */
+function mischiefDue(data, size, m, keeping) {
+  const chaotic = mischief() === 'chaotic';
+  if (MASCOT.wander && MASCOT.clock > MASCOT.wander.until) MASCOT.wander = null;
+  if (!MASCOT.wander && MASCOT.clock > MASCOT.nextWander) {
+    MASCOT.wander = wanderTo(data, size);
+    MASCOT.nextWander = MASCOT.clock + (chaotic ? 10 : 24) * (keeping ? 1.8 : 1) + Math.random() * 14;
+  }
+  if (!MASCOT.job && MASCOT.clock > (MASCOT.nextPush ?? 24 - 12 * m.temper)) {
+    MASCOT.nextPush = MASCOT.clock + 70 - 55 * m.temper + Math.random() * 30;
+    const free = data.nodes.filter(node => node.t === 'el' && node.x !== undefined && pushable(node));
+    const pick = free[Math.floor(Math.random() * free.length)];
+    if (pick) MASCOT.job = {kind: 'push', node: pick.id, dir: null, strength: 0.25 + 0.35 * m.temper, agent: false};
+  }
+  return Boolean(MASCOT.wander);
+}
+/* The node the person drags by hand, which the mascot never pushes or takes. */
+const HANDDRAG = {node: null};
+const pushable = node => node && node.id !== S.selected && node !== HANDDRAG.node && node.fx === undefined && !CUT.job;
+/* A node the mascot holds, pinned where it carries it; one at a time. Let go, it goes back to the layout, which
+ * settles round it. Only the layout's positions change, as when the person drags a node: never the map. */
+function dropHeld() {
+  const held = MASCOT.holding;
+  if (!held) return;
+  MASCOT.holding = null;
+  Object.assign(held, {fx: undefined, fy: undefined, fz: undefined});
+  if (G) { G.d3VelocityDecay(DRAG_FRICTION).d3ReheatSimulation(); setTimeout(() => G?.d3VelocityDecay(PHYS.decay), 1500); }
+}
+/* A shove: a kick of speed along `dir`, capped so the map is never flung apart; its joins pull its neighbours after
+ * it and the layout settles, against more friction for a moment so it follows gently. Under reduced motion the node
+ * is simply where the shove leaves it. */
+function shove(node, dir, strength, size) {
+  const kick = Math.min(1, Math.max(0.05, strength)) * size * 1.2;
+  if (reduced()) { node.x += dir.x * kick * 2.5; node.y += dir.y * kick * 2.5; node.z += dir.z * kick * 2.5; }
+  else { node.vx = (node.vx || 0) + dir.x * kick; node.vy = (node.vy || 0) + dir.y * kick; node.vz = (node.vz || 0) + dir.z * kick; }
+  nudgeNode(node, 0.12);
+  G.d3VelocityDecay(DRAG_FRICTION).d3ReheatSimulation();
+  setTimeout(() => G?.d3VelocityDecay(PHYS.decay), 1500);
+}
+/* What the mascot is doing with its body, `MASCOT.job`: going to a point, pushing a node, or carrying one. Returns
+ * where it steers this frame, or null once the job is done. A job of the agent's runs while the agent drives. */
+function mascotJob(data, size, passed) {
+  const job = MASCOT.job;
+  if (job.kind === 'move') {
+    const node = job.node ? nodeById(data, job.node) : null;
+    const want = node && node.x !== undefined ? besideNode(node, size, SPOT) : job.point ? SPOT.copy(job.point) : null;
+    if (!want || MASCOT.pos.distanceTo(want) < size * 0.3 && !job.agent) { MASCOT.job = null; return null; }
+    return {want, fast: 1};
+  }
+  const node = nodeById(data, job.node);
+  if (!node || node.x === undefined || (!job.agent && !pushable(node) && MASCOT.holding !== node)) { MASCOT.job = null; return null; }
+  AT.set(node.x, node.y, node.z);
+  if (job.kind === 'push') {
+    // from the side away from where it shoves, then a run at it; its own shoves go wherever it came from
+    const dir = job.dir ? new THREE.Vector3(...job.dir) : TOWARD.subVectors(AT, MASCOT.pos).normalize().clone();
+    if (dir.lengthSq() < 1e-6) dir.set(1, 0, 0);
+    dir.normalize();
+    const reach = ballOf(node) + size * 0.5;
+    if (!job.charging) {
+      const start = SPOT.copy(AT).addScaledVector(dir, -(reach + size * 1.5));
+      if (MASCOT.pos.distanceTo(start) < size * 0.6 || reduced()) job.charging = true;
+      return {want: start, face: FACEAT.copy(AT), fast: 1};
+    }
+    if (MASCOT.pos.distanceTo(AT) <= reach * 1.15 || reduced()) {
+      shove(node, dir, job.strength ?? 0.5, size);
+      MASCOT.hello = MASCOT.clock;  // a little hop as it lands the shove
+      MASCOT.job = job.agent ? {kind: 'move', point: MASCOT.pos.clone(), agent: true} : null;
+      return {want: SPOT.copy(MASCOT.pos), face: FACEAT.copy(AT)};
+    }
+    return {want: SPOT.copy(AT), face: FACEAT.copy(AT), fast: 1.8};
+  }
+  if (job.kind === 'drag') {
+    if (MASCOT.holding !== node) {  // to it first, then it takes hold
+      const grip = besideNode(node, size, SPOT);
+      if (MASCOT.pos.distanceTo(grip) > size * 0.7 && !reduced()) return {want: grip, face: FACEAT.copy(AT)};
+      dropHeld();
+      MASCOT.holding = node;
+      job.offset = new THREE.Vector3().subVectors(AT, MASCOT.pos);
+      G.d3VelocityDecay(DRAG_FRICTION);
+    }
+    const beside = job.beside ? nodeById(data, job.beside) : null;
+    const to = beside && beside.x !== undefined ? new THREE.Vector3(beside.x, beside.y, beside.z).addScaledVector(
+      TOWARD.subVectors(AT, new THREE.Vector3(beside.x, beside.y, beside.z)).normalize(), ballOf(beside) + ballOf(node) + size)
+      : job.point ? new THREE.Vector3(...job.point) : null;
+    const want = to ? SPOT.copy(to).sub(job.offset) : SPOT.copy(MASCOT.pos);
+    if (reduced()) MASCOT.pos.copy(want);
+    // the node rides along with it, pinned where it carries it, and the map follows through its joins
+    const at = AT.copy(MASCOT.pos).add(job.offset);
+    Object.assign(node, {fx: at.x, fy: at.y, fz: at.z});
+    G.d3ReheatSimulation();
+    return {want, face: null, fast: 0.8};
+  }
+  MASCOT.job = null;
+  return null;
+}
+/* Who leads it, shown quietly: a faint ring at its feet while its agent drives it. */
+function ringMascot(size, on) {
+  if (!MASCOT.mesh) return;
+  if (!MASCOT.ring) {
+    MASCOT.ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.5, 40), new THREE.MeshBasicMaterial({
+      color: new THREE.Color(css('--signal') || '#00e5d4'), transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide}));
+    MASCOT.ring.rotation.x = -Math.PI / 2;
+    MASCOT.ring.raycast = () => {};
+  }
+  if (MASCOT.ring.parent !== MASCOT.mesh) MASCOT.mesh.add(MASCOT.ring);
+  const material = MASCOT.ring.material;
+  material.opacity += ((on ? 0.45 : 0) - material.opacity) * 0.12;  // eased in and out
+  MASCOT.ring.visible = material.opacity > 0.01;
+}
+function mascot3d(data, size, passed) {
+  const {glyph, leaving} = mascotFigure();
+  reserveGlyph(glyph);
+  if (MASCOT.mesh && MASCOT.glyph !== glyph) { dropHeld(); G.scene().remove(MASCOT.mesh); MASCOT.mesh = null; MASCOT.job = null; }
+  const home = primaryOf(data);
+  if (!glyph || !size || !home || home.x === undefined) return;
+  if (!MASCOT.mesh && leaving) return;  // a conversation that ended before its body was drawn: nothing to walk home
+  if (!MASCOT.mesh) {
+    const mesh = createAgent(glyph);
+    mesh.traverse(object => { object.raycast = () => {}; });  // never in the way of a click
+    mesh.userData.motion = MASCOT.motion = motionOf(glyph, 'mascot');
+    G.scene().add(mesh);
+    Object.assign(MASCOT, {glyph, mesh, clock: 0, greeted: null, wander: null, fade: undefined, ring: null});
+    besideNode(home, size, MASCOT.pos);
+    MASCOT.vel.set(0, 0, 0);
+  }
+  const m = MASCOT.motion, mesh = MASCOT.mesh, now = performance.now();
+  m.temper = {calm: 0.1, playful: 0.6, chaotic: 0.95}[mischief()] ?? 0.6;  // its own temper, web_mascot_mischief
+  MASCOT.clock += passed;
+  // as large as an agent with the whole map in view, and never more than MASCOT.most pixels tall close up
+  const camera = G.camera(), far = Math.max(1, camera.position.distanceTo(MASCOT.pos));
+  const perPixel = 2 * far * Math.tan((camera.fov || 50) * Math.PI / 360) / Math.max(1, G.renderer().domElement.clientHeight);
+  mesh.scale.setScalar(Math.min(size * 0.95, MASCOT.most * perPixel / 1.6));
+  // where it goes: an agent the person chats with, what the person selected, a wander of its own, or home
+  const chatting = !$('#helpdesk')?.hidden && DOCK.target ? ROAM.figures.get(DOCK.target) : null;
+  const selected = S.selected ? nodeById(data, S.selected) : null;
+  let want = null, face = null, state = 'idle', fast = 1, spin = 0, puff = 1;
+  const driven = !leaving && mascotDriven();
+  MASCOT.sleeping = !leaving && !driven && now - FRAMES.active > FRAMES.idle + 2500 && !MASCOT.call && !CUT.job && !MASCOT.job;
+  if (MASCOT.call && now > MASCOT.call.until) MASCOT.call = null;
+  const job = !leaving && MASCOT.job && (driven || !MASCOT.job.agent) ? mascotJob(data, size, passed) : null;
+  if (MASCOT.job?.agent && !driven) { dropHeld(); MASCOT.job = null; }  // let go: what the agent had it do ends
+  const mending = leaving || driven || job ? null : mascotForCut(size);  // an edge the person cut, `CUT`
+  ringMascot(size, driven);  // a faint ring at its feet while its agent leads it
+  if (leaving) {  // its conversation has ended: it walks home and goes
+    want = besideNode(home, size, SPOT);
+    // home, it shrinks away on the leaving curve and is gone
+    if (MASCOT.pos.distanceTo(want) < size * 0.6) MASCOT.fade = Math.max(0, (MASCOT.fade ?? 1) - passed * 2.2);
+    if (MASCOT.fade === 0) MASCOT_GONE.glyph = null;
+    else if (MASCOT.fade !== undefined) puff = Math.max(0.01, 1 - easeBoth(1 - MASCOT.fade));
+  } else if (job) {
+    ({want = null, face = null, fast = 1} = job);
+  } else if (driven) {  // its system agent leads it: where it was sent, or it stays where it was taken
+    const spot = MASCOT.call?.agent ? callSpot(data, size) : null;
+    if (spot) ({want, face = null} = spot); else want = SPOT.copy(MASCOT.pos);
+  } else if (mending) {
+    ({want = null, fast = 1, spin = 0, puff = 1} = mending);
+    if (mending.face) face = mending.face;
+    if (mending.stomp) { state = 'cross'; MASCOT.stride += passed * m.stride * 2.2; }
+  } else if (MASCOT.call?.node && !MASCOT.call.agent) {  // calling the person's attention, `ATTN`
+    const spot = callSpot(data, size);
+    if (spot) ({want, face = null} = spot);
+  } else if (now - FRAMES.active > FRAMES.idle) {
+    state = 'sleep';
+  } else if (chatting && chatting.mesh) {
+    want = SPOT.copy(chatting.mesh.position).addScaledVector(ASIDE.setFromMatrixColumn(G.camera().matrixWorld, 0), size * 1.8);
+    face = chatting.mesh.position;
+    if (MASCOT.greeted !== chatting.id && MASCOT.pos.distanceTo(want) < size * 1.5) {  // they greet each other
+      MASCOT.greeted = chatting.id;
+      MASCOT.hello = MASCOT.clock;
+      chatting.glance = {other: 'mascot', until: chatting.clock + 1.6};
+    }
+  } else if (mischief() !== 'calm' && mischiefDue(data, size, m, Boolean(selected))) {  // off on a wander of its own
+    const node = MASCOT.wander?.id && nodeById(data, MASCOT.wander.id);
+    want = MASCOT.wander?.point ? SPOT.copy(MASCOT.wander.point) : besideNode(node && node.x !== undefined ? node : home, size, SPOT);
+  } else if (selected && selected.x !== undefined) {
+    want = besideNode(selected, size, SPOT);
+  } else want = besideNode(home, size, SPOT);
+  if (reduced()) {  // it just stands there
+    if (want) MASCOT.pos.copy(want);
+    mesh.position.copy(MASCOT.pos);
+    mesh.userData.update(0, {move: {speed: 0, stride: 0, state: 'idle'}});
+    return;
+  }
+  // a pointer that chases it: it hops aside
+  if (MASCOT.dodge && MASCOT.clock < MASCOT.dodge.until && want) want = SPOT.copy(want).add(MASCOT.dodge.by);
+  const top = ROAM.speed * m.speed * 0.9 * fast * strokeOf(m, MASCOT.stride).pace, accel = ROAM.accel * m.accel * fast;
+  if (state !== 'sleep' && want) steer(MASCOT, want, passed, top, accel);
+  else MASCOT.vel.multiplyScalar(Math.exp(-passed * 4));
+  mesh.position.copy(MASCOT.pos);
+  const speed = MASCOT.vel.length();
+  MASCOT.stride += speed * passed / size;
+  if (m.go === 'hop' && speed < size * 0.3 && state !== 'sleep' && Math.sin(MASCOT.clock * 0.5) > 0.4) MASCOT.stride += passed * m.stride * 0.8;
+  if (MASCOT.hello && MASCOT.clock - MASCOT.hello < 1.2) MASCOT.stride += passed * m.stride * 1.5;  // a little hop of hello
+  if (MASCOT.speaking) { MASCOT.stride += passed * m.stride * 1.1; puff = 1 + 0.04 * Math.sin(MASCOT.clock * 18); }  // talking
+  // what its system agent asks of it, `mascotEvent`: a way to face, a turn and a gesture toward a part, a feeling shown
+  if (MASCOT.facing && now < (MASCOT.driven || 0)) {  // an explicit turn wins over the viewpoint's own
+    const toward = MASCOT.facing.node ? nodeById(data, MASCOT.facing.node) : null;
+    if (toward && toward.x !== undefined) face = AT.set(toward.x, toward.y, toward.z);
+    else if (MASCOT.facing.dir) face = AT.copy(MASCOT.pos).add(MASCOT.facing.dir);
+  }
+  const pointing = MASCOT.point && MASCOT.clock - MASCOT.point.at < MASCOT.point.long ? nodeById(data, MASCOT.point.node) : null;
+  if (pointing && pointing.x !== undefined) { face = AT.set(pointing.x, pointing.y, pointing.z); MASCOT.stride += passed * m.stride * 0.6; }
+  const feeling = MASCOT.emote && MASCOT.clock - MASCOT.emote.at < MASCOT.emote.long ? MASCOT.emote : null;
+  if (feeling) {
+    const u = (MASCOT.clock - feeling.at) / feeling.long;
+    if (feeling.kind === 'wave') { spin = Math.sin(u * Math.PI * 6) * 0.35; MASCOT.stride += passed * m.stride * 0.8; }
+    else if (feeling.kind === 'celebrate') { spin = easeBoth(u) * Math.PI * 2; MASCOT.stride += passed * m.stride * 2; puff = 1 + 0.12 * Math.sin(Math.PI * u); }
+    else if (feeling.kind === 'shrug') puff = 1 + 0.06 * Math.sin(Math.PI * u);
+    else if (feeling.kind === 'think') { spin = Math.sin(u * Math.PI) * 0.5; face = face || G.camera().position; }
+    else if (feeling.kind === 'sleep') state = 'sleep';
+  }
+  // light mischief: a node it passes sways
+  if (mischief() !== 'calm' && speed > size && MASCOT.clock > MASCOT.nudged) {
+    const brush = data.nodes.find(node => node.t === 'el' && node.x !== undefined
+      && MASCOT.pos.distanceTo(AT.set(node.x, node.y, node.z)) < ballOf(node) + size * 0.8);
+    if (brush) { nudgeNode(brush, 0.06); MASCOT.nudged = MASCOT.clock + (mischief() === 'chaotic' ? 3 : 8); }
+  }
+  if (speed > 1e-2) MASCOT.heading.lerp(AHEAD.copy(MASCOT.vel).normalize(), 0.25);
+  AHEAD.copy(face ? TOWARD.subVectors(face, MASCOT.pos) : MASCOT.heading);
+  if (!face && speed < size * 0.2 && state !== 'sleep' && !EYE.view && !EYE.saved)  // at rest it half turns to the person
+    AHEAD.lerp(TOWARD.subVectors(G.camera().position, MASCOT.pos).normalize(), 0.5);
+  if (spin) AHEAD.applyAxisAngle(THREE.Object3D.DEFAULT_UP, spin);
+  orientAgent(mesh, AHEAD, spin ? 0.6 : 0.15, passed);
+  if (puff !== 1) mesh.scale.multiplyScalar(puff);
+  markTrail(MASCOT, size);
+  mesh.userData.update(passed, {move: {speed: Math.min(1, speed / Math.max(1, top)), stride: MASCOT.stride, state}});
+}
+// the pointer over the 3D map: where it is and how fast it moves, so the mascot can dodge one that chases it
+$('#stage').addEventListener('pointermove', event => {
+  const pointer = MASCOT.pointer, now = performance.now(), passed = Math.max(1, now - pointer.at);
+  pointer.speed = Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) / passed;
+  Object.assign(pointer, {x: event.clientX, y: event.clientY, at: now});
+  if (!MASCOT.mesh || !G || mischief() === 'calm' || pointer.speed < 0.8) return;
+  const area = G.renderer().domElement.getBoundingClientRect(), at = SPOT.copy(MASCOT.mesh.position).project(G.camera());
+  const x = area.left + (at.x + 1) / 2 * area.width, y = area.top + (1 - at.y) / 2 * area.height;
+  if (Math.hypot(x - event.clientX, y - event.clientY) > 60 || (MASCOT.dodge && MASCOT.clock < MASCOT.dodge.until)) return;
+  ASIDE.setFromMatrixColumn(G.camera().matrixWorld, 0);
+  MASCOT.dodge = {until: MASCOT.clock + 1.4, by: ASIDE.clone().multiplyScalar((x < event.clientX ? -1 : 1) * ROAM.drawn * 2.5)};
+  MASCOT.stride += MASCOT.motion.stride * 0.5;
+  wake3d();
+}, {passive: true});
+/* A word bubble over the mascot, in 3D and 2D: a short line in its voice, eased in and out, placed over the figure
+ * each frame so it reads at any angle; one at a time, never piled up. `say` shows one for a while; a click on it does
+ * what `onClick` says. */
+const BUBBLE = {el: null, text: '', until: 0, click: null};
+function bubble() {
+  if (BUBBLE.el) return BUBBLE.el;
+  BUBBLE.el = h('div', {class: 'mascot-bubble', role: 'status', 'aria-live': 'polite'});
+  BUBBLE.el.addEventListener('click', event => { event.stopPropagation(); const act = BUBBLE.click; if (act) { hush(); act(); } });
+  document.body.append(BUBBLE.el);
+  return BUBBLE.el;
+}
+function say(text, seconds = 4, onClick = null, who = null, name = '') {  // `who`: an embodied agent's figure, else the mascot
+  const el = bubble();
+  el.dataset.name = name;  // the agent speaking through it, named quietly over its words; its own words go unnamed
+  Object.assign(BUBBLE, {text, until: performance.now() + seconds * 1000, click: onClick, who});
+  el.textContent = text;
+  el.classList.toggle('clickable', Boolean(onClick));
+  el.classList.add('on');
+  wake3d(seconds * 1000);
+}
+function hush() { BUBBLE.until = 0; BUBBLE.el?.classList.remove('on'); }
+function placeBubble() {  // over the mascot as it is drawn: the large map's figure, else the 2D one
+  if (!BUBBLE.el) return;
+  if (performance.now() > BUBBLE.until) { BUBBLE.el.classList.remove('on'); return; }
+  let x = null, y = null;
+  const speaker = (BUBBLE.who && ROAM.figures.get(BUBBLE.who)?.mesh) || MASCOT.mesh;  // the figure that speaks
+  if (G && speaker) {
+    const area = G.renderer().domElement.getBoundingClientRect(), at = SPOT.copy(speaker.position).project(G.camera());
+    if (area.width && Math.abs(at.z) < 1) { x = area.left + (at.x + 1) / 2 * area.width; y = area.top + (1 - at.y) / 2 * area.height - onScreen(speaker) * 0.6; }
+  }
+  if (x === null && MASCOT2D.g?.isConnected) {
+    const box = MASCOT2D.g.getBoundingClientRect();
+    if (box.width) { x = box.left + box.width / 2; y = box.top; }
+  }
+  if (x === null) { BUBBLE.el.classList.remove('on'); return; }
+  BUBBLE.at = {x, y};
+  BUBBLE.el.style.left = `${Math.round(x)}px`;
+  BUBBLE.el.style.top = `${Math.round(y)}px`;
+}
+/* Cut an edge, VIEW-005, a playful mode of the 3D map: X turns scissors on, and a click cuts the join edge the pointer
+ * marks, the edge the page's own picking chooses, `EDGE_PICK`. The edge snaps, its halves whipping back, and whatever
+ * has lost its way back to the map's primary node through the joins and namespace links left falls: the group hangs
+ * together on its strings like a mobile, swinging as it drops, and lands softly at the foot of the view. The mascot
+ * notices, runs over in its own gait, is cross with the person in its own words, picks up the loose end, carries it
+ * back with the rest dangling from it, reties the edge with a little flourish, and everything springs back into place.
+ * Nearby agents glance over. It is all drawn: no join is changed and nothing is written. Escape, or X again, puts
+ * everything back at once. With reduced motion the cut and the repair happen without the swing or the run. */
+const CUT = {on: false, job: null, saved: null};
+const CROSS = {jelly: 'Hey! I felt that one in every tentacle.', gearling: 'Clunk! That was load-bearing.',
+  kite: 'You cut my string! Rude.', moth: 'Who turned off that light?!', drone: 'Delivery interrupted. Not cool.',
+  snail: 'I am going as fast as I can, and you do this?', crystal: 'That join was flawless. Was.',
+  wisp: 'Ooh, that sent a chill right through me.', comet: 'Whoa! Did you see that fall?', beetle: 'Hmph. I will push it back.',
+  slime: 'Splat. Really? Really?', plane: 'Mayday! Mayday! Who did that?', puffer: 'I am puffed up and I am not happy.',
+  owl: 'Whoo cut that? Hoo-hum. I saw you.', cubebot: 'ERROR: edge severed. Fixing your mess.',
+  mushroom: 'Stomp! That was holding things up!', seahorse: 'Now I have to tie that with my tail.'};
+function cutMode(on) {
+  if (!G) return;
+  if (!on) restoreCut();
+  CUT.on = on;
+  $('#stage').classList.toggle('scissors', on);
+  if (on) say('Scissors out. Careful…', 2.2);
+  wake3d();
+}
+function restoreCut() {  // everything back where it was, at once
+  const saved = CUT.saved;
+  CUT.job = null;
+  if (!saved) return;
+  for (const [node, place] of saved.nodes) Object.assign(node, place);
+  for (const link of saved.hidden) if (link.__lineObj) link.__lineObj.visible = true;
+  // the layout stops where everything was, with no warmth left to move it and no fit of the view after
+  const decay = G.d3AlphaDecay();
+  G.d3AlphaDecay(1).d3AlphaMin(0.001).cooldownTime(saved.cooldown);
+  V3.ticks = 0;
+  setTimeout(() => G?.d3AlphaDecay(decay), 400);
+  CUT.saved = null;
+  wake3d();
+}
+function supportedFrom(data, start, cut) {  // what still reaches the primary node through the links left
+  const near = new Map(), add = (one, two) => { if (!near.has(one)) near.set(one, []); near.get(one).push(two); };
+  for (const link of data.links) {
+    if (cut.has(link) || typeof link.source !== 'object') continue;
+    add(link.source, link.target); add(link.target, link.source);
+  }
+  const held = new Set([start]), queue = [start];
+  while (queue.length) for (const next of near.get(queue.shift()) || []) if (!held.has(next)) { held.add(next); queue.push(next); }
+  return held;
+}
+function cutLink(link) {
+  const data = G.graphData(), home = primaryOf(data);
+  if (!link || !home || CUT.job) return;
+  // the layout holds every node where it is; the page moves the fallen ones itself, through where they are held
+  if (!CUT.saved) {
+    CUT.saved = {nodes: new Map(data.nodes.map(node => [node, {x: node.x, y: node.y, z: node.z, fx: node.fx, fy: node.fy, fz: node.fz,
+      vx: 0, vy: 0, vz: 0}])), hidden: [], cooldown: G.cooldownTime()};
+    for (const node of data.nodes) Object.assign(node, {fx: node.x, fy: node.y, fz: node.z});
+    G.cooldownTime(Infinity).d3AlphaMin(0);
+    G.d3ReheatSimulation();
+  }
+  CUT.saved.hidden.push(link);
+  if (link.__lineObj) link.__lineObj.visible = false;
+  const held = supportedFrom(data, home, new Set([link]));
+  const loose = held.has(link.source) ? link.target : link.source, anchor = loose === link.source ? link.target : link.source;
+  const falling = data.nodes.filter(node => !held.has(node) && node.x !== undefined);
+  const span = Math.max(40, sizeOf(data) / ROAM.share);
+  CUT.job = {link, loose: falling.includes(loose) ? loose : null, anchor, falling, at: performance.now() / 1000, stage: 'fall',
+    clock: 0, span, ropes: data.links.filter(one => typeof one.source === 'object' && falling.includes(one.source) && falling.includes(one.target)
+      && one !== link).map(one => ({one: one.source, two: one.target, long: Math.hypot(one.source.x - one.target.x,
+      one.source.y - one.target.y, one.source.z - one.target.z)})),
+    bodies: new Map(falling.map((node, index) => [node, {x: node.x, y: node.y, z: node.z, px: node.x, py: node.y, pz: node.z,
+      drag: 0.985 - (index % 3) * 0.006, home: {x: node.x, y: node.y, z: node.z}}])),
+    ends: [{x: link.source.x, y: link.source.y, z: link.source.z}, {x: link.target.x, y: link.target.y, z: link.target.z}]};
+  // the agents nearby look over
+  for (const figure of ROAM.figures.values()) figure.glance = {other: 'cut', until: figure.clock + 1.5};
+  if (reduced()) for (const [node, body] of CUT.job.bodies) { body.y = floorAt(body) + ballOf(node); body.py = body.y; }
+  wake3d(20000);
+}
+function floorAt(at) {  // the foot of the view, at the depth of a point
+  const camera = G.camera();
+  SPOT.set(at.x, at.y, at.z).project(camera);
+  SPOT.set(0, -0.86, SPOT.z).unproject(camera);
+  return SPOT.y;
+}
+/* Each frame of a cut: the fall and its swing, the mascot's run, its cross words, the carry, the knot and the spring
+ * back, with the halves of the cut edge whipping back as it snaps. */
+function cut3d(size, passed) {
+  const job = CUT.job;
+  if (!job) return;
+  job.clock += passed;
+  if (!MASCOT.mesh) mascotForCut(size);  // with no mascot the cut mends itself
+  const g = job.span * 1.4, steps = 3;
+  // the fallen group: verlet bodies under gravity, its own strings holding it together, landing softly
+  if (job.stage !== 'spring') {
+    for (const [node, body] of job.bodies) {
+      if (job.carried === node) continue;
+      if (reduced()) continue;
+      const vx = (body.x - body.px) * body.drag, vy = (body.y - body.py) * body.drag, vz = (body.z - body.pz) * body.drag;
+      Object.assign(body, {px: body.x, py: body.y, pz: body.z});
+      body.x += vx; body.y += vy - g * passed * passed; body.z += vz;
+      const floor = floorAt(body.home) + ballOf(node);
+      if (body.y < floor) { body.y = floor; body.py = floor + (body.y - body.py) * -0.25; body.px = body.x - vx * 0.6; body.pz = body.z - vz * 0.6; }
+    }
+    if (job.carried) {  // the loose end rides above the mascot, and the rest dangles from it
+      const at = job.bodies.get(job.carried);
+      Object.assign(at, {x: MASCOT.pos.x, y: MASCOT.pos.y + size * 1.1, z: MASCOT.pos.z});
+      Object.assign(at, {px: at.x, py: at.y, pz: at.z});
+    }
+    for (let round = 0; round < steps; round++) for (const rope of job.ropes) {  // a string pulls only when taut
+      const one = job.bodies.get(rope.one), two = job.bodies.get(rope.two);
+      const dx = two.x - one.x, dy = two.y - one.y, dz = two.z - one.z, long = Math.hypot(dx, dy, dz);
+      if (long <= rope.long || long < 1e-6) continue;
+      const fix = (long - rope.long) / long / 2, pinOne = job.carried === rope.one, pinTwo = job.carried === rope.two;
+      const a = pinOne ? 0 : pinTwo ? 2 : 1, b = pinTwo ? 0 : pinOne ? 2 : 1;
+      one.x += dx * fix * a; one.y += dy * fix * a; one.z += dz * fix * a;
+      two.x -= dx * fix * b; two.y -= dy * fix * b; two.z -= dz * fix * b;
+    }
+  } else {  // everything springs back into place
+    const u = Math.min(1, (job.clock) / 1.1), k = 1 - Math.exp(-u * 6) * Math.cos(u * 5);
+    for (const body of job.bodies.values()) {
+      body.x = body.from.x + (body.home.x - body.from.x) * k;
+      body.y = body.from.y + (body.home.y - body.from.y) * k;
+      body.z = body.from.z + (body.home.z - body.from.z) * k;
+    }
+    if (u >= 1) { restoreCut(); return; }
+  }
+  for (const [node, body] of job.bodies) Object.assign(node, {fx: body.x, fy: body.y, fz: body.z, x: body.x, y: body.y, z: body.z});
+  // the halves of the cut edge whip back to their ends as it snaps
+  const snap = Math.min(1, job.clock / 0.55);
+  if (snap < 1 && !reduced()) {
+    const back = 1 - (1 + 2.2 * Math.pow(snap - 1, 3) + 1.2 * Math.pow(snap - 1, 2)), color = tintOf(linkColor(job.link));
+    const [a, b] = [job.link.source, job.link.target], mid = {x: (job.ends[0].x + job.ends[1].x) / 2,
+      y: (job.ends[0].y + job.ends[1].y) / 2, z: (job.ends[0].z + job.ends[1].z) / 2};
+    for (const end of [a, b]) {
+      const tip = {x: end.x + (mid.x - end.x) * back, y: end.y + (mid.y - end.y) * back, z: end.z + (mid.z - end.z) * back};
+      fxLine(end, tip, color, 0.9, 0.5);
+    }
+  }
+  if (job.carried) fxLine(job.anchor, job.carried, tintOf(linkColor(job.link)), 0.8, 0.8);  // the loose end in hand
+}
+/* What the mascot does about a cut, `mascot3d` asks it each frame: where it goes, what it faces, and how it moves. */
+function mascotForCut(size) {
+  const job = CUT.job;
+  if (!job) return null;
+  const loose = job.loose ? job.bodies.get(job.loose) : null;
+  if (!mascotGlyph() || !MASCOT.mesh || !loose) {  // no mascot, or nothing fell: it springs back by itself
+    if (job.stage === 'fall' && job.clock > 2.4) startSpring(job);
+    return null;
+  }
+  if (job.stage === 'fall' && job.clock > (reduced() ? 0.2 : 0.7)) Object.assign(job, {stage: 'run', clock: 0});
+  if (job.stage === 'run') {
+    if (reduced() || MASCOT.pos.distanceTo(AT.set(loose.x, loose.y, loose.z)) < size * 1.6) {
+      Object.assign(job, {stage: 'cross', clock: 0});
+      say(CROSS[MASCOT.glyph] || 'Hey! Who cut that?', 2.8);
+    }
+    return {want: SPOT.set(loose.x + size, loose.y, loose.z), fast: 1.7};
+  }
+  if (job.stage === 'cross') {  // it stomps and puffs up, facing the person
+    if (job.clock > 2.4) Object.assign(job, {stage: 'carry', clock: 0, carried: job.loose});
+    return {want: null, face: G.camera().position, stomp: true, puff: 1 + 0.12 * Math.max(0, Math.sin(job.clock * 5))};
+  }
+  if (job.stage === 'carry') {  // back to where the loose end belongs, the rest dangling from it
+    const home = job.bodies.get(job.loose).home;
+    if (reduced() || MASCOT.pos.distanceTo(AT.set(home.x, home.y - size * 1.1, home.z)) < size * 0.5) {
+      Object.assign(job, {stage: 'tie', clock: 0});
+      say('There. Knotted.', 1.6);
+    }
+    return {want: SPOT.set(home.x, home.y - size * 1.1, home.z), fast: 0.8};
+  }
+  if (job.stage === 'tie') {  // a little knot flourish
+    if (job.clock > 1 || reduced()) startSpring(job);
+    return {want: null, spin: easeBoth(Math.min(1, job.clock)) * Math.PI * 2};
+  }
+  return null;
+}
+function startSpring(job) {
+  job.carried = null;
+  for (const body of job.bodies.values()) body.from = {x: body.x, y: body.y, z: body.z};
+  for (const link of CUT.saved?.hidden || []) if (link.__lineObj) link.__lineObj.visible = true;
+  Object.assign(job, {stage: 'spring', clock: reduced() ? 9 : 0});
+}
+document.addEventListener('keydown', event => {
+  if (!G || event.ctrlKey || event.metaKey || event.altKey || event.target.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+  if (event.key === 'x' || event.key === 'X') cutMode(!CUT.on);
+  else if ((event.key === 'e' || event.key === 'E') && MASCOT.mesh) mascotEyes();  // the mascot's eyes, and back
+  else if (event.key === 'Escape' && CUT.on) { event.stopImmediatePropagation(); cutMode(false); }
+}, true);
+/* The mascot calls the person's attention, VIEW-005: when something needs them, an agent waiting for an answer, a
+ * ticket done, a spinning or stuck agent, an intake finished or a merge to review, it goes there, says so in its
+ * bubble, and brings a small note card into view, set down near the pointer, that takes the person to it on a click
+ * and goes on its ×. Driven by what the page already reads as it happens, never by a model. It speaks rarely and
+ * briefly: one call at a time, ATTN.gap apart, each thing once, at most ATTN.most waiting, the oldest dropped. */
+const ATTN = {seen: new Set(), queue: [], last: 0, timer: 0, card: null, gap: 6000, most: 3, held: 25000};
+function attend(key, text, node, open) {
+  if (!mascotGlyph() || ATTN.seen.has(key)) return;
+  ATTN.seen.add(key);
+  ATTN.queue = [...ATTN.queue.filter(one => one.text !== text), {text, node, open}].slice(-ATTN.most);
+  pumpAttention();
+}
+function pumpAttention() {
+  clearTimeout(ATTN.timer);
+  const wait = ATTN.last + ATTN.gap - Date.now();
+  if (!ATTN.queue.length) return;
+  if (wait > 0 || ATTN.card) { ATTN.timer = setTimeout(pumpAttention, Math.max(500, wait)); return; }
+  const call = ATTN.queue.shift();
+  ATTN.last = Date.now();
+  // while its agent drives it the card still comes, but the mascot goes nowhere on its own
+  if (!mascotDriven()) MASCOT.call = call.node ? {node: call.node, until: performance.now() + 9000} : null;
+  wake3d(9000);
+  say(call.text, 6, call.open);
+  bringCard(call);
+}
+function bringCard(call) {  // a note card, carried from the mascot to near the pointer, eased in and out
+  const card = ATTN.card = h('div', {class: 'mascot-card', role: 'alert'},
+    h('button', {class: 'go', type: 'button', onclick: () => { done(); call.open?.(); }}, call.text),
+    h('button', {class: 'x', type: 'button', title: 'Dismiss', 'aria-label': 'Dismiss', onclick: () => done()}, '×'));
+  const from = BUBBLE.at || {x: innerWidth - 120, y: innerHeight - 80};
+  const recent = performance.now() - MASCOT.pointer.at < 30000;
+  const to = recent ? {x: Math.min(innerWidth - 160, Math.max(160, MASCOT.pointer.x + 24)), y: Math.min(innerHeight - 60, Math.max(80, MASCOT.pointer.y + 28))}
+    : {x: innerWidth - 200, y: innerHeight - 140};
+  Object.assign(card.style, {left: `${from.x}px`, top: `${from.y}px`});
+  document.body.append(card);
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    card.classList.add('on');
+    Object.assign(card.style, {left: `${to.x}px`, top: `${to.y}px`});
+  }));
+  const timer = setTimeout(() => done(), ATTN.held);
+  function done() {
+    clearTimeout(timer);
+    card.classList.remove('on');
+    setTimeout(() => card.remove(), 400);
+    if (ATTN.card === card) ATTN.card = null;
+    if (MASCOT.call?.node === call.node) MASCOT.call = null;
+    pumpAttention();
   }
 }
+/* What needs the person now, read from what the page has just read: an agent waiting for them, one spinning or stuck,
+ * and a merge waiting for review. A ticket done is told by `flowTickets`, an intake finished where the page learns it. */
+function noticeAttention() {
+  if (ASKING.pending) flushAsk();  // words to the system agent waiting for its session to start
+  for (const one of D.asking || []) {
+    const session = D.sessions.find(row => row.session_id === one.session_id);
+    if (session) attend(`ask:${one.session_id}:${one.signal}:${one.key || ''}`, `${agentName(session.agent)} is waiting on you`,
+      ticketOf(session.work_id) ? ticketNode(ticketOf(session.work_id)) : null, () => agentAt(session.work_id, session.session_id));
+  }
+  for (const one of D.signals || []) {
+    if (one.active === false || !RESTLESS.includes(one.signal)) continue;
+    const session = D.sessions.find(row => row.session_id === one.session_id && row.state === 'running');
+    if (session) attend(`stuck:${one.session_id}:${one.signal}`, `${agentName(session.agent)} seems stuck`,
+      ticketOf(session.work_id) ? ticketNode(ticketOf(session.work_id)) : null, () => agentAt(session.work_id, session.session_id));
+  }
+  for (const row of MERGE.rows || []) {
+    const ticket = ticketOf(row.work_id);
+    attend(`merge:${row.work_id}`, 'A merge is waiting for your review', ticket ? ticketNode(ticket) : null,
+      () => takeReview(row.work_id, null));
+  }
+}
+/* What the person's system agent, as the mascot, and every agent, as its figure, do on the page, VIEW-005: the web
+ * module's verbs reach the page as `mascot` events with an id, and what they ask, what a figure sees, a picture from
+ * its eyes, what the person is looking at, is answered to /api/mascot-result under that id. Every act shows on the
+ * page as the mascot doing it: it walks to what it selects, gestures at what it opens, and says so in a word. */
+function mascotEvent(payload) {
+  if (!payload || payload.project !== S.project) return;
+  const act = payload.act, node = nodeOfAddress(payload.address);
+  const answer = result => payload.id && wrote('/api/mascot-result', {id: payload.id, result});
+  if (act === 'see' || act === 'look') {  // the system agent looking through the mascot's eyes leads it too
+    if (mascotGlyph() && (!payload.work || isSystemTalk(ticketOf(payload.work)))) driveMascot();
+    return sight(payload, node, answer);
+  }
+  if (act === 'viewing') return answer(viewing());
+  if (act === 'embody') return answer(payload.work ? embody(payload.work, payload.character, 'agent')
+    : {error: 'Only an agent in a conversation can take a body: run it from that agent.'});
+  const own = payload.work && ROAM.figures.get(payload.work)?.talk ? payload.work : null;  // an embodied agent's own figure
+  // the body's acts need a body; the page's own acts, the camera, a tab, a pane, the maps, are done with or without one
+  const bodily = ['say', 'go', 'turn', 'point', 'emote', 'move', 'push', 'drag', 'drop', 'take', 'release'].includes(act);
+  const body = Boolean(mascotGlyph());
+  if (bodily && !body && !own) {
+    if (payload.id) answer({error: 'The mascot has no body on the map yet: it is drawn once your system agent has one.'});
+    return;
+  }
+  // its system agent leads it now: autonomy pauses until the agent lets go, `mascotDriven`
+  if (body && !own) driveMascot(act === 'take' ? {reason: String(payload.reason || '')} : null);
+  const tell = (words, seconds = 2.4) => say(words, seconds);
+  if (act === 'release') { releaseMascot(); dropHeld(); MASCOT.job = null; }
+  else if (act === 'take') { if (payload.reason) say(String(payload.reason).slice(0, 140), 4, null, null, MASCOT.glyph || ''); }
+  else if (act === 'say') say(String(payload.text || '').slice(0, 280), Math.min(12, 3 + String(payload.text || '').length / 18), null,
+    own, own ? '' : MASCOT.glyph || '');  // an embodied agent speaks in its own bubble; the mascot's agent is named in it
+  else if (act === 'go' && node) {
+    MASCOT.call = {node, until: MASCOT.driven, distance: payload.distance, height: payload.height, agent: true};
+    MASCOT.facing = null;
+    MASCOT.job = null;
+  }
+  else if (act === 'move') {  // to a point, an address, or by a step relative to its heading
+    const point = Array.isArray(payload.point) ? new THREE.Vector3(...payload.point.map(Number)) : null;
+    const step = ['forward', 'right', 'up'].some(key => payload[key] != null) ? (() => {
+      const ahead = MASCOT.heading.clone().setY(0).normalize(), side = new THREE.Vector3().crossVectors(ahead, THREE.Object3D.DEFAULT_UP).normalize();
+      return MASCOT.pos.clone().addScaledVector(ahead, Number(payload.forward || 0)).addScaledVector(side, Number(payload.right || 0))
+        .add(new THREE.Vector3(0, Number(payload.up || 0), 0));
+    })() : null;
+    MASCOT.call = null;
+    MASCOT.job = {kind: 'move', node: point || step ? null : node, point: point || step, agent: true};
+  }
+  else if (act === 'push' && node) {
+    const toward = payload.toward ? nodeOfAddress(payload.toward) : null, at = nodeById(G?.graphData() || {nodes: []}, node);
+    const dir = {up: [0, 1, 0], down: [0, -1, 0]}[payload.direction] || (toward && at ? (() => {
+      const other = nodeById(G.graphData(), toward);
+      return other ? [other.x - at.x, other.y - at.y, other.z - at.z] : null;
+    })() : null);
+    MASCOT.call = null;
+    MASCOT.job = {kind: 'push', node, dir, strength: Number(payload.strength ?? 0.5), agent: true};
+  }
+  else if (act === 'drag' && node) {
+    MASCOT.call = null;
+    if (MASCOT.holding && MASCOT.holding.id !== node) dropHeld();  // one node held at a time
+    MASCOT.job = {kind: 'drag', node, point: Array.isArray(payload.point) ? payload.point.map(Number) : null,
+      beside: payload.beside ? nodeOfAddress(payload.beside) : null, agent: true};
+  }
+  else if (act === 'drop') { dropHeld(); MASCOT.job = null; }
+  else if (act === 'turn') turnMascot(node, payload.degrees);
+  else if (act === 'point' && node) MASCOT.point = {node, at: MASCOT.clock, long: 2.4};
+  else if (act === 'emote') MASCOT.emote = {kind: payload.emote, at: MASCOT.clock, long: payload.emote === 'sleep' ? 6 : 1.8};
+  else if (act === 'select' && node) {  // it walks over, and the selection follows it
+    if (body) MASCOT.call = {node, until: MASCOT.driven, agent: true};
+    setTimeout(() => select(node, true), reduced() || !body ? 0 : 900);
+  } else if (act === 'camera') {
+    if (payload.mode) setMode3d(payload.mode);
+    if (node) { MASCOT.point = {node, at: MASCOT.clock, long: 2}; fly3d(node, true); }
+    tell(payload.mode ? `${payload.mode[0].toUpperCase()}${payload.mode.slice(1)} view.` : 'Over here.');
+  } else if (act === 'tab') {
+    showTab(payload.tab === 'provenance' ? 'prov' : payload.tab);
+    MASCOT.emote = {kind: 'wave', at: MASCOT.clock, long: 1.2};
+    tell(`The ${payload.tab} tab.`);
+  } else if (act === 'open') opened(payload, tell);
+  else if (act === 'swap') { swap(payload.large === '2d'); tell(`The ${payload.large.toUpperCase()} map, large.`); }
+  else if (act === 'flow') { flowMode(payload.mode); if (typeof showFlow === 'function') showFlow(payload.mode); tell(`Flow: ${payload.mode}.`); }
+  else if (act === 'physics') {
+    if (PHYSICS.some(([name]) => name === payload.preset)) { applyPhysics(payload.preset); tell(`Physics: ${payload.preset}.`); }
+    else tell(`I don't know the ${payload.preset} physics.`);
+  }
+  answer({done: true});
+  wake3d(4000);
+  wake2d();
+}
+function openFor(payload, tell) {  // what the agent opens on the page for the person
+  if (payload.what === 'board') { if ($('#board').hidden) $('#boardBtn').click(); tell('The board.'); }
+  else if (payload.what === 'settings') { openSettings(); tell('Settings.'); }
+  else if (payload.what === 'pane' && payload.id && WS.on) { WS.reveal(payload.id); tell('There.'); }
+  else if (payload.what === 'ticket' && payload.id) {  // its node, its work in the panel
+    const ticket = ticketOf(payload.id);
+    if (!ticket) return tell('I cannot find that ticket.');
+    const node = ticketNode(ticket);
+    MASCOT.call = {node, until: MASCOT.driven, agent: true};
+    setTimeout(() => { select(node, true); showTab('object'); }, reduced() ? 0 : 900);
+    tell(`Ticket on ${ticketPart(ticket)}.`);
+  }
+}
+// an element by its address, or a join written receiver>provider, as the node the maps draw for it
+function nodeOfAddress(address) {
+  if (!address) return null;
+  const [receiver, provider] = String(address).split('>').map(part => part.trim());
+  if (provider) {
+    const one = partAt(receiver)?.id, two = partAt(provider)?.id;
+    const join = S.joins.find(item => item.receiver === one && item.providers.includes(two));
+    return join ? 'p:' + join.id : null;
+  }
+  return partAt(receiver)?.id ?? null;
+}
+function turnMascot(node, degrees) {
+  if (node) MASCOT.facing = {node};
+  else if (Number.isFinite(Number(degrees))) {
+    const by = -Number(degrees) * Math.PI / 180;  // right is clockwise seen from above
+    MASCOT.facing = {dir: MASCOT.heading.clone().setY(0).normalize().applyAxisAngle(THREE.Object3D.DEFAULT_UP, by)};
+  }
+  MASCOT.driven = performance.now() + 120000;
+}
+/* Who sees: the calling agent's own figure, by the work its runner gave it, or else the person's mascot, which is the
+ * system agent's figure and the person's. A refusal says why. */
+function seer(work, role) {
+  const figure = work ? ROAM.figures.get(work) : null;  // its own figure, an embodied conversation agent's too
+  if (figure?.mesh) return {mesh: figure.mesh, who: figure.glyph, figure};
+  if (role === 'system' && MASCOT.mesh) return {mesh: MASCOT.mesh, who: MASCOT.glyph, mascot: true};  // the person's own agent
+  if (work && ticketOf(work)?.held && !isSystemTalk(ticketOf(work)))
+    return {refuse: 'You have no body on the map yet: the person can give you one, or ask for one with web_embody.'};
+  if (work && ticketOf(work) && !ticketOf(work).held) return {refuse: 'No figure is drawn for your ticket on this page yet: it walks onto the map once your session is working there.'};
+  if (MASCOT.mesh) return {mesh: MASCOT.mesh, who: MASCOT.glyph, mascot: true};
+  return {refuse: mascotGlyph() ? 'The mascot is not drawn yet: the 3D map is not open.' : 'No mascot is chosen: web_mascot is none.'};
+}
+/* A figure's eyes as a camera: at its eye anchor, facing its gaze, with its own field of view, `eyeOf`. */
+const EYE = {camera: new THREE.PerspectiveCamera(68, 1.5, 0.05, 1e6), at: new THREE.Vector3(), dir: new THREE.Vector3(),
+  look: new THREE.Vector3(), width: 768, height: 512, target: null, debug: false, view: false, saved: null, k: 0};
+function eyeCamera(mesh, aspect = EYE.width / EYE.height) {
+  eyeOf(mesh, EYE.at, EYE.dir);
+  const camera = EYE.camera;
+  camera.fov = mesh.userData.fov || 68;
+  camera.aspect = aspect;
+  camera.near = Math.max(0.01, mesh.scale.x * 0.05);
+  camera.far = G.camera().far || 1e6;
+  camera.position.copy(EYE.at);
+  camera.up.set(0, 1, 0);
+  camera.lookAt(EYE.look.copy(EYE.at).add(EYE.dir));
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld(true);
+  return camera;
+}
+/* What a figure sees now: every element in its field of view, with how far, which way, whether something nearer hides
+ * it, and whether it is selected or being worked; the figures in view; and the elements nearest it, seen or not. */
+function seeFrom(mesh, camera) {
+  const data = G.graphData(), eye = EYE.at, seen = [], near = [], figures = [];
+  const balls = data.nodes.filter(node => node.x !== undefined && node.__threeObj?.visible !== false && shownNode(node));
+  const hidden = (point, away, own) => balls.some(other => {  // a nearer node across the line of sight
+    if (other === own) return false;
+    AT.set(other.x, other.y, other.z);
+    const along = TOWARD.subVectors(AT, eye).dot(SPOT.subVectors(point, eye).normalize());
+    if (along <= 0 || along >= away - ballOf(own || other)) return false;
+    return AT.distanceTo(PULL.copy(eye).addScaledVector(SPOT, along)) < ballOf(other);
+  });
+  const bearing = v => [v.x < -0.33 ? 'left' : v.x > 0.33 ? 'right' : 'ahead', v.y > 0.45 ? 'above' : v.y < -0.45 ? 'below' : null]
+    .filter(Boolean).join(', ');
+  for (const node of balls) {
+    if (node.t !== 'el' && node.t !== 'purpose') continue;
+    const point = new THREE.Vector3(node.x, node.y, node.z), away = point.distanceTo(eye), v = point.clone().project(camera);
+    const join = node.t === 'purpose' ? joinOf(node.id) : null;
+    const entry = {address: join ? `${partAddress(join.receiver)}>${partAddress(join.providers[0])}` : node.address,
+      name: join ? (join.purpose || 'a join') : node.name, kind: join ? 'join' : 'element', distance: Math.round(away * 10) / 10,
+      selected: S.selected === node.id, active: INUSE.parts.get(node.id) === true || Boolean(node.work?.length)
+        || [...ROAM.figures.values()].some(figure => figure.target === node.id)};
+    if (node.t === 'el') near.push(entry);
+    if (v.z > -1 && v.z < 1 && Math.abs(v.x) <= 1 && Math.abs(v.y) <= 1)
+      seen.push({...entry, bearing: bearing(v), visible: !hidden(point, away, node)});
+  }
+  for (const figure of [...ROAM.figures.values(), ...(MASCOT.mesh ? [{mesh: MASCOT.mesh, glyph: MASCOT.glyph, mascot: true}] : [])]) {
+    if (figure.mesh === mesh) continue;
+    const point = figure.mesh.position, v = point.clone().project(camera);
+    if (v.z > -1 && v.z < 1 && Math.abs(v.x) <= 1 && Math.abs(v.y) <= 1)
+      figures.push({character: figure.glyph, who: figure.mascot ? "the person's mascot" : `the agent on ${partAddress(figure.target) || 'its ticket'}`,
+        distance: Math.round(point.distanceTo(eye) * 10) / 10, bearing: bearing(v)});
+  }
+  seen.sort((one, two) => one.distance - two.distance);
+  near.sort((one, two) => one.distance - two.distance);
+  const ahead = seen.filter(one => one.visible).sort((one, two) => (one.bearing === 'ahead' ? 0 : 1) - (two.bearing === 'ahead' ? 0 : 1))[0];
+  return {fov: Math.round(camera.fov), facing: ahead?.address || null, in_view: seen, figures, nearest: near.slice(0, 6)};
+}
+const partAddress = id => S.elements.get(id)?.element.address || (String(id).startsWith('p:') ? joinOf(id)?.receiver_address : null) || null;
+/* A picture from a figure's eyes, the scene as the page draws it, everything a module adds to it included, the figure
+ * itself left out: a PNG, EYE.width by EYE.height, as base64. */
+function lookFrom(mesh, camera) {
+  const renderer = G.renderer();
+  if (!EYE.target) {
+    EYE.target = new THREE.WebGLRenderTarget(EYE.width, EYE.height, {samples: 4});
+    EYE.target.texture.colorSpace = THREE.SRGBColorSpace;
+  }
+  const was = renderer.getRenderTarget(), shown = mesh.visible;
+  mesh.visible = false;
+  try {
+    renderer.setRenderTarget(EYE.target);
+    renderer.clear();
+    renderer.render(G.scene(), camera);
+    const pixels = new Uint8Array(EYE.width * EYE.height * 4);
+    renderer.readRenderTargetPixels(EYE.target, 0, 0, EYE.width, EYE.height, pixels);
+    const canvas = document.createElement('canvas');
+    canvas.width = EYE.width; canvas.height = EYE.height;
+    const pen = canvas.getContext('2d'), image = pen.createImageData(EYE.width, EYE.height);
+    for (let row = 0; row < EYE.height; row++)  // the target is read bottom row first
+      image.data.set(pixels.subarray((EYE.height - 1 - row) * EYE.width * 4, (EYE.height - row) * EYE.width * 4), row * EYE.width * 4);
+    pen.putImageData(image, 0, 0);
+    return canvas.toDataURL('image/png').split(',')[1];
+  } finally {
+    renderer.setRenderTarget(was);
+    mesh.visible = shown;
+  }
+}
+/* see and look: from the caller's own figure; turned first toward an address when one is given. */
+function sight(payload, node, answer) {
+  if (!G) return answer({error: 'The 3D map is not open on this page.'});
+  const who = seer(payload.work, payload.role);
+  if (who.refuse) return answer({error: who.refuse});
+  let wait = 0;
+  if (node) {
+    if (who.mascot) { turnMascot(node); wait = reduced() ? 0 : 900; }
+    else if (who.figure) { who.figure.lookAt = {node, until: who.figure.clock + 3}; wait = reduced() ? 0 : 900; }
+  }
+  wake3d(wait + 1500);
+  setTimeout(() => {
+    const camera = eyeCamera(who.mesh), seen = seeFrom(who.mesh, camera);
+    const from = {character: who.who, as: who.mascot ? "the person's mascot" : 'your figure',
+      eye: EYE.at.toArray().map(one => Math.round(one * 10) / 10), gaze: EYE.dir.toArray().map(one => Math.round(one * 100) / 100)};
+    answer(payload.act === 'look' ? {from, ...seen, png: lookFrom(who.mesh, camera)} : {from, ...seen});
+  }, wait);
+}
+/* What the person is looking at now: the selection, the large map, each map's mode, the side tab, the flow, the
+ * physics, the panes open, and the elements in the 3D view. */
+function viewing() {
+  const chosen = S.selected, on = chosen ? (S.elements.get(chosen)?.element || null) : null, join = chosen?.startsWith('p:') ? joinOf(chosen) : null;
+  const inView = [];
+  if (G) for (const node of G.graphData().nodes) {
+    if (node.t !== 'el' || node.x === undefined) continue;
+    const v = SPOT.set(node.x, node.y, node.z).project(G.camera());
+    if (v.z > -1 && v.z < 1 && Math.abs(v.x) <= 1 && Math.abs(v.y) <= 1) inView.push({address: node.address, name: node.name});
+  }
+  return {selected: on ? {address: on.address, name: labelOf(on)} : join ? {join: join.purpose, receiver: join.receiver_address} : null,
+    large: $('.app').classList.contains('swapped') ? '2d' : '3d', mode3d: V3.mode, mode2d: MODE.mode, tab: tabNow(),
+    flow: flowModeNow(), physics: PHYS.name, board: !$('#board').hidden, chat: !$('#helpdesk').hidden,
+    panes: WS.on ? WS.layout() : null, in_view_3d: inView, mascot_eyes: EYE.view};
+}
+/* The mascot's eyes, for the person: the large 3D view eases to where the mascot sees from and follows it, and back
+ * to where the camera was. */
+function mascotEyes(on = !EYE.view) {
+  if (!G || !MASCOT.mesh) return false;
+  const camera = G.camera(), controls = G.controls();
+  if (on && !EYE.view) EYE.saved = {at: camera.position.clone(), turn: camera.quaternion.clone(), fov: camera.fov};
+  EYE.view = Boolean(on);
+  EYE.k = 0;
+  controls.enabled = !EYE.view && !EYE.saved;
+  wake3d(1500);
+  return EYE.view;
+}
+const EYEQ = new THREE.Quaternion();
+function eyes3d(passed) {  // each frame: the large camera toward the mascot's eyes, or back to where it was
+  if (!G || (!EYE.view && !EYE.saved)) return;
+  const camera = G.camera();
+  EYE.k = reduced() ? 1 : Math.min(1, EYE.k + passed / 0.9);
+  const k = 1 - Math.pow(1 - EYE.k, 3);
+  if (MASCOT.mesh) MASCOT.mesh.visible = !(EYE.view || (EYE.saved && EYE.k < 0.6));  // never seen from inside
+  if (EYE.view && MASCOT.mesh) {
+    const eye = eyeCamera(MASCOT.mesh, camera.aspect);
+    camera.position.lerp(eye.position, Math.max(k, 0.25));
+    camera.quaternion.slerp(EYEQ.copy(eye.quaternion), Math.max(k, 0.25));
+    camera.fov += (eye.fov - camera.fov) * Math.max(k, 0.25);
+  } else if (EYE.saved) {
+    camera.position.lerp(EYE.saved.at, k);
+    camera.quaternion.slerp(EYE.saved.turn, k);
+    camera.fov += (EYE.saved.fov - camera.fov) * k;
+    if (EYE.k >= 1) { EYE.saved = null; G.controls().enabled = true; if (MASCOT.mesh) MASCOT.mesh.visible = true; }
+  }
+  camera.updateProjectionMatrix();
+  FRAMES.moved = true;
+}
+function eyeDebug3d() {  // the eye anchor and the gaze ray of every figure, drawn for a check of `look`
+  for (const mesh of [MASCOT.mesh, ...[...ROAM.figures.values()].map(figure => figure.mesh)]) {
+    if (!mesh) continue;
+    eyeOf(mesh, EYE.at, EYE.dir);
+    const far = mesh.scale.x * 6, tip = {x: EYE.at.x + EYE.dir.x * far, y: EYE.at.y + EYE.dir.y * far, z: EYE.at.z + EYE.dir.z * far};
+    fxLine(EYE.at, tip, tintOf('#ff3dd2'), 1, 0.4);
+    fxDot(EYE.at, mesh.scale.x * 0.12, tintOf('#ff3dd2'), 1, 0, 6, 10);
+  }
+}
+/* Chat with the mascot: a click on it, where no node takes the click, opens a small reply field under its bubble. What
+ * the person writes goes to their system agent, the one the chat dock's Call starts, and the answer comes back in the
+ * bubble, in full in the chat dock's thread. */
+const ASKING = {open: false, sent: 0, heard: null, base: null, pending: null};
+function mascotScreen() {  // where the 3D mascot is on the page, for a click on it
+  if (!G || !MASCOT.mesh) return {};
+  const area = G.renderer().domElement.getBoundingClientRect(), at = SPOT.copy(MASCOT.mesh.position).project(G.camera());
+  return {sx: area.left + (at.x + 1) / 2 * area.width, sy: area.top + (1 - at.y) / 2 * area.height};
+}
+function mascotAt(x, y) {
+  if (!G || !MASCOT.mesh) return false;
+  const area = G.renderer().domElement.getBoundingClientRect(), at = SPOT.copy(MASCOT.mesh.position).project(G.camera());
+  const px = area.left + (at.x + 1) / 2 * area.width, py = area.top + (1 - at.y) / 2 * area.height;
+  return Math.abs(at.z) < 1 && Math.hypot(px - x, py - y) < Math.max(18, onScreen(MASCOT.mesh) * 0.6);
+}
+function replyField() {
+  const el = bubble(), field = h('input', {class: 'reply', type: 'text', placeholder: 'Ask your system agent…',
+    'aria-label': 'Ask your system agent through the mascot'});
+  ASKING.open = true;
+  el.replaceChildren(h('span', {}, BUBBLE.text && performance.now() < BUBBLE.until ? BUBBLE.text : 'Yes?'), field);
+  Object.assign(BUBBLE, {until: performance.now() + 60000, click: null});
+  el.classList.add('on', 'asking');
+  field.addEventListener('keydown', async event => {
+    event.stopPropagation();
+    if (event.key === 'Escape') return closeReply();
+    if (event.key !== 'Enter' || !field.value.trim()) return;
+    const text = field.value.trim();
+    closeReply();
+    say('Asking…', 30);
+    await mascotAsk(text);
+  });
+  field.addEventListener('blur', () => setTimeout(() => { if (ASKING.open && document.activeElement !== field) closeReply(); }, 200));
+  setTimeout(() => field.focus(), 30);
+}
+function closeReply() {
+  ASKING.open = false;
+  BUBBLE.el?.classList.remove('asking');
+  hush();
+}
+async function mascotAsk(text) {
+  const live = DOCK.mine && D.sessions.some(one => one.work_id === DOCK.mine && one.state === 'running' && one.session_id);
+  ASKING.pending = text;
+  if (!live) await callSystem();
+  if (!DOCK.mine) { ASKING.pending = null; say('I could not reach your system agent.', 4); return; }
+  await flushAsk();
+}
+/* The person's words to the system agent go once its session is up: at once when it is, or when the agents are next
+ * read, `noticeAttention`, after the Call that starts it. */
+async function flushAsk() {
+  const text = ASKING.pending, session = D.sessions.filter(one => one.work_id === DOCK.mine && one.state === 'running'
+    && one.session_id).at(-1);
+  if (!text || !session) return;
+  ASKING.pending = null;
+  Object.assign(ASKING, {sent: Date.now(), heard: null, base: null});
+  if (!await wrote('/api/dispatch-message', {work_id: DOCK.mine, session: session.session_id, text})) say('That did not go through.', 4);
+}
+/* The system agent's answer, the newest of its words after the person asked, said in the bubble in short; the chat
+ * dock's thread, where it is read in full, calls this as it draws. */
+function mascotHeard(target, lines) {
+  if (!ASKING.sent || target !== DOCK.mine) return;
+  const spoken = lines.filter(line => line.kind === 'agent_message_chunk');
+  if (ASKING.base === null) { ASKING.base = Math.max(-1, ...spoken.map(line => Number(line.seq) || 0)); return; }
+  const last = spoken.filter(line => (Number(line.seq) || 0) > ASKING.base).at(-1);
+  const words = String(last?.text || '').replace(/\s+/g, ' ').trim();
+  if (!words || words === ASKING.heard) return;
+  ASKING.heard = words;
+  say(words.length > 160 ? words.slice(0, 157) + '…' : words, Math.min(12, 3 + words.length / 25), () => agentAt(DOCK.mine),
+    ROAM.figures.get(DOCK.mine)?.talk ? DOCK.mine : null);  // an embodied system agent answers from its own figure
+}
+$('#stage').addEventListener('click', event => {  // a click on the mascot where no node takes it: a word with it
+  if (CUT.on || hovered || !mascotAt(event.clientX, event.clientY)) return;
+  event.stopPropagation();
+  replyField();
+}, true);
 /* A figure in 3D is the agent at work on its ticket: a click on it opens that session's thread in the chat dock. A
  * figure is taken anywhere within a ball of its size, so one moving on its orbit is easy to catch. */
 const FIGURE_PICK = {ray: new THREE.Raycaster(), at: new THREE.Vector2(), ball: new THREE.Sphere(), down: null};
@@ -1392,6 +2959,7 @@ function route2d(base, from, to) {  // the fewest edges of the 2D map from one e
   return path;
 }
 function spot2d(base, key) {  // where a 2D figure stands: an element's box, or the middle of a join's edge
+  if (!key) return null;  // no node, as while the map is read again and has no elements yet
   if (!key.startsWith('p:')) { const node = base.nodes.get(key); return node && {x: node.x, y: node.y, w: node.w, h: node.h}; }
   const path = base.edges.find(edge => edge.join.id === key.slice(2))?.path;
   if (!path?.getTotalLength) return null;
@@ -1414,7 +2982,7 @@ function figures2d(tickets) {
   for (const ticket of tickets) {
     const figure = ROAM2D.figures.get(ticket.id);
     if (figure) { figure.done = Boolean(ticket.done) || !live.has(ticket.id); continue; }
-    const working = live.has(ticket.id) && !ticket.done, target = working && target2d(base, ticket);
+    const working = drawnWorking(ticket, live), target = working && target2d(base, ticket);
     if (target && !ROAM2D.seen.has(ticket.id)) {
       const glyph = ROAM.figures.get(ticket.id)?.glyph || glyphFor(ticket.id);
       const g = document.createElementNS(SVG, 'g'), image = document.createElementNS(SVG, 'image');
@@ -1425,15 +2993,16 @@ function figures2d(tickets) {
       ROAM2D.seen.add(ticket.id);
       // a join's figure walks on from its receiver onto the middle of the join's edge
       const way = [...route2d(base, home, target.last), ...(target.key !== target.last ? [target.key] : [])];
+      const motion = motionOf(glyph, ticket.id);
       ROAM2D.figures.set(ticket.id, {id: ticket.id, glyph, g, home, target: target.key, last: target.last, stage: 'arriving',
-        way: way.map(key => ({key})), u: 0, speed: 0, clock: 0, angle: Math.random() * Math.PI * 2, stride: 0, lean: 0,
+        way: way.map(key => ({key})), u: 0, speed: 0, clock: 0, angle: motion.phase * Math.PI * 2, stride: 0, lean: 0, motion,
         from: {x: 0, y: 0}, heading: {x: 1, y: 0}, x: 0, y: 0, size: 0, drawn: '', done: Boolean(ticket.done)});
     }
   }
   for (const [id, figure] of ROAM2D.figures) if (!tickets.some(ticket => ticket.id === id)) figure.done = true;
   again2d();
 }
-function again2d() { if (ROAM2D.figures.size && !ROAM2D.frame) ROAM2D.frame = requestAnimationFrame(roam2d); }
+function again2d() { if ((ROAM2D.figures.size || mascotGlyph() || MASCOT2D.g) && !ROAM2D.frame) ROAM2D.frame = requestAnimationFrame(roam2d); }
 function layer2d(base) {  // the figures are drawn over the boxes, in the boxes' own coordinates
   if (base.agents?.isConnected || (base.agents && base.svg.contains(base.agents))) return base.agents;
   const holder = base.nodes.values().next().value?.g.parentNode;
@@ -1459,19 +3028,23 @@ function curve2d(points, u) {
 /* A 2D figure walks its way as the 3D figures do, `walk`: from rest up to ROAM2D.speed, slower into each sharp turn,
  * and to rest as it arrives. Says whether it has arrived. */
 function walk2d(figure, points, passed) {
-  const legs = points.length - 1, lengths = [];
+  const legs = points.length - 1, lengths = [], motion = figure.motion;
+  const top = ROAM2D.speed * (motion?.speed ?? 1), accel = ROAM2D.accel * (motion?.accel ?? 1);
+  const corner = CORNERS[motion?.corner]?.slow ?? ROAM2D.corner;
   let total = 0;
   for (let k = 0; k < legs; k++) { lengths.push(Math.max(1e-3, Math.hypot(points[k + 1].x - points[k].x, points[k + 1].y - points[k].y))); total += lengths[k]; }
   const leg = Math.min(legs - 1, Math.floor(figure.u));
   let done = (figure.u - leg) * lengths[leg];
   for (let k = 0; k < leg; k++) done += lengths[k];
-  const least = ROAM2D.speed * 0.12, reach = (limit, away) => Math.sqrt(limit * limit + 2 * ROAM2D.accel * Math.max(0, away));
-  let speed = Math.min(ROAM2D.speed, reach(least, done), reach(least, total - done));
+  const least = top * 0.12, reach = (limit, away) => Math.sqrt(limit * limit + 2 * accel * Math.max(0, away));
+  let speed = Math.min(top, reach(least, done), reach(least, total - done));
   for (let k = 1, at = lengths[0]; k < legs; at += lengths[k], k++) {
     const turn = ((points[k].x - points[k - 1].x) * (points[k + 1].x - points[k].x) + (points[k].y - points[k - 1].y) * (points[k + 1].y - points[k].y))
       / (lengths[k - 1] * lengths[k]);
-    speed = Math.min(speed, reach(ROAM2D.speed * (1 - ROAM2D.corner * (1 - turn) / 2), Math.abs(at - done)));
+    speed = Math.min(speed, reach(top * (1 - corner * (1 - turn) / 2), Math.abs(at - done)));
   }
+  if (motion) speed *= strokeOf(motion, figure.stride / Math.max(1, figure.size || 40)).pace;
+  figure.top = top;
   let step = speed * passed;
   figure.stride += step;
   while (step > 0 && figure.u < legs) {
@@ -1485,6 +3058,23 @@ function walk2d(figure, points, passed) {
 function home2dFrom(base, figure) {
   const way = back2d(base, figure).slice(1);
   return [{point: {x: figure.x, y: figure.y}}, ...(way.length ? way : [figure.home]).map(key => ({key}))];
+}
+/* How a flat glyph carries its character's gait, `MOTION`, from its stride in glyph sizes: how high it is off its
+ * line, how much it is squashed (less than 0 stretched), and the sway of a swimmer's push. */
+function gait2d(figure, moving) {
+  const m = figure.motion, stroke = strokeOf(m, figure.stride / Math.max(1, figure.size || 40));
+  if (m.go === 'hop') {
+    if (figure.wasPhase < 0.75 && stroke.phase >= 0.75) figure.landed = figure.clock;
+    figure.wasPhase = stroke.phase;
+    const crouch = stroke.phase >= 0.75 ? Math.sin((stroke.phase - 0.75) / 0.25 * Math.PI) : 0;
+    const land = Math.exp(-(figure.clock - (figure.landed ?? -9)) * 14);
+    return {lift: stroke.air * m.lift * 1.2, squash: crouch * 0.2 - (stroke.phase < 0.375 ? stroke.air * 0.12 : 0) + land * 0.12, sway: 0};
+  }
+  if (m.go === 'walk' || m.go === 'creep') return {lift: moving ? Math.abs(Math.sin(stroke.phase * Math.PI * 2)) * Math.max(0.04, m.lift) : 0, squash: 0, sway: 0};
+  if (m.go === 'swim' || m.go === 'pulse') return {lift: 0, squash: m.go === 'pulse' && moving ? (stroke.thrust - 0.5) * 0.12 : 0,
+    sway: moving ? Math.sin(stroke.phase * Math.PI * 2) * 7 * stroke.thrust : 0};
+  if (m.go === 'flap') return {lift: moving ? stroke.thrust * 0.05 : 0, squash: 0, sway: 0};
+  return {lift: 0, squash: 0, sway: 0};
 }
 function roam2d() {
   ROAM2D.frame = 0;
@@ -1502,68 +3092,182 @@ function roam2d() {
     figure.clock += passed;
     const size = Math.max(base.agentSize, ROAM2D.least * perPixel), target = spot2d(base, figure.target), home = spot2d(base, figure.home);
     if (!target || !home) { if (figure.done) gone(); continue; }
-    let x = target.x, y = target.y, scale = 1, lift = 0, lean = 0;
+    const m = figure.motion;
+    let x = target.x, y = target.y, scale = 1, lift = 0, lean = 0, squash = 0, spin = 0, going = false;
     if (reduced()) {  // no walking: it stands above its node while the ticket is worked
       y = target.y - target.h / 2 - size / 2;
       if (figure.done) { gone(); continue; }
-    } else if (figure.stage === 'arriving') {  // it appears on the DE
-      const grown = Math.min(1, figure.clock / ROAM2D.appear);
-      ({x, y} = home); scale = Math.max(0.001, 1 + 1.7 * Math.pow(grown - 1, 3) + 0.7 * Math.pow(grown - 1, 2));
-      if (grown >= 1) Object.assign(figure, {stage: 'going', u: 0, clock: 0});
+    } else if (figure.stage === 'arriving') {  // it appears on the DE, in its own way
+      const k = Math.min(1, figure.clock / ROAM2D.appear), e = easeBoth(k);
+      ({x, y} = home);
+      if (m.arrive === 'drop') y -= (1 - e) * size * 3;
+      else if (m.arrive === 'swoop') { y -= (1 - e) * size * 2.5; x -= (1 - e) * size * 2; }
+      else if (m.arrive === 'rise') y += (1 - e) * size * 1.5;
+      scale = m.arrive === 'pop' ? Math.max(0.001, 1 + 1.7 * Math.pow(k - 1, 3) + 0.7 * Math.pow(k - 1, 2)) : Math.max(0.001, Math.min(1, k * 2));
+      if (m.arrive === 'sprout') { scale = 1; squash = 1 - Math.max(0.001, e); }
+      if (k >= 1) Object.assign(figure, {stage: 'going', u: 0, clock: 0});
     } else if (figure.stage === 'going' || figure.stage === 'returning') {  // along the map's own edges
-      const going = figure.stage === 'going';
+      going = true;
+      const out = figure.stage === 'going';
       const points = figure.way.map(step => step.point || spot2d(base, step.key));
       if (points.length < 2 || points.some(point => !point)) {  // a node of its way left the map
-        Object.assign(figure, going ? {stage: figure.done ? 'touching' : 'circling'} : {stage: 'leaving'}, {clock: 0, from: {x: 0, y: 0}});
+        Object.assign(figure, out ? {stage: figure.done ? 'flourish' : 'circling'} : {stage: 'leaving'}, {clock: 0, from: {x: 0, y: 0}});
         continue;
       }
       const arrived = walk2d(figure, points, passed), at = curve2d(points, figure.u), ahead = curve2d(points, Math.min(points.length - 1, figure.u + 0.02));
       ({x, y} = at);
       if (Math.hypot(ahead.x - x, ahead.y - y) > 1e-3) figure.heading = {x: ahead.x - x, y: ahead.y - y};
-      // a step's bounce, and a lean the way it goes, as fast as it goes
-      lift = Math.abs(Math.sin(figure.stride / (size * 0.9) * Math.PI)) * size * 0.07 * Math.min(1, figure.speed / ROAM2D.speed);
-      lean = Math.sign(figure.heading.x) * Math.min(1, figure.speed / ROAM2D.speed) * ROAM2D.lean;
-      if (arrived) {
-        if (going) {  // onto its orbit from where it arrived, on the side that carries it straight on
-          const across = target.w / 2 + size * ROAM2D.orbit, down = target.h / 2 + size * ROAM2D.orbit;
-          figure.from = {x: x - target.x, y: y - target.y};
-          figure.angle = Math.atan2(-figure.heading.x / across, figure.heading.y / down);
-        }
-        Object.assign(figure, {clock: 0, stage: !going ? 'leaving' : figure.done ? 'touching' : 'circling'});
+      if (m.corner === 'flit') {  // a moth jinks from side to side
+        const across = Math.hypot(figure.heading.x, figure.heading.y) || 1;
+        const jink = Math.sin(figure.stride / size * 5.3) * size * 0.2 * Math.min(1, figure.speed / figure.top);
+        x += -figure.heading.y / across * jink; y += figure.heading.x / across * jink;
       }
-    } else if (figure.stage === 'circling') {  // around its box, slowly at one steady pace
-      figure.angle += passed * 2 * Math.PI / ROAM2D.lap;
-      const settled = easeBoth(Math.min(1, figure.clock / ROAM2D.settle));  // it swings out from where it arrived
-      const across = target.w / 2 + size * ROAM2D.orbit, down = target.h / 2 + size * ROAM2D.orbit;
-      x = target.x + figure.from.x + (Math.cos(figure.angle) * across - figure.from.x) * settled;
-      y = target.y + figure.from.y + (Math.sin(figure.angle) * down - figure.from.y) * settled;
-      lift = Math.sin(figure.clock * 2.4) * size * 0.025;   // at rest on its orbit it bobs, gently
-      lean = -Math.sin(figure.angle) * ROAM2D.lean * 0.5 * settled;
-      if (figure.done) Object.assign(figure, {stage: 'returning', way: home2dFrom(base, {...figure, x, y}), u: 0, clock: 0, stride: 0});
-    } else if (figure.stage === 'touching') {  // finished before it got there: it still touches the node
-      const dip = Math.min(1, figure.clock / ROAM2D.touch);
+      lean = Math.sign(figure.heading.x) * Math.min(1, figure.speed / figure.top) * ROAM2D.lean * (m.corner === 'bank' ? 1.6 : 1);
+      if (arrived) {
+        if (out) {  // onto its orbit from where it arrived, on the side that carries it straight on
+          const across = target.w / 2 + size * ROAM2D.orbit * m.orbit / 1.5, down = target.h / 2 + size * ROAM2D.orbit * m.orbit / 1.5;
+          figure.from = {x: x - target.x, y: y - target.y};
+          figure.angle = m.dir * Math.atan2(figure.from.y / down, figure.from.x / across);
+        }
+        Object.assign(figure, {clock: 0, stage: !out ? 'leaving' : figure.done ? 'flourish' : 'circling'});
+      }
+    } else if (figure.stage === 'circling') {  // around its box, in its own way and at its own lap
+      const mood = moodOf(id), c = figure.clock;
+      let rate = 2 * Math.PI / m.lap;
+      if (mood === 'restless') rate *= 1 + 0.55 * Math.sin(c * 1.7) * Math.sin(c * 0.63 + 1);
+      if (mood === 'waiting') rate = 0;
+      figure.angle += rate * passed;
+      const settled = easeBoth(Math.min(1, c / ROAM2D.settle));  // it swings out from where it arrived
+      const across = target.w / 2 + size * ROAM2D.orbit * m.orbit / 1.5, down = target.h / 2 + size * ROAM2D.orbit * m.orbit / 1.5;
+      const turn = m.dir * figure.angle;
+      let wx = target.x + Math.cos(turn) * across, wy = target.y + Math.sin(turn) * down;
+      if (mood === 'waiting') { wx = target.x + target.w / 2 + size * 0.7; wy = target.y + target.h / 2; lean = 8; }  // toward the chat dock
+      // a tool call: a quick reach toward the part it touched, and back
+      if (figure.reach) {
+        const u = (c - figure.reach.at) / 1.3, to = spot2d(base, figure.reach.to);
+        if (u >= 1 || !to) figure.reach = null;
+        else { const k = Math.sin(Math.PI * u) ** 2, share = to === target || figure.reach.to === figure.target ? 0.5 : 0.3;
+          wx += (to.x - wx) * share * k; wy += (to.y - wy) * share * k; }
+      }
+      // now and then while it works, something of its own with its box: perched on top, or in close at its side
+      if (mood === 'working' && !figure.act && c > (figure.nextAct ?? 5) && ACTS[m.act]) figure.act = {kind: m.act, at: c, long: ACTS[m.act]};
+      if (figure.act) {
+        const u = (c - figure.act.at) / figure.act.long;
+        if (u >= 1 || mood !== 'working') { figure.act = null; figure.nextAct = c + actGap(m, c); }
+        else {
+          const k = easeBoth(Math.min(1, Math.sin(Math.PI * u) * 1.6));
+          const [px, py] = figure.act.kind === 'perch' ? [target.x, target.y - target.h / 2 - size * 0.35]
+            : [target.x + Math.cos(turn) * (target.w / 2 + size * 0.15), target.y + Math.sin(turn) * (target.h / 2 + size * 0.15)];
+          wx += (px - wx) * k; wy += (py - wy) * k;
+        }
+      }
+      x = target.x + figure.from.x + (wx - target.x - figure.from.x) * settled;
+      y = target.y + figure.from.y + (wy - target.y - figure.from.y) * settled;
+      // its stride goes on with the distance it covers, and a hopper hops in place now and then as it waits
+      const covered = Math.hypot(x - figure.x, y - figure.y);
+      figure.stride += covered;
+      if (m.go === 'hop' && covered < size * 0.01 && Math.sin(c * 0.6 + m.phase * 6) > 0.2) figure.stride += passed * m.stride * size * 0.8;
+      going = covered > size * 0.003;
+      if (!lean) lean = -Math.sin(turn) * ROAM2D.lean * 0.5 * settled;
+      if (figure.done) Object.assign(figure, {stage: 'flourish', clock: 0, from: {x: x - target.x, y: y - target.y}});
+    } else if (figure.stage === 'flourish') {  // done: its little flourish, then home
+      const u = Math.min(1, figure.clock / FLOURISH), k = Math.sin(Math.PI * u);
       ({x, y} = {x: target.x + figure.from.x, y: target.y + figure.from.y});
-      scale = 1 - 0.3 * Math.sin(Math.PI * dip);
-      if (dip >= 1) Object.assign(figure, {stage: 'returning', way: home2dFrom(base, {...figure, x, y}), u: 0, clock: 0, stride: 0});
+      const kind = m.flourish;
+      if (kind === 'spin' || kind === 'twirl' || kind === 'loop') spin = easeBoth(u) * 360;
+      if (kind === 'hop' || kind === 'flap' || kind === 'twirl') lift = k * 0.9;
+      if (kind === 'puff') scale = 1 + 0.3 * k;
+      if (kind === 'bow') squash = k * 0.25;
+      if (u >= 1) Object.assign(figure, {stage: 'returning', way: home2dFrom(base, {...figure, x, y}), u: 0, clock: 0, stride: 0});
     } else if (figure.stage === 'leaving') {  // home again, it is gone
       const faded = Math.min(1, figure.clock / ROAM2D.vanish);
       ({x, y} = home); scale = Math.max(0.001, 1 - faded * faded);
       if (faded >= 1) { gone(); continue; }
     }
+    if (!reduced() && figure.stage !== 'leaving' && figure.stage !== 'arriving') {
+      const step = gait2d(figure, going);
+      lift += step.lift; squash += step.squash; lean += step.sway;
+      if (!going && m.idle.includes('bob') && figure.stage === 'circling') lift += Math.sin(figure.clock * 2.4 + m.phase * 6) * 0.025;
+    }
     figure.lean += (lean - figure.lean) * (1 - Math.exp(-passed * 8));
     Object.assign(figure, {x, y, size: size * scale});
-    const drawn = size * scale, top = y - lift;
-    const placed = [x - drawn / 2, top - drawn / 2, drawn, figure.lean].map(value => Math.round(value * 100) / 100).join(' ');
+    const drawn = size * scale, foot = y + drawn / 2 - lift * size;
+    const placed = [x - drawn / 2, foot, drawn, figure.lean, squash, spin].map(value => Math.round(value * 100) / 100).join(' ');
     if (placed === figure.drawn) continue;   // nothing to draw again
     figure.drawn = placed;
     moving = true;
     const image = figure.g.firstChild;
-    image.setAttribute('x', x - drawn / 2); image.setAttribute('y', top - drawn / 2);
+    image.setAttribute('x', x - drawn / 2); image.setAttribute('y', foot - drawn);
     image.setAttribute('width', drawn); image.setAttribute('height', drawn);
-    image.setAttribute('transform', `rotate(${figure.lean.toFixed(2)} ${x} ${top})`);
+    // it leans the way it goes, squashes and stretches from its feet, and turns about its middle in a flourish
+    image.setAttribute('transform', `rotate(${(figure.lean + spin).toFixed(2)} ${x} ${foot - drawn / 2}) `
+      + `translate(${x} ${foot}) scale(${(1 + squash * 0.6).toFixed(3)} ${(1 - squash).toFixed(3)}) translate(${-x} ${-foot})`);
   }
+  const awake = mascot2d(base, layer, perPixel, passed);
   // With reduced motion a figure stands still, so the frames stop once each is drawn; a redraw or a change asks again.
-  if (ROAM2D.figures.size && (moving || !reduced())) ROAM2D.frame = requestAnimationFrame(roam2d);
+  // The mascot alone keeps them going only while it is awake, so a page left alone rests.
+  if ((ROAM2D.figures.size && (moving || !reduced())) || awake) ROAM2D.frame = requestAnimationFrame(roam2d);
+}
+/* The mascot on the 2D map, `MASCOT`: its flat glyph goes to the selected box, waits at its right, below the name,
+ * walks over to the figure of the agent the person chats with, and sleeps while the person is away. */
+const MASCOT2D = {g: null, glyph: null, x: null, y: null, vx: 0, vy: 0, stride: 0, clock: 0, lean: 0, drawn: '', size: 0};
+function mascot2d(base, layer, perPixel, passed) {
+  const {glyph, leaving} = mascotFigure();
+  if (MASCOT2D.g && (MASCOT2D.glyph !== glyph || !layer)) { MASCOT2D.g.remove(); MASCOT2D.g = null; }
+  if (!glyph || !layer || !base || (leaving && !MASCOT2D.g)) return false;
+  const size = Math.max(base.agentSize, ROAM2D.least * perPixel) * 0.95;
+  if (!MASCOT2D.g) {
+    const g = document.createElementNS(SVG, 'g'), image = document.createElementNS(SVG, 'image');
+    g.setAttribute('class', 'agent2d mascot2d');
+    g.style.pointerEvents = 'none';  // never in the way of a click
+    image.setAttribute('href', `/page/agent-glyphs/${glyph}.svg`);
+    g.append(image);
+    Object.assign(MASCOT2D, {g, glyph, motion: motionOf(glyph, 'mascot'), x: null});
+  }
+  if (MASCOT2D.g.parentNode !== layer) layer.append(MASCOT2D.g);
+  MASCOT2D.clock += passed;
+  const m = MASCOT2D.motion, chat = !$('#helpdesk')?.hidden && DOCK.target ? ROAM2D.figures.get(DOCK.target) : null;
+  // its agent leading it: where it sent it, or the node its body works on, else it stays; the selection waits
+  const driven = !leaving && mascotDriven(), job = driven ? MASCOT.job : null;
+  MASCOT2D.g.classList.toggle('driven', driven);
+  const call = MASCOT.call?.node && (driven || !MASCOT.call.agent) ? spot2d(base, MASCOT.call.node) : null;
+  const working = job?.node ? spot2d(base, job.node) : null;
+  const chosen = S.selected && spot2d(base, S.selected), home = spot2d(base, home2d());
+  const stay = driven && MASCOT2D.x !== null ? {x: MASCOT2D.x - size * 0.75, y: MASCOT2D.y + size * 0.15, w: 0, h: 0} : null;
+  const at = leaving ? home : driven ? call || working || stay || home
+    : call || (chat ? {x: chat.x + size * 1.1, y: chat.y, w: 0, h: 0} : null) || chosen || home;
+  if (!at) return false;
+  const wx = at.x + at.w / 2 + size * 0.75, wy = at.y + at.h / 2 - size * 0.15;
+  if (MASCOT2D.x === null || reduced()) Object.assign(MASCOT2D, {x: wx, y: wy, vx: 0, vy: 0});
+  const asleep = !leaving && !driven && performance.now() - FRAMES.active > FRAMES.idle && !MASCOT.call;
+  if (!reduced() && !asleep) {  // steering, as the 3D mascot does: off gently, and to rest gently
+    const top = ROAM2D.speed * m.speed * 0.9, accel = ROAM2D.accel * m.accel, dx = wx - MASCOT2D.x, dy = wy - MASCOT2D.y;
+    const away = Math.hypot(dx, dy), speed = Math.min(top, Math.sqrt(2 * accel * Math.max(0, away - 0.5)));
+    const want = away > 1e-3 ? [dx / away * speed, dy / away * speed] : [0, 0];
+    let ax = want[0] - MASCOT2D.vx, ay = want[1] - MASCOT2D.vy;
+    const most = accel * passed * 1.5, push = Math.hypot(ax, ay);
+    if (push > most) { ax *= most / push; ay *= most / push; }
+    MASCOT2D.vx += ax; MASCOT2D.vy += ay;
+    MASCOT2D.x += MASCOT2D.vx * passed; MASCOT2D.y += MASCOT2D.vy * passed;
+  }
+  const speed = Math.hypot(MASCOT2D.vx, MASCOT2D.vy);
+  MASCOT2D.stride += speed * passed;
+  MASCOT2D.size = size;
+  const step = reduced() ? {lift: 0, squash: 0, sway: 0} : gait2d(MASCOT2D, speed > size * 0.05);
+  const lean = asleep ? 6 : Math.sign(MASCOT2D.vx) * Math.min(1, speed / (ROAM2D.speed * m.speed)) * ROAM2D.lean + step.sway;
+  MASCOT2D.lean += (lean - MASCOT2D.lean) * (1 - Math.exp(-passed * 8));
+  const squash = asleep ? 0.08 + Math.sin(MASCOT2D.clock * 0.9) * 0.03 : step.squash;
+  const x = MASCOT2D.x, foot = MASCOT2D.y + size / 2 - step.lift * size;
+  const placed = [x, foot, size, MASCOT2D.lean, squash].map(value => Math.round(value * 100) / 100).join(' ');
+  const awake = !reduced() && (!asleep || placed !== MASCOT2D.drawn);
+  if (placed === MASCOT2D.drawn) return awake;
+  MASCOT2D.drawn = placed;
+  const image = MASCOT2D.g.firstChild;
+  image.setAttribute('x', x - size / 2); image.setAttribute('y', foot - size);
+  image.setAttribute('width', size); image.setAttribute('height', size);
+  image.setAttribute('transform', `rotate(${MASCOT2D.lean.toFixed(2)} ${x} ${foot - size / 2}) `
+    + `translate(${x} ${foot}) scale(${(1 + squash * 0.6).toFixed(3)} ${(1 - squash).toFixed(3)}) translate(${-x} ${-foot})`);
+  return awake;
 }
 /* A part's light, VIEW-035 and MAP-046: broken flashes red. Flashing lets the node's own
  * color show between flashes, and each step filed makes it faster: from FLASH.slow a beat while it waits, to
@@ -1652,6 +3356,54 @@ const shapes = new Map();
 let SEGMENTS = 16;  // as the graph draws its own nodes; 32 halves the frame rate where there is no graphics card
 const isGlass = node => node.t === 'el';
 const ballShape = radius => shapes.get(radius) || shapes.set(radius, new THREE.SphereGeometry(radius, SEGMENTS, SEGMENTS)).get(radius);
+/* An element's shape tells its artifact type, the first segment of its address, before any text is read, P042: code a
+ * box, a document a page, media a screen, data a cylinder, a collection a stack, upstream a cone pointing up, toward
+ * what feeds the project, and downstream one pointing down, toward who it serves. Each is about the size of the sphere it
+ * replaces, so sizes still compare; anything else stays a sphere. The web_node_shapes setting turns them off. The 2D
+ * map draws the same types as Mermaid shapes, SHAPES2D. One shape serves every node of a type and size. */
+const VIEW_SETTINGS = {shapes: true};
+const TYPE_ROOTS = ['code', 'document', 'media', 'data', 'collection', 'upstream', 'downstream'];
+const typeOf = node => {
+  const root = String(node?.address || '').split('.')[0];
+  return VIEW_SETTINGS.shapes && TYPE_ROOTS.includes(root) ? root : null;
+};
+function stacked(parts) {
+  const loose = parts.map(part => part.index ? part.toNonIndexed() : part);
+  const merged = new THREE.BufferGeometry();
+  for (const name of ['position', 'normal', 'uv']) {
+    const size = loose[0].getAttribute(name).itemSize;
+    const all = new Float32Array(loose.reduce((sum, part) => sum + part.getAttribute(name).array.length, 0));
+    let at = 0;
+    for (const part of loose) { all.set(part.getAttribute(name).array, at); at += part.getAttribute(name).array.length; }
+    merged.setAttribute(name, new THREE.BufferAttribute(all, size));
+  }
+  return merged;
+}
+function typeShape(type, radius) {
+  const key = `${type}:${radius}`;
+  if (shapes.has(key)) return shapes.get(key);
+  const r = radius, box = (w, hh, d) => new RoundedBoxGeometry(w * r, hh * r, d * r, 2, Math.min(w, hh, d) * r * 0.2);
+  const made = type === 'code' ? box(1.55, 1.55, 1.55)
+    : type === 'document' ? box(1.35, 1.85, 0.45)
+    : type === 'media' ? box(2.05, 1.3, 0.35)
+    : type === 'data' ? new THREE.CylinderGeometry(r, r, 1.5 * r, SEGMENTS)
+    : type === 'collection' ? stacked([-0.62, 0, 0.62].map(y => box(1.8, 0.42, 1.8).translate(0, y * r, 0)))
+    : type === 'upstream' ? new THREE.ConeGeometry(1.1 * r, 1.9 * r, SEGMENTS)
+    : type === 'downstream' ? new THREE.ConeGeometry(1.1 * r, 1.9 * r, SEGMENTS).rotateX(Math.PI)
+    : null;
+  shapes.set(key, made);
+  return made;
+}
+const nodeShape = (node, radius) => (typeOf(node) && typeShape(typeOf(node), radius)) || ballShape(radius);
+/* The shapes turned on or off: each element's node drawn again in its shape. */
+function shapes3d() {
+  if (!G) return;
+  for (const node of G.graphData().nodes) {
+    const object = node.__threeObj;
+    if (object?.isMesh && isGlass(node)) object.geometry = nodeShape(node, Math.cbrt(nodeSize(node)) * 3);
+  }
+  wake3d();
+}
 function bead(node) {
   const radius = Math.cbrt(nodeSize(node)) * 3;  // as the graph sizes a node: the cube root of its value, times 3
 
@@ -1673,7 +3425,7 @@ function bead(node) {
   back.userData.front = material;
   material.userData.own = true;
   colored(material, colorOf(node));
-  return new THREE.Mesh(ballShape(radius), material);
+  return new THREE.Mesh(nodeShape(node, radius), material);
 }
 /* What is behind the glass, drawn each frame as drei's component draws it, once for every node, VIEW-025: the scene
  * with the glass hidden, into `back`; then with the far wall of every node, which reads `back`, into `main`; and the
@@ -1969,14 +3721,14 @@ function ghostly(material, opacity) {
  * sphere. A join's purpose node, which the graph draws itself, is made a ghost of its own here. */
 function nodeObject(node, glass = true) {
   if (unbuilt(node)) {
-    const object = isGlass(node) && glass ? bead(node)
-      : new THREE.Mesh(ballShape(Math.cbrt(nodeSize(node)) * 3), new THREE.MeshLambertMaterial({color: colorOf(node)}));
+    const object = ULTRA.body(node) || (isGlass(node) && glass ? bead(node)  // ULTRA: a body in outer space
+      : new THREE.Mesh(nodeShape(node, Math.cbrt(nodeSize(node)) * 3), new THREE.MeshLambertMaterial({color: colorOf(node)})));
     object.material.userData.own = true;
     ghostly(object.material, GHOST.opacity);
     object.userData.ghost = true;
     return object;
   }
-  return glass && isGlass(node) ? bead(node) : false;
+  return ULTRA.body(node) || (glass && isGlass(node) ? bead(node) : false);  // ULTRA
 }
 /* Each frame: a part built since it was drawn as a ghost comes up to solid. */
 const eased = share => share * share * (3 - 2 * share);
@@ -2105,13 +3857,17 @@ function start3D() {
  * that the flow stops until the next act or change; null keeps it flowing, as VIEW-005 draws it. With reduced motion
  * nothing flows, so an idle map draws nothing at all. */
 const FRAMES = {id: 0, timer: 0, held: false, until: 0, active: 0, last: 0, drawn: 0, engine: false, moved: false,
-  busy: false, flowing: false, grace: 700, idle: 30000, idleRate: 15, rest: null};
+  busy: false, flowing: false, grace: 700, idle: 30000, idleRate: 15, rest: 0};
+// `idle` and `rest` are the web module's settings, web_flow_seconds and web_idle_flow, read with the workspace: the
+// flow lasts web_flow_seconds after the last act or change and then stops, so an idle page costs nothing; with
+// web_idle_flow on it goes on slowly, `rest` null, as the map was drawn before.
 const DAMPING = 0.12;
 const DRAG_FRICTION = 0.65;  // the share of its speed a node loses each tick while one is dragged; 0.4 otherwise  // the share of a turn of the camera a hand gave that it loses each 60th of a second: it coasts
 function wake3d(ms = FRAMES.grace) {
   const now = performance.now();
   FRAMES.until = Math.max(FRAMES.until, now + ms);
   FRAMES.active = now;
+  wake2d();  // the selected node's flow in the 2D map goes on with any act, as the 3D map's does
   if (!G || FRAMES.held || FRAMES.id) return;
   clearTimeout(FRAMES.timer);
   FRAMES.timer = 0;
@@ -2155,7 +3911,9 @@ function wakeful(graph) {
         FLIGHT.on = false;
         V3.focus = null;
         V3.auto = name === 'zoomToFit';
-        wake3d(FRAMES.grace + (Number(args[name === 'zoomToFit' ? 0 : 2]) || 0));
+        const takes = Number(args[name === 'zoomToFit' ? 0 : 2]) || 0;
+        wake3d(FRAMES.grace + takes);
+        setTimeout(rehover3d, takes);  // the readout decided again once the flight is done
       } else wake3d();
       return method.apply(this, args);
     };
@@ -2176,14 +3934,14 @@ function create3D() {
     .nodeOpacity(0.95)
     .nodeResolution(16)
     .nodeLabel(() => '')  // the page shows its own tooltip, anchored above the node, not under the pointer
-    .onNodeHover(node => hover3d(node))
+    .onNodeHover(() => {})  // the hover is the page's nearest-node choice, `nodeAt3d`
     .linkColor(linkColor)
     .linkOpacity(Number(css('--link-opacity')))
-    .linkMaterial(fiberOf)
+    .linkMaterial(link => ULTRA.fiber(link) || fiberOf(link))  // ULTRA: a filament of light in outer space
     .linkWidth(link => link.k === 'tree' ? 0.4 : link.k === 'layer' || link.k === 'item' ? 0.25 : link.k === 'relation' ? 0.5 : 0.9)
     .linkCurvature(0)
-    .linkDirectionalParticles(link => !reduced() && (link.k === 'purpose' || link.k === 'encounter') ? 2 : 0)
-    .linkDirectionalParticleSpeed(0)  // the page moves the dots itself, by the time that passed, `flow3d`
+    .linkDirectionalParticles(link => !reduced() && (link.k === 'purpose' || link.k === 'encounter') ? 1 : 0)
+    .linkDirectionalParticleSpeed(0)  // the page draws the flow itself, `flow3d`; this dot shows only held, `dots3d`
     .linkDirectionalParticleWidth(1.6)
     .linkDirectionalParticleColor(linkColor)
     // The layout settles once its energy is spent rather than after a fixed time, and the map is then fitted to the
@@ -2195,20 +3953,30 @@ function create3D() {
     // let go: a settled layout would stop at once and leave the map rigid, so it is kept running while a node is held.
     // The graph library warms it to 0.3 for a drag, which throws the whole map about; the nodes move against more
     // friction while one is held, DRAG_FRICTION, so the map follows gently.
-    .onNodeDrag(() => { G.d3AlphaMin(0).d3VelocityDecay(DRAG_FRICTION); })
-    .onNodeDragEnd(() => { G.d3AlphaMin(0.001).d3VelocityDecay(0.4); })
-    .onNodeClick(clicked3d)
+    .onNodeDrag(node => {  // the mascot never pushes the node in the person's hand, and lets go of one taken from it
+      HANDDRAG.node = node;
+      if (MASCOT.holding === node) { MASCOT.holding = null; MASCOT.job = null; }
+      G.d3AlphaMin(0).d3VelocityDecay(DRAG_FRICTION);
+    })
+    .onNodeDragEnd(() => { HANDDRAG.node = null; G.d3AlphaMin(0.001).d3VelocityDecay(PHYS.decay); })
+    .onNodeClick((node, event) => clickedAt3d(event))
+    // a click on no node takes the nearest join's edge within reach, `linkAt3d`, as the 2D map does
+    .onLinkClick((link, event) => clickedAt3d(event))
+    .onBackgroundClick(event => clickedAt3d(event))
     .onNodeRightClick((node, event) => { if (node) menu(node.id, event.clientX, event.clientY); });
   grounded();
   G.scene().onBeforeRender = solid;
   addBehind();
   addBloom();
+  ULTRA.attach(G, {wake: wake3d, reduced, css, selected: () => S.selected, hovered: () => hovered?.id ?? null,  // ULTRA
+    dimmed: node => Boolean(dimmed(node)), idle:() => performance.now() - FRAMES.active > FRAMES.idle, toast,
+    chained: () => FRAMES.id > 0, settings: async () => (await read('settings')).settings || [],
+    save: value => posted('/api/settings', {key: 'web_graphics', value}), shapes: () => VIEW_SETTINGS.shapes});
   // The page's own work for each frame runs first in the render chain: after the layout's tick and the controls, before
   // anything is drawn, so the camera's flight, the labels, the dots and the tooltip are all of the same frame.
   G.postProcessingComposer().insertPass({isPass: true, enabled: true, needsSwap: false, clear: false, renderToScreen: false,
     setSize() {}, render() { prepare3d(); }, dispose() {}}, 0);
-  G.d3Force('charge').strength(node => node.t === 'el' ? -140 : node.t === 'item' ? -10 : -18);
-  G.d3Force('link').distance(link => link.k === 'layer' ? 8 : link.k === 'item' ? 12 : link.k === 'tree' ? 60 : 34);
+  applyPhysics(PHYS.name, false);  // the forces of the physics chosen, `PHYSICS`
   // The camera coasts after a hand lets it go, and the wheel zooms toward the point under the pointer.
   const controls = G.controls();
   Object.assign(controls, {enableDamping: true, dampingFactor: DAMPING, zoomToCursor: true});
@@ -2219,11 +3987,28 @@ function create3D() {
     // next selection meets a sign again.
     if (MEET.on) meetEnds();
   });
-  controls.addEventListener('change', () => { FRAMES.moved = true; });
+  controls.addEventListener('change', () => { FRAMES.moved = true; rehover3d(); });  // the readout decided again at rest
   const stage = $('#stage');
   for (const type of ['pointerdown', 'wheel', 'keydown']) stage.addEventListener(type, () => wake3d(), {passive: true});
   for (const type of ['pointerenter', 'pointermove']) stage.addEventListener(type, () => { TIP.out = false; wake3d(); }, {passive: true});
-  stage.addEventListener('pointerleave', () => { TIP.out = true; hover3d(null); });
+  stage.addEventListener('pointerleave', () => { TIP.out = true; hover3d(null); pick3d(null); });
+  // the edge a click would take, marked once a frame as the pointer moves; a node under the pointer takes the click
+  stage.addEventListener('pointermove', event => {
+    if (EDGE_PICK.frame3d || event.buttons) return;
+    const {clientX: x, clientY: y} = event;
+    EDGE_PICK.frame3d = requestAnimationFrame(() => {
+      EDGE_PICK.frame3d = 0;
+      // the node nearest the pointer within reach, then the nearest edge: what a click will take, `pickAt3d`
+      if (!TIP.out) hover3d(nodeAt3d(x, y));
+      const link = hovered ? null : linkAt3d(x, y);
+      pick3d(link);
+      $('#stage').classList.toggle('picking', Boolean(hovered || link));
+      // an agent's figure under the pointer, with no node or edge, is said in the readout and takes the click
+      const work = !hovered && !link ? figureAt(x, y) : null;
+      if (work) readout('3d', figureWords(work));
+      else if (!hovered && !link) readout('3d', null);
+    });
+  }, {passive: true});
   // a click on an agent's figure, not a drag of the camera, opens its thread
   stage.addEventListener('pointerdown', event => { FIGURE_PICK.down = [event.clientX, event.clientY]; }, true);
   stage.addEventListener('click', event => {
@@ -2253,6 +4038,117 @@ function create3D() {
     V3.auto = true;  // the new layout is fitted to the view as it settles
     G.graphData(data);  // the layout gives vertices without a position new ones and settles again
   };
+}
+/* The join edge nearest the pointer on the screen, within EDGE_PICK.most CSS pixels, each edge projected to the screen as the
+ * camera sees it, VIEW-008: the edge a click on no node takes and the one the pointer marks. A join's edges run from
+ * its receiver to its purpose vertex and on to each element serving it; either selects the join. */
+const LINK_ENDS = [new THREE.Vector3(), new THREE.Vector3()];
+function linkAt3d(x, y) {
+  if (!G) return null;
+  const box = $('#stage').getBoundingClientRect(), camera = G.camera(), [one, two] = LINK_ENDS;
+  const px = x - box.left, py = y - box.top;
+  let best = null, nearest = EDGE_PICK.most;
+  for (const link of G.graphData().links) {
+    const from = link.source, to = link.target;
+    if (!link.join || (link.k !== 'purpose' && link.k !== 'encounter') || typeof from !== 'object' || from.x === undefined
+      || to.x === undefined || !shownNode(from) || !shownNode(to)) continue;
+    one.set(from.x, from.y, from.z).project(camera);
+    two.set(to.x, to.y, to.z).project(camera);
+    if (Math.abs(one.z) > 1 || Math.abs(two.z) > 1) continue;  // behind the eye or past the far plane
+    const away = segmentAway(px, py, (one.x + 1) / 2 * box.width, (1 - one.y) / 2 * box.height,
+      (two.x + 1) / 2 * box.width, (1 - two.y) / 2 * box.height);
+    if (away < nearest) { nearest = away; best = link; }
+  }
+  return best;
+}
+const purposeOf = link => endOf(link.k === 'purpose' ? link.target : link.source);
+/* Each node's reach, in both maps: the area of the screen where the pointer takes it. It reaches half the distance to
+ * its nearest neighbour on the screen, centre to centre, so neighbours share the room between them evenly; never less
+ * than the node as drawn, and never more than REACH.most CSS pixels, so a node alone does not take the empty space
+ * around it. Where reaches overlap, the node whose centre is nearest the pointer takes it; an edge is picked only where
+ * no node reaches, `linkAt3d` and `edgeAt2d`. The reaches are measured again at most once a frame, as the camera, the
+ * layout or the zoom moves the nodes on the screen. A neighbour farther than twice the most a reach can be never
+ * shortens it, so each node looks only at the cells of a grid around it. */
+const REACH = {most: 60, d3: null, d2: null};
+function reachOf(list) {  // list: {x, y, r} in CSS pixels, r the node as drawn; sets each one's `reach`
+  const cell = 2 * REACH.most, grid = new Map(), at = (x, y) => `${x},${y}`;
+  for (const one of list) {
+    const key = at(Math.floor(one.x / cell), Math.floor(one.y / cell));
+    (grid.get(key) || grid.set(key, []).get(key)).push(one);
+  }
+  for (const one of list) {
+    const cx = Math.floor(one.x / cell), cy = Math.floor(one.y / cell);
+    let nearest = Infinity;
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (const other of grid.get(at(cx + dx, cy + dy)) || []) {
+      if (other !== one) nearest = Math.min(nearest, Math.hypot(other.x - one.x, other.y - one.y));
+    }
+    one.reach = Math.max(one.r, Math.min(nearest / 2, REACH.most));
+  }
+  return list;
+}
+/* The 3D map's nodes on the screen with their reaches, measured at most once a frame. */
+const NODE_AT = new THREE.Vector3();
+function reaches3d() {
+  const now = performance.now();
+  if (REACH.d3 && now - REACH.d3.at < 16) return REACH.d3.list;
+  const box = $('#stage').getBoundingClientRect(), camera = G.camera(), across = Math.tan(camera.fov * Math.PI / 360), list = [];
+  for (const node of G.graphData().nodes) {
+    if (node.x === undefined || !shownNode(node)) continue;
+    NODE_AT.set(node.x, node.y, node.z);
+    const far = NODE_AT.distanceTo(camera.position);
+    NODE_AT.project(camera);
+    if (Math.abs(NODE_AT.z) > 1) continue;  // behind the eye or past the far plane
+    list.push({node, x: box.left + (NODE_AT.x + 1) / 2 * box.width, y: box.top + (1 - NODE_AT.y) / 2 * box.height,
+      r: Math.cbrt(nodeSize(node)) * 3 / (far * across) * box.height / 2});
+  }
+  REACH.d3 = {at: now, list: reachOf(list)};
+  return list;
+}
+/* The node the pointer takes on the 3D map: of those whose reach covers it, the one whose centre is nearest, so a large
+ * node close to the eye does not swallow the small ones drawn over it. */
+function nodeAt3d(x, y) {
+  if (!G) return null;
+  let best = null, nearest = Infinity;
+  for (const one of reaches3d()) {
+    const middle = Math.hypot(one.x - x, one.y - y);
+    if (middle <= one.reach && middle < nearest) { nearest = middle; best = one.node; }
+  }
+  return best;
+}
+/* A click on the 3D map takes what the pointer marks: with the scissors out the nearest edge, `CUT`; an agent's figure
+ * keeps its own click; then the nearest node within reach, then the nearest edge. */
+function clickedAt3d(event) {
+  if (!event) return;
+  if (CUT.on) return clickedLink3d(event);
+  if (figureAt(event.clientX, event.clientY)) return;
+  const node = nodeAt3d(event.clientX, event.clientY);
+  if (node) return clicked3d(node);
+  clickedLink3d(event);
+}
+function clickedLink3d(event) {
+  const link = linkAt3d(event.clientX, event.clientY);
+  if (CUT.on) return cutLink(link);  // with the scissors out a click cuts the edge, `CUT`
+  if (link) select(purposeOf(link), true);
+}
+/* The edge the pointer would take, drawn as a bright strand while it is the one. */
+let PICKED_FIBER = null;
+function pick3d(link) {
+  if (EDGE_PICK.link3d === link) return;
+  const was = EDGE_PICK.link3d;
+  if (link) readout('3d', edgeWords(joinOf(purposeOf(link)) || {receiver: '', providers: []}));
+  if (was?.__lineObj && was.__pickedFrom) { was.__lineObj.material = was.__pickedFrom; delete was.__pickedFrom; }
+  EDGE_PICK.link3d = link;
+  if (link?.__lineObj) {
+    if (!PICKED_FIBER) {
+      PICKED_FIBER = fiberOf(link).clone();
+      PICKED_FIBER.uniforms.tint.value = new THREE.Color(css('--text'));
+      PICKED_FIBER.uniforms.opacity.value = 1;
+    }
+    link.__pickedFrom = link.__lineObj.material;
+    link.__lineObj.material = PICKED_FIBER;
+  }
+  $('#stage').classList.toggle('picking', Boolean(link));
+  wake3d();
 }
 /* A click on any vertex selects that object itself: an element or a join's purpose vertex. */
 function clicked3d(node) {
@@ -2300,24 +4196,182 @@ function hover3d(node) {
   const was = hovered;
   hovered = TIP.out ? null : node || null;
   if (hovered !== was && [was, hovered].some(one => one && unbuilt(one))) wake3d();  // a ghost's name comes up, VIEW-027
-  $('#tip3d').hidden = !hovered;
-  if (hovered) { fill($('#tip3d'), tipFor(hovered)); placeTip(); }
+  if (hovered === was && hovered) return;
+  readout('3d', hovered ? readoutOf(hovered) : null);
 }
-function placeTip() {
-  const tip = $('#tip3d');
-  if (!G || !hovered || hovered.x === undefined) return;
-  const point = G.graph2ScreenCoords(hovered.x, hovered.y, hovered.z);
-  const camera = G.camera(), box = $('#stage').getBoundingClientRect();
-  const distance = Math.hypot(camera.position.x - hovered.x, camera.position.y - hovered.y, camera.position.z - hovered.z);
-  const radius = Math.cbrt(nodeSize(hovered)) * 3 / (distance * Math.tan(camera.fov * Math.PI / 360)) * box.height / 2;
-  const above = point.y - radius - 10 - tip.offsetHeight >= 0;
-  tip.style.left = point.x + 'px';
-  tip.style.top = (above ? point.y - radius - 10 : point.y + radius + 10) + 'px';
-  tip.style.transform = `translate(-${Math.min(100, Math.max(0, point.x / box.width * 100))}%, ${above ? '-100%' : '0'})`;
+/* ---------- the hover readout: what the pointer is on, said across the top of the map's window ----------
+ * Over anything a click picks, a node, a join's edge by the nearest-edge choice, a purpose vertex, an agent's figure
+ * or a memory, the cursor is a pointing finger and the readout at the top of that map's window says what it is: its
+ * name, its kind and its address, and for an edge the receiver → provider with the join's purpose. It eases in on
+ * hover and fades a moment after the pointer leaves; it lies over the map, takes no room and no click, so nothing
+ * jumps. Its text grows with the window between a floor and a ceiling, wraps to three lines at most and ends with an
+ * ellipsis; in the small pane it is one line. It is #tip3d in the 3D map and #tip2d in the 2D one. */
+/* It holds steady: a name shows once what the pointer is on has stayed the same for `settle` ms, stays `stay` ms after
+ * the pointer leaves it before it fades, and a new name takes the place of one on view by crossfading in place. It is
+ * decided when the pointer moves and when the camera comes to rest, `rehover3d`, never frame by frame, so the camera's
+ * motion, ultra's quality steps and a sign's occlusion changing under a still pointer never toggle it. */
+const READOUT = {timers: {}, now: {}, want: {}, settle: 120, stay: 400};
+function readoutBox(which) {
+  if (which === '3d') return $('#tip3d');
+  let box = $('#tip2d');
+  if (!box) { box = h('div', {id: 'tip2d', class: 'readout', role: 'status', 'aria-live': 'polite', hidden: true}); $('#map2d').append(box); }
+  return box;
 }
+/* What the pointer is on, said in two places: its name across the top, only where the map shows none that can be read,
+ * `top`, and its details in the card at the lower left, `card`, for anything a click picks. `info` null: nothing. */
+function readout(which, info) {
+  const hovering = Boolean(info), shows = VIEW.hoverInfo || 'name+summary';  // web_hover_info
+  const parts = shows === 'summary' || shows === 'off' ? null : Array.isArray(info) ? info : info?.top || null;
+  hoverCard(which, shows === 'name' || shows === 'off' || Array.isArray(info) ? null : info?.card || null);
+  const box = readoutBox(which);
+  if (!box) return;
+  box.classList.add('readout');
+  const host = which === '3d' ? $('#stage') : $('#viewport');
+  host?.classList.toggle('pickable', hovering);
+  const key = parts ? JSON.stringify(parts.map(part => part?.textContent ?? part)) : null;  // a part left out is null
+  if (key === READOUT.want[which]) return;  // the same as asked already: its timer runs on
+  READOUT.want[which] = key;
+  clearTimeout(READOUT.timers[which]);
+  if (!parts) {  // gone: kept a moment, then faded and put away
+    if (READOUT.now[which] === null) return;
+    READOUT.timers[which] = setTimeout(() => {
+      READOUT.now[which] = null;
+      box.classList.remove('on');
+      READOUT.timers[which] = setTimeout(() => { if (!box.classList.contains('on')) box.hidden = true; }, reduced() ? 0 : 400);
+    }, reduced() ? 0 : READOUT.stay);
+    return;
+  }
+  if (READOUT.now[which] === key) { box.classList.add('on'); return; }  // back to the name on view before it went
+  READOUT.timers[which] = setTimeout(() => {
+    const said = h('span', {class: 'said'}, h('span', {class: 'line'}, parts));
+    const showing = box.classList.contains('on') && !box.hidden && READOUT.now[which];
+    READOUT.now[which] = key;
+    if (showing && !reduced()) {  // one name gives way to the next in place, the old fading out over the new
+      for (const old of box.querySelectorAll('.said')) {
+        old.classList.add('leaving');
+        setTimeout(() => old.remove(), 220);
+      }
+      said.classList.add('arriving');
+      box.append(said);
+    } else fill(box, said);
+    box.hidden = false;
+    void box.offsetWidth;  // from where it stands away, so it eases in
+    box.classList.add('on');
+  }, reduced() ? 0 : READOUT.settle);
+}
+/* The 3D map's readout decided again once the camera rests, a wheel's zoom or a flight done, for the node or edge the
+ * pointer is still on: its sign may now be read, or no longer. */
+function rehover3d() {
+  clearTimeout(READOUT.rest3d);
+  READOUT.rest3d = setTimeout(() => {
+    if (TIP.out) return;
+    if (hovered) readout('3d', readoutOf(hovered));
+  }, 250);
+}
+/* What the readout says, the name alone, and only where the map shows no name that can be read: for an edge, which
+ * has no label of its own, the names it joins, receiver → provider; for a node, only while its own label is drawn
+ * smaller than READABLE CSS pixels on the screen or not drawn at all, as when labels are decluttered; for an agent's
+ * figure, its agent's name. A node whose name can be read gets the finger and its highlight, and no readout. */
+const READABLE = 11;
+function labelReadable(id, which) {
+  if (which === '2d') {
+    const g = M.nodes.get(id)?.g, label = g?.querySelector('.nodeLabel, text');
+    if (!label || !label.getBoundingClientRect().height || getComputedStyle(label).visibility === 'hidden') return false;
+    return parseFloat(getComputedStyle(label).fontSize) * Math.abs(g.getScreenCTM()?.a || 0) >= READABLE;
+  }
+  const tag = tags.get(id);
+  if (!tag || tag.hidden) return false;
+  if (MEET.on && MEET.back?.id === id) return true;  // the met name, drawn over the map
+  if (tag.under || !tag.sprite.visible || !LABELS.on || (tag.sprite.material.opacity ?? 1) < 0.35) return false;
+  // its letters as drawn on the screen: the sign's four corners projected as the scene draws them, `signRect`, so an
+  // outward sign seen at a slant is measured as small as it reads; on the screen at all, and tall enough to read
+  const rect = window.metaform.signRect(id), area = $('#stage').getBoundingClientRect();
+  if (!rect || !tag.height) return false;
+  const middle = {x: (rect.left + rect.right) / 2, y: (rect.top + rect.bottom) / 2};
+  if (middle.x < area.left || middle.x > area.right || middle.y < area.top || middle.y > area.bottom) return false;
+  // the lesser of its height and its width as drawn against its own, so a sign turned edge on, its letters squeezed
+  // thin, does not count as read
+  const scale = Math.min((rect.bottom - rect.top) / tag.height, tag.width ? (rect.right - rect.left) / tag.width : Infinity);
+  return scale * (tag.lookNow?.size ?? LABEL.size) >= READABLE;
+}
+/* The readout of a node of either map, by its id, or of a 3D graph node: null where its own name can be read. */
+function readoutOf(node, which = '3d') {
+  const id = typeof node === 'string' ? node : node.id;
+  const join = id.startsWith('p:') ? joinOf(id) : (typeof node === 'object' && node.t === 'purpose' ? S.joins.find(one => one.id === node.join) : null);
+  if (join) return edgeWords(join);
+  const top = name => labelReadable(id, which) ? null : [h('b', {}, name)];
+  const entry = S.elements.get(id);
+  if (entry) {
+    const element = entry.element;
+    const serves = S.joins.find(one => one.providers.includes(id) && (one.ef || one.purpose));
+    const holds = S.joins.find(one => one.receiver === id && one.purpose);
+    return {top: top(labelOf(element)), card: {title: labelOf(element),
+      kind: ['element', element.role, element.address?.split('.')[0]].filter(Boolean).join(' · '), address: element.address,
+      text: serves ? (serves.ef || serves.purpose) : holds ? `Needs: ${holds.purpose}` : '', work: (element.open_work || []).join(' · ')}};
+  }
+  if (typeof node === 'object' && node.t === 'item') {
+    return {top: [h('b', {}, short(node.text || '', 120))], card: {title: short(node.text || '', 80), kind: `item · ${node.layer}`, text: node.text}};
+  }
+  const thing = memoryThing?.(id);
+  if (thing) return {top: [h('b', {}, thing.name || thing.title || id)], card: {title: thing.name || thing.title || id, kind: 'memory',
+    text: (thing.observations || []).slice(0, 2).join(' ') || thing.entityType || ''}};
+  const name = (typeof node === 'object' && node.name) || id;
+  return {top: [h('b', {}, name)], card: {title: name, kind: 'node'}};
+}
+function edgeWords(join) {
+  const named = item => S.elements.has(item) ? labelOf(S.elements.get(item).element) : item;
+  const ends = `${named(join.receiver) || join.receiver_address || ''} → ${join.providers.map(named).join(', ') || join.provider_address || ''}`;
+  return {top: [h('b', {}, ends)], card: {title: ends, kind: ['join', join.layer].filter(Boolean).join(' · '),
+    address: join.receiver_address || '', text: join.purpose || '', more: join.ef || ''}};
+}
+function figureWords(workId) {
+  const session = D.sessions.filter(one => one.work_id === workId).at(-1);
+  return {top: [h('b', {}, agentName(session?.agent))], card: {title: agentName(session?.agent), kind: 'agent',
+    text: `On ${workPart(workId)}`, status: sessionStatus(session)}};
+}
+/* The detail card at the lower left of the map's window, in the legend's corner, the legend easing out while it shows: the name as its title, a quiet line
+ * of its kind and role, the address in mono, its purpose or EF in a line or two, for an edge the join's purpose, and
+ * for an agent what it works on and its status. It eases in for anything hovered and fades a moment after; it sits
+ * above the map's count and clear of the legend, takes no click, and in the small pane is its title and one line. */
+const CARD = {timers: {}, now: {}};
+function cardBox(which) {
+  const id = which === '3d' ? 'card3d' : 'card2d';
+  let box = document.getElementById(id);
+  if (!box) {
+    box = h('div', {id, class: 'hovercard', role: 'status', 'aria-live': 'polite', hidden: true});
+    (which === '3d' ? $('#big3d .view3d') : $('#map2d'))?.append(box);
+  }
+  return box;
+}
+function hoverCard(which, card) {
+  const box = cardBox(which);
+  if (!box) return;
+  clearTimeout(CARD.timers[which]);
+  if (!card) {
+    CARD.now[which] = null;
+    box.classList.remove('on');
+    CARD.timers[which] = setTimeout(() => { if (!box.classList.contains('on')) box.hidden = true; }, reduced() ? 0 : 900);
+    return;
+  }
+  const key = JSON.stringify([card.title, card.kind, card.address, card.text, card.more, card.work, card.status?.words]);
+  if (CARD.now[which] !== key) {
+    CARD.now[which] = key;
+    // no title: the name is said once, at the top left where the map shows none to read, or on its own sign
+    fill(box, card.kind || card.status ? h('div', {class: 'kind'}, card.kind || '', card.status ? statusChip(card.status) : null) : null,
+      card.address ? h('code', {class: 'address'}, card.address) : null,
+      card.text ? h('p', {class: 'text'}, card.text) : null,
+      card.more && card.more !== card.text ? h('p', {class: 'more'}, card.more) : null,
+      card.work ? h('p', {class: 'work'}, card.work) : null);
+  }
+  box.hidden = false;
+  void box.offsetWidth;  // from where it stands away, so it eases in
+  box.classList.add('on');
+}
+/* The readout stands across the top of the map's window, not at the node, so nothing follows the node each frame. */
+function placeTip() {}
 const short = (text, most) => text.length > most ? text.slice(0, most - 1) + '…' : text;
 /* The labels of the 3D map, VIEW-038, are drawn inside the scene, each its element's whole name, wrapped at word
- * breaks, painted on a canvas and shown as a sign in the scene, its face turned out from the map's middle. Its size and its opacity say how near it is:
+ * breaks, painted on a canvas and shown as a sign in the scene, standing out from the map's middle and facing the eye. Its size and its opacity say how near it is:
  * a label grows and shrinks with the map as it is zoomed, and from the front of the map in view to its back it goes
  * from its full size to a fifth of it; the nearest label is solid and the farthest two thirds clear, so the near names stand
  * out where the map is dense and the depth of the map reads from its names as well as its nodes. Each
@@ -2332,6 +4386,30 @@ const short = (text, most) => text.length > most ? text.slice(0, most - 1) + '�
  * text color, each letter outlined in the background's color, `stroke`, in place of a box behind the name, so the
  * name reads over what is behind it without a bar hiding the map; the outline fades with the label by its depth. A
  * label is painted again only when what it shows changes. */
+/* How each physics preset treats the names, so a name can be read in every shape the map takes: `place`, where it
+ * stands from its node, away from the map's middle ('out'), above it ('above'), or beside it, to the side of the way
+ * service flows ('beside'); `least` and `most`, the screen pixels its letters are held between, so a map seen whole
+ * never shrinks them to specks nor a near one blows them up; `declutter`, whether a name that would overlap one ranked
+ * above it, the selection, its neighbours, then the hubs, then the rest, is left out until there is room; `farthest`,
+ * how faint the farthest name is drawn, lower in a tight preset so the near ones stand out. Organic keeps the names as
+ * they have always been drawn, held only from shrinking past reading. Every name faces the eye, never edge on or
+ * mirrored. */
+const LABEL_PRESETS = {
+  organic: {place: 'out', least: 9, most: Infinity, declutter: false, farthest: 0.34},
+  clusters: {place: 'above', least: 11, most: 22, declutter: true, farthest: 0.18},
+  spread: {place: 'out', least: 12, most: 24, declutter: true, farthest: 0.4},
+  calm: {place: 'out', least: 10, most: 22, declutter: true, farthest: 0.3},
+  down: {place: 'beside', least: 11, most: 22, declutter: true, farthest: 0.4},
+  across: {place: 'above', least: 11, most: 22, declutter: true, farthest: 0.4},
+  radial: {place: 'out', least: 11, most: 22, declutter: true, farthest: 0.4},
+  depth: {place: 'beside', least: 11, most: 22, declutter: true, farthest: 0.25},
+  flat: {place: 'above', least: 11, most: 22, declutter: true, farthest: 0.6},
+};
+const RIGHT = new THREE.Vector3();
+/* Outward signs, as they have always been drawn: away from the map's middle, sized by perspective, the far ones fading
+ * to LABEL.farthest, none left out; their letters raised only where they would fall below `least` screen pixels, so a
+ * map seen whole, as Spread leaves it, never shrinks them past reading. */
+const OUTWARD_SIGNS = {place: 'out', least: 7, most: Infinity, declutter: false, farthest: 0.34};
 const LABEL = {size: 11, chosen: 13, wide: 9, line: 1.15, padX: 6, padY: 4, stroke: 2, after: 10, titleStep: 0.06,
   out: 12,  // how far a label stands out from its ball's surface, away from the map's middle, in the map's units
   // the size of a label's letters in the map, in its units, about an element's height; painted sharper at each
@@ -2340,12 +4418,12 @@ const LABEL = {size: 11, chosen: 13, wide: 9, line: 1.15, padX: 6, padY: 4, stro
 const tags = new Map();   // by node id: the label's sprite, its canvas, what it shows and where it is on the screen
 const LABELS = {group: null, plane: null, on: true, only: null, pen: null, measured: new Map()};
 const OUT = new THREE.Vector3(), UP = new THREE.Vector3(), AT = new THREE.Vector3(), middle = new THREE.Vector3();
-const Y_UP = new THREE.Vector3(0, 1, 0);
+const Y_UP = new THREE.Vector3(0, 1, 0);  // the map's own up, which an outward sign keeps
 const fontOf = look => `${look.weight} ${look.size}px ${look.family}`;
 /* The name in lines no wider than the label's width, broken only between words, as the page wraps text; a word longer
  * than the width keeps its own line whole. Measured once for each name and look. */
-function wrapped(text, look) {
-  const key = fontOf(look) + '\n' + text;
+function wrapped(text, look, oneLine = false) {
+  const key = fontOf(look) + '\n' + text + (oneLine ? '\n1' : '');
   if (LABELS.measured.has(key)) return LABELS.measured.get(key);
   LABELS.pen = LABELS.pen || document.createElement('canvas').getContext('2d');
   LABELS.pen.font = fontOf(look);
@@ -2356,6 +4434,11 @@ function wrapped(text, look) {
     else lines.push(word);
   }
   if (!lines.length) lines.push('');
+  if (oneLine && lines.length > 1) {  // one line, ended with an ellipsis where it runs past twice the usual width
+    let line = text.trim();
+    while (line.length > 1 && LABELS.pen.measureText(line + '…').width > most * 2) line = line.slice(0, -1).trimEnd();
+    lines.splice(0, lines.length, line === text.trim() ? line : line + '…');
+  }
   const widest = Math.max(...lines.map(line => LABELS.pen.measureText(line).width));
   const made = {lines, width: Math.ceil(widest) + 2 * LABEL.padX, height: Math.ceil(lines.length * look.size * LABEL.line) + 2 * LABEL.padY};
   LABELS.measured.set(key, made);
@@ -2396,8 +4479,8 @@ function labelFor(node) {
   const texture = new THREE.CanvasTexture(document.createElement('canvas'));
   Object.assign(texture, {colorSpace: THREE.SRGBColorSpace, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
     generateMipmaps: false});
-  // A sign in the scene, its face turned out from the map's middle and seen from either side, so from behind the
-  // map its name reads backward, as a sign does. `sprite` is the name it has always had in the page's reads.
+  // A sign in the scene, standing out from the map's middle and turned to face the eye, so its name always reads as
+  // written. `sprite` is the name it has always had in the page's reads.
   LABELS.plane ??= new THREE.PlaneGeometry(1, 1);
   // It is tested against what is nearer, so a nearer node or edge hides it, but writes no depth of its own and is
   // drawn after the map, so it never cuts out an edge or a node behind it: written into the depth, each letter and
@@ -2439,6 +4522,12 @@ function layered() {
     exclude: css('--exclude'), ground: css('--ground'), sans: css('--sans')};  // read once a frame, not once a label
   if (LABELS.group) LABELS.group.visible = LABELS.on;
   UP.set(0, 1, 0).applyQuaternion(camera.quaternion);
+  RIGHT.set(1, 0, 0).applyQuaternion(camera.quaternion);
+  // outward signs, web_signs' default, are drawn as they always were, held only from dropping below a readable floor;
+  // facing signs take their physics preset's treatment, `LABEL_PRESETS`
+  const how = signsFacing() ? LABEL_PRESETS[PHYS.name] || LABEL_PRESETS.organic : OUTWARD_SIGNS;
+  const degree = new Map();  // a hub is a node with many joins: its name ranks after the selection and its neighbours
+  if (how.declutter) for (const link of G.graphData().links) for (const end of [endOf(link.source), endOf(link.target)]) degree.set(end, (degree.get(end) || 0) + 1);
   const spheres = [], shown = [];
   let nearest = Infinity, deepest = -Infinity, placed = 0;
   middle.set(0, 0, 0);  // the map's middle, its nodes' mean place, which the names stand away from
@@ -2476,38 +4565,69 @@ function layered() {
     // its canvas. From the front of the map in view to its back it fades, `back`.
     const back = deepest > nearest ? Math.min(1, Math.max(0, (depth - nearest) / (deepest - nearest))) : 0;
     const grown = LABEL.letters / LABEL.size / unit;
-    const shape = wrapped(tag.text, look);
+    const shape = wrapped(tag.text, look, tag.id === SMALL_NAME.id && small3d());
+    tag.lookNow = look;
     tag.shape = shape;
     // Pinned in the map a set distance from its node, on the side away from the map's middle, so it is a thing of the
     // scene: it swings round its node as the map turns and goes behind the node as anything behind it does, and the
     // outer names stand outside the map, over the least of it.
     const ball = radius;
-    OUT.set(node.x - middle.x, node.y - middle.y, node.z - middle.z);
-    if (OUT.lengthSq() < 1e-6) OUT.copy(UP); else OUT.normalize();
-    tag.sprite.position.set(node.x, node.y, node.z).addScaledVector(OUT, ball + LABEL.out);
-    // turned to face out from the map's middle, upright in the map, or upright to the eye where it would face
-    // straight up or down
-    tag.sprite.up.copy(Math.abs(OUT.y) > 0.98 ? UP : Y_UP);
-    tag.sprite.lookAt(AT.copy(tag.sprite.position).add(OUT));
-    const seen = grown, size = LABEL.letters / LABEL.size;
-    tag.sprite.scale.set(shape.width * size, shape.height * size, 1);
+    // its letters held between the preset's least and most screen pixels, `how`, so they are read at any zoom
+    const onScreen = grown * LABEL.size, held = Math.min(how.most, Math.max(how.least, onScreen)) / onScreen;
+    const seen = grown * held, size = LABEL.letters / LABEL.size * held;
+    const wide = shape.width * size, tall = shape.height * size;
+    if (how.place === 'above') {  // over the node, as a cluster's names sit over its knot
+      tag.sprite.position.set(node.x, node.y, node.z).addScaledVector(UP, ball + LABEL.out * 0.4 + tall / 2);
+    } else if (how.place === 'beside') {  // to the side of a tree's flow, clear of the edges along it
+      tag.sprite.position.set(node.x, node.y, node.z).addScaledVector(RIGHT, ball + LABEL.out * 0.4 + wide / 2);
+    } else {
+      OUT.set(node.x - middle.x, node.y - middle.y, node.z - middle.z);
+      if (OUT.lengthSq() < 1e-6) OUT.copy(UP); else OUT.normalize();
+      tag.sprite.position.set(node.x, node.y, node.z).addScaledVector(OUT, ball + LABEL.out);
+    }
+    // web_signs: outward, each sign facing away from the map's middle, upright in the map, and turned round on its
+    // upright axis when the eye is on the map's side of it, so its letters read as written and are never mirrored; or
+    // facing, each sign turned to the eye and upright to it, read the same from any side and at any angle
+    if (signsFacing()) tag.sprite.quaternion.copy(G.camera().quaternion);
+    else {
+      OUT.set(node.x - middle.x, node.y - middle.y, node.z - middle.z);
+      if (OUT.lengthSq() < 1e-6) OUT.copy(UP); else OUT.normalize();
+      tag.sprite.up.copy(Math.abs(OUT.y) > 0.98 ? UP : Y_UP);
+      const eye = G.camera().position, at = tag.sprite.position;
+      const behind = (eye.x - at.x) * OUT.x + (eye.y - at.y) * OUT.y + (eye.z - at.z) * OUT.z < 0;
+      tag.sprite.lookAt(AT.copy(at).addScaledVector(OUT, behind ? -1 : 1));
+    }
+    tag.sprite.scale.set(wide, tall, 1);
     const anchor = G.graph2ScreenCoords(tag.sprite.position.x, tag.sprite.position.y, tag.sprite.position.z);
     tag.rect = {left: anchor.x - shape.width * seen / 2, right: anchor.x + shape.width * seen / 2,
       top: anchor.y - shape.height * seen / 2, bottom: anchor.y + shape.height * seen / 2};
     tag.grown = seen;
     tag.ghost = titled ? 1 : ghostSign(node, seen, now);  // a part not built has a faint name, VIEW-027
-    shown.push({tag, far: depth, look, back});
+    const rank = node.id === S.selected ? 0 : S.neighbors.has(node.id) ? 1 : 2;
+    shown.push({tag, far: depth, look, back, rank, hub: degree.get(node.id) || 0});
+  }
+  // A preset that declutters leaves out a name that would overlap one ranked above it: the selection first, then its
+  // neighbours, then the hubs by their joins, then the rest, nearest first; the selection and its neighbours always
+  // keep theirs.
+  if (how.declutter) {
+    const kept = [];
+    for (const label of [...shown].sort((one, two) => one.rank - two.rank || two.hub - one.hub || one.far - two.far)) {
+      const box = label.tag.rect;
+      const clash = kept.some(other => !(box.right <= other.left || other.right <= box.left || box.bottom <= other.top || other.bottom <= box.top));
+      if (clash && label.rank > 1) { label.tag.sprite.visible = false; label.out = true; continue; }
+      kept.push(box);
+    }
   }
   shown.sort((one, two) => one.far - two.far);
   shown.forEach((label, index) => {
-    // the nearest label solid, the farthest at LABEL.farthest of it, the rest between by their depth
+    // the nearest label solid, the farthest at the preset's `farthest` of it, the rest between by their depth
     // and a part not built's name as faint as its ghost, `ghostSign`
-    label.tag.sprite.material.opacity = (1 - (1 - LABEL.farthest) * label.back) * (label.tag.fade ?? 1) * label.tag.ghost;
+    label.tag.sprite.material.opacity = (1 - (1 - how.farthest) * label.back) * (label.tag.fade ?? 1) * label.tag.ghost;
     const box = label.tag.rect;
     const behind = spheres.some(sphere => sphere.id !== label.tag.id && sphere.far < label.far &&
       Math.hypot(Math.max(box.left, Math.min(sphere.x, box.right)) - sphere.x,
                  Math.max(box.top, Math.min(sphere.y, box.bottom)) - sphere.y) < sphere.r);
-    const covered = shown.slice(0, index).some(({tag: other}) => !(box.right <= other.rect.left ||
+    const covered = shown.slice(0, index).some(({tag: other, out}) => !out && !(box.right <= other.rect.left ||
       other.rect.right <= box.left || box.bottom <= other.rect.top || other.rect.bottom <= box.top));
     const tag = label.tag;
     tag.under = (behind || covered) && !(MEET.on && tag === tags.get(MEET.back?.id));
@@ -2516,7 +4636,7 @@ function layered() {
     const look = lookOf(tag.classes, palette);
     // painted for the size it is drawn at, in steps, so a near label is as sharp as one at its own size
     const sharp = ratio * Math.min(LABEL.largest, Math.max(1, Math.ceil(tag.grown / LABEL.sharper) * LABEL.sharper));
-    const key = [tag.text, fontOf(look), look.color, look.ground, look.glow, sharp].join('|');
+    const key = [tag.text, fontOf(look), look.color, look.ground, look.glow, sharp, tag.shape.lines.length].join('|');
     if (key !== tag.key) { painted(tag, look, sharp, tag.shape); tag.key = key; }
   });
   metSign(MEET.on ? tags.get(MEET.back?.id) : null);
@@ -2578,27 +4698,363 @@ function prepare3d() {
   // The bloom runs while a reach is lit and while any part has a record that gives off light, VIEW-029, for as long
   // as the record is open and not only at the moments of its flash: the glass's highlights are over full brightness
   // too, and a pass switched with each flash would make them blink with it.
-  if (BLOOM) BLOOM.enabled = Boolean(R.key) || signaled;
+  // ULTRA: in outer space ultra's own bloom glows on everything bright, and its sky, bodies and governor run here.
+  if (BLOOM) BLOOM.enabled = !ULTRA.on() && (Boolean(R.key) || signaled);
+  ULTRA.frame(now, data);
   placeTip();
   showModes3d();
-  FRAMES.busy = !reduced() && (Boolean(R.key) || ROAM.figures.size > 0 || GHOSTS.built.size > 0 || signaled);
+  FRAMES.busy = !reduced() && (Boolean(R.key) || ROAM.figures.size > 0 || GHOSTS.built.size > 0 || signaled || mascotAwake());
   FRAMES.flowing = !reduced() && FLOW.count > 0 && FLOW.held === null;
 }
-/* What travels each join, VIEW-005, so its direction reads at a glance: a request and the data that answers it. The
- * request is a small white glowing dot from the receiver through the purpose vertex to each element the join holds;
- * the data is a longer streak in the link's colour, running the way the join's information goes, its ifd: back to the
- * receiver when it receives, one streak each way when both. A receiver that sends asks nothing: its streak alone goes
- * out to the providers. Three dots to a link: the request, then a streak for each way. The page moves them by the
- * time that passed, so they flow at one speed at any frame rate. The purpose link and the encounter links of one join
- * share one phase, so the flow runs through the join as one; each join has its own phase, so the map's joins never
- * pulse in step. Of a join's `period`, the request takes the first `ask`, a pause of `gap` follows, and the data the
- * rest; a streak is `streak` of the join's whole way long. `held`, a share of the way, holds every dot there,
- * `dots3d`. */
-const FLOW = {period: 3.6, clock: 0, last: 0, held: null, count: 0, ends: 0.08, ask: 0.4, gap: 0.05, streak: 0.3};
-let askMaterial = null;  // the request's glow, made once: white, added to what is behind it, so it reads as light
-function asking() {
-  return askMaterial ||= new THREE.MeshBasicMaterial({color: 0xffffff, transparent: true, opacity: 0.95,
-    blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false});
+/* What travels the map, VIEW-005, drawn so the map reads as a working system: who asks whom, which way the data goes,
+ * and what gets written down because of it. Only the selected node's joins flow, those it receives on and those it
+ * serves, through their purpose vertex, as in the 2D map; with nothing selected no join flows and a large map costs
+ * nothing. Three things travel, each with a look of its own so they tell apart at a glance, and each smaller than
+ * any node:
+ *  - a request: one tiny white dot that glimmers, from the receiver through the join's purpose vertex to each element
+ *    the join holds. A join asks when its information flow direction, its ifd, has the receiver take something:
+ *    receives, or both.
+ *  - the reply: a train of small separate dots, evenly spaced, in the colour of the element the data comes from, the
+ *    last few fading, `fxTrain`, leaving the moment the request arrives and running the way the data goes: back to the
+ *    receiver when it receives, one train each way when both. So a request reads as one dot going out and a reply as a
+ *    stream coming back; the number of dots can carry how much data later.
+ *  - a record: a small card in the record colour, --record, on a join whose receiver sends (ifd sends, or none
+ *    recorded, which the 2D arrows also draw as sending): what an element pushes on to the store or the log it feeds.
+ *    It lands with a ring that opens on the element that takes it.
+ * An element that answers a request sends its records the moment it answers, so a request, its answer and the records
+ * it leaves behind run as one chain: a data-access element that is asked and writes to the database shows its writes
+ * landing there as it answers. An element nobody asks sends on a clock of its own. All of it is read from the joins
+ * and their ifd; no element is named.
+ * A join's cycle is its request, `ask` seconds, the reply, `reply` seconds, then a wait of (random + random) times the
+ * setting web_pulse_ms, a fresh wait every cycle, bunched about it with now and then a quick one or a slow one; a
+ * record takes `send` seconds and its ring `burst`. Each join keeps its own clock, so the map never pulses in step.
+ * Everything moves by the time that passed, on FLOW.clock, so it flows at one speed at any frame rate, and only while
+ * the map draws frames, `FRAMES`, so a page left alone rests; with reduced motion nothing flows.
+ * What agents really do is drawn in the same looks, `bright` times larger and brighter so it reads as real, wherever it
+ * happens, selected or not, `flowLive`: an agent's session starting sends a request from the map's primary node to its
+ * ticket's node; each tool call of a running agent sends a request from its ticket's node to every part of the map the
+ * call touched and the reply back, and an edit leaves a record there; a note, an item or a work record written on a
+ * node lands there as a record. They come from the page's event stream as they happen; web_live_flow turns them off.
+ * The 3D map draws all of it as two objects of its scene, points and line segments filled again each frame, so a
+ * larger map adds no objects; a point is sized in map units but held between a few pixels, so nothing swells near the
+ * camera. The selected node's edges in the 2D map carry the same, `flows2d`. The graph library's own particle, one to
+ * a link, is never drawn while the page draws the flow: `held`, a share of the way, shows it held there instead,
+ * `dots3d`, so a browser check can read a dot over a node. */
+const FLOW = {clock: 0, last: 0, held: null, count: 0, ask: 0.45, reply: 0.9, send: 0.8, burst: 0.55, mean: 1.5,
+  streak: 0.3, trail: 0.06, bright: 1.35, live: [], net: null, mode: null, fades: new Map(), liveFade: 1, ease: 6};
+const cycles = new Map();  // each join's current cycle: when it began on FLOW.clock, its wait, and whether it answered
+/* A join's cycle at this moment; `active` is how long a cycle shows. A `driven` join sends its records only when its
+ * receiver answers a request, `recorded`, so it has no clock of its own. */
+function cycleOf(join, active, driven = false) {
+  let cycle = cycles.get(join);
+  if (!cycle || cycle.driven !== driven) cycles.set(join, cycle = driven
+    ? {at: -Infinity, wait: Infinity, driven, answered: true}
+    : {at: FLOW.clock - Math.random() * 2 * pulseMean(), wait: 0, driven, answered: false});
+  while (FLOW.clock - cycle.at > active + cycle.wait) {
+    cycle.at += active + cycle.wait;
+    cycle.wait = (Math.random() + Math.random()) * pulseMean();
+    cycle.answered = false;
+  }
+  return cycle;
+}
+const asksOf = join => join?.ifd === 'receives' || join?.ifd === 'both';
+// the usual wait between a join's cycles, web_pulse_ms, `mean` until the page has read it
+const pulseMean = () => (Number(WS.view().pulse_ms) || FLOW.mean * 1000) / 1000;
+/* Whether a join's flow is drawn: only the selected node's joins, those it receives on and those it serves, through
+ * their purpose vertex, as the 2D map draws them; with nothing selected no join flows, so a large map costs nothing. */
+function flowShown(join) {
+  const mode = flowModeNow(), chosen = S.selected;
+  if (mode === 'all') return Boolean(join);
+  if (mode !== 'selected') return false;
+  return Boolean(chosen && join && (join.receiver === chosen || join.providers.includes(chosen) || chosen === 'p:' + join.id));
+}
+/* Which joins flow, web_flow_mode: off, none and no agents' activity either; selected, the selected node's joins, the
+ * default; all, every join; live, only what agents really do. `window.metaform.flowMode` changes it for the page, and
+ * the mode bar and the View menu offer it; a change eases the dots in or out, `FLOW.fades`, never cutting them. */
+const FLOW_MODE_LIST = [{name: 'off', label: 'Off', help: 'No dots flow, and agents\' activity is not drawn.'},
+  {name: 'selected', label: 'Selection', help: "Dots flow along the selected node's joins, and agents' activity shows."},
+  {name: 'all', label: 'All', help: "Dots flow along every join, and agents' activity shows."},
+  {name: 'live', label: 'Live', help: 'Only what agents really do is drawn.'}];
+const flowModeNow = () => FLOW.mode || (FLOW_MODE_LIST.some(one => one.name === WS.view().flow_mode) ? WS.view().flow_mode : 'selected');
+function flowMode(name) {
+  if (FLOW_MODE_LIST.some(one => one.name === name) && name !== FLOW.mode) {
+    FLOW.mode = name;
+    wake3d(1500);
+    wake2d();
+  }
+  return flowModeNow();
+}
+/* Who asks whom, read again only when the joins change: each join by its id, the elements some join asks, which
+ * answer, and the joins each element sends records on. */
+function flowNet() {
+  if (FLOW.net?.joins === S.joins && FLOW.net.size === S.joins.length) return FLOW.net;
+  const byId = new Map(), answering = new Set(), sends = new Map();
+  for (const join of S.joins) {
+    byId.set(join.id, join);
+    if (asksOf(join)) for (const id of join.providers) answering.add(id);
+    else sends.set(join.receiver, [...(sends.get(join.receiver) || []), join.id]);
+  }
+  return FLOW.net = {joins: S.joins, size: S.joins.length, byId, answering, sends};
+}
+/* One join's flow at this moment: whether it asks, and how long since its cycle began. The moment its request reaches
+ * the elements it holds they answer, and each sends its records then. */
+function flowAt(join) {
+  const net = flowNet();
+  if (asksOf(join)) {
+    const cycle = cycleOf(join.id, FLOW.ask + FLOW.reply), since = FLOW.clock - cycle.at;
+    if (since >= FLOW.ask && !cycle.answered) {
+      cycle.answered = true;
+      if (since < FLOW.ask + FLOW.reply)
+        for (const id of join.providers) for (const sent of net.sends.get(id) || []) recorded(sent);
+    }
+    return {asks: true, since};
+  }
+  const cycle = cycleOf(join.id, FLOW.send + FLOW.burst, net.answering.has(join.receiver));
+  return {asks: false, since: FLOW.clock - cycle.at};
+}
+function recorded(join) {  // a record leaves on the join now, unless one is still on its way
+  const cycle = cycleOf(join, FLOW.send + FLOW.burst, true);
+  if (FLOW.clock - cycle.at >= FLOW.send) cycle.at = FLOW.clock;
+}
+function flowTick(now) {  // the clock moves on by the time that passed, once a frame whichever map draws it
+  if (now <= FLOW.last) return;
+  FLOW.clock += Math.min(0.1, (now - (FLOW.last || now)) / 1000);
+  FLOW.last = now;
+}
+/* What an agent really did, drawn in the flow's looks, VIEW-005: `start`, a request from the map's primary node to
+ * the ticket's node as the agent's session begins; `touch`, a request from the agent's node to each node its tool
+ * call touched and the answer back, with a record landing there too when the call wrote, `edit`; `record`, a record
+ * landing on a node something was written to. Nodes are the map's node ids. */
+function flowLive(kind, from, to, edit = false) {
+  if (reduced() || WS.view().live_flow === false || flowModeNow() === 'off') return;
+  const targets = (Array.isArray(to) ? to : [to]).filter(Boolean);
+  if (!targets.length) return;
+  const long = kind === 'start' ? 2 * FLOW.ask + FLOW.burst : kind === 'record' ? FLOW.send + FLOW.burst
+    : FLOW.ask + Math.max(FLOW.reply, edit ? FLOW.send + FLOW.burst : FLOW.burst);
+  FLOW.live.push({kind, from, to: targets, edit, at: FLOW.clock, long});
+  if (FLOW.live.length > 120) FLOW.live.splice(0, FLOW.live.length - 120);
+  wake3d(1000 * long + 200);
+  wake2d();
+}
+const flowNode = place => place ? (place.kind === 'join' ? 'p:' + place.id : place.id) : null;
+/* Where a running agent's tool calls reached, as its runner tells the page, `map.flow`: a request from the ticket's
+ * node, or from the map's primary node for an agent with no ticket, to each part reached; a call that changes files
+ * leaves a record there too. */
+function flowEvent(payload) {
+  if (!payload || payload.project !== S.project) return;
+  const primary = G ? primaryOf(G.graphData())?.id : null;
+  for (const flow of payload.flows || []) {
+    flowLive('touch', flowNode(flow.from) || primary, (flow.to || []).map(flowNode), /^(edit|delete|move)$/.test(flow.action));
+    figureReached(flow.work_id, flowNode(flow.to?.[0]));  // its figure reaches toward what the call touched
+  }
+}
+/* A note, an item or a property written on a node, read from the ops the page applies, lands there as a record. */
+function flowWritten(ops) {
+  const at = new Set();
+  for (const op of ops) {
+    if (op.op === 'remove' || (op.kind !== 'item' && op.kind !== 'property')) continue;
+    const held = S.items.get((op.kind === 'item' ? 'i:' : 'r:') + op.id)?.item;
+    const place = op.kind === 'item' ? held?.target : held?.element_id ? {kind: 'element', id: held.element_id} : null;
+    if (place) at.add(flowNode(place));
+  }
+  if (at.size) flowLive('record', null, [...at]);
+}
+/* A work record opened or changed on a node, each step an agent reports among them, lands there as a record. The first
+ * read only learns the records. */
+const WORKED = {seen: null, of: null};
+function flowTickets(tickets) {
+  const now = new Map(tickets.map(ticket => [ticket.id,
+    [ticket.condition, ticket.note, ticket.task, ticket.steps_done, ticket.said?.length, ticket.done].join('|')]));
+  const before = WORKED.of === `${S.project}|${S.base}` ? WORKED.seen : null, held = WORKED.tickets || new Map();
+  Object.assign(WORKED, {seen: now, of: `${S.project}|${S.base}`, tickets: new Map(tickets.map(ticket => [ticket.id, ticket]))});
+  if (!before) return;
+  // a ticket the open work no longer holds was closed: the mascot says it is done
+  for (const [id, ticket] of held) if (!now.has(id) && before.has(id))
+    attend(`done:${id}`, `Ticket done: ${ticketPart(ticket)}`, ticketNode(ticket), () => select(ticketNode(ticket), true));
+  const at = new Set(tickets.filter(ticket => before.get(ticket.id) !== now.get(ticket.id)).map(ticketNode));
+  if (at.size) flowLive('record', null, [...at]);
+  for (const ticket of tickets) if (ticket.done && before.has(ticket.id) && !String(before.get(ticket.id)).endsWith('|' + ticket.done))
+    attend(`done:${ticket.id}`, `Ticket done: ${ticketPart(ticket)}`, ticketNode(ticket), () => select(ticketNode(ticket), true));
+}
+/* The 3D flow's two objects: points, each a dot, a card or a ring by its shape, and line segments for the streaks'
+ * tails, both added to what is behind them so they read as light. Their buffers grow as needed and are filled again
+ * each frame. A point's size is in map units, held between a few pixels and its own most, `look`. */
+const FX = {scene: null, points: null, lines: null, n: 0, m: 0, cap: 0, capL: 0, tints: new Map(), fade: 1};
+const WHITE = new THREE.Color(1, 1, 1), LIT = new THREE.Color();
+function tintOf(color) {
+  if (!FX.tints.has(color)) FX.tints.set(color, new THREE.Color(color || '#ffffff'));
+  return FX.tints.get(color);
+}
+function fxMake() {
+  const scene = G.scene();
+  if (FX.scene === scene) return;
+  FX.scene = scene;
+  const light = {transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false};
+  // What travels runs along the middle of a link, inside its fiber, which is drawn with depth: each point is set a
+  // little toward the eye for the depth test alone, where it is drawn on the screen unchanged, so the fiber never
+  // hides it and a node still does.
+  const NEAR = `
+      vec4 near(vec4 at) { float far = length(at.xyz); at.xyz *= max(0.01, far - 1.5) / far; return at; }`;
+  FX.points = new THREE.Points(new THREE.BufferGeometry(), new THREE.ShaderMaterial({...light,
+    uniforms: {scale: {value: 1}, ratio: {value: 1}},
+    vertexShader: `attribute vec4 tint; attribute vec4 look; uniform float scale; uniform float ratio;
+      varying vec4 vTint; varying float vShape;${NEAR}
+      void main() {
+        vec4 at = near(modelViewMatrix * vec4(position, 1.0));
+        gl_Position = projectionMatrix * at;
+        gl_PointSize = clamp(look.x * scale / max(0.001, -at.z), look.z * ratio, max(look.z, look.w) * ratio);
+        vTint = tint; vShape = look.y;
+      }`,
+    // a dot is a white-hot core in a glow of its colour; a card, a small lit rectangle with two lines across it; a
+    // ring, a thin circle
+    fragmentShader: `varying vec4 vTint; varying float vShape;
+      void main() {
+        vec2 c = gl_PointCoord * 2.0 - 1.0;
+        float d = length(c), a = 1.0;
+        vec3 color = vTint.rgb;
+        if (vShape < 0.5) {
+          a = max(smoothstep(0.6, 0.35, d), 0.7 * pow(max(0.0, 1.0 - d), 1.5));
+          color = mix(color, vec3(1.0), 0.25 + 0.75 * smoothstep(0.6, 0.1, d));
+        } else if (vShape < 1.5) {
+          vec2 q = abs(c) / vec2(0.86, 0.64);
+          float edge = max(q.x, q.y);
+          if (edge > 1.0) discard;
+          float line = step(abs(abs(c.y) - 0.2), 0.08) * step(abs(c.x), 0.55);
+          color = mix(color, vec3(1.0), 0.35 * smoothstep(0.7, 0.95, edge)) * (1.0 - 0.5 * line);
+        } else {
+          a = smoothstep(0.14, 0.0, abs(d - 0.84));
+        }
+        if (a * vTint.a < 0.004) discard;
+        gl_FragColor = vec4(color, a * vTint.a);
+      }`}));
+  FX.lines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.ShaderMaterial({...light,
+    vertexShader: `attribute vec3 shade; varying vec3 vShade;${NEAR}
+      void main() { gl_Position = projectionMatrix * near(modelViewMatrix * vec4(position, 1.0)); vShade = shade; }`,
+    fragmentShader: `varying vec3 vShade; void main() { gl_FragColor = vec4(vShade, 1.0); }`}));
+  for (const object of [FX.points, FX.lines]) { object.frustumCulled = false; object.renderOrder = 10; scene.add(object); }
+  FX.cap = FX.capL = 0;
+  fxGrow(true); fxGrow(false);
+}
+function fxGrow(points) {
+  const grown = (old, size) => { const made = new Float32Array(size); if (old) made.set(old.subarray(0, Math.min(old.length, size))); return made; };
+  const geometry = (points ? FX.points : FX.lines).geometry;
+  const put = (name, array, width) => geometry.setAttribute(name, new THREE.BufferAttribute(array, width).setUsage(THREE.DynamicDrawUsage));
+  if (points) {
+    FX.cap = Math.max(512, FX.cap * 2);
+    put('position', FX.pos = grown(FX.pos, FX.cap * 3), 3);
+    put('tint', FX.tint = grown(FX.tint, FX.cap * 4), 4);
+    put('look', FX.look = grown(FX.look, FX.cap * 4), 4);
+  } else {
+    FX.capL = Math.max(1024, FX.capL * 2);
+    put('position', FX.lpos = grown(FX.lpos, FX.capL * 3), 3);
+    put('shade', FX.lcol = grown(FX.lcol, FX.capL * 3), 3);
+  }
+}
+// shape: 0 a dot, 1 a card, 2 a ring; `size` across in map units, held between `least` and `most` pixels
+function fxDot(at, size, color, alpha, shape, least, most) {
+  if (FX.n === FX.cap) fxGrow(true);
+  const i = FX.n++;
+  FX.pos[i * 3] = at.x; FX.pos[i * 3 + 1] = at.y; FX.pos[i * 3 + 2] = at.z;
+  FX.tint[i * 4] = color.r; FX.tint[i * 4 + 1] = color.g; FX.tint[i * 4 + 2] = color.b; FX.tint[i * 4 + 3] = alpha * FX.fade;
+  FX.look[i * 4] = size; FX.look[i * 4 + 1] = shape; FX.look[i * 4 + 2] = least; FX.look[i * 4 + 3] = most;
+}
+function fxLine(a, b, color, glowA, glowB) {  // a segment fading from glowA to glowB, its colour toward white as it glows
+  if (FX.m + 2 > FX.capL) fxGrow(false);
+  for (const [at, shown] of [[a, glowA], [b, glowB]]) {
+    const glow = shown * FX.fade, i = FX.m++, white = 0.6 * glow;
+    FX.lpos[i * 3] = at.x; FX.lpos[i * 3 + 1] = at.y; FX.lpos[i * 3 + 2] = at.z;
+    FX.lcol[i * 3] = (color.r + (1 - color.r) * white) * glow;
+    FX.lcol[i * 3 + 1] = (color.g + (1 - color.g) * white) * glow;
+    FX.lcol[i * 3 + 2] = (color.b + (1 - color.b) * white) * glow;
+  }
+}
+function fxDone() {
+  if (!FX.points) return;
+  const renderer = G.renderer(), camera = G.camera();
+  FX.scale = FX.points.material.uniforms.scale.value = renderer.domElement.height / (2 * Math.tan((camera.fov || 50) * Math.PI / 360));
+  FX.ratio = FX.points.material.uniforms.ratio.value = renderer.getPixelRatio();
+  for (const [object, count] of [[FX.points, FX.n], [FX.lines, FX.m]]) {
+    object.visible = count > 0;
+    object.geometry.setDrawRange(0, count);
+    for (const attribute of Object.values(object.geometry.attributes)) attribute.needsUpdate = count > 0;
+  }
+}
+/* The point a share of the way along a way of nodes, each leg an equal share: a join's way is its receiver, its
+ * purpose vertex and one element it holds, so the purpose vertex is half way. */
+function wayAt(way, share, out = {x: 0, y: 0, z: 0}) {
+  const legs = way.length - 1, s = Math.min(1, Math.max(0, share)) * legs, i = Math.min(legs - 1, Math.floor(s)), u = s - i;
+  const a = way[i], b = way[i + 1];
+  out.x = a.x + (b.x - a.x) * u; out.y = a.y + (b.y - a.y) * u; out.z = a.z + (b.z - a.z) * u;
+  return out;
+}
+const TAIL = Array.from({length: 11}, () => ({x: 0, y: 0, z: 0}));
+function fxRequest(way, t, live) {  // tiny, white, glimmering, with a short faint trail that says which way it goes
+  const k = live ? FLOW.bright : 1, glimmer = 0.75 + 0.25 * Math.sin(FLOW.clock * 16);
+  const head = wayAt(way, t, TAIL[0]), tail = wayAt(way, t - FLOW.trail, TAIL[1]);
+  if (t > FLOW.trail) fxLine(tail, head, WHITE, 0, 0.5 * k);
+  fxDot(head, 0.6 * k, WHITE, glimmer, 0, 6 * k, 8 * k);
+}
+/* A reply: a train of small separate dots, evenly spaced, one after another along the join the way the data goes, in
+ * the colour of the element it comes from, the last few fading. `count` can carry how much data later. The dots are
+ * spaced on the screen at least a little more than twice their size apart, so the train reads as dots at any zoom; a
+ * join too short for all of them shows fewer. */
+function fxTrain(way, t, back, color, live, count = 8) {
+  const k = live ? FLOW.bright : 1, dot = 5.5 * k;
+  color = LIT.copy(color).lerp(WHITE, 0.35);  // a little lighter than the element, so it reads over the fibers
+  let long = 0;
+  for (let i = 1; i < way.length; i++) long += Math.hypot(way[i].x - way[i - 1].x, way[i].y - way[i - 1].y, way[i].z - way[i - 1].z);
+  const middle = wayAt(way, 0.5, TAIL[1]), far = Math.max(1e-3, G.camera().position.distanceTo(AT.set(middle.x, middle.y, middle.z)));
+  const across = long * (FX.scale || 800) / (FX.ratio || 1) / far;  // the whole way in pixels on the screen
+  const spacing = Math.max(0.03, dot * 2.3 / Math.max(1, across));
+  const shown = Math.max(3, Math.min(count, Math.floor(0.6 / spacing) + 1));
+  const head = t * (1 + spacing * (shown - 1));  // the last dot arrives as the reply ends
+  for (let i = 0; i < shown; i++) {
+    const s = head - spacing * i;
+    if (s < 0 || s > 1) continue;
+    const fade = i < shown - 3 ? 1 : 1 - (i - (shown - 4)) / 4;  // the last few fade
+    fxDot(wayAt(way, back ? 1 - s : s, TAIL[0]), 0.7 * k, color, fade, 0, dot, dot * 1.4);
+  }
+}
+function fxBurst(node, u, color, live) {  // a ring that opens on a node as something lands on it, and a brief flash
+  const k = live ? FLOW.bright : 1, ball = node.t ? ballOf(node) : 3;
+  fxDot(node, ball * 2.4 * (1 + 0.9 * u) * k, color, Math.pow(1 - u, 1.5) * (live ? 1 : 0.85), 2, 20 * (1 + u) * k, 260);
+  fxDot(node, ball * 1.4, color, Math.pow(1 - u, 3) * 0.45 * k, 0, 8 * k, 160);
+  if (live && u > 0.3)
+    fxDot(node, ball * 2.4 * (1 + 1.4 * (u - 0.3)), color, Math.pow(1 - u, 2) * 0.6, 2, 12 * (1 + 2 * (u - 0.3)), 300);
+}
+function fxRecord(way, since, color, live) {  // a card on its way, then the ring where it lands
+  const k = live ? FLOW.bright : 1;
+  if (since < FLOW.send) {
+    const t = since / FLOW.send, eased = t * t * (3 - 2 * t);
+    return fxDot(wayAt(way, eased, TAIL[0]), 2.4 * k, color, 1, 1, 12 * k, 16 * k);
+  }
+  const u = (since - FLOW.send) / FLOW.burst;
+  if (u < 1) fxBurst(way[way.length - 1], u, color, live);
+}
+/* What agents really did, as it came from the event stream, `flowLive`: each trip drawn until it is over. */
+function live3d(data, colors) {
+  FLOW.live = FLOW.live.filter(trip => FLOW.clock - trip.at < trip.long);
+  if (!FLOW.live.length) return;
+  const nodes = new Map(data.nodes.map(node => [node.id, node]));
+  for (const trip of FLOW.live) {
+    const since = FLOW.clock - trip.at, from = nodes.get(trip.from);
+    for (const id of trip.to) {
+      const to = nodes.get(id);
+      if (!to || to.x === undefined) continue;
+      if (trip.kind === 'record') {  // dropped onto the node from just above it
+        fxRecord([{x: to.x, y: to.y + ballOf(to) * 4, z: to.z}, to], since, colors.record, true);
+        continue;
+      }
+      const way = from && from.x !== undefined && from !== to ? [from, to] : null;
+      const going = trip.kind === 'start' ? 2 * FLOW.ask : FLOW.ask;
+      if (since < going) { if (way) fxRequest(way, since / going, true); continue; }
+      const after = since - going;
+      if (trip.kind === 'start') { if (after < FLOW.burst) fxBurst(to, after / FLOW.burst, colors.signal, true); continue; }
+      if (way && after < FLOW.reply) fxTrain(way, after / FLOW.reply, true, tintOf(colorOf(to)), true);
+      if (trip.edit) fxRecord(way || [to, to], after, colors.record, true);
+      else if (!way && after < FLOW.burst) fxBurst(to, after / FLOW.burst, colors.signal, true);
+    }
+  }
 }
 const phases = new Map();
 function phaseOf(join) {
@@ -2610,26 +5066,60 @@ function phaseOf(join) {
   return phases.get(join);
 }
 function flow3d(now, data) {
-  FLOW.clock += Math.min(0.1, Math.max(0, (now - (FLOW.last || now)) / 1000));
-  FLOW.last = now;
+  flowTick(now);
+  if (FLOW.held === null) fxMake();
+  FX.n = FX.m = 0;
   let count = 0;
-  const ways = new Map(S.joins.map(join => [join.id, flowOf(join)]));
+  const ways = new Map();  // each join drawn: its receiver, its purpose vertex, the elements drawn that it holds
   for (const link of data.links) {
     const dots = link.__photonsObj?.children, from = link.source, to = link.target;
-    if (!dots?.length || from?.x === undefined || to?.x === undefined) continue;
+    if (!dots?.length || !link.__photonsObj.parent || from?.x === undefined || to?.x === undefined) continue;
     count++;
-    const offset = phaseOf(link.join), way = ways.get(link.join) || ['forth'];
-    dots.forEach((dot, index) => {
-      // the way the join's information goes: back, from the elements served to the receiver, runs the relay in reverse
-      const forth = (FLOW.clock / FLOW.period + offset + index / dots.length) % 1, back = way[index % way.length] === 'back';
-      const along = FLOW.held ?? (back ? 1 - forth : forth);
-      dot.__progressRatio = along;
-      dot.position.set(from.x + (to.x - from.x) * along, from.y + (to.y - from.y) * along, from.z + (to.z - from.z) * along);
-      const through = link.k === 'purpose' ? along / 2 : 0.5 + along / 2;  // its share of the whole join's way
-      dot.scale.setScalar(FLOW.held === null ? Math.max(0.001, Math.min(1, through / FLOW.ends, (1 - through) / FLOW.ends)) : 1);
-    });
+    if (FLOW.held !== null) {
+      const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
+      for (const dot of dots) {
+        Object.assign(dot, {visible: true, __progressRatio: FLOW.held});
+        dot.position.set(from.x + dx * FLOW.held, from.y + dy * FLOW.held, from.z + dz * FLOW.held);
+        dot.scale.setScalar(1);
+      }
+      continue;
+    }
+    for (const dot of dots) dot.visible = false;
+    let way = ways.get(link.join);
+    if (!way) ways.set(link.join, way = {receiver: null, purpose: null, providers: [], color: dots[0].material.color});
+    if (link.k === 'purpose') Object.assign(way, {receiver: from, purpose: to}); else way.providers.push(to);
   }
-  FLOW.count = count;
+  FLOW.count = FLOW.held !== null ? count : 0;
+  if (FLOW.held === null && !reduced()) {
+    const colors = {record: tintOf(css('--record')), signal: tintOf(css('--signal'))}, net = flowNet();
+    // a join's dots ease in as it starts to flow, and out as it stops, by the flow's own clock
+    const ease = 1 - Math.exp(-Math.max(0, FLOW.clock - (FLOW.fadedAt ?? FLOW.clock)) * FLOW.ease);
+    FLOW.fadedAt = FLOW.clock;
+    for (const [id, way] of ways) {
+      const join = net.byId.get(id);
+      if (!join || !way.receiver) continue;
+      const fade = (FLOW.fades.get(id) ?? 0) + ((flowShown(join) ? 1 : 0) - (FLOW.fades.get(id) ?? 0)) * ease;
+      if (fade < 0.01) { FLOW.fades.delete(id); continue; }  // only the joins the mode shows flow, `flowShown`
+      FLOW.fades.set(id, fade);
+      FX.fade = fade;
+      FLOW.count++;
+      const {asks, since} = flowAt(join);
+      for (const to of way.providers) {
+        const path = [way.receiver, way.purpose, to];
+        if (!asks) fxRecord(path, since, colors.record, false);
+        else if (since < FLOW.ask) fxRequest(path, since / FLOW.ask, false);
+        else if (since < FLOW.ask + FLOW.reply) for (const back of join.ifd === 'both' ? [true, false] : [true])
+          fxTrain(path, (since - FLOW.ask) / FLOW.reply, back, tintOf(colorOf(back ? to : way.receiver)), false);
+      }
+    }
+    FLOW.liveFade += ((flowModeNow() === 'off' ? 0 : 1) - FLOW.liveFade) * ease;
+    FX.fade = FLOW.liveFade;
+    live3d(data, colors);
+    FX.fade = 1;
+    fxMarks(tintOf(css('--muted')));  // the trails the figures leave
+    if (EYE.debug) eyeDebug3d();  // each figure's eye anchor and gaze, for a check of `look`
+  }
+  fxDone();
 }
 /* The 3D view draws the map, or the memory network of a node while one is open, VIEW-031. `previous` holds where
  * each node stood, the positions of what is drawn now unless given. */
@@ -2653,6 +5143,7 @@ function draw3D(previous = null) {
   // layout running from where each node stands.
   G.warmupTicks(MEM.key ? 120 : 0);
   G.graphData(data);
+  applyPhysics(PHYS.name, false);  // its chains of service and its parts read again
   V3.layouts++;
 }
 /* A node new to a map already laid out starts beside a node it is linked to, a little way off in a direction its id
@@ -2709,8 +5200,14 @@ function inPlace(data) {
 }
 /* A theme recolors both views in place, VIEW-023: the 3D view rereads its colors, the 2D map is drawn again. The
  * choice is the viewer's own, kept in this browser. */
-function setTheme(name) {
+/* The theme is the one choice of look: space draws the 3D map in outer space, ULTRA, and every other theme flat. */
+const PLAIN = {last: 'black'};
+function setTheme(name, keep = true) {
   document.documentElement.dataset.theme = name;
+  if (name !== 'space') PLAIN.last = name;
+  if ($('#theme') && $('#theme').value !== name) $('#theme').value = name;
+  ULTRA.setting(name === 'space' ? 'ultra' : 'clean');
+  if (keep && S.project) posted('/api/settings', {key: 'web_graphics', value: name === 'space' ? 'ultra' : 'clean'});
   try { localStorage.setItem('metaform.theme', name); } catch (error) { /* storage can be blocked; the theme still shows */ }
   if (G) G.backgroundColor(css('--ground')).linkOpacity(Number(css('--link-opacity'))).nodeColor(G.nodeColor())
     .linkColor(G.linkColor()).linkDirectionalParticleColor(G.linkDirectionalParticleColor());
@@ -2726,13 +5223,26 @@ $('#theme').onchange = () => setTheme($('#theme').value);
  * and All fit the map to the pane, and in Free the wheel sets it. Each is [name, key, word, short word, what it does].
  * `free` is the zoom the wheel left in Free, in screen pixels to a unit of the map; `page` the page's text sizes the
  * text modes are read from, `pageText`; `labels` each drawing's own label size. The 3D map's zoom is its own, VIEW-005. */
-const MODES2D = [['small', '4', 'Small', 'S', "the map's text at the size of the smallest text on the page"],
+const MODES2D = [['all', '1', 'All', 'All', 'the whole map in the pane'],
+  ['width', '2', 'Width', 'W', "the map's width fitted to the pane; the wheel scrolls up and down"],
+  ['height', '3', 'Height', 'H', "the map's height fitted to the pane; the wheel scrolls across"],
+  ['small', '4', 'Small', 'S', "the map's text at the size of the smallest text on the page"],
   ['medium', '5', 'Medium', 'M', "the map's text at the size of the panel's headings"],
   ['large', '6', 'Large', 'L', "the map's text at twice the size of the panel's headings"],
-  ['height', '7', 'Height', 'H', "the map's height fitted to the pane; the wheel scrolls across"],
-  ['width', '8', 'Width', 'W', "the map's width fitted to the pane; the wheel scrolls up and down"],
-  ['all', '9', 'All', 'All', 'the whole map in the pane'],
   ['free', '0', 'Free', 'Free', 'the wheel zooms']];
+/* 7, 8 and 9 choose the 2D map's direction, Auto, left to right and top to bottom, kept in the web_map_direction
+ * setting, which the 2D layout reads; the map is drawn again in it. */
+const DIRECTION_KEYS = {7: 'auto', 8: 'across', 9: 'down'};
+async function chooseDirection(direction) {
+  if (!S.project) return;
+  const done = await posted('/api/settings', {key: 'web_map_direction', value: direction});
+  if (!done.ok) return toast(done.body.error || 'The direction was not saved.');
+  PEEK.direction = direction;
+  peekParts();
+  toast(`The 2D map runs ${{auto: 'as suits its pane', across: 'left to right', down: 'top to bottom'}[direction]}.`);
+  await build2D(false);
+  if (S.selected) select(S.selected, false, true);
+}
 const MODE = {mode: 'all', free: 1, box: null, buttons: new Map(), page: null, labels: new WeakMap()};
 const MARGIN = 40;  // the most screen pixels shown beyond the map's edge where it runs past the pane, VIEW-041
 /* The two views change places, VIEW-028: the 2D map takes the large area and the 3D map the small one, and back.
@@ -2745,20 +5255,23 @@ async function swap(on, remember = true) {
   $('#swap3dBtn').title = on ? 'Put this map back in the large area' : 'Put this map in the small area, and the 2D map here';
   if (remember) try { localStorage.setItem('metaform.swapped', on ? '1' : ''); } catch (error) { /* storage can be blocked; the swap still shows */ }
   resize();
+  peekParts();  // the large map's bar holds the modes of the map now in the large area
   if (G) setTimeout(() => {
     // Keep a met name at the new area's share; an unfocused map still opens whole.
-    if (S.selected && V3.focus === S.selected && fly3d(S.selected)) return;
-    fit3d(600, on ? 24 : 60);
+    if (S.selected && (on || V3.mode === 'zoom') && fly3d(S.selected)) return;
+    if (on || V3.mode !== 'free') fit3d(600, on ? 24 : 60);
   }, 50);
   if (S.loading || !S.elements.size) return;
   await build2D(false);  // drawn for its new area, opening as it does on loading
   if (S.selected) select(S.selected, false, true);
 }
-$('#swapBtn').onclick = $('#swap3dBtn').onclick = () => swap(!$('.app').classList.contains('swapped'));
+// with the workspace, the two map panes exchange their places, saved with the layout
+$('#swapBtn').onclick = $('#swap3dBtn').onclick = () => WS.swapMaps() || swap(!$('.app').classList.contains('swapped'));
 /* The 3D map's own Fit goes between two views: the whole map, and close on the selected node. It moves the 3D map
  * only, as the 2D map's Fit moves the 2D map only. `auto` says the camera still shows the whole map as the page last
  * fitted it, with no hand and no selection having moved it since, so the layout may fit it again once it settles. */
-const V3 = {whole: 0, fits: 0, layouts: 0, ticks: 0, auto: true, followed: 0, asked: false, focus: null, lens: null};
+const V3 = {whole: 0, fits: 0, layouts: 0, ticks: 0, auto: true, followed: 0, asked: false, focus: null, lens: null,
+  mode: 'zoom'};  // `mode`, the large area's Whole, Zoom or Free, `setMode3d`
 const away3d = () => G.camera().position.distanceTo(G.controls().target);
 /* The 3D camera's flights, VIEW-008 and VIEW-028. A flight moves the point looked at and the camera's place around it
  * together: the point in a straight line, the camera around it by its turn, its tilt and the log of its distance, so it
@@ -2844,7 +5357,15 @@ function framed(balls, {room = 60, on = null, toward = 0, facing = null, mass = 
   up.crossVectors(back, right);
   const tall = Math.tan(camera.fov * Math.PI / 360), height = Math.max(1, box.height), width = Math.max(1, box.width);
   const spare = (pixels, of) => Math.max(0.25, 1 - 2 * pixels / of);
-  const across = tall * camera.aspect * spare(room, width), down = tall * spare(room + LABEL.size, height);
+  // the room kept at the foot, `foot3d`: the frame fits the height above it, and is raised by half of it, below
+  const foot = Math.min(foot3d(), height / 3);
+  const across = tall * camera.aspect * spare(room, width), down = tall * spare(room + LABEL.size, height) * (1 - foot / height);
+  const raise = result => {
+    if (!foot) return result;
+    const distance = Math.exp(result.far), lift = foot / height * tall * distance;  // half the room, in map units there
+    at.set(result.x, result.y, result.z).addScaledVector(up, -lift);
+    return {...result, x: at.x, y: at.y, z: at.z};
+  };
   // the middle of what is shown, as seen from the camera's way
   let low = [Infinity, Infinity], high = [-Infinity, -Infinity];
   const middle = new THREE.Vector3();
@@ -2865,8 +5386,15 @@ function framed(balls, {room = 60, on = null, toward = 0, facing = null, mass = 
     low = [cut(xs, mass), cut(ys, mass)];
     high = [cut(xs, 1 - mass), cut(ys, 1 - mass)];
     middle.addScaledVector(right, (low[0] + high[0]) / 2).addScaledVector(up, (low[1] + high[1]) / 2);
-    const far = Math.max((high[0] - low[0]) / 2 / across, (high[1] - low[1]) / 2 / down);
-    return {x: middle.x, y: middle.y, z: middle.z, turn: here.turn, tilt: here.tilt, far: Math.log(Math.max(far, 1))};
+    // Each node's own need, with its size and its depth as the camera sees it, and only the `mass` share of the
+    // nodes that need the most left out, so a small map is framed whole, every node and its ball in view.
+    const needs = balls.map(ball => {
+      at.set(ball.x, ball.y, ball.z).sub(middle);
+      const ahead = -at.dot(back);
+      return Math.max((Math.abs(at.dot(right)) + ball.r) / across - ahead, (Math.abs(at.dot(up)) + ball.r) / down - ahead, ball.r * 2 - ahead);
+    }).sort((a, b) => b - a);
+    const far = needs[Math.min(needs.length - 1, Math.floor(mass * needs.length))];
+    return raise({x: middle.x, y: middle.y, z: middle.z, turn: here.turn, tilt: here.tilt, far: Math.log(Math.max(far, 1))});
   }
   middle.addScaledVector(right, (low[0] + high[0]) / 2).addScaledVector(up, (low[1] + high[1]) / 2);
   if (on) middle.lerp(at.set(on.x, on.y, on.z), toward);
@@ -2877,7 +5405,22 @@ function framed(balls, {room = 60, on = null, toward = 0, facing = null, mass = 
     far = Math.max(far, (Math.abs(at.dot(right)) + ball.r) / across - ahead, (Math.abs(at.dot(up)) + ball.r) / down - ahead,
       ball.r * 2 - ahead);
   }
-  return {x: middle.x, y: middle.y, z: middle.z, turn: here.turn, tilt: here.tilt, far: Math.log(Math.max(far, 1))};
+  return raise({x: middle.x, y: middle.y, z: middle.z, turn: here.turn, tilt: here.tilt, far: Math.log(Math.max(far, 1))});
+}
+/* The room kept free at the foot of the 3D map's window, in screen pixels, as `foot2d` keeps it in 2D: the legend and
+ * the count where they stand now, and the hover card at rest, so a card that grows while it shows never moves the
+ * camera; and a small gap. */
+function foot3d() {
+  const view = $('#stage')?.closest('.view3d');
+  if (!view) return 0;
+  const bottom = view.getBoundingClientRect().bottom, shows = VIEW.hoverInfo || 'name+summary';
+  let most = shows === 'name' || shows === 'off' ? 0 : FOOT2D.card || restingCard(view);
+  for (const one of view.querySelectorAll(':scope > .legend, :scope > .count')) {
+    const box = one.getBoundingClientRect();
+    if (one.hidden || !box.height || getComputedStyle(one).display === 'none' || bottom - box.bottom > 60) continue;
+    most = Math.max(most, bottom - box.top);
+  }
+  return most ? most + FOOT2D.gap : 0;
 }
 const ball = node => ({x: node.x, y: node.y, z: node.z, r: ballOf(node)});
 const drawnBalls = data => data.nodes.filter(node => node.x !== undefined && shownNode(node)).map(ball);
@@ -2914,16 +5457,37 @@ function facingOf(node, balls) {
 /* A selection meets its name at a fixed share of the panel's width, VIEW-005. The large area's levels are a quarter,
  * a half and three quarters, opening at 2; the small area always uses four fifths. Unnamed nodes use their neighbors
  * for framing. Without `close` the camera keeps its distance. */
-const NAME = {in: 0.8, level: 2};
+const NAME = {in: 0.8, level: 2, tall: 0.8, floor: 12};  // the small pane: the name block fills 80% of the width or of the height, whichever binds
 const small3d = () => $('.app').classList.contains('swapped');
 /* How far the camera stands, as a log, for the node's name, at its real size in the map, to span `share` of the
  * view's width; null while the name is not drawn yet. */
+/* The selected name at `share` of the view's width, VIEW-005: in the small area four fifths, NAME.in, unless at that
+ * size it would be taller than the pane, when it fits NAME.tall of the pane's height instead, every wrapped line in
+ * view. The camera's distance does the framing; the name is drawn as it is. In the small
+ * area, where even the floor would not fit its lines, the name is drawn on one line ending in an ellipsis,
+ * `SMALL_NAME`. */
+const SMALL_NAME = {id: null};
 function nameFar(node, share) {
-  const sign = tags.get(node.id)?.sprite;
+  const tag = tags.get(node.id), sign = tag?.sprite;
   if (!sign?.scale.x) return null;
-  const camera = G.camera(), across = 2 * Math.tan(camera.fov * Math.PI / 360) * camera.aspect;
+  const camera = G.camera(), tall = 2 * Math.tan(camera.fov * Math.PI / 360), across = tall * camera.aspect;
   const out = Math.hypot(sign.position.x - node.x, sign.position.y - node.y, sign.position.z - node.z);
-  return Math.log(sign.scale.x / (share * across) + out);
+  const high = Math.max(1, $('#stage').clientHeight), size = LABEL.letters / LABEL.size;
+  const reachFor = shape => {
+    const width = shape.width * size, height = shape.height * size;
+    // the small area fits the name's height too; the large area's levels are a share of its width alone
+    const reach = Math.max(width / (share * across), small3d() ? height / (NAME.tall * tall) : 0);
+    return reach;  // the camera moves to frame the name; the name itself is never capped
+  };
+  // the sign as drawn now, its letters raised where they would fall below reading, `layered`
+  const shape = {width: sign.scale.x / size, height: sign.scale.y / size, lines: tag.shape?.lines || ['']};
+  // In the small pane the whole name block fits, every line inside with a margin: 80% of the width unless its height
+  // needs the camera farther, so the farther of the two fits wins and a name of two lines stays two lines; the camera
+  // distance alone sizes it. Measured in a 150 px pane, 2026-10-12, where a name of two lines was clipped.
+  const reach = reachFor(shape);
+  SMALL_NAME.id = null;
+  void high;
+  return Math.log(reach + out);
 }
 function fly3d(id, close = true) {
   const data = G ? G.graphData() : null, node = data?.nodes.find(item => item.id === id);
@@ -2941,6 +5505,8 @@ function fly3d(id, close = true) {
   const facing = facingOf(node, fitBalls(data));
   const view = framed([ball(node), ...around.map(ball)], {room: 70, on: node, toward: 1, facing});
   const whole = framed(fitBalls(data), {facing, mass: fitTrim()}).far;
+  // `close` 'whole': turned to the node at the whole map's distance, the map around it, `follow3d`
+  if (close === 'whole') { view.far = whole; V3.auto = false; flyTo(view); V3.focus = null; return true; }
   view.far = close ? Math.min(Math.max(view.far, Math.log(ballOf(node) * 7)), whole + Math.log(0.4))
     : (FLIGHT.on ? FLIGHT.to.far : cameraNow().far);  // a selection keeps the zoom the person has
   // Measure the selected font and any newly selected join title before choosing the distance. Measuring the old
@@ -3027,43 +5593,639 @@ function settled3d() {
   const off = Math.hypot(view.x - here.x, view.y - here.y, view.z - here.z) / Math.exp(here.far);
   if (Math.abs(view.far - here.far) > 0.06 || off > 0.04) fit3d(1100);
 }
-// Where the camera stands decides it, and not which button was clicked last, since the person also moves the camera
-// by hand: standing back with the whole map in view it goes in on the selected node, and from anywhere nearer it
-// goes out to the whole map.
-/* The 3D map's own Whole and Zoom, as the 2D map has, beside its Fit: the whole map, or close on the selected node,
- * facing the eye; whichever the camera is at is checked. */
-const MODES3D = {box: null, whole: null, zoom: null, said: ''};
+/* The 3D map's modes in the large area, VIEW-005: Whole keeps the whole map framed through selections, layout changes
+ * and new sizes; Zoom follows the selection close up, at the name level 4, 5 or 6 chose; Free moves the camera only by
+ * hand. The mode chosen is the one checked, whatever the camera does meanwhile. A hand on the camera always takes
+ * over: the mode moves it again at the next selection or change. Fit, beside them, fits the whole map once and leaves
+ * the mode as it is. The small area is not configured: it has neither these nor Fit, takes no keys, and meets each
+ * selection on its own, while the hand still moves it. */
+const MODES3D = {box: null, buttons: new Map(), said: ''};
+const MODES3D_LIST = [['whole', 'Whole', '1', 'The whole map in view, kept so through selections and layout changes (1, Home)'],
+  ['zoom', 'Zoom', '4–6', 'Close on each node selected, turned to face you; 4, 5 and 6 stand far, medium and close'],
+  ['free', 'Free', '0', 'The camera moves only by hand (0)']];
 MODES3D.box = h('div', {class: 'segmented modes3d', role: 'radiogroup', 'aria-label': 'How the 3D map is framed'},
-  MODES3D.whole = h('button', {type: 'button', role: 'radio', title: 'The whole map in view',
-    onclick: event => { event.stopPropagation(); fit3d(); }}, 'Whole'),
-  MODES3D.zoom = h('button', {type: 'button', role: 'radio', title: 'Close on the selected node, turned to face you',
-    onclick: event => { event.stopPropagation(); if (S.selected) fly3d(S.selected, true); }}, 'Zoom'));
-$('#big3d .mapbtns').prepend(MODES3D.box);
-function showModes3d() {  // each frame, from where the camera stands or is flying to
-  // the small area has no whole map to show and one view of the selected node, so it has neither these nor Fit
+  MODES3D_LIST.map(([name, word, key, title]) => {
+    const button = h('button', {type: 'button', role: 'radio', 'aria-checked': 'false', title,
+      'aria-keyshortcuts': key === '4–6' ? '4 5 6' : key, onclick: event => { event.stopPropagation(); setMode3d(name); }},
+    h('span', {class: 'long'}, word), h('kbd', {}, key));
+    MODES3D.buttons.set(name, button);
+    return button;
+  }));
+/* The page's easing tokens: one set for every motion, defined once here and as CSS custom properties in app.css's
+ * :root (--ease-arrive, --ease-leave, --ease-move, --dur-1 to --dur-3), the same curves. What arrives settles with a
+ * spring's ease-out and no overshoot; what leaves goes with a gentle ease-in; a move from one place to another eases
+ * both ways; a larger move takes a little longer, `durFor`. CSS transitions carry an interrupted move on from where
+ * it is. With reduced motion every state still changes, without moving. The maps' cameras ease as before, aim2d,
+ * settle2D and the 3D flights, on curves of the same feel; the agents' figures take these. */
+const EASE = {arrive: [0.16, 1, 0.3, 1], leave: [0.5, 0, 0.75, 0], move: [0.45, 0, 0.2, 1], short: 180, medium: 320, long: 520};
+const durFor = pixels => Math.round(Math.min(EASE.long, EASE.short + Math.sqrt(Math.max(0, pixels)) * 9));
+/* A token's curve as a function of the share of time gone, for motion drawn on a canvas or in the 3D scene. */
+function easeCurve([x1, y1, x2, y2]) {
+  const at = (t, one, two) => 3 * one * t * (1 - t) ** 2 + 3 * two * t * t * (1 - t) + t ** 3;
+  return s => {
+    if (s <= 0 || s >= 1) return Math.min(1, Math.max(0, s));
+    let low = 0, high = 1, t = s;
+    for (let step = 0; step < 24; step++) { t = (low + high) / 2; if (at(t, x1, x2) < s) low = t; else high = t; }
+    return at(t, y1, y2);
+  };
+}
+window.metaformEase = {...EASE, durFor, curve: name => easeCurve(EASE[name])};  // for the flow's figures, the same curves
+
+/* The view settings of the web module that the page follows, read once a project is shown: the large map's bar,
+ * web_mode_bar; the agents window, web_agents_window; the 3D map's physics, web_physics; the 2D map's direction,
+ * web_map_direction. Whether the page is drawn from its workspace is web_panes, which the workspace reads itself. A
+ * change made here is saved to the setting, so every project and every reload opens the same way. */
+const VIEW = {modeBar: 'auto', barBefore: null, agents: 'auto', physics: 'organic', read: null, reading: null};
+const INFOSET = {buttons: new Map()};  // the bar's Info choice, web_hover_info, `showInfo`, drawn as the view is read
+// declared before the view settings are read, which shows them: the flow modes and the node zoom switch
+const FLOWSET = {name: null, buttons: new Map()};
+const NODEZOOM = {button: null};
+const LENS = {name: 'natural', button: null, frame: 0};
+const LENS_NEXT = {natural: 'wide', wide: 'fisheye', fisheye: 'natural'};
+/* The signs, web_signs: outward, the map's names standing out from its middle as signs in the scene, or facing, each
+ * turned to the eye. S switches them, as do the large map's bar and the View menu. */
+const SIGNS = {button: null, words: {outward: 'Outward', facing: 'Facing'}};
+const FOV3D = {least: 30, most: 55};  // the 3D map's field of view in degrees, top to bottom, `resize`
+const LENSES = {natural: 55, wide: 80, fisheye: 120};  // web_lens: the widest the view opens
+const LENS_WORDS = {natural: 'Natural', wide: 'Wide', fisheye: 'Fisheye'};
+function readView() {
+  const project = S.project;
+  if (!project) return Promise.resolve();
+  if (VIEW.read === project) return VIEW.reading;
+  VIEW.read = project;
+  VIEW.reading = (async () => {
+    let rows = [];
+    try { rows = (await read('settings')).settings || []; } catch { return; }
+    if (S.project !== project) return;
+    const value = (key, otherwise) => rows.find(row => row.key === key)?.value ?? otherwise;
+    VIEW.modeBar = value('web_mode_bar', 'auto');
+    VIEW.agents = value('web_agents_window', 'auto');
+    PEEK.direction = value('web_map_direction', 'auto');
+    VIEW.signs = String(value('web_signs', 'outward'));
+    VIEW.embody = String(value('web_embody', 'offer'));
+    VIEW.embodyTurns = Number(value('web_embody_turns', 8));
+    VIEW.embodyMinutes = Number(value('web_embody_minutes', 20));
+    showSigns();
+    LENS.name = String(value('web_lens', 'natural'));
+    lens3d(LENS.name);
+    showLens();
+    ULTRA.setting(document.documentElement.dataset.theme === 'space' ? 'ultra' : 'clean');  // the theme decides
+    const physics = value('web_physics', 'organic');
+    if (physics !== PHYS.name) applyPhysics(physics);
+    showFlow(String(value('web_flow_mode', flowNow())));
+    VIEW.nodeZoom = value('web_node_zoom', true) !== false;
+    showNodeZoom();
+    VIEW.hoverInfo = String(value('web_hover_info', 'name+summary'));
+    showInfo();
+    barFollows();
+    agentsWindow();
+    peekParts();
+  })();
+  return VIEW.reading;
+}
+async function saveView(key, value) {
+  const done = await posted('/api/settings', {key, value});
+  if (!done.ok) toast(done.body.error || 'That choice was not kept.');
+  return done.ok;
+}
+
+/* The large map's bar: the modes with their keys, Fit, the 2D map's direction and the 3D map's physics, at the top
+ * right of the large area, web_mode_bar. auto brings it out as the pointer nears that corner and puts it away ten
+ * seconds after the pointer was last near it, the last key or the last use of it; shown keeps it out; keys, the
+ * default and the cleanest, keeps it away and lets it peek for a moment when a key changes what it shows, the new
+ * choice checked. Tab reaches it whatever the choice. M and the quiet handle at the corner's edge toggle shown. It
+ * holds no room while it is away: what stands in that corner, the agents window, moves down by its height while it is
+ * out and back as it goes. It is never in the small area, which is not configured. */
+const PEEK = {el: null, two: null, three: null, physics: null, timer: 0, out: false, direction: null, handle: null};
+const FIT3D = $('#fit3dBtn');  // held before the bar takes it out of the page, where $ no longer finds it
+PEEK.el = h('div', {id: 'peek', class: 'peek', role: 'toolbar', 'aria-label': "The large map's modes, direction and physics"},
+  PEEK.two = h('div', {class: 'peekpart two'}),
+  PEEK.three = h('div', {class: 'peekpart three'}, MODES3D.box, FIT3D),
+  PEEK.physics = h('div', {class: 'peekpart physics'}));
+FIT3D.title = 'Fit the whole map in view once, leaving the mode as it is (F)';
+FIT3D.setAttribute('aria-keyshortcuts', 'F');
+PEEK.directions = new Map();
+PEEK.two.append(h('div', {class: 'segmented directions', role: 'radiogroup', 'aria-label': "The 2D map's direction"},
+  Object.entries(DIRECTION_KEYS).map(([key, direction]) => {
+    const words = {auto: ['Auto', 'As suits the pane'], across: ['→', 'Left to right'], down: ['↓', 'Top to bottom']}[direction];
+    const button = h('button', {type: 'button', role: 'radio', 'aria-checked': 'false', 'aria-label': words[1],
+      'aria-keyshortcuts': key, title: `${words[1]} (${key})`, onclick: event => { event.stopPropagation(); chooseDirection(direction); }},
+    h('span', {class: 'long'}, words[0]), h('kbd', {}, key));
+    PEEK.directions.set(direction, button);
+    return button;
+  })));
+PEEK.handle = h('button', {class: 'peekhandle', type: 'button', 'aria-label': "The large map's bar", 'aria-keyshortcuts': 'M',
+  'aria-pressed': 'false', title: "Show or put away the large map's bar: its modes, direction and physics (M)",
+  onclick: event => { event.stopPropagation(); toggleBar(); }});
+$('main').append(PEEK.el);  // no handle: the bar comes out as the pointer rests where it sits, or by M
+function peekParts() {
+  PEEK.two.hidden = !small3d();  // `small3d`: the 3D map in the small area, the 2D map in the large one
+  PEEK.three.hidden = small3d();
+  for (const [direction, button] of PEEK.directions) button.setAttribute('aria-checked', String(direction === PEEK.direction));
+  for (const [name, button] of PHYS.buttons) button.setAttribute('aria-checked', String(name === PHYS.name));
+  if (PHYS.shown) showPhysics();
+  if (PEEK.ultra) showUltra();  // U pressed elsewhere: the bar names the look the map has now
+  PEEK.handle.setAttribute('aria-pressed', String(VIEW.modeBar === 'shown'));
+  $('#modebarat').value = VIEW.modeBar;
+}
+/* The bar drawn as small as it can be: one row, as wide as what it holds, while the map is wide enough; on a narrower
+ * map its controls wrap, `narrow`, and the bar is drawn as narrow as keeps that many rows, so the rows are even and
+ * no empty room stands beside a short one. The map below it is then shorter by the bar's height as drawn, `--peek-h`. */
+function fitPeek() {
+  const bar = PEEK.el;
+  bar.classList.remove('narrow');
+  bar.style.width = '';
+  const controls = () => [...bar.querySelectorAll(':scope > .peekpart:not([hidden]) > *')]
+    .filter(one => one.getClientRects().length).map(one => one.getBoundingClientRect());
+  const edge = bar.getBoundingClientRect(), shown = controls();
+  // too wide for one row: a control stands past either edge of the bar
+  if (shown.some(box => box.left < edge.left - 0.5 || box.right > edge.right + 0.5)) {
+    bar.classList.add('narrow');
+    const rows = () => new Set(controls().map(box => Math.round(box.top))).size;
+    const count = rows();
+    let low = Math.floor(bar.getBoundingClientRect().width / count), high = Math.ceil(bar.getBoundingClientRect().width);
+    while (high - low > 2) {  // the narrowest width that keeps the rows it has
+      const middle = Math.round((low + high) / 2);
+      bar.style.width = `${middle}px`;
+      if (rows() <= count) high = middle; else low = middle;
+    }
+    bar.style.width = `${high}px`;
+  }
+  if (PEEK.out) $('main').style.setProperty('--peek-h', `${PEEK.el.offsetHeight + PEEK.gap()}px`);
+}
+addEventListener('resize', () => { if (PEEK.out) fitPeek(); });
+/* Out, for `why`: 'near' the pointer, 'key' a key that changed it, 'use' a click or the focus in it. */
+function peek(why = 'use') {
+  if (FRAMED || (why === 'near' && VIEW.modeBar !== 'auto')) return;
+  peekParts();
+  if (!PEEK.out) {
+    PEEK.out = true;
+    PEEK.el.classList.add('out');
+    $('main').classList.add('peeking');
+  }
+  fitPeek();
+  clearTimeout(PEEK.timer);
+  // away again: a key's peek after a moment with keys; otherwise fifteen seconds after the pointer leaves its strip,
+  // and not while the pointer is in it, `PEEK.inside`
+  if (VIEW.modeBar !== 'shown' && !PEEK.inside) PEEK.timer = setTimeout(unpeek, why === 'key' && VIEW.modeBar === 'keys' ? 2600 : PEEK.stay);
+}
+function unpeek(now = false) {
+  if (VIEW.modeBar === 'shown') return;
+  if (!now && (PEEK.el.contains(document.activeElement) || PEEK.inside)) { PEEK.timer = setTimeout(unpeek, PEEK.stay); return; }
+  clearTimeout(PEEK.timer);
+  PEEK.out = false;
+  PEEK.el.classList.remove('out');
+  $('main').classList.remove('peeking');
+}
+function barFollows() { if (VIEW.modeBar === 'shown') peek(); else if (PEEK.out) unpeek(true); peekParts(); }
+function toggleBar() {
+  if (VIEW.modeBar === 'shown') VIEW.modeBar = VIEW.barBefore || 'auto';
+  else { VIEW.barBefore = VIEW.modeBar; VIEW.modeBar = 'shown'; }
+  barFollows();
+  if (VIEW.modeBar !== 'shown') unpeek(true);
+  saveView('web_mode_bar', VIEW.modeBar);
+}
+$('#modebarat').onchange = event => {
+  VIEW.modeBar = event.target.value;
+  barFollows();
+  saveView('web_mode_bar', VIEW.modeBar);
+};
+$('#agentsat').onchange = event => chooseAgents(event.target.value);
+PEEK.el.addEventListener('focusin', () => peek());
+PEEK.el.addEventListener('pointerdown', () => peek());
+PEEK.el.addEventListener('pointermove', () => { if (PEEK.out) peek(); }, {passive: true});
+/* With web_mode_bar auto the bar comes out when the pointer rests in the strip it occupies, at the top right of the
+ * large area under the map's own bar, for `dwell` ms; passing through does nothing. It stays while the pointer is in
+ * that strip and goes `stay` ms after the pointer leaves it; coming back in stops the count. While it is out the map
+ * below it is shorter by its height, `main.peeking`, so it covers nothing. */
+// `gap`, the room above and below the bar in its strip: its offset under the map's own bar, twice
+Object.assign(PEEK, {dwell: 800, stay: 15000, inside: false, resting: 0,
+  gap: () => 2 * Math.max(0, PEEK.el.offsetTop - ($('main .bar3d, main .bar2d')?.offsetHeight || PEEK.el.offsetTop))});
+function inStrip(x, y) {
+  const area = $('main').getBoundingClientRect(), bar = $('main .bar3d, main .bar2d')?.offsetHeight || 38;
+  if (!area.width) return false;
+  const top = area.top + bar, width = PEEK.el.offsetWidth + 2 * PEEK.gap(), height = PEEK.el.offsetHeight + PEEK.gap();
+  return x <= area.right && x >= area.right - width && y >= top && y <= top + height;
+}
+document.addEventListener('pointermove', event => {
+  if (VIEW.modeBar !== 'auto' || FRAMED) return;
+  const inside = inStrip(event.clientX, event.clientY);
+  if (inside === PEEK.inside) return;
+  PEEK.inside = inside;
+  clearTimeout(PEEK.resting);
+  if (inside && !PEEK.out) PEEK.resting = setTimeout(() => { if (PEEK.inside) peek('near'); }, PEEK.dwell);
+  else if (inside) clearTimeout(PEEK.timer);  // back in: the count to put it away stops
+  else if (PEEK.out) { clearTimeout(PEEK.timer); PEEK.timer = setTimeout(unpeek, PEEK.stay); }
+}, {passive: true});
+document.addEventListener('pointerleave', () => {
+  if (!PEEK.inside) return;
+  PEEK.inside = false;
+  clearTimeout(PEEK.resting);
+  if (PEEK.out && VIEW.modeBar === 'auto') { clearTimeout(PEEK.timer); PEEK.timer = setTimeout(unpeek, PEEK.stay); }
+});
+
+/* The window of the agents at work, web_agents_window: auto slides it out as an agent starts work and keeps it while
+ * any is at work, and slides it away completely a few seconds after the last one stops; open pins it out, saying when
+ * none is at work, and hidden pins it away. A, and the View menu, change it. */
+const AGENTS_WINDOW = {timer: 0, working: 0};
+function agentsWindow(count = AGENTS_WINDOW.working) {
+  AGENTS_WINDOW.working = count;
+  const box = $('#agents');
+  box.querySelector('.none')?.toggleAttribute('hidden', count > 0);
+  const want = VIEW.agents === 'open' || (VIEW.agents === 'auto' && count > 0);
+  clearTimeout(AGENTS_WINDOW.timer);
+  if (want) slideIn(box);
+  else if (VIEW.agents === 'auto' && !box.hidden) AGENTS_WINDOW.timer = setTimeout(() => slideOut(box), 4000);
+  else slideOut(box);
+  if ($('#agentsat')) $('#agentsat').value = VIEW.agents;
+}
+function slideIn(box) {
+  if (!box.hidden && !box.classList.contains('away')) return;
+  box.classList.add('away');
+  box.hidden = false;
+  void box.offsetWidth;  // from where it stands away, so it slides in
+  box.classList.remove('away');
+}
+function slideOut(box) {
+  if (box.hidden || box.classList.contains('away')) return;
+  box.classList.add('away');
+  setTimeout(() => { if (box.classList.contains('away')) box.hidden = true; }, reduced() ? 0 : EASE.medium + 60);
+}
+function chooseAgents(choice) {
+  VIEW.agents = choice;
+  agentsWindow();
+  toast({auto: 'The agents window shows while agents are at work.', open: 'The agents window stays out.',
+    hidden: 'The agents window stays away.'}[choice]);
+  saveView('web_agents_window', choice);
+}
+
+/* Which joins the dots flow along, web_flow_mode, the flow's own setting: off, the selection's joins, all of them, or
+ * live, only what agents really do. The flow draws it, `window.metaform.flowMode`; this is its choice in the map's bar,
+ * the View menu and the key D, which steps through them, the new one shown as the bar peeks. */
+const FLOW_MODES = [['off', 'Off', 'No dots flow'], ['selected', 'Selection', "Dots flow along the selection's joins"],
+  ['all', 'All', 'Dots flow along every join'], ['live', 'Live', 'Dots show only what agents really do']];
+function flowModes() {
+  const offered = window.metaform?.flowModes;
+  const names = Array.isArray(offered) ? offered.map(one => (typeof one === 'string' ? one : one?.name)) : null;
+  return names?.length ? FLOW_MODES.filter(([name]) => names.includes(name)) : FLOW_MODES;
+}
+function flowNow() {
+  const asked = typeof window.metaform?.flowMode === 'function' ? window.metaform.flowMode() : null;
+  return (typeof asked === 'string' && asked) || FLOWSET.name || 'all';
+}
+function chooseFlow(name) {
+  FLOWSET.name = name;
+  if (typeof window.metaform?.flowMode === 'function') window.metaform.flowMode(name);
+  for (const [one, button] of FLOWSET.buttons) button.setAttribute('aria-checked', String(one === name));
+  if ($('#flowat')) $('#flowat').value = name;
+  peek('key');
+  saveView('web_flow_mode', name);
+}
+FLOWSET.box = h('div', {class: 'segmented flowset', role: 'radiogroup', 'aria-label': 'Which joins the dots flow along (D)'},
+  FLOW_MODES.map(([name, word, why]) => {
+    const button = h('button', {type: 'button', role: 'radio', 'aria-checked': 'false', 'aria-keyshortcuts': 'D',
+      title: `${why} (D steps through them)`, onclick: event => { event.stopPropagation(); chooseFlow(name); }}, word);
+    FLOWSET.buttons.set(name, button);
+    return button;
+  }));
+PEEK.three.append(h('span', {class: 'peekpair'}, h('span', {class: 'peeklabel', 'aria-hidden': 'true'}, 'Flow'), FLOWSET.box));
+/* What the maps say of what the pointer is on, web_hover_info: the name and the card, the name alone, the card alone,
+ * or nothing; in the bar as Info, the View menu and the key I, which steps through them, applied at once. */
+const HOVER_INFO = [['name+summary', 'Both', 'The name where it cannot be read on the map, and the card of its details'],
+  ['name', 'Name', 'Only the name, where it cannot be read on the map'], ['summary', 'Card', 'Only the card of its details'],
+  ['off', 'Off', 'Nothing said of what the pointer is on']];
+function chooseInfo(name) {
+  VIEW.hoverInfo = name;
+  showInfo();
+  readout('3d', null); readout('2d', null);
+  peek('key');
+  saveView('web_hover_info', name);
+}
+function showInfo() {
+  const now = VIEW.hoverInfo || 'name+summary';
+  INFOSET.pick?.show(now);
+  if ($('#infoat')) $('#infoat').value = now;
+}
+/* A choice of the large map's bar made less often: one compact button naming the choice in force, "Lens Natural L ▾",
+ * opening a small menu of every choice with what it does, as the physics opens; the frequent ones, Node zoom, the
+ * modes, Fit and Flow, stay segmented controls, so the bar keeps one row. `list` is [name, word, why]; `choose` takes
+ * a name; `show(name)` names it on the button and checks it in the menu. */
+function barPick({id, label, key, title, list, choose}) {
+  const items = new Map();
+  const pick = {items, button: null, menu: null, show: null};
+  pick.menu = h('div', {class: 'menu physicsmenu barmenu', id, role: 'menu', hidden: true, 'aria-label': title},
+    list.map(([name, word, why]) => {
+      const item = h('button', {type: 'button', role: 'menuitemradio', 'aria-checked': 'false', title: why,
+        onclick: event => { event.stopPropagation(); pick.menu.hidden = true; choose(name); }},
+      h('span', {class: 'wsitem'}, h('i', {class: 'i i-check wscheck', 'aria-hidden': 'true'}), word));
+      items.set(name, item);
+      return item;
+    }));
+  document.body.append(pick.menu);
+  overlay(pick.menu, {kind: 'menu'});
+  pick.button = h('button', {class: `btn sm quiet barpick ${id.replace(/menu$/, '')}btn`, type: 'button', 'aria-haspopup': 'menu',
+    'aria-controls': id, 'aria-expanded': 'false', 'aria-keyshortcuts': key, title: `${title} (${key})`,
+    onclick: event => {
+      event.stopPropagation();
+      if (!pick.menu.hidden) { pick.menu.hidden = true; return; }
+      pick.menu.hidden = false;
+      const at = pick.button.getBoundingClientRect(), size = pick.menu.getBoundingClientRect();
+      Object.assign(pick.menu.style, {position: 'fixed', top: `${at.bottom + 4}px`,
+        left: `${Math.max(8, Math.min(at.right - size.width, innerWidth - size.width - 8))}px`});
+    }});
+  pick.show = name => {
+    const word = (list.find(([one]) => one === name) || list[0])[1];
+    // drawn again only when the choice changed: the bar names its parts on every press in it, and a button whose
+    // contents are made again between the press and the release takes no click
+    if (pick.drawn === word) return;
+    pick.drawn = word;
+    // the key stays in the title and aria-keyshortcuts, and the reference ? lists it, so the button keeps its room
+    fill(pick.button, h('span', {class: 'peeklabel'}, label), h('span', {class: 'value'}, word),
+      h('i', {class: 'i i-chev', 'aria-hidden': 'true'}));
+    pick.button.setAttribute('aria-label', `${label}: ${word}`);
+    for (const [one, item] of items) item.setAttribute('aria-checked', String(one === name));
+  };
+  return pick;
+}
+INFOSET.pick = barPick({id: 'infomenu', label: 'Info', key: 'I', title: 'What is said of what the pointer is on',
+  list: HOVER_INFO, choose: name => chooseInfo(name)});
+INFOSET.buttons = INFOSET.pick.items;
+INFOSET.pick.show(VIEW.hoverInfo || 'name+summary');
+PEEK.three.append(INFOSET.pick.button);
+if ($('#infoat')) $('#infoat').onchange = event => chooseInfo(event.target.value);
+function stepInfo() {
+  const names = HOVER_INFO.map(([name]) => name), at = names.indexOf(VIEW.hoverInfo || 'name+summary');
+  chooseInfo(names[(at + 1) % names.length]);
+}
+// Node zoom, in the bar beside the modes, as pressed while each selection is flown to (Z)
+NODEZOOM.button = h('button', {class: 'btn sm quiet nodezoom', type: 'button', 'aria-pressed': 'true', 'aria-keyshortcuts': 'Z',
+  'aria-label': 'Node zoom', title: 'Node zoom: fly to each node selected and frame it with its neighbours; off, a selection leaves the camera (Z)',
+  onclick: event => { event.stopPropagation(); toggleNodeZoom(); }}, h('span', {class: 'state'}, 'On'), h('kbd', {}, 'Z'));
+PEEK.three.prepend(h('span', {class: 'peekpair'}, h('span', {class: 'peeklabel', 'aria-hidden': 'true'}, 'Node zoom'), NODEZOOM.button));
+$('#nodezoomat').onchange = event => toggleNodeZoom(event.target.checked);
+$('#flowat').onchange = event => chooseFlow(event.target.value);
+function stepFlow() {
+  const modes = flowModes().map(([name]) => name), now = modes.indexOf(flowNow());
+  chooseFlow(modes[(now + 1) % modes.length]);
+}
+function showFlow(name = flowNow()) {
+  FLOWSET.name = name;
+  const offered = new Set(flowModes().map(([one]) => one));
+  for (const [one, button] of FLOWSET.buttons) { button.hidden = !offered.has(one); button.setAttribute('aria-checked', String(one === name)); }
+  if ($('#flowat')) $('#flowat').value = name;
+}
+/* The 3D map's physics, web_physics, chosen with Alt and a digit wherever the 3D map is, VIEW-005. Each is a named way
+ * for its layout to move, with what it helps the reader see. The forces are d3-force-3d's, which the graph runs: a
+ * change is only new forces and a warmed layout, so the nodes ease to their new places from where they stand and the
+ * camera stays, unless its mode asks for a fit. The chains of service, down, across, radial and depth, pull each node
+ * toward its step from the parts that serve no one, along the joins from each receiver to the parts serving it.
+ * Alt and the key's place, never its character, so a Mac's Option, which types characters, works too; Alt and 0 stays
+ * the default text size. Chrome and Firefox on Linux switch tabs with Alt and a digit, which the page takes while it
+ * has the focus. */
+const PHYSICS = [
+  ['organic', 'Organic', 'The natural layout', {}],
+  ['flat', 'Flat', 'Everything on one plane', {flat: true, facing: true}],
+];
+const PHYS = {name: 'organic', decay: 0.4, buttons: new Map()};
+/* The views whose layout turns outward signs sideways to the eye face their signs forward instead, those views only. */
+const signsFacing = () => VIEW.signs === 'facing' || Boolean(PHYSICS.find(([name]) => name === PHYS.name)?.[3].facing);
+const baseCharge = node => node.t === 'el' ? -140 : node.t === 'item' ? -10 : -18;
+const baseDistance = link => link.k === 'layer' ? 8 : link.k === 'item' ? 12 : link.k === 'tree' ? 60 : 34;
+/* Each node's step along the chains of service: 0 for an element that serves no one, a join's purpose half a step on
+ * from its receiver, and each part serving it a whole step. A node off every chain has none and is not pulled. */
+function serviceSteps(data) {
+  const next = new Map(), served = new Set(), steps = new Map();
+  for (const link of data.links) {
+    if (link.k !== 'purpose' && link.k !== 'encounter') continue;
+    const from = endOf(link.source), to = endOf(link.target);
+    (next.get(from) || next.set(from, []).get(from)).push(to);
+    served.add(to);
+  }
+  const queue = data.nodes.filter(node => node.t === 'el' && !served.has(node.id)).map(node => node.id);
+  for (const id of queue) steps.set(id, 0);
+  while (queue.length) {
+    const id = queue.shift();
+    for (const to of next.get(id) || []) if (!steps.has(to)) { steps.set(to, steps.get(id) + 0.5); queue.push(to); }
+  }
+  return steps;
+}
+/* A weak gravity on each connected part of the map as a whole: each part's middle is drawn toward the map's middle,
+ * every node of it by the same amount, so a part joined to nothing of the rest stays near it instead of drifting off,
+ * and no part is squeezed. Its parts are read again whenever the graph's nodes change. */
+function partsGravity(strength) {
+  let parts = null;
+  const force = alpha => {
+    if (!parts) {
+      const owner = new Map(), find = id => { while (owner.get(id) !== id) id = owner.set(id, owner.get(owner.get(id))).get(id); return id; };
+      for (const node of force.nodes) owner.set(node.id, node.id);
+      for (const link of G.graphData().links) {
+        const one = endOf(link.source), two = endOf(link.target);
+        if (owner.has(one) && owner.has(two)) owner.set(find(one), find(two));
+      }
+      const groups = new Map();
+      for (const node of force.nodes) (groups.get(find(node.id)) || groups.set(find(node.id), []).get(find(node.id))).push(node);
+      parts = [...groups.values()];
+    }
+    const pull = strength * alpha;
+    for (const part of parts) {
+      let x = 0, y = 0, z = 0;
+      for (const node of part) { x += node.x || 0; y += node.y || 0; z += node.z || 0; }
+      x /= part.length; y /= part.length; z /= part.length;
+      for (const node of part) { node.vx -= x * pull; node.vy -= y * pull; if (node.vz !== undefined) node.vz -= z * pull; }
+    }
+  };
+  force.initialize = nodes => { force.nodes = nodes; parts = null; };
+  force.nodes = [];
+  return force;
+}
+function applyPhysics(name, warm = true) {
+  const preset = PHYSICS.find(([one]) => one === name) || PHYSICS[0], how = preset[3];
+  PHYS.name = preset[0];
+  peekParts();
+  if (!G) return;
+  const steps = how.axis || how.radial ? serviceSteps(G.graphData()) : null, gap = 52;
+  const at = node => (steps?.get(node.id) ?? 0) * gap, pulled = node => steps?.has(node.id) ? 0.22 : 0;
+  // Spread pushes within a part, not part from part: the push reaches no farther than PHYSICS_REACH
+  G.d3Force('charge').strength(node => baseCharge(node) * (how.charge || 1)).distanceMax(how.reach || Infinity);
+  G.d3Force('parts', partsGravity(how.gravity ?? 0.06));
+  G.d3Force('link').distance(link => baseDistance(link) * (how.distance || 1));
+  G.d3Force('serviceX', how.axis === 'x' ? forceX(node => at(node) * how.sign).strength(pulled) : null);
+  G.d3Force('serviceY', how.axis === 'y' ? forceY(node => at(node) * how.sign).strength(pulled) : null);
+  G.d3Force('serviceZ', how.axis === 'z' ? forceZ(node => at(node) * how.sign).strength(pulled)
+    : how.flat ? forceZ(0).strength(0.35) : null);
+  G.d3Force('serviceR', how.radial ? forceRadial(node => at(node) + gap * 0.25).strength(pulled) : null);
+  PHYS.decay = how.decay || 0.4;
+  G.d3VelocityDecay(PHYS.decay);
+  if (warm) G.d3ReheatSimulation();
+}
+function choosePhysics(name) {
+  if (name === PHYS.name) return peek('key');
+  applyPhysics(name);
+  peek('key');
+  saveView('web_physics', name);
+}
+/* The physics in the bar: one button naming the preset in force with its key, opening the list of all of them, each
+ * by its name, what it helps the reader see, and its key, so the bar stays one quiet row. */
+const ALT_SIGN = /Mac|iPhone|iPad/.test(navigator.userAgentData?.platform || navigator.platform || '') ? '⌥' : 'Alt ';
+PHYS.list = h('div', {class: 'menu physicsmenu', id: 'physicsmenu', role: 'menu', hidden: true, 'aria-label': "The 3D map's physics"},
+  PHYSICS.map(([name, word, why], index) => {
+    const key = String(index + 1), button = h('button', {type: 'button', role: 'menuitemradio', 'aria-checked': String(name === PHYS.name),
+      'aria-keyshortcuts': `Alt+${key}`, title: `${why} (${ALT_SIGN}${key})`,
+      onclick: event => { event.stopPropagation(); PHYS.list.hidden = true; choosePhysics(name); }},
+    h('span', {class: 'wsitem'}, h('i', {class: 'i i-check wscheck', 'aria-hidden': 'true'}), word), h('kbd', {}, `${ALT_SIGN}${key}`));
+    PHYS.buttons.set(name, button);
+    return button;
+  }));
+document.body.append(PHYS.list);
+overlay(PHYS.list, {kind: 'menu'});
+PHYS.shown = h('button', {class: 'btn sm quiet physicsbtn', type: 'button', 'aria-haspopup': 'menu', 'aria-controls': 'physicsmenu',
+  'aria-expanded': 'false', title: `How the 3D map's layout moves; ${ALT_SIGN}1 to ${ALT_SIGN}9 choose one`,
+  onclick: event => {
+    event.stopPropagation();
+    if (!PHYS.list.hidden) { PHYS.list.hidden = true; return; }
+    PHYS.list.hidden = false;
+    const at = PHYS.shown.getBoundingClientRect(), size = PHYS.list.getBoundingClientRect();
+    Object.assign(PHYS.list.style, {position: 'fixed', top: `${at.bottom + 4}px`, left: `${Math.max(8, Math.min(at.right - size.width, innerWidth - size.width - 8))}px`});
+  }});
+PEEK.physics.append(PHYS.shown);
+// the 3D map's lens, its names and its graphics, each a compact choice of the bar beside the modes, `barPick`; L, S
+// and U still step through them
+LENS.pick = barPick({id: 'lensmenu', label: 'Lens', key: 'L', title: "The 3D map's lens: how far its view opens as its pane grows tall",
+  list: [['natural', 'Natural', 'The view opens no wider than the eye sees, 55°'], ['wide', 'Wide', 'The view opens to 80° as the pane grows tall'],
+    ['fisheye', 'Fisheye', 'The view opens to 120°, the whole map close around you']], choose: name => chooseLens(name)});
+LENS.button = LENS.pick.button;
+PEEK.three.append(LENS.button);
+$('#lensat').onchange = event => chooseLens(event.target.value);
+showLens();
+SIGNS.pick = barPick({id: 'signsmenu', label: 'Signs', key: 'S', title: "How the 3D map's names stand",
+  list: [['outward', 'Outward', "Each name a sign standing out from the map's middle, turned round when seen from behind"],
+    ['facing', 'Facing', 'Each name turned to face you']], choose: name => chooseSigns(name)});
+SIGNS.button = SIGNS.pick.button;
+PEEK.three.append(SIGNS.button);
+$('#signsat').onchange = event => chooseSigns(event.target.value);
+// Ultra graphics, U, page/ultra.js: the 3D map in outer space or clean; the button names the look the map has
+PEEK.ultra = barPick({id: 'ultramenu', label: 'Ultra', key: 'U', title: "How the 3D map is drawn: clean, or in outer space",
+  list: [['clean', 'Off', 'The map as it has always been drawn'], ['ultra', 'On', 'The map in outer space: a starfield, bodies and filaments of light']],
+  choose: name => { setTheme(name === 'ultra' ? 'space' : PLAIN.last); showUltra(); peek('key'); }});
+function showUltra() { PEEK.ultra.show(ULTRA.stats().mode === 'ultra' ? 'ultra' : 'clean'); }
+PEEK.three.append(PEEK.ultra.button);
+showUltra();
+function chooseSigns(name) {
+  VIEW.signs = name === 'facing' ? 'facing' : 'outward';
+  showSigns();
+  wake3d();
+  peek('key');
+  saveView('web_signs', VIEW.signs);
+}
+function showSigns() {
+  SIGNS.pick?.show(VIEW.signs === 'facing' ? 'facing' : 'outward');
+  if ($('#signsat')) $('#signsat').value = VIEW.signs || 'outward';
+}
+showSigns();
+function showPhysics() {
+  const at = PHYSICS.findIndex(([one]) => one === PHYS.name), preset = PHYSICS[Math.max(0, at)];
+  if (PHYS.drawn === preset[0]) return;  // as `barPick`: made again only on a change, so a press on it is never lost
+  PHYS.drawn = preset[0];
+  fill(PHYS.shown, h('span', {class: 'peeklabel'}, 'Physics'), h('span', {class: 'value'}, preset[1]),
+    h('i', {class: 'i i-chev', 'aria-hidden': 'true'}));  // each preset's key is in its menu
+  PHYS.shown.setAttribute('aria-label', `Physics: ${preset[1]}`);
+}
+showPhysics();
+addEventListener('keydown', event => {
+  if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || !/^Digit[1-9]$/.test(event.code)) return;
+  const target = event.target instanceof Element ? event.target : document.body;
+  if (target.closest('input, textarea, select, .CodeMirror, [contenteditable="true"]') || overlayHolds(target)) return;
+  const preset = PHYSICS[Number(event.code.slice(5)) - 1];
+  if (!preset) return;
+  event.preventDefault();
+  choosePhysics(preset[0]);
+});
+function setMode3d(mode, level = null) {
+  if (!G || small3d()) return;
+  V3.mode = mode;
+  if (level) NAME.level = level;
+  showModes3d();
+  if (mode === 'whole') fit3d();
+  else if (mode === 'zoom' && S.selected) fly3d(S.selected, true);
+  else if (mode === 'free') V3.auto = false;  // the layout no longer refits it either
+}
+/* What a selection does to the 3D camera: in the small area it is met; in the large one, as the mode says. */
+/* Node zoom, web_node_zoom, on unless the person turns it off: every selection flies the camera to the node and frames
+ * it with its neighbours, in either pane, whatever Whole, Zoom, Free or physics is in force; Whole and Free frame the
+ * map while nothing is being flown to. Off, a selection never moves the camera. Found 2026-10-12: with Whole or Free
+ * chosen, by 1, 0 or the bar, a selection in the large pane no longer flew to its node, which hid what the map is for. */
+function follow3d(id) {
+  if (VIEW.nodeZoom === false) return true;
+  if (!small3d() && V3.mode === 'free') return true;  // Free leaves the camera to the hand
+  // Whole turns the map round the node so it faces the eye near the middle, labelled, at the whole map's distance,
+  // so the map shows around it; Zoom, and the small pane, fly close
+  if (!small3d() && V3.mode === 'whole') return fly3d(id, 'whole');
+  return fly3d(id);
+}
+function toggleNodeZoom(on = VIEW.nodeZoom === false) {
+  VIEW.nodeZoom = on;
+  showNodeZoom();
+  if (on && S.selected && G) fly3d(S.selected);
+  peek('key');
+  toast(on ? 'Node zoom on: each node selected is flown to.' : 'Node zoom off: a selection leaves the camera where it is.');
+  saveView('web_node_zoom', on);
+}
+function showNodeZoom() {
+  NODEZOOM.button?.setAttribute('aria-pressed', String(VIEW.nodeZoom !== false));
+  const state = NODEZOOM.button?.querySelector('.state');
+  if (state) state.textContent = VIEW.nodeZoom !== false ? 'On' : 'Off';
+  if ($('#nodezoomat')) $('#nodezoomat').checked = VIEW.nodeZoom !== false;
+}
+function showModes3d() {
   MODES3D.box.hidden = small3d();
-  $('#fit3dBtn').hidden = small3d();
-  const far = FLIGHT.on ? Math.exp(FLIGHT.to.far) : away3d(), whole = V3.whole && far >= V3.whole * 0.8;
-  // A long name at level 1 can need more distance than Whole. Once the person moves the camera, focus is released
-  // and its distance decides the mode again.
-  const said = V3.focus ? 'zoom' : V3.whole ? (whole ? 'whole' : 'zoom') : '';
+  FIT3D.hidden = small3d();
+  const said = small3d() ? '' : V3.mode;
   if (said === MODES3D.said) return;
   MODES3D.said = said;
-  MODES3D.whole.setAttribute('aria-checked', String(said === 'whole'));
-  MODES3D.zoom.setAttribute('aria-checked', String(said === 'zoom'));
+  for (const [name, button] of MODES3D.buttons) button.setAttribute('aria-checked', String(name === said));
 }
-$('#fit3dBtn').onclick = () => {
-  if (!G) return;
-  const back = !V3.focus && V3.whole && away3d() >= V3.whole * 0.8;
-  if (back && S.selected && fly3d(S.selected, true)) return;
-  fit3d();
-};
+FIT3D.onclick = () => { if (G && !small3d()) fit3d(); };
 // The 2D map opens in the large area, where its names are read, unless this browser has put the 3D map there: the
 // chart is the map a person reads, and the 3D map keeps the whole in view beside it, VIEW-028.
 {
   let kept = null;
   try { kept = localStorage.getItem('metaform.swapped'); } catch (error) { /* storage can be blocked: the default */ }
   if (kept === null || kept === '1') swap(true, false);
+}
+/* The lens chosen in the page, web_lens: L steps through natural, wide and fisheye, as do the large map's bar and the
+ * View menu. The field of view eases to the new one on the arrival curve, `EASE`, rather than jumping; with reduced
+ * motion it changes at once. */
+function chooseLens(name, keep = true) {
+  if (!(name in LENSES)) return;
+  LENS.name = name;
+  showLens();
+  const camera = G?.camera(), from = camera?.fov;
+  lens3d(name);
+  if (camera && from !== undefined && camera.fov !== from && !reduced()) {
+    const to = camera.fov, start = performance.now(), curve = easeCurve(EASE.arrive);
+    cancelAnimationFrame(LENS.frame);
+    camera.fov = from;
+    const step = now => {
+      const s = Math.min(1, (now - start) / EASE.medium);
+      camera.fov = from + (to - from) * curve(s);
+      camera.updateProjectionMatrix();
+      wake3d();
+      if (s < 1) LENS.frame = requestAnimationFrame(step);
+    };
+    LENS.frame = requestAnimationFrame(step);
+  }
+  if (keep) { peek('key'); saveView('web_lens', name); }
+}
+function showLens() {
+  LENS.pick?.show(LENS.name in LENS_WORDS ? LENS.name : 'natural');
+  if ($('#lensat')) $('#lensat').value = LENS.name;
+}
+function lens3d(name) {  // the lens chosen, its widest field of view, applied at once
+  FOV3D.most = LENSES[name] ?? LENSES.natural;
+  if (!G || V3.lensFirst === undefined) return;
+  V3.lens = V3.lensFirst;  // from the lens it opened with, so a wider choice opens as far as it allows
+  G.width(G.width() + 1);  // `resize` acts only on a change of size
+  resize();
 }
 function resize() {
   if (!G) return;
@@ -3072,15 +6234,22 @@ function resize() {
   const camera = G.camera();
   // Keep the lens's pixels per world unit independent of panel height. A shorter panel crops vertically without
   // changing a name's width or moving the camera. Width changes reframe the name at the selected share below.
-  V3.lens ??= Math.tan(camera.fov * Math.PI / 360) / box.height;
+  V3.lensFirst ??= Math.tan(camera.fov * Math.PI / 360) / box.height;  // the lens the 3D map opened with
+  V3.lens ??= V3.lensFirst;
   G.width(box.width).height(box.height);
   // The library applies its size asynchronously; framing must use the new projection immediately.
   camera.aspect = box.width / box.height;
-  camera.fov = Math.atan(V3.lens * box.height) * 360 / Math.PI;
+  // Within a natural lens only: a pane that grows a lot, such as the 3D map swapped from the small area into the large
+  // one, would otherwise widen the view into a fisheye. Held at the edge, the lens starts again from there.
+  const fov = Math.atan(V3.lens * box.height) * 360 / Math.PI, held = Math.min(FOV3D.most, Math.max(FOV3D.least, fov));
+  if (held !== fov) V3.lens = Math.tan(held * Math.PI / 360) / box.height;
+  camera.fov = held;
   camera.updateProjectionMatrix();
   if (S.selected && V3.focus === S.selected) {
-    if (width !== box.width) fly3d(S.selected);
-  } else if (V3.auto && fitBalls(G.graphData()).length) fit3d();
+    // a new width, a lens held at its edge, or in the small area any new size, where the name is framed both ways,
+    // reframes the name
+    if (width !== box.width || held !== fov || small3d()) fly3d(S.selected);
+  } else if ((V3.auto || (V3.mode === 'whole' && !small3d())) && fitBalls(G.graphData()).length) fit3d();
   wake3d();
 }
 addEventListener('resize', resize);
@@ -3117,6 +6286,26 @@ const MAP2D = 5000;  // the most elements Mermaid lays out; above it the 2D map 
 const EDGES2D = MAP2D * 10;
 const ELK2D = {layout: 'elk', elk: {nodePlacementStrategy: 'NETWORK_SIMPLEX'}, maxEdges: EDGES2D,
   maxTextSize: MAP2D * 40 + EDGES2D * 32};
+/* The 2D map fills its pane as well as ELK can draw it, P043. ELK lays the map out a few ways off screen: left to
+ * right and top to bottom, and, for a map more than three layers deep, each of those folded, so a long run goes on in
+ * rows or columns as text runs on in lines. A run is folded only where one edge alone joins its two halves, so a
+ * branching part is never cut and a small tree is never folded on its own. The parts of the map not joined to each
+ * other are laid out apart and packed together to a width to height ELK is given, `fitOptions2d`.
+ *
+ * ELK reaches the width to height it is given only roughly, so each way is first laid out for the pane's, and the way
+ * that comes out best is laid out again for the width to height that corrects what it missed by, at most `refine`
+ * times. The drawing kept is the one whose whole map can be drawn largest in the pane. A folded way is kept only when
+ * it is `fold` times larger, as its runs turn back across the map, and the way drawn now is kept unless another is
+ * `keep` times larger, so a pane near the point between two ways never turns the map back and forth. The setting
+ * web_map_direction holds the map to one direction, across or down, unfolded, its parts still packed to the pane.
+ *
+ * The pane's shape is taken in steps, `fitStep2d`, each a quarter wider or narrower than the last, and a step is held
+ * until the pane is well into the next, so a pane resized within one is not laid out again. The way chosen for each
+ * step is kept with the map's layers when it was chosen, and the last `most` drawings with the map's text, so a pane
+ * swapped back and forth gets its own picture again at once. A map whose layers change by a quarter is chosen for
+ * again. Laying out stops after `budget` ms once one way is drawn, so a large map costs about that and no more. */
+const FIT2D = {config: null, step: Math.log(1.25), stay: 0.75, keep: 1.12, fold: 1.15, refine: 2, budget: 2000, most: 16,
+  chosen: new Map(), drawn: new Map()};
 /* A name as a 2D label: the characters Mermaid would read as its own taken out, and a name longer than `most` cut at the
  * last break between words that keeps most of it, with an ellipsis, so a label never ends in half a word and always
  * says it goes on. The whole name is in the panel and in the 3D map's tooltip. */
@@ -3127,16 +6316,23 @@ function plain2d(text, most = 30) {
   return (space >= most * 0.6 ? cut.slice(0, space) : cut).replace(/[\s,.;:–—-]+$/, '') + '…';
 }
 let mermaidReady = false;
+/* The Mermaid shape of each artifact type, as the 3D map's: a process box for code, a document, a display for media,
+ * a database cylinder for data, stacked boxes for a collection, input and output parallelograms for upstream and
+ * downstream. */
+const SHAPES2D = {code: 'rect', document: 'doc', media: 'curv-trap', data: 'cyl', collection: 'st-rect', upstream: 'lean-r',
+  downstream: 'lean-l'};
 async function build2D(keep = true) {
   const generation = ++M.generation;
   const host = $('#viewport');
   if (!window.mermaid) { fill(host, h('p', {class: 'empty', style: {padding: '16px'}}, 'The 2D map could not load.')); return; }
   if (!mermaidReady) {
-    window.mermaid.initialize({startOnLoad: false, securityLevel: 'strict', theme: 'base', htmlLabels: false, ...ELK2D,
+    FIT2D.config = {startOnLoad: false, securityLevel: 'strict', theme: 'base', htmlLabels: false, ...ELK2D,
       flowchart: {htmlLabels: false, useMaxWidth: false, curve: 'basis', nodeSpacing: 28, rankSpacing: 45},
       themeVariables: {background: css('--ground'), primaryColor: css('--node'), primaryBorderColor: css('--node-line'),
         primaryTextColor: css('--text'), lineColor: css('--edge'), fontFamily: 'IBM Plex Sans, sans-serif', fontSize: '13px',
-        tertiaryColor: css('--group')}});
+        tertiaryColor: css('--group')}};
+    window.mermaid.initialize(FIT2D.config);
+    FIT2D.drawn.clear();  // the drawings kept were drawn in the colors before
     mermaidReady = true;
   }
   const shown2d = [...S.elements].filter(([, {element}]) => !underHiddenRoot(element.address));
@@ -3145,10 +6341,12 @@ async function build2D(keep = true) {
   // export writes it: from the element served to the receiver when the receiver receives, `ends2d`.
   const drawn = S.joins.filter(join => keys.has(join.receiver))
     .flatMap(join => join.providers.filter(id => keys.has(id)).map(provider => ({join, provider})));
-  const shape = shape2d(keys, drawn), vertical = vertical2d(shape, M.asked ?? null);
-  Object.assign(M, {shape, asked: vertical});  // the direction the latest drawing asked for, `vertical2d`
-  const lines = [vertical ? 'flowchart TB' : 'flowchart LR'];
-  for (const [id, {element}] of shown2d) lines.push(`${keys.get(id)}["${plain2d(labelOf(element))}"]`);
+  const shape = shape2d(keys, drawn);
+  const lines = [];  // the map without its direction, which the layout chosen for the pane gives it, `fitPick2d`
+  for (const [id, {element}] of shown2d) {
+    const shape = typeOf(element) && SHAPES2D[typeOf(element)];
+    lines.push(shape ? `${keys.get(id)}@{ shape: ${shape}, label: "${plain2d(labelOf(element))}" }` : `${keys.get(id)}["${plain2d(labelOf(element))}"]`);
+  }
   drawn.forEach(({join, provider}, index) => { const [from, to] = ends2d(join, provider);
     lines.push(`${keys.get(from)} e${index}@--> ${keys.get(to)}`); });
   if (!S.elements.size || S.elements.size > MAP2D) { IN.length = 0; M.base = null; renderCrumbs(); }
@@ -3158,21 +6356,26 @@ async function build2D(keep = true) {
     fill(host, h('p', {class: 'empty', style: {padding: '16px'}}, `The 2D map lays out at most ${MAP2D} elements; these layers show ${S.elements.size}. The 3D view shows them all.`));
     return;
   }
-  let result, layout = 'elk';
-  try { result = await window.mermaid.render(`map2d${generation}`, lines.join('\n'), $('#draw')); }
+  let picked = null, layout = 'elk';
+  try { picked = await fitPick2d(lines.join('\n'), shape, generation); }
   catch (error) {
     // ELK failing never leaves the pane empty: the same map is drawn with Mermaid's other layout, dagre, P043
     layout = 'dagre';
-    try { result = await window.mermaid.render(`map2d${generation}d`, `---\nconfig:\n  layout: dagre\n---\n${lines.join('\n')}`, $('#draw')); }
+    const pin = fitPin2d(), down = pin === 'down' || (pin !== 'across' && vertical2d(shape, M.way?.vertical ?? null));
+    try { picked = {way: {vertical: down, wrap: false}, result: await window.mermaid.render(`map2d${generation}d`,
+      `---\nconfig:\n  layout: dagre\n---\n${down ? 'flowchart TB' : 'flowchart LR'}\n${lines.join('\n')}`, $('#draw'))}; }
     catch (again) { fill(host, h('p', {class: 'empty', style: {padding: '16px'}}, 'The 2D map could not be drawn.')); return; }
   }
-  if (generation !== M.generation) return;
+  if (generation !== M.generation || !picked) return;
+  const {result, way} = picked, vertical = way.vertical;
+  M.way = way;  // the way the whole map is drawn now, which a later choice keeps unless another is clearly better
   // The whole map drawn again keeps its camera and eases from there to its mode's framing, VIEW-041.
   const was = keep && M.base && M.svg === M.base.svg && M.cam ? {...M.cam} : null;
   const inside = IN.length > 0 || Boolean(MEM.key);
   const before = was && !inside ? drawnAt(M.base) : null;  // where each node is drawn now, to move it from there
   const svg = mountSvg(result, host, inside);
-  Object.assign(svg.dataset, {layout, direction: vertical ? 'TB' : 'LR'});  // what laid it out, and which way
+  // what laid it out, which way, and whether its layers run on in rows or columns
+  Object.assign(svg.dataset, {layout, direction: vertical ? 'TB' : 'LR', wrapped: String(way.wrap)});
   const nodes = new Map();
   for (const [id, key] of keys) {
     const group = svg.querySelector(`[id*="-flowchart-${key}-"]`);
@@ -3227,10 +6430,10 @@ function shape2d(keys, drawn) {
   for (const layer of rank.values()) counts.set(layer, (counts.get(layer) || 0) + 1);
   return {layers: Math.max(1, counts.size), widest: Math.max(1, ...counts.values())};
 }
-/* The 2D map runs top to bottom or left to right, whichever drawing is nearer the pane's shape, P043. Each drawing's
- * width to height is reckoned from its layers, at the size Mermaid draws a 2D label and about the room ELK leaves
- * between nodes and between layers. Once drawn one way, the map turns only when the other way fits clearly better,
- * so a pane near the point between the two does not turn it back and forth. */
+/* Which direction, top to bottom or left to right, is likelier to fit the pane, reckoned before anything is drawn: the
+ * way ELK lays out first, `fitPick2d`, and the direction dagre draws if ELK fails. Each drawing's width to height is
+ * reckoned from its layers, at the size Mermaid draws a 2D label and about the room ELK leaves between nodes and
+ * between layers. Once drawn one way, the other must fit clearly better. */
 const BOX2D = {w: 152, h: 45, across: 40, between: 50, clearly: 0.15};
 function vertical2d(shape, was = null) {
   const area = area2d();
@@ -3241,17 +6444,124 @@ function vertical2d(shape, was = null) {
   const pane = area.width / area.height, miss = ratio => Math.abs(Math.log(ratio / pane));
   return miss(down) <= miss(side) + (was === null ? 0 : was ? clearly : -clearly);
 }
-/* A pane reshaped so that the other direction fits it better lays the map out again, P043: 150 ms after it stops
- * changing, keeping the selection and the mode's framing, each node easing to its new place, `settle2D`. A pane
- * resized within one direction gets the same layout from ELK, so it is not laid out again; its mode refits it,
- * `aim2d`. */
+/* The step of the pane's width to height, `FIT2D`: the drawn step `was` is held until the pane is `stay` steps from it. */
+function fitStep2d(area, was = null) {
+  if (!area.width || !area.height) return was ?? 0;
+  const at = Math.log(area.width / area.height) / FIT2D.step;
+  return was !== null && Math.abs(at - was) < FIT2D.stay ? was : Math.round(at);
+}
+/* ELK's options for one way, laid out for the width to height `aim`. The map has no subgraphs, so its root is laid out
+ * on its own rather than with its children, which lets ELK lay out each part not joined to the rest apart, pack the
+ * parts together to `aim` and close the gaps between them. A folded way also cuts each part's layers into rows or
+ * columns for `aim`, ELK's single-edge wrapping: only where one edge alone crosses between two layers, so a long run
+ * is folded and a branching part, or a part that fits as it is, is left whole. Mermaid passes on its own few ELK
+ * options; these reach the layout as `elk.rootLayoutOptions` in its configuration, which the vendored mermaid.min.js
+ * was changed to forward, vendor/README.md. */
+function fitOptions2d({wrap, aim}) {
+  return {'elk.hierarchyHandling': 'SEPARATE_CHILDREN', 'elk.aspectRatio': String(aim),
+    'elk.separateConnectedComponents': 'true', 'elk.layered.compaction.connectedComponents': 'true',
+    ...(wrap ? {'elk.layered.wrapping.strategy': 'SINGLE_EDGE'} : {})};
+}
+/* One drawing with ELK's options given, Mermaid's configuration put back as it was once it is drawn, so the graph
+ * inside a node and the memory network are laid out as before. */
+async function fitDraw2d(id, text, options) {
+  window.mermaid.initialize({...FIT2D.config, elk: {...FIT2D.config.elk, rootLayoutOptions: options}});
+  try { return await window.mermaid.render(id, text, $('#draw')); }
+  finally { window.mermaid.initialize(FIT2D.config); }
+}
+/* How large the whole drawing is drawn in the pane, in screen pixels to a unit of it, with the margin a fit leaves,
+ * `scaleFor`. */
+function fitScale2d({w, h}, area) {
+  const room = side => Math.min(MARGIN, side / 10);
+  return Math.min((area.width - 2 * room(area.width)) / Math.max(1, w), (area.height - 2 * room(area.height)) / Math.max(1, h));
+}
+// a way apart from the width to height it was laid out for: its direction, and whether it is folded
+const fitWay2d = ({vertical, wrap}) => `${vertical ? 'TB' : 'LR'}${wrap ? 'w' : ''}`;
+/* web_map_direction as this page last read it, kept with the bar's direction buttons, `PEEK`: auto, across or down,
+ * its directions also taken as Mermaid names them, LR and TB. */
+const fitPin2d = () => ({LR: 'across', TB: 'down'})[PEEK.direction] || PEEK.direction || 'auto';
+const fitNear2d = (a, b) => Boolean(a && b) && [a.layers / b.layers, a.widest / b.widest].every(part => part > 0.8 && part < 1.25);
+function fitHash2d(text) {  // the map's text in a few characters, to know a drawing of it again
+  let hash = 0x811c9dc5;
+  for (let at = 0; at < text.length; at++) hash = Math.imul(hash ^ text.charCodeAt(at), 0x01000193);
+  return `${text.length}.${(hash >>> 0).toString(36)}`;
+}
+/* The map's text laid out for the pane, `FIT2D`: the drawing and its way, or null once a later drawing has begun. The
+ * project's settings are waited for while the page reads them, so a map held to one direction is drawn that way from
+ * the first, and a direction changed while the map is laid out lays it out again. It fails only when ELK lays out
+ * none of the ways. */
+async function fitPick2d(body, shape, generation) {
+  if (S.project && VIEW.read === S.project) await VIEW.reading;
+  if (generation !== M.generation) return null;
+  const area = area2d(), step = M.bucket = fitStep2d(area, M.bucket ?? null), pane = Math.exp(step * FIT2D.step);
+  const pin = fitPin2d(), mark = `${pin} ${step}`, held = FIT2D.chosen.get(mark), reuse = fitNear2d(held?.shape, shape);
+  const first = vertical2d(shape, M.way?.vertical ?? null), aim = Number(pane.toPrecision(3));
+  const ways = reuse ? [held.way] : pin === 'across' || pin === 'down' ? [{vertical: pin === 'down', wrap: false, aim}]
+    : [{vertical: first, wrap: false, aim},
+      ...(shape.layers > 3 ? [{vertical: first, wrap: true, aim}, {vertical: !first, wrap: true, aim}] : []),
+      {vertical: !first, wrap: false, aim}];
+  const text = fitHash2d(body), start = performance.now(), tried = new Set();
+  let best = null, again = reuse ? 0 : FIT2D.refine;
+  for (let at = 0; at < ways.length; at++) {
+    const way = ways[at], key = `${text} ${step} ${fitWay2d(way)} ${way.aim}`;
+    if (best && performance.now() - start > FIT2D.budget) break;
+    if (tried.has(key)) continue;
+    tried.add(key);
+    let drawing = FIT2D.drawn.get(key);
+    FIT2D.drawn.delete(key);
+    if (!drawing) {
+      try {
+        const {svg} = await fitDraw2d(`map2d${generation}n${at}`, `flowchart ${way.vertical ? 'TB' : 'LR'}\n${body}`,
+          fitOptions2d(way));
+        const box = (svg.match(/viewBox="([^"]+)"/)?.[1] || '').split(/[\s,]+/).map(Number);
+        drawing = {result: {svg}, w: box[2] || 1, h: box[3] || 1};
+      } catch (error) { if (generation !== M.generation) return null; continue; }  // the other ways may still be laid out
+      if (generation !== M.generation) return null;
+    }
+    FIT2D.drawn.set(key, drawing);  // the latest last, and the oldest let go
+    while (FIT2D.drawn.size > FIT2D.most) FIT2D.drawn.delete(FIT2D.drawn.keys().next().value);
+    const score = fitScale2d(drawing, area) / (way.wrap ? FIT2D.fold : 1)
+      * (M.way && fitWay2d(M.way) === fitWay2d(way) ? FIT2D.keep : 1);
+    if (!best || score > best.score) best = {...drawing, way, score};
+    // every way laid out, the best is laid out again for the width to height that makes up what it missed the pane by
+    const miss = Math.log(pane / (best.w / best.h));
+    if (at === ways.length - 1 && again > 0 && Math.abs(miss) > FIT2D.step / 2) {
+      again--;
+      ways.push({...best.way, aim: Number(Math.min(pane * 4, Math.max(pane / 4, best.way.aim * Math.exp(miss))).toPrecision(3))});
+    }
+  }
+  if (!best) throw new Error('ELK laid out none of the ways.');
+  if (!reuse) FIT2D.chosen.set(mark, {way: best.way, shape});
+  if (fitPin2d() !== pin) return fitPick2d(body, shape, generation);  // its direction was changed meanwhile
+  return {result: best.result, way: best.way};
+}
+/* A pane reshaped into another step of width to height, `fitStep2d`, lays the map out again, P043: 150 ms after it
+ * stops changing, keeping the selection and the mode's framing, each node easing to its new place, `settle2D`. A
+ * pane resized within its step keeps its layout; its mode refits it, `aim2d`. */
 const RELAYOUT2D = {timer: 0};
 new ResizeObserver(() => {
   clearTimeout(RELAYOUT2D.timer);
   RELAYOUT2D.timer = setTimeout(() => {
-    if (M.shape && M.base && !S.loading && vertical2d(M.shape, M.asked) !== M.asked) build2D();
+    if (M.base && !S.loading && fitStep2d(area2d(), M.bucket ?? null) !== M.bucket) build2D();
   }, 150);
 }).observe($('#viewport'));
+/* web_map_direction as the page reads it again, `fitPin2d`: a change draws the map in it and checks the bar's button.
+ * It is read with the workspace, and again whenever the page is looked at, its window focused or its tab shown, since
+ * a direction set with `metaform set` while the page is open is not announced to it; the page takes it up then. */
+function fitDirection2d(direction) {
+  if (!direction || direction === (PEEK.direction || 'auto')) return;
+  PEEK.direction = direction;
+  if (PEEK.two) peekParts();
+  if (M.base) build2D();
+}
+async function fitRecheck2d() {
+  if (!S.project || FRAMED || document.hidden) return;
+  let found = null;
+  try { found = await getJson(`/api/workspace?project=${encodeURIComponent(S.project)}`); } catch { return; }
+  fitDirection2d(found?.view?.map_direction);
+}
+addEventListener('focus', fitRecheck2d);
+document.addEventListener('visibilitychange', fitRecheck2d);
 /* Where each node of a drawn map stands, by its element id, in the map's own units, counting any move it is still
  * making, so a map drawn again mid-move starts from where its nodes are and not where they were going. */
 function drawnAt(base) {
@@ -4046,6 +7356,10 @@ async function openSettings() {
   showAgentMenu(false);
   $('#settingsbox').hidden = true;
   if (!S.project) return toast('Choose a project first: the settings shown are those of its folder.');
+  if (WS.reveal('settings')) return;  // a pane in the workspace: it shows there and reads as it shows
+  await showSettings();
+}
+async function showSettings() {
   CONFIG.errors.clear();
   fill($('#settings .body'), h('p', {class: 'loading'}, 'Reading the settings…'));
   $('#settings').hidden = false;
@@ -4287,6 +7601,11 @@ function afterSetting(key) {
   if (key === 'layers' && S.view === null) {
     read('layers', {limit: 0}).then(found => { S.layers = found.results; renderChips(); }).catch(error => toast(error.message));
   }
+  // ULTRA: the 3D map fades to the graphics chosen, as U does
+  if (key === 'web_graphics') {  // set on the Settings screen: the theme follows, space for ultra
+    const ultra = CONFIG.data?.settings?.find(one => one.key === key)?.value === 'ultra';
+    if (ultra !== (document.documentElement.dataset.theme === 'space')) setTheme(ultra ? 'space' : PLAIN.last, false);
+  }
 }
 $('#allSettingsBtn').onclick = openSettings;
 $('#viewAllSettingsBtn').onclick = openSettings;
@@ -4416,19 +7735,50 @@ addEventListener('resize', () => { MODE.page = null; });
 function scaleFor(mode, area = area2d()) {
   const box = M.bounds, room = side => Math.min(MARGIN, side / 10), text = pageText();
   const across = (area.width - 2 * room(area.width)) / Math.max(1, box.w);
-  const down = (area.height - 2 * room(area.height)) / Math.max(1, box.h);
+  const down = (area.height - Math.min(foot2d(), area.height / 3) - 2 * room(area.height)) / Math.max(1, box.h);
   const px = {small: text.small, medium: text.heading, large: 2 * text.heading}[mode];
   if (px) return px / labelSize(M.svg);
   return mode === 'height' ? down : mode === 'width' ? across : mode === 'free' ? MODE.free : Math.min(across, down);
 }
+/* The room kept free at the foot of the 2D map's window, in screen pixels, so no node is fitted under what stands
+ * there: the hover card at rest, as tall as it is with a line of words, so a card that grows while it shows never
+ * moves the map, and any other overlay standing at the window's foot, measured as it is now; and a small gap. */
+const FOOT2D = {card: 0, gap: 8};
+function foot2d() {
+  const root = $('#map2d');
+  if (!root) return 0;
+  const bottom = root.getBoundingClientRect().bottom, shows = VIEW.hoverInfo || 'name+summary';
+  let most = shows === 'name' || shows === 'off' ? 0 : FOOT2D.card || restingCard(root);
+  for (const one of root.children) {
+    if (one.matches('#viewport, .bar2d, .readout, .hovercard') || one.hidden) continue;
+    const style = getComputedStyle(one), box = one.getBoundingClientRect();
+    if (style.position !== 'absolute' || !box.height || style.display === 'none' || bottom - box.bottom > 48) continue;
+    most = Math.max(most, bottom - box.top);
+  }
+  return most ? most + FOOT2D.gap : 0;
+}
+/* The card's height at rest, its kind, its address and one line of words, measured once from a copy out of sight. */
+function restingCard(root) {
+  const probe = h('div', {class: 'hovercard', style: {visibility: 'hidden', transition: 'none'}},
+    h('div', {class: 'kind'}, 'element'), h('code', {class: 'address'}, 'a.b'), h('p', {class: 'text'}, 'A line.'));
+  root.append(probe);
+  const tall = probe.getBoundingClientRect().height, inset = parseFloat(getComputedStyle(probe).bottom) || 0;
+  probe.remove();
+  if (tall) FOOT2D.card = Math.ceil(tall + inset);
+  return FOOT2D.card;
+}
+addEventListener('resize', () => { FOOT2D.card = 0; });  // its inset and text follow the window's size
 /* The view at `scale` with its middle as near `center` as the limits let it be: along an axis where the map runs past
  * the pane, no more than MARGIN screen pixels beyond the map's edge show, and along one where it does not, the map is
- * centered. */
+ * centered; down the pane, in the part above the room kept at its foot, `foot2d`. */
 function place2d(scale, center, area = area2d()) {
   const box = M.bounds, w = area.width / scale, height = area.height / scale, room = MARGIN / scale;
+  const foot = Math.min(foot2d(), area.height / 3) / scale, usable = height - foot;
   const along = (at, start, size, view) => size <= view ? start + size / 2 - view / 2
     : Math.min(Math.max(at - view / 2, start - room), start + size + room - view);
-  return {x: along(center.x, box.x, box.w, w), y: along(center.y, box.y, box.h, height), w, h: height};
+  const down = box.h <= usable ? box.y + box.h / 2 - usable / 2
+    : Math.min(Math.max(center.y - usable / 2, box.y - room), box.y + box.h + room + foot - height);
+  return {x: along(center.x, box.x, box.w, w), y: down, w, h: height};
 }
 /* The camera to the mode's framing, with `center` in the middle as far as the limits allow, or the middle of the view
  * where it is going; eased, or with `now` put there at once, for a view that fades in. */
@@ -4465,16 +7815,11 @@ function showModes() {
 }
 /* A node's name is its hovertext only while the map's text is drawn smaller than Small, VIEW-041: there the eye
  * cannot read it, and above it a tip would cover a map that can be read. */
-function hover2d(scale) {
-  if (!M.svg || !scale) return;
-  const tips = labelSize(M.svg) * scale < pageText().small - 0.05;
-  if (M.tips === tips && M.tipped === M.svg && M.tipping === M.nodes) return;
-  Object.assign(M, {tips, tipped: M.svg, tipping: M.nodes});
-  for (const node of M.nodes.values()) {
-    const tip = node.g.querySelector(':scope > title');
-    if (tips && !tip) node.g.append(Object.assign(document.createElementNS(SVG, 'title'), {textContent: node.tip}));
-    else if (!tips) tip?.remove();
-  }
+function hover2d() {
+  // the readout at the top of the map's window names what the pointer is on at every size, `readout`, so no node
+  // carries a hover title of its own
+  if (!M.svg) return;
+  for (const node of M.nodes.values()) node.g.querySelector(':scope > title')?.remove();
 }
 /* Each edge of the whole map takes a click, which selects its join, VIEW-008: on a band one screen pixel wider than its
  * line, a copy of it with no paint in a group of their own just over the edges, `.hits2d`. They lie under the nodes, so
@@ -4489,10 +7834,114 @@ function hits2d(edges) {
     const hit = edge.hit = edge.path.cloneNode(false);
     for (const name of ['id', 'marker-end', 'marker-start', 'data-id', 'style']) hit.removeAttribute(name);
     hit.setAttribute('class', 'hit');
-    hits.append(hit);
-    hit.addEventListener('click', event => { event.stopPropagation(); clicked2d('p:' + edge.join.id, event); });
+    hits.append(hit);  // its band shows the selection's edges; which edge a click takes is `edgeAt2d`'s choice
   }
 }
+/* Which edge a click on the map takes, in both maps alike, VIEW-008: the one nearest the pointer on the screen, within
+ * EDGE_PICK.most CSS pixels, so each edge takes all the room up to where the next edge is nearer, and a node under the
+ * pointer always wins. The pointer shows it first: the edge it would take is marked as the pointer moves. */
+const EDGE_PICK = {most: 24, edge2d: null, node2d: null, link3d: null, frame: 0, frame3d: 0};
+const segmentAway = (x, y, x1, y1, x2, y2) => {
+  const dx = x2 - x1, dy = y2 - y1, length = dx * dx + dy * dy;
+  const t = length ? Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / length)) : 0;
+  return Math.hypot(x - x1 - t * dx, y - y1 - t * dy);
+};
+/* An edge's line as points along it, in its own units, taken again only when its path changes. */
+function edgePoints(edge) {
+  const path = edge.path, d = path.getAttribute('d');
+  if (edge.sampled === d && edge.points) return edge.points;
+  const length = path.getTotalLength(), step = Math.max(2, length / 160), points = [];
+  for (let at = 0; at < length; at += step) { const one = path.getPointAtLength(at); points.push(one.x, one.y); }
+  const end = path.getPointAtLength(length);
+  points.push(end.x, end.y);
+  return Object.assign(edge, {sampled: d, points}).points;
+}
+function edgeAt2d(x, y) {
+  if (!M.svg) return null;
+  let best = null, nearest = EDGE_PICK.most;
+  for (const edge of M.edges) {
+    const path = edge.path;
+    if (!edge.join || !path?.isConnected || path.classList.contains('reserved')) continue;
+    const box = path.getBoundingClientRect();
+    if (x < box.left - nearest || x > box.right + nearest || y < box.top - nearest || y > box.bottom + nearest) continue;
+    const ctm = path.getScreenCTM();
+    if (!ctm) continue;
+    const local = new DOMPoint(x, y).matrixTransform(ctm.inverse()), scale = Math.hypot(ctm.a, ctm.b), points = edgePoints(edge);
+    for (let at = 0; at + 3 < points.length; at += 2) {
+      const away = segmentAway(local.x, local.y, points[at], points[at + 1], points[at + 2], points[at + 3]) * scale;
+      if (away < nearest) { nearest = away; best = edge; }
+    }
+  }
+  return best;
+}
+/* The 2D map's nodes on the screen with their reaches, `REACH`, measured at most once a frame. A node is a box: the
+ * whole box is its own, as drawn, and around its centre it reaches half the distance to the nearest box's centre, at
+ * most REACH.most, which past a small box's edge is the room between it and its neighbours, and leaves the gaps between
+ * large boxes to the edges drawn there. A group's box is not one, so the nodes and edges in it come first. */
+function reaches2d() {
+  const now = performance.now();
+  if (REACH.d2 && now - REACH.d2.at < 16) return REACH.d2.list;
+  const list = [];
+  for (const [key, node] of M.nodes) {
+    const g = node.g;
+    if (!g?.isConnected || !g.classList.contains('node') || g.classList.contains('reserved')) continue;
+    const box = g.getBoundingClientRect();
+    if (!box.width) continue;
+    list.push({key, box, x: (box.left + box.right) / 2, y: (box.top + box.bottom) / 2, r: 0});
+  }
+  REACH.d2 = {at: now, list: reachOf(list)};
+  return list;
+}
+/* The node the pointer takes on the 2D map: inside a box, that node; elsewhere, of those whose reach covers the
+ * pointer, the one whose centre is nearest. Its key, or null. */
+function nodeAt2d(x, y) {
+  if (!M.svg) return null;
+  let best = null, nearest = Infinity;
+  for (const one of reaches2d()) {
+    const {box} = one, inside = x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
+    const middle = Math.hypot(one.x - x, one.y - y);
+    if (!inside && middle > one.reach) continue;
+    const rank = inside ? -1 : middle;  // inside a box it is that node's
+    if (rank < nearest) { nearest = rank; best = one.key; }
+  }
+  return best;
+}
+function pickNode2d(key) {
+  if (EDGE_PICK.node2d === key) return;
+  M.nodes.get(EDGE_PICK.node2d)?.g.classList.remove('pick');
+  EDGE_PICK.node2d = key;
+  M.nodes.get(key)?.g.classList.add('pick');
+  HOVER2D.on = key;
+  if (key) readout('2d', readoutOf(key, '2d'));
+}
+function pickEdge2d(edge) {
+  if (EDGE_PICK.edge2d === edge) return;
+  for (const one of [EDGE_PICK.edge2d, edge]) if (one) { one.path?.classList.toggle('pick', one === edge); one.hit?.classList.toggle('pick', one === edge); }
+  EDGE_PICK.edge2d = edge;
+  $('#viewport').classList.toggle('picking', Boolean(edge));
+  if (edge) readout('2d', edgeWords(edge.join));
+  else if (!HOVER2D.on) readout('2d', null);
+}
+/* The 2D map's hover, as the 3D map's: a node, an agent's figure or a box inside a node said in the readout; the
+ * edge under the pointer is `pickEdge2d`'s. */
+const HOVER2D = {on: null};
+$('#viewport').addEventListener('pointerover', event => {
+  const figure = event.target.closest?.('g.agent2d'), node = event.target.closest?.('g.node');
+  if (figure) {
+    const found = [...ROAM2D.figures.values()].find(one => one.g === figure);
+    HOVER2D.on = found ? `figure:${found.id}` : null;
+    if (found) readout('2d', figureWords(found.id));
+  } else if (node?.dataset.key) {
+    HOVER2D.on = node.dataset.key;
+    readout('2d', readoutOf(node.dataset.key, '2d'));
+  }
+});
+$('#viewport').addEventListener('pointerout', event => {
+  const from = event.target.closest?.('g.agent2d, g.node');
+  if (!from || from.contains(event.relatedTarget)) return;
+  HOVER2D.on = EDGE_PICK.node2d;  // a node still within reach keeps the readout, `nodeAt2d`
+  if (!EDGE_PICK.edge2d && !EDGE_PICK.node2d) readout('2d', null);
+});
 /* All shows the whole map and leaves the selection as it is, its node and its joins still marked, so the whole map is
  * seen with what the selected node is joined to; letting go of the selection clears the marks, `deselect`. */
 function unmark2D() {
@@ -4517,25 +7966,93 @@ function pointed(edge) {
   const path = edge.path, end = path?.getAttribute('marker-end');
   if (end && edge.join?.ifd === 'both') path.setAttribute('marker-start', end.replace('pointEnd', 'pointStart'));
 }
-/* The selected node's joins in the 2D map carry its flow, as the dots carry it along every join in 3D, VIEW-005:
- * pulses running along each of its edges the way the join's information goes, `flowOf`, both ways for both.
- * Only the selected node's, so the map stays still to read and the flow says what the selection takes from where.
- * Each is a copy of its edge drawn over it in dashes that move, `.flow` in the styles; with reduced motion they stand. */
+/* The selected node's joins in the 2D map carry its flow in the 3D map's looks, on the same clocks, VIEW-005 and
+ * `FLOW`: a tiny white request from the receiver to the element served, the answer back as a short bright streak, the
+ * way the information goes, and on a join whose receiver sends, a record card that lands with a ring. Only the
+ * selected node's, so the map stays still to read and the flow says what the selection takes from where. Each edge
+ * gets a group of shapes over it, moved along the edge each frame, `frame2d`, while the page is in use, as the 3D map
+ * draws its flow, `FRAMES`; with reduced motion nothing moves and nothing is shown. */
+const FLOW2D = {id: 0, edges: []};
+// an element's own colour on the map, as the 3D map draws it, for what comes from it
+const color2d = id => { const node = G?.graphData().nodes.find(one => one.id === id); return node ? colorOf(node) : css('--signal'); };
 function flows2d() {
   for (const old of M.svg?.querySelectorAll('g.flows2d') || []) old.remove();
-  const on = M.edges.filter(edge => edge.path?.classList.contains('on'));
+  FLOW2D.edges = [];
+  const on = M.edges.filter(edge => edge.path?.classList.contains('on') && edge.join);
   if (!on.length) return;
   // a group of their own just over the edges, so the edges stay what they are
   const flows = document.createElementNS(SVG, 'g'), edges = on[0].path.closest('.edgePaths') || on[0].path.parentNode;
   flows.setAttribute('class', 'flows2d');
   edges.after(flows);
-  // each edge already runs the way its information goes, `ends2d`: only both ways also flows back along it
-  for (const edge of on) for (const way of edge.join?.ifd === 'both' ? ['forth', 'back'] : ['forth']) {
-    const flow = edge.path.cloneNode(false);
-    for (const name of ['id', 'marker-end', 'marker-start', 'data-id', 'style']) flow.removeAttribute(name);
-    flow.setAttribute('class', way === 'back' ? 'flow back' : 'flow');
-    flows.append(flow);
+  const made = (tag, name, attributes = {}) => {
+    const shape = document.createElementNS(SVG, tag);
+    shape.setAttribute('class', name);
+    for (const [key, value] of Object.entries(attributes)) shape.setAttribute(key, value);
+    shape.style.display = 'none';
+    flows.append(shape);
+    return shape;
+  };
+  for (const edge of on) {
+    FLOW2D.edges.push({edge, length: edge.path.getTotalLength(),
+      // a reply's train of dots each way, in the colour of the element it comes from, `fxTrain`
+      trains: [0, 1].map(way => ({color: color2d(way === 0 ? edge.provider : edge.join.receiver),
+        beads: Array.from({length: 8}, () => made('circle', 'bead', {r: 2.1}))})),
+      ask: made('circle', 'ask', {r: 1.9}), record: made('rect', 'record', {x: -4.5, y: -3.2, width: 9, height: 6.4, rx: 1.4}),
+      ring: made('circle', 'ring', {r: 4})});
   }
+  wake2d();
+}
+function wake2d() {
+  if (!FLOW2D.id && FLOW2D.edges.length && !reduced()) FLOW2D.id = requestAnimationFrame(frame2d);
+  again2d();  // the figures and the mascot on the 2D map wake with any act too
+}
+function frame2d(now) {
+  FLOW2D.id = 0;
+  const shown = FLOW2D.edges.filter(one => one.edge.path.isConnected);
+  if (!shown.length || !M.svg?.getClientRects().length) return;
+  // it rests as the 3D map's flow rests, once nothing was done for web_flow_seconds, until the next act
+  const resting = reduced() || (FRAMES.rest !== null && performance.now() - FRAMES.active > FRAMES.idle);
+  flowTick(now);
+  // the flow mode, web_flow_mode: off and live draw none of it here; a change eases it in or out
+  const wanted = flowModeNow() === 'selected' || flowModeNow() === 'all' ? 1 : 0, was = FLOW2D.fade ?? wanted;
+  FLOW2D.fade = was + (wanted - was) * (1 - Math.exp(-Math.max(0, FLOW.clock - (FLOW2D.at ?? FLOW.clock)) * FLOW.ease));
+  FLOW2D.at = FLOW.clock;
+  const group = shown[0].ask.parentNode;
+  if (group) group.style.opacity = FLOW2D.fade.toFixed(3);
+  if (FLOW2D.fade < 0.01 && !wanted) { for (const shape of group?.children || []) shape.style.display = 'none'; return; }
+  for (const one of shown) {
+    const {edge, length, trains, ask, record, ring} = one, join = edge.join, receives = join.ifd === 'receives';
+    const along = share => (receives ? 1 - share : share) * length;  // the edge runs the way its information goes
+    const at = share => edge.path.getPointAtLength(along(Math.min(1, Math.max(0, share))));
+    const put = (shape, point) => { shape.style.display = ''; shape.setAttribute('transform', `translate(${point.x} ${point.y})`); };
+    for (const shape of [ask, record, ring, ...trains.flatMap(train => train.beads)]) shape.style.display = 'none';
+    if (resting) continue;
+    const {asks, since} = flowAt(join);
+    if (!asks) {
+      if (since < FLOW.send) { const t = since / FLOW.send; put(record, at(t * t * (3 - 2 * t))); }
+      else if (since < FLOW.send + FLOW.burst) {
+        const u = (since - FLOW.send) / FLOW.burst;
+        put(ring, at(1));
+        ring.setAttribute('r', String(4 + 14 * u));
+        ring.style.opacity = String(Math.pow(1 - u, 1.5));
+      }
+    } else if (since < FLOW.ask) put(ask, at(since / FLOW.ask));
+    else if (since < FLOW.ask + FLOW.reply) {  // the reply: a train of dots the way the data goes
+      const t = (since - FLOW.ask) / FLOW.reply;
+      (join.ifd === 'both' ? [true, false] : [true]).forEach((back, index) => {
+        const {beads, color} = trains[index], spacing = Math.max(0.03, 2.1 * 2 * 2.3 / Math.max(1, length));
+        const shown = Math.max(3, Math.min(beads.length, Math.floor(0.6 / spacing) + 1)), head = t * (1 + spacing * (shown - 1));
+        beads.forEach((bead, i) => {
+          const s = head - spacing * i;
+          if (i >= shown || s < 0 || s > 1) return;
+          put(bead, at(back ? 1 - s : s));
+          bead.style.fill = color;
+          bead.style.opacity = String(i < shown - 3 ? 1 : 1 - (i - (shown - 4)) / 4);
+        });
+      });
+    }
+  }
+  if (!resting) FLOW2D.id = requestAnimationFrame(frame2d);
 }
 function focus2D(id) {
   const join = id.startsWith('p:') ? joinOf(id) : null;
@@ -4586,7 +8103,18 @@ function noneSelected() {
 }
 (function wire2D() {
   const host = $('#map2d');
-  if (MAC) for (const key of document.querySelectorAll('#help .ctrlclick kbd')) key.textContent = '⌘';  // as modified2d reads it
+  // The seven modes on the map's bar, VIEW-041, each with its word, its short word in the small area, and its key.
+  MODE.box = h('div', {class: 'segmented modes2d', role: 'radiogroup', 'aria-label': 'How the 2D map is zoomed'},
+    MODES2D.map(([name, key, word, short, what]) => {
+      const button = h('button', {type: 'button', role: 'radio', 'aria-checked': 'false', 'aria-label': word,
+        'aria-keyshortcuts': key, title: `${word}, ${what} (${key})`,
+        onclick: event => { event.stopPropagation(); setMode(name); }},
+      h('span', {class: 'long'}, word), h('span', {class: 'short'}, short), h('kbd', {}, key));
+      MODE.buttons.set(name, button);
+      return button;
+    }));
+  PEEK.two.prepend(MODE.box);  // in the large map's peekaboo bar
+  showModes();
   $('#backBtn').onclick = event => { event.stopPropagation(); step(-1); };
   $('#forwardBtn').onclick = event => { event.stopPropagation(); step(1); };
   // A drag moves the view within the mode's limits, VIEW-041, and is not a click on what it started on.
@@ -4609,6 +8137,29 @@ function noneSelected() {
     setCam(place2d(scale, {x: at.x - (event.clientX - drag.x) / scale, y: at.y - (event.clientY - drag.y) / scale}, area));
   });
   host.addEventListener('pointerup', () => { dragged = Boolean(drag?.moving); drag = null; });
+  // The edge a click would take, marked as the pointer moves, once a frame; a node under the pointer takes it instead.
+  host.addEventListener('pointermove', event => {
+    if (drag?.moving || EDGE_PICK.frame) return;
+    const {clientX: x, clientY: y, target} = event;
+    EDGE_PICK.frame = requestAnimationFrame(() => {
+      EDGE_PICK.frame = 0;
+      // the node nearest the pointer within reach, then the nearest edge: what a click will take; a figure keeps its own
+      const off = !M.svg || target.closest?.('.bar2d, button, g.agent2d') || !target.closest?.('#viewport');
+      const key = off ? null : nodeAt2d(x, y);
+      pickNode2d(key);
+      pickEdge2d(off || key ? null : edgeAt2d(x, y));
+      $('#viewport').classList.toggle('picking', Boolean(key || EDGE_PICK.edge2d));
+    });
+  });
+  host.addEventListener('pointerleave', () => { pickNode2d(null); pickEdge2d(null); });
+  // A click takes the nearest node within reach, then the nearest edge, before a group behind them does.
+  host.addEventListener('click', event => {
+    if (dragged || !M.svg || event.target.closest('.bar2d, button, g.agent2d') || !event.target.closest('#viewport')) return;
+    const key = nodeAt2d(event.clientX, event.clientY), edge = key ? null : edgeAt2d(event.clientX, event.clientY);
+    if (!key && !edge) return;
+    event.stopPropagation();
+    clicked2d(key || 'p:' + edge.join.id, event);
+  }, true);
   // A click on the map where there is no node and no edge lets go of the selection, VIEW-008.
   host.addEventListener('click', event => {
     if (dragged) { dragged = false; return; }
@@ -4755,20 +8306,77 @@ function mapKeys(event) {
   if (event.key.startsWith('Arrow') && target.closest(ARROWS_OWN)) return false;
   return true;
 }
-document.addEventListener('keydown', event => {
-  if (!mapKeys(event)) return;
-  // The page's own keys: / searches the map and ? shows every key.
-  if (event.key === '/') { event.preventDefault(); openSearch(); return; }
-  if (event.key === '?') { event.preventDefault(); $('#help').hidden = false; return; }
-  // The keys 4 to 9 and 0 choose the 2D map's mode, and Home chooses All, VIEW-041; 1 to 3 are the 3D map's, VIEW-005.
-  if (!small3d() && ['1', '2', '3'].includes(event.key)) {
-    event.preventDefault();
-    NAME.level = Number(event.key);
-    if (S.selected) fly3d(S.selected);
+/* The digits act on the map in the large area, one scheme from the whole map in to close up, VIEW-041 and VIEW-005:
+ * 1 the whole map, 2 Width and 3 Height, 4, 5 and 6 Small, Medium and Large, or far, medium and close on the selection
+ * in 3D, 0 Free; 7, 8 and 9 the 2D map's direction. Home is 1. The small area takes none of them. The bar peeks with
+ * the new choice checked. */
+function largeKey(key) {
+  if (small3d()) {  // the 2D map is the large one
+    const mode = MODES2D.find(([, one]) => one === key);
+    if (mode) { setMode(mode[0]); peek('key'); return; }
+    if (DIRECTION_KEYS[key]) { chooseDirection(DIRECTION_KEYS[key]); peek('key'); }
     return;
   }
-  const mode = MODES2D.find(([, key]) => key === event.key);
-  if (mode || event.key === 'Home') { event.preventDefault(); setMode(mode ? mode[0] : 'all'); return; }
+  const three = {1: ['whole'], 4: ['zoom', 1], 5: ['zoom', 2], 6: ['zoom', 3], 0: ['free']}[key];
+  if (three) { setMode3d(...three); peek('key'); }
+}
+/* Every key the page takes, in one table: the reference `?` opens is drawn from it, grouped and searchable, and the
+ * map's keys run from it, `KEY_RUN`, so the two never part. `keys` is what the reference shows, `match` the keys that
+ * run `run`; an entry with no `run` is a key another handler takes, written here so it is listed. The Alt digits are
+ * the physics presets, `PHYSICS`, run by their own listener by the key's place. */
+const KEYS = [
+  {group: 'Anywhere', keys: ['/'], what: 'Search the map', match: ['/'], run: () => openSearch()},
+  {group: 'Anywhere', keys: ['?'], what: 'Keyboard shortcuts', match: ['?'], run: () => openHelp()},
+  {group: 'Anywhere', keys: ['V'], what: 'View menu', match: ['v', 'V'], run: () => $('#settingsBtn').click()},
+  {group: 'Anywhere', keys: ['Esc'], what: 'Close, or deselect'},
+  {group: 'Anywhere', keys: ['Alt', '+', '−'], what: 'Text size'},
+  {group: 'Maps', keys: ['↑', '↓', '←', '→'], what: 'Move between nodes'},
+  {group: 'Maps', keys: ['Enter'], what: 'Go inside'},
+  {group: 'Maps', keys: ['Shift', 'Enter'], what: 'Go out'},
+  {group: 'Zoom', keys: ['1'], what: 'Whole map', match: ['1', 'Home'], run: largeKey},
+  {group: 'Zoom', keys: ['2', '3'], what: 'Fit width, height (2D)', match: ['2', '3'], run: largeKey},
+  {group: 'Zoom', keys: ['4', '5', '6'], what: 'Zoom levels', match: ['4', '5', '6'], run: largeKey},
+  {group: 'Zoom', keys: ['0'], what: 'Free', match: ['0'], run: largeKey},
+  {group: 'Zoom', keys: ['F'], what: 'Fit once (3D)', match: ['f', 'F'],
+    run: () => { if (G && !small3d()) { fit3d(); peek('key'); } }},
+  {group: 'Zoom', keys: ['Z'], what: 'Node zoom on/off', match: ['z', 'Z'], run: () => toggleNodeZoom()},
+  {group: 'Zoom', keys: ['7', '8', '9'], what: '2D direction', match: ['7', '8', '9'], run: largeKey},
+  {group: 'Zoom', keys: ['U'], what: 'Space theme on/off', match: ['u', 'U'],  // the space theme or the last plain one
+    run: () => setTheme(document.documentElement.dataset.theme === 'space' ? PLAIN.last : 'space')},
+  {group: 'Chat', keys: ['C'], what: 'Open or hide chat', match: ['c', 'C'],
+    run: () => ($('#dock').className.startsWith('open') && !chatDocked() && !dockGoingAway() ? putChatAway() : dockState('open'))},
+  {group: 'Chat', keys: ['Enter'], what: 'Send'},
+  {group: 'Chat', keys: ['Shift', 'Enter'], what: 'New line'},
+  {group: 'Chat', keys: [MAC ? '⌘' : 'Ctrl', '.'], what: 'Interrupt the agent'},
+  {group: 'Chat', keys: [MAC ? '⌥' : 'Ctrl', 'Space'], what: 'Talk'},
+];
+const KEY_RUN = new Map(KEYS.filter(entry => entry.run).flatMap(entry => entry.match.map(key => [key, entry])));
+/* The reference, drawn from `KEYS`: a group to a section, and a search that keeps the keys whose words match. */
+function openHelp() {
+  $('#settingsbox').hidden = true;
+  const find = $('#help .keyfind'), box = $('#help .keys');
+  const draw = () => {
+    const words = find.value.trim().toLowerCase();
+    // the toolbar's tools with a key, as the modules declare them and the workspace runs them, in the same reference
+    const tools = WS.active ? WS.toolKeys().map(tool => ({group: 'Tools', keys: tool.shortcut.split('+'), what: `${tool.title}: ${tool.description}`})) : [];
+    const rows = [...KEYS, ...tools].filter(entry => !words || `${entry.group} ${entry.keys.join(' ')} ${entry.what}`.toLowerCase().includes(words));
+    const groups = [...new Set(rows.map(entry => entry.group))];
+    fill(box, groups.length ? groups.map(group => h('section', {}, h('h3', {}, group),
+      h('dl', {}, rows.filter(entry => entry.group === group).flatMap(entry => [
+        h('dt', {}, entry.keys.flatMap((key, at) => [at ? ' ' : null, /^(Click|click)$/.test(key) ? key : h('kbd', {}, key)])),
+        h('dd', {}, entry.what)]))))
+      : h('p', {class: 'empty'}, 'No key does that.'));
+  };
+  find.oninput = draw;
+  draw();
+  $('#help').hidden = false;
+  find.focus();
+}
+document.addEventListener('keydown', event => {
+  if (!mapKeys(event)) return;
+  // The keys of the key table, `KEYS`, each run by its entry, so the reference `?` opens says what each does.
+  const entry = KEY_RUN.get(event.key);
+  if (entry) { event.preventDefault(); entry.run(event.key === 'Home' ? '1' : event.key); return; }
   // Escape lets go of the selection, and with nothing selected backs out one level; Shift+Enter always backs out.
   if (event.key === 'Escape') { event.preventDefault(); if (S.selected) deselect(); else levelUp(); return; }
   if (event.key === 'Enter' && event.shiftKey) { event.preventDefault(); levelUp(); return; }
@@ -4850,13 +8458,18 @@ function selectNow(id, fly, keepTrail, stepping, again) {
   if (G) {
     G.nodeColor(G.nodeColor());
     const node = G.graphData().nodes.find(item => item.id === id);
-    if (fly && node) fly3d(id);
+    if (fly && node) follow3d(id);
   }
   focus2D(id);
   // The brief stays on view while the person walks the map from it; any other tab gives way to the object.
   const briefing = tabNow() === 'brief';
-  if (!again) showTab(briefing ? 'brief' : 'object');
-  else if (briefing) renderBrief();
+  // in the workspace every pane stays where the person left it, and those shown follow the selection
+  if (WS.on) wsSelected();
+  else {
+    if (WS.active) WS.refresh(true);  // the page as written with the toolbar: its tools follow the selection too
+    if (!again) showTab(briefing ? 'brief' : 'object');
+    else if (briefing) renderBrief();
+  }
   // The panel's reads are returned, so a load waits for them before it says it is loaded.
   return MEM.key ? renderMemories(id) : join ? renderJoin(join) : renderObject(id);
 }
@@ -4934,6 +8547,7 @@ const MERGE = {rows: [], chat: null, since: 0};
 async function renderMerges() {
   if (!S.project || FRAMED) return;
   try { MERGE.rows = (await read('merges')).merges || []; } catch { MERGE.rows = []; }
+  noticeAttention();  // a merge waiting for review: the mascot tells the person, `ATTN`
   const at = seconds => new Date(seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
   fill($('#reviewNotice'), MERGE.rows.map(row => {
     const ticket = (B.tickets || []).find(one => one.id === row.work_id);
@@ -4966,8 +8580,140 @@ async function takeReview(workId, button) {
  * project and the agent is told where. The dock rests in the corner, docks at either side of the page, or floats where
  * its head is dragged. */
 const DOCK = {target: null, session: null, label: '', since: 0, notes: [], list: [], files: [], mine: null, waiting: '',
-  calling: null, chats: [], chat: null, pinned: true};  // chats: every open thread, one a tab; chat: the one on view
+  calling: null, chats: [], chat: null, pinned: true,  // chats: every open thread, one a tab; chat: the one on view
+  queue: [], unread: false, heard: new Set()};  // queue: messages written before the agent was there, sent in order once it is
+/* When the page first saw each message of a thread. A thread's lines carry no time of their own, so those already
+ * there when its session was first read have none, and each one after that has the moment it arrived. */
+const SEEN = {at: new Map(), sessions: new Set()};
+const clockOf = (when, day = false) => {
+  const date = new Date(when);
+  if (isNaN(date)) return '';
+  const today = new Date().toDateString() === date.toDateString();
+  return date.toLocaleString([], {hour: '2-digit', minute: '2-digit', ...(day && !today ? {month: 'short', day: 'numeric'} : {})});
+};
 const STANDBY = 'Please stand by while we contact an agent for you.';
+const DOCKMOTION = {anim: null, dir: null};  // the chat going into its tab, 'away', or coming out of it, 'back'
+const dockGoingAway = () => Boolean(DOCKMOTION.anim) && (DOCKMOTION.dir === 'away') === (DOCKMOTION.anim.playbackRate > 0);
+/* A body for the chat's agent on the map, web_embody: offered once per chat, inline at the top of its thread and never
+ * as a window, at a pause after web_embody_turns turns or web_embody_minutes minutes, whichever comes first; always
+ * gives it the person's last choice, or the mascot to the system agent; never gives none. The choice folds into the
+ * chat's head as a small avatar of the character, which, like B, opens the choice again. The figure is the flow's:
+ * `window.metaform.characters()` lists the characters and `window.metaform.embody(workId, glyph)` gives one; until
+ * those exist nothing is offered and nothing breaks. */
+const EMBODY = {offered: new Set(), given: new Set(), since: new Map(), open: null, last: null, stops: []};
+try { Object.assign(EMBODY, {last: localStorage.getItem('metaform.embodied') || null}); } catch { /* storage can be blocked */ }
+const embodyHooks = () => ['embody', 'characters', 'bodies'].every(name => typeof window.metaform?.[name] === 'function');
+const hooked = (name, ...given) => { try { return window.metaform[name](...given); } catch { return null; } };
+/* Only a conversation's agent takes a body this way, the system agent or a chat the person started; an agent at work
+ * on a ticket walks as its own figure already. */
+const embodiable = chat => Boolean(chat && ['system', 'conversation'].includes(chat.source) && !isIntake(chat.target));
+const bodyFor = work => (hooked('bodies') || []).find(one => one.work === work) || null;
+function characterList(work) {
+  const system = DOCK.chat?.source === 'system', mine = bodyFor(work)?.character;
+  // the person's own character, web_mascot, first for their system agent; with none set, none is put first
+  const list = (hooked('characters') || []).filter(one => one?.name && (!one.mascot || system)).map(one => ({...one,
+    src: `/page/agent-glyphs/${one.name}.svg`, free: one.free !== false || one.name === mine || (one.mascot && system),
+    preferred: Boolean(one.preferred && system)}));
+  return [...list.filter(one => one.preferred), ...list.filter(one => !one.preferred)];
+}
+function stopPreviews() { for (const stop of EMBODY.stops.splice(0)) { try { stop(); } catch { /* already still */ } } }
+/* Give the chat's agent the character chosen; the flow says no when it is taken, and the chat says why. */
+function embodyAs(work, glyph, quiet = false) {
+  if (!work || !glyph || !embodyHooks()) return false;
+  const done = hooked('embody', work, glyph);
+  if (!done || done.error) { if (!quiet) dockNote(done?.error || 'That body could not be given.'); return false; }
+  EMBODY.last = glyph;
+  try { localStorage.setItem('metaform.embodied', glyph); } catch { /* storage can be blocked */ }
+  EMBODY.given.add(work);
+  if (EMBODY.open === work) { EMBODY.open = null; stopPreviews(); }
+  if (!quiet) dockNote(done.mascot ? `Your system agent walks the map as the ${glyph} now, your mascot while you talk.` : `It walks the map as the ${glyph} now.`);
+  else drawHelpdesk();
+  return true;
+}
+/* web_embody: offer asks once per conversation, in its thread, after web_embody_turns turns or web_embody_minutes
+ * minutes, whichever comes first, and only at a pause, as a turn ends or a ticket closes, never while it works;
+ * always gives each conversation the person's last choice, or the mascot to the system agent; never offers nothing.
+ * The person asks at any time with the avatar in the head, the head's menu or B. */
+function embodyOffer(work, session, lines, busy) {
+  paintAvatar(work);
+  if (!work || !session || !embodyHooks() || VIEW.embody === 'never' || !embodiable(DOCK.chat)) return;
+  if (!EMBODY.since.has(work)) EMBODY.since.set(work, Date.now());
+  const body = bodyFor(work), chosen = Boolean(body?.by);
+  if (VIEW.embody === 'always') {
+    if (chosen || EMBODY.given.has(work)) return;
+    EMBODY.given.add(work);
+    const list = characterList(work), free = name => list.find(one => one.name === name && one.free);
+    const glyph = [EMBODY.last, list.find(one => one.preferred)?.name, list.find(one => one.free && !one.mascot)?.name].find(free);
+    if (glyph) embodyAs(work, glyph, true);
+    return;
+  }
+  if (chosen || EMBODY.offered.has(work)) return;
+  const turns = lines.filter(line => line.kind === 'turn').length;
+  const minutes = (Date.now() - EMBODY.since.get(work)) / 60000;
+  const due = turns >= (VIEW.embodyTurns ?? 8) || minutes >= (VIEW.embodyMinutes ?? 20);
+  const ticket = ticketOf(work);
+  const pause = !busy && session.state === 'running' && session.activity === 'idle' || Boolean(ticket?.done);
+  if (due && (pause || (VIEW.embodyTurns ?? 8) === 0)) { EMBODY.offered.add(work); EMBODY.open = work; }
+}
+/* Open the choice now, as the person asked: in the thread, where the offer stands. */
+function askEmbody() {
+  const work = DOCK.target;
+  if (!embodyHooks()) return toast('Bodies on the map are not ready on this page yet.');
+  if (!work || !embodiable(DOCK.chat)) return toast('Open a chat with your system agent, or one you started, first.');
+  EMBODY.open = EMBODY.open === work ? null : work;
+  EMBODY.offered.add(work);
+  if (!EMBODY.open) stopPreviews();
+  if (!$('#dock').className.startsWith('open')) dockState('open');
+  drawHelpdesk().then(() => { if (EMBODY.open) followLog(true); });
+}
+/* The offer in the thread, a row of the conversation: each character moving in its own way on a small canvas, with
+ * its name and temper, those taken by another agent unavailable, and Not now. */
+function embodyRows(work) {
+  if (!work || EMBODY.open !== work || !embodyHooks()) { if (EMBODY.stops.length) stopPreviews(); return []; }
+  const body = bodyFor(work), list = characterList(work);
+  return [{key: `embody:${work}`, text: `${body?.character || ''}:${list.map(one => `${one.name}${one.free ? '' : '-'}`).join(',')}`, make: () => {
+    stopPreviews();
+    const choices = list.map(one => {
+      const canvas = h('canvas', {width: '96', height: '96', 'aria-hidden': 'true'});
+      const stop = typeof one.preview === 'function' ? (() => { try { return one.preview(canvas); } catch { return null; } })() : null;
+      if (typeof stop === 'function') EMBODY.stops.push(stop);
+      const on = body?.by && body.character === one.name;
+      return h('button', {type: 'button', class: `character${on ? ' on' : ''}`, disabled: !one.free,
+        title: `${one.name}: ${one.temperament || ''}${one.moves ? `, it ${one.moves}s` : ''}${one.free ? '' : ' · at work already'}`,
+        'aria-pressed': String(Boolean(on)), onclick: () => embodyAs(work, one.name)},
+      canvas, h('span', {class: 'name'}, one.name), h('small', {}, one.preferred ? 'your character' : one.temperament || ''));
+    });
+    return h('div', {class: 'embody', role: 'group', 'aria-label': 'Give this agent a body on the map'},
+      h('p', {class: 'ask'}, h('b', {}, body?.by ? 'Change its body?' : `Give ${DOCK.label || 'this agent'} a body on the map?`),
+        h('small', {}, 'It walks the map in that shape as it works. Change it at any time with its avatar or B.')),
+      h('div', {class: 'choices'}, choices),
+      h('div', {class: 'acts'}, h('button', {type: 'button', class: 'btn sm quiet notnow',
+        onclick: () => { EMBODY.open = null; stopPreviews(); drawHelpdesk(); }}, 'Not now')));
+  }}];
+}
+/* The head's avatar: the agent's body when it has one, else the letter; a click opens the choice. */
+function paintAvatar(work) {
+  const avatar = $('#helpdesk .head .avatar');
+  if (!avatar) return;
+  if (!avatar.dataset.letter) avatar.dataset.letter = avatar.textContent;
+  const hooks = embodyHooks(), can = hooks && work && embodiable(DOCK.chat);
+  const body = can ? bodyFor(work) : null, glyph = body && (body.by || body.drawn) ? body.character : null;
+  if (avatar.dataset.glyph !== (glyph || '')) {
+    avatar.dataset.glyph = glyph || '';
+    fill(avatar, glyph ? h('img', {src: `/page/agent-glyphs/${glyph}.svg`, alt: ''}) : avatar.dataset.letter);
+  }
+  avatar.classList.toggle('embodied', Boolean(glyph));
+  avatar.classList.toggle('choosable', Boolean(can));
+  avatar.setAttribute('role', can ? 'button' : 'img');
+  avatar.setAttribute('tabindex', can ? '0' : '-1');
+  avatar.setAttribute('aria-hidden', String(!can));
+  avatar.setAttribute('aria-label', can ? (glyph ? `Its body on the map: the ${glyph}. Change it` : 'Give this agent a body on the map') : '');
+  avatar.title = can ? `${glyph ? `Its body on the map: the ${glyph}. Change it` : 'Give this agent a body on the map'} (B)` : '';
+  avatar.onclick = can ? () => askEmbody() : null;
+  avatar.onkeydown = can ? event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); askEmbody(); } } : null;
+}
+/* Kept for the flow's own callers: the avatar and the offer are drawn with the chat. */
+function drawEmbody() { if ($('#helpdesk') && !$('#helpdesk').hidden) drawHelpdesk(); }
 /* Where a thread comes from, said on its chip. The system agent and a chat the person started are the person's own;
  * a session the page did not start is known only as an agent at work, an intake or a sentinel. */
 const SOURCES = {agent: 'Agent at work', intake: 'Intake', system: 'Your system agent', conversation: 'Your chat',
@@ -4976,11 +8722,27 @@ const sourceOf = workId => isIntake(workId) ? 'intake' : workId === DOCK.mine ? 
   : (D.proposals || {})[workId] ? 'sentinel' : 'agent';
 const sourceChip = source => h('span', {class: 'src', 'data-source': source}, SOURCES[source] || SOURCES.agent);
 function dockState(state) {
-  const was = !$('#helpdesk').hidden;
+  const box = $('#helpdesk'), was = !box.hidden, open = state === 'open' || state === 'open big';
+  const anim = DOCKMOTION.anim;
+  if (open && dockGoingAway()) { reverseDock(); if (state === $('#dock').className) return; }  // called back on its way
+  if (!open && anim) {  // put away at once, as another project is chosen: no motion left running
+    Object.assign(DOCKMOTION, {anim: null, dir: null});
+    anim.cancel();
+    $('#dockTab').classList.remove('launch');
+    Object.assign(box.style, {transformOrigin: '', willChange: ''});
+  }
+  const from = open && !was && !chatDocked() ? launcherRect() : null;  // measured while the tab still shows
   $('#dock').className = state;
-  $('#helpdesk').hidden = state !== 'open' && state !== 'open big';
+  box.hidden = !open;
   dockLayout();
-  if (!was && !$('#helpdesk').hidden) drawHelpdesk();  // opened, even empty, it says what it is and how to start
+  if (open && !was) {  // opened, even empty, it says what it is and how to start, and grows out of its tab
+    if ($('#dock').dataset.place === 'float' && box.style.left) setBox(box.getBoundingClientRect(), false);  // the window may be smaller now
+    DOCK.unread = false;
+    drawDockTab();
+    drawHelpdesk();
+    if (from) growFrom(from);
+  }
+  if (!open) stopPreviews();
 }
 function dockNote(text) { DOCK.notes.push({at: Date.now(), text}); drawHelpdesk(); }
 /* session: the session the thread is with, when it is known. A thread stays with its session, so a later session of
@@ -5006,7 +8768,7 @@ function showChat(chat, {focus = false} = {}) {
   const moved = DOCK.chat !== chat;
   Object.assign(DOCK, {chat, target: chat.target, session: chat.session, label: chat.label, waiting: chat.waiting,
     since: chat.since});
-  if (moved) DOCK.pinned = true;
+  if (moved) { DOCK.pinned = true; DOCK.child = null; }  // another thread opens on its own agent, not a subagent
   MERGE.chat = chat.target;
   $('#helpdesk .call').textContent = 'Dismiss';
   drawTabs();
@@ -5070,6 +8832,7 @@ function drawThreadBar(session) {
   const icon = bar.querySelector('.icon'), withGlyph = chat.source === 'agent' && Boolean(ticket);
   icon.hidden = !withGlyph;
   if (withGlyph && icon.getAttribute('src') !== glyphOf(target)) { icon.src = glyphOf(target); icon.alt = glyphFor(target); }
+  // its status is said once, quietly, in the chat's head, `drawHelpdesk`, with the reason a login or a lost runner gives
   fill(bar.querySelector('.source'), sourceChip(chat.source));
   const task = ticket ? ticket.task || ticket.note || '' : isIntake(target) ? `The intake of ${S.project}: it records the map as it reads the project.` : '';
   const said = bar.querySelector('.task');
@@ -5089,6 +8852,20 @@ function drawThreadBar(session) {
   bar.querySelector('.stop').hidden = !running || inEditor;
   bar.querySelector('.stop').disabled = false;
   bar.querySelector('.again').hidden = !ended || isIntake(target);
+  // Cancel, beside Stop: the ticket closed as cancelled, asked first, never a completion
+  let cancel = bar.querySelector('.cancel');
+  if (!cancel) {
+    cancel = h('button', {class: 'btn sm quiet cancel', type: 'button', title: 'Cancel this ticket: its agent stops and the ticket is closed as cancelled, not completed',
+      onclick: async () => { const one = ticketOf(DOCK.target); if (one) await cancelTicket(one, cancel); }}, 'Cancel ticket…');
+    bar.querySelector('.stop').after(cancel);
+  }
+  cancel.hidden = !ticket || Boolean(ticket.done) || chat.source !== 'agent';
+  // the person's own chat says whom it is with in the head, and Dismiss ends it: no chip, no Stop, and no bar at all
+  // when nothing else is left to show in it
+  const own = ['system', 'conversation'].includes(chat.source);
+  bar.querySelector('.source').hidden = own;
+  if (own) bar.querySelector('.stop').hidden = true;
+  bar.hidden = own && !task && [...bar.querySelectorAll('button')].every(one => one.hidden);
 }
 $('#helpdesk .threadbar .task').onclick = event => event.currentTarget.classList.toggle('open');
 $('#helpdesk .threadbar .locate').onclick = () => DOCK.chat && focusThread(DOCK.chat);
@@ -5107,9 +8884,101 @@ $('#helpdesk .threadbar .again').onclick = () => {
 $('#helpdesk .log').addEventListener('scroll', () => {
   const log = $('#helpdesk .log');
   DOCK.pinned = log.scrollTop + log.clientHeight >= log.scrollHeight - 24;
+  if (DOCK.pinned) $('#helpdesk .latest').hidden = true;
 });
 new ResizeObserver(() => { const log = $('#helpdesk .log'); if (DOCK.pinned) log.scrollTop = log.scrollHeight; })
   .observe($('#helpdesk .log'));
+/* The subagents of the session on view, P016: each a child session with its own thread, opened in place and back to
+ * its parent, so the person follows the parent and every child it started from one chat. */
+function drawSubagents() {
+  let box = $('#helpdesk .subagents');
+  if (!box) { box = h('div', {class: 'subagents', role: 'group', 'aria-label': 'Subagents of this session'}); $('#helpdesk .sessionbar').after(box); }
+  const kids = DOCK.subagents || [];
+  box.hidden = !kids.length;
+  if (!kids.length) return fill(box);
+  const open = DOCK.child;
+  fill(box, h('span', {class: 'eyebrow'}, `Subagents · ${kids.length}`),
+    open ? h('button', {class: 'btn sm quiet', type: 'button', title: 'Back to the thread of the agent that started it',
+      onclick: () => { DOCK.child = null; drawHelpdesk(); }}, h('i', {class: 'i i-back', 'aria-hidden': 'true'}), 'Parent') : null,
+    kids.map(kid => h('button', {class: `btn sm${kid.session_id === open ? ' primary' : ''}`, type: 'button', 'aria-pressed': String(kid.session_id === open),
+      title: [kid.description || kid.prompt || '', `Session ${kid.session_id}`].filter(Boolean).join(' · '),
+      onclick: () => { DOCK.child = kid.session_id === open ? null : kid.session_id; drawHelpdesk(); }},
+    kid.name || kid.title || kid.agent || 'Subagent', statusChip(kid.state ? sessionStatus({...kid, work_id: DOCK.target}) : null))));
+}
+/* What the ticket on view has spent today, as dispatch spend reads it against the budgets, M01; read again at most every
+ * few seconds while the chat is drawn. */
+const SPEND = {work: null, at: 0, data: null};
+async function drawSpend(work) {
+  let box = $('#helpdesk .spend');
+  if (!box) { box = h('div', {class: 'spend', role: 'status'}); $('#helpdesk .sessionbar').after(box); }
+  // a ticket's agent only: the person's own chat holds a ticket of its own that nobody reads as work
+  if (!work || isIntake(work) || ['system', 'conversation'].includes(DOCK.chat?.source)) { box.hidden = true; return; }
+  if (SPEND.work !== work || Date.now() - SPEND.at > 5000) {
+    SPEND.work = work; SPEND.at = Date.now();
+    try { SPEND.data = await read('dispatch-spend', {id: work}); } catch { SPEND.data = null; }
+  }
+  const ticket = SPEND.data?.ticket;
+  box.hidden = !ticket;
+  if (!ticket || work !== DOCK.target) return;
+  const budgets = ticket.budgets || {};
+  const tokens = `${countOf(ticket.tokens || 0)} tokens${budgets.ticket ? ` of ${countOf(budgets.ticket)}` : ''}`;
+  const cost = ticket.cost !== null && ticket.cost !== undefined && ticket.currency
+    ? ` · ${ticket.currency === 'USD' ? '$' : `${ticket.currency} `}${Number(ticket.cost).toFixed(2)}` : '';
+  const blind = (ticket.unmetered?.tokens || []).length ? ' · some sessions report no usage' : '';
+  fill(box, h('span', {class: 'eyebrow'}, 'Spent on this ticket'), ` ${tokens}${cost}${blind}`);
+  box.title = SPEND.data.measure || '';
+}
+/* One status for a ticket and its agent, as data/status.py names it for every surface, with the reason the person
+ * needs: a cancelled ticket is never shown as completed, a login only the person can give is not an ordinary wait,
+ * and a runner that is gone is not an agent at work. {state, reason, words, why}. */
+function sessionStatus(session, signals = D.signals || []) {
+  if (!session) return null;
+  const agent = agentName(session.agent), how = String(session.how || '');
+  const login = signals.some(one => one.signal === 'login-needed' && one.active !== false
+    && (one.session_id === session.session_id || (!one.session_id && one.work_id === session.work_id)));
+  if (login || /needs a login/.test(how)) {
+    return {state: 'input_required', reason: 'login', words: 'Needs a login',
+      why: `${agent} needs a login, which only you can give: metaform dispatch login ${session.agent || ''}`.trim()};
+  }
+  if (session.state === 'running') {
+    if (session.waiting_on === 'permission') return {state: 'input_required', reason: 'permission', words: 'Needs your permission', why: 'Its request is in the thread, with the agent\'s own choices.'};
+    if (session.waiting_on === 'question') return {state: 'input_required', reason: 'question', words: 'Needs your answer', why: 'Its question is in the thread.'};
+    if (session.activity === 'working') return {state: 'running', reason: 'working', words: 'Working', why: `${agent} is working a turn.`};
+    return {state: 'running', reason: 'idle', words: 'Ready', why: `${agent}'s turn has ended; it reads your next message.`};
+  }
+  if (/runner is no longer|no longer listening|another session|runner of another/.test(how)) {
+    return {state: 'failed', reason: 'dead', words: 'Runner gone', why: `Its runner stopped: ${how}. The ticket goes back to the board for another agent.`};
+  }
+  if (/ticket is done/.test(how)) return {state: 'completed', reason: 'done', words: 'Ended', why: 'Its ticket is done.'};
+  return {state: 'submitted', reason: 'ended', words: 'Ended', why: how ? `It ended: ${how}.` : 'Its session ended.'};
+}
+function ticketStatus(ticket) {
+  if (!ticket) return null;
+  if (ticket.done) {
+    const outcome = ticket.outcome || 'completed';
+    return {state: outcome, reason: outcome, words: {completed: 'Completed', cancelled: 'Cancelled', failed: 'Failed'}[outcome] || outcome,
+      why: ticket.resolution || (outcome === 'cancelled' ? 'Cancelled by the person, not completed.' : '')};
+  }
+  const session = D.sessions.filter(one => one.work_id === ticket.id).at(-1);
+  return session ? sessionStatus(session) : null;
+}
+const statusChip = status => status ? h('span', {class: `statechip ${status.state} ${status.reason || ''}`, title: status.why || status.words,
+  'aria-label': `${status.words}${status.why ? `: ${status.why}` : ''}`}, status.words) : null;
+/* Cancel a ticket, the person's own: asked first with an optional reason; dispatch cancel stops its agent's turn with
+ * session/cancel as the person's own stop, so nothing retries it, and closes the ticket as cancelled, never completed. */
+async function cancelTicket(ticket, button = null) {
+  const reason = h('input', {type: 'text', class: 'reason', placeholder: 'Why (optional), kept as its resolution',
+    'aria-label': 'Why it is cancelled', autocomplete: 'off'});
+  const sure = await confirmAct({title: 'Cancel this ticket?', verb: 'Cancel ticket', cancel: 'Keep it',
+    text: [ticket.taken ? 'The agent working it is stopped, and nothing retries it.' : 'No agent has taken it.', reason],
+    lost: ['The ticket stays on the board only in Done, marked cancelled, not completed.']});
+  if (!sure) return false;
+  if (button) button.disabled = true;
+  const done = await wrote('/api/dispatch-cancel', {work_id: ticket.id, reason: reason.value.trim()});
+  if (done) { toast('Ticket cancelled.'); await renderAgents(); if (!$('#board').hidden) await renderBoard(); }
+  else if (button) button.disabled = false;
+  return Boolean(done);
+}
 function chatActivity(session) {
   if (!session) return {label: 'Connecting', busy: false, interruptible: false};
   if (session.state !== 'running') return {label: 'Ended', busy: false, interruptible: false};
@@ -5143,6 +9012,13 @@ async function drawHelpdesk(trouble) {
       const sessions = found.sessions || [];
       session = DOCK.session ? sessions.find(one => one.session_id === DOCK.session)
         : sessions.filter(one => one.state === 'running').at(-1);
+      // a thread waiting for its agent whose start failed takes that session, so it says why instead of waiting on
+      let failed = null;
+      if (!session && !DOCK.session && chat) {
+        failed = sessions.filter(one => one.state !== 'running' && /^it (failed|did not start)/.test(one.how || '')
+          && Date.parse(one.started || '') >= chat.since - 5000).at(-1) || null;
+        session = failed;
+      }
       if (session) {
         // a waiting thread that finds its session already open in another tab gives way to that one
         const other = DOCK.chats.find(one => one !== chat && one.session === session.session_id);
@@ -5152,30 +9028,62 @@ async function drawHelpdesk(trouble) {
         }
         DOCK.session = session.session_id;
         if (chat) chat.session = session.session_id;
+        if (chat && session.state === 'running') chat.starting = 0;  // reached: it reads what waits for it
         state = (found.states || {})[session.session_id] || null;
+        if (failed) startFailed(`${agentName(failed.agent)} did not start: ${String(failed.how).replace(/^it (failed|did not start):?\s*/, '')}`);
       }
       lines = session ? (found.lines || []).filter(line => line.session_id === session.session_id) : [];
+      // the subagents this session started, each a child thread of its own; one opened shows its own lines
+      DOCK.subagents = session ? (found.subagents || []).filter(one => one.parent === session.session_id) : [];
+      const child = DOCK.child && DOCK.subagents.find(one => one.session_id === DOCK.child);
+      if (child) lines = child.lines || [];
+      else DOCK.child = null;
     } catch (error) { trouble = error.message; }
-  }
+  } else DOCK.subagents = [];
+  drawSubagents();
+  drawSpend(target);
   DOCK.state = state;
   DOCK.agent = session?.agent || null;
+  DOCK.live = session?.state === 'running';
   drawThreadBar(session);
   drawAsked(target, session, lines);
+  mascotHeard(target, lines);  // the system agent's answer to the mascot, said in its bubble too
   drawProposals();
   drawSession($('#helpdesk .sessionbar'), {work: target, session, state});
   drawPlan($('#helpdesk .planbox'), target ? state?.plan : null);
   const activity = chatActivity(session);
   const waiting = DOCK.target && !session;
   const busy = DOCK.target && activity.busy && session?.activity !== 'waiting';
-  // one line says whom the chat is with, or that it is online; the other what that agent is doing, while there is one
-  $('#helpdesk .status').textContent = DOCK.target ? activity.label : '';
-  $('#helpdesk .status').hidden = !DOCK.target;
+  embodyOffer(target, session, lines, busy);  // a body for this chat's agent on the map, offered at a pause
+  // One quiet status in the head, on the line that says whom the chat is with: a login only the person gives and a
+  // lost runner said as such, else what the agent is doing; its dot takes the state's color.
+  const told = session ? sessionStatus(session) : null;
+  const special = told && ['login', 'dead'].includes(told.reason);
+  const connecting = Boolean(DOCK.calling) || (DOCK.target && !session);
+  const status = $('#helpdesk .status');
+  status.textContent = special ? told.words : session ? activity.label : connecting ? 'Connecting' : '';
+  status.title = special ? told.why : session ? activity.note || activity.label : connecting ? DOCK.waiting || STANDBY : '';
+  status.hidden = !status.textContent;
+  $('#helpdesk .head').dataset.state = special ? told.reason : connecting ? 'connecting' : !session ? 'none'
+    : session.state !== 'running' ? 'ended' : session.activity === 'waiting' ? 'asks' : busy ? 'working' : 'ready';
   $('#helpdesk').classList.toggle('asks', Boolean(session && session.activity === 'waiting'));
   $('#helpdesk .interrupt').disabled = !DOCK.target || !activity.interruptible;
+  $('#helpdesk .interrupt').hidden = !DOCK.target || !(activity.interruptible || session?.interrupting);
   $('#helpdesk .with').textContent = DOCK.target ? `With ${DOCK.label}` : 'Online';
-  const intro = 'You are connected to Metaform Support. Start a chat with your system agent below, or type / for the commands.';
+  // whom the chat is with is its title; the line under it then says only what it is doing
+  const named = DOCK.target ? String(DOCK.label || 'an agent').replace(/^the /, '') : '';
+  $('#helpdesk .who .title').textContent = named ? named[0].toUpperCase() + named.slice(1) : 'Metaform Support';
+  $('#helpdesk .with').classList.toggle('visually-hidden', Boolean(DOCK.target || DOCK.calling) && !status.hidden);
   const system = (key, text) => ({key, text, make: () => h('div', {class: 'system'}, text)});
   const log = $('#helpdesk .log');
+  // with nothing on view, the chat says what it is and how to start, once, as an empty conversation does
+  const intro = DOCK.target || DOCK.calling || DOCK.queue.length ? [] : [{key: 'intro', text: summonAgent() || '',
+    make: () => h('div', {class: 'empty'}, h('b', {}, 'Metaform Support'),
+      h('p', {}, 'Write a message and press Enter: your system agent starts and reads it. Type / for the chat\'s commands.'),
+      h('p', {class: 'hint'}, h('kbd', {}, 'C'), ' opens and puts it away · ', h('kbd', {}, '?'), ' every key'))}];
+  // the conversation's start, with its agent and when, above its first line
+  const begun = session ? [{key: `start:${session.session_id}`, text: session.started || '', make: () => h('div', {class: 'system begun'},
+    `${agentName(session.agent)}${session.started ? ` · ${clockOf(session.started, true)}` : ''}`)}] : [];
   // with no chat on view, each agent waiting for the person's permission, so the dock's count leads somewhere
   const asking = DOCK.target ? [] : (D.asking || []).map(one => ({key: `asks:${one.work_id}:${one.request}`, text: `${one.work_id}\n${one.tool}`,
     make: () => h('div', {class: 'system asking'}, one.signal === 'question-waiting'
@@ -5183,15 +9091,129 @@ async function drawHelpdesk(trouble) {
       : `${agentName(one.agent)} on ${workPart(one.work_id)} asks to ${one.tool || 'use a tool'}.`,
       h('button', {class: 'btn sm primary', type: 'button', onclick: () => isIntake(one.work_id) ? openIntakeChat(one.work_id, one.session_id)
         : agentAt(one.work_id, one.session_id)}, 'Open'))}));
+  // the agent at work, said as a quiet typing row where its next words will come, its fuller note on hover
+  const doing = waiting || connecting ? DOCK.waiting || STANDBY : `${agentName(session?.agent)} is working`;
+  const typing = waiting || busy || (DOCK.calling && !DOCK.target) ? [{key: 'waiting', text: doing, make: () => h('div',
+    {class: 'waiting typingrow', role: 'status', title: activity.note || ''},
+    h('span', {class: 'typing', 'aria-hidden': 'true'}, h('i'), h('i'), h('i')), h('span', {class: 'said'}, doing))}] : [];
   const changed = keyedFill(log, [
-    system('intro', intro),
+    ...intro,
     ...asking,
+    ...begun,
     ...DOCK.notes.filter(note => note.at >= DOCK.since - 1).map((note, index) => system(`note:${note.at}:${index}`, note.text)),
     ...threadRows(lines, {work: target, agent: session?.agent}),
-    ...(waiting || busy ? [{key: 'waiting', text: waiting ? DOCK.waiting : activity.note || activity.label, make: () => h('div', {class: 'system waiting'}, waiting ? DOCK.waiting : activity.note || activity.label,
-      h('span', {class: 'typing', 'aria-hidden': 'true'}, h('i'), h('i'), h('i')))}] : []),
+    ...queuedRows(),
+    ...embodyRows(target),
+    ...galleryRows(),
+    ...typing,
     ...(trouble ? [system('trouble', trouble)] : [])]);
-  if (changed && DOCK.pinned) log.scrollTop = log.scrollHeight;
+  if (changed) followLog();
+  if (changed && $('#helpdesk').hidden && lines.some(line => line.kind === 'agent_message_chunk')) markUnread();
+  deliverQueued(session);  // what was written while the agent was being reached, sent once it is there
+  chatAway(session, changed);
+}
+/* The thread follows its newest line while the person reads its end; scrolled up to read, it stays put and a quiet
+ * "New messages" button below says something came, which a click, or Alt+End, goes to. */
+function followLog(force = false) {
+  const log = $('#helpdesk .log');
+  if (force) DOCK.pinned = true;
+  const latest = $('#helpdesk .latest');
+  if (DOCK.pinned) { log.scrollTop = log.scrollHeight; latest.hidden = true; return; }
+  latest.style.bottom = `${$('#helpdesk').getBoundingClientRect().bottom - log.getBoundingClientRect().bottom + 10}px`;  // just above the box
+  latest.hidden = false;
+}
+$('#helpdesk .latest').onclick = () => { followLog(true); $('#helpdesk .say').focus({preventScroll: true}); };
+/* What came while the chat was put away: a dot on its tab, cleared as it opens. */
+function markUnread() { DOCK.unread = true; drawDockTab(); }
+/* The chat puts itself away 15 seconds after its agent is gone, its session ended, stopped or the thread dismissed:
+ * it eases away and leaves no gap, and its threads are kept, so opening it again shows the conversation. The count
+ * waits while the person types in it, has the focus in it or the pointer over it; a line arriving or the agent back,
+ * a resume, stops it. The minus in its head, Escape inside it and C put it away at any time. Docked in a pane of the
+ * workspace it stays, as a pane does. */
+const CHAT_AWAY = {timer: 0, for: null, had: false, wait: 15000};
+function chatAway(session, changed = false) {
+  const open = $('#dock').className.startsWith('open') && !chatDocked();
+  if (session?.state === 'running') CHAT_AWAY.had = true;
+  const gone = open && CHAT_AWAY.had && (session ? session.state !== 'running' : !DOCK.target);
+  if (!gone || changed) { clearTimeout(CHAT_AWAY.timer); CHAT_AWAY.timer = 0; CHAT_AWAY.for = null; if (!gone) return; }
+  const key = session?.session_id || 'none';
+  if (CHAT_AWAY.for === key && CHAT_AWAY.timer) return;
+  CHAT_AWAY.for = key;
+  clearTimeout(CHAT_AWAY.timer);
+  CHAT_AWAY.timer = setTimeout(awayNow, CHAT_AWAY.wait);
+}
+function awayNow() {
+  const box = $('#helpdesk');
+  if (box.contains(document.activeElement) || box.matches(':hover') || $('#helpdesk .say')?.value.trim()) {
+    CHAT_AWAY.timer = setTimeout(awayNow, CHAT_AWAY.wait);
+    return;
+  }
+  CHAT_AWAY.timer = 0;
+  CHAT_AWAY.had = false;
+  putChatAway();
+}
+/* Put away and opened again, the chat shrinks and fades into its tab and grows back out of it along the same path:
+ * only a transform, a translation and a scale about the tab's middle, and its opacity, so its own size and place,
+ * as moved and sized, are exactly what they were. Away leaves on the leaving curve, back arrives on the arriving one,
+ * each about 260 to 340 ms by the way it travels; one interrupted turns back from where it is. The tab answers with
+ * a small pulse as the chat lands in it. Under reduced motion only the opacity changes. The minus, Escape, C and the
+ * put-away after an agent leaves all go this way, as a chat docked at a side does. */
+function launcherRect() {
+  const dock = $('#dock');
+  dock.classList.add('measure');  // the tab, laid out where it rests but not shown, to be measured
+  const rect = $('#dockTab').getBoundingClientRect();
+  dock.classList.remove('measure');
+  return rect;
+}
+function towardsTab(panel, tab) {
+  const sx = Math.max(0.02, tab.width / panel.width), sy = Math.max(0.02, tab.height / panel.height);
+  const ox = tab.left + tab.width / 2 - panel.left, oy = tab.top + tab.height / 2 - panel.top;  // the tab's middle
+  return {transform: `translate(${(ox - panel.width / 2) * sx}px, ${(oy - panel.height / 2) * sy}px) scale(${sx}, ${sy})`,
+    origin: `${ox}px ${oy}px`, travel: Math.hypot(ox - panel.width / 2, oy - panel.height / 2)};
+}
+const dockCurve = name => `cubic-bezier(${EASE[name].join(',')})`;
+function moveDock(dir, tab) {
+  const box = $('#helpdesk'), panel = box.getBoundingClientRect(), path = towardsTab(panel, tab);
+  const still = reduced(), duration = still ? 140 : Math.round(Math.min(340, 260 + path.travel * 0.06));
+  const shut = still ? {opacity: 0} : {transform: path.transform, opacity: 0.12};
+  const full = still ? {opacity: 1} : {transform: 'none', opacity: 1};
+  DOCKMOTION.anim?.cancel();
+  // on its way out the focus leaves it, so C, or a click on the page, can call it back before it lands
+  if (dir === 'away' && box.contains(document.activeElement)) document.activeElement.blur();
+  Object.assign(box.style, {transformOrigin: path.origin, willChange: still ? 'opacity' : 'transform, opacity'});
+  const anim = box.animate(dir === 'away' ? [full, shut] : [shut, full],
+    {duration, easing: dockCurve(dir === 'away' ? 'leave' : 'arrive'), fill: 'both'});
+  Object.assign(DOCKMOTION, {anim, dir});
+  $('#dockTab').classList.toggle('launch', dir === 'back');  // the tab, not the dock, whose class is its state
+  anim.onfinish = () => {
+    if (DOCKMOTION.anim !== anim) return;
+    const away = (DOCKMOTION.dir === 'away') === (anim.playbackRate > 0);
+    Object.assign(DOCKMOTION, {anim: null, dir: null});
+    $('#dockTab').classList.remove('launch');
+    if (away && $('#dock').className.startsWith('open')) {
+      dockState('resting');
+      const launcher = $('#dockTab');
+      if (!still) launcher.animate([{scale: '1'}, {scale: '1.08'}, {scale: '1'}], {duration: 360, easing: dockCurve('arrive')});
+      launcher.focus({preventScroll: true});
+    } else if (!away) $('#helpdesk .say').focus({preventScroll: true});
+    anim.cancel();
+    Object.assign(box.style, {transformOrigin: '', willChange: ''});
+  };
+}
+function reverseDock() {
+  const anim = DOCKMOTION.anim;
+  if (!anim) return;
+  anim.reverse();  // from where it is, back the way it came
+  $('#dockTab').classList.toggle('launch', (DOCKMOTION.dir === 'back') === (anim.playbackRate > 0));
+}
+function growFrom(tab) { moveDock('back', tab); }
+function putChatAway() {
+  const box = $('#helpdesk');
+  if (box.hidden || chatDocked()) return;
+  if (DOCKMOTION.anim) { if (!dockGoingAway()) reverseDock(); return; }  // on its way out of the tab: it turns back
+  $('#dockMenu').hidden = true;
+  if (SESSIONPOP.el) SESSIONPOP.el.hidden = true;
+  moveDock('away', launcherRect());
 }
 /* The open questions an agent at work on a ticket asked at its node, answered as every question is, VIEW-021; a
  * permission request is answered from its own card in the thread, so its question at the node is not shown again. */
@@ -5214,7 +9236,8 @@ async function drawAsked(target, session, lines) {
 /* The chat's own commands, offered with the agent's when the person types / in the message box. */
 const DOCK_COMMANDS = [{name: 'help', description: 'What the chat\'s commands do'},
   {name: 'list', description: 'The agents at work, numbered'}, {name: 'chat', hint: '<number>', description: 'Talk with an agent at work, by its number in /list'},
-  {name: 'system', description: 'Start a chat with your system agent'}];
+  {name: 'system', description: 'Start a chat with your system agent'},
+  {name: 'apps', description: 'The views the enabled modules offer, each opened in a panel'}];
 const dockOffered = () => {
   const agents = commandsOf(DOCK.target ? DOCK.state : null, DOCK.agent);
   return [...agents, ...DOCK_COMMANDS.filter(one => !agents.some(agent => agent.name === one.name)).map(one => ({...one, from: 'This chat'}))];
@@ -5226,7 +9249,7 @@ async function dockCommand(text) {
     if (await wrote('/api/dispatch-message', {work_id: DOCK.target, session: DOCK.session, text})) drawHelpdesk();
     return;
   }
-  if (command === 'help') return dockNote('/list shows the agents at work · /chat <number> talks with one of them · /system calls your system agent · the agent\'s own commands are offered as you type /.');
+  if (command === 'help') return dockNote('/list shows the agents at work · /chat <number> talks with one of them · /system calls your system agent · /apps lists the views the modules offer · the agent\'s own commands are offered as you type /.');
   if (command === 'list') {
     let found = [];
     try { found = (await read('dispatch-sessions', {thread: 'false'})).sessions || []; } catch (error) { return dockNote(error.message); }
@@ -5242,25 +9265,49 @@ async function dockCommand(text) {
     return dockNote(`You are now talking with ${DOCK.label}. Its work goes on while you talk.`);
   }
   if (command === 'system') return callSystem();
+  if (command === 'apps') return showGallery();
   dockNote(`${text} is not a command here. Type /help.`);
 }
+/* Call: the person's system agent starts with the agent and settings chosen in the line at the top, resuming the
+ * last conversation while Resume is checked, which the server's system chat does. A start that fails says why in
+ * the chat, and what was written for it goes back into the box. */
 async function callSystem() {
   syncResume();
   dockState($('#dock').className.startsWith('open') ? $('#dock').className : 'open');
-  Object.assign(DOCK, {since: Date.now()});
+  Object.assign(DOCK, {since: Date.now(), waiting: STANDBY});
   $('#helpdesk .call').textContent = 'Dismiss';
-  dockNote(STANDBY);
   const call = DOCK.calling = {};
+  drawHelpdesk();  // the chat says it is reaching the agent, where its first words will come
   const agent = summonAgent();
-  const started = await wrote('/api/system-chat', agent ? {agent} : {});
+  const done = await posted('/api/system-chat', agent ? {agent} : {});
+  const started = done.ok ? done.body : null;
   if (DOCK.calling !== call) {  // dismissed while it was being reached: it is stopped as soon as it answers
-    if (started) await wrote('/api/dispatch-stop', {work_id: started.work_id});
-    return;
+    if (started) stayedOff(await stopOnceStarted(started.work_id));
+    return null;
   }
   DOCK.calling = null;
-  if (!started) { $('#helpdesk .call').textContent = 'Call'; return; }
+  if (!started) {
+    $('#helpdesk .call').textContent = DOCK.target ? 'Dismiss' : 'Call';
+    startFailed(done.body?.error || 'The agent did not start.', done.body?.next);
+    return null;
+  }
   DOCK.mine = started.work_id;
   openHelpdesk(started.work_id, 'your system agent', STANDBY, started.session_id, 'system');
+  reaching(started);
+  return started;
+}
+/* An agent dismissed while it was being reached is still starting when the start answers, and a stop sent then finds
+ * nothing to stop yet: it is stopped once its session is there, looked for every half second for up to half a
+ * minute, or not at all when its start failed. */
+async function stopOnceStarted(work) {
+  for (let tries = 0; tries < 60; tries++) {
+    let rows = [];
+    try { rows = (await read('dispatch-sessions', {id: work, thread: 'false'})).sessions || []; } catch { rows = []; }
+    if (rows.some(one => one.state === 'running')) return wrote('/api/dispatch-stop', {work_id: work});
+    if (rows.some(one => /^it (failed|did not start)/.test(one.how || '') && Date.now() - Date.parse(one.started || '') < 60000)) return null;
+    await new Promise(wait => setTimeout(wait, 500));
+  }
+  return null;
 }
 /* Chat on anything the page shows, VIEW-042: a ticket, open or done, a node, a question, or an agent's session. An
  * agent at work on it is talked to directly; otherwise one starts to talk, and Dismiss stops it. */
@@ -5268,11 +9315,67 @@ async function talkAbout(given, label) {
   // an intake's agent is a conversation already, never a ticket: its chat opens on its session
   if (isIntake(given.id)) return openIntakeChat(given.id, null);
   const agent = summonAgent();  // the agent a new chat starts with; one at work on it is talked to as it is
-  const started = await wrote('/api/talk', {...given, ...(agent ? {agent} : {})});
-  if (!started) return;
+  DOCK.talking = true;  // a message written meanwhile waits for this start, and starts no other
+  let done;
+  try { done = await posted('/api/talk', {...given, ...(agent ? {agent} : {})}); } finally { DOCK.talking = false; }
+  const started = done.ok ? done.body : null;
+  if (!started) { startFailed(done.body?.error || 'The agent did not start.', done.body?.next); return null; }
   if (started.conversation) DOCK.mine = started.work_id;
   openHelpdesk(started.work_id, label, started.state === 'running' ? 'It answers when its current step ends.' : STANDBY,
     started.session_id, started.conversation ? 'conversation' : null);
+  reaching(started);
+  return started;
+}
+/* A start that answered before its session runs: a resume names its session at once, though the session is live only
+ * once the resume is done. Until then the thread is being reached, and a message written meanwhile waits for it and
+ * starts nothing more; a start that never comes is given up after a minute and a half. */
+function reaching(started) {
+  if (DOCK.chat && DOCK.chat.target === started.work_id) DOCK.chat.starting = started.state === 'running' ? 0 : Date.now();
+}
+const beingReached = chat => Boolean(chat?.starting) && Date.now() - chat.starting < 90000;
+/* Sending with no agent there starts one, as Call does, or, on a thread whose agent has ended, as Continue does; the
+ * message waits in the thread, marked as waiting, and goes as the first message once the session is there, after a
+ * resume has finished. What is written meanwhile waits behind it, in order. */
+function ensureAgent() {
+  if (DOCK.calling || DOCK.talking || (DOCK.target && !DOCK.session) || beingReached(DOCK.chat)) return;  // being reached already
+  if (!DOCK.target) { callSystem(); return; }
+  if (DOCK.live) return;
+  const chat = DOCK.chat;
+  if (!chat || isIntake(chat.target)) { startFailed('This conversation has ended; an intake is not taken up again from here.'); return; }
+  if (chat.source === 'system' || chat.target === DOCK.mine && chat.source !== 'conversation') { callSystem(); return; }
+  talkAbout({session: `${chat.target}:${chat.session}`}, chat.label);
+}
+function queuedRows() {
+  DOCK.queue = DOCK.queue.filter(item => !(item.state === 'sent' && (DOCK.heard.has(item.text.trim()) || Date.now() - item.at > 30000)));
+  return DOCK.queue.map((item, index) => ({key: `queued:${item.id}`, text: `${item.state}:${index}`,
+    make: () => messageRow(item.text, {mine: true, who: 'You', first: index === 0, at: item.at,
+      pending: {waiting: 'Sent once the agent is there', sending: 'Sending…', sent: 'Sent'}[item.state] || ''})}));
+}
+let QUEUE_ID = 0;
+async function deliverQueued(session) {
+  if (DOCK.delivering || DOCK.calling || session?.state !== 'running' || session.session_id !== DOCK.session
+    || !DOCK.queue.some(one => one.state === 'waiting')) return;
+  const work = DOCK.target;
+  DOCK.delivering = true;
+  try {
+    for (const item of DOCK.queue.filter(one => one.state === 'waiting')) {
+      if (DOCK.target !== work) return;
+      item.state = 'sending';
+      const done = await posted('/api/dispatch-message', {work_id: work, session: session.session_id, text: item.text});
+      if (!done.ok) { item.state = 'waiting'; startFailed(done.body?.error || 'The message was not sent.', done.body?.next); return; }
+      item.state = 'sent';
+    }
+  } finally { DOCK.delivering = false; }
+  drawHelpdesk();
+}
+/* A start or a send that failed: why, in the chat, and every message still waiting back in the box, so nothing
+ * written is lost. */
+function startFailed(reason, next = null) {
+  const waiting = DOCK.queue.filter(item => item.state !== 'sent').map(item => item.text);
+  DOCK.queue = DOCK.queue.filter(item => item.state === 'sent');
+  const box = $('#helpdesk .say');
+  if (waiting.length) { box.value = [...waiting, box.value.trim()].filter(Boolean).join('\n\n'); growSay(); }
+  dockNote(`${reason}${next ? ` Next: ${next}` : ''}${waiting.length ? ' Your message is back in the box.' : ''}`);
 }
 const chatButton = (given, label) => h('button', {class: 'chat', title: `Talk with an agent about ${label}`,
   onclick: event => { event.stopPropagation(); talkAbout(given, label); }}, 'Chat');
@@ -5282,54 +9385,145 @@ function nodeTalk(id) {
   return {node: join ? join.receiver_address : S.elements.get(id)?.element.address || id};
 }
 async function dismiss() {
+  if (DOCK.queue.some(item => item.state !== 'sent')) startFailed('Not sent: the agent was dismissed.');
   if (DOCK.calling) {
     DOCK.calling = null;
-    $('#helpdesk .call').textContent = 'Call';
+    $('#helpdesk .call').textContent = DOCK.target ? 'Dismiss' : 'Call';
     return dockNote('The call was cancelled.');
   }
   const chat = DOCK.chat;
   // the agent the person summoned is stopped; an agent at work on its ticket goes on, and only its thread closes
   const summoned = Boolean(chat && (chat.mine || chat.target === DOCK.mine));
-  if (summoned) await wrote('/api/dispatch-stop', {work_id: chat.target});
+  const stopped = summoned ? await wrote('/api/dispatch-stop', {work_id: chat.target}) : null;
   if (DOCK.target === DOCK.mine) DOCK.mine = null;
   DOCK.chats = DOCK.chats.filter(one => one !== chat);
   if (ROAM.focus === chat?.target) ROAM.focus = null;
-  dockNote(summoned || !chat ? 'The agent was dismissed.' : 'The thread was closed; its agent works on, under Agent deployed.');
+  dockNote(summoned || !chat ? 'The agent was dismissed.' + stayedOff(stopped) : 'The thread was closed; its agent works on, under Agent deployed.');
   if (DOCK.chats.length) return showChat(DOCK.chats.at(-1));  // the next open chat comes on view
-  Object.assign(DOCK, {target: null, session: null, label: '', chat: null});
+  // no agent is there now: a message sent next starts one, as Call does, and the chat says how to start again
+  Object.assign(DOCK, {target: null, session: null, label: '', chat: null, live: false, state: null, agent: null});
   MERGE.chat = null;
   $('#helpdesk .call').textContent = 'Call';
   drawTabs();
+  drawHelpdesk();
 }
 $('#helpdesk .interrupt').onclick = () => interruptChat(DOCK.target, DOCK.session, $('#helpdesk .interrupt'));
 $('#helpdesk .call').onclick = () => (DOCK.target || DOCK.calling ? dismiss() : callSystem());
-/* Resume beside Call: the dispatch_resume_chats setting of this project, read when the dock opens and saved on a change. */
+/* Resume and Stay connected beside Call: the dispatch_resume_chats and dispatch_stay_connected settings of this
+ * project, read when the dock opens and saved on a change. */
 async function syncResume() {
-  const project = S.project, box = $('#helpdesk .resume input');
+  const project = S.project, box = $('#helpdesk .resume input'), stay = $('#helpdesk .stay input');
+  if (!project) return;  // read with the project's own settings, once one is shown
   try {
-    const row = ((await read('settings')).settings || []).find(one => one.key === 'dispatch_resume_chats');
+    const rows = (await read('settings')).settings || [];
+    const row = rows.find(one => one.key === 'dispatch_resume_chats'), kept = rows.find(one => one.key === 'dispatch_stay_connected');
     if (S.project === project && row) box.checked = row.value !== false;
+    if (S.project === project && kept) stay.checked = kept.value === true;
   } catch { /* the box keeps what it shows */ }
 }
 $('#helpdesk .resume input').onchange = async event => {
   const done = await posted('/api/settings', {key: 'dispatch_resume_chats', value: event.target.checked});
   if (!done.ok) { event.target.checked = !event.target.checked; dockNote(done.body.error || 'Resume was not saved.'); }
 };
+$('#helpdesk .stay input').onchange = async event => {
+  const done = await posted('/api/settings', {key: 'dispatch_stay_connected', value: event.target.checked});
+  if (!done.ok) { event.target.checked = !event.target.checked; dockNote(done.body.error || 'Stay connected was not saved.'); }
+  else if (event.target.checked) dockNote('Your system agent stays connected to this project; closing the chat never stops it, and Dismiss turns this off.');
+};
+/* The person's stop of their system agent turns Stay connected off for the project, dispatch's `disconnect`: the box
+ * follows, and the dock says so. `stopped` is the stop's answer. */
+function stayedOff(stopped) {
+  if (stopped?.stay_connected !== false) return '';
+  $('#helpdesk .stay input').checked = false;
+  return ' Stay connected is off for this project until you check it again.';
+}
 $('#helpdesk .compose').onsubmit = async event => {
   event.preventDefault();
   const box = $('#helpdesk .say'), text = box.value.trim();
   if (!text && !DOCK.files.length) return;
-  box.value = '';
-  if (text.startsWith('/')) return dockCommand(text);
-  if (!DOCK.target) return dockNote('Press Call to reach an agent first, or type /list to talk with one at work.');
+  if (text.startsWith('/')) { box.value = ''; return dockCommand(text); }
   const attached = DOCK.files.length ? '\n\nAttached files, saved in the project:\n' + DOCK.files.map(file => `- ${file}`).join('\n') : '';
-  if (await wrote('/api/dispatch-message', {work_id: DOCK.target, session: DOCK.session, text: text + attached})) {
+  box.value = '';
+  growSay();
+  followLog(true);  // what the person sends is followed to the end of the thread
+  if (!DOCK.live || DOCK.queue.some(item => item.state !== 'sent')) {  // no agent there yet: it waits, and one is reached
+    DOCK.queue.push({id: ++QUEUE_ID, text: text + attached, state: 'waiting', at: Date.now()});
+    DOCK.files = []; fill($('#helpdesk .files'));
+    ensureAgent();
+    drawHelpdesk();
+    return;
+  }
+  if (await wrote('/api/dispatch-message', {work_id: DOCK.target, session: DOCK.session, text: text + attached,
+    ...await voiceAudio(text, DOCK.state?.capabilities?.audio === true)})) {  // a spoken message's recording, where taken
     DOCK.files = []; fill($('#helpdesk .files')); drawHelpdesk();
-  } else box.value = text;
+  } else { box.value = text; growSay(); }
 };
 $('#helpdesk .say').addEventListener('keydown', event => {  // Enter sends, Shift+Enter starts a new line
-  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); $('#helpdesk .compose').requestSubmit(); }
+  // an IME's Enter confirms the word it composes and never sends: isComposing, or Safari's 229 as composition ends
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); $('#helpdesk .compose').requestSubmit(); }
+  // Page Up and Page Down read the conversation without leaving the box
+  if ((event.key === 'PageUp' || event.key === 'PageDown') && !event.altKey && !event.ctrlKey && !event.metaKey) {
+    event.preventDefault();
+    const log = $('#helpdesk .log');
+    log.scrollBy({top: (event.key === 'PageUp' ? -1 : 1) * log.clientHeight * 0.85, behavior: reduced() ? 'auto' : 'smooth'});
+  }
 });
+/* The chat's own keys, anywhere in it, each in the `?` reference: interrupt the turn, the thread before or after, the
+ * newest message, the agent's settings. */
+$('#helpdesk').addEventListener('keydown', event => {
+  if (event.isComposing) return;
+  const mod = MAC ? event.metaKey : event.ctrlKey;
+  if (mod && event.key === '.') {
+    event.preventDefault();
+    if (!$('#helpdesk .interrupt').disabled) $('#helpdesk .interrupt').click();
+    return;
+  }
+  if (!event.altKey || event.ctrlKey || event.metaKey) return;
+  if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+    if (DOCK.chats.length < 2) return;
+    event.preventDefault();
+    const at = DOCK.chats.indexOf(DOCK.chat), by = event.key === 'ArrowUp' ? -1 : 1;
+    showChat(DOCK.chats[(at + by + DOCK.chats.length) % DOCK.chats.length], {focus: true});
+  } else if (event.key === 'End') { event.preventDefault(); followLog(true); }
+  else if (event.key === ',') { event.preventDefault(); openSessionPop(); }
+});
+function openSessionPop() {
+  const line = $('#helpdesk .sessionline');
+  if (!line) return toast('The agent\'s settings show once one is chosen.');
+  if (sessionPop().hidden) line.click();
+  requestAnimationFrame(() => sessionPop().querySelector(FOCUSABLE)?.focus());
+}
+/* The head's menu: what is used now and then, each with its key. */
+const DOCKMENU = overlay($('#dockMenu'), {kind: 'menu'});
+function drawDockMenu() {
+  const big = $('#dock').className === 'open big', side = ['left', 'right'].includes($('#dock').dataset.place);
+  const item = (label, key, run, shown = true) => shown ? h('button', {type: 'button', role: 'menuitem', onclick: () => {
+    DOCKMENU.hidden = true; run(); }}, h('span', {}, label), key ? h('kbd', {}, key) : null) : null;
+  fill(DOCKMENU,
+    item('Give this agent a body…', 'B', askEmbody, embodyHooks() && embodiable(DOCK.chat)),
+    item('Agent and settings…', 'Alt ,', openSessionPop),
+    item('Apps…', '/apps', showGallery),
+    item(big ? 'Back to its size' : 'Make it large', null, () => $('#helpdesk .big').click(), !narrowPage()),
+    item(side ? 'Float it' : 'Dock it at the side', null, () => $('#helpdesk .place').click(), !narrowPage()),
+    item('Put it back in its corner', 'Double-click head', resetDock, !narrowPage() && !big),
+    h('hr'),
+    item('Keyboard shortcuts', '?', () => openHelp()));
+}
+$('#helpdesk .more').onclick = event => {
+  event.stopPropagation();
+  if (!DOCKMENU.hidden) { DOCKMENU.hidden = true; return; }
+  drawDockMenu();
+  DOCKMENU.hidden = false;
+};
+/* The message box grows with what is typed, from one line to about five, and scrolls only past that. */
+function growSay() {
+  const box = $('#helpdesk .say'), most = parseFloat(getComputedStyle(box).lineHeight || '20') * 5 + 14;
+  box.style.height = 'auto';
+  box.style.height = `${Math.min(box.scrollHeight + 2, most)}px`;
+  box.style.overflowY = box.scrollHeight + 2 > most ? 'auto' : 'hidden';
+}
+$('#helpdesk .say').addEventListener('input', growSay);
+$('#helpdesk .compose').addEventListener('submit', () => requestAnimationFrame(growSay));
 $('#helpdesk .clip input').onchange = async event => {
   for (const file of event.target.files) {
     const data = await new Promise(done => { const r = new FileReader(); r.onload = () => done(String(r.result).split(',')[1] || ''); r.readAsDataURL(file); });
@@ -5341,25 +9535,44 @@ $('#helpdesk .clip input').onchange = async event => {
 };
 $('#dockTab').onclick = () => dockState('open');
 $('#dockTab').onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); dockState('open'); } };
-$('#helpdesk .min').onclick = () => dockState('resting');
+$('#helpdesk .min').onclick = () => putChatAway();  // eased away; its threads are kept
+$('#helpdesk .min').title = 'Put the chat away; its conversation is kept (C, or Escape inside it)';
 // On the overlay stack as the dock: Escape puts it away only from inside it, and it stays usable over the board.
-overlay($('#helpdesk'), {kind: 'dock', close: () => dockState('resting'), focus: '.say'});
+overlay($('#helpdesk'), {kind: 'dock', close: () => putChatAway(), focus: '.say'});
 $('#helpdesk .big').onclick = () => dockState($('#dock').className === 'open big' ? 'open' : 'open big');
-/* Where the dock stands: in the corner; docked at the left or the right of the page, which makes room for it; or
- * floating where its head was dragged, as every window of the page is moved, VIEW-048. Let go at a side of the page it
- * docks there; the head's Dock button docks it at the right, and from a side puts it back in the corner. The place is
- * kept in this browser. On a narrow screen it is always the sheet at the bottom. */
-const DOCK_PLACE = 'metaform.dock';
+/* Where the dock stands: in the corner at its first size; docked at the left or the right of the page, which makes
+ * room for it, as wide as its inner edge is dragged; or floating where its head was dragged, VIEW-048, at the size its
+ * edges and corners were dragged to. It is kept wholly on the screen and settles gently against an edge it is let go
+ * near; let go with the pointer at the page's very side it docks there. The head's Dock button docks it at the right,
+ * and from a side puts it back in the corner; a double-click on the head puts it back in the corner at its first
+ * size. Its place and size are kept in this browser. On a narrow screen it is always the sheet at the bottom. */
+const DOCK_PLACE = 'metaform.dock', DOCK_BOX = 'metaform.dockBox';
+const DOCK_MIN = {width: 340, height: 360}, DOCK_EDGE = 12, DOCK_SNAP = 28;
 const narrowPage = () => matchMedia('(max-width: 820px)').matches;
+const keptBox = () => { try { return JSON.parse(localStorage.getItem(DOCK_BOX) || 'null'); } catch { return null; } };
+/* A floating place and size, inside the window: never larger than it, never past its edges. */
+function fitBox({left, top, width, height}) {
+  width = Math.round(Math.max(DOCK_MIN.width, Math.min(width, innerWidth - 2 * DOCK_EDGE)));
+  height = Math.round(Math.max(DOCK_MIN.height, Math.min(height, innerHeight - 2 * DOCK_EDGE)));
+  left = Math.round(Math.max(0, Math.min(left, innerWidth - width)));
+  top = Math.round(Math.max(0, Math.min(top, innerHeight - height)));
+  return {left, top, width, height};
+}
+function setBox(given, keep = true) {
+  const box = $('#helpdesk'), fitted = fitBox(given);
+  for (const side of ['left', 'top', 'width', 'height']) box.style[side] = `${fitted[side]}px`;
+  box.style.transform = '';
+  if (keep) try { localStorage.setItem(DOCK_BOX, JSON.stringify(fitted)); } catch { /* storage can be blocked */ }
+  return fitted;
+}
 function placeDock(place, keep = true) {
   const box = $('#helpdesk');
   place = ['corner', 'left', 'right', 'float'].includes(place) ? place : 'corner';
   $('#dock').dataset.place = place;
   if (place !== 'float') for (const side of ['left', 'top', 'width', 'height', 'transform']) box.style[side] = '';
-  else if (!box.style.left) {  // floating again where the person last put it, inside the page
-    const kept = places().helpdesk || {left: innerWidth - 440, top: 80};
-    box.style.left = Math.round(Math.max(8, Math.min(kept.left, innerWidth - 120))) + 'px';
-    box.style.top = Math.round(Math.max(8, Math.min(kept.top, innerHeight - 120))) + 'px';
+  else if (!box.style.left) {  // floating again where the person last put it, at the size they gave it
+    const now = box.getBoundingClientRect();
+    setBox(keptBox() || {left: innerWidth - now.width - 24, top: 80, width: now.width || 460, height: now.height || 640}, false);
   }
   if (keep) try { localStorage.setItem(DOCK_PLACE, place); } catch { /* storage can be blocked; it opens in the corner */ }
   const side = place === 'left' || place === 'right', button = $('#helpdesk .place');
@@ -5376,10 +9589,105 @@ function dockLayout() {
   foldHeader();  // the header's row is narrower beside a docked chat, and folds when it no longer holds everything
 }
 $('#helpdesk .place').onclick = () => placeDock(['left', 'right'].includes($('#dock').dataset.place) ? 'corner' : 'right');
-movable($('#helpdesk'), {handle: '.head',
-  start: () => { if (narrowPage() || $('#dock').className === 'open big') return false; $('#dock').dataset.place = 'float'; dockLayout(); },
-  end: last => placeDock(last.clientX >= innerWidth - 32 ? 'right' : last.clientX <= 32 ? 'left' : 'float')});
-addEventListener('resize', dockLayout);
+/* A change of place shown as motion: the chat drawn where it now is, eased there from where it was by a transform
+ * alone, on the arriving curve. */
+function settleFrom(before) {
+  const box = $('#helpdesk'), after = box.getBoundingClientRect();
+  if (reduced() || !before || box.hidden) return;
+  const dx = before.left - after.left, dy = before.top - after.top;
+  const sx = before.width / after.width, sy = before.height / after.height;
+  if (Math.abs(dx) < 1 && Math.abs(dy) < 1 && Math.abs(sx - 1) < 0.01 && Math.abs(sy - 1) < 0.01) return;
+  box.animate([{transformOrigin: '0 0', transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`},
+    {transformOrigin: '0 0', transform: 'none'}], {duration: durFor(Math.hypot(dx, dy)), easing: dockCurve('arrive')});
+}
+const dockMovable = () => !narrowPage() && !chatDocked() && $('#dock').className === 'open' && !DOCKMOTION.anim;
+/* The head moves it: a press that moves more than a few pixels takes it, a click leaves it where it is. */
+$('#helpdesk .head').addEventListener('pointerdown', event => {
+  if (event.button || event.target.closest('button, input, select, textarea, a, [role=button]') || !dockMovable()) return;
+  const box = $('#helpdesk'), at = [event.clientX, event.clientY];
+  let grip = null, size = null;
+  const move = moved => {
+    if (!grip) {
+      if (Math.hypot(moved.clientX - at[0], moved.clientY - at[1]) < 4) return;
+      const from = box.getBoundingClientRect(), side = ['left', 'right'].includes($('#dock').dataset.place);
+      const kept = keptBox();  // off a side it floats at its floating size, still under the pointer
+      size = side ? {width: kept?.width || Math.min(from.width, 520), height: kept?.height || Math.min(from.height, 680)}
+        : {width: from.width, height: from.height};
+      grip = [Math.min(at[0] - from.left, size.width - 48), Math.min(at[1] - from.top, 40)];
+      $('#dock').dataset.place = 'float';
+      box.classList.add('dragging');
+      dockLayout();
+    }
+    setBox({left: moved.clientX - grip[0], top: moved.clientY - grip[1], ...size}, false);
+  };
+  const done = last => {
+    removeEventListener('pointermove', move); removeEventListener('pointerup', done); removeEventListener('pointercancel', done);
+    box.classList.remove('dragging');
+    if (!grip) return;
+    if (last.clientX >= innerWidth - 8 || last.clientX <= 8) return placeDock(last.clientX <= 8 ? 'left' : 'right');
+    const before = box.getBoundingClientRect(), near = {...fitBox(before)};
+    // near an edge it settles against it, a small margin in
+    if (near.left < DOCK_SNAP) near.left = DOCK_EDGE;
+    if (near.top < DOCK_SNAP) near.top = DOCK_EDGE;
+    if (innerWidth - (near.left + near.width) < DOCK_SNAP) near.left = innerWidth - near.width - DOCK_EDGE;
+    if (innerHeight - (near.top + near.height) < DOCK_SNAP) near.top = innerHeight - near.height - DOCK_EDGE;
+    setBox(near);
+    placeDock('float');
+    settleFrom(before);
+  };
+  addEventListener('pointermove', move);
+  addEventListener('pointerup', done);
+  addEventListener('pointercancel', done);
+  event.preventDefault();
+});
+/* Back to the corner at its first size, from wherever it is: a double-click on the head. */
+function resetDock() {
+  if (narrowPage() || chatDocked()) return;
+  const before = $('#helpdesk').getBoundingClientRect();
+  try { localStorage.removeItem(DOCK_BOX); } catch { /* storage can be blocked */ }
+  if ($('#dock').className === 'open big') dockState('open');
+  placeDock('corner');
+  settleFrom(before);
+}
+$('#helpdesk .head').addEventListener('dblclick', event => { if (!event.target.closest('button, [role=button]')) resetDock(); });
+/* Every edge and corner sizes it, floating or in its corner; in the corner it floats from where it stands. */
+for (const edge of ['n', 'e', 's', 'w', 'ne', 'nw', 'se', 'sw']) {
+  const grip = h('div', {class: `grip grip-${edge}`, 'data-edge': edge, 'aria-hidden': 'true'});
+  $('#helpdesk').append(grip);
+  grip.addEventListener('pointerdown', event => {
+    if (event.button || !dockMovable() || ['left', 'right'].includes($('#dock').dataset.place)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const box = $('#helpdesk'), start = box.getBoundingClientRect(), at = [event.clientX, event.clientY];
+    $('#dock').dataset.place = 'float';
+    setBox(start, false);
+    box.classList.add('sizing');
+    const move = moved => {
+      const dx = moved.clientX - at[0], dy = moved.clientY - at[1];
+      let {left, top, width, height} = start;
+      if (edge.includes('e')) width = Math.min(start.width + dx, innerWidth - start.left);
+      if (edge.includes('s')) height = Math.min(start.height + dy, innerHeight - start.top);
+      if (edge.includes('w')) { left = Math.max(0, Math.min(start.left + dx, start.right - DOCK_MIN.width)); width = start.right - left; }
+      if (edge.includes('n')) { top = Math.max(0, Math.min(start.top + dy, start.bottom - DOCK_MIN.height)); height = start.bottom - top; }
+      setBox({left, top, width: Math.max(DOCK_MIN.width, width), height: Math.max(DOCK_MIN.height, height)}, false);
+    };
+    const done = () => {
+      removeEventListener('pointermove', move); removeEventListener('pointerup', done); removeEventListener('pointercancel', done);
+      box.classList.remove('sizing');
+      setBox(box.getBoundingClientRect());
+      placeDock('float');
+    };
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', done);
+    addEventListener('pointercancel', done);
+  });
+}
+addEventListener('resize', () => {  // a smaller window keeps the floating chat whole and on it
+  if ($('#dock').dataset.place === 'float' && $('#helpdesk').style.left && !$('#helpdesk').hidden && !DOCKMOTION.anim) {
+    setBox($('#helpdesk').getBoundingClientRect(), false);
+  }
+  dockLayout();
+});
 try { placeDock(localStorage.getItem(DOCK_PLACE), false); } catch { placeDock('corner', false); }
 document.addEventListener('pointermove', event => {  // near the sliver it lifts enough to click; away, it settles back
   const dock = $('#dock');
@@ -5656,6 +9964,8 @@ function card(ticket, place, total) {
       conditionLabel(ticket),
       ticket.done && ticket.outcome && ticket.outcome !== 'completed' ? h('span', {class: `outcome ${ticket.outcome}`,
         title: `Closed ${ticket.outcome}, not completed`}, ticket.outcome === 'cancelled' ? 'Cancelled' : ticket.outcome) : null,
+      // its agent's status with the reason, the same words as the chat's thread: working, needs a login, runner gone
+      !ticket.done ? statusChip(ticketStatus(ticket)) : null,
       ticket.taken_by ? h('span', {class: 'by'}, ticket.taken_by) : null,
       h('span', {class: 'age', title: `${ticket.done ? 'Done' : ticket.taken ? 'Taken' : 'Opened'} ${dated(ticket.done || ticket.taken || ticket.created)}`},
         ago(ticket.done || ticket.taken || ticket.created))),
@@ -5677,18 +9987,7 @@ function card(ticket, place, total) {
       ticket.done ? null : h('button', {class: 'btn sm quiet cancel', type: 'button',
         title: 'Cancel this ticket: its agent stops and the ticket is closed as cancelled', onclick: async event => {
           event.stopPropagation();
-          const button = event.currentTarget;
-          const reason = h('input', {type: 'text', class: 'reason', placeholder: 'Why (optional), kept as its resolution',
-            'aria-label': 'Why it is cancelled', autocomplete: 'off'});
-          const sure = await confirmAct({title: 'Cancel this ticket?', verb: 'Cancel ticket', cancel: 'Keep it',
-            text: [ticket.taken ? 'The agent working it is stopped, and nothing retries it.' : 'No agent has taken it.', reason],
-            lost: ['The ticket stays on the board only in Done, marked cancelled, not completed.']});
-          if (!sure) return;
-          button.disabled = true;
-          if (await wrote('/api/dispatch-cancel', {work_id: ticket.id, reason: reason.value.trim()})) {
-            toast('Ticket cancelled.');
-            await renderBoard();
-          } else button.disabled = false;
+          await cancelTicket(ticket, event.currentTarget);
         }}, 'Cancel'),
       h('span', {class: 'grow'}),
       h('div', {class: 'priority', role: 'group', 'aria-label': 'Card order'},
@@ -5752,7 +10051,7 @@ async function renderBoard() {
   if (S.project !== project || S.base !== metaform) return;
   drawBoard();
 }
-$('#boardBtn').onclick = async () => { $('#board').hidden = false; await renderBoard(); };
+$('#boardBtn').onclick = async () => { if (WS.reveal('board')) return; $('#board').hidden = false; await renderBoard(); };
 $('#board .close').onclick = () => { $('#board').hidden = true; };
 overlay($('#board'), {kind: 'dialog', focus: '.search'});
 $('#board .start-all').onclick = async () => {
@@ -5934,7 +10233,9 @@ function ticketPart(ticket) {
 // a ticket's own glyph, VIEW-040: the map module keeps it and the work read shows it under `map`, BASE-035
 const ownGlyph = ticket => ticket?.map?.glyph;
 // the character its 3D figure is, VIEW-035: the ticket's own glyph when it is assigned one, VIEW-040
-const glyphFor = workId => drawGlyph(workId, ownGlyph(ticketOf(workId)));
+// and else the character the person chose for the agent's type, web_agent_glyphs, when no agent at work has it
+// a body chosen for a conversation agent, `embody`, comes before it
+const glyphFor = workId => drawGlyph(workId, ownGlyph(ticketOf(workId)) || bodyOf(workId), typeGlyph(workId));
 const glyphOf = workId => `/page/agent-glyphs/${glyphFor(workId)}.svg`;
 async function startAgent(workId, agent) {
   if (!await wrote('/api/dispatch-start', {work_id: workId, agent})) return false;
@@ -6028,8 +10329,12 @@ async function renderAgents() {
   }
   if (S.project !== project || S.base !== metaform) return;  // the answer for a project the person has left
   D.sessions = found.sessions || [];
+  D.signals = found.signals || [];  // a login needed is read from them, `sessionStatus`
+  D.states = found.states || {};  // each session's state, the intake guard's phase among it, `drawIntake`
   D.claims = claimed.claims || [];
   D.proposals = claimed.proposals || {};
+  D.signals = found.signals || [];  // a spinning or stuck agent's figure circles restlessly, `moodOf`
+  noticeAttention();  // and the mascot calls the person to what needs them, `ATTN`
   // the permission requests and the agents' questions waiting for the person, counted on the chat's tab
   const asking = (found.signals || []).filter(one => WAITS_ON_PERSON.includes(one.signal) && one.active !== false);
   D.asking = asking.map(one => ({...one, agent: D.sessions.find(row => row.session_id === one.session_id)?.agent}))
@@ -6053,7 +10358,7 @@ async function renderAgents() {
       h('img', {src: glyphOf(one.work_id), alt: glyphFor(one.work_id)}), h('b', {}, agentName(one.agent)),
       h('small', {}, `on ${workPart(one.work_id)} · working`)),
       chatButton({id: one.work_id}, `${agentName(one.agent)} on ${workPart(one.work_id)}`))})));
-  $('#agents').hidden = !working.length;
+  agentsWindow(working.length);  // slides out while any is at work, away a few seconds after
   paintInUse();
   figures(S.tickets || []);  // the map's figures follow the same sessions
 }
@@ -6568,16 +10873,16 @@ async function renderObject(id) {
  * passed back unchanged for the next, and a kind chosen is filtered there, through the whole list. */
 const BR = {address: null, generation: 0, data: null, kind: 'all', open: null, walk: [], seen: null, items: [],
   cursor: null, cache: new Map(), pending: null};
-const SEEN = 'metaform.seen';
+const BRIEF_SEEN = 'metaform.seen';  // the latest item shown at each address, kept in this browser
 function seenAt(project) {
-  try { return JSON.parse(localStorage.getItem(SEEN) || '{}')[project] || {}; } catch { return {}; }
+  try { return JSON.parse(localStorage.getItem(BRIEF_SEEN) || '{}')[project] || {}; } catch { return {}; }
 }
 function keepSeen() {  // the latest number shown at the address the brief is leaving
   if (!BR.address || !BR.data?.latest || !S.project) return;
   try {
-    const all = JSON.parse(localStorage.getItem(SEEN) || '{}');
+    const all = JSON.parse(localStorage.getItem(BRIEF_SEEN) || '{}');
     all[S.project] = {...(all[S.project] || {}), [BR.address]: BR.data.latest.number};
-    localStorage.setItem(SEEN, JSON.stringify(all));
+    localStorage.setItem(BRIEF_SEEN, JSON.stringify(all));
   } catch { /* storage can be blocked: then nothing is marked new */ }
 }
 addEventListener('pagehide', keepSeen);
@@ -6595,7 +10900,7 @@ function briefAddress(id = S.selected) {
 }
 const elementAt = address => [...S.elements.values()].find(entry => entry.element.address === address)?.element || null;
 /* A text to copy in one press, the clipboard where the browser gives one. */
-function copyButton(label, text, words = 'Copy') {
+function briefCopy(label, text, words = 'Copy') {
   return h('button', {class: 'btn sm quiet copy', type: 'button', 'aria-label': `Copy ${label}`, title: `Copy ${label}`,
     onclick: async () => {
       try { await navigator.clipboard.writeText(typeof text === 'function' ? await text() : text); toast('Copied.'); }
@@ -6676,7 +10981,7 @@ function drawBrief() {
   fill(pane,
     h('div', {class: 'head'}, h('div', {class: 'eyebrow'}, 'Agent brief'),
       h('h2', {tabindex: '-1'}, element.name || element.short_name || data.address),
-      h('div', {class: 'uri'}, h('code', {}, data.uri), copyButton('the brief\'s address', data.uri, ''))),
+      h('div', {class: 'uri'}, h('code', {}, data.uri), briefCopy('the brief\'s address', data.uri, ''))),
     join ? h('p', {class: 'hint'}, 'A join\'s items are numbered at its receiver, so this is the receiver\'s brief.') : null,
     budgetMeter('Brief', data.bytes, data.budget),
     h('p', {class: 'hint'}, 'What an agent assigned here is handed, read as it reads it. Its size is held to the ',
@@ -6689,12 +10994,12 @@ function drawBrief() {
     itemsSection(),
     h('details', {class: 'sent'}, h('summary', {}, `Exactly as sent · ${counted(data.bytes)}`),
       h('pre', {class: 'brieftext raw', tabindex: '0', 'aria-label': 'The brief exactly as an agent receives it'}, data.text),
-      copyButton('the brief as sent', data.text)),
+      briefCopy('the brief as sent', data.text)),
     FRAMED ? null : h('div', {class: 'acts'},
       h('button', {class: 'btn sm seeall', type: 'button', 'aria-controls': 'agentview',
         title: 'The connect message, the glossary with its tools, and this brief, each with its size', onclick: openAgentView},
         'What an agent sees…'),
-      copyButton('this node and its neighbours as Mermaid', () => mermaidText({address: data.address}), 'Copy as Mermaid')));
+      briefCopy('this node and its neighbours as Mermaid', () => mermaidText({address: data.address}), 'Copy as Mermaid')));
   pane.scrollTop = scroll;
 }
 function itemsSection() {
@@ -6709,9 +11014,22 @@ function itemsSection() {
         h('i', {class: 'i i-back', 'aria-hidden': 'true'}), 'Back'),
       h('span', {class: 'trail'}, [...BR.walk, BR.open].filter(Boolean).join(' → '))) : null,
     BR.seen === null && latest ? h('p', {class: 'hint'}, 'First look here in this browser: items numbered after now are marked unseen.') : null,
+    newHere(latest, BR.data.last_session),
     list);
   drawItems(list);
   return box;
+}
+/* What is new at the node, as the brief's line under the node tells the agent, MCP-037: the latest item, its number
+ * and title, opened with a click, and the range the last agent session numbered here, the same pointers on every
+ * surface that shows the brief. */
+function newHere(latest, last) {
+  if (!latest) return null;
+  const span = last ? (last.first === last.last ? hex(last.first) : `${hex(last.first)}–${hex(last.last)}`) : null;
+  return h('dl', {class: 'newhere', 'aria-label': 'What is new here'},
+    h('dt', {}, 'Latest'), h('dd', {}, h('button', {class: 'link', type: 'button', title: 'Open the latest item',
+      onclick: () => openItem(latest.item)}, h('code', {}, hex(latest.number)), ' ', latest.title || 'untitled')),
+    last ? [h('dt', {}, 'Last session'), h('dd', {title: `Session ${last.session}`}, h('code', {}, span),
+      last.count !== last.last - last.first + 1 ? ` · ${last.count} of them` : '')] : null);
 }
 function drawItems(list = $('#p-brief ul.items')) {
   if (!list) return;
@@ -6781,7 +11099,7 @@ function itemDetail(ref) {
     links.length ? h('div', {class: 'eyebrow'}, 'Links') : null, links.length ? h('ul', {class: 'links'}, links) : null,
     h('details', {class: 'sent'}, h('summary', {}, `As an agent reads metaform://${ref}`),
       h('pre', {class: 'brieftext raw', tabindex: '0', 'aria-label': `${ref} exactly as an agent reads it`}, found.text),
-      copyButton(`${ref} as an agent reads it`, found.text))];
+      briefCopy(`${ref} as an agent reads it`, found.text))];
 }
 /* A link from one memory to another followed: the item at its own node, the walk kept for Back. */
 function walkTo(ref, back = false) {
@@ -6809,6 +11127,7 @@ const AV_TABS = [['connect', 'Connect'], ['glossary', 'Glossary'], ['tools', 'To
   ['prompts', 'Prompts'], ['brief', 'Brief']];
 async function openAgentView() {
   showAgentMenu(false);
+  if (WS.reveal('agent-view')) return;  // a pane in the workspace: it shows there and reads as it shows
   $('#agentview').hidden = false;
   await readAgentView();
 }
@@ -6877,12 +11196,12 @@ function agentPart(key) {
     h('p', {class: 'hint'}, `Capabilities: ${Object.entries(data.capabilities).map(([name, held]) => name === 'extensions' && held && typeof held === 'object'
       ? `extensions (${Object.keys(held).join(', ') || 'none'})` : name).join(', ') || 'none'} · protocol ${data.protocol.join(', ')}${data.server ? ` · ${data.server.name} ${data.server.version || ''}` : ''}`),
     h('p', {class: 'hint'}, `The server's instructions, sent once as the agent connects. Claude Code keeps the first ${counted(data.host_limit, 'characters')} of them.`),
-    text('The connect message', data.connect.text), copyButton('the connect message', data.connect.text)];
+    text('The connect message', data.connect.text), briefCopy('the connect message', data.connect.text)];
   if (key === 'glossary') return [
     budgetMeter('metaform://metaform', data.glossary.bytes, 0),
     budgetMeter('metaform://tools, one line per tool, read apart where tools are listed by name', data.glossary.index.bytes, 0),
     h('p', {class: 'hint'}, 'The terms and rules, then one line per tool: read once, when the connect message tells the agent to.'),
-    text('metaform://metaform', data.glossary.text), copyButton('the glossary', data.glossary.text), text('metaform://tools', data.glossary.index.text)];
+    text('metaform://metaform', data.glossary.text), briefCopy('the glossary', data.glossary.text), text('metaform://tools', data.glossary.index.text)];
   if (key === 'tools') {
     const long = data.tools.filter(tool => tool.description.length > data.host_limit);
     return [
@@ -6906,7 +11225,7 @@ function agentPart(key) {
   return [
     budgetMeter(`metaform://${data.address}`, data.brief.bytes, data.budget),
     h('p', {class: 'hint'}, 'Handed to an agent assigned to this node, and read by any agent at its address.'),
-    text('The brief', data.brief.text), copyButton('the brief', data.brief.text)];
+    text('The brief', data.brief.text), briefCopy('the brief', data.brief.text)];
 }
 $('#agentViewBtn').onclick = openAgentView;
 $('#agentview .close').onclick = () => { $('#agentview').hidden = true; };
@@ -7032,10 +11351,12 @@ $('#saveBtn').onclick = async () => {
 /* ---------- tabs ---------- */
 /* The panel's tabs, as tabs are: the open one is in the Tab order, and Left and Right move between them. */
 const TABS = {object: '#p-object', brief: '#p-brief', prov: '#p-prov', prompt: '#p-prompt'};
-const tabNow = () => Object.keys(TABS).find(key => $('#t-' + key).getAttribute('aria-selected') === 'true') || 'object';
+const tabNow = () => WS.on ? (WS.isShown('map.brief') ? 'brief' : 'object')
+  : Object.keys(TABS).find(key => $('#t-' + key).getAttribute('aria-selected') === 'true') || 'object';
 function showTab(tab) {
   if (tab !== 'prompt' && $('#p-prompt').classList.contains('full')) promptFull(false);
-  for (const [key, selector] of Object.entries(TABS)) {
+  if (WS.on) WS.reveal(TAB_VIEWS[tab]);  // a pane of the workspace, opened where the person put it
+  else for (const [key, selector] of Object.entries(TABS)) {
     $(selector).hidden = key !== tab;
     $('#t-' + key).setAttribute('aria-selected', String(key === tab));
     $('#t-' + key).tabIndex = key === tab ? 0 : -1;
@@ -7068,9 +11389,14 @@ async function nodeTabs() {
   const panes = new Map((found.panes || []).map(pane => [pane.id, pane]));
   const group = Object.values(found.layout?.areas || {}).flatMap(area => area.groups || [])
     .find(one => one.tabs.some(id => TAB_PAGES[panes.get(id)?.content?.page] === 'object'));
-  if (!group) return;
-  const strip = $('.tabs[role=tablist]'), off = new Set(found.layout.off || []), now = tabNow();
-  for (const id of group.tabs) {
+  if (group) classicTabs(panes, group.tabs, new Set(found.layout.off || []));
+}
+/* The side column's tabs as a layout gives them: in its order, with their titles, a tab turned off gone from the strip
+ * unless it is the one on view; and each tab's pane shown or hidden by the tab open, as the workspace may have moved
+ * them. The workspace's arrangement that is the page as written, `classicFrame`, draws them this way too. */
+function classicTabs(panes, tabs, off) {
+  const strip = $('.tabs[role=tablist]'), now = tabNow();
+  for (const id of tabs) {
     const pane = panes.get(id), key = TAB_PAGES[pane?.content?.page];
     if (!key) continue;
     const tab = $('#t-' + key);
@@ -7078,6 +11404,11 @@ async function nodeTabs() {
     tab.title = pane.description;
     tab.hidden = off.has(id) && key !== now;
     strip.append(tab);  // in the declared order
+  }
+  for (const [key, selector] of Object.entries(TABS)) {
+    $(selector).hidden = key !== now;
+    $('#t-' + key).setAttribute('aria-selected', String(key === now));
+    $('#t-' + key).tabIndex = key === now ? 0 : -1;
   }
 }
 /* The prompt editor fills the screen, and back, VIEW-013; Escape puts it back. */
@@ -7357,9 +11688,12 @@ function summonPicker(name, options = {}) {
 function drawDockTab() {
   const waiting = (D.asking || []).length, tab = $('#dockTab');
   tab.classList.toggle('asks', waiting > 0);
-  fill(tab, h('span', {}, 'Chat'), waiting ? h('b', {class: 'asking', 'aria-hidden': 'true'}, String(waiting)) : null);
+  const unread = !waiting && DOCK.unread;  // the agent wrote while the chat was put away
+  tab.classList.toggle('unread', unread);
+  fill(tab, h('span', {}, 'Chat'), waiting ? h('b', {class: 'asking', 'aria-hidden': 'true'}, String(waiting))
+    : unread ? h('i', {class: 'newdot', 'aria-hidden': 'true'}) : null);
   tab.setAttribute('aria-label', waiting ? `Open the chat: ${plural(waiting, 'agent waits', 'agents wait')} for you`
-    : 'Open the chat with an agent');
+    : unread ? 'Open the chat: a new message' : 'Open the chat with an agent');
 }
 
 /* ---------- an agent's session as ACP gives it, VIEW-039 and BASE-052 ----------
@@ -7580,14 +11914,217 @@ function signalWords(text) {
  * bubbles, its thinking folded to a few quiet lines that open on a click, each tool call one compact row, each
  * permission request a card with the agent's own options, and what Metaform said or noticed as a quiet line. The plan
  * is drawn apart, as a checklist; a turn's end and the session's state are not lines of the conversation. */
+/* ---------- the chat as an MCP Apps host, io.modelcontextprotocol/ui (2026-01-26) ----------
+ * A Metaform tool that declares a view, `_meta.ui.resourceUri`, shows it in the thread under its call: the view's
+ * document, `GET /api/mcp-app`, in a frame sandboxed to scripts alone, so its origin is opaque and it reaches nothing
+ * of the page's; its content policy is the one it asks for. The page is its host over postMessage, JSON-RPC as the
+ * spec has it: ui/initialize answered with what this host offers, the call's input and result sent once the view is
+ * ready, its size followed, tools/call taken to the folder's MCP server as the thread's agent session
+ * (`POST /api/mcp-call`), a link opened only once the person agrees. A view pops out into a panel of its own, moved
+ * and sized as the person likes, and comes back; /apps, or the head's menu, lists every view the enabled modules
+ * offer, each opened in a panel. The views and the tools that show them are read from the server, `GET /api/mcp-apps`. */
+const APPS = {project: null, at: 0, tools: {}, views: [], reading: null, panels: 0, gallery: false};
+const APPFRAMES = new Map();  // key -> {key, app, scope, frame, holder, panel, mode, ready, fed}
+const APP_PROTOCOL = '2026-01-26';
+function readApps(force = false) {
+  if (!S.project) return Promise.resolve(APPS);
+  if (!force && APPS.project === S.project && Date.now() - APPS.at < 300000) return Promise.resolve(APPS);
+  if (APPS.reading) return APPS.reading;
+  const project = S.project;
+  APPS.reading = read('mcp-apps')
+    .then(found => { if (S.project === project) Object.assign(APPS, {project, at: Date.now(), tools: found.tools || {}, views: found.views || []}); })
+    .catch(() => Object.assign(APPS, {project, at: Date.now(), tools: {}, views: []}))
+    .then(() => { APPS.reading = null; if (DOCK.target || APPS.gallery) drawHelpdesk(); return APPS; });
+  return APPS.reading;
+}
+/* The view a tool call shows: its tool's, when the runner kept the call's tool, `data.call`. */
+function appOf(line) {
+  const call = line.data?.call;
+  if (!call?.tool) return null;
+  if (APPS.project !== S.project) { readApps(); return null; }  // drawn again once the views are known
+  const tool = APPS.tools[call.tool];
+  return tool?.uri ? {uri: tool.uri, call, tool: call.tool} : null;
+}
+const appName = uri => APPS.views.find(one => one.uri === uri)?.name || String(uri).replace(/^ui:\/\//, '');
+function appRow(key, app, scope) {
+  const holder = h('div', {class: 'appholder'});
+  const box = h('div', {class: 'mcpapp', 'data-uri': app.uri},
+    h('div', {class: 'appbar'}, h('span', {class: 'name'}, appName(app.uri)), app.tool ? h('small', {}, app.tool) : null,
+      h('span', {class: 'grow'}),
+      h('button', {class: 'btn sm quiet', type: 'button', title: 'Show it in a panel of its own, moved and sized as you like',
+        onclick: () => popApp(key)}, 'Pop out')), holder);
+  const had = APPFRAMES.get(key);
+  if (had?.panel) {  // shown in its panel: the thread says so, and it comes back here
+    had.inline = holder;
+    fill(holder, appAway(key));
+  } else mountApp(key, holder, app, scope, 'inline');
+  return box;
+}
+const appAway = key => h('p', {class: 'appaway'}, 'Shown in a panel of its own. ',
+  h('button', {class: 'btn sm quiet', type: 'button', onclick: () => bringBack(key)}, 'Bring it back'));
+function mountApp(key, holder, app, scope, mode) {
+  const entry = APPFRAMES.get(key) || {key};
+  const meta = APPS.views.find(one => one.uri === app.uri)?.meta?.ui || {};
+  const frame = h('iframe', {class: 'appframe', title: `${appName(app.uri)}, a view of the MCP server`,
+    sandbox: 'allow-scripts', referrerpolicy: 'no-referrer', ...(meta.permissions?.clipboardWrite ? {allow: 'clipboard-write'} : {}),
+    src: `/api/mcp-app?project=${encodeURIComponent(S.project)}&uri=${encodeURIComponent(app.uri)}`});
+  Object.assign(entry, {app, scope, frame, holder, mode, ready: false, fed: {input: false, result: false}});
+  APPFRAMES.set(key, entry);
+  fill(holder, frame);
+  for (const [other, one] of APPFRAMES) if (other !== key && !one.panel && !one.frame?.isConnected) APPFRAMES.delete(other);
+  return entry;
+}
+function appPost(entry, message) { entry.frame?.contentWindow?.postMessage({jsonrpc: '2.0', ...message}, '*'); }
+/* The call's input, then its result once there is one, each sent once the view is ready, ui/notifications. */
+function appFed(key, call) {
+  const entry = APPFRAMES.get(key);
+  if (!entry) return;
+  entry.app.call = call;
+  feedApp(entry);
+}
+function feedApp(entry) {
+  const call = entry.app.call;
+  if (!entry.ready || !call) return;
+  if (!entry.fed.input) { entry.fed.input = true; appPost(entry, {method: 'ui/notifications/tool-input', params: {arguments: call.input || {}}}); }
+  if (call.result && !entry.fed.result) {
+    entry.fed.result = true;
+    appPost(entry, {method: 'ui/notifications/tool-result', params: {content: call.result.content || [], isError: Boolean(call.result.isError)}});
+  }
+}
+function appContext(entry) {
+  const box = (entry.panel ? entry.holder : entry.frame)?.getBoundingClientRect();
+  const ground = getComputedStyle(document.body).backgroundColor.match(/\d+(\.\d+)?/g)?.map(Number) || [0, 0, 0];
+  const light = (0.2126 * ground[0] + 0.7152 * ground[1] + 0.0722 * ground[2]) / 255 > 0.5;
+  return {theme: light ? 'light' : 'dark', displayMode: entry.mode, availableDisplayModes: ['inline', 'fullscreen', 'pip'],
+    containerDimensions: entry.panel ? {height: Math.round(box?.height || 400), width: Math.round(box?.width || 560)}
+      : {maxHeight: 560, width: Math.round(box?.width || 400)},
+    locale: navigator.language, platform: 'web', userAgent: 'Metaform web',
+    ...(entry.app.call ? {toolInfo: {tool: {name: entry.app.call.tool, inputSchema: {type: 'object'}}}} : {})};
+}
+addEventListener('message', event => {
+  const entry = [...APPFRAMES.values()].find(one => one.frame?.contentWindow && one.frame.contentWindow === event.source);
+  const message = event.data;
+  if (!entry || !message || message.jsonrpc !== '2.0' || !message.method) return;  // answers to the host's own requests are not awaited
+  appMessage(entry, message);
+});
+async function appMessage(entry, message) {
+  const reply = result => message.id !== undefined && appPost(entry, {id: message.id, result});
+  const fail = (code, text) => message.id !== undefined && appPost(entry, {id: message.id, error: {code, message: text}});
+  const params = message.params || {};
+  if (message.method === 'ui/initialize') {
+    return reply({protocolVersion: APP_PROTOCOL, hostInfo: {name: 'Metaform web', version: '1'},
+      hostCapabilities: {openLinks: {}, serverTools: {listChanged: false}, logging: {}}, hostContext: appContext(entry)});
+  }
+  if (message.method === 'ui/notifications/initialized') { entry.ready = true; return feedApp(entry); }
+  if (message.method === 'ui/notifications/size-changed') {  // inline it is as tall as it asks, within the thread's reach
+    if (!entry.panel && Number(params.height) > 0) entry.frame.style.height = `${Math.round(Math.min(560, Math.max(120, Number(params.height))))}px`;
+    return;
+  }
+  if (message.method === 'ping') return reply({});
+  if (message.method === 'tools/call') {
+    const done = await posted('/api/mcp-call', {tool: params.name, arguments: params.arguments || {},
+      ...(entry.scope?.work ? {work_id: entry.scope.work, session: entry.scope.session || null} : {})});
+    return done.ok ? reply(done.body) : fail(-32000, done.body?.error || 'The call failed.');
+  }
+  if (message.method === 'ui/open-link') {
+    const url = String(params.url || '');
+    if (!/^https?:\/\//i.test(url)) return fail(-32602, 'Only a web address is opened.');
+    const sure = await confirmAct({title: 'Open this link?', verb: 'Open it', cancel: 'Stay here', danger: false,
+      text: [`${appName(entry.app.uri)} asks to open a page in a new tab:`, h('code', {class: 'url'}, url)]});
+    if (sure) window.open(url, '_blank', 'noopener,noreferrer');
+    return reply(sure ? {} : {isError: true});
+  }
+  if (message.method === 'ui/request-display-mode') {
+    const mode = params.mode;
+    if (mode === 'inline' && entry.panel) { reply({mode: 'inline'}); return bringBack(entry.key); }
+    if ((mode === 'fullscreen' || mode === 'pip') && !entry.panel) { reply({mode}); return popApp(entry.key, mode); }
+    return reply({mode: entry.mode});
+  }
+  if (message.method === 'notifications/message') return;  // the view's own log
+  return fail(-32601, `${message.method} is not offered by this host.`);
+}
+/* Before a view's frame goes, it is told, ui/resource-teardown, as a host does. */
+function teardownApp(entry) { if (entry.frame) appPost(entry, {id: `teardown-${Date.now()}`, method: 'ui/resource-teardown', params: {}}); }
+/* A view in a panel of its own: moved by its bar, sized from its corner, kept until put back or closed. */
+function popApp(key, mode = 'pip') {
+  const entry = APPFRAMES.get(key);
+  if (!entry) return;
+  if (entry.panel) { entry.panel.hidden = false; return; }
+  teardownApp(entry);
+  const inline = entry.holder;
+  const body = h('div', {class: 'appholder'});
+  const panel = h('div', {id: `mcpapp${++APPS.panels}`, class: `window movable mcpwin${mode === 'fullscreen' ? ' large' : ''}`,
+    role: 'dialog', 'aria-label': appName(entry.app.uri)},
+    h('div', {class: 'bar'}, h('span', {class: 'title'}, appName(entry.app.uri)),
+      inline ? h('button', {class: 'btn sm quiet', type: 'button', onclick: () => bringBack(key)}, 'Back into the chat') : null,
+      h('button', {class: 'close btn icon sm quiet', type: 'button', 'aria-label': 'Close', title: 'Close (Escape)',
+        onclick: () => (inline ? bringBack(key) : closeApp(key))}, h('i', {class: 'i i-close', 'aria-hidden': 'true'}))), body);
+  document.body.append(panel);
+  movable(panel);
+  overlay(panel, {kind: 'window', close: () => (inline ? bringBack(key) : closeApp(key)), focus: false});
+  mountApp(key, body, entry.app, entry.scope, mode);
+  Object.assign(entry, {panel, inline});
+  if (inline?.isConnected) fill(inline, appAway(key));
+  new ResizeObserver(() => { if (entry.ready && entry.panel === panel) appPost(entry, {method: 'ui/notifications/host-context-changed', params: {containerDimensions: appContext(entry).containerDimensions}}); }).observe(body);
+}
+function closeApp(key) {
+  const entry = APPFRAMES.get(key);
+  if (!entry) return;
+  teardownApp(entry);
+  const panel = entry.panel;
+  APPFRAMES.delete(key);
+  if (panel) { panel.hidden = true; setTimeout(() => panel.remove(), 0); }
+}
+function bringBack(key) {
+  const entry = APPFRAMES.get(key);
+  if (!entry?.panel) return;
+  const {panel, inline} = entry;
+  teardownApp(entry);
+  entry.panel = null;
+  panel.hidden = true;
+  setTimeout(() => panel.remove(), 0);
+  if (inline?.isConnected) mountApp(key, inline, entry.app, entry.scope, 'inline'); else APPFRAMES.delete(key);
+}
+/* The gallery, /apps or the head's menu: every view the enabled modules offer, each opened in a panel of its own,
+ * its calls made as the agent of the thread on view, or as the person's page when none is. */
+function showGallery() {
+  APPS.gallery = true;
+  readApps(true);
+  drawHelpdesk().then(() => followLog(true));
+}
+function galleryRows() {
+  if (!APPS.gallery) return [];
+  return [{key: 'gallery', text: JSON.stringify(APPS.views.map(one => one.uri)), make: () => h('div', {class: 'appgallery', role: 'group', 'aria-label': 'The views of the MCP server'},
+    h('div', {class: 'appbar'}, h('span', {class: 'name'}, 'Apps'), h('small', {}, 'The views the enabled modules offer'), h('span', {class: 'grow'}),
+      h('button', {class: 'btn sm quiet', type: 'button', onclick: () => { APPS.gallery = false; drawHelpdesk(); }}, 'Close')),
+    APPS.views.length ? h('ul', {}, APPS.views.map(one => h('li', {},
+      h('div', {}, h('b', {}, one.name || one.uri), h('small', {}, one.description || ''), h('code', {}, one.uri)),
+      h('button', {class: 'btn sm', type: 'button', onclick: () => {
+        const key = `gallery:${one.uri}:${++APPS.panels}`;
+        APPFRAMES.set(key, {key, app: {uri: one.uri, call: null}, scope: {work: DOCK.target, session: DOCK.session}});
+        popApp(key);
+      }}, 'Open'))))
+      : h('p', {class: 'hint'}, APPS.reading ? 'Reading the views…' : 'No enabled module offers a view here.'))}];
+}
 function threadRows(lines, {work, agent}) {
   const rows = [];
+  let sender = null;  // who wrote the message before, so a run of one sender's messages is named once
+  DOCK.heard = new Set();
   for (const line of lines) {
     const key = `${line.session_id}:${line.name ?? line.seq}`;
     const kind = line.kind;
     const text = `${kind}\n${line.text}\n${line.data ? JSON.stringify(line.data) : ''}`;
     if (kind === 'plan' || kind === 'state' || kind === 'tool_detail' || kind === 'turn') continue;
-    if (kind === 'tool_call' || kind === 'tool_call_update') { rows.push({key, text, make: () => toolRow(line, 'div', key)}); continue; }
+    if (kind === 'tool_call' || kind === 'tool_call_update') {
+      rows.push({key, text, make: () => toolRow(line, 'div', key)});
+      // a Metaform tool with a view shows that view under its call, fed the call's input and its result
+      const app = appOf(line);
+      if (app) {
+        rows.push({key: `app:${key}`, text: app.uri, make: () => appRow(`app:${key}`, app, {work, session: line.session_id})});
+        appFed(`app:${key}`, app.call);
+      }
+      continue;
+    }
     if (kind === 'permission') { rows.push({key, text, make: () => permissionCard(line, work, 'div', agent)}); continue; }
     if (kind === 'elicitation') {
       rows.push({key, text, make: () => line.data?.request ? elicitationCard(line, work, 'div', agent)
@@ -7600,15 +12137,116 @@ function threadRows(lines, {work, agent}) {
       if (words) rows.push({key, text, make: () => h('div', {class: 'system signal'}, words)});
       continue;
     }
-    if (kind === 'agent_message_chunk') rows.push({key, text, make: () => h('div', {class: 'bubble theirs'}, ...linked(line.text))});
-    else if (kind === 'person' || kind === 'user_message_chunk') rows.push({key, text, make: () => h('div', {class: 'bubble mine'}, line.text)});
+    if (kind === 'agent_message_chunk' || kind === 'person' || kind === 'user_message_chunk') {
+      const mine = kind !== 'agent_message_chunk', who = mine ? 'You' : agentName(agent);
+      const first = who !== sender, at = SEEN.at.get(key) ?? (SEEN.sessions.has(line.session_id) ? Date.now() : 0);
+      SEEN.at.set(key, at);
+      sender = who;
+      if (mine) DOCK.heard.add(String(line.text).trim());
+      rows.push({key, text: `${text}\n${first}`, make: () => messageRow(line.text, {mine, who, first, at})});
+    }
     else if (kind === 'agent_thought_chunk') rows.push({key, text, make: () => h('div', {class: 'thought',
       title: 'Its thinking: click to read all of it, and again to fold it',
       onclick: event => { if (!event.target.closest('a, button')) event.currentTarget.classList.toggle('open'); }},
       h('small', {}, 'Thinking'), h('span', {class: 'said'}, ...linked(line.text)))});
     else if (['setting', 'approved', 'failed', 'notice'].includes(kind)) rows.push({key, text, make: () => h('div', {class: `system ${kind}`}, line.text)});
   }
+  for (const line of lines) SEEN.sessions.add(line.session_id);  // a line read later than this one arrived now
   return rows;
+}
+/* A message: who wrote it, named above the first of a run of theirs, its words read as markdown, and on hover or
+ * focus the time it arrived and, for the agent's, Copy. The sender is said to a screen reader in the bubble too. */
+function messageRow(text, {mine, who, first, at, pending = null}) {
+  const bubble = h('div', {class: `bubble ${mine ? 'mine' : 'theirs'}${pending ? ' pending' : ''}`},
+    h('span', {class: 'visually-hidden'}, `${who}: `), ...richText(text));
+  const time = at ? h('time', {datetime: new Date(at).toISOString(), title: new Date(at).toLocaleString()}, clockOf(at)) : null;
+  const tools = h('div', {class: 'tools'}, pending ? h('small', {class: 'pendingnote'}, pending) : time,
+    mine ? null : copyButton(() => String(text), 'Copy the message'));
+  return h('div', {class: `msg ${mine ? 'mine' : 'theirs'}${first ? ' first' : ''}`},
+    first ? h('div', {class: 'who', 'aria-hidden': 'true'}, who) : null, h('div', {class: 'row'}, bubble, tools));
+}
+/* A small Copy button: the text given goes to the clipboard, and the button says Copied for a moment. */
+function copyButton(text, label = 'Copy') {
+  const button = h('button', {class: 'copy', type: 'button', title: label, 'aria-label': label, onclick: async event => {
+    event.stopPropagation();
+    const said = text();
+    try { await navigator.clipboard.writeText(said); } catch {
+      const field = h('textarea', {style: {position: 'fixed', opacity: '0'}}, said);
+      document.body.append(field); field.select();
+      try { document.execCommand('copy'); } catch { /* nothing more to try */ }
+      field.remove();
+    }
+    button.classList.add('done');
+    button.setAttribute('aria-label', 'Copied');
+    setTimeout(() => { button.classList.remove('done'); button.setAttribute('aria-label', label); }, 1400);
+  }}, h('i', {class: 'i i-copy', 'aria-hidden': 'true'}), h('i', {class: 'i i-check', 'aria-hidden': 'true'}));
+  return button;
+}
+/* A message's words as written in markdown, read into the page's own elements and never set as HTML, VIEW-009:
+ * paragraphs, headings, lists, quotes and rules; fenced code with its language and Copy; inline code, bold, italic
+ * and links to web pages, opened in a new tab. References in the words are linked as everywhere else. */
+const BLOCK_START = /^\s*(```|~~~|#{1,6}\s|>|[-*+]\s|\d{1,3}[.)]\s|([-*_])(\s*\2){2,}\s*$)/;
+function richText(text) {
+  const lines = String(text ?? '').replace(/\r\n?/g, '\n').split('\n'), out = [];
+  let at = 0;
+  while (at < lines.length) {
+    const line = lines[at];
+    const fence = /^\s*(```+|~~~+)\s*([\w+#.-]*)/.exec(line);
+    if (fence) {
+      const code = [];
+      for (at++; at < lines.length && !lines[at].trim().startsWith(fence[1]); at++) code.push(lines[at]);
+      at++;
+      out.push(codeBlock(code.join('\n'), fence[2]));
+      continue;
+    }
+    if (!line.trim()) { at++; continue; }
+    const head = /^\s*(#{1,6})\s+(.*)$/.exec(line);
+    if (head) { out.push(h('p', {class: `mdh h${head[1].length}`}, ...inlineText(head[2]))); at++; continue; }
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { out.push(h('hr')); at++; continue; }
+    if (/^\s*>/.test(line)) {
+      const said = [];
+      for (; at < lines.length && /^\s*>/.test(lines[at]); at++) said.push(lines[at].replace(/^\s*>\s?/, ''));
+      out.push(h('blockquote', {}, ...richText(said.join('\n'))));
+      continue;
+    }
+    const item = /^(\s*)([-*+]|\d{1,3}[.)])\s+/;
+    if (item.test(line)) {
+      const ordered = /\d/.test(item.exec(line)[2]), items = [];
+      for (; at < lines.length && (item.test(lines[at]) || (/^\s{2,}\S/.test(lines[at]) && items.length)); at++) {
+        const found = item.exec(lines[at]);
+        if (found && /\d/.test(found[2]) === ordered) items.push(lines[at].slice(found[0].length));
+        else if (found) break;
+        else items[items.length - 1] += '\n' + lines[at].trim();
+      }
+      const start = ordered ? parseInt(item.exec(line)[2], 10) : 1;
+      out.push(h(ordered ? 'ol' : 'ul', ordered && start !== 1 ? {start: String(start)} : {}, items.map(one => h('li', {}, ...inlineText(one)))));
+      continue;
+    }
+    const said = [line];
+    for (at++; at < lines.length && lines[at].trim() && !BLOCK_START.test(lines[at]); at++) said.push(lines[at]);
+    out.push(h('p', {}, ...inlineText(said.join('\n'))));
+  }
+  return out;
+}
+const INLINE = /(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)|\*\*([^*\n]+?)\*\*|__([^_\n]+?)__|(?<![\w*])\*(?!\s)([^*\n]+?)\*(?![\w*])|(?<![\w_])_(?!\s)([^_\n]+?)_(?![\w_])|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/g;
+function inlineText(text) {
+  const parts = [];
+  let at = 0;
+  for (const found of text.matchAll(INLINE)) {
+    parts.push(...linked(text.slice(at, found.index)));
+    const [, , code, bold, bold2, em, em2, label, href, bare] = found;
+    if (code !== undefined) parts.push(h('code', {}, code));
+    else if (bold || bold2) parts.push(h('strong', {}, ...linked(bold || bold2)));
+    else if (em || em2) parts.push(h('em', {}, ...linked(em || em2)));
+    else parts.push(h('a', {href: href || bare, target: '_blank', rel: 'noopener noreferrer', title: href || bare}, label || bare));
+    at = found.index + found[0].length;
+  }
+  parts.push(...linked(text.slice(at)));
+  return parts;
+}
+function codeBlock(code, lang) {
+  return h('div', {class: 'code'}, h('div', {class: 'codehead'}, h('span', {}, lang || 'code'), copyButton(() => code, 'Copy the code')),
+    h('pre', {tabindex: '0'}, h('code', {}, code)));
 }
 /* The plan, a checklist of its entries as the agent keeps it, drawn again only when it changes. */
 function drawPlan(box, plan) {
@@ -7642,8 +12280,9 @@ function drawSession(box, {work, session, state}) {
   const ended = session && session.state !== 'running';
   const resumable = ended && (caps.load || caps.resume);
   const text = JSON.stringify([work, session?.session_id, session?.state, settings, usage, resumable, state?.tokens || null]);
-  if (box.dataset.drawn === text || box.contains(document.activeElement) && box.dataset.work === work) return;
-  box.dataset.drawn = text;
+  if (box.dataset.drawn === text + (session ? '' : summonAgent()) || (box.contains(document.activeElement)
+    || SESSIONPOP.el?.contains(document.activeElement)) && box.dataset.work === work) return;
+  box.dataset.drawn = text + (session ? '' : summonAgent());
   box.dataset.work = work || '';
   const agent = agentName(session?.agent);
   const controls = ended ? [] : settings.map(setting => {
@@ -7688,8 +12327,112 @@ function drawSession(box, {work, session, state}) {
       toast(done.state === 'running' ? `${agent} is running already; talk to it here.` : `${agent} is resuming its session; it waits for your next message.`);
       await renderAgents();
     }}, h('i', {class: 'i i-play', 'aria-hidden': 'true'}), 'Resume') : null;
-  box.hidden = !(controls.length || used || resume);
-  fill(box, controls, h('span', {class: 'grow'}), used, resume);
+  if (!session && !ended) { preCallSettings(box); return; }  // before Call: the agent's known options, chosen first
+  sessionSummary(box, {agent, settings, usage, controls, used, resume});
+}
+/* The session's settings folded to one quiet line under the chat's head, "Codex · Sol · High · Fast · 94k/475k": a
+ * click opens its controls as a popover over the thread, which stays where it is; a click outside or Escape closes
+ * it. Resume, when the agent offers it, stays beside the line. */
+const SESSIONPOP = {el: null};
+function sessionPop() {
+  if (SESSIONPOP.el) return SESSIONPOP.el;
+  SESSIONPOP.el = h('div', {id: 'sessionpop', class: 'sessionpop', role: 'dialog', 'aria-label': 'The agent\'s settings', hidden: true});
+  $('#helpdesk').append(SESSIONPOP.el);
+  overlay(SESSIONPOP.el, {kind: 'popover'});
+  return SESSIONPOP.el;
+}
+function optionWords(setting) {
+  if (setting.type === 'boolean') return setting.current ? setting.name : null;
+  const chosen = (setting.options || setting.choices || []).find(option => option.value === (setting.current ?? setting.chosen));
+  return chosen?.name || null;
+}
+/* The agent is the line's first word and the popover's first field. Before Call it is the one choice of the agent a
+ * call starts, the summon choice every start shares, with its default star; choosing another shows that agent's own
+ * options at once. Once an agent runs, the field names it: another one is chosen by Dismiss, then Call. */
+const DOCKPICK = {row: null, picker: null};
+function dockPicker() {
+  if (!DOCKPICK.row) {
+    DOCKPICK.picker = summonPicker('dock', {label: 'Agent', onchange: () => refreshPreCall()});
+    DOCKPICK.row = h('div', {class: 'setting agent'}, h('span', {}, 'Agent'), DOCKPICK.picker);
+  }
+  return DOCKPICK.row;
+}
+function refreshPreCall() {
+  PRECALL.at = 0;
+  if (!DOCK.target) preCallSettings($('#helpdesk .sessionbar'));
+}
+function sessionSummary(box, {agent, settings, usage, controls, used, resume, before = false}) {
+  const pop = sessionPop();
+  const words = settings.map(optionWords).filter(Boolean);
+  const tokens = usage && usage.used !== null && usage.used !== undefined
+    ? (usage.size ? `${countOf(usage.used)}/${countOf(usage.size)}` : countOf(usage.used)) : null;
+  const line = [agent, ...words, tokens].filter(Boolean).join(' · ');
+  box.hidden = false;
+  const open = h('button', {class: 'sessionline', type: 'button', 'aria-haspopup': 'dialog', 'aria-controls': 'sessionpop',
+    'aria-expanded': String(!pop.hidden), title: before ? 'The agent a call starts, and its model, effort, mode and the rest'
+      : 'The agent\'s settings: its model, effort, mode and the rest', onclick: event => {
+      event.stopPropagation();
+      if (!pop.hidden) { pop.hidden = true; return; }
+      pop.style.top = `${box.offsetTop + box.offsetHeight + 4}px`;  // just under the line, over the thread
+      pop.hidden = false;
+    }}, h('span', {class: 'said'}, line || 'Settings'), h('i', {class: 'i i-chev', 'aria-hidden': 'true'}));
+  fill(box, open, h('span', {class: 'grow'}), resume);
+  const running = h('div', {class: 'setting agent'}, h('span', {}, 'Agent'),
+    h('b', {title: 'To talk with another agent, Dismiss this one, choose it here and Call'}, agent));
+  // the agent's own row is kept in place, so a choice being made in it keeps the focus as the rest is drawn again;
+  // a setting of the same agent just chosen in the open popover keeps its control, and only the line says it
+  const same = !pop.hidden && pop.contains(document.activeElement) && pop.dataset.for === `${before}:${agent}`;
+  pop.dataset.for = `${before}:${agent}`;
+  if (!same) keepFill(pop, [h('div', {class: 'eyebrow'}, before ? 'The next call' : `${agent}'s settings`),
+    before ? dockPicker() : running, h('div', {class: 'controls'}, controls),
+    used ? h('p', {class: 'hint'}, used) : null,
+    !controls.length && !used ? h('p', {class: 'hint'}, before ? `${agent} offers its settings once it has run here.`
+      : 'This agent offers no settings to change now.') : null].filter(Boolean));
+}
+/* Before Call the chat offers what the agent to be called offered at its last session here, `dispatch options`: its
+ * model, effort, mode and the rest, chosen now and kept in dispatch_agent_options, which every session it starts is
+ * given. An agent that has not run here has none yet. */
+const PRECALL = {agent: null, at: 0, data: null};
+async function preCallSettings(box) {
+  if (S.project && (HARNESS.project !== S.project || !HARNESS.read)) await readHarnesses();  // the agents there are
+  const agent = summonAgent() || HARNESS.default;
+  if (!S.project && !DOCK.target) {  // opened before the page knows its project: drawn again once it does
+    box.hidden = true;
+    box.dataset.drawn = '';
+    setTimeout(() => { if (!$('#helpdesk').hidden && !DOCK.target) drawHelpdesk(); }, 400);
+    return;
+  }
+  if (!agent || DOCK.target) { box.hidden = true; return; }
+  if (PRECALL.agent !== agent || Date.now() - PRECALL.at > 30000) {
+    PRECALL.agent = agent; PRECALL.at = Date.now();
+    try { PRECALL.data = (await read('dispatch-options', {agent})).agents?.[0] || null; } catch { PRECALL.data = null; }
+  }
+  if (DOCK.target || agent !== (summonAgent() || HARNESS.default)) return;  // a call began, or another agent was chosen
+  const found = PRECALL.data || {};
+  const settings = (found.settings || []).map(one => ({...one, options: one.choices, current: one.chosen ?? one.current}));
+  const controls = settings.map(setting => {
+    if (setting.type === 'boolean') {
+      const input = h('input', {type: 'checkbox', role: 'switch', checked: String(setting.current) === 'true',
+        onchange: () => keepAgentOption(agent, setting.key, input.checked ? 'true' : 'false')});
+      return h('label', {class: 'switch setting', title: setting.description || setting.name}, input, setting.name);
+    }
+    const pick = h('select', {'aria-label': setting.name, onchange: () => keepAgentOption(agent, setting.key, pick.value)},
+      (setting.options || []).map(option => h('option', {value: option.value, selected: option.value === setting.current}, option.name || option.value)));
+    return h('label', {class: 'setting'}, h('span', {}, setting.name), pick);
+  });
+  sessionSummary(box, {agent: found.label || agentName(agent), settings, usage: null, controls,
+    used: controls.length ? null : found.next ? `It has not run here yet: ${found.next}` : null, resume: null, before: true});
+}
+async function keepAgentOption(agent, key, value) {
+  let rows = [];
+  try { rows = (await read('settings')).settings || []; } catch { /* written as the only entry of its own */ }
+  const held = rows.find(row => row.key === 'dispatch_agent_options')?.value;
+  const kept = (Array.isArray(held) ? held : String(held || '').split(',')).map(one => String(one).trim()).filter(Boolean)
+    .filter(one => !one.startsWith(`${agent}.${key}=`));
+  const done = await posted('/api/settings', {key: 'dispatch_agent_options', value: [...kept, `${agent}.${key}=${value}`]});
+  if (!done.ok) return toast(done.body.error || 'That choice was not kept.');
+  refreshPreCall();  // the line says the choice at once
+  toast(`${agentName(agent)} starts with ${key} ${value}.`);
 }
 /* Slash commands: typing / at the start of a message offers the commands, the chat's own and the agent's, as the
  * agent named them; Up and Down choose, Enter or Tab takes one, Escape closes the list. */
@@ -7804,9 +12547,27 @@ async function readIntake(signals = []) {
   INTAKE.agent = session?.agent || null;
   INTAKE.waiting = session ? signals.filter(one => WAITS_ON_PERSON.includes(one.signal) && one.active !== false
     && one.work_id === session.work_id).length : 0;
+  // what the intake's guard and its runner say of it, such as no first record yet or reading earlier conclusions
+  INTAKE.signals = session ? signals.filter(one => one.active !== false && one.work_id === session.work_id
+    && !WAITS_ON_PERSON.includes(one.signal)) : [];
   drawIntake();
 }
 /* The bar over the map while an intake runs or is being recorded: what is happening, its agent, and its acts. */
+/* The signals an intake's session raises, said in words on its bar: [words, status class, why]. A signal not named here
+ * is said by its own name. */
+const INTAKE_SIGNALS = {
+  'no-first-record': ['No record yet', 'input_required', 'The intake has read for a while and recorded nothing: open its chat to see what it is doing.'],
+  'first-record-late': ['No record yet', 'input_required', 'The intake has read for a while and recorded nothing: open its chat to see what it is doing.'],
+  'intake-conclusions': ['Reading conclusions', 'input_required', 'It reached for a report, review, log or notes drawn earlier in place of the project itself, and would inherit their errors.'],
+  'conclusion-reading': ['Reading conclusions', 'input_required', 'It reads earlier reports and notes in place of the project itself, and inherits their errors.'],
+  conclusions: ['Reading conclusions', 'input_required', 'It reads earlier reports and notes in place of the project itself, and inherits their errors.'],
+  silent: ['Silent', 'waiting', 'It has said nothing for a while.'],
+  'spinning-calls': ['Repeating calls', 'failed', 'It makes the same calls again and again.'],
+  'spinning-time': ['Long turn', 'waiting', 'Its turn has run long.'],
+  'repeated-failure': ['Failing', 'failed', 'The same step fails again and again.'],
+  'login-needed': ['Needs a login', 'login', 'Its agent needs a login, which only you can give.'],
+  budget: ['Budget reached', 'failed', 'It reached a spend budget.'],
+};
 function drawIntake() {
   const bar = $('#intakeBar');
   const running = intakeRunning(), recording = LIVE.layer !== null;
@@ -7814,13 +12575,25 @@ function drawIntake() {
   drawEmpty();
   if (bar.hidden) return;
   const parts = S.elements.size;
+  // the intake guard's page side: no record yet is said with how long the agent has been at it, from its session's
+  // start, said again at each change the page hears, never by a timer of its own
+  // the runner's own word on it first, its `intake` state, M04: the phase and when it began
+  const guard = (D.states || {})[INTAKE.session?.session_id]?.intake || null;
+  const since = guard?.began || INTAKE.session?.started || null;
+  const waitingFirst = guard ? guard.phase === 'waiting for first record' : INTAKE.session?.activity === 'working';
+  const firstWait = running && !recording && !INTAKE.waiting && since && waitingFirst && !parts
+    ? `Waiting for the first record · ${ago(since) === 'now' ? 'just started' : `${ago(since)} since it started`}${guard?.steered ? ' · told to record' : ''}` : null;
   const doing = INTAKE.waiting ? `${agentName(INTAKE.agent)} waits for your permission`
     : recording ? `Recording ${LIVE.layer} · ${plural(parts, 'part')} so far`
-    : INTAKE.session?.activity === 'working' ? 'Reading the project' : 'Starting';
+    : firstWait || (INTAKE.session?.activity === 'working' ? 'Reading the project' : 'Starting');
   bar.classList.toggle('asks', INTAKE.waiting > 0);
+  const said = (INTAKE.signals || []).map(one => h('span', {class: `statechip ${INTAKE_SIGNALS[one.signal]?.[1] || 'waiting'}`,
+    title: one.detail || one.message || one.reason || INTAKE_SIGNALS[one.signal]?.[2] || ''},
+  INTAKE_SIGNALS[one.signal]?.[0] || String(one.signal || '').replace(/-/g, ' ')));
   fill(bar, h('span', {class: 'pulse', 'aria-hidden': 'true'}),
     h('span', {class: 'what'}, h('b', {}, running ? `Intake · ${agentName(INTAKE.agent)}` : 'Intake'),
-      h('span', {class: 'doing'}, running ? doing : `Recording ${LIVE.layer} · ${plural(parts, 'part')} so far · by an agent outside the page`)),
+      h('span', {class: 'doing'}, running ? doing : `Recording ${LIVE.layer} · ${plural(parts, 'part')} so far · by an agent outside the page`),
+      said.length ? h('span', {class: 'signals'}, said) : null),
     running ? h('button', {class: `btn sm ${INTAKE.waiting ? 'primary' : ''}`, type: 'button', onclick: () => openIntakeChat()},
       INTAKE.waiting ? 'Answer' : 'Chat') : null,
     running ? h('button', {class: 'btn sm danger', type: 'button', onclick: stopIntake}, 'Stop')
@@ -8259,8 +13032,7 @@ function closeBuildPrompt() {
 overlay($('#buildPrompt'), {kind: 'dialog', close: closeBuildPrompt, guard: promptKept});
 // The dock's message box offers the commands as / is typed: the dock's own and those of the agent on view.
 slashCommands($('#helpdesk .say'), dockOffered);
-// The chat dock's own picker: the agent its new chats start with, beside Call.
-$('#helpdesk .summon').append(summonPicker('dock', {up: true, label: 'Agent for new chats'}));
+// The agent the chat's new chats start with is chosen as the first field of its settings popover, `dockPicker`.
 syncResume();
 
 /* ---------- live: the server pushes what modules publish, and the page redraws; nothing polls, VIEW-018 ----------
@@ -8304,6 +13076,7 @@ async function follow(found) {
     renderLegend();
     drawIntake();
     toast(stands ? `The intake finished.` : `The intake stopped: ${S.project} was cleared.`);
+    if (stands) attend(`intake:${base}`, 'The intake finished', null, null);  // the mascot says so too, `ATTN`
     await loadProject();
     return;
   }
@@ -8348,6 +13121,10 @@ async function changed(event) {
   if (event.topic !== 'map.changed') return;
   if (event.payload?.project && event.payload.project !== S.project) return intakeElsewhere(event.payload);
   if (event.payload?.project !== S.project) return;
+  if (WS.on) {  // the workspace's panes that read the map, its messages and its workflow runs, read again
+    WS.refresh();
+    for (const page of ['messages', 'runs']) if (WS.isShown(WS.paneOfPage(page)?.id)) PANE_VIEWS[page].show();
+  } else if (WS.active) WS.refresh();
   const named = event.payload.tables;
   if (briefTouched(named)) LIVE.brief = true;
   if (Array.isArray(named) && named.length && named.every(table => String(table).startsWith('jev.'))) {
@@ -8489,6 +13266,7 @@ async function appliedOps() {
   for (const entry of S.elements.values()) entry.parent = holderOf(entry.element);
   S.whole = {elements: S.elements, joins: S.joins};
   S.seq = ops[ops.length - 1].seq;
+  flowWritten(ops);  // what was written on a node lands there as a record, `FLOW`
   draw3D();
   renderLegend();
   await build2D();
@@ -8609,6 +13387,10 @@ function listen() {
   source.onmessage = message => {
     const event = JSON.parse(message.data);
     if (event.topic === 'build') return buildEvent(event.payload);  // the build panel's progress, BASE-060
+    if (event.topic === 'map.flow') return flowEvent(event.payload);  // where agents' tool calls reached, `FLOW`
+    if (event.topic === 'mascot') return mascotEvent(event.payload);  // the system agent moves the mascot, `MASCOT`
+    if (event.topic === 'workspace') return loadWorkspace();  // arranged on another page, or in the settings
+    if (debugAt('verbose')) { traced({kind: 'event', what: event.topic, raw: debugAt('trace') ? message.data : null}); dlog('verbose', 'event', event); }
     changed(event);
   };
   source.onopen = () => {
@@ -8710,12 +13492,14 @@ async function readGraph(agents) {
   const start = keep || MEM.key || (S.cleared ? null : entryOf());  // a selection let go of stays let go, VIEW-008
   if (!start) S.cleared && S.elements.size ? noneSelected() : fill($('#p-object'), emptyPanel());
   else {
-    if (!keep) setTimeout(() => { if (G) fit3d(800, 60); }, 2200);
+    // the whole map fitted once it has spread, unless a selection has flown the camera to its node meanwhile
+    if (!keep) setTimeout(() => { if (G && !V3.focus && S.selected === start) fit3d(800, 60); }, 2200);
     await select(start, false, false, false, true);
   }
   await told;
   drawIntake();
   window.metaform.onLoaded?.();  // the map view in an AI tool then turns to the address its call named, MCP-037
+  READY.done?.();  // `window.metaform.ready`, once, the first map drawn
 }
 async function loadMetaform() {
   S.view = null; S.selected = null; S.cleared = false; IN.length = 0; M.base = null; dropMemories(); renderCrumbs();
@@ -8729,7 +13513,7 @@ function loadProject(wanted = null) { return opening(() => readProject(wanted));
 async function readProject(wanted) {
   const project = S.project;
   readHarnesses();
-  nodeTabs();
+  loadWorkspace();
   await readAutostart();
   const metaforms = (await read('bases', {limit: 0})).results;
   if (S.project !== project) return;  // the metaforms of a project the person has left
@@ -8808,6 +13592,226 @@ function toProject(id) {
 }
 $('#proj').onchange = () => { toProject($('#proj').value); loadProject(); listen(); };
 $('#mf').onchange = () => { S.base = $('#mf').value; baseButtons(); loadMetaform(); };
+
+/* ---------- the developer level: browser-console detail and traces, only with metaform web start --web-debug ----------
+ * Off, the default, logs nothing and keeps no trace. info logs each read and write of the page and keeps them for the
+ * Traces pane; verbose adds the events heard and each pane drawn; trace adds every raw response. The level comes with
+ * the workspace's read, from the web_debug setting or the last start's --web-debug. */
+const DEBUG = {level: 'off', rows: [], most: 400};
+const DEBUG_LEVELS = ['off', 'info', 'verbose', 'trace'];
+const debugAt = level => DEBUG_LEVELS.indexOf(DEBUG.level) >= DEBUG_LEVELS.indexOf(level) && DEBUG.level !== 'off';
+function dlog(level, ...said) { if (debugAt(level)) console.info(`[metaform ${level}]`, ...said); }
+function traced(row) {
+  if (DEBUG.level === 'off') return;
+  DEBUG.rows.push({at: Date.now(), ...row});
+  if (DEBUG.rows.length > DEBUG.most) DEBUG.rows.splice(0, DEBUG.rows.length - DEBUG.most);
+}
+{
+  const own = window.fetch.bind(window);
+  window.fetch = async (input, options = {}) => {
+    if (DEBUG.level === 'off') return own(input, options);
+    const what = typeof input === 'string' ? input : input.url, method = (options.method || 'GET').toUpperCase(), began = performance.now();
+    const response = await own(input, options);
+    const ms = Math.round(performance.now() - began);
+    let raw = null;
+    if (debugAt('trace')) { try { raw = (await response.clone().text()).slice(0, 20000); } catch { raw = null; } }
+    traced({kind: method, what, status: response.status, ms, raw});
+    dlog('info', method, what, response.status, `${ms} ms`);
+    return response;
+  };
+}
+
+/* ---------- the workspace: the toolbar, the panes and their places, web/README.md "Toolbar and panes" ----------
+ * Drawn from /api/workspace by workspace.js, which this part lends the page's own views and commands. In an AI tool's
+ * frame, or with no workspace read, the page stays as written. */
+const TAB_VIEWS = {object: 'object', brief: 'brief', prov: 'provenance', prompt: 'prompt'};
+const PANE_VIEWS = createViews({h, fill, read, wrote, toast, confirmAct, project: () => S.project, debug: () => DEBUG.level,
+  trace: () => DEBUG.rows, getJson: workspaceJson,
+  openMessages: record => { const id = nodeOf(record); select(id, true); show(id, 'unread'); }});
+for (const view of Object.values(PANE_VIEWS)) $('.app').append(view.el);
+async function workspaceJson(path) {
+  const response = await reach(path, {headers: {Accept: 'application/json'}});
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw Object.assign(new Error(body.error || `${path} failed`), {status: response.status, body});
+  return body;
+}
+/* A window of the page shown as a pane leaves the overlay stack while it is docked, so it neither covers the page nor
+ * holds its keys, and is a window on the stack again when it floats or closes. */
+function overlayDocked(box, on) {
+  if (on) {
+    const known = OVERLAY.known.get(box);
+    if (known) { box.wsOverlay = known; OVERLAY.known.delete(box); }
+    OVERLAY.stack = OVERLAY.stack.filter(entry => entry.box !== box);
+    box.inert = false;
+    restack();
+  } else if (box.wsOverlay) {
+    OVERLAY.known.set(box, box.wsOverlay);
+    delete box.wsOverlay;
+  }
+}
+/* The chat in a pane's body: it stays open there, its tab and its own place left aside; null puts it back in its dock. */
+function chatPane(on) {
+  const box = $('#helpdesk');
+  overlayDocked(box, on);
+  if (on) {
+    $('#dock').dataset.place = 'pane';
+    $('#dock').className = 'open';
+    box.hidden = false;
+    dockLayout();
+    drawHelpdesk();
+    return;
+  }
+  $('#dock').append(box);
+  let kept = 'corner';
+  try { kept = localStorage.getItem(DOCK_PLACE) || 'corner'; } catch { /* storage can be blocked */ }
+  placeDock(kept, false);
+  dockState('resting');
+}
+const chatDocked = () => $('#dock').dataset.place === 'pane';
+/* An agent's figure on the 2D map opens the exact session it walks for, as its figure in 3D and its row under Agent
+ * deployed do; the click goes to the figure, not to the box under it. */
+$('#viewport').addEventListener('click', event => {
+  const g = event.target.closest?.('g.agent2d');
+  if (!g) return;
+  const figure = [...ROAM2D.figures.values()].find(one => one.g === g);
+  if (!figure) return;
+  event.stopPropagation();
+  event.preventDefault();
+  const session = D.sessions.filter(one => one.work_id === figure.id && one.state === 'running').at(-1);
+  agentAt(figure.id, session?.session_id || null);
+}, true);
+/* The chat docked at a side of the page is as wide as the person drags its inner edge, kept in this browser as a view
+ * preference of the screen; a double-click puts it back. */
+{
+  const DOCK_WIDTH = 'metaform.dockWidth';
+  const set = pixels => {
+    if (pixels === null) { document.documentElement.style.removeProperty('--dock-width'); try { localStorage.removeItem(DOCK_WIDTH); } catch { /* blocked */ } }
+    else {
+      const width = Math.round(Math.max(320, Math.min(innerWidth - 360, pixels)));
+      document.documentElement.style.setProperty('--dock-width', `${width}px`);
+      try { localStorage.setItem(DOCK_WIDTH, String(width)); } catch { /* storage can be blocked; it is sized for now */ }
+    }
+    dispatchEvent(new Event('resize'));
+  };
+  const edge = h('div', {class: 'dockedge', role: 'separator', 'aria-orientation': 'vertical', tabindex: '0',
+    'aria-label': 'The docked chat\'s width', title: 'Drag to resize the chat; double-click to reset'});
+  $('#helpdesk').append(edge);
+  edge.addEventListener('pointerdown', event => {
+    event.preventDefault();
+    const right = $('#dock').dataset.place === 'right';
+    const move = moved => set(right ? innerWidth - moved.clientX : moved.clientX);
+    const end = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', end); };
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', end);
+  });
+  edge.addEventListener('dblclick', () => set(null));
+  edge.addEventListener('keydown', event => {
+    const by = {ArrowLeft: 24, ArrowRight: -24}[event.key];
+    if (!by) return;
+    event.preventDefault();
+    const now = $('#helpdesk').getBoundingClientRect().width;
+    set(now + ($('#dock').dataset.place === 'right' ? by : -by));
+  });
+  try { const kept = Number(localStorage.getItem(DOCK_WIDTH)); if (kept) set(kept); } catch { /* the default width */ }
+}
+const VIEWS = {
+  object: {el: $('#p-object'), show: () => { if (S.selected) select(S.selected, false, true, false, true); }},
+  brief: {el: $('#p-brief'), show: () => renderBrief()},
+  provenance: {el: $('#p-prov'), show: () => renderProv()},
+  prompt: {el: $('#p-prompt'), show: () => (P.editor ? setTimeout(() => P.editor.refresh(), 0) : renderPrompt())},
+  settings: {el: $('#settings'), show: () => showSettings(), docked: on => overlayDocked($('#settings'), on)},
+  'agent-view': {el: $('#agentview'), show: () => readAgentView(), docked: on => overlayDocked($('#agentview'), on)},
+  board: {el: $('#board'), show: () => renderBoard(), docked: on => overlayDocked($('#board'), on)},
+  dock: {el: $('#helpdesk'), show: () => drawHelpdesk(), docked: on => chatPane(on)},
+  ...PANE_VIEWS,
+};
+const COMMANDS = {
+  search: () => openSearch(),
+  'export-markdown': () => $('#exportMarkdown').click(), 'export-xml': () => $('#exportXml').click(),
+  'export-mermaid': () => $('#exportMermaid').click(), 'copy-mermaid': () => $('#copyMermaid').click(),
+  build: () => $('#buildBtn').click(), shortcuts: () => openHelp(),
+  layers: () => $('#layersBtn').click(), agents: () => $('#agentsMenuBtn').click(), intake: () => openIntake(),
+  orphaned: () => $('#orphanBtn').click(),
+  'add-task': address => { const element = elementAt(address); if (element) giveWork(element.id); },
+  'add-element': address => addElement(elementAt(address)?.id || S.selected),
+  'dispatch-node': address => {
+    const element = elementAt(address);
+    if (!element) return;
+    giveWork(element.id);
+    $('#task .start-agent').checked = true;
+  },
+};
+const WS = createWorkspace({h, fill, toast, confirmAct, overlay, movable, place, wrote, getJson: workspaceJson,
+  project: () => S.project, selection: () => briefAddress(), layers: () => viewLayers(),
+  view: page => (page === 'dev-prompts' || page === 'dev-trace') && DEBUG.level === 'off' ? null : VIEWS[page] || null,
+  hasCommand: page => page in COMMANDS, command: (page, address) => COMMANDS[page]?.(address),
+  tab: page => ({object: $('#t-object'), brief: $('#t-brief'), provenance: $('#t-prov'), prompt: $('#t-prompt')})[page] || null,
+  openAddress: uri => { const element = elementAt(uri.replace(/^metaform:\/\//, '').split('#')[0]); if (element) briefTo(element.id); },
+  maps: large => {
+    const swapped = $('.app').classList.contains('swapped');
+    if ((large === 'map2d') !== swapped) swap(large === 'map2d', false);
+    return {large: $('main'), small: $('#small')};
+  },
+  classic: on => { $('.app').classList.toggle('ws', !on); if (on) $('#toolbar').hidden = true; },
+  // the arrangement that is the page as written: its side column at that side with the node's tabs as laid out, its
+  // tab open, its windows opened and closed as their own buttons do, and the large map this browser's choice
+  classicFrame: ({side, panes, tabs, off}) => { sideAt(side === 'right'); classicTabs(panes, tabs, off); },
+  tabOpen: page => $('#t-' + TAB_PAGES[page])?.getAttribute('aria-selected') === 'true',
+  showTab: page => showTab(TAB_PAGES[page]),
+  largeMap: () => ($('.app').classList.contains('swapped') ? 'map2d' : 'map3d'),
+  openWindow: page => ({board: () => $('#boardBtn').click(), settings: () => openSettings(),
+    'agent-view': () => openAgentView()})[page]?.(),
+  overlayHolds, log: dlog});
+/* The workspace read with the project, the page's developer level with it; without it, the node's tabs as the
+ * declarations give them, `nodeTabs`. */
+async function loadWorkspace() {
+  if (FRAMED) return nodeTabs();
+  await readView();
+  const before = WS.on;  // web_panes off, WS.load keeps the page as written and reads the view settings alone
+  const on = await WS.load();
+  const view = WS.view();  // read with panes on or off, web_panes
+  DEBUG.level = view.debug || 'off';
+  const shapes = view.shapes !== false;
+  if (shapes !== VIEW_SETTINGS.shapes) { VIEW_SETTINGS.shapes = shapes; shapes3d(); if (M.base) build2D(); }
+  Object.assign(FRAMES, {idle: 1000 * Number(view.flow_seconds ?? 30), rest: view.idle_flow ? null : 0});
+  fitDirection2d(view.map_direction);  // web_map_direction, the 2D map's way, `fitPin2d`
+  if (!on) return nodeTabs();
+  if (DEBUG.level !== 'off' && !before) WS.render();  // the developer panes, offered now that the level is known
+  dlog('info', 'workspace', WS.state()?.workspace, WS.layout());
+}
+// Where a node's sign is on the screen, its four corners projected as the scene draws them, for a check of its framing.
+window.metaform.signRect = id => {
+  const sign = tags.get(id)?.sprite;
+  if (!G || !sign) return null;
+  sign.updateMatrixWorld();
+  const box = $('#stage').getBoundingClientRect(), camera = G.camera();
+  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+  for (const [x, y] of [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]]) {
+    const at = new THREE.Vector3(x, y, 0).applyMatrix4(sign.matrixWorld).project(camera);
+    const sx = box.left + (at.x + 1) / 2 * box.width, sy = box.top + (1 - at.y) / 2 * box.height;
+    left = Math.min(left, sx); right = Math.max(right, sx); top = Math.min(top, sy); bottom = Math.max(bottom, sy);
+  }
+  return {left, top, right, bottom};
+};
+// What a browser check reads of the agents drawn: the agents read again, and where an agent's figure is on the screen.
+Object.assign(window.metaform, {renderAgents: () => renderAgents(),
+  figureOnScreen: work => {
+    const figure = ROAM.figures.get(work);
+    if (!G || !figure?.mesh) return null;
+    const box = $('#stage').getBoundingClientRect(), at = figure.mesh.position.clone().project(G.camera());
+    return {x: box.left + (at.x + 1) / 2 * box.width, y: box.top + (1 - at.y) / 2 * box.height};
+  },
+  readout: which => { const box = readoutBox(which); return box && !box.hidden && box.classList.contains('on') ? box.textContent : null; }});
+// What a browser check reads of the workspace: whether it is on, the layout drawn, and where a pane stands.
+window.metaform.workspace = {on: () => WS.on, layout: () => WS.layout(), toolbar: () => WS.toolbar(), where: id => WS.where(id),
+  shown: id => WS.isShown(id), activate: id => WS.activate(id), move: (id, target) => WS.moveTo(id, target)};
+/* What changes with a selection in the workspace: the brief and provenance shown read again, and the panes that
+ * follow the selection. */
+function wsSelected() {
+  if (WS.isShown('map.brief')) renderBrief();
+  if (WS.isShown('map.provenance')) renderProv();
+  WS.refresh(true);
+}
 
 async function main() {
   const response = await reach('/api/projects');

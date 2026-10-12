@@ -31,9 +31,9 @@ PANES: tuple[Pane, ...] = (
     # The prompts agents are sent are read and edited beside the node they shape; today the object panel's third tab.
     Pane('prompt', 'Prompt', 'Read and edit the prompts agents are sent, as new versions with their changes shown.',
          icon='pen', page='prompt', area='right', group='node', visible=True, order=30, min_width=320),
-    # Settings are read and typed into, so the pane belongs with the reading on the right.
+    # Settings open as the page's own window, as they always have; the person can dock the pane on the right.
     Pane('settings', 'Settings', 'Change any setting of this folder and its modules, and turn modules on or off.',
-         icon='gear', page='settings', area='right', group='node', order=90, min_width=360),
+         icon='gear', page='settings', area='float', order=90, min_width=360),
 )
 
 check_workspace('chassis', (), TOOLBAR, PANES)

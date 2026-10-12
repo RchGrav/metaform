@@ -84,9 +84,17 @@ def stamp(cite: str, root: Path) -> Row:
 @dataclass
 class Checker:
     """Checks citations against the project's files for one read: each file is stat'ed, and read only when its size or
-    time changed, once."""
-    root: Path
+    time changed, once. The project's folder is looked up on the first citation checked, so a read of memories that
+    cite nothing costs nothing more."""
+    ctx: Context
     texts: dict[str, str | None] = field(default_factory=dict[str, str | None])
+    _root: Path | None = None
+
+    @property
+    def root(self) -> Path:
+        if self._root is None:
+            self._root = root_of(self.ctx)
+        return self._root
 
     def _text(self, path: str) -> str | None:
         if path not in self.texts:

@@ -5,6 +5,16 @@ Every secret is kept only as its SHA-256: an invitation, a session, a code and a
 bits made by `secrets`, so a copy of this file signs no one in and calls nothing. Passkeys keep only their public
 keys. Nothing here is portable to another domain: a passkey belongs to the name it was made for, WebAuthn's relying
 party, so a moved instance enrols its people again.
+
+Each account row also carries its `generation`, the number every signed token names (tokens.py): bumping it signs the
+account out everywhere. Its one pending invitation is on the row too, as a hash and an expiry.
+
+`BrokerStore` is the store of the broker role at metaform.ing, which keeps nothing on disk but the accounts and their
+passkeys' public keys: its tokens are signed (tokens.py), and its sign-in challenges, sessions, consent requests and
+client metadata are held in memory, lost on a restart by design, which costs anyone mid-sign-in a retry. Opened on a
+file that holds any of a self-hosted Node's tables (a migrated store, or one a command opened the other way), it drops
+them, so the file never keeps more than the accounts and passkeys. `open_store` picks the right one from the role the
+server last ran as, so a command run beside a broker (`metaform node signout`) opens the broker's store.
 """
 from __future__ import annotations
 
@@ -13,6 +23,7 @@ import secrets
 import threading
 import time
 import uuid
+from collections import OrderedDict
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -22,13 +33,15 @@ from typing import Any
 
 from metaform.data import DataConnection, private_database
 
-SCHEMA = """
+DURABLE = """
 CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, role TEXT NOT NULL,
-    created REAL NOT NULL, disabled REAL);
+    created REAL NOT NULL, disabled REAL, generation INTEGER NOT NULL DEFAULT 0, invite_sha256 TEXT,
+    invite_expires REAL);
 CREATE TABLE IF NOT EXISTS passkeys (credential_id TEXT PRIMARY KEY, account TEXT NOT NULL REFERENCES accounts(id),
     public_key BLOB NOT NULL, sign_count INTEGER NOT NULL, transports TEXT, created REAL NOT NULL, used REAL);
-CREATE TABLE IF NOT EXISTS invites (hash TEXT PRIMARY KEY, account TEXT NOT NULL REFERENCES accounts(id),
-    expires REAL NOT NULL, used REAL);
+"""
+# What only a self-hosted Node keeps on disk; the broker holds the same in memory, or needs none of it.
+SCHEMA = """
 CREATE TABLE IF NOT EXISTS challenges (id TEXT PRIMARY KEY, challenge BLOB NOT NULL, purpose TEXT NOT NULL,
     subject TEXT, expires REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS sessions (hash TEXT PRIMARY KEY, account TEXT NOT NULL REFERENCES accounts(id),
@@ -42,6 +55,14 @@ CREATE TABLE IF NOT EXISTS tokens (hash TEXT PRIMARY KEY, kind TEXT NOT NULL, fa
     client_id TEXT NOT NULL, account TEXT NOT NULL, scopes TEXT NOT NULL, resource TEXT NOT NULL,
     expires REAL NOT NULL, revoked REAL, rotated REAL);
 CREATE INDEX IF NOT EXISTS tokens_family ON tokens(family);
+"""
+# Everything a self-hosted Node's store may hold beside the accounts and passkeys, the old invitations table included.
+SELF_HOSTED_TABLES = ('invites', 'challenges', 'sessions', 'clients', 'pending', 'codes', 'tokens')
+# Refresh-token marks kept across restarts when the operator sets node_refresh_replay to durable: grant ids and
+# counters, no secret (tokens.Families).
+FAMILIES = """
+CREATE TABLE IF NOT EXISTS families (family TEXT PRIMARY KEY, seq INTEGER NOT NULL, revoked INTEGER NOT NULL,
+    expires REAL NOT NULL);
 """
 
 
@@ -75,12 +96,36 @@ class Token:
 
 
 class AuthStore:
+    transient = SCHEMA  # the tables kept on disk beside the accounts; the broker keeps none
+
     def __init__(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
         self.lock = threading.RLock()
         self.db = private_database(path)
-        self.db.executescript(SCHEMA)
+        self.families_ready = False
+        self.db.executescript(DURABLE)
+        self._migrate()
+        if self.transient:
+            self.db.executescript(self.transient)
+
+    def _migrate(self) -> None:
+        """An account table from before generations and invitations on the row: the columns are added, and each
+        account's newest unused invitation moves onto its row. The old invites table is left as it was."""
+        with self.lock:
+            columns = {row[1] for row in self.db.execute('PRAGMA table_info(accounts)')}
+            if 'generation' not in columns:
+                self.db.execute('ALTER TABLE accounts ADD COLUMN generation INTEGER NOT NULL DEFAULT 0')
+            if 'invite_sha256' not in columns:
+                self.db.execute('ALTER TABLE accounts ADD COLUMN invite_sha256 TEXT')
+                self.db.execute('ALTER TABLE accounts ADD COLUMN invite_expires REAL')
+                old = self.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='invites'").fetchone()
+                if old is not None:
+                    for hashed, account, expires in self.db.execute(
+                            'SELECT hash, account, expires FROM invites WHERE used IS NULL AND expires>? '
+                            'ORDER BY expires', (time.time(),)).fetchall():
+                        self.db.execute('UPDATE accounts SET invite_sha256=?, invite_expires=? WHERE id=?',
+                                        (hashed, expires, account))
 
     @contextmanager
     def tx(self) -> Generator[DataConnection]:
@@ -118,7 +163,8 @@ class AuthStore:
             return found
         made_id = uuid.uuid4().hex
         with self.tx() as db:
-            db.execute('INSERT INTO accounts VALUES (?, ?, ?, ?, NULL)', (made_id, name.lower(), role, time.time()))
+            db.execute('INSERT INTO accounts (id, name, role, created) VALUES (?, ?, ?, ?)',
+                       (made_id, name.lower(), role, time.time()))
         return Account(made_id, name.lower(), role, False)
 
     def disable(self, name: str) -> bool:
@@ -127,11 +173,32 @@ class AuthStore:
             return False
         now = time.time()
         with self.tx() as db:
-            db.execute('UPDATE accounts SET disabled=? WHERE id=?', (now, account.id))
-            db.execute('DELETE FROM sessions WHERE account=?', (account.id,))
-            db.execute('UPDATE tokens SET revoked=? WHERE account=? AND revoked IS NULL', (now, account.id))
-            db.execute('UPDATE invites SET used=? WHERE account=? AND used IS NULL', (now, account.id))
+            db.execute("UPDATE accounts SET disabled=?, generation=generation+1, invite_sha256='' WHERE id=?",
+                       (now, account.id))
+        self.forget(account.id)
+        self.revoke_account(account.id, now)
         return True
+
+    def revoke_account(self, account_id: str, now: float) -> None:
+        with self.tx() as db:
+            db.execute('UPDATE tokens SET revoked=? WHERE account=? AND revoked IS NULL', (now, account_id))
+
+    def forget(self, account_id: str) -> None:
+        """Every session of the account ends, as its generation moved."""
+        with self.tx() as db:
+            db.execute('DELETE FROM sessions WHERE account=?', (account_id,))
+
+    def generation(self, account_id: str) -> tuple[int, bool] | None:
+        row = self.one('SELECT generation, disabled FROM accounts WHERE id=?', account_id)
+        return (int(row[0]), row[1] is not None) if row else None
+
+    def bump_generation(self, account_id: str) -> int:
+        """Sign the account out everywhere: every token naming the old generation stops working."""
+        with self.tx() as db:
+            db.execute('UPDATE accounts SET generation=generation+1 WHERE id=?', (account_id,))
+            row = db.execute('SELECT generation FROM accounts WHERE id=?', (account_id,)).fetchone()
+        self.forget(account_id)
+        return int(row[0]) if row else 0
 
     def owner_exists(self) -> bool:
         return self.one("SELECT 1 FROM accounts WHERE role='owner' AND disabled IS NULL") is not None
@@ -140,24 +207,30 @@ class AuthStore:
 
     def invite(self, account: Account, days: float = 7, *, hashed: str | None = None,
                expires: float | None = None) -> str | None:
-        """A one-time setup secret for `account`, kept as its hash; with `hashed`, import one made elsewhere."""
+        """A one-time setup secret for `account`, kept as its hash on the account's row, replacing any earlier one;
+        with `hashed`, import one made elsewhere, only onto a row that never held one, so the owner's first link is
+        not brought back once used."""
         secret = None if hashed else made()
+        until = expires or time.time() + days * 86400
         with self.tx() as db:
-            db.execute('INSERT OR IGNORE INTO invites VALUES (?, ?, ?, NULL)',
-                       (hashed or digest(secret or ''), account.id, expires or time.time() + days * 86400))
+            if hashed:
+                db.execute('UPDATE accounts SET invite_sha256=?, invite_expires=? WHERE id=? AND invite_sha256 IS NULL',
+                           (hashed, until, account.id))
+            else:
+                db.execute('UPDATE accounts SET invite_sha256=?, invite_expires=? WHERE id=?',
+                           (digest(secret or ''), until, account.id))
         return secret
 
     def invited(self, secret: str) -> Account | None:
-        row = self.one('SELECT account FROM invites WHERE hash=? AND used IS NULL AND expires>?', digest(secret),
-                       time.time())
-        if row is None:
+        if not secret:
             return None
-        account = self.account(id=row[0])
-        return account if account and not account.disabled else None
+        row = self.one('SELECT id FROM accounts WHERE invite_sha256=? AND invite_expires>? AND disabled IS NULL',
+                       digest(secret), time.time())
+        return self.account(id=row[0]) if row else None
 
     def use_invite(self, secret: str) -> None:
         with self.tx() as db:
-            db.execute('UPDATE invites SET used=? WHERE hash=?', (time.time(), digest(secret)))
+            db.execute("UPDATE accounts SET invite_sha256='' WHERE invite_sha256=?", (digest(secret),))
 
     # ------------------------------------------------------------------------------------------------ passkeys
 
@@ -309,3 +382,163 @@ class AuthStore:
     def revoke_family(self, family: str) -> None:
         with self.tx() as db:
             db.execute('UPDATE tokens SET revoked=? WHERE family=? AND revoked IS NULL', (time.time(), family))
+
+    # ------------------------------------------------------------------------------------------------ families
+
+    def _families(self) -> None:
+        with self.lock:
+            if not self.families_ready:
+                self.db.executescript(FAMILIES)
+                self.families_ready = True
+
+    def family(self, family: str) -> tuple[int, bool] | None:
+        """A refresh family's mark, with node_refresh_replay durable (tokens.Families)."""
+        self._families()
+        with self.lock:
+            row = self.db.execute('SELECT seq, revoked FROM families WHERE family=? AND expires>?',
+                                  (family, time.time())).fetchone()
+        return (int(row[0]), bool(row[1])) if row else None
+
+    def save_family(self, family: str, seq: int, revoked: bool, expires: float) -> None:
+        self._families()
+        with self.tx() as db:
+            db.execute('DELETE FROM families WHERE expires<?', (time.time(),))
+            db.execute('INSERT OR REPLACE INTO families VALUES (?, ?, ?, ?)', (family, seq, int(revoked), expires))
+
+
+class BrokerStore(AuthStore):
+    """The broker's store: accounts and passkeys on disk, everything else in this process's memory. Challenges,
+    sessions, consent requests and client metadata documents live here until they expire or the process stops.
+
+    `families` says what to do with the refresh marks table (tokens.Families): True keeps it (node_refresh_replay
+    durable), False drops it, None, for a command that does not know the setting, leaves it as it is."""
+
+    transient = ''
+    CLIENTS_HELD = 1024  # client metadata documents kept, the least recently used dropped first
+
+    def __init__(self, path: Path, families: bool | None = None) -> None:
+        super().__init__(path)
+        with self.lock:
+            for table in SELF_HOSTED_TABLES + (('families',) if families is False else ()):
+                self.db.execute(f'DROP TABLE IF EXISTS {table}')
+            self.db.execute('DROP INDEX IF EXISTS tokens_family')
+        self.memory_lock = threading.Lock()
+        self.challenges: dict[str, tuple[bytes, str, str | None, float]] = {}
+        self.sessions: dict[str, tuple[str, str, int, float]] = {}
+        self.clients: OrderedDict[str, tuple[dict[str, Any], str, float]] = OrderedDict()
+        self.pending: dict[str, tuple[str, dict[str, Any], float]] = {}
+
+    @staticmethod
+    def _prune(held: dict[str, Any], now: float) -> None:
+        for key, value in list(held.items()):
+            if value[-1] < now:
+                held.pop(key, None)
+
+    def forget(self, account_id: str) -> None:
+        with self.memory_lock:
+            for key, (account, _, _, _) in list(self.sessions.items()):
+                if account == account_id:
+                    self.sessions.pop(key, None)
+
+    def revoke_account(self, account_id: str, now: float) -> None:
+        return None  # its tokens name a generation that has moved on
+
+    def add_passkey(self, account: Account, credential_id: str, public_key: bytes, sign_count: int,
+                    transports: list[str]) -> None:
+        with self.tx() as db:  # no times kept: the key and its counter are all a passkey check needs
+            db.execute('INSERT INTO passkeys VALUES (?, ?, ?, ?, ?, 0, NULL)',
+                       (credential_id, account.id, public_key, sign_count, json.dumps(transports)))
+
+    def used_passkey(self, credential_id: str, sign_count: int) -> None:
+        with self.tx() as db:
+            db.execute('UPDATE passkeys SET sign_count=? WHERE credential_id=?', (sign_count, credential_id))
+
+    def challenge(self, challenge: bytes, purpose: str, subject: str | None, seconds: float = 300) -> str:
+        made_id = made()
+        with self.memory_lock:
+            self._prune(self.challenges, time.time())
+            self.challenges[digest(made_id)] = (challenge, purpose, subject, time.time() + seconds)
+        return made_id
+
+    def take_challenge(self, made_id: str, purpose: str) -> tuple[bytes, str | None] | None:
+        with self.memory_lock:
+            found = self.challenges.pop(digest(made_id), None)
+        if found is None or found[1] != purpose or found[3] < time.time():
+            return None
+        return found[0], found[2]
+
+    def open_session(self, account: Account, seconds: float) -> tuple[str, str]:
+        """A session names the generation it was opened under, as every token does: signing the account out
+        everywhere, from this process or from `metaform node signout` in another, ends it at its next use."""
+        session, csrf = made(), made()
+        current = self.generation(account.id)
+        with self.memory_lock:
+            self._prune(self.sessions, time.time())
+            self.sessions[digest(session)] = (account.id, csrf, current[0] if current else -1, time.time() + seconds)
+        return session, csrf
+
+    def session(self, session: str) -> tuple[Account, str] | None:
+        with self.memory_lock:
+            found = self.sessions.get(digest(session))
+        if found is None or found[3] < time.time():
+            return None
+        current = self.generation(found[0])
+        account = self.account(id=found[0])
+        if current is None or current[0] != found[2] or account is None or account.disabled:
+            with self.memory_lock:
+                self.sessions.pop(digest(session), None)
+            return None
+        return account, found[1]
+
+    def close_session(self, session: str) -> None:
+        with self.memory_lock:
+            self.sessions.pop(digest(session), None)
+
+    def client(self, client_id: str) -> tuple[dict[str, Any], str, float] | None:
+        with self.memory_lock:
+            found = self.clients.get(client_id)
+            if found is not None:
+                self.clients.move_to_end(client_id)
+            return found
+
+    def save_client(self, client_id: str, metadata: dict[str, Any], kind: str, fresh_until: float) -> None:
+        """Held while fresh, and at most CLIENTS_HELD at once: a document dropped early is fetched again on its
+        client's next request, so the bound costs a fetch, never a sign-in."""
+        with self.memory_lock:
+            self._prune(self.clients, time.time())
+            self.clients[client_id] = (metadata, kind, fresh_until)
+            self.clients.move_to_end(client_id)
+            while len(self.clients) > self.CLIENTS_HELD:
+                self.clients.popitem(last=False)
+
+    def hold(self, client_id: str, params: dict[str, Any], seconds: float = 600) -> str:
+        made_id = made()
+        with self.memory_lock:
+            self._prune(self.pending, time.time())
+            self.pending[made_id] = (client_id, params, time.time() + seconds)
+        return made_id
+
+    def held(self, made_id: str) -> tuple[str, dict[str, Any]] | None:
+        with self.memory_lock:
+            found = self.pending.get(made_id)
+        return (found[0], found[1]) if found is not None and found[2] > time.time() else None
+
+    def release(self, made_id: str) -> None:
+        with self.memory_lock:
+            self.pending.pop(made_id, None)
+
+
+def role_file(path: Path) -> Path:
+    """Beside the store: the role the server last ran as, written by `metaform node auth`."""
+    return path.parent / 'role'
+
+
+def open_store(path: Path, broker: bool | None = None, families: bool | None = None) -> AuthStore:
+    """The store at `path` as its server uses it: a broker's (BrokerStore) or a self-hosted Node's (AuthStore). With
+    `broker` None, as for a command run beside the server, the role the server last ran as decides."""
+    if broker is None:
+        try:
+            broker = role_file(path).read_text(encoding='utf-8').strip() == 'broker'
+        except OSError:
+            broker = False
+    return BrokerStore(path, families) if broker else AuthStore(path)

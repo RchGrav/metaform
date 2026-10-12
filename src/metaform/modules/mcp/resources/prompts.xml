@@ -84,7 +84,7 @@
      and the head of its description's first sentence. An agent whose AI tool lists tools by name only reads it once
      and knows what each is for; a tool's arguments come with it when the agent loads it. Empty leaves the heading
      out. -->
-<tool_index>Metaform's tools, one line each, under the prefix of the module that serves them: map_ then where is map_where. A tool's arguments come with it when you load it.</tool_index>
+<tool_index>Metaform's tools by module, one line each: map_ then where is map_where. A tool's arguments come with it when you load it.</tool_index>
 <!-- The heading of the rules block that follows the tool index in metaform://tools. The block gathers the <rules>
      of every enabled module on the folder's surface, one line each, written "[module] <rule> Why: <why>", so an agent
      reads them once with the tools. A module writes its rules in its own prompts.xml as

@@ -39,6 +39,22 @@ def test_change_triggers_only_relevant_dispatch_checks(payload, starts, monkeypa
     assert page.get_nowait() == {'topic': 'map.changed', 'payload': event}
 
 
+@pytest.mark.req('VIEW-005')
+def test_where_an_agents_tool_calls_reached_goes_to_pages_as_its_own_event_and_leaves_the_change_as_it_was(monkeypatch):
+    server = object.__new__(module.Server)
+    page = queue.SimpleQueue()
+    server.listeners = {page}
+    server.listening = threading.Lock()
+    monkeypatch.setattr(module.home, 'project', lambda project: SimpleNamespace(project_id=project))
+    monkeypatch.setattr(server, 'schedule_dispatch', lambda project: None)
+    flow = [{'session_id': 's', 'agent': 'claude', 'work_id': 'w', 'from': {'kind': 'element', 'id': 'e1'},
+             'to': [{'kind': 'element', 'id': 'e2'}], 'action': 'edit'}]
+    change = {'project': 'proj', 'base_id': 'main', 'tables': 'dispatch', 'dispatch_tables': ['dispatch.lines']}
+    server.changed({**change, 'flow': flow})
+    assert page.get_nowait() == {'topic': 'map.flow', 'payload': {'project': 'proj', 'flows': flow}}
+    assert page.get_nowait() == {'topic': 'map.changed', 'payload': change}
+
+
 def test_repeated_changes_queue_one_followup_without_concurrent_batches(monkeypatch):
     server = object.__new__(module.Server)
     server.dispatch_lock = threading.Lock()

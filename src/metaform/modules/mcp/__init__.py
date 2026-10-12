@@ -94,6 +94,13 @@ settings.boolean('mcp_tasks', True, label='Tasks for long tools',
                          'run paused on you asks its question in your AI tool. tasks/get gives the result and '
                          'tasks/cancel stops the work. A task is kept in the project for a day. AI tools that do not '
                          'declare the extension get the result as before.')
+settings.choice('mcp_search_fetch', ['remote', 'always', 'never'], 'remote', label='search and fetch tools',
+                help='Offer the two tools ChatGPT calls by name, search and fetch: remote offers them over HTTP and the '
+                     'cloud tunnel, always everywhere, never nowhere.',
+                details='ChatGPT\'s connectors and deep research call tools named exactly search and fetch. Both only '
+                        'read: search finds layer items, memories and terms and returns metaform:// ids, fetch reads '
+                        'one. Over stdio a local agent has the real tools (map_search, memory_search_nodes), so remote '
+                        'leaves the two generic ones out there.')
 settings.choice('mcp_recovery', ['relay', 'manual'], 'relay', label='Schema upgrade recovery',
                 help='On a newer store, relay this connection to changed code on disk, or require a manual restart.',
                 details='Relay preserves the host connection and retries calls refused before dispatch. '

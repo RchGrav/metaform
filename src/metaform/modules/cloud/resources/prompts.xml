@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The cloud module's prompts. Every cloud verb is the person's own, on the command line, so nothing here is sent to
+     agents by default. Each element is one prompt, named by its tag, sent exactly as written; comments are never
+     sent. -->
+<prompts>
+<!-- cloud's line in the connect message, after '– cloud: '. Empty sends nothing: agents do not run cloud verbs. -->
+<connect></connect>
+<!-- cloud's instructions, returned by metaform_instructions with module cloud and printed by metaform help agents cloud.
+     Empty sends nothing. -->
+<instructions></instructions>
+<!-- The line under the counts at a node; cloud counts nothing, so it stays empty. -->
+<counts></counts>
+<!-- cloud's rules, one sentence each with its why; empty sends nothing. -->
+<rules></rules>
+</prompts>

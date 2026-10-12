@@ -22,9 +22,11 @@ in place, its thread going on where it ended.
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import contextvars
 import difflib
+import hashlib
 import json
 import os
 import re
@@ -51,6 +53,7 @@ from acp.schema import (
     CancelElicitationResponse,
     ClientCapabilities,
     ClientSessionCapabilities,
+    CreateTerminalResponse,
     DeclineElicitationResponse,
     DeniedOutcome,
     ElicitationCapabilities,
@@ -61,16 +64,23 @@ from acp.schema import (
     Implementation,
     InitializeRequest,
     InitializeResponse,
+    KillTerminalResponse,
     McpServerStdio,
     PermissionOption,
+    ReadTextFileResponse,
+    ReleaseTerminalResponse,
     RequestPermissionResponse,
     SessionConfigOptionsCapabilities,
+    TerminalExitStatus,
+    TerminalOutputResponse,
     ToolCallUpdate,
+    WaitForTerminalExitResponse,
+    WriteTextFileResponse,
 )
 
-from metaform import axiom
+from metaform import axiom, home, jev
 from metaform.data import Item, Node, Store, StoreError, WorkRecord
-from metaform.module import Context, Stop, child_environment, context, mcp_server
+from metaform.module import WITHHELD, Context, Stop, child_environment, context, mcp_server, surface
 
 from . import (
     PERSON_ENDS,
@@ -80,6 +90,7 @@ from . import (
     agent_named,
     argv,
     billable,
+    claimed,
     end_group,
     glyph_of,
     group_options,
@@ -87,7 +98,9 @@ from . import (
     intake_id,
     intake_prompt,
     intake_store,
+    mascot_line,
     memory_read,
+    module_read,
     next_ticket,
     option_key,
     over_budget,
@@ -106,6 +119,7 @@ from . import (
     work_line,
     workflow_skill,
 )
+from .merge import checkpoint
 
 START_LIMIT = 300.0  # the one wait for the agent to start and make its session; npx may download it first
 END_LIMIT = 10.0  # the one wait for a cancelled turn to end, and for the agent to end once its input is closed
@@ -762,6 +776,150 @@ def subject(store: Store, work_id: str, talk: str) -> tuple[str, str]:
 
 
 @dataclass
+class Terminal:
+    """One terminal the agent asked the runner for, ACP's terminal/create: its process in a group of its own, the
+    output kept so far, at most `limit` bytes with the oldest dropped first, and how it exited once it has."""
+    command: str
+    cwd: str
+    process: asyncio.subprocess.Process
+    limit: int
+    output: bytearray
+    truncated: bool = False
+    exit: TerminalExitStatus | None = None
+    reader: asyncio.Task[None] | None = None
+    shown: float = 0.0  # when its line in the thread was last written
+
+
+def trimmed(output: bytearray, limit: int) -> bool:
+    """Drop the oldest output past `limit` bytes, at a character boundary as ACP asks; whether anything was dropped."""
+    if len(output) <= limit:
+        return False
+    del output[:len(output) - limit]
+    while output and output[0] & 0xC0 == 0x80:  # a UTF-8 continuation byte: the character began in what was dropped
+        del output[0]
+    return True
+
+
+def exit_status(code: int | None) -> TerminalExitStatus:
+    """A process's end as ACP says it: its exit code, or the signal that ended it, by name."""
+    if code is not None and code < 0:
+        try:
+            return TerminalExitStatus(exit_code=None, signal=signal.Signals(-code).name)
+        except ValueError:
+            return TerminalExitStatus(exit_code=None, signal=str(-code))
+    return TerminalExitStatus(exit_code=code, signal=None)
+
+
+PROVIDERS = {'claude': 'anthropic', 'codex': 'openai', 'gemini': 'gcp.gemini'}  # gen_ai.provider.name, semconv
+
+
+def usage_attributes(agent: str, name: str, version: str | None, session_id: str | None, usage: Any,
+                     reason: str, model: str | None) -> dict[str, Any]:
+    """One agent turn's span attributes, as the OpenTelemetry GenAI semantic conventions name them for an invoke_agent
+    client span, github.com/open-telemetry/semantic-conventions-genai docs/gen-ai/gen-ai-agent-spans.md, read
+    2026-10-12: input tokens count every input token, the cached ones among them, so ACP's input, which leaves the
+    cached part out, is added to the cache reads and writes; output is ACP's output, which holds the thinking."""
+    attributes: dict[str, Any] = {'gen_ai.operation.name': 'invoke_agent',
+                                  'gen_ai.provider.name': PROVIDERS.get(agent, agent), 'gen_ai.agent.id': agent,
+                                  'gen_ai.agent.name': name, 'gen_ai.response.finish_reasons': [reason]}
+    if version:
+        attributes['gen_ai.agent.version'] = version
+    if session_id:
+        attributes['gen_ai.conversation.id'] = session_id
+    if model:
+        attributes['gen_ai.request.model'] = model
+    if usage is not None:
+        cache_read, cache_write = int(usage.cached_read_tokens or 0), int(usage.cached_write_tokens or 0)
+        attributes['gen_ai.usage.input_tokens'] = int(usage.input_tokens) + cache_read + cache_write
+        attributes['gen_ai.usage.output_tokens'] = int(usage.output_tokens)
+        if usage.cached_read_tokens is not None:
+            attributes['gen_ai.usage.cache_read.input_tokens'] = cache_read
+        if usage.cached_write_tokens is not None:
+            attributes['gen_ai.usage.cache_write.input_tokens'] = cache_write
+    return attributes
+
+
+def traced(attributes: dict[str, Any], started_ns: int, error: str | None = None) -> None:
+    """The turn as an OpenTelemetry client span, from when its prompt was sent to now, through the OpenTelemetry API
+    when it is installed; with no SDK set up, the API records nothing. Never raises: a trace is never worth a turn."""
+    try:
+        from opentelemetry import trace
+    except ImportError:
+        return
+    try:
+        tracer = trace.get_tracer('metaform.dispatch')
+        span = tracer.start_span(f'invoke_agent {attributes.get("gen_ai.agent.name") or ""}'.strip(),
+                                 kind=trace.SpanKind.CLIENT, attributes=attributes, start_time=started_ns)
+        if error:
+            from opentelemetry.trace import Status, StatusCode
+            span.set_attribute('error.type', 'turn_error')
+            span.set_status(Status(StatusCode.ERROR, error))
+        span.end()
+    except Exception as failure:  # noqa: BLE001  a tracer's own failure is said in the log and nowhere else
+        sys.stderr.write(f'Could not trace the turn: {failure}\n')
+
+
+# What a tool call reaches for: a Metaform tool by its MCP name, mcp__metaform__map_node or metaform_map_node as hosts
+# show it, or the command line, metaform map node. The tool is <module>_<verb>, a verb's dashes as written.
+METAFORM_TOOL = re.compile(r'(?i)(?:mcp__metaform__|metaform[_ ])(?P<module>[a-z][a-z0-9]*)[_ ](?P<verb>[a-z][a-z0-9_-]*)')
+DRIFT_EVERY = 10  # tool calls between two asks of Jev whether a worker has drifted, when Jev's session_drift is on
+
+
+def call_line(call: dict[str, Any]) -> str:
+    """One tool call as one line, its title and its input, as Jev's session_drift reads calls."""
+    raw = call.get('rawInput')
+    return f'{call.get("title") or call.get("kind") or "tool"} {json.dumps(raw, ensure_ascii=False)[:400] if raw else ""}'.strip()
+
+
+CALLED_MOST = 64_000  # characters of a Metaform call's input and of each block of its result kept in its thread
+
+
+def metaform_called(known: dict[str, Any], data: dict[str, Any], title: str) -> dict[str, Any] | None:
+    """The Metaform tool a call names, `<module>_<verb>`, with what it was given and, once it is complete, what it gave
+    back as an MCP tool result, each clipped to CALLED_MOST; None for any other call, or before either is known.
+    Read from the call's title as hosts show it, or claude-agent-acp's `_meta.claudeCode.toolName`."""
+    meta = cast(dict[str, Any], data.get('_meta') or {})
+    named = tools_named(f'{title} {cast(dict[str, Any], meta.get("claudeCode") or {}).get("toolName") or ""}')
+    if not named:
+        return None
+    module, verb = named[0]
+    raw = known.get('rawInput')
+    given = cast(dict[str, Any], raw) if isinstance(raw, dict) and len(json.dumps(raw, default=str)) <= CALLED_MOST else {}
+    output = data.get('rawOutput')
+    blocks: list[dict[str, Any]] = []
+    if isinstance(output, dict) and isinstance(cast(dict[str, Any], output).get('content'), list):
+        blocks = [cast(dict[str, Any], one) for one in cast(list[Any], cast(dict[str, Any], output)['content'])
+                  if isinstance(one, dict)]
+    elif data.get('status') in ('completed', 'failed'):
+        blocks = [cast(dict[str, Any], one['content']) for one in cast(list[dict[str, Any]], known.get('content') or [])
+                  if one.get('type') == 'content' and isinstance(one.get('content'), dict)]
+        if not blocks and isinstance(output, str):
+            blocks = [{'type': 'text', 'text': output}]
+    text = [{'type': 'text', 'text': str(one.get('text', ''))[:CALLED_MOST]} for one in blocks if one.get('type') == 'text']
+    called: dict[str, Any] = {'tool': f'{module}_{verb}', 'input': given}
+    if data.get('status') in ('completed', 'failed'):
+        called['result'] = {'content': text, 'isError': data.get('status') == 'failed'}
+    return called
+
+
+def tools_named(line: str) -> list[tuple[str, str]]:
+    """The Metaform tools a call line names, as (module, verb)."""
+    return [(found['module'].lower(), found['verb'].lower().rstrip('_')) for found in METAFORM_TOOL.finditer(line)]
+
+
+def withheld_named(line: str, entries: Sequence[str], effects: dict[tuple[str, str], str]) -> list[str]:
+    """The Metaform tools a call line reaches for that the session's withheld entries name, `<module>_<verb>`:
+    `<module>`, `<module>:read` with the verb's effect read, or the tool itself."""
+    found: list[str] = []
+    for module, verb in tools_named(line):
+        tool = f'{module}_{verb}'
+        if (module in entries or tool in entries
+                or (f'{module}:read' in entries and effects.get((module, verb)) == 'read')):
+            found.append(tool)
+    return found
+
+
+@dataclass
 class ActiveTurn:
     """Cancellation belongs to one prompt, including its turn-start publication before ACP receives it."""
     sent: bool = False
@@ -811,6 +969,9 @@ class Session:
                                     'commands': [], 'plan': [], 'usage': None, 'tokens': None, 'title': None,
                                     'touched': [], 'resumed': None, 'before_resume': [],
                                     'spent': None, 'auth': None, 'auth_methods': [],
+                                    # the files it read and wrote through the runner, P019, the latest first, and an
+                                    # intake agent's first call and record, M04
+                                    'files': [], 'intake': None,
                                     # what a conversation is about, so the person's next Call or Chat on it resumes it
                                     'about': str(ctx.nouns.get('talk') or 'system') if system else None}
         self.modes: dict[str, Any] | None = None  # the agent's session modes: current and available
@@ -822,6 +983,9 @@ class Session:
         self.named: set[str] = set()  # the lines kept for something, such as one tool call, changed in place
         self.lines = 0
         self.tools: dict[str, dict[str, Any]] = {}
+        # The parts of the map each tool call has touched, and those not yet told to the open pages, `flowed`
+        self.reached: dict[str, set[tuple[str, str]]] = {}
+        self.flowing: list[dict[str, Any]] = []
         self.flow_kind: str | None = None
         self.flow_text = ''
         self.flow_key: str | None = None  # the note the text being written grows in
@@ -836,6 +1000,7 @@ class Session:
         self.active_turn: ActiveTurn | None = None
         self.interrupt_lock = asyncio.Lock()  # cancellation cannot spill into the next queued prompt
         self.pending: deque[str] = deque()  # prompts wait in arrival order while one turn is in flight
+        self.voiced: deque[Any] = deque()  # beside each, the person's recording as an ACP audio block, or None
         self.idle = asyncio.Event()
         self.idle.set()
         self.lock = asyncio.Lock()
@@ -887,6 +1052,30 @@ class Session:
         self.closed = False  # session/close was sent
         self.probe = False  # started only to be asked something, P199 and P031: it keeps no thread
         self.left_out = ''  # what initialize could not offer, said in the thread once it exists
+        self.terminals: dict[str, Terminal] = {}  # the agent's terminals, ACP's terminal/*, by their id, P019
+        self.terminal_count = 0
+        self.servers: list[McpServerStdio] = []  # the MCP servers its session was given, given again to a fork
+        self.stop_record_asked = False  # the turn asking a stopped or failed worker to record was decided, P033
+        # An intake agent's first Metaform call and first record, M04: when its first turn began, the seconds each
+        # took, and whether it was steered; and its clock, which steers it once when no call has come in time.
+        self.intake: dict[str, Any] | None = {'phase': 'starting'} if self.role == 'intake' else None
+        self.intake_began = 0.0
+        self.intake_timer: asyncio.TimerHandle | None = None
+        self.withheld: list[str] = []  # what the intake agent's server leaves out, dispatch_intake_withheld
+        self.effects: dict[tuple[str, str], str] | None = None  # each Metaform tool's effect, read when needed
+        self.calls: deque[str] = deque(maxlen=jev.CALLS)  # the latest tool calls, one line each, for Jev's drift check
+        self.drift_at = 0  # the fresh calls counted when Jev was last asked about drift
+        self.drifting = False  # a drift check is in flight
+        self.paused_runs: set[str] = set()  # the workflow runs this worker's ticket paused on the person, H03
+        self.workflow_reading = False
+
+    def option(self, key: str, default: Any) -> Any:
+        """A setting of the session's context, or `default` when it cannot be read, so a setting that is not there
+        never keeps a session from starting."""
+        try:
+            return self.ctx.setting(key)
+        except Exception:  # noqa: BLE001  a missing or unreadable setting is the default
+            return default
 
     @property
     def waiting(self) -> bool:
@@ -912,9 +1101,13 @@ class Session:
             return
         record = await asyncio.to_thread(ticket, self.store, self.work_id)
         if record.steps_done != self.progress_steps or record.done:
+            if record.steps_done > self.progress_steps and self.folder != self.root:  # a worktree's step, P009
+                said = record.said[-1].said if record.said else ''
+                await asyncio.to_thread(checkpoint, self.folder, self.work_id,
+                                        f'Step {record.steps_done} of ticket {self.work_id}: {said or ""}'.strip())
             self.progress_steps = record.steps_done
             self.progress_at = time.monotonic()
-            self.progress_calls = self.failed_count = 0
+            self.progress_calls = self.failed_count = self.drift_at = 0
             self.failed_input = None
             for signal in ('spinning-calls', 'spinning-time', 'repeated-failure'):
                 await self.raise_signal(signal, active=False)
@@ -1001,6 +1194,8 @@ class Session:
             dispatch_tables = sorted({*dispatch_tables, 'dispatch.lines'})
         if dispatch_tables is not None:
             payload['dispatch_tables'] = dispatch_tables
+        if self.flowing:  # where the agent's tool calls reached since the last event, `flowed`
+            payload['flow'], self.flowing = self.flowing, []
         if tables != 'dispatch' or dispatch_tables is None or 'dispatch.lines' in dispatch_tables:
             self.lines_covered()  # no detail, or the map's tables, reads the agents too
         await self.ctx.publish_async('map.changed', payload)
@@ -1089,10 +1284,29 @@ class Session:
                 title = known.get('title') or known.get('kind') or 'A tool call'
                 await self.note(f'tool:{ident}', kind, f'{title} ({known.get("status", "pending")})')
                 detail = await self.tool_detail({**known, 'toolCallId': ident, 'title': title})
+                # a call of a Metaform tool keeps what it was given and gave back, for a page that shows that tool's
+                # MCP App view with the call, its tool-input and tool-result; kept past the call, as its line is
+                called = metaform_called(known, data, title)
+                if called is not None:  # an update without the input or the result keeps those already known
+                    held_call = cast(dict[str, Any], known.get('called') or {})
+                    known['called'] = {**held_call, **{key: value for key, value in called.items() if value}}
+                if known.get('called') is not None:
+                    detail: dict[str, Any] | None = {**(detail or {'tool_call_id': ident, 'title': title, 'kind': known.get('kind'),
+                                            'status': known.get('status', 'pending'), 'diffs': [], 'locations': [],
+                                            'terminals': [], 'nodes': []}), 'call': known['called']}
                 if detail is not None:
+                    self.flowed(ident, detail['nodes'], str(known.get('kind') or 'other'))
                     await self.note(f'detail:{ident}', 'tool_detail', json.dumps(detail, ensure_ascii=False))
                     await self.touch(detail['nodes'], str(known.get('kind') or 'other'))
+                line = call_line({**known, 'title': title})
+                if self.intake is not None and (fresh or known.get('status') in ('completed', 'failed')):
+                    await self.intake_call(line, known.get('status') == 'completed', ident)
                 if fresh and not self.prep and not self.ending:
+                    self.calls.append(line)
+                    if self.progress_calls + 1 - self.drift_at >= DRIFT_EVERY and \
+                            await asyncio.to_thread(jev.config, Path(self.root), 'session_drift') is not None:
+                        self.drift_at = self.progress_calls + 1
+                        self.spawn(self.drift())
                     self.progress_calls += 1
                     if self.progress_calls >= self.ctx.setting('dispatch_spin_calls'):
                         await self.raise_signal('spinning-calls', calls=self.progress_calls)
@@ -1249,6 +1463,15 @@ class Session:
         except StoreError as error:  # a catalog that cannot be written never keeps a session from starting
             sys.stderr.write(f'Could not keep what {self.name} offered: {error}\n')
 
+    def jev_chosen(self) -> dict[str, str]:
+        """The model and effort Jev chose when autostart started this session, by ACP category; none otherwise."""
+        try:
+            found: Any = json.loads(str(self.ctx.nouns.get('chosen') or '{}'))
+        except ValueError:
+            return {}
+        given = cast(dict[str, Any], found) if isinstance(found, dict) else {}
+        return {key: str(value) for key, value in given.items() if key in ('model', 'thought_level') and value}
+
     async def apply_options(self) -> list[dict[str, Any]]:
         """Give the session the settings chosen for it, P199 and P015: dispatch_agent_options for its agent, then its
         ticket's own model and effort, each matched to the agent's settings by ACP category or by id and set through
@@ -1259,6 +1482,7 @@ class Session:
             return []
         wanted = await asyncio.to_thread(wanted_options, self.ctx, self.store, self.agent,
                                          None if self.node is None else self.work_id)
+        wanted = {**self.jev_chosen(), **wanted}  # Jev's choice, H23, under every choice of the person's
         rank = {key: at for at, key in enumerate(APPLY_ORDER)}
         done: list[dict[str, Any]] = []
         for key, value in sorted(wanted.items(), key=lambda pair: rank.get(pair[0], len(APPLY_ORDER))):
@@ -1641,6 +1865,21 @@ class Session:
                 'status': call.get('status', 'pending'), 'diffs': diffs, 'locations': places,
                 'terminals': terminals, 'nodes': nodes}
 
+    def flowed(self, ident: str, nodes: list[dict[str, str]], action: str) -> None:
+        """The parts of the map a tool call reached that it had not reached before, from the ticket's node, for the open
+        pages to draw as the agent's request going there, VIEW-005. They ride on the next `map.changed` this session
+        fires, `changed`, as its `flow`; the line the call writes fires one within LINES_EVERY, so no event is added."""
+        if self.probe or not nodes:
+            return
+        reached = self.reached.setdefault(ident, set())
+        fresh = [{'kind': place['kind'], 'id': place['id']} for place in nodes if (place['kind'], place['id']) not in reached]
+        if not fresh:
+            return
+        reached.update((place['kind'], place['id']) for place in fresh)
+        self.flowing.append({'session_id': self.session_id, 'agent': self.agent, 'work_id': self.work_id,
+                             'from': {'kind': self.node.kind, 'id': self.node.id} if self.node is not None else None,
+                             'to': fresh, 'action': action})
+
     async def touch(self, nodes: list[dict[str, str]], action: str) -> None:
         """The parts of the map this session has touched, the latest first, kept in its state."""
         if not nodes:
@@ -1699,6 +1938,307 @@ class Session:
             await self.note(None, 'setting', f'{found["name"]} set to {shown}.')
             await self.save_state()
         return {'setting': found['id'], 'value': chosen, 'settings': self.settings()}
+
+    # ------------------------------------------------------------------ the client's files and terminals, P019
+
+    async def refuse(self, what: str, path: str, why: str) -> acp.RequestError:
+        """A file or terminal request refused, said in the thread so the person sees it, and returned for the SDK to
+        answer the agent with as invalid params, its reason in the error's data."""
+        async with self.lock:
+            await self.flush()
+            await self.note(None, 'notice', f'{self.name} asked to {what} {path}: refused, {why}.')
+        return acp.RequestError.invalid_params({'path': path, 'reason': why})
+
+    async def confined(self, what: str, path: str | None) -> Path:
+        """An absolute path inside the session's folder, its worktree when it has one, its links followed; a path
+        outside it is refused, as is a relative one, which ACP does not allow."""
+        if not path or not os.path.isabs(path):
+            raise await self.refuse(what, str(path), 'ACP paths are absolute')
+        found, root = Path(path).resolve(), Path(self.folder).resolve()
+        if found != root and root not in found.parents:
+            raise await self.refuse(what, path, f'it is outside the session\'s folder, {root}')
+        return found
+
+    async def filed(self, path: Path, action: str) -> list[dict[str, str]]:
+        """A file the agent read or wrote through the runner: placed on the map, kept among the parts it touched, and
+        kept in the session's state, the latest first."""
+        named = relative(str(path), [self.folder, self.root]) or str(path)
+        nodes = placed(await self.places(), named)
+        files = [{'path': named, 'action': action}] + [one for one in cast(list[dict[str, str]], self.acp['files'])
+                                                        if one != {'path': named, 'action': action}]
+        self.acp['files'] = files[:TOUCHED_KEPT]
+        async with self.lock:
+            await self.touch(nodes, action)
+            await self.save_state()
+        return nodes
+
+    async def read_text_file(self, session_id: str, path: str, line: int | None = None, limit: int | None = None,
+                             **kwargs: Any) -> ReadTextFileResponse:
+        """ACP's fs/read_text_file: the file's text from `line`, 1-based, at most `limit` lines."""
+        found = await self.confined('read', path)
+        try:
+            text = await asyncio.to_thread(found.read_text, encoding='utf-8', errors='replace')
+        except OSError as error:
+            raise acp.RequestError.resource_not_found(path) if isinstance(error, FileNotFoundError) else \
+                acp.RequestError.internal_error({'path': path, 'reason': str(error)}) from None
+        if line is not None or limit is not None:
+            lines = text.splitlines(keepends=True)
+            start = max((line or 1) - 1, 0)
+            text = ''.join(lines[start:start + limit] if limit is not None else lines[start:])
+        await self.filed(found, 'read')
+        return ReadTextFileResponse(content=text)
+
+    async def write_text_file(self, session_id: str, path: str, content: str,
+                              **kwargs: Any) -> WriteTextFileResponse | None:
+        """ACP's fs/write_text_file: the file written whole, made with its folders when it does not exist; refused
+        inside a part of the map another ticket's claim reserves, LAYER-029."""
+        found = await self.confined('write', path)
+        named = relative(str(found), [self.folder, self.root])
+        for place in placed(await self.places(), named):
+            lock = await asyncio.to_thread(claimed, self.store, place.get('address'), self.work_id)
+            if lock is not None:
+                raise await self.refuse('write', path, f'{place.get("address")} is claimed by "{lock["name"]}"')
+
+        def written() -> None:
+            found.parent.mkdir(parents=True, exist_ok=True)
+            found.write_text(content, encoding='utf-8')
+        try:
+            await asyncio.to_thread(written)
+        except OSError as error:
+            raise acp.RequestError.internal_error({'path': path, 'reason': str(error)}) from None
+        await self.filed(found, 'edit')
+        return WriteTextFileResponse()
+
+    async def create_terminal(self, session_id: str, command: str, args: list[str] | None = None,
+                              env: list[EnvVariable] | None = None, cwd: str | None = None,
+                              output_byte_limit: int | None = None, **kwargs: Any) -> CreateTerminalResponse:
+        """ACP's terminal/create: the command started at once in a process group of its own, in the session's folder
+        or a folder inside it, with the agent's environment and the variables it names; its output, stdout and stderr
+        together, kept up to its limit, or dispatch_terminal_kb when it names none."""
+        folder = await self.confined('run a terminal in', cwd) if cwd else Path(self.folder)
+        given = {**child_environment(), **{one.name: one.value for one in env or []}}
+        try:
+            process = await asyncio.create_subprocess_exec(
+                command, *(args or []), cwd=str(folder), env=given, stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, **group_options())
+        except OSError as error:
+            raise await self.refuse('run', command, str(error)) from None
+        self.terminal_count += 1
+        ident = f'term-{self.terminal_count}'
+        limit = output_byte_limit if output_byte_limit is not None else 1024 * int(self.ctx.setting('dispatch_terminal_kb'))
+        held = Terminal(' '.join([command, *(args or [])]), str(folder), process, max(int(limit), 0), bytearray())
+        self.terminals[ident] = held
+        held.reader = asyncio.create_task(self.terminal_read(ident, held))
+        self.tasks.add(held.reader)
+        held.reader.add_done_callback(self.tasks.discard)
+        await self.terminal_line(ident, held)
+        return CreateTerminalResponse(terminal_id=ident)
+
+    async def terminal_read(self, ident: str, held: Terminal) -> None:
+        """A terminal's output read as it comes, its line in the thread kept at its latest every STREAM_EVERY, then
+        its exit."""
+        stream = held.process.stdout
+        if stream is not None:
+            while chunk := await stream.read(65536):
+                held.output += chunk
+                held.truncated = trimmed(held.output, held.limit) or held.truncated
+                if time.monotonic() - held.shown >= STREAM_EVERY:
+                    await self.terminal_line(ident, held)
+        held.exit = exit_status(await held.process.wait())
+        await self.terminal_line(ident, held)
+
+    async def terminal_line(self, ident: str, held: Terminal) -> None:
+        """A terminal's line in the thread: its command, folder, the last of its output and its exit."""
+        held.shown = time.monotonic()
+        said = {'terminal_id': ident, 'command': held.command, 'cwd': relative(held.cwd, [self.folder]) or '.',
+                'output': held.output[-4096:].decode('utf-8', errors='replace'), 'truncated': held.truncated,
+                'exit': held.exit.model_dump(mode='json', by_alias=True, exclude_none=True) if held.exit else None}
+        async with self.lock:
+            await self.note(f'terminal:{ident}', 'terminal', json.dumps(said, ensure_ascii=False))
+
+    def terminal(self, ident: str) -> Terminal:
+        held = self.terminals.get(ident)
+        if held is None:
+            raise acp.RequestError.invalid_params({'terminalId': ident, 'reason': 'no such terminal, or released'})
+        return held
+
+    async def terminal_output(self, session_id: str, terminal_id: str, **kwargs: Any) -> TerminalOutputResponse:
+        """ACP's terminal/output: what it has written so far, whether some was dropped, and its exit once it has."""
+        held = self.terminal(terminal_id)
+        return TerminalOutputResponse(output=held.output.decode('utf-8', errors='replace'), truncated=held.truncated,
+                                      exit_status=held.exit)
+
+    async def wait_for_terminal_exit(self, session_id: str, terminal_id: str,
+                                     **kwargs: Any) -> WaitForTerminalExitResponse:
+        """ACP's terminal/wait_for_exit: answered once the command has ended."""
+        held = self.terminal(terminal_id)
+        if held.reader is not None:
+            await asyncio.shield(held.reader)
+        ended = held.exit or exit_status(await held.process.wait())
+        return WaitForTerminalExitResponse(exit_code=ended.exit_code, signal=ended.signal)
+
+    async def kill_terminal(self, session_id: str, terminal_id: str, **kwargs: Any) -> KillTerminalResponse | None:
+        """ACP's terminal/kill: its process group ended; the terminal stays readable until it is released."""
+        held = self.terminal(terminal_id)
+        if held.process.returncode is None:
+            await asyncio.to_thread(end_group, held.process.pid)
+        return KillTerminalResponse()
+
+    async def release_terminal(self, session_id: str, terminal_id: str,
+                               **kwargs: Any) -> ReleaseTerminalResponse | None:
+        """ACP's terminal/release: ended when it still runs, and forgotten; its line stays in the thread."""
+        held = self.terminals.pop(terminal_id, None)
+        if held is not None and held.process.returncode is None:
+            await asyncio.to_thread(end_group, held.process.pid)
+        return ReleaseTerminalResponse()
+
+    async def terminals_ended(self) -> None:
+        """Every terminal still running ends with the session."""
+        for ident in list(self.terminals):
+            with contextlib.suppress(Exception):
+                await self.release_terminal(self.session_id or '', ident)
+
+    # ------------------------------------------------------------------ session/fork, P030
+
+    async def fork(self, text: str) -> dict[str, Any]:
+        """ACP's session/fork, where the agent offers it: a session branching from this one with all its context,
+        given the same Metaform server with the same identity, so what it was told stays told and its calls are this
+        session's. It is kept as a child thread, as a subagent is, and `text`, when given, is its first turn."""
+        caps = cast(dict[str, Any], self.acp['capabilities'])
+        if not caps.get('fork'):
+            return {'error': f'{self.name} does not offer session/fork.'}
+        if self.ending or self.session_id is None or self.conn is None:
+            return {'error': 'The session has not started or is ending.'}
+        made = await asyncio.wait_for(self.conn.fork_session(session_id=self.session_id, cwd=self.folder,
+                                                             mcp_servers=self.servers), START_LIMIT)
+        child = str(made.session_id)
+        self.children[child] = {'session_id': child, 'name': 'fork', 'task': text or None, 'state': 'running',
+                                'started': stamp(), 'lines': 0, 'named': set(), 'flow': None, 'fork': True}
+        await self.child_line(child)
+        if text:
+            self.spawn(self.fork_turn(child, text))
+        identity = {one.name: one.value for server in self.servers for one in server.env
+                    if one.name in ('METAFORM_ROLE', 'METAFORM_SESSION', 'METAFORM_WORK', 'METAFORM_NODE')}
+        return {'fork': child, 'from': self.session_id, 'identity': identity}
+
+    async def fork_turn(self, child: str, text: str) -> None:
+        """One turn of a fork, its words in its own thread."""
+        held = self.children.get(child)
+        if held is None:
+            return
+        async with self.lock:
+            await self.child_note(child, None, 'person', text)
+        held['state'] = 'running'
+        try:
+            answer = await self.conn.prompt(session_id=child, prompt=[acp.text_block(text)])
+            reason = str(answer.stop_reason)
+        except Exception as error:  # noqa: BLE001  the fork's turn ends whatever ended it
+            reason = f'error: {error}'
+        held['state'] = 'idle'
+        async with self.lock:
+            await self.child_note(child, None, 'turn', f'The turn ended: {reason}.')
+        await self.child_line(child)
+
+    # ------------------------------------------------------------------ the intake's guards, M04
+
+    def intake_clock(self) -> None:
+        """Start the intake's first-record clock with its first turn: past dispatch_intake_first_record seconds with
+        no Metaform call, it is steered once."""
+        if self.intake is None or self.intake_began:
+            return
+        self.intake_began = time.monotonic()
+        self.intake.update(phase='waiting for first record', began=stamp())
+        self.acp['intake'] = dict(self.intake)
+        seconds = float(self.option('dispatch_intake_first_record', 0) or 0)
+        if seconds > 0:
+            self.intake_timer = asyncio.get_running_loop().call_later(
+                seconds, lambda: self.spawn(self.first_record_due(seconds)))
+
+    async def first_record_due(self, seconds: float) -> None:
+        """No Metaform call in time: the intake_first_record line, into the turn in flight when the agent offers
+        steering, otherwise its next turn; once."""
+        self.intake_timer = None
+        if self.intake is None or self.ending or 'first_call_s' in self.intake or self.intake.get('steered'):
+            return
+        text = prompt('intake_first_record', seconds=str(int(seconds)))
+        if not text:
+            return
+        self.intake['steered'] = stamp()
+        self.acp['intake'] = dict(self.intake)
+        steered = await self.steer(text) if self.turns and self.active_turn is not None and self.active_turn.sent \
+            else False
+        async with self.lock:
+            await self.note(None, 'steered' if steered else 'notice',
+                            f'No Metaform call in {int(seconds)} s: {"steered" if steered else "sent next"}: {text}')
+            await self.save_state()
+        if not steered:
+            self.turn(text)
+
+    async def intake_call(self, line: str, completed: bool, ident: str = '') -> None:
+        """An intake agent's tool call, under the session's lock: its first Metaform call and its first record timed
+        from its first turn, and a reach for earlier conclusions, a withheld tool or a report, review, log or notes
+        file, signalled at the session."""
+        if self.intake is None or self.probe:
+            return
+        kind = jev.call_kind(line)
+        if self.effects is None:
+            found = await asyncio.to_thread(surface, Path(self.root))
+            self.effects = {(module.id, verb.name.replace('-', '_')): verb.effect for module in found
+                            for verb in module.verbs}
+            self.effects.update({(module, verb.replace('_', '-')): effect
+                                 for (module, verb), effect in list(self.effects.items())})
+        reached = withheld_named(line, self.withheld, self.effects)
+        if reached or kind == 'conclusion':
+            await self.raise_signal('intake-conclusions', key=ident or hashlib.sha256(line.encode()).hexdigest()[:16],
+                                    tool=line[:200], withheld=reached or None,
+                                    reason='a withheld tool' if reached else 'a file of earlier conclusions')
+        if kind != 'metaform' or reached or not self.intake_began:  # a withheld tool is not served: no call made
+            return
+        took = round(time.monotonic() - self.intake_began, 1)
+        changed = False
+        if 'first_call_s' not in self.intake:
+            self.intake['first_call_s'] = took
+            changed = True
+            if self.intake_timer is not None:
+                self.intake_timer.cancel()
+                self.intake_timer = None
+        writes = [tool for tool in tools_named(line) if (self.effects or {}).get(tool, 'write') != 'read']
+        if completed and writes and 'first_record_s' not in self.intake:
+            self.intake.update(first_record_s=took, phase='recording')
+            changed = True
+        if changed:  # under the session's lock already, as every update is
+            self.acp['intake'] = dict(self.intake)
+            await self.save_state()
+            await self.changed(tables='dispatch')
+
+    # ------------------------------------------------------------------ Jev's drift check, H23
+
+    async def drift(self) -> None:
+        """Ask Jev, every DRIFT_EVERY tool calls of a worker, whether it reads conclusions in place of the source,
+        strays from its ticket or repeats work, when jev is on and its session_drift decision is chosen; a sure yes
+        raises the drift signal, which names what drifted. With Jev off, unsure or unreachable, nothing is raised and
+        the spinning signals stand as before."""
+        if self.drifting or self.node is None or self.system or self.prep or self.probe:
+            return
+        self.drifting = True
+        try:
+            record = await asyncio.to_thread(ticket, self.store, self.work_id)
+            steps = [step.said for step in record.said if step.said]
+            folder, calls, task = Path(self.root), list(self.calls), record.task or record.note or ''
+
+            def asked() -> Any:
+                with jev.within(jev.DEADLINE):
+                    return jev.session_drift(folder, self.session_id or self.work_id, calls, task, steps=steps,
+                                             address=self.at or None, project=self.store.project_id)
+            decision = await asyncio.to_thread(asked)
+            found = cast(dict[str, Any], decision.answer) if decision is not None else {}
+            drifted = sorted(part for part, value in found.items() if value is True)
+            await self.raise_signal('drift', key='jev', active=bool(drifted), drifted=drifted or None,
+                                    reason=decision.reason[:400] if decision is not None and drifted else None)
+        except Exception as error:  # noqa: BLE001  a decision that fails changes nothing
+            sys.stderr.write(f'Could not ask Jev about drift: {error}\n')
+        finally:
+            self.drifting = False
 
     async def permission(self, request: str, **changes: Any) -> None:
         """A permission request's line, kept at its latest: waiting, answered, unmatched or cancelled."""
@@ -2156,8 +2696,14 @@ class Session:
         # place of a server of that name the agent's own config holds rather than beside it: one set of Metaform
         # tools, each call carrying this session's identity. Its environment names the METAFORM_* variables, the home
         # and the identity, since codex-acp gives an MCP server only a short list of its own variables, ticket 80cafcd9.
+        # An intake agent's server leaves out the tools that read earlier conclusions, M04 and P019: named in its
+        # environment beside its identity, so only this session's server withholds them.
+        if self.intake is not None:
+            self.withheld = [str(one) for one in cast(list[Any], self.option('dispatch_intake_withheld', []) or [])]
+        withheld = {WITHHELD: ','.join(self.withheld)} if self.withheld else {}
         servers = [McpServerStdio(name='metaform', command=sys.executable, args=['-m', *server],
-                                  env=server_environment(**identity))] if server else []
+                                  env=server_environment(**identity, **withheld))] if server else []
+        self.servers = servers
         try:
             if self.resume:
                 made = await asyncio.wait_for(self.reopen(servers), START_LIMIT)
@@ -2243,8 +2789,9 @@ class Session:
         elif self.system and self.ctx.nouns.get('talk'):  # the person clicked something to talk about: no ticket work
             about, read = await asyncio.to_thread(subject, self.store, self.work_id, str(self.ctx.nouns['talk']))
             text = prompt('talk', about=about, read=read)
-        elif self.system:
-            text = prompt('system', project=self.store.project_id)
+        elif self.system:  # the person's own, and their mascot's voice when they have one
+            text = prompt('system', project=self.store.project_id,
+                          mascot=await asyncio.to_thread(mascot_line, Path(self.root)))
         elif self.prep:
             from .merge import branch_of, dev_branch
             text = prompt('prep', work_id=self.work_id, branch=branch_of(self.work_id),
@@ -2268,8 +2815,9 @@ class Session:
 
     async def open_agent(self, identity: dict[str, str], *, terminal_login: bool = False) -> InitializeResponse:
         """Start the agent's adapter in its own process group, its stderr read into the thread, and initialize it.
-        The client offers no file system and no terminal of its own: the agent reads, writes and runs in the folder it
-        works in, and each tool call says where. It takes boolean config options, so every setting reaches the page;
+        The client offers its own file reads and writes and its own terminals while dispatch_client_files and
+        dispatch_client_terminal are on, P019, each confined to the folder the agent works in. It takes boolean config
+        options, so every setting reaches the page;
         subagent sessions, so a subagent's work is a child session rather than mixed into its parent's, P016; ACP's
         elicitation in both modes, so a question the agent or one of its MCP servers puts to the person reaches them
         rather than being answered empty; and ACP's session notices, so what the agent says of its own state is a
@@ -2291,10 +2839,13 @@ class Session:
             version = metadata.version('metaform')
         except metadata.PackageNotFoundError:
             version = '0'
+        # The client's own files and terminals, P019, each offered while its setting is on.
+        files, terminal = bool(self.option('dispatch_client_files', False)), \
+            bool(self.option('dispatch_client_terminal', False))
         asked = InitializeRequest(
             protocol_version=acp.PROTOCOL_VERSION,
             client_capabilities=ClientCapabilities(
-                fs=FileSystemCapabilities(read_text_file=False, write_text_file=False), terminal=False,
+                fs=FileSystemCapabilities(read_text_file=files, write_text_file=files), terminal=terminal,
                 session=ClientSessionCapabilities(config_options=SessionConfigOptionsCapabilities(
                     boolean=BooleanConfigOptionCapabilities())),
                 auth=AuthCapabilities(terminal=terminal_login),
@@ -2367,11 +2918,30 @@ class Session:
             self.acp.update({key: held[key] for key in carried})
             self.acp['before_resume'] = carried
 
-    def turn(self, text: str) -> None:
+    def recording(self, path: str) -> Any:
+        """The person's spoken message as an ACP audio block, ContentBlock::Audio, beside its transcript: only for a
+        session whose agent declared promptCapabilities.audio, never assumed, and only a clip the web GUI kept under the
+        home's run/voice/clips. The file is removed once read, sent or not, so the recording is not left behind."""
+        if not path:
+            return None
+        clips = (home.home() / 'run' / 'voice' / 'clips').resolve()
+        file = Path(path).resolve()
+        if file.parent != clips or file.suffix != '.wav':
+            return None
+        try:
+            data = file.read_bytes() if self.acp['capabilities'].get('audio') else None
+        except OSError:
+            data = None
+        finally:
+            file.unlink(missing_ok=True)
+        return acp.audio_block(base64.b64encode(data).decode('ascii'), 'audio/wav') if data else None
+
+    def turn(self, text: str, audio: Any = None) -> None:
         if self.ending:
             return
         self.replaying = False  # what comes from here on is the session's own, never a replay
         self.pending.append(text)
+        self.voiced.append(audio)
         if self.turns == 0:
             self.progress_at = time.monotonic()
         if self.turns:
@@ -2393,6 +2963,7 @@ class Session:
                     current = self.active_turn or ActiveTurn()
                     self.active_turn = current
                     text = self.pending.popleft()
+                    audio = self.voiced.popleft() if self.voiced else None
                 self.heard = stamp()  # a tool call of this turn began no earlier than its prompt
                 try:
                     await self.changed(tables='dispatch')
@@ -2404,7 +2975,9 @@ class Session:
                         current.sent = True
                         self.cost_open, self.provisional = False, 0
                         self.arm()  # the turn's silence clock, P040
-                        blocks: list[Any] = [acp.text_block(text)]
+                        self.intake_clock()  # an intake's first-record clock starts with its first turn, M04
+                        began_ns = time.time_ns()
+                        blocks: list[Any] = [acp.text_block(text), *([audio] if audio is not None else [])]
                         blocks += [acp.resource_link_block(one['name'], one['uri'], title=one.get('title'))
                                    for one in self.attached]  # the hand-off's links, typed, beside its text
                         self.attached = []
@@ -2415,6 +2988,7 @@ class Session:
                                                                          exclude={'field_meta'})
                             self.reported('tokens')
                         await self.spend(answer.usage)
+                        self.trace(answer.usage, reason, began_ns)
                 except Exception as error:  # noqa: BLE001  the turn's end is noted whatever ended it
                     reason = f'error: {error}'
                 self.hush()
@@ -2440,7 +3014,11 @@ class Session:
             # Otherwise the agent stopped with its ticket open: the session stays, idle and reachable, and the
             # ticket stays taken with the agent's last note, until the person talks to it, stops it or puts the
             # ticket back. Nothing restarts by itself, change order of 2026-10-07. The stopped-open signal says so,
-            # since the session no longer ends, BASE-057; the next turn or the session's end clears it.
+            # since the session no longer ends, BASE-057; the next turn or the session's end clears it. Once per
+            # session a worker is first given a turn to record what it learned, P033, on_stopped_open or, after a
+            # turn that failed, on_failure; the signal is raised when that turn ends.
+            if await self.record_before_stop(reason):
+                return
             async with self.lock:
                 if not self.turns and not self.ending:  # a message that came meanwhile has started the next turn
                     await self.raise_signal('stopped-open', stop_reason=reason, steps=record.steps_done)
@@ -2469,16 +3047,48 @@ class Session:
         finally:
             self.finishing = False
 
-    def record_prompt(self) -> str:
-        """The `on_ticket_done` turn, with where to record, when one is due: never with the setting `off`, the prompt
-        empty, no node or the memory module off its surface, which leaves the agent nothing to record with; always
-        with `always`; with `when-missing` only when no memory join or observation at the node was written by this
-        session, its `by` the runner's id, BASE-052 and STORE-020."""
-        mode = self.ctx.setting('dispatch_record_on_finish')
+    async def record_before_stop(self, reason: str) -> bool:
+        """Give a worker that stopped with its ticket open one turn, once per session, to record what it learned,
+        P033: the on_failure turn after a turn that ended in an error while its agent still runs, otherwise the
+        on_stopped_open turn, each as its setting asks. Whether the turn was sent."""
+        if self.stop_record_asked or self.budget is not None or self.role != 'worker' or self.ending:
+            return False
+        self.stop_record_asked = True
+        failed = reason.startswith('error')
+        if failed and (self.process is None or self.process.returncode is not None or self.exited.is_set()):
+            return False
+        setting, name = ('dispatch_record_on_failure', 'on_failure') if failed else \
+            ('dispatch_record_on_stop', 'on_stopped_open')
+        try:
+            text = await asyncio.to_thread(self.record_prompt, setting, name)
+        except Exception as error:  # noqa: BLE001  a failed check never keeps the session from waiting as before
+            sys.stderr.write(f'Could not check what work {self.work_id} recorded: {error}\n')
+            return False
+        if not text or self.ending or self.turns:
+            return False
+        self.turn(text)
+        return True
+
+    def trace(self, usage: Any, reason: str, began_ns: int) -> None:
+        """The turn as an OpenTelemetry invoke_agent span with its usage, while dispatch_usage_traces is on."""
+        if not self.option('dispatch_usage_traces', False):
+            return
+        info = cast(dict[str, Any], self.acp.get('agent_info') or {})
+        model = next((str(one.get('current')) for one in self.settings() if one.get('category') == 'model'
+                      and one.get('current')), None)
+        traced(usage_attributes(self.agent, self.name, cast(str | None, info.get('version')), self.session_id, usage,
+                                reason, model), began_ns)
+
+    def record_prompt(self, setting: str = 'dispatch_record_on_finish', name: str = 'on_ticket_done') -> str:
+        """The turn asking a worker to record at its node, `on_ticket_done` by default, with where to record, when one
+        is due: never with its setting `off`, the prompt empty, no node or the memory module off its surface, which
+        leaves the agent nothing to record with; always with `always`; with `when-missing` only when no memory join or
+        observation at the node was written by this session, its `by` the runner's id, BASE-052 and STORE-020."""
+        mode = self.ctx.setting(setting)
         if mode == 'off' or self.node is None:
             return ''
         node = self.at if self.node.kind == 'element' and self.at else f'{self.node.kind}:{self.node.id}'
-        text = prompt('on_ticket_done', node=node)
+        text = prompt(name, node=node)
         if not text:
             return ''
         root = Path(self.root)
@@ -2539,12 +3149,49 @@ class Session:
 
     def changed_elsewhere(self, payload: dict[str, Any]) -> None:
         """map.changed from another process, handed over by the base's listener, BASE-053: a change to this project
-        may be the person's answer to a permission prompt, so they are checked. A change to the map itself may move the
-        refs that place a file on it, so they are read again when next needed."""
+        may be the person's answer to a permission prompt, so they are checked, or to a workflow run this worker paused
+        on them. A change to the map itself may move the refs that place a file on it, so they are read again when next
+        needed."""
         if payload.get('project') == self.store.project_id and not self.ending:
             if payload.get('tables') != 'dispatch':
                 self.sources = None
+                self.spawn(self.workflow_answers())
             self.spawn(self.check())
+
+    async def workflow_answers(self) -> None:
+        """A workflow run this worker's ticket paused on the person, MAP-050, that the person has answered since: the
+        agent is told to resume it, the workflow_answered prompt as its next turn, so the person's answer reaches it
+        without a message of their own, H03. Runs are read through workflow's own runs verb, never its tables."""
+        if self.node is None or self.system or self.prep or self.probe or self.ending or self.workflow_reading:
+            return
+        self.workflow_reading = True
+        try:
+            found = await asyncio.to_thread(module_read, Path(self.root), self.store.project_id, 'workflow', 'runs',
+                                            limit=0)
+        except Exception as error:  # noqa: BLE001  a read that fails delivers nothing; the ticket's note still says it
+            sys.stderr.write(f'Could not read the workflow runs: {error}\n')
+            return
+        finally:
+            self.workflow_reading = False
+        listed: Any = cast(dict[str, Any], found).get('runs') if isinstance(found, dict) else None
+        for run in cast(list[dict[str, Any]], listed or []):
+            word = str(run.get('run'))
+            if run.get('ticket') != self.work_id:
+                continue
+            if run.get('state') == 'input_required':
+                self.paused_runs.add(word)
+            elif word in self.paused_runs and run.get('state') == 'running':
+                self.paused_runs.discard(word)
+                text = prompt('workflow_answered', run=word)
+                if text and not self.ending:
+                    current = self.active_turn  # into the turn in flight where the agent steers, else its next turn
+                    steered = (await self.steer(text) if self.turns and not self.pending and current is not None
+                               and current.sent and not current.cancel_requested else False)
+                    async with self.lock:
+                        await self.note(None, 'notice', f'Workflow run {word} was answered; its agent is told to '
+                                                        'resume it.')
+                    if not steered:
+                        self.turn(text)
 
     async def control(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         """One request on the control port, with this session's token: `status`, `message`, `interrupt`, `stop`,
@@ -2568,12 +3215,18 @@ class Session:
                                           'waiting_on': 'question' if self.elicited else 'permission' if self.asked
                                           else None,
                                           'interrupting': bool(self.active_turn and self.active_turn.cancel_requested),
+                                          # an intake waiting for its first record, M04, said as the page reads it
+                                          **({'phase': self.intake.get('phase')} if live and self.intake else {}),
                                           'how': None if live else self.how or 'the agent is no longer running'})
+            elif op == 'message' and asked.get('fork') in self.children and self.children[asked['fork']].get('fork'):
+                self.spawn(self.fork_turn(str(asked['fork']), str(asked.get('text', ''))))  # a turn of a fork, P030
+                await self.reply(writer, {**said, 'sent': True, 'fork': asked['fork']})
             elif op == 'message':
                 if self.ending or self.session_id is None:
                     await self.reply(writer, {**said, 'sent': False, 'error': 'The session has not started or is ending.'})
                     return
                 text, by = str(asked.get('text', '')), str(asked.get('by') or '')
+                audio = self.recording(str(asked.get('audio') or '')) if not by else None
                 async with self.lock:  # the sender's words in the thread, where the agent's reply follows
                     await self.flush()
                     # an agent's message is never shown as the person's, BASE-052
@@ -2582,7 +3235,7 @@ class Session:
                 # it waits its turn, in order.
                 current = self.active_turn
                 steered = (await self.steer(text) if self.turns and not self.pending and current is not None
-                           and current.sent and not current.cancel_requested else False)
+                           and current.sent and not current.cancel_requested and audio is None else False)
                 if steered is not False:
                     async with self.lock:
                         await self.note(None, 'steered', 'Delivered into the running turn.' if steered else
@@ -2590,8 +3243,8 @@ class Session:
                                         'have reached the turn, so it is not sent again. Send it again if it did not.')
                     await self.reply(writer, {**said, 'sent': True, 'steered': steered})
                     return
-                self.turn(text)
-                await self.reply(writer, {**said, 'sent': True, 'steered': False})
+                self.turn(text, audio)
+                await self.reply(writer, {**said, 'sent': True, 'steered': False, 'audio': audio is not None})
             elif op == 'interrupt':
                 try:
                     requested = await self.interrupt()
@@ -2604,6 +3257,11 @@ class Session:
             elif op == 'configure':
                 await self.reply(writer, {**said, **await self.configure(str(asked.get('setting', '')),
                                                                          str(asked.get('value', '')))})
+            elif op == 'fork':  # ACP's session/fork, a side conversation with the session's context, P030
+                try:
+                    await self.reply(writer, {**said, **await self.fork(str(asked.get('text') or ''))})
+                except Exception as error:  # noqa: BLE001  a fork that fails leaves the session as it was
+                    await self.reply(writer, {**said, 'error': f'Could not fork the session: {error}'})
             elif op == 'tune':  # the ticket's own model and effort, changed while it runs, P015
                 await self.reply(writer, {**said, 'applied': await self.apply_options()})
             elif op in ('stop', 'cancel'):  # session/cancel for a turn in flight, then the session ends, P232
@@ -2635,6 +3293,7 @@ class Session:
             return
         self.ending, self.how = True, how
         self.pending.clear()
+        self.voiced.clear()
         try:
             # Cancelling startup would abandon to_thread writes or a child being created. Let the current
             # acquisition finish and let begin observe ending before proceeding, then clean up its resources.
@@ -2665,6 +3324,14 @@ class Session:
                         process.stdin.close()
                 with contextlib.suppress(asyncio.TimeoutError):
                     await asyncio.wait_for(self.exited.wait(), END_LIMIT)
+            await self.terminals_ended()  # the terminals it asked for end with it, P019
+            if self.folder != self.root and not self.prep and self.node is not None:  # nothing lost on a crash, P009
+                with contextlib.suppress(Exception):
+                    await asyncio.to_thread(checkpoint, self.folder, self.work_id,
+                                            f'The session of ticket {self.work_id} ended: {how}')
+            if self.intake_timer is not None:
+                self.intake_timer.cancel()
+                self.intake_timer = None
             if process is not None:
                 await asyncio.to_thread(end_group, process.pid)  # what it started ends with it
                 with contextlib.suppress(asyncio.TimeoutError):

@@ -1843,7 +1843,7 @@ MODULE = Module(
         Pane('messages', 'Messages', 'Answer the questions agents left for you at nodes, oldest first.', icon='send',
              page='messages', area='right', group='chat', order=110, min_width=320),
         Pane('board', 'Board', "Prioritize the project's tickets and see which agent holds each.", icon='board',
-             page='board', area='main', group='stage', order=20, min_width=640, min_height=320),
+             page='board', area='float', order=20, min_width=640, min_height=320),
         # The code layer at the selected node, `<address>@code`, P165: its symbols, the calls in and out with the
         # Address at the other end, and the code serving it, as code-context reads it.
         Pane('code', 'Code', 'Read the code that serves the selected node, and the Addresses its calls reach.',

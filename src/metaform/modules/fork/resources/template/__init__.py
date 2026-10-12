@@ -90,6 +90,13 @@ person uses it, its tooltip, and an icon, a name from `ICONS` or an SVG
 under `resources/`. They are defaults: the person arranges the toolbar and
 the panes and saves workspaces on the page. The tool and the pane below show
 `resources/pane.md`; a copy writes its own.
+
+A module offers something to other modules, without either importing the other, with `provides=`: `Provides(kind,
+value)` of `metaform.module`, found by kind with `metaform.module.provided(folder, kind)`, every enabled module's in
+module id order. A disabled module provides nothing. The voice module finds speech engines this way, each a
+`VoiceEngine(name, summary, sends=, transcribe=, speak=, ready=, formats=)` provided as `voice.engine`; the
+elevenlabs module provides one. The voice module provides `voice`, its own speak and transcribe for a server-side
+caller such as a phone bridge.
 """
 from __future__ import annotations
 
@@ -127,4 +134,5 @@ MODULE = Module(
         Pane('about', 'About template', 'Read what this module is for before turning it on.', icon='file',
              resource='resources/pane.md', area='right'),
     ),
+    provides=(),
 )

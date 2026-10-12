@@ -18,6 +18,11 @@
   --t-lg:calc(16px * var(--ui)); --t-xl:calc(20px * var(--ui));
   --ctl:calc(32px * var(--ui)); --ctl-sm:calc(26px * var(--ui)); --ctl-lg:calc(40px * var(--ui)); --bar:calc(38px * var(--ui));
   --ring:2px; --ease:cubic-bezier(.2,.7,.2,1); --quick:.14s;
+  /* The easing tokens, mirrored in app.js's EASE for motion drawn in script: --ease-arrive settles what comes in like
+   * a spring with no overshoot, --ease-leave lets what goes gently gather speed, --ease-move carries a thing from one
+   * place to another; --dur-1 to --dur-3 for a small, a middle and a large move. */
+  --ease-arrive:cubic-bezier(.16,1,.3,1); --ease-leave:cubic-bezier(.5,0,.75,0); --ease-move:cubic-bezier(.45,0,.2,1);
+  --dur-1:180ms; --dur-2:320ms; --dur-3:520ms;
   --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --cond:"IBM Plex Sans Condensed","IBM Plex Sans",system-ui,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
@@ -49,6 +54,17 @@
   --missing:#feca00; --broken:#ff635f; --exclude:#beff3d; --question:#ff8ad8;
   --node:#0f1836; --node-sub:#182241; --node-sel:#003d48; --node-broken:#551918; --group:#070f2c; --node-line:#5d75bb; --edge:#5d75bb;
   --mark:#004855; --string:#00fd78; --add:#83d494; --add-bg:#11331b; --del:#ff9f9f; --del-bg:#4c171a; --shadow:#000000;
+}
+:root[data-theme="black"]{
+  color-scheme:dark;
+  --ground:#000000; --panel:#0b0b0b; --panel-2:#161616; --control:#6a6a6a; --line:#262626; --line-2:#3f3f3f;
+  --text:#f7f7f7; --muted:#a8a8a8; --faint:#858585;
+  --signal:#00fdea; --de:#ffffff; --dim-keep:0.65; --tree:#7a7e84; --link-opacity:0.8;
+  --intake:#53a0ff; --memory:#b17eff; --danger:#fe6a00;
+  --k1:#fead00; --k2:#00fd49; --k3:#ff5c9b; --k4:#00cafe; --k5:#fbec00; --k6:#8d90ff;
+  --missing:#feca00; --broken:#ff635f; --exclude:#beff3d; --question:#ff8ad8;
+  --node:#161616; --node-sub:#202020; --node-sel:#1c5450; --node-broken:#612421; --group:#0e0e0e; --node-line:#6f747c; --edge:#6f747c;
+  --mark:#144b47; --string:#00fd78; --add:#87d999; --add-bg:#1c3e24; --del:#ffacab; --del-bg:#572124; --shadow:#000000;
 }
 :root[data-theme="graphite"]{
   color-scheme:dark;
@@ -177,6 +193,17 @@ button,select,input,textarea{font:inherit;color:inherit}
 .i-expand{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5L9 7M2.5 13.5L7 9' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}
 .i-minus{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8h9' stroke='black' stroke-width='1.7' stroke-linecap='round'/%3E%3C/svg%3E")}
 .i-keyboard{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1.5' y='4' width='13' height='8.5' rx='1.5' fill='none' stroke='black' stroke-width='1.4'/%3E%3Cpath d='M4 7h1M7.5 7h1M11 7h1M4.5 10h7' stroke='black' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E")}
+/* The icons of the workspace's tools and panes, the built-in names a module's ToolbarItem and Pane take. */
+.i-board{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1.8' y='2.5' width='12.4' height='11' rx='1.5' fill='none' stroke='black' stroke-width='1.3'/%3E%3Cpath d='M6 2.5v11M10 2.5v11' stroke='black' stroke-width='1.3'/%3E%3Cpath d='M3.3 4.5h1.4M7.3 4.5h1.4M7.3 6.5h1.4M11.3 4.5h1.4' stroke='black' stroke-width='1.3' stroke-linecap='round'/%3E%3C/svg%3E")}
+.i-brief{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 1.8h5l3 3v9.4H4z M9 1.8v3h3' fill='none' stroke='black' stroke-width='1.3' stroke-linejoin='round'/%3E%3Cpath d='M6 8h4M6 10.5h4' stroke='black' stroke-width='1.3' stroke-linecap='round'/%3E%3C/svg%3E")}
+.i-chat{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z' fill='none' stroke='black' stroke-width='1.3' stroke-linejoin='round'/%3E%3C/svg%3E")}
+.i-code{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}
+.i-cube{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.8l5.7 3.1v6.2L8 14.2l-5.7-3.1V4.9z M2.3 4.9L8 8l5.7-3.1M8 8v6.2' fill='none' stroke='black' stroke-width='1.3' stroke-linejoin='round'/%3E%3Ccircle cx='8' cy='8' r='1' fill='black'/%3E%3C/svg%3E")}
+.i-eye{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z' fill='none' stroke='black' stroke-width='1.3' stroke-linejoin='round'/%3E%3Ccircle cx='8' cy='8' r='2' fill='none' stroke='black' stroke-width='1.3'/%3E%3C/svg%3E")}
+.i-gauge{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M2.5 11.5a5.5 5.5 0 1111 0' fill='none' stroke='black' stroke-width='1.3' stroke-linecap='round'/%3E%3Cpath d='M8 11.5l3-4' stroke='black' stroke-width='1.4' stroke-linecap='round'/%3E%3Ccircle cx='8' cy='11.5' r='1' fill='black'/%3E%3C/svg%3E")}
+.i-layers{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 2l6 3-6 3-6-3z' fill='none' stroke='black' stroke-width='1.3' stroke-linejoin='round'/%3E%3Cpath d='M2 8l6 3 6-3M2 11l6 3 6-3' fill='none' stroke='black' stroke-width='1.3' stroke-linejoin='round'/%3E%3C/svg%3E")}
+.i-map{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1.8' y='5.5' width='4' height='3' rx='.6' fill='none' stroke='black' stroke-width='1.2'/%3E%3Crect x='10.2' y='2' width='4' height='3' rx='.6' fill='none' stroke='black' stroke-width='1.2'/%3E%3Crect x='10.2' y='11' width='4' height='3' rx='.6' fill='none' stroke='black' stroke-width='1.2'/%3E%3Cpath d='M5.8 7h2v-3.5h2.4M7.8 7v5.5h2.4' fill='none' stroke='black' stroke-width='1.2'/%3E%3C/svg%3E")}
+.i-memory{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='4' cy='4.5' r='2' fill='none' stroke='black' stroke-width='1.3'/%3E%3Ccircle cx='12' cy='5' r='2' fill='none' stroke='black' stroke-width='1.3'/%3E%3Ccircle cx='7.5' cy='12' r='2' fill='none' stroke='black' stroke-width='1.3'/%3E%3Cpath d='M6 4.6l4 .3M5 6.3l1.6 3.9M10.8 6.6L8.7 10.3' stroke='black' stroke-width='1.2'/%3E%3C/svg%3E")}
 /* A dropdown button ends in a chevron that turns while its menu is open. */
 .btn .i-chev{margin-right:-4px;opacity:.8;transition:transform var(--quick)}
 .btn[aria-expanded="true"] .i-chev{transform:rotate(180deg)}
@@ -398,6 +425,13 @@ body.moving-side,body.moving-side *{cursor:grabbing!important}
 .app.side-right aside{border-right:0;border-left:1px solid var(--line)}
 .app.side-right .splitter.side{right:auto;left:-4px}
 .app.side-right .splitter.side::after{left:4px}
+/* While the side column's splitter is held: a quiet grip of three dots at its centre, the resize cursor, and past the
+ * middle of the window, where letting go leaves the column on the other side, the move cursor. */
+.splitter.side.dragging::before{content:"";position:absolute;left:50%;top:50%;width:3px;height:15px;translate:-50% -50%;
+  background:radial-gradient(circle,var(--muted) 1.2px,transparent 1.6px) center top/3px 6px repeat-y;opacity:.9}
+.splitter.side.dragging.across::before{background-image:radial-gradient(circle,var(--signal) 1.2px,transparent 1.6px)}
+body.sizing-side,body.sizing-side *{cursor:col-resize!important;user-select:none}
+body.moving-side-split,body.moving-side-split *{cursor:move!important}
 /* Tabs: the one open is underlined in the accent. */
 .tabs{display:flex;border-bottom:1px solid var(--line);flex:none}
 .tabs button{flex:1;min-height:40px;padding:0 var(--s1);background:none;border:0;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;
@@ -533,8 +567,11 @@ dl.facts dd.addr{font:var(--t-sm)/1.6 var(--mono);color:var(--signal)}
 .map2d.focused .node:not(.sel):not(.near) text,.map2d.focused .node:not(.sel):not(.near) .nodeLabel{fill:var(--muted)!important}
 .map2d .edgePaths path{stroke:var(--edge)!important;stroke-width:max(1.2px,calc(var(--pixel2d,0) * 1px))!important;transition:stroke .3s,opacity .3s}
 .map2d .edgePaths path.on{stroke:var(--intake)!important;stroke-width:max(1.8px,calc(var(--pixel2d,0) * 1.5px))!important}
-/* An edge takes a click on a band one screen pixel wider than its line, VIEW-008: a copy of it over it, unpainted. */
-.map2d .hits2d path{stroke:transparent!important;fill:none!important;pointer-events:stroke;cursor:pointer;
+/* A copy of each edge, unpainted, over it; a click takes the edge nearest the pointer, `edgeAt2d`, VIEW-008, and the
+ * edge it would take is marked under the pointer, `pick`, its line brighter and a little wider. */
+.map2d .edgePaths path.pick{stroke:var(--text)!important;stroke-width:max(2px,calc(var(--pixel2d,0) * 1.8px))!important;transition:stroke var(--quick)}
+#viewport.picking{cursor:pointer}
+.map2d .hits2d path{stroke:transparent!important;fill:none!important;pointer-events:none;
   stroke-width:calc(max(1.2px,calc(var(--pixel2d,0) * 1px)) + var(--unit2d,0) * 1px)}
 .map2d .hits2d path.on{stroke-width:calc(max(1.8px,calc(var(--pixel2d,0) * 1.5px)) + var(--unit2d,0) * 1px)}
 .map2d .cluster rect{fill:var(--group)!important;stroke:var(--node-line)!important;stroke-width:1px!important;rx:6px;cursor:pointer}
@@ -774,7 +811,7 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 #dock.near #dockTab span,#dockTab:focus-visible span{opacity:1}
 #dock.open #dockTab,#dock.open.big #dockTab{display:none}
 @media (prefers-reduced-motion:reduce){#dockTab,#dockTab span{transition:none}}
-#helpdesk{position:fixed;right:var(--s5);bottom:var(--s5);width:400px;height:620px;max-height:calc(100vh - 2 * var(--s5));max-width:calc(100vw - 2 * var(--s3));display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line-2);border-radius:var(--r-lg);overflow:hidden;box-shadow:var(--lift-3)}
+#helpdesk{position:fixed;right:var(--s5);bottom:var(--s5);width:clamp(420px,34vw,640px);height:min(720px,calc(100vh - 2 * var(--s5)));max-height:calc(100vh - 2 * var(--s5));max-width:calc(100vw - 2 * var(--s3));display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line-2);border-radius:var(--r-lg);overflow:hidden;box-shadow:var(--lift-3)}
 #dock.big #helpdesk{width:80vw;height:80vh;right:10vw;bottom:10vh}
 #helpdesk .files{display:flex;flex-wrap:wrap;gap:var(--s1);padding:0 var(--s3)}
 #helpdesk .files:empty{display:none}
@@ -936,7 +973,12 @@ span.ref-link{color:var(--signal);text-decoration:underline dotted;cursor:pointe
 #helpdesk .calls .summon .pickernote,#helpdesk .calls .summon .choice > .btn .badge{display:none}
 #helpdesk .calls .summon .choice > .btn{height:var(--ctl)}
 #helpdesk .calls .call{flex:0 0 auto}
-#helpdesk .calls .resume{flex:0 0 auto;display:flex;align-items:center;gap:var(--s1);height:var(--ctl);white-space:nowrap}
+/* Resume and Stay connected sit on a quiet line of their own under Interrupt, the agent and Call, so the agent's
+ * picker keeps its room. */
+#helpdesk .calls{flex-wrap:wrap;row-gap:var(--s1)}
+#helpdesk .calls::after{content:'';flex-basis:100%;order:9}
+#helpdesk .calls .summon{min-width:8rem}
+#helpdesk .calls .resume{order:10;flex:0 0 auto;display:flex;align-items:center;gap:var(--s1);white-space:nowrap;font-size:var(--t-sm);color:var(--muted)}
 #helpdesk .system.asking{display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center;justify-content:center;color:var(--text)}
 #helpdesk.asks .head{background:var(--question)}
 #helpdesk .compose{position:relative}
@@ -979,7 +1021,7 @@ span.ref-link{color:var(--signal);text-decoration:underline dotted;cursor:pointe
 #helpdesk .head{cursor:move;user-select:none;-webkit-user-select:none}
 #helpdesk .head button{cursor:pointer}
 #helpdesk .head .place[aria-pressed="true"]{background:color-mix(in srgb,var(--ground) 22%,transparent)}
-#dock[data-place="float"] #helpdesk{right:auto;bottom:auto;resize:both;min-width:320px;min-height:320px}
+#dock[data-place="float"] #helpdesk{right:auto;bottom:auto;min-width:340px;min-height:360px;max-height:none;max-width:none}
 #dock[data-place="left"] #helpdesk,#dock[data-place="right"] #helpdesk{top:0;bottom:0;height:auto;max-height:none;width:var(--dock-width);border-radius:0;box-shadow:var(--lift-2)}
 #dock[data-place="right"] #helpdesk{right:0;border-width:0 0 0 1px}
 #dock[data-place="left"] #helpdesk{left:0;right:auto;border-width:0 1px 0 0}
@@ -1238,7 +1280,12 @@ button.toolhead:hover{border-color:var(--control)}
 @media (max-width:1366px){
   header .btn.quiet{padding:0 6px}
   header .btn .i-chev{margin-left:-4px}
+  header .viewbtn .lbl{display:none}  /* the View menu keeps its icon, its tooltip and V where the header is short of room */
 }
+/* The View menu's button: the "more" dots and its name, View, while the header has room. */
+.i-more{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='3' cy='8' r='1.5'/%3E%3Ccircle cx='8' cy='8' r='1.5'/%3E%3Ccircle cx='13' cy='8' r='1.5'/%3E%3C/svg%3E")}
+header .viewbtn{gap:6px}
+header.fold .viewbtn .lbl{display:inline}
 /* A tablet or a phone: one column, the maps over the panel, the header's rest behind the menu button, windows as
  * sheets across the screen, and every control at least 40 px tall for a finger. */
 /* A narrow window: the header keeps the project, Messages and Search on its row, and folds the rest behind the menu
@@ -1344,12 +1391,44 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
 .modes2d button[aria-checked="true"] kbd{color:var(--muted)}
 .modes2d .short,.small .modes2d .long,.small .modes2d kbd{display:none}
 .small .modes2d .short{display:inline}
-/* The selected node's joins in the 2D map carry its flow, VIEW-005: pulses along each edge, receiver to provider. */
-.map2d .flows2d path.flow{fill:none;stroke:var(--signal)!important;stroke-width:2.6px!important;stroke-linecap:round;
-  stroke-dasharray:1 13;animation:flow2d 1.4s linear infinite;pointer-events:none;opacity:.9}
-@keyframes flow2d{to{stroke-dashoffset:-14}}
-@media (prefers-reduced-motion: reduce){.map2d .flows2d path.flow{animation:none}}
-.map2d .flows2d path.flow.back{animation-direction:reverse;animation-delay:-.7s}
+/* What travels the map, VIEW-005, `FLOW` in app.js: a request is one tiny white dot, a reply a train of small dots in
+ * the colour of the element it comes from, a record a card in --record that lands with a ring. One record colour on
+ * every theme, each of them dark, warm against the links' blues and the signal's cyan. In the 2D map the selected
+ * node's edges carry it. */
+:root{--record:#ffbe55}
+.map2d .flows2d *{pointer-events:none}
+.map2d .flows2d .bead{stroke:none;filter:drop-shadow(0 0 1.5px currentColor)}
+.map2d .flows2d .ask{fill:#fff;filter:drop-shadow(0 0 1.5px #fff)}
+.map2d .flows2d .record{fill:var(--record);stroke:#fff;stroke-width:.6px}
+.map2d .flows2d .ring{fill:none;stroke:var(--record);stroke-width:1.4px}
+/* The mascot's word bubble, over the figure wherever it is drawn: eased in and out, one line or two, never in the way
+ * unless it has something to click. */
+.mascot-bubble{position:fixed;left:0;top:0;z-index:40;max-width:260px;padding:6px 10px;border-radius:12px;
+  background:var(--panel-2);border:1px solid var(--line-2);color:var(--text);font:500 var(--t-sm,13px)/1.35 var(--sans);
+  box-shadow:var(--lift-2,0 4px 14px rgba(0,0,0,.4));pointer-events:none;opacity:0;
+  transform:translate(-50%,calc(-100% - 10px)) scale(.92);transform-origin:50% 100%;
+  transition:opacity .22s var(--ease),transform .28s var(--ease)}
+.mascot-bubble::after{content:'';position:absolute;left:50%;bottom:-6px;width:10px;height:10px;margin-left:-5px;
+  background:var(--panel-2);border-right:1px solid var(--line-2);border-bottom:1px solid var(--line-2);transform:rotate(45deg)}
+.mascot-bubble.on{opacity:1;transform:translate(-50%,calc(-100% - 10px)) scale(1)}
+.mascot-bubble.on.clickable{pointer-events:auto;cursor:pointer}
+.mascot-bubble.clickable:hover{border-color:var(--signal)}
+.mascot-bubble.asking{pointer-events:auto;display:flex;flex-direction:column;gap:6px;max-width:300px}
+.mascot-bubble .reply{width:240px;min-height:28px;padding:0 8px;font:inherit}
+/* The note card the mascot brings when something needs the person, set down near the pointer: a click on its words
+ * goes there, its × puts it away. Eased in and out. */
+.mascot-card{position:fixed;z-index:41;display:flex;align-items:center;gap:4px;padding:4px 4px 4px 10px;border-radius:10px;
+  background:var(--panel-2);border:1px solid var(--record,#ffbe55);box-shadow:var(--lift-2,0 4px 14px rgba(0,0,0,.4));
+  opacity:0;transform:translate(-50%,-50%) scale(.6) rotate(-4deg);
+  transition:left .7s var(--ease),top .7s var(--ease),opacity .3s var(--ease),transform .5s var(--ease)}
+.mascot-card.on{opacity:1;transform:translate(-50%,-50%) scale(1) rotate(-1.5deg)}
+.mascot-card .go{all:unset;cursor:pointer;color:var(--text);font:500 var(--t-sm,13px)/1.3 var(--sans);max-width:240px}
+.mascot-card .go:hover,.mascot-card .go:focus-visible{text-decoration:underline}
+.mascot-card .x{all:unset;cursor:pointer;width:22px;height:22px;text-align:center;border-radius:6px;color:var(--muted)}
+.mascot-card .x:hover{background:var(--control);color:var(--text)}
+@media (prefers-reduced-motion: reduce){.mascot-bubble,.mascot-card{transition:none}}
+/* Scissors out on the 3D map, `CUT`: the pointer is a pair of scissors. */
+#stage.scissors canvas{cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23f5f7fa' stroke-width='1.8' stroke-linecap='round'%3E%3Ccircle cx='6' cy='6' r='3'/%3E%3Ccircle cx='6' cy='18' r='3'/%3E%3Cpath d='M8.1 8.1 20 20M8.1 15.9 20 4'/%3E%3C/svg%3E") 12 12,crosshair}
 .bar3d .mapbtns .modes3d{margin-right:var(--s2)}
 /* In the small area the bar is narrow: the modes are set tighter, and the breadcrumb keeps room to be read. */
 .small .mapbtns .modes2d button,.small .mapbtns .modes3d button{padding:0 var(--s1)}
@@ -1369,6 +1448,14 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
 .settingspanel > .body{gap:var(--s4);grid-template-columns:minmax(0,1fr)}
 .settingspanel > .bar .search{flex:0 1 240px;min-width:120px;height:var(--ctl-sm);min-height:0;font-size:var(--t-sm)}
 .settingspanel .hint{margin:0}
+/* The configuration surfaces always open at the window's right edge, just below the header, at their own width,
+ * whichever side the side column is on, whichever map is large, and wherever the workspace's panes stand; a phone keeps
+ * its sheets. `--head-bottom` is where the header ends, kept by the page. */
+@media (min-width:821px){
+  #settings.settingspanel:not(.docked){left:auto!important;right:var(--s3)!important;top:calc(var(--head-bottom,60px) + var(--s2))!important;
+    transform:none!important;max-height:calc(100vh - var(--head-bottom,60px) - 2 * var(--s2))}
+  #settingsbox{position:fixed;left:auto;right:var(--s3);top:calc(var(--head-bottom,60px) + 6px)}
+}
 .setgroup{display:grid;gap:var(--s2);grid-template-columns:minmax(0,1fr)}
 .setgroup .head{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--s1) var(--s3)}
 .setgroup h3{margin:0;font:600 var(--t-base)/1.3 var(--sans);color:var(--text)}
@@ -1496,8 +1583,632 @@ details.entry[open] > pre{margin:var(--s1) 0 var(--s2)}
 /* The page in an AI tool's frame, the MCP Apps map view, MCP-037: the maps and the panel only. What acts on the project,
  * the agents and the chat stay in the web GUI, since the view only reads. Inline it is a fixed height the host fits;
  * full screen it fills the screen. */
-html.frame .app{height:600px}
+html.frame .app{height:var(--view-height,600px)}
 html.frame[data-display="fullscreen"] .app{height:100vh}
 html.frame header,html.frame .skip,html.frame #dock,html.frame #agents,html.frame #board,html.frame #float,
 html.frame #intakeBar,html.frame #emptyStage{display:none!important}
 html.frame .workhead,html.frame button.chat{display:none!important}
+
+/* ---------- the workspace: the toolbar, the Window menu and the panes, workspace.js ----------
+ * With the workspace read the page is the header, the toolbar's row, and the areas: left, main, right and bottom, each
+ * a column of groups of tabs, a group a strip of tabs over the one pane open. The side column as written gives way to
+ * it; its maps and panes are the panes' content. An area with no pane shown takes no room. */
+.app.ws{grid-template-rows:auto auto minmax(0,1fr);grid-template-columns:minmax(0,1fr);grid-template-areas:"top" "tools" "ws"}
+.app.ws > aside{display:none}
+.app:not(.ws) > #ws{display:none}
+/* The workspace's arrangement that is the page as written: the page's own column and maps, with the toolbar's row. */
+.app.wsclassic{grid-template-rows:auto auto minmax(0,1fr);grid-template-areas:"top top" "tools tools" "side stage"}
+.app.wsclassic.side-right{grid-template-areas:"top top" "tools tools" "stage side"}
+@media (max-width:820px){.app.wsclassic.wsclassic,.app.wsclassic.side-right{grid-template-rows:auto auto 56vh auto;grid-template-areas:"top" "tools" "stage" "side"}}
+/* A map alone in a group at a side is as tall as the small map of the page as written. */
+.wsgroup.mapalone{flex:0 0 var(--small-height,clamp(240px,38vh,380px))!important}
+.toolbar-row{grid-area:tools;display:flex;align-items:center;gap:2px;min-height:calc(36px * var(--ui));padding:2px var(--s3);
+  border-bottom:1px solid var(--line);background:var(--panel);overflow-x:auto;scrollbar-width:thin}
+.wsslot{position:relative;flex:none;gap:6px}
+.wsslot .lbl{white-space:nowrap}
+.wsslot.grouped::after{content:"";position:absolute;right:3px;bottom:3px;border:3px solid transparent;border-right-color:currentColor;border-bottom-color:currentColor;opacity:.7}
+.wsslot.more{font:600 var(--t-base)/1 var(--sans);letter-spacing:.08em;margin-left:auto}
+.wsslot[aria-pressed="true"]{color:var(--text);box-shadow:inset 0 -2px 0 var(--signal)}
+@media (max-width:1100px){.wsslot .lbl{display:none}}
+.ws{grid-area:ws;display:grid;min-height:0;min-width:0;position:relative;
+  grid-template-columns:var(--ws-left,0px) auto minmax(0,1fr) auto var(--ws-right,0px);grid-template-rows:minmax(0,1fr) auto var(--ws-bottom,0px);
+  grid-template-areas:"left lsplit main rsplit right" "bsplit bsplit bsplit bsplit bsplit" "bottom bottom bottom bottom bottom"}
+.wsarea{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:var(--panel)}
+.wsarea[data-area="left"]{grid-area:left;border-right:1px solid var(--line)}
+.wsarea[data-area="main"]{grid-area:main;background:var(--ground)}
+.wsarea[data-area="right"]{grid-area:right;border-left:1px solid var(--line)}
+.wsarea[data-area="bottom"]{grid-area:bottom;border-top:1px solid var(--line)}
+.wsarea.empty{display:none}
+.ws:has(.wsarea[data-area="left"].empty){--ws-left:0px}
+.ws:has(.wsarea[data-area="right"].empty){--ws-right:0px}
+.ws:has(.wsarea[data-area="bottom"].empty){--ws-bottom:0px}
+.wssplit{background:transparent;z-index:6;touch-action:none}
+.wssplit[data-area="left"]{grid-area:lsplit;width:6px;margin:0 -3px;cursor:col-resize}
+.wssplit[data-area="right"]{grid-area:rsplit;width:6px;margin:0 -3px;cursor:col-resize}
+.wssplit[data-area="bottom"]{grid-area:bsplit;height:6px;margin:-3px 0;cursor:row-resize}
+.wssplit:hover,.wssplit.dragging,.wssplit:focus-visible,.wsgsplit:hover{background:color-mix(in srgb,var(--signal) 45%,transparent)}
+.wsgroup{display:flex;flex-direction:column;min-height:0;min-width:0;position:relative}
+.wsgsplit{flex:none;height:5px;margin:-2px 0;cursor:row-resize;z-index:4;background:var(--line)}
+.wsgsplit.across{width:5px;height:auto;margin:0 -2px;cursor:col-resize}
+.wstabs{display:flex;flex:none;flex-wrap:wrap;border-bottom:1px solid var(--line);background:var(--panel)}
+.wstab{display:inline-flex;align-items:center;gap:6px;flex:none;min-height:calc(34px * var(--ui));padding:0 var(--s3);background:none;border:0;
+  border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;font:600 var(--t-xs)/1 var(--sans);letter-spacing:.06em;text-transform:uppercase;touch-action:none}
+.wstab .i{width:14px;height:14px}
+.wstab:hover{color:var(--text)}
+.wstab[aria-selected="true"]{color:var(--text);border-bottom-color:var(--signal)}
+.wstab:focus-visible{outline-offset:-3px}
+.wsbody{flex:1;position:relative;min-height:0;min-width:0;overflow:hidden}
+.wsbody > *{position:absolute;inset:0}
+.wsbody > .small{height:auto;border-bottom:0}
+.wsbody > main{grid-area:auto}
+.wsbody > .pane{padding:var(--s4) var(--s4) var(--s5)}
+.wsbody > .window.docked,.wsbody > #helpdesk{position:absolute;inset:0!important;transform:none!important;width:auto!important;height:auto!important;max-width:none;max-height:none;
+  border:0;border-radius:0;box-shadow:none;z-index:auto;resize:none;-webkit-backdrop-filter:none;backdrop-filter:none;background:var(--panel)}
+.window.docked > .bar > .title,.window.docked > .bar > .close{display:none}
+.wsbody > #helpdesk .place,.wsbody > #helpdesk .big{display:none}
+#dock[data-place="pane"]{display:none}
+#wsHold{display:none}
+.wsfloat{z-index:27;resize:both;overflow:hidden;width:min(560px,calc(100vw - 16px));height:min(480px,calc(100vh - 80px))}
+.wsfloat > .wsbody{flex:1}
+.wsfloatmenu{position:fixed;top:auto;left:auto;z-index:1200}
+.wsitem{display:inline-flex;align-items:center;gap:var(--s2)}
+.wscheck{visibility:hidden}
+[aria-checked="true"] > .wsitem > .wscheck{visibility:visible}
+#windowbox [role="menuitemcheckbox"],#windowbox [role="menuitem"]{display:flex;align-items:center;justify-content:space-between;gap:var(--s4);min-height:var(--ctl);
+  padding:0 var(--s3);border:0;border-radius:var(--r);background:transparent;color:var(--text);font:var(--t-md)/1.3 var(--sans);text-align:left;cursor:pointer}
+#windowbox{max-height:min(70vh,560px);overflow:auto}
+.wsghost{position:fixed;z-index:3000;pointer-events:none;padding:var(--s1) var(--s3);border-radius:var(--r);background:var(--panel-2);border:1px solid var(--signal);
+  color:var(--text);font:600 var(--t-xs)/1.4 var(--sans);letter-spacing:.06em;text-transform:uppercase;box-shadow:var(--lift-2)}
+.wsdrop{position:fixed;z-index:2900;pointer-events:none;border:2px solid var(--intake);background:color-mix(in srgb,var(--intake) 22%,transparent);border-radius:var(--r)}
+.wszone{position:fixed;z-index:2800;pointer-events:none;background:color-mix(in srgb,var(--intake) 10%,transparent);border:1px dashed color-mix(in srgb,var(--intake) 60%,transparent)}
+body.ws-dragging,body.ws-dragging *{cursor:grabbing!important;user-select:none}
+.wspane .wscontent{display:grid;gap:var(--s3);font:var(--t-md)/1.5 var(--sans);color:var(--text)}
+.wsmeta{display:flex;justify-content:space-between;gap:var(--s3);align-items:baseline;flex-wrap:wrap}
+.wsmeta .chars{font:var(--t-xs) var(--mono);color:var(--muted)}
+.wstext{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:var(--t-sm)/1.5 var(--mono);color:var(--text);background:var(--panel-2);padding:var(--s2) var(--s3);border-radius:var(--r)}
+.wsfields{display:grid;grid-template-columns:minmax(80px,max-content) minmax(0,1fr);gap:2px var(--s3);margin:0}
+.wsfields dt{color:var(--muted);font:600 var(--t-xs)/1.6 var(--sans);text-transform:uppercase;letter-spacing:.05em}
+.wsfields dd{margin:0;overflow-wrap:anywhere;min-width:0}
+.wslist{margin:0;padding-left:var(--s4);display:grid;gap:var(--s1)}
+.wslist > li{padding:var(--s1) 0;border-bottom:1px solid var(--line)}
+.wsframe{width:100%;height:100%;min-height:240px;border:0;background:var(--panel)}
+.none{color:var(--faint)}
+.raw summary{cursor:pointer;color:var(--muted);font:var(--t-xs) var(--sans)}
+.wshead{display:flex;justify-content:space-between;align-items:center;gap:var(--s3);flex-wrap:wrap}
+.wsrows{list-style:none;margin:0;padding:0;display:grid;gap:var(--s1)}
+.wsrow{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"kind title" "kind where";gap:0 var(--s2);width:100%;text-align:left;
+  padding:var(--s2);border:1px solid var(--line);border-radius:var(--r);background:var(--panel-2);color:var(--text);cursor:pointer;font:var(--t-md)/1.4 var(--sans)}
+.wsrow .pill{grid-area:kind;align-self:start}
+.wsrow small{grid-area:where;color:var(--muted);font-family:var(--mono)}
+.wsrow:hover{border-color:var(--control)}
+.wsrun{display:grid;gap:var(--s1);padding:var(--s2) var(--s3);border:1px solid var(--line);border-radius:var(--r);background:var(--panel-2)}
+.wsrun .line{display:flex;gap:var(--s2);align-items:baseline;flex-wrap:wrap}
+.wsrun .id{font:var(--t-xs) var(--mono);color:var(--muted)}
+.wsrun .reason{margin:0;color:var(--text)}
+.wsrun .answer{display:grid;gap:var(--s1)}
+.wsrun .acts{display:flex;justify-content:flex-end;gap:var(--s2);align-items:center;flex-wrap:wrap}
+.statechip{font:600 var(--t-xs)/1.4 var(--sans);letter-spacing:.04em;padding:1px var(--s2);border-radius:var(--r-pill);border:1px solid var(--control);color:var(--muted)}
+.statechip.running,.statechip.working,.statechip.submitted,.statechip.waiting{color:var(--signal);border-color:color-mix(in srgb,var(--signal) 60%,transparent)}
+.statechip.input_required,.statechip.login,.statechip.permission,.statechip.question{color:var(--question);border-color:var(--question)}
+.statechip.completed{color:var(--add);border-color:color-mix(in srgb,var(--add) 60%,transparent)}
+.statechip.failed,.statechip.dead{color:var(--danger);border-color:var(--danger)}
+.statechip.cancelled{color:var(--muted);border-style:dashed}
+.wseditcols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s4)}
+.wseditlist{list-style:none;margin:0;padding:var(--s1);min-height:160px;max-height:50vh;overflow:auto;border:1px dashed var(--control);border-radius:var(--r);display:grid;gap:var(--s1);align-content:start}
+.wseditslot > ol{list-style:none;margin:0;padding:0;display:grid;gap:2px;border:1px solid var(--line);border-radius:var(--r);padding:2px}
+.wsedititem{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"icon name act" "icon why act";gap:0 var(--s2);align-items:center;
+  padding:var(--s1) var(--s2);border-radius:var(--r);background:var(--panel-2);color:var(--text);cursor:grab}
+.wsedititem .i{grid-area:icon}
+.wsedititem .name{grid-area:name;font:500 var(--t-md)/1.3 var(--sans)}
+.wsedititem .why{grid-area:why;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wsedititem .btn{grid-area:act}
+.wsedititem.inslot{margin-left:var(--s4)}
+.wsedititem.over{box-shadow:inset 0 0 0 2px var(--intake)}
+.wsedititem:focus-visible{outline:var(--ring) solid var(--signal)}
+.wsedititem.dragging{opacity:.5}
+#wsedit{width:min(760px,calc(100vw - 2 * var(--s3)))}
+#wsedit .foot,.wswindow .foot{display:flex;gap:var(--s2);padding:var(--s3) var(--s4);border-top:1px solid var(--line);flex-wrap:wrap}
+.wswindow .foot:empty{display:none}
+.grow{flex:1}
+.wsformbody{display:grid;gap:var(--s3)}
+.wsfield{display:grid;gap:var(--s1)}
+.wsfield .hint{color:var(--muted)}
+#wsresult{width:min(560px,calc(100vw - 2 * var(--s3)));max-height:70vh}
+.wsprompts{display:grid;gap:var(--s1)}
+.wsprompts .size{font:var(--t-xs) var(--mono);color:var(--muted)}
+.wsprompts .size.over{color:var(--danger)}
+.wstrace{list-style:none;margin:0;padding:0;font:var(--t-xs)/1.5 var(--mono);display:grid;gap:2px}
+.wstrace .st.bad{color:var(--danger)}
+.wstrace .at{color:var(--faint);margin-right:var(--s2)}
+@media (max-width:820px){
+  /* the areas stack, the main area first, then right, left and bottom, each a group at a time; the page scrolls */
+  .app.ws{height:auto;min-height:100%;grid-template-rows:auto auto auto}
+  .ws{display:flex;flex-direction:column}
+  .wsarea{border:0;border-top:1px solid var(--line)}
+  .wsarea[data-area="main"]{order:1}.wsarea[data-area="right"]{order:2}.wsarea[data-area="left"]{order:3}.wsarea[data-area="bottom"]{order:4}
+  .wssplit,.wsgsplit{display:none}
+  .wsgroup{flex:none!important;min-width:0!important}
+  .wsarea[data-area="main"] .wsgroup{height:56vh}
+  .wsarea:not([data-area="main"]) .wsgroup{height:min(70vh,560px)}
+  .wsedititem{cursor:auto}
+  .wseditcols{grid-template-columns:minmax(0,1fr)}
+}
+/* The 2D map's typed shapes, P042: Mermaid draws a document, a cylinder, a stack or a display as paths and the
+ * parallelograms as polygons, so they take the same fill, stroke and signals as the plain box. */
+.map2d .node :is(path.label-container,.label-container > path,.label-container > g > path){fill:var(--node)!important;stroke:var(--node-line)!important;transition:stroke .3s,fill .3s}
+.map2d .node.sel :is(polygon,path.label-container,.label-container > path,.label-container > g > path){fill:var(--node-sel)!important;stroke:var(--signal)!important;stroke-width:2px!important}
+.map2d .node.near :is(polygon,path.label-container,.label-container > path,.label-container > g > path){stroke:var(--intake)!important}
+.map2d .node.reach :is(polygon,path.label-container,.label-container > path,.label-container > g > path){stroke:var(--reach)!important;stroke-width:2px}
+.map2d .node.inuse :is(path.label-container,.label-container > path,.label-container > g > path){fill:var(--in-use)!important;stroke:var(--in-use)!important}
+.map2d :is(.node.work-question,.node.work-message) :is(polygon,path.label-container,.label-container > path,.label-container > g > path){stroke:var(--question)!important;stroke-width:2px}
+.map2d :is(.node.work-broken,.node.work-trouble) :is(polygon,path.label-container,.label-container > path,.label-container > g > path){stroke:var(--broken)!important;animation:flash var(--pace,1s) ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){.map2d :is(.node.work-broken,.node.work-trouble) :is(polygon,path.label-container,.label-container > path,.label-container > g > path){animation:none;fill:var(--node-broken)!important}}
+/* The large map's bar, web_mode_bar, at the top right of the large area: away off its right edge, holding no room,
+ * until the pointer nears, Tab reaches it, a key changes it or M or the handle pins it out. While it is out what stands
+ * in that corner, the agents window, moves down by its height, `--peek-h`, and back as it goes. */
+.peek{position:absolute;top:calc(var(--bar) + var(--s1));right:var(--s2);z-index:7;display:flex;align-items:center;
+  justify-content:flex-end;flex-wrap:wrap;gap:var(--s2);max-width:calc(100% - 2 * var(--s3) - 6px);padding:var(--s1) var(--s2);
+  background:color-mix(in srgb,var(--panel) 94%,transparent);border:1px solid var(--line-2);border-radius:var(--r-lg);box-shadow:var(--lift-2);
+  translate:var(--s4) 0;opacity:0;pointer-events:none;  /* a short slide: its controls stand where they will be as it shows */
+  transition:translate var(--dur-2) var(--ease-leave),opacity var(--dur-2) var(--ease-leave)}
+.peek.out,.peek:focus-within{translate:0 0;opacity:1;pointer-events:auto;
+  transition:translate var(--dur-2) var(--ease-arrive),opacity var(--dur-2) var(--ease-arrive)}
+.peekpart{display:flex;align-items:center;gap:var(--s1)}
+.peekpart[hidden]{display:none}
+.peekpart + .peekpart:not([hidden]){padding-left:var(--s2);border-left:1px solid var(--line)}
+.peek .segmented button{display:inline-flex;align-items:center;gap:var(--s1)}
+.peek kbd{font:500 var(--t-xs)/1 var(--mono);color:var(--faint);background:none;border:0;padding:0;min-width:0;height:auto}
+.peek [aria-checked="true"] kbd{color:var(--muted)}
+.peek .physicsset button kbd{color:inherit;font-size:var(--t-sm)}
+.peek .peeklabel{font:600 var(--t-xs)/1 var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.peek .modes2d .short{display:none}
+/* The handle: a quiet grip at the corner's very edge, beside nothing, that pins the bar out or lets it go. */
+.peekhandle{position:absolute;top:calc(var(--bar) + var(--s2));right:0;z-index:8;width:6px;height:var(--ctl);padding:0;border:0;
+  border-radius:var(--r) 0 0 var(--r);background:color-mix(in srgb,var(--muted) 35%,transparent);cursor:pointer;
+  transition:width var(--dur-1) var(--ease-arrive),background var(--dur-1) var(--ease-arrive)}
+.peekhandle:hover,.peekhandle:focus-visible{width:10px;background:var(--muted)}
+.peekhandle[aria-pressed="true"]{background:var(--signal)}
+.small .peek,.small .peekhandle{display:none}
+/* The agents window slides in from the right as an agent starts work and away completely after; the bar pushes it
+ * down while it is out. Its slide is `translate`, the bar's push its `transform`, so the two never fight. */
+main #agents{transition:translate var(--dur-2) var(--ease-arrive),opacity var(--dur-2) var(--ease-arrive),transform var(--dur-2) var(--ease-arrive)}
+main #agents.away{translate:calc(100% + var(--s5)) 0;opacity:0;pointer-events:none;
+  transition:translate var(--dur-2) var(--ease-leave),opacity var(--dur-2) var(--ease-leave),transform var(--dur-2) var(--ease-arrive)}
+main.peeking #agents{transform:translateY(var(--peek-h,0px))}
+#agents .none{margin:0;color:var(--muted);font:var(--t-sm) var(--sans)}
+#help .keyfind{width:100%;margin-bottom:var(--s3)}
+@media (prefers-reduced-motion: reduce){.peek,.peek.out,.peek:focus-within,.peekhandle,main #agents,main #agents.away{transition:none}}
+#stage.picking canvas{cursor:pointer}
+/* What is new at a node in its brief: the latest item and the last session's range, one quiet line each. */
+.newhere{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:2px var(--s3);margin:0;font:var(--t-sm)/1.5 var(--sans);color:var(--muted)}
+.newhere dt{font:600 var(--t-xs)/1.8 var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.newhere dd{margin:0;min-width:0;overflow-wrap:anywhere;color:var(--text)}
+.newhere button.link{background:none;border:0;padding:0;color:var(--text);cursor:pointer;text-align:left;font:inherit}
+.newhere button.link:hover{color:var(--signal)}
+.newhere code{font:var(--t-xs) var(--mono);color:var(--signal)}
+/* The chat's subagents, each a child thread opened in place, and what the ticket has spent, quiet lines under the
+ * session's bar. */
+#helpdesk .subagents,#helpdesk .spend{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s1) var(--s2);padding:var(--s1) var(--s3);
+  border-bottom:1px solid var(--line);font:var(--t-xs)/1.5 var(--sans);color:var(--muted)}
+#helpdesk .subagents[hidden],#helpdesk .spend[hidden]{display:none}
+#helpdesk .subagents .btn .statechip{margin-left:var(--s1)}
+.threadbar .statechip,.card .statechip{flex:none}
+/* The intake bar's signals: what the guard and the runner say of the intake, one quiet chip each. */
+.intakebar .signals{display:inline-flex;flex-wrap:wrap;gap:var(--s1);margin-left:var(--s2)}
+/* The view's header slot in an AI tool's frame, MCP Apps: the host's controls in the top row, at the right. */
+.viewslot{display:none}
+html.frame .viewslot{grid-area:top;display:flex;justify-content:flex-end;align-items:center;gap:6px;min-height:0;padding:4px 8px;
+  padding-top:calc(4px + var(--safe-top,0px));padding-right:calc(8px + var(--safe-right,0px));background:var(--panel);border-bottom:1px solid var(--line)}
+html.frame .viewslot:empty{display:none}
+html.frame .viewslot #viewbar{position:static}
+/* An agent's figure on the 2D map opens its session; the docked chat's inner edge sizes it. */
+#map2d g.agent2d{cursor:pointer}
+.dockedge{display:none;position:absolute;top:0;bottom:0;width:8px;cursor:col-resize;z-index:2;touch-action:none}
+#dock[data-place="right"] .dockedge{display:block;left:0}
+#dock[data-place="left"] .dockedge{display:block;right:0}
+.dockedge:hover,.dockedge:focus-visible{background:color-mix(in srgb,var(--signal) 40%,transparent)}
+@media (max-width:820px){.dockedge{display:none!important}}
+/* The hover readout across the top of a map's window: what the pointer is on, eased in and faded out, over the map
+ * and never under the pointer's click; the pointing finger over anything a click picks. */
+.readout{position:absolute;left:0;right:0;top:var(--bar);z-index:5;pointer-events:none;padding:var(--s2) var(--s4) var(--s4);
+  background:linear-gradient(to bottom,color-mix(in srgb,var(--ground) 82%,transparent) 55%,transparent);
+  font:500 clamp(13px,0.55rem + 0.75vw,22px)/1.35 var(--sans);color:var(--text);text-shadow:0 0 6px var(--ground),0 0 2px var(--ground);
+  max-width:none;border:0;border-radius:0;opacity:0;translate:0 -6px;
+  transition:opacity var(--dur-2,.32s) var(--ease-leave,ease-in),translate var(--dur-2,.32s) var(--ease-leave,ease-in)}
+.readout.on{opacity:1;translate:0 0;transition:opacity var(--dur-1,.18s) var(--ease-arrive,ease-out),translate var(--dur-1,.18s) var(--ease-arrive,ease-out)}
+.readout .said{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;overflow:hidden;overflow-wrap:anywhere}
+.readout .said > *{margin-right:.6em}
+.readout b{font-weight:600}
+.readout .kind{color:var(--muted);font-size:.8em;letter-spacing:.04em;text-transform:uppercase}
+.readout code{font:.82em var(--mono);color:var(--signal)}
+.readout .why{color:var(--muted)}
+.readout .statechip{font-size:.75em;vertical-align:middle}
+.small .readout .said{-webkit-line-clamp:1;line-clamp:1;display:block;white-space:nowrap;text-overflow:ellipsis}
+#tip3d.readout{left:0!important;top:var(--bar)!important;transform:none!important}
+@media (prefers-reduced-motion: reduce){.readout,.readout.on{transition:none;translate:none}}
+#stage.pickable canvas,#viewport.pickable,#viewport.picking{cursor:pointer}
+/* the 2D map's own grab gives way to the finger wherever a click would take a node or an edge, `nodeAt2d`/`edgeAt2d` */
+#viewport.picking .map2d svg,#viewport.picking svg,#viewport.picking svg *{cursor:pointer}
+/* The node a click on the 2D map will take, the nearest within reach, `nodeAt2d`: its edge brightened. */
+.map2d .node.pick :is(rect,polygon,path.label-container,.label-container > path,.label-container > g > path){stroke:var(--text)!important}
+.readout.readout b{font:inherit;font-weight:600;color:var(--text);letter-spacing:normal;text-transform:none}
+.readout .said > .line{display:inline}
+.readout .line > *{display:inline;margin-right:.55em}
+.readout .line > .statechip{display:inline-block;padding:0 .5em}
+/* Voice, voice.js: the mic beside a box a person writes to agents in. Quiet until used: a faint glyph, no fill. While
+ * listening a soft ring fills in and a halo follows the voice's level, --voice-level from 0 to 1, eased in script like a
+ * spring; it arrives and leaves on the page's own easing. Under reduced motion it holds still. */
+#helpdesk .compose .voice-mic,.voice-mic{position:relative;flex:none;align-self:flex-end;width:var(--ctl);height:var(--ctl);padding:0;border:0;border-radius:var(--r-pill);
+  background:transparent;color:var(--faint);display:grid;place-items:center;cursor:pointer;
+  transition:color .32s var(--ease-arrive),opacity .32s var(--ease-arrive)}
+.voice-mic svg{position:relative;z-index:1}
+.voice-mic:hover,.voice-mic:focus-visible{color:var(--text)}
+.voice-mic:focus-visible{outline:var(--ring) solid var(--signal);outline-offset:1px}
+.voice-mic .voice-ring,.voice-mic .voice-halo{position:absolute;inset:4px;border-radius:inherit;pointer-events:none;opacity:0}
+.voice-mic .voice-ring{background:var(--signal);transform:scale(.6);transition:opacity .28s var(--ease-leave),transform .28s var(--ease-leave)}
+.voice-mic .voice-halo{inset:2px;border:1.5px solid var(--signal);transform:scale(calc(1 + var(--voice-level,0) * .55))}
+#helpdesk .compose .voice-mic.listening,.voice-mic.listening{color:var(--ground)}
+.voice-mic.listening .voice-ring{opacity:.92;transform:scale(1);transition:opacity .4s var(--ease-arrive),transform .4s var(--ease-arrive)}
+.voice-mic.listening .voice-halo{opacity:calc(.12 + var(--voice-level,0) * .6)}
+.voice-mic.voice-off{opacity:.4;cursor:default}
+.voice-live{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--signal) 55%,transparent)}
+.voice-partial{color:color-mix(in srgb,var(--text) 72%,var(--muted))}
+.voice-ask,.voice-note{position:fixed;z-index:2700;background:var(--panel);border:1px solid var(--line-2);border-radius:var(--r-lg);box-shadow:var(--lift-2);
+  font:400 var(--t-sm)/1.45 var(--sans);color:var(--text);opacity:0;translate:0 6px;transition:opacity .3s var(--ease-arrive),translate .3s var(--ease-arrive)}
+.voice-ask{padding:var(--s3)}
+.voice-ask p{margin:0 0 var(--s2)}
+.voice-ask .voice-acts{display:flex;justify-content:flex-end;gap:var(--s2)}
+.voice-ask .voice-bar{height:4px;border-radius:var(--r-pill);background:var(--panel-2);overflow:hidden;margin:0 0 var(--s2)}
+.voice-ask .voice-bar span{display:block;height:100%;width:0;background:var(--signal);transition:width .5s var(--ease)}
+.voice-note{max-width:min(320px,calc(100vw - 16px));padding:var(--s2) var(--s3);pointer-events:none}
+.voice-ask.shown,.voice-note.shown{opacity:1;translate:0 0}
+.voice-ask.leaving{opacity:0;translate:0 6px;transition:opacity .2s var(--ease-leave),translate .2s var(--ease-leave)}
+@media (prefers-reduced-motion:reduce){.voice-mic,.voice-mic .voice-ring,.voice-mic .voice-halo,.voice-ask,.voice-note,.voice-ask .voice-bar span{transition:none;transform:none;translate:none}}
+/* While the large map's bar is out the map below it is shorter by the bar's height, `--peek-h`, so the bar covers
+ * nothing: the map's viewport, its fit and its framing take the reduced height, and grow back as it goes, both eased. */
+.peekhandle{display:none!important}
+main .view3d,main .map2d .viewport{transition:top var(--dur-2) var(--ease-leave)}
+main.peeking .view3d,main.peeking .map2d .viewport{top:calc(var(--bar) + var(--peek-h,0px));transition:top var(--dur-2) var(--ease-arrive)}
+main.peeking .readout{top:calc(var(--bar) + var(--peek-h,0px))}
+@media (prefers-reduced-motion: reduce){main .view3d,main .map2d .viewport{transition:none}}
+#helpdesk .compose textarea.voice-live{field-sizing:content}  /* a spoken message grows its box as it is heard, where the browser can */
+/* The large map's bar, compact: right-aligned and only as wide as what it holds, one row while it fits and wrapping only
+ * on a narrow map; one quiet label style for every part, and the physics as one button naming the preset in force. */
+.peek{width:max-content;max-width:calc(100% - 2 * var(--s2));row-gap:var(--s1)}
+.peekpart{flex-wrap:nowrap}
+.peek .nodezoom,.peek .physicsbtn{gap:var(--s1);height:var(--ctl-sm);padding:0 var(--s2);color:var(--muted)}
+.peek .nodezoom[aria-pressed="true"]{color:var(--text)}
+.peek .nodezoom[aria-pressed="true"] .state{color:var(--signal)}
+.peek .physicsbtn{color:var(--text)}
+.peek .physicsbtn kbd,.physicsmenu kbd{font:500 var(--t-xs)/1 var(--mono);color:var(--faint);background:none;border:0;padding:0;min-width:0;height:auto}
+.physicsmenu{position:fixed;z-index:1200;min-width:200px}
+.physicsmenu [role="menuitemradio"]{display:flex;align-items:center;justify-content:space-between;gap:var(--s4);min-height:var(--ctl);
+  padding:0 var(--s3);border:0;border-radius:var(--r);background:transparent;color:var(--text);font:var(--t-md)/1.3 var(--sans);text-align:left;cursor:pointer}
+.physicsmenu [role="menuitemradio"]:hover,.physicsmenu [role="menuitemradio"]:focus-visible{background:var(--panel-2);outline:none}
+/* The wake phrase's indicator, voice.js: shown for as long as the microphone listens for it, at the foot of the page
+ * beside the chat's tab; its dot swells softly with the voice it hears, and a click stops it. */
+.voice-wake{position:fixed;left:var(--s4);bottom:var(--s4);z-index:1000;display:inline-flex;align-items:center;gap:var(--s2);height:28px;padding:0 var(--s3) 0 var(--s2);
+  border:1px solid var(--line-2);border-radius:var(--r-pill);background:color-mix(in srgb,var(--panel) 92%,transparent);color:var(--muted);
+  font:500 var(--t-xs)/1 var(--sans);cursor:pointer;box-shadow:var(--lift-2);opacity:0;translate:0 8px;
+  transition:opacity .35s var(--ease-arrive),translate .35s var(--ease-arrive),color .3s var(--ease-arrive)}
+.voice-wake.shown{opacity:1;translate:0 0}
+.voice-wake:hover,.voice-wake.armed{color:var(--text)}
+.voice-wake .voice-dot{width:8px;height:8px;border-radius:50%;background:var(--signal);transform:scale(calc(.8 + var(--voice-level,0) * .7));
+  box-shadow:0 0 0 calc(var(--voice-level,0) * 5px) color-mix(in srgb,var(--signal) 25%,transparent)}
+.voice-wake.armed .voice-dot{background:var(--text)}
+@media (prefers-reduced-motion:reduce){.voice-wake,.voice-wake .voice-dot{transition:none;translate:none;transform:none;box-shadow:none}}
+/* In the small pane the readout is small and quiet: one line at 11 to 13 px on a faint strip at the very top. */
+.small .readout{font-size:clamp(11px,0.4rem + 0.35vw,13px);line-height:1.3;padding:2px var(--s2);
+  background:color-mix(in srgb,var(--ground) 72%,transparent);text-shadow:none}
+/* The detail card at the lower right of a map's window: the hovered thing's name, a quiet line of its kind, its
+ * address in mono and its purpose or EF; above the map's count and clear of the legend, never under the pointer's
+ * click, eased in and faded out. In the small pane, its title and one line. */
+.hovercard{position:absolute;right:var(--s4);bottom:calc(44px + 1.7em + var(--s2));z-index:4;pointer-events:none;
+  width:clamp(260px,30%,340px);max-width:calc(100% - 2 * var(--s4));display:grid;gap:3px;padding:var(--s3) var(--s4);
+  background:color-mix(in srgb,var(--panel) 86%,transparent);border:1px solid color-mix(in srgb,var(--line-2) 70%,transparent);
+  border-radius:var(--r-lg);box-shadow:var(--lift-2);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  font:var(--t-md)/1.45 var(--sans);color:var(--text);opacity:0;translate:0 8px;
+  transition:opacity var(--dur-2,.32s) var(--ease-leave,ease-in),translate var(--dur-2,.32s) var(--ease-leave,ease-in)}
+.hovercard.on{opacity:1;translate:0 0;transition:opacity var(--dur-1,.18s) var(--ease-arrive,ease-out),translate var(--dur-1,.18s) var(--ease-arrive,ease-out)}
+.hovercard .title{font:600 var(--t-base)/1.3 var(--sans);overflow-wrap:anywhere}
+.hovercard .kind{display:flex;align-items:center;gap:var(--s2);font:500 var(--t-xs)/1.4 var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.hovercard .kind .statechip{text-transform:none;letter-spacing:normal}
+.hovercard .address{font:var(--t-xs)/1.4 var(--mono);color:var(--signal);overflow-wrap:anywhere}
+.hovercard .text,.hovercard .more,.hovercard .work{margin:2px 0 0;color:var(--muted);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden}
+.hovercard .more{color:var(--faint)}
+.hovercard .work{color:var(--broken);font-size:var(--t-sm)}
+#map2d > .hovercard{bottom:var(--s4)}
+.small .hovercard{right:var(--s2);bottom:var(--s2);width:auto;max-width:calc(100% - 2 * var(--s2));padding:var(--s1) var(--s3);gap:0}
+.small .hovercard :is(.kind,.address,.more,.work){display:none}
+.small .hovercard .text{-webkit-line-clamp:1;line-clamp:1}
+@media (prefers-reduced-motion: reduce){.hovercard,.hovercard.on{transition:none;translate:none}}
+/* The readout names what the pointer is on at the top left of the map's window, left-aligned on a quiet chip as wide
+ * as its name, never a strip across the map. */
+.readout{right:auto;max-width:min(62%,560px);padding:var(--s1) var(--s3);background:color-mix(in srgb,var(--ground) 78%,transparent);
+  border-radius:0 0 var(--r) 0}
+.small .readout{max-width:calc(100% - var(--s4))}
+/* The card sits in the lower left corner, where the legend lives: while it shows the legend eases out and the card
+ * comes in after it, and when the card fades the legend eases back after it, so the two never overlap. */
+.hovercard{left:14px;right:auto;bottom:14px}
+#map2d > .hovercard{left:var(--s4);right:auto;bottom:var(--s4)}
+.small .hovercard{left:var(--s2);right:auto}
+.view3d:has(> .legend:not(:empty)) > .hovercard.on{transition-delay:var(--dur-1)}
+.legend{transition:opacity var(--dur-2) var(--ease-arrive) var(--dur-2),translate var(--dur-2) var(--ease-arrive) var(--dur-2)}
+.view3d:has(> .hovercard.on) > .legend{opacity:0;translate:-12px 0;transition:opacity var(--dur-1) var(--ease-leave),translate var(--dur-1) var(--ease-leave)}
+@media (prefers-reduced-motion: reduce){.legend,.view3d:has(> .hovercard.on) > .legend,.view3d > .hovercard.on{transition:none}}
+/* The name at the top left, said once: inset from the map's corner by `--hover-inset`, in step with its size, clear of
+ * the map's bar and of the large map's bar while it is out, in the page's sans at a confident weight, two lines at most,
+ * on a faint backing with a shadow of the background so it reads over edges and nodes. A new name crossfades in place
+ * over the one it follows. The card at the lower left keeps the same inset as its padding, and wraps its words within
+ * the pane, three lines at most, two in the small area, then an ellipsis. */
+.view3d,.map2d{--hover-inset:clamp(11px,1.32vw,18px)}
+.small .view3d,.small .map2d,.small.view3d,.small.map2d{--hover-inset:10px}
+.readout,#tip3d.readout{display:grid;left:var(--hover-inset)!important;top:calc(var(--bar) + var(--hover-inset))!important;
+  max-width:min(70%,640px);padding:.16em .45em;border-radius:var(--r);background:color-mix(in srgb,var(--ground) 62%,transparent);
+  font:600 clamp(18px,2.2vw,30px)/1.22 var(--sans);letter-spacing:-.005em;text-shadow:0 1px 2px var(--ground),0 0 8px var(--ground)}
+.small .readout,.small #tip3d.readout{font-size:clamp(15px,1.3vw,18px);max-width:calc(100% - 2 * var(--hover-inset))}
+main.peeking .readout,main.peeking #tip3d.readout{top:calc(var(--bar) + var(--peek-h,0px) + var(--hover-inset))!important}
+.readout .said{grid-area:1/1;-webkit-line-clamp:2;line-clamp:2}
+/* the old tooltip's rule for its spans, `.tip3d span`, set them in mono; the readout's words are in its own sans */
+.readout :is(.said,.line){font-family:inherit;color:inherit;word-break:normal}
+.readout .said.leaving{opacity:0;transition:opacity var(--dur-1) var(--ease-leave)}
+.readout .said.arriving{animation:readout-in var(--dur-1) var(--ease-arrive)}
+@keyframes readout-in{from{opacity:0}}
+.hovercard,.small .hovercard,#map2d > .hovercard{left:var(--hover-inset);bottom:var(--hover-inset);padding:var(--hover-inset);
+  width:min(340px,calc(100% - 2 * var(--hover-inset)));max-width:calc(100% - 2 * var(--hover-inset))}
+.hovercard :is(.text,.more,.work){overflow-wrap:anywhere;-webkit-line-clamp:3;line-clamp:3}
+.small .hovercard .text{-webkit-line-clamp:2;line-clamp:2}
+@media (prefers-reduced-motion: reduce){.readout .said.leaving{transition:none}.readout .said.arriving{animation:none}}
+/* The bar keeps one row while the map is wide enough for it. Its parts lend their controls to the bar itself, so on a
+ * map too narrow for one row, `narrow`, the controls wrap as one right-aligned line of controls, and `fitPeek` draws
+ * the bar as narrow as keeps that many rows, so the rows are even and no empty room stands beside a short one. */
+.peek{flex-wrap:nowrap;column-gap:var(--s1);row-gap:var(--s1)}
+.peekpart:not([hidden]){display:contents}
+.peek > .peekpart > *{flex-shrink:0}
+.peek.narrow{flex-wrap:wrap}
+.peek .peeklabel{margin-left:var(--s1)}
+.peek .peekpair{display:inline-flex;align-items:center;gap:var(--s1)}  /* a label never wraps away from its control */
+.peek .segmented button{padding:0 6px}
+.peek .peeklabel{white-space:nowrap;letter-spacing:.04em}
+/* The bar's less frequent choices, `barPick`, and the physics: one compact button each, a quiet label, the value in
+ * force, its key and a chevron for the small menu it opens. */
+.peek .barpick,.peek .physicsbtn{display:inline-flex;align-items:center;gap:4px;height:var(--ctl-sm);padding:0 6px;
+  color:var(--text);white-space:nowrap}
+.peek .barpick .value,.peek .physicsbtn .value{font:500 var(--t-sm)/1 var(--sans)}
+.peek .barpick kbd{font:500 var(--t-xs)/1 var(--mono);color:var(--faint);background:none;border:0;padding:0;min-width:0;height:auto}
+.peek .barpick .i-chev,.peek .physicsbtn .i-chev{margin-left:-2px;color:var(--faint)}
+.peek .barpick[aria-expanded="true"],.peek .physicsbtn[aria-expanded="true"]{background:color-mix(in srgb,var(--text) 7%,transparent)}
+/* The agent's settings in the chat: one quiet line under the head, its controls a popover over the thread, which
+ * keeps its room. */
+#helpdesk .sessionbar{gap:var(--s2);padding:var(--s1) var(--s3)}
+#helpdesk .sessionline{display:inline-flex;align-items:center;gap:var(--s1);min-width:0;max-width:100%;padding:2px var(--s1);border:0;border-radius:var(--r);
+  background:none;color:var(--muted);font:var(--t-sm)/1.4 var(--sans);cursor:pointer;text-align:left}
+#helpdesk .sessionline .said{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#helpdesk .sessionline:hover:not(:disabled),#helpdesk .sessionline[aria-expanded="true"]{color:var(--text);background:color-mix(in srgb,var(--text) 7%,transparent)}
+#helpdesk .sessionline:disabled{cursor:default}
+#helpdesk{position:fixed}
+.sessionpop{position:absolute;left:var(--s3);right:var(--s3);top:calc(var(--s6) * 3.2);z-index:20;display:grid;gap:var(--s2);max-height:60%;overflow:auto;
+  padding:var(--s3);background:var(--panel);border:1px solid var(--line-2);border-radius:var(--r-lg);box-shadow:var(--lift-3)}
+.sessionpop .controls{display:grid;gap:var(--s2)}
+.sessionpop .setting{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);align-items:center;gap:var(--s2);font:var(--t-sm)/1.3 var(--sans);color:var(--muted)}
+.sessionpop .switch.setting{display:flex}
+/* The offer of a body for the chat's agent, inline at the top of its thread: a quiet row of characters, each gently
+ * moving, and Not now; the choice becomes the avatar in the chat's head. */
+#helpdesk .embody{display:flex;align-items:center;flex-wrap:wrap;gap:var(--s2);margin:var(--s2) var(--s3) 0;padding:var(--s2) var(--s3);
+  border:1px solid var(--line);border-radius:var(--r-lg);background:var(--panel-2);font:var(--t-sm)/1.3 var(--sans);color:var(--muted)}
+#helpdesk .embody .choices{display:flex;flex-wrap:wrap;gap:var(--s1);flex:1}
+#helpdesk .embody .character{width:36px;height:36px;padding:3px;border:1px solid transparent;border-radius:var(--r);background:none;cursor:pointer}
+#helpdesk .embody .character:hover,#helpdesk .embody .character.on{border-color:var(--signal)}
+#helpdesk .embody .character img{width:100%;height:100%;animation:embody-idle 2.4s var(--ease-move) infinite alternate}
+#helpdesk .embody .character:nth-child(3n+2) img{animation-delay:-.8s}
+#helpdesk .embody .character:nth-child(3n) img{animation-delay:-1.6s}
+@keyframes embody-idle{from{translate:0 1px;rotate:-4deg}to{translate:0 -2px;rotate:4deg}}
+#helpdesk .head .avatar.choosable{cursor:pointer}
+#helpdesk .head .avatar.embodied img{width:100%;height:100%;object-fit:contain}
+@media (prefers-reduced-motion: reduce){#helpdesk .embody .character img{animation:none}}
+/* The message box takes the row: Enter sends, so there is no Send button but on a touch screen, a small arrow inside
+ * the box's right edge; the attach and mic icons stay small beside it. It grows from one line to about five. */
+#helpdesk .compose{align-items:flex-end}
+#helpdesk .compose textarea.say{flex:1 1 auto;min-width:0;min-height:var(--ctl);overflow-y:hidden;line-height:1.4}
+#helpdesk .compose .send{display:none}
+@media (pointer: coarse){
+  #helpdesk .compose .send{display:inline-flex;align-items:center;justify-content:center;position:absolute;right:calc(var(--s3) + 4px);bottom:calc(var(--s3) + 4px);
+    width:28px;height:28px;padding:0;border-radius:var(--r-pill);background:var(--signal);color:var(--ground)}
+  #helpdesk .compose textarea.say{padding-right:40px}
+}
+
+/* ---------- The chat, polished: a slim head with one status, a thread that reads like a conversation, one composer.
+ * Colors are the theme's tokens only, so the dark, light and ultra themes each hold. ---------- */
+/* The head: who the chat is with and one quiet status line, its dot colored by the state. */
+#helpdesk .head{gap:var(--s2);padding:var(--s2) var(--s2) var(--s2) var(--s3);min-height:48px}
+#helpdesk .avatar{width:30px;height:30px;flex:none;font-size:var(--t-sm);overflow:hidden;transition:transform var(--dur-1,.18s) var(--ease-arrive)}
+#helpdesk .avatar.choosable:hover,#helpdesk .avatar.choosable:focus-visible{transform:scale(1.08)}
+#helpdesk .avatar.choosable:focus-visible{outline:var(--ring) solid var(--ground);outline-offset:2px}
+#helpdesk .avatar.embodied{background:color-mix(in srgb,var(--ground) 85%,transparent);padding:2px}
+#helpdesk .who b.title{font:600 var(--t-md)/1.2 var(--sans);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#helpdesk .who .line{display:flex;align-items:center;gap:6px;min-width:0;font:var(--t-xs)/1.3 var(--sans);opacity:.9;white-space:nowrap}
+#helpdesk .who .line .with{overflow:hidden;text-overflow:ellipsis}
+#helpdesk .who .line .status{font-weight:600}
+#helpdesk .who .line .with:not(.visually-hidden) + .status:not([hidden])::before{content:'·';margin-right:6px;font-weight:400;opacity:.7}
+#helpdesk .who .status[hidden]{display:none}
+#helpdesk .dot{flex:none;opacity:.55;transition:opacity .3s var(--ease-arrive)}
+#helpdesk .head[data-state="ready"] .dot{opacity:1}
+#helpdesk .head[data-state="working"] .dot,#helpdesk .head[data-state="connecting"] .dot{opacity:1;animation:dockpulse 1.4s var(--ease-move) infinite}
+#helpdesk .head[data-state="ended"] .dot,#helpdesk .head[data-state="dead"] .dot{opacity:.3}
+@keyframes dockpulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.6);opacity:.5}}
+#helpdesk .head .more{margin-left:auto}
+/* The head's menu, under its button, over the thread. */
+.dockmenu{position:absolute;right:var(--s2);top:46px;z-index:30;min-width:220px;display:grid;gap:2px;padding:var(--s1);background:var(--panel);
+  border:1px solid var(--line-2);border-radius:var(--r-lg);box-shadow:var(--lift-3);font:var(--t-sm)/1.3 var(--sans)}
+.dockmenu[hidden]{display:none}
+.dockmenu [role="menuitem"]{display:flex;align-items:center;justify-content:space-between;gap:var(--s4);min-height:32px;padding:0 var(--s3);border:0;
+  border-radius:var(--r);background:none;color:var(--text);font:inherit;text-align:left;cursor:pointer}
+.dockmenu [role="menuitem"]:hover,.dockmenu [role="menuitem"]:focus-visible{background:var(--panel-2);outline:none}
+.dockmenu kbd{font:var(--t-xs)/1 var(--mono);color:var(--faint)}
+.dockmenu hr{border:0;border-top:1px solid var(--line);margin:2px 0}
+/* The bars under the head stay thin and quiet. */
+#helpdesk .threadbar{padding:6px var(--s3)}
+#helpdesk .threadbar .source[hidden]{display:none}
+#helpdesk .sessionbar{min-height:30px;padding:2px var(--s2)}
+/* The thread: room to read, messages grouped by who wrote them. */
+#helpdesk .log{padding:var(--s3) var(--s3) var(--s4);gap:6px;scroll-behavior:auto;overscroll-behavior:contain}
+#helpdesk .log:focus{outline:none}
+#helpdesk .log > *{flex-shrink:0}  /* a long thread scrolls; no row is squeezed to fit, as a clamped thought would be */
+/* Who leads the mascot, said quietly: the agent speaking through it named over its words, and its 2D figure's faint
+ * glow while the agent drives it (the 3D figure has a faint ring at its feet). */
+.mascot-bubble[data-name]:not([data-name=""])::before{content:attr(data-name);display:block;margin-bottom:1px;
+  font:600 var(--t-xs)/1.3 var(--sans);text-transform:capitalize;letter-spacing:.02em;opacity:.6}
+.mascot2d.driven image{filter:drop-shadow(0 0 3px color-mix(in srgb,var(--signal) 70%,transparent))}
+/* An MCP App view in the thread, under the call that showed it; in a panel of its own once popped out; the gallery. */
+#helpdesk .log > .mcpapp,#helpdesk .log > .appgallery{align-self:stretch;display:grid;gap:0;border:1px solid var(--line-2);border-radius:var(--r-lg);
+  background:var(--panel);overflow:hidden}
+.mcpapp .appbar,.appgallery .appbar{display:flex;align-items:center;gap:var(--s2);min-height:32px;padding:2px var(--s1) 2px var(--s3);
+  border-bottom:1px solid var(--line);font:600 var(--t-xs)/1.3 var(--sans);color:var(--muted)}
+.mcpapp .appbar small,.appgallery .appbar small{font:var(--t-xs)/1.3 var(--mono);color:var(--faint);font-weight:400}
+.mcpapp .appbar .grow,.appgallery .appbar .grow{flex:1}
+.appholder{min-width:0;min-height:0;display:flex}
+.appframe{display:block;flex:1;width:100%;height:320px;border:0;background:var(--panel)}
+.mcpapp .appaway{margin:0;padding:var(--s2) var(--s3);font:var(--t-sm)/1.4 var(--sans);color:var(--muted)}
+.appgallery ul{list-style:none;margin:0;padding:var(--s1) 0}
+.appgallery li{display:flex;align-items:center;gap:var(--s3);padding:var(--s2) var(--s3)}
+.appgallery li + li{border-top:1px solid var(--line)}
+.appgallery li > div{flex:1;min-width:0;display:grid;gap:1px;font:var(--t-sm)/1.35 var(--sans);color:var(--text)}
+.appgallery li small{color:var(--muted)}
+.appgallery li code{font:var(--t-xs)/1.3 var(--mono);color:var(--faint)}
+.appgallery .hint{margin:0;padding:var(--s2) var(--s3);color:var(--muted);font:var(--t-sm)/1.4 var(--sans)}
+.window.mcpwin{width:min(620px,calc(100vw - 2 * var(--s3)));height:min(480px,calc(100vh - 2 * var(--s3)));min-width:280px;min-height:200px;
+  resize:both;overflow:hidden}
+.window.mcpwin.large{width:min(1100px,calc(100vw - 2 * var(--s3)));height:min(760px,calc(100vh - 2 * var(--s3)))}
+.window.mcpwin > .appholder{flex:1}
+.window.mcpwin .appframe{height:auto}
+body:has(.window.mcpwin > .bar:active) .appframe{pointer-events:none}  /* a panel moved over a view keeps the pointer */
+#helpdesk .log > .system{font-size:var(--t-xs);line-height:1.45;padding:2px 0}
+#helpdesk .log > .system.begun{color:var(--faint);letter-spacing:.02em}
+#helpdesk .msg{display:flex;flex-direction:column;max-width:100%;min-width:0}
+#helpdesk .msg.theirs{align-items:flex-start}
+#helpdesk .msg.mine{align-items:flex-end}
+#helpdesk .msg.first{margin-top:var(--s2)}
+#helpdesk .msg .who{font:600 var(--t-xs)/1.4 var(--sans);color:var(--muted);margin:0 var(--s1) 2px}
+#helpdesk .msg .row{display:flex;align-items:flex-end;gap:var(--s1);max-width:100%;min-width:0}
+#helpdesk .msg.mine .row{flex-direction:row-reverse}
+#helpdesk .msg .bubble{max-width:min(92%,72ch);min-width:0;white-space:normal;overflow-wrap:anywhere;font:var(--t-md)/1.5 var(--sans)}
+#helpdesk .msg.mine .bubble{max-width:min(85%,64ch);background:color-mix(in srgb,var(--signal) 16%,var(--panel));color:var(--text);
+  border:1px solid color-mix(in srgb,var(--signal) 38%,transparent)}
+#helpdesk .msg .bubble.pending{border-style:dashed;opacity:.8}
+#helpdesk .msg .tools{display:flex;align-items:center;gap:2px;flex:none;opacity:0;transition:opacity var(--dur-1,.18s) var(--ease-arrive);
+  font:var(--t-xs)/1 var(--sans);color:var(--faint);white-space:nowrap;padding-bottom:4px}
+#helpdesk .msg:hover .tools,#helpdesk .msg:focus-within .tools,#helpdesk .msg .tools:has(.pendingnote){opacity:1}
+#helpdesk .msg .tools .pendingnote{font-style:italic}
+@media (hover:none){#helpdesk .msg .tools{opacity:1}}
+/* What markdown makes inside a message. */
+#helpdesk .bubble > :first-child:not(.visually-hidden),#helpdesk .bubble > .visually-hidden + *{margin-top:0}
+#helpdesk .bubble > :last-child{margin-bottom:0}
+#helpdesk .bubble p{margin:0 0 .6em;white-space:pre-wrap}
+#helpdesk .bubble .mdh{font-weight:650;margin:.8em 0 .35em;white-space:normal}
+#helpdesk .bubble .mdh.h1,#helpdesk .bubble .mdh.h2{font-size:1.08em}
+#helpdesk .bubble ul,#helpdesk .bubble ol{margin:0 0 .6em;padding-left:1.4em}
+#helpdesk .bubble li{margin:.15em 0;white-space:pre-wrap}
+#helpdesk .bubble blockquote{margin:0 0 .6em;padding:0 0 0 var(--s3);border-left:2px solid var(--line-2);color:var(--muted)}
+#helpdesk .bubble hr{border:0;border-top:1px solid var(--line-2);margin:.7em 0}
+#helpdesk .bubble a{color:var(--signal);text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1px}
+#helpdesk .bubble :not(pre) > code{font:.9em var(--mono);padding:1px 5px;border-radius:var(--r-sm);background:color-mix(in srgb,var(--text) 9%,transparent)}
+#helpdesk .bubble .code{margin:.2em 0 .7em;border:1px solid var(--line-2);border-radius:var(--r);background:var(--ground);overflow:hidden}
+#helpdesk .bubble .codehead{display:flex;align-items:center;justify-content:space-between;gap:var(--s2);padding:2px 4px 2px var(--s3);
+  border-bottom:1px solid var(--line);font:var(--t-xs)/1.8 var(--mono);color:var(--faint)}
+#helpdesk .bubble pre{margin:0;padding:var(--s2) var(--s3);overflow-x:auto;font:var(--t-sm)/1.5 var(--mono);color:var(--text);white-space:pre;tab-size:2}
+#helpdesk .bubble pre:focus-visible{outline:var(--ring) solid var(--signal);outline-offset:-2px}
+/* Copy: a quiet icon that says Copied with a check for a moment. */
+#helpdesk .copy{display:inline-grid;place-items:center;width:24px;height:24px;padding:0;border:0;border-radius:var(--r);background:none;color:var(--faint);cursor:pointer}
+#helpdesk .copy:hover,#helpdesk .copy:focus-visible{color:var(--text);background:color-mix(in srgb,var(--text) 8%,transparent)}
+#helpdesk .copy .i-check,#helpdesk .copy.done .i-copy{display:none}
+#helpdesk .copy.done .i-check{display:inline-block;color:var(--add)}
+/* The agent at work: three dots where its next words will come, its words quiet beside them. */
+#helpdesk .typingrow{align-self:flex-start;display:inline-flex;align-items:center;gap:var(--s2);padding:6px var(--s3);border-radius:14px;
+  background:var(--panel);border:1px solid var(--line);color:var(--muted);font:var(--t-sm)/1.3 var(--sans)}
+#helpdesk .typingrow .typing{margin:0}
+/* An empty chat says what it is and how to start, in the middle of the room it has. */
+#helpdesk .log > .empty{margin:auto;max-width:34ch;display:grid;gap:var(--s2);text-align:center;color:var(--muted);font:var(--t-sm)/1.5 var(--sans)}
+#helpdesk .log > .empty b{color:var(--text);font:600 var(--t-md)/1.3 var(--sans)}
+#helpdesk .log > .empty p{margin:0}
+#helpdesk .log > .empty .hint{color:var(--faint);font-size:var(--t-xs)}
+#helpdesk kbd{font:var(--t-xs)/1 var(--mono);padding:1px 5px;border:1px solid var(--line-2);border-bottom-width:2px;border-radius:var(--r-sm);color:var(--muted)}
+/* New messages below, while the person reads further up. */
+#helpdesk .latest{position:absolute;left:50%;bottom:calc(var(--compose-h,110px) + var(--s2));translate:-50% 0;z-index:5;display:inline-flex;align-items:center;gap:6px;
+  height:28px;padding:0 var(--s3);border:1px solid var(--line-2);border-radius:var(--r-pill);background:var(--panel);color:var(--text);
+  font:500 var(--t-xs)/1 var(--sans);box-shadow:var(--lift-2);cursor:pointer;animation:latest-in var(--dur-2,.32s) var(--ease-arrive)}
+#helpdesk .latest[hidden]{display:none}
+#helpdesk .latest .i-chev{width:12px;height:12px}
+@keyframes latest-in{from{opacity:0;translate:-50% 8px}to{opacity:1;translate:-50% 0}}
+/* The composer: one rounded box, the attach and mic icons inside its row, the box growing from one line. */
+#helpdesk .compose{margin:0 var(--s3) var(--s1);padding:4px;gap:2px;align-items:flex-end;border:1px solid var(--line-2);border-radius:14px;
+  background:var(--panel-2);transition:border-color var(--dur-1,.18s) var(--ease-arrive),box-shadow var(--dur-1,.18s) var(--ease-arrive)}
+#helpdesk .compose:focus-within{border-color:color-mix(in srgb,var(--signal) 60%,var(--line-2));box-shadow:0 0 0 3px color-mix(in srgb,var(--signal) 14%,transparent)}
+#helpdesk .compose textarea.say{border:0;background:transparent;box-shadow:none;outline:none;padding:7px var(--s1);min-height:34px;font:var(--t-md)/1.4 var(--sans);color:var(--text)}
+#helpdesk .compose textarea.say:focus,#helpdesk .compose textarea.say:focus-visible{outline:none;box-shadow:none}
+#helpdesk .clip{flex:none;width:32px;height:34px;color:var(--faint);transition:color var(--dur-1,.18s) var(--ease-arrive)}
+#helpdesk .clip:hover,#helpdesk .clip:focus-within{color:var(--text);background:none}
+#helpdesk .compose .voice-mic{width:32px;height:34px}
+@media (pointer: coarse){
+  #helpdesk .compose .send{position:static;flex:none;width:30px;height:30px;margin:2px}
+  #helpdesk .compose textarea.say{padding-right:var(--s1)}
+}
+#helpdesk .files{padding:var(--s1) var(--s3) 0}
+/* Resume, Stay connected, Interrupt while a turn runs, and Call: one quiet line under the box. */
+#helpdesk .calls{flex-wrap:nowrap;align-items:center;gap:var(--s3);padding:2px var(--s3) var(--s2)}
+#helpdesk .calls::after{content:none}
+#helpdesk .calls .resume{order:0;font-size:var(--t-xs);color:var(--faint)}
+#helpdesk .calls .resume:hover{color:var(--muted)}
+#helpdesk .calls .resume input{width:13px;height:13px;margin:0}
+#helpdesk .calls .grow{flex:1}
+#helpdesk .calls .interrupt[hidden]{display:none}
+#helpdesk .call,#helpdesk .calls .interrupt{height:28px;padding:0 var(--s3);font-size:var(--t-xs);border-radius:var(--r-pill)}
+#helpdesk .call{flex:none}
+/* The settings popover: the agent first, its options below. */
+.sessionpop .setting.agent{grid-template-columns:minmax(0,1fr) minmax(0,1.3fr)}
+.sessionpop .setting.agent > b{font:600 var(--t-sm)/1.3 var(--sans);color:var(--text)}
+.sessionpop .setting.agent .agentpicker .choice > .btn{height:var(--ctl-sm);min-height:0;font-size:var(--t-sm)}
+.sessionpop .setting.agent .pickernote{grid-column:1 / -1;font-size:var(--t-xs)}
+#helpdesk .sessionline .i-chev{width:10px;height:10px;opacity:.7}
+/* The offer of a body, a card in the thread: each character moving on its own canvas, its name and temper beneath. */
+#helpdesk .log > .embody{align-self:stretch;margin:var(--s2) 0;display:grid;gap:var(--s2);padding:var(--s3);border:1px solid var(--line-2);border-radius:var(--r-lg);
+  background:var(--panel);animation:offer-in var(--dur-2,.32s) var(--ease-arrive)}
+@keyframes offer-in{from{opacity:0;translate:0 8px}to{opacity:1;translate:0 0}}
+#helpdesk .embody .ask{margin:0;display:grid;gap:2px}
+#helpdesk .embody .ask b{color:var(--text);font:600 var(--t-sm)/1.3 var(--sans)}
+#helpdesk .embody .ask small{color:var(--muted);font-size:var(--t-xs)}
+#helpdesk .embody .choices{display:grid;grid-template-columns:repeat(auto-fill,minmax(68px,1fr));gap:var(--s1)}
+#helpdesk .embody .character{width:auto;height:auto;display:grid;justify-items:center;gap:1px;padding:4px 2px 6px;border:1px solid transparent;border-radius:var(--r);
+  background:none;color:var(--text);cursor:pointer;transition:background var(--dur-1,.18s) var(--ease-arrive),border-color var(--dur-1,.18s) var(--ease-arrive)}
+#helpdesk .embody .character:hover:not(:disabled),#helpdesk .embody .character:focus-visible{background:var(--panel-2);border-color:var(--line-2)}
+#helpdesk .embody .character.on{border-color:var(--signal)}
+#helpdesk .embody .character:disabled{opacity:.35;cursor:not-allowed}
+#helpdesk .embody .character canvas{width:48px;height:48px}
+#helpdesk .embody .character .name{font:500 var(--t-xs)/1.2 var(--sans);text-transform:capitalize}
+#helpdesk .embody .character small{font:var(--t-xs)/1.2 var(--sans);color:var(--faint)}
+#helpdesk .embody .acts{display:flex;justify-content:flex-end}
+/* The edges and corners that size the floating chat; the head that moves it. */
+#helpdesk .grip{display:none;position:absolute;z-index:40;touch-action:none}
+#dock:is([data-place="corner"],[data-place="float"]).open #helpdesk .grip{display:block}
+#helpdesk .grip-n,#helpdesk .grip-s{left:10px;right:10px;height:6px;cursor:ns-resize}
+#helpdesk .grip-n{top:0}
+#helpdesk .grip-s{bottom:0}
+#helpdesk .grip-e,#helpdesk .grip-w{top:10px;bottom:10px;width:6px;cursor:ew-resize}
+#helpdesk .grip-e{right:0}
+#helpdesk .grip-w{left:0}
+#helpdesk :is(.grip-ne,.grip-nw,.grip-se,.grip-sw){width:14px;height:14px}
+#helpdesk .grip-ne{top:0;right:0;cursor:nesw-resize}
+#helpdesk .grip-sw{bottom:0;left:0;cursor:nesw-resize}
+#helpdesk .grip-nw{top:0;left:0;cursor:nwse-resize}
+#helpdesk .grip-se{bottom:0;right:0;cursor:nwse-resize}
+#helpdesk.dragging,#helpdesk.sizing{user-select:none;-webkit-user-select:none;box-shadow:0 18px 48px color-mix(in srgb,var(--shadow) 55%,transparent)}
+#helpdesk.dragging .head{cursor:grabbing}
+/* The tab the chat goes into: measured where it rests while the chat is open, seen easing out as the chat leaves
+ * it, and a quiet dot when the agent wrote while the chat was away. */
+#dock.measure #dockTab{display:flex!important;visibility:hidden}
+#dock.open #dockTab.launch{display:flex;animation:tab-leave var(--dur-2,.32s) var(--ease-leave) forwards}
+@keyframes tab-leave{to{opacity:0;scale:.94}}
+#dockTab .newdot{width:7px;height:7px;margin:5px 0 0 6px;border-radius:50%;background:var(--ground);opacity:.85}
+@media (prefers-reduced-motion: reduce){
+  #helpdesk .head[data-state] .dot,#helpdesk .latest,#helpdesk .log > .embody,#dock.open #dockTab.launch{animation:none}
+  #helpdesk .avatar{transition:none}
+}

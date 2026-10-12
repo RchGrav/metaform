@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from typing import Any
+from typing import Any, cast
 
 from metaform.data import Store
 from metaform.module import Context
@@ -60,8 +60,41 @@ def rows(store: Store, work_id: str | None = None, active: bool = True) -> list[
 
 
 def read(ctx: Context) -> dict[str, Any]:
-    """An observational read, available on CLI, MCP and web through the module verb."""
-    return {'signals': rows(ctx.require_store(), ctx.nouns.get('id'), ctx.nouns.get('active', True))}
+    """An observational read, available on CLI, MCP and web through the module verb; the waiting ones triaged by
+    Jev when it is on, `triaged`."""
+    active = ctx.nouns.get('active', True)
+    found = rows(ctx.require_store(), ctx.nouns.get('id'), active)
+    return {'signals': triaged(ctx, found) if active else found}
+
+
+ASKED = ('permission-waiting', 'question-waiting')  # put to the person by the agent: always the person's, MAP-050
+TRIAGE_LIMIT = 3.0  # seconds a read waits on Jev's triage before it answers in its own order
+
+
+def triaged(ctx: Context, found: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The waiting signals, each marked `for` the person or an agent and the person's first, as Jev's triage
+    decides when jev is on and its triage decision is chosen, H23. Triage orders and marks; it never hides one. A
+    permission or a question the agent asked is the person's whatever Jev says. With Jev off, unsure or unreachable
+    within TRIAGE_LIMIT, the signals are as they were, in their own order and unmarked."""
+    if not found:
+        return found
+    from metaform import jev
+    try:
+        if jev.config(ctx.folder, 'triage') is None:
+            return found
+        said = {f's{n}': json.dumps({key: value for key, value in one.items()
+                                     if key not in ('module', 'project', 'active', 'at')}, ensure_ascii=False)
+                for n, one in enumerate(found)}
+        asked = [f's{n}' for n, one in enumerate(found) if one.get('signal') in ASKED]
+        with jev.within(TRIAGE_LIMIT):
+            decision = jev.triage(ctx.folder, said, questions=asked)
+    except Exception:  # noqa: BLE001  a decision that fails leaves the list as it is
+        return found
+    if decision is None:
+        return found
+    sorted_to = cast(dict[str, str], decision.answer)
+    marked = [{**one, 'for': sorted_to.get(f's{n}', 'person')} for n, one in enumerate(found)]
+    return sorted(marked, key=lambda one: one['for'] != 'person')
 
 
 def requeued(payload: dict[str, Any], ctx: Context) -> None:

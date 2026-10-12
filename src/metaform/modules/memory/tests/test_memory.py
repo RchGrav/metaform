@@ -88,12 +88,12 @@ def test_memory_offers_the_nine_commands_with_the_reference_names_and_argument_s
         return schema
     reference = {
         'create_entities': {'entities': {'type': 'array', 'items': {'type': 'object', 'properties': {
-            'name': text, 'entityType': text, 'observations': texts, 'title': text, 'why': text},
+            'name': text, 'entityType': text, 'observations': texts, 'title': text, 'why': text, 'cite': texts},
             'required': ['name', 'entityType', 'observations']}}},
         'create_relations': {'relations': {'type': 'array', 'items': {'type': 'object', 'properties': {
             'from': text, 'to': text, 'relationType': text}, 'required': ['from', 'to', 'relationType']}}},
         'add_observations': {'observations': {'type': 'array', 'items': {'type': 'object', 'properties': {
-            'entityName': text, 'contents': texts}, 'required': ['entityName', 'contents']}}},
+            'entityName': text, 'contents': texts, 'cite': texts}, 'required': ['entityName', 'contents']}}},
         'delete_entities': {'entityNames': texts},
         'delete_observations': {'deletions': {'type': 'array', 'items': {'type': 'object', 'properties': {
             'entityName': text, 'observations': texts}, 'required': ['entityName', 'observations']}}},
@@ -358,7 +358,7 @@ def test_memory_kept_with_times_is_upgraded_keeping_every_memory_relation_join_a
         recorded = json.loads(db.execute("SELECT value FROM meta WHERE key='module:memory'").fetchone()[0])
         held = {table: [row[1] for row in db.execute(f'PRAGMA table_info("memory.{table}")')]
                 for table in ('entities', 'observations', 'relations', 'joins')}
-    assert recorded['version'] == 5
+    assert recorded['version'] == 6
     assert held == {'entities': ['name', 'entity_type', 'seq', 'title', 'why'],
                     'observations': ['entity', 'content', 'seq', 'by', 'session', 'at'],
                     'relations': ['source', 'target', 'relation_type', 'seq'],
@@ -865,7 +865,7 @@ def test_memory_kept_at_version_2_is_upgraded_keeping_every_row_with_no_by(run, 
     assert [(one['join_id'], one['by']) for one in whole['joins']] == [('j1', None)]
     with project_transaction(path, write=False) as db:
         recorded = json.loads(db.execute("SELECT value FROM meta WHERE key='module:memory'").fetchone()[0])
-    assert (recorded['version'], recorded['compatible_from']) == (5, 2)
+    assert (recorded['version'], recorded['compatible_from']) == (6, 2)
 
 
 def item(run, reference, cwd, ok=True):
@@ -947,7 +947,7 @@ def test_memories_kept_before_numbers_are_numbered_in_the_order_they_were_made_w
     assert after['items'] == ['code.manager.route#4  Next.']
     with project_transaction(path, write=False) as db:
         recorded = json.loads(db.execute("SELECT value FROM meta WHERE key='module:memory'").fetchone()[0])
-    assert (recorded['version'], recorded['compatible_from']) == (5, 2)
+    assert (recorded['version'], recorded['compatible_from']) == (6, 2)
 
 
 @pytest.mark.req('MCP-039')
@@ -965,7 +965,7 @@ def test_a_memory_cites_its_evidence_and_a_read_flags_it_stale_once_the_cited_li
     assert held['stale'] == ['route.py:2: line 2 changed; the cited text is now at line 3']
     counted = run('map', 'where', 'code.manager.route', cwd=mapped).stdout
     assert '1 stale memory' in counted, counted
-    item = json.loads(run('map', 'item', 'code.manager.route', '1', '--json', cwd=mapped).stdout)
+    item = json.loads(run('map', 'item', 'code.manager.route#1', '--json', cwd=mapped).stdout)
     assert 'STALE: route.py:2: line 2 changed' in item['body']
     refused = m(run, 'create_entities', J([{**entity('ghost', 'behavior', 'Nothing.'), 'cite': 'nowhere.py:3'}]),
                 ROUTE, cwd=mapped, ok=False)

@@ -26,6 +26,93 @@ export const HARNESS_RING = {
   hermes: 0x38e0a0, opencode: 0xf5c542, crush: 0xa78bfa, other: 0x7d88b0,
 };
 
+// ---------------------------------------------------------------- how each one moves
+
+// Each character moves as its body would, and the page's figures, 3D and 2D, read this table to move it:
+//   go       how it travels: swim (bursts of thrust and glides between), pulse (a bell that pushes), flap (wings that
+//            beat and glide), flutter, glide (a sail or wing held out), hover, float, dart, roll, walk, creep, hop
+//   speed    its pace and how fast it gets there, `accel`, as shares of the page's own
+//   corner   how it takes a turn: bank (leans in, wide), pivot (slows and turns on the spot), drift (wide and lazy),
+//            flit (small jinks), bend (the body curves through it), hop (turns between hops)
+//   stride   the distance one step, hop, beat or push covers, in figure sizes, and `lift` how high it rises with it
+//   orbit    how far out it circles its node, in figure sizes, `lap` the seconds a lap takes, `dir` which way round
+//   idle     what it does while it waits: bob, look (turns its head about), wander (small moves), pause, stretch
+//   act      what it does with its node in its own way: circle, perch (sits on top), poke (darts in and back),
+//            nudge (pushes it so it sways), peek (leans in close)
+//   arrive   how it comes and goes: pop, drop (falls in and settles), swoop (comes in from above), sprout (grows up
+//            from the node), fade, rise (floats up into place)
+//   flourish what it does when its work is done, before it walks home: spin, loop, hop, flap, puff, bow, twirl
+//   temper   how serious or mischievous it is, 0 to 1: a serious one keeps to its task, moves efficiently and rarely
+//            plays; a mischievous one does things with its node often, takes detours, pokes nodes it passes and teases
+//            passing figures, never getting in the way. The mascot's own is web_mascot_mischief's.
+export const MOTION = {
+  jelly: {go: 'pulse', speed: 0.7, accel: 0.6, corner: 'drift', stride: 1.4, lift: 0.25, orbit: 1.6, lap: 15, dir: 1,
+    temper: 0.5, idle: ['bob', 'pause'], act: 'peek', arrive: 'rise', flourish: 'puff'},
+  gearling: {go: 'roll', speed: 1.0, accel: 1.2, corner: 'pivot', stride: 2.2, lift: 0, orbit: 1.3, lap: 12, dir: -1,
+    temper: 0.45, idle: ['look', 'pause'], act: 'poke', arrive: 'pop', flourish: 'spin'},
+  kite: {go: 'glide', speed: 1.25, accel: 0.7, corner: 'bank', stride: 3, lift: 0.15, orbit: 1.7, lap: 16, dir: 1,
+    temper: 0.6, idle: ['bob', 'wander'], act: 'circle', arrive: 'swoop', flourish: 'loop'},
+  moth: {go: 'flutter', speed: 1.0, accel: 1.4, corner: 'flit', stride: 0.6, lift: 0.12, orbit: 1.2, lap: 12, dir: -1,
+    temper: 0.95, idle: ['wander', 'bob'], act: 'peek', arrive: 'swoop', flourish: 'loop'},
+  drone: {go: 'hover', speed: 1.1, accel: 1.0, corner: 'pivot', stride: 2, lift: 0.05, orbit: 1.5, lap: 12, dir: 1,
+    temper: 0.15, idle: ['bob', 'look'], act: 'perch', arrive: 'drop', flourish: 'spin'},
+  snail: {go: 'creep', speed: 0.42, accel: 0.4, corner: 'drift', stride: 0.8, lift: 0, orbit: 1.0, lap: 24, dir: 1,
+    temper: 0.2, idle: ['pause', 'look'], act: 'perch', arrive: 'sprout', flourish: 'bow'},
+  crystal: {go: 'float', speed: 0.85, accel: 0.8, corner: 'drift', stride: 2, lift: 0.1, orbit: 1.4, lap: 17, dir: -1,
+    temper: 0.1, idle: ['bob', 'pause'], act: 'circle', arrive: 'fade', flourish: 'spin'},
+  wisp: {go: 'float', speed: 0.8, accel: 0.6, corner: 'drift', stride: 2, lift: 0.18, orbit: 1.6, lap: 13, dir: 1,
+    temper: 0.55, idle: ['wander', 'bob'], act: 'peek', arrive: 'fade', flourish: 'twirl'},
+  comet: {go: 'dart', speed: 1.5, accel: 1.6, corner: 'bank', stride: 3, lift: 0.05, orbit: 1.7, lap: 12, dir: -1,
+    temper: 0.85, idle: ['wander'], act: 'circle', arrive: 'swoop', flourish: 'loop'},
+  beetle: {go: 'walk', speed: 0.75, accel: 1.0, corner: 'pivot', stride: 0.35, lift: 0.03, orbit: 1.1, lap: 14, dir: 1,
+    temper: 0.35, idle: ['look', 'pause'], act: 'nudge', arrive: 'pop', flourish: 'hop'},
+  slime: {go: 'hop', speed: 0.6, accel: 0.7, corner: 'hop', stride: 0.9, lift: 0.3, orbit: 1.1, lap: 16, dir: -1,
+    temper: 0.8, idle: ['bob', 'stretch'], act: 'perch', arrive: 'drop', flourish: 'hop'},
+  plane: {go: 'glide', speed: 1.4, accel: 0.8, corner: 'bank', stride: 3, lift: 0.08, orbit: 1.7, lap: 12, dir: -1,
+    temper: 0.4, idle: ['wander'], act: 'circle', arrive: 'swoop', flourish: 'loop'},
+  puffer: {go: 'swim', speed: 0.75, accel: 0.9, corner: 'bend', stride: 1.6, lift: 0.04, orbit: 1.4, lap: 15, dir: 1,
+    temper: 0.65, idle: ['bob', 'look'], act: 'peek', arrive: 'pop', flourish: 'puff'},
+  owl: {go: 'flap', speed: 1.05, accel: 0.9, corner: 'bank', stride: 1.3, lift: 0.12, orbit: 1.4, lap: 13, dir: 1,
+    temper: 0.25, idle: ['look', 'pause'], act: 'perch', arrive: 'swoop', flourish: 'flap'},
+  cubebot: {go: 'hover', speed: 0.95, accel: 1.1, corner: 'pivot', stride: 2, lift: 0.04, orbit: 1.3, lap: 12, dir: -1,
+    temper: 0.05, idle: ['look', 'bob'], act: 'poke', arrive: 'drop', flourish: 'hop'},
+  mushroom: {go: 'hop', speed: 0.6, accel: 1.0, corner: 'hop', stride: 1.1, lift: 0.55, orbit: 1.2, lap: 14, dir: 1,
+    temper: 0.7, idle: ['stretch', 'pause'], act: 'nudge', arrive: 'sprout', flourish: 'hop'},
+  seahorse: {go: 'swim', speed: 0.55, accel: 0.6, corner: 'drift', stride: 1.2, lift: 0.06, orbit: 1.3, lap: 17, dir: 1,
+    temper: 0.3, idle: ['bob', 'pause'], act: 'perch', arrive: 'rise', flourish: 'twirl'},
+};
+// One figure's motion: its character's, varied a little by its id, so two of one character still differ, and the same
+// agent moves the same way on every load: its pace, its orbit and lap, sometimes the way round, and its phase.
+export function motionOf(name, id) {
+  const base = MOTION[name] || MOTION.jelly, hash = spread(`${id}|motion`);
+  const vary = (bits, share) => 1 + ((((hash >>> bits) & 0xff) / 255) * 2 - 1) * share;
+  return {...base, speed: base.speed * vary(0, 0.12), accel: base.accel * vary(8, 0.12), lap: base.lap * vary(16, 0.15),
+    orbit: base.orbit * vary(24, 0.1), dir: (hash & 0x7) === 0 ? -base.dir : base.dir, phase: (hash % 1000) / 1000,
+    temper: Math.min(1, Math.max(0, (base.temper ?? 0.5) + (((hash >>> 12) & 0xff) / 255 * 2 - 1) * 0.08))};
+}
+
+// Where a figure is in its stroke, from the distance it has covered in figure sizes: the share of a step, hop, beat or
+// push done, how hard it is pushing then, `thrust`, and the share of its pace it moves at, so a swimmer surges on each
+// push and glides between, a bell pulses forward, a hopper covers ground only in the air. `air` is a hop's height, 0
+// to 1, over the ground.
+export function strokeOf(motion, stride) {
+  const phase = ((stride / Math.max(0.05, motion.stride)) % 1 + 1) % 1;
+  if (motion.go === 'swim' || motion.go === 'pulse') {
+    const thrust = phase < 0.35 ? Math.sin(phase / 0.35 * Math.PI) : 0;
+    return {phase, thrust, pace: 0.55 + 0.75 * thrust, air: 0};
+  }
+  if (motion.go === 'hop') {
+    const up = phase < 0.75 ? phase / 0.75 : 1;  // in the air for most of the stride, then a short crouch
+    const air = phase < 0.75 ? Math.sin(up * Math.PI) : 0;
+    return {phase, thrust: air, pace: phase < 0.75 ? 1.25 : 0.25, air};
+  }
+  if (motion.go === 'flap') {
+    const thrust = phase < 0.6 ? Math.abs(Math.sin(phase / 0.6 * Math.PI * 2)) : 0;  // two beats, then a glide
+    return {phase, thrust, pace: 0.85 + 0.25 * thrust, air: 0};
+  }
+  return {phase, thrust: 1, pace: 1, air: 0};
+}
+
 // ---------------------------------------------------------------- drawn from the id
 
 // A ticket's character comes from its id, so it is the same on every load of the page; two at work at once never
@@ -36,18 +123,28 @@ function spread(text) {
   return hash;
 }
 const assigned = new Map();
+// The person's mascot, never given to an agent; `reserveGlyph` names it, or null for none.
+let reserved = null;
+export function reserveGlyph(name) { reserved = GLYPHS.includes(name) ? name : null; }
 // A ticket assigned to an agent's glyph, VIEW-040, is drawn as that glyph; tickets sharing it are one agent's.
-export function drawGlyph(sessionId, own = null) {
-  if (GLYPHS.includes(own)) { assigned.set(sessionId, own); return own; }
-  if (assigned.has(sessionId)) return assigned.get(sessionId);
+// `prefer`, the character the person chose for the agent's type, is taken when no agent at work has it.
+const guessed = new Set();  // drawn before the agent's type was known, so a preference may still replace it
+export function drawGlyph(sessionId, own = null, prefer = null) {
+  if (GLYPHS.includes(own) && own !== reserved) { assigned.set(sessionId, own); guessed.delete(sessionId); return own; }
+  if (assigned.has(sessionId) && !(guessed.has(sessionId) && GLYPHS.includes(prefer))) return assigned.get(sessionId);
+  if (assigned.get(sessionId) === prefer) { guessed.delete(sessionId); return prefer; }
+  assigned.delete(sessionId);
+  if (prefer === null) guessed.add(sessionId); else guessed.delete(sessionId);
   const inUse = new Set(assigned.values());
+  if (reserved) inUse.add(reserved);
+  if (GLYPHS.includes(prefer) && !inUse.has(prefer)) { assigned.set(sessionId, prefer); return prefer; }
   const start = spread(sessionId) % GLYPHS.length;
-  const order = GLYPHS.map((_, step) => GLYPHS[(start + step) % GLYPHS.length]);
+  const order = GLYPHS.map((_, step) => GLYPHS[(start + step) % GLYPHS.length]).filter((name) => name !== reserved);
   const g = order.find((name) => !inUse.has(name)) ?? order[0];
   assigned.set(sessionId, g);
   return g;
 }
-export function releaseGlyph(sessionId) { assigned.delete(sessionId); }
+export function releaseGlyph(sessionId) { assigned.delete(sessionId); guessed.delete(sessionId); }
 
 // ---------------------------------------------------------------- materials
 
@@ -94,6 +191,8 @@ function mesh(geo, mat, { outline = true, parent, pos, rot, scale } = {}) {
 }
 
 // Cute face: two glossy eyes with a white catch-light, placed on a surface facing +Z.
+// The eyes of the character being built, gathered as it is built: where it sees from, `eyeOf`.
+let FOUND_EYES = [];
 function eyes(parent, { y = 0, z = 0.5, gap = 0.16, r = 0.075, color = INK } = {}) {
   const out = [];
   for (const s of [-1, 1]) {
@@ -104,6 +203,7 @@ function eyes(parent, { y = 0, z = 0.5, gap = 0.16, r = 0.075, color = INK } = {
     mesh(new THREE.SphereGeometry(r * 0.32, 10, 8), whiteMat(), { parent: g, outline: false, pos: [r * 0.3, r * 0.4, r * 0.45] });
     parent.add(g);
     out.push(g);
+    FOUND_EYES.push(g);
   }
   return out;
 }
@@ -170,8 +270,10 @@ const BUILD = {
       const a = (i / 5) * Math.PI * 2;
       tent.push(chain(root, { n: 7, len: 0.085, r: 0.035, mat: vinyl(0xb79cff, { glowAmt: 0.4 }), pos: [Math.sin(a) * 0.27, -0.03, Math.cos(a) * 0.27] }));
     }
-    return (t, s) => {
-      const p = Math.sin(t * 2.4 * s);
+    return (t, s, ctx) => {
+      // the bell squeezes on each push and opens as it glides; at rest it breathes slowly
+      const moving = ctx && ctx.speed > 0.02;
+      const p = moving ? (ctx.stroke.thrust * 2 - 1) : Math.sin(t * (ctx ? 1.2 : 2.4) * s);
       bell.scale.set(1 + 0.07 * p, 1 - 0.09 * p, 1 + 0.07 * p);
       tent.forEach((c, i) => { waveChain(c, t * s, { amp: 0.4, freq: 2.4, lag: 0.7, axis: 'x', phase: i });
         waveChain(c, t * s, { amp: 0.25, freq: 1.7, lag: 0.5, axis: 'z', phase: i * 2 }); });
@@ -191,8 +293,9 @@ const BUILD = {
     const body = mesh(new THREE.SphereGeometry(0.38, 40, 28), vinyl(0x9ade52), { parent: root, scale: [1, 1, 0.85] });
     mesh(new THREE.SphereGeometry(0.39, 40, 12, Math.PI / 2 - 0.75, 1.5, Math.PI / 2 - 0.2, 0.36), inkMat(), { parent: body, outline: false });
     const eye = mesh(new THREE.SphereGeometry(0.06, 20, 14), glowMat(0xd7ff9e, 3), { parent: body, outline: false, pos: [0, 0, 0.4], scale: [1, 1, 0.6] });
-    return (t, s) => {
-      gear.rotation.z = t * 0.8 * s;
+    FOUND_EYES.push(eye);
+    return (t, s, ctx) => {
+      gear.rotation.z = ctx ? -(ctx.stride || 0) * 2.6 + t * 0.15 : t * 0.8 * s;
       { const a = Math.sin(t * 1.6 * s) * 0.55; eye.position.set(Math.sin(a) * 0.39, 0, Math.cos(a) * 0.39); }
       body.rotation.y = Math.sin(t * 0.8) * 0.15;
     };
@@ -235,7 +338,7 @@ const BUILD = {
       return { piv, s };
     });
     return (t, s) => {
-      const f = Math.sin(t * 14 * s);
+      const f = Math.sin(t * 14 * s);  // a moth never stops fluttering
       wings.forEach(({ piv, s: side }) => (piv.rotation.z = side * (0.75 + f * 0.55)));
       root.position.y = Math.sin(t * 5) * 0.03;
     };
@@ -285,8 +388,8 @@ const BUILD = {
     // wave travels tail (-Z) to head (+Z): phase = k*z - w*t
     const K = 8, AMP = 0.022;
     const wave = (z, t) => Math.sin(K * z - t);
-    return (t, s) => {
-      const w = t * 4.5 * s;
+    return (t, s, ctx) => {
+      const w = ctx ? (ctx.stride || 0) * 14 + t * 0.6 : t * 4.5 * s;
       for (let i = 0; i < pos.count; i++) {
         const x = base[i * 3], y = base[i * 3 + 1], z = base[i * 3 + 2];
         const h = wave(z, w);
@@ -397,11 +500,12 @@ const BUILD = {
       mesh(new THREE.CapsuleGeometry(0.025, 0.24, 4, 8), inkMat(), { parent: piv, outline: false, pos: [s * 0.12, -0.08, 0], rot: [0, 0, s * 1.0] });
       legs.push({ piv, ph: i * 2.1 + (s > 0 ? Math.PI : 0) });
     }
-    return (t, s) => {
-      legs.forEach((l) => (l.piv.rotation.y = Math.sin(t * 12 * s + l.ph) * 0.4));
+    return (t, s, ctx) => {
+      const step = ctx ? (ctx.stride || 0) / 0.35 * Math.PI * 2 : t * 12 * s, walking = !ctx || ctx.speed > 0.02;
+      legs.forEach((l) => (l.piv.rotation.y = walking ? Math.sin(step + l.ph) * 0.4 : Math.sin(t * 1.5 + l.ph) * 0.05));
       const open = Math.max(0, Math.sin(t * 0.7)) ** 6 * 0.5;
       elytra.forEach(({ piv, s: side }) => (piv.rotation.z = -side * open));
-      root.position.y = Math.abs(Math.sin(t * 12 * s)) * 0.015;
+      root.position.y = walking ? Math.abs(Math.sin(step)) * 0.015 : 0;
     };
   },
 
@@ -485,14 +589,20 @@ const BUILD = {
     const dorsal = new THREE.Group(); dorsal.position.set(0, 0.3, -0.24); dorsal.rotation.x = 1.25; root.add(dorsal);
     mesh(fan(0.13, 1.1), finMat, { parent: dorsal, outline: false, rot: [0, Math.PI / 2, 0] });
 
-    return (t, s) => {
-      // swim: tail sweeps, body yaws against it, fins flutter
-      const sweep = Math.sin(t * 5 * s);
-      tail.rotation.y = sweep * 0.45;
-      root.rotation.y = -sweep * 0.06;
-      pecs.forEach((f, i) => (f.rotation.y = Math.sin(t * 14 * s + i * Math.PI) * 0.45));
-      dorsal.rotation.z = Math.sin(t * 5 * s + 1) * 0.15;
-      root.position.y = Math.sin(t * 2) * 0.03;
+    let flick = 0, bend = 0;
+    return (t, s, ctx) => {
+      // swim, as a fish does: a wave from head to tail, growing toward the tail, on each push of a burst, then a glide
+      // with the tail held; it bends its whole body into a turn; at rest it hovers, sculling slowly with its fins
+      const moving = ctx ? ctx.speed > 0.02 : true, thrust = ctx ? (ctx.stroke?.thrust ?? 0) : 1;
+      const beat = ctx ? (ctx.stroke?.phase ?? 0) * Math.PI * 2 : t * 5 * s;
+      flick += ((moving ? thrust : 0.15) - flick) * Math.min(1, (ctx?.dt ?? 0.016) * 8);
+      const sweep = Math.sin(beat);
+      bend += (Math.max(-0.35, Math.min(0.35, (ctx?.turn ?? 0) * 0.2)) - bend) * Math.min(1, (ctx?.dt ?? 0.016) * 4);
+      tail.rotation.y = sweep * (0.15 + 0.55 * flick) + bend * 1.6;
+      root.rotation.y = -sweep * 0.08 * flick + bend * 0.4;
+      pecs.forEach((f, i) => (f.rotation.y = Math.sin(t * (moving ? 14 : 3.2) * s + i * Math.PI) * (moving ? 0.3 + 0.3 * flick : 0.35)));
+      dorsal.rotation.z = Math.sin(beat + 1) * 0.15 * (0.4 + flick);
+      root.position.y = Math.sin(t * (moving ? 2 : 0.9)) * (moving ? 0.03 : 0.05);
       // every few seconds it puffs up, holds, and lets out
       const c = (t * 0.22) % 1;
       const puff = c < 0.12 ? c / 0.12 : c < 0.3 ? 1 : c < 0.45 ? 1 - (c - 0.3) / 0.15 : 0;
@@ -522,11 +632,15 @@ const BUILD = {
       mesh(new THREE.SphereGeometry(0.2, 20, 14), vinyl(0x9a6436), { parent: piv, pos: [s * 0.02, -0.18, 0], scale: [0.35, 1, 0.8] });
       return { piv, s };
     });
-    return (t, s) => {
+    return (t, s, ctx) => {
       const blink = (t % 4) > 3.82 ? 1 : 0;
       lids.forEach((l) => (l.scale.y = blink ? 1 : 0.05));
-      body.rotation.y = Math.sin(t * 0.7) * 0.35;
-      wings.forEach(({ piv, s: side }) => (piv.rotation.z = side * (0.1 + Math.max(0, Math.sin(t * 3 * s)) * 0.3)));
+      const flying = ctx && ctx.speed > 0.02;
+      // a perched owl turns its head about; one in flight looks ahead, beating its wings, then gliding with them out
+      body.rotation.y = flying ? Math.sin(t * 0.7) * 0.08 : Math.sin(t * 0.7) * 0.35 + Math.sin(t * 0.23) * 0.4;
+      const open = flying ? (ctx.stroke.thrust > 0 ? 0.2 + Math.sin(ctx.stroke.phase / 0.6 * Math.PI * 4) * 0.5 : 0.9)
+        : 0.1 + Math.max(0, Math.sin(t * 3 * s)) * 0.3 * (ctx ? 0.3 : 1);
+      wings.forEach(({ piv, s: side }) => (piv.rotation.z = side * open));
     };
   },
 
@@ -536,6 +650,7 @@ const BUILD = {
     const eyeMat = glowMat(0x9dffb0, 2.6);
     const eyeL = mesh(new RoundedBoxGeometry(0.11, 0.11, 0.03, 2, 0.02), eyeMat, { parent: screen, outline: false, pos: [-0.12, 0, 0.035] });
     const eyeR = mesh(new RoundedBoxGeometry(0.11, 0.11, 0.03, 2, 0.02), eyeMat, { parent: screen, outline: false, pos: [0.12, 0, 0.035] });
+    FOUND_EYES.push(eyeL, eyeR);
     for (let i = 0; i < 4; i++) mesh(new THREE.BoxGeometry(0.07, 0.03, 0.02), inkMat(), { parent: body, outline: false, pos: [-0.15 + i * 0.1, -0.2, 0.355] });
     mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.22), inkMat(), { parent: body, outline: false, pos: [0, 0.47, 0] });
     const bulbMat = glowMat(0xfff36b, 3);
@@ -563,12 +678,25 @@ const BUILD = {
       const n = new THREE.Vector3(Math.sin(a) * r, y - 0.55, Math.cos(a) * r).normalize();
       d.position.set(Math.sin(a) * r, y, Math.cos(a) * r); d.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), n); d.scale.set(1, 0.35, 1);
     }
-    return (t, s) => {
-      const ph = (t * 1.1 * s) % 1, hop = Math.max(0, Math.sin(ph * Math.PI * 2));
-      g.position.y = -0.45 + hop * 0.2;
-      const sq = ph > 0.5 ? Math.sin((ph - 0.5) * Math.PI * 2) * 0.12 : 0;
-      g.scale.set(1 + sq, 1 - sq, 1 + sq);
-      cap.rotation.y = Math.sin(t * 2) * 0.2;
+    // the cap turns on where it sits on the stem, so it wobbles there rather than swinging from the ground
+    capGeo.translate(0, -0.55, 0); cap.position.y = 0.55;
+    for (const d of cap.children) if (d.geometry !== capGeo) d.position.y -= 0.55;
+    return (t, s, ctx) => {
+      if (!ctx) {  // measured at rest, or drawn with no page moving it: it hops in place as it always did
+        const ph = (t * 1.1 * s) % 1, hop = Math.max(0, Math.sin(ph * Math.PI * 2));
+        g.position.y = -0.45 + hop * 0.2;
+        const sq = ph > 0.5 ? Math.sin((ph - 0.5) * Math.PI * 2) * 0.12 : 0;
+        g.scale.set(1 + sq, 1 - sq, 1 + sq);
+        cap.rotation.y = Math.sin(t * 2) * 0.2;
+        return;
+      }
+      // the hop itself is the figure's gait; the cap lags behind the body: it tips back on the way up, and wobbles
+      // after each landing, dying away
+      const air = ctx.stroke?.air ?? 0, wob = Math.exp(-ctx.landed * 5);
+      cap.rotation.x = -air * 0.12 + Math.sin(ctx.landed * 19) * 0.16 * wob;
+      cap.rotation.z = Math.sin(ctx.landed * 15 + 1) * 0.1 * wob;
+      cap.rotation.y = Math.sin(t * 0.7) * 0.15;
+      g.position.y = -0.45; g.scale.set(1, 1, 1);
     };
   },
 
@@ -712,9 +840,13 @@ const _wq = new THREE.Quaternion(), _wp = new THREE.Vector3(), _ev = new THREE.E
 export function createAgent(name, { harness = 'other', halo = false } = {}) {
   if (!BUILD[name]) throw new Error(`unknown agent glyph: ${name}`);
   const agent = new THREE.Group(); agent.name = `agent-${name}`;
-  const fit = new THREE.Group(), centre = new THREE.Group(), body = new THREE.Group();
-  agent.add(fit); fit.add(centre); centre.add(body);
+  // `gait` carries how the whole body moves with its stride, `MOTION`: a hop's arc and its squash and stretch, a
+  // step's bounce, a swimmer's sway, a hover's tilt into the way it goes
+  const gait = new THREE.Group(), fit = new THREE.Group(), centre = new THREE.Group(), body = new THREE.Group();
+  agent.add(gait); gait.add(fit); fit.add(centre); centre.add(body);
+  FOUND_EYES = [];
   const anim = BUILD[name](body);
+  const seeing = FOUND_EYES;
 
   // fit to ~1.6 units, centred on the pivot (measured at rest)
   anim(0, 1); body.position.set(0, 0, 0); body.rotation.set(0, 0, 0); body.updateMatrixWorld(true);
@@ -730,13 +862,39 @@ export function createAgent(name, { harness = 'other', halo = false } = {}) {
     ring.rotation.x = Math.PI / 2; ring.position.y = -0.95; agent.add(ring);
   }
 
-  let t = Math.random() * 10, prev = null;
+  let t = Math.random() * 10, prev = null, wasPhase = 0, landed = 9, sway = 0;
   const smooth = { turn: 0, climb: 0 };
   agent.userData = {
-    glyph: name, harness, turnRate: 0,
-    // dt in seconds; busy 0..1 speeds the motion up (working rather than travelling)
-    update(dt, { busy = 0 } = {}) {
+    glyph: name, harness, turnRate: 0, motion: MOTION[name], eyes: seeing, fov: EYE_FOV[name] ?? 68,
+    // dt in seconds; busy 0..1 speeds the motion up (working rather than travelling); `move` is how it moves now:
+    // speed, a share of its top pace, stride, the distance covered in figure sizes, and its state, as the page has it
+    update(dt, { busy = 0, move = null } = {}) {
       t += dt;
+      const motion = agent.userData.motion, m = move || { speed: 0, stride: 0, state: 'idle' };
+      const stroke = strokeOf(motion, m.stride || 0), moving = m.speed > 0.02;
+      let y = 0, squash = 0, pitch = 0;
+      if (motion.go === 'hop') {
+        // a crouch before each jump, a stretch on the way up, a little squash as it lands; it lands where the stride
+        // turns from the air to the crouch, and the page keeps the stride going in place while it idles
+        if (wasPhase < 0.75 && stroke.phase >= 0.75) landed = 0;
+        y = stroke.air * motion.lift * 1.6;
+        const crouch = stroke.phase >= 0.75 ? Math.sin((stroke.phase - 0.75) / 0.25 * Math.PI) : 0;
+        squash = crouch * 0.2 - (stroke.phase < 0.375 ? stroke.air * 0.12 : 0) + Math.exp(-landed * 14) * 0.12;
+      } else if (motion.go === 'walk' || motion.go === 'creep') {
+        y = Math.abs(Math.sin(stroke.phase * Math.PI * 2)) * motion.lift * 1.6 * Math.min(1, m.speed * 2);
+      } else if (moving && (motion.go === 'hover' || motion.go === 'dart' || motion.go === 'glide')) {
+        pitch = m.speed * (motion.go === 'hover' ? 0.28 : 0.1);  // a hover tips into the way it goes
+      }
+      if (!moving && m.state !== 'sleep' && motion.go !== 'hop' && motion.idle.includes('bob'))
+        y += Math.sin(t * 1.3 + (motion.phase || 0) * 6.28) * 0.05;
+      // a swimmer's whole body sways with each push, more toward the tail, and bends into a turn
+      sway += ((motion.go === 'swim' ? Math.sin(stroke.phase * Math.PI * 2) * 0.16 * stroke.thrust * Math.min(1, m.speed * 2) : 0)
+        - sway) * Math.min(1, dt * 10);
+      if (m.state === 'sleep') { squash = 0.06 + Math.sin(t * 0.9) * 0.03; pitch = 0.25; }
+      landed += dt; wasPhase = stroke.phase;
+      gait.position.y = y - squash * 0.8;
+      gait.scale.set(1 + squash * 0.6, 1 - squash, 1 + squash * 0.6);
+      gait.rotation.set(pitch, sway, 0);
       // turn rate and climb rate, read from how the graph moved the agent since last frame
       agent.getWorldQuaternion(_wq); agent.getWorldPosition(_wp);
       _ev.setFromQuaternion(_wq, 'YXZ');
@@ -749,13 +907,41 @@ export function createAgent(name, { harness = 'other', halo = false } = {}) {
       smooth.turn += (turn - smooth.turn) * Math.min(1, dt * 4);
       smooth.climb += (climb - smooth.climb) * Math.min(1, dt * 4);
       agent.userData.turnRate = smooth.turn;   // read by orientAgent, which leans a flyer into its turn
-      anim(t, 1 + busy * 1.5, { busy, turn: smooth.turn, climb: smooth.climb, dt });
+      anim(t, m.state === 'sleep' ? 0.35 : 1 + busy * 1.5, { busy, turn: smooth.turn, climb: smooth.climb, dt,
+        speed: m.speed, stride: m.stride || 0, stroke, landed, state: m.state });
       if (ring) { ring.rotation.z += dt * (0.6 + busy * 3); ring.material.opacity = 0.75 + Math.sin(t * 3) * 0.2 + busy * 0.05; }
     },
   };
   return agent;
 }
 
+// How wide each character sees, its camera's vertical field of view in degrees: wide for an owl or a fish, narrow
+// for a crystal's focused gaze.
+const EYE_FOV = { owl: 75, moth: 74, puffer: 72, seahorse: 72, jelly: 70, wisp: 70, kite: 70, snail: 64, crystal: 60,
+  cubebot: 62, drone: 64, plane: 66, comet: 66, beetle: 66, slime: 68, mushroom: 68, gearling: 62 };
+const _eyeAt = new THREE.Vector3(), _eyeDir = new THREE.Vector3();
+// Where an agent sees from, in the scene, and the way it looks, as its body is drawn this moment, with every turn of
+// its head, its bob and its lean: the middle of its eyes, and the way their faces point, each eye looking out of its
+// own +Z, so a fish's eyes on the sides of its head look ahead between them. Into `at` and `dir`; false when it has
+// no eyes, and then its middle and its heading.
+export function eyeOf(agent, at = new THREE.Vector3(), dir = new THREE.Vector3()) {
+  const seen = agent.userData.eyes || [];
+  agent.updateMatrixWorld(true);
+  if (!seen.length) {
+    agent.getWorldPosition(at);
+    agent.getWorldDirection(dir);
+    return false;
+  }
+  at.set(0, 0, 0); dir.set(0, 0, 0);
+  for (const eye of seen) {
+    at.add(eye.getWorldPosition(_eyeAt));
+    dir.add(eye.getWorldDirection(_eyeDir));
+  }
+  at.divideScalar(seen.length);
+  if (dir.lengthSq() < 1e-8) agent.getWorldDirection(dir);
+  dir.normalize();
+  return true;
+}
 const _q = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, 'YXZ');
 // The characters that walk, creep or hop keep upright in a turn; the seahorse leans by itself. The rest fly or swim and
 // lean into a turn, as a body moving through air or water does.

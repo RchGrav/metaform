@@ -54,6 +54,11 @@ turns to the first correct edit, total tokens, cost, pass or fail on the end sta
 reached the agent (Metaform tool calls, resource reads, memory reads, ToolSearch queries, permission denials by tool,
 prompt bytes), and where the tokens went: each main-thread request in one phase (orientation, work, verification,
 bookkeeping, closing), and each tool result's size with the tokens it cost by being carried in by every later request.
+Every request's input is split as Claude Code's stream-json reports it: uncached input, cache written and cache read;
+the headline numbers are the context the agent carried (all three) and the fresh tokens (uncached plus written), with
+list-price USD beside them as a secondary figure. Every block of text Metaform delivered (the connect instructions,
+the hand-off prompt, the tool descriptions loaded, each Metaform result) that the agent's context holds more than once
+is listed with its size and where each copy came from: a duplicate is a defect to remove at its source.
 --remeasure <results folder> measures a finished run's kept transcripts again, spending nothing.
 Per task and arm across the k runs: pass@k, pass^k, mean and standard deviation; per task, the paired difference from
 arm none. Results are written as results.json and results.md under artifacts/orientation-eval/<UTC time>/.
@@ -1237,7 +1242,7 @@ def decompose(events: list[dict[str, Any]], write_turn: int | None, correct_turn
     priced = True
     turns: list[int] = []
     metaform_only = {'requests': 0, 'tokens': 0}
-    context = {'at_first_write': None, 'at_end': 0, 'peak': 0}
+    context: dict[str, int] = {'at_end': 0, 'peak': 0}
     turn = 0
     for ident in order:
         spent = context_tokens(usage[ident]) + int(usage[ident].get('output_tokens') or 0)
@@ -1254,7 +1259,7 @@ def decompose(events: list[dict[str, Any]], write_turn: int | None, correct_turn
         context['at_end'] = context_tokens(usage[ident])
         context['peak'] = max(context['peak'], context['at_end'])
         if write_turn is not None and turn == write_turn:
-            context['at_first_write'] = context['at_end']
+            context['at_first_write'] = context['at_end']  # left out when no write was made
         made = by_message.get(ident, [])
         if write_turn is None or turn <= write_turn:
             phase = 'orientation'
@@ -1566,7 +1571,7 @@ def spent_on(events: list[dict[str, Any]], write_turn: int | None, correct_turn:
     split = decompose(events, write_turn, correct_turn)
     denied = sum(cast(dict[str, int], reached.get('denials') or {}).values())
     kinds = cast(dict[str, dict[str, float]], split['kinds'])
-    context = cast(dict[str, int | None], split['context'])
+    context = cast(dict[str, int], split['context'])
     fresh_before = int(kinds['orientation']['fresh'])
     return {**{f'tokens_{name}': value for name, value in split['phases'].items()},
             **{f'fresh_{name}': int(held['fresh']) for name, held in kinds.items()},
@@ -1576,7 +1581,7 @@ def spent_on(events: list[dict[str, Any]], write_turn: int | None, correct_turn:
             'read_tokens': sum(int(held['read']) for held in kinds.values()),
             'usd_list': round(sum(held['usd'] for held in kinds.values()), 6) if split['priced'] else None,
             'fresh_before_first_write': fresh_before if write_turn is not None else None,
-            'context_at_first_write': context['at_first_write'], 'context_at_end': context['at_end'],
+            'context_at_first_write': context.get('at_first_write'), 'context_at_end': context['at_end'],
             'context_peak': context['peak'],
             'metaform_only_requests_before_first_write': split['metaform_only_before_first_write']['requests'],
             'metaform_only_tokens_before_first_write': split['metaform_only_before_first_write']['tokens'],

@@ -15,6 +15,7 @@ internet ──443──> Caddy (TLS, Let's Encrypt) ── one network namespac
                     ├─ /.well-known/oauth-authorization-server, /oauth/*, /node/*  ->  auth  :7435  (the AS, passkeys)
                     ├─ /mcp, /.well-known/oauth-protected-resource/*, /a2a*, /.well-known/agent-card.json
                     │                                                              ->  mcp   :7434  (checks its own tokens)
+                    ├─ /phone/*  (Twilio's webhooks and call audio)                ->  twilio :7441 (checks Twilio's signature)
                     └─ everything else: forward_auth /node/gate, then              ->  web   :7433  (the page)
 ```
 
@@ -178,9 +179,190 @@ owner accepts that.
 **Gap.** On a laptop the relay serves the containerized Node with its own home, not a Metaform running natively;
 pointing frpc at a native Metaform waits on the one-port service.
 
+## metaform.ing: the cloud broker
+
+The broker lets AI tools that run in the cloud (ChatGPT, Claude on the web, any remote MCP host) reach the Metaform on
+a person's own machine, with no port opened there. It is the same image with `node_role` at `broker`; the person's
+side is the cloud module (`src/metaform/modules/cloud/`).
+
+```
+ claude.ai / ChatGPT ──HTTPS, Bearer (aud = https://metaform.ing/mcp[/<instance>])──┐
+                                                                                      ▼
+                       metaform.ing: Caddy :443 ── one process on 127.0.0.1:7435
+                                                    authorization server, passkeys, device sign-in, key set
+                                                    broker: /mcp*, /cloud/tunnel
+ person's machine: metaform cloud connect ──WSS, DPoP (aud = https://metaform.ing/cloud/tunnel)──┘
+                   └─ the MCP server's app run in-process (no listening socket), audit log, person-only rules
+```
+
+### For the person
+
+1. Install Metaform on the machine that holds the projects.
+2. `metaform cloud login`: the terminal shows a code and opens `https://metaform.ing/device`; sign in with the passkey,
+   check the code matches, approve.
+3. `metaform cloud connect`, left running (or `cloud_autoconnect`, so `metaform web start` starts it).
+4. In ChatGPT or Claude, add a custom connector at `https://metaform.ing/mcp`, sign in with the passkey, Allow.
+
+A second machine takes its own name first (`metaform set --cloud-instance laptop`) and is reached at
+`https://metaform.ing/mcp/laptop`. `metaform cloud status` shows the state and the URL.
+
+### One account, two kinds of client
+
+The local service and the AI host sign in to the same authorization server, as the same account, with the same
+passkey. The local service uses the device authorization grant (RFC 8628) as the built-in public client
+`metaform-cli`, its tokens bound to a key it made (DPoP, RFC 9449); the host uses the authorization code grant with
+PKCE S256, identified by its Client ID Metadata Document, exactly as on a self-hosted Node. Dynamic Client
+Registration stays off unless `node_dcr` is on. On a broker it then keeps nothing: the client id it hands back is a JWT
+of the registered metadata signed with the Node's key, and a secret, for a client that asks for one, is derived from
+that key, so a registration outlives any restart and lives as long as the key that signed it.
+
+Before `metaform cloud login` keeps anything it names the account that approved the code and, at a terminal, asks the
+person to confirm it is theirs; declined, the sign-in is revoked at once. Wrong codes typed on `/device` count against
+the source (an IPv4 address, an IPv6 /64) and the signed-in account: ten in ten minutes lock either out for fifteen.
+
+### What the server stores
+
+On disk, `node/auth.sqlite`: `accounts` (id, name, role, created, disabled, `generation`, and one pending invitation
+as its hash and expiry) and `passkeys` (credential id, public key, sign count, transports). The Node's signing keys
+are in `node/keys/`, mode 0600: they are the server's identity, not anyone's data. Nothing else: no maps, memories,
+tool arguments or results, no token or grant table, no audit log.
+
+In memory, lost on a restart by design: WebAuthn challenges, page sessions (one hour, each naming the generation it
+was opened under, so signing out everywhere ends it too), consent requests, used authorization codes, pending device
+sign-ins, the client metadata cache (at most 1,024 documents, least recently used dropped first), the tunnel routing
+table, the rate-limit buckets, each account's cached generation and the refresh families' marks. A restart costs every
+machine an automatic reconnect, one to five seconds after the broker's `goaway`, and anyone mid-sign-in a retry.
+
+The store is opened as the role the server last ran as (`node/role`, written by `metaform node auth`), so `metaform
+node invite`, `signout` and the other account commands run beside a broker open its store the same way; a broker's
+store opened over a self-hosted Node's file drops the self-hosted tables, so it never holds more than the accounts and
+passkeys (and, with `node_refresh_replay` at `durable`, the `families` marks).
+
+### Tokens
+
+Every token is a JWT signed with the Node's Ed25519 key (EdDSA), named by `kid`, published at
+`/.well-known/jwks.json` and named `jwks_uri` in the metadata, and says what it is in `typ`, so one kind is never
+taken for another:
+
+| Token | `typ` | Life | Bound to |
+|---|---|---|---|
+| Host access token | `at+jwt` | 10 minutes | `aud` = the instance's resource URL |
+| Machine access token | `at+jwt` | 10 minutes | `aud` = `/cloud/tunnel`, `cnf.jkt` = the machine's key |
+| Refresh token | `rt+jwt` | 30 days sliding, 90 days from the approval | the grant (`fam`) and its sequence (`seq`) |
+| Authorization code | `code+jwt` | 5 minutes, used once | the PKCE challenge and the redirect URI |
+| Per-request assertion | `mf-assert+jwt` | 60 seconds | the account, the instance's resource, the body's hash |
+
+Every token names the account's `generation`. A check is the signature, the type, the issuer, the audience, the
+expiry and the generation, with no read of any store per request: each account's generation is read once and kept
+for 30 seconds. `metaform node rotate-key` makes a new key; the old one stays published until its tokens expire. A key
+that may have been copied is revoked instead with `metaform node rotate-key revoke_old=true`: every older key file is
+deleted and leaves the published key set, the running broker reads the change within five seconds with no restart,
+and every token signed with an old key, genuine or forged, is refused. The generation is no defence here, since a
+forger writes whatever generation it likes; removing the key is what ends a key compromise. Each machine's tunnel
+closes on its next check and its refresh is refused, so it stops and asks for `metaform cloud login`; each machine
+also replaces its saved key set whole with the one the broker sends in `ready`.
+
+**Revoking.** "Sign out everywhere" on `/account` (the person, with their passkey) or `metaform node signout <name>`
+(the operator) moves the generation: every token, session and tunnel of the account fails its next check, and the
+broker closes the account's tunnels at once (4003). One grant is revoked with RFC 7009 (`metaform cloud logout` does
+it for its machine); that is held in memory while the process runs.
+
+**What is lost without token tables, and why it is acceptable.** OAuth 2.1 asks an authorization server to detect a
+refresh token used twice. Each refresh token carries its grant and a sequence number, and the broker keeps, in memory,
+the highest number issued per grant: one presented below it is a replay, so the grant is revoked and both holders sign
+in again. While the process runs this is exactly OAuth 2.1's rotation detection. Across a restart the marks are gone,
+so a refresh token retired before the restart can be redeemed once more, by whoever presents it first; a revocation of
+one grant is forgotten the same way. That needs a stolen refresh token and a restart before the thief uses it; the
+90-day cap and the passkey bound it, the machine's own refresh token is useless without its DPoP key, and "sign out
+everywhere" is durable. A grant forked after a restart (the thief and the holder each refreshing from the same token)
+is still caught at the following rotation, by whichever of them refreshes second. An operator who wants detection
+across restarts sets `node_refresh_replay` to `durable`, which keeps the same marks (grant ids and counters, no secret)
+in a `families` table; set it in the broker's home, as compose does not pass it.
+
+### The tunnel and the broker
+
+The machine opens one WebSocket to `/cloud/tunnel` (subprotocol `metaform-tunnel.1`) with its access token and a DPoP
+proof; a request with an `Origin` is refused, so no web page opens one. Each message is one frame: a 4-byte length, a
+JSON header, then raw body bytes; the frame types, the header allowlists, credit and the close codes are in the cloud
+module's README. Requests are multiplexed by a stream number the broker assigns, never by JSON-RPC id. Pings every 20
+seconds; an idle host stream gets an SSE comment every 25 seconds; the machine renews its token in-band before it
+expires and reconnects with jittered backoff (1 to 60 seconds).
+
+The broker never forwards the host's token (the MCP security guidance forbids token passthrough). It checks it, then
+signs an assertion for that one request: the account, the client, the scopes (the host's, capped by what the machine
+allows), the instance's resource URL, the body's SHA-256, valid 60 seconds. The machine checks it against the key set
+it saved at login, its own resource URL, the account it signed in as and the body, spends it once, and only then
+hands the request to the MCP app, whose bearer check, scope gate and person-only refusals are the ones every exposed
+Metaform uses. A misrouted request is refused by the receiver, not run. The machine writes one line per request to
+`<home>/cloud/audit.jsonl`: account, client, method, tool or resource, project, outcome, duration, the assertion's id.
+
+**One resource per machine.** `https://metaform.ing/mcp` is the instance named `default`, `/mcp/<instance>` any other,
+each with its own Protected Resource Metadata (RFC 9728), so a token approved for one machine is useless at another.
+Routing is by (account, instance): two accounts may both have `default`. A newer connection for the same instance
+replaces the old one (4009 to it).
+
+**Offline.** A tool call gets a result with `isError: true` saying which machine to run `metaform cloud connect` on, so
+the model tells the person; any other request a JSON-RPC error, code -32050, with `data.next`; a notification or a
+stream 503 with `Retry-After`. Only then does the broker read a request body.
+
+**Limits** (`broker.Limits`, in memory): 10 requests a second per account with a burst of 30 (429); a 1 MiB request
+body (413); an 8 MiB answer that is not a stream; 1 MiB frames; 32 requests open per tunnel (a request waits 10
+seconds for one, then 503). Held-open streams, a GET or a POST to `subscriptions/listen` (known by its `Mcp-Method`
+header, which the machine refuses if it does not match the body), never take one of those 32: they are counted apart,
+8 per account and client and 16 per tunnel (429 beyond), each an hour at most. Credit is enforced at the broker: a
+machine may send a stream only the bytes granted it, and is disconnected (4008) for a byte more, so a machine that
+ignores credit fills nothing but its own windows; the answers a tunnel holds at once are capped at 16 MiB (502 for
+the request that passes it). 5 machines per account; a tunnel connection every 2 seconds per account after a burst of
+5.
+
+Before anyone is signed in, each source (an IPv4 address, an IPv6 /64) has its own allowance, spent before the global
+ceiling of 200 a second: 20 a minute to the sign-in, consent and device pages and the device endpoint, 600 a minute
+to anything else. The token and revocation endpoints are charged differently, since AI hosts call them from a few
+addresses for many people: a request naming a refresh token, code or device code this server signed or issued is
+charged to that grant (1 a second after a burst of 10), and one naming nothing valid to its source (120 a minute). One
+source flooding junk therefore spends only its own allowance, never the refreshes of every account.
+
+**Scopes** are capped twice: at the broker by the Node's capability and the account's role (only the owner may be
+granted `mcp:dispatch`, unless `node_member_dispatch`), and on the machine by `cloud_capability` (person-only, `write`
+by default). A tool beyond the machine's ceiling is answered 403 `insufficient_scope` saying the owner caps it there.
+
+**ChatGPT.** ChatGPT's connectors and deep research call two tools by exactly these names, so the mcp module serves
+`search` and `fetch` itself, read-only, over HTTP and the tunnel (`mcp_search_fetch`, `remote` by default; not over
+stdio, where a local agent has the real tools). `search` looks through the map's layer items, the memories (each hit
+as the node it is attached to) and the glossaries, and returns `{"results": [{"id", "title", "url"}]}` with
+`metaform://` ids; `fetch` reads one as `resources/read` does.
+
+**What runs where.** metaform.ing: `metaform node init metaform.ing --node-role broker` writes Caddy and one service,
+`metaform node auth --node-role broker`: the authorization server, the pages, the key set, `/mcp*` and
+`/cloud/tunnel` in one process on 127.0.0.1:7435, because the generations, the device codes and the routing table are
+shared in memory. No mcp or web service, no project mount, no access log in Caddy or uvicorn. Known limit: one
+process; scaling out needs routing by account at the front.
+
+### Threats
+
+| Threat | Handling |
+|---|---|
+| Stolen host access token | 10 minutes, one instance's resource |
+| Stolen host refresh token | rotation with replay detection; 90-day cap; sign out everywhere; the restart gap above |
+| Stolen machine credentials file | the DPoP key is in it, so the whole file works, as for an SSH key: mode 0600; `logout` or sign out everywhere ends it; the token without the key does not work |
+| Token passthrough, confused deputy | the host's token stops at the broker; the machine accepts only assertions for its own resource, account and body |
+| Broker misroutes a request | refused on the machine by `sub` or `aud`, never run |
+| Compromised broker | it can call tools as the person within the scopes the machine allows (`cloud_capability`, `write` by default, dispatch never unless raised); every call is in the machine's audit log, signed by the broker; `cloud logout` cuts it |
+| Device-code phishing | the page shows the device and instance and warns per RFC 8628 section 5.4; codes live 10 minutes. The result is a tunnel token, so the attacker's machine never reads the person's maps. But approved under the name of an instance the person uses, it takes that instance's place (4009 to the person's machine), and from then on every request the person's AI tools send there, with whatever the person's prompts put in its arguments, goes to the attacker's machine, which can answer with content of its choosing. So when that name is connected the page says so and approval needs a box ticked to replace it, and `/account` and the person's machine (stopped with 4009) both show the change |
+| Someone approves a person's code on their own account (a guessed or sent code) | the person's machine would connect to the attacker's account and serve the person's maps to the attacker's AI tools; `metaform cloud login` names the approving account and asks the person to confirm it before keeping anything, and declined revokes the sign-in |
+| Someone connects as the person's instance | needs the person's passkey approval; a replacement shows as 4009 on the person's machine and on `/account` |
+| User-code guessing | 20^8 codes, 10 minutes; ten wrong in ten minutes lock out the source (an IPv4 address, an IPv6 /64) and the signed-in account that typed them for fifteen minutes |
+| Server breach | account names, passkey public keys, generations: nothing that signs anyone in or reads a map. The signing key is what to protect. A rotation alone does not end a copied key, nor does signing everyone out, since a forger chooses the generation: `metaform node rotate-key revoke_old=true` deletes every older key, which leaves the key set at once in the running broker and on each machine at its next connection, and every token it signed, genuine or forged, is refused |
+| Clock drift on a person's machine | DPoP proofs and assertion checks use the broker's time, measured from each answer's `Date` header and from `ready`, with 30 seconds of leeway; a request refused for the time alone is answered with a message saying to set the clock, and the tunnel reconnects to measure again |
+| A machine that ignores credit or holds streams open | disconnected at the first byte past its credit; held-open streams counted apart from requests; slots given back however a stream ends |
+| Token endpoint flooding | junk spends its own source's allowance; requests naming a valid grant are charged to that grant |
+| Client metadata fetch (SSRF) | the name is resolved once and the connection made to the address checked public, never resolved again (no DNS rebinding); no redirects, 5 KB, 5 seconds |
+| Logs | no bodies, tokens, query strings, tool or instance names in the server's logs |
+
 ## Hosted instances on metaform.ing
 
-The same image, one instance per user (`<name>.metaform.ing`), each with its own authorization server, passkeys,
+An alternative to the broker for someone who wants their Metaform itself in the cloud: the same image, one instance
+per user (`<name>.metaform.ing`), each with its own authorization server, passkeys,
 store and settings; nothing shared between instances.
 
 - **Isolation follows capability.** Instances at read or write (map, briefs, glossaries, MCP Apps, memories, tickets,
@@ -218,3 +400,7 @@ natural next step.
 - The relay operator's own deploy is by hand (`relay-init`, copy, `docker compose up -d --build`); `node deploy`
   opens the relay's port on a host that also runs it (`--node-relay-domain`).
 - Dispatch inside the image has no agent CLIs installed; a dispatch-level Node needs them added to its image.
+- The broker runs as one process; serving more people than one process holds needs routing by account at the front.
+- A self-hosted Node still issues opaque tokens kept as hashes; signed tokens are the broker's alone until agreed for
+  every Node.
+- A2A through the broker (`/a2a[/<instance>]` over the same tunnel) is not built.

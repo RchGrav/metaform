@@ -110,7 +110,7 @@ AND (unresolved disagreement is not silently erased)
      semicolons; <names/> the memories written to the whole graph at no node; <added/> each entity with the count of
      observations added, "name +n"; <count/> the relations made. Notices follow, a line each. The command line and the
      page still get the reference server's results. -->
-<recorded>Recorded <items/>.</recorded>
+<recorded>Recorded: <items/></recorded>
 <recorded_unjoined>Recorded <names/> in the whole memory graph, at no node.</recorded_unjoined>
 <recorded_nothing>Nothing new to record: each memory and observation was held already.</recorded_nothing>
 <observed>Observations added: <added/>.</observed>

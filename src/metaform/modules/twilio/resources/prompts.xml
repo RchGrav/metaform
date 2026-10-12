@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The twilio module's prompts: the text Metaform sends to agents for the twilio module, and the few lines the phone
+     itself says to the person on a call or in a text.
+     Each element is one prompt, named by its tag. What is between the tags is sent exactly as written.
+     An empty element inside a prompt, such as <mascot/>, marks a place the code fills in.
+     Comments are never sent. -->
+<prompts>
+<!-- twilio's line in the connect message: one short phrase saying what an agent uses the module for. Empty, as here,
+     sends nothing: no twilio verb is an agent's to call; the phone is the person's. -->
+<connect></connect>
+<!-- twilio's instructions. Returned by metaform_instructions with module twilio, at metaform://instructions/twilio,
+     and printed by metaform help agents twilio. Off until the module is enabled. -->
+<instructions>twilio lets the person talk with their system agent by phone and be called or texted when something needs them. When a message says it comes by phone or by text, answer as speech or a short text: plain words, no formatting.</instructions>
+<!-- The line under the counts an agent is told at its node, MCP-039. The twilio module counts nothing at a node. -->
+<counts></counts>
+<!-- twilio's rules, MCP-031. None: the system agent learns how to answer on the phone from the framing below, sent
+     with the first words of each call. -->
+<rules></rules>
+<!-- Sent to the person's system agent ahead of the first words of a call the person made, and shown in the chat
+     thread with them. It tells the agent its answer is spoken. Empty sends the words alone. -->
+<on_call>The person is talking with you by phone, and what you answer is spoken aloud to them. Answer in a few short spoken sentences: no markdown, lists, code, links or file paths unless they ask, and say a number or a name the way it is said. If something needs the screen, say so and that it is in the chat. They said:</on_call>
+<!-- As on_call, for a call Metaform placed because something needs the person; <why/> is what it is, as the
+     opening line below says it. -->
+<on_callback>You called the person by phone because <why/>. They heard that as you opened the call. Answer in a few short spoken sentences, with no formatting, and help them decide or act on it. They said:</on_callback>
+<!-- Sent to the system agent ahead of a text the person sent the phone number. Its reply is texted back, cut to
+     about 1,500 characters. -->
+<on_text>The person texted you from their phone, and your reply is sent back to them as a text. Reply in one to three short plain sentences, no formatting. Their text:</on_text>
+<!-- Spoken to the person when they call and the bridge connects, before they say anything; <mascot/> is their
+     mascot's name, or "your system agent" when they have none. Keep it short: they wait through it. -->
+<greeting>Hi, it's <mascot/>. What can I do for you?</greeting>
+<!-- Spoken when Metaform calls the person; <why/> says what needs them. -->
+<calling>Hi, it's <mascot/>. I'm calling because <why/>.</calling>
+<!-- The text Metaform sends when something needs the person and twilio_text_when names it; <why/> says what. -->
+<texting>Metaform: <why/>. Reply here, or call this number to talk it over.</texting>
+<!-- Said, by Twilio's own voice, to a caller whose number is not in twilio_owner_numbers, before the call ends. -->
+<refusal>Sorry, this number only takes calls from its owner. Goodbye.</refusal>
+<!-- Said, by Twilio's own voice, when a call from an owner number must enter the PIN before it is connected, as
+     twilio_caller_proof says: every call under pin, and a call whose caller ID was not fully attested under
+     attested-or-pin. Do not say the PIN's length here; the keypad's # ends it. -->
+<pin>Enter your PIN, then press pound.</pin>
+<!-- Said before hanging up on a call whose PIN was wrong, or that entered none in time. -->
+<pin_wrong>That is not the PIN. Goodbye.</pin_wrong>
+<!-- Said to the owner when a call is already in progress. -->
+<busy>Another call is in progress. Please try again in a moment.</busy>
+<!-- Spoken when the agent or the voice cannot answer; the call stays open, and the chat has the details. -->
+<trouble>Sorry, I can't answer that right now. The details are in the chat.</trouble>
+</prompts>

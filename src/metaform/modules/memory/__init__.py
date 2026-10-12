@@ -811,7 +811,7 @@ def _read(ctx: Context, notices: list[dict[str, str]]) -> View | None:
     store, key = _scope(ctx, notices, carry=False)
     if key is not None and not _reaches(store, key.address):
         return None
-    checker = Checker(root_of(ctx))  # a read says which citations no longer hold
+    checker = Checker(ctx)  # a read says which citations no longer hold
     with store.tables(write=False) as tx:
         if key is not None:
             return _view(tx, key, checker)
@@ -1001,7 +1001,7 @@ def node_read(ctx: Context, node: Node) -> Any:
             found['note'] = held
         if not shows:
             return found or None
-        view = _view(tx, key, Checker(root_of(ctx)))
+        view = _view(tx, key, Checker(ctx))
         if view.names:
             found.update(view.whole())
         if node.kind == 'element':
@@ -1028,7 +1028,7 @@ def node_count(ctx: Context, addresses: tuple[str, ...]) -> tuple[Count, ...] | 
     at: dict[str, tuple[int, int, int]] = {}
     notes: dict[str, tuple[int, int, int]] = {}
     stale: dict[str, tuple[int, int, int]] = {}
-    checker = Checker(root_of(ctx))
+    checker = Checker(ctx)
     with store.tables(write=False) as tx:
         for address in dict.fromkeys(addresses):
             if tx.get('notes', {'receiver': address, 'provider': ''}) is not None:
@@ -1078,7 +1078,7 @@ def item_read(ctx: Context, address: str, number: int) -> dict[str, Any] | None:
         found = list(tx.rows('joins', {'receiver': address, 'number': number}, limit=0).results)
         if not found:
             return None
-        graph = Graph.read(tx, Checker(root_of(ctx)))
+        graph = Graph.read(tx, Checker(ctx))
         name = found[0]['entity']
         if name not in graph.entities:
             return None
@@ -1260,6 +1260,6 @@ MODULE = Module(
     panes=(
         Pane('memories', 'Memories', 'Read what agents learned at the selected node: its entities, observations and '
              'relations.', icon='memory', verb='read_graph', selection='node', area='right', group='node',
-             visible=True, order=60, min_width=320),
+             order=60, min_width=320),
     ),
 )

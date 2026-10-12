@@ -810,8 +810,9 @@ def test_a_text_noun_sent_another_json_value_reaches_the_tool_as_its_json_text_w
                                       'Notice: ef: ef is text; what was sent was kept as its JSON text.']
     join = json.loads(joined[1])
     assert (join['purpose'], join['ef'], join['notices']) == ('12', '["r"]', [])
-    assert json.loads(observed[-1])['notices'] == [
-        {'where': 'observations', 'message': 'observations is text; what was sent was kept as its JSON text.'}]
+    # a memory write answers one line over MCP, its notices each on a line after it
+    assert observed[-1].splitlines()[1:] == [
+        'observations: observations is text; what was sent was kept as its JSON text.']
     graph = json.loads(run('memory', 'read_graph', '--json', cwd=mapped).stdout)
     assert graph['entities'][0]['observations'] == ['fine', '7']
 
@@ -2210,3 +2211,61 @@ def test_the_trace_view_follows_a_tickets_thread_as_lines_are_added(run, home, m
         assert page.evaluate('window.refused') == []
     finally:
         wire.close()
+
+
+@pytest.mark.req('MCP-037')
+def test_metaform_serves_its_glossary_alone_the_projects_own_and_the_tools_in_a_line_each(run, home, mapped):
+    """metaform://metaform is the mcp glossary prompt as written and nothing more, metaform://glossary is gone with no
+    alias, metaform://<project> is the map module's glossary of the project after the register standard, or the
+    standard and a note while map is off, and metaform://tools gives each tool one line under its module with the
+    rules after it."""
+    import asyncio
+
+    from metaform import prompt_files
+    from metaform.modules.mcp import server
+    run('enable', 'memory')
+
+    def read(uri):
+        return asyncio.run(server.read_resource_text(mapped, uri))[0]
+    assert read('metaform://metaform') == prompt_files.module('mcp', 'glossary').strip() + '\n'
+    with pytest.raises(server.Missing):
+        read('metaform://glossary')
+    standard = prompt_files.module('map', 'register_standard')
+    project = read('metaform://proj')
+    assert project.startswith(standard) and '@STATE_INIT' in project and 'audible alarm' in project
+    tools = read('metaform://tools')
+    assert '\nmap_\n  activate: ' in tools and '\n  where: Read one address on the map\n' in tools
+    assert tools.index('\nmemory_\n') < tools.index(prompt_files.module('mcp', 'rules_heading'))
+    run('set', '--modules', 'memory', cwd=mapped)  # map off: the standard as written, and why no terms follow
+    assert read('metaform://proj') == standard + '\n\n' + prompt_files.module('mcp', 'project_glossary_absent') + '\n'
+
+
+@pytest.mark.req('MCP-037')
+def test_a_write_over_mcp_answers_one_line_with_its_number_not_the_record(run, home, mapped):
+    """A ticket's add, plan, step and done, a memory recorded and a term added each answer an agent one line naming
+    the new <address>#<n>; the command line still gets the record."""
+    import asyncio
+
+    from metaform.modules.mcp import server
+
+    def call(name, **given):
+        error, blocks = asyncio.run(server.run_tool(mapped, name, given))
+        assert not error, blocks
+        return blocks[-1]
+    added = call('map_work', op='add', node='code.timer.kitchen', task='Make the alarm louder.', title='Louder alarm')
+    work_id = added.rsplit('id ', 1)[1].rstrip('.')
+    assert added == f'code.timer.kitchen#1 Louder alarm: added, id {work_id}.'
+    assert call('map_work', op='take', id=work_id, by='claude') == 'code.timer.kitchen#1 Louder alarm: taken by claude.'
+    assert call('map_work', op='plan', id=work_id, steps=2) == 'code.timer.kitchen#1 Louder alarm: 2 steps planned.'
+    assert call('map_work', op='step', id=work_id, said='Found the gain.') == (
+        'code.timer.kitchen#1 Louder alarm: step 1 of 2 recorded.')
+    assert call('map_work', op='done', id=work_id, resolution='Gain raised.', why='The cook hears it.') == (
+        'code.timer.kitchen#1 Louder alarm: done.')
+    assert call('memory_create_entities', node='element:code.timer.kitchen', entities=[
+        {'name': 'gain', 'entityType': 'fact', 'observations': ['The gain was low.'], 'why': 'It explains the tone.'}]
+    ) == 'Recorded: code.timer.kitchen#2  The gain was low.'
+    assert call('map_term', op='add', term='tone', definition='The alarm sound.', why='Cooks say tone.',
+                source='alarm.c:3', node='code.timer.kitchen') == 'tone: added at code.timer.kitchen#3.'
+    record = json.loads(run('map', 'work', 'op=edit', f'id={work_id}', 'note=kept', '--json', cwd=mapped).stdout)
+    assert record['id'] == work_id and record['task'] == 'Make the alarm louder.'  # the command line keeps the record
+

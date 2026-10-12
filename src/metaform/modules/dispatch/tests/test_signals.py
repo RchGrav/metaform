@@ -217,13 +217,11 @@ def test_a_talk_first_turn_is_checked_like_the_handoff(dispatch, run):
          f'talk=ticket:{dispatch.id}'], cwd=dispatch.folder, env=dispatch.env('plain'),
         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     [sent] = eventually(lambda: dispatch.received('session/prompt'))
-    expected = axiom.notices('prompt', sent['params']['prompt'][0]['text'])
-    assert expected, 'the talk draft lacks @CONDITION today, so its first turn is flagged'
-    eventually(lambda: [row for row in dispatch.items('note') if row.extra['update'] == 'notice'] or None)
-    [notice] = [row.value for row in dispatch.items('note') if row.extra['update'] == 'notice']
-    assert notice == ' '.join(one['message'] for one in expected)
-    [raised] = [row for row in signals(dispatch, run) if row['signal'] == axiom.SIGNAL]
-    assert raised['work_id'] == dispatch.id and raised['notices'] == expected
+    # the talk prompt carries its @CONDITION now, P041, so its first turn is checked and goes unflagged
+    assert axiom.notices('prompt', sent['params']['prompt'][0]['text']) == []
+    eventually(lambda: [row for row in dispatch.items('note') if row.extra['update'] == 'turn'] or None)
+    assert not [row for row in dispatch.items('note') if row.extra['update'] == 'notice']
+    assert not [row for row in signals(dispatch, run) if row['signal'] == axiom.SIGNAL]
 
 
 def test_a_turn_that_stops_with_the_ticket_open_raises_stopped_open(dispatch, run):
@@ -249,3 +247,28 @@ def test_stopped_open_is_cleared_by_the_next_turn(dispatch, run):
     eventually(lambda: not [row for row in signals(dispatch, run) if row['signal'] == 'stopped-open'] or None)
     assert [row for row in signals(dispatch, run, False) if row['signal'] == 'stopped-open']
     dispatch.stop()
+
+
+def test_jevs_triage_marks_and_orders_waiting_signals_and_never_hides_one(dispatch, run, monkeypatch):
+    """H23: with Jev on, the waiting signals are each marked for the person or an agent, the person's first; a
+    permission the agent asked stays the person's; with Jev off they are as they were."""
+    from metaform import jev
+    from metaform.modules.dispatch.signals import publish, read
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    publish(ctx, 'spinning-calls', work_id=dispatch.id, key='a', calls=40)
+    publish(ctx, 'permission-waiting', work_id=dispatch.id, key='b', request='b')
+    before = read(context('dispatch', dispatch.folder, project='proj', nouns={'id': dispatch.id}))['signals']
+    assert all('for' not in one for one in before)
+    asked = {}
+
+    def triage(folder, messages, *, questions=()):
+        asked.update(messages=dict(messages), questions=list(questions))
+        from metaform.jev import Decision
+        return Decision('pick_some', 't', 'w', 'q', (), {key: 'agent' if key not in questions else 'person'
+                                                           for key in messages}, 0.9, True, 'r', 'jev', 0.0, False)
+    monkeypatch.setattr(jev, 'config', lambda folder, decision=None: object())
+    monkeypatch.setattr(jev, 'triage', triage)
+    after = read(context('dispatch', dispatch.folder, project='proj', nouns={'id': dispatch.id}))['signals']
+    assert [(one['signal'], one['for']) for one in after] == [('permission-waiting', 'person'),
+                                                               ('spinning-calls', 'agent')]
+    assert len(asked['messages']) == 2 and len(asked['questions']) == 1

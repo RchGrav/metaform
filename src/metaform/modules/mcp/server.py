@@ -578,7 +578,8 @@ def tool_index(folder: Path) -> list[tuple[str, str]]:
 
 CLAUSE = re.compile(r'(?<=[\w>)])[:;]\s')  # where a first sentence's head ends and its details begin
 AS_DOES = re.compile(r',? as metaform [\w -]+? (?:does|gives|lists|prints)(?: them| it)?(?=[,.:;]|$)')
-LINE = 80  # the characters a tool's line is cut back toward, at a comma
+LINE = 64  # the characters a tool's line is cut back toward, at a comma
+LINE_LEAST = 32  # and the fewest it is cut to
 
 
 def short_line(description: str) -> str:
@@ -587,7 +588,10 @@ def short_line(description: str) -> str:
     first = SENTENCE.split(description.split(' Caution:')[0], maxsplit=1)[0]
     head = CLAUSE.split(AS_DOES.sub('', first), maxsplit=1)[0].strip().rstrip('.')
     while len(head) > LINE and ', ' in head:  # a long head keeps its leading phrases, each whole
-        head = head.rsplit(', ', 1)[0]
+        shorter = head.rsplit(', ', 1)[0]
+        if len(shorter) < LINE_LEAST:  # cut no further than still says what the tool does
+            break
+        head = shorter
     return head
 
 
@@ -1151,12 +1155,85 @@ def _numbers(folder: Path, address: str, prefix: str) -> list[str]:
     return found
 
 
-def serve(folder: Path, *, http: bool = False, port: int = 0, bind: str | None = None, public_url: str | None = None,
-          introspection: str | None = None) -> None:
-    """Serve the folder over stdio, the host's own connection, or with `http` over Streamable HTTP on 127.0.0.1 at
-    `port`, one server any number of clients connect to, MCP-002. Both run the one server built here; the transport
-    is the only difference. Over HTTP the SDK checks every request's Host and Origin against 127.0.0.1 and localhost,
-    so a web page cannot reach the server through DNS rebinding, and there is no relay: an HTTP client reconnects.
+# ChatGPT's connectors and deep research call two tools by exactly these names, so they break the <module>_<verb> rule,
+# MCP-003: the mcp module serves them itself, read-only, over HTTP and the cloud tunnel by default (mcp_search_fetch).
+SEARCH_FETCH: dict[str, tuple[str, dict[str, Any]]] = {
+    'search': (('Search this Metaform: the map\'s layer items, the memories and the project\'s terms. Returns ids '
+                'to read with fetch.'),
+               {'type': 'object', 'properties': {'query': {'type': 'string', 'description': 'The words to find.'}},
+                'required': ['query'], 'additionalProperties': False}),
+    'fetch': ('Read one result of search by its id: a node\'s brief, an item, or a glossary.',
+              {'type': 'object', 'properties': {'id': {'type': 'string', 'description': 'An id search returned, a '
+                                                                                      'metaform:// URI.'}},
+               'required': ['id'], 'additionalProperties': False}),
+}
+SEARCH_LIMIT = 20
+
+
+async def search(folder: Path, query: str, client: str | None = None) -> dict[str, Any]:
+    """ChatGPT's `search`: `{"results": [{"id", "title", "url"}]}`, at most SEARCH_LIMIT. Each id is the metaform://
+    URI fetch reads: a layer item's hit is the node it is held at, a memory's the node it is attached to (knowledge
+    attaches to the receiving element), a term's the project's glossary."""
+    words = [word for word in query.lower().split() if word]
+    if not words:
+        return {'results': []}
+    hits: list[dict[str, str]] = []
+
+    def add(uri: str, title: str) -> None:
+        if len(hits) < SEARCH_LIMIT and all(one['id'] != uri for one in hits):
+            hits.append({'id': uri, 'title': title[:200], 'url': uri})
+    known = await anyio.to_thread.run_sync(tools, folder)
+    if 'map_search' in known:
+        error, _, data = await answer(folder, 'map_search', {'text': query}, client=client)
+        for found in cast(list[Any], (data or {}).get('results') or []) if not error else []:
+            target: Any = cast(dict[str, Any], found).get('target') if isinstance(found, dict) else None
+            if isinstance(target, dict) and cast(dict[str, Any], target).get('kind') in ('element', 'type'):
+                address = str(cast(dict[str, Any], target).get('id') or '')
+                value = cast(dict[str, Any], found).get('value')
+                add(f'metaform://{address}', f'{address}: {value if isinstance(value, str) else json.dumps(value)}')
+    if 'memory_search_nodes' in known:
+        error, _, data = await answer(folder, 'memory_search_nodes', {'query': query}, client=client)
+        names = [str(cast(dict[str, Any], one).get('name')) for one in
+                 cast(list[Any], (data or {}).get('entities') or []) if isinstance(one, dict)] if not error else []
+        if names and 'memory_joins' in known:
+            error, _, joined = await answer(folder, 'memory_joins', {}, client=client)
+            where: dict[str, str] = {}
+            for join in cast(list[Any], (joined or {}).get('joins') or []) if not error else []:
+                if isinstance(join, dict):
+                    held = cast(dict[str, Any], join)
+                    where.setdefault(str(held.get('entity')), str(held.get('receiver') or held.get('address') or ''))
+            for name in names:
+                if where.get(name):
+                    add(f'metaform://{where[name]}', f'{where[name]}: memory {name}')
+    own = await anyio.to_thread.run_sync(project_uri, folder)
+    texts = [(own, await anyio.to_thread.run_sync(project_glossary_text, folder, client))] if own else []
+    texts.append((GLOSSARY_URI, await anyio.to_thread.run_sync(glossary, folder)))
+    for uri, text in texts:
+        line = next((line.strip() for line in text.splitlines() if all(word in line.lower() for word in words)), None)
+        if line:
+            add(uri, line)
+    return {'results': hits}
+
+
+async def fetch(folder: Path, given: str, client: str | None = None) -> dict[str, Any]:
+    """ChatGPT's `fetch`: `{"id", "title", "text", "url", "metadata"}`, the text read as resources/read reads it."""
+    try:
+        found = await read_resource_text(folder, given, client=client)
+    except (Missing, Stop, StoreError) as error:
+        return {'id': given, 'error': str(error)}
+    if found is None:
+        return {'id': given, 'error': f'No resource {given} here; use an id search returned.'}
+    text, mime = found
+    addressed = ADDRESS.match(given)
+    title = addressed.group('address') if addressed else given.removeprefix('metaform://')
+    return {'id': given, 'title': title, 'text': text, 'url': given, 'metadata': {'mimeType': mime}}
+
+
+def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
+    """The MCP server for the folder, MCP-002, with the relay that keeps a stdio connection over a schema upgrade and
+    the listen handler a stdio session closes: one server whichever transport carries it. `http`: it is reached over
+    HTTP, directly or through the cloud broker's tunnel, which is where ChatGPT's `search` and `fetch` are offered
+    (mcp_search_fetch).
 
     Beside the core it serves the extensions a client declares, each only to a client that declares it: MCP Apps, the
     map and node views; the tasks extension, for verbs that can take long; and elicitation, by multi round-trip
@@ -1167,9 +1244,7 @@ def serve(folder: Path, *, http: bool = False, port: int = 0, bind: str | None =
     from mcp import types
     from mcp.server import Server
     from mcp.server.caching import CacheHint
-    from mcp.server.lowlevel import NotificationOptions
     from mcp.server.request_state import RequestStateBoundary, RequestStateSecurity
-    from mcp.server.stdio import stdio_server
     from mcp.server.subscriptions import (
         InMemorySubscriptionBus,
         ListenHandler,
@@ -1189,6 +1264,8 @@ def serve(folder: Path, *, http: bool = False, port: int = 0, bind: str | None =
     apps_on = bool(settings.value('mcp_apps', folder))
     apps_always = settings.value('mcp_apps_offer', folder) == 'always'
     tasks_on = bool(settings.value('mcp_tasks', folder))
+    offered = settings.value('mcp_search_fetch', folder)
+    searching = offered == 'always' or (offered == 'remote' and http)
     tokens = consent.Tokens()  # the forms asked and not yet answered, each answer taken once
     running = tasked.Running()  # the tool calls this process runs as tasks
     held: dict[str, Any] = {}  # the task group tasks run in, while the server runs
@@ -1243,8 +1320,16 @@ def serve(folder: Path, *, http: bool = False, port: int = 0, bind: str | None =
                                           open_world_hint=False))
     view_tool.meta = {'ui': {'visibility': ['app']}}
 
+    # ChatGPT's two, by the names it calls: read-only, over the map, memory and the terms (mcp_search_fetch).
+    searched_tools = [types.Tool(name=name, description=description, input_schema=schema,
+                                 annotations=types.ToolAnnotations(read_only_hint=True, destructive_hint=False,
+                                                                   idempotent_hint=True, open_world_hint=False))
+                      for name, (description, schema) in SEARCH_FETCH.items()]
+
     def build(shown: bool) -> list[Any]:
         listed = [tool(one, shown) for one in listing(folder).values()]
+        if searching:
+            listed = sorted([*listed, *searched_tools], key=lambda one: one.name)
         return sorted([*listed, view_tool], key=lambda one: one.name) if shown else listed
 
     def build_prompts() -> list[Any]:
@@ -1325,7 +1410,17 @@ def serve(folder: Path, *, http: bool = False, port: int = 0, bind: str | None =
         return {**arguments, **values}, True
 
     def outcome(error: bool, blocks: list[str], structured: dict[str, Any] | None) -> Any:
-        return types.CallToolResult(content=[types.TextContent(type='text', text=block) for block in blocks],
+        # A result that carries a picture, `image` with its base64 `data` and `mimeType`, as web look does: the picture
+        # is the tool's image content, and the text and the structured result name it rather than repeat it.
+        picture: Any = (structured or {}).get('image')
+        images: list[Any] = []
+        shown = cast(dict[str, Any], picture) if isinstance(picture, dict) else {}
+        if isinstance(shown.get('data'), str):
+            data, kind = str(shown['data']), str(shown.get('mimeType') or 'image/png')
+            images = [types.ImageContent(type='image', data=data, mime_type=kind)]
+            blocks = [block.replace(data, '(the picture, attached)') for block in blocks]
+            structured = {**cast(dict[str, Any], structured), 'image': {'mimeType': kind, 'attached': True}}
+        return types.CallToolResult(content=[*(types.TextContent(type='text', text=block) for block in blocks), *images],
                                     structured_content=structured, is_error=error)
 
     async def call_tool(ctx: Any, params: Any) -> Any:
@@ -1333,6 +1428,11 @@ def serve(folder: Path, *, http: bool = False, port: int = 0, bind: str | None =
         client = client_of(ctx)
         if name == views.TOOL and apps(ctx):
             return await view_call(arguments, viewer(ctx))
+        if searching and name in SEARCH_FETCH:
+            found = await (search(folder, str(arguments.get('query') or ''), client) if name == 'search' else
+                           fetch(folder, str(arguments.get('id') or ''), client))
+            return types.CallToolResult(content=[types.TextContent(type='text', text=json.dumps(found))],
+                                        structured_content=found, is_error='error' in found)
         given, answered = await consented(ctx, params, name, arguments)
         if given is None:
             return answered
@@ -1606,6 +1706,41 @@ def serve(folder: Path, *, http: bool = False, port: int = 0, bind: str | None =
     server.middleware.append(RequestStateBoundary(RequestStateSecurity.ephemeral(ttl=consent.EXPIRES_S),
                                                   default_audience='metaform'))
 
+    return server, relay, subscriptions
+
+
+def tool_scope(folder: Path, name: str) -> str | None:
+    """The scope a tool call needs, oauth.required_scope; a tool not listed is asked of as a write, or a dispatch by
+    name, and search and fetch, which only read, as reads."""
+    from . import oauth
+    if name in SEARCH_FETCH:
+        return oauth.READ
+    one = listing(folder).get(name)
+    return oauth.required_scope(name, one.effect if one else 'write', one.open_world if one else False)
+
+
+def http_app(folder: Path, *, bind: str = '127.0.0.1', exposed: Any = None, verifier: Any = None) -> Any:
+    """The Streamable HTTP app `metaform mcp serve --http` serves, and the cloud module's tunnel runs in-process: for
+    a local server the SDK's Host and Origin checks for loopback; for one reached from outside (`exposed`) the bearer
+    check of every request against its resource, with `verifier` (introspection at the Node's authorization server by
+    default, the broker's signed assertions through the tunnel) and the scope gate before every tool call."""
+    from . import oauth
+    server = build(folder, http=True)[0]
+    if exposed is None:
+        return server.streamable_http_app(host='127.0.0.1')  # the SDK turns Host and Origin checks on for loopback
+    app = server.streamable_http_app(host=bind, transport_security=oauth.transport_security(exposed),
+                                     auth=oauth.auth_settings(exposed),
+                                     token_verifier=verifier or oauth.Introspection(exposed, exposed.mcp))
+    oauth.protect(app, exposed, functools.partial(tool_scope, folder), getattr(verifier, 'allowed', None))
+    return app
+
+
+def serve(folder: Path, *, http: bool = False, port: int = 0, bind: str | None = None, public_url: str | None = None,
+          introspection: str | None = None) -> None:
+    """Serve the folder over stdio, the host's own connection, or with `http` over Streamable HTTP on 127.0.0.1 at
+    `port`, one server any number of clients connect to, MCP-002. Both run the one server `build` makes; the transport
+    is the only difference. Over HTTP the SDK checks every request's Host and Origin against 127.0.0.1 and localhost,
+    so a web page cannot reach the server through DNS rebinding, and there is no relay: an HTTP client reconnects."""
     if http:
         import uvicorn
 
@@ -1615,26 +1750,18 @@ def serve(folder: Path, *, http: bool = False, port: int = 0, bind: str | None =
         exposed = oauth.exposure(
             public_url if public_url is not None else str(settings.value('mcp_public_url', folder) or ''), bind,
             introspection or str(settings.value('mcp_introspection', folder) or oauth.DEFAULT_INTROSPECTION))
-        if exposed is None:
-            app = server.streamable_http_app(host='127.0.0.1')  # the SDK turns Host and Origin checks on for loopback
-            where = f'http://127.0.0.1:{port}/mcp'
-        else:
-            app = server.streamable_http_app(host=bind, transport_security=oauth.transport_security(exposed),
-                                             auth=oauth.auth_settings(exposed),
-                                             token_verifier=oauth.Introspection(exposed, exposed.mcp))
-
-            def tool_scope(name: str) -> str | None:
-                one = listing(folder).get(name)  # a tool not listed is asked of as a write, or a dispatch by name
-                return oauth.required_scope(name, one.effect if one else 'write', one.open_world if one else False)
-            oauth.protect(app, exposed, tool_scope)
-            where = exposed.mcp
+        app = http_app(folder, bind=bind, exposed=exposed)
+        where = exposed.mcp if exposed is not None else f'http://127.0.0.1:{port}/mcp'
         print(f'Metaform MCP server for {folder} at {where}', file=sys.stderr, flush=True)
         if settings.value('mcp_a2a', folder):  # A2A on the same port, P004 and P005
             from .a2a import attach
             print(attach(app, folder, port, exposed), file=sys.stderr, flush=True)
         uvicorn.Server(uvicorn.Config(app, host=bind, port=port, log_level='warning')).run()
         return
+    from mcp.server.lowlevel import NotificationOptions
+    from mcp.server.stdio import stdio_server
 
+    server, relay, subscriptions = build(folder)
     serve_session()  # one host conversation per process over stdio, so what it was told is told once, MCP-039
 
     async def main() -> None:

@@ -454,6 +454,40 @@ class Count:
 
 
 @dataclass(frozen=True)
+class Provides:
+    """Something a module offers other modules, found by its kind, so a module that uses it never imports the one that
+    offers it. `kind` names the contract, such as `voice.engine`, a `VoiceEngine` another module brings to the voice
+    module, or `voice`, the voice module's own speak and transcribe for a server-side caller such as a phone bridge;
+    `value` is what the contract says it is. `provided(folder, kind)` finds every enabled module's."""
+    kind: str
+    value: Any
+
+
+@dataclass(frozen=True)
+class VoiceEngine:
+    """A speech engine a module brings to the voice module, which offers it as a choice beside its own engines.
+
+    `name` is the choice, in voice_engine for one that `transcribe`s and voice_tts for one that `speak`s; `sends` says
+    plainly where the person's audio or text goes, shown beside the choice, empty when nothing leaves the machine.
+    `transcribe(ctx, path, language)` returns `{'text': ..., 'segments': [...]}` for an audio file; `speak(ctx, text,
+    character, format)` returns an iterator of audio chunks, `format` being 'page', 'phone' or one of `formats`; a speak
+    that also takes the keyword `voice`, a voice id of the engine's own, is given it when a caller names one, in place of
+    the character's voice, and one that does not take it speaks with the character's; `output(ctx, format)` is the
+    format those chunks are in, such as pcm_22050 or mp3_44100_128; `ready(ctx)` is None when the engine can be used
+    now, else why not, with the next step. Each raises `Stop` with the next step when it refuses.
+    The module that provides it owns its settings and its keys; enabling or disabling that module offers or withdraws
+    the engine."""
+    name: str
+    summary: str
+    sends: str = ''
+    transcribe: Callable[..., dict[str, Any]] | None = None
+    speak: Callable[..., Any] | None = None
+    ready: Callable[..., str | None] | None = None
+    formats: tuple[str, ...] = ()
+    output: Callable[..., str] | None = None
+
+
+@dataclass(frozen=True)
 class Module:
     id: str
     summary: str
@@ -477,6 +511,7 @@ class Module:
     resources: tuple[Resource, ...] = ()  # read-only texts served over MCP as resources, MCP-037
     toolbar: tuple[ToolbarItem, ...] = ()  # the tools it adds to the web GUI's toolbar
     panes: tuple[Pane, ...] = ()  # the panes it adds to the web GUI's workspace
+    provides: tuple[Provides, ...] = ()  # what it offers other modules by kind, found with provided(folder, kind)
 
     def __post_init__(self) -> None:
         names = {verb.name for verb in self.verbs}
@@ -613,7 +648,7 @@ def withheld(modules: list[Module], named: str) -> list[Module]:
     entries = {entry.strip() for entry in named.split(',') if entry.strip()}
     if not entries:
         return modules
-    import dataclasses
+    import copy
     kept: list[Module] = []
     for module in modules:
         if module.id in entries:
@@ -621,7 +656,14 @@ def withheld(modules: list[Module], named: str) -> list[Module]:
         verbs = tuple(verb for verb in module.verbs
                       if f'{module.id}_{verb.name}' not in entries
                       and not (f'{module.id}:read' in entries and verb.effect == 'read'))
-        kept.append(module if len(verbs) == len(module.verbs) else dataclasses.replace(module, verbs=verbs))
+        if len(verbs) == len(module.verbs):
+            kept.append(module)
+            continue
+        # the same module with fewer tools: copied rather than declared again, so its panes, which may run a verb
+        # withheld here, still stand as the module declared them
+        served = copy.copy(module)
+        object.__setattr__(served, 'verbs', verbs)
+        kept.append(served)
     return kept
 
 
@@ -707,6 +749,24 @@ def mcp_server(folder: Path) -> list[str] | None:
     chosen, naming the setting."""
     from . import install
     return install.server(folder)
+
+
+def mcp_connect(folder: Path, **identity: str) -> Any:
+    """A connection to the folder's own MCP server, MCP-010, for a surface that is an MCP host for the person, as the
+    web GUI's chat is for an MCP App view: the server AI tools are registered with, run by this Python in the folder
+    with `identity`, the METAFORM_* names of the agent session its calls are made for, or with none. The caller keeps
+    it and closes it with `close()`; `request(method, params, deadline=)` sends one request with the per-request
+    `_meta`, whose client capabilities the caller may give. Stops when no enabled module serves MCP or the server does
+    not start."""
+    from . import probe
+    command = mcp_server(folder)
+    if command is None:
+        raise Stop('No enabled module serves MCP here, so an agent has nothing to connect to.', 'metaform enable mcp')
+    started = [sys.executable, '-m', 'metaform', *command[1:]] if command[0] == 'metaform' else command
+    try:
+        return probe.Session(started, cwd=folder, env=child_environment(**identity))
+    except OSError as error:
+        raise Stop(f'The MCP server did not start here: {error}.', 'metaform mcp serve') from None
 
 
 def mcp_reads(folder: Path, uris: tuple[str, ...] = (), *, limit: float = 30.0) -> dict[str, Any]:
@@ -810,6 +870,12 @@ def context(module: str, folder: Path, *, project: str | None = None, nouns: dic
     from . import context as contexts
     return contexts.build(module, folder, project=project, nouns=nouns, switches=switches, sink=sink, surface=surface,
                           client=client, session=session)
+
+
+def provided(folder: Path, kind: str) -> list[tuple[str, Any]]:
+    """What the modules on this folder's surface provide of `kind`, as `(module id, value)` in module id order; a
+    disabled module provides nothing, so turning it off withdraws what it offered."""
+    return [(module.id, one.value) for module in surface(folder) for one in module.provides if one.kind == kind]
 
 
 def node_counts(folder: Path, addresses: tuple[str, ...], *, project: str | None = None,
@@ -1069,6 +1135,19 @@ def latest_item(folder: Path, address: str, *, project: str | None = None) -> di
     return {'number': number, 'item': reference(address, number), 'title': found.get('title') if found else None}
 
 
+def last_session_range(folder: Path, address: str, *, project: str | None = None) -> dict[str, Any] | None:
+    """What the last agent session to number items at an address took there, as the brief's line under the node says
+    it, MCP-037: `session`, the `first` and `last` numbers and `count`, so every surface that shows the brief shows the
+    same range; None when no session is known to have taken one there."""
+    from . import context as contexts
+    store = contexts.build('map', folder, project=project).store
+    found = store.last_session(address) if store is not None else None
+    if found is None:
+        return None
+    session, first, end, count = found
+    return {'session': session, 'first': first, 'last': end, 'count': count}
+
+
 def node_brief(folder: Path, address: str, *, client: str | None = None) -> str | None:
     """A node's brief, `metaform://<address>`, MCP-037: the map module's `where` read of the address as it gives it the
     first time an agent session reads the node, with the counts at it and around it and each read named as a tool
@@ -1127,8 +1206,8 @@ def node_view(folder: Path, address: str, *, cursor: str | None = None, kinds: t
     """A node's brief as the person and the agents see it, MCP-037, the one answer the web GUI's /api/brief and the MCP
     map view's `brief` read give: `text`, the brief exactly as an agent reads it at `metaform://<address>`, `brief` the
     same parsed when it is JSON, its `bytes` against `budget`, the folder's node_summary_bytes; `latest`, the last
-    number taken there; and a page of the items numbered there, newest first, of the `kinds` named, as `items_page`
-    pages them. Stop when the address is empty, holds no element, or no map is served."""
+    number taken there, and `last_session`, the range the last session numbered there; and a page of the items numbered
+    there, newest first, of the `kinds` named, as `items_page` pages them. Stop when the address is empty, holds no element, or no map is served."""
     import json
 
     from . import settings
@@ -1146,7 +1225,8 @@ def node_view(folder: Path, address: str, *, cursor: str | None = None, kinds: t
             parsed = None
     return {'address': address, 'uri': f'metaform://{address}', 'text': text, 'brief': parsed,
             'bytes': len(text.encode('utf-8')), 'budget': settings.value('node_summary_bytes', folder),
-            'latest': latest_item(folder, address, project=project), 'kinds': list(kinds),
+            'latest': latest_item(folder, address, project=project),
+            'last_session': last_session_range(folder, address, project=project), 'kinds': list(kinds),
             **items_page(folder, address, cursor=cursor, kinds=kinds, limit=limit, project=project)}
 
 

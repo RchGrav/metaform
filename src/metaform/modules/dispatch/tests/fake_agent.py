@@ -20,13 +20,15 @@ FAKE_ACP_RICH=1 makes it an agent with more than text: it names itself, offers t
 effort option (category thought_level) at session/new, then its slash commands, takes session/set_mode and
 session/set_config_option, and its first turn edits FAKE_ACP_RICH_PATH, a diff at a location, and reports its usage.
 FAKE_ACP_LOAD=1 offers session/load, which takes the session id it is given and replays one message of its history
-before it answers.
+before it answers. FAKE_ACP_APP=<address> makes its first turn call mcp__metaform__map_where on that address, a tool
+with an MCP App view, its result what the real metaform map where prints.
 
 The extensions the real adapters advertise, each on its own switch: FAKE_ACP_STEER=1 advertises `_session/steering`
 and takes it into a turn in flight; FAKE_ACP_SUBAGENT=1 starts one subagent session in its first turn, which says a
 word and completes; FAKE_ACP_AUTH=1 offers an agent login method, advertises authStatus and pushes a logged-out
 status after initialize, and takes authenticate; FAKE_ACP_USAGE=<n> answers every prompt with n tokens used;
 FAKE_ACP_STDERR=1 writes two lines to stderr when it starts, one holding a secret-looking key.
+FAKE_ACP_AUDIO=1 declares promptCapabilities.audio, so a person's spoken message may carry its recording.
 FAKE_ACP_ELICIT=form puts one question to the person in its first turn with ACP's elicitation/create, a choice of
 Red or Blue, and logs the answer as `elicited`; FAKE_ACP_ELICIT=url asks it to open a page, logs the answer, and sends
 elicitation/complete; FAKE_ACP_ELICIT=ask asks as claude-agent-acp's AskUserQuestion does, a choice of Red or Blue
@@ -37,6 +39,11 @@ with. FAKE_ACP_USED=<a,b,...> sends a usage update with each context size in use
 the adapters do after each model call. FAKE_ACP_COST=<a,b,...> sends a usage update with each cumulative cost in USD in its first turn;
 FAKE_ACP_NOTICE=1 sends a session notice when the client advertises them; FAKE_ACP_CLOSE=1 advertises session/close
 and session/delete and takes them; FAKE_ACP_FORK=1 advertises session/fork and answers it with fake-fork-<n>;
+FAKE_ACP_CLIENT=1 makes its first turn use the client's own files and terminals, ACP's fs/* and terminal/*: it writes and
+reads fake-client/note.txt in its folder, reads a file outside it, runs one command in a terminal, waits for it, reads
+its output and releases it, and logs every answer as `client`.
+FAKE_ACP_INTAKE=1 makes its first turn read a review file and call a memory tool, wait up to 30 s for a steer, then
+call intake_element and log `intake_recorded`.
 FAKE_ACP_INFO=1 writes, in one write with its session/new answer and after it, a session_info_update giving the
 session a title and its last activity; FAKE_ACP_SILENT=<seconds> makes a hold turn fall silent that long, say one word,
 and fall silent again.
@@ -46,6 +53,10 @@ session/list and answers it in two pages of its own, the second holding seed-03,
 FAKE_ACP_V2=1 negotiates ACP v2: `capabilities` and `info` at initialize, and every prompt answered at insertion with
 its messageId, then reported as a user message, an agent message streamed and replaced, a tool call that modifies a
 file, and an idle `state_update`.
+FAKE_ACP_MASCOT=1 makes it a system agent that drives the person's mascot: each prompt after the first runs the real
+metaform web say, web go (to FAKE_ACP_MASCOT_GO, when set, then web see and web look there) and web emote wave, then
+answers in one message; with FAKE_ACP_MASCOT_SCRIPT naming a file, it first runs each metaform command of its lines, a JSON
+list of words each, or waits the seconds a line gives alone.
 To a client whose clientCapabilities.auth.terminal is true it offers a terminal login, and started with that
 login's --login it logs its arguments and exits 0, speaking no ACP.
 """
@@ -151,6 +162,32 @@ def first_turn(prompt_id, text):
     update({'sessionUpdate': 'tool_call', 'toolCallId': 't1', 'title': 'Read file', 'kind': 'read',
             'status': 'pending'})
     update({'sessionUpdate': 'tool_call_update', 'toolCallId': 't1', 'status': 'completed'})
+    if os.environ.get('FAKE_ACP_CLIENT') == '1':  # the client's files and terminals, ACP fs/* and terminal/*
+        inside = os.path.join(os.getcwd(), 'fake-client', 'note.txt')
+        done = {'write': request(800, 'fs/write_text_file', {'sessionId': SESSION, 'path': inside,
+                                                              'content': 'one\ntwo\nthree\n'}),
+                'read': request(801, 'fs/read_text_file', {'sessionId': SESSION, 'path': inside, 'line': 2,
+                                                            'limit': 1}),
+                'outside': request(802, 'fs/read_text_file', {'sessionId': SESSION, 'path': os.path.join(
+                    os.path.dirname(os.getcwd()), 'outside.txt')})}
+        made = request(803, 'terminal/create', {'sessionId': SESSION, 'command': sys.executable,
+                                                 'args': ['-c', 'print("hi from terminal")'], 'outputByteLimit': 1000})
+        own = {'sessionId': SESSION, 'terminalId': made.get('terminalId')}
+        done.update(create=made, exit=request(804, 'terminal/wait_for_exit', own),
+                    output=request(805, 'terminal/output', own), release=request(806, 'terminal/release', own),
+                    gone=request(807, 'terminal/output', own))
+        log({'client': done})
+    if os.environ.get('FAKE_ACP_INTAKE') == '1':  # an intake that reaches for earlier conclusions, then is steered
+        for ident, title, raw in (('i1', 'Read artifacts/review-notes.md', {'path': 'artifacts/review-notes.md'}),
+                                  ('i2', 'mcp__metaform__memory_read_graph', {})):
+            update({'sessionUpdate': 'tool_call', 'toolCallId': ident, 'title': title, 'kind': 'read',
+                    'status': 'pending', 'rawInput': raw})
+            update({'sessionUpdate': 'tool_call_update', 'toolCallId': ident, 'status': 'completed'})
+        STEERED.wait(30)
+        update({'sessionUpdate': 'tool_call', 'toolCallId': 'i3', 'title': 'mcp__metaform__intake_element',
+                'kind': 'other', 'status': 'pending', 'rawInput': {'address': 'code.engine'}})
+        update({'sessionUpdate': 'tool_call_update', 'toolCallId': 'i3', 'status': 'completed'})
+        log({'intake_recorded': True})
     if os.environ.get('FAKE_ACP_SUBAGENT') == '1':  # the native subagent session shape of claude-agent-acp
         update({'sessionUpdate': 'subagent_spawned', 'subagentSessionId': 'child-1', 'name': 'Explorer',
                 'task': 'Look around', 'capabilities': {}})
@@ -164,6 +201,15 @@ def first_turn(prompt_id, text):
                 'content': [{'type': 'diff', 'path': path, 'oldText': 'one\n', 'newText': 'one\ntwo\n'}]})
         update({'sessionUpdate': 'tool_call_update', 'toolCallId': 't-edit', 'status': 'completed'})
         update({'sessionUpdate': 'usage_update', 'used': 1200, 'size': 200000})
+    if os.environ.get('FAKE_ACP_APP'):  # a Metaform tool with a view, called as an MCP tool, its result the real one
+        address = os.environ['FAKE_ACP_APP']
+        update({'sessionUpdate': 'tool_call', 'toolCallId': 't-app', 'title': 'mcp__metaform__map_where',
+                'kind': 'other', 'status': 'in_progress', 'rawInput': {'address': address}})
+        printed = subprocess.run([sys.executable, '-m', 'metaform', 'map', 'where', address], capture_output=True,
+                                 text=True, check=False).stdout
+        update({'sessionUpdate': 'tool_call_update', 'toolCallId': 't-app', 'status': 'completed',
+                'rawOutput': {'content': [{'type': 'text', 'text': printed}], 'isError': False},
+                'content': [{'type': 'content', 'content': {'type': 'text', 'text': printed}}]})
     if os.environ.get('FAKE_ACP_NOTICE') == '1' and NOTICES[0]:
         update({'sessionUpdate': 'notice', 'severity': 'warning', 'title': 'MCP server unavailable',
                 'description': 'Continuing without it.'})
@@ -276,6 +322,28 @@ def first_turn(prompt_id, text):
     send({'jsonrpc': '2.0', 'id': prompt_id, 'result': {'stopReason': 'end_turn', **used()}})
 
 
+def mascot_turn(prompt_id, text):
+    """The person's message, answered as their mascot: the bubble, a walk and a wave through the web module's verbs."""
+    asked = ' '.join(text.split())[:60]
+    log({'mascot_say': tool('m-say', 'Say it in the bubble', ['web', 'say', f'On it: {asked}'])})
+    if os.environ.get('FAKE_ACP_MASCOT_GO'):
+        log({'mascot_go': tool('m-go', 'Walk the mascot there', ['web', 'go', os.environ['FAKE_ACP_MASCOT_GO']])})
+    log({'mascot_emote': tool('m-emote', 'Wave', ['web', 'emote', 'wave'])})
+    if os.environ.get('FAKE_ACP_MASCOT_GO'):  # and what it sees there, and a picture from its eyes
+        log({'mascot_see': tool('m-see', 'See', ['web', 'see', '--json'])[:2000]})
+        log({'mascot_look': tool('m-look', 'Look', ['web', 'look', '--json'])[:2000]})
+    script = Path(os.environ.get('FAKE_ACP_MASCOT_SCRIPT') or '')
+    if script.is_file():  # each line a metaform command to run, its words as a JSON list, a pause in seconds alone
+        for at, line in enumerate(script.read_text(encoding='utf-8').splitlines()):
+            words = json.loads(line) if line.strip() else []
+            if isinstance(words, (int, float)):
+                CANCELLED.wait(words)
+            elif words:
+                log({'mascot_script': words, 'printed': tool(f'm-script-{at}', ' '.join(words), [*words, '--json'])[:400]})
+    update({'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': f'The fake answers: {asked}'}})
+    send({'jsonrpc': '2.0', 'id': prompt_id, 'result': {'stopReason': 'end_turn', **used()}})
+
+
 def used():
     """What a prompt's answer says it used, ACP's end-turn token usage, when FAKE_ACP_USAGE sets it."""
     tokens = int(os.environ.get('FAKE_ACP_USAGE') or 0)
@@ -331,6 +399,8 @@ def main():
                              + ([TERMINAL_LOGIN] if message['params'].get('clientCapabilities', {}).get('auth', {})
                                 .get('terminal') is True else []),
                              'agentCapabilities': {'loadSession': os.environ.get('FAKE_ACP_LOAD') == '1',
+                                                   **({'promptCapabilities': {'audio': True}}
+                                                      if os.environ.get('FAKE_ACP_AUDIO') == '1' else {}),
                                                    **({'mcpCapabilities': {'acp': True}} if MCP_ACP else {}),
                                                    **({'sessionCapabilities': sessions} if sessions else {}),
                                                    **({'_meta': {'authStatus': {}}} if auth else {})},
@@ -345,6 +415,7 @@ def main():
         elif method == '_session/steering':
             outcome = 'injected' if ACTIVE_TURN[0] else 'promptRequired'
             log({'steered': message['params']['prompt'][0]['text'], 'outcome': outcome})
+            STEERED.set()
             send({'jsonrpc': '2.0', 'id': ident, 'result': {'outcome': outcome}})
         elif method == 'session/new':
             with WRITING, open(LOG, encoding='utf-8') as handle:
@@ -398,6 +469,9 @@ def main():
             elif PROMPTS[0] == 1:
                 said = ' '.join(block.get('text', '') for block in message['params'].get('prompt', []))
                 threading.Thread(target=turn_of, args=(first_turn, ident, said), daemon=True).start()
+            elif os.environ.get('FAKE_ACP_MASCOT') == '1':
+                said = ' '.join(block.get('text', '') for block in message['params'].get('prompt', []))
+                threading.Thread(target=turn_of, args=(mascot_turn, ident, said), daemon=True).start()
             elif os.environ.get('FAKE_ACP_HOLD_LATER') == '1':
                 threading.Thread(target=turn_of, args=(held_turn, ident), daemon=True).start()
             else:
@@ -451,6 +525,7 @@ def turn_of(work, *args):
 
 
 ACTIVE_TURN = [False]
+STEERED = threading.Event()  # a steer reached the turn, FAKE_ACP_INTAKE waits for it
 NOTICES = [False]  # the client advertised ACP's session notices
 # ACP's terminal login, offered to an editor that can run one: the editor runs this agent again with these arguments
 # and this environment, in a terminal; started so, it logs what it was given and exits 0 without speaking ACP.

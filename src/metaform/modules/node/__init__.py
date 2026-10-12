@@ -8,6 +8,10 @@ one on Vultr with cloud-init, then copies, builds, starts and checks the stack f
 register the Node. `relay` puts a Metaform with no open port behind a relay; `relay-init`, `relay-enrol` and
 `relay-gate` are the relay operator's side.
 
+With `--node-role broker` the same Node is metaform.ing's broker instead: accounts and passkeys only, the device
+sign-in for `metaform cloud login`, and the broker that carries AI hosts' MCP down each person's own tunnel to the
+Metaform on their machine (broker.py). `signout` signs an account out everywhere; `rotate-key` makes a new signing key.
+
 Every verb is the person's own, on the command line: none is a tool an agent can call.
 """
 from __future__ import annotations
@@ -25,7 +29,8 @@ from metaform.module import Context, Module, Noun, Stop, Verb
 from . import config
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
-DEPENDENCIES = ('mcp>=2.2,<3', 'webauthn>=2.8,<3', 'httpx>=0.28,<1', 'uvicorn>=0.31', 'starlette>=0.48')
+DEPENDENCIES = ('mcp>=2.2,<3', 'webauthn>=2.8,<3', 'httpx>=0.28,<1', 'uvicorn>=0.31', 'starlette>=0.48',
+                'pyjwt[crypto]>=2.10', 'websockets>=13')
 SHIPS_DISABLED = False
 REMOTE_AGENT = False  # a deployment tool for the person; a remote agent has no use for it
 
@@ -61,6 +66,27 @@ settings.text('node_dns_provider', '', scope=G, label='DNS provider',
                    'secrets.env on the host as DNS_API_TOKEN.')
 settings.text('node_wildcard', '', scope=G, label='Wildcard base',
               help='A base domain to hold a wildcard certificate for, such as metaform.ing, with node_mode dns.')
+settings.choice('node_role', list(config.ROLES), 'node', scope=G, person_only=True, label='Node role',
+                help='node serves a Metaform of its own; broker serves accounts and carries AI tools\' MCP to the '
+                     'Metaform on each person\'s own machine, as metaform.ing does.',
+                details='A broker keeps nothing on disk but accounts and their passkeys\' public keys: its tokens are '
+                        'signed with the Node\'s key, the people\'s machines dial in over a tunnel (metaform cloud '
+                        'connect), and the record of who called what is kept on each person\'s machine. It mounts no '
+                        'project and runs no MCP server or page of its own.')
+settings.choice('node_refresh_replay', ['memory', 'durable'], 'memory', scope=G, person_only=True,
+                label='Refresh reuse detection',
+                help='Where a broker keeps the newest refresh token number of each sign-in: memory, or durable on disk '
+                     'as well.',
+                details='A refresh token used a second time means it was stolen, and the sign-in is ended for both '
+                        'holders. In memory (the default, so the broker stores no grant at all) this holds while the '
+                        'process runs: after a restart a refresh token retired before it can be used once more, by '
+                        'whoever has it first, until it expires or the account signs out everywhere. durable keeps the '
+                        'same marks, grant ids and counters with no secret, in the broker\'s store, which closes that '
+                        'gap.')
+settings.boolean('node_member_dispatch', False, scope=G, person_only=True, label='Members may dispatch',
+                 help='On a broker, let an account that is not the owner approve an AI tool to start agents '
+                      '(mcp:dispatch) on its own machine.',
+                 details='Each machine still caps what it allows with its own cloud_capability.')
 settings.boolean('node_dcr', False, scope=G, person_only=True, label='Dynamic client registration',
                  help='Let older AI tools register themselves (RFC 7591), which the MCP specification of 2026-07-28 '
                       'deprecates in favour of Client ID Metadata Documents.')
@@ -111,7 +137,8 @@ def _spec(ctx: Context, domain: str, mode: str | None = None) -> config.NodeSpec
         dns_provider=str(ctx.setting('node_dns_provider')), wildcard=str(ctx.setting('node_wildcard')),
         relay_server=str(ctx.setting('node_relay_server')), relay_port=int(ctx.setting('node_relay_port')),
         relay_name=str(ctx.nouns.get('name') or domain.split('.')[0]) if mode == 'relay' else '',
-        dcr=bool(ctx.setting('node_dcr')), owner=str(ctx.nouns.get('owner') or 'owner'))
+        dcr=bool(ctx.setting('node_dcr')), owner=str(ctx.nouns.get('owner') or 'owner'),
+        role=str(ctx.setting('node_role')) if mode != 'relay' else 'node')
 
 
 def write_project(folder: Path, spec: config.NodeSpec) -> dict[str, Any]:
@@ -275,9 +302,11 @@ def _on_host(ctx: Context, verb: str, *words: str) -> Any | None:
 
 
 def _store() -> Any:
+    """The accounts store as the server on this home uses it: on a broker's home its BrokerStore, so a command run
+    beside it never adds the tables a broker does not keep."""
     from .authserver import store_path
-    from .authstore import AuthStore
-    return AuthStore(store_path())
+    from .authstore import open_store
+    return open_store(store_path())
 
 
 def invite(ctx: Context) -> Any:
@@ -311,6 +340,42 @@ def revoke(ctx: Context) -> Any:
     return {'revoked': name, 'note': 'Its sessions, invitations and tokens no longer work.'}
 
 
+def signout(ctx: Context) -> Any:
+    """Sign an account out everywhere: its generation moves, so every token, session and tunnel it holds stops
+    working; a running broker sees it within half a minute. It signs in again with its passkey."""
+    name = str(ctx.nouns['name']).lower()
+    remote = _on_host(ctx, 'signout', name)
+    if remote is not None:
+        return remote
+    store = _store()
+    account = store.account(name)
+    if account is None:
+        raise Stop(f'No account {name}.', 'metaform node accounts')
+    return {'signed_out': name, 'generation': store.bump_generation(account.id),
+            'note': 'Every AI tool and machine signed in to it must sign in again.'}
+
+
+def rotate_key(ctx: Context) -> Any:
+    """A new signing key for the broker's tokens. By default the old one is still published until its tokens have
+    expired, so no one signs in again. With revoke_old=true, for a key that may have been copied, every older key
+    is deleted and leaves the key set at once: every token signed with it, real or forged, is refused, every machine
+    and AI tool signs in again, and the running broker changes over within seconds, with no restart."""
+    revoke_old = bool(ctx.nouns.get('revoke_old'))
+    remote = _on_host(ctx, 'rotate-key', *(['revoke_old=true'] if revoke_old else []))
+    if remote is not None:
+        return remote
+    from .authserver import keys_folder
+    from .tokens import RELOAD_SECONDS, Keys
+    kid = Keys(keys_folder()).rotate(revoke_old=revoke_old)
+    if revoke_old:
+        return {'signing_key': kid, 'revoked': 'every older key',
+                'note': f'Within {int(RELOAD_SECONDS)} seconds the broker signs with the new key and refuses every '
+                        'token signed before: each machine runs metaform cloud login again, each AI tool reconnects.'}
+    return {'signing_key': kid, 'note': f'The broker signs with it within {int(RELOAD_SECONDS)} seconds; tokens signed '
+                                        'before keep working until they expire. For a key that may have been '
+                                        'copied: metaform node rotate-key revoke_old=true'}
+
+
 def auth(ctx: Context) -> None:
     from .authserver import Policy, serve
     domain = str(ctx.setting('node_domain')).lower()
@@ -320,8 +385,13 @@ def auth(ctx: Context) -> None:
     kept = home.home() / 'node' / 'issuer'
     kept.parent.mkdir(parents=True, exist_ok=True)
     kept.write_text(issuer + '\n', encoding='utf-8')
-    serve(Policy(issuer, str(ctx.setting('node_capability')), bool(ctx.setting('node_dcr'))), config.AUTH_PORT,
-          Path(str(ctx.nouns.get('bootstrap') or '/run/metaform-bootstrap')))
+    role = str(ctx.setting('node_role'))
+    (kept.parent / 'role').write_text(role + '\n', encoding='utf-8')  # what `metaform node signout` opens it as
+    serve(Policy(issuer, str(ctx.setting('node_capability')), bool(ctx.setting('node_dcr')),
+                 broker=role == 'broker',
+                 member_dispatch=bool(ctx.setting('node_member_dispatch'))), config.AUTH_PORT,
+          Path(str(ctx.nouns.get('bootstrap') or '/run/metaform-bootstrap')),
+          replay=str(ctx.setting('node_refresh_replay')))
 
 
 def connect(ctx: Context) -> dict[str, Any]:
@@ -414,7 +484,7 @@ def relay_gate(ctx: Context) -> None:
 
 
 CLI: tuple[Any, ...] = ('cli',)
-SETUP = ('node_mode', 'node_email', 'node_capability', 'node_relay_capability', 'node_projects', 'node_dns_provider',
+SETUP = ('node_role', 'node_mode', 'node_email', 'node_capability', 'node_relay_capability', 'node_projects', 'node_dns_provider',
          'node_wildcard', 'node_dcr', 'node_relay_server', 'node_relay_port', 'node_dir')
 REACH = ('node_host', 'node_ssh_identity', 'node_dir')
 
@@ -450,7 +520,8 @@ MODULE = Module(
              switches=('node_dry_run', *REACH), surfaces=CLI, open_world=True, task=True),
         Verb('auth', auth, 'Run the Node\'s authorization server, in the Node\'s auth container.',
              nouns=(Noun('bootstrap', 'The folder holding the owner\'s setup record.', required=False),),
-             switches=('node_domain', 'node_capability', 'node_dcr'), surfaces=CLI, transport=True),
+             switches=('node_domain', 'node_capability', 'node_dcr', 'node_role', 'node_refresh_replay',
+                       'node_member_dispatch'), surfaces=CLI, transport=True),
         Verb('invite', invite, 'Let a person in: an account and a one-time link to enrol their passkey.',
              nouns=(Noun('name', 'Their account name.'),), switches=REACH, surfaces=CLI),
         Verb('accounts', accounts, 'List the accounts that may sign in, with their passkeys.', switches=REACH,
@@ -458,6 +529,12 @@ MODULE = Module(
         Verb('revoke', revoke, 'Shut an account out: its sessions, links and tokens stop working.',
              nouns=(Noun('name', 'The account name.'),), switches=REACH, surfaces=CLI, effect='remove',
              caution='The account cannot sign in again; invite them under a new name to let them back.'),
+        Verb('signout', signout, 'Sign an account out everywhere: every token, session and tunnel it holds ends.',
+             nouns=(Noun('name', 'The account name.'),), switches=REACH, surfaces=CLI),
+        Verb('rotate-key', rotate_key, 'Make a new signing key for a broker\'s tokens; revoke_old=true ends the old.',
+             nouns=(Noun('revoke_old', 'true: delete every older key at once, for a key that may have been copied; '
+                                       'every token signed with it stops working.', kind='bool', required=False),),
+             switches=REACH, surfaces=CLI),
         Verb('connect', connect, 'Show how AI tools add the Node, and its Agent Card.',
              nouns=(Noun('dir', 'The Node folder, under this one.', required=False),), surfaces=CLI, effect='read'),
         Verb('relay', relay, 'Reach this Metaform through a relay, with no open port.',

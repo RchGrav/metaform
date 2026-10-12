@@ -14,7 +14,9 @@ merge is ever offered; the active dev branch is the branch checked out in the pr
 """
 from __future__ import annotations
 
+import os
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -23,6 +25,10 @@ from metaform.data import Node, Store, WorkRecord
 
 READY, REVIEW, MERGED, FAILED = 'ready', 'review', 'merged', 'failed'
 FOLDER = '.worktrees'  # inside the project folder, so an agent there reaches the project; kept out of git status
+TRAILER = 'Metaform-Ticket'  # the git trailer every commit made for a ticket carries, P009
+SNAPSHOTS = 'refs/metaform/snapshot'  # where the snapshot a ticket's worktree began from is kept, by its branch name
+QUEUE = 'metaform-merge.lock'  # in the project's git folder: one merge at a time, P018
+QUEUE_LIMIT = 600.0  # seconds a lock left by a merge that died is honoured before it is taken over
 
 
 def git(folder: str | Path, *words: str, limit: float = 120) -> subprocess.CompletedProcess[str]:
@@ -40,9 +46,38 @@ def dev_branch(project: str | Path) -> str | None:
     return found.stdout.strip() or None if found.returncode == 0 else None
 
 
+def snapshot(project: str | Path, work_id: str) -> str | None:
+    """The project folder as it is now, committed on top of HEAD without touching the folder, its index or any
+    branch, P009: tracked changes and untracked files that are not ignored, through a temporary index, write-tree and
+    commit-tree. HEAD itself when nothing is uncommitted; None outside git."""
+    head = git(project, 'rev-parse', '--verify', '--quiet', 'HEAD').stdout.strip()
+    if not head:
+        return None
+    handle, index = tempfile.mkstemp(prefix='metaform-index-')
+    os.close(handle)
+    env = {**os.environ, 'GIT_INDEX_FILE': index}
+    try:
+        def staged(*words: str) -> subprocess.CompletedProcess[str]:
+            return subprocess.run(['git', *words], cwd=project, capture_output=True, text=True, encoding='utf-8',
+                                  timeout=120, check=False, stdin=subprocess.DEVNULL, env=env)
+        if staged('read-tree', head).returncode != 0 or staged('add', '-A').returncode != 0:
+            return head
+        tree = staged('write-tree').stdout.strip()
+    finally:
+        with_index = Path(index)
+        if with_index.exists():
+            with_index.unlink()
+    if not tree or tree == git(project, 'rev-parse', f'{head}^{{tree}}').stdout.strip():
+        return head
+    made = git(project, 'commit-tree', tree, '-p', head, '-m', f'Snapshot of uncommitted work for ticket {work_id}',
+               '-m', f'{TRAILER}: {work_id}').stdout.strip()
+    return made or head
+
+
 def worktree_for(project: str | Path, work_id: str) -> Path | None:
-    """The ticket's own worktree, made on first use on a branch from the active dev branch; none when the project
-    folder is not a git repository on a branch."""
+    """The ticket's own worktree, made on first use on a branch from a snapshot of the project folder as it is, its
+    uncommitted work with it, P009; the snapshot is kept under SNAPSHOTS, so a merge carries the agent's work alone.
+    None when the project folder is not a git repository on a branch."""
     project = Path(project)
     dev = dev_branch(project)
     if dev is None:
@@ -56,8 +91,43 @@ def worktree_for(project: str | Path, work_id: str) -> Path | None:
             written.write(f'\n/{FOLDER}/\n')
     branch = branch_of(work_id)
     known = git(project, 'rev-parse', '--verify', '--quiet', branch).returncode == 0
-    made = git(project, 'worktree', 'add', *([str(folder), branch] if known else ['-b', branch, str(folder), dev]))
-    return folder if made.returncode == 0 else None
+    start = None if known else snapshot(project, work_id) or dev
+    made = git(project, 'worktree', 'add', *([str(folder), branch] if known else ['-b', branch, str(folder), start or dev]))
+    if made.returncode != 0:
+        return None
+    if start:
+        git(project, 'update-ref', f'{SNAPSHOTS}/{branch}', start)
+    return folder
+
+
+def checkpoint(folder: str | Path, work_id: str, said: str) -> str | None:
+    """Everything the agent has changed in its worktree committed, with the ticket's trailer, P009: the runner's own
+    commit at each step and at the session's end, so nothing is lost on a crash. The commit, or None when nothing
+    changed or the folder is not a worktree of the project's."""
+    if not (Path(folder) / '.git').exists():
+        return None
+    git(folder, 'add', '-A')
+    if git(folder, 'diff', '--cached', '--quiet').returncode == 0:
+        return None
+    done = git(folder, 'commit', '-q', '-m', said[:200] or f'Checkpoint of ticket {work_id}', '-m',
+               f'{TRAILER}: {work_id}')
+    return git(folder, 'rev-parse', 'HEAD').stdout.strip() if done.returncode == 0 else None
+
+
+def snapshot_of(project: str | Path, branch: str) -> str | None:
+    """The snapshot a branch's worktree began from, as worktree_for kept it; None for a branch made before."""
+    found = git(project, 'rev-parse', '--verify', '--quiet', f'{SNAPSHOTS}/{branch}').stdout.strip()
+    return found or None
+
+
+def removed(project: str | Path, folder: str | Path, branch: str | None = None) -> None:
+    """A ticket's worktree removed once its work is committed, P192; with a branch, that branch and its snapshot ref
+    too, for work merged or abandoned."""
+    git(project, 'worktree', 'remove', '--force', str(folder))
+    if branch:
+        git(project, 'branch', '-D', branch)
+        git(project, 'update-ref', '-d', f'{SNAPSHOTS}/{branch}')
+    git(project, 'worktree', 'prune')
 
 
 def worktree_of(store: Store, work_id: str) -> Path:
@@ -72,15 +142,18 @@ def worktree_of(store: Store, work_id: str) -> Path:
 
 
 def clean_merge(project: str | Path, branch: str) -> tuple[bool, str]:
-    """Whether the branch merges into the active dev branch with no conflict, without touching either."""
+    """Whether the branch's own work merges into the active dev branch with no conflict, without touching either: the
+    work since the snapshot its worktree began from, P009, or since the two branches parted."""
     dev = dev_branch(project)
     if dev is None:
         return False, 'the project folder is not on a branch'
-    found = git(project, 'merge-tree', '--write-tree', dev, branch)
-    if found.returncode in (0, 1) and 'unknown rev' not in found.stderr:  # git 2.38 and later: 1 means conflicts
+    began = snapshot_of(project, branch)
+    found = git(project, 'merge-tree', '--write-tree', *(['--merge-base', began] if began else []), dev, branch)
+    if found.returncode in (0, 1) and 'unknown' not in found.stderr and 'usage' not in found.stderr:
+        # git 2.38 and later: 1 means conflicts
         return found.returncode == 0, '' if found.returncode == 0 else (found.stdout + found.stderr).strip()[-400:]
     # An earlier git: the trivial three-way merge-tree prints conflict markers where the two sides clash.
-    base = git(project, 'merge-base', dev, branch).stdout.strip()
+    base = began or git(project, 'merge-base', dev, branch).stdout.strip()
     if not base:
         return False, f'{branch} and {dev} share no history'
     shown = git(project, 'merge-tree', base, dev, branch).stdout
@@ -101,15 +174,20 @@ def tests_pass(folder: str | Path, command: str) -> tuple[bool, str]:
 
 
 def finished(ctx: Any, store: Store, record: WorkRecord, folder: Path) -> dict[str, Any] | None:
-    """A done ticket's worktree: its changes committed, the tests and the merge check run, and when both pass the merge
-    waits for review. Returns the merge row, or None when there is nothing to merge."""
+    """A done ticket's worktree: its changes committed with the ticket's trailer, then, for a ticket completed, the
+    tests and the merge check run, and when both pass the merge waits for review. A ticket cancelled or failed is not
+    offered: its work is committed on its branch and its worktree removed, P192, the branch kept until
+    dispatch_abandoned_branch_days have passed, P017. Returns the merge row, or None when there is nothing to merge."""
     project = Path(store.project().path)
-    git(folder, 'add', '-A')
-    git(folder, 'commit', '-q', '-m', f'{record.condition or "work"}: {(record.task or record.note or "")[:60]}',
-        '-m', f'Work {record.id}: {record.resolution or ""}')
+    checkpoint(folder, record.id, f'{record.condition or "work"}: {(record.task or record.note or "")[:60]}\n\n'
+                                  f'Work {record.id}: {record.resolution or ""}')
     branch = branch_of(record.id)
+    if (record.outcome or 'completed') != 'completed':
+        removed(project, folder)
+        return None
     dev = dev_branch(project)
-    if dev is None or git(project, 'rev-list', '--count', f'{dev}..{branch}').stdout.strip() in ('', '0'):
+    since = snapshot_of(project, branch) or dev
+    if dev is None or git(project, 'rev-list', '--count', f'{since}..{branch}').stdout.strip() in ('', '0'):
         return None
     passed, said = tests_pass(folder, str(ctx.setting('dispatch_test_command')))
     merges, why = clean_merge(project, branch) if passed else (False, said)
@@ -143,9 +221,47 @@ def review(store: Store, work_id: str) -> bool:
         return True
 
 
+class Queued:
+    """One merge at a time in a project, P018: a lock file in the project's git folder, taken over only once it is
+    older than QUEUE_LIMIT, left by a merge that died."""
+
+    def __init__(self, project: Path) -> None:
+        found = git(project, 'rev-parse', '--git-common-dir').stdout.strip()
+        self.path = (project / found if found else project / '.git') / QUEUE
+        self.held = False
+
+    def __enter__(self) -> bool:
+        for _ in range(2):
+            try:
+                os.close(os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+                self.held = True
+                return True
+            except FileExistsError:
+                try:
+                    if time.time() - self.path.stat().st_mtime < QUEUE_LIMIT:
+                        return False
+                    self.path.unlink()
+                except OSError:
+                    return False
+            except OSError:
+                return False
+        return False
+
+    def __exit__(self, *_: object) -> None:
+        if self.held:
+            try:
+                self.path.unlink()
+            except OSError:
+                pass
+
+
 def merge_due(ctx: Any, store: Store, work_id: str) -> dict[str, Any]:
-    """At the deadline, with no review: run both checks again, merge into the active dev branch, and write the ticket
-    that says the feature needs testing before the next release. Anything that no longer passes is not merged."""
+    """At the deadline, with no review, one merge at a time, P018 and P011: the branch's own work, since the snapshot it
+    began from, rebased onto the active dev branch in its worktree, the tests run there again, squashed into one commit
+    with the ticket's trailer, and the dev branch fast-forwarded to it, which only a folder with no uncommitted change
+    to a tracked file takes; then the worktree, the branch and its snapshot are removed, P192, and the ticket that says
+    the feature needs testing before the next release is written. Anything that no longer passes is not merged; a
+    folder with uncommitted changes, or another merge under way, leaves it waiting."""
     own = Store(store.project_id, module='dispatch')
     with own.tables(write=False) as tx:
         row = tx.get('merges', {'work_id': work_id})
@@ -153,22 +269,70 @@ def merge_due(ctx: Any, store: Store, work_id: str) -> dict[str, Any]:
         return {'work_id': work_id, 'merged': False, 'why': 'not waiting'}
     row = dict(row)
     project = Path(store.project().path)
-    passed, said = tests_pass(row['worktree'], str(ctx.setting('dispatch_test_command')))
-    merges, why = clean_merge(project, row['branch']) if passed else (False, said)
-    outcome: dict[str, Any] = {'state': FAILED, 'reason': why}
-    if passed and merges:
-        done = git(project, 'merge', '--no-ff', '--no-edit', row['branch'])
-        if done.returncode == 0:
-            outcome = {'state': MERGED, 'reason': ''}
+    folder, branch = str(row['worktree']), str(row['branch'])
+    with Queued(project) as first:
+        if not first:
+            return {'work_id': work_id, 'merged': False, 'why': 'another merge is under way; this one waits'}
+        if git(project, 'status', '--porcelain', '--untracked-files=no').stdout.strip():
+            return {'work_id': work_id, 'merged': False,
+                    'why': 'the project folder has uncommitted changes; the merge waits until they are committed'}
+        dev = dev_branch(project)
+        if dev is None:
+            return {'work_id': work_id, 'merged': False, 'why': 'the project folder is not on a branch'}
+        passed, why = clean_merge(project, branch)
+        outcome: dict[str, Any] = {'state': FAILED, 'reason': why}
+        if passed:
+            began = snapshot_of(project, branch) or git(project, 'merge-base', dev, branch).stdout.strip()
+            moved = git(folder, 'rebase', '--onto', dev, began)
+            if moved.returncode != 0:
+                git(folder, 'rebase', '--abort')
+                outcome['reason'] = 'conflict: ' + (moved.stdout + moved.stderr).strip()[-400:]
+                passed = False
+        if passed:
+            passed, said = tests_pass(folder, str(ctx.setting('dispatch_test_command')))
+            outcome['reason'] = said
+        if passed:
             record = store.ticket(work_id).work
-            store.add_work(Node.of(record.node_kind, record.node_id), None,
-                           note=f'Merged into {dev_branch(project)} without review, from {row["branch"]}, after its '
-                                f'tests passed: work {work_id}.',
-                           task=f'Newly committed feature, needs testing before the next release: '
-                                f'{record.task or record.note or work_id}')
-        else:
-            git(project, 'merge', '--abort')
-            outcome['reason'] = (done.stdout + done.stderr).strip()[-400:]
+            git(folder, 'reset', '--soft', dev)
+            squashed = git(folder, 'commit', '-q', '-m',
+                           f'{record.condition or "work"}: {(record.task or record.note or work_id)[:60]}',
+                           '-m', f'Work {work_id}: {record.resolution or ""}', '-m', f'{TRAILER}: {work_id}')
+            done = git(project, 'merge', '--ff-only', branch) if squashed.returncode == 0 else squashed
+            if done.returncode == 0:
+                outcome = {'state': MERGED, 'reason': ''}
+                store.add_work(Node.of(record.node_kind, record.node_id), None,
+                               note=f'Merged into {dev} without review, from {branch}, after its tests passed: '
+                                    f'work {work_id}.',
+                               task=f'Newly committed feature, needs testing before the next release: '
+                                    f'{record.task or record.note or work_id}')
+                removed(project, folder, branch)
+            else:
+                outcome['reason'] = (done.stdout + done.stderr).strip()[-400:]
     with own.tables() as tx:
         tx.update('merges', {'work_id': work_id}, outcome)
     return {'work_id': work_id, 'merged': outcome['state'] == MERGED, 'why': outcome['reason']}
+
+
+def abandoned(store: Store, project: str | Path, days: int) -> list[str]:
+    """The branches of tickets closed and not merged, older than `days`, removed with their worktrees and snapshots,
+    P017, after their work was committed; and git's own record of worktrees gone, pruned, P192. The branches removed."""
+    project = Path(project)
+    if dev_branch(project) is None:
+        return []
+    git(project, 'worktree', 'prune')
+    listed = git(project, 'for-each-ref', '--format=%(refname:short) %(committerdate:unix)', 'refs/heads/metaform/')
+    own = Store(store.project_id, module='dispatch')
+    with own.tables(write=False) as tx:
+        waiting = {str(row['branch']) for row in tx.rows('merges', limit=0).results if row['state'] in (READY, REVIEW)}
+    closed = {branch_of(record.id): record for record in store.work(open=False, limit=0).results}
+    gone: list[str] = []
+    for line in listed.stdout.splitlines():
+        branch, _, when = line.partition(' ')
+        if branch in waiting or branch not in closed or time.time() - float(when or 0) < days * 86400:
+            continue
+        folder = project / FOLDER / branch.split('/', 1)[1]
+        if folder.exists():
+            checkpoint(folder, closed[branch].id, f'Abandoned work of ticket {closed[branch].id}')
+        removed(project, folder, branch)
+        gone.append(branch)
+    return gone

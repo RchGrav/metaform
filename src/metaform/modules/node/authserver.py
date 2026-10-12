@@ -22,6 +22,12 @@ protected resources, `https://<domain>/mcp` and `https://<domain>/a2a`, and it i
   owner's first passkey comes from the one-time link `metaform node init` prints; everyone else is invited with
   `metaform node invite <name>`, so the accounts are the allowlist.
 - The page's session is this server's too: Caddy asks `/node/gate` before every page request.
+
+In the broker role (metaform.ing, `Policy.broker`), the same server keeps nothing on disk but accounts and passkeys:
+`SignedProvider` issues every code and token as a JWT signed with the Node's key (tokens.py), the key set is published
+at `/.well-known/jwks.json`, the local service signs in with the device authorization grant (RFC 8628, device.py), and
+each person's instances are resources of their own, `https://<domain>/mcp` for the one named `default` and
+`https://<domain>/mcp/<instance>` for the others, reached through the broker (broker.py).
 """
 from __future__ import annotations
 
@@ -35,14 +41,16 @@ import secrets
 import socket
 import time
 import urllib.parse
+from collections.abc import Callable
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
 from typing import Any, cast
 
+import httpcore
 import httpx
+import jwt
 from mcp.server.auth.handlers.authorize import AuthorizationHandler
-from mcp.server.auth.handlers.metadata import MetadataHandler
 from mcp.server.auth.handlers.register import RegistrationHandler
 from mcp.server.auth.handlers.revoke import RevocationHandler
 from mcp.server.auth.handlers.token import TokenHandler
@@ -84,8 +92,10 @@ from webauthn.helpers.structs import (
 
 from metaform import home
 
+from . import tokens
 from .authstore import Account, AuthStore, digest
-from .config import KNOWN_SCOPES, scopes_for
+from .config import KNOWN_SCOPES, LABEL, scopes_for
+from .device import DeviceGrants
 
 ACCESS_SECONDS = 3600
 REFRESH_SECONDS = 30 * 86400
@@ -96,6 +106,10 @@ CIMD_TIMEOUT = 5.0
 CIMD_MIN_CACHE, CIMD_MAX_CACHE, CIMD_DEFAULT_CACHE = 60, 86400, 600
 LOOPBACK_HOSTS = ('127.0.0.1', '[::1]', 'localhost')
 RESOURCE_SERVER = 'metaform-resource-server'  # the client id MCP and A2A introspect with
+CLI_CLIENT, DEVICE_GRANT, TUNNEL_SCOPE = tokens.CLI_CLIENT, tokens.DEVICE_GRANT, tokens.TUNNEL_SCOPE
+BROKER_SESSION_SECONDS = 3600
+DEFAULT_INSTANCE = 'default'
+DCR_SECONDS = 10 * 365 * 86400  # a registered client's id holds until its signing key leaves the key set
 
 
 def store_path() -> Path:
@@ -134,6 +148,31 @@ class Policy:
     issuer: str
     capability: str = 'write'
     dcr: bool = False
+    broker: bool = False
+    member_dispatch: bool = False  # on a broker, whether an account that is not the owner may be granted dispatch
+
+    @property
+    def session_seconds(self) -> int:
+        return BROKER_SESSION_SECONDS if self.broker else SESSION_SECONDS
+
+    @property
+    def tunnel(self) -> str:
+        """The tunnel's resource: what the local service's access token is for."""
+        return self.issuer + '/cloud/tunnel'
+
+    def instance_resource(self, instance: str) -> str:
+        return self.issuer + '/mcp' + ('' if instance == DEFAULT_INSTANCE else '/' + instance)
+
+    def instance_of(self, resource: str) -> str | None:
+        """On a broker, the instance a resource URL names: `default` for `/mcp`, `<label>` for `/mcp/<label>`."""
+        if not self.broker:
+            return None
+        base = canonical(self.issuer + '/mcp')
+        given = canonical(resource)
+        if given == base:
+            return DEFAULT_INSTANCE
+        rest = given[len(base) + 1:] if given.startswith(base + '/') else ''
+        return rest if LABEL.match(rest) and rest != DEFAULT_INSTANCE else None
 
     @property
     def rp_id(self) -> str:
@@ -145,13 +184,21 @@ class Policy:
 
     @property
     def grantable(self) -> dict[str, tuple[str, ...]]:
-        """Scopes by resource URI."""
+        """Scopes by resource URI; on a broker the default instance's, which every instance shares."""
         scoped = scopes_for(self.capability)
+        if self.broker:
+            return {self.resources['mcp']: scoped['mcp']}
         return {self.resources[name]: scoped[name] for name in self.resources}
+
+    def granted(self, resource: str) -> tuple[str, ...]:
+        if self.instance_of(resource) is not None:
+            return scopes_for(self.capability)['mcp']
+        return self.grantable.get(resource, ())
 
     @property
     def all_scopes(self) -> list[str]:
-        return [scope for scopes in self.grantable.values() for scope in scopes]
+        listed = [scope for scopes in self.grantable.values() for scope in scopes]
+        return [*listed, TUNNEL_SCOPE] if self.broker else listed
 
     @property
     def secure(self) -> bool:
@@ -164,6 +211,10 @@ class Policy:
     def resource_for(self, asked: str | None, scopes: list[str] | None) -> str:
         """The one resource a token is for: the one asked, which must be this Node's, or the one the scopes name."""
         known = {canonical(uri): uri for uri in self.grantable}
+        if asked and self.instance_of(asked) is not None:
+            return self.instance_resource(self.instance_of(asked) or DEFAULT_INSTANCE)
+        if self.broker and not asked:  # a host that names no resource reaches the instance named default
+            return self.instance_resource(DEFAULT_INSTANCE)
         if asked:
             found = known.get(canonical(asked))
             if found is None:
@@ -179,7 +230,7 @@ class Policy:
         """What a token for `resource` carries: of the scopes asked, those this Node's capability grants, as RFC 6749
         section 3.3 lets a server narrow a request and say so in the token response; with none asked, what the
         resource needs to work, the dispatch scope left for a step-up challenge. Nothing grantable is refused."""
-        granted = list(self.grantable.get(resource, ()))
+        granted = list(self.granted(resource))
         kept = [scope for scope in granted if scope != 'mcp:dispatch'] if asked is None else \
             [scope for scope in granted if scope in asked]
         if not kept:
@@ -214,15 +265,52 @@ def _cimd_url(client_id: str) -> bool:
         and not parts.username and not parts.password
 
 
-def _public_address(host: str, port: int) -> bool:
-    """Whether every address the host resolves to is on the public internet: a client id may not make this server
-    fetch from its own network, the draft's SSRF guard."""
+def _public_addresses(host: str, port: int) -> list[str]:
+    """The addresses the host resolves to, when every one is on the public internet; none otherwise. A client id may
+    not make this server fetch from its own network, the draft's SSRF guard."""
     try:
         infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except OSError:
-        return False
-    addresses = {info[4][0] for info in infos}
-    return bool(addresses) and all(ipaddress.ip_address(str(one).split('%')[0]).is_global for one in addresses)
+        return []
+    addresses = list(dict.fromkeys(str(info[4][0]) for info in infos))
+    if not addresses or not all(ipaddress.ip_address(one.split('%')[0]).is_global for one in addresses):
+        return []
+    return addresses
+
+
+class PublicOnly(httpcore.AsyncNetworkBackend):
+    """Connects only to an address it has just checked is public, and to exactly that address: the name is resolved
+    once, here, and the connection made to the address resolved, so a name that answers with a public address for
+    the check and a private one for the connection (DNS rebinding) never reaches this server's own network. TLS still
+    names and verifies the host, as httpcore passes the host name for SNI and the certificate check."""
+
+    def __init__(self, inner: httpcore.AsyncNetworkBackend | None = None) -> None:
+        self.inner: httpcore.AsyncNetworkBackend = inner or cast(httpcore.AsyncNetworkBackend, httpcore.AnyIOBackend())
+
+    async def connect_tcp(self, host: str, port: int, timeout: float | None = None, local_address: str | None = None,
+                          socket_options: Any = None) -> httpcore.AsyncNetworkStream:
+        import anyio
+        addresses = await anyio.to_thread.run_sync(_public_addresses, host, port)
+        if not addresses:
+            raise httpcore.ConnectError(f'{host} is not on a public address.')
+        return await self.inner.connect_tcp(addresses[0], port, timeout=timeout, local_address=local_address,
+                                            socket_options=socket_options)
+
+    async def connect_unix_socket(self, path: str, timeout: float | None = None,
+                                  socket_options: Any = None) -> httpcore.AsyncNetworkStream:
+        raise httpcore.ConnectError('A client metadata document is fetched over the network only.')
+
+    async def sleep(self, seconds: float) -> None:
+        await self.inner.sleep(seconds)
+
+
+class PublicTransport(httpx.AsyncHTTPTransport):
+    """httpx's own transport over PublicOnly, with no proxy, so the address checked is the address reached."""
+
+    def __init__(self, backend: httpcore.AsyncNetworkBackend | None = None) -> None:
+        super().__init__(trust_env=False)
+        self._pool = httpcore.AsyncConnectionPool(ssl_context=httpx.create_ssl_context(trust_env=False),
+                                                  network_backend=PublicOnly(backend))
 
 
 def _cache_seconds(header: str | None) -> float:
@@ -258,20 +346,25 @@ def check_document(client_id: str, document: Any) -> dict[str, Any]:
 
 async def fetch_document(client_id: str, transport: httpx.AsyncBaseTransport | None = None) -> tuple[dict[str, Any],
                                                                                                      float]:
-    parts = urllib.parse.urlsplit(client_id)
-    if transport is None and not _public_address(parts.hostname or '', parts.port or 443):
-        raise ValueError('The client metadata document is not on a public address.')
-    async with httpx.AsyncClient(timeout=CIMD_TIMEOUT, follow_redirects=False, transport=transport,
-                                 headers={'Accept': 'application/json'}) as client, \
-            client.stream('GET', client_id) as answer:
-        if answer.status_code != 200:
-            raise ValueError(f'The client metadata document answered {answer.status_code}.')
-        body = b''
-        async for chunk in answer.aiter_bytes():
-            body += chunk
-            if len(body) > CIMD_MAX_BYTES:
-                raise ValueError('The client metadata document is larger than 5 KB.')
-        cache = _cache_seconds(answer.headers.get('cache-control'))
+    try:
+        async with httpx.AsyncClient(timeout=CIMD_TIMEOUT, follow_redirects=False,
+                                     transport=transport or PublicTransport(),
+                                     headers={'Accept': 'application/json'}) as client, \
+                client.stream('GET', client_id) as answer:
+            return await _document(client_id, answer)
+    except httpx.ConnectError as error:
+        raise ValueError(f'The client metadata document could not be fetched: {error}.') from error
+
+
+async def _document(client_id: str, answer: httpx.Response) -> tuple[dict[str, Any], float]:
+    if answer.status_code != 200:
+        raise ValueError(f'The client metadata document answered {answer.status_code}.')
+    body = b''
+    async for chunk in answer.aiter_bytes():
+        body += chunk
+        if len(body) > CIMD_MAX_BYTES:
+            raise ValueError('The client metadata document is larger than 5 KB.')
+    cache = _cache_seconds(answer.headers.get('cache-control'))
     try:
         document = json.loads(body)
     except ValueError as error:
@@ -329,6 +422,10 @@ class Provider:
             'redirect_uri': str(params.redirect_uri), 'explicit': params.redirect_uri_provided_explicitly,
             'resource': resource, 'client_name': client.client_name or client.client_id})
         return f'{self.policy.issuer}/node/consent?request={held}'
+
+    def issue_code(self, record: dict[str, Any]) -> str:
+        """The authorization code for an approved request, kept as its hash until used or expired."""
+        return self.store.add_code(record, CODE_SECONDS)
 
     async def load_authorization_code(self, client: OAuthClientInformationFull,
                                       authorization_code: str) -> AuthorizationCode | None:
@@ -408,7 +505,205 @@ class Provider:
                 'iss': self.policy.issuer, 'token_type': 'Bearer'}
 
 
+class SignedProvider(Provider):
+    """The broker's provider: every authorization code and token a signed JWT, so nothing about a grant is written.
+    A token is checked by its signature, its audience, its account's generation and, in memory, whether its grant was
+    revoked; refresh tokens rotate, and one presented after it was rotated revokes the grant (tokens.Families)."""
+
+    def __init__(self, store: AuthStore, policy: Policy, keys: tokens.Keys, families: tokens.Families | None = None,
+                 transport: httpx.AsyncBaseTransport | None = None) -> None:
+        super().__init__(store, policy, transport)
+        self.signer = tokens.Signer(keys, policy.issuer)
+        self.generations = tokens.Generations(store)
+        self.families = families or tokens.Families()
+        self.spent = tokens.Replay()  # authorization codes used, each until it expires
+
+    async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
+        if client_id == CLI_CLIENT:
+            return OAuthClientInformationFull(client_id=CLI_CLIENT, client_name='Metaform', redirect_uris=None,
+                                              token_endpoint_auth_method='none',
+                                              grant_types=[DEVICE_GRANT, 'refresh_token'], scope=TUNNEL_SCOPE)
+        if self.policy.dcr and not _cimd_url(client_id):
+            claims = self.signer.read(client_id, tokens.CLIENT_ID, self.policy.issuer)
+            registered: Any = claims.get('md') if claims else None
+            if isinstance(registered, dict):
+                data = dict(cast(dict[str, Any], registered))
+                if data.get('token_endpoint_auth_method', 'none') != 'none':
+                    data['client_secret'] = self._client_secret(client_id)
+                return self._client(client_id, data)
+            return None
+        return await super().get_client(client_id)
+
+    def _client_secret(self, client_id: str) -> str | None:
+        try:
+            kid = str(jwt.get_unverified_header(client_id).get('kid') or '')
+        except jwt.PyJWTError:
+            return None
+        return self.signer.keys.derive(kid, 'client-secret:' + client_id)
+
+    async def register_client(self, client_info: OAuthClientInformationFull) -> None:
+        """Dynamic client registration with nothing kept (node_dcr, for an AI host that cannot use a metadata
+        document): the client id the SDK made is replaced by a signed JWT of the registered metadata, so the broker
+        reads the client back from its id after any restart, and a secret, for a client that asked for one, is
+        derived from the key that signed the id, never stored. Such a client lives as long as that key: a rotation
+        ends it when the retired key leaves the key set, and a revocation at once."""
+        if not self.policy.dcr:
+            raise RegistrationError('invalid_client_metadata', 'Dynamic client registration is off on this Node.')
+        for uri in client_info.redirect_uris or []:
+            if not (uri.scheme == 'https' or (uri.scheme == 'http' and _loopback(uri.host))):
+                raise RegistrationError('invalid_redirect_uri', f'{uri} is neither https nor loopback http.')
+        data = client_info.model_dump(mode='json', exclude_none=True)
+        for kept_out in ('client_id', 'client_secret', 'client_id_issued_at', 'client_secret_expires_at'):
+            data.pop(kept_out, None)
+        client_info.client_id = self.signer.mint(tokens.CLIENT_ID, {'aud': self.policy.issuer, 'md': data},
+                                                 DCR_SECONDS)
+        if client_info.client_secret is not None:
+            client_info.client_secret = self._client_secret(client_info.client_id)
+
+    def issue_code(self, record: dict[str, Any]) -> str:
+        """The code as a signed JWT: nothing secret is in it (PKCE protects it), and it names the generation it was
+        approved under, so signing out everywhere ends a code not yet exchanged too."""
+        found = self.generations.current(str(record.get('account') or ''))
+        return self.signer.mint(tokens.CODE, {'aud': self.policy.issuer, 'gen': found[0] if found else -1,
+                                              'auth_time': int(time.time()), **record}, CODE_SECONDS)
+
+    def allowed(self, account_id: str) -> Account | None:
+        account = self.store.account(id=account_id)
+        return account if account is not None and not account.disabled else None
+
+    def issue(self, client_id: str, client_name: str, account: Account, scopes: list[str], resource: str,
+              family: str, seq: int, auth_time: int, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+        """An access token for `resource` and the grant's next refresh token, as the token endpoint answers them."""
+        now = int(time.time())
+        found = self.generations.current(account.id)
+        claims: dict[str, Any] = {'sub': account.id, 'username': account.name, 'client_id': client_id,
+                                  'cname': client_name, 'scope': ' '.join(scopes), 'gen': found[0] if found else 0,
+                                  'fam': family, **(extra or {})}
+        access = self.signer.mint(tokens.ACCESS, {**claims, 'aud': resource}, tokens.ACCESS_SECONDS, now=now)
+        until = min(now + tokens.REFRESH_SECONDS, auth_time + tokens.REFRESH_CAP_SECONDS)
+        refresh = self.signer.mint(tokens.REFRESH, {**claims, 'aud': self.policy.issuer, 'resource': resource,
+                                                    'seq': seq, 'auth_time': auth_time}, until - now, now=now)
+        if seq == 0:
+            self.families.start(family, until)
+        return {'access_token': access, 'token_type': 'DPoP' if extra and 'cnf' in extra else 'Bearer',
+                'expires_in': tokens.ACCESS_SECONDS, 'scope': ' '.join(scopes), 'refresh_token': refresh}
+
+    def live(self, claims: dict[str, Any] | None) -> dict[str, Any] | None:
+        """The claims of a token still in force: its account's generation current, its grant not revoked."""
+        if claims is None or not self.generations.valid(str(claims.get('sub') or ''), claims.get('gen')):
+            return None
+        return None if self.families.revoked(str(claims.get('fam') or '')) else claims
+
+    def access(self, token: str, audience: str | None = None) -> dict[str, Any] | None:
+        return self.live(self.signer.read(token, tokens.ACCESS, audience))
+
+    def refreshed(self, token: str) -> dict[str, Any] | None:
+        """A refresh token's claims when it is live and is the newest of its grant; one already rotated revokes it."""
+        claims = self.live(self.signer.read(token, tokens.REFRESH, self.policy.issuer))
+        if claims is None:
+            return None
+        family, seq = str(claims.get('fam') or ''), claims.get('seq')
+        mark = self.families.mark(family)
+        if not isinstance(seq, int) or (mark is not None and seq < mark):
+            self.families.revoke(family, float(claims.get('exp') or time.time()))
+            return None
+        return claims
+
+    async def load_authorization_code(self, client: OAuthClientInformationFull,
+                                      authorization_code: str) -> AuthorizationCode | None:
+        claims = self.signer.read(authorization_code, tokens.CODE, self.policy.issuer)
+        if claims is None:
+            return None
+        if self.spent.seen.get(str(claims['jti']), 0) > time.time():  # a second use: what the first gave is revoked
+            self.families.revoke(str(claims['jti']), time.time() + tokens.REFRESH_CAP_SECONDS)
+            return None
+        return AuthorizationCode(code=authorization_code, scopes=list(claims['scopes']), expires_at=float(claims['exp']),
+                                 client_id=str(claims['client_id']), code_challenge=str(claims['code_challenge']),
+                                 redirect_uri=AnyUrl(str(claims['redirect_uri'])),
+                                 redirect_uri_provided_explicitly=bool(claims['explicit']),
+                                 resource=str(claims['resource']), subject=str(claims['account']))
+
+    async def exchange_authorization_code(self, client: OAuthClientInformationFull,
+                                          authorization_code: AuthorizationCode) -> OAuthToken:
+        claims = self.signer.read(authorization_code.code, tokens.CODE, self.policy.issuer) or {}
+        family = str(claims.get('jti') or '')
+        if not family or not self.spent.first(family, float(claims.get('exp') or 0) + 60):
+            raise TokenError('invalid_grant', 'The authorization code was already used.')
+        account = self.allowed(authorization_code.subject or '')
+        if account is None or not self.generations.valid(account.id, claims.get('gen')):
+            raise TokenError('invalid_grant', 'The account that approved this code is no longer allowed.')
+        issued = self.issue(client.client_id, str(claims.get('cname') or client.client_id), account,
+                            authorization_code.scopes, authorization_code.resource or '', family, 0,
+                            int(claims.get('auth_time') or claims['iat']))
+        return OAuthToken.model_validate(issued)
+
+    async def load_refresh_token(self, client: OAuthClientInformationFull, refresh_token: str) -> RefreshToken | None:
+        claims = self.refreshed(refresh_token)
+        if claims is None or claims.get('client_id') != client.client_id:
+            return None
+        return RefreshToken(token=refresh_token, client_id=str(claims['client_id']),
+                            scopes=str(claims.get('scope') or '').split(), expires_at=int(claims['exp']),
+                            resource=str(claims.get('resource') or ''), subject=str(claims['sub']))
+
+    def rotate_refresh(self, claims: dict[str, Any], scopes: list[str]) -> dict[str, Any]:
+        """Spend a refresh token's place in its grant and issue the next pair, scopes narrowed to what is still
+        grantable; TokenError when it was already spent."""
+        account = self.allowed(str(claims['sub']))
+        if account is None:
+            raise TokenError('invalid_grant', 'The account is no longer allowed.')
+        if not self.families.advance(str(claims['fam']), int(claims['seq']), float(claims['exp'])):
+            raise TokenError('invalid_grant', 'The refresh token was already used.')
+        resource = str(claims.get('resource') or '')
+        allowed: set[str] = {*self.policy.granted(resource), *([TUNNEL_SCOPE] if resource == self.policy.tunnel else [])}
+        kept = [scope for scope in scopes if scope in allowed]
+        extra = {key: claims[key] for key in ('cnf', 'inst') if key in claims}
+        return self.issue(str(claims['client_id']), str(claims.get('cname') or ''), account, kept, resource,
+                          str(claims['fam']), int(claims['seq']) + 1, int(claims['auth_time']), extra)
+
+    async def exchange_refresh_token(self, client: OAuthClientInformationFull, refresh_token: RefreshToken,
+                                     scopes: list[str]) -> OAuthToken:
+        claims = self.signer.read(refresh_token.token, tokens.REFRESH, self.policy.issuer)
+        if claims is None:
+            raise TokenError('invalid_grant', 'The refresh token is not valid.')
+        return OAuthToken.model_validate(self.rotate_refresh(claims, scopes))
+
+    async def load_access_token(self, token: str) -> AccessToken | None:
+        claims = self.access(token)
+        if claims is None:
+            return None
+        return AccessToken(token=token, client_id=str(claims.get('client_id') or ''),
+                           scopes=str(claims.get('scope') or '').split(), expires_at=int(claims['exp']),
+                           resource=str(claims.get('aud') or ''), subject=str(claims['sub']),
+                           claims={'iss': claims['iss'], 'username': claims.get('username')})
+
+    async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
+        claims = self.signer.read(token.token, tokens.ACCESS) or self.signer.read(token.token, tokens.REFRESH)
+        if claims is not None:
+            self.families.revoke(str(claims.get('fam') or ''), time.time() + tokens.REFRESH_CAP_SECONDS)
+
+    def introspect(self, token: str) -> dict[str, Any]:
+        claims = self.access(token)
+        if claims is None:
+            return {'active': False}
+        return {'active': True, 'client_id': claims.get('client_id'), 'scope': claims.get('scope'),
+                'exp': claims['exp'], 'aud': claims.get('aud'), 'sub': claims['sub'],
+                'username': claims.get('username'), 'iss': claims['iss'], 'token_type': 'Bearer'}
+
+
 # ---------------------------------------------------------------------------------------------------- the server
+
+def metadata_document(policy: Policy) -> dict[str, Any]:
+    """RFC 8414's document; a broker adds its key set, the device authorization endpoint (RFC 8628) and DPoP (RFC
+    9449), which the SDK's model does not name."""
+    made = metadata(policy).model_dump(mode='json', exclude_none=True)
+    if policy.broker:
+        base = policy.issuer
+        made['jwks_uri'] = base + '/.well-known/jwks.json'
+        made['device_authorization_endpoint'] = base + '/oauth/device_authorization'
+        made['grant_types_supported'] = ['authorization_code', 'refresh_token', DEVICE_GRANT]
+        made['dpop_signing_alg_values_supported'] = list(tokens.DPOP_ALGORITHMS)
+    return made
+
 
 def metadata(policy: Policy) -> OAuthMetadata:
     """RFC 8414, validated from strings so the issuer is exactly the identifier clients compare, no slash added."""
@@ -471,10 +766,29 @@ def _safe_next(target: str | None) -> str:
 class Node:
     """The authorization server's routes, as one Starlette app."""
 
-    def __init__(self, store: AuthStore, policy: Policy, transport: httpx.AsyncBaseTransport | None = None) -> None:
+    def __init__(self, store: AuthStore, policy: Policy, transport: httpx.AsyncBaseTransport | None = None, *,
+                 keys: tokens.Keys | None = None, families: tokens.Families | None = None) -> None:
         self.store = store
         self.policy = policy
-        self.provider = Provider(store, policy, transport)
+        self.keys = keys
+        self.provider: Provider = Provider(store, policy, transport) if keys is None else \
+            SignedProvider(store, policy, keys, families, transport)
+        # On a broker, whether an account's instance is connected now, and what each account has connected; the broker
+        # sets these, so the consent and account pages can say so.
+        self.connected: Callable[[str, str], bool] = lambda account_id, instance: False
+        self.instances: Callable[[str], list[str]] = lambda account_id: []
+        self.extra_routes: list[Any] = []
+        self.device_grants = DeviceGrants()  # the local service's pending sign-ins, on a broker (device.py)
+        self.dpop_seen = tokens.Replay()
+        # On a broker, whether a request to the token or revocation endpoint may go ahead, by what it names: a grant
+        # the server signed (`key`), or nothing valid (None, charged to the address it came from). The broker sets it.
+        self.token_gate: Callable[[Request, str | None], bool] = lambda request, key: True
+
+    @property
+    def signed(self) -> SignedProvider:
+        if not isinstance(self.provider, SignedProvider):
+            raise TypeError('This Node issues stored tokens; signed ones are the broker\'s.')
+        return self.provider
 
     # ------------------------------------------------------------------------------------------------ sessions
 
@@ -483,8 +797,9 @@ class Node:
         return self.store.session(session) if session else None
 
     def _with_session(self, response: Response, account: Account) -> Response:
-        session, _ = self.store.open_session(account, SESSION_SECONDS)
-        response.set_cookie(self.policy.cookie, session, max_age=SESSION_SECONDS, path='/', secure=self.policy.secure,
+        seconds = self.policy.session_seconds
+        session, _ = self.store.open_session(account, seconds)
+        response.set_cookie(self.policy.cookie, session, max_age=seconds, path='/', secure=self.policy.secure,
                             httponly=True, samesite='lax')
         return response
 
@@ -630,10 +945,15 @@ class Node:
         if _loopback(redirect.hostname):
             warning = ('<p class="warn">This client receives the result on this computer (localhost). Approve only '
                        'if you started this connection from an AI tool on the computer you are using now.</p>')
-        scopes = ''.join(f'<li><code>{_escape(scope)}</code></li>' for scope in params['scopes'])
+        scopes = ''.join(f'<li><code>{_escape(scope)}</code></li>' for scope in self._scopes(account, params['scopes']))
+        resource = _escape(params['resource'])
+        instance = self.policy.instance_of(params['resource'])
+        if instance is not None:  # a broker: the machine it reaches, and whether it is there now
+            now = 'connected now' if self.connected(account.id, instance) else 'not connected now'
+            resource += f'<br><small>Your Metaform named <strong>{_escape(instance)}</strong>, {now}</small>'
         return HTMLResponse(_page(
             'consent.html', client=_escape(str(params['client_name'])), client_id=_escape(client_id),
-            redirect_host=_escape(redirect.hostname or ''), resource=_escape(params['resource']), scopes=scopes,
+            redirect_host=_escape(redirect.hostname or ''), resource=resource, scopes=scopes,
             warning=warning, account=_escape(account.name), request=_escape(held_id), csrf=_escape(csrf)),
             headers={'Cache-Control': 'no-store', 'X-Frame-Options': 'DENY',
                      'Content-Security-Policy': "frame-ancestors 'none'"})
@@ -657,13 +977,20 @@ class Node:
             target = construct_redirect_uri(params['redirect_uri'], error='access_denied', state=params['state'],
                                             iss=self.policy.issuer)
             return RedirectResponse(target, status_code=303)
-        code = self.store.add_code({'client_id': client_id, 'account': signed[0].id, 'scopes': params['scopes'],
-                                    'resource': params['resource'], 'redirect_uri': params['redirect_uri'],
-                                    'explicit': params['explicit'], 'code_challenge': params['code_challenge']},
-                                   CODE_SECONDS)
+        code = self.provider.issue_code({
+            'client_id': client_id, 'account': signed[0].id, 'scopes': self._scopes(signed[0], params['scopes']),
+            'resource': params['resource'], 'redirect_uri': params['redirect_uri'], 'explicit': params['explicit'],
+            'code_challenge': params['code_challenge'], 'cname': str(params.get('client_name') or client_id)})
         target = construct_redirect_uri(params['redirect_uri'], code=code, state=params['state'],
                                         iss=self.policy.issuer)
         return RedirectResponse(target, status_code=303)
+
+    def _scopes(self, account: Account, scopes: list[str]) -> list[str]:
+        """On a broker, dispatch only for the owner unless the operator lets members have it: the account's role is
+        the server's cap, as the person's own machine keeps its own (cloud_capability)."""
+        if self.policy.broker and account.role != 'owner' and not self.policy.member_dispatch:
+            return [scope for scope in scopes if scope != 'mcp:dispatch']
+        return scopes
 
     async def introspect(self, request: Request) -> Response:
         """RFC 7662, for the resource servers on loopback, each request authenticated with their credential."""
@@ -692,9 +1019,17 @@ class Node:
                               self.policy.issuer)
         token = cors(request_response(TokenHandler(self.provider, authenticator).handle))  # pyright: ignore
         revoke = cors(request_response(RevocationHandler(self.provider, authenticator).handle))  # pyright: ignore
+        document = metadata_document(self.policy)
+
+        async def described(_: Request) -> Response:
+            return JSONResponse(document, headers={'Cache-Control': 'public, max-age=3600'})
+        if self.keys is not None:  # signed tokens: the local service's grants first, the hosts' to the SDK
+            from .device import revocation_endpoint, token_endpoint
+            token = cors(request_response(token_endpoint(self, TokenHandler(self.provider, authenticator))))  # pyright: ignore
+            revoke = cors(request_response(revocation_endpoint(self)))
         routes = [
-            Route('/.well-known/oauth-authorization-server', cors(request_response(
-                MetadataHandler(metadata(self.policy)).handle)), methods=['GET', 'OPTIONS']),
+            Route('/.well-known/oauth-authorization-server', cors(request_response(described)),
+                  methods=['GET', 'OPTIONS']),
             Route('/oauth/authorize', authorize, methods=['GET', 'POST']),
             Route('/oauth/token', token, methods=['POST', 'OPTIONS']),
             Route('/oauth/revoke', revoke, methods=['POST', 'OPTIONS']),
@@ -717,7 +1052,15 @@ class Node:
                                                 default_scopes=self.policy.all_scopes)
             register = cors(request_response(RegistrationHandler(self.provider, options).handle))  # pyright: ignore
             routes.append(Route('/oauth/register', register, methods=['POST', 'OPTIONS']))
-        return Starlette(routes=routes)
+        if self.keys is not None:
+            from .device import routes as device_routes
+            keys = self.keys
+
+            async def jwks(_: Request) -> Response:
+                return JSONResponse(keys.jwks(), headers={'Cache-Control': 'public, max-age=300'})
+            routes += [Route('/.well-known/jwks.json', cors(request_response(jwks)), methods=['GET', 'OPTIONS']),
+                       *device_routes(self)]
+        return Starlette(routes=[*routes, *self.extra_routes])
 
 
 def bootstrap(store: AuthStore, folder: Path) -> str | None:
@@ -733,13 +1076,44 @@ def bootstrap(store: AuthStore, folder: Path) -> str | None:
     return account.name
 
 
-def serve(policy: Policy, port: int, bootstrap_folder: Path) -> None:
+def keys_folder() -> Path:
+    """The broker's signing keys: its identity, owner-readable only, on the home volume."""
+    return home.home() / 'node' / 'keys'
+
+
+def make_broker(policy: Policy, store: AuthStore, *, replay: str = 'memory', limits: Any = None,
+                transport: httpx.AsyncBaseTransport | None = None) -> Any:
+    """The broker role's one app: the authorization server, the device sign-in and account pages, the key set, the
+    hosts' `/mcp` and the machines' `/cloud/tunnel`, in one process, since the generations, the device codes and the
+    routing table are shared in memory with no channel between processes. Returns the Broker, whose `app()` serves
+    it and whose `server()` runs it."""
+    from .broker import Broker
+    families = tokens.Families(store if replay == 'durable' else None)
+    node = Node(store, policy, transport, keys=tokens.Keys(keys_folder()), families=families)
+    return Broker(node, limits)
+
+
+def serve(policy: Policy, port: int, bootstrap_folder: Path, *, replay: str = 'memory') -> None:
     import uvicorn
-    store = AuthStore(store_path())
-    introspection_secret(create=True)
+
+    from .authstore import open_store
+    store = open_store(store_path(), policy.broker, (replay == 'durable') if policy.broker else None)
     owner = bootstrap(store, bootstrap_folder)
     if owner:
         print(f'Owner {owner} can enrol a passkey with the link metaform node init printed.', flush=True)
+    # No access log: what passes is nobody's to keep here, and the broker's paths name instances.
+    def config(app: Any) -> Any:
+        return uvicorn.Config(app, host='127.0.0.1', port=port, log_level='warning', proxy_headers=False,
+                              access_log=False, ws_max_size=2 * 1024 * 1024, ws_ping_interval=20, ws_ping_timeout=20)
+    if policy.broker:
+        carrier = make_broker(policy, store, replay=replay)
+        print(f'Metaform broker for {policy.issuer} on 127.0.0.1:{port}', flush=True)
+        carrier.server(config(carrier.app())).run()
+        return
+    introspection_secret(create=True)
     print(f'Metaform Node authorization server for {policy.issuer} on 127.0.0.1:{port}', flush=True)
-    uvicorn.Server(uvicorn.Config(Node(store, policy).app(), host='127.0.0.1', port=port, log_level='warning',
-                                  proxy_headers=False)).run()
+    uvicorn.Server(config(Node(store, policy).app())).run()
+
+
+# The page helpers, for device.py's pages.
+escape, page, safe_next = _escape, _page, _safe_next

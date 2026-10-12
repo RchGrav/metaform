@@ -36,6 +36,10 @@ A module that reports the state of work, a run, a ticket or a session, uses `met
 
 `metaform.module.code_print()` returns a fingerprint of the package's Python source paths, modification times and sizes on disk, using metadata only and creating no state. Long-running modules compare it with their startup fingerprint when a store requires newer code, so unchanged code does not cause replacement loops. A changed fingerprint does not prove that a replacement can open the store. It works with installed and editable packages. Hello's `basedemo` returns it as `code_print`.
 
+### Provides
+
+What the module offers other modules, `MODULE.provides`: each a `Provides(kind, value)` of `metaform.module`, found by kind with `metaform.module.provided(folder, kind)`, every enabled module's in module id order, so neither module imports the other and turning one off withdraws what it offered. The kinds in use: `voice.engine`, a `VoiceEngine(name, summary, sends=, transcribe=, speak=, ready=, formats=)` the voice module offers as a choice beside its own engines, where `sends` says plainly where the person's audio or text goes, `transcribe(ctx, path, language)` returns `{'text', 'segments'}`, `speak(ctx, text, character, format)` returns an iterator of audio chunks and `ready(ctx)` is None or why not, the elevenlabs module's showing it; and `voice`, the voice module's own `speak`, `transcribe` and `transcribe_stream` for a server-side caller such as a phone bridge. The template provides nothing.
+
 ## Prompts
 
 The prompts in `resources/prompts.xml`, each an element named for the prompt, and where each is served, MCP-031. `instructions` is listed in the instructions agents read under "modules available."; a copy writes its own module name in place of `template`. `prompt_files.module_commands(id)` reads a loaded module's declared slash commands through the public base, returning an empty list when the module is not found.

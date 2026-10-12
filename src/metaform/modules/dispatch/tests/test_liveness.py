@@ -34,6 +34,7 @@ def dispatch(run, home, project_folder, tmp_path):
 def test_mid_turn_messages_wait_in_order_and_cannot_replace_a_prompt(dispatch, run, tmp_path, done):
     gates = tmp_path / 'turns'
     gates.mkdir()
+    run('set', '--dispatch-record-on-finish', 'off', cwd=dispatch.folder)  # every turn here is gated by the test
     dispatch.start('replace', FAKE_ACP_TURN_GATES=str(gates))
     eventually(lambda: dispatch.received('session/prompt'))
     for text in ('First message', 'Second message'):

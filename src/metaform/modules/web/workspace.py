@@ -37,7 +37,8 @@ if TYPE_CHECKING:
 PREFIX = '/api/workspace'
 DEFAULT = 'Default'
 AREAS = ('left', 'main', 'right', 'bottom')  # where panes dock; `float` panes are in `floating`
-AREA_SIZES: dict[str, int | None] = {'left': 360, 'main': None, 'right': 420, 'bottom': 280}  # CSS px; main fills
+# CSS px; main fills, and the right area is the side column's width as the page draws it, unless the person sizes it
+AREA_SIZES: dict[str, int | None] = {'left': 360, 'main': None, 'right': None, 'bottom': 280}
 NAME = re.compile(r'^[^\x00-\x1f]{1,40}$')
 FILE_TYPES = {'.svg': 'image/svg+xml', '.md': 'text/markdown; charset=utf-8', '.txt': 'text/plain; charset=utf-8',
               '.html': 'text/html; charset=utf-8'}
@@ -318,8 +319,10 @@ def item_record(ident: str, owner: str, item: ToolbarItem, folder: Path) -> dict
     action: dict[str, Any] = {'kind': item.action}
     if item.verb is not None:
         verb = next(verb for verb in _module(owner, folder).verbs if verb.name == item.verb)
-        action.update(verb=item.verb, arguments=dict(item.arguments), effect=verb.effect, caution=verb.caution,
-                      form=form_of(item, verb))
+        action.update(verb=item.verb, arguments=dict(item.arguments), effect=verb.effect, caution=verb.caution)
+        form = form_of(item, verb)
+        if form:  # a tool that runs at once has none
+            action['form'] = form
     elif item.pane is not None:
         action['pane'] = _pane_id(owner, item.pane)
     elif item.page is not None:
@@ -400,12 +403,20 @@ def state(folder: Path) -> dict[str, Any]:
 
 def view() -> dict[str, Any]:
     """How the page draws, from the web module's global settings: node shapes, how long the 3D map's flow lasts once
-    nothing moves, whether it keeps flowing slowly, and the developer level, off unless asked for."""
+    nothing moves, whether it keeps flowing slowly, whether agents' real activity is drawn in the flow, and the
+    developer level, off unless asked for."""
     from . import debug_level
     where = home.home()
-    return {'shapes': bool(settings.value('web_node_shapes', where)),
+    return {'panes': bool(settings.value('web_panes', where)), 'shapes': bool(settings.value('web_node_shapes', where)),
             'flow_seconds': int(settings.value('web_flow_seconds', where) or 0),
-            'idle_flow': bool(settings.value('web_idle_flow', where)), 'debug': debug_level()}
+            'pulse_ms': int(settings.value('web_pulse_ms', where) or 1500),
+            'flow_mode': settings.value('web_flow_mode', where),
+            'idle_flow': bool(settings.value('web_idle_flow', where)),
+            'live_flow': bool(settings.value('web_live_flow', where)),
+            'mascot': settings.value('web_mascot', where),
+            'mascot_mischief': settings.value('web_mascot_mischief', where),
+            'agent_glyphs': list(settings.value('web_agent_glyphs', where) or []),
+            'map_direction': str(settings.value('web_map_direction', where) or 'auto'), 'debug': debug_level()}
 
 
 # The endpoints --------------------------------------------------------------------------------------------------

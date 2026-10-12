@@ -92,3 +92,46 @@ def test_the_agent_asked_to_help_works_in_the_merges_worktree_with_the_prep_prom
                                  if 'Do not merge into' in message['params']['prompt'][0]['text']] or None)
     assert waiting['branch'] in text and 'Do not merge into dev' in text
     assert dispatch.ticket().done, 'the done ticket is not taken again'
+
+
+@pytest.mark.req('BASE-052')
+def test_a_worktree_begins_from_uncommitted_work_and_merges_only_the_agents_work_squashed(dispatch, repo, run):
+    """P009, P018: the worktree branches from a snapshot of the folder with its uncommitted change; the agent's work
+    is committed with the ticket's trailer; a folder with uncommitted changes holds the merge; once committed, the
+    agent's work alone lands as one commit fast-forwarded onto dev, and its worktree, branch and snapshot are gone."""
+    (repo / 'README.md').write_text('base\nuncommitted line\n', encoding='utf-8')
+    (repo / 'draft.txt').write_text('an untracked draft\n', encoding='utf-8')
+    [waiting] = worked(dispatch, repo)
+    tree = repo / waiting['worktree']
+    assert (tree / 'draft.txt').read_text(encoding='utf-8') == 'an untracked draft\n', 'uncommitted work came along'
+    assert f'Metaform-Ticket: {dispatch.id}' in git(tree, 'log', '-1', '--format=%B')
+    held = json.loads(run('dispatch', 'merge', dispatch.id, '--json', cwd=repo).stdout)
+    assert held['merged'] is False and 'uncommitted' in held['why']
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-q', '-m', 'the person commits their own work')
+    merged = json.loads(run('dispatch', 'merge', dispatch.id, '--json', cwd=repo).stdout)
+    assert merged['merged'] is True, merged
+    assert git(repo, 'log', '-1', '--format=%B').count('Metaform-Ticket') == 1
+    assert git(repo, 'show', '--stat', '--format=', 'HEAD').split('|')[0].strip() == 'feature.txt', \
+        'the merged commit holds the agent\'s work alone'
+    assert not tree.exists() and not git(repo, 'branch', '--list', waiting['branch'])
+    assert not git(repo, 'for-each-ref', 'refs/metaform/')
+
+
+def test_a_cancelled_tickets_work_is_kept_on_its_branch_until_abandoned(dispatch, repo, run):
+    """P192, P017: a ticket closed without completing is not offered; its work is committed on its branch and its
+    worktree removed; past dispatch_abandoned_branch_days the branch goes too, at recovery."""
+    from metaform.data import Store
+    from metaform.modules.dispatch.merge import abandoned, branch_of, worktree_for
+    store = Store('proj')
+    folder = worktree_for(repo, dispatch.id)
+    (folder / 'half.txt').write_text('half done\n', encoding='utf-8')
+    store.finish_work(dispatch.id, 'Cancelled: no longer needed', 'cancelled by the person', outcome='cancelled')
+    from metaform.module import context
+    from metaform.modules.dispatch.merge import finished
+    assert finished(context('dispatch', repo, project='proj'), store, store.ticket(dispatch.id).work, folder) is None
+    branch = branch_of(dispatch.id)
+    assert not folder.exists() and 'half.txt' in git(repo, 'show', '--stat', '--format=', branch)
+    assert abandoned(store, repo, 30) == [], 'kept while younger than the setting'
+    assert abandoned(store, repo, 0) == [branch]
+    assert not git(repo, 'branch', '--list', branch)

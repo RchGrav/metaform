@@ -171,6 +171,16 @@ def recover(ctx: Context) -> dict[str, Any]:
 
     policy = str(ctx.setting('dispatch_recovery'))
     result: dict[str, Any] = {'policy': policy, 'released': [], 'deferred': []}
+    if ctx.store is not None and ctx.setting('dispatch_worktrees'):  # worktrees gone and abandoned branches, P192, P017
+        store = ctx.store
+        from .merge import abandoned
+        try:
+            removed = abandoned(store, store.project().path, int(ctx.setting('dispatch_abandoned_branch_days')))
+        except (OSError, subprocess.SubprocessError) as error:
+            result['deferred'].append({'reason': f'abandoned branches were not cleaned up: {error}'})
+        else:
+            if removed:
+                result['branches_removed'] = removed
     if policy != 'automatic':
         return result
     store = ctx.require_store()

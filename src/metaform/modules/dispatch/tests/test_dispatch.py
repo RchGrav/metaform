@@ -23,7 +23,7 @@ MODULE = HERE.parent
 FAKE = HERE / 'fake_agent.py'
 ROOT = Path(__file__).parents[5]
 PUBLIC = {'metaform.module', 'metaform.settings', 'metaform.data', 'metaform.events',
-          'metaform.prompt_files', 'metaform.axiom', 'metaform.home'}
+          'metaform.prompt_files', 'metaform.axiom', 'metaform.home', 'metaform.jev'}  # Jev, the decision service
 NODE = 'code.engine'
 LINKED = 'code.store'
 UNRELATED = 'code.ledger'  # a node a ticket neither is nor links
@@ -222,9 +222,10 @@ def test_each_agent_has_its_start_command_as_a_setting(run):
     from metaform import loader, settings
     run('enable', 'dispatch')
     loader.get('dispatch')
-    assert settings.SCHEMA['dispatch_claude'].default == 'npx -y @agentclientprotocol/claude-agent-acp'
-    assert settings.SCHEMA['dispatch_codex'].default == 'npx -y @agentclientprotocol/codex-acp'
-    assert settings.SCHEMA['dispatch_gemini'].default == 'gemini --acp'
+    # each pinned at the version the ACP Registry lists for claude-acp, codex-acp and gemini, P013
+    assert settings.SCHEMA['dispatch_claude'].default == 'npx -y @agentclientprotocol/claude-agent-acp@0.89.1'
+    assert settings.SCHEMA['dispatch_codex'].default == 'npx -y @agentclientprotocol/codex-acp@2.2.2'
+    assert settings.SCHEMA['dispatch_gemini'].default == 'npx -y @google/gemini-cli@0.63.0 --acp'
 
 
 @pytest.mark.req('BASE-052')
@@ -271,7 +272,8 @@ def test_session_new_is_in_the_project_folder_with_metaform_mcp_and_the_person_e
     init = dispatch.received('initialize')[0]['params']
     assert init['protocolVersion'] == 1
     capabilities = init.get('clientCapabilities', {})  # the SDK leaves out a capability that is off
-    assert not any(capabilities.get('fs', {}).values()) and not capabilities.get('terminal')
+    # the runner's own files and terminals, P019, on by default and confined to the folder
+    assert all(capabilities['fs'].values()) and capabilities['terminal'] is True
     assert {entry['secret'] for entry in dispatch.entries() if 'secret' in entry} == {'the-person-own-value'}
     assert not any(entry['crlf'] for entry in dispatch.entries() if 'crlf' in entry)
     assert {tuple(entry['argv']) for entry in dispatch.entries() if 'argv' in entry} == {(str(FAKE),)}, \
@@ -435,6 +437,32 @@ def test_a_person_message_reaches_the_agent_as_session_prompt(dispatch, run, tmp
     prompts = eventually(lambda: dispatch.received('session/prompt')[1:])
     assert prompts[0]['params']['prompt'] == [{'type': 'text', 'text': 'also run the tests'}]
     assert prompts[0]['params']['sessionId'] == 'fake-session-1'
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.parametrize('declared', [True, False])
+def test_a_spoken_message_carries_its_recording_only_to_an_agent_that_declares_audio(dispatch, run, home, tmp_path,
+                                                                                    declared):
+    import base64
+    gates = tmp_path / 'turns'
+    gates.mkdir()
+    dispatch.start('replace', FAKE_ACP_TURN_GATES=str(gates), **({'FAKE_ACP_AUDIO': '1'} if declared else {}))
+    eventually(lambda: dispatch.received('session/prompt'))
+    clips = home / 'run' / 'voice' / 'clips'
+    clips.mkdir(parents=True)
+    clip = clips / ('ab' * 16 + '.wav')
+    clip.write_bytes(b'RIFF-fake-wav')
+    sent = json.loads(run('dispatch', 'message', dispatch.id, f'audio={clip}', '--json', '--', 'run the tests',
+                          cwd=dispatch.folder).stdout)
+    assert sent['audio'] is declared
+    assert not clip.exists()  # read and removed, sent or not
+    (gates / '1').touch()
+    prompts = eventually(lambda: dispatch.received('session/prompt')[1:])
+    blocks = [{'type': 'text', 'text': 'run the tests'}]
+    if declared:
+        blocks.append({'type': 'audio', 'mimeType': 'audio/wav', 'data': base64.b64encode(b'RIFF-fake-wav').decode()})
+    assert prompts[0]['params']['prompt'] == blocks
     dispatch.stop()
 
 
@@ -998,6 +1026,24 @@ def test_the_session_state_and_each_edit_are_structured_and_a_file_is_placed_on_
     assert (diff['path'], diff['added'], diff['removed'], diff['created']) == ('src/engine.py', 1, 0, False)
     assert '+two' in diff['patch'] and [node['address'] for node in diff['nodes']] == [NODE]
     assert not [line for line in found['lines'] if line['kind'] in ('state', 'tool_detail')]
+    dispatch.stop()
+
+
+@pytest.mark.req('VIEW-005')
+def test_where_a_tool_call_reached_rides_once_on_the_sessions_next_change_from_the_tickets_node(dispatch):
+    """The open pages draw an agent's request going to each part of the map its tool call reached: the runner adds
+    them to the next map.changed it fires, once for each part a call reaches, and fires nothing more for them."""
+    from metaform import relay
+    heard = []
+    with relay.listen('probe', heard.append):
+        dispatch.start('hold', **rich(dispatch))
+        eventually(lambda: dispatch.logged('grandchild'))
+        flows = eventually(lambda: [flow for one in heard for flow in one.get('flow') or []])
+    node = dispatch.store.element(NODE)
+    ticket = dispatch.ticket()
+    assert [(flow['to'], flow['action'], flow['from']) for flow in flows] == \
+        [([{'kind': 'element', 'id': node.id}], 'edit', {'kind': ticket.node_kind, 'id': ticket.node_id})]
+    assert all(one.get('tables') == 'dispatch' for one in heard if one.get('flow'))
     dispatch.stop()
 
 
@@ -1749,6 +1795,116 @@ def test_the_supervisor_hands_a_logged_out_session_over_at_once_and_keeps_its_ru
     assert handed['work_id'] == dispatch.id and 'login' in handed['reason']
 
 
+def stay_connected(dispatch, run, monkeypatch, caps):
+    """dispatch_stay_connected on, the held system ticket, and one system session s1 on it that ended on its own
+    with the capabilities given; nothing is started: each runner spawned and each new conversation is only noted."""
+    from metaform import settings
+    from metaform.data import Store
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    for agent in ('claude', 'codex', 'gemini'):  # the fake, before anything could start
+        assert str(FAKE) in settings.value(f'dispatch_{agent}', dispatch.folder)
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    held = module.anchor(ctx, dispatch.store, NODE)  # this map has no roots, so the held ticket is at the node
+    with Store('proj', module='dispatch').tables() as tx:
+        tx.insert('sessions', {'session_id': 's1', 'work_id': held.id, 'agent': 'claude', 'state': 'ended',
+                               'how': 'the agent ended with exit code 1', 'started': '2026-10-11T00:00:00Z', 'seq': 1})
+        tx.insert('lines', {'session_id': 's1', 'name': 'state', 'work_id': held.id, 'kind': 'state', 'seq': 1,
+                            'text': json.dumps({'capabilities': caps, 'cwd': str(dispatch.folder), 'about': 'system'})})
+    started = []
+    monkeypatch.setattr(module, 'spawn', lambda store, work_id, agent, extra, name: started.append(extra) or {'pid': 0})
+    monkeypatch.setattr(module, 'converse', lambda ctx, store, work_id, agent, extra: started.append(['new', agent])
+                        or {'state': 'starting', 'work_id': work_id})
+    assert module.stay_connected(ctx, dispatch.store) == {}, 'off by default: nothing starts'
+    run('set', '--dispatch-stay-connected', cwd=dispatch.folder)
+    return module, ctx, held, started
+
+
+def due(work_id):
+    from metaform.data import Store
+    with Store('proj', module='dispatch').tables() as tx:
+        tx.update('attempts', {'work_id': work_id}, {'next_at': 0.0})
+
+
+@pytest.mark.req('VIEW-045')
+def test_the_system_agent_kept_connected_is_resumed_in_place_with_backoff_then_waits_for_the_persons_call(
+        dispatch, run, monkeypatch):
+    """dispatch_stay_connected: the system agent that ended without the person's stop is resumed in place, as the
+    person's own agent, after the wait, doubled each time, up to dispatch_retries; then it waits for their Call."""
+    module, ctx, held, started = stay_connected(dispatch, run, monkeypatch, {'load': True})
+    first = module.stay_connected(ctx, dispatch.store)
+    assert started == [] and first['retry_due'] > time.time(), 'the first resume waits dispatch_retry_seconds'
+    assert module.autostart(ctx)['retry_due'] == first['retry_due'], 'the agent starter says when, with Autostart off'
+    due(held.id)
+    resumed = module.stay_connected(ctx, dispatch.store)['connected']
+    assert started == [['resume=s1', 'system=true']] and resumed['retry'] == 1, 'in place, never as a worker retry'
+    from metaform.data import Store
+    with Store('proj', module='dispatch').tables() as tx:
+        waited = tx.get('attempts', {'work_id': held.id})['next_at'] - time.time()
+    assert 50 < waited <= 60, 'the next waits twice as long'
+    due(held.id)
+    module.stay_connected(ctx, dispatch.store)
+    due(held.id)
+    assert module.stay_connected(ctx, dispatch.store) == {} and len(started) == 2, 'dispatch_retries is 2'
+    [handed] = [one for one in module.read_signals(ctx)['signals'] if one['signal'] == 'handed-over']
+    assert handed['work_id'] == held.id and handed['next'] == 'metaform dispatch system'
+
+
+@pytest.mark.req('VIEW-045')
+def test_a_system_agent_that_cannot_resume_starts_a_new_conversation_and_the_person_is_told_once(
+        dispatch, run, monkeypatch):
+    module, ctx, held, started = stay_connected(dispatch, run, monkeypatch, {})
+    module.stay_connected(ctx, dispatch.store)
+    due(held.id)
+    module.stay_connected(ctx, dispatch.store)
+    due(held.id)
+    module.stay_connected(ctx, dispatch.store)
+    assert started[0] == ['new', 'codex'], 'a new conversation with the default agent'
+    told = [one for one in module.read_signals(ctx)['signals'] if one['signal'] == 'new-conversation']
+    assert len(told) == 1 and 'can neither resume nor load' in told[0]['reason']
+
+
+@pytest.mark.req('VIEW-045')
+def test_the_persons_stop_of_their_system_agent_turns_stay_connected_off_and_an_agents_does_not(
+        dispatch, run, monkeypatch):
+    """Dismiss in the chat dock is the person's stop: it turns dispatch_stay_connected off for the project, so the
+    agent does not come straight back; an agent's stop over MCP leaves the person's setting as it is."""
+    from metaform.module import context
+    module, ctx, held, started = stay_connected(dispatch, run, monkeypatch, {'load': True})
+    row = {'work_id': held.id, 'session_id': 's1'}
+    agent = context('dispatch', dispatch.folder, project='proj', surface='mcp')
+    assert module.disconnect(agent, dispatch.store, row) is False and ctx.setting('dispatch_stay_connected')
+    assert module.disconnect(ctx, dispatch.store, row) is True
+    assert context('dispatch', dispatch.folder, project='proj').setting('dispatch_stay_connected') is False
+    run('set', '--dispatch-stay-connected', cwd=dispatch.folder)
+    from metaform.data import Store
+    with Store('proj', module='dispatch').tables() as tx:
+        tx.update('sessions', {'session_id': 's1'}, {'how': 'stopped by the person'})
+    run('set', '--dispatch-agent=claude', cwd=dispatch.folder)  # as Call does, the default agent's conversation
+    module.stay_connected(ctx, dispatch.store)
+    assert started == [['resume=s1', 'system=true']], 'turned on again, it connects at once, resumed in place'
+    assert module.stay_connected(ctx, dispatch.store) == {} and len(started) == 1, 'once, while that start runs'
+
+
+@pytest.mark.req('VIEW-005')
+def test_the_system_agent_is_told_it_speaks_as_the_mascot_and_where_its_persona_and_tools_are(dispatch, run):
+    """The mascot binding: one sentence naming the character, where its persona is written, read on demand, and the
+    mascot's tools that are on the surface; nothing while no mascot is chosen."""
+    from metaform.modules import dispatch as module
+    assert module.mascot_line(dispatch.folder) == ''
+    run('set', '--web-mascot=owl', cwd=dispatch.folder)
+    line = module.mascot_line(dispatch.folder)
+    assert 'You speak as owl' in line and 'persona_owl of ' in line
+    written = Path(line.split('persona_owl of ')[1].split(' before ')[0])
+    assert written.name == 'prompts.xml' and '<persona_owl>' in written.read_text(encoding='utf-8')
+    assert 'wise, watchful owl' not in line, 'the persona is read on demand, never pushed'
+    from metaform.module import surface
+    [web] = [one for one in surface(dispatch.folder) if one.id == 'web']
+    offered = {verb.name for verb in web.verbs}
+    for verb in module.MASCOT_VERBS:
+        assert (f'web_{verb}' in line) == (verb in offered), 'only the tools the agent has'
+
+
 # ------------------------------------------------------------------ dispatch serve: an editor's ACP agent, BASE-062
 
 class Editor:
@@ -2268,3 +2424,372 @@ def test_serve_in_the_reference_conductors_chain_answers_the_agents_mcp_over_acp
         assert editor.answer(3)['result']['stopReason'] == 'end_turn', 'Metaform answers its command in the chain'
     finally:
         editor.close()
+
+
+# ------------------------------------------------------------------ the client's files, terminals and forks, P019, P030
+
+@pytest.mark.req('BASE-052')
+def test_the_runner_serves_files_and_terminals_confined_to_the_session_folder(dispatch, run):
+    """P019: the runner offers ACP's fs and terminal methods; a file inside the session's folder is written and read
+    by line, one outside it is refused and said in the thread, and a terminal runs, exits, gives its output and is
+    released, its line kept in the thread."""
+    dispatch.start('ask', FAKE_ACP_CLIENT='1')
+    [client] = eventually(lambda: dispatch.logged('client'))
+    offered = dispatch.received('initialize')[0]['params']['clientCapabilities']
+    assert offered['fs'] == {'readTextFile': True, 'writeTextFile': True} and offered['terminal'] is True
+    assert client['read'] == {'content': 'two\n'}
+    assert (dispatch.folder / 'fake-client' / 'note.txt').read_text(encoding='utf-8') == 'one\ntwo\nthree\n'
+    assert 'error' in client['outside'] and 'outside the session' in json.dumps(client['outside'])
+    assert client['exit']['exitCode'] == 0
+    assert 'hi from terminal' in client['output']['output'] and client['output']['exitStatus']['exitCode'] == 0
+    assert client['output']['truncated'] is False and 'error' in client['gone'], 'a released terminal is gone'
+    lines = eventually(lambda: [one for one in dispatch.items('note') if one.extra['kind'] == 'terminal'
+                                and json.loads(one.value)['exit']])
+    assert 'hi from terminal' in json.loads(lines[0].value)['output']
+    assert any(one.extra['kind'] == 'notice' and 'refused' in one.value for one in dispatch.items('note'))
+    state = eventually(lambda: next((json.loads(one.value) for one in dispatch.items('note')
+                                     if one.extra['name'] == 'state' and json.loads(one.value)['files']), None))
+    assert {'path': 'fake-client/note.txt', 'action': 'read'} in state['files']
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+def test_the_client_files_and_terminal_settings_turn_them_off(dispatch, run):
+    run('set', '--no-dispatch-client-files', '--no-dispatch-client-terminal', cwd=dispatch.folder)
+    dispatch.start('hold')
+    eventually(lambda: dispatch.logged('grandchild'))
+    offered = dispatch.received('initialize')[0]['params']['clientCapabilities']
+    assert offered['fs'] == {'readTextFile': False, 'writeTextFile': False} and offered['terminal'] is False
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+def test_a_fork_keeps_the_sessions_identity_and_has_a_thread_of_its_own(dispatch, run):
+    """P030: dispatch fork asks the agent for session/fork, giving the fork the same Metaform server with the same
+    identity, and its first turn and its end are in a child thread of the session."""
+    dispatch.start('hold', FAKE_ACP_FORK='1')
+    eventually(lambda: dispatch.logged('grandchild'))
+    forked = json.loads(run('dispatch', 'fork', dispatch.id, '--json', '--', 'What else did you consider?',
+                            cwd=dispatch.folder).stdout)
+    [asked] = dispatch.received('session/fork')
+    made = dispatch.received('session/new')[0]['params']
+    assert asked['params']['sessionId'] == 'fake-session-1' and asked['params']['cwd'] == made['cwd']
+    assert asked['params']['mcpServers'] == made['mcpServers'], 'the same server and identity'
+    env = {one['name']: one['value'] for one in asked['params']['mcpServers'][0]['env']}
+    assert env['METAFORM_WORK'] == dispatch.id and env['METAFORM_ROLE'] == 'worker'
+    assert forked['identity']['METAFORM_SESSION'] == env['METAFORM_SESSION']
+    child = forked['fork']
+    assert eventually(lambda: any(one.value == 'The turn ended: end_turn.' for one in dispatch.items('note')
+                                  if one.extra['session_id'] == child))
+    prompted = [one['params'] for one in dispatch.received('session/prompt') if one['params']['sessionId'] == child]
+    assert prompted[0]['prompt'][0]['text'] == 'What else did you consider?'
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.kind('fixture')
+def test_a_turns_usage_is_one_invoke_agent_span_with_cached_input_counted(monkeypatch):
+    """The OTel export: one client span per turn, its input tokens holding the cached part as the GenAI conventions
+    ask, since ACP's inputTokens leaves it out."""
+    from types import SimpleNamespace
+
+    from metaform.modules.dispatch import runner
+    usage = SimpleNamespace(input_tokens=100, output_tokens=40, cached_read_tokens=1000, cached_write_tokens=5,
+                            thought_tokens=None)
+    found = runner.usage_attributes('claude', 'Claude Code', '0.89.1', 's-1', usage, 'end_turn', 'opus')
+    assert found['gen_ai.usage.input_tokens'] == 1105 and found['gen_ai.usage.output_tokens'] == 40
+    assert found['gen_ai.usage.cache_read.input_tokens'] == 1000 and found['gen_ai.provider.name'] == 'anthropic'
+    assert found['gen_ai.operation.name'] == 'invoke_agent' and found['gen_ai.conversation.id'] == 's-1'
+    spans = []
+
+    class Span:
+        def __init__(self, name, **given):
+            spans.append((name, given))
+
+        def end(self):
+            spans.append('ended')
+
+    from opentelemetry import trace
+    monkeypatch.setattr(trace, 'get_tracer', lambda name: SimpleNamespace(start_span=Span))
+    runner.traced(found, 7)
+    assert spans[0][0] == 'invoke_agent Claude Code' and spans[0][1]['start_time'] == 7 and spans[1] == 'ended'
+    assert spans[0][1]['kind'] == trace.SpanKind.CLIENT and spans[0][1]['attributes'] is found
+
+
+# ------------------------------------------------------------------ the ACP Registry, P013 and P030
+
+def registry_of(tmp_path, **entry):
+    """A private registry of one binary agent, fakeacp 1.2.3, whose archive for this platform holds a script that runs
+    the fake agent, with its sha256; the file the dispatch_registry_url setting can name."""
+    import hashlib
+    import io
+    import tarfile
+
+    from metaform.modules.dispatch import registry
+    script = f'#!/bin/sh\nexec "{sys.executable}" "{FAKE}" "$@"\n'.encode()
+    packed = io.BytesIO()
+    with tarfile.open(fileobj=packed, mode='w:gz') as archive:
+        info = tarfile.TarInfo('fake-acp')
+        info.size, info.mode = len(script), 0o644
+        archive.addfile(info, io.BytesIO(script))
+    archive_path = tmp_path / 'fake-acp-1.2.3.tar.gz'
+    archive_path.write_bytes(packed.getvalue())
+    target = {'archive': archive_path.as_uri(), 'cmd': './fake-acp', 'args': ['--acp'],
+              'sha256': hashlib.sha256(packed.getvalue()).hexdigest(), 'env': {'FAKE_SECRET': 'from-registry'}}
+    agent = {'id': 'fakeacp', 'name': 'Fake ACP', 'version': '1.2.3', 'description': 'A fake agent.',
+             'license_url': 'https://example.com/license', 'distribution': {'binary': {registry.platform(): target}},
+             **entry}
+    path = tmp_path / 'registry.json'
+    path.write_text(json.dumps({'version': '1.0.0', 'agents': [agent], 'extensions': []}), encoding='utf-8')
+    return path
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.skipif(os.name == 'nt', reason='the fake archive holds a POSIX shell script')
+def test_a_registry_agent_is_pinned_installed_primed_and_started(dispatch, run, tmp_path):
+    """P013: an agent of the ACP Registry other than dispatch's own is chosen, its archive checked against its
+    sha256 and unpacked at that exact version, its options read by priming, and it works a ticket."""
+    path = registry_of(tmp_path)
+    run('set', '--dispatch-registry-url', str(path), cwd=dispatch.folder)
+    listed = json.loads(run('dispatch', 'registry', '--json', cwd=dispatch.folder).stdout)
+    assert [(one['agent'], one['runs_here'], one['pinned']) for one in listed['agents']] == [('fakeacp', 'binary', None)]
+    added = json.loads(run('dispatch', 'registry', 'add=fakeacp', '--json', cwd=dispatch.folder).stdout)
+    [changed] = added['changed']
+    assert (changed['pinned'], changed['kind'], changed['verified']) == ('1.2.3', 'binary', True)
+    assert changed['command'].endswith('fake-acp --acp') and '/agents/fakeacp/1.2.3/' in changed['command']
+    agents = json.loads(run('dispatch', 'agents', '--json', cwd=dispatch.folder).stdout)['agents']
+    mine = next(one for one in agents if one['agent'] == 'fakeacp')
+    assert (mine['available'], mine['pinned'], mine['label']) == (True, '1.2.3', 'Fake ACP')
+    primed = json.loads(run('dispatch', 'options', 'agent=fakeacp', 'prime=true', '--json', cwd=dispatch.folder,
+                            env=dispatch.env('hold', **rich(dispatch))).stdout)['agents'][0]
+    assert [one['key'] for one in primed['settings']] == ['mode', 'model', 'thought_level']
+    ran = subprocess.run([sys.executable, '-m', 'metaform', 'dispatch', 'run', dispatch.id, 'fakeacp'],
+                         cwd=dispatch.folder, env=dispatch.env('done'), capture_output=True, text=True, timeout=60,
+                         check=False)
+    assert ran.returncode == 0, ran.stderr
+    assert dispatch.ticket().done
+    [row] = [one.extra for one in dispatch.items('session')]
+    assert row['agent'] == 'fakeacp'
+    assert any(entry.get('secret') == 'from-registry' and entry['argv'][-1] == '--acp' for entry in dispatch.entries())
+    # a newer version listed later leaves the pin where it is until the person upgrades
+    path.write_text(path.read_text(encoding='utf-8').replace('1.2.3', '1.2.4'), encoding='utf-8')
+    refreshed = json.loads(run('dispatch', 'registry', 'refresh=true', '--json', cwd=dispatch.folder).stdout)
+    assert refreshed['agents'][0]['version'] == '1.2.4' and refreshed['agents'][0]['pinned'] == '1.2.3'
+
+
+@pytest.mark.req('BASE-052')
+def test_a_registry_archive_whose_checksum_differs_is_not_installed(dispatch, run, tmp_path):
+    path = registry_of(tmp_path)
+    wrong = json.loads(path.read_text(encoding='utf-8'))
+    from metaform.modules.dispatch import registry
+    wrong['agents'][0]['distribution']['binary'][registry.platform()]['sha256'] = '0' * 64
+    path.write_text(json.dumps(wrong), encoding='utf-8')
+    run('set', '--dispatch-registry-url', str(path), cwd=dispatch.folder)
+    refused = run('dispatch', 'registry', 'add=fakeacp', cwd=dispatch.folder, ok=False)
+    assert refused.returncode != 0 and 'sha256' in refused.stdout + refused.stderr
+    assert run('dispatch', 'agents', '--json', cwd=dispatch.folder).stdout.count('fakeacp') == 0
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.kind('fixture')
+def test_the_publication_entry_is_checked_against_the_registry_schema(tmp_path):
+    from metaform.modules.dispatch import registry
+    good = registry.publication(agent_id='metaform', name='Metaform', version='1.0.0', description='Maps.',
+                                package='metaform-acp', repository='https://github.com/example/metaform',
+                                license_name='MIT', license_url='https://example.com/LICENSE')
+    assert good['problems'] == [] and good['entry']['distribution'] == {
+        'uvx': {'package': 'metaform-acp==1.0.0', 'args': ['dispatch', 'serve']}}
+    calendar = registry.publication(agent_id='metaform', name='Metaform', version='2026.9.30.2', description='Maps.',
+                                    package='metaform', repository=None, license_name=None, license_url=None)
+    assert any(problem.startswith('version:') for problem in calendar['problems'])
+    assert any('license_url' in problem for problem in calendar['problems'])
+
+
+# ------------------------------------------------------------------ the intake's guards, M04
+
+@pytest.mark.req('VIEW-045')
+@pytest.mark.req('BASE-039')
+def test_an_intake_agent_is_withheld_conclusions_and_steered_to_its_first_record(dispatch, run, dispatch_runners):
+    """The intake agent's Metaform server is told to leave out memory and the map's reading tools; reading a review
+    file or calling a memory tool raises intake-conclusions; with no Metaform call in time it reads as waiting for
+    first record and is steered once, and its first record is timed in its state."""
+    run('set', '--dispatch-intake-first-record', '3', cwd=dispatch.folder)
+    started = json.loads(run('dispatch', 'intake', 'agent=claude', '--json', cwd=dispatch.folder,
+                             env=dispatch.env('hold', FAKE_ACP_INTAKE='1', FAKE_ACP_STEER='1')).stdout)
+    dispatch_runners.append((started, dispatch.folder, dispatch.log))
+    work_id = started['work_id']
+    waiting = eventually(lambda: next((one for one in read(run, dispatch, work_id)['sessions']
+                                       if one.get('phase') == 'waiting for first record'), None))
+    assert (waiting['status'], waiting['reason']) == ('running', 'waiting for first record')
+    [made] = eventually(lambda: dispatch.received('session/new'))
+    env = {one['name']: one['value'] for one in made['params']['mcpServers'][0]['env']}
+    assert env['METAFORM_ROLE'] == 'intake' and env['METAFORM_WITHHELD'] == 'memory,map:read'
+    def reached():
+        found = [one for one in json.loads(run('dispatch', 'signals', f'id={work_id}', '--json',
+                                               cwd=dispatch.folder).stdout)['signals']
+                 if one['signal'] == 'intake-conclusions']
+        return found if len(found) == 2 else None
+    signals = eventually(reached)
+    assert {one['reason'] for one in signals} == {'a withheld tool', 'a file of earlier conclusions'}
+    [steer] = eventually(lambda: dispatch.logged('steered'))
+    assert 'without a Metaform call' in steer
+    eventually(lambda: dispatch.logged('intake_recorded'))
+    state = eventually(lambda: found if (found := next(
+        (json.loads(one.value)['intake'] for one in dispatch.items('note')
+         if one.extra['session_id'] != f'work:{work_id}' and one.extra['name'] == 'state'), None)) and
+        found.get('first_record_s') is not None else None)
+    assert state['phase'] == 'recording' and state['steered'] and state['first_call_s'] >= 1
+    run('dispatch', 'stop', work_id, cwd=dispatch.folder)
+
+
+@pytest.mark.req('BASE-039')
+@pytest.mark.kind('fixture')
+def test_a_server_serving_a_withheld_session_leaves_those_tools_out(monkeypatch, run, project_folder):
+    from metaform.module import WITHHELD, surface
+    whole = {module.id: [verb.name for verb in module.verbs] for module in surface(project_folder)}
+    monkeypatch.setenv(WITHHELD, 'memory,map:read')
+    kept = {module.id: [verb.name for verb in module.verbs] for module in surface(project_folder)}
+    assert 'memory' in whole and 'memory' not in kept
+    assert 'node' in whole['map'] and 'node' not in kept['map'] and 'work' in kept['map'] and 'intake' in kept
+    from metaform.harness import child_environment
+    assert WITHHELD not in child_environment(), 'no process the server starts is withheld anything'
+
+
+# ------------------------------------------------------------------ the status vocabulary of work, H02
+
+@pytest.mark.req('BASE-051')
+@pytest.mark.req('BASE-052')
+def test_a_cancelled_ticket_and_its_session_read_cancelled_in_the_status_vocabulary(dispatch, run):
+    """One cancelled ticket reads cancelled, never completed, in its work read, its session's read and a wait."""
+    dispatch.start('hold')
+    eventually(lambda: dispatch.logged('grandchild'))
+    working = json.loads(run('map', 'work', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)['dispatch']
+    assert (working['status'], working['sessions'][-1]['status']) == ('running', 'running')
+    run('dispatch', 'cancel', dispatch.id, '--', 'No longer needed', cwd=dispatch.folder)
+    assert dispatch.process.wait(LIMIT) == 0
+    read = json.loads(run('map', 'work', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)['dispatch']
+    assert read['status'] == 'cancelled' and read['sessions'][-1]['status'] == 'cancelled'
+    listed = json.loads(run('dispatch', 'sessions', f'id={dispatch.id}', 'thread=false', '--json',
+                            cwd=dispatch.folder).stdout)['sessions']
+    assert (listed[-1]['status'], listed[-1]['reason']) == ('cancelled', 'cancelled by the person')
+    waited = json.loads(run('dispatch', 'wait', 'until=done', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)
+    assert waited['woke'][0]['status'] == 'cancelled'
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.kind('fixture')
+def test_waits_on_the_person_and_a_dead_runner_are_told_apart_from_work():
+    from metaform.modules.dispatch import session_work_status
+    running = {'session_id': 's', 'state': 'running', 'activity': 'working'}
+    assert session_work_status(running) == {'status': 'running', 'reason': None}
+    assert session_work_status(running, [{'signal': 'login-needed', 'session_id': 's'}]) == \
+        {'status': 'input_required', 'reason': 'login'}
+    assert session_work_status({**running, 'waiting_on': 'permission'})['reason'] == 'permission'
+    assert session_work_status({**running, 'activity': 'idle'}, [{'signal': 'stopped-open', 'session_id': 's'}]) == \
+        {'status': 'input_required', 'reason': 'stopped'}
+    assert session_work_status({**running, 'phase': 'waiting for first record'}) == \
+        {'status': 'running', 'reason': 'waiting for first record'}
+    died = {'session_id': 's', 'state': 'ended', 'how': 'the runner is no longer running'}
+    assert session_work_status(died) == {'status': 'failed', 'reason': 'runner died'}
+    assert session_work_status({**died, 'how': 'the ticket is done'})['status'] == 'completed'
+
+
+@pytest.mark.req('BASE-051')
+@pytest.mark.req('MAP-050')
+def test_a_workflow_answer_reaches_the_worker_that_paused_the_run(dispatch, run):
+    """H03: a worker pauses a workflow run on the person; once the person answers it, the runner hears the answer
+    and gives the worker the workflow_answered turn, so no message of the person's is needed."""
+    from metaform.data import Store
+    from metaform.modules.workflow.tests.test_executor import begin
+    run('enable', 'workflow')
+    dispatch.start('hold', FAKE_ACP_STEER='1')
+    eventually(lambda: dispatch.logged('grandchild'))
+    word = begin(Store('proj', module='workflow'))
+    run('workflow', 'pause', f'run={word}', 'Which', 'timer?', cwd=dispatch.folder,
+        env={'METAFORM_WORK': dispatch.id, 'METAFORM_SESSION': 'r1'})
+    time.sleep(1)  # the runner hears the pause before the answer, as it would while the person reads the ticket
+    run('workflow', 'answer', f'run={word}', 'The', 'oven', cwd=dispatch.folder)
+    wanted = f'Run {word} is answered; resume it with metaform workflow resume run={word}'
+    assert eventually(lambda: dispatch.logged('steered')) == [wanted], 'into the turn in flight, as it steers'
+    dispatch.stop()
+
+
+# ------------------------------------------------------------------ Jev's hooks in dispatch, H23
+
+def decided(answer, sure=True):
+    from metaform.jev import Decision
+    return Decision('pick_one', 'title', 'why', 'question', (), answer, 0.9, sure, 'reason', 'jev', 0.0, False)
+
+
+@pytest.mark.req('MAP-058')
+@pytest.mark.req('VIEW-042')
+def test_autostart_takes_jevs_sure_agent_and_options_only_where_the_person_chose_none(dispatch, run, monkeypatch):
+    """With Jev on, autostart starts a ticket the person gave no agent with the agent Jev is sure of, and passes its
+    model and effort on, under the person's own; a ticket whose eligible agents leave Jev's out, or with Jev unsure,
+    starts as before."""
+    from metaform import jev
+    from metaform.jev import Assignments
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    picked, unsure = glyphed(dispatch, run, ('Picked by Jev', None, False), ('Jev unsure', None, False))
+    eligible(dispatch, run, dispatch.id, 'codex')  # Jev's pick is not eligible here, so the eligible agent starts
+    run('set', '--dispatch-autostart', '--dispatch-agent', 'codex', cwd=dispatch.folder)
+    asked = []
+    monkeypatch.setattr(jev, 'config', lambda folder, decision=None: object())
+    monkeypatch.setattr(jev, 'choose_agents', lambda folder, tickets, agents, options, **kw: asked.append(
+        (sorted(tickets), sorted(agents))) or Assignments({
+            dispatch.id: decided({'agent': 'gemini', 'model': None, 'thought_level': None}),
+            picked: decided({'agent': 'gemini', 'model': 'large', 'thought_level': 'high'}),
+            unsure: decided({'agent': 'gemini', 'model': None, 'thought_level': None}, sure=False)}))
+    launched = []
+    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation: launched.append(
+        (ctx.nouns['id'], ctx.nouns['agent'], ctx.nouns.get('chosen'))) or {'work_id': ctx.nouns['id']})
+    module.autostart(context('dispatch', dispatch.folder, project='proj'))
+    assert asked == [(sorted([dispatch.id, picked, unsure]), ['claude', 'codex', 'gemini'])]
+    assert launched == [(dispatch.id, 'codex', None),
+                        (picked, 'gemini', json.dumps({'model': 'large', 'thought_level': 'high'})),
+                        (unsure, 'codex', None)]
+
+
+@pytest.mark.req('MAP-058')
+def test_autostart_starts_as_before_when_jev_is_off_or_fails(dispatch, run, monkeypatch):
+    from metaform import jev
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    run('set', '--dispatch-autostart', '--dispatch-agent', 'codex', cwd=dispatch.folder)
+    monkeypatch.setattr(jev, 'config', lambda folder, decision=None: object())
+
+    def failing(*args, **kw):
+        raise OSError('unreachable')
+    monkeypatch.setattr(jev, 'choose_agents', failing)
+    launched = []
+    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation: launched.append(
+        (ctx.nouns['id'], ctx.nouns['agent'])) or {'work_id': ctx.nouns['id']})
+    module.autostart(context('dispatch', dispatch.folder, project='proj'))
+    assert launched == [(dispatch.id, 'codex')]
+
+
+@pytest.mark.req('BASE-057')
+def test_jevs_drift_check_raises_the_drift_signal_naming_what_drifted(dispatch, monkeypatch):
+    """H23: with Jev on, a worker's recent tool calls and filed steps are judged by session_drift; a sure drift
+    raises the drift signal at the ticket, naming what drifted, and one judged clean clears it."""
+    from metaform import jev
+    from metaform.module import context
+    from metaform.modules.dispatch import runner
+    from metaform.modules.dispatch.signals import rows
+    answers = [{'conclusions': False, 'off_task': True, 'repeating': None},
+               {'conclusions': False, 'off_task': False, 'repeating': False}]
+    judged = []
+
+    def drift(folder, session, calls, task, **kw):
+        judged.append((list(calls), task))
+        return decided(answers[len(judged) - 1])
+    monkeypatch.setattr(jev, 'session_drift', drift)
+    ctx = context('dispatch', dispatch.folder, project='proj', nouns={'id': dispatch.id, 'agent': 'claude'})
+    session = runner.Session(ctx, dispatch.store, dispatch.ticket(), 'claude', ['unused'])
+    session.calls.extend(['Read report.md {"path": "artifacts/report.md"}', 'Read src/engine.py'])
+    asyncio.run(session.drift())
+    [raised] = [one for one in rows(dispatch.store, dispatch.id) if one['signal'] == 'drift']
+    assert raised['drifted'] == ['off_task'] and judged[0] == (list(session.calls), 'Write notes.txt')
+    asyncio.run(session.drift())
+    assert not [one for one in rows(dispatch.store, dispatch.id) if one['signal'] == 'drift']

@@ -236,13 +236,22 @@ def _verb_rows(verb: Verb) -> list[tuple[str, str]]:
     return found
 
 
+def _required_rows(verb: Verb) -> list[tuple[str, str]]:
+    """Each noun a verb requires, as its usage line names it, with what it means, so the help that names it says
+    it too."""
+    return [(f'<{noun.name}>' + ('...' if noun.many else ''), noun.help) for noun in verb.nouns if noun.required]
+
+
 def verb_syntax(module: Module, verb: Verb) -> str:
     lines = ['Usage: ' + verb.usage(module.id), '']
-    return '\n'.join(lines + rows(_verb_rows(verb) + [('-h, --help', 'Show this syntax.')])) + '\n'
+    return '\n'.join(lines + rows(_required_rows(verb) + _verb_rows(verb) + [('-h, --help', 'Show this syntax.')])) + '\n'
 
 
 def verb_page(module: Module, verb: Verb) -> str:
     lines = [f'{module.id} {verb.name}: {verb.summary}', '', 'Usage', '  ' + verb.usage(module.id), '']
+    required = _required_rows(verb)
+    if required:
+        lines += ['Nouns'] + rows(required) + ['']
     found = _verb_rows(verb)
     if found:
         lines += ['Switches'] + rows(found) + ['']

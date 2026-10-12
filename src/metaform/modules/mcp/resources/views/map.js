@@ -22,15 +22,17 @@
   document.head.append(sized);
 
   /* Turn to an Address: its node selected on both maps, as a selection of the person's would, but quietly, so the
-   * agent is not told it as the person's. The map may still be loading, so the node is looked for a few seconds. */
+   * agent is not told it as the person's. The page's script, a module, runs after this one: its `window.metaform` is
+   * waited for, then its `ready`, kept once the first map is drawn, so an Address named while the map loads is turned
+   * to as soon as it can be, and no sooner. */
   view.turner(async address => {
-    const wanted = String(address).split('#')[0];
-    for (let tries = 0; tries < 40; tries += 1) {
-      const id = window.metaform?.find?.(wanted);
-      if (id) { view.quietly(() => window.metaform.select(id)); return true; }
-      await new Promise(done => setTimeout(done, 200));
-    }
-    return false;
+    const wanted = String(address).replace(/^metaform:\/\//, '').split('#')[0];
+    for (let tries = 0; tries < 100 && !window.metaform?.ready; tries += 1) await new Promise(done => setTimeout(done, 100));
+    if (!window.metaform?.ready) return false;
+    await window.metaform.ready;
+    const id = window.metaform.find(wanted);
+    if (id) view.quietly(() => window.metaform.select(id));
+    return Boolean(id);
   });
 
   /* The bar, each button only where the host allows it. */
