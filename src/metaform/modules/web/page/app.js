@@ -6662,7 +6662,7 @@ function showBase(left = null) {
     return;
   }
   base.svg.style.transition = ''; base.svg.style.opacity = '';  // a map faded on the way in shows whole again
-  aim2d(node || (base.cam ? mid2d(base.cam) : center2d(S.selected) || base.nodes.get(entryOf())
+  aim2d(node || (base.cam ? focus2d(base.cam) : center2d(S.selected) || base.nodes.get(entryOf())
     || base.nodes.values().next().value), true);
 }
 
@@ -7774,6 +7774,12 @@ addEventListener('resize', () => { FOOT2D.card = 0; });  // its inset and text f
 /* The view at `scale` with its middle as near `center` as the limits let it be: along an axis where the map runs past
  * the pane, no more than MARGIN screen pixels beyond the map's edge show, and along one where it does not, the map is
  * centered; down the pane, in the part above the room kept at its foot, `foot2d`. */
+/* The point `place2d` keeps in the middle of a view: its middle across, and down the middle of the part above the room
+ * at its foot, so a view turned back into its center and placed again stands where it stood. */
+function focus2d(view, area = area2d()) {
+  const foot = Math.min(foot2d(), area.height / 3) * view.w / Math.max(1, area.width);
+  return {x: view.x + view.w / 2, y: view.y + (view.h - foot) / 2};
+}
 function place2d(scale, center, area = area2d()) {
   const box = M.bounds, w = area.width / scale, height = area.height / scale, room = MARGIN / scale;
   const foot = Math.min(foot2d(), area.height / 3) / scale, usable = height - foot;
@@ -7788,7 +7794,7 @@ function place2d(scale, center, area = area2d()) {
 function aim2d(center = null, now = false) {
   const area = area2d(), here = M.to || M.cam;
   if (!M.svg || !M.bounds || !area.width || !area.height) return;
-  const view = place2d(scaleFor(MODE.mode, area), center || (here ? mid2d(here) : mid2d(M.bounds)), area);
+  const view = place2d(scaleFor(MODE.mode, area), center || (here ? focus2d(here, area) : mid2d(M.bounds)), area);
   if (now || !M.cam) setCam(view); else moveCam(view);
 }
 /* Where a selection is centered: a node at its middle, and a join of the whole map at the middle of its edge, where a
@@ -8136,7 +8142,7 @@ function noneSelected() {
       drag.cam = {...M.cam};
       drag.moving = true; host.setPointerCapture(event.pointerId);
     }
-    const area = area2d(), scale = area.width / drag.cam.w, at = mid2d(drag.cam);
+    const area = area2d(), scale = area.width / drag.cam.w, at = focus2d(drag.cam, area);
     setCam(place2d(scale, {x: at.x - (event.clientX - drag.x) / scale, y: at.y - (event.clientY - drag.y) / scale}, area));
   });
   host.addEventListener('pointerup', () => { dragged = Boolean(drag?.moving); drag = null; });
@@ -8185,7 +8191,7 @@ function noneSelected() {
       const zoom = Math.min(most, Math.max(least, scale / f)), w = area.width / zoom, height = area.height / zoom;
       const px = (event.clientX - area.left) / area.width, py = (event.clientY - area.top) / area.height;
       MODE.free = zoom;
-      return setCam(place2d(zoom, mid2d({x: c.x + (c.w - w) * px, y: c.y + (c.h - height) * py, w, h: height}), area));
+      return setCam(place2d(zoom, focus2d({x: c.x + (c.w - w) * px, y: c.y + (c.h - height) * py, w, h: height}, area), area));
     }
     const across = M.bounds.w > c.w, down = M.bounds.h > c.h;
     if (!across && !down) return;
@@ -8193,7 +8199,7 @@ function noneSelected() {
     if (event.shiftKey && !dx) [dx, dy] = [dy, 0];
     if (!down) [dx, dy] = [dx || dy, 0];
     else if (!across) [dx, dy] = [0, dy || dx];
-    const at = mid2d(c);
+    const at = focus2d(c, area);
     setCam(place2d(scale, {x: at.x + dx / scale, y: at.y + dy / scale}, area));
   }, {passive: false});
   new ResizeObserver(() => aim2d()).observe($('#viewport'));  // a fit refits as the pane changes size, VIEW-041
