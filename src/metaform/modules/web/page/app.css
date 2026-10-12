@@ -1415,7 +1415,7 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
  * node's edges carry it. */
 :root{--record:#ffbe55}
 .map2d .flows2d *{pointer-events:none}
-.map2d .flows2d .bead{stroke:none;filter:drop-shadow(0 0 2px currentColor) drop-shadow(0 0 5px currentColor)}
+.map2d .flows2d .bead{stroke:none;filter:drop-shadow(0 0 1.5px currentColor)}
 .map2d .flows2d .ask{fill:var(--spark);filter:drop-shadow(0 0 1.5px var(--spark))}
 .map2d .flows2d .record{fill:var(--record);stroke:var(--spark);stroke-width:.6px}
 .map2d .flows2d .ring{fill:none;stroke:var(--record);stroke-width:1.4px}
