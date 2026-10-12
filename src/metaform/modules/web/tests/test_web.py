@@ -731,7 +731,7 @@ def test_a_node_with_open_unbuilt_work_is_a_ghost_a_broken_one_flashes_red_until
     missing = store.add_work(Node('element', 'code.alarm.audible'), 'unbuilt', note='in the spec', task='build the piezo driver')
     store.add_work(Node('element', 'exterior.cook'), None, task='name the cook')  # a plain task marks nothing
     started(run)
-    page, problems, _ = opened(browser, web)
+    page, problems, _ = opened(browser, web, plain=True)
     page.wait_for_function('() => window.metaform.loaded()')
     ids = {address: store.element(address).id for address in ('code.alarm.audible', 'code.timer.kitchen', 'exterior.cook')}
     look = lambda address: page.evaluate(f'window.metaform.look("{ids[address]}")')
@@ -841,7 +841,7 @@ def test_a_propertys_reach_travels_as_a_wave_from_the_element_it_is_linked_to(ru
         store.add_element('notes', address, name_length=1)
     written = store.add_property('notes', 'code.timer.kitchen', 'written in C11')
     started(run)
-    page, problems, _ = opened(browser, web)
+    page, problems, _ = opened(browser, web, plain=True)
     page.wait_for_function('() => window.metaform.loaded()')
     _, at = keys_of(web)
     names = {at[address]: address for address in at}
@@ -5491,7 +5491,7 @@ def test_the_labels_wrap_keep_the_draw_order_and_the_hover_says_what_a_part_does
     store.add_element('notes', 'code.controller.address.fallback', name_length=3)
     long = store.element('code.controller.address.fallback').id
     started(run)
-    page, problems, _ = opened(browser, web)
+    page, problems, _ = opened(browser, web, plain=True)
     page.wait_for_function(f'() => window.metaform.labels3d().some(label => label.id === "{long}" && !label.hidden)')
     camera, target = {'x': 2000, 'y': 0, 'z': 300}, {'x': 2000, 'y': 0, 'z': 0}
     staged(page, {kitchen: (2000, 0, 0), alarm: (2000, 0, -150)}, (camera, target))
@@ -5519,7 +5519,11 @@ def test_the_labels_wrap_keep_the_draw_order_and_the_hover_says_what_a_part_does
             assert (one['right'] <= two['left'] or two['right'] <= one['left'] or one['bottom'] <= two['top']
                     or two['bottom'] <= one['top']), (one, two)
     # The hover's details are in the card at the lower left; the name across the top shows only for a node whose
-    # own label cannot be read, and the kitchen timer's can.
+    # own label cannot be read. In Organic a sign faces out from the middle and may be seen edge on; in Flat every
+    # sign faces the eye, and the kitchen timer's can be read.
+    page.locator('body').press('l')
+    page.wait_for_function('() => window.metaform.physics() === "flat"')
+    page.wait_for_timeout(1800)  # the camera turned to face the plane
     page.evaluate(f'window.metaform.hover3d("{kitchen}")')
     card = page.locator('#card3d.on')
     card.wait_for(state='visible')
@@ -5551,7 +5555,7 @@ def test_a_node_between_the_camera_and_a_label_hides_the_label(run, web, mapped,
     cook = store.element('exterior.cook').id
     alarm = store.element('code.alarm.audible').id
     started(run)
-    page, problems, _ = opened(browser, web)
+    page, problems, _ = opened(browser, web, plain=True)
     page.emulate_media(reduced_motion='reduce')                       # nothing moves between two pictures
     page.reload()
     page.wait_for_function('() => window.metaform && window.metaform.loaded() && window.metaform.linkColors().length > 0')
