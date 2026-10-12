@@ -5838,11 +5838,13 @@ def test_an_agent_is_started_on_a_ticket_followed_messaged_and_stopped_from_the_
     assert -1 < activity.find('Thinking it over') < activity.find('Hello from fake') < activity.find('Read file'), \
         activity                                                       # in the order written
     page.click('#helpdesk .min')                                       # put away; its thread stays open in it
-    # its turn stops on a permission prompt: waiting on the person, so it leaves the key and the map, VIEW-035, and is
-    # reached from the node's work history, where its session is still running
+    # its turn stops on a permission prompt: waiting on the person, so it leaves the key, VIEW-035, and its figure waits
+    # still beside its node, turned toward the chat dock; it is reached from the node's work history, where its session
+    # is still running
     gate.touch()
     page.wait_for_function('() => document.querySelector("#agents").hidden', timeout=30000)
-    page.wait_for_function(f'() => !window.metaform.figures().some(one => one.work_id === "{work}")', timeout=30000)
+    page.wait_for_function(f'() => window.metaform.figures().some(one => one.work_id === "{work}" && one.mood === "waiting")',
+                           timeout=30000)
     waiting = api(web, '/api/dispatch-sessions?project=proj&thread=false')[1]['sessions']
     assert [(one['state'], one['activity']) for one in waiting] == [('running', 'waiting')], waiting
     page.evaluate(f'window.metaform.menu("{alarm}")')
