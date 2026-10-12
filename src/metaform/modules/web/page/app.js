@@ -9053,6 +9053,13 @@ async function drawHelpdesk(trouble) {
         if (chat) chat.session = session.session_id;
         if (chat && session.state === 'running') chat.starting = 0;  // reached: it reads what waits for it
         state = (found.states || {})[session.session_id] || null;
+        // the system agent is known by what its session is about, however it was started: by the page, the phone or
+        // the command line. A conversation about a node hangs on the same held ticket and stays the person's chat
+        if (chat && state?.about === 'system' && chat.source !== 'system') {
+          Object.assign(chat, {source: 'system', label: 'your system agent'});
+          DOCK.label = chat.label;
+          drawTabs();
+        }
         if (failed) startFailed(`${agentName(failed.agent)} did not start: ${String(failed.how).replace(/^it (failed|did not start):?\s*/, '')}`);
       }
       lines = session ? (found.lines || []).filter(line => line.session_id === session.session_id) : [];
@@ -9260,6 +9267,7 @@ async function drawAsked(target, session, lines) {
 const DOCK_COMMANDS = [{name: 'help', description: 'What the chat\'s commands do'},
   {name: 'list', description: 'The agents at work, numbered'}, {name: 'chat', hint: '<number>', description: 'Talk with an agent at work, by its number in /list'},
   {name: 'system', description: 'Start a chat with your system agent'},
+  {name: 'fork', hint: '[text]', description: 'A side conversation with the agent on view that knows all it knows, under Subagents'},
   {name: 'apps', description: 'The views the enabled modules offer, each opened in a panel'}];
 const dockOffered = () => {
   const agents = commandsOf(DOCK.target ? DOCK.state : null, DOCK.agent);
@@ -9272,7 +9280,7 @@ async function dockCommand(text) {
     if (await wrote('/api/dispatch-message', {work_id: DOCK.target, session: DOCK.session, text})) drawHelpdesk();
     return;
   }
-  if (command === 'help') return dockNote('/list shows the agents at work · /chat <number> talks with one of them · /system calls your system agent · /apps lists the views the modules offer · the agent\'s own commands are offered as you type /.');
+  if (command === 'help') return dockNote('/list shows the agents at work · /chat <number> talks with one of them · /system calls your system agent · /fork [text] starts a side conversation with the agent on view · /apps lists the views the modules offer · the agent\'s own commands are offered as you type /.');
   if (command === 'list') {
     let found = [];
     try { found = (await read('dispatch-sessions', {thread: 'false'})).sessions || []; } catch (error) { return dockNote(error.message); }
@@ -9288,6 +9296,15 @@ async function dockCommand(text) {
     return dockNote(`You are now talking with ${DOCK.label}. Its work goes on while you talk.`);
   }
   if (command === 'system') return callSystem();
+  // a fork keeps the session's whole conversation and leaves the session at its work; what follows /fork, when
+  // anything does, is its first turn, and it shows under Subagents once its agent has made it
+  if (command === 'fork') {
+    if (!DOCK.target || !DOCK.live) return dockNote('A fork is made of an agent at work: open its thread, then type /fork.');
+    const first = text.slice(1).trim().slice(command.length).trim();
+    const done = await posted('/api/dispatch-fork', {work_id: DOCK.target, session: DOCK.session, ...(first ? {text: first} : {})});
+    return dockNote(done.ok ? 'The fork was made; its thread is under Subagents.'
+      : `${done.body?.error || 'The fork was not made.'}${done.body?.next ? ` Next: ${done.body.next}` : ''}`);
+  }
   if (command === 'apps') return showGallery();
   dockNote(`${text} is not a command here. Type /help.`);
 }
@@ -9469,7 +9486,10 @@ $('#helpdesk .compose').onsubmit = async event => {
   box.value = '';
   growSay();
   followLog(true);  // what the person sends is followed to the end of the thread
-  if (!DOCK.live || DOCK.queue.some(item => item.state !== 'sent')) {  // no agent there yet: it waits, and one is reached
+  // a fork's thread on view is written to as the fork, which takes the words alone; an agent's own subagent is not
+  // written to, so what is written there goes to its parent. Words for a fork never wait for its parent's agent
+  const fork = DOCK.child && (DOCK.subagents || []).find(one => one.session_id === DOCK.child)?.fork === true ? DOCK.child : null;
+  if (!fork && (!DOCK.live || DOCK.queue.some(item => item.state !== 'sent'))) {  // no agent there yet: it waits, and one is reached
     DOCK.queue.push({id: ++QUEUE_ID, text: text + attached, state: 'waiting', at: Date.now()});
     DOCK.files = []; fill($('#helpdesk .files'));
     ensureAgent();
@@ -9477,7 +9497,8 @@ $('#helpdesk .compose').onsubmit = async event => {
     return;
   }
   if (await wrote('/api/dispatch-message', {work_id: DOCK.target, session: DOCK.session, text: text + attached,
-    ...await voiceAudio(text, DOCK.state?.capabilities?.audio === true)})) {  // a spoken message's recording, where taken
+    ...(fork ? {fork} : {}),
+    ...await voiceAudio(text, !fork && DOCK.state?.capabilities?.audio === true)})) {  // a spoken message's recording, where taken
     DOCK.files = []; fill($('#helpdesk .files')); drawHelpdesk();
   } else { box.value = text; growSay(); }
 };
@@ -10393,8 +10414,11 @@ function agentAt(workId, sessionId = null) {
   const session = sessionId ? sessions.find(one => one.session_id === sessionId) || {session_id: sessionId}
     : sessions.filter(one => one.state === 'running').at(-1) || sessions.at(-1) || null;
   if (isIntake(workId)) return openIntakeChat(workId, session?.session_id || null, {focus: true});
-  openHelpdesk(workId, `${agentName(session?.agent)} on ${workPart(workId)}`, 'It answers when its current step ends.',
-    session?.session_id || null, null, {focus: true});
+  // a thread already open keeps its name and where it comes from: the person's chat about a node and the system agent
+  // hang on the same held ticket, and the thread read tells them apart
+  const open = session && DOCK.chats.find(one => one.session === session.session_id);
+  openHelpdesk(workId, open?.label || `${agentName(session?.agent)} on ${workPart(workId)}`,
+    'It answers when its current step ends.', session?.session_id || null, null, {focus: true});
 }
 /* Giving work, VIEW-032: the task is written as a person writes, the nodes it concerns are linked to it, and a node
  * inserted into the text reads there as its proper noun and carries its address. */

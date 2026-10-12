@@ -739,6 +739,7 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/memory': self.write_memory,
                   '/api/mascot': self.mascot_request, '/api/mascot-result': self.mascot_result,
                   '/api/dispatch-start': self.dispatch_start, '/api/dispatch-message': self.dispatch_message,
+                  '/api/dispatch-fork': self.dispatch_fork,
                   '/api/dispatch-stop': self.dispatch_stop, '/api/dispatch-interrupt': self.dispatch_interrupt,
                   '/api/dispatch-cancel': self.dispatch_cancel,
                   '/api/dispatch-prompts': self.set_dispatch_prompts,
@@ -1346,19 +1347,40 @@ class Handler(BaseHTTPRequestHandler):
 
     def dispatch_message(self, given: dict[str, Any]) -> None:
         """Send a person's message to the agent working a ticket with the dispatch module's message, VIEW-039; to the
-        chat session it names, when it names one, as several editor sessions share one ticket, BASE-062."""
-        work_id, text, session = given.get('work_id'), given.get('text'), given.get('session')
+        chat session it names, when it names one, as several editor sessions share one ticket, BASE-062. A message to a
+        fork of the session, named by `fork`, goes with the dispatch module's fork, which takes no recording."""
+        work_id, text, session, forked = given.get('work_id'), given.get('text'), given.get('session'), given.get('fork')
         if not isinstance(work_id, str) or not work_id:
             return self.send(400, {'error': 'A message goes to the agent working a ticket: its work id.'})
         if not isinstance(text, str) or not text.strip():
             return self.send(400, {'error': 'A message says something.'})
         if session is not None and (not isinstance(session, str) or not session):
             return self.send(400, {'error': 'The chat session id must be a nonempty string.'})
+        if forked is not None:
+            if not isinstance(forked, str) or not forked:
+                return self.send(400, {'error': 'The fork\'s session id must be a nonempty string.'})
+            if given.get('audio') is not None:
+                return self.send(400, {'error': 'A message to a fork is sent as text; a fork takes no recording.'})
+            return self.dispatched(given, 'fork', [work_id, *([f'session={session}'] if session else []),
+                                                   f'fork={forked}'], text.strip())
         # a spoken message's recording, kept by /api/voice/clip, for an agent that takes audio
         from .voice import clip_path
         clip = clip_path(given['audio']) if isinstance(given.get('audio'), str) else None
         self.dispatched(given, 'message', [work_id, *([f'session={session}'] if session else []),
                                            *([f'audio={clip}'] if clip else [])], text.strip())
+
+    def dispatch_fork(self, given: dict[str, Any]) -> None:
+        """Fork a running session into a side conversation with the dispatch module's fork, P030; the text, when there
+        is some, is the fork's first turn, and with none the fork is made and waits."""
+        work_id, text, session = given.get('work_id'), given.get('text'), given.get('session')
+        if not isinstance(work_id, str) or not work_id:
+            return self.send(400, {'error': 'A session is forked by the work id of its ticket.'})
+        if session is not None and (not isinstance(session, str) or not session):
+            return self.send(400, {'error': 'The chat session id must be a nonempty string.'})
+        if text is not None and not isinstance(text, str):
+            return self.send(400, {'error': 'A fork\'s first turn is text.'})
+        self.dispatched(given, 'fork', [work_id, *([f'session={session}'] if session else [])],
+                        text.strip() if text and text.strip() else None)
 
     def dispatch_interrupt(self, given: dict[str, Any]) -> None:
         """Interrupt the chat's current turn through dispatch without ending its session."""

@@ -5766,6 +5766,7 @@ def test_the_dispatch_writes_are_taken_only_from_the_page_and_say_what_to_do_nex
     own, as_json = f'http://127.0.0.1:{web}', {'Content-Type': 'application/json'}
     given = {'/api/dispatch-start': {'work_id': work, 'agent': 'claude'},
              '/api/dispatch-message': {'work_id': work, 'text': 'also run the tests'},
+             '/api/dispatch-fork': {'work_id': work, 'text': 'what else did you consider?'},
              '/api/dispatch-stop': {'work_id': work},
              '/api/dispatch-interrupt': {'work_id': work},
              '/api/dispatch-permit': {'work_id': work, 'request': 'r1', 'option': 'allow'},
@@ -5786,8 +5787,8 @@ def test_the_dispatch_writes_are_taken_only_from_the_page_and_say_what_to_do_nex
     status, said = api(web, '/api/dispatch-start', method='POST', headers={**as_json, 'Origin': own},
                        body=json.dumps({'project': 'proj', 'work_id': work, 'agent': 'someone'}))
     assert status == 400 and 'claude, codex, gemini' in said['error'], said
-    for path in ('/api/dispatch-message', '/api/dispatch-stop', '/api/dispatch-interrupt', '/api/dispatch-permit',
-                 '/api/dispatch-configure'):
+    for path in ('/api/dispatch-message', '/api/dispatch-fork', '/api/dispatch-stop', '/api/dispatch-interrupt',
+                 '/api/dispatch-permit', '/api/dispatch-configure'):
         status, said = api(web, path, method='POST', headers={**as_json, 'Origin': own},
                            body=json.dumps({'project': 'proj', **given[path]}))
         assert status == 400 and said['next'] == f'metaform dispatch start {work} <agent>', (path, said)
@@ -5805,6 +5806,27 @@ def test_the_dispatch_writes_are_taken_only_from_the_page_and_say_what_to_do_nex
     for name in AGENT_GLYPHS:
         status, body, headers = request(web, f'/page/agent-glyphs/{name}.svg')
         assert status == 200 and headers['Content-Type'] == 'image/svg+xml' and body.startswith('<svg'), name
+
+
+@pytest.mark.req('VIEW-039')
+def test_a_message_naming_a_fork_goes_to_the_fork_through_dispatch_fork_and_never_with_a_recording(monkeypatch):
+    """`dispatch message` names no fork, so a message written in a fork's thread reached the session it was forked
+    from. Naming the fork sends it with `dispatch fork fork=<id>`, which takes the text alone."""
+    from metaform.modules.web import server
+    ran = []
+    monkeypatch.setattr(server, 'cli_result', lambda given, module_id, verb, nouns, text=None: ran.append(
+        (module_id, verb, nouns, text)) or (200, {}))
+    handler = _Handler()
+    handler.dispatched = lambda given, verb, nouns, text=None: server.Handler.dispatched(handler, given, verb, nouns, text)
+    server.Handler.dispatch_message(handler, {'project': 'proj', 'work_id': 'w1', 'session': 's1', 'fork': 'c1',
+                                              'text': ' what else? '})
+    assert ran == [('dispatch', 'fork', ['w1', 'session=s1', 'fork=c1'], 'what else?')], ran
+    server.Handler.dispatch_message(handler, {'project': 'proj', 'work_id': 'w1', 'fork': 'c1', 'text': 'said aloud',
+                                              'audio': 'clip-1'})
+    assert handler.answers[-1][0] == 400 and len(ran) == 1, handler.answers
+    # /fork makes a new fork of the session, which names none; with no text the fork is made and waits
+    server.Handler.dispatch_fork(handler, {'project': 'proj', 'work_id': 'w1', 'session': 's1', 'text': '  '})
+    assert ran[-1] == ('dispatch', 'fork', ['w1', 'session=s1'], None), ran
 
 
 @pytest.mark.req('VIEW-039')
@@ -6545,6 +6567,64 @@ def test_each_open_chat_is_a_tab_in_the_dock_and_dismissing_one_leaves_the_other
     page.click('#helpdesk .call')  # Dismiss closes the chat on view, and the other comes back on view
     page.wait_for_function(f'() => document.querySelector("#helpdesk .log").textContent.includes("{on_view}")')
     assert page.locator('#helpdesk .tabs').is_hidden() and page.locator('#helpdesk .call').text_content() == 'Dismiss'
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-045')
+def test_the_system_agent_started_elsewhere_opens_as_the_system_agent_and_dismiss_only_closes_its_thread(
+        run, web, mapped, browser):
+    """A system agent the page did not start, by the phone, `dispatch system` or before a reload, opened as an agent at
+    work with a spend box. What its session is about says what it is: it opens as the system agent, and since the page
+    did not summon it, Dismiss closes its thread and leaves it running; /fork there forks its session. The person's chat
+    about a node hangs on the same held ticket and keeps its name and its chip, however it is opened again."""
+    from metaform.data import Node, Store
+    store = Store('proj')
+    run('enable', 'dispatch')
+    system = store.add_work(Node('element', 'code.alarm.audible'), None, task='Conversation with the system agent',
+                            held=True)
+    live_session(system.id)
+    with Store('proj', module='dispatch').tables() as tx:  # a node's conversation, run by the same kind of runner
+        row = dict(tx.get('sessions', {'session_id': f's-{system.id}'}) or {})
+        tx.insert('sessions', {**row, 'session_id': 's-node', 'seq': int(row['seq']) + 1})
+        for session, about in ((f's-{system.id}', 'system'), ('s-node', 'node:code.alarm.audible')):
+            tx.insert('lines', {'session_id': session, 'name': 'state', 'work_id': system.id, 'kind': 'state',
+                                'seq': 1, 'text': json.dumps({'about': about})})
+    alarm = store.element('code.alarm.audible').id
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
+    threads = lambda: page.evaluate('window.metaform.dock().threads')
+    page.evaluate(f'window.metaform.agent("{system.id}", "s-{system.id}")')
+    page.wait_for_function('() => window.metaform.dock().threads[0]?.source === "system"', timeout=10000)
+    assert threads()[0]['label'] == 'your system agent', threads()
+    page.wait_for_timeout(500)  # the spend box is drawn with the thread
+    assert page.locator('#helpdesk .spend').is_hidden()
+    forked = []  # /fork asks for a fork of the session on view, its words the fork's first turn
+    page.route('**/api/dispatch-fork', lambda route: forked.append(route.request.post_data_json) or route.fulfill(
+        status=200, content_type='application/json', body='{}'))
+    page.fill('#helpdesk .say', '/fork  what else did you consider?')
+    page.press('#helpdesk .say', 'Enter')
+    page.wait_for_function('() => document.querySelector("#helpdesk .log").textContent'
+                           '.includes("The fork was made; its thread is under Subagents.")', timeout=10000)
+    assert [{key: one.get(key) for key in ('work_id', 'session', 'text')} for one in forked] == [
+        {'work_id': system.id, 'session': f's-{system.id}', 'text': 'what else did you consider?'}], forked
+    asked = []
+    page.on('request', lambda sent: asked.append(sent.url) if '/api/' in sent.url else None)
+    page.click('#helpdesk .call')
+    page.wait_for_function('() => document.querySelector("#helpdesk .log").textContent'
+                           '.includes("The thread was closed; its agent works on, under Agent deployed.")', timeout=10000)
+    assert not any('/api/dispatch-stop' in url for url in asked), asked
+    # Chat about the node: its conversation hangs on the held ticket; the start is answered here, no agent is run
+    page.route('**/api/talk', lambda route: route.fulfill(status=200, content_type='application/json', body=json.dumps(
+        {'work_id': system.id, 'session_id': 's-node', 'agent': 'claude', 'state': 'running', 'conversation': True})))
+    page.evaluate(f'window.metaform.menu("{alarm}")')
+    page.click('#menu button.chat')
+    page.wait_for_function('() => window.metaform.dock().threads.some(one => one.session === "s-node")', timeout=10000)
+    chat = next(one for one in threads() if one['session'] == 's-node')
+    assert chat['source'] == 'conversation', chat
+    page.evaluate(f'window.metaform.agent("{system.id}", "s-node")')  # as an attention card or its figure opens it
+    page.wait_for_timeout(1000)  # its thread is read, and what it is about is said there
+    assert next(one for one in threads() if one['session'] == 's-node') == chat, threads()
     assert problems == []
 
 
