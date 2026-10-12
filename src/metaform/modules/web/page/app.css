@@ -2212,3 +2212,9 @@ body:has(.window.mcpwin > .bar:active) .appframe{pointer-events:none}  /* a pane
   #helpdesk .head[data-state] .dot,#helpdesk .latest,#helpdesk .log > .embody,#dock.open #dockTab.launch{animation:none}
   #helpdesk .avatar{transition:none}
 }
+
+/* Each map's controls in its own bar row, beside Swap, always in view. */
+.bar3d .peekpart, .bar2d .peekpart{display:flex;align-items:center;gap:var(--s2);flex-wrap:nowrap}
+.bar3d .peekpart[hidden], .bar2d .peekpart[hidden]{display:none}
+.bar3d .mapbtns, .bar2d .mapbtns{display:flex;align-items:center;gap:var(--s3)}
+.bar3d .peeklabel, .bar2d .peeklabel{font:600 var(--t-xs)/1 var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);white-space:nowrap}

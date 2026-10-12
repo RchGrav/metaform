@@ -73,17 +73,18 @@ MESSAGE_SID = re.compile(r'^(SM|MM)[0-9a-fA-F]{32}$')
 
 @dataclass
 class Lines:
-    """What the phone says, from the module's prompts.xml, filled for this person."""
-    greeting: str = 'Hi. What can I do for you?'
-    calling: Callable[[str], str] = lambda why: f'Hi. I am calling because {why}.'
+    """What the phone says. Every line is read from the module's prompts.xml (`lines` in __init__.py), filled for this
+    person; the empty defaults here only stand in for a test that builds a bridge with no prompts read."""
+    greeting: str = ''
+    calling: Callable[[str], str] = lambda why: ''
     on_call: str = ''
     on_callback: Callable[[str], str] = lambda why: ''
     on_text: str = ''
-    refusal: str = 'Sorry, this number only takes calls from its owner. Goodbye.'
-    busy: str = 'Another call is in progress. Please try again in a moment.'
-    trouble: str = "Sorry, I can't answer that right now."
-    pin: str = 'Enter your PIN, then press pound.'
-    pin_wrong: str = 'That is not the PIN. Goodbye.'
+    refusal: str = ''
+    busy: str = ''
+    trouble: str = ''
+    pin: str = ''
+    pin_wrong: str = ''
 
 
 @dataclass

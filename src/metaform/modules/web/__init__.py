@@ -144,7 +144,7 @@ settings.choice('web_flow_mode', ['off', 'selected', 'all', 'live'], 'selected',
                 details="selected draws the flow on the selected node's joins only, so a large map costs nothing; all "
                         "draws it on every join; live draws only what agents really do; off draws nothing, agents' "
                         'activity included. A change eases the dots in or out.')
-settings.number('web_pulse_ms', 1500, min=200, max=30000, scope='global',
+settings.number('web_pulse_ms', 2000, min=200, max=30000, scope='global',
                 help='The usual wait, in milliseconds, between one request and reply on a join and the next.',
                 details='Each join waits (random + random) times this after each cycle, a fresh wait every time, so '
                         'the flow bunches about this pace and never pulses in step, in the 3D and the 2D map.')

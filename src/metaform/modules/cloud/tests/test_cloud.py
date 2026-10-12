@@ -421,7 +421,7 @@ def test_a_tunnel_opens_only_with_the_key_its_token_is_bound_to_and_never_from_a
     from websockets.asyncio.client import connect
     from websockets.exceptions import ConnectionClosed, InvalidStatus
 
-    from metaform.modules.cloud import frames
+    from metaform import frames
     from metaform.modules.cloud.login import new_key, proof, refresh
     _, browser = broker.person('alice')
     made = login(broker, browser)
@@ -480,7 +480,7 @@ class Rogue:
     no credit: what a malicious local service could do to the broker."""
 
     def __init__(self, made, answer):
-        from metaform.modules.cloud import frames
+        from metaform import frames
         self.closed = None
         self.ready = threading.Event()
 
@@ -512,7 +512,7 @@ class Rogue:
 
 def test_a_machine_that_ignores_credit_is_disconnected_and_fills_no_memory_past_its_window(tmp_path, home,
                                                                                            monkeypatch):
-    from metaform.modules.cloud import frames
+    from metaform import frames
     work = tmp_path / 'work'
     work.mkdir()
     monkeypatch.chdir(work)
@@ -541,7 +541,7 @@ def test_a_machine_that_ignores_credit_is_disconnected_and_fills_no_memory_past_
 
 
 def test_a_bad_head_or_answers_past_the_tunnels_hold_are_502_and_give_their_stream_back(tmp_path, home, monkeypatch):
-    from metaform.modules.cloud import frames
+    from metaform import frames
     work = tmp_path / 'work'
     work.mkdir()
     monkeypatch.chdir(work)

@@ -90,8 +90,8 @@ def _credentials() -> Any:
 
 
 def _allows(ctx: Context) -> tuple[str, ...]:
-    from metaform.modules.mcp.oauth import scopes_up_to
-    return scopes_up_to(str(ctx.setting('cloud_capability')))
+    from . import tunnel
+    return tunnel.mcp(Path(ctx.folder)).scopes_up_to(str(ctx.setting('cloud_capability')))
 
 
 def sign_in(ctx: Context) -> dict[str, Any]:

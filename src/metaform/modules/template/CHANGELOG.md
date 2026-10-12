@@ -70,3 +70,5 @@ Each change to the module contract, newest first, so a module copied from the te
 - A module declares `SHIPS_DISABLED` and `DEPENDENCIES` as literals, read before import, BASE-015 and BASE-017.
 - A verb may declare `supported_os` and `surfaces`, BASE-016 and BASE-035.
 - A verb returns its result; the CLI and MCP show the same data, BASE-036.
+
+- `metaform.frames` joins the public base: the tunnel wire format the node broker and the cloud module share. A module that needs another module's internals takes them through `provides` instead, as cloud now takes the mcp module's HTTP serving pieces (`provided(folder, 'mcp.http')`).

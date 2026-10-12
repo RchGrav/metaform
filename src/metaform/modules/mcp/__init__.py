@@ -16,7 +16,7 @@ from typing import Any
 
 from metaform import settings
 from metaform.data import Tables
-from metaform.module import Context, Module, Subscription, Verb
+from metaform.module import Context, Module, Provides, Subscription, Verb
 
 from . import a2a_records, task_records
 
@@ -147,6 +147,32 @@ def serve(ctx: Context) -> None:
                introspection=str(ctx.setting('mcp_introspection') or ''))
 
 
+class HttpService:
+    """What this module offers another module that serves its MCP app behind a front door of its own, such as cloud's
+    tunnel: the app, the check of a broker's assertions, the exposure it is served under and the scope ladder. Found
+    with `provided(folder, 'mcp.http')`, so no module imports this one's internals."""
+
+    @staticmethod
+    def http_app(folder: Path, **given: Any) -> Any:
+        from .server import http_app
+        return http_app(folder, **given)
+
+    @staticmethod
+    def asserted(*given: Any, **named: Any) -> Any:
+        from .oauth import Asserted
+        return Asserted(*given, **named)
+
+    @staticmethod
+    def exposure(**given: Any) -> Any:
+        from .oauth import Exposure
+        return Exposure(**given)
+
+    @staticmethod
+    def scopes_up_to(capability: str) -> tuple[str, ...]:
+        from .oauth import scopes_up_to
+        return tuple(scopes_up_to(capability))
+
+
 MODULE = Module(
     id='mcp',
     summary="Serve Metaform's tools to AI tools over MCP.",
@@ -161,4 +187,5 @@ MODULE = Module(
     mcp_server='serve',
     tables=TABLES,
     subscriptions=(Subscription('map.changed', changed),),
+    provides=(Provides('mcp.http', HttpService()),),
 )

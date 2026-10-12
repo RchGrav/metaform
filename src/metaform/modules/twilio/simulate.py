@@ -128,7 +128,7 @@ async def run(*, pause: float = PAUSE, agent_delay: float = 0.0, speech: bytes |
     pin = ''.join(secrets.choice('0123456789') for _ in range(6))  # a made-up PIN, entered on the simulated keypad
     config = Config(public_url=PUBLIC, twilio_number=NUMBER, owners=(OWNER,), auth_token=token,
                     control_token=secrets.token_hex(20), proof='attested-or-pin', pin=pin,
-                    lines=Lines(greeting="Hi, it's owl. What can I do for you?", on_call='(by phone)'))
+                    lines=Lines(greeting="Hi, it's owl.", on_call='(by phone)'))
     phone = Phone(config, agent=lambda: agent, voice=lambda: voice,
                   client=api.Client(post=recorded, creds=lambda: ('AC' + '0' * 32, ('AC' + '0' * 32, 'simulated'))),
                   log=log.append)

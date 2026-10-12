@@ -47,7 +47,7 @@ class Recorder:
 def bridge(agent=None, voice=None, *, clock=None, seen=None, **config):
     recorder = Recorder()
     phone = Phone(Config(public_url=PUBLIC, twilio_number=NUMBER, owners=(OWNER,), auth_token=TOKEN,
-                         control_token='control', lines=Lines(on_text='(by text)'), **config),
+                         control_token='control', lines=Lines(on_text='(by text)', refusal='Not you.', busy='Busy.'), **config),
                   agent=lambda: agent or ScriptedAgent(['On it.']), voice=lambda: voice or ScriptedVoice(),
                   client=api.Client(post=recorder, creds=lambda: ('AC' + '1' * 32, ('SK' + '2' * 32, 'secret'))),
                   log=lambda line: None, seen=seen, **({'clock': clock} if clock else {}))

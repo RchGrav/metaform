@@ -33,7 +33,10 @@ from typing import Any, cast
 
 import httpx
 
-from . import audit, frames
+from metaform import frames
+from metaform.module import Stop, provided
+
+from . import audit
 from .login import Credentials, Refused, fresh_keys, proof, refresh, save
 
 RENEW_BEFORE = 60.0  # seconds before the access token expires that a new one is sent
@@ -366,20 +369,26 @@ class Connection:
         return status, seen
 
 
-def asserted(made: Credentials, allows: tuple[str, ...]) -> Any:
-    """This machine's check of the broker's assertions (oauth.Asserted), against what login saved."""
-    from metaform.modules.mcp.oauth import Asserted
-    return Asserted(made.issuer, made.resource, made.account, made.public_key, allows,
-                    clock=lambda: time.time() + made.skew)
+def mcp(folder: Path) -> Any:
+    """The mcp module's HTTP serving pieces, as it provides them (`mcp.http`); refused while mcp is off."""
+    found = provided(folder, 'mcp.http')
+    if not found:
+        raise Stop('The mcp module is off on this folder, and the cloud connection serves its tools.', 'metaform enable mcp')
+    return found[0][1]
+
+
+def asserted(made: Credentials, allows: tuple[str, ...], folder: Path | None = None) -> Any:
+    """This machine's check of the broker's assertions, against what login saved."""
+    return mcp(folder or Path.cwd()).asserted(made.issuer, made.resource, made.account, made.public_key, allows,
+                                              clock=lambda: time.time() + made.skew)
 
 
 def build_app(folder: Path, made: Credentials, verifier: Any) -> Any:
     """The MCP app `metaform mcp serve --http` serves, for this instance's resource URL behind the broker."""
-    from metaform.modules.mcp.oauth import Exposure
-    from metaform.modules.mcp.server import http_app
-    exposed = Exposure(public=made.issuer, introspection='', credential='',
-                       path=urllib.parse.urlsplit(made.resource).path or '/mcp')
-    return http_app(folder, bind='127.0.0.1', exposed=exposed, verifier=verifier)
+    served = mcp(folder)
+    exposed = served.exposure(public=made.issuer, introspection='', credential='',
+                              path=urllib.parse.urlsplit(made.resource).path or '/mcp')
+    return served.http_app(folder, bind='127.0.0.1', exposed=exposed, verifier=verifier)
 
 
 async def serve(folder: Path, made: Credentials, allows: tuple[str, ...], *, full_audit: bool = False,
@@ -387,7 +396,7 @@ async def serve(folder: Path, made: Credentials, allows: tuple[str, ...], *, ful
                 wrap: Callable[[Any], Any] | None = None) -> None:
     """Run the app's lifespan once, then the connection until it stops for good (Stopped, raised as itself, not
     inside the lifespan's task group). `wrap` puts something in front of the app, as a test watches what reaches it."""
-    verifier = asserted(made, allows)
+    verifier = asserted(made, allows, folder)
     app = build_app(folder, made, verifier)
     ended: list[Stopped] = []
     async with app.router.lifespan_context(app):

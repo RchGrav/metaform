@@ -7,12 +7,13 @@ from __future__ import annotations
 import base64
 import hashlib
 import secrets
-import sqlite3
 import time
 import urllib.parse
 
 import httpx
 import pytest
+
+from metaform.data import private_database
 
 pytestmark = pytest.mark.kind('fixture')
 
@@ -92,7 +93,7 @@ def test_the_store_keeps_accounts_and_passkeys_and_nothing_else(tmp_path):
     client = web(made)
     sign_in(store, client)
     host_tokens(client)
-    tables = {row[0] for row in sqlite3.connect(tmp_path / 'auth.sqlite').execute(
+    tables = {row[0] for row in private_database(tmp_path / 'auth.sqlite').execute(
         "SELECT name FROM sqlite_master WHERE type='table'")}
     assert tables == {'accounts', 'passkeys'}  # no sessions, codes, tokens, clients or challenges on disk
     assert {path.suffix for path in (tmp_path / 'keys').iterdir()} == {'.pem', '.json'}
@@ -316,7 +317,7 @@ def test_payload_and_rate_limits(tmp_path):
 def test_an_old_store_moves_its_invitations_onto_the_account_rows(tmp_path):
     from metaform.modules.node.authstore import AuthStore
     path = tmp_path / 'auth.sqlite'
-    old = sqlite3.connect(path)
+    old = private_database(path)
     old.executescript("""
         CREATE TABLE accounts (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, role TEXT NOT NULL, created REAL NOT NULL,
             disabled REAL);
@@ -391,7 +392,7 @@ def test_an_operator_sign_out_ends_the_running_brokers_sessions_and_its_store_st
     assert isinstance(beside, BrokerStore)
     beside.bump_generation(account.id)
     assert client.get('/account').status_code == 302  # the session named the old generation: gone
-    tables = {row[0] for row in sqlite3.connect(store.path).execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    tables = {row[0] for row in private_database(store.path).execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert tables == {'accounts', 'passkeys'}
 
 
@@ -405,7 +406,7 @@ def test_a_self_hosted_store_opened_as_a_brokers_keeps_only_accounts_and_passkey
     old.save_client(CLIENT, document(), 'cimd', time.time() + 600)
     old.save_family('f', 1, False, time.time() + 600)
     BrokerStore(path, families=False)
-    tables = {row[0] for row in sqlite3.connect(path).execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    tables = {row[0] for row in private_database(path).execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert tables == {'accounts', 'passkeys'}
     assert BrokerStore(path).account('rich') is not None
 

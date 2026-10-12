@@ -99,7 +99,7 @@ credential, and `node/issuer`.
 
 mcp, through its settings `mcp_public_url`, `mcp_bind` and `mcp_introspection`, written into the compose file, and
 through RFC 7662 introspection over loopback; web, whose server process the compose file runs. Neither is imported.
-The broker imports the cloud module's wire format, `cloud/frames.py`, so both ends of the tunnel read one definition.
+The broker and the cloud module read one definition of the tunnel's wire format, `metaform.frames` in the public base.
 
 ## Systems supported
 

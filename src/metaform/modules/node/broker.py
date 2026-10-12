@@ -45,7 +45,7 @@ from starlette.routing import Route, WebSocketRoute
 from starlette.types import ASGIApp, Receive, Scope, Send
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from metaform.modules.cloud import frames
+from metaform import frames
 
 from . import tokens
 from .authserver import DEFAULT_INSTANCE, Node

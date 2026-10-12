@@ -4740,7 +4740,7 @@ function prepare3d() {
  * camera. The selected node's edges in the 2D map carry the same, `flows2d`. The graph library's own particle, one to
  * a link, is never drawn while the page draws the flow: `held`, a share of the way, shows it held there instead,
  * `dots3d`, so a browser check can read a dot over a node. */
-const FLOW = {clock: 0, last: 0, held: null, count: 0, ask: 0.45, reply: 0.9, send: 0.8, burst: 0.55, mean: 1.5,
+const FLOW = {clock: 0, last: 0, held: null, count: 0, ask: 0.45, reply: 0.9, send: 0.8, burst: 0.55, mean: 2,
   streak: 0.3, trail: 0.06, bright: 1.35, live: [], net: null, mode: null, fades: new Map(), liveFade: 1, ease: 6};
 const cycles = new Map();  // each join's current cycle: when it began on FLOW.clock, its wait, and whether it answered
 /* A join's cycle at this moment; `active` is how long a cycle shows. A `driven` join sends its records only when its
@@ -5717,7 +5717,10 @@ PEEK.two.append(h('div', {class: 'segmented directions', role: 'radiogroup', 'ar
 PEEK.handle = h('button', {class: 'peekhandle', type: 'button', 'aria-label': "The large map's bar", 'aria-keyshortcuts': 'M',
   'aria-pressed': 'false', title: "Show or put away the large map's bar: its modes, direction and physics (M)",
   onclick: event => { event.stopPropagation(); toggleBar(); }});
-$('main').append(PEEK.el);  // no handle: the bar comes out as the pointer rests where it sits, or by M
+// Each map's controls stand in its own bar row, beside Swap, always in view: nothing slides out over the map.
+$('#big3d .bar3d .mapbtns').prepend(PEEK.three);
+$('.bar2d .mapbtns').prepend(PEEK.two);
+PEEK.three.append(PEEK.physics);
 function peekParts() {
   PEEK.two.hidden = !small3d();  // `small3d`: the 3D map in the small area, the 2D map in the large one
   PEEK.three.hidden = small3d();
@@ -5756,6 +5759,8 @@ function fitPeek() {
 addEventListener('resize', () => { if (PEEK.out) fitPeek(); });
 /* Out, for `why`: 'near' the pointer, 'key' a key that changed it, 'use' a click or the focus in it. */
 function peek(why = 'use') {
+  peekParts();
+  return;  // the controls are always in their bar now; nothing comes out
   if (FRAMED || (why === 'near' && VIEW.modeBar !== 'auto')) return;
   peekParts();
   if (!PEEK.out) {
@@ -5770,6 +5775,7 @@ function peek(why = 'use') {
   if (VIEW.modeBar !== 'shown' && !PEEK.inside) PEEK.timer = setTimeout(unpeek, why === 'key' && VIEW.modeBar === 'keys' ? 2600 : PEEK.stay);
 }
 function unpeek(now = false) {
+  return;  // the controls are always in their bar now; nothing goes away
   if (VIEW.modeBar === 'shown') return;
   if (!now && (PEEK.el.contains(document.activeElement) || PEEK.inside)) { PEEK.timer = setTimeout(unpeek, PEEK.stay); return; }
   clearTimeout(PEEK.timer);
@@ -5951,7 +5957,6 @@ INFOSET.pick = barPick({id: 'infomenu', label: 'Info', key: 'I', title: 'What is
   list: HOVER_INFO, choose: name => chooseInfo(name)});
 INFOSET.buttons = INFOSET.pick.items;
 INFOSET.pick.show(VIEW.hoverInfo || 'name+summary');
-PEEK.three.append(INFOSET.pick.button);
 if ($('#infoat')) $('#infoat').onchange = event => chooseInfo(event.target.value);
 function stepInfo() {
   const names = HOVER_INFO.map(([name]) => name), at = names.indexOf(VIEW.hoverInfo || 'name+summary');
@@ -5961,7 +5966,6 @@ function stepInfo() {
 NODEZOOM.button = h('button', {class: 'btn sm quiet nodezoom', type: 'button', 'aria-pressed': 'true', 'aria-keyshortcuts': 'Z',
   'aria-label': 'Node zoom', title: 'Node zoom: fly to each node selected and frame it with its neighbours; off, a selection leaves the camera (Z)',
   onclick: event => { event.stopPropagation(); toggleNodeZoom(); }}, h('span', {class: 'state'}, 'On'), h('kbd', {}, 'Z'));
-PEEK.three.prepend(h('span', {class: 'peekpair'}, h('span', {class: 'peeklabel', 'aria-hidden': 'true'}, 'Node zoom'), NODEZOOM.button));
 $('#nodezoomat').onchange = event => toggleNodeZoom(event.target.checked);
 $('#flowat').onchange = event => chooseFlow(event.target.value);
 function stepFlow() {
@@ -6094,21 +6098,18 @@ LENS.pick = barPick({id: 'lensmenu', label: 'Lens', key: 'L', title: "The 3D map
   list: [['natural', 'Natural', 'The view opens no wider than the eye sees, 55°'], ['wide', 'Wide', 'The view opens to 80° as the pane grows tall'],
     ['fisheye', 'Fisheye', 'The view opens to 120°, the whole map close around you']], choose: name => chooseLens(name)});
 LENS.button = LENS.pick.button;
-PEEK.three.append(LENS.button);
 $('#lensat').onchange = event => chooseLens(event.target.value);
 showLens();
 SIGNS.pick = barPick({id: 'signsmenu', label: 'Signs', key: 'S', title: "How the 3D map's names stand",
   list: [['outward', 'Outward', "Each name a sign standing out from the map's middle, turned round when seen from behind"],
     ['facing', 'Facing', 'Each name turned to face you']], choose: name => chooseSigns(name)});
 SIGNS.button = SIGNS.pick.button;
-PEEK.three.append(SIGNS.button);
 $('#signsat').onchange = event => chooseSigns(event.target.value);
 // Ultra graphics, U, page/ultra.js: the 3D map in outer space or clean; the button names the look the map has
 PEEK.ultra = barPick({id: 'ultramenu', label: 'Ultra', key: 'U', title: "How the 3D map is drawn: clean, or in outer space",
   list: [['clean', 'Off', 'The map as it has always been drawn'], ['ultra', 'On', 'The map in outer space: a starfield, bodies and filaments of light']],
   choose: name => { setTheme(name === 'ultra' ? 'space' : PLAIN.last); showUltra(); peek('key'); }});
 function showUltra() { PEEK.ultra.show(ULTRA.stats().mode === 'ultra' ? 'ultra' : 'clean'); }
-PEEK.three.append(PEEK.ultra.button);
 showUltra();
 function chooseSigns(name) {
   VIEW.signs = name === 'facing' ? 'facing' : 'outward';
@@ -6126,7 +6127,7 @@ function showPhysics() {
   const at = PHYSICS.findIndex(([one]) => one === PHYS.name), preset = PHYSICS[Math.max(0, at)];
   if (PHYS.drawn === preset[0]) return;  // as `barPick`: made again only on a change, so a press on it is never lost
   PHYS.drawn = preset[0];
-  fill(PHYS.shown, h('span', {class: 'peeklabel'}, 'Physics'), h('span', {class: 'value'}, preset[1]),
+  fill(PHYS.shown, h('span', {class: 'peeklabel'}, 'Layout'), h('span', {class: 'value'}, preset[1]),
     h('i', {class: 'i i-chev', 'aria-hidden': 'true'}));  // each preset's key is in its menu
   PHYS.shown.setAttribute('aria-label', `Physics: ${preset[1]}`);
 }
