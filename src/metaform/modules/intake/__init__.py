@@ -1,18 +1,18 @@
 """intake: the intake served by name, recorded one object at a time as it is reasoned, BASE-039.
 
 A subagent reads `intake prompt` and records the map as it works: it starts the
-intake, records each element and each join in its own call, anneals a part as a
-join one level deeper, received by the element it is part of, reads the recorded
+intake, records each element and each purpose record in its own call, anneals a part as an
+element held by a purpose record one level deeper, received by the element it is part of, reads the recorded
 map back with `intake show`, whole or one receiver at a time, corrects it by
 recording again and with `intake remove`, and ends with `intake finish`. The
 intake layer is building until then: context reads do not see it, and the web
 GUI follows it live.
 
 The map is: an element is its namespace_address,
-name_length, name and role; a join is its type, purpose, ef and ifd, held by its
+name_length, name and role; a purpose record is its type, purpose, ef and ifd, held by its
 receiver, holding the elements that serve it. An element's refs go in the
 sources layer while intake_sources is on. The agent names what it reasoned,
-never what the store keeps: an element by its namespace_address and a join by
+never what the store keeps: an element by its namespace_address and a purpose record by
 its receiver and an element it holds; no id reaches the agent. Nothing is
 refused for its content: what does not fit is stored as given and named in a
 notice, BASE-044. The report and process feedback are saved at the finish,
@@ -24,6 +24,7 @@ import json
 import os
 import re
 import sys
+from dataclasses import replace
 from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
@@ -40,7 +41,7 @@ DEPENDENCIES = ()
 SHIPS_DISABLED = False
 REMOTE_AGENT = False  # a project wheel carries a map already built
 
-RESOURCE = resources.files(__name__) / 'resources' / 'intake.xml'  # the digital typology intake, the served intake
+RESOURCE = resources.files(__name__) / 'resources' / 'intake.axiom'  # the digital typology intake, the served intake
 SHAPE = resources.files(__name__) / 'resources' / 'metaform.axiom'  # the metaform's shape
 SCHEMA_URI = 'metaform://intake/schema'
 VARIABLE = ('The functional map of the artifact: its elements, and each receiver\'s purpose served by a provider\'s '
@@ -48,7 +49,7 @@ VARIABLE = ('The functional map of the artifact: its elements, and each receiver
 TARGET = re.compile(r'<target\b[^>]*>')
 
 def _field_words(group: str) -> dict[str, str]:
-    """The definition of each field of `group`, element or join, written once in this module's prompts.xml under
+    """The definition of each field of `group`, element or purpose record, written once in this module's prompts.xml under
     <fields>, MCP-031. The Canonical Intake is not parsed for them: it is the instruction, served as written, and a
     field's definition lives in one place that every tool taking the field shows."""
     import xml.etree.ElementTree as ET
@@ -57,7 +58,7 @@ def _field_words(group: str) -> dict[str, str]:
     return {} if found is None else {child.tag: (child.text or '').strip() for child in found}
 
 
-ELEMENT_WORDS, JOIN_WORDS = _field_words('element'), _field_words('join')
+ELEMENT_WORDS, PURPOSE_WORDS = _field_words('element'), _field_words('purpose')
 
 settings.text('intake_file', '', help='An intake file to serve instead of the Canonical Intake. Empty means the '
                                       'Canonical Intake.')
@@ -147,7 +148,7 @@ def _stamp() -> str:
 
 def _note(notices: Notices, result: Any, words: dict[str, str] | None = None) -> None:
     """A store result's notices, each named by the field it is about; the element's address by its tool name. An id
-    the store names is said in the agent's words, `words`, as an address or a join."""
+    the store names is said in the agent's words, `words`, as an address or a purpose record."""
     for notice in cast(tuple[Notice, ...], getattr(result, 'notices', ()) or ()):
         message = ID.sub(lambda match: (words or {}).get(match.group(0), match.group(0)), notice.message)
         where = {'address': ADDRESS}.get(notice.where, notice.where)
@@ -156,7 +157,7 @@ def _note(notices: Notices, result: Any, words: dict[str, str] | None = None) ->
 
 def _said(held: Join) -> str:
     first = held.elements[0].address if held.elements else None
-    return f'the join of {held.receiver_address} holding {first}'
+    return f'the purpose record of {held.receiver_address} holding {first}'
 
 
 def _words(store: Store, layer: Layer | None) -> dict[str, str]:
@@ -172,7 +173,7 @@ def _words(store: Store, layer: Layer | None) -> dict[str, str]:
 
 
 def _joins_holding(store: Store, layer: Layer | None, receiver: Any, elements: list[Any]) -> list[Join]:
-    """The joins of `receiver` in the intake being recorded, or in the metaform when none is, that hold any of
+    """The purpose records of `receiver` in the intake being recorded, or in the metaform when none is, that hold any of
     `elements`."""
     owner = store.element(str(receiver), raw=True)
     if owner is None:
@@ -314,8 +315,8 @@ def start(ctx: Context) -> Any:
                                             result_id=str(ctx.nouns['result']) if ctx.nouns.get('result') else None))
     elif (mapped := _active_map(store)) is not None and not ctx.nouns.get('name'):  # a name asks for a new intake
         notices.append({'where': 'intake', 'message': f'The active metaform {mapped.metaform} has a finished intake. '
-                        'Conditions, their notes and refs recorded on its elements and joins are written onto it. '
-                        'Recording a new element or join, or changing a field of one, starts a new intake in a new '
+                        'Conditions, their notes and refs recorded on its elements and purpose records are written onto it. '
+                        'Recording a new element or purpose record, or changing a field of one, starts a new intake in a new '
                         'base, kept apart until it finishes.'})
         return {'layer': mapped.layer.name, 'project': store.project_id, 'base': mapped.metaform, 'notices': notices}
     else:
@@ -324,13 +325,14 @@ def start(ctx: Context) -> Any:
 
 
 def _described(element: Element) -> bool:
-    """Whether an element was described with intake element, not only named in a join."""
+    """Whether an element was described with intake element, not only named in a purpose record."""
     return element.role is not None or element.name_length is not None
 
 
 def _sources(ctx: Context, rec: Recording, kind: Literal['element', 'join'], element_id: str, address: str,
              refs: list[Any], notices: Notices) -> None:
-    """The refs given with an element or a join, written as its one item of the sources layer, replacing what that item held:
+    """The refs given with an element or a purpose record, written as its one item of the sources layer,
+    replacing what that item held:
     refs live in a sources layer, never in the metaform. Off with intake_sources, nothing is written."""
     if not ctx.setting('intake_sources'):
         notices.append({'where': 'refs', 'message': 'intake_sources is off, so the refs were not recorded.'})
@@ -431,7 +433,7 @@ def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], t
 
 
 def _close_work(store: Store, things: set[str], resolution: str) -> None:
-    """Close every open work record at these elements and joins, which are being removed."""
+    """Close every open work record at these elements and purpose records, which are being removed."""
     for row in store.work(open=True, limit=0).results:
         if row.node_id in things:
             store.finish_work(row.id, resolution)
@@ -440,10 +442,10 @@ def _close_work(store: Store, things: set[str], resolution: str) -> None:
 JOIN_FIELDS = ('purpose', 'ef', 'ifd')
 
 
-def join(ctx: Context) -> Any:
-    """Record one purpose join: the receiver's purpose, the ef and the ifd, holding the elements that serve it.
-    A join of the receiver that already holds one of the elements is that join: the fields given replace its own, and
-    the elements given that it does not hold are added to it."""
+def purpose(ctx: Context) -> Any:
+    """Record one purpose record: the receiver's purpose, the ef and the ifd, holding the elements that serve it.
+    A purpose record of the receiver that already holds one of the elements is that record: the fields given replace
+    its own, and the elements given that it does not hold are added to it."""
     _checked_condition(ctx)
     notices: Notices = []
     receiver = ctx.nouns['receiver']
@@ -460,9 +462,9 @@ def join(ctx: Context) -> Any:
                     'notices': notices}
     if not elements:  # checked before an intake is started or a base opened, since nothing is recorded
         building = _building(ctx.require_store())
-        notices.append({'where': 'elements', 'message': 'elements is missing; a join holds the elements that serve '
-                                                        'its purpose. A join takes receiver, elements, purpose, ef '
-                                                        'and ifd. Nothing was recorded.'})
+        notices.append({'where': 'elements', 'message': 'elements is missing; a purpose record holds the elements '
+                                                        'that serve its purpose. A purpose record takes receiver, '
+                                                        'elements, purpose, ef and ifd. Nothing was recorded.'})
         return {'receiver': receiver, 'elements': elements,
                 'layer': building.layer.name if building is not None else None, 'notices': notices}
     rec = _recording(ctx, notices)
@@ -470,7 +472,7 @@ def join(ctx: Context) -> Any:
     words = _words(rec.store, rec.layer)
     found = _joins_holding(rec.store, rec.layer, receiver, elements)
     if len(found) > 1:
-        notices.append({'where': 'elements', 'message': f'{receiver} has {len(found)} joins holding these elements, '
+        notices.append({'where': 'elements', 'message': f'{receiver} has {len(found)} purpose records holding these elements, '
                                                         f'with the purposes {"; ".join(repr(held.purpose) for held in found)}; '
                                                         'name elements that only one of them holds. Nothing was '
                                                         'changed.'})
@@ -505,7 +507,7 @@ def join(ctx: Context) -> Any:
 
 
 def _join_refs(ctx: Context, rec: Recording, join_id: str, receiver: str, notices: Notices) -> None:
-    """The refs given with a join, as its item of the sources layer, the same way an element's are kept."""
+    """The refs given with a purpose record, as its item of the sources layer, the same way an element's are kept."""
     refs = _list(ctx, 'refs')
     if refs is not None:
         _sources(ctx, rec, 'join', join_id, receiver, refs, notices)
@@ -529,14 +531,14 @@ def _join_entry(held: Join) -> dict[str, Any]:
 
 
 def _findings(store: Store, elements: list[Element], joins: list[Join]) -> dict[str, dict[str, Any]]:
-    """The open condition and note on each recorded element and join, by id, so an agent reads its marks back."""
+    """The open condition and note on each recorded element and purpose record, by id, so an agent reads its marks back."""
     ids = {element.id for element in elements} | {held.id for held in joins}
     return {row.node_id: {'condition': row.condition, 'note': row.note}
             for row in store.work(open=True, limit=0).results if row.node_id in ids}
 
 
 def _refs(store: Store) -> dict[tuple[str, str], list[dict[str, str]]]:
-    """Every element's and join's refs, the items of the sources layer at it, by its kind and id, read in one pass
+    """Every element's and purpose record's refs, the items of the sources layer at it, by its kind and id, read in one pass
     rather than one read per element; none when there is no sources layer."""
     try:
         held = store.layer_items(SOURCES, limit=0).results
@@ -551,9 +553,9 @@ def _refs(store: Store) -> dict[tuple[str, str], list[dict[str, str]]]:
 
 
 def _map(elements: list[Element], joins: list[Join], store: Store | None = None) -> dict[str, Any]:
-    """The recorded map in the agent's words: every element by its address with its refs, every join by its receiver
-    with the elements it holds, each with its open condition and note, the CQUs whose root joins the map comes off,
-    what those joins do not reach, and the addresses never described."""
+    """The recorded map in the agent's words: every element by its address with its refs, every purpose record by its receiver
+    with the elements it holds, each with its open condition and note, the CQUs whose root purpose records the map comes off,
+    what those purpose records do not reach, and the addresses never described."""
     marks = _findings(store, elements, joins) if store is not None else {}
     refs = _refs(store) if store is not None else {}
     listed: list[dict[str, Any]] = []
@@ -562,12 +564,12 @@ def _map(elements: list[Element], joins: list[Join], store: Store | None = None)
         if store is not None:
             entry['refs'] = refs.get(('element', found.id), [])
         listed.append({**entry, **marks.get(found.id, {})})
-    serves: dict[str, set[str]] = {}  # each receiver, and the elements its joins hold
+    serves: dict[str, set[str]] = {}  # each receiver, and the elements its purpose records hold
     for held in joins:
-        if held.receiver_address is not None:  # an orphaned join's receiver is gone, so it reaches nothing
+        if held.receiver_address is not None:  # an orphaned purpose record's receiver is gone, so it reaches nothing
             serves.setdefault(held.receiver_address, set()).update(each.address for each in held.elements
                                                                    if each.address is not None)
-    # the map comes off the root joins, each a CQU receiving from the DE; what they do not reach is disconnected
+    # the map comes off the root purpose records, each a CQU receiving from the DE; what they do not reach is disconnected
     roots = [found.address for found in elements if found.role == 'CQU' and found.address in serves]
     reached, waiting = set(roots), list(roots)
     while waiting:
@@ -577,7 +579,7 @@ def _map(elements: list[Element], joins: list[Join], store: Store | None = None)
                 waiting.append(address)
 
     return {'elements': listed,
-            'joins': [{**_join_entry(held), **({'refs': refs.get(('join', held.id), [])} if store is not None else {}),
+            'purposes': [{**_join_entry(held), **({'refs': refs.get(('join', held.id), [])} if store is not None else {}),
                        **marks.get(held.id, {})} for held in joins],
             'roots': roots,
             'disconnected': [found.address for found in elements if found.address not in reached],
@@ -585,14 +587,15 @@ def _map(elements: list[Element], joins: list[Join], store: Store | None = None)
 
 
 def _recorded(store: Store, layer: Layer) -> tuple[list[Element], list[Join]]:
-    """What this intake recorded: its elements, with every element its joins hold that it wrote, and its joins."""
+    """What this intake recorded: its elements, with every element its purpose records hold that it wrote,
+    and its purpose records."""
     graph: GraphPage = store.layer_graph(layer.name)
     listed = {placed.element.id: placed.element for placed in graph.elements}
     return sorted(listed.values(), key=lambda found: found.address), list(graph.joins)
 
 
 def show(ctx: Context) -> Any:
-    """The intake being recorded, whole or one receiver's joins and the elements they hold: to read back, proof and
+    """The intake being recorded, whole or one receiver's purpose records and the elements they hold: to read back, proof and
     correct before finishing, without reading the whole map at once."""
     store = ctx.require_store()
     found = _building(store)
@@ -601,7 +604,7 @@ def show(ctx: Context) -> Any:
         notices.append({'where': 'intake', 'message': f'No intake is being recorded; this is the active metaform '
                                                       f'{found.metaform}, whose intake is finished.'})
     if found is None:
-        return {'layer': None, 'project': store.project_id, 'base': None, 'elements': [], 'joins': [],
+        return {'layer': None, 'project': store.project_id, 'base': None, 'elements': [], 'purposes': [],
                 'roots': [], 'disconnected': [], 'undescribed': [],
                 'notices': [{'where': 'intake', 'message': NOTHING}]}
     elements, joins = _recorded(found.store, found.layer)
@@ -618,12 +621,13 @@ def show(ctx: Context) -> Any:
 
 
 NAMED_BY = ('Name what to remove by its addresses: namespace_address for an element, receiver and provider for the '
-            'join of that receiver holding that element, and all three to take the element at namespace_address out '
-            'of that join.')
+            'purpose record of that receiver holding that element, and all three to take the element at namespace_address out '
+            'of that purpose record.')
 
 
 def remove(ctx: Context) -> Any:
-    """Remove one recorded element, one join, or one element from a join, while the intake is being recorded."""
+    """Remove one recorded element, one purpose record, or one element from a purpose record,
+    while the intake is being recorded."""
     store = ctx.require_store()
     found = _building(store)
     named = {key: ctx.nouns[key] for key in ('receiver', 'provider', ADDRESS) if ctx.nouns.get(key) is not None}
@@ -635,7 +639,7 @@ def remove(ctx: Context) -> Any:
     if 'receiver' in named and 'provider' in named:
         held = _joins_holding(found.store, found.layer, named['receiver'], [named['provider']])
         if len(held) != 1:
-            notices.append({'where': 'provider', 'message': f'{named["receiver"]} has {len(held)} joins holding '
+            notices.append({'where': 'provider', 'message': f'{named["receiver"]} has {len(held)} purpose records holding '
                                                             f'{named["provider"]}; nothing was changed.'})
         elif ADDRESS in named:
             kept = [each.address for each in held[0].elements if each.address != named[ADDRESS]]
@@ -645,14 +649,14 @@ def remove(ctx: Context) -> Any:
             else:
                 _note(notices, found.store.edit(held[0].id, {'elements': kept}), words)
         else:
-            _close_work(found.store, {held[0].id}, 'Its join was removed from the intake.')
+            _close_work(found.store, {held[0].id}, 'Its purpose record was removed from the intake.')
             _note(notices, found.store.remove(held[0].id), words)
     elif ADDRESS in named and 'receiver' not in named and 'provider' not in named:
         current = found.store.element(named[ADDRESS], raw=True)
         if current is None:
             notices.append({'where': ADDRESS, 'message': f'{named[ADDRESS]} is not an element; nothing was changed.'})
         else:
-            # what held it lets it go, and its marks close with it, so nothing is left orphaned or open; a join
+            # what held it lets it go, and its marks close with it, so nothing is left orphaned or open; a purpose record
             # left holding nothing is removed, and its marks close too
             gone = {current.id}
             for held in _recorded(found.store, found.layer)[1]:
@@ -677,7 +681,7 @@ def finish(ctx: Context) -> Any:
     feedback = _given(ctx, 'feedback', notices)
     found = _building(store)
     if found is None:
-        return {'layer': None, 'project': store.project_id, 'base': None, 'elements': 0, 'joins': 0, 'work': 0,
+        return {'layer': None, 'project': store.project_id, 'base': None, 'elements': 0, 'purposes': 0, 'work': 0,
                 'notices': notices + [{'where': 'intake', 'message': 'No intake is being recorded; there is nothing '
                                                                      'to finish.'}]}
     elements, joins = _recorded(found.store, found.layer)
@@ -685,7 +689,7 @@ def finish(ctx: Context) -> Any:
     if undescribed:
         notices.append({'where': 'undescribed', 'message': f'{", ".join(undescribed)} '
                                                            f'{"was" if len(undescribed) == 1 else "were"} named in a '
-                                                           'join but never described with intake element; stored '
+                                                           'purpose record but never described with intake element; stored '
                                                            'without a role or a name_length.'})
     _note(notices, found.store.finish(found.layer.name))
     if not found.active:
@@ -705,8 +709,18 @@ def finish(ctx: Context) -> Any:
     work = sum(1 for row in found.store.work(open=True, limit=0).results if row.node_id in recorded_ids)
     # A map with a code trunk is ready for its code: the map module reads it into its own layer, P167.
     code = any(element.address.split('.', 1)[0] == 'code' for element in elements)
+    follow_on: list[dict[str, Any]] = []
+    if code:
+        base = found.store.bound_base()
+        if base is not None:
+            # Optional enrichment receives the committed map, even when this call resolved its project implicitly.
+            # The event bus reports subscriber failures without undoing the completed intake.
+            follow_on = replace(ctx, project=store.project_id).publish('intake.finished', {
+                'project': store.project_id, 'base': base.id, 'layer': found.layer.id, 'code': True,
+            })
     return {'layer': found.layer.name, 'project': store.project_id, 'base': found.metaform,
-            'elements': len(elements), 'joins': len(joins), 'work': work, 'notices': notices,
+            'elements': len(elements), 'purposes': len(joins), 'work': work, 'notices': notices,
+            **({'follow_on': follow_on} if follow_on else {}),
             **({'next': [ctx.calls('metaform map code-import')]} if code else {})}
 
 
@@ -749,9 +763,9 @@ def status(ctx: Context) -> Status:
     return Status(lines=('Intake: none yet',), instruction=prompt_files.required(here, 'no_intake'))
 
 
-E, J = ELEMENT_WORDS.get, JOIN_WORDS.get
+E, P = ELEMENT_WORDS.get, PURPOSE_WORDS.get
 def _condition_nouns(words: Any) -> tuple[Noun, Noun]:
-    """The condition and the note an element or a join is recorded with, each in that command's own words."""
+    """The condition and the note an element or a purpose record is recorded with, each in that command's own words."""
     return (Noun('condition', words('condition', ''), required=False,
                  schema={'type': 'string', 'enum': ['MISS', 'BKN', 'OK', 'broken', *INTAKE_MARKS]}),  # the procedure's word or its stored one
             Noun('note', words('note', ''), required=False))
@@ -763,8 +777,8 @@ MODULE = Module(
             'has an intake. The intake is agent work: a subagent reads its instructions with the command prompt and '
             'follows them. Details: metaform help intake.',
     details='The intake text is served as stored, with its prompt slot filled. The intake is recorded as it is '
-            "reasoned, one element or join per call, in the metaform's shape: an element is its namespace_address, "
-            'name_length, name and role; a join is the receiver\'s purpose, the ef and the ifd, holding the elements '
+            "reasoned, one element or purpose record per call, in the metaform's shape: an element is its namespace_address, "
+            'name_length, name and role; a purpose record is the receiver\'s purpose, the ef and the ifd, holding the elements '
             'that serve it. An element\'s refs go in the sources layer while intake_sources is on. It is read back '
             'with show, whole or one receiver at a time, and corrected by recording again and with remove. No other '
             'read sees it until finish; after finish the metaform changes by refining, metaform map refine, in the '
@@ -776,10 +790,10 @@ MODULE = Module(
              nouns=(Noun('text', 'path to the target for the intake process; leaving this blank means this project',
                          required=False),), effect='read'),
         Verb('schema', schema, 'Read the shape the intake records: namespace roots, Upstream and Downstream links, '
-                               'element and join forms.', effect='read'),
+                               'element and purpose forms.', effect='read'),
         Verb('start', start, "Start recording this project's intake, or resume the one being recorded. On a project "
                              'whose intake is finished it stays on that map: conditions, notes and refs are written '
-                             'onto it, and recording a new element or join opens a separate intake-<UTC timestamp> '
+                             'onto it, and recording a new element or purpose record opens a separate intake-<UTC timestamp> '
                              'metaform, keeping the earlier one untouched. Returns its name; the existing web GUI '
                              'follows it live.',
              nouns=(Noun('result', 'The result id the intake procedure generates and gives at start, kept with the intake.', required=False),
@@ -797,22 +811,22 @@ MODULE = Module(
                     Noun('role', E('role', ''), required=False, schema=ROLE),
                     Noun('refs', E('refs', ''), required=False, schema=REFS),
                     *_condition_nouns(E))),
-        Verb('join', join, "Record one purpose join: a receiver's OP and the elements that serve it, with its EF. "
-                           'Recorded again with an element it holds, the fields given replace its own and new elements '
-                           'are added.',
-             nouns=(Noun('receiver', J('receiver', '')),
-                    Noun('elements', J('elements', ''), schema=ELEMENTS),
-                    Noun('purpose', J('purpose', ''), required=False),
-                    Noun('ef', J('ef', ''), required=False),
-                    Noun('ifd', J('ifd', ''), required=False, schema=IFD),
-                    Noun('refs', J('refs', ''), required=False, schema=REFS),
-                    *_condition_nouns(J))),
+        Verb('purpose', purpose, "Record one purpose record: a receiver's OP and the elements that serve it, with its EF. "
+                                 'Recorded again with an element it holds, the fields given replace its own and new '
+                                 'elements are added.',
+             nouns=(Noun('receiver', P('receiver', '')),
+                    Noun('elements', P('elements', ''), schema=ELEMENTS),
+                    Noun('purpose', P('purpose', ''), required=False),
+                    Noun('ef', P('ef', ''), required=False),
+                    Noun('ifd', P('ifd', ''), required=False, schema=IFD),
+                    Noun('refs', P('refs', ''), required=False, schema=REFS),
+                    *_condition_nouns(P))),
         Verb('show', show, 'Read the intake being recorded, whole or one receiver at a time.',
-             nouns=(Noun('receiver', J('receiver', ''), required=False),), effect='read'),
-        Verb('remove', remove, 'Remove one element, one join, or one element from a join, from the intake being '
-                               'recorded. Each is named by addresses.',
-             nouns=(Noun('receiver', J('receiver', ''), required=False),
-                    Noun('provider', J('provider', ''), required=False),
+             nouns=(Noun('receiver', P('receiver', ''), required=False),), effect='read'),
+        Verb('remove', remove, 'Remove one element, one purpose record, or one element from a purpose record, from '
+                               'the intake being recorded. Each is named by addresses.',
+             nouns=(Noun('receiver', P('receiver', ''), required=False),
+                    Noun('provider', P('provider', ''), required=False),
                     Noun(ADDRESS, E(ADDRESS, ''), required=False)), effect='remove'),
         Verb('finish', finish, 'Finish the intake and make its base the active map, keeping the earlier one whole. '
                                'Switch back with metaform map activate <previous-name>. After finish the metaform '
@@ -831,8 +845,8 @@ MODULE = Module(
                  'The intake instructions for this project, the procedure an intake follows. Read before intake start.',
                  'prompt'),
         Resource('metaform://intake/schema', 'Intake forms',
-                 'The shape of the metaform: the namespace roots, the links, and the element and join forms intake '
-                 'element and intake join record.', 'schema'),
+                 'The shape of the metaform: the namespace roots, the links, and the element and purpose forms intake '
+                 'element and intake purpose record.', 'schema'),
     ),
     # A map starts with an intake and is checked against the project with another; the page's dialog starts it.
     toolbar=(

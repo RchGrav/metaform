@@ -9,7 +9,7 @@
      project's terms. Sent to every agent when it connects over MCP, one line per enabled module under mcp's
      <instructions>, and listed in the compact command-line guide, metaform help agents. Empty sends nothing for
      intake. Off when the module is disabled or the folder's modules setting leaves it out. -->
-<connect>– intake: map the AUE into its elements and joins when you are assigned an intake</connect>
+<connect>– intake: map the AUE into its elements and purpose records when you are assigned an intake</connect>
 <!-- Intake's instructions: where the intake procedure and its forms are.
      Returned by metaform_instructions with module intake, at metaform://instructions/intake, and by metaform instructions intake; printed in the
      command-line guide while connect_instructions is full. no_intake or unfinished follows it when the folder's state calls for it.
@@ -56,7 +56,7 @@ request right after.
      -->
 <commands><intake verb="prompt"/></commands>
 <!-- The field descriptions of the intake recording commands, never sent as one block: each child describes one
-     argument, under <element> for elements and <join> for joins, in the commands' help and argument schemas.
+     argument, under <element> for elements and <purpose> for purpose records, in the commands' help and argument schemas.
      Read once when the module loads. A missing child leaves that field without a description; a test checks the
      allowed values named here against what the commands accept. -->
 <fields>
@@ -69,16 +69,16 @@ request right after.
     <condition>MISS, BKN or OK, as the intake procedure marks a part, or broken, missing, trouble or ok: MISS and missing are stored as missing, not built yet; BKN and broken as trouble, which needs a note saying what is wrong and what corrects it; OK as ok. Recording it again replaces the last.</condition>
     <note>Free text kept with the element; an exclusion is a note that starts with "exclude:".</note>
   </element>
-  <join>
-    <receiver>The address of the receiving element, the RE, whose purpose the join records.</receiver>
+  <purpose>
+    <receiver>The address of the receiving element, the RE, that holds the purpose record.</receiver>
     <elements>The addresses of the providing elements, the PEs, that serve the receiver's purpose.</elements>
-    <provider>The address of one providing element, a PE, held by the join.</provider>
+    <provider>The address of one providing element, a PE, held by the purpose record.</provider>
     <purpose>The receiver's operative purpose, the OP, as defined in the intake procedure.</purpose>
     <ef>The encounter function, the EF: what the providing elements do for the receiver, in active voice.</ef>
     <ifd>sends, receives or both: the information flow direction, as defined in the intake procedure.</ifd>
-    <refs>Where the join is found: a list of references, each a key and a value.</refs>
+    <refs>Where the purpose record is found: a list of references, each a key and a value.</refs>
     <condition>MISS, BKN or OK, as the intake procedure marks a part, or broken, missing, trouble or ok: MISS and missing are stored as missing, not built yet; BKN and broken as trouble, which needs a note saying what is wrong and what corrects it; OK as ok. Recording it again replaces the last.</condition>
-    <note>Free text kept with the join; an exclusion is a note that starts with "exclude:".</note>
-  </join>
+    <note>Free text kept with the purpose record; an exclusion is a note that starts with "exclude:".</note>
+  </purpose>
 </fields>
 </prompts>

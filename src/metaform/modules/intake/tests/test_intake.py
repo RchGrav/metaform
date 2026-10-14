@@ -14,7 +14,7 @@ from metaform.data import Node, Store, export_document
 pytestmark = pytest.mark.kind('fixture')
 
 ROOT = Path(__file__).parents[5]
-SPEC = Path(__file__).parents[1] / 'resources' / 'intake.xml'  # the served intake
+SPEC = Path(__file__).parents[1] / 'resources' / 'intake.axiom'  # the served intake
 RESOURCE = SPEC
 
 
@@ -101,7 +101,7 @@ def submit(run, cwd, document, tmp_path, extra=(), as_json=True):
         for number, join in enumerate(element.get('joins', [])):
             held = [join.get('provider', ''), *(subtype.get('element', {}).get('namespace_address', '')
                                                 for subtype in join.get('subtypes', []))]
-            call(f'elements[{index}].joins[{number}]', 'join', element['namespace_address'], json.dumps(held),
+            call(f'elements[{index}].joins[{number}]', 'purpose', element['namespace_address'], json.dumps(held),
                  *fields(join, {'purpose', 'ef', 'ifd'}))
     finish = [arg for arg in extra if arg.split('=', 1)[0] in ('report', 'feedback')]
     finished = run('intake', 'finish', *finish, *(['--json'] if as_json else []), cwd=cwd)
@@ -196,7 +196,7 @@ def test_debug_and_report_are_chassis_booleans_that_follow_every_settings_rule(r
 @pytest.mark.req('LAYER-001')
 def test_an_intake_recorded_object_by_object_is_stored_whole_and_reads_back(run, project, tmp_path):
     report = submit(run, project, FIXTURE, tmp_path, extra=('model=claude', 'role=intake agent'))
-    assert (report['project'], report['base'], report['elements'], report['joins'], report['work']) == (
+    assert (report['project'], report['base'], report['elements'], report['purposes'], report['work']) == (
         'timer', 'main', 4, 2, 0)
     assert set(notices(report)) == NAMED
     assert report['layer'] == 'base'  # LAYER-025: no time or random part
@@ -249,7 +249,7 @@ def test_a_name_is_recorded_wherever_a_namespace_address_and_a_name_length_are(r
     inner = json.loads(run('intake', 'element', 'code.loop.tick', 'name=one-second tick', 'name_length=2', 'role=SE',
                            '--json', cwd=project).stdout)
     assert inner['notices'] == []
-    join = json.loads(run('intake', 'join', 'code.timer.kitchen', '["code.alarm.audible", "code.loop.tick"]',
+    join = json.loads(run('intake', 'purpose', 'code.timer.kitchen', '["code.alarm.audible", "code.loop.tick"]',
                           'purpose=Get attention.', 'ef=Rings.', 'ifd=receives', '--json', cwd=project).stdout)
     assert join['notices'] == []
     shown = json.loads(run('intake', 'show', '--json', cwd=project).stdout)
@@ -270,10 +270,10 @@ def test_no_intake_tool_takes_a_perspective():
     mistakes. No intake tool
     takes a perspective, and no field description names one."""
     import xml.etree.ElementTree as ET
-    for verb in ('element', 'join'):
+    for verb in ('element', 'purpose'):
         assert 'perspective' not in nouns_of(verb), verb
     fields = ET.fromstring((RESOURCE.parent / 'prompts.xml').read_text(encoding='utf-8')).find('fields')
-    assert fields is not None and fields.find('join/perspective') is None and fields.find('element/perspective') is None
+    assert fields is not None and fields.find('purpose/perspective') is None and fields.find('element/perspective') is None
     assert 'perspective' not in json.dumps(FIXTURE)
 
 
@@ -433,17 +433,17 @@ def test_the_intake_tools_carry_no_flag_field_and_a_flag_sent_anyway_is_named_an
     """The intake tools carry no flag field, and a flag sent anyway is never a work record. With no extra in the
     metaform's shape the command line has nowhere to keep a word it does not know, so it refuses it, as the chassis grammar does
     for every verb with no extra, BASE-043, and writes nothing."""
-    for verb in ('element', 'join'):
+    for verb in ('element', 'purpose'):
         assert not {'flag', 'flag_note'} & set(nouns_of(verb)), verb
     recorded(run, project, 'start')
     refused = run('intake', 'element', 'code.alarm.audible', 'role=SE', 'flag=broken', cwd=project, ok=False)
     assert refused.returncode == 2 and "does not take 'flag=broken'" in refused.stderr
-    joined = run('intake', 'join', 'code.timer.kitchen', '["code.alarm.audible"]', 'purpose=p', 'colour=red',
+    joined = run('intake', 'purpose', 'code.timer.kitchen', '["code.alarm.audible"]', 'purpose=p', 'colour=red',
                  cwd=project, ok=False)
     assert joined.returncode == 2 and "does not take 'colour=red'" in joined.stderr
     assert Store('timer').work(open=True, limit=0).results == ()
     shown = recorded(run, project, 'show')
-    assert (shown['elements'], shown['joins']) == ([], [])
+    assert (shown['elements'], shown['purposes']) == ([], [])
 
 
 @pytest.mark.req('BASE-039')
@@ -594,7 +594,7 @@ def test_a_building_intake_is_seen_only_through_intake_show_until_it_finishes(ru
     built, and only a finished intake reaches every other read."""
     run('intake', 'start', 'model=claude', 'role=intake agent', cwd=project)
     run('intake', 'element', 'stakeholder.cook.home', 'role=CQU', 'name=Home cook', cwd=project)
-    made = json.loads(run('intake', 'join', 'stakeholder.cook.home', '["code.timer.kitchen"]',
+    made = json.loads(run('intake', 'purpose', 'stakeholder.cook.home', '["code.timer.kitchen"]',
                           'purpose=Know when each dish is done.', 'ef=Counts down and rings.', 'ifd=receives',
                           '--json', cwd=project).stdout)
     assert [notice['where'] for notice in made['notices']] == ['elements']
@@ -602,14 +602,14 @@ def test_a_building_intake_is_seen_only_through_intake_show_until_it_finishes(ru
     store = Store('timer')
     assert not store.has_intake() and store.element('stakeholder.cook.home') is None
     shown = json.loads(run('intake', 'show', '--json', cwd=project).stdout)
-    assert (len(shown['elements']), len(shown['joins']), shown['joins'][0]['elements']) == (
+    assert (len(shown['elements']), len(shown['purposes']), shown['purposes'][0]['elements']) == (
         2, 1, ['code.timer.kitchen'])
     assert shown['undescribed'] == ['code.timer.kitchen']
     assert 'Intake: being recorded' in run(cwd=project).stdout
     run('intake', 'element', 'code.timer.kitchen', 'role=DE', 'name=kitchen timer', cwd=project)
     assert json.loads(run('intake', 'show', '--json', cwd=project).stdout)['undescribed'] == []
     finished = json.loads(run('intake', 'finish', '--json', cwd=project).stdout)
-    assert (finished['elements'], finished['joins']) == (2, 1)
+    assert (finished['elements'], finished['purposes']) == (2, 1)
     store = Store('timer')
     assert store.has_intake() and store.element('code.timer.kitchen').role == 'DE'
     assert store.provenance(finished['layer']).model == 'claude'
@@ -623,19 +623,19 @@ def test_recording_again_and_remove_change_a_building_intake_and_a_finished_one_
     run('intake', 'start', cwd=project)
     run('intake', 'element', 'code.a', 'role=DE', cwd=project)
     run('intake', 'element', 'code.b', 'role=SE', cwd=project)
-    run('intake', 'join', 'code.a', '["code.b"]', 'purpose=p', 'ef=f', 'ifd=receives', cwd=project)
-    run('intake', 'join', 'code.b', '["code.a"]', 'purpose=q', 'ef=g', 'ifd=sends', cwd=project)
-    run('intake', 'join', 'code.a', '["code.b"]', 'purpose=The better purpose.', cwd=project)
+    run('intake', 'purpose', 'code.a', '["code.b"]', 'purpose=p', 'ef=f', 'ifd=receives', cwd=project)
+    run('intake', 'purpose', 'code.b', '["code.a"]', 'purpose=q', 'ef=g', 'ifd=sends', cwd=project)
+    run('intake', 'purpose', 'code.a', '["code.b"]', 'purpose=The better purpose.', cwd=project)
     run('intake', 'remove', 'receiver=code.b', 'provider=code.a', cwd=project)
     shown = json.loads(run('intake', 'show', '--json', cwd=project).stdout)
-    assert [(row['receiver'], row['elements'], row['purpose'], row['ef']) for row in shown['joins']] == [
+    assert [(row['receiver'], row['elements'], row['purpose'], row['ef']) for row in shown['purposes']] == [
         ('code.a', ['code.b'], 'The better purpose.', 'f')]
     run('intake', 'finish', cwd=project)
     gone = json.loads(run('intake', 'remove', 'receiver=code.a', 'provider=code.b', '--json', cwd=project).stdout)
     assert 'map refine' in gone['notices'][0]['message'] and 'correction' not in gone['notices'][0]['message']
     assert [join.purpose for join in Store('timer').joins('code.a').results] == ['The better purpose.']
     # Recording after the finish starts a new intake in a new metaform; the finished one is left exactly as it was.
-    later = json.loads(run('intake', 'join', 'code.a', '["code.b"]', 'purpose=Changed.', '--json', cwd=project).stdout)
+    later = json.loads(run('intake', 'purpose', 'code.a', '["code.b"]', 'purpose=Changed.', '--json', cwd=project).stdout)
     assert any(notice['where'] == 'base' for notice in later['notices'])
     run('intake', 'element', 'code.a', 'role=SE', 'name=renamed', cwd=project)
     finished = Store('timer')
@@ -724,11 +724,11 @@ def failsafe_intake(run, project):
     for address, role in (('stakeholder.operator', 'CQU'), ('code.failsafe.gateway', 'DE'), ('code.probe.echo', 'SE'),
                           ('code.alarm', 'SE')):
         recorded(run, project, 'element', address, f'role={role}', 'name_length=1')
-    recorded(run, project, 'join', 'stakeholder.operator', '["code.failsafe.gateway"]',
+    recorded(run, project, 'purpose', 'stakeholder.operator', '["code.failsafe.gateway"]',
              'purpose=Catch a dead gateway.', 'ef=Probes the gateway and fails over.', 'ifd=receives')
-    recorded(run, project, 'join', 'stakeholder.operator', '["code.probe.echo"]',
+    recorded(run, project, 'purpose', 'stakeholder.operator', '["code.probe.echo"]',
              'purpose=Know the gateway answers.', 'ef=Sends an echo each second.', 'ifd=receives')
-    recorded(run, project, 'join', 'code.alarm', '["code.probe.echo"]', 'purpose=Hear a lost echo.',
+    recorded(run, project, 'purpose', 'code.alarm', '["code.probe.echo"]', 'purpose=Hear a lost echo.',
              'ef=Reports each lost echo.', 'ifd=receives')
 
 
@@ -757,16 +757,16 @@ def test_the_agent_records_joins_and_is_never_handed_an_id(run, project):
     """The agent records the map as it reasons it, never handling ids. The intake tool names a join by its receiver
     and an element it holds, and an element by its address; no noun or result hands the agent an id."""
     from metaform.modules.intake import MODULE
-    assert 'join' in [verb.name for verb in MODULE.verbs]
+    assert 'purpose' in [verb.name for verb in MODULE.verbs]
     for verb in MODULE.verbs:
         taken = {noun.name for noun in verb.nouns}
         assert not [name for name in taken if name in ID_KEYS | {'into', 'type'}], verb.name
     failsafe_intake(run, project)
     results = [
         recorded(run, project, 'element', 'code.siren', 'role=SE', 'name_length=1'),
-        recorded(run, project, 'join', 'code.alarm', '["code.failsafe.gateway"]', 'purpose=Know of a failover.',
+        recorded(run, project, 'purpose', 'code.alarm', '["code.failsafe.gateway"]', 'purpose=Know of a failover.',
                  'ef=Reports each failover.', 'ifd=receives'),
-        recorded(run, project, 'join', 'stakeholder.operator', '["code.failsafe.gateway", "code.probe.ping"]'),
+        recorded(run, project, 'purpose', 'stakeholder.operator', '["code.failsafe.gateway", "code.probe.ping"]'),
         recorded(run, project, 'show'),
         recorded(run, project, 'show', 'receiver=code.alarm'),
         recorded(run, project, 'remove', 'receiver=code.alarm', 'provider=code.failsafe.gateway'),
@@ -784,13 +784,13 @@ def test_a_join_call_naming_elements_two_joins_hold_changes_neither(run, project
     """Two joins of one receiver that a call names together cannot be told apart by their addresses: the call changes
     neither, adds no element to either, and its notice lists both purposes."""
     recorded(run, project, 'start')
-    recorded(run, project, 'join', 'code.a', '["code.b"]', 'purpose=First why.', 'ef=f', 'ifd=receives')
-    recorded(run, project, 'join', 'code.a', '["code.c"]', 'purpose=Second why.', 'ef=g', 'ifd=receives')
-    both = recorded(run, project, 'join', 'code.a', '["code.b", "code.c"]', 'purpose=Changed.')
+    recorded(run, project, 'purpose', 'code.a', '["code.b"]', 'purpose=First why.', 'ef=f', 'ifd=receives')
+    recorded(run, project, 'purpose', 'code.a', '["code.c"]', 'purpose=Second why.', 'ef=g', 'ifd=receives')
+    both = recorded(run, project, 'purpose', 'code.a', '["code.b", "code.c"]', 'purpose=Changed.')
     message = ' '.join(notice['message'] for notice in both['notices'])
     assert 'First why.' in message and 'Second why.' in message
     shown = recorded(run, project, 'show')
-    assert sorted((row['purpose'], tuple(row['elements'])) for row in shown['joins']) == [
+    assert sorted((row['purpose'], tuple(row['elements'])) for row in shown['purposes']) == [
         ('First why.', ('code.b',)), ('Second why.', ('code.c',))]
 
 
@@ -802,17 +802,17 @@ def test_annealing_adds_an_element_to_its_parents_join_and_the_element_stays_one
     and the element itself does not move. In, the join holds it as one more element."""
     failsafe_intake(run, project)
     recorded(run, project, 'remove', 'receiver=stakeholder.operator', 'provider=code.probe.echo')
-    annealed = recorded(run, project, 'join', 'stakeholder.operator', '["code.failsafe.gateway", "code.probe.echo"]')
+    annealed = recorded(run, project, 'purpose', 'stakeholder.operator', '["code.failsafe.gateway", "code.probe.echo"]')
     assert annealed['notices'] == []
     shown = recorded(run, project, 'show')
-    assert sorted((row['receiver'], tuple(row['elements'])) for row in shown['joins']) == [
+    assert sorted((row['receiver'], tuple(row['elements'])) for row in shown['purposes']) == [
         ('code.alarm', ('code.probe.echo',)), ('stakeholder.operator', ('code.failsafe.gateway', 'code.probe.echo'))]
-    [operator] = [row for row in shown['joins'] if row['receiver'] == 'stakeholder.operator']
+    [operator] = [row for row in shown['purposes'] if row['receiver'] == 'stakeholder.operator']
     assert (operator['purpose'], operator['ef']) == ('Catch a dead gateway.', 'Probes the gateway and fails over.')
     [element] = [row for row in shown['elements'] if row['namespace_address'] == 'code.probe.echo']
     assert element['role'] == 'SE'
     finished = recorded(run, project, 'finish')
-    assert (finished['elements'], finished['joins']) == (4, 2)
+    assert (finished['elements'], finished['purposes']) == (4, 2)
     store = Store('timer')
     [parent] = store.joins('stakeholder.operator').results
     assert [held.address for held in parent.elements] == ['code.failsafe.gateway', 'code.probe.echo']
@@ -825,13 +825,13 @@ def test_show_reads_one_receivers_joins_and_what_they_hold(run, project):
     """The intake must not depend on the size of the agent's context."""
     failsafe_intake(run, project)
     recorded(run, project, 'remove', 'receiver=stakeholder.operator', 'provider=code.probe.echo')
-    recorded(run, project, 'join', 'stakeholder.operator', '["code.failsafe.gateway", "code.probe.echo"]')
+    recorded(run, project, 'purpose', 'stakeholder.operator', '["code.failsafe.gateway", "code.probe.echo"]')
     operator = recorded(run, project, 'show', 'receiver=stakeholder.operator')
-    assert [row['elements'] for row in operator['joins']] == [['code.failsafe.gateway', 'code.probe.echo']]
+    assert [row['elements'] for row in operator['purposes']] == [['code.failsafe.gateway', 'code.probe.echo']]
     assert {row['namespace_address'] for row in operator['elements']} == {
         'stakeholder.operator', 'code.failsafe.gateway', 'code.probe.echo'}
     alarm = recorded(run, project, 'show', 'receiver=code.alarm')
-    assert [row['elements'] for row in alarm['joins']] == [['code.probe.echo']]
+    assert [row['elements'] for row in alarm['purposes']] == [['code.probe.echo']]
 
 
 @pytest.mark.req('BASE-039')
@@ -839,8 +839,8 @@ def test_recording_and_remove_name_an_element_and_a_join_by_their_addresses(run,
     """A Fable intake on 2026-09-27 crashed its own script expecting join_id where intake_show said id; there are no
     ids to expect: each thing is named by the addresses the agent reasoned."""
     failsafe_intake(run, project)
-    recorded(run, project, 'join', 'stakeholder.operator', '["code.failsafe.gateway", "code.probe.ping"]')
-    held = next(row for row in recorded(run, project, 'show')['joins']
+    recorded(run, project, 'purpose', 'stakeholder.operator', '["code.failsafe.gateway", "code.probe.ping"]')
+    held = next(row for row in recorded(run, project, 'show')['purposes']
                 if row['receiver'] == 'stakeholder.operator' and 'code.probe.ping' in row['elements'])
     # recorded again with no fields, the join keeps its own and only gains the element
     assert (held['purpose'], held['ef'], held['ifd']) == ('Catch a dead gateway.', 'Probes the gateway and fails over.',
@@ -853,10 +853,10 @@ def test_recording_and_remove_name_an_element_and_a_join_by_their_addresses(run,
     again = recorded(run, project, 'show')
     alarm = next(row for row in again['elements'] if row['namespace_address'] == 'code.alarm')
     assert (alarm['name_length'], alarm['role'], alarm['name']) == (2, 'SE', 'alarm bell')  # the rest is kept
-    assert sorted((row['receiver'], tuple(row['elements'])) for row in again['joins']) == [
+    assert sorted((row['receiver'], tuple(row['elements'])) for row in again['purposes']) == [
         ('code.alarm', ('code.probe.echo',)), ('stakeholder.operator', ('code.failsafe.gateway',))]
     assert 'namespace_address' in nouns_of('element') and 'address' not in nouns_of('element')
-    assert {'receiver', 'elements'} <= set(nouns_of('join'))
+    assert {'receiver', 'elements'} <= set(nouns_of('purpose'))
     assert {'receiver', 'provider', 'namespace_address'} <= set(nouns_of('remove'))
 
 
@@ -880,7 +880,7 @@ def test_the_cestui_que_use_is_the_role_cqu_and_ve_is_no_longer_a_role(run, proj
 
 
 FIELDS = {'element': ('namespace_address', 'role', 'name_length', 'name', 'refs'),
-          'join': ('receiver', 'elements', 'purpose', 'ef', 'ifd')}
+          'purpose': ('receiver', 'elements', 'purpose', 'ef', 'ifd')}
 
 
 @pytest.mark.req('BASE-039')
@@ -892,13 +892,13 @@ def test_each_recorded_field_is_described_once_from_the_intake_modules_prompts_f
     import xml.etree.ElementTree as ET
     written = ET.parse(Path(__file__).parents[1] / 'resources' / 'prompts.xml').getroot().find('fields')
     assert written is not None
-    assert [group.tag for group in written] == ['element', 'join']
-    for verb, group in (('element', 'element'), ('join', 'join')):
+    assert [group.tag for group in written] == ['element', 'purpose']
+    for verb, group in (('element', 'element'), ('purpose', 'purpose')):
         nouns = nouns_of(verb)
         for field in FIELDS[group]:
             said = written.findtext(f'{group}/{field}')
             assert said and said.strip() == nouns[field].help, (verb, field)
-    assert nouns_of('remove')['provider'].help == written.findtext('join/provider').strip()
+    assert nouns_of('remove')['provider'].help == written.findtext('purpose/provider').strip()
     source = (Path(__file__).parents[1] / '__init__.py').read_text(encoding='utf-8')
     assert 'schema//elements' not in source and 'SET perspective' not in source  # the Canonical Intake is not parsed for them
 
@@ -915,7 +915,7 @@ def test_no_intake_or_map_tool_takes_relation_or_observation():
     assert taken == set()
 
 
-RECORDING = ('element', 'join', 'show', 'remove')
+RECORDING = ('element', 'purpose', 'show', 'remove')
 
 
 @pytest.mark.req('BASE-039')
@@ -945,7 +945,7 @@ def test_a_condition_given_with_an_element_or_a_join_is_an_open_work_record_at_i
     element = recorded(run, project, 'element', 'code.auth', 'role=SE', 'name=auth', 'condition=trouble',
                        'note=Non-debug modes are forced to debug.')
     run('intake', 'element', 'code.timer', 'role=DE', 'name=timer', cwd=project)
-    join = recorded(run, project, 'join', 'code.timer', '["code.auth"]', 'purpose=p', 'ef=f', 'ifd=receives',
+    join = recorded(run, project, 'purpose', 'code.timer', '["code.auth"]', 'purpose=p', 'ef=f', 'ifd=receives',
                     'condition=missing', 'note=The demo does not declare its autoap dependency.')
     plain = recorded(run, project, 'element', 'code.clock', 'role=SE', 'name=clock')
     for made in (element, join, plain):
@@ -968,14 +968,14 @@ def test_every_join_is_asked_its_information_flow_direction(run, project):
     """IFD, Information Flow Direction, the primary flow of information. sends: OP to EF. receives:
     EF to OP. both: equal need. It is a field of the join, defined once in prompts.xml, a closed choice of three, kept
     with the join, and named in a notice when it is missing."""
-    noun = nouns_of('join')['ifd']
+    noun = nouns_of('purpose')['ifd']
     assert noun.schema['enum'] == ['sends', 'receives', 'both']
     assert noun.help.startswith('sends, receives or both: the information flow direction')
     run('intake', 'start', cwd=project)
     run('intake', 'element', 'code.store.state', 'role=SE', cwd=project)
-    read = recorded(run, project, 'join', 'code.selector.route', '["code.store.state"]', 'purpose=p', 'ef=f',
+    read = recorded(run, project, 'purpose', 'code.selector.route', '["code.store.state"]', 'purpose=p', 'ef=f',
                     'ifd=receives')
-    write = recorded(run, project, 'join', 'code.protocol.sync', '["code.store.state"]', 'purpose=q', 'ef=g')
+    write = recorded(run, project, 'purpose', 'code.protocol.sync', '["code.store.state"]', 'purpose=q', 'ef=g')
     assert 'ifd' in [notice['where'] for notice in write['notices']]
     assert 'ifd' not in [notice['where'] for notice in read['notices']]
     store = Store('timer')
@@ -1048,7 +1048,7 @@ def test_notes_missing_and_join_refs_are_kept_as_the_intake_records_them(run, pr
     recorded(run, project, 'start')
     recorded(run, project, 'element', 'code.alarm.audible', 'role=DE', 'note=exclude: a stray copy beside it')
     recorded(run, project, 'element', 'downstream.cqu.cook', 'role=CQU')
-    recorded(run, project, 'join', 'downstream.cqu.cook', 'code.alarm.audible', 'purpose=Know when food is done',
+    recorded(run, project, 'purpose', 'downstream.cqu.cook', 'code.alarm.audible', 'purpose=Know when food is done',
              'ef=Sounds an alarm', 'ifd=send', 'note=the join note', 'refs=[{"key": "path", "value": "src/alarm.c"}]')
     recorded(run, project, 'element', 'code.display.digit', 'role=SE', 'condition=missing', 'note=no display yet')
     recorded(run, project, 'finish', 'report=done')
@@ -1073,7 +1073,7 @@ def test_the_read_back_shows_marks_notes_and_what_no_root_join_reaches(run, proj
     recorded(run, project, 'element', 'code.display.digit', 'role=SE', 'note=exclude: a stray copy')
     recorded(run, project, 'element', 'code.light.indicator', 'role=SE')
     recorded(run, project, 'element', 'downstream.cqu.cook', 'role=CQU')
-    recorded(run, project, 'join', 'downstream.cqu.cook', '["code.alarm.audible", "code.display.digit"]',
+    recorded(run, project, 'purpose', 'downstream.cqu.cook', '["code.alarm.audible", "code.display.digit"]',
              'purpose=Know when food is done', 'ef=Sounds an alarm', 'ifd=sends')
     shown = recorded(run, project, 'show')
     by = {entry['namespace_address']: entry for entry in shown['elements']}
@@ -1083,7 +1083,7 @@ def test_the_read_back_shows_marks_notes_and_what_no_root_join_reaches(run, proj
     assert shown['disconnected'] == ['code.light.indicator']
     recorded(run, project, 'remove', 'namespace_address=code.alarm.audible')
     after = recorded(run, project, 'show')
-    [joined] = after['joins']
+    [joined] = after['purposes']
     assert joined['elements'] == ['code.display.digit']  # the join lets the removed element go
     assert Store('timer').work(open=True, limit=0).results == ()  # and its mark is closed, not left open
 
@@ -1093,14 +1093,14 @@ def test_the_field_text_lists_exactly_the_values_the_intake_tools_accept():
     """The description beside each argument is what an agent reads as it records, so a value listed there and refused
     by the tool, or accepted and never listed, misleads it: the old text offered condition missing after it was
     ruled out."""
-    from metaform.modules.intake import ELEMENT_WORDS, INTAKE_MARKS, JOIN_WORDS, MODULE
+    from metaform.modules.intake import ELEMENT_WORDS, INTAKE_MARKS, MODULE, PURPOSE_WORDS
 
     def listed(words: str) -> set[str]:
         head = re.split(r'[.:]', words, maxsplit=1)[0]
         return {part.strip() for part in re.split(r',| or ', head) if part.strip() and ' ' not in part.strip()}
 
     nouns = {(verb.name, noun.name): noun for verb in MODULE.verbs for noun in verb.nouns}
-    for verb, words in (('element', ELEMENT_WORDS), ('join', JOIN_WORDS)):
+    for verb, words in (('element', ELEMENT_WORDS), ('purpose', PURPOSE_WORDS)):
         for field in ('role', 'condition', 'ifd'):
             noun = nouns.get((verb, field))
             if noun is not None:
@@ -1130,23 +1130,23 @@ def test_a_verify_pass_writes_conditions_and_refs_onto_the_finished_map_without_
     recorded(run, project, 'start')
     recorded(run, project, 'element', 'code.timer.kitchen', 'role=DE', 'name=timer', 'condition=MISS')
     recorded(run, project, 'element', 'code.alarm.audible', 'role=SE', 'name=alarm')
-    recorded(run, project, 'join', 'code.timer.kitchen', '["code.alarm.audible"]', 'purpose=p', 'ef=f', 'ifd=receives')
+    recorded(run, project, 'purpose', 'code.timer.kitchen', '["code.alarm.audible"]', 'purpose=p', 'ef=f', 'ifd=receives')
     recorded(run, project, 'finish', 'report=done')
     recorded(run, project, 'start')
     recorded(run, project, 'element', 'code.timer.kitchen', 'condition=OK', 'refs=[{"key": "read", "value": "t.c#L1"}]')
-    recorded(run, project, 'join', 'code.timer.kitchen', '["code.alarm.audible"]', 'condition=BKN', 'note=never fires')
+    recorded(run, project, 'purpose', 'code.timer.kitchen', '["code.alarm.audible"]', 'condition=BKN', 'note=never fires')
     shown = recorded(run, project, 'show')
     by = {entry['namespace_address']: entry for entry in shown['elements']}
     assert (by['code.timer.kitchen']['condition'], by['code.timer.kitchen']['refs']) == \
         ('ok', [{'key': 'read', 'value': 't.c#L1'}])
-    assert [(held['condition'], held['note']) for held in shown['joins']] == [('trouble', 'never fires')]
+    assert [(held['condition'], held['note']) for held in shown['purposes']] == [('trouble', 'never fires')]
     assert [base['name'] for base in json.loads(run('map', 'bases', '--json', cwd=project).stdout)['results']] == ['main']
 
 
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('BASE-044')
 def test_a_join_with_no_elements_records_nothing_and_starts_no_intake(run, project):
-    said = recorded(run, project, 'join', 'code.timer.kitchen', '[]', 'purpose=p')
+    said = recorded(run, project, 'purpose', 'code.timer.kitchen', '[]', 'purpose=p')
     assert said['layer'] is None and [notice['where'] for notice in said['notices']] == ['elements']
     assert 'No intake yet' in run('intake', 'status', cwd=project).stdout
 
@@ -1155,6 +1155,90 @@ def test_a_join_with_no_elements_records_nothing_and_starts_no_intake(run, proje
 @pytest.mark.req('BASE-039')
 def test_removing_a_join_from_a_building_intake_closes_its_marks(run, project):
     failsafe_intake(run, project)
-    recorded(run, project, 'join', 'code.alarm', '["code.probe.echo"]', 'condition=BKN', 'note=never fires')
+    recorded(run, project, 'purpose', 'code.alarm', '["code.probe.echo"]', 'condition=BKN', 'note=never fires')
     recorded(run, project, 'remove', 'receiver=code.alarm', 'provider=code.probe.echo')
     assert Store('timer').work(open=True, limit=0).results == ()
+
+
+@pytest.mark.parametrize('new_base', [False, True])
+def test_code_intake_follow_on_sees_committed_active_base(run, project, monkeypatch, new_base):
+    from metaform import loader
+    from metaform.module import Context, Module, Subscription
+    from metaform.modules.intake import finish
+
+    if new_base:
+        recorded(run, project, 'start')
+        recorded(run, project, 'element', 'media.previous', 'role=DE')
+        recorded(run, project, 'finish')
+    recorded(run, project, 'start', *(['name=code-follow-on'] if new_base else []))
+    recorded(run, project, 'element', 'code.example', 'role=DE')
+    recording = Store('timer').intake_recording().results[0]
+    seen = []
+
+    def follow_on(payload, ctx):
+        assert ctx.project == 'timer'
+        store = Store(payload['project'], base=payload['base'])
+        assert store.active_base().id == recording.base_id
+        assert store.layers(kind='intake', limit=0).results[0].ready is not None
+        assert store.element('code.example') is not None
+        seen.append(payload)
+        return {'state': 'started'}
+
+    subscriber = Module(id='follow_on', summary='Follow on.', purpose='Follow on.',
+                        subscriptions=(Subscription('intake.finished', follow_on),))
+    enabled = loader.enabled()
+    monkeypatch.setattr(loader, 'enabled', lambda: [*enabled, subscriber])
+    result = finish(Context('intake', project, store=Store('timer')))
+    assert seen == [{'project': 'timer', 'base': recording.base_id, 'layer': recording.layer.id, 'code': True}]
+    delivery = next(one for one in result['follow_on'] if one['module'] == 'follow_on')
+    assert delivery == {'module': 'follow_on', 'status': 'completed', 'result': {'state': 'started'}}
+
+
+def test_failed_follow_on_does_not_undo_finished_intake(run, project, monkeypatch):
+    from metaform import loader
+    from metaform.module import Context, Module, Subscription
+    from metaform.modules.intake import finish
+
+    recorded(run, project, 'start')
+    recorded(run, project, 'element', 'code.example', 'role=DE')
+
+    def unavailable(payload, ctx):
+        raise RuntimeError('Service unavailable')
+
+    subscriber = Module(id='unavailable', summary='Unavailable.', purpose='Unavailable.',
+                        subscriptions=(Subscription('intake.finished', unavailable),))
+    enabled = loader.enabled()
+    monkeypatch.setattr(loader, 'enabled', lambda: [*enabled, subscriber])
+    result = finish(Context('intake', project, store=Store('timer')))
+    delivery = next(one for one in result['follow_on'] if one['module'] == 'unavailable')
+    assert delivery['status'] == 'failed'
+    assert 'Service unavailable' in delivery['error']
+    assert Store('timer').has_intake()
+    assert Store('timer').element('code.example') is not None
+
+
+@pytest.mark.parametrize('address', [None, 'media.photo'])
+def test_follow_on_is_not_published_without_a_finished_code_intake(run, project, monkeypatch, address):
+    from metaform.module import Context
+    from metaform.modules.intake import finish
+
+    if address:
+        recorded(run, project, 'start')
+        recorded(run, project, 'element', address, 'role=DE')
+
+    def unexpected(*args):
+        pytest.fail('No code intake was finished.')
+
+    monkeypatch.setattr(Context, 'publish', unexpected)
+    assert 'follow_on' not in finish(Context('intake', project, store=Store('timer')))
+
+
+def test_finished_code_intake_without_subscribers_keeps_regular_result(run, project):
+    run('disable', 'refactor', cwd=project)
+    recorded(run, project, 'start')
+    recorded(run, project, 'element', 'code.example', 'role=DE')
+    result = recorded(run, project, 'finish')
+    assert 'follow_on' not in result
+    assert result['next'] == ['metaform map code-import']
+    assert result['elements'] == 1
+    assert Store('timer').has_intake()
