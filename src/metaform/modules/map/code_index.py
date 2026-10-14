@@ -494,7 +494,7 @@ class CodeGraphServer:
     are read today; another server is named in what stops the import, so a reader for it is added, not guessed."""
 
     def __init__(self, call: Callable[[str, dict[str, Any]], Any], server: str, version: str, tools: Sequence[str],
-                 folder: Path, project: str, labels: Sequence[str]) -> None:
+                 folder: Path, project: str, labels: Sequence[str], *, index_missing: bool = False) -> None:
         self.tool, self.version, self.notices = server, version, cast(list[str], [])
         self.refresh, self.by_name = f'let {server} index the folder again with its index_repository tool', False
         self.unresolved = cast(dict[str, set[str]], {})
@@ -504,7 +504,16 @@ class CodeGraphServer:
                               'code_server to codebase-memory-mcp')
         self._call = call
         self.labels = [label for label in labels if LABEL.fullmatch(label)]
-        self.project = project or self._project(folder)
+        if project:
+            self.project = project
+        else:
+            try:
+                self.project = self._project(folder)
+            except Unavailable as error:
+                if not index_missing or 'holds no index of' not in error.message or 'index_repository' not in tools:
+                    raise
+                self._json('index_repository', {'repo_path': str(folder)})
+                self.project = self._project(folder)
         self.prefix = self.project + '.'
 
     def _json(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -520,6 +529,10 @@ class CodeGraphServer:
         except json.JSONDecodeError:
             raise Unavailable(f'{self.tool} {tool} answered with no JSON: {text[:200]}',
                               f'check {self.tool} {tool} by hand') from None
+
+    def query(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Read a provider tool's JSON evidence through the existing connected session."""
+        return self._json(tool, arguments)
 
     def _project(self, folder: Path) -> str:
         offset, wanted = 0, home.path_key(folder)
@@ -660,7 +673,7 @@ def _cause(error: BaseException) -> BaseException:
 
 @contextmanager
 def code_graph_server(setting: str, folder: Path, project: str, labels: Sequence[str],
-                      environment: Sequence[str] = ()) -> Generator[CodeGraphServer]:
+                      environment: Sequence[str] = (), *, index_missing: bool = False) -> Generator[CodeGraphServer]:
     """A session with the code-graph MCP server for the length of the block, its async client driven from this
     thread through an anyio blocking portal. Only what the server does is said to be the server's: connecting,
     listing its tools and each tool call; an error raised by the block itself passes through as it is."""
@@ -694,7 +707,7 @@ def code_graph_server(setting: str, folder: Path, project: str, labels: Sequence
                     except Exception as error:  # noqa: BLE001  a call that fails is the server's to explain
                         raise Unavailable(f'{name} {tool} could not be read: {_cause(error)}.', step) from None
                 yield CodeGraphServer(call, name, version, [tool.name for tool in listed.tools], folder, project,
-                                      labels)
+                                      labels, index_missing=index_missing)
         except BaseExceptionGroup as group:  # the client's task group wraps what the block raised: the first cause
             cause = _cause(group)
             raise (cause if isinstance(cause, Exception) else group) from None

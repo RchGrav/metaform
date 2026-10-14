@@ -40,6 +40,7 @@ from metaform.module import (
     Noun,
     NounKind,
     Pane,
+    Provides,
     Status,
     Stop,
     ToolbarItem,
@@ -61,6 +62,7 @@ from .code import brief as code_brief
 from .code import node_line as code_node_line
 from .code import scoped as code_scoped
 from .code import start_line as code_start_line
+from .code_preparation import inventory as code_inventory
 from .glossary import PANES as GLOSSARY_PANES
 from .glossary import VERBS as GLOSSARY_VERBS
 from .glossary import item_read as term_read
@@ -1555,6 +1557,7 @@ HELD = (_noun('provider', 'A purpose node holds as its receiver: the address of 
 
 MODULE = Module(
     id='map',
+    provides=(Provides('code.inventory', code_inventory),),
     # The kanban lines speak to nodes, which exist once an intake is finished, MAP-048 and MCP-029.
     # The tasks instruction is read on demand with map's full instructions, not handed to every agent at connect.
     status=lambda ctx: Status(instruction=prompt_files.module('map', 'tasks') if ctx.setting('tasks') and ctx.store
@@ -1661,7 +1664,7 @@ MODULE = Module(
                     _noun('role', 'The intake classification of the new element: CQU, DE, SE or NE.'),
                     _noun('reason', 'Why the join needs an element.')),
              details='The join records its element by address and keeps its receiver and held elements. The '
-                     'associated element receives and provides ordinary joins. An intake join gains a version '
+                     'associated element receives and provides ordinary joins. An intake purpose gains a version '
                      'in its own layer; a knowledge join follows its existing edit rules. Repeating the same '
                      'association adds no version. An existing element keeps its authored fields; a different '
                      'address for an already promoted join returns a notice and writes nothing.'),
