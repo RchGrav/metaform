@@ -9447,5 +9447,110 @@
    "outcome": "no submission",
    "reason": "its model did not answer: HTTP 402: {\"error\":{\"message\":\"Insufficient credits. Add more using https://openrouter.ai/settings/credits\",\"code\":402,\"metadata\":{\"limit_source\":\"openrouter_credits\",\"remedy_hint\":\"Add credits at https://openrouter.ai/settings/credits, or lower max_tokens / prompt size to fit your remaining balance.\"}}}"
   }
- ]
+ ],
+ "table_record": {
+  "number": 1,
+  "address": "code.interface.graphical",
+  "subject": "embodied-ai-in-a-3d-physics",
+  "opening": "Effective Approaches for embodied AI interacting, and the controls the agents get and what the user sees when its occuring in a 3D physics environment, where the AI can see the environment from their perspective.",
+  "chair": "person",
+  "seats": [
+   {
+    "kind": "acp",
+    "id": "acp:codex/gpt-6-astra",
+    "agent": "codex",
+    "model": "gpt-6-astra"
+   },
+   {
+    "kind": "acp",
+    "id": "acp:codex/gpt-6.1-sol",
+    "agent": "codex",
+    "model": "gpt-6.1-sol"
+   },
+   {
+    "kind": "openrouter",
+    "id": "google/gemini-4-argon"
+   },
+   {
+    "kind": "openrouter",
+    "id": "moonshotai/kimi-k3"
+   },
+   {
+    "kind": "openrouter",
+    "id": "deepseek/deepseek-v4.1-flash"
+   },
+   {
+    "kind": "acp",
+    "id": "acp:claude/opus",
+    "agent": "claude",
+    "model": "opus"
+   },
+   {
+    "kind": "acp",
+    "id": "acp:claude/sonnet",
+    "agent": "claude",
+    "model": "sonnet"
+   },
+   {
+    "kind": "acp",
+    "id": "acp:claude/fable",
+    "agent": "claude",
+    "model": "fable"
+   },
+   {
+    "kind": "openrouter",
+    "id": "qwen/qwen3.8-flash"
+   },
+   {
+    "kind": "openrouter",
+    "id": "z-ai/glm-5.3"
+   },
+   {
+    "kind": "openrouter",
+    "id": "x-ai/grok-4.7"
+   }
+  ],
+  "state": "ended",
+  "reason": "ended by its chair.",
+  "round": 71,
+  "position": 5,
+  "round_kept": 2,
+  "delivered": 0,
+  "watched": 0.0,
+  "go": false,
+  "beat": 1791993396.402569,
+  "unjudged": {
+   "position": 5,
+   "text": "T776: Lay out the person's screen by Endsley's three levels of situational awareness. Level 1, what is: the body, its hands, who's nearby. Level 2, what it means: the current goal, the risk, who holds control. Level 3, what comes next: the ghost, the next commit point, the forecast cones. Each level gets a fixed place on screen, so a glance at the same spot always answers the same question. Each overlay (T78) is tested against the level it serves, and one that serves none is dropped.",
+   "over512": false
+  },
+  "report_error": "The report could not be written: its session ended, so it has left the table: Session 5c1e67b0-42ef-4e5c-8904-6d15e386917b of work 53c4992cdc6044deac89198db66c4de2 did not answer: [Errno 104] Connection reset by peer. Ask for it again with roundtable_end.",
+  "created": "2026-10-14T07:05:24+00:00",
+  "ended": "2026-10-14T15:56:40+00:00",
+  "seat_work": "53c4992cdc6044deac89198db66c4de2",
+  "explored": false,
+  "spent": 0.0
+ },
+ "what_happened": [
+  "07:05 UTC the table opened; 11 seats in this order: Astra, Sol, Gemini, Kimi, DeepSeek, Opus, Sonnet, Fable, Qwen, GLM, Grok.",
+  "Nothing capped rounds or spend; the only automatic end was a full round with nothing kept, which never happened (Jev kept at least one turn every round).",
+  "OpenRouter seats were sent their whole conversation every turn (no system prompt, no caching, max_tokens 4000); vetoes were spelled out with all four questions each time. Context grew to 56-72k tokens.",
+  "From about T616 OpenRouter returned HTTP 402 (out of credits). At about 11:20 Jev itself could not be paid, and the table HELD (the rule then: if Jev fails, hold) instead of ending.",
+  "15:56 UTC the table was ended by hand. The reporter, the Opus seat, could not write the report because its Claude Code session had died (see discussion.report_error). A fresh Opus agent then wrote the report from the record (report.md).",
+  "Views, figures and the 3D scene did not exist for this table; no model looked at anything."
+ ],
+ "configuration": {
+  "settings": {
+   "roundtable_keep": 83,
+   "roundtable_pause": 5,
+   "roundtable_agent_wait": 300,
+   "roundtable_reporter": "acp:claude/opus"
+  },
+  "openrouter_request_constants (seats.py)": {
+   "SEAT_TOKENS": "4_000",
+   "REPORT_TOKENS": "12_000",
+   "TIMEOUT": "180.0"
+  },
+  "note": "Settings read now; roundtable_reporter was acp:claude/opus for this table. SEAT_TOKENS is max_tokens requested per OpenRouter seat turn."
+ }
 }
