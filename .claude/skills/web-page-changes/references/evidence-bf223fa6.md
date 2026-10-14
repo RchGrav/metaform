@@ -1,0 +1,1 @@
+a ```mermaid fence in any message is drawn by diagramBlock (session/text.js) with window.mermaid under the global config the 2D map set (strict security), parsed first so a bad source leaves no Mermaid error SVG; the SVG is imported through DOMParser, never innerHTML.

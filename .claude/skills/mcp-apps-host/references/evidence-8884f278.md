@@ -1,0 +1,1 @@
+Unsupported requests are refused -32601 and said in an .appnote line over the view. ... ui/update-model-context is kept per thread and view and sent as "[From the <view>: ...]" before the person's next message to that session. Teardown waits up to 600 ms for the view's answer before pop-out, back or close.

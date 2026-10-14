@@ -1,0 +1,1 @@
+{"text":"Resume the validation task. Rich confirmed the selected provider element is the correct target: it acts as the receiving element for its implementation code. Attach code placements directly to that element, never to a purpose/join record. Current 548 placements already use element targets and need no relocation. Continue validating the remaining queue from source."}

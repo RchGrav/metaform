@@ -1,0 +1,26 @@
+---
+name: web-page-changes
+description: Use when editing Metaform web page UI or browser tests.
+category: development
+---
+
+# Changing the Metaform web page and its browser tests
+
+Make the page change surgically, then make every browser test that touched the old control pass against the new one before you report it done.
+
+- A setting the page shows is read when its control opens and again when the setting changes elsewhere. In `page/app/settings/screen.js`, `afterSetting(key)` is where a Settings-screen change reaches other controls: wire both paths and test both.
+- Removing a control: delete its HTML, its CSS rules (scoped by the old id, e.g. `#prompts .choice`) and its JS in one edit. Then grep the tests for the old id, because a test still clicking it fails only at that line: `grep -rn "promptsBtn\|#prompts" src/metaform/modules/web/tests`.
+- A refused save: the control goes back to the value in force and says why, in the field and as a toast. Test the refusal with `page.route(..., lambda route: route.fulfill(status=400, ...))`. The browser logs that 400 as a console error, so the `problems` list must expect exactly `'Failed to load resource: the server responded with a status of 400 (Bad Request)'`; an empty `problems` list on that path is wrong.
+- The page tree is shared and may be edited by other agents at the same time. Edit only the files your ticket names. Never revert or reformat a file wholesale. When a subagent takes a fix, give it an explicit file allowlist and forbid commit, worktree and branch creation.
+- Checks, each isolated: `node --check` on every changed JS part; `uv run ruff check` on changed test files; `timeout 400 uv run pytest -m browser -n 0 src/metaform/modules/web/tests/test_web.py -k <name> -q` (about 35 s a test). Never the full suite.
+- Agent figures are drawn twice: in 3D (`page/app/figures/agents.js`) and in the 2D map (`figures/roam2d.js`), which once wrote the same rule by hand. When a figure rule changes, grep both (`grep -rn "figure.done\|moodOf" page/app`) and point the 2D copy at the shared helper (`drawnWorking`) rather than a second copy.
+- Per-project page state is cleared when the person leaves a project. `leaveAgents()` in `page/app/loading/load.js` resets the agent lists and figures; any new per-project list (for example `D.subagents`) is cleared there too, or the old project's figures stay on the next one.
+- Python changes under `modules/web` or `modules/dispatch` need the web GUI restarted (`metaform web start`), because the running server still serves the code it started with. Reload the browser after a page or server change before judging it by eye.
+- Before reporting a changed JS part done, run `node --check` on it and a line-length scan such as `awk 'length > 120 {print FILENAME": "FNR}' <file>`, then fix what it flags.
+- Browser tests can read page state through `window.metaform` (for example `window.metaform.figures()`) and wait on it with `page.wait_for_function`. A test can also call a page function directly with `page.evaluate` and a dynamic `import('/page/app/...')`.
+- Mermaid fences in chat text (`diagramBlock` in `session/text.js`): parse the source before rendering so a bad source leaves no error SVG; import the returned SVG through `DOMParser`, never `innerHTML`; cache drawings by source so a streamed re-render does not redraw. Reuse the strict Mermaid config the 2D map sets rather than a second one.
+- Reuse the fixtures already in `test_web.py`: `opened(browser, web)` opens the page on the project, and `run('enable', 'dispatch')` plus `started(run)` prepare a dispatch-backed page. Do not add a test file.
+- A browser test that seeds a tool result or runner record builds it from the real command's output (`run(..., '--json')`) rather than a hand-written shape. A hand-written shape can omit fields the runner keeps, so the test passes while the page gets less.
+- Agent figures are decided in `page/app/figures/agents.js`: `conversing(ticket)` is true for a held ticket, or for a done one that has a running session which started after the ticket's `done` time. So a chat about a done ticket gets a figure (and `web_look` works), while the finished worker's figure still walks back. When a browser test times out at a `wait_for_function`, read the predicate it waits for and the function that decides that state before changing the test or its timeout.
+- The page the person has open runs the JS it loaded, so it shows old code until they reload. Browser tests load the page fresh; judge a page change by them, not by an open tab.
+- Content that grows after its thread row is placed (a diagram drawn late, an MCP view sized in) must keep a pinned thread at its end: call `followLog()` from `page/app/dock/helpdesk.js` after the growth, guarded by `DOCK.pinned`. The guard leaves a thread the person scrolled up from being pulled down.

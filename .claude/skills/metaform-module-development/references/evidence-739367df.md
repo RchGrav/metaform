@@ -1,0 +1,1 @@
+"web_go, web_point, web_emote, web_look, web_see, web_turn and web_come, so the agent is never told to use one it does not" was replaced with a rewrapped version, then "does not have. Its second sentence lets the agent offer the person, once, a body of its own on the map through" was rewrapped again into three shorter lines ending "leaves the mascot to the page alone. -->"

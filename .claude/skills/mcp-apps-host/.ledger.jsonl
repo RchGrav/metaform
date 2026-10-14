@@ -1,0 +1,1 @@
+{"action": "create", "reason": "The chat's MCP Apps host (views, ui/ methods, structuredContent, model context, teardown) is a distinct class of work with its own rules, verified against the spec this session. Born as a class skill so later host changes patch into it.", "evidence": "references/evidence-8884f278.md"}

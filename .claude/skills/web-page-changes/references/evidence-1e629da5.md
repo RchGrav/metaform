@@ -1,0 +1,5 @@
+  assert page.eval_on_selector_all('#prompts input[name=prompts]', 'found => found.map(one => one.value)') == [
+E       AssertionError: {'error': "--dispatch-prompts has no choice 'everything'. Choices: approve-all, approve-reads, ask_all.", 'next': 'metaform help --dispatch-prompts'}
+    assert status == 400 and settings.value('dispatch_prompts', mapped) == 'approve-all', said
+    assert problems == ['Failed to load resource: the server responded with a status of 400 (Bad Request)']
+The page under src/metaform/modules/web/page/app/ is uncommitted work, shared with other agents editing right now. Edit only the files under page/app/figures/ (and page/app/loading/load.js only if truly needed). Do NOT touch page/app/settings/screen.js, page/index.html, page/app.css, or any test about agent prompts; another agent is editing those. Never revert or reformat a file wholesale; make surgical edits. Do not commit, do not create a git worktree or branch.

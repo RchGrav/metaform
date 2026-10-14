@@ -1,0 +1,1 @@
+{"action": "create", "reason": "Agents publishing a file into their own chat (dispatch attach) and the person downloading it is a new class of work with security-sensitive rules: bytes copied per session and id, downloads never served by path, and clean rollback on refusal. Born as a class skill.", "evidence": "references/evidence-6d8e9e37.md"}

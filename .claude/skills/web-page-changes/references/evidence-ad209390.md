@@ -1,0 +1,2 @@
+  // drawn after its row is placed, it grows the thread, which stays at its end if it was following it
+  const drawnLate = () => { shown(); if (DOCK.pinned && block.closest('#helpdesk')) followLog(); };

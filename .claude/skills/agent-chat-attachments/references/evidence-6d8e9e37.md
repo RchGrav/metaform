@@ -1,0 +1,1 @@
+`dispatch attach path= [name=]` (MCP dispatch_attach) publishes a file into the caller's own chat. ... Bytes are copied to <Metaform home project folder>/published/<session>/<16-hex id>/<name> with meta.json, so a reused filename or later edit never replaces an earlier attachment.

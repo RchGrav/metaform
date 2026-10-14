@@ -1,0 +1,1 @@
+The refusal is visible and the copy was removed, but an empty session folder stayed behind. Tidying that in the verb and removing the empty folder it left.

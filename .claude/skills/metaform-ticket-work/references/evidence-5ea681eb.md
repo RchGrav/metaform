@@ -1,0 +1,2 @@
+Left out: VIEW-039 'What this means' (09-viewer.md:591) still says Administration has Agent prompts as a window; this was already stale (it was in the Agents menu before this change). Draft for the person's spec pass: 'The Agents menu has Agent prompts, a select showing dispatch_prompts as the settings hold it.' Not edited, because specs are written with Rich.
+Ticket closes after that report.
