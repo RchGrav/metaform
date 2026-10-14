@@ -29,12 +29,12 @@ $('#map2d').addEventListener('pointercancel', () => { FIGURE2D_PICK.down = null;
 
 /* The agents in 2D, VIEW-035: the same agents as the 3D map's figures, each drawn as its flat glyph,
  * page/agent-glyphs/<glyph>.svg, the glyph its 3D figure is drawn with. It appears on the DE, walks the 2D map's own
- * edges to its ticket's node, circles the node's box while the ticket is open, and when the ticket closes walks back
- * and is gone; a join's ticket is circled at the middle of the join's edge. Its size is a share of a node's height,
+ * edges to its ticket's node, rests beside the node's box while working, and when the ticket closes walks back
+ * and is gone; a join's ticket is worked beside the middle of the join's edge. Its size is a share of a node's height,
  * so it keeps its place beside the boxes at any zoom, and never so few pixels that it is lost with a large map
  * whole in view. It walks as the 3D figures do, on a smooth curve, setting off and arriving gently, with a step's
- * bounce and a lean the way it goes, and swings onto its orbit the way it came. With reduced motion it stands above
- * its node. */
+ * bounce and a lean the way it goes, and settles beside its work the way it came. With reduced motion it stands
+ * still at its working place. */
 export const ROAM2D = {figures: new Map(), seen: new Set(), frame: 0, last: 0, speed: 240, size: 1.2, orbit: 0.45,
   lap: 12, appear: 0.8, touch: 0.9, vanish: 0.6,
   // as the 3D figures move, `ROAM`, in the map's own units; the most it leans the way it goes, in degrees; and the
@@ -258,12 +258,14 @@ function stepFigure2d(id, figure, base, layer, perPixel, passed) {
   const target = spot2d(base, figure.target), home = spot2d(base, figure.home);
   if (!target || !home) { if (figure.done) gone2d(id, figure); return false; }
   const pose = {x: target.x, y: target.y, scale: 1, lift: 0, lean: 0, squash: 0, spin: 0, going: false};
-  if (reduced()) {  // no walking: it stands above its node while the ticket is worked
-    pose.y = target.y - target.h / 2 - size / 2;
+  if (reduced()) {  // no walking or sway; retain the same separate working places
+    if (moodOf(id) === 'working') Object.assign(pose, workingSpot2d(figure, target, size));
+    else pose.y = target.y - target.h / 2 - size / 2;
     if (figure.done) { gone2d(id, figure); return false; }
   } else if (STAGES2D[figure.stage]?.(figure, {id, base, target, home, size, passed, pose}) === false) return false;
   if (!reduced() && figure.stage !== 'leaving' && figure.stage !== 'arriving') {
-    const m = figure.motion, step = gait2d(figure, pose.going);
+    const m = figure.motion, step = pose.resting && !pose.going
+      ? {lift: 0, squash: 0, sway: 0} : gait2d(figure, pose.going);
     pose.lift += step.lift; pose.squash += step.squash; pose.lean += step.sway;
     if (!pose.going && m.idle.includes('bob') && figure.stage === 'circling') {
       pose.lift += Math.sin(figure.clock * 2.4 + m.phase * 6) * 0.025;
@@ -342,19 +344,30 @@ function orbit2d(target, size, m) {
   const out = size * ROAM2D.orbit * m.orbit / 1.5;
   return {across: target.w / 2 + out, down: target.h / 2 + out};
 }
-/* Around its box, in its own way and at its own lap, swinging out from where it arrived: beside it toward the chat
- * dock while it waits, reaching toward what a tool call touched, now and then perched on top or in close at its
- * side. */
+/* Stable lanes reserve separate places for coworkers, independently of the camera and the current act. */
+function workingSpot2d(figure, target, size) {
+  const peers = [...ROAM2D.figures.values()].filter(one => one.target === figure.target && !one.done)
+    .sort((one, two) => one.id.localeCompare(two.id));
+  const lane = Math.max(0, peers.indexOf(figure)), side = lane % 2 ? -1 : 1;
+  return {x: target.x + side * (target.w / 2 + size * 0.7), y: target.y + Math.floor(lane / 2) * size * 1.2};
+}
+/* Beside its work with a small character sway; around its box when restless, toward the dock when waiting.
+ * Temporary reaches and acts take over the same place, then return to it. */
 function circling2d(figure, {id, base, target, size, passed, pose}) {
   const m = figure.motion, mood = moodOf(id), c = figure.clock;
   let rate = 2 * Math.PI / m.lap;
   if (mood === 'restless') rate *= 1 + 0.55 * Math.sin(c * 1.7) * Math.sin(c * 0.63 + 1);
-  if (mood === 'waiting') rate = 0;
+  if (mood === 'waiting' || mood === 'working') rate = 0;
   figure.angle += rate * passed;
   const settled = easeBoth(Math.min(1, c / ROAM2D.settle));
   const {across, down} = orbit2d(target, size, m);
-  const turn = m.dir * figure.angle;
+  let turn = m.dir * figure.angle;
   const want = {x: target.x + Math.cos(turn) * across, y: target.y + Math.sin(turn) * down};
+  if (mood === 'working') {
+    Object.assign(want, workingSpot2d(figure, target, size));
+    turn = Math.atan2((want.y - target.y) / down, (want.x - target.x) / across);
+    pose.lean = Math.sin(c * (m.go === 'hop' ? 1.2 : 0.8) + m.phase * 6) * 2;
+  }
   if (mood === 'waiting') {  // toward the chat dock
     Object.assign(want, {x: target.x + target.w / 2 + size * 0.7, y: target.y + target.h / 2});
     pose.lean = 8;
@@ -364,16 +377,17 @@ function circling2d(figure, {id, base, target, size, passed, pose}) {
     figure.act = {kind: m.act, at: c, long: ACTS[m.act]};
   }
   if (figure.act) act2d(figure, mood, target, size, turn, want);
+  pose.resting = mood === 'working' && !figure.act && !figure.reach;
   pose.x = target.x + figure.from.x + (want.x - target.x - figure.from.x) * settled;
   pose.y = target.y + figure.from.y + (want.y - target.y - figure.from.y) * settled;
   // its stride goes on with the distance it covers, and a hopper hops in place now and then as it waits
   const covered = Math.hypot(pose.x - figure.x, pose.y - figure.y);
   figure.stride += covered;
-  if (m.go === 'hop' && covered < size * 0.01 && Math.sin(c * 0.6 + m.phase * 6) > 0.2) {
+  if (mood !== 'working' && m.go === 'hop' && covered < size * 0.01 && Math.sin(c * 0.6 + m.phase * 6) > 0.2) {
     figure.stride += passed * m.stride * size * 0.8;
   }
   pose.going = covered > size * 0.003;
-  if (!pose.lean) pose.lean = -Math.sin(turn) * ROAM2D.lean * 0.5 * settled;
+  if (mood !== 'working' && !pose.lean) pose.lean = -Math.sin(turn) * ROAM2D.lean * 0.5 * settled;
   if (figure.done) {
     Object.assign(figure, {stage: 'flourish', clock: 0, from: {x: pose.x - target.x, y: pose.y - target.y}});
   }

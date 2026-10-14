@@ -1,4 +1,4 @@
-"""The 2D figure rests beside its work and uses the shared public-message bubble."""
+"""The 2D figure rests beside its work and resumes after temporary motion."""
 import pytest
 
 from metaform.modules.web.tests.test_web import (  # noqa: F401 -- shared fixtures
@@ -38,7 +38,6 @@ def test_working_2d_figures_hold_separate_places_and_resume_after_temporary_moti
         const {ROAM2D, again2d, spot2d} = await import('/page/app/figures/roam2d.js');
         const {M} = await import('/page/app/map2d/build.js');
         const {D} = await import('/page/app/agents/dispatch.js');
-        const {updateThoughts} = await import('/page/app/figures/thoughts.js');
         window.metaform.pause3d(true);
         const figures = [...ROAM2D.figures.values()], target = spot2d(M.base, figures[0].target);
         // Run the real frame callback at 50 ms intervals without waiting on wall-clock timing.
@@ -88,21 +87,10 @@ def test_working_2d_figures_hold_separate_places_and_resume_after_temporary_moti
             step(30); const restless = {x: f.x, y: f.y}; step(20);
             const restlessMoved = Math.hypot(f.x - restless.x, f.y - restless.y);
             D.signals = []; step(40);
-            updateThoughts({sessions: [{...session, latest_message: {session_id: session.session_id,
-                kind: 'agent_message_chunk', name: 'work:1', seq: 1,
-                text: 'Checking the current work.', complete: true}}]});
-            step(1);
-            const bubble = document.querySelector('.agent-thought[data-map="2d"][data-work="' + f.id + '"]');
-            const bubbleOn = Boolean(bubble?.classList.contains('on') && bubble.querySelector('canvas'));
-            const bubbleText = bubble?.querySelector('.agent-thought-words')?.textContent;
-            for (const one of figures) { one.stage = 'leaving'; one.clock = 2; }
-            step(1);
-            const removedBubble = !document.querySelector('.agent-thought[data-map="2d"].on');
             return {radius, separation: Math.hypot(places[0].x - places[1].x, places[0].y - places[1].y),
                 sizes: figures.map(f => f.size), lift: Math.max(...lift.map(Math.abs)),
                 beside: places.every(p => Math.abs(p.x - target.x) > target.w / 2),
-                actDeparture, actReturn, reachDeparture, reachReturn, waitingDrift, restlessMoved,
-                bubbleOn, bubbleText, removedBubble};
+                actDeparture, actReturn, reachDeparture, reachReturn, waitingDrift, restlessMoved};
         } finally {
             window.requestAnimationFrame = realFrame; performance.now = realNow;
             ROAM2D.frame = 0; ROAM2D.last = realNow() / 1000; again2d();
@@ -114,6 +102,4 @@ def test_working_2d_figures_hold_separate_places_and_resume_after_temporary_moti
     assert found['actDeparture'] > 1 and found['actReturn'] < .1, found
     assert found['reachDeparture'] > 1 and found['reachReturn'] < .1, found
     assert found['waitingDrift'] < .1 and found['restlessMoved'] > 1, found
-    assert found['bubbleOn'] and found['bubbleText'] == 'Checking the current work.', found
-    assert found['removedBubble'], found
     assert problems == []

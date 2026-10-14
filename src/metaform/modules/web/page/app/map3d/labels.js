@@ -23,7 +23,6 @@ import {flight} from '/page/app/camera/flight.js';
 import {small3d, SMALL_NAME, MEET, frameWhileSpreading, holdMet} from '/page/app/camera/fly3d.js';
 import {PHYS, signsFacing} from '/page/app/views/bar.js';
 import {joinTitle} from '/page/app/map2d/inside.js';
-import {placeThoughts3d} from '/page/app/figures/thoughts.js';
 
 /* The labels of the 3D map, VIEW-038, are drawn inside the scene, each its element's whole name, wrapped at word
  * breaks, painted on a canvas and shown as a sign in the scene, standing out from the map's middle and facing the eye.
@@ -404,7 +403,6 @@ export function prepare3d() {
   ghost3d(data, now);
   const signaled = paintSignals(data);
   layered();
-  placeThoughts3d();
   flow3d(now, data);
   // The bloom runs while a reach is lit and while any part has a record that gives off light, VIEW-029, for as long
   // as the record is open and not only at the moments of its flash: the glass's highlights are over full brightness

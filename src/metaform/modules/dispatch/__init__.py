@@ -2713,22 +2713,6 @@ def threaded(lines: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[st
 SUBAGENTS_READ = 50  # the most of a running session's subagents the agents key reads, for their figures
 
 
-def latest_message(rows: Sequence[Any], session_id: str) -> dict[str, Any] | None:
-    """A bounded public line for the map, from this session alone. No tools or private thinking leave here.
-
-    Rows arrive from this session's ascending index. A later record marks the streamed message complete,
-    even when that record is a tool call or thinking.
-    """
-    message = next((row for row in reversed(rows)
-                    if row['kind'] == 'agent_message_chunk' and str(row['text']).strip()), None)
-    if message is None:
-        return None
-    text = next((line.strip() for line in reversed(str(message['text']).splitlines()) if line.strip()), '')
-    return {'session_id': session_id, 'name': message['name'], 'seq': message['seq'],
-            'kind': 'agent_message_chunk', 'text': text[:600],
-            'complete': bool(rows and rows[-1]['seq'] > message['seq'])}
-
-
 def read_sessions(ctx: Context) -> dict[str, Any]:
     """The sessions of one ticket or of every ticket, each with the lines of its thread in order, for the page's agent
     window and a node's work history, VIEW-036 and VIEW-039; with thread=false, the sessions alone, for the agents key.
@@ -2746,11 +2730,6 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
     try:
         with store.tables(write=False) as tx:
             for session in found:
-                session_lines = None
-                if session.get('state') == 'running' and (ctx.nouns.get('thread') is False or since is None):
-                    session_lines = tx.rows('lines', {'session_id': session['session_id']},
-                                            by=('session_id', 'seq'), limit=0).results
-                    session['latest_message'] = latest_message(session_lines, str(session['session_id']))
                 if ctx.nouns.get('thread') is not False and since is not None:
                     # Only the lines begun after `since`, one range of the (session_id, seq) index read from the
                     # cursor at that seq, for a caller that polls a thread; a line grown in place keeps the seq it
@@ -2762,9 +2741,8 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
                     lines += [dict(row) for row in tx.rows('lines', {'session_id': session['session_id'],
                                                                      'name': 'state'}, limit=1).results]
                 elif ctx.nouns.get('thread') is not False:
-                    lines += [dict(row) for row in (session_lines if session_lines is not None else
-                              tx.rows('lines', {'session_id': session['session_id']},
-                                      by=('session_id', 'seq'), limit=0).results)]
+                    lines += [dict(row) for row in tx.rows('lines', {'session_id': session['session_id']},
+                                                           by=('session_id', 'seq'), limit=0).results]
                 else:
                     lines += [dict(row) for row in tx.rows('lines', {'session_id': session['session_id'],
                                                                      'name': 'state'}, limit=1).results]
@@ -2792,17 +2770,7 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
                                                               by=('session_id', 'seq'), limit=0).results]
             except StoreError:
                 pass
-        summary = latest_message(own_lines, str(child.get('session_id') or ''))
-        if ctx.nouns.get('thread') is False:
-            try:
-                with store.tables(write=False) as tx:
-                    child_id = str(child.get('session_id') or '')
-                    summary = latest_message(tx.rows('lines', {'session_id': child_id},
-                                                     by=('session_id', 'seq'), limit=0).results, child_id)
-            except StoreError:
-                pass
-        children.append({**child, 'parent': line['session_id'], 'lines': threaded(own_lines)[0],
-                         'latest_message': summary})
+        children.append({**child, 'parent': line['session_id'], 'lines': threaded(own_lines)[0]})
     if ctx.nouns.get('thread') is False:
         lines = []
     from .signals import rows

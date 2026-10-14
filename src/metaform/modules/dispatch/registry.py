@@ -163,6 +163,8 @@ def _unpacked(data: bytes, archive: str, into: Path) -> None:
             home.mkdir_private(target.parent)
             if filtered.isfile():
                 home.write_private(target, b'')
+            elif filtered.isdir():
+                home.mkdir_private(target)
             if os.name != 'nt' and not filtered.issym() and not filtered.islnk():
                 filtered.mode = 0o700 if filtered.isdir() else 0o600 | ((filtered.mode or 0) & stat.S_IXUSR)
             return filtered

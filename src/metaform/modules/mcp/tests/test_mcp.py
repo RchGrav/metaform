@@ -897,7 +897,7 @@ FILE_BOOKKEEPING = ('metaform.sqlite.private', 'metaform.loader._copy_resources'
 WEB_ONLY_WRITES = {'memory_note': 'writes only from the web page; a call from any other surface with text is refused'}
 # These reads save only the screenshot the caller requests, rather than changing the map or the viewed page.
 SCREENSHOT_ONLY_WRITES = {
-    'web_look': 'reads the page through Playwright; only an explicitly requested screenshot is saved',
+    'web_look': 'reads the page through Playwright and saves only an explicitly requested screenshot',
     'web_capture': 'reads a frame of the page and saves the requested screenshot',
 }
 
@@ -1190,7 +1190,7 @@ UNSEEN_OPEN_WORLD = {
     'mcp_a2a_exchanges': 'polls remote agents through factory-built A2A Client objects',
     'mcp_a2a_cancel': 'cancels remote work through a factory-built A2A Client object',
     'node_logs': 'reads logs on the remote host through an SSH subprocess',
-    'node_relay': 'builds and starts the relay tunnel through executable plan callbacks and subprocesses',
+    'node_relay': 'builds the relay wheel through plan callbacks and subprocesses that resolve external dependencies',
     'paperclip_status': 'reads the external Paperclip service through a Client object and injected opener',
     'paperclip_brief': 'reads the external Paperclip service through a Client object and injected opener',
     'paperclip_link': 'reads the external issue before linking it through a Client object and injected opener',

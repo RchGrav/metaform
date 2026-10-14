@@ -79,6 +79,7 @@ def test_a_new_home_is_its_owners_alone_and_an_open_one_is_closed_once(home, tmp
     store.add_element(store.layer('notes', 'test', 'Notes.', mutable=True, hideable=True,
                                   provenance={'module': 'test'}).name, 'code.engine')
     web.opened('work')
+    assert_private(home)
     files = [home / 'metaform.sqlite3', own('work') / 'project.sqlite3', *own('work').glob('*.metaform.sqlite3'),
              web.opened_file()]
     def modes():

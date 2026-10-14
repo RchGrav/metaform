@@ -26,7 +26,6 @@ import {named} from '/page/app/task/task.js';
 import {readHarnesses, agentName, agentPicker, PICKERS, drawDockTab} from '/page/app/agents/pickers.js';
 import {isIntake, workPart} from '/page/app/session/tools.js';
 import {readIntake, openIntakeChat} from '/page/app/intake/intake.js';
-import {updateThoughts} from '/page/app/figures/thoughts.js';
 
 /* ---------- agents dispatched on tickets, VIEW-039 ----------
  * The dispatch module starts, messages and stops an agent on a ticket, BASE-052; the page asks it to through three
@@ -244,7 +243,6 @@ export async function renderAgents() {
   D.states = found.states || {};  // each session's state, the intake guard's phase among it, `drawIntake`
   drawAgentSessions();
   D.subagents = found.subagents || [];  // the running sessions' own subagents, each a figure, `childFigures`
-  updateThoughts(found);
   D.claims = claimed.claims || [];
   D.proposals = claimed.proposals || {};
   noticeAttention();  // and the mascot calls the person to what needs them, `ATTN`
