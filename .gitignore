@@ -15,3 +15,8 @@ node_modules/
 
 # the MCP Apps map view, built from the web page by scripts/build_map_view.mjs, never committed, 2026-10-12
 src/metaform/modules/mcp/resources/views/map.html
+
+# The agent harness's own run state, never committed, 2026-10-14: its session locks, offsets, run records and request
+# counter are rewritten whenever an agent runs here, in whichever folder it is started from, so tracking them left the
+# working tree dirty on every run and no branch could be started from a clean main. Nothing in Metaform reads them.
+**/.claude/autoharness/
