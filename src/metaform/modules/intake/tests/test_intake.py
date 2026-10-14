@@ -3,8 +3,11 @@ from __future__ import annotations
 
 import copy
 import json
+import multiprocessing
+import os
 import re
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -634,15 +637,15 @@ def test_recording_again_and_remove_change_a_building_intake_and_a_finished_one_
     gone = json.loads(run('intake', 'remove', 'receiver=code.a', 'provider=code.b', '--json', cwd=project).stdout)
     assert 'map refine' in gone['notices'][0]['message'] and 'correction' not in gone['notices'][0]['message']
     assert [join.purpose for join in Store('timer').joins('code.a').results] == ['The better purpose.']
-    # Recording after the finish starts a new intake in a new metaform; the finished one is left exactly as it was.
+    # A field changed after the finish is refined into the finished map as a new version; no new metaform opens.
     later = json.loads(run('intake', 'purpose', 'code.a', '["code.b"]', 'purpose=Changed.', '--json', cwd=project).stdout)
-    assert any(notice['where'] == 'base' for notice in later['notices'])
+    assert later['base'] == 'main' and not any(notice['where'] == 'base' for notice in later['notices'])
     run('intake', 'element', 'code.a', 'role=SE', 'name=renamed', cwd=project)
     finished = Store('timer')
     assert [(join.purpose, [held.address for held in join.elements]) for join in finished.joins('code.a').results] == [
-        ('The better purpose.', ['code.b'])]
+        ('Changed.', ['code.b'])]
     kept = finished.element('code.a')
-    assert kept is not None and (kept.role, kept.name) == ('DE', None)
+    assert kept is not None and (kept.role, kept.name) == ('SE', 'renamed')
 
 
 @pytest.mark.req('BASE-039')
@@ -1053,12 +1056,21 @@ def test_notes_missing_and_join_refs_are_kept_as_the_intake_records_them(run, pr
              'ef=Sounds an alarm', 'ifd=send', 'note=the join note', 'refs=[{"key": "path", "value": "src/alarm.c"}]')
     recorded(run, project, 'element', 'code.display.digit', 'role=SE', 'condition=missing', 'note=no display yet')
     recorded(run, project, 'finish', 'report=done')
+    recorded(run, project, 'element', 'downstream.cqu.cook', 'note=reads it from across the room')  # finished map
     store = Store('timer')
     graph = store.graph()
-    notes = {entry.element.address: entry.element.note for entry in graph.elements}
-    assert notes['code.alarm.audible'] == 'exclude: a stray copy beside it'
+    # the base holds RE, PE, OP and EF only: each note is the node's item of the critic layer, beside it
+    assert [entry.element.note for entry in graph.elements] == [None] * len(graph.elements)
     [joined] = graph.joins
-    assert (joined.note, joined.ifd) == ('the join note', 'sends')
+    assert (joined.note, joined.ifd) == (None, 'sends')
+    ids = {entry.element.address: entry.element.id for entry in graph.elements}
+    critic = {(item.target.kind, item.target.id): item.value for item in store.layer_items('critic', None, limit=0).results}
+    assert critic == {('element', ids['code.alarm.audible']): 'exclude: a stray copy beside it',
+                      ('join', joined.id): 'the join note',
+                      ('element', ids['downstream.cqu.cook']): 'reads it from across the room'}
+    refused = store.refine(ids['code.alarm.audible'], {'note': 'into the base'}, reason='a check')
+    assert refused.notices[0].message.startswith('The base holds RE, PE, OP and EF only; a note goes to layer critic')
+    assert store.element('code.alarm.audible', raw=True).note is None
     assert [(w.condition, w.note) for w in store.work(open=True, limit=0).results] == [('missing', 'no display yet')]
     refs = [[(ref.key, ref.value) for ref in item.refs] for item in store.layer_items('sources', None, limit=0).results]
     assert [('path', 'src/alarm.c')] in refs
@@ -1209,6 +1221,76 @@ def test_a_verify_pass_writes_conditions_and_refs_onto_the_finished_map_without_
         ('ok', [{'key': 'read', 'value': 't.c#L1'}])
     assert [(held['condition'], held['note']) for held in shown['purposes']] == [('trouble', 'never fires')]
     assert [base['name'] for base in json.loads(run('map', 'bases', '--json', cwd=project).stdout)['results']] == ['main']
+
+
+@pytest.mark.req('BASE-039')
+@pytest.mark.req('LAYER-025')
+def test_a_changed_field_on_a_finished_map_is_refined_in_place_and_the_map_stays_active(run, project):
+    """A verification pass that corrects a field of an element or purpose record on the finished map refines it, a
+    new version in the map's own layer; no new base holding only the corrections becomes the active map."""
+    recorded(run, project, 'start')
+    for address, role in (('stakeholder.cook.home', 'CQU'), ('code.timer.kitchen', 'DE'), ('code.alarm.audible', 'SE')):
+        recorded(run, project, 'element', address, f'role={role}', 'name=n')
+    recorded(run, project, 'purpose', 'stakeholder.cook.home', '["code.timer.kitchen"]', 'purpose=p', 'ef=f',
+             'ifd=receives')
+    recorded(run, project, 'purpose', 'code.timer.kitchen', '["code.alarm.audible"]', 'purpose=q', 'ef=g',
+             'ifd=receives')
+    recorded(run, project, 'finish')
+    recorded(run, project, 'start')
+    renamed = recorded(run, project, 'element', 'code.timer.kitchen', 'name=kitchen timer')
+    assert renamed['base'] == 'main' and not any(notice['where'] == 'base' for notice in renamed['notices'])
+    recorded(run, project, 'purpose', 'code.timer.kitchen', '["code.alarm.audible"]', 'purpose=Ring when done.')
+    finished = recorded(run, project, 'finish')
+    assert not any(notice['where'] == 'undescribed' for notice in finished['notices'])
+    assert [base['name'] for base in json.loads(run('map', 'bases', '--json', cwd=project).stdout)['results']] == ['main']
+    run('map', 'where', 'code.alarm.audible', cwd=project)
+    store = Store('timer')
+    kitchen = store.element('code.timer.kitchen')
+    assert kitchen is not None and kitchen.name == 'kitchen timer'
+    assert len(store.history(kitchen.id).results) == 2
+    assert [join.purpose for join in store.joins('code.timer.kitchen').results] == ['Ring when done.']
+
+
+def _element_at_once(home: str, folder: str, address: str, ready: Any, failures: Any) -> None:
+    """One process's intake element call, released with the others' at the same moment."""
+    os.environ['METAFORM_HOME'] = home
+    os.chdir(folder)
+    from metaform import cli
+    ready.wait()
+    try:
+        code = cli.main(['intake', 'element', address, 'role=SE', 'name_length=1', '--json'])
+    except SystemExit as stopped:
+        code = stopped.code
+    if code not in (0, None):
+        failures.put(f'{address}: exit {code}')
+
+
+@pytest.mark.req('BASE-039')
+@pytest.mark.req('QUAL-001')
+def test_processes_recording_new_shape_on_a_finished_map_at_once_open_one_base(run, home, project):
+    """Intake element calls at once, each with a new element for a finished map, open one new base that holds them
+    all; none is stranded in a base of its own. Four calls, as the verifier ran: with two the window is often missed."""
+    recorded(run, project, 'start')
+    recorded(run, project, 'element', 'stakeholder.cook.home', 'role=CQU', 'name_length=1')
+    recorded(run, project, 'finish')
+    spawn = multiprocessing.get_context('spawn')
+    addresses = ('code.timer.kitchen', 'code.alarm.audible', 'code.light.oven', 'code.clock.wall')
+    ready, failures = spawn.Barrier(len(addresses)), spawn.Queue()
+    workers = [spawn.Process(target=_element_at_once, args=(str(home), str(project), address, ready, failures))
+               for address in addresses]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(120)
+    assert [worker.exitcode for worker in workers] == [0] * len(addresses)
+    assert failures.empty(), failures.get()
+    bases = [base['name'] for base in json.loads(run('map', 'bases', '--json', cwd=project).stdout)['results']]
+    building = Store('timer').intake_recording().results
+    assert len(bases) == 2 and len(building) == 1, (bases, [held.base for held in building])
+    held = Store('timer', base=building[0].base_id)
+    for address in addresses:
+        element = held.element(address, raw=True)
+        assert element is not None and element.layer_id == building[0].layer.id, address
 
 
 @pytest.mark.req('BASE-039')

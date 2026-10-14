@@ -4,6 +4,8 @@ Each change to the module contract, newest first, so a module copied from the te
 
 ## Unreleased
 
+- `metaform.home.file_lock(path, wait=True)` is an exclusive lock on a file between processes, for a module that checks for something and then makes it, so two calls at once never make two, QUAL-001. It is held for a `with` block, yields the file open for appending, and is let go when the process ends; `wait=False` raises `metaform.home.Held` when another holds it. Never replace or remove a lock file. The intake opens one intake at a time with it, and source_placement and report files use it.
+- `Context.identity` carries transport-supplied IDs as a fresh dictionary per call, passed with `context(..., identity=...)`. Paperclip HTTP headers supply `agent_id`, `issue_id` and `run_id` to direct calls and MCP tasks. Delivery records use the agent and run, so changing issues within a run does not repeat context and a new run receives it independently. Calls without headers keep existing session and environment fallbacks.
 - The install stage publishes `install.completed` with `version` and `wheel` after a successful newer installation. Modules can subscribe for release upkeep. Wheel handover delivers it in the installed dependency environment, BASE-027 and BASE-047.
 - `metaform.skills` supplies canonical skill folders to native harnesses, MCP and Axiom calls, BASE-059. Metadata controls discoverability independently of address-based access. Required libraries come from the current prompt store so authored procedures need no harness-specific copies.
 

@@ -25,14 +25,15 @@ import os
 import re
 import sys
 from collections.abc import Sequence
+from contextlib import AbstractContextManager
 from dataclasses import replace
 from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, BinaryIO, Literal, cast
 
 from metaform import home, prompt_files, settings
-from metaform.data import Element, GraphPage, Item, Join, Layer, Node, Notice, Store, StoreError, WorkRecord
+from metaform.data import Element, GraphPage, Item, Join, Layer, Node, Notice, Store, StoreError, WorkRecord, as_object
 from metaform.module import Context, Module, Noun, Resource, Status, Stop, ToolbarItem, Verb, save_report
 
 from .schema import ELEMENTS, IFD, NAME_LENGTH, REFS, ROLE
@@ -130,6 +131,10 @@ def schema(ctx: Context) -> str:
 Notices = list[dict[str, str]]
 ADDRESS = 'namespace_address'  # the element's address, named as in the metaform's shape, MAP-040
 SOURCES = 'sources'  # the layer an element's refs go in
+# the layer a note given without a condition goes in, beside the map: the base holds RE, PE, OP and EF only, and
+# everything else said about a part is critic content, Rich's rule of 2026-10-12
+CRITIC = 'critic'
+NOTED = 'What the intake noted beside the map'  # the critic layer's variable; the map module declares it the same way
 ID = re.compile(r'\b[0-9a-f]{32}\b')
 
 settings.boolean('intake_sources', True, label='Intake sources layer',
@@ -288,6 +293,7 @@ def _active_map(store: Store) -> Recording | None:
 
 
 SHAPE_FIELDS = ('name_length', 'name', 'role')  # an element's fields that are its shape
+VERIFIED = 'intake verification pass'  # the reason a correction to the finished map is refined with
 BASE_NAME = re.compile(r'[A-Za-z0-9._-]{1,64}')  # what an intake's metaform may be named, `intake start name=`
 
 
@@ -297,10 +303,29 @@ def _recording(ctx: Context, notices: Notices) -> Recording:
     found = _building(store)
     if found is not None:
         return found
-    made = _open(ctx, store, notices)
-    notices.append({'where': 'intake', 'message': f'No intake was being recorded, so this call started one: layer '
-                                                  f'{made.layer.name} in metaform {made.metaform}.'})
+    made, opened = _opened(ctx, store, notices)
+    if opened:
+        notices.append({'where': 'intake', 'message': f'No intake was being recorded, so this call started one: '
+                                                      f'layer {made.layer.name} in metaform {made.metaform}.'})
     return made
+
+
+def _lock(store: Store) -> AbstractContextManager[BinaryIO]:
+    """The project's intake lock, between processes: a check that no intake is being recorded and the opening of one
+    are one step, and a finish is another, so two calls at once never open two, QUAL-001 and BASE-039."""
+    folder = home.project_folder(store.project_id)
+    if folder is None:
+        raise Stop(f'No project {store.project_id} is registered.', 'metaform list projects')
+    home.mkdir_private(folder)
+    return home.file_lock(folder / 'intake.lock')
+
+
+def _opened(ctx: Context, store: Store, notices: Notices, named: str = '') -> tuple[Recording, bool]:
+    """The intake being recorded, asked again inside the intake lock, or a new one opened there; and whether this call
+    opened it, so a call that lost the race to another records into that one."""
+    with _lock(store):
+        found = _building(store)
+        return (found, False) if found is not None else (_open(ctx, store, notices, named), True)
 
 
 def start(ctx: Context) -> Any:
@@ -308,27 +333,29 @@ def start(ctx: Context) -> Any:
     store = ctx.require_store()
     notices: Notices = []
     found = _building(store)
-    if found is not None:
+    # a name asks for a new intake
+    if found is None and (mapped := _active_map(store)) is not None and not ctx.nouns.get('name'):
+        notices.append({'where': 'intake', 'message': f'The active metaform {mapped.metaform} has a finished intake. '
+                        'Conditions, their notes and refs recorded on its elements and purpose records are written onto it, '
+                        'and a changed field of one is refined there, keeping every version. Only a new element or '
+                        'purpose record starts a new intake in a new base, kept apart until it finishes.'})
+        return {'layer': mapped.layer.name, 'project': store.project_id, 'base': mapped.metaform, 'notices': notices}
+    opened = False
+    if found is None:
+        found, opened = _opened(ctx, store, notices, str(ctx.nouns.get('name') or '').strip())
+    if not opened:
         notices.append({'where': 'intake', 'message': f'An intake is already being recorded in layer '
                                                       f'{found.layer.name} of metaform {found.metaform}; this call '
                                                       'resumes it. intake show reads back what it holds.'})
         # What the layer lacks of its provenance is filled in; what it holds is kept, LAYER-010.
         _note(notices, found.store.complete(found.layer.name, {name: ctx.nouns.get(name) for name in ('model', 'role')},
                                             result_id=str(ctx.nouns['result']) if ctx.nouns.get('result') else None))
-    elif (mapped := _active_map(store)) is not None and not ctx.nouns.get('name'):  # a name asks for a new intake
-        notices.append({'where': 'intake', 'message': f'The active metaform {mapped.metaform} has a finished intake. '
-                        'Conditions, their notes and refs recorded on its elements and purpose records are written onto it. '
-                        'Recording a new element or purpose record, or changing a field of one, starts a new intake in a new '
-                        'base, kept apart until it finishes.'})
-        return {'layer': mapped.layer.name, 'project': store.project_id, 'base': mapped.metaform, 'notices': notices}
-    else:
-        found = _open(ctx, store, notices, str(ctx.nouns.get('name') or '').strip())
     return {'layer': found.layer.name, 'project': store.project_id, 'base': found.metaform, 'notices': notices}
 
 
 def _described(element: Element) -> bool:
     """Whether an element was described with intake element, not only named in a purpose record."""
-    return element.role is not None or element.name_length is not None
+    return element.role is not None or element.name_length is not None or element.name is not None
 
 
 def _sources(ctx: Context, rec: Recording, kind: Literal['element', 'join'], element_id: str, address: str,
@@ -343,12 +370,39 @@ def _sources(ctx: Context, rec: Recording, kind: Literal['element', 'join'], ele
     store.layer(SOURCES, 'intake', 'refs', kind='layer', mutable=True, hideable=True, ready=True)  # read at once
     held = [item for item in store.layer_items(SOURCES, Node(kind, element_id), limit=0).results
             if isinstance(item, Item)]
+    given = [as_object(ref) for ref in refs]
+    if len(held) == 1 and not held[0].extra and [(ref.key, ref.value) for ref in held[0].refs] == [
+            (each.get('key'), each.get('value')) if each is not None else None for each in given]:
+        return  # the refs it holds already, as a verification pass gives them again: nothing to write
     if held:
         _note(notices, store.edit(held[0].id, {'refs': refs}))
         for extra in held[1:]:
             _note(notices, store.remove(extra.id))
     else:
         _note(notices, store.add_item(SOURCES, Node(kind, element_id), address, refs=refs))
+
+
+def _noted(ctx: Context) -> str | None:
+    """The note given without a condition: free text about the part, kept beside the map. A note given with a
+    condition is the finding's, a work record, MAP-046."""
+    note = ctx.nouns.get('note')
+    return str(note) if note and not ctx.nouns.get('condition') else None
+
+
+def _beside(rec: Recording, kind: Literal['element', 'join'], thing_id: str, note: str, notices: Notices) -> None:
+    """A note given with an element or a purpose record, as its one item of the critic layer, replacing what that item
+    held: the base holds RE, PE, OP and EF only, so a note is kept beside it, never in it."""
+    store = rec.store
+    made = store.layer(CRITIC, 'intake', NOTED, kind='layer', mutable=True, hideable=True, ready=True)  # read at once
+    held = [item for item in store.layer_items(made.name, Node(kind, thing_id), limit=0).results
+            if isinstance(item, Item)]
+    if held:
+        if held[0].value != note:
+            _note(notices, store.edit(held[0].id, {'value': note}))
+        for extra in held[1:]:
+            _note(notices, store.remove(extra.id))
+    else:
+        _note(notices, store.add_item(made.name, Node(kind, thing_id), note))
 
 
 MARKS = {'MISS': 'missing', 'BKN': 'trouble', 'OK': 'ok', 'BROKEN': 'trouble'}  # the procedure's words, any case
@@ -378,21 +432,23 @@ def element(ctx: Context) -> Any:
     address = ctx.nouns[ADDRESS]
     mapped = _active_map(ctx.require_store())
     current_map = mapped.store.element(address, raw=True) if mapped is not None else None
-    if mapped is not None and current_map is not None and all(
-            ctx.nouns.get(key) is None or ctx.nouns.get(key) == getattr(current_map, key) for key in SHAPE_FIELDS):
+    if mapped is not None and current_map is not None:
+        # a field changed on an element of the finished map is refined there, a new version, LAYER-025
+        shape = {key: _whole(ctx.nouns.get(key)) for key in SHAPE_FIELDS}
+        changed = {key: value for key, value in shape.items()
+                   if value is not None and value != getattr(current_map, key)}
+        if changed:
+            _note(notices, mapped.store.refine(current_map.id, changed, reason=VERIFIED))
         refs = _list(ctx, 'refs')
         if refs is not None:
             _sources(ctx, mapped, 'element', current_map.id, address, refs, notices)
         _condition(ctx, mapped, 'element', current_map.id, notices)
-        if ctx.nouns.get('note') and not ctx.nouns.get('condition'):
-            notices.append({'where': 'note', 'message': 'On a finished map a note is kept with a condition; this one '
-                                                        'was not kept.'})
+        if (note := _noted(ctx)) is not None:
+            _beside(mapped, 'element', current_map.id, note, notices)
         return {ADDRESS: address, 'layer': mapped.layer.name, 'base': mapped.metaform, 'notices': notices}
     rec = _recording(ctx, notices)
     given = {'name_length': _whole(ctx.nouns.get('name_length')), 'name': ctx.nouns.get('name'),
              'role': ctx.nouns.get('role')}
-    # a note without a condition is kept on the element itself
-    kept = {'note': ctx.nouns['note']} if ctx.nouns.get('note') and not ctx.nouns.get('condition') else {}
     current = rec.store.element(address, raw=True)
     element_id: str | None
     if current is not None and current.layer_id == rec.layer.id:
@@ -407,8 +463,8 @@ def element(ctx: Context) -> Any:
         made = rec.store.add_element(rec.layer.name, address, **given)
         _note(notices, made)
         element_id = getattr(made, 'id', None)
-    if kept and element_id is not None:
-        _note(notices, rec.store.edit(element_id, kept))
+    if (note := _noted(ctx)) is not None and element_id is not None:
+        _beside(rec, 'element', element_id, note, notices)
     refs = _list(ctx, 'refs')
     if refs is not None and element_id is not None:
         _sources(ctx, rec, 'element', element_id, address, refs, notices)
@@ -528,10 +584,22 @@ def purpose(ctx: Context) -> Any:
     mapped = _active_map(ctx.require_store())
     if mapped is not None and elements:
         held_map = _joins_holding(mapped.store, mapped.layer, receiver, elements)
-        if len(held_map) == 1 and all(ctx.nouns.get(key) is None or ctx.nouns.get(key) == getattr(held_map[0], key)
-                                      for key in JOIN_FIELDS) and \
-                set(elements) <= {each.address for each in held_map[0].elements}:
+        holding = [each.address for each in held_map[0].elements] if len(held_map) == 1 else []
+        added = [address for address in elements if address not in holding]
+        # a purpose record of the finished map is refined there, LAYER-025; an element it would hold that the map
+        # lacks is new shape, recorded in a new intake
+        if len(held_map) == 1 and all(mapped.store.element(str(address), raw=True) is not None for address in added):
+            refined: dict[str, Any] = {key: ctx.nouns[key] for key in JOIN_FIELDS
+                                       if ctx.nouns.get(key) is not None
+                                       and ctx.nouns.get(key) != getattr(held_map[0], key)}
+            if added:
+                refined['elements'] = [*holding, *added]
+            if refined:
+                _note(notices, mapped.store.refine(held_map[0].id, refined, reason=VERIFIED),
+                      _words(mapped.store, mapped.layer))
             _join_refs(ctx, mapped, held_map[0].id, receiver, notices)
+            if (note := _noted(ctx)) is not None:
+                _beside(mapped, 'join', held_map[0].id, note, notices)
             _condition(ctx, mapped, 'join', held_map[0].id, notices, [receiver, *elements])
             return {'receiver': receiver, 'elements': elements, 'layer': mapped.layer.name, 'base': mapped.metaform,
                     'notices': notices}
@@ -559,10 +627,10 @@ def purpose(ctx: Context) -> Any:
         added = [address for address in elements if address not in holding]
         if added:
             changes['elements'] = [*holding, *added]
-        if ctx.nouns.get('note') and not ctx.nouns.get('condition'):
-            changes['note'] = ctx.nouns['note']
         if changes:
             _note(notices, rec.store.edit(held.id, changes), words)
+        if (note := _noted(ctx)) is not None:
+            _beside(rec, 'join', held.id, note, notices)
         _join_refs(ctx, rec, held.id, receiver, notices)
         _condition(ctx, rec, 'join', held.id, notices, [receiver, *elements])
         return result
@@ -573,8 +641,8 @@ def purpose(ctx: Context) -> Any:
                               **{field: ctx.nouns.get(field) for field in JOIN_FIELDS})
     _note(notices, made, words)
     join_id = getattr(made, 'id', None)
-    if join_id is not None and ctx.nouns.get('note') and not ctx.nouns.get('condition'):
-        _note(notices, rec.store.edit(join_id, {'note': ctx.nouns['note']}))
+    if join_id is not None and (note := _noted(ctx)) is not None:
+        _beside(rec, 'join', join_id, note, notices)
     if join_id is not None:
         _join_refs(ctx, rec, join_id, receiver, notices)
     _condition(ctx, rec, 'join', join_id, notices, [receiver, *elements])
@@ -593,16 +661,20 @@ FINISHED = ('The intake is finished, so nothing was changed. The metaform change
 NOTHING = 'No intake is being recorded. intake start begins one.'
 
 
-def _element_entry(found: Element) -> dict[str, Any]:
+def _element_entry(found: Element, note: str | None = None) -> dict[str, Any]:
+    """An element as the read-back shows it, with its note from the critic layer, or the one a base written before
+    notes went beside it still holds."""
     entry = {ADDRESS: found.address, 'short_name': found.short_name, 'name_length': found.name_length,
              'name': found.name, 'role': found.role}
-    return {**entry, **({'note': found.note} if found.note else {})}
+    note = note or found.note
+    return {**entry, **({'note': note} if note else {})}
 
 
-def _join_entry(held: Join) -> dict[str, Any]:
+def _join_entry(held: Join, note: str | None = None) -> dict[str, Any]:
     entry = {'receiver': held.receiver_address, 'type': held.type, 'purpose': held.purpose, 'ef': held.ef,
              'ifd': held.ifd, 'elements': [each.address for each in held.elements]}
-    return {**entry, 'note': held.note} if held.note else entry
+    note = note or held.note
+    return {**entry, 'note': note} if note else entry
 
 
 def _findings(store: Store, elements: list[Element], joins: list[Join]) -> dict[str, dict[str, Any]]:
@@ -627,15 +699,27 @@ def _refs(store: Store) -> dict[tuple[str, str], list[dict[str, str]]]:
     return found
 
 
+def _notes(store: Store) -> dict[tuple[str, str], str]:
+    """Every element's and purpose record's note, its item of the critic layer, by its kind and id, read in one pass;
+    none when there is no critic layer."""
+    try:
+        held = store.layer_items(CRITIC, limit=0).results
+    except StoreError:
+        return {}
+    return {(item.target.kind, item.target.id): str(item.value) for item in held
+            if isinstance(item, Item) and item.value}
+
+
 def _map(elements: list[Element], joins: list[Join], store: Store | None = None) -> dict[str, Any]:
     """The recorded map in the agent's words: every element by its address with its refs, every purpose record by its receiver
     with the elements it holds, each with its open condition and note, the CQUs whose root purpose records the map comes off,
     what those purpose records do not reach, and the addresses never described."""
     marks = _findings(store, elements, joins) if store is not None else {}
     refs = _refs(store) if store is not None else {}
+    notes = _notes(store) if store is not None else {}
     listed: list[dict[str, Any]] = []
     for found in elements:
-        entry = _element_entry(found)
+        entry = _element_entry(found, notes.get(('element', found.id)))
         if store is not None:
             entry['refs'] = refs.get(('element', found.id), [])
         listed.append({**entry, **marks.get(found.id, {})})
@@ -654,8 +738,9 @@ def _map(elements: list[Element], joins: list[Join], store: Store | None = None)
                 waiting.append(address)
 
     return {'elements': listed,
-            'purposes': [{**_join_entry(held), **({'refs': refs.get(('join', held.id), [])} if store is not None else {}),
-                       **marks.get(held.id, {})} for held in joins],
+            'purposes': [{**_join_entry(held, notes.get(('join', held.id))),
+                          **({'refs': refs.get(('join', held.id), [])} if store is not None else {}),
+                          **marks.get(held.id, {})} for held in joins],
             'roots': roots,
             'disconnected': [found.address for found in elements if found.address not in reached],
             'undescribed': [found.address for found in elements if not _described(found)]}
@@ -754,27 +839,40 @@ def finish(ctx: Context) -> Any:
     notices: Notices = []
     report = _given(ctx, 'report', notices)
     feedback = _given(ctx, 'feedback', notices)
-    found = _building(store)
-    if found is None:
-        return {'layer': None, 'project': store.project_id, 'base': None, 'elements': 0, 'purposes': 0, 'work': 0,
-                'notices': notices + [{'where': 'intake', 'message': 'No intake is being recorded; there is nothing '
-                                                                     'to finish.'}]}
-    elements, joins = _recorded(found.store, found.layer)
-    undescribed = [element.address for element in elements if not _described(element)]
-    if undescribed:
-        notices.append({'where': 'undescribed', 'message': f'{", ".join(undescribed)} '
-                                                           f'{"was" if len(undescribed) == 1 else "were"} named in a '
-                                                           'purpose record but never described with intake element; stored '
-                                                           'without a role or a name_length.'})
-    _note(notices, found.store.finish(found.layer.name))
-    if not found.active:
-        previous = store.active_base()
-        store.activate_base(found.metaform)
-        if previous is not None:
-            notices.append({'where': 'base', 'message': f'This intake was stored as the new active base '
-                                                        f'{found.metaform}; the earlier one, {previous.name}, is '
-                                                        'kept whole. To switch back: metaform map activate '
-                                                        f'{previous.name}'})
+    with _lock(store):  # the intake finished is the one being recorded when the lock is held, and none opens meanwhile
+        found = _building(store)
+        if found is None:
+            return {'layer': None, 'project': store.project_id, 'base': None, 'elements': 0, 'purposes': 0, 'work': 0,
+                    'notices': notices + [{'where': 'intake', 'message': 'No intake is being recorded; there is '
+                                                                         'nothing to finish.'}]}
+        elements, joins = _recorded(found.store, found.layer)
+        undescribed = [element.address for element in elements if not _described(element)]
+        if undescribed:
+            notices.append({'where': 'undescribed', 'message': f'{", ".join(undescribed)} '
+                                                               f'{"was" if len(undescribed) == 1 else "were"} named in '
+                                                               'a purpose record but never described with intake '
+                                                               'element; stored without a role or a name_length.'})
+        _note(notices, found.store.finish(found.layer.name))
+        previous = None
+        if not found.active:
+            previous = store.active_base()
+            store.activate_base(found.metaform)
+    if previous is not None:
+        notices.append({'where': 'base', 'message': f'This intake was stored as the new active base '
+                                                    f'{found.metaform}; the earlier one, {previous.name}, is '
+                                                    'kept whole. To switch back: metaform map activate '
+                                                    f'{previous.name}'})
+        if previous.name != found.metaform:
+            # what the map in use until now held that this one does not, so a partial intake is seen at once
+            earlier = [placed.element.address for placed in
+                       Store(store.project_id, base=previous.id).graph(raw=True, limit=0).elements]
+            recorded = {element.address for element in elements}
+            lacking = [address for address in earlier if address not in recorded]
+            if lacking:
+                shown = ', '.join(lacking[:10]) + (f' and {len(lacking) - 10} more' if len(lacking) > 10 else '')
+                notices.append({'where': 'elements', 'message': f'This intake holds {len(elements)} elements; '
+                                                                f'the map {previous.name} held {len(earlier)}, and '
+                                                                f'{len(lacking)} of them are not in it: {shown}.'})
     for kind, text in (('report', report), ('feedback', feedback)):
         if text is not None:
             save_report(store.project_id, found.layer.id, kind, text, store=found.store,
@@ -799,6 +897,20 @@ def finish(ctx: Context) -> Any:
             **({'next': [ctx.calls('metaform map code-import')]} if code else {})}
 
 
+def _several(store: Store) -> str | None:
+    """Every intake being recorded, when there is more than one, with how to keep the one calls record into: one each
+    from calls made at once before the intake lock, QUAL-001."""
+    building = store.intake_recording().results
+    if len(building) < 2:
+        return None
+    named = ', '.join(f'layer {held.layer.name} of metaform {held.base}' for held in building)
+    others = list(dict.fromkeys(held.base for held in building[1:] if held.base != building[0].base))
+    removal = ('; remove each other one: ' + '; '.join(f'metaform map remove-base {name}' for name in others)
+               if others else '')
+    return (f'{len(building)} intakes are being recorded: {named}. Calls record into and finish the first, in '
+            f'metaform {building[0].base}{removal}.')
+
+
 def status_verb(ctx: Context) -> str:
     store = ctx.require_store()
     found = _building(store)
@@ -808,6 +920,8 @@ def status_verb(ctx: Context) -> str:
         lines.append(f'This project has an intake. Latest intake layer: {latest.name}')
     if found is not None:
         lines.append(f'An intake is being recorded in layer {found.layer.name} of metaform {found.metaform}.')
+    if (several := _several(store)) is not None:
+        lines.append(several)
     if not lines:
         lines.append('No intake yet. Read the instructions with metaform intake prompt.')
     return '\n'.join(lines) + '\n'
@@ -827,8 +941,9 @@ def status(ctx: Context) -> Status:
         step = '   ' + prompt_files.required(here, 'register_step') + '\n'
         return Status(instruction=prompt_files.required(here, 'no_intake', register=step))
     found = _building(ctx.store)
-    recording = (f'Intake: being recorded in layer {found.layer.name} of metaform {found.metaform}',) \
-        if found is not None else ()
+    several = _several(ctx.store)
+    recording = (f'Intake: being recorded in layer {found.layer.name} of metaform {found.metaform}',
+                 *((several,) if several is not None else ())) if found is not None else ()
     # The instructions agents read name an intake started and not finished, or else a project with no intake, MCP-009.
     unfinished = prompt_files.required(here, 'unfinished') if found is not None else None
     if ctx.store.has_intake():

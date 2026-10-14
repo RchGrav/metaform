@@ -67,7 +67,7 @@ request right after.
     <name>The element's name as the project calls it.</name>
     <refs>Where the element is found: a list of references, each a key and a value, such as path and src/timer.py.</refs>
     <condition>MISS, BKN or OK, as the intake procedure marks a part, or broken, missing, trouble or ok: MISS and missing are stored as missing, not built yet; BKN and broken as trouble, which needs a note saying what is wrong and what corrects it; OK as ok. Recording it again replaces the last.</condition>
-    <note>Free text kept with the element; an exclusion is a note that starts with "exclude:".</note>
+    <note>Free text about the element, kept beside the map in the critic layer, never in the map itself; an exclusion is a note that starts with "exclude:".</note>
   </element>
   <purpose>
     <receiver>The address of the receiving element, the RE, that holds the purpose record.</receiver>
@@ -78,7 +78,7 @@ request right after.
     <ifd>sends, receives or both: the information flow direction, as defined in the intake procedure.</ifd>
     <refs>Where the purpose record is found: a list of references, each a key and a value.</refs>
     <condition>MISS, BKN or OK, as the intake procedure marks a part, or broken, missing, trouble or ok: MISS and missing are stored as missing, not built yet; BKN and broken as trouble, which needs a note saying what is wrong and what corrects it; OK as ok. Recording it again replaces the last.</condition>
-    <note>Free text kept with the purpose record; an exclusion is a note that starts with "exclude:".</note>
+    <note>Free text about the purpose record, kept beside the map in the critic layer, never in the map itself; an exclusion is a note that starts with "exclude:".</note>
   </purpose>
 </fields>
 </prompts>

@@ -1,0 +1,1 @@
+tests/test_base.py FAILED tests/test_base.py::test_every_shipped_module_imports_only_the_public_base — the test name as it appears in the trace.

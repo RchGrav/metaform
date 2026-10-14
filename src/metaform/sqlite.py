@@ -13,11 +13,12 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import sys
 import threading
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 from .errors import NewerStore, StoreError
 
@@ -58,6 +59,49 @@ def private(path: Path) -> None:
         os.close(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
     except FileExistsError:
         pass
+
+
+class Held(Exception):
+    """A file lock another holder has, when the caller asked not to wait for it."""
+
+
+@contextmanager
+def file_lock(path: Path, *, wait: bool = True) -> Generator[BinaryIO, None, None]:
+    """An exclusive lock on the file between processes, held until the block ends, and the file open for appending,
+    so a writer that locks the file it writes holds the lock with the handle it writes through. A file that does not
+    exist is created, in the home readable and writable by its owner alone. The file is never replaced or removed,
+    which would let another opener lock a different file under the same name. A process that ends, by a crash too,
+    lets go of its lock. With wait=False a lock another holds raises Held at once; on Windows a wait gives up with
+    OSError after about ten seconds."""
+    from . import home
+    flags = os.O_RDWR | os.O_CREAT | os.O_APPEND | getattr(os, 'O_BINARY', 0)
+    with os.fdopen(os.open(path, flags, 0o600 if home.is_home_path(path) else 0o666), 'a+b') as stream:
+        if sys.platform == 'win32':
+            import msvcrt
+            stream.seek(0)
+            try:
+                msvcrt.locking(stream.fileno(), msvcrt.LK_LOCK if wait else msvcrt.LK_NBLCK, 1)
+            except OSError:
+                if wait:
+                    raise
+                raise Held(str(path)) from None
+            try:
+                yield stream
+            finally:
+                stream.flush()
+                stream.seek(0)
+                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            try:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
+            except BlockingIOError:
+                raise Held(str(path)) from None
+            try:
+                yield stream
+            finally:
+                stream.flush()
+                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
 
 def connect(path: Path | str) -> sqlite3.Connection:

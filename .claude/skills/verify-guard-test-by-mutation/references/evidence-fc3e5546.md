@@ -1,0 +1,1 @@
+The check failed 5 of 5 runs with four spawned workers and 2 of 5 with two, because the window is narrow. Use four workers to reproduce. — and — "Check after the fix: test_processes_recording_new_shape_on_a_finished_map_at_once_open_one_base passed 5 of 5 runs (four workers; one new base holding all four elements...)"

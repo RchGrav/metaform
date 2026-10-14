@@ -606,8 +606,10 @@ def ask_page(ctx: Context, act: str, **given: Any) -> dict[str, Any]:
         connection.close()
     answer = cast(dict[str, Any], found) if isinstance(found, dict) else {}
     if response.status != 200 or answer.get('error'):
+        # the page answered and refused: it is open, so the agent reads what it shows; else no page answered
+        fallback = 'metaform web viewing' if response.status == 200 else 'open the page on this project'
         raise Stop(str(answer.get('error') or f'The page refused it ({response.status}).'),
-                   str(answer.get('next') or 'open the page on this project'))
+                   str(answer.get('next') or fallback))
     return answer
 
 

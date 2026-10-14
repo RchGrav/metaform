@@ -48,10 +48,11 @@ EXCHANGES = Table('a2a_exchanges', place='project', key=('exchange_id',), column
     Column('exchange_id', required=True), Column('peer', required=True), Column('peer_task_id'),
     Column('address', required=True), Column('sender'), Column('work_id'), Column('state', required=True),
     Column('said'), Column('text', required=True), Column('seen', 'json'), Column('created', required=True),
-    Column('updated', required=True), Column('seq', 'int', required=True)),
+    Column('updated', required=True), Column('seq', 'int', required=True), Column('asked')),
     indexes=(Index(('peer', 'peer_task_id')), Index(('address',)), Index(('state',)), Index(('seq',))))
-# 2 only adds a2a_asks, 3 only a2a_peers and a2a_exchanges, so every earlier version still reads the rest.
-TABLES = Tables(version=3, tables=(TASKS, ASKS, PUSH, PEERS, EXCHANGES), compatible_from=1)
+# 2 only adds a2a_asks, 3 only a2a_peers and a2a_exchanges, 4 only a2a_exchanges' `asked`, the open question at the
+# Address whose answer goes back to the peer, which may be empty, so every earlier version still reads the rest.
+TABLES = Tables(version=4, tables=(TASKS, ASKS, PUSH, PEERS, EXCHANGES), compatible_from=1)
 
 
 @dataclass(frozen=True)
@@ -215,7 +216,8 @@ def delete_push(project: str, work_id: str, config_id: str | None = None) -> int
 class Exchange:
     """One message sent to a peer about an Address, MCP-043: the peer and the task it opened, the Address and the
     ticket it belongs to, the agent instance that sent it, the task's state in the status vocabulary of work with the
-    peer's last word on it, and what of the task was already written at the Address."""
+    peer's last word on it, what of the task was already written at the Address, and the open question there whose
+    answer goes back to the peer, `asked`, a message id of the map."""
     exchange_id: str
     peer: str
     address: str
@@ -228,6 +230,7 @@ class Exchange:
     seen: list[str] = field(default_factory=list[str])
     created: str = ''
     updated: str = ''
+    asked: str | None = None
 
 
 def _exchange(row: Any) -> Exchange:
@@ -235,7 +238,7 @@ def _exchange(row: Any) -> Exchange:
     return Exchange(str(row['exchange_id']), str(row['peer']), str(row['address']), str(row['text']),
                     str(row['state']), row['peer_task_id'], row['sender'], row['work_id'], row['said'],
                     [str(one) for one in cast(list[Any], seen)] if isinstance(seen, list) else [],
-                    str(row['created']), str(row['updated']))
+                    str(row['created']), str(row['updated']), row['asked'])
 
 
 def keep_card(project: str, name: str, url: str, card: dict[str, Any]) -> None:
@@ -307,3 +310,15 @@ def moved(project: str, exchange_id: str, *, state: str | None = None, said: str
         change['updated'] = _now()
         after = tx.update('a2a_exchanges', {'exchange_id': exchange_id}, change)
     return _exchange(after) if after is not None else before, 'state' in change, taken
+
+
+def asking(project: str, exchange_id: str, was: str | None, now: str | None) -> bool:
+    """Set the exchange's open question from `was` to `now` in one transaction, only while it is still `was`, so of
+    two followers that read one answer only the one that takes it sends it, and a question the peer asks meanwhile is
+    never overwritten. Returns whether it was set."""
+    with _own(project).tables() as tx:
+        row = tx.get('a2a_exchanges', {'exchange_id': exchange_id})
+        if row is None or row['asked'] != was:
+            return False
+        tx.update('a2a_exchanges', {'exchange_id': exchange_id}, {'asked': now, 'updated': _now()})
+    return True

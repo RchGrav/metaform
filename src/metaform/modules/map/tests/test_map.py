@@ -1781,8 +1781,27 @@ def test_missing_address_names_the_layer_and_a_raw_read(run, mapped, visibility)
 def test_missing_address_with_no_candidate_names_the_roots(run, mapped):
     stopped = run('map', 'where', 'xyz.abc', cwd=mapped, ok=False)
     assert stopped.returncode == 2
-    assert stopped.stderr.splitlines()[-1] == 'Next: metaform map children'
-    assert j(run, 'children', '', cwd=mapped)['results']
+    assert stopped.stderr.splitlines()[-1] == "Next: metaform map children address=''"
+    assert j(run, 'children', 'address=', cwd=mapped)['results']
+
+
+def test_missing_address_in_the_first_building_intake_names_intake_show(run, project_folder):
+    run('intake', 'element', 'namespace_address=code.calculator.sum', 'name_length=2', 'role=DE', cwd=project_folder)
+    stopped = run('map', 'where', 'code.calculator.sum', cwd=project_folder, ok=False)
+    assert stopped.returncode == 2
+    assert 'layer base' in stopped.stderr
+    assert stopped.stderr.splitlines()[-1] == 'Next: metaform intake show receiver=code.calculator.sum'
+
+
+def test_missing_address_recovery_is_shared_by_code_and_glossary(run, kitchen):
+    code(run, kitchen, 'code-import', 'from=scip')
+    for args in (('code-context', 'address=code.timer.kitchn'),
+                 ('code-link', 'op=add', 'node=code.timer.kitchn', 'symbol=Timer', 'why=Realize the timer.'),
+                 ('term', 'term=dish timer', 'node=code.timer.kitchn', 'definition=A timer.', 'why=Name the timer.')):
+        stopped = run('map', *args, cwd=kitchen, ok=False)
+        assert stopped.returncode == 2
+        assert 'Nearest: code.timer.kitchen' in stopped.stderr
+        assert stopped.stderr.splitlines()[-1] == 'Next: metaform map where code.timer.kitchen'
 
 
 def test_citing_a_path_outside_the_project_stops_and_an_uncited_path_names_code_search(run, mapped):
@@ -1792,11 +1811,13 @@ def test_citing_a_path_outside_the_project_stops_and_an_uncited_path_names_code_
     assert f'{outside} is outside the project folder {mapped}' in stopped.stderr
     uncited = j(run, 'citing', 'key=path', 'value=./src/uncited.py', cwd=mapped)
     assert uncited['results'] == []
-    assert uncited['next'] == 'metaform map code-search file=src/uncited.py'
+    assert uncited['next'] == 'metaform map code-search file_pattern=src/uncited.py'
 
 
-def test_orientation_recovery_reaches_working_next_steps_over_mcp(run, home, mapped):
+def test_orientation_recovery_reaches_working_next_steps_over_mcp(run, home, kitchen):
     from metaform.modules.mcp.tests.test_mcp import called, session, text
+
+    code(run, kitchen, 'code-import', 'from=scip')
 
     async def check(client, init):
         typo = await called(client, 'map_where', {'address': 'code.timer.kitchn'})
@@ -1807,9 +1828,14 @@ def test_orientation_recovery_reaches_working_next_steps_over_mcp(run, home, map
         assert not recovered.is_error
         uncited = await called(client, 'map_citing', {'key': 'path', 'value': './src/uncited.py'})
         assert not uncited.is_error
-        assert 'call map_code_search file=src/uncited.py' in '\n'.join(text(uncited))
+        next_step = json.loads(text(uncited)[-1])['next']
+        assert next_step == 'map_code-search file_pattern=src/uncited.py'
+        assert next_step.split()[0] in {one.name for one in (await client.list_tools()).tools}
+        searched = await called(client, 'map_code-search', {'file_pattern': 'src/uncited.py'})
+        assert not searched.is_error
+        assert json.loads(text(searched)[-1])['results'] == []
 
-    session(home, mapped, check)
+    session(home, kitchen, check)
 
 
 @pytest.mark.req('BASE-038')

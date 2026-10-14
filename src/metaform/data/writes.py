@@ -330,6 +330,21 @@ def split_changes(kind: str, changes: dict[str, Any], notices: list[Notice]) -> 
     return allowed
 
 
+BESIDE = 'critic'  # the layer a note about a part of the base goes in, the intake module's critic layer
+
+
+def base_only(kind: str, found: LayerRow, allowed: dict[str, Any], notices: list[Notice]) -> dict[str, Any]:
+    """The changes a thing of the base takes: the base holds RE, PE, OP and EF only, Rich's rule of 2026-10-12, so a
+    note written to an element or join of the base is named in a notice and not applied. Clearing one is applied, so
+    a note written before the rule can leave the base."""
+    if found.kind not in BASE_KINDS or kind not in ('element', 'join') or not allowed.get('note'):
+        return allowed
+    notices.append(Notice('note', f'The base holds RE, PE, OP and EF only; a note goes to layer {BESIDE} at the same '
+                                  f'{kind}: metaform map knowledge op=add-item layer={BESIDE} node={kind}:<id> '
+                                  'value=<note>. note was not applied.'))
+    return {key: value for key, value in allowed.items() if key != 'note'}
+
+
 def changed_columns(tx: Tx, kind: str, changes: dict[str, Any], found: LayerRow, notices: list[Notice],
                     base: Row) -> tuple[dict[str, Any], list[tuple[str, Any]]]:
     """The field values of a change of `base`, each checked the way a write checks it; and records split from an
@@ -400,7 +415,8 @@ def edit(tx: Tx, thing: str, changes: Any) -> Version | Outcome:
     if not given_changes:
         return Outcome((Notice('changes', 'No field to change was named; nothing was written.'),))
     notices: list[Notice] = []
-    allowed = split_changes(kind, {str(key): value for key, value in given_changes.items()}, notices)
+    allowed = base_only(kind, found, split_changes(kind, {str(key): value for key, value in given_changes.items()},
+                                                   notices), notices)
     if not allowed:
         return Outcome(tuple(notices))
     columns, split = changed_columns(tx, kind, allowed, found, notices, row)

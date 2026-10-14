@@ -580,14 +580,14 @@ class Store:
         return sliced(home.bases(self.project_id), limit, after)
 
     def intake_recording(self) -> Page[Recording]:
-        """The intake being recorded for this project, in whichever of its metaforms it is building: a page of none
-        or one, BASE-039."""
+        """The intake being recorded for this project, in whichever of its metaforms it is building, BASE-039: a page
+        of none or one, and of every one when more than one was opened, so none is hidden."""
+        found: list[Recording] = []
         for metaform in home.bases(self.project_id):
-            found = Store(self.project_id, base=metaform.id)
-            for layer in found.layers(kind='base', limit=0).results:
+            for layer in Store(self.project_id, base=metaform.id).layers(kind='base', limit=0).results:
                 if layer.ready is None:
-                    return Page((Recording(metaform.id, metaform.name, metaform.active, layer),), None)
-        return Page((), None)
+                    found.append(Recording(metaform.id, metaform.name, metaform.active, layer))
+        return Page(tuple(found), None)
 
     def active_base(self) -> home.Base | None:
         return home.active_base(self.project_id)

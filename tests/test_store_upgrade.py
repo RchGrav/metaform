@@ -256,7 +256,41 @@ def test_a_layout_10_store_opens_with_no_perspective_and_every_other_field_of_ev
     kept.close()
 
 
-LAYOUT_11 = (Path(__file__).parent / 'fixtures' / 'store-v11.sql').read_text(encoding='utf-8')
+def _opener(home: str, path: str, barrier, answers) -> None:
+    """One process opening the store as every web server, MCP server and runner does after a release."""
+    import os
+    os.environ['METAFORM_HOME'] = home
+    barrier.wait()
+    try:
+        with open_store(Path(path), write=False) as db:
+            version = db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
+            ops = db.execute('SELECT COUNT(*) FROM ops').fetchone()[0]
+        answers.put((version, ops))
+    except BaseException as error:  # noqa: BLE001 - the parent asserts on what each process met
+        answers.put(repr(error))
+
+
+@pytest.mark.req('STORE-006')
+@pytest.mark.req('QUAL-001')
+def test_three_processes_opening_a_layout_10_store_at_once_all_read_it_upgraded_once(home: Path, tmp_path: Path):
+    """Processes that open an earlier layout at the same time take turns: one upgrades it, the others wait and read
+    the new file, and one backup is kept."""
+    import multiprocessing
+    path = tmp_path / 'main.metaform.sqlite3'
+    layout_10_store(path)
+    spawn = multiprocessing.get_context('spawn')
+    barrier, answers = spawn.Barrier(3), spawn.Queue()
+    openers = [spawn.Process(target=_opener, args=(str(home), str(path), barrier, answers)) for _ in range(3)]
+    for opener in openers:
+        opener.start()
+    met = [answers.get(timeout=120) for _ in openers]
+    for opener in openers:
+        opener.join(timeout=30)
+    assert met == [(SCHEMA_VERSION, 9)] * 3
+    assert len(list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))) == 1
+
+
+LAYOUT_11 =(Path(__file__).parent / 'fixtures' / 'store-v11.sql').read_text(encoding='utf-8')
 
 
 def layout_11_store(path: Path) -> None:

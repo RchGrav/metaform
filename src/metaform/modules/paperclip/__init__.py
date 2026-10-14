@@ -27,10 +27,15 @@ PAPERCLIP_AGENT_ID, PAPERCLIP_RUN_ID) win over the settings, since the run's tok
 """
 from __future__ import annotations
 
+import contextlib
+import json
 import math
 import os
 import re
+import signal
+import subprocess
 import sys
+import time
 import uuid
 from collections.abc import Iterator, Mapping
 from datetime import UTC, datetime, timedelta
@@ -38,7 +43,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, cast
 
-from metaform import jev, prompt_files, settings
+from metaform import home, jev, prompt_files, settings
 from metaform.data import Column, Index, Message, Node, Store, StoreError, Table, Tables, WorkRecord, now
 from metaform.data import status as vocabulary
 from metaform.module import (
@@ -47,8 +52,10 @@ from metaform.module import (
     Noun,
     Status,
     Stop,
+    Subscription,
     Verb,
     call,
+    child_environment,
     context,
     first_line,
     node_brief,
@@ -56,7 +63,7 @@ from metaform.module import (
     tool_arguments,
 )
 
-from .client import Client, PaperclipError
+from .client import Client, Opener, PaperclipError
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -79,8 +86,11 @@ TICKET = re.compile(r'^\s*ticket:\s*(\S+)\s*$', re.IGNORECASE | re.MULTILINE)
 UUID = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$', re.IGNORECASE)
 BRIDGE = uuid.UUID('6f1c1d2e-8a51-4c41-9a44-7d7f3c0b8e10')  # names each bridged message's clientRequestId, uuid5
 CANDIDATES = 12  # the Addresses Jev chooses among when an issue names none, the best matches of its words
+RESOLVED = 2000  # the most of an assignee's last comment kept as the resolution of a ticket whose issue is done
+BEAT = 20  # seconds between the watcher's beats in its run file; one older than three beats is a watcher gone
 WORD = re.compile(r'[a-z0-9]{3,}')
 PROMPTS = resources.files(__name__)
+OPENER: Opener | None = None  # what opens each request to Paperclip; urlopen when None, an in-memory server in tests
 
 # Where Metaform calls out to and which agents it hands work to are the person's to decide, never an agent's over MCP,
 # CLI-011, so every setting here is person_only; the token itself is never a setting.
@@ -105,7 +115,8 @@ settings.number('paperclip_check_minutes', 10, min=1, max=1440, person_only=True
                 help='How often Paperclip wakes the Metaform agent to check an issue a Metaform agent is working.',
                 details='Each issue heartbeat takes carries an issue monitor of kind external_service, so Paperclip '
                         'reads it as held by an outside service rather than as a stuck run, and wakes the agent this '
-                        'many minutes on to sync it. Each heartbeat sets the next check while the ticket is open.')
+                        'many minutes on to sync it. Each heartbeat sets the next check while the ticket is open. '
+                        'paperclip watch syncs this often too.')
 settings.boolean('paperclip_jev_route', True, person_only=True, label='Paperclip routing by Jev',
                  help='Let Jev choose the Address of a Paperclip issue that names none, when the setting jev is on.',
                  details='heartbeat offers Jev the Addresses whose purposes best match the issue\'s words; a sure '
@@ -147,7 +158,7 @@ def _client(ctx: Context) -> Client:
     if not url:
         raise Stop('No Paperclip server is set.', 'metaform set --paperclip-url <origin, such as http://localhost:3100>')
     token = os.environ.get(str(ctx.setting('paperclip_token_env') or '')) or None
-    return Client(url, token, run_id=os.environ.get('PAPERCLIP_RUN_ID'))
+    return Client(url, token, run_id=os.environ.get('PAPERCLIP_RUN_ID'), opener=OPENER)
 
 
 def _company(ctx: Context) -> str:
@@ -392,7 +403,7 @@ def brief(ctx: Context) -> str:
     """The brief of the Address a Paperclip issue works on, the issue Paperclip woke this run for when none is
     named."""
     store = ctx.require_store()
-    issue = str(ctx.nouns.get('issue') or os.environ.get('PAPERCLIP_TASK_ID') or '')
+    issue = str(ctx.nouns.get('issue') or ctx.identity.get('issue_id') or os.environ.get('PAPERCLIP_TASK_ID') or '')
     if not issue:
         raise Stop('No Paperclip issue is named, and this is not a Paperclip run.', 'metaform paperclip brief issue=<id>')
     held = _link(store, issue)
@@ -439,7 +450,7 @@ def send(ctx: Context) -> dict[str, Any]:
     held = _link_of_work(store, work_id)
     if held is not None:
         _write_document(_client(ctx), held['issue_id'], held['address'], work_id)
-        return _shown(held)
+        return {**_shown(held), 'next': _follows(ctx)}
     record = store.ticket(work_id).work
     if record.done or record.taken:
         raise Stop(f"Ticket {work_id} is {'done' if record.done else 'taken by ' + str(record.taken_by)}; only an "
@@ -481,7 +492,18 @@ def send(ctx: Context) -> dict[str, Any]:
     shown = _shown(row)
     if chose:
         shown['assignee_chosen'] = chose
+    shown['next'] = _follows(ctx)
     return shown
+
+
+def _follows(ctx: Context) -> str:
+    """How a ticket sent to Paperclip follows its issue: each sync, which the watcher runs while it runs."""
+    found = _watcher(str(ctx.project)) if ctx.project else None
+    if found is not None:
+        return (f"the ticket follows the issue: the Paperclip watcher, process {found.get('pid')}, runs metaform "
+                'paperclip sync every paperclip_check_minutes')
+    return ('the ticket follows the issue each time metaform paperclip sync runs; metaform paperclip watch runs it '
+            'every paperclip_check_minutes, and web start starts the watcher while issues are open')
 
 
 def _record(store: Store, work_id: str) -> WorkRecord | None:
@@ -705,10 +727,32 @@ def _note(store: Store, client: Client, issue_id: str, body: str, request: str |
         _bridge(store, issue_id, str(comment['id']), None, 'note')
 
 
-def _close(ctx: Context, store: Store, record: WorkRecord, name: str, state: str) -> dict[str, Any]:
+def _last_said(store: Store, client: Client, issue: Mapping[str, Any]) -> str | None:
+    """What the issue's assignee last wrote on it, cut to RESOLVED characters: the newest comment by that agent that
+    is neither Paperclip's own notice nor one this module posted, or None when there is none."""
+    assignee = issue.get('assigneeAgentId')
+    if not assignee:
+        return None
+    for comment in _objects(client.comments(str(issue['id']), order='desc')):
+        notice = comment.get('authorType') == 'system' or \
+            _object(comment.get('presentation')).get('kind') == 'system_notice'
+        body = str(comment.get('body') or '').strip()
+        if notice or not body or comment.get('authorAgentId') != assignee:
+            continue
+        with store.tables(write=False) as tx:
+            kept = tx.get('bridged', {'issue_id': str(issue['id']), 'comment_id': str(comment.get('id') or '')})
+        if kept is not None and kept['way'] == 'note':
+            continue
+        return body[:RESOLVED]
+    return None
+
+
+def _close(ctx: Context, store: Store, client: Client, record: WorkRecord, name: str, state: str,
+           issue: Mapping[str, Any]) -> dict[str, Any]:
     """Close a ticket whose issue Paperclip closed, ending the dispatch session on it through dispatch's own verbs:
     `cancel` for an issue cancelled, which cancels the agent's turn and closes the ticket cancelled, and `stop` before
-    the close of an issue done. With dispatch off, the ticket is closed alone."""
+    the close of an issue done. With dispatch off, the ticket is closed alone. An issue done is resolved with what its
+    assignee last wrote on it, else with the issue's state."""
     outcome = STATES[state]
     dispatch = _on_surface(ctx, 'dispatch')
     if outcome == 'cancelled' and dispatch:
@@ -718,7 +762,8 @@ def _close(ctx: Context, store: Store, record: WorkRecord, name: str, state: str
     stopped = dispatch and _running(ctx, record.id)
     if stopped:
         _verb(ctx, 'dispatch', 'stop', {'id': record.id})
-    store.finish_work(record.id, f'{name} is {state} in Paperclip.', f'Paperclip closed issue {name}.',
+    said = _last_said(store, client, issue) if state == 'done' else None
+    store.finish_work(record.id, said or f'{name} is {state} in Paperclip.', f'Paperclip closed issue {name}.',
                       outcome=outcome)
     return {'ticket_now': outcome, **({'session': 'stopped'} if stopped else {})}
 
@@ -759,6 +804,12 @@ def _sync_one(ctx: Context, store: Store, client: Client, row: dict[str, Any]) -
     name = str(row.get('identifier') or row['issue_id'])
     ended = STATES.get(state) in vocabulary.TERMINAL
     changed: dict[str, Any] = {}
+    if row['works'] == 'paperclip' and not record.done:
+        # what the Paperclip agent says on the issue is knowledge of the Address it works, so it is kept there, up to
+        # the sync that closes the ticket
+        heard = _comments_in(store, client, row)
+        if heard:
+            changed['comments_in'] = heard
     if row['works'] == 'metaform' and not ended:
         held = _held(store, row['address'])
         if not record.done:
@@ -774,7 +825,7 @@ def _sync_one(ctx: Context, store: Store, client: Client, row: dict[str, Any]) -
         if changed.get('issue_now'):
             state, ended = str(changed['issue_now']), True
     if not record.done and ended:
-        changed.update(_close(ctx, store, record, name, state))
+        changed.update(_close(ctx, store, client, record, name, state, issue))
     elif record.done and not row.get('reported') and not ended and (
             row['works'] == 'metaform' or record.outcome == 'cancelled'):
         # a Metaform agent's ticket ended, or the person cancelled a ticket a Paperclip agent works
@@ -807,6 +858,101 @@ def sync(ctx: Context) -> dict[str, Any]:
         if one:
             changed.append(one)
     return {'changed': changed, 'failed': failed}
+
+
+# ------------------------------------------------------------------------------------------------------ the watcher
+
+def run_file(project: str) -> Path:
+    """The running watcher's record for a project, its pid and its last beat."""
+    return home.home() / 'run' / 'paperclip' / f'{project}.json'
+
+
+def _watcher(project: str) -> dict[str, Any] | None:
+    """The watcher running for a project: its record, while it beats; None when there is none or it has gone."""
+    try:
+        found: Any = json.loads(run_file(project).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    record = cast(dict[str, Any], found) if isinstance(found, dict) else {}
+    return record if time.time() - float(record.get('beat') or 0) <= 3 * BEAT else None
+
+
+def _followed(store: Store, row: dict[str, Any]) -> bool:
+    """Whether sync has work left on a link a Paperclip agent works: its ticket open, or cancelled here and not yet
+    reported on the issue."""
+    record = _record(store, row['work_id']) if row['works'] == 'paperclip' else None
+    if record is None:
+        return False
+    return not record.done or (record.outcome == 'cancelled' and not row.get('reported')
+                               and STATES.get(str(row.get('state') or '')) not in vocabulary.TERMINAL)
+
+
+def watch(ctx: Context) -> dict[str, Any]:
+    """Run sync every paperclip_check_minutes until stopped, so each ticket follows its issue with no one running it."""
+    store = ctx.require_store()
+    project = str(store.project_id)
+    live = _watcher(project)
+    if live is not None:
+        raise Stop(f"The Paperclip watcher already runs here, process {live.get('pid')}.", 'metaform paperclip links')
+    _client(ctx)  # no server set is said now, not at the first sync
+    home.mkdir_private(run_file(project).parent)
+    record = {'pid': os.getpid(), 'project': project, 'folder': str(ctx.folder), 'started': now()}
+
+    def beat() -> None:
+        home.write_private(run_file(project), json.dumps({**record, 'beat': time.time()}))
+
+    def stopped(number: int, frame: Any) -> None:
+        raise KeyboardInterrupt  # SIGTERM, from a process manager, stops it as Ctrl-C does, so the record goes too
+
+    previous: Any = None
+    with contextlib.suppress(ValueError):  # only the main thread can take signals
+        previous = signal.signal(signal.SIGTERM, stopped)
+    syncs = 0
+    try:
+        while True:
+            beat()
+            done = sync(ctx)
+            syncs += 1
+            for one in done['changed']:
+                ctx.say(f"{now()} {one['issue']}, ticket {one['ticket']}: " + ', '.join(
+                    f'{key} {value}' for key, value in one.items() if key not in ('issue', 'ticket')))
+            for one in done['failed']:
+                ctx.say(f'{now()} failed {one}')
+            due = time.monotonic() + 60 * int(ctx.setting('paperclip_check_minutes') or 10)
+            while (left := due - time.monotonic()) > 0:
+                beat()
+                time.sleep(min(BEAT, left))
+    except KeyboardInterrupt:
+        pass
+    finally:
+        with contextlib.suppress(OSError, ValueError):
+            if json.loads(run_file(project).read_text(encoding='utf-8')).get('pid') == os.getpid():
+                run_file(project).unlink(missing_ok=True)
+        if previous is not None:
+            with contextlib.suppress(ValueError):
+                signal.signal(signal.SIGTERM, previous)
+    return {'state': 'stopped', 'syncs': syncs}
+
+
+def web_started(payload: dict[str, Any], ctx: Context) -> dict[str, Any] | None:
+    """Start the watcher beside the web GUI when issues a Paperclip agent works are open here and none runs; detached,
+    so it runs on as the web GUI does."""
+    store = ctx.store
+    if store is None or _watcher(str(store.project_id)) is not None:
+        return None
+    if not any(_followed(store, row) for row in _links(store)):
+        return None
+    folder = Path(str(payload.get('folder') or ctx.folder))
+    log = run_file(str(store.project_id)).with_suffix('.log')
+    home.mkdir_private(log.parent)
+    options: dict[str, Any] = {'start_new_session': True} if os.name != 'nt' else \
+        {'creationflags': getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0) | getattr(subprocess, 'DETACHED_PROCESS', 0)}
+    descriptor = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    with os.fdopen(descriptor, 'ab') as written:
+        process = subprocess.Popen([sys.executable, '-m', 'metaform', 'paperclip', 'watch'], cwd=folder,
+                                   stdin=subprocess.DEVNULL, stdout=written, stderr=written, env=child_environment(),
+                                   **options)
+    return {'paperclip': 'watching', 'pid': process.pid}
 
 
 def _candidates(store: Store, words: set[str]) -> dict[str, str]:
@@ -1020,9 +1166,8 @@ MODULE = Module(
                                'agent configuration that runs heartbeat.',
              effect='read', open_world=True),
         Verb('brief', brief, 'Read the brief of the Address a Paperclip issue works on.',
-             nouns=(Noun('issue', 'The Paperclip issue, by id or identifier; when omitted, PAPERCLIP_TASK_ID, which '
-                                  'Paperclip sets for a coding agent\'s run woken for an issue, under every local '
-                                  'agent adapter and not under process or http.',
+             nouns=(Noun('issue', 'The Paperclip issue, by id or identifier; when omitted, the gateway\'s '
+                                  'x-paperclip-issue-id, then PAPERCLIP_TASK_ID from a local coding agent\'s run.',
                          required=False),),
              effect='read', open_world=True),
         Verb('links', links, 'List the Paperclip issues tied to tickets here.', effect='read'),
@@ -1041,6 +1186,10 @@ MODULE = Module(
              open_world=True),
         Verb('sync', sync, 'Bring linked issues and tickets together: ends, comments, questions and answers.',
              surfaces=('cli',), open_world=True),
+        Verb('watch', watch, 'Run sync every paperclip_check_minutes until stopped, so tickets follow their issues.',
+             details='web start starts it, detached, while issues a Paperclip agent works are open here. Its process '
+                     'and last beat are kept in the Metaform home, run/paperclip/<project>.json, and its log beside.',
+             surfaces=('cli',), open_world=True),
         Verb('heartbeat', heartbeat, 'Run one Paperclip heartbeat: sync, then take the assigned issues as tickets at '
                                      'their Addresses for dispatch.',
              details='Paperclip runs it as the command of an agent with the process adapter, set as status prints it: '
@@ -1050,6 +1199,7 @@ MODULE = Module(
                      'tickets it took; off, they wait in To do for the person.',
              surfaces=('cli',), open_world=True),
     ),
+    subscriptions=(Subscription('web.started', web_started),),
     status=module_status,
     tables=TABLES,
     work_read=work_read,

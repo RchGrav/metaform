@@ -1,0 +1,2 @@
+cp src/metaform/modules/mcp/tests/test_mcp.py /tmp/test_mcp_f2.py && python3 - <<'EOF' ... s.replace("    run('map', 'reply', asked, 'answer=Red', cwd=mapped)\n" ... ) ... ; cp /tmp/test_mcp_f2.py src/metaform/modules/mcp/tests/test_mcp.py; cp /tmp/mcp_init_f2.py src/metaform/modules/mcp/__init__.py; cp /tmp/a2a_out_clean.py src/metaform/modules/mcp/a2a_out.py; grep -c "NOTSENT\|CHANGED" src/metaform/modules/mcp/a2a_out.py src/metaform/modules/mcp/__init__.py
+Output: src/metaform/modules/mcp/__init__.py:0  src/metaform/modules/mcp/a2a_out.py:0

@@ -1,6 +1,6 @@
 /* Picking on the 3D map: the edge and node the pointer takes, clicks, the picked fiber, and the tooltip over the
  * hovered node. */
-import '/page/app/map3d/graph3d.js';  // the part before runs first, so the parts run in the page's order
+import '/page/app/map3d/fibers3d.js';  // the part before runs first, so the parts run in the page's order
 // The graph, glass and figures share the import map's one local Three.js runtime, VIEW-003 and VIEW-025.
 import * as THREE from 'three';
 import {$, css, h} from '/page/app/core/dom.js';
@@ -11,7 +11,7 @@ import {figureAt} from '/page/app/figures/ask.js';
 import {shownNode} from '/page/app/map3d/light.js';
 import {endOf} from '/page/app/map3d/waves.js';
 import {unbuilt} from '/page/app/map3d/ghosts.js';
-import {fiberOf, G, nodeSize, wake3d} from '/page/app/map3d/graph3d.js';
+import {G, nodeSize, wake3d} from '/page/app/map3d/graph3d.js';
 import {readout, readoutOf, edgeWords, short} from '/page/app/map3d/readout.js';
 import {EDGE_PICK, segmentAway} from '/page/app/map2d/hover.js';
 import {select} from '/page/app/selection/select.js';
@@ -116,29 +116,13 @@ function clickedLink3d(event) {
   if (CUT.on) return cutLink(link);  // with the scissors out a click cuts the edge, `CUT`
   if (link) select(purposeOf(link), true);
 }
-/* The edge the pointer would take, drawn as a bright strand while it is the one. */
-let PICKED_FIBER = null;
+/* The edge the pointer would take, drawn as a bright strand in the text's color while it is the one, `fibers3d`. */
 export function pick3d(link) {
   if (EDGE_PICK.link3d === link) return;
-  const was = EDGE_PICK.link3d;
   if (link) readout('3d', edgeWords(joinOf(purposeOf(link)) || {receiver: '', providers: []}));
-  if (was?.__lineObj && was.__pickedFrom) { was.__lineObj.material = was.__pickedFrom; delete was.__pickedFrom; }
   EDGE_PICK.link3d = link;
-  if (link?.__lineObj) {
-    link.__pickedFrom = link.__lineObj.material;
-    link.__lineObj.material = pickedFiber(link);
-  }
   $('#stage').classList.toggle('picking', Boolean(link));
   wake3d();
-}
-/* One bright strand in the text's color, made once from the first fiber picked. */
-function pickedFiber(link) {
-  if (!PICKED_FIBER) {
-    PICKED_FIBER = fiberOf(link).clone();
-    PICKED_FIBER.uniforms.tint.value = new THREE.Color(css('--text'));
-    PICKED_FIBER.uniforms.opacity.value = 1;
-  }
-  return PICKED_FIBER;
 }
 /* A click on any vertex selects that object itself: an element or a join's purpose vertex. */
 export function clicked3d(node) {

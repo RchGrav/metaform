@@ -16,15 +16,15 @@ from pathlib import Path
 from typing import Any
 
 from metaform import settings
-from metaform.data import Tables
-from metaform.module import Context, Module, Noun, Provides, Subscription, Verb
+from metaform.data import StoreError, Tables
+from metaform.module import Context, Module, Noun, Provides, Stop, Subscription, Verb
 
 from . import a2a_records, task_records
 
-# The module's tables: A2A's, versions 1 and 2 (a2a_records.py), the tasks extension's tool calls, version 3, and
-# A2A outbound's peers and exchanges, version 4, MCP-043; each only adds tables, so every earlier version still reads
-# the rest.
-TABLES = Tables(version=4, tables=(*a2a_records.TABLES.tables, task_records.TABLE), compatible_from=1)
+# The module's tables: A2A's, versions 1 and 2 (a2a_records.py), the tasks extension's tool calls, version 3, A2A
+# outbound's peers and exchanges, version 4, MCP-043, and an exchange's open question, version 5, MCP-041; each only
+# adds a table or a column that may be empty, so every earlier version still reads the rest.
+TABLES = Tables(version=5, tables=(*a2a_records.TABLES.tables, task_records.TABLE), compatible_from=1)
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ('mcp>=2.2,<3', 'a2a-sdk[http-server]>=1.2.2,<2')
@@ -160,10 +160,22 @@ settings.items('mcp_a2a_peers', (), scope='global', person_only=True, exclusive=
 
 def changed(payload: dict[str, Any], ctx: Context) -> None:
     """A change made in this process, BASE-032: the A2A server here, when one runs, reads the tasks it follows in that
-    project again; changes from other processes reach it through `events.listen`, BASE-053."""
+    project again; changes from other processes reach it through `events.listen`, BASE-053. A change that may have
+    answered a question an A2A peer asked sends that answer back, MCP-041; only the exchanges whose question waits
+    are read, and the A2A client is loaded only when one does."""
     served = sys.modules.get(f'{__name__}.a2a')
     if served is not None:
         served.heard(payload)
+    project, named = str(payload.get('project') or ''), payload.get('tables')
+    if not project or (named and 'messages' not in named):
+        return
+    try:
+        waiting = [one for one in a2a_records.exchanges(project, open_only=True) if one.asked]
+    except (Stop, StoreError):
+        return
+    if waiting:
+        from .a2a_out import answer_all
+        answer_all(project, Path(ctx.folder), waiting)
 
 
 def serve(ctx: Context) -> None:

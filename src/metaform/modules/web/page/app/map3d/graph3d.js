@@ -17,6 +17,7 @@ import {nodeObject, linkColor} from '/page/app/map3d/ghosts.js';
 import {linkAt3d, nodeAt3d, clickedAt3d, pick3d, hovered, TIP, hover3d} from '/page/app/map3d/pick3d.js';
 import {readout, rehover3d, figureWords} from '/page/app/map3d/readout.js';
 import {prepare3d} from '/page/app/map3d/labels.js';
+import {fibers3d} from '/page/app/map3d/fibers3d.js';
 import {swap, V3, FLIGHT} from '/page/app/camera/flight.js';
 import {MEET, meetEnds, settled3d} from '/page/app/camera/fly3d.js';
 import {VIEW} from '/page/app/views/settings.js';
@@ -32,26 +33,23 @@ import {posted} from '/page/app/intake/intake.js';
  * fiber gives off its color with a bright core along its middle, where the tube faces the eye, and dims toward its
  * rim, so it reads as a round strand of light at any width. It is never brighter than full, so the bloom never takes
  * it: light that spreads on the map means a node needs attention, VIEW-029, and fibers that glowed with it made the
- * whole map hazy whenever one did. One material for each color and opacity, shared by every link of them. */
-const FIBERS = new Map();
-const FIBER_VERTEX = `varying vec3 vNormal; varying vec3 vView;
-      void main() { vec4 at = modelViewMatrix * vec4(position, 1.0); vNormal = normalize(normalMatrix * normal);
-        vView = normalize(-at.xyz); gl_Position = projectionMatrix * at; }`;
-const FIBER_FRAGMENT = `uniform vec3 tint; uniform float opacity; varying vec3 vNormal; varying vec3 vView;
-      void main() { float facing = abs(dot(normalize(vNormal), normalize(vView)));
+ * whole map hazy whenever one did. The page draws every fiber of a look in one draw, `fibers3d`: each is an instance
+ * of one tube, its tint and opacity its own, `fiber`. `version` counts the changes to what the links are or how they
+ * look, so each link's look is read again only then. */
+export const FIBERS = {version: 0};
+export const FIBER_VERTEX = `attribute vec4 fiber; varying vec3 vNormal; varying vec3 vView; varying vec4 vFiber;
+      void main() { vec4 at = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+        vNormal = normalize(normalMatrix * mat3(instanceMatrix) * normal);
+        vView = normalize(-at.xyz); vFiber = fiber; gl_Position = projectionMatrix * at; }`;
+export const FIBER_FRAGMENT = `varying vec3 vNormal; varying vec3 vView; varying vec4 vFiber;
+      void main() { vec3 tint = vFiber.rgb; float opacity = vFiber.a;
+        float facing = abs(dot(normalize(vNormal), normalize(vView)));
         float core = pow(facing, 1.6), spark = pow(facing, 12.0);
         gl_FragColor = vec4(tint * min(1.0, 0.4 + 0.5 * core + 0.3 * spark), opacity * (0.25 + 0.75 * core)); }`;
-export function fiberOf(link) {
-  const color = linkColor(link), opacity = Number(css('--link-opacity')), key = color + '|' + opacity;
-  if (!FIBERS.has(key)) FIBERS.set(key, new THREE.ShaderMaterial({transparent: true, depthWrite: true,
-    uniforms: {tint: {value: new THREE.Color(color)}, opacity: {value: opacity}},
-    vertexShader: FIBER_VERTEX, fragmentShader: FIBER_FRAGMENT}));
-  return FIBERS.get(key);
-}
 export let G = null;
 export const nodeSize = node => node.t === 'el' ? (node.role === 'DE' ? 9 : node.role === 'CQU' ? 7 : 4)
   : node.t === 'purpose' ? 0.9 : node.t === 'item' ? 0.3 : 0.35;
-const linkWidthOf = link => link.k === 'tree' ? 0.4 : link.k === 'layer' || link.k === 'item' ? 0.25
+export const linkWidthOf = link => link.k === 'tree' ? 0.4 : link.k === 'layer' || link.k === 'item' ? 0.25
   : link.k === 'relation' ? 0.5 : 0.9;
 /* The background is part of the scene as well as the graph's clear color. The render chain clears its buffer before
  * three.js draws into it, with the clear color last converted for the screen; three.js clears a scene's background
@@ -86,19 +84,16 @@ export function start3D() {
  * runs the graph's frames itself, `frame3d`, in place of the library's own loop, which draws every frame forever. A
  * frame is drawn while the layout settles, the camera flies or coasts, the pointer is on the map, a part flashes or
  * pulses, a property's wave, a part's text or an agent moves, and for `grace` after anything changes what is drawn:
- * every setter of the graph and every act on the map wakes it, `wake3d`. The dots that flow along the joins are the
- * one motion that never ends: they keep flowing, and once nothing has been done or changed for `idle` they are drawn
- * `idleRate` times a second, a flow nobody is watching closely, at its own speed. `rest`, when set, is how long after
- * that the flow stops until the next act or change; null keeps it flowing at the full frame rate, as VIEW-005 draws
- * it, since a flow watched without touching is still watched. The flash and pulse of a part's record, a ghost rising,
- * an agent's figure, a lit reach and the mascot up and about are ambient, `busy`: drawn at once until the map has
- * been left alone for `idle`, then `idleRate` times a second, each at its own speed. With reduced motion nothing
- * flows or flashes, so an idle map draws nothing at all. */
-export const FRAMES = {id: 0, timer: 0, held: false, until: 0, active: 0, last: 0, drawn: 0, engine: false,
-  moved: false, busy: false, flowing: false, grace: 700, idle: 30000, idleRate: 15, rest: 0};
-// `idle` and `rest` are the web module's settings, web_flow_seconds and web_idle_flow, read with the workspace: the
-// flow lasts web_flow_seconds after the last act or change and then stops, so an idle page costs nothing; with
-// web_idle_flow on it goes on slowly, `rest` null, as the map was drawn before.
+ * every setter of the graph and every act on the map wakes it, `wake3d`. The dots that flow along the joins, a part's
+ * flash or pulse, a ghost rising, an agent's figure, a lit reach and the mascot up and about move without end: while
+ * any of them runs, every frame is drawn, at the screen's rate, for as long as the page is open. With web_idle_flow
+ * off the map may rest: left alone for `idle` (web_flow_seconds), it stops drawing until the next act or until its
+ * tab comes back into view. It is never drawn at a lower rate. With reduced motion nothing flows or flashes, so an
+ * idle map draws nothing at all. */
+export const FRAMES = {id: 0, held: false, until: 0, active: 0, last: 0, drawn: 0, engine: false,
+  moved: false, busy: false, flowing: false, grace: 700, idle: 30000, rest: null};
+// `idle` and `rest` are the web module's settings, web_flow_seconds and web_idle_flow, read with the workspace: rest
+// null, the default, keeps the map running; 0 lets it stop `idle` after the last act or change.
 const DAMPING = 0.12;
 // the share of a turn of the camera a hand gave that it loses each 60th of a second: it coasts
 // (DAMPING, above); and the share of its speed a node loses each tick while one is dragged, 0.4 otherwise
@@ -109,8 +104,6 @@ export function wake3d(ms = FRAMES.grace) {
   FRAMES.active = now;
   wake2d();  // the selected node's flow in the 2D map goes on with any act, as the 3D map's does
   if (!G || FRAMES.held || FRAMES.id) return;
-  clearTimeout(FRAMES.timer);
-  FRAMES.timer = 0;
   FRAMES.id = requestAnimationFrame(frame3d);
 }
 function frame3d(now) {
@@ -128,25 +121,17 @@ function frame3d(now) {
   FRAMES.drawn++;
   const still = now - FRAMES.active;
   if (moving3d(now, still)) FRAMES.id = requestAnimationFrame(frame3d);
-  else if (FRAMES.busy || (FRAMES.flowing && (FRAMES.rest === null || still < FRAMES.idle + FRAMES.rest))) {
-    // timed from this frame's start and a little early, so the screen's next refresh after it is the one
-    // 1/idleRate on: waiting the whole time and then for a refresh drew 12 frames a second, not 15
-    FRAMES.timer = setTimeout(idleFrame, Math.max(0, now + 1000 / FRAMES.idleRate - 4 - performance.now()));
-  }
 }
-/* Whether the next frame is drawn at once: something changed lately, the layout or the camera moves, a flight is
- * under way, or the flow or an ambient animation runs and the page has not yet been left alone for `idle`; the flow
- * also when it rests never. Left alone longer, an ambient animation is drawn `idleRate` times a second. */
+/* Whether the next frame is drawn: something changed lately, the layout or the camera moves, or a flight is under way;
+ * and while the flow or an ambient animation runs (a figure, the mascot, a record's flash), every frame, for as long
+ * as the page is open. Only with web_idle_flow off may the map rest: once it has been left alone for `idle` it stops
+ * drawing, and the next act, or the tab coming back into view, wakes it. It is never drawn at a lower rate. */
 function moving3d(now, still) {
   if (now < FRAMES.until || FRAMES.engine || FRAMES.moved || FLIGHT.on) return true;
-  if ((FRAMES.busy || FRAMES.flowing) && still < FRAMES.idle) return true;
-  return FRAMES.flowing && FRAMES.rest === null;
+  return (FRAMES.busy || FRAMES.flowing) && (FRAMES.rest === null || still < FRAMES.idle);
 }
-/* One frame of the flow left alone, drawn at its slow rate. */
-function idleFrame() {
-  FRAMES.timer = 0;
-  if (!FRAMES.id && !FRAMES.held) FRAMES.id = requestAnimationFrame(frame3d);
-}
+// A tab the person comes back to is drawn at once: a hidden tab gets no frames, and nothing else would wake it.
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') wake3d(); });
 /* The library's setters and the methods that change what is drawn wake the map, as does every camera move asked for
  * from outside the page's own flights; such a move also ends a flight under way and, unless it fits the whole map,
  * tells the settled layout not to fit it again, since someone put the camera where it is. */
@@ -160,6 +145,7 @@ function wakeful(graph) {
       // a getter, a force asked for by its name, or a reading of where something is drawn changes nothing
       const reading = (!args.length && !WAKERS.has(name)) || (name === 'd3Force' && args.length < 2);
       if (reading) return method.apply(this, args);
+      if (name === 'graphData' || name === 'refresh' || name.startsWith('link')) FIBERS.version++;
       if (name === 'cameraPosition' || name === 'zoomToFit') {
         FLIGHT.on = false;
         V3.focus = V3.hold = null;
@@ -188,7 +174,7 @@ function create3D() {
   // The page's own work for each frame runs first in the render chain: after the layout's tick and the controls, before
   // anything is drawn, so the camera's flight, the labels, the dots and the tooltip are all of the same frame.
   G.postProcessingComposer().insertPass({isPass: true, enabled: true, needsSwap: false, clear: false,
-    renderToScreen: false, setSize() {}, render() { prepare3d(); }, dispose() {}}, 0);
+    renderToScreen: false, setSize() {}, render() { prepare3d(); fibers3d(); }, dispose() {}}, 0);
   applyPhysics(PHYS.name, false);  // the forces of the physics chosen, `PHYSICS`
   steer3d(G.controls());
   listen3d($('#stage'));
@@ -212,8 +198,9 @@ function configure3d() {
     .onNodeHover(() => {})  // the hover is the page's nearest-node choice, `nodeAt3d`
     .linkColor(linkColor)
     .linkOpacity(Number(css('--link-opacity')))
-    .linkMaterial(link => ULTRA.fiber(link) || fiberOf(link))  // ULTRA: a filament of light in outer space
-    .linkWidth(linkWidthOf)
+    // the page draws the fibers, `fibers3d`; the library keeps for each link only an object saying it is shown
+    .linkThreeObject(() => Object.assign(new THREE.Object3D(), {matrixAutoUpdate: false}))
+    .linkPositionUpdate(() => true)
     .linkCurvature(0)
     .linkDirectionalParticles(link => !reduced() && (link.k === 'purpose' || link.k === 'encounter') ? 1 : 0)
     .linkDirectionalParticleSpeed(0)  // the page draws the flow itself, `flow3d`; this dot shows only held, `dots3d`

@@ -559,6 +559,7 @@ class Context:
     surface: Surface = 'cli'
     client: str | None = None  # the MCP client name, supplied by the transport rather than tool arguments
     session: str | None = None  # the agent session the call is made in, MCP-039; None for a person's command line
+    identity: dict[str, str] = field(default_factory=dict[str, str])  # transport-supplied IDs, never tool arguments
 
     def seen(self, key: str, value: Any) -> Any:
         """What this call's session was last shown under `key`, or None the first time, recording `value` as shown
@@ -889,12 +890,13 @@ def request_scope(*, fresh: bool = False) -> Generator[None, None, None]:
 
 def context(module: str, folder: Path, *, project: str | None = None, nouns: dict[str, Any] | None = None,
             switches: dict[str, Any] | None = None, sink: Callable[[str], None] | None = None,
-            surface: Surface = 'cli', client: str | None = None, session: str | None = None) -> Context:
+            surface: Surface = 'cli', client: str | None = None, session: str | None = None,
+            identity: dict[str, str] | None = None) -> Context:
     """A Context for one call, with the project and store resolved for its folder, BASE-028; `session` names the agent
     session the call is made for when it is not this process's own, MCP-039."""
     from . import context as contexts
     return contexts.build(module, folder, project=project, nouns=nouns, switches=switches, sink=sink, surface=surface,
-                          client=client, session=session)
+                          client=client, session=session, identity=identity)
 
 
 def provided(folder: Path, kind: str) -> list[tuple[str, Any]]:

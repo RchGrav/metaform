@@ -1,0 +1,1 @@
+Choice: modules may not import metaform.sqlite (the tests/test_base.py PUBLIC guard), so metaform.home re-exports file_lock and Held, and the template README and CHANGELOG record it as the module contract requires. — and — E       AssertionError: (PosixPath('/home/rich/metaform/src/metaform/modules/mcp/server.py'), 'skills')

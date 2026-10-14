@@ -63,7 +63,7 @@ const U = {
   G: null, ctx: null, mode: 'clean', drawn: 'clean', wanted: null, turn: 0, quality: 0,
   clock: 0, last: 0, reveal: 1, revealFrom: 0, sky: null, pass: null, veil: null,
   shared: {time: {value: 0}, sun: {value: new THREE.Vector3()}, sunOn: {value: 0}},
-  gain: {value: 1}, patched: new WeakSet(), fibers: new Map(), shapes: new Map(), sprites: new Map(),
+  gain: {value: 1}, patched: new WeakSet(), shapes: new Map(), sprites: new Map(),
   measure: {time: 0, frames: 0, last: 0, chained: false, fps: 0, steps: 0}, frames: 0, ease: null, saved: null,
   saving: 0, view: {perPixel: 0, camera: null},
 };
@@ -133,10 +133,12 @@ export function body(node) {
   if (U.drawn !== 'ultra' || !U.G) return null;
   return makeBody(node);
 }
-/* A join's material in ultra, or null in clean. */
+/* A join's look in ultra, a filament of light, or null in clean: its color and how strongly it shines, a quiet one, a
+ * link of the tree, a layer or an item, at half. The page draws it with FILAMENT, `fibers3d`. */
 export function fiber(link) {
   if (U.drawn !== 'ultra' || !U.G) return null;
-  return filament(U.G.linkColor()(link), link.k);
+  const quiet = link.k === 'tree' || link.k === 'layer' || link.k === 'item';
+  return {color: U.G.linkColor()(link), strength: quiet ? 0.5 : 0.95};
 }
 /* For the browser checks: the look drawn, the quality step, the frame rate last measured, and the sky's own clock,
  * which stands still with reduced motion. */
@@ -231,8 +233,7 @@ function apply(mode) {
   U.measure = {...U.measure, time: 0, frames: 0, last: 0, chained: false};
   if (ultra) G.scene().background = U.sky.ground;
   else G.scene().background = new THREE.Color(U.ctx.css('--ground') || SPACE);
-  G.nodeThreeObject(G.nodeThreeObject());  // every node made again, as a body or as glass
-  G.linkMaterial(G.linkMaterial());
+  G.nodeThreeObject(G.nodeThreeObject());  // every node made again, as a body or as glass; the fibers follow `on`
 }
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 /* The veil's fade has ended, or a while past when it should have. */
@@ -887,23 +888,15 @@ function hashOf(text) {
 
 /* A join as a filament of light: added to the sky, bright along its middle where the tube faces the eye, a thin
  * white core, and nothing at its edges, so it reads as a strand of light at any width. The namespace's own edges are
- * fainter than the joins. Never over full brightness, so the bloom never takes it and the map stays clear. One
- * material for each color and kind of edge. */
-function filament(color, kind) {
-  const quiet = kind === 'tree' || kind === 'layer' || kind === 'item', key = `${color}|${quiet}`;
-  if (!U.fibers.has(key)) U.fibers.set(key, new THREE.ShaderMaterial({transparent: true, depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    uniforms: {tint: {value: new THREE.Color(color)}, strength: {value: quiet ? 0.5 : 0.95}},
-    vertexShader: `varying vec3 vNormal; varying vec3 vView;
-      void main() { vec4 at = modelViewMatrix * vec4(position, 1.0); vNormal = normalize(normalMatrix * normal);
-        vView = normalize(-at.xyz); gl_Position = projectionMatrix * at; }`,
-    fragmentShader: `uniform vec3 tint; uniform float strength; varying vec3 vNormal; varying vec3 vView;
-      void main() { float facing = abs(dot(normalize(vNormal), normalize(vView)));
+ * fainter than the joins. Never over full brightness, so the bloom never takes it and the map stays clear. Its light
+ * is added to what is behind it and writes no depth. The page draws every filament in one draw, `fibers3d`, whose
+ * shader gives each its tint and strength, `vFiber`. */
+export const FILAMENT = `varying vec3 vNormal; varying vec3 vView; varying vec4 vFiber;
+      void main() { vec3 tint = vFiber.rgb; float strength = vFiber.a;
+        float facing = abs(dot(normalize(vNormal), normalize(vView)));
         float core = pow(facing, 2.4), thread = pow(facing, 16.0);
         vec3 c = (tint * (0.16 + 0.74 * core) + vec3(0.95) * thread * 0.45) * strength;
-        gl_FragColor = vec4(min(c, vec3(0.98)), 1.0); }`}));
-  return U.fibers.get(key);
-}
+        gl_FragColor = vec4(min(c, vec3(0.98)), 1.0); }`;
 
 /* ---------- the flow ---------- */
 

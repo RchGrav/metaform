@@ -18,6 +18,12 @@ def test_close_and_escape_preserve_a_working_system_session_and_stop_can_resume_
     agent.id = agent.store.add_work(agent.node, None, task='Conversation with the system agent', held=True).id
     agent.start('hold', 'system=true', FAKE_ACP_LOAD='1')
     session = agent.session().extra['session_id']
+    from metaform.data import Store
+    with Store('proj', module='dispatch').tables() as tx:  # ended sessions the person never stopped
+        for index, how in enumerate(('it failed: x', 'cancelled by the person')):
+            tx.insert('sessions', {'session_id': f'other-ended-{index}', 'work_id': f'other-work-{index}',
+                                   'agent': 'claude', 'state': 'ended', 'how': how,
+                                   'started': '2026-10-01T00:00:00Z', 'seq': index + 1})
     try:
         eventually(lambda: agent.received('session/prompt'))
         started(run)
@@ -62,9 +68,16 @@ def test_close_and_escape_preserve_a_working_system_session_and_stop_can_resume_
         assert sessions()[0]['state'] == 'ended'
         assert page.locator('#helpdesk .stopped-agent img').get_attribute('src')
         assert page.locator('#helpdesk .stopped-agent time').get_attribute('datetime')
+        assert page.locator('#helpdesk .stopped-agents .agent-session').count() == 1
+        page.click('#helpdesk .stopped-agents .forget')
+        assert page.locator('#helpdesk .stopped-agents .agent-session').count() == 0
         page.reload(wait_until='domcontentloaded', timeout=30000)
         page.wait_for_function('() => window.metaform?.loaded()', timeout=30000)
         page.click('#agentsMenuBtn')
+        for index in range(2):
+            other = page.locator(f'#agentbox .agent-session[data-session="other-ended-{index}"]')
+            assert other.locator('button.resume').count() == 0
+            assert 'Stopped' not in other.inner_text()
         row = page.locator(f'#agentbox .stopped-agent[data-session="{session}"]')
         assert 'Claude Code' in row.inner_text()
         assert 'Conversation' in row.inner_text()

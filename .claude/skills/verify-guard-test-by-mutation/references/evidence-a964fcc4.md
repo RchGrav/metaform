@@ -1,0 +1,1 @@
+Test output: "AssertionError: Open-world evidence registry differs: ['paperclip_watch']". Agent: "This is the exact registry I expected. Adding `paperclip_watch` with its reason, as `paperclip_sync` has." Rerun: "3 passed, 78 deselected in 36.42s".

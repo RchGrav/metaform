@@ -1723,18 +1723,12 @@ class Handler(BaseHTTPRequestHandler):
         switch, negative, kind = found
         if kind == 'list' and isinstance(value, str):
             return self.send(400, {'error': f'{switch} is a list: send its items as an array.', 'key': key})
-        if kind == 'list' and isinstance(value, list) and settings.SCHEMA.get(str(key)) is not None:
+        if kind == 'list' and isinstance(value, list):
             return self.save_list(folder, str(key), cast(list[Any], value), glue=given.get('glue') is True)
         if kind == 'bool':
             if not isinstance(value, bool):
                 return self.send(400, {'error': f'{switch} is on or off: true or false.', 'key': key})
             argument = switch if value else negative
-        elif kind == 'list' and isinstance(value, list):
-            listed = cast(list[Any], value)
-            if not all(isinstance(item, str) for item in listed):
-                return self.send(400, {'error': f'{switch} is a list of names.', 'key': key})
-            text = ','.join(item.strip() for item in cast(list[str], listed) if item.strip())
-            argument = f'{switch}={text or ("all" if key in settings.EMPTY_IS_ALL else "")}'
         elif isinstance(value, (str, int)) and not isinstance(value, bool):
             argument = f'{switch}={value}'
         else:
@@ -1756,22 +1750,24 @@ class Handler(BaseHTTPRequestHandler):
             self.refuse(error, 400)
 
     def save_list(self, folder: Path, key: str, value: list[Any], *, glue: bool) -> None:
-        """Save a list setting this server declares as the list it is, member by member, so an item may hold a comma:
-        joined into the command line's comma text it was split again at every comma, CLI-027. Checked and stored as
-        `metaform set` checks and stores it; an empty list of a setting shown as all when empty clears it."""
+        """Save a list setting as the list it is, member by member, so an item may hold a comma: joined into the
+        command line's comma text it was split again at every comma, CLI-027. Checked and stored as `metaform set`
+        checks and stores it; an empty list of a setting shown as all when empty clears it. A setting this server does
+        not declare, such as one of another project's own modules, is saved by a process in the project's folder,
+        which loads that folder's modules."""
         if not all(isinstance(item, str) for item in value):
             return self.send(400, {'error': f'{key} is a list of names.', 'key': key})
         chassis.refresh_modules()  # a module turned off since this server started has no setting to save
-        if key not in settings.SCHEMA:
-            return self.send(404, {'error': f'No setting {key} here.', 'next': 'metaform config --show'})
         members = [item.strip() for item in cast(list[str], value) if item.strip()]
         try:
-            settings.checked(key, members, folder, typed=True)
-            assigned = settings.put(key, members, folder, glue=glue)
-        except (settings.SettingError, Stop) as error:
-            return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None), 'key': key})
+            status, said = (stored_list(folder, key, members, glue=glue) if key in settings.SCHEMA
+                            else stored_list_there(folder, key, members, glue=glue))
+        except Stop as error:
+            return self.refuse(error, 500)
+        if status != 200:
+            return self.send(status, {**said, 'key': key})
         try:
-            self.send(200, {**configured(folder), 'key': key, 'notices': list(assigned.notices)})
+            self.send(200, {**configured(folder), 'key': key, 'notices': said['notices']})
         except Stop as error:
             self.refuse(error, 400)
 
@@ -2248,6 +2244,52 @@ def metaform_cli(folder: Path, *args: str) -> subprocess.CompletedProcess[str]:
                               encoding='utf-8', stdin=subprocess.DEVNULL, timeout=DISPATCH_LIMIT, check=False)
     except (OSError, subprocess.TimeoutExpired) as error:
         raise Stop(f'metaform {args[0]} did not finish: {error}', f'metaform {args[0]}, in {folder}') from None
+
+
+STORED = 'stored-list: '  # the line a process in a project's folder answers `stored_list_there` with
+
+
+def stored_list(folder: Path, key: str, members: list[str], *, glue: bool) -> tuple[int, dict[str, Any]]:
+    """Check and store a list setting this process declares, member by member, as `metaform set` checks and stores
+    it: the status the page gets, with the refusal and its next step, or the notices set gave for what it kept."""
+    if key not in settings.SCHEMA:
+        return 404, {'error': f'No setting {key} here.', 'next': 'metaform config --show'}
+    try:
+        settings.checked(key, members, folder, typed=True)
+        assigned = settings.put(key, members, folder, glue=glue)
+    except (settings.SettingError, Stop) as error:
+        return 400, {'error': str(error), 'next': getattr(error, 'next_step', None)}
+    return 200, {'notices': list(assigned.notices)}
+
+
+def stored_list_there(folder: Path, key: str, members: list[str], *, glue: bool) -> tuple[int, dict[str, Any]]:
+    """`stored_list` run by a process in `folder`, which loads the modules enabled there, the project's own among
+    them, as `metaform set` would, so a list this server does not declare is still stored member by member. Raises
+    Stop when it cannot be run or does not answer."""
+    program = 'from metaform.modules.web.server import store_list_here; store_list_here()'
+    try:
+        done = subprocess.run([sys.executable, '-c', program], cwd=folder,
+                              input=json.dumps({'key': key, 'members': members, 'glue': glue}), capture_output=True, text=True, encoding='utf-8', timeout=DISPATCH_LIMIT, check=False)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise Stop(f'saving {key} did not finish: {error}', f'metaform config --show, in {folder}') from None
+    answer = next((line[len(STORED):] for line in reversed(done.stdout.splitlines()) if line.startswith(STORED)), None)
+    if done.returncode != 0 or answer is None:
+        raise Stop(f'saving {key} did not finish: {(done.stderr or done.stdout).strip()}',
+                   f'metaform config --show, in {folder}')
+    status, said = json.loads(answer)
+    return int(status), cast(dict[str, Any], said)
+
+
+def store_list_here() -> None:
+    """The process `stored_list_there` starts: it loads the modules enabled in its folder, then stores the list it
+    reads on stdin and prints its answer on a line of its own."""
+    given = json.loads(sys.stdin.read())
+    folder = Path.cwd()
+    with chassis.request_scope():
+        chassis.surface(folder)  # loads the modules enabled here, the project's own among them, and their settings
+        answer = stored_list(folder, str(given['key']), [str(item) for item in given['members']],
+                             glue=given['glue'] is True)
+    sys.stdout.write(f'\n{STORED}{json.dumps(answer)}\n')
 
 
 def refusal(done: subprocess.CompletedProcess[str]) -> dict[str, Any]:

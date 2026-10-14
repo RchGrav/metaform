@@ -181,8 +181,7 @@ function pause3d(on) {
   FRAMES.held = Boolean(on);
   if (!on) { wake3d(); return; }
   cancelAnimationFrame(FRAMES.id);
-  clearTimeout(FRAMES.timer);
-  FRAMES.id = FRAMES.timer = 0;
+  FRAMES.id = 0;
 }
 function zoom3d(share) {
   if (!G) return;

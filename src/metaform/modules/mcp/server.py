@@ -462,8 +462,13 @@ def client_name(ctx: Any) -> str | None:
     return initialized.client_info.name if initialized is not None else None
 
 
-def skill_index(folder: Path, client: str | None = None) -> str:
-    """Fallback discovery only where a completed native deployment does not provide it, BASE-059."""
+HOST_KEEPS = 2048  # the characters of the connect message Claude Code keeps, MCP-029
+
+
+def skill_index(folder: Path, client: str | None = None, room: int | None = None) -> str:
+    """Fallback discovery only where a completed native deployment does not provide it, BASE-059. Within `room`
+    characters: each skill with its description, else the names alone, for metaform_skills op=list to describe, else
+    nothing, since what passes the host's cut never arrives."""
     from metaform import install, skills
     mode = settings.value('skill_index', folder)
     if mode == 'off' or (mode == 'auto' and client and install.skills_deployed(client)):
@@ -472,12 +477,18 @@ def skill_index(folder: Path, client: str | None = None) -> str:
     if not entries:
         return ''
     lines = '\n'.join(f'{one["name"]}: {one["description"]}' for one in entries)
-    return prompt_files.module('mcp', 'skill_index', skills=lines) or ''
+    for listed in (lines, ', '.join(one['name'] for one in entries)):
+        index = prompt_files.module('mcp', 'skill_index', skills=listed) or ''
+        if room is None or len(index) <= room:
+            return index
+    return ''
 
 
 def connect_instructions(folder: Path, client: str | None = None) -> str:
-    """The usual startup instructions followed by the connecting harness's fallback skill discovery."""
-    return '\n'.join(one for one in (startup_instructions(folder), skill_index(folder, client)) if one)
+    """The usual startup instructions followed by the connecting harness's fallback skill discovery, together within
+    the characters the host keeps."""
+    started = startup_instructions(folder)
+    return '\n'.join(one for one in (started, skill_index(folder, client, HOST_KEEPS - len(started) - 1)) if one)
 
 
 def project_id_for(folder: Path) -> str:
@@ -566,7 +577,7 @@ def _no_project() -> str:
 
 def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dict[str, Any],
              lines: list[str], client: str | None = None, consented: bool = False,
-             session: str | None = None) -> Context:
+             session: str | None = None, identity: dict[str, str] | None = None) -> Context:
     project = arguments.get('project')
     layers = arguments.get('layers')
     confirmed = arguments.get('confirm', False)
@@ -586,7 +597,7 @@ def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dic
     if layers is not None:
         switches['layers'] = [str(item) for item in cast(list[Any], layers)]
     return context(module.id, folder, project=project, nouns=nouns, switches=switches, sink=lines.append,
-                   surface='mcp', client=client, session=session)
+                   surface='mcp', client=client, session=session, identity=identity)
 
 
 # The headers Paperclip's tool gateway forwards with each call, its connection's forwardContextHeaders, ticket T3 of
@@ -594,14 +605,24 @@ def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dic
 PAPERCLIP_HEADERS = (('agent', 'x-paperclip-agent-id'), ('issue', 'x-paperclip-issue-id'), ('run', 'x-paperclip-run-id'))
 
 
+def gateway_identity(headers: Any) -> dict[str, str]:
+    """The IDs supplied by Paperclip for this request, copied without changing the server's environment."""
+    if headers is None:
+        return {}
+    return {f'{name}_id': value for name, header in PAPERCLIP_HEADERS
+            if (value := str(headers.get(header) or '').strip())}
+
+
 def gateway_session(headers: Any) -> str | None:
     """The agent session of a call through Paperclip's gateway, from the headers it forwards, MCP-042: credited to
     that agent, and kept apart per run, so what one run was shown is never taken as shown to another, MCP-039. None
     for a call that carries none of them, which keeps the session this server gives."""
-    if headers is None:
-        return None
-    given = [(name, str(headers.get(header) or '').strip()) for name, header in PAPERCLIP_HEADERS]
-    named = ','.join(f'{name}={value}' for name, value in given if value)
+    from urllib.parse import quote
+    identity = gateway_identity(headers)
+    # A run may work on several issues. Counts already delivered to that run stay delivered as the issue changes.
+    keys = ('agent', 'run') if 'run_id' in identity else ('agent', 'issue')
+    named = ','.join(f'{name}={quote(identity[name + "_id"], safe="")}'
+                     for name in keys if name + '_id' in identity)
     return f'paperclip:{named}' if named else None
 
 
@@ -750,7 +771,8 @@ async def run_tool(folder: Path, name: str, arguments: dict[str, Any], *, client
 
 
 async def answer(folder: Path, name: str, arguments: dict[str, Any], *, client: str | None = None,
-                 consented: bool = False, session: str | None = None) -> tuple[bool, list[str], dict[str, Any] | None]:
+                 consented: bool = False, session: str | None = None,
+                 identity: dict[str, str] | None = None) -> tuple[bool, list[str], dict[str, Any] | None]:
     """A call to one listed tool, as `run_tool`, with the result's structured form when it is an object, BASE-036:
     the same data as the text block holding it, for a host that reads tool output as data. `consented`: the person
     said yes to the call in their AI tool, so its caution and its person-only settings need no more from the agent."""
@@ -771,7 +793,7 @@ async def answer(folder: Path, name: str, arguments: dict[str, Any], *, client: 
     lines: list[str] = []
     try:
         ctx = await anyio.to_thread.run_sync(_prepare, folder, module, verb, name, dict(arguments), lines, client,
-                                             consented, session)
+                                             consented, session, identity)
         if inspect.iscoroutinefunction(verb.run):
             result = await verb.run(ctx)
         else:
@@ -1571,14 +1593,15 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
         approved = answered is True
         listed = (await anyio.to_thread.run_sync(listing, folder)).get(name)
         tasked_as = listed.task if tasks_on and listed is not None and tasked.declared(capabilities(ctx)) else False
+        headers = ctx.request.headers if ctx.request is not None else None
+        identity, session = gateway_identity(headers), gateway_session(headers)
         if tasked_as is True and 'group' in held:
             project = await anyio.to_thread.run_sync(tasked.owning, folder)
             if project is not None:  # a folder that is no project's keeps no task, so its call is answered as ever
-                return await start_task(project, name, given, client, approved)
-        session = gateway_session(ctx.request.headers if ctx.request is not None else None)
+                return await start_task(project, name, given, client, approved, session, identity)
         try:
             error, blocks, structured = await answer(folder, name, given, client=client, consented=approved,
-                                                     session=session)
+                                                     session=session, identity=identity)
         finally:  # what the tool changed, fired on the event bus from a worker thread, VIEW-018; a module enabled or
             # disabled since this server started is loaded or dropped first, BASE-037
             await anyio.to_thread.run_sync(events.announce, folder, 'mcp')
@@ -1596,7 +1619,8 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
         found = tasked.store(folder)
         return None if found is None else tasked.seed_run(found, run_id)
 
-    async def start_task(project: str, name: str, given: dict[str, Any], client: str | None, approved: bool) -> Any:
+    async def start_task(project: str, name: str, given: dict[str, Any], client: str | None, approved: bool,
+                         session: str | None, identity: dict[str, str]) -> Any:
         """A tool call answered with a task: the task is written first, so tasks/get finds it at once, then the call
         runs in this process and the task keeps its result."""
         said = prompt_files.module('mcp', 'task_working', tool=name) or f'{name} is running.'
@@ -1604,7 +1628,8 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
 
         async def work() -> dict[str, Any]:
             try:
-                error, blocks, structured = await answer(folder, name, given, client=client, consented=approved)
+                error, blocks, structured = await answer(folder, name, given, client=client, consented=approved,
+                                                         session=session, identity=identity)
             finally:  # shielded, so a cancel after the verb finished leaves its result to the task
                 with anyio.CancelScope(shield=True):
                     await anyio.to_thread.run_sync(events.announce, folder, 'mcp')

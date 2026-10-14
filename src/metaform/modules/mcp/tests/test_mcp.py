@@ -1195,6 +1195,7 @@ UNSEEN_OPEN_WORLD = {
     'paperclip_brief': 'reads the external Paperclip service through a Client object and injected opener',
     'paperclip_link': 'reads the external issue before linking it through a Client object and injected opener',
     'paperclip_sync': 'synchronizes external issues through a Client object and injected opener',
+    'paperclip_watch': 'runs sync on a timer, synchronizing external issues through a Client object and injected opener',
     'twilio_serve': 'serves phone callbacks whose Phone object reaches Twilio and the selected voice engine',
     'twilio_call': 'the local bridge places the outbound call through a Phone object',
     'twilio_text': 'the local bridge or a Client object sends the outbound text to Twilio',
@@ -1527,10 +1528,15 @@ def test_gateway_identity_and_delivery_are_per_run(run, home, mapped, user_modul
         SUPPORTED_OS = ('linux', 'macos', 'windows')
         def read(ctx):
             return {'identity': ctx.identity, 'session': ctx.session, 'before': ctx.seen('gateway-proof', 1)}
-        MODULE = Module('gatewayprobe', 'Observe call context.', verbs=(
+        MODULE = Module('gatewayprobe', 'Observe call context.', 'Verify per-call delivery.', verbs=(
             Verb('read', read, 'Read context.', effect='read', task=True),))
     ''')
     run('enable', 'gatewayprobe', cwd=mapped)
+    run('enable', 'paperclip', cwd=mapped)
+    from metaform.module import context
+    from metaform.modules import paperclip
+    paperclip._keep(context('paperclip', mapped).require_store(), {
+        'issue_id': 'gateway-issue', 'address': 'code.alarm.audible', 'work_id': 'gateway-work', 'works': 'paperclip'})
     monkeypatch.setenv('METAFORM_SESSION', 'server-process')
     served = Served(mapped)
 
@@ -1578,9 +1584,16 @@ def test_gateway_identity_and_delivery_are_per_run(run, home, mapped, user_modul
             assert (await read('r-1', issue='i-2'))['before'] == 1
             assert (await read('r-2'))['before'] is None
             assert (await read('r-1', agent='a-2'))['before'] is None
+            concurrent = await asyncio.gather(read('r-3'), read('r-4'))
+            assert [one['identity']['run_id'] for one in concurrent] == ['r-3', 'r-4']
+            assert all(one['before'] is None for one in concurrent)
             plain = await read()
             assert plain['identity'] == {} and plain['session'] == 'server-process'
             assert os.environ['METAFORM_SESSION'] == 'server-process'
+            brief = (await request('tools/call', {'name': 'paperclip_brief', 'arguments': {}}, {
+                'X-Paperclip-Issue-Id': 'gateway-issue', 'X-Paperclip-Run-Id': 'r-5'}))['result']
+            assert not brief.get('isError'), brief
+            assert 'code.alarm.audible' in brief['content'][0]['text']
 
     try:
         asyncio.run(go())
@@ -3010,6 +3023,22 @@ def test_an_a2a_send_carries_its_address_and_sender_and_what_the_peer_does_lands
         a2a_out.heard('proj', other['exchange'], question)
     held = Store('proj').messages(Node('element', 'code.alarm.audible'), limit=0).results
     assert [one.kind for one in held if one.text == 'Which fan is it?'] == ['question']
+    posts = []  # what reaches the peer from here on
+
+    class Recording(httpx.ASGITransport):
+        async def handle_async_request(self, request):
+            if request.method == 'POST':
+                posts.append(json.loads(await request.aread() or b'null'))
+            return await super().handle_async_request(request)
+    monkeypatch.setattr(a2a_out, 'TRANSPORT', Recording(app=app))
+    asked = next(one.id for one in held if one.text == 'Which fan is it?')
+    run('map', 'reply', asked, 'answer=Red', cwd=mapped)
+    verb('exchanges', id=other['exchange'])
+    answers = [post['params']['message'] for post in posts if isinstance(post, dict)
+               and post.get('method') == 'SendMessage']
+    assert [(one.get('taskId'), [part.get('text') for part in one['parts']]) for one in answers] \
+        == [(other['peer_task'], ['Red'])]  # the answer, once, on the peer's task, MCP-041
+    assert a2a_records.exchange('proj', other['exchange']).asked is None
     cancelled = verb('cancel', id=other['exchange'])
     assert cancelled['state'] == 'cancelled' and Store('proj').ticket(other['peer_task']).work.outcome == 'cancelled'
     gateway = {'x-paperclip-agent-id': 'a-7', 'x-paperclip-run-id': 'r-9'}

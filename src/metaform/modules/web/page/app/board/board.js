@@ -17,9 +17,9 @@ import {HARNESS, agentName, agentSelect} from '/page/app/agents/pickers.js';
 import {WS} from '/page/app/workspace/workspace.js';
 
 /* The agent a ticket prefers by default: Claude for front-end and GUI work, Codex for back-end and system work, as
- * dispatch chooses it; the person can choose another on the card at any time. */
-const FRONTEND_WORDS = new Set(['gui', 'web', 'page', 'viewer', 'view', 'board', 'ui', 'frontend']);
-export const defaultAgent = address => (address || '').split('.').some(word => FRONTEND_WORDS.has(word)) ? 'claude'
+ * dispatch chooses it from its front-end words, read with the agents; the person can choose another on the card at
+ * any time. */
+export const defaultAgent = address => (address || '').split('.').some(word => HARNESS.frontend.has(word)) ? 'claude'
   : 'codex';
 export const eligibleAgents = ticket => Array.isArray(ticket?.map?.eligible) ? ticket.map.eligible : [];
 export const allowsAgent = (ticket, agent) => !eligibleAgents(ticket).length || eligibleAgents(ticket).includes(agent);
@@ -57,7 +57,7 @@ function ticketControls(ticket) {
     try { if (await wrote('/api/ticket', {work_id: ticket.id, ...fields})) await renderBoard(); }
     finally { control.disabled = false; }
   };
-  const chosen = kept.agent || defaultAgent(ticket.address);
+  const chosen = kept.agent || defaultAgent(ticket.address || ticket.receiver_address);
   const saveEligible = async agents => {
     if (!await wrote('/api/eligible', {work_id: ticket.id, agents})) return false;
     await renderBoard();

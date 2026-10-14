@@ -4,12 +4,14 @@ from __future__ import annotations
 import json
 import secrets
 import time
+from dataclasses import replace
 from typing import Any, cast
 
 from metaform.data import Store, StoreError, WorkRecord, on_base
 from metaform.module import Context
 
-from .signals import own_store, publish, rows
+from .signals import announce, own_store, rows
+from .signals import record as record_signal
 
 SOURCE = 'monitor:progress'  # separate from every ACP thread; no table upgrade beneath live runners
 
@@ -85,40 +87,58 @@ def blocked(ctx: Context, store: Store, record: WorkRecord) -> bool:
 
 def refresh(ctx: Context, store: Store, record: WorkRecord) -> None:
     """Reconcile progress and signal its streak after the accounting transaction commits."""
+    from . import ticket
+    notices: list[dict[str, Any]] = []
     with store.atomic():
+        record = ticket(store, record.id)  # the caller's snapshot may predate a completed step or another runner
         value = _read(store, record.id)
         if value is None:
             return
         if _advanced(value, record) and (value['attempts'] or record.steps_done > value['steps']):
             _reset(value, record)
             _write(store, record.id, value)
-    limit = int(ctx.setting('dispatch_rework_limit'))
-    reached = bool(limit and not record.done and value['attempts'] >= limit)
-    for signal in rows(store, record.id):
-        epoch = signal.get('epoch')
-        if signal['signal'] == 'rework-limit' and epoch and (not reached or epoch != value['epoch']):
-            publish(ctx, 'rework-limit', work_id=record.id, key=epoch, active=False, epoch=epoch,
-                    reason='ticket progress advanced, work finished, or the limit was disabled')
-    if reached:
-        ctx.publish('dispatch.rework-limit', {'work_id': record.id, 'attempts': value['attempts'],
-                                            'limit': limit, 'epoch': value['epoch']})
+        limit = int(ctx.setting('dispatch_rework_limit'))
+        reached = bool(limit and not record.done and value['attempts'] >= limit)
+        for signal in rows(store, record.id):
+            epoch = signal.get('epoch')
+            if signal['signal'] == 'rework-limit' and epoch and (not reached or epoch != value['epoch']):
+                cleared = record_signal(store, 'rework-limit', work_id=record.id, key=epoch, active=False, epoch=epoch,
+                                        reason='ticket progress advanced, work finished, or the limit was disabled')
+                if cleared is not None:
+                    notices.append(cleared)
+        if reached:
+            raised = record_signal(store, 'rework-limit', work_id=record.id, key=value['epoch'],
+                                   attempts=value['attempts'], limit=limit, epoch=value['epoch'])
+            if raised is not None:
+                notices.append(raised)
+    bound = store.bound_base()
+    with on_base(bound.id if bound else None):
+        scoped = replace(ctx, store=own_store(store))
+        for notice in notices:
+            if notice['active']:
+                scoped.publish('dispatch.rework-limit', notice)
+            announce(scoped, notice)
 
 
 def changed(payload: dict[str, Any], ctx: Context) -> None:
     """Ticket writes clear stale streaks through the existing event bus, without a timer or polling."""
     from . import ticket
     tables = payload.get('tables')
-    if tables is not None and 'work' not in tables:
+    settings_changed = tables is not None and 'dispatch.settings' in tables
+    if tables is not None and 'work' not in tables and not settings_changed:
         return
-    store = Store(ctx.require_store().project_id, base=payload.get('base_id'), module='dispatch')
-    with store.tables(write=False) as tx:
-        tracked = tx.rows('lines', {'session_id': SOURCE}, limit=0).results
-    for row in tracked:
-        try:
-            record = ticket(store, row['work_id'])
-        except StoreError:  # a ticket removed with its base has no progress left to reconcile
-            continue
-        with on_base(payload.get('base_id')):
+    project = ctx.require_store().project_id
+    bases = ([base.id for base in ctx.require_store().bases(limit=0).results]
+             if settings_changed else [payload.get('base_id')])
+    for base in bases:
+        store = Store(project, base=base, module='dispatch')
+        with store.tables(write=False) as tx:
+            tracked = tx.rows('lines', {'session_id': SOURCE}, limit=0).results
+        for row in tracked:
+            try:
+                record = ticket(store, row['work_id'])
+            except StoreError:  # a ticket removed with its base has no progress left to reconcile
+                continue
             refresh(ctx, store, record)
 
 

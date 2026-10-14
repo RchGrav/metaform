@@ -1,0 +1,1 @@
+{"action": "create", "reason": "Agent hit four parser rejections in a row querying the live map with map_cypher. Nothing in the index covers the query dialect; the metaform skill covers tool use in general. Captures the subset that works so the next agent does not spend calls rediscovering it.", "evidence": "references/evidence-231b665a.md"}

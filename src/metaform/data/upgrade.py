@@ -59,10 +59,13 @@ No other removed join fields return.
 """
 from __future__ import annotations
 
+import glob
 import json
+import os
 import re
 import shutil
 import sqlite3
+import time
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -71,7 +74,7 @@ from typing import Any
 
 from .. import home
 from ..errors import StoreError
-from ..sqlite import COMPATIBLE_FROM, SCHEMA_VERSION, private, stamp
+from ..sqlite import BUSY_SECONDS, COMPATIBLE_FROM, SCHEMA_VERSION, connect, file_lock, private, stamp
 from . import tables
 from .schema import LAYOUT_20, STORE_SCHEMA
 
@@ -89,10 +92,30 @@ UPGRADE_SESSION = 'upgrade-21'
 
 def upgrade(db: sqlite3.Connection, path: Path, found: str) -> bool:
     """Bring a store at layout 7 to 20 to the log, STORE-046, writing a new file from the old one. Returns True: the
-    file at `path` was replaced, and the caller's connection reads the old one, so it reconnects."""
+    file at `path` was replaced, and the caller's connection reads the old one, so it reconnects. Processes that open
+    the file at once take turns under a lock beside it, STORE-006: one upgrades it, and each that waited finds it at
+    the current layout and reconnects."""
     if found not in (*LEGACY, '20'):
         raise StoreError(f'{path} has schema version {found}; this Metaform updates only versions 7 to 20.',
                          'install the Metaform release that wrote it')
+    with file_lock(path.with_name(path.name + '.upgrade.lock')):
+        if _layout(path) == SCHEMA_VERSION:  # another process upgraded it while this one waited for the lock
+            return True
+        return _upgraded(db, path, found)
+
+
+def _layout(path: Path) -> str | None:
+    """The layout of the file now at `path`, read on a connection of its own: the caller's may read a file another
+    process has since moved to backups."""
+    fresh = connect(path)
+    try:
+        row = fresh.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+    finally:
+        fresh.close()
+    return None if row is None else str(row[0])
+
+
+def _upgraded(db: sqlite3.Connection, path: Path, found: str) -> bool:
     tables_held = {str(row[0]) for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     if 'ops' in tables_held and 'elements' not in tables_held:  # the log already, under an earlier number
         kept = _kept_folder(path)
@@ -114,26 +137,40 @@ def upgrade(db: sqlite3.Connection, path: Path, found: str) -> bool:
             db.execute('ROLLBACK')
             raise
         return False
-    work = path.with_name(path.name + '.upgrading')
-    fresh = path.with_name(path.name + '.new')
-    for stale in (work, fresh):
-        stale.unlink(missing_ok=True)
-    private(work)
-    copy = sqlite3.connect(work)
+    for left in (*path.parent.glob(glob.escape(path.name) + '.upgrading-*'),
+                 *path.parent.glob(glob.escape(path.name) + '.new-*')):
+        left.unlink(missing_ok=True)  # left by an upgrade that ended part way; under the lock no other one runs
+    unique = f'{os.getpid()}-{uuid.uuid4().hex[:8]}'
+    work = path.with_name(f'{path.name}.upgrading-{unique}')
+    fresh = path.with_name(f'{path.name}.new-{unique}')
+    # A connection of its own holds the old file's write lock from the copy to the swap, so no writer, such as a
+    # process still on earlier code, commits to the file that goes to backups after it was copied. The caller's
+    # connection cannot hold it: SQLite refuses to back up from a connection inside its own write transaction.
+    guard = connect(path)
+    guard.execute('BEGIN IMMEDIATE')
     try:
-        db.backup(copy)
+        private(work)
+        copy = sqlite3.connect(work)
+        try:
+            db.backup(copy)
+        finally:
+            copy.close()
+        old = sqlite3.connect(work, isolation_level=None)
+        try:
+            if found in LEGACY:
+                _legacy(old, work, found)
+            _to_log(old, fresh, found)
+        finally:
+            old.close()
+        kept = _kept_folder(path)
+        home.mkdir_private(kept)
+        _backfilled(db, path)
+    except BaseException:
+        work.unlink(missing_ok=True)
+        raise
     finally:
-        copy.close()
-    old = sqlite3.connect(work, isolation_level=None)
-    try:
-        if found in LEGACY:
-            _legacy(old, work, found)
-        _to_log(old, fresh, found)
-    finally:
-        old.close()
-    kept = _kept_folder(path)
-    home.mkdir_private(kept)
-    db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+        guard.execute('ROLLBACK')
+        guard.close()
     # The caller's connection reads the old file and is reconnected after this returns; it is closed before the file
     # moves, since Windows refuses to move or delete a file a connection holds open.
     db.close()
@@ -145,8 +182,24 @@ def upgrade(db: sqlite3.Connection, path: Path, found: str) -> bool:
     return True
 
 
+def _backfilled(db: sqlite3.Connection, path: Path) -> None:
+    """Every commit in the old file's write-ahead log copied into the file, so the file kept in backups is whole once
+    its log is removed. Passive, since the full checkpoint waits for the write lock this upgrade holds; a reader in
+    another process on an earlier snapshot is waited for, as a write waits, STORE-006."""
+    deadline = time.monotonic() + BUSY_SECONDS
+    while True:
+        _, logged, copied = db.execute('PRAGMA wal_checkpoint(PASSIVE)').fetchone()
+        if logged == copied:  # both -1 when the file is not in WAL mode
+            return
+        if time.monotonic() > deadline:
+            raise StoreError(f'{path}: a read in another process kept its last commits from the backup for '
+                             f'{BUSY_SECONDS} seconds, so it was not upgraded.', 'run metaform again')
+        time.sleep(0.05)
+
+
 def _kept_folder(path: Path) -> Path:
-    return home.home() / 'backups' / f'upgrade-{SCHEMA_VERSION}' / home.now().replace(':', '').replace('-', '') / path.parent.name
+    when = home.now().replace(':', '').replace('-', '')
+    return home.home() / 'backups' / f'upgrade-{SCHEMA_VERSION}' / f'{when}-{os.getpid()}' / path.parent.name
 
 
 NATIVE_20 = set(re.findall(r'CREATE(?: VIRTUAL)? TABLE IF NOT EXISTS ([a-z_]+)', LAYOUT_20))

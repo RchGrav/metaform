@@ -16,6 +16,7 @@ import {callSystem} from '/page/app/dock/commands.js';
 import {wrote} from '/page/app/board/history.js';
 import {D, agentAt} from '/page/app/agents/dispatch.js';
 import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
+import {bubbleAt} from '/page/app/figures/bubble3d.js';
 import {spokenOf, sameWords} from '/page/app/session/apps.js';
 
 /* Chat with the mascot: a click on it, where no node takes the click, opens a small reply field under its bubble.
@@ -108,21 +109,29 @@ function clickMascot(event) {  // a click on the mascot where no node takes it: 
 $('#stage').addEventListener('click', clickMascot, true);
 /* A figure in 3D is the agent at work on its ticket: a click on it opens that session's thread in the chat dock. A
  * figure is taken anywhere within a ball of its size, so one moving on its orbit is easy to catch. */
-export const FIGURE_PICK = {ray: new THREE.Raycaster(), at: new THREE.Vector2(), ball: new THREE.Sphere(), down: null};
+export const FIGURE_PICK = {ray: new THREE.Raycaster(), at: new THREE.Vector2(), ball: new THREE.Sphere(),
+  middle: new THREE.Vector3(), down: null};
 export function figureAt(x, y) {
   if (!G || !ROAM.figures.size) return null;
   const area = G.renderer().domElement.getBoundingClientRect();
   if (!area.width || !area.height) return null;
   FIGURE_PICK.at.set((x - area.left) / area.width * 2 - 1, -(y - area.top) / area.height * 2 + 1);
   FIGURE_PICK.ray.setFromCamera(FIGURE_PICK.at, G.camera());
+  const ray = FIGURE_PICK.ray.ray;
+  // of the figures whose ball the ray passes through, the one whose middle it passes closest to, for its size: two
+  // figures side by side each take the clicks on themselves, not the one nearer the camera; and an agent's speech
+  // bubble takes the click for its agent where it is nearer the camera than that figure
   let best = null;
   for (const [id, figure] of ROAM.figures) {
     if (figure.stage === 'leaving') continue;
-    FIGURE_PICK.ball.set(figure.mesh.position, Math.max(0.5, figure.mesh.scale.x));
-    if (!FIGURE_PICK.ray.ray.intersectsSphere(FIGURE_PICK.ball)) continue;
-    const distance = FIGURE_PICK.ray.ray.origin.distanceTo(figure.mesh.position);
-    if (!best || distance < best.distance) best = {id, distance};
+    const size = Math.max(0.5, figure.mesh.scale.x), middle = figure.mesh.getWorldPosition(FIGURE_PICK.middle);
+    FIGURE_PICK.ball.set(middle, size);
+    if (!ray.intersectsSphere(FIGURE_PICK.ball)) continue;
+    const off = ray.distanceToPoint(middle) / size;
+    if (!best || off < best.off) best = {id, off, distance: ray.origin.distanceTo(middle) - size};
   }
+  const said = bubbleAt(FIGURE_PICK.ray);
+  if (said && (!best || said.distance < best.distance)) return said.id;
   return best?.id || null;
 }
 export function openFigure(workId) {

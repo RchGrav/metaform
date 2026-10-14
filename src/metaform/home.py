@@ -36,6 +36,7 @@ from . import changes, sqlite
 from .errors import Stop, StoreError
 from .wording import counted, listed
 
+file_lock, Held = sqlite.file_lock, sqlite.Held  # the lock between processes, for modules, which cannot import sqlite
 CHASSIS_SCHEMA_VERSION = '3'  # 2 holds no project; 3 backfills installed harnesses, PROJ-026, MCP-028, STORE-029
 CHASSIS_COMPATIBLE_FROM = '3'  # code at 2 would install harnesses without the records 3 backfilled, STORE-029
 PROJECT_SCHEMA_VERSION = '2'  # a project's own project.sqlite3, PROJ-026; 2 names its bases, the change order of 2026-10-07

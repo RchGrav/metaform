@@ -17,7 +17,7 @@ import {getJson} from '/page/app/panel/prompts.js';
  * agent is started offers the same picker: an agent not found is shown with how to set it up, the default is marked,
  * and the star beside the picker makes the chosen agent the default in one click. */
 export const HARNESS = {project: null, enabled: null, default: null, room: null, agents: [], next: null, error: null,
-  reading: null, read: 0, pickers: new Set()};
+  reading: null, read: 0, pickers: new Set(), frontend: new Set()};  // frontend: dispatch's front-end address words
 // the agent new chats, issues and intakes start with; none chosen is the default
 const SUMMON = {agent: null, chosen: false};
 export async function readHarnesses() {
@@ -34,7 +34,8 @@ async function readAgents(project) {
     const found = await getJson(`/api/dispatch-agents?project=${encodeURIComponent(project)}`);
     if (S.project === project) {
       Object.assign(HARNESS, {project, enabled: found.enabled !== false, default: found.default ?? null,
-        room: found.room ?? null, agents: found.agents || [], next: found.next || null, error: null, read: Date.now()});
+        room: found.room ?? null, agents: found.agents || [], next: found.next || null, error: null, read: Date.now(),
+        frontend: new Set(found.frontend || [])});
       if (!$('#board').hidden) drawBoard();  // a card's own agent select lists them too
     }
   } catch (error) {

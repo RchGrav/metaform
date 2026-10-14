@@ -53,7 +53,8 @@ def machine(tmp_path, monkeypatch):
                 environment.setenv(install.UPKEEP, __version__)
             install.install(words, print)
     monkeypatch.setattr(install, 'hand_over', installed_setup)
-    return {'user': user, 'bin': bin_folder, 'wheel': wheel, 'env': env, 'folder': tmp_path}
+    return {'user': user, 'bin': bin_folder, 'wheel': wheel, 'env': env, 'folder': tmp_path,
+            'hand_over': hand_over}
 
 
 def tree(folder: Path) -> dict[str, bytes]:
@@ -1169,7 +1170,7 @@ def test_a_wheel_that_leaves_modules_out_hands_the_setup_to_the_metaform_it_inst
         'same': __version__, 'downgrade': NEWER_DATE}[transition])
     # This test uses the real handover, including when all modules remain enabled in a direct wheel.
     from metaform import install
-    monkeypatch.setattr(install, 'hand_over', install.hand_over.__closure__[0].cell_contents) if False else None
+    monkeypatch.setattr(install, 'hand_over', machine['hand_over'])
     installed = machine['folder'] / 'tools-bin'
     executable(machine['bin'], 'uv', f'import sys\nprint({str(installed)!r}) if sys.argv[1:3] == ["tool", "dir"] else None\n')
     executable(installed, 'metaform', 'import json, os, sys\n'

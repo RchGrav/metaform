@@ -230,4 +230,8 @@
      its first line; this is the why the person and the next agent read beside it. <peer/> takes the peer's name in
      mcp_a2a_peers. Empty asks the question with no why. -->
 <a2a_peer_question_why><peer/> asks this about the work sent to it over A2A; its task waits for the answer.</a2a_peer_question_why>
+<!-- A2A outbound, MCP-041: the answer given to that question is sent back on the peer's task. When the peer refuses
+     it, this message is left at the Address, so the person and the next agent there know the answer did not reach
+     it. <peer/> takes the peer's name, <error/> what the peer said. Empty leaves no message. -->
+<a2a_answer_refused><peer/> did not take the answer to its question: <error/></a2a_answer_refused>
 </prompts>

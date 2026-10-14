@@ -1,0 +1,1 @@
+Compare name_length through _whole(): CLI values arrive as text, and comparing '2' with 2 silently sent every unchanged CLI element call down the new-base path.

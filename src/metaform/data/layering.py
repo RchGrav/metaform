@@ -329,7 +329,7 @@ def refine(tx: Tx, thing: str, changes: dict[str, Any] | None = None, *, remove:
                                      'knowledge layer is edited in place: metaform map knowledge '
                                      f'op=edit layer={found.name} id={thing} <field>=<value>. Nothing was '
                                      'written.'),))
-    allowed = writes.split_changes(kind, given, notices)
+    allowed = writes.base_only(kind, found, writes.split_changes(kind, given, notices), notices)
     if not remove and given and not allowed:
         return Outcome(tuple(notices))
     columns: dict[str, Any] = dict(current.fields)

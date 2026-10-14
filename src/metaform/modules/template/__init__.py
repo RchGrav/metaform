@@ -5,6 +5,11 @@ module's purpose, and enable it with `metaform enable <id>`. Every field
 hello declares is here, empty. CHANGELOG.md records each change to the
 module contract, so a copy can follow it.
 
+A verb receives `ctx.identity`, a fresh dictionary of IDs supplied by the transport for this call. Paperclip's
+HTTP gateway supplies `agent_id`, `issue_id` and `run_id`; absent headers leave it empty. `context(..., identity=...)`
+copies the dictionary. These IDs do not change the process environment or grant authority. `ctx.session` keeps
+what was shown apart per agent and run, including when MCP executes the verb as a background task.
+
 A verb declares what it does with `effect=`: `read` changes nothing, `write`,
 the default, adds or changes and keeps what was there, `remove` deletes or
 replaces what cannot be had back; and `open_world=True` when it reaches past

@@ -2351,14 +2351,22 @@ def test_web_open_opens_the_board_on_the_persons_page(run, web, mapped, browser)
 
 def test_web_open_of_a_ticket_not_on_the_map_fails_with_the_pages_words(run, web, mapped, browser):
     """`web open` waits for the page: a ticket the map does not hold is refused in the page's words with a non-zero
-    exit, where it answered success and opened nothing; the board still opens."""
+    exit, where it answered success and opened nothing; the board still opens. With the workspace on in its default,
+    classic layout, a real pane opens and an unknown one is refused."""
+    run('set', '--web-panes')
     started(run)
     page, problems, _ = opened(browser, web, plain=True)
+    page.wait_for_function('() => window.metaform.workspace.layout() !== null', timeout=10000)
     refused = run('web', 'open', 'ticket', 'id=nope-0000', '--json', cwd=mapped, ok=False)
     assert refused.returncode != 0 and 'No ticket nope-0000' in refused.stdout + refused.stderr
     said = run('web', 'open', 'board', '--json', cwd=mapped)
     assert json.loads(said.stdout)['what'] == 'board'
     page.wait_for_selector('#board:not([hidden])', timeout=10000)
+    pane = run('web', 'open', 'pane', 'id=map.messages', '--json', cwd=mapped)
+    assert json.loads(pane.stdout)['done'] is True
+    assert page.evaluate("window.metaform.workspace.shown('map.messages')")
+    unknown = run('web', 'open', 'pane', 'id=nope', cwd=mapped, ok=False)
+    assert unknown.returncode != 0 and 'No pane nope' in unknown.stdout + unknown.stderr
     assert problems == []
 
 
@@ -8852,6 +8860,20 @@ def test_a_setting_the_command_line_would_refuse_is_refused_with_its_next_step_a
     assert status == 400 and 'send its items as an array' in said['error'] and said['key'] == 'modules', said
     assert settings.state('connect_instructions', mapped) == settings.state('debug', mapped) == 'default'
     assert settings.state('modules', mapped) == 'default'
+    # a list of another project's own module, which this server never loads, is still saved item by item
+    other = mapped.parent / 'other'
+    place = other / '.metaform' / 'modules' / 'listy'
+    place.mkdir(parents=True)
+    (place / '__init__.py').write_text("from metaform import settings\nfrom metaform.module import Module\n"
+                                       "SUPPORTED_OS = ('linux', 'macos', 'windows')\n"
+                                       "settings.items('listy_things', [])\n"
+                                       "MODULE = Module(id='listy', summary='Lists.', purpose='Lists. Details: "
+                                       "metaform help listy.')\n")
+    run('add', 'project', 'other', str(other))
+    status, said = setting_write(web, '/api/settings', project='other', key='listy_things', value=['*.{js,ts}'])
+    assert status == 200, said
+    rows = json.loads(run('config', '--show', '--json', cwd=other).stdout)
+    assert next(row['value'] for row in rows if row['key'] == 'listy_things') == ['*.{js,ts}']
 
 
 @pytest.mark.req('VIEW-011')

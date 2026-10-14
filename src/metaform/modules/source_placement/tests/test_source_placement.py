@@ -217,17 +217,20 @@ def test_a_start_in_one_home_leaves_a_shared_project_folders_runs_resumable_from
     from metaform.module import Context
     from metaform.modules.source_placement import migrate_names, pipeline
     run_id = 'b' * 24
-    old = project_folder / '.metaform' / 'refactor' / run_id
-    old.mkdir(parents=True)
-    (old / 'run.json').write_text(json.dumps({'run_id': run_id, 'project': 'proj', 'base_id': 'base',
-                                              'status': 'interrupted', 'threshold': 0.83}))
-    (old / 'input.json').write_text(json.dumps({'threshold': 0.83}))
+    # Each home's bases have ids of their own; the run was prepared in home B, so it names B's base.
     monkeypatch.setenv('METAFORM_HOME', str(tmp_path / 'home-b'))
     metaform_home.add_project('proj', project_folder)
+    base_b = metaform_home.add_base('proj', 'original').id
+    old = project_folder / '.metaform' / 'refactor' / run_id
+    old.mkdir(parents=True)
+    (old / 'run.json').write_text(json.dumps({'run_id': run_id, 'project': 'proj', 'base_id': base_b,
+                                              'status': 'interrupted', 'threshold': 0.83}))
+    (old / 'input.json').write_text(json.dumps({'threshold': 0.83}))
     monkeypatch.setenv('METAFORM_HOME', str(home))
     migrate_names()
     assert (project_folder / '.metaform' / 'source_placement' / run_id / 'run.json').is_file()
-    assert not (home / 'projects' / 'proj' / 'source_placement' / run_id).exists()
+    home_a_folder = metaform_home.project_folder('proj')
+    assert home_a_folder is not None and not (home_a_folder / 'source_placement' / run_id).exists()
     monkeypatch.setenv('METAFORM_HOME', str(tmp_path / 'home-b'))
     ctx = Context('source_placement', project_folder, project='proj', store=Store('proj'))
     assert pipeline.status(ctx, run_id)['threshold'] == 0.9

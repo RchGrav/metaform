@@ -1,0 +1,1 @@
+"Its urlopen stub must refuse, not answer: an answered stub is cached 600 s and hides the second request." Also from the final report: "An answered request gets cached for 10 minutes, which made the \"before\" run show 1 request instead of 2." Timing: "pre-fix source copy 3.38 s, 3.12 s, 3.15 s per tools/list with 3 requests; fixed source 0.14 s, 0.12 s, 0.05 s with 0 requests."

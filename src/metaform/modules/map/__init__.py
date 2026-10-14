@@ -321,7 +321,8 @@ def _missing(store: Store, address: str) -> Stop:
     if recording is not None:
         building = Store(store.project_id, base=recording.base_id)
         held = building.where(address, raw=True)
-        if held is not None and held.element is not None and held.element.layer_id == recording.layer.id:
+        if (held is not None and held.element is not None and held.element.layer_id == recording.layer.id
+                and (found is None or found.element is not None and found.element.layer_id == recording.layer.id)):
             return Stop(f'Element {address} is in the intake being built in layer {recording.layer.name} '
                         f'of metaform {recording.base}.', f'metaform intake show receiver={address}')
     if found is not None and found.element is not None:
@@ -336,12 +337,12 @@ def _missing(store: Store, address: str) -> Stop:
             children = store.children(prefix, limit=0).results
             break
         prefix = parent
-    addresses = [one.element.address for one in store.graph(limit=0).elements]
+    addresses = [one.element.address for one in store.graph(raw=True, limit=0).elements]
     nearest = list(dict.fromkeys((*difflib.get_close_matches(address, addresses, n=5, cutoff=0.6), *children)))[:5]
     message = f'No element {address} in context here.'
     if nearest:
         return Stop(f'{message} Nearest: {", ".join(nearest)}.', f'metaform map where {nearest[0]}')
-    return Stop(message, f'metaform map children {prefix}'.rstrip())
+    return Stop(message, f'metaform map children address={shlex.quote(prefix)}')
 
 
 def where(ctx: Context) -> Any:
@@ -519,7 +520,7 @@ def citing(ctx: Context) -> Any:
                            'metaform map citing key=path value=<project-relative path>') from None
     found = store.citing(key, value, **_paging(ctx))
     if key == 'path' and not found.results:
-        return {**found.to_dict(), 'next': f'metaform map code-search file={shlex.quote(value)}'}
+        return {**found.to_dict(), 'next': ctx.calls(f'metaform map code-search file_pattern={shlex.quote(value)}')}
     return found
 
 

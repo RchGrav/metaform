@@ -102,12 +102,25 @@ export function drawTabs() {
     h('i', {class: 'srcdot', 'aria-hidden': 'true'}), chat.label.replace(/^the /, ''))));
 }
 /* Recovery is attached to the session, never to whichever ticket happens to run next. Dispatch retains the
- * session and its end signals across reloads. A stop made here also keeps its timestamp in this browser. */
-const stoppedSession = session => session && session.state !== 'running' && session.how !== 'the ticket is done';
+ * session and its end signals across reloads. A stop made here also keeps its timestamp in this browser, and the
+ * dock lists only those stops, until the person forgets the line or the session runs again. */
+const stoppedByPerson = session => session?.state !== 'running' && session?.how === 'stopped by the person';
 const stopKey = () => `metaform.stopped-agents.${S.project}`;
 function stopTimes() { try { return JSON.parse(localStorage.getItem(stopKey()) || '{}'); } catch { return {}; } }
-function rememberStop(session, at) {
-  try { localStorage.setItem(stopKey(), JSON.stringify({...stopTimes(), [session]: at})); } catch { /* signals remain */ }
+function keepStops(times) {
+  try { localStorage.setItem(stopKey(), JSON.stringify(times)); } catch { /* signals remain */ }
+}
+function rememberStop(session, at) { keepStops({...stopTimes(), [session]: at}); }
+function forgetStops(...sessions) {
+  const times = stopTimes();
+  sessions.forEach(session => delete times[session]);
+  keepStops(times);
+}
+/* How a session ended, in one word: only the person's own stop is "Stopped", the one a Resume brings back. */
+function endWord(session) {
+  const how = String(session.how || '');
+  return stoppedByPerson(session) ? 'Stopped' : how.startsWith('it failed') ? 'Failed'
+    : how === 'cancelled by the person' ? 'Cancelled' : 'Ended';
 }
 function sessionTask(session, state = D.states?.[session.session_id]) {
   const ticket = ticketOf(session.work_id);
@@ -116,20 +129,26 @@ function sessionTask(session, state = D.states?.[session.session_id]) {
     : ticket?.held ? 'Conversation' : null;
   return conversation || ticket?.task || ticket?.map?.title || ticket?.note || `ticket ${session.work_id}`;
 }
+/* The dock holds the stops made in this browser, so the person can bring back an agent stopped by mistake; the Agents
+ * menu holds every session, each with how it ended. */
+const RESUMED = new Set();
 export function drawAgentSessions() {
-  const stopped = D.sessions.filter(stoppedSession);
+  const again = D.sessions.filter(one => one.state === 'running' && RESUMED.delete(one.session_id));
+  if (again.length) forgetStops(...again.map(one => one.session_id));
+  const times = stopTimes(), stopped = D.sessions.filter(one => stoppedByPerson(one) && times[one.session_id]);
   const dock = $('#helpdesk .stopped-agents'), menu = $('#agentbox .agent-sessions');
   dock.hidden = !stopped.length;
   menu.hidden = !D.sessions.length;
-  const row = session => ({key: session.session_id,
+  const row = forget => session => ({key: session.session_id,
     text: JSON.stringify([session.state, session.how, agentName(session.agent), glyphOf(session.work_id), sessionTask(session),
-      stopTimes()[session.session_id], D.signals?.filter(one => one.session_id === session.session_id)]),
-    make: () => sessionRow(session)});
-  keyedFill(dock, stopped.map(row));
-  keyedFill(menu, D.sessions.map(row));
+      times[session.session_id], D.signals?.filter(one => one.session_id === session.session_id)]),
+    make: () => sessionRow(session, forget)});
+  keyedFill(dock, stopped.map(row(true)));
+  keyedFill(menu, D.sessions.map(row(false)));
 }
-function sessionRow(session) {
-  const stopped = stoppedSession(session), name = agentName(session.agent), task = sessionTask(session);
+function sessionRow(session, forget = false) {
+  const stopped = stoppedByPerson(session), name = agentName(session.agent), task = sessionTask(session);
+  const ended = session.state !== 'running', word = endWord(session);
   const signals = (D.signals || []).filter(one => one.session_id === session.session_id
     && one.reason === session.how && one.at).sort((a, b) => a.at.localeCompare(b.at));
   const at = signals.at(-1)?.at || stopTimes()[session.session_id] || null;
@@ -144,6 +163,7 @@ function sessionRow(session) {
     try {
       const done = await wrote('/api/dispatch-resume', {work_id: session.work_id, session: session.session_id});
       if (!done) return;
+      RESUMED.add(session.session_id);  // its line goes once it runs again
       open();
       if (done.state !== 'running') DOCK.chat.starting = Date.now();
       toast(`${name} is resuming with its memory.`);
@@ -151,13 +171,18 @@ function sessionRow(session) {
       await drawHelpdesk();
     } finally { button.disabled = false; }
   };
+  const how = session.how ? `It ended: ${session.how}.` : 'Its session ended.';
   return h('div', {class: `agent-session${stopped ? ' stopped-agent' : ''}`, 'data-session': session.session_id},
     h('img', {src: glyphOf(session.work_id), alt: glyphFor(session.work_id)}),
     h('div', {class: 'details'}, h('b', {}, name), h('span', {class: 'task'}, task),
-      stopped ? at ? h('time', {datetime: at, title: new Date(at).toLocaleString()}, `Stopped ${clockOf(at, true)}`)
-        : h('span', {class: 'meta'}, 'Stopped · time unavailable') : h('span', {class: 'meta'}, 'Running')),
+      !ended ? h('span', {class: 'meta'}, 'Running')
+        : at ? h('time', {datetime: at, title: `${how} ${new Date(at).toLocaleString()}`}, `${word} ${clockOf(at, true)}`)
+        : h('span', {class: 'meta', title: how}, stopped ? 'Stopped · time unavailable' : word)),
     h('button', {type: 'button', class: 'btn sm open-chat', onclick: open}, 'Chat'),
-    stopped ? h('button', {type: 'button', class: 'btn sm resume', onclick: resume}, 'Resume') : null);
+    stopped ? h('button', {type: 'button', class: 'btn sm resume', onclick: resume}, 'Resume') : null,
+    forget ? h('button', {type: 'button', class: 'btn sm quiet forget', 'aria-label': 'Forget this line',
+      title: 'Forget this line; the session stays in the Agents menu',
+      onclick: () => { forgetStops(session.session_id); drawAgentSessions(); }}, '×') : null);
 }
 /* The thread's own bar: the chip of where it comes from, its agent's glyph and its task, Show on map and Stop agent while
  * its session runs. A stopped session has its own Resume row; Continue on a completed ticket starts a conversation. */
@@ -188,7 +213,7 @@ export function drawThreadBar(session) {
   (bar.querySelector('.where') || editorNote(bar)).hidden = !inEditor;
   bar.querySelector('.stop').hidden = !running || inEditor;
   bar.querySelector('.stop').disabled = STOPPING.has(session?.session_id);
-  bar.querySelector('.again').hidden = !ended || stoppedSession(session) || isIntake(target);
+  bar.querySelector('.again').hidden = !ended || stoppedByPerson(session) || isIntake(target);
   const cancel = bar.querySelector('.cancel') || cancelButton(bar);
   cancel.hidden = !ticket || Boolean(ticket.done) || chat.source !== 'agent';
   // The person's own chat names its agent in the head. Stop agent remains a separate explicit action.

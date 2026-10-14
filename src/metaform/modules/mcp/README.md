@@ -164,15 +164,20 @@ Agents here send work to other A2A agents, `a2a_out.py`, MCP-040 to MCP-043, thr
   reading the task again every 20 seconds. An artifact becomes a message at the Address, numbered there, and an
   input-required status an open question there on the exchange's ticket, `a2a_peer_question_why` its why; each is
   written once, however many followers hear it.
+- The answer given to that question, `map reply`, goes back on the peer's task once, `a2a_out.answered`: from the
+  map change that closed it, from the follower, and from a listing. While the question waits, the follower reads the
+  peer's task only every 200 seconds. A peer that refuses the answer is said at the Address, `a2a_answer_refused`.
 - `mcp a2a_exchanges [id=] [address=]` lists them, newest first, reading each open one again from its peer first, so
   they follow without a server too; `mcp a2a_cancel <id>` cancels the peer's task.
-- Not built yet: receiving the peer's push notifications, sending the answer to a peer's question back on its task,
-  and the page's view of exchanges, VIEW-050.
+- Not built yet: receiving the peer's push notifications, and the page's view of exchanges, VIEW-050.
 
 A call that reaches the HTTP server through Paperclip's tool gateway is credited to the agent the gateway names: the
-forwarded `x-paperclip-agent-id`, `-issue-id` and `-run-id` become the call's session,
-`paperclip:agent=<id>,issue=<id>,run=<id>`, so `sender` names that agent and what one run was shown is kept apart from
-another, MCP-039 and MCP-042.
+forwarded `x-paperclip-agent-id`, `-issue-id` and `-run-id` populate `ctx.identity` as `agent_id`, `issue_id` and
+`run_id` on direct calls and background tasks. The delivery session is `paperclip:agent=<id>,run=<id>` when a run
+is supplied, so changing issues within that run does not repeat context and another run receives its own,
+MCP-039 and MCP-042. Without a run, the session uses the supplied agent and issue. Blank headers are omitted,
+and a call without these headers keeps the existing session fallback. Header values are escaped in session names
+so their separators cannot conflate identities. No process environment or authority is changed.
 
 ## Resources
 

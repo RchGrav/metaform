@@ -1,5 +1,6 @@
 """BASE-056 bounds automatic rework using recorded ticket progress, without a model."""
 import json
+import sys
 
 import pytest
 
@@ -99,7 +100,6 @@ def test_limit_can_be_disabled_without_erasing_observed_attempts(dispatch, run):
         store = attempt(dispatch, str(number))
     refresh(ctx, store, dispatch.ticket())
     run('set', '--dispatch-rework-limit=0', cwd=dispatch.folder)
-    refresh(ctx, store, dispatch.ticket())
     assert not blocked(ctx, store, dispatch.ticket())
     assert not [one for one in rows(store, dispatch.id) if one['signal'] == 'rework-limit']
     run('set', '--dispatch-rework-limit=3', cwd=dispatch.folder)
@@ -123,3 +123,144 @@ def test_a_real_fake_worker_end_records_an_attempt_and_step_events_clear_it(disp
     assert not blocked(ctx, store, dispatch.ticket())
     shown = json.loads(run('dispatch', 'signals', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)
     assert not [one for one in shown['signals'] if one['signal'] == 'rework-limit']
+
+
+def test_automatic_queue_glyph_and_supervisor_wait_but_explicit_start_can_finish(dispatch, run, monkeypatch):
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch.progress import blocked
+    run('set', '--dispatch-autostart', '--dispatch-rework-limit=1', cwd=dispatch.folder)
+    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'glyph=kite', cwd=dispatch.folder)
+    store = attempt(dispatch, 'failed')
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    started = []
+    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation: started.append(ctx.nouns['id']) or {})
+    assert module.start_work(ctx, dispatch.store, {})['started'] == []
+    assert started == [] and module.next_ticket(ctx, dispatch.store, 'kite', agent='claude') is None
+    dispatch.store.take_work(dispatch.id, by='claude same-session')
+    with store.tables() as tx:
+        tx.insert('sessions', {'session_id': 'same-session', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'ended',
+                               'how': 'the agent ended with exit code 1', 'started': '2026-10-14T00:00:00Z', 'seq': 1})
+    assert module.retry(ctx, dispatch.store) == {'retried': []}
+    assert blocked(ctx, store, dispatch.ticket())
+    run('map', 'work', 'op=move', f'id={dispatch.id}', 'column=todo', cwd=dispatch.folder)
+    run('set', '--no-dispatch-autostart', cwd=dispatch.folder)
+    dispatch.start('done')  # an explicit run is available even with the automatic rework gate closed
+    assert dispatch.process.wait(30) == 0
+    assert dispatch.ticket().done
+    assert not blocked(ctx, store, dispatch.ticket())
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='safe live group cleanup requires Linux pidfds')
+def test_verified_dead_recovery_counts_once_and_keeps_recovery_available_at_limit(dispatch, run):
+    from metaform.modules.dispatch.progress import blocked
+    run('set', '--dispatch-recovery=automatic', '--dispatch-rework-limit=1', cwd=dispatch.folder)
+    dispatch.start('hold', FAKE_ACP_ORPHAN_HOLD='1')
+    eventually(lambda: dispatch.logged('grandchild'))
+    dispatch.process.kill()
+    dispatch.process.wait()
+    recovered = json.loads(run('dispatch', 'recover', '--json', cwd=dispatch.folder).stdout)
+    assert recovered['released'] == [dispatch.id]
+    assert not dispatch.ticket().taken
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    assert blocked(ctx, Store('proj', module='dispatch'), dispatch.ticket())
+    again = json.loads(run('dispatch', 'recover', '--json', cwd=dispatch.folder).stdout)
+    assert again['released'] == []
+    shown = json.loads(run('dispatch', 'signals', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)
+    [signal] = [one for one in shown['signals'] if one['signal'] == 'rework-limit']
+    assert signal['attempts'] == 1
+
+
+def test_stale_snapshot_cannot_raise_an_alert_after_progress(dispatch):
+    from metaform.modules.dispatch.progress import refresh
+    from metaform.modules.dispatch.signals import rows
+    for number in range(3):
+        store = attempt(dispatch, str(number))
+    stale = dispatch.ticket()
+    dispatch.store.step_work(dispatch.id, 'A real step completed before the queued refresh.')
+    refresh(context('dispatch', dispatch.folder, project='proj'), store, stale)
+    assert not [one for one in rows(store, dispatch.id) if one['signal'] == 'rework-limit']
+
+
+def test_manual_requeue_and_reset_cannot_lose_or_duplicate_an_executed_attempt(dispatch, run, monkeypatch):
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch.progress import begin, blocked, executed
+    run('set', '--dispatch-rework-limit=1', cwd=dispatch.folder)
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    store = Store('proj', module='dispatch')
+    dispatch.store.take_work(dispatch.id, by='claude same-session')
+    begin(store, dispatch.ticket(), 'same-session', 'dead-runner')
+    executed(store, dispatch.id, 'dead-runner')
+    with store.tables() as tx:
+        tx.insert('sessions', {'session_id': 'same-session', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'running',
+                               'runner': 'dead-runner', 'started': '2026-10-14T00:00:00Z', 'seq': 1})
+    monkeypatch.setattr(module, 'sessions', lambda *args, **kwargs: [])  # verified gone, no process is launched here
+    assert module.reset(ctx)['released'] == [dispatch.id]
+    assert blocked(ctx, store, dispatch.ticket())
+    dispatch.store.step_work(dispatch.id, 'Prepared a different execution approach.')
+    dispatch.store.take_work(dispatch.id, by='claude new-session')
+    begin(store, dispatch.ticket(), 'new-session', 'new-runner')
+    executed(store, dispatch.id, 'new-runner')
+    run('map', 'work', 'op=move', f'id={dispatch.id}', 'column=todo', cwd=dispatch.folder)
+    assert blocked(ctx, store, dispatch.ticket())
+    module.release(store, dispatch.id, 'claude new-session', True, None, 'late cleanup', runner='new-runner')
+
+
+def test_nonactive_base_signal_is_raised_and_cleared_only_in_its_own_base(dispatch):
+    from metaform.modules.dispatch.progress import blocked, changed
+    from metaform.modules.dispatch.signals import rows
+    for number in range(3):
+        attempt(dispatch, str(number))
+    first = dispatch.store.bound_base()
+    assert first is not None
+    other = dispatch.store.add_base('other')
+    original = Store('proj', base=first.id)  # a map store for the counter's base, while another base is active
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    changed({'base_id': first.id, 'tables': ['work']}, ctx)
+    assert blocked(ctx, original, original.ticket(dispatch.id).work)
+    assert [one for one in rows(original, dispatch.id) if one['signal'] == 'rework-limit']
+    assert not rows(Store('proj', base=other.id, module='dispatch'), dispatch.id)
+    original.step_work(dispatch.id, 'Completed work on the nonactive base.')
+    changed({'base_id': first.id, 'tables': ['work']}, ctx)
+    assert not [one for one in rows(original, dispatch.id) if one['signal'] == 'rework-limit']
+    assert not rows(Store('proj', base=other.id, module='dispatch'), dispatch.id)
+
+
+def test_late_release_cannot_end_a_resumed_worker_or_clear_its_permissions(dispatch, run):
+    from metaform.modules.dispatch import release
+    from metaform.modules.dispatch.progress import begin, blocked, executed
+    from metaform.modules.dispatch.signals import publish, rows
+    run('set', '--dispatch-rework-limit=1', cwd=dispatch.folder)
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    store = Store('proj', module='dispatch')
+    dispatch.store.take_work(dispatch.id, by='claude same-session')
+    begin(store, dispatch.ticket(), 'same-session', 'resumed-runner')
+    executed(store, dispatch.id, 'resumed-runner')
+    with store.tables() as tx:
+        tx.insert('sessions', {'session_id': 'same-session', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'running',
+                               'runner': 'resumed-runner', 'started': '2026-10-14T00:00:00Z', 'seq': 1})
+    publish(ctx, 'permission-waiting', work_id=dispatch.id, session_id='same-session', key='permission',
+            message_id='permission')
+    release(store, dispatch.id, 'claude same-session', True, 'same-session', 'late cleanup', runner='old-runner')
+    with store.tables(write=False) as tx:
+        assert tx.get('sessions', {'session_id': 'same-session'})['state'] == 'running'
+    assert [one for one in rows(store, dispatch.id) if one['signal'] == 'permission-waiting']
+    assert not blocked(ctx, store, dispatch.ticket())
+    for _ in range(2):
+        release(store, dispatch.id, 'claude same-session', True, 'same-session', 'failed', runner='resumed-runner')
+    assert blocked(ctx, store, dispatch.ticket())
+    assert not [one for one in rows(store, dispatch.id) if one['signal'] == 'permission-waiting']
+    [signal] = [one for one in rows(store, dispatch.id) if one['signal'] == 'rework-limit']
+    assert signal['attempts'] == 1
+
+
+def test_reset_of_a_dead_intake_needs_no_ticket_or_progress_counter(dispatch, monkeypatch):
+    from metaform.modules import dispatch as module
+    store = Store('proj', module='dispatch')
+    with store.tables() as tx:
+        tx.insert('sessions', {'session_id': 'intake-session', 'work_id': 'intake-dead', 'agent': 'claude',
+                               'state': 'running', 'runner': 'dead-runner', 'started': '2026-10-14T00:00:00Z', 'seq': 1})
+    monkeypatch.setattr(module, 'sessions', lambda *args, **kwargs: [])
+    result = module.reset(context('dispatch', dispatch.folder, project='proj'))
+    assert result == {'released': [], 'sessions_ended': ['intake-dead'], 'still_working': []}
+    with store.tables(write=False) as tx:
+        assert tx.get('sessions', {'session_id': 'intake-session'})['state'] == 'ended'

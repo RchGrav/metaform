@@ -107,22 +107,19 @@ export function wake2d() {
   AMBIENT2D.timer = setTimeout(rest2d, FRAMES.idle);
 }
 /* The 2D map's ambient animations, the flash of a part's record and the pulse of one under construction, VIEW-029,
- * are the page's CSS and run at the screen's rate while the page is in use. Once nothing has been done or changed for
- * `FRAMES.idle` they are held and stepped on `FRAMES.idleRate` times a second, at their own speed, as the 3D map's
- * are, and the next act lets them run again, `wake2d`. Only those that repeat for ever: a fade runs out by itself. */
+ * are the page's CSS and run at the screen's rate for as long as the page is open. Only with web_idle_flow off may they
+ * rest: once nothing has been done or changed for `FRAMES.idle` they are paused, and the next act, or the tab coming
+ * back into view, lets them run again, `wake2d`. They are never stepped at a lower rate. Only those that repeat for
+ * ever: a fade runs out by itself. */
 const AMBIENT2D = {timer: 0, at: 0};
 const ambients2d = () => ($('#map2d')?.getAnimations({subtree: true}) || []).filter(one => one instanceof CSSAnimation
   && one.effect?.getTiming().iterations === Infinity);
 function rest2d() {
-  const now = performance.now(), still = now - FRAMES.active;
+  if (FRAMES.rest === null) return;  // the map keeps running
+  const still = performance.now() - FRAMES.active;
   if (still < FRAMES.idle) { AMBIENT2D.timer = setTimeout(rest2d, FRAMES.idle - still); return; }
-  const passed = AMBIENT2D.at ? now - AMBIENT2D.at : 0;
-  AMBIENT2D.at = now;
-  for (const one of ambients2d()) {  // a part drawn since they were held is held at its next step
-    if (one.playState === 'running') one.pause();
-    else if (one.playState === 'paused') one.currentTime = Number(one.currentTime || 0) + passed;
-  }
-  AMBIENT2D.timer = setTimeout(rest2d, 1000 / FRAMES.idleRate);
+  AMBIENT2D.at = performance.now();
+  for (const one of ambients2d()) if (one.playState === 'running') one.pause();
 }
 /* A point at a distance along an edge, looked up in the edge's curve sampled once, `sampled`, never measured again each
  * frame: measuring a curve for every dot on every frame was the page's own heaviest work. */

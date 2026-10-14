@@ -235,7 +235,7 @@ def term(ctx: Context) -> Any:
     key = key_of(words)
     node = _clean(ctx.nouns.get('node')) or None
     if node is not None and store.element(node) is None:
-        from . import _missing
+        from . import _missing  # pyright: ignore[reportPrivateUsage]  # shared within the map module
         raise _missing(store, node)
     current = {key_of(one.term): one for one in terms(store)}
     with store.tables(write=False) as tx:

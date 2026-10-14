@@ -783,7 +783,7 @@ def _node(store: Store, ctx: Context) -> tuple[Node, str, str | None]:
         return node, address, held.id if held is not None else None
     element = store.element(address)
     if element is None:
-        from . import _missing
+        from . import _missing  # pyright: ignore[reportPrivateUsage]  # shared within the map module
         raise _missing(store, address)
     return Node('element', element.id), element.address, None
 
@@ -1177,7 +1177,7 @@ def _context(ctx: Context, store: Store, code: Code, address: str, provider: str
     realizing the join's EF, linked at the join."""
     element = store.element(address)
     if element is None:
-        from . import _missing
+        from . import _missing  # pyright: ignore[reportPrivateUsage]  # shared within the map module
         raise _missing(store, address)
     if provider is not None:
         own = [link for link in code.links if link.kind == 'join' and link.receiver == address and provider in link.at]

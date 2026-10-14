@@ -33,6 +33,7 @@ SCRIBE_MODELS = ('scribe_v1', 'scribe_v1_experimental')
 _cache: dict[str, tuple[float, Any]] = {}
 _cache_lock = threading.Lock()
 LISTED_FOR = 600.0  # seconds the account's voices and models are kept before they are asked for again
+REFUSED_FOR = 60.0  # seconds a failed listing is kept, and raised again, before ElevenLabs is asked again
 
 
 def available() -> bool:
@@ -64,9 +65,17 @@ def _get(path: str, timeout: float = TIMEOUT) -> Any:
 def _kept(name: str, read: Any) -> Any:
     with _cache_lock:
         held = _cache.get(name)
-        if held is not None and time.monotonic() - held[0] < LISTED_FOR:
+        if held is not None and isinstance(held[1], OSError):
+            if time.monotonic() - held[0] < REFUSED_FOR:
+                raise held[1].with_traceback(None)
+        elif held is not None and time.monotonic() - held[0] < LISTED_FOR:
             return held[1]
-    found = read()
+    try:
+        found = read()
+    except OSError as error:
+        with _cache_lock:
+            _cache[name] = (time.monotonic(), error)
+        raise
     with _cache_lock:
         _cache[name] = (time.monotonic(), found)
     return found

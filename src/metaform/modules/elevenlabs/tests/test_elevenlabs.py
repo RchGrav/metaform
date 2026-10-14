@@ -103,16 +103,37 @@ def test_scribe_hears_a_file_when_elevenlabs_is_the_voice_engine(run, eleven, mo
     assert b'name="language_code"\r\n\r\nen' in calls[0].data
 
 
-def test_the_models_come_from_the_account_and_a_voice_is_named_by_its_name(run, eleven, monkeypatch, tmp_path):
+def test_the_models_come_from_the_account_and_a_voice_is_named_by_its_name(run, eleven, monkeypatch, tmp_path,
+                                                                           project_folder):
+    """The account's models are the choices once metaform elevenlabs models has listed them."""
     monkeypatch.setenv('ELEVENLABS_API_KEY', FAKE_KEY)
     caught(monkeypatch, json.dumps([{'model_id': 'eleven_flash_v2_5', 'name': 'Flash', 'can_do_text_to_speech': True},
-                                    {'model_id': 'eleven_v3', 'name': 'v3', 'can_do_text_to_speech': True}]).encode(),
+                                    {'model_id': 'eleven_v4', 'name': 'v4', 'can_do_text_to_speech': True}]).encode(),
            json.dumps({'voices': [{'voice_id': 'abcdefghijklmnopqrst', 'name': 'Daniel'}]}).encode(), b'audio')
-    assert run('set', '--elevenlabs-model', 'eleven_v3').returncode == 0
-    assert run('set', '--elevenlabs-model', 'eleven_nonesuch', ok=False).returncode != 0
-    run('set', '--elevenlabs-voices', 'owl=Daniel')
-    run('elevenlabs', 'speak', 'character=owl', f'file={tmp_path / "x.pcm"}', '--', 'hi')
+    assert run('set', '--elevenlabs-model', 'eleven_v4', cwd=project_folder, ok=False).returncode != 0
+    run('elevenlabs', 'models', cwd=project_folder)
+    assert run('set', '--elevenlabs-model', 'eleven_v4', cwd=project_folder).returncode == 0
+    assert run('set', '--elevenlabs-model', 'eleven_v3', cwd=project_folder, ok=False).returncode != 0
+    run('set', '--elevenlabs-voices', 'owl=Daniel', cwd=project_folder)
+    run('elevenlabs', 'speak', 'character=owl', f'file={tmp_path / "x.pcm"}', '--', 'hi', cwd=project_folder)
     assert (tmp_path / 'x.pcm').read_bytes() == b'audio'
+
+
+def test_showing_the_settings_and_an_agents_tool_list_never_ask_elevenlabs(run, eleven, monkeypatch, tmp_path):
+    """The model choices are computed without the network, though the key is set: ElevenLabs slow or down never holds
+    up config --show, help or an agent's tools/list."""
+    from metaform import settings
+    from metaform.modules.mcp import server
+    monkeypatch.setenv('ELEVENLABS_API_KEY', FAKE_KEY)
+    calls = []
+
+    def urlopen(request, timeout=None):
+        calls.append(request.full_url)
+        raise urllib.error.URLError('refused')
+    monkeypatch.setattr(urllib.request, 'urlopen', urlopen)
+    run('config', '--show')
+    server._setting_type(settings.SCHEMA['elevenlabs_model'], tmp_path)
+    assert calls == []
 
 
 def test_disabling_the_module_withdraws_the_engine_from_voice(run, eleven, tmp_path):

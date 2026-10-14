@@ -14,15 +14,12 @@ from __future__ import annotations
 import os
 import re
 import secrets
-import sys
 import threading
-from collections.abc import Generator
-from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import Any
 
-from . import context, home
+from . import context, home, sqlite
 from .data import Notice, Page, Report, Store, StoreError
 from .errors import Stop
 
@@ -32,29 +29,6 @@ KIND_OF = {suffix: kind for kind, suffix in FILES.items()}
 
 
 _THREADS = threading.Lock()  # writers in this process; the file lock below keeps processes apart
-
-
-@contextmanager
-def _locked(stream: BinaryIO) -> Generator[None, None, None]:
-    """An exclusive lock on the open file, held until the block ends."""
-    if sys.platform == 'win32':
-        import msvcrt
-        stream.seek(0)
-        msvcrt.locking(stream.fileno(), msvcrt.LK_LOCK, 1)
-        try:
-            yield
-        finally:
-            stream.flush()
-            stream.seek(0)
-            msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
-    else:
-        import fcntl
-        fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            stream.flush()
-            fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
 
 def folder(project_id: str | None) -> Path:
@@ -78,9 +52,7 @@ def write(project_id: str | None, run: str, kind: str, text: str, *, store: Stor
     name = f'{run}-{FILES[kind]}'
     target = folder(project_id) / name
     home.mkdir_private(target.parent)
-    with _THREADS, (target.open('ab') if os.name == 'nt' else
-                   os.fdopen(os.open(target, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), 'ab')) as stream, \
-            _locked(stream):
+    with _THREADS, sqlite.file_lock(target) as stream:
         # Writes to one file take turns, so none replaces another: the first writes the text, each later one a
         # section. On Windows an append is not one step, so the lock is what keeps them apart, BASE-045.
         stream.seek(0, os.SEEK_END)

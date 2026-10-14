@@ -69,6 +69,25 @@ def test_connect_index_uses_deployment_evidence_and_explicit_setting(folder, mon
         assert server.skill_index(folder, 'another-client')
 
 
+SHIPPED = ('dispatch', 'fork', 'hello', 'intake', 'map', 'mcp', 'memory', 'packet', 'template', 'web', 'workflow')
+
+
+@pytest.mark.req('MCP-029')
+def test_connect_message_and_index_fit_what_the_host_keeps(folder, run):
+    """The startup text and the fallback index together stay within the 2,048 characters Claude Code keeps, with
+    every shipped module on and the first-run notice; the names alone when the descriptions do not fit."""
+    sent = server.connect_instructions(folder, 'unknown-host')
+    assert len(sent) <= 2048 and 'write-workflow' in sent and 'FIRST RUN' in sent
+    for module in SHIPPED:
+        run('enable', module)
+    for registered in (False, True):
+        if registered:
+            run('add', 'project', 'skills', str(folder))
+        sent = server.connect_instructions(folder, 'unknown-host')
+        assert len(sent) <= 2048 and 'FIRST RUN' in sent, len(sent)
+        assert sent.startswith(server.startup_instructions(folder))
+
+
 def test_client_identity_accepts_initialize_params_and_modern_request_metadata():
     def context(params):
         return SimpleNamespace(params=params, session=SimpleNamespace(client_params=None))

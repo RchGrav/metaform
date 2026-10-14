@@ -285,7 +285,7 @@ def test_automatic_recovery_stops_orphans_before_returning_ticket_and_preserves_
     before = dispatch.ticket()
     dispatch.process.kill()
     dispatch.process.wait()
-    transcript = [(item.extra, item.value) for item in dispatch.items('note')]
+    transcript = [(item.extra, item.value) for item in dispatch.items('note') if item.extra['kind'] != 'progress']
     # Automatic recovery must remain a command action, never a side effect of reading a ticket or its sessions.
     shown = json.loads(run('dispatch', 'sessions', 'thread=false', '--json', cwd=dispatch.folder).stdout)
     assert shown['sessions'][0]['state'] == 'ended'
@@ -298,7 +298,8 @@ def test_automatic_recovery_stops_orphans_before_returning_ticket_and_preserves_
     assert (after.steps, after.steps_done, after.said, after.position) == (
         before.steps, before.steps_done, before.said, before.position)
     assert dispatch.session().extra['state'] == 'ended'
-    assert [(item.extra, item.value) for item in dispatch.items('note') if item.extra['kind'] != 'signal'] == transcript
+    assert [(item.extra, item.value) for item in dispatch.items('note')
+            if item.extra['kind'] not in ('signal', 'progress')] == transcript
     assert {'not-smooth', 'requeue'} <= {json.loads(item.value)['signal'] for item in dispatch.items('note')
                                         if item.extra['kind'] == 'signal'}
     again = json.loads(run('dispatch', 'recover', '--json', cwd=dispatch.folder).stdout)

@@ -1,0 +1,1 @@
+Since 2026-10-14 (ticket b87e868d), /api/settings has no comma path for lists. set_setting sends every list array to save_list. If this server declares the key, save_list calls stored_list in-process. Otherwise stored_list_there runs a child `python -c 'from metaform.modules.web.server import store_list_here; ...'` in the project's folder.

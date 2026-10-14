@@ -57,10 +57,26 @@ Elapsed time is evaluated on the next incoming session or map event, with no tim
 therefore raises its time signal when another event arrives. Permission waiting is reported separately and ends
 when its request is answered or cancelled.
 
-Session ends with unfinished work, requeues and incomplete prompts also raise signals. The separate rework
-counter, owned by ticket `88d5a05958c04257baf716c0272500ae`, announces `dispatch.rework-limit` with `work_id`,
-`attempts` and `limit`; dispatch records and publishes its signal. That counter is not implemented by this feature.
-Detection takes no recovery action. Under D119, the orchestrator may stop a spinning or crashed agent, ask the
+Session ends with unfinished work, requeues and incomplete prompts also raise signals. Dispatch owns the rework
+counter, BASE-056: `dispatch_rework_limit` defaults to 3 consecutive worker attempts ending with the ticket open
+and no completed ticket step. Set it with `metaform set --dispatch-rework-limit 3`; 0 disables the pause. An attempt
+must send a prompt. Person stops, startup failures before a prompt, idle resumes and preparation or system chats
+do not count. A completed step or ticket clears the streak. Editing notes, changing the plan and making tool calls
+do not establish ticket progress. This uses recorded progress, without judging whether the finished step meets
+acceptance; the workflow's proof requirements still apply.
+
+The counter survives process restarts in a per-ticket `progress` row in the existing `lines` table, outside ACP
+transcripts. It records the baseline at worker acquisition and identifies an attempt by its runner, so repeated
+release, resumed ACP session ids, manual requeues, reset and verified-dead recovery cannot count the same attempt
+twice. No table upgrade or separate scheduler is needed. It begins with observed attempts after installation,
+without inferring failures from old sessions that have no baseline.
+
+Reaching the limit announces `dispatch.rework-limit` with `work_id`, `attempts`, `limit` and a streak identity.
+One active signal represents each streak; recorded progress or disabling the limit clears it. The limit pauses
+automatic queue starts, glyph handoffs and supervisor retries. Explicit starts and resumes remain available, and
+dead-runner recovery keeps its existing policy. The default permits investigation and retry while bounding
+repeated execution without recorded progress. Ticket progress events reconcile the counter without polling.
+Under D119, the orchestrator may stop a spinning or crashed agent, ask the
 workflow agent to repair its execution instructions and restart it. Changes to the goal remain with the person.
 
 ## Prompts

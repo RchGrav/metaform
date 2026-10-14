@@ -1189,10 +1189,12 @@ def release(store: Store, work_id: str, by: str, took: bool, session_id: str | N
         with store.atomic():
             with store.tables() as tx:
                 previous = tx.get('sessions', {'session_id': session_id})
-                if previous is None or previous['state'] != 'running' or runner and previous.get('runner') != runner:
-                    return  # duplicate cleanup, or a late release from before this session's latest resume
-                tx.update('sessions', {'session_id': session_id}, {'state': 'ended', 'how': how})
-            if took and runner:
+                if previous is not None and (previous['work_id'] != work_id
+                                             or runner and previous.get('runner') != runner):
+                    return  # a late release must never end or clear permissions on the session's latest resume
+                if previous is not None and previous['state'] == 'running':
+                    tx.update('sessions', {'session_id': session_id}, {'state': 'ended', 'how': how})
+            if took and runner and previous is not None and previous['state'] == 'running':
                 from .progress import finish
                 finish(store, work_id, runner, how)
     if session_id is not None or requeued:
@@ -1383,7 +1385,9 @@ def budget_stop(ctx: Context, store: Store, work_id: str) -> None:
                    f'reached: {found["spent"]} of {found["limit"]} {unit}.', str(found['next']))
 
 
-FRONTEND = frozenset({'gui', 'web', 'page', 'viewer', 'view', 'board', 'ui', 'frontend'})  # address words of front-end work
+# address words of front-end work; the page reads this list from harnesses, so it keeps no copy
+FRONTEND = frozenset({'gui', 'web', 'page', 'viewer', 'view', 'board', 'ui', 'frontend', 'graphical', 'interface',
+                      'graphic', 'display', 'render', 'speech', 'voice'})
 
 
 def ticket_settings(ctx: Context) -> dict[str, dict[str, Any]]:
@@ -1449,11 +1453,11 @@ def jev_choices(ctx: Context, store: Store) -> dict[str, dict[str, str]]:
 
 def preferred(record: WorkRecord, kept: dict[str, Any] | None) -> str:
     """The agent a ticket prefers: the one the person chose, or by default Claude for front-end and GUI work and Codex
-    for back-end and system work."""
+    for back-end and system work, by the element's Address or, for a purpose record, its receiver's."""
     agent = (kept or {}).get('agent')
     if agent in agent_choices():
         return str(agent)
-    return 'claude' if FRONTEND & set((record.address or '').split('.')) else 'codex'
+    return 'claude' if FRONTEND & set((record.address or record.receiver_address or '').split('.')) else 'codex'
 
 
 def summoned(row: dict[str, Any]) -> bool:
@@ -1851,10 +1855,19 @@ def reset(ctx: Context) -> dict[str, Any]:
     ended: list[str] = []
     for row in recorded:
         if row['work_id'] not in alive:
-            with own.tables() as tx:
-                tx.update('sessions', {'session_id': row['session_id']},
-                          {'state': 'ended', 'how': 'its runner was gone; ended by dispatch reset'})
+            with own.atomic():
+                with own.tables() as tx:
+                    latest = tx.get('sessions', {'session_id': row['session_id']})
+                    if latest != row:
+                        continue
+                    tx.update('sessions', {'session_id': row['session_id']},
+                              {'state': 'ended', 'how': 'its runner was gone; ended by dispatch reset'})
+                from .progress import finish
+                finish(own, row['work_id'], str(row.get('runner') or ''), 'its runner was gone; ended by dispatch reset')
             ended.append(row['work_id'])
+            from .progress import refresh
+            if not intake_id(row['work_id']):
+                refresh(ctx, own, ticket(own, row['work_id']))
             from .signals import clear_permissions, publish
             clear_permissions(ctx, row['session_id'])
             publish(ctx, 'not-smooth', work_id=row['work_id'], session_id=row['session_id'],
@@ -2838,7 +2851,7 @@ def harnesses(ctx: Context) -> dict[str, Any]:
                       'pinned': registry_pins().get(agent),
                       'next': None if path else f'metaform set --dispatch-{agent} "<command>"' if agent in AGENTS
                       else f'metaform dispatch registry add={agent}'})
-    result: dict[str, Any] = {'agents': found, 'default': default}
+    result: dict[str, Any] = {'agents': found, 'default': default, 'frontend': sorted(FRONTEND)}
     if ctx.store is not None:
         result['room'] = summon_room(ctx, ctx.store)
     return result

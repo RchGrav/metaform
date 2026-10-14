@@ -1,0 +1,1 @@
+{"action": "create", "reason": "CLI arguments arrive as text, so comparing name_length '2' with stored 2 made every unchanged CLI call take the new-base path. Identical refs also got rewritten into a finished base's layer on each verification pass, changing the stored bytes.", "evidence": "references/evidence-5b53cfd5.md"}

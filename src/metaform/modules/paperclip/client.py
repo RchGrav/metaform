@@ -103,11 +103,11 @@ class Client:
         """Every agent of the company: id, name, urlKey, role, title, capabilities, adapterType and status."""
         return self.request('GET', f'/companies/{_part(company_id)}/agents')
 
-    def comments(self, issue_id: str, after: str | None = None, limit: int = 100) -> Any:
-        """The issue's comments oldest first, those after the comment `after` when given (server/src/routes/issues.ts,
-        GET /issues/:id/comments, `after`, `order`, `limit`)."""
+    def comments(self, issue_id: str, after: str | None = None, limit: int = 100, order: str = 'asc') -> Any:
+        """The issue's comments oldest first, or newest first with order `desc`, those after the comment `after` when
+        given (server/src/routes/issues.ts, GET /issues/:id/comments, `after`, `order`, `limit`)."""
         return self.request('GET', f'/issues/{_part(issue_id)}/comments',
-                            query={'after': after, 'order': 'asc', 'limit': limit})
+                            query={'after': after, 'order': order, 'limit': limit})
 
     def document(self, issue_id: str, key: str) -> Any:
         """The issue's document under this key, or None when it has none."""

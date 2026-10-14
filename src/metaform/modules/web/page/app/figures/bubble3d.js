@@ -24,7 +24,7 @@ const LOOK = {
   outline: 6, radius: 22, shadow: [7, 8],
   tail: {at: 0.16, base: 34, length: 40, lean: -18},  // along the bottom edge, its width, how far down and left
   scale: 3,  // texture pixels per SVG pixel, so the bubble stays sharp up close
-  world: 0.0105,  // world units per SVG pixel, per unit of the figure's size
+  world: 0.016,  // world units per SVG pixel, per unit of the figure's size
   pop: 320,  // ms of the pop when new words arrive
 };
 const BUBBLES = new Map();  // figure id -> {mesh, texture, text, drawn, born, shown}
@@ -97,7 +97,7 @@ function made(id) {
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = G.renderer().capabilities.getMaxAnisotropy();
   const material = new THREE.MeshBasicMaterial({map: texture, transparent: true, depthWrite: false, toneMapped: false,
-    opacity: 0});
+    fog: false, opacity: 0});
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
   mesh.renderOrder = 5;
   mesh.visible = false;
@@ -172,4 +172,16 @@ export function bubbles3d() {
     bubble.mesh.geometry.dispose(); bubble.mesh.material.dispose(); bubble.texture.dispose();
     BUBBLES.delete(id);
   }
+}
+/* The bubble the ray `caster` meets first, for a click on its words: its agent and how far along the ray, or null. */
+const HITS = [];
+export function bubbleAt(caster) {
+  HITS.length = 0;
+  for (const bubble of BUBBLES.values()) {
+    if (bubble.mesh.visible) THREE.Mesh.prototype.raycast.call(bubble.mesh, caster, HITS);
+  }
+  if (!HITS.length) return null;
+  HITS.sort((a, b) => a.distance - b.distance);
+  const id = [...BUBBLES.values()].find(bubble => bubble.mesh === HITS[0].object)?.id;
+  return id ? {id, distance: HITS[0].distance} : null;
 }

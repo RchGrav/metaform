@@ -9,7 +9,7 @@ import re
 import time
 from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Any, cast
 
@@ -61,38 +61,14 @@ def _load(ctx: Context, run_id: str, base_id: str | None = None) -> tuple[Path, 
 
 @contextmanager
 def _lock(directory: Path) -> Generator[None]:
-    # Advisory locks are released on process exit, including crashes. Keep the
-    # inode so another opener cannot acquire a different lock under the same name.
-    path = directory / 'lock'
-    handle = (os.fdopen(os.open(path, os.O_RDWR | os.O_CREAT | os.O_APPEND, 0o600), 'a+b')
-              if home.is_home_path(path) else path.open('a+b'))
-    with handle:
-        handle.seek(0, 2)
-        if handle.tell() == 0:
-            handle.write(b'0')
-            handle.flush()
-        handle.seek(0)
-        if os.name == 'nt':
-            import msvcrt
-            try:
-                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-            except OSError:
-                raise ValueError('This source placement run is already being processed.') from None
-            try:
-                yield
-            finally:
-                handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-        else:
-            import fcntl
-            try:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except OSError:
-                raise ValueError('This source placement run is already being processed.') from None
-            try:
-                yield
-            finally:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    # Advisory locks are released on process exit, including crashes; the lock file is never replaced, so another
+    # opener cannot acquire a different lock under the same name.
+    with ExitStack() as held:
+        try:
+            held.enter_context(home.file_lock(directory / 'lock', wait=False))
+        except home.Held:
+            raise ValueError('This source placement run is already being processed.') from None
+        yield
 
 
 def _categories(store: Store, exclude: list[str]) -> dict[str, Any]:

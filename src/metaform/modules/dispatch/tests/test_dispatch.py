@@ -1135,6 +1135,21 @@ def test_autostart_starts_each_ticket_with_an_agent_eligible_for_it(dispatch, ru
     assert launched == [(dispatch.id, 'codex'), (claude_only, 'claude')]
 
 
+@pytest.mark.parametrize(('address', 'receiver', 'agent'), [('code.interface.graphical', None, 'claude'),
+                                                             ('code.dispatcher.agent', None, 'codex'),
+                                                             (None, 'code.interface.graphical', 'claude')])
+def test_a_ticket_with_no_agent_prefers_claude_for_this_maps_graphical_interface_and_codex_elsewhere(
+        address, receiver, agent):
+    """Ticket a2c74004: this map's page work sits at code.interface.graphical, which the front-end words missed, so
+    autostart sent it to Codex. A purpose record's ticket goes by its receiver."""
+    from metaform.data import WorkRecord
+    from metaform.modules.dispatch import preferred
+    record = WorkRecord(id='w', node_kind='element' if address else 'join', node_id='n', address=address,
+                        receiver_address=receiver, provider_address=None, condition='', note=None, task='Fix it.',
+                        held=False, reviewed=False, created='2026-10-14T00:00:00Z', done=None, resolution=None)
+    assert preferred(record, None) == agent
+
+
 @pytest.mark.req('MAP-046')
 @pytest.mark.req('VIEW-042')
 def test_a_marker_starts_with_its_note_as_task_once_its_node_has_no_taken_ticket_and_one_at_a_time(
@@ -2171,6 +2186,7 @@ def test_cancel_and_tune_refuse_an_agent_cli_unless_the_person_allows_control(di
     assert dispatch.ticket().outcome == 'cancelled'
 
 
+@pytest.mark.req('BASE-052')
 @pytest.mark.req('CLI-011')
 def test_cancel_and_tune_are_the_persons_and_tune_takes_only_what_the_agent_offers(dispatch, run):
     """P232 and P015: over MCP an agent is refused cancel and tune while agents_may_set_control is off; tune refuses

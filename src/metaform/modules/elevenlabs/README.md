@@ -31,7 +31,7 @@ None. Its settings show in `metaform config`, the TUI, and the web GUI's setting
 | Verb | Tool | What it returns | Effect |
 |---|---|---|---|
 | `metaform elevenlabs status` | `elevenlabs_status` | Whether the key is present, and the model, formats, voice settings and latency in use. Never the key. | read |
-| `metaform elevenlabs models` | `elevenlabs_models` | The text-to-speech models the account can use. | read, open world |
+| `metaform elevenlabs models` | `elevenlabs_models` | The text-to-speech models the account can use, kept for the project as `elevenlabs_model`'s choices. | write, open world |
 | `metaform elevenlabs voices` | `elevenlabs_voices` | Each mascot character's voice, and the voices on the account. | read, open world |
 | `metaform elevenlabs speak -- <text>` | command line only | Text spoken into a file; never an agent's tool, since it spends the person's account. | write, open world |
 
@@ -43,7 +43,7 @@ Every one is the module's own, `elevenlabs_*`, so they group together in the TUI
 
 | Setting | Default | What it does to the sound |
 |---|---|---|
-| `elevenlabs_model` | eleven_flash_v2_5 | The model that speaks; its choices are the account's own models while the key is set. Flash starts soonest, multilingual is the most natural, v3 the most expressive and slowest. |
+| `elevenlabs_model` | eleven_flash_v2_5 | The model that speaks; its choices are the account's models as last listed with `metaform elevenlabs models`, else ElevenLabs's published ones; finding them never asks ElevenLabs. Flash starts soonest, multilingual is the most natural, v3 the most expressive and slowest. |
 | `elevenlabs_stability` | 50 | 0 to 100: low is livelier and less predictable, high is even and can sound flat. |
 | `elevenlabs_similarity` | 75 | 0 to 100: how closely the voice keeps to its source, its timbre and accent and that recording's noise. |
 | `elevenlabs_style` | 0 | 0 to 100: how much the source speaker's delivery is exaggerated; above 0 is slower to make. |
@@ -68,11 +68,11 @@ Every verb and engine function is synchronous; `speak` returns an iterator that 
 
 ## Layers
 
-None, and no tables.
+None. One table, `listed_models`, kept with the project: the model ids `metaform elevenlabs models` last listed, in the account's order.
 
 ## Lifecycle and cleanup
 
-No start or stop. The account's models and voices are kept in memory for ten minutes.
+No start or stop. The account's models and voices are kept in memory for ten minutes; a failed listing is kept for a minute, so a slow or unreachable ElevenLabs is asked at most once a minute.
 
 ## Modules relied on
 

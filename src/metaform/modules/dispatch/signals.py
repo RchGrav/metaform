@@ -12,7 +12,10 @@ from metaform.module import Context
 
 def own_store(store: Store) -> Store:
     """The dispatch module's own store for this project: the one given when it is already that."""
-    return store if store.module == 'dispatch' else Store(store.project_id, module='dispatch')
+    if store.module == 'dispatch':
+        return store
+    bound = store.bound_base()
+    return Store(store.project_id, base=bound.id if bound else None, module='dispatch')
 
 
 def add_line(tx: Any, session_id: str, work_id: str, key: str | None, kind: str, text: str,
@@ -68,9 +71,15 @@ def record(store: Store, signal: str, *, work_id: str = '', session_id: str = ''
 def publish(ctx: Context, signal: str, **details: Any) -> None:
     value = record(ctx.require_store(), signal, **details)
     if value is not None:
-        ctx.publish('signal.raised' if value['active'] else 'signal.cleared', value)
-        ctx.publish('map.changed', {'project': value['project'], 'tables': 'dispatch',
-                                   'dispatch_tables': ['dispatch.lines'], 'signal': value})
+        announce(ctx, value)
+
+
+def announce(ctx: Context, value: dict[str, Any]) -> None:
+    """Publish a signal already committed by its producer, outside that producer's transaction."""
+    ctx.publish('signal.raised' if value['active'] else 'signal.cleared', value)
+    bound = ctx.require_store().bound_base()
+    ctx.publish('map.changed', {'project': value['project'], 'base_id': bound.id if bound else None, 'tables': 'dispatch',
+                               'dispatch_tables': ['dispatch.lines'], 'signal': value})
 
 
 def rows(store: Store, work_id: str | None = None, active: bool = True) -> list[dict[str, Any]]:
@@ -130,6 +139,8 @@ def requeued(payload: dict[str, Any], ctx: Context) -> None:
 
 def rework_limit(payload: dict[str, Any], ctx: Context) -> None:
     """The rework counter owns its limit; dispatch records its announced result."""
+    if 'active' in payload:  # the counter committed its signal with its count; the event announces that result
+        return
     publish(ctx, 'rework-limit', work_id=payload['work_id'], key=str(payload.get('epoch') or payload.get('attempts', '')),
             attempts=payload.get('attempts'), limit=payload.get('limit'),
             **({'epoch': payload['epoch']} if payload.get('epoch') else {}))

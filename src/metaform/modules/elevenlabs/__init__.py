@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from metaform import home, settings
+from metaform.data import Column, Table, Tables
 from metaform.module import Context, Module, Noun, Provides, Stop, Verb, VoiceEngine
 
 from . import api
@@ -42,14 +43,23 @@ FALLBACK = 'JBFqnCBsd6RMkjVDRZzb'  # George, for a mascot that is none of these
 LANGUAGE = re.compile(r'^(auto|[a-z]{2,3})$')
 
 
-def _models(ctx: Any = None) -> list[str]:
-    """The models to choose from: the account's own while the key is here, else the ones ElevenLabs publishes."""
-    if api.available():
-        try:
-            listed = [one['model_id'] for one in api.models()]
-            return listed or list(api.MODELS)
-        except OSError:
-            pass
+# The account's models as `metaform elevenlabs models` last listed them, in the account's order, kept with the project:
+# elevenlabs_model's choices read them, and never ElevenLabs, because config --show, help and every agent's tool list
+# compute those choices.
+TABLES = Tables(version=1, tables=(
+    Table('listed_models', place='project', key=('position',),
+          columns=(Column('position', 'int', required=True), Column('model_id', required=True))),
+))
+
+
+def _models(ctx: Context | None = None) -> list[str]:
+    """The models to choose from: the account's as last listed with metaform elevenlabs models, else the ones
+    ElevenLabs publishes. Never a request to ElevenLabs."""
+    if ctx is not None and ctx.store is not None:
+        with ctx.store.tables(write=False) as tx:
+            listed = [str(row['model_id']) for row in tx.rows('listed_models', limit=0).results]
+        if listed:
+            return listed
     return list(api.MODELS)
 
 
@@ -67,7 +77,8 @@ def _check_language(value: Any, folder: Path) -> list[str] | None:
 
 
 settings.choice('elevenlabs_model', _models, 'eleven_flash_v2_5', scope='global',
-                help='The ElevenLabs model that speaks: the account\'s own models while its key is set.',
+                help='The ElevenLabs model that speaks: the account\'s models as last listed with metaform elevenlabs '
+                     'models, else ElevenLabs\'s published ones.',
                 details='eleven_flash_v2_5 starts speaking soonest and costs least; eleven_turbo_v2_5 is a little '
                         'richer; eleven_multilingual_v2 is the most natural across languages and slower to start; '
                         'eleven_v3 is the most expressive and the slowest.')
@@ -192,11 +203,19 @@ def status(ctx: Context) -> dict[str, Any]:
 
 
 def list_models(ctx: Context) -> dict[str, Any]:
+    """The account's models from ElevenLabs, kept for the project as elevenlabs_model's choices."""
     _need(ctx)
     try:
-        return {'models': api.models()}
+        found = api.models()
     except OSError as error:
         raise Stop(str(error), 'metaform elevenlabs status') from None
+    if ctx.store is not None and found:
+        with ctx.store.tables() as tx:
+            for row in tx.rows('listed_models', limit=0).results:
+                tx.delete('listed_models', {'position': row['position']})
+            for position, one in enumerate(found):
+                tx.insert('listed_models', {'position': position, 'model_id': one['model_id']})
+    return {'models': found}
 
 
 def list_voices(ctx: Context) -> dict[str, Any]:
@@ -238,8 +257,8 @@ MODULE = Module(
             'boost, speed, streaming latency, and the formats for the page and for a phone call.',
     verbs=(
         Verb('status', status, 'Show whether the ElevenLabs key is present and the settings in use.', effect='read', surfaces=('cli',)),
-        Verb('models', list_models, 'List the text-to-speech models your ElevenLabs account can use.', effect='read',
-             open_world=True, surfaces=('cli',)),
+        Verb('models', list_models, 'List the text-to-speech models your ElevenLabs account can use.', effect='write',
+             open_world=True, surfaces=('cli',)),  # writes the listing it keeps as elevenlabs_model's choices
         Verb('voices', list_voices, "List each mascot character's voice and the voices on your ElevenLabs account.",
              effect='read', open_world=True, surfaces=('cli',)),
         Verb('speak', speak, 'Speak text with ElevenLabs into an audio file; ElevenLabs receives the text.',
@@ -254,7 +273,7 @@ MODULE = Module(
     start=None,
     stop=None,
     status=None,
-    tables=None,
+    tables=TABLES,
     data=None,
     node_read=None,
     node_count=None,

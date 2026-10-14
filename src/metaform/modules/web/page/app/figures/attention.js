@@ -472,7 +472,7 @@ function openFor(payload, tell) {
   if (payload.what === 'board') { if ($('#board').hidden) $('#boardBtn').click(); tell('The board.'); }
   else if (payload.what === 'settings') { openSettings(); tell('Settings.'); }
   else if (payload.what === 'pane') {  // a page's pane, or a pane by its own id
-    if (!WS.on) return {error: `The workspace is off, so there is no pane ${which} to open.`};
+    if (!WS.active) return {error: `The workspace is off, so there is no pane ${which} to open.`};
     if (!which || !(WS.reveal(which) || WS.activate(which))) return {error: `No pane ${which} in the workspace.`};
     tell('There.');
   } else if (payload.what === 'ticket') {  // its node, its work in the panel
