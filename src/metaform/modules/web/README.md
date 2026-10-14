@@ -2,6 +2,13 @@
 
 Metaform's one web GUI for the user: one server per Metaform home, serving every registered project.
 
+## Known control limit
+
+On loopback, the write gate checks Origin but does not authenticate the caller. A local agent can forge Origin
+and use the page's write endpoints to change person-only controls. The CLI and MCP refusals do not close this path.
+Closing it requires the home token on loopback (H13 part 2, VIEW-002), tracked separately from SEC-F2. An additional
+caller-supplied header would leave the same hole.
+
 ## Purpose
 
 People see the map in a browser. `metaform web` starts the server and prints its address; run again from any folder, it prints the address it already runs at. `metaform web stop` stops it. Before an intake, the intake's own instructions have the agent start it with the `web_start` tool and tell the user the address, so the map can be watched as it is recorded. It ships enabled.

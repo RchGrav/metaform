@@ -122,14 +122,17 @@ def triaged(ctx: Context, found: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def requeued(payload: dict[str, Any], ctx: Context) -> None:
+    from .progress import requeued as account_requeue
+    account_requeue(payload, ctx)
     publish(ctx, 'requeue', work_id=payload['work_id'], key=str(payload.get('revision', '')),
             previous=payload['previous'])
 
 
 def rework_limit(payload: dict[str, Any], ctx: Context) -> None:
     """The rework counter owns its limit; dispatch records its announced result."""
-    publish(ctx, 'rework-limit', work_id=payload['work_id'], key=str(payload.get('attempts', '')),
-            attempts=payload.get('attempts'), limit=payload.get('limit'))
+    publish(ctx, 'rework-limit', work_id=payload['work_id'], key=str(payload.get('epoch') or payload.get('attempts', '')),
+            attempts=payload.get('attempts'), limit=payload.get('limit'),
+            **({'epoch': payload['epoch']} if payload.get('epoch') else {}))
 
 
 def collect(payload: dict[str, Any], ctx: Context) -> None:

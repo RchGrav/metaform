@@ -783,7 +783,8 @@ def _node(store: Store, ctx: Context) -> tuple[Node, str, str | None]:
         return node, address, held.id if held is not None else None
     element = store.element(address)
     if element is None:
-        raise Stop(f'No element {address} in context here.', f'metaform map children {address}')
+        from . import _missing
+        raise _missing(store, address)
     return Node('element', element.id), element.address, None
 
 
@@ -1176,7 +1177,8 @@ def _context(ctx: Context, store: Store, code: Code, address: str, provider: str
     realizing the join's EF, linked at the join."""
     element = store.element(address)
     if element is None:
-        raise Stop(f'No element {address} in context here.', f'metaform map children {address}')
+        from . import _missing
+        raise _missing(store, address)
     if provider is not None:
         own = [link for link in code.links if link.kind == 'join' and link.receiver == address and provider in link.at]
         serving: list[Link] = []

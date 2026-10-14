@@ -9,9 +9,11 @@ in context. `knowledge` is the one read-write verb for layers, LAYER-018.
 from __future__ import annotations
 
 import dataclasses
+import difflib
 import json
 import os
 import re
+import shlex
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -312,6 +314,36 @@ def _oriented(ctx: Context, found: Any, node: Node, *, contents: bool = False) -
     return _fitted(ctx, found, data, said, budget, calls=True)
 
 
+def _missing(store: Store, address: str) -> Stop:
+    """Recover orientation at the map surface without changing the store's context reads."""
+    found = store.where(address, raw=True)
+    recording = next(iter(store.intake_recording().results), None)
+    if recording is not None:
+        building = Store(store.project_id, base=recording.base_id)
+        held = building.where(address, raw=True)
+        if held is not None and held.element is not None and held.element.layer_id == recording.layer.id:
+            return Stop(f'Element {address} is in the intake being built in layer {recording.layer.name} '
+                        f'of metaform {recording.base}.', f'metaform intake show receiver={address}')
+    if found is not None and found.element is not None:
+        return Stop(f'Element {address} is in building, hidden or masked layer {found.element.layer}.',
+                    f'metaform map where {address} --raw')
+
+    prefix = address
+    children: tuple[str, ...] = ()
+    while prefix:
+        parent = prefix.rpartition('.')[0]
+        if prefix in store.children(parent, limit=0).results:
+            children = store.children(prefix, limit=0).results
+            break
+        prefix = parent
+    addresses = [one.element.address for one in store.graph(limit=0).elements]
+    nearest = list(dict.fromkeys((*difflib.get_close_matches(address, addresses, n=5, cutoff=0.6), *children)))[:5]
+    message = f'No element {address} in context here.'
+    if nearest:
+        return Stop(f'{message} Nearest: {", ".join(nearest)}.', f'metaform map where {nearest[0]}')
+    return Stop(message, f'metaform map children {prefix}'.rstrip())
+
+
 def where(ctx: Context) -> Any:
     """One read of an address: what relies on it and what it relies on, with the counts at it and around it,
     STORE-025 and MCP-039; the entry with no address. `<scope>@<layer>` reads what that layer holds at the scope, P165,
@@ -323,7 +355,7 @@ def where(ctx: Context) -> Any:
         return scoped_read(ctx, str(address))
     found = _store(ctx).where(address, full=bool(ctx.nouns.get('full', False)), **_reading(ctx))
     if found is None:
-        raise Stop(f'No element {address} in context here.', f'metaform map children {address}')
+        raise _missing(_store(ctx), address)
     return _oriented(ctx, found, Node('element', address), contents=bool(ctx.nouns.get('contents', False)))
 
 
@@ -472,7 +504,23 @@ def links(ctx: Context) -> Any:
 
 
 def citing(ctx: Context) -> Any:
-    return _store(ctx).citing(ctx.nouns['key'], ctx.nouns['value'], **_paging(ctx))
+    store = _store(ctx)
+    key, value = ctx.nouns['key'], ctx.nouns['value']
+    if key == 'path':
+        value = value.replace('\\', '/')
+        while value.startswith('./'):
+            value = value[2:]
+        if Path(value).is_absolute():
+            root = Path(store.project().path).resolve()
+            try:
+                value = Path(value).resolve().relative_to(root).as_posix()
+            except ValueError:
+                raise Stop(f'{value} is outside the project folder {root}.',
+                           'metaform map citing key=path value=<project-relative path>') from None
+    found = store.citing(key, value, **_paging(ctx))
+    if key == 'path' and not found.results:
+        return {**found.to_dict(), 'next': f'metaform map code-search file={shlex.quote(value)}'}
+    return found
 
 
 def history(ctx: Context) -> Any:

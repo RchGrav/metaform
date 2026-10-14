@@ -988,7 +988,7 @@ def stage(wheel: Path, uv: str, force: bool, say: Callable[[str], None], retry: 
         db.execute("INSERT INTO meta(key, value) VALUES ('installed_version', ?) "
                    'ON CONFLICT(key) DO UPDATE SET value=excluded.value', (__version__,))
     say(f'Installed: Metaform {__version__} from {wheel}')
-    if newer and not loader.withdrawn():
+    if newer and not os.environ.get('METAFORM_WHEEL'):
         notify_install(wheel, say)
     return newer
 
@@ -1034,7 +1034,9 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
             retry_words.append('force=true')
         retry = subprocess.list2cmdline(retry_words) if os.name == 'nt' else shlex.join(retry_words)
         newer = stage(wheel, uv, force, say, retry)
-        if loader.withdrawn():
+        # Even an enabled module can lack a transitive compiled dependency in the direct wheel interpreter.
+        # Newer installs deliver upkeep in the installed environment before it sets up the tools.
+        if newer or loader.withdrawn():
             return hand_over(uv, wheel, [word for word in words if not word.startswith('force=')], newer=newer)
     elif os.environ.pop(UPKEEP, None) == __version__ and os.environ.get(HANDED):
         notify_install(source(), say)

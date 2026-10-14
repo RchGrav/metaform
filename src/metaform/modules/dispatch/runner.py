@@ -2845,6 +2845,9 @@ class Session:
                                                              'runner')})
                     else:
                         tx.insert('sessions', row)
+                if not self.prep:
+                    from .progress import begin
+                    begin(self.store, ticket(self.store, self.work_id), str(self.session_id), str(self.runner))
             # Acquisition is complete before write publishes its change. A failed announcement still needs release.
             self.took = not self.prep
             self.recorded = True
@@ -3116,6 +3119,9 @@ class Session:
                         blocks += [acp.resource_link_block(one['name'], one['uri'], title=one.get('title'))
                                    for one in self.attached]  # the hand-off's links, typed, beside its text
                         self.attached = []
+                        if not self.prep:
+                            from .progress import executed
+                            await asyncio.to_thread(executed, self.store, self.work_id, str(self.runner))
                         answer = await self.conn.prompt(session_id=self.session_id, prompt=blocks)
                         reason = str(answer.stop_reason)
                         if answer.usage is not None:  # the tokens of this turn, as the agent counts them
@@ -3527,7 +3533,8 @@ class Session:
         the code on disk; when that fails too, the runner's log says what is left and how to put the ticket back."""
         owner = self.by if self.recorded else self.ctx.nouns.get('reservation') or self.by
         given: dict[str, Any] = {'work_id': self.work_id, 'by': owner, 'took': self.took,
-                                 'session_id': self.session_id if self.recorded else None, 'how': how}
+                                 'session_id': self.session_id if self.recorded else None, 'how': how,
+                                 'runner': self.runner}
         try:
             await asyncio.to_thread(release, self.store, **given)
         except Exception as error:  # noqa: BLE001  the code on disk may reach what this code cannot

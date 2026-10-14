@@ -474,6 +474,9 @@ def set_(args: list[str], folder: Path) -> None:
         raise Stop('--confirm is not a setting.', 'metaform help --confirm')
     if not pairs:
         raise Stop('set needs at least one setting switch.', 'metaform set --help')
+    if os.environ.get('METAFORM_ROLE') not in (None, '', 'none'):
+        # Check the whole call before validation, confirmation or writes: --confirm cannot grant control.
+        settings.refuse_held_control((setting.key for setting, _ in pairs), folder)
     for setting, raw in pairs:
         try:
             settings.checked(setting.key, raw, folder)
@@ -564,6 +567,8 @@ def unset(args: list[str], folder: Path) -> None:
         # Only the settings stored at this folder, D36, of the modules loaded now, D53.
         keys = [key for key, setting in settings.SCHEMA.items()
                 if settings.scope_of(setting, folder) == settings.own_scope_of(setting, folder)]
+    if os.environ.get('METAFORM_ROLE') not in (None, '', 'none'):
+        settings.refuse_held_control(keys, folder)
     for key in keys:  # every one is checked before any is reset
         try:
             settings.check_reset(key, folder)

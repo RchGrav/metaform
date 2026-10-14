@@ -27,7 +27,7 @@ import re
 import subprocess
 import sys
 from collections import OrderedDict
-from collections.abc import AsyncGenerator, Callable, Iterable
+from collections.abc import AsyncGenerator, Callable
 from importlib import resources
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -79,6 +79,7 @@ from metaform.module import (
     surface,
     tool_arguments,
 )
+from metaform.settings import refuse_held_control
 
 from . import consent
 
@@ -163,19 +164,6 @@ def set_schema(folder: Path) -> dict[str, Any]:
     properties['confirm'] = {'type': 'boolean', 'description': 'The person confirmed a choice that lets an agent act '
                                                                'without asking; without it such a choice is refused.'}
     return {'type': 'object', 'properties': properties, 'additionalProperties': False}
-
-
-def refuse_person_only(keys: Iterable[str], folder: Path | None = None) -> None:
-    """A setting only the person writes, on the command line or the page, is refused over MCP, stored with `set` or
-    given for one call alike, so an agent cannot widen its own permissions or control, CLI-011 and MCP-006; unless the
-    person has turned `agents_may_set_control` on, since control is a permission the person holds and can change."""
-    if settings.value('agents_may_set_control', folder or Path.cwd()):
-        return
-    held = sorted(key for key in keys if (setting := settings.SCHEMA.get(key)) is not None and setting.person_only)
-    if held:
-        raise Stop(f'{", ".join(held)} {"is" if len(held) == 1 else "are"} set only by the person, on the command '
-                   'line or the page, never by an agent. Say what you need in your ticket\'s note.',
-                   'metaform map work op=edit id=<your work id> note="..."')
 
 
 CHASSIS: dict[str, tuple[str, dict[str, Any]]] = {
@@ -384,7 +372,7 @@ def run_set(folder: Path, arguments: dict[str, Any], consented: bool = False) ->
         if not isinstance(glue, bool):
             raise Stop('glue is true or false.', schema_step(f'{OWN}_set'))
         if not consented:
-            refuse_person_only(arguments, folder)
+            refuse_held_control(arguments, folder)
         read: list[tuple[str, str]] = []
         typed = {key: setting_value(key, value, folder, read) for key, value in arguments.items()}
         notices += [{'where': key, 'message': message} for key, message in read]
@@ -592,7 +580,7 @@ def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dic
     if verb.caution and not (confirmed or consented):
         raise Stop(verb.caution, f'If you are sure: call {name} with confirm true')
     if not consented:
-        refuse_person_only((key for key in arguments if key in verb.switches), folder)
+        refuse_held_control((key for key in arguments if key in verb.switches), folder)
     nouns, switches, notices = tool_arguments(module.id, verb, arguments, ignore=PER_CALL, folder=folder)
     lines.extend(f'Notice: {key}: {message}' for key, message in notices)
     if layers is not None:

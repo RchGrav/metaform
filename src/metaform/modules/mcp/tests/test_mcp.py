@@ -1517,6 +1517,98 @@ class Served:
         self.thread.join(10)
 
 
+@pytest.mark.parametrize('background', [False, True])
+def test_gateway_identity_and_delivery_are_per_run(run, home, mapped, user_module, monkeypatch, background):
+    """A shared HTTP connection carries fresh identity per call, including calls executed as tasks."""
+    import httpx
+
+    user_module('gatewayprobe', '''
+        from metaform.module import Module, Verb
+        SUPPORTED_OS = ('linux', 'macos', 'windows')
+        def read(ctx):
+            return {'identity': ctx.identity, 'session': ctx.session, 'before': ctx.seen('gateway-proof', 1)}
+        MODULE = Module('gatewayprobe', 'Observe call context.', verbs=(
+            Verb('read', read, 'Read context.', effect='read', task=True),))
+    ''')
+    run('enable', 'gatewayprobe', cwd=mapped)
+    monkeypatch.setenv('METAFORM_SESSION', 'server-process')
+    served = Served(mapped)
+
+    async def go():
+        async with httpx.AsyncClient() as client:
+            async def request(method, params, headers):
+                params = {**params, '_meta': {'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+                    'io.modelcontextprotocol/clientCapabilities': {}, **params.get('_meta', {})}}
+                response = await client.post(served.url, headers={
+                    'Accept': 'application/json, text/event-stream', 'MCP-Protocol-Version': '2026-07-28',
+                    'MCP-Method': method, **({'MCP-Name': params['name']} if 'name' in params else {}),
+                    **headers}, json={'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': params})
+                assert response.is_success, response.text
+                response.raise_for_status()
+                if response.headers.get('mcp-session-id'):
+                    client.headers['mcp-session-id'] = response.headers['mcp-session-id']
+                if response.headers['content-type'].startswith('text/event-stream'):
+                    return json.loads(next(line[6:] for line in response.text.splitlines() if line.startswith('data: ')))
+                return response.json()
+
+            async def read(run_id=None, issue='i-1', agent='a-1'):
+                headers = {} if run_id is None else {'X-Paperclip-Agent-Id': agent,
+                    'X-Paperclip-Issue-Id': issue, 'X-Paperclip-Run-Id': run_id}
+                capabilities = {'extensions': {'io.modelcontextprotocol/tasks': {}}} if background else {}
+                reply = await request('tools/call', {'name': 'gatewayprobe_read', 'arguments': {},
+                    '_meta': {'io.modelcontextprotocol/clientCapabilities': capabilities}}, headers)
+                assert 'error' not in reply, reply
+                result = reply['result']
+                if background:
+                    assert result['resultType'] == 'task', result
+                    deadline = time.monotonic() + 10
+                    while result['status'] == 'working':
+                        assert time.monotonic() < deadline
+                        await asyncio.sleep(0.02)
+                        result = (await request('tasks/get', {'taskId': result['taskId'],
+                            '_meta': {'io.modelcontextprotocol/clientCapabilities': capabilities}}, {}))['result']
+                    assert result['status'] == 'completed', result
+                    result = result['result']
+                assert not result.get('isError'), result
+                return result['structuredContent']
+
+            first = await read('r-1')
+            assert first['identity'] == {'agent_id': 'a-1', 'issue_id': 'i-1', 'run_id': 'r-1'}
+            assert first['before'] is None
+            assert (await read('r-1', issue='i-2'))['before'] == 1
+            assert (await read('r-2'))['before'] is None
+            assert (await read('r-1', agent='a-2'))['before'] is None
+            plain = await read()
+            assert plain['identity'] == {} and plain['session'] == 'server-process'
+            assert os.environ['METAFORM_SESSION'] == 'server-process'
+
+    try:
+        asyncio.run(go())
+    finally:
+        served.stop()
+
+
+def test_paperclip_brief_resolves_explicit_issue_then_call_identity_then_environment(run, mapped, monkeypatch):
+    from metaform.module import context
+    from metaform.modules import paperclip
+
+    run('enable', 'paperclip', cwd=mapped)
+    store = context('paperclip', mapped).require_store()
+    for issue, address in [('explicit', 'code.timer.kitchen'), ('header', 'code.alarm.audible'),
+                           ('environment', 'code.timer.kitchen')]:
+        paperclip._keep(store, {'issue_id': issue, 'address': address, 'work_id': issue, 'works': 'paperclip'})
+    monkeypatch.setenv('PAPERCLIP_TASK_ID', 'environment')
+    monkeypatch.setattr(paperclip, 'node_brief', lambda folder, address: address)
+    ctx = context('paperclip', mapped, surface='mcp')
+    ctx.identity = {'issue_id': 'header'}
+    assert paperclip.brief(ctx) == 'code.alarm.audible\n'
+    ctx.nouns['issue'] = 'explicit'
+    assert paperclip.brief(ctx) == 'code.timer.kitchen\n'
+    ctx.nouns.clear()
+    ctx.identity.clear()
+    assert paperclip.brief(ctx) == 'code.timer.kitchen\n'
+
+
 async def heard_until(heard, method, count, limit=5):
     """Wait for `count` of `method` in `heard`, written by the client's GET stream task, or the limit."""
     deadline = time.monotonic() + limit

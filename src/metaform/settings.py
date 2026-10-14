@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, NamedTuple, cast
 
 from . import home
+from .errors import Stop
 
 KINDS = ('str', 'int', 'bool', 'list', 'select')
 
@@ -50,9 +51,8 @@ class Setting:
     default_from: Callable[[Path], Any] | None = field(default=None, compare=False)
     check: Callable[[Any, Path], list[str] | None] | None = field(default=None, compare=False)
     boundary: Callable[[Path], Path | None] | None = field(default=None, compare=False)
-    # Written only by the person, on the command line or the page: a setting that decides what agents may do or how
-    # they are started and overseen. Over MCP, set and a per-call switch refuse it, so an agent cannot widen its own
-    # control, CLI-011.
+    # A setting that decides what agents may do or how they are started and overseen. MCP and a dispatched agent's
+    # CLI refuse it unless the person has allowed agents to set control, so an agent cannot widen its own control.
     person_only: bool = False
     # A list whose entries are `<name><exclusive><value>`, such as `claude.model=opus` with `=`, holds one value per
     # name: two are refused, and a picker that checks one unchecks the others of its name.
@@ -115,6 +115,19 @@ class Setting:
 
 
 SCHEMA: dict[str, Setting] = {}
+
+
+def refuse_held_control(keys: Iterable[str], folder: Path | None = None) -> None:
+    """Refuse person-only settings on an agent surface unless the person has allowed agents to set control."""
+    if value('agents_may_set_control', folder or Path.cwd()):
+        return
+    held = sorted(key for key in keys if (setting := SCHEMA.get(key)) is not None and setting.person_only)
+    if held:
+        raise Stop(f'{", ".join(held)} {"is" if len(held) == 1 else "are"} set only by the person, on the command '
+                   'line or the page, never by an agent. Say what you need in your ticket\'s note.',
+                   'metaform map work op=edit id=<your work id> note="..."')
+
+
 # The module the current thread is loading. It is per thread, not a process global: while one thread loads a module,
 # another thread's own declarations, such as a direct import of a module package, keep their own owner.
 _owner: ContextVar[str | None] = ContextVar('metaform_settings_owner', default=None)

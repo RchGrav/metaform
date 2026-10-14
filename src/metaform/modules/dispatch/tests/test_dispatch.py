@@ -2138,6 +2138,40 @@ def test_a_cost_budget_counts_each_reports_addition_and_interrupts_the_turn_when
 
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('CLI-011')
+def test_a_dispatched_agents_budget_refusal_points_to_its_ticket(dispatch, run, monkeypatch):
+    from metaform.module import Stop, context
+    from metaform.modules import dispatch as module
+    run('set', '--dispatch-budget-ticket', '1', cwd=dispatch.folder)
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    with module.own_store(dispatch.store).tables() as tx:
+        tx.insert('spend', {'session_id': 'budget-check', 'seq': 1, 'work_id': dispatch.id,
+                            'run': 'budget-check', 'day': module.today(), 'tokens': 1})
+    monkeypatch.setenv('METAFORM_ROLE', 'system')
+    with pytest.raises(Stop) as refused:
+        module.budget_stop(ctx, dispatch.store, dispatch.id)
+    assert refused.value.next_step.startswith('metaform map work op=edit')
+    assert 'metaform set' not in refused.value.next_step
+    monkeypatch.setenv('METAFORM_ROLE', 'none')
+    with pytest.raises(Stop) as person:
+        module.budget_stop(ctx, dispatch.store, dispatch.id)
+    assert person.value.next_step.startswith('metaform set --dispatch-budget-ticket')
+
+
+@pytest.mark.req('CLI-011')
+def test_cancel_and_tune_refuse_an_agent_cli_unless_the_person_allows_control(dispatch, run):
+    agent = {'METAFORM_ROLE': 'system'}
+    for verb, nouns in (('cancel', ()), ('tune', ('model=large',))):
+        refused = run('dispatch', verb, dispatch.id, *nouns, cwd=dispatch.folder, env=agent, ok=False)
+        assert refused.returncode == 2
+        assert "the person's decision" in refused.stderr
+        assert 'Next: metaform map work op=edit' in refused.stderr
+    assert not dispatch.ticket().done
+    run('set', '--agents-may-set-control', cwd=dispatch.folder)
+    run('dispatch', 'cancel', dispatch.id, cwd=dispatch.folder, env=agent)
+    assert dispatch.ticket().outcome == 'cancelled'
+
+
+@pytest.mark.req('CLI-011')
 def test_cancel_and_tune_are_the_persons_and_tune_takes_only_what_the_agent_offers(dispatch, run):
     """P232 and P015: over MCP an agent is refused cancel and tune while agents_may_set_control is off; tune refuses
     a value the ticket's agent did not offer at its last session, and the ticket read shows what it keeps; each of an

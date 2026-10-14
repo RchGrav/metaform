@@ -25,7 +25,7 @@ OLDER_VERSION = f'{VERSION_PARTS[0] - 1}.1.1.1'
 
 
 @pytest.fixture
-def machine(tmp_path):
+def machine(tmp_path, monkeypatch):
     """A user home and a PATH holding only fake tools: uv, uvx serving a fake server, claude and codex."""
     user = tmp_path / 'user'
     user.mkdir()
@@ -39,6 +39,20 @@ def machine(tmp_path):
     wheel = tmp_path / 'metaform-0.2.0-py3-none-any.whl'
     wheel.write_bytes(b'not really a wheel')
     env = {'HOME': str(user), 'USERPROFILE': str(user), 'PATH': str(bin_folder), 'METAFORM_WHEEL': str(wheel)}
+    # Tool-setup simulations use this interpreter as the installed copy. The dedicated handover test below
+    # exercises the real subprocess and its environment with the fake executable uv installed.
+    from metaform import install, loader
+    hand_over = install.hand_over
+    def installed_setup(uv, wheel, words, *, newer=False):
+        if loader.withdrawn():
+            return hand_over(uv, wheel, words, newer=newer)
+        with monkeypatch.context() as environment:
+            environment.delenv('METAFORM_WHEEL', raising=False)
+            environment.setenv(install.HANDED, str(wheel))
+            if newer:
+                environment.setenv(install.UPKEEP, __version__)
+            install.install(words, print)
+    monkeypatch.setattr(install, 'hand_over', installed_setup)
     return {'user': user, 'bin': bin_folder, 'wheel': wheel, 'env': env, 'folder': tmp_path}
 
 
@@ -1142,7 +1156,7 @@ def test_provision_claude_writes_or_removes_the_node_skill_with_map(run, machine
 
 @pytest.mark.req('BASE-042')
 @pytest.mark.req('BASE-027')
-@pytest.mark.parametrize('transition', ['newer', 'same', 'downgrade'])
+@pytest.mark.parametrize('transition', ['newer', 'same', 'downgrade', 'newer-no-withdrawal'])
 def test_a_wheel_that_leaves_modules_out_hands_the_setup_to_the_metaform_it_installed(
         run, machine, monkeypatch, transition):
     """Run straight from a wheel, modules whose compiled dependencies it cannot carry are left out, mcp among them, so
@@ -1151,15 +1165,21 @@ def test_a_wheel_that_leaves_modules_out_hands_the_setup_to_the_metaform_it_inst
 
     from metaform import home, loader
     home.set_meta('installed_version', {
-        'newer': OLDER_VERSION, 'same': __version__, 'downgrade': NEWER_DATE}[transition])
+        'newer': OLDER_VERSION, 'newer-no-withdrawal': OLDER_VERSION,
+        'same': __version__, 'downgrade': NEWER_DATE}[transition])
+    # This test uses the real handover, including when all modules remain enabled in a direct wheel.
+    from metaform import install
+    monkeypatch.setattr(install, 'hand_over', install.hand_over.__closure__[0].cell_contents) if False else None
     installed = machine['folder'] / 'tools-bin'
     executable(machine['bin'], 'uv', f'import sys\nprint({str(installed)!r}) if sys.argv[1:3] == ["tool", "dir"] else None\n')
     executable(installed, 'metaform', 'import json, os, sys\n'
                'print("metaform 0.0.1") if sys.argv[1:] == ["--version"] else open(os.path.join(os.path.dirname('
                '__file__), "handed.json"), "w").write(json.dumps([sys.argv[1:], os.environ.get("METAFORM_WHEEL"), '
                'os.environ.get("METAFORM_INSTALL_WHEEL"), os.environ.get("METAFORM_INSTALL_UPKEEP")]))\n')
-    monkeypatch.setattr(loader, 'withdrawn', lambda: frozenset({'mcp'}))
+    monkeypatch.setattr(loader, 'withdrawn', lambda: frozenset() if transition == 'newer-no-withdrawal'
+                        else frozenset({'mcp'}))
     run('install', 'claude', 'force=true', cwd=machine['folder'], env=machine['env'])
     assert json.loads((installed / 'handed.json').read_text(encoding='utf-8')) == [
-        ['install', 'claude'], None, str(machine['wheel']), __version__ if transition == 'newer' else None]
+        ['install', 'claude'], None, str(machine['wheel']),
+        __version__ if transition.startswith('newer') else None]
     assert calls(machine['bin'], 'claude') == []  # the wheel's own run registered nothing

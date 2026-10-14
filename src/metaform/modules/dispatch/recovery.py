@@ -222,11 +222,15 @@ def recover(ctx: Context) -> dict[str, Any]:
                 if (fresh.done or not fresh.taken or fresh.taken_by != owner or not latest
                         or dict(latest[0]) != row):
                     continue
+                from .progress import finish
+                finish(own, work_id, str(row.get('runner') or ''), 'its verified dead runner was recovered automatically')
                 own.move_work(work_id, 'todo', fresh.position, 'dispatch recovery')
                 with own.tables() as tx:
                     tx.update('sessions', {'session_id': row['session_id']},
                               {'state': 'ended', 'how': 'its verified dead runner was recovered automatically'})
             result['released'].append(work_id)
+            from .progress import refresh
+            refresh(ctx, own, ticket(own, work_id))
             from .signals import clear_permissions, publish
             clear_permissions(ctx, row['session_id'])
             publish(ctx, 'not-smooth', work_id=work_id, session_id=row['session_id'],

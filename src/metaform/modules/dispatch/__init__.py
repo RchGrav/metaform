@@ -61,6 +61,8 @@ from metaform.module import (
 )
 
 from . import registry as agent_registry  # by another name: unloading a module drops its submodules' names
+from .progress import blocked as rework_blocked
+from .progress import changed as progress_changed
 from .signals import collect, own_store, requeued, rework_limit
 from .signals import read as read_signals
 
@@ -240,6 +242,12 @@ settings.number('dispatch_spin_minutes', 10, min=1, person_only=True,
                 help='Minutes without a completed step before the next session event raises a spinning signal.')
 settings.number('dispatch_repeat_failures', 3, min=2, person_only=True,
                 help='Consecutive failures of the same tool input before raising a repeated-failure signal.')
+settings.number('dispatch_rework_limit', 3, min=0, person_only=True, label='Rework limit',
+                help='Consecutive worker attempts ending without a completed ticket step before automatic work pauses. '
+                     '0 disables the limit.',
+                details='Counts worker runners that send a prompt and end with the ticket open. Person stops and idle '
+                        'resumes do not count. A completed step or ticket clears the streak. Explicit starts and '
+                        'resumes remain available; dispatch.rework-limit announces the pause.')
 settings.boolean('dispatch_worktrees', False, person_only=True,
                  help='Each ticket\'s agent works in a git worktree of its own, and done '
                  'work waits for review, then merges into the active dev branch, VIEW-044. Off until the dev branch '
@@ -1116,6 +1124,8 @@ def next_ticket(ctx: Context, store: Store, glyph: str, *, agent: str | None = N
             require_eligible(ctx, record, chosen)
         except Stop:
             continue
+        if rework_blocked(ctx, store, record):
+            continue
         return record
     return None
 
@@ -1169,17 +1179,28 @@ def intake_prompt(ctx: Context, asked: str) -> str:
     return str(verb.run(context('intake', ctx.folder, project=ctx.project, nouns={'text': asked} if asked else {})))
 
 
-def release(store: Store, work_id: str, by: str, took: bool, session_id: str | None, how: str) -> None:
+def release(store: Store, work_id: str, by: str, took: bool, session_id: str | None, how: str,
+            runner: str | None = None) -> None:
     """What an ending session leaves: its session row says it ended. A ticket it took and did not finish stays taken,
     with the agent's last note on it, until the person puts it back on the board: nothing restarts by itself. A
     runner whose own code cannot reach the store runs this in a new process, with the code on disk."""
     requeued = False
     if session_id is not None:
-        with store.tables() as tx:
-            tx.update('sessions', {'session_id': session_id}, {'state': 'ended', 'how': how})
+        with store.atomic():
+            with store.tables() as tx:
+                previous = tx.get('sessions', {'session_id': session_id})
+                if previous is None or previous['state'] != 'running' or runner and previous.get('runner') != runner:
+                    return  # duplicate cleanup, or a late release from before this session's latest resume
+                tx.update('sessions', {'session_id': session_id}, {'state': 'ended', 'how': how})
+            if took and runner:
+                from .progress import finish
+                finish(store, work_id, runner, how)
     if session_id is not None or requeued:
         from .signals import clear_permissions, publish
         ctx = context('dispatch', Path(store.project().path), project=store.project_id)
+        if took and runner:
+            from .progress import refresh
+            refresh(ctx, store, ticket(store, work_id))
         if session_id is not None:
             clear_permissions(ctx, session_id)
             # an ended session is no longer stopped and waiting; not-smooth below says what is left, BASE-057
@@ -1343,10 +1364,13 @@ def over_budget(ctx: Context, store: Store, *, work_id: str | None = None, run: 
             currency = max(costs, key=lambda one: costs[one], default=None)
             used = round(costs[currency] * 100) if currency is not None else 0
         if used >= limit:
+            next_step = f'metaform set --{key.replace("_", "-")}=<{"tokens" if measure == "tokens" else "cents"}>'
+            if os.environ.get('METAFORM_ROLE') not in (None, '', 'none'):
+                next_step = 'metaform map work op=edit id=<your work id> note="..."'
             return {'budget': name, 'measure': measure, 'setting': key, 'limit': limit, 'spent': used,
                     **({'currency': currency} if measure == 'cost' else {}),
                     **({'provisional': pending} if measure == 'tokens' and pending else {}),
-                    'next': f'metaform set --{key.replace("_", "-")}=<{"tokens" if measure == "tokens" else "cents"}>'}
+                    'next': next_step}
     return None
 
 
@@ -1508,6 +1532,9 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any]) -> dict[st
     # Jev's choice of agent, model and effort for the tickets the person gave no agent, asked before the transaction
     # below, so no network call is ever made inside it; nothing when Jev is off, H23.
     picks = jev_choices(ctx, store)
+    from .progress import refresh
+    for record in store.work(open=True, limit=0).results:
+        refresh(ctx, store, record)
     reserved: list[tuple[WorkRecord, str, str]] = []
     # Counting and reserving are one write transaction on the work store, so two checks at once, the page's and a
     # runner's, never both see the same free slot. Inside it the map's and dispatch's own tables are only read, and
@@ -1578,6 +1605,8 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any]) -> dict[st
                 continue
             if over_budget(ctx, store, work_id=record.id) is not None:  # its own budget spent, M01
                 continue
+            if rework_blocked(ctx, store, record):
+                continue
             reservation = 'dispatch starting ' + secrets.token_hex(16)
             if not (record.task or '').strip():  # a marker with no task, from the person or a critic
                 store.edit_work(record.id, {'task': marker_task(record)})
@@ -1627,6 +1656,8 @@ def retry(ctx: Context, store: Store, opened: Sequence[WorkRecord] | None = None
         agent, _, session_id = (record.taken_by or '').partition(' ')
         row = latest.get((record.id, session_id))
         if agent not in agent_choices() or row is None or row['state'] != 'ended' or str(row.get('how') or '') in PERSON_ENDS:
+            continue
+        if rework_blocked(ctx, store, record):
             continue
         with own_store(store).tables() as tx:
             held = tx.get('attempts', {'work_id': record.id})
@@ -3089,11 +3120,12 @@ async def options(ctx: Context) -> dict[str, Any]:
 
 
 def persons_own(ctx: Context, what: str) -> None:
-    """Refuse an agent over MCP what only the person decides, as a person-only setting is refused, CLI-011: a change
+    """Refuse an agent over MCP or its CLI what only the person decides, as a person-only setting is refused: a change
     to a ticket's intended outcome or to what it costs, spec 04 D119. The person lets agents do it by turning
     agents_may_set_control on."""
     may_steer(ctx)
-    if ctx.surface == 'mcp' and not settings.value('agents_may_set_control', ctx.folder):
+    if (ctx.surface == 'mcp' or os.environ.get('METAFORM_ROLE') not in (None, '', 'none')) \
+            and not settings.value('agents_may_set_control', ctx.folder):
         raise Stop(f'{what} is the person\'s decision, made on the command line or the page, never an agent\'s. Say '
                    'what you need in your ticket\'s note.', 'metaform map work op=edit id=<your work id> note="..."')
 
@@ -3254,7 +3286,8 @@ MODULE = Module(
         Verb('autostart', autostart, 'Start agents on the waiting tickets in board order, while the person has '
                                      'Autostart agents checked. Held tickets are left out, and at most dispatch_agents '
                                      'run at once.',
-             switches=('dispatch_autostart', 'dispatch_agent', 'dispatch_agents', 'dispatch_recovery'), open_world=True),
+             switches=('dispatch_autostart', 'dispatch_agent', 'dispatch_agents', 'dispatch_recovery',
+                       'dispatch_rework_limit'), open_world=True),
         Verb('recover', recover, 'Return the tickets of dead agent runners to the queue, while the dispatch_recovery '
                                  'setting is automatic. Cleanup it cannot be sure of leaves the work taken.',
              switches=('dispatch_recovery',), open_world=True),
@@ -3539,7 +3572,7 @@ MODULE = Module(
     ),
     tables=TABLES,
     subscriptions=(Subscription('work.requeued', requeued), Subscription('dispatch.rework-limit', rework_limit),
-                   Subscription('signal.raised', collect)),
+                   Subscription('signal.raised', collect), Subscription('map.changed', progress_changed)),
     work_read=work_read,
     start=migrate_agent_options,
     stop=None,

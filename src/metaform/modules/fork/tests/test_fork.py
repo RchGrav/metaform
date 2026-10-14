@@ -338,7 +338,8 @@ def test_install_transition_runs_existing_upkeep_only_after_a_newer_success(
         return subprocess.CompletedProcess(argv, 1 if transition == 'failed' else 0, '', 'install failed')
     monkeypatch.setattr(install, '_run', run)
     if transition == 'handed':
-        monkeypatch.setattr(loader, 'withdrawn', lambda: frozenset({'dispatch'}))
+        monkeypatch.setenv('METAFORM_WHEEL', str(tmp_path / 'metaform.whl'))
+        monkeypatch.setattr(loader, 'withdrawn', lambda: frozenset())
     monkeypatch.setattr(repository, 'template_changelog', lambda: '## 0.3.0\n- New contract.\n')
     monkeypatch.setattr(repository, 'update_worktree', lambda root, work_id: root)
     started = []

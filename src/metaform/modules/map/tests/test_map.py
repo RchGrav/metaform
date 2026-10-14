@@ -1722,13 +1722,94 @@ def test_a_positional_value_holding_an_equals_sign_stays_the_value(run, describe
 
 @pytest.mark.req('MCP-006')
 @pytest.mark.req('BASE-038')
+@pytest.mark.parametrize('check', ['nearest', 'path', 'intake'])
+def test_where_names_the_nearest_address_and_citing_takes_any_path_form(run, mapped, check):
+    if check == 'nearest':
+        stopped = run('map', 'where', 'code.timer.kitchn', cwd=mapped, ok=False)
+        assert stopped.returncode == 2
+        assert 'Nearest: code.timer.kitchen' in stopped.stderr
+        assert stopped.stderr.splitlines()[-1] == 'Next: metaform map where code.timer.kitchen'
+        assert j(run, 'where', 'code.timer.kitchen', cwd=mapped)['element']['address'] == 'code.timer.kitchen'
+    elif check == 'path':
+        store = Store('proj')
+        layer = store.layer('sources', 'intake', 'Source references.', mutable=True, hideable=True, ready=True)
+        store.add_item(layer.name, Node('element', 'code.timer.kitchen'), 'timer source',
+                       refs=[('path', 'src/timer.py')])
+        relative = j(run, 'citing', 'key=path', 'value=src/timer.py', cwd=mapped)
+        assert relative['results']
+        for path in (str(mapped / 'src/timer.py'), './src/timer.py', r'.\src\timer.py'):
+            assert j(run, 'citing', 'key=path', f'value={path}', cwd=mapped) == relative
+    else:
+        run('intake', 'element', 'namespace_address=code.timer.digital', 'name_length=2', 'role=SE', cwd=mapped)
+        stopped = run('map', 'where', 'code.timer.digital', cwd=mapped, ok=False)
+        assert stopped.returncode == 2
+        assert 'layer base' in stopped.stderr
+        assert stopped.stderr.splitlines()[-1] == 'Next: metaform intake show receiver=code.timer.digital'
+        shown = json.loads(run('intake', 'show', 'receiver=code.timer.digital', '--json', cwd=mapped).stdout)
+        assert shown['elements'][0]['namespace_address'] == 'code.timer.digital'
+
+
+@pytest.mark.req('MCP-006')
+@pytest.mark.req('BASE-038')
 @pytest.mark.parametrize('address', ['code.timer', 'code.timer.kitchn'])
-def test_where_on_an_address_that_is_no_element_stops_and_names_the_children_read(run, mapped, address):
+def test_where_on_an_address_that_is_no_element_stops_and_names_a_nearby_element(run, mapped, address):
     """A namespace prefix and a typo are both no element; silence left an agent unsure whether the read failed."""
     refused = run('map', 'where', address, cwd=mapped, ok=False)
     assert refused.returncode == 2
     assert f'No element {address} in context here.' in refused.stderr
-    assert refused.stderr.splitlines()[-1] == f'Next: metaform map children {address}'
+    assert 'Nearest: code.timer.kitchen' in refused.stderr
+    assert refused.stderr.splitlines()[-1] == 'Next: metaform map where code.timer.kitchen'
+
+
+@pytest.mark.parametrize('visibility', ['building', 'hidden', 'masked'])
+def test_missing_address_names_the_layer_and_a_raw_read(run, mapped, visibility):
+    store = Store('proj')
+    layer = store.layer('extra', 'map', 'Additional map elements.', mutable=True, hideable=True,
+                        ready=visibility != 'building')
+    store.add_element(layer.name, 'code.timer.extra', name_length=2, role='SE')
+    if visibility == 'hidden':
+        store.hide(layer.name)
+    elif visibility == 'masked':
+        store.mask('code.timer.extra', layer.name)
+    stopped = run('map', 'where', 'code.timer.extra', cwd=mapped, ok=False)
+    assert stopped.returncode == 2
+    assert 'layer extra' in stopped.stderr
+    assert stopped.stderr.splitlines()[-1] == 'Next: metaform map where code.timer.extra --raw'
+    assert j(run, 'where', 'code.timer.extra', '--raw', cwd=mapped)['element']['address'] == 'code.timer.extra'
+
+
+def test_missing_address_with_no_candidate_names_the_roots(run, mapped):
+    stopped = run('map', 'where', 'xyz.abc', cwd=mapped, ok=False)
+    assert stopped.returncode == 2
+    assert stopped.stderr.splitlines()[-1] == 'Next: metaform map children'
+    assert j(run, 'children', '', cwd=mapped)['results']
+
+
+def test_citing_a_path_outside_the_project_stops_and_an_uncited_path_names_code_search(run, mapped):
+    outside = str(mapped.parent / 'outside.py')
+    stopped = run('map', 'citing', 'key=path', f'value={outside}', cwd=mapped, ok=False)
+    assert stopped.returncode == 2
+    assert f'{outside} is outside the project folder {mapped}' in stopped.stderr
+    uncited = j(run, 'citing', 'key=path', 'value=./src/uncited.py', cwd=mapped)
+    assert uncited['results'] == []
+    assert uncited['next'] == 'metaform map code-search file=src/uncited.py'
+
+
+def test_orientation_recovery_reaches_working_next_steps_over_mcp(run, home, mapped):
+    from metaform.modules.mcp.tests.test_mcp import called, session, text
+
+    async def check(client, init):
+        typo = await called(client, 'map_where', {'address': 'code.timer.kitchn'})
+        assert typo.is_error
+        assert 'Nearest: code.timer.kitchen' in '\n'.join(text(typo))
+        assert 'Next: call map_where' in '\n'.join(text(typo))
+        recovered = await called(client, 'map_where', {'address': 'code.timer.kitchen'})
+        assert not recovered.is_error
+        uncited = await called(client, 'map_citing', {'key': 'path', 'value': './src/uncited.py'})
+        assert not uncited.is_error
+        assert 'call map_code_search file=src/uncited.py' in '\n'.join(text(uncited))
+
+    session(home, mapped, check)
 
 
 @pytest.mark.req('BASE-038')

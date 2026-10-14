@@ -172,6 +172,48 @@ def test_confirm_is_never_a_setting(run):
     assert refused.stderr.splitlines() == ['Error: --confirm is not a setting.', 'Next: metaform help --confirm']
 
 
+@pytest.mark.req('CLI-011')
+@pytest.mark.parametrize('switches,key,default', [
+    (('--jev',), 'jev', False),
+    (('--agents-may-set-control',), 'agents_may_set_control', False),
+    (('--dispatch-prompts', 'approve-all', '--confirm'), 'dispatch_prompts', 'ask_all'),
+])
+def test_a_dispatched_agent_cannot_set_its_own_controls_from_the_cli(run, switches, key, default):
+    refused = run('set', *switches, env={'METAFORM_ROLE': 'worker'}, ok=False)
+    assert refused.returncode == 2, refused.stdout + refused.stderr
+    assert "Say what you need in your ticket's note." in refused.stderr
+    assert 'Next: metaform map work op=edit' in refused.stderr
+    assert shown(run)[key]['value'] == default
+
+
+@pytest.mark.req('CLI-011')
+@pytest.mark.parametrize('switches', [('--jev', '--unglue'), ('all', '--unglue')])
+def test_a_dispatched_agent_cannot_reset_controls_or_partially_apply_a_call(run, switches):
+    run('set', '--jev', '--glue', '--modules', 'chassis,map,dispatch,mcp,web')
+    before = shown(run)
+    for args in (('unset', *switches), ('set', '--modules', 'chassis', '--jev')):
+        refused = run(*args, env={'METAFORM_ROLE': 'system'}, ok=False)
+        assert refused.returncode == 2
+        assert 'Next: metaform map work op=edit' in refused.stderr
+        assert shown(run) == before
+
+
+@pytest.mark.req('CLI-011')
+def test_the_person_can_allow_cli_control_changes_and_ordinary_settings_stay_available(run):
+    run('set', '--modules', 'chassis,map,dispatch,mcp,web', env={'METAFORM_ROLE': 'worker'})
+    run('set', '--jev', env={'METAFORM_ROLE': 'none'})
+    run('unset', '--jev')
+    run('set', '--agents-may-set-control')
+    agent = {'METAFORM_ROLE': 'worker'}
+    run('set', '--jev', '--dispatch-prompts', 'approve-all', '--confirm', env=agent)
+    assert shown(run)['jev']['value'] is True
+    assert shown(run)['dispatch_prompts']['value'] == 'approve-all'
+    run('unset', '--jev', env=agent)
+    run('unset', 'all', '--unglue', env=agent)
+    assert shown(run)['jev']['value'] is False
+    assert shown(run)['agents_may_set_control']['value'] is False
+
+
 @pytest.mark.req('CLI-023')
 def test_a_default_is_never_written_and_unknown_stored_keys_survive(run, toggles, home):
     run('config', '--show')

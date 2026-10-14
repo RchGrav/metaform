@@ -235,7 +235,8 @@ def term(ctx: Context) -> Any:
     key = key_of(words)
     node = _clean(ctx.nouns.get('node')) or None
     if node is not None and store.element(node) is None:
-        raise Stop(f'No element {node} in context here.', f'metaform map children {node}')
+        from . import _missing
+        raise _missing(store, node)
     current = {key_of(one.term): one for one in terms(store)}
     with store.tables(write=False) as tx:
         row = tx.get('terms', {'key': key})

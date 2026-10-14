@@ -119,7 +119,7 @@ MODULE = Module(
             'where its details are. Details: metaform help template.',
     details='',
     verbs=(),
-    subscriptions=(),
+    subscriptions=(),  # Release upkeep can subscribe to install.completed; fork shows the handler and manual retry.
     start=None,
     stop=None,
     status=None,
