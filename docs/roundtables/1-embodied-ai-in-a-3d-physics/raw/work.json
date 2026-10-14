@@ -1,0 +1,23 @@
+[
+ {
+  "row": 48,
+  "work_id": "53c4992cdc6044deac89198db66c4de2",
+  "target_kind": "element",
+  "target_id": "23e184b89bf7437b9f8d4cf5f5566ceb",
+  "condition": "",
+  "note": "Held for the harness seats of a roundtable; no agent works this ticket.",
+  "task": "Roundtable 1",
+  "held": 1,
+  "reviewed": 0,
+  "created": "2026-10-14T07:05:25Z",
+  "done": "2026-10-14T15:56:35Z",
+  "resolution": "Roundtable 1 ended.",
+  "steps": null,
+  "steps_done": 0,
+  "taken": null,
+  "taken_by": null,
+  "position": null,
+  "kind": "",
+  "outcome": "completed"
+ }
+]

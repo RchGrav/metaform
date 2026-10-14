@@ -9,8 +9,11 @@ Everything recorded about roundtable 1 ("Effective Approaches for embodied AI in
 | `context/00-Astra.md` … | Each model's context exactly as it arrived, turn by turn, readable. |
 | `report.md` | The report written from the record by Opus after the table ended. |
 | `Roundtable_1_First_Run_Analysis_and_Failure_Audit.md/.pdf` | The independent analysis and failure audit (written from the first, smaller export). |
-| `../1-embodied-ai-in-a-3d-physics.json` | Everything above in one file. |
+| `raw/*.json` | Every row Metaform stored about this table, untransformed: the roundtable's own tables (`roundtable.discussions`, `roundtable.seats` with each seat's full stored conversation, `roundtable.submissions`), the table's ticket (`work`, `map.ticket_settings`), and dispatch's records of the five Claude Code/Codex sessions (`dispatch.sessions`, all 839 thread lines in `dispatch.lines`, and 600 rows of per-turn token and cost accounting in `dispatch.spend`: input, output, cache read, cache write, thought, cost). |
+| `all-in-one.json` | The derived files above in one file. |
 
 Scores are always `[new, valuable, relevant, keep]`; a turn entered only at 0.83 or above on all four. In a model's conversation, `table`/`received` is what the roundtable sent it; the person typed nothing into this table.
 
-Not recorded by the version that ran: Jev's input, raw answer and cost per judgment; OpenRouter request bodies, per-call tokens, cache use, cost and stop reason. No views existed for this table.
+This is everything Metaform stored about the table. Not recorded by the version that ran: Jev's input, raw answer and cost per judgment; OpenRouter request bodies, per-call tokens, cache use, cost and stop reason. No views existed for this table.
+
+OpenRouter keeps its own per-request log of the OpenRouter seats and Jev (tokens, cost, model, time) on its Activity page (openrouter.ai/activity), exportable there; Metaform never had it.
