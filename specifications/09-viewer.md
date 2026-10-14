@@ -845,6 +845,15 @@ The GUI is built after the intake and debug system is stable and the fix pass is
 - Relates to: BASE-060, VIEW-013, VIEW-048.
 - Status: built 2026-10-10; the layout is recommended.
 
+### VIEW-050 A2A exchanges are shown where the work is
+
+- Requirement: An A2A exchange, MCP-041, shows on the board card of the ticket it belongs to and in the chat dock thread of the agent that sent it: who asked whom about what, its state and its result.
+- Why: A person should see who handed what to whom without reading logs.
+- Build: the page reads a ticket's exchanges from MCP-043's table with the ticket, and draws each on its card and in the sending agent's thread, VIEW-039, updated as the exchange changes, BASE-053.
+- Acceptance: with a stubbed peer, an exchange sent by an agent at work on a ticket shows on that ticket's card and in that agent's thread with the peer, the Address, its state, and its result once the peer's task ends.
+- Relates to: VIEW-039, VIEW-045, MCP-041, MCP-042, MCP-043, BASE-053.
+- Status: specified 2026-10-14 with the owner; build started.
+
 1. Answered: active viewing never changes settings; a separate control applies the viewer's layer choice to the folder, VIEW-007.
 2. Answered: the viewer writes exactly ten things, restoring a backup the ninth, VIEW-019, and a note the tenth, VIEW-034, adding a task the seventh, VIEW-032, and adding an element the eighth, VIEW-033: applying layers, new prompt versions, removing the top correction layer with a warning, clearing the selected project, VIEW-019, answering a question at a node, VIEW-021, and marking a note read, VIEW-030, VIEW-011.
 3. NEW How does a module add a view to the web GUI? Recommended: a module declares its views as a page folder and the read endpoints they need, and the web module serves them under the module's id; decided when a second module has a view. (VIEW-001)

@@ -708,3 +708,55 @@ It also defines the first working test, which exercises all three end to end.
 - Acceptance: Protected by `src/metaform/modules/map/tests/test_map.py::test_the_counts_at_a_node_are_told_once_per_session_and_then_only_what_changed`, `test_the_counts_tree_aligns_its_counts_and_caps_each_side`, and `src/metaform/modules/dispatch/tests/test_dispatch.py::test_the_handoff_is_the_brief_the_ticket_its_node_and_counts_under_three_kilobytes`.
 - Relates to: BASE-035, BASE-050, BASE-052, MAP-048, STORE-025, LAYER-012, LAYER-013, MCP-029, MCP-036, MCP-038.
 - Status: built 2026-10-11 at the owner's direction that agents are informed of what exists and read it themselves, once.
+
+### MCP-040 Metaform talks to the A2A peers the person names, and to no other
+
+- Requirement: Metaform keeps a list of A2A peers, each named by its Agent Card URL and the environment variable that holds its token, and sends A2A messages only to the peers on that list. The person adds and removes peers; an agent cannot.
+- What this means:
+  - The list is the mcp module's `person_only` setting `mcp_a2a_peers`, global. Each entry is a short name, a card URL and a token variable. A token is never stored, only the name of the variable that holds it, as `paperclip_token_env` does.
+  - When a peer is added, Metaform reads its Agent Card once and keeps the skills and interfaces the card lists. It reads the card again when a send fails with a version or interface error.
+  - Metaform's own inbound side is unchanged: other agents still reach it through `/.well-known/agent-card.json` and the bearer token in `<home>/run/a2a-token`, served by `src/metaform/modules/mcp/a2a.py` while `mcp_a2a` is on.
+- Why: A2A lets any agent hand work to any other. Which outside agents may receive this project's work, and spend from whose budget, is the person's decision, as it is for Paperclip and for every setting that decides which agents run, CLI-011. A list of named peers keeps that decision in one place that every surface reads.
+- How it shows: `metaform config --show` lists each peer with its name, card URL and token variable, and whether that variable is set.
+- Build: `settings.items('mcp_a2a_peers', ..., scope='global', person_only=True)` declared in `src/metaform/modules/mcp/__init__.py`, each item `<name> <card URL> <token variable>`. The card read at add is kept in the mcp module's tables beside `a2a_tasks`, `src/metaform/modules/mcp/a2a_records.py`, STORE-045, and read again on a version or interface error through the official `a2a-sdk` client. The entry format is the builder's choice, open to the owner's review.
+- Acceptance: a peer added on the command line appears in `metaform config --show`; an MCP call that tries to add one is refused and stores nothing, CLI-011; a send to a name not on the list is refused with the list in its `Next:` line, MCP-006.
+- Relates to: CLI-011, MCP-006, MCP-041, MCP-042, STORE-045, BASE-066.
+- Built 2026-10-14: entries are `<name>=<card URL> <token variable>`, refused when malformed, with a notice for a variable not set where the setting is made; the card is kept in `a2a_peers`, `src/metaform/modules/mcp/a2a_out.py`. `metaform config --show` shows the entries; whether each variable is set is said when the list is set, not in `--show`. Acceptance test: `test_an_a2a_send_carries_its_address_and_sender_and_what_the_peer_does_lands_at_the_address` in `src/metaform/modules/mcp/tests/test_mcp.py`.
+- Status: specified 2026-10-14 with the owner; build started.
+
+### MCP-041 An agent sends a peer a message about an Address, and follows it to its end
+
+- Requirement: An agent working in Metaform sends an A2A message to a peer on the list, MCP-040, about an Address, and follows the task the peer opens until it ends; the peer's replies, state changes and artifacts come back to that Address.
+- What this means:
+  - The verb `mcp a2a_send peer=<name> address=<Address> text=<text>`, the tool `mcp_a2a_send`, sends one message with the Address as its `contextId`, the Address extension Metaform already reads inbound. It returns the exchange id and the peer's task id.
+  - Metaform follows the task by the peer's streaming or push, whichever its card offers, else by reading the task again. Each change is recorded at the Address: a state change as an update of the exchange, an artifact as an item, MCP-037, and a question the peer asks as an open question at the Address, MAP-050, which the agent or the person answers.
+  - A cancel from the sender cancels the peer's task.
+- Why: Metaform only receives today. Agents working together means an agent can hand part of its work to another and get the result back where the work lives. Attaching every reply to the Address keeps the Join rule: what was learned attaches to the receiving element.
+- Build: the verb in `src/metaform/modules/mcp/__init__.py`, open world, BASE-006; the send and the following through the official `a2a-sdk` client, its streaming, push and task reads; the exchange recorded as MCP-043 says; the items and questions written through the map module's own operations, so they are numbered and titled at the Address like every other.
+- Acceptance: with a stubbed peer, a send carries the Address as its `contextId` and returns the exchange id and the peer's task id; a state change, an artifact and a question from the peer each land at the Address as an update, an item and an open question; a cancel from the sender reaches the peer as a cancel of its task.
+- Relates to: MCP-037, MCP-038, MCP-040, MCP-042, MCP-043, MAP-050, VIEW-050, BASE-066.
+- Built 2026-10-14: `mcp a2a_send`, `a2a_exchanges` and `a2a_cancel` in `src/metaform/modules/mcp/a2a_out.py`; followed by the peer's stream, else by reading the task again; an artifact is a message at the Address, a question an open question there. Push from the peer and sending an answer back to its question are not built. Acceptance test as MCP-040's.
+- Status: specified 2026-10-14 with the owner; build started.
+
+### MCP-042 Every A2A message says which agent sent it, and Metaform checks it
+
+- Requirement: Every message Metaform sends carries the identity of the agent instance that sent it, not of the session that started that agent, and every message Metaform receives from a known peer is checked against that peer's token before its sender is trusted.
+- What this means:
+  - The sender is the agent instance: its runner session, `METAFORM_SESSION`, BASE-052, and for a child agent its own session, not its parent's. The identity travels in the message metadata under the Metaform extension.
+  - Calls that reach Metaform through Paperclip's gateway take their identity from the headers the gateway forwards, `agent_id`, `issue_id` and `run_id`, ticket T3 of the Paperclip integration, `artifacts/swarm-2026-10-11/PAPERCLIP-INTEGRATION.md`.
+- Why: When several agents share one conversation, a message credited to the wrong agent breaks everything built on it: who said what, which seat was vetoed, who owns the result. The embodiment report and the Paperclip gateway hit the same gap.
+- Build: the sender's identity read from `Context.session`, MCP-039, and written into the message metadata by MCP-041's send; an inbound message from a peer on the list checked against the token its variable names before its stated sender is recorded.
+- Acceptance: a send from a child agent carries the child's session, not its parent's; an inbound message claiming a peer's identity with a wrong token is not credited to that peer; a call through the gateway with `x-paperclip-agent-id` is credited to that agent.
+- Relates to: BASE-052, MCP-039, MCP-040, MCP-041, BASE-066.
+- Built 2026-10-14 in part: the sender travels as `sender` under the Address extension and in the User-Agent, which the inbound side writes on the ticket; Paperclip's forwarded headers become the call's session, `gateway_session` in `src/metaform/modules/mcp/server.py`. Not built: checking an inbound message's stated sender against a listed peer's token, since inbound A2A takes the one home token.
+- Status: specified 2026-10-14 with the owner; build started.
+
+### MCP-043 An exchange survives restarts
+
+- Requirement: Each exchange is stored with its peer, the peer's task id, the Address, the sending agent and the ticket it belongs to, so a reply that arrives after any restart lands in the right place.
+- Why: Peers answer on their own time. An exchange followed only in memory loses every reply that arrives after a restart.
+- Build: a table of exchanges in the mcp module's project-level tables, `src/metaform/modules/mcp/a2a_records.py`, STORE-045, beside `a2a_tasks`, `a2a_asks` and `a2a_push`; a server that starts follows again every exchange whose task has not ended.
+- Acceptance: an exchange made, the server stopped and started again, and a reply then delivered by the stubbed peer lands at the exchange's Address and on its ticket.
+- Relates to: MCP-041, MCP-042, STORE-045, BASE-053, VIEW-050.
+- Built 2026-10-14: `a2a_exchanges` in `src/metaform/modules/mcp/a2a_records.py`, mcp tables version 4; followed again by `metaform mcp serve --http` at start, `a2a_out.attach`. Checked live with two servers and a restart between the peer's change and the sender's record; not yet in an automated test.
+- Status: specified 2026-10-14 with the owner; build started.

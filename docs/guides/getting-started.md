@@ -114,34 +114,34 @@ The served procedure's XML schema defines the fields of each object. The agent r
 metaform intake start model=opus role="intake agent"
 metaform intake element stakeholder.cook.home role=CQU name_length=2
 metaform intake element code.timer.kitchen role=DE name_length=2 name="dish clock"
-metaform intake join stakeholder.cook.home '["code.timer.kitchen"]' purpose="Know when each dish is done." ef="tells the cook when a dish is done" ifd=receives
+metaform intake purpose stakeholder.cook.home '["code.timer.kitchen"]' purpose="Know when each dish is done." ef="tells the cook when a dish is done" ifd=receives
 metaform intake show
 metaform intake finish report="What the agent found broken or unfinished."
 ```
 
-The map has two kinds of record, in the shape the owner restored on 2026-10-04.
+The intake records elements and purpose records in the recursive shape served by `intake schema`.
 
 - An element is its `namespace_address`, `name_length`, `name` and `role`. Its short name is its address read backward through `name_length`, so `code.timer.kitchen` with `name_length=2` is the kitchen timer. `name` is the project's own name for it: this project calls its kitchen timer the dish clock.
-- A join is its type (`purpose`), `purpose`, `ef` and `ifd`. The receiver holds the join and the join holds the elements that serve the purpose. `ef` is the Encounter Function, a fragment in the active voice. `ifd` is the information flow direction: `sends`, `receives` or `both`.
+- A purpose record is its type (`purpose`), `purpose`, `ef` and `ifd`. The receiver holds the purpose record and the purpose record holds the elements that serve the purpose. `ef` is the Encounter Function, a fragment in the active voice. `ifd` is the information flow direction: `sends`, `receives` or `both`.
 
-There are no subtype joins, and no `refs`, `verb`, `non_goal` or name on a join. A part that serves the same purpose is another element in the same join.
+A purpose record has no `refs`, `verb`, `non_goal` or name. Its nested parts are ordinary elements. A part that serves the same purpose is another element in the same purpose record. An element can also receive purpose records of its own, repeating the same element and purpose form at every depth.
 
-Over MCP the same calls are the tools `intake_prompt`, `intake_start`, `intake_element`, `intake_join`, `intake_show`, `intake_remove` and `intake_finish`, with the same fields as named arguments. The agent names an element by its `namespace_address` and a join by its `receiver` and an element it holds, as in the Canonical Intake. No call hands it an id.
+Over MCP the same calls are the tools `intake_prompt`, `intake_start`, `intake_element`, `intake_purpose`, `intake_show`, `intake_remove` and `intake_finish`, with the same fields as named arguments. The agent names an element by its `namespace_address` and a purpose record by its `receiver` and an element it holds, as in the Canonical Intake. No call hands it an id.
 
 | Verb | What it does |
 |---|---|
 | `prompt` | Serves the intake. |
 | `start` | Opens the building layer, with the `model` and `role` the agent gives. |
 | `element` | Records one element. Recording an address again replaces the fields given. Takes `refs`, `condition` and `note`. |
-| `join` | Records one join: `receiver`, `elements` as a JSON list, and optional `purpose`, `ef`, `ifd`, `condition` and `note`. Recording again with an element the join already holds changes that join, and any element it does not hold is added to it. This is annealing. |
-| `show` | Reads back the recorded map: `elements`, `joins` and `undescribed`, the addresses a join names and no `element` call described. With `receiver=` it reads one receiver's joins and the elements they hold. |
-| `remove` | Takes out an element (`namespace_address`), a join (`receiver` and `provider`, an element it holds), or one element from a join (all three). After `finish` it changes nothing and names `map refine`. |
-| `finish` | Marks the layer ready and saves `report` and `feedback`. Returns the counts of `elements`, `joins` and open `work` records, and a notice for any address named in a join and never described. |
+| `purpose` | Records one purpose record: `receiver`, `elements` as a JSON list, and optional `purpose`, `ef`, `ifd`, `condition` and `note`. Recording again with an element the purpose record already holds changes that purpose record, and any element it does not hold is added to it. This is annealing. |
+| `show` | Reads back the recorded map: `elements`, `purposes` and `undescribed`, the addresses a purpose record names and no `element` call described. With `receiver=` it reads one receiver's purpose records and the elements they hold. |
+| `remove` | Takes out an element (`namespace_address`), a purpose record (`receiver` and `provider`, an element it holds), or one element from a purpose record (all three). After `finish` it changes nothing and names `map refine`. |
+| `finish` | Marks the layer ready and saves `report` and `feedback`. Returns the counts of `elements`, `purposes` and open `work` records, and a notice for any address named in a purpose record and never described. |
 | `status` | Whether the project has an intake, or one is being recorded. |
 
 Each call returns what it stored and its notices. Nothing is refused for its content: a field that does not fit is stored as given and named in a notice, and a missing field is stored empty and named. Until `finish`, the intake is building: no read other than `intake show` sees it, and `metaform web` draws each object as it arrives.
 
-`element` and `join` take `condition` and `note`. Given either, the call also writes an open work record at what it just recorded, apart from the map: `condition=missing` for what the specifications describe and is not built, `broken`, or `exclude`. The web GUI draws a node with an open `missing` record at 70% opacity and flashes one with an open `broken` record red. Any other work record is written with `map work`.
+`element` and `purpose` take `condition` and `note`. Given either, the call also writes an open work record at what it just recorded, apart from the map: `condition=missing` for what the specifications describe and is not built, `broken`, or `exclude`. The web GUI draws a node with an open `missing` record at 70% opacity and flashes one with an open `broken` record red. Any other work record is written with `map work`.
 
 #### Refs go in the sources layer
 
@@ -211,16 +211,16 @@ metaform add project kitchen .
 metaform intake start model=none role="by hand"
 metaform intake element stakeholder.cook.home role=CQU name_length=2
 metaform intake element code.timer.kitchen role=DE name_length=2 name="dish clock" refs='[{"key": "path", "value": "src/main.c"}]'
-metaform intake join stakeholder.cook.home '["code.timer.kitchen"]' purpose="Know when each dish is done without watching the clock." ef="tells the cook when a dish is done" ifd=receives
+metaform intake purpose stakeholder.cook.home '["code.timer.kitchen"]' purpose="Know when each dish is done without watching the clock." ef="tells the cook when a dish is done" ifd=receives
 metaform intake element code.alarm.audible role=SE name_length=2 name="buzzer" refs='[{"key": "path", "value": "src/alarm.c"}]'
-metaform intake join code.timer.kitchen '["code.alarm.audible"]' purpose="Get the cook's attention the moment a countdown ends." ef="sounds the end of a countdown through the speaker" ifd=receives
+metaform intake purpose code.timer.kitchen '["code.alarm.audible"]' purpose="Get the cook's attention the moment a countdown ends." ef="sounds the end of a countdown through the speaker" ifd=receives
 metaform intake element code.loop.tick role=SE name_length=2 name="ticker" refs='[{"key": "path", "value": "src/tick.c"}]'
-metaform intake join stakeholder.cook.home '["code.timer.kitchen", "code.loop.tick"]'
+metaform intake purpose stakeholder.cook.home '["code.timer.kitchen", "code.loop.tick"]'
 metaform intake finish
 metaform map where code.timer.kitchen
 ```
 
-The last `intake join` names a join the cook already holds with the timer. It is that join: it keeps its purpose, `ef` and `ifd` and gains the tick loop, so the cook's purpose is served by two elements. `finish` reports four elements, two joins and no open work records. `map where code.loop.tick` returns the one join that holds it. `map where code.timer.kitchen` lists the three refs under `layers`.
+The last `intake purpose` names a purpose record the cook already holds with the timer. It is that record: it keeps its purpose, `ef` and `ifd` and gains the tick loop, so the cook's purpose is served by two elements. `finish` reports four `elements`, two `purposes` and no open work records. `map where code.loop.tick` returns the one join that holds it. `map where code.timer.kitchen` lists the three refs under `layers`.
 
 The shell examples use POSIX single quotes around JSON; on Windows PowerShell, quote the JSON for PowerShell instead.
 

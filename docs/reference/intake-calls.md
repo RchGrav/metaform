@@ -2,7 +2,7 @@
 
 [Documentation](../README.md) · [Reading a metaform](../guides/reading-a-metaform.md) · [Working with Metaform](../guides/working-with-metaform.md)
 
-An intake is the first analysis of a project. An agent reads the project, follows the intake procedure, and records the project's functional map, its elements and the purpose joins between them, one object at a time through the `intake` tool on the Metaform MCP server. This page lists every call the intake uses, what each field means, and how the calls are written inside an Axiom script.
+An intake is the first analysis of a project. An agent reads the project, follows the intake procedure, and records the project's functional map, its elements and each receiver's purpose records, one object at a time through the `intake` tool on the Metaform MCP server. This page lists every call the intake uses, what each field means, and how the calls are written inside an Axiom script.
 
 ## Call notation
 
@@ -71,15 +71,15 @@ A script binds each call to a short name once, at the top, and uses the name in 
 @RECORD:
   START    := mcp.metaform.intake.start
   ELEMENT  := mcp.metaform.intake.element
-  JOIN     := mcp.metaform.intake.join
+  PURPOSE  := mcp.metaform.intake.purpose
   READBACK := mcp.metaform.intake.show
   FINISH   := mcp.metaform.intake.finish
 ```
 
 ```
   ELEMENT( namespace_address={CQU_Base}.<cqu type>, role=CQU )
-  JOIN( receiver={CQU address}, elements=[DE address],
-        purpose=the CQU's OP, ef=the DE's EF for this encounter, ifd=... )
+  PURPOSE( receiver={CQU address}, elements=[DE address],
+           purpose=the CQU's OP, ef=the DE's EF for this encounter, ifd=... )
 ```
 
 The binding block lists every tool the script depends on in one place, and a renamed tool changes one line. The agent running the script makes each real call. Nothing in Metaform parses the script.
@@ -90,8 +90,8 @@ A field that holds several values is a list, `elements=[...]`. A field that hold
 
 1. `intake.prompt` and `intake.schema`: read the procedure and the shape of the map.
 2. `intake.start`: open the intake.
-3. `intake.element` and `intake.join`, as each object is reasoned, one object per call. The map is never held back and recorded at the end.
-4. `intake.show`: read back what was recorded and correct it with `intake.element`, `intake.join` or `intake.remove`.
+3. `intake.element` and `intake.purpose`, as each object is reasoned, one object per call. The map is never held back and recorded at the end.
+4. `intake.show`: read back what was recorded and correct it with `intake.element`, `intake.purpose` or `intake.remove`.
 5. `intake.finish`: finish and make the recorded metaform the active one.
 
 ## Reference
@@ -116,7 +116,7 @@ The same text is served as the resource `metaform://intake/procedure`. Subagents
 mcp.metaform.intake.schema()
 ```
 
-Returns the shape of the metaform: the namespace roots, the upstream and downstream links, and the element and join forms the intake records. The same text is served as the resource `metaform://intake/schema`.
+Returns the shape of the metaform: the namespace roots, the upstream and downstream links, and the element and purpose record forms the intake records. The same text is served as the resource `metaform://intake/schema`.
 
 ### intake.start
 
@@ -124,7 +124,7 @@ Returns the shape of the metaform: the namespace roots, the upstream and downstr
 mcp.metaform.intake.start( model, role )
 ```
 
-Opens the intake, or resumes the one being recorded. On a project whose intake is finished it stays on that map: conditions, notes and refs recorded on its elements and joins are written onto it, and recording a new element or join opens a separate metaform named `intake-<UTC timestamp>`, keeping the earlier one untouched. Returns the metaform's name. An open web view follows the intake live.
+Opens the intake, or resumes the one being recorded. On a project whose intake is finished it stays on that map: conditions, notes and refs recorded on its elements and purpose records are written onto it, and recording a new element or purpose record opens a separate metaform named `intake-<UTC timestamp>`, keeping the earlier one untouched. Returns the metaform's name. An open web view follows the intake live.
 
 | Field | Meaning |
 |---|---|
@@ -149,24 +149,24 @@ Records one element, or records it again. Fields given replace the ones the elem
 | `condition` | The procedure's mark: `MISS`, `BKN` or `OK`, stored as `missing`, `trouble` and `ok`. `BKN` needs a note saying what is wrong and what corrects it. Left out when the state is not in question. Recording it again replaces the last. Any other word is refused before anything is recorded. |
 | `note` | Free text kept with the element. An exclusion is a note that starts with `exclude:`. |
 
-### intake.join
+### intake.purpose
 
 ```
-mcp.metaform.intake.join( receiver, elements, purpose, ef, ifd, refs, condition, note )
+mcp.metaform.intake.purpose( receiver, elements, purpose, ef, ifd, refs, condition, note )
 ```
 
-Records one purpose join: the receiver's purpose, served by the elements the join holds. Recorded again with an element it already holds, the fields given replace its own and new elements are added. A part folded into its parent during annealing is recorded as a join one level deeper, with the element it is part of as the receiver.
+Records one purpose record: the receiver's purpose, served by the elements the purpose record holds. Recorded again with an element it already holds, the fields given replace its own and new elements are added. A part folded into its parent during annealing is an ordinary element held by a purpose record one level deeper, with the element it is part of as the receiver.
 
 | Field | Meaning |
 |---|---|
-| `receiver` | The address of the receiving element, the RE, whose purpose the join records. |
+| `receiver` | The address of the receiving element, the RE, that holds the purpose record. |
 | `elements` | The addresses of the providing elements, the PEs, that serve the receiver's purpose. |
 | `purpose` | The receiver's operative purpose, the OP. |
 | `ef` | The encounter function, the EF: what the providing elements do for the receiver, in active voice. |
 | `ifd` | The information flow direction: `sends`, `receives` or `both`. |
-| `refs` | Where the join is found: a list of references, each a key and a value. |
+| `refs` | Where the purpose record is found: a list of references, each a key and a value. |
 | `condition` | As for `intake.element`. |
-| `note` | Free text kept with the join. |
+| `note` | Free text kept with the purpose record. |
 
 ### intake.show
 
@@ -174,11 +174,11 @@ Records one purpose join: the receiver's purpose, served by the elements the joi
 mcp.metaform.intake.show( receiver )
 ```
 
-Returns the intake being recorded, or the finished map when none is: every element with its fields, refs, open condition and note, every join with the elements it holds and its refs, the CQUs whose root joins the map comes off as `roots`, the elements no root join reaches as `disconnected`, and the addresses never described.
+Returns the intake being recorded, or the finished map when none is: every element with its fields, refs, open condition and note, every purpose record with the elements it holds and its refs under `purposes`, the CQUs whose root purpose records the map comes off as `roots`, the elements no root purpose record reaches as `disconnected`, and the addresses never described.
 
 | Field | Meaning |
 |---|---|
-| `receiver` | Limits the result to one receiver's joins and the elements they hold. Left out, the whole intake is returned. |
+| `receiver` | Limits the result to one receiver's purpose records and the elements they hold. Left out, the whole intake is returned. |
 
 ### intake.remove
 
@@ -190,9 +190,9 @@ Removes one recorded object while the intake is open. The fields given decide wh
 
 | Fields given | What is removed |
 |---|---|
-| `namespace_address` | The element. The joins that held it let it go, and its open marks are closed. |
-| `receiver` and `provider` | The join of that receiver holding that element. |
-| `receiver`, `provider` and `namespace_address` | The element at `namespace_address`, taken out of that join only. |
+| `namespace_address` | The element. The purpose records that held it let it go, and its open marks are closed. |
+| `receiver` and `provider` | The purpose record of that receiver holding that element. |
+| `receiver`, `provider` and `namespace_address` | The element at `namespace_address`, taken out of that purpose record only. |
 
 ### intake.finish
 
@@ -200,7 +200,7 @@ Removes one recorded object while the intake is open. The fields given decide wh
 mcp.metaform.intake.finish( report, feedback )
 ```
 
-Finishes the intake and makes the recorded metaform the active one, keeping the earlier one whole. `metaform map activate <previous-name>` switches back. After `finish`, the metaform changes by refinement, `metaform map refine`, or by another intake, which writes conditions, notes and refs onto it and opens a new metaform only for new shape.
+Finishes the intake and makes the recorded metaform the active one, keeping the earlier one whole. The result counts the recorded elements as `elements` and purpose records as `purposes`. `metaform map activate <previous-name>` switches back. After `finish`, the metaform changes by refinement, `metaform map refine`, or by another intake, which writes conditions, notes and refs onto it and opens a new metaform only for new shape.
 
 | Field | Meaning |
 |---|---|

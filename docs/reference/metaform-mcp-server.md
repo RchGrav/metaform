@@ -67,6 +67,8 @@ Over HTTP and the cloud tunnel the server also offers the two tools ChatGPT call
 | `metaform://prompts/{name}` | A stored prompt's newest text and version, by name |
 | `metaform://reports/{name}` | One report, feedback or shape file exactly, by the name `metaform_list_reports` gives |
 | `metaform://intake/procedure`, `metaform://intake/schema` | The intake procedure and its forms, declared by the intake module |
+| `metaform://roundtable/discussion{discussion}/submission{submission}` | The text one seat submitted at a roundtable, and nothing else, declared by the roundtable module as a resource template |
+| `metaform://roundtable/discussion{discussion}/review` | A roundtable's full review: the four questions, then every submission with its turn, seat, whether it was kept, its four nouls as `[new, valuable, relevant, keep]` and its link |
 | `metaform://{address}` | One node's brief, such as `metaform://code.manager.route`: the map's `where` read of it as a session's first read gives it |
 | `metaform://{address}/items/{n}` | The one memory, ticket, question or message numbered n at the address, n in hex as shown, such as `metaform://code.manager.route/items/1f` (the fragment form `metaform://code.manager.route#1f` is read too): its title, why, body and links. A missing address or item is refused with `-32602` and a next step |
 
@@ -136,12 +138,12 @@ Serve the intake and record its result as it is reasoned.
 |---|---|---|
 | `intake_element` | Record one element of the intake at its address; recording it again replaces the fields given. | write |
 | `intake_finish` | Finish the intake and make its base the active map, keeping the earlier one whole. Switch back with metaform map activate <previous-name>. After finish the metaform changes by refining, metaform map refine, or by another intake. | write |
-| `intake_join` | Record one purpose join: a receiver's OP and the elements that serve it, with its EF. Recorded again with an element it holds, the fields given replace its own and new elements are added. | write |
 | `intake_prompt` | Read the intake instructions an agent follows to record this project's map. | read |
-| `intake_remove` | Remove one element, one join, or one element from a join, from the intake being recorded. Each is named by addresses. | remove |
-| `intake_schema` | Read the shape the intake records: namespace roots, Upstream and Downstream links, element and join forms. | read |
+| `intake_purpose` | Record one purpose record: a receiver's OP and the elements that serve it, with its EF. Recorded again with an element it holds, the fields given replace its own and new elements are added. | write |
+| `intake_remove` | Remove one element, one purpose record, or one element from a purpose record, from the intake being recorded. Each is named by addresses. | remove |
+| `intake_schema` | Read the shape the intake records: namespace roots, Upstream and Downstream links, element and purpose record forms. | read |
 | `intake_show` | Read the intake being recorded, whole or one receiver at a time. | read |
-| `intake_start` | Start recording this project's intake, or resume the one being recorded. On a project whose intake is finished it stays on that map: conditions, notes and refs are written onto it, and recording a new element or join opens a separate intake-<UTC timestamp> metaform, keeping the earlier one untouched. Returns its name; the existing web GUI follows it live. | write |
+| `intake_start` | Start recording this project's intake, or resume the one being recorded. On a project whose intake is finished it stays on that map: conditions, notes and refs are written onto it, and recording a new element or purpose record opens a separate intake-<UTC timestamp> metaform, keeping the earlier one untouched. Returns its name; the existing web GUI follows it live. | write |
 | `intake_status` | Say whether this project has an intake, and whether one is being recorded. | read |
 
 ### map
@@ -219,6 +221,26 @@ A memory graph, presented at each node of the map as the MCP reference memory se
 | `memory_rekey` | Move the memory joins and notes at an old address to the address that replaced it. | write |
 | `memory_search_nodes` | Search memory entities by name, type and observation text, at a node or in the whole memory graph. | read |
 | `memory_unjoin` | Detach one memory join from its node by its id; the entity stays in the memory graph. | remove |
+
+### roundtable
+
+A discussion among models at an Address, where only what Jev finds new, valuable, relevant and worth keeping enters, BASE-066. `open`, `comment`, `hold`, `continue` and `end` are the person's and the head agent's: an MCP call from any other session is refused. `roundtable run` is on the command line only.
+
+| Tool | What it does | Effect |
+|---|---|---|
+| `roundtable_open` | Open a roundtable at an Address with an opening message and its seats. | write, open world |
+| `roundtable_comment` | Comment at a table, inline at the next gap between turns; unjudged, no limit. | write |
+| `roundtable_hold` | Hold a table after the turn in flight until it is continued. | write |
+| `roundtable_continue` | Continue a held table, or end the pause after a turn now. | write, open world |
+| `roundtable_end` | End a table; its report is written into docs/roundtables/. | write, open world |
+| `roundtable_watch` | Say the person is watching a table, for a few seconds; the page renews it. | write |
+| `roundtable_status` | Read a table: its state, whose turn it is, each seat's kept against taken. | read |
+| `roundtable_list` | List the project's tables, newest first. | read |
+| `roundtable_read` | Read a table's turns after a cursor, each as the seats see it, with its nouls. | read |
+| `roundtable_turn` | As an agent seat, read your turn: what happened since your last reply. | read |
+| `roundtable_submit` | As an agent seat, submit your turn, at most 512 characters. | write |
+| `roundtable_submission` | Read the text one seat submitted, and nothing else. | read |
+| `roundtable_review` | Read the full review: every submission with its four nouls. | read |
 
 ### twilio
 
