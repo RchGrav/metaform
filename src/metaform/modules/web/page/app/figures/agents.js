@@ -15,6 +15,7 @@ import {AT} from '/page/app/map3d/labels.js';
 import {flowLive, flowTickets} from '/page/app/flow/flow.js';
 import {wake2d} from '/page/app/map2d/flow2d.js';
 import {D, ticketOf, glyphFor} from '/page/app/agents/dispatch.js';
+import {holderOf} from '/page/app/keys/walk.js';
 
 /* ---------- 3D: a synaptic map, drawn as the approved prototype draws it ---------- */
 // built draws nothing
@@ -99,7 +100,9 @@ export function figures(tickets) {
   if (!home) return;
   const live = liveWork();
   for (const ticket of tickets) {
-    const figure = ROAM.figures.get(ticket.id), target = ticket.held ? talkTarget(ticket, data) : ticketNode(ticket);
+    // a part held deeper than the depth is worked at the node that holds it, VIEW-051
+    const figure = ROAM.figures.get(ticket.id);
+    const target = holderOf(ticket.held ? talkTarget(ticket, data) : ticketNode(ticket));
     const working = drawnWorking(ticket, live);
     if (figure) {
       if (working && figure.done) turnRound(figure, data);
@@ -183,9 +186,10 @@ function startFigure(ticket, data, home, target) {
  * plain one while it works. Given a body, `embody`, by the person from the chat dock's offer or by the agent itself
  * with web_embody, it walks out from the map's primary node in that character, with its motion and its temper: the
  * system agent to what the person has selected, or beside the mascot, and an agent chatting about something to it.
- * It sees from its own eyes, `seer`, and speaks in its own bubble. The system agent given the mascot's character is
- * the mascot. A body is kept for the conversation, by its ticket, so a resumed conversation comes back in the same
- * body; the person's choice stands over the agent's, and no two figures at work share a character. */
+ * It sees from its own eyes, `seer`, and speaks in its own bubble. The body the person gives the system agent is the
+ * mascot; one the system agent takes itself, web_embody, is its own figure, which its acts move. A body is kept for
+ * the conversation, by its ticket, so a resumed conversation comes back in the same body; the person's choice stands
+ * over the agent's, and no two figures at work share a character. */
 const SYSTEM_TALK = 'Conversation with the system agent';  // the system agent's ticket, dispatch's SYSTEM_TASK
 function keptBodies() {
   try { return JSON.parse(localStorage.getItem('metaform.bodies') || '{}'); } catch { return {}; }
@@ -201,6 +205,8 @@ export function bodyOf(work) {
   return !live || live.session_id === held.session ? held.glyph : null;
 }
 export const isSystemTalk = ticket => Boolean(ticket?.held && ticket.task === SYSTEM_TALK);
+// a body the conversation's agent took itself, web_embody, not one the person gave it
+const tookOwn = ticket => BODIES.chosen[bodyKey(ticket.id)]?.by === 'agent';
 const talking = ticket => D.sessions.some(one => one.work_id === ticket.id && one.state === 'running');
 /* A conversation's ticket: one held for it, or a done one a session began on after it was done, since dispatch ends a
  * worker's session when its ticket is done and only a conversation about the ticket starts on it after. */
@@ -209,8 +215,9 @@ export const conversing = ticket => Boolean(ticket?.held || ticket?.done && D.se
 /* Whether a ticket's agent is drawn as a figure now. */
 export function drawnWorking(ticket, live = liveWork()) {
   if (!conversing(ticket)) return !ticket.done && live.has(ticket.id);
-  if (isSystemTalk(ticket)) return false;  // the system agent is drawn only as the mascot, once it has a body
   const body = bodyOf(ticket.id);
+  // the system agent is drawn as the mascot once the person gives it a body; one it took itself is its own figure
+  if (isSystemTalk(ticket) && !(body && tookOwn(ticket))) return false;
   if (body) return talking(ticket);
   return live.has(ticket.id) && !mascotGlyph();
 }
@@ -245,11 +252,13 @@ export function embody(work, glyph, by = 'person') {
   const ticket = ticketOf(work), key = bodyKey(work), held = BODIES.chosen[key];
   if (!GLYPHS.includes(glyph)) return {error: `${glyph} is not a character.`};
   if (!ticket) return {error: 'There is no such conversation on this page.'};
-  if (by === 'agent' && held?.by === 'person' && held.glyph !== glyph) {
-    return {error: `The person gave you the ${held.glyph}; it stays.`};
+  if (by === 'agent' && held?.by === 'person') {
+    if (held.glyph !== glyph) return {error: `The person gave you the ${held.glyph}; it stays.`};
+    by = 'person';  // the person's gift stays theirs
   }
-  // the system agent's body is the mascot; the mascot's character is no other agent's while it is drawn
-  const mascot = isSystemTalk(ticket);
+  // the body the person gives the system agent is the mascot; one an agent takes itself is its own figure; the
+  // mascot's character is no other agent's while it is drawn
+  const mascot = isSystemTalk(ticket) && by === 'person';
   if (glyph === mascotGlyph() && !mascot) return {error: `The ${glyph} is the person's mascot.`};
   const other = [...ROAM.figures.values()]
     .find(figure => figure.id !== work && figure.glyph === glyph && figure.stage !== 'leaving');
@@ -274,10 +283,10 @@ export function bodies() {
   return (S.tickets || []).filter(ticket => conversing(ticket) && talking(ticket)).map(bodyRow);
 }
 function bodyRow(ticket) {
-  const system = isSystemTalk(ticket), character = bodyOf(ticket.id);
+  const character = bodyOf(ticket.id), system = isSystemTalk(ticket), mascot = system && !tookOwn(ticket);
   return {work: ticket.id, system, character, by: character ? BODIES.chosen[bodyKey(ticket.id)]?.by || null : null,
-    drawn: system ? Boolean(MASCOT.mesh) && Boolean(character) : ROAM.figures.has(ticket.id),
-    mascot: system && Boolean(character)};
+    drawn: mascot ? Boolean(MASCOT.mesh) && Boolean(character) : ROAM.figures.has(ticket.id),
+    mascot: mascot && Boolean(character)};
 }
 /* The characters a body can be, for the picker: each with its name, its temper and a word for it, how it moves, whether
  * it is free now, and `preview(canvas)`, which draws it moving in its own way on a small canvas until the function it

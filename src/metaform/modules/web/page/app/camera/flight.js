@@ -11,7 +11,7 @@ import {shownNode} from '/page/app/map3d/light.js';
 import {G, wake3d} from '/page/app/map3d/graph3d.js';
 import {LABEL} from '/page/app/map3d/labels.js';
 import {small3d, fly3d, meetEnds} from '/page/app/camera/fly3d.js';
-import {VIEW, PEEK, peekParts} from '/page/app/views/settings.js';
+import {VIEW, PEEK} from '/page/app/views/settings.js';
 import {flatNow, flatFacing} from '/page/app/views/bar.js';
 import {resize} from '/page/app/views/lens.js';
 import {build2D} from '/page/app/map2d/build.js';
@@ -28,7 +28,6 @@ export async function chooseDirection(direction) {
   const done = await posted('/api/settings', {key: 'web_map_direction', value: direction});
   if (!done.ok) return toast(done.body.error || 'The direction was not saved.');
   PEEK.direction = direction;
-  peekParts();
   toast(`The 2D map runs ${{auto: 'as suits its pane', across: 'left to right', down: 'top to bottom'}[direction]}.`);
   await build2D(false);
   if (S.selected) select(S.selected, false, true);
@@ -39,7 +38,7 @@ export async function chooseDirection(direction) {
  * on which a selection frames its node with its neighbours, 3 toggling it. `svg` is the drawing the framing is for and
  * `base` whether it is the map's own, `drawing2d`. `page` holds the page's text sizes the auto zoom's closest is read
  * from, `pageText`, and `labels` each drawing's own label size. The 3D map's zoom is its own, VIEW-005. */
-export const MODE = {free: false, svg: null, base: false, box: null, note: 0, page: null, labels: new WeakMap()};
+export const MODE = {free: false, svg: null, base: false, note: 0, page: null, labels: new WeakMap()};
 export const MARGIN = 40;  // the most screen pixels shown beyond the map's edge where it runs past the pane, VIEW-041
 /* The two views change places, VIEW-028: the 2D map takes the large area and the 3D map the small one, and back.
  * Each is then drawn for the area it has. The choice is the viewer's own, kept in this browser. */
@@ -47,15 +46,10 @@ export async function swap(on, remember = true) {
   $('.app').classList.toggle('swapped', on);
   (on ? $('main') : $('#small')).append($('#map2d'));
   (on ? $('#small') : $('main')).append($('#big3d'));
-  $('#swapBtn').title = on ? 'Put the 3D map back in the large area'
-    : 'Put this map in the large area, and the 3D map here';
-  $('#swap3dBtn').title = on ? 'Put this map back in the large area'
-    : 'Put this map in the small area, and the 2D map here';
   if (remember) {
     try { localStorage.setItem('metaform.swapped', on ? '1' : ''); } catch (error) { /* storage can be blocked */ }
   }
   resize();
-  peekParts();  // the large map's bar holds the modes of the map now in the large area
   if (G) setTimeout(() => refit3d(on), 50);
   if (S.loading || !S.elements.size) return;
   await build2D(false);  // drawn for its new area, opening as it does on loading
@@ -66,15 +60,16 @@ function refit3d(large2d) {
   if (S.selected && (large2d || V3.mode === 'zoom') && fly3d(S.selected)) return;
   if (large2d || V3.mode !== 'free') fit3d(600, large2d ? 24 : 60);
 }
-// with the workspace, the two map panes exchange their places, saved with the layout
-$('#swapBtn').onclick = $('#swap3dBtn').onclick = () => WS.swapMaps() || swap(!$('.app').classList.contains('swapped'));
+/* S, which ? lists, swaps the maps: with the workspace, the two map panes exchange their places, saved with the
+ * layout; without it, `swap`. */
+export const swapMaps = () => WS.swapMaps() || swap(!$('.app').classList.contains('swapped'));
 /* The 3D map's own Fit goes between two views: the whole map, and close on the selected node. It moves the 3D map
  * only, as the 2D map's Fit moves the 2D map only. `auto` says the camera still shows the whole map as the page last
  * fitted it, with no hand and no selection having moved it since, so the layout may fit it again once it settles. */
 // `mode`, the large area's Whole, Zoom or Free, `setMode3d`; `hold`, the small area's met node the camera follows,
-// `holdMet`
+// `holdMet`; `eyes`, the large area seen through a followed agent's eyes, `eyesOf`
 export const V3 = {whole: 0, fits: 0, layouts: 0, ticks: 0, auto: true, followed: 0, asked: false, focus: null,
-  lens: null, mode: 'zoom', hold: null};
+  lens: null, mode: 'zoom', hold: null, eyes: false};
 export const away3d = () => G.camera().position.distanceTo(G.controls().target);
 /* The 3D camera's flights, VIEW-008 and VIEW-028. A flight moves the point looked at and the camera's place around it
  * together: the point in a straight line, the camera around it by its turn, its tilt and the log of its distance, so it
@@ -119,7 +114,7 @@ function flightAt(now) {
   return {at, rate, s};
 }
 export function flyTo(to, {length = null, done = null} = {}) {
-  if (!G) return;
+  if (!G || V3.eyes) return;  // seen through an agent's eyes, the camera is the agent's, `eyesOf`, and never flies
   V3.focus = V3.hold = null;  // a flight elsewhere lets the held node go; a meeting holds it again, `flyToSign`
   meetEnds();  // every flight starts with the whole scene drawn again; a meeting clears its foreground on arrival
   const now = performance.now(), under = FLIGHT.on ? flightAt(now) : null, here = under ? under.at : cameraNow();

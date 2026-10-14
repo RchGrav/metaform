@@ -78,8 +78,8 @@ export function sessionSummary(box, {agent, settings, usage, controls, used, res
     !controls.length && !used ? h('p', {class: 'hint'}, none) : null].filter(Boolean));
 }
 /* Before Call the chat offers what the agent to be called offered at its last session here, `dispatch options`: its
- * model, effort, mode and the rest, chosen now and kept in dispatch_agent_options, which every session it starts is
- * given. An agent that has not run here has none yet. */
+ * model, effort, mode and the rest, each chosen now and kept in its own setting, dispatch_<agent>_<option>, which
+ * every session it starts is given. An agent that has not run here has none yet. */
 const PRECALL = {agent: null, at: 0, data: null};
 export async function preCallSettings(box) {
   // the agents there are
@@ -105,8 +105,8 @@ export async function preCallSettings(box) {
     before: true});
 }
 /* An agent's own settings as controls, as it offered them at its last session here, `dispatch options`: its model,
- * effort, mode and the rest, each choice kept in dispatch_agent_options, which every session it starts is given, the
- * chat's and the intake's alike. */
+ * effort, mode and the rest, each choice kept in its own setting, dispatch_<agent>_<option>, which every session it
+ * starts is given, the chat's and the intake's alike. */
 function agentOptionControls(agent, found) {
   const settings = (found.settings || [])
     .map(one => ({...one, options: one.choices, current: one.chosen ?? one.current}));
@@ -116,12 +116,13 @@ function agentOptionControls(agent, found) {
 }
 function optionSwitch(agent, setting) {
   const input = h('input', {type: 'checkbox', role: 'switch', checked: String(setting.current) === 'true',
-    onchange: () => keepAgentOption(agent, setting.key, input.checked ? 'true' : 'false')});
+    disabled: !setting.setting, onchange: () => keepAgentOption(agent, setting, input.checked ? 'true' : 'false')});
   return h('label', {class: 'switch setting', title: setting.description || setting.name}, input, setting.name);
 }
 function optionSelect(agent, setting) {
-  const pick = h('select', {'aria-label': setting.name,
-    onchange: () => keepAgentOption(agent, setting.key, pick.value)},
+  const pick = h('select', {'aria-label': setting.name, disabled: !setting.setting,
+    title: setting.setting ? null : 'Metaform has no setting for this option; the agent keeps its own.',
+    onchange: () => keepAgentOption(agent, setting, pick.value)},
   (setting.options || []).map(option => h('option', {value: option.value, selected: option.value === setting.current},
     option.name || option.value)));
   return h('label', {class: 'setting'}, h('span', {}, setting.name), pick);
@@ -141,18 +142,12 @@ export async function drawIntakeSettings() {
     : `${agentName(agent)} offers no settings to choose.`;
   box.hidden = false;
 }
-async function keepAgentOption(agent, key, value) {
-  let rows = [];
-  try { rows = (await read('settings')).settings || []; } catch { /* written as the only entry of its own */ }
-  const held = rows.find(row => row.key === 'dispatch_agent_options')?.value;
-  const kept = (Array.isArray(held) ? held : String(held || '').split(','))
-    .map(one => String(one).trim()).filter(Boolean)
-    .filter(one => !one.startsWith(`${agent}.${key}=`));
-  const done = await posted('/api/settings',
-    {key: 'dispatch_agent_options', value: [...kept, `${agent}.${key}=${value}`]});
+/* A choice is kept in the option's own setting, dispatch_<agent>_<option>, so keeping one never touches another. */
+async function keepAgentOption(agent, setting, value) {
+  const done = await posted('/api/settings', {key: setting.setting, value});
   if (!done.ok) return toast(done.body.error || 'That choice was not kept.');
   refreshPreCall();  // the line says the choice at once
-  toast(`${agentName(agent)} starts with ${key} ${value}.`);
+  toast(`${agentName(agent)} starts with ${setting.name} ${value}.`);
 }
 /* Slash commands: typing / at the start of a message offers the commands, the chat's own and the agent's, as the
  * agent named them; Up and Down choose, Enter or Tab takes one, Escape closes the list. */

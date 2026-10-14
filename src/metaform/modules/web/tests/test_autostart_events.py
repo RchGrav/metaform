@@ -69,7 +69,7 @@ def test_repeated_changes_queue_one_followup_without_concurrent_batches(monkeypa
     monkeypatch.setattr(module.events, 'announce', lambda *args: [])
     calls = []
 
-    def check(*args):
+    def check(*args, **kwargs):
         calls.append(args)
         if len(calls) == 1:
             for _ in range(50):

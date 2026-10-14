@@ -10,7 +10,7 @@ import {toggler} from '/page/app/header/menus.js';
 import {PLAIN, setTheme} from '/page/app/map3d/draw3d.js';
 import {renderBoard} from '/page/app/board/board.js';
 import {wrote} from '/page/app/board/history.js';
-import {AUTO, readAutostart, renderAgents} from '/page/app/agents/dispatch.js';
+import {AUTO, PROMPT_WORDS, readAutostart, renderAgents} from '/page/app/agents/dispatch.js';
 import {HARNESS, readHarnesses, paintPickers, makeDefault, agentPicker, PICKERS} from '/page/app/agents/pickers.js';
 import {posted} from '/page/app/intake/intake.js';
 import {WS} from '/page/app/workspace/workspace.js';
@@ -20,11 +20,6 @@ import {WS} from '/page/app/workspace/workspace.js';
  * it, so the administrator's choice is the one every agent follows and never reverts. Each choice reads in plain
  * words with its setting's value, and approving every prompt says what it risks. A choice is saved as it is made,
  * through metaform set; a refused save puts back the one in force and says why. */
-const PROMPT_WORDS = {
-  'approve-all': ['Approve every prompt',
-    'Agents run any tool without asking, including ones that change or delete files.'],
-  'approve-reads': ['Approve reads and searches; ask for the rest', ''],
-  ask_all: ['Ask every prompt as a question at the ticket', '']};
 const PROMPTS = {value: null, saving: false};
 const promptWords = choice => (PROMPT_WORDS[choice] || [choice, ''])[0];
 function sayPrompts(text, risky = false) {
@@ -131,7 +126,7 @@ $('#resetAgentsBtn').onclick = resetAgents;
  * through metaform set and unset in the project's folder, so it is checked as the command line checks it, and a
  * refusal is said under the setting with its next step. Left and Right change a switch or a choice, as on the
  * terminal's settings screen. */
-const CONFIG = {data: null, filter: '', errors: new Map()};
+const CONFIG = {data: null, filter: '', errors: new Map(), page: keptPage(), flyout: false};
 const SHOWN_MODULES = 'modules';  // the chassis setting shown with the modules: which of them this folder shows
 export async function openSettings() {
   showAgentMenu(false);
@@ -180,8 +175,18 @@ function renderSettings() {
   body.scrollTop = scroll;
   if (focused) body.querySelector(`[data-focus="${CSS.escape(focused)}"]`)?.focus({preventScroll: true});
 }
-/* The screen's sections, as the filter leaves them: a word on what the settings are, the modules with the setting of
- * which are shown, then the chassis's settings and each module's. */
+/* The screen is one page at a time, VIEW-023: the modules' on and off switches, the chassis's settings, or one module's,
+ * chosen from a flyout list at its top, since every setting in one long list was hard to find a way through. The list
+ * names each page with how many settings it holds, or, while Find a setting has words, how many of them match, and
+ * leaves out pages with none; the page open is kept when it still has a match, else the first that does. The page
+ * chosen is remembered in this browser. */
+function keptPage() {
+  try { return localStorage.getItem('metaform.settingsPage') || 'modules'; } catch { return 'modules'; }
+}
+function keepPage(page) {
+  CONFIG.page = page;
+  try { localStorage.setItem('metaform.settingsPage', page); } catch { /* storage can be blocked: not kept */ }
+}
 function settingsSections(data) {
   const query = CONFIG.filter.trim().toLowerCase();
   const matches = (...texts) => !query || texts.some(text => String(text || '').toLowerCase().includes(query));
@@ -189,24 +194,67 @@ function settingsSections(data) {
   const sections = [h('p', {class: 'hint'}, `The settings of ${S.project}, kept for ${data.folder}. A folder setting `
     + 'applies to this folder and every folder below it; a global one applies everywhere. They are the settings '
     + 'metaform config shows, and each change is saved as metaform set saves it.')];
-  const modules = data.modules.filter(module => matches(module.id, module.summary, module.problem));
-  const modulePart = [data.modules_refused ? refusalBox(data.modules_refused) : null,
+  const pages = settingsPages(data, matches, shownRow);
+  if (!pages.length) return sections;
+  const page = pages.find(one => one.id === CONFIG.page) || pages[0];
+  sections.splice(0, 0, pagePicker(pages, page));
+  sections.push(setGroup(page.title, page.about, page.parts));
+  return sections;
+}
+/* Every page the filter leaves: Modules first, then the chassis, then each module that has settings. */
+function settingsPages(data, matches, shownRow) {
+  const pages = [];
+  const modules = data.modules.filter(module => matches(module.id, module.summary, module.problem))
+    .sort((one, two) => one.id.localeCompare(two.id));
+  const shown = shownRow && matches(shownRow.key, shownRow.help, 'Modules shown in this folder');
+  const moduleParts = [data.modules_refused ? refusalBox(data.modules_refused) : null,
     modules.length ? h('div', {class: 'setlist'}, modules.map(moduleRow)) : null,
-    shownRow && matches(shownRow.key, shownRow.help, 'Modules shown in this folder')
-      ? h('div', {class: 'setlist'}, settingRow(shownRow, 'Modules shown in this folder')) : null].filter(Boolean);
-  if (modulePart.length) sections.push(setGroup('Modules', 'On or off for every project, as metaform enable and '
-    + 'disable turn them. A module turned off keeps its settings.', modulePart));
-  const owners = new Set(['chassis', ...data.modules.map(module => module.id), ...data.settings.map(row => row.owner)]);
-  for (const owner of owners) {
+    shown ? h('div', {class: 'setlist'}, settingRow(shownRow, 'Modules shown in this folder')) : null].filter(Boolean);
+  if (moduleParts.length) {
+    pages.push({id: 'modules', title: 'Modules', count: modules.length + (shown ? 1 : 0), parts: moduleParts,
+      about: 'On or off for every project, as metaform enable and disable turn them. A module turned off keeps its '
+        + 'settings.'});
+  }
+  // the modules in alphabetical order after the chassis, and each page's settings by the name they show under
+  const named = row => String(row.label || row.key).toLowerCase();
+  const others = [...new Set([...data.modules.map(module => module.id), ...data.settings.map(row => row.owner)])]
+    .filter(owner => owner !== 'chassis').sort();
+  for (const owner of ['chassis', ...others]) {
     const own = data.settings.filter(row => row.owner === owner && row !== shownRow
-      && matches(row.key, row.label, row.help, row.details));
+      && matches(row.key, row.label, row.help, row.details)).sort((one, two) => named(one).localeCompare(named(two)));
     if (!own.length) continue;
     const about = owner === 'chassis' ? 'Settings of the chassis itself.'
       : data.modules.find(module => module.id === owner)?.summary || '';
-    sections.push(setGroup(owner === 'chassis' ? 'Chassis' : owner, about,
-      h('div', {class: 'setlist'}, own.map(row => settingRow(row)))));
+    // a setting with a section sits under its heading, such as Agent options · Claude Code, after the others
+    const top = own.filter(row => !row.section);
+    const sections = [...new Set(own.map(row => row.section).filter(Boolean))].sort();
+    pages.push({id: owner, title: owner === 'chassis' ? 'Chassis' : owner, about, count: own.length,
+      parts: [top.length ? h('div', {class: 'setlist'}, top.map(row => settingRow(row))) : null,
+        ...sections.map(section => setGroup(section.split('/').join(' · '), '',
+          h('div', {class: 'setlist'}, own.filter(row => row.section === section).map(row => settingRow(row)))))]
+        .filter(Boolean)});
   }
-  return sections;
+  return pages;
+}
+/* The button naming the page open, and the flyout list of pages it opens; Escape or a choice closes the list. */
+function pagePicker(pages, page) {
+  const choose = one => { keepPage(one.id); CONFIG.flyout = false; renderSettings(); };
+  const list = CONFIG.flyout ? h('div', {class: 'setpages', role: 'listbox', 'aria-label': 'Settings pages'},
+    pages.map(one => h('button', {type: 'button', role: 'option', 'aria-selected': String(one.id === page.id),
+      'data-focus': `page:${one.id}`, onclick: () => choose(one)},
+    h('span', {}, one.title), h('span', {class: 'setcount'}, String(one.count))))) : null;
+  const toggle = () => { CONFIG.flyout = !CONFIG.flyout; renderSettings(); };
+  const shut = event => {
+    if (event.key !== 'Escape' || !CONFIG.flyout) return;
+    event.stopPropagation();
+    CONFIG.flyout = false;
+    renderSettings();
+  };
+  return h('div', {class: 'setpicker', 'data-own-escape': String(CONFIG.flyout), onkeydown: shut},
+    h('button', {type: 'button', class: 'btn sm', 'aria-haspopup': 'listbox', 'aria-expanded': String(CONFIG.flyout),
+      'data-focus': 'page-picker', onclick: toggle},
+    h('span', {}, page.title), h('span', {class: 'setcount'}, String(page.count)), h('i', {class: 'i i-chev',
+      'aria-hidden': 'true'})), list);
 }
 const setGroup = (title, about, kids) => h('section', {class: 'setgroup'},
   h('div', {class: 'head'}, h('h3', {}, title), about ? h('span', {class: 'hint'}, about) : null), kids);
@@ -322,11 +370,12 @@ function settingControl(row, id, label) {
   const choices = Array.isArray(row.choices) && row.choices.length ? row.choices : null;
   if (row.kind === 'select' && choices) {
     const listed = choices.includes(row.value) ? choices : [row.value ?? '', ...choices];
+    const said = row.choice_help || {};  // each choice in plain words, the one in force said under the row
     const select = h('select', {'aria-label': label, 'data-focus': id, onchange: () => save(select.value),
       onkeydown: event => arrowSelect(event, select)},
-      listed.map(choice => h('option', {value: choice, selected: choice === row.value,
+      listed.map(choice => h('option', {value: choice, selected: choice === row.value, title: said[choice] || null,
         disabled: !choices.includes(choice)}, choice === '' ? '(none)' : choice)));
-    return {main: select};
+    return {main: select, wide: said[row.value] ? h('p', {class: 'hint'}, said[row.value]) : null};
   }
   if (row.kind === 'list' && choices) return {main: null, wide: checklist(row, choices, id, label)};
   const all = CONFIG.data.all_when_empty.includes(row.key);

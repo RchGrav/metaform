@@ -12,7 +12,7 @@ import {M} from '/page/app/map2d/build.js';
 import {IN} from '/page/app/map2d/inside.js';
 import {MAC, aim2d, autoZoom2d, fullFit2d} from '/page/app/map2d/camera.js';
 import {HOVER2D} from '/page/app/map2d/hover.js';
-import {goInside, levelUp} from '/page/app/keys/walk.js';
+import {goInside, levelUp, toggleDepth} from '/page/app/keys/walk.js';
 import {select} from '/page/app/selection/select.js';
 
 /* A join's information flow direction, its ifd, MAP-020, as the receiver has it: it sends to the elements that serve
@@ -180,8 +180,8 @@ export function focus2D(id, frame = true) {
     }
   }
   flows2d();
-  // Auto zoom frames a new selection with its neighbours; off, or for the map drawn again, the view stays where it
-  // is, refitted only in full fit, VIEW-041.
+  // The view stays where it is, refitted only in full fit, VIEW-041; only the node of an agent the person follows
+  // is framed, `autoZoom2d`.
   if (frame) autoZoom2d(id); else aim2d();
 }
 /* The selected node marked, and its neighbours. */
@@ -196,6 +196,8 @@ export function markNodes(nodes, id) {
  * held, Command on macOS, where a click with Control is the system's right-click, it goes back to full fit. */
 export function clicked2d(id, event) {
   if (modified2d(event)) return;
+  // a node holding parts deeper than the depth breaks them out in place, or folds them, and is selected, VIEW-051
+  if (toggleDepth(id)) return select(id, true);
   if (!MEM.key && (id === S.selected || id.startsWith('m:'))) goInside(id); else select(id, true);
 }
 export function modified2d(event) {

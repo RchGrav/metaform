@@ -4,12 +4,12 @@ import '/page/app/settings/screen.js';  // the part before runs first, so the pa
 import {$, reduced, h} from '/page/app/core/dom.js';
 import {joinOf} from '/page/app/graph/data.js';
 import {spot2d, again2d} from '/page/app/figures/roam2d.js';
-import {MODE, MARGIN, hermite} from '/page/app/camera/flight.js';
-import {NAME} from '/page/app/camera/fly3d.js';
+import {G} from '/page/app/map3d/graph3d.js';
+import {MODE, MARGIN, hermite, fit3d} from '/page/app/camera/flight.js';
+import {small3d} from '/page/app/camera/fly3d.js';
 import {VIEW} from '/page/app/views/settings.js';
-import {setMode3d} from '/page/app/views/bar.js';
 import {M} from '/page/app/map2d/build.js';
-import {note2d, showModes, hover2d} from '/page/app/map2d/hover.js';
+import {note2d, hover2d} from '/page/app/map2d/hover.js';
 
 function aspect() {
   const box = $('#viewport').getBoundingClientRect();
@@ -60,7 +60,6 @@ export function setCam(cam) {
   M.svg?.style.setProperty('--unit2d', wide ? String(cam.w / wide) : '0');
   again2d();  // a figure keeps its least size on the screen as the zoom changes
   hover2d(wide ? wide / cam.w : 0);
-  showModes();
 }
 const near = (a, b) => Boolean(a && b)
   && ['x', 'y', 'w', 'h'].every(k => Math.abs(a[k] - b[k]) <= Math.max(a.w, b.w) * 1e-4);
@@ -107,8 +106,8 @@ export function moveCam(target, {length = 0.7, dive = false} = {}) {
 }
 /* The 2D map's camera, VIEW-041: full fit, the whole map in the pane, `scaleFor`, which the page opens in and which
  * refits, eased, as the pane or the map changes size; free zoom, the wheel zooming about the pointer and a drag
- * panning, after which the view is held where the person left it, `MODE.free`; auto zoom, a selection easing to its
- * node and neighbours, `autoZoom2d`; and the limits where a view stands, `place2d`. */
+ * panning, after which the view is held where the person left it, `MODE.free`; a followed agent's node framed with its
+ * neighbours, `autoZoom2d`; and the limits where a view stands, `place2d`. */
 const at2d = id => !id ? null : M.nodes.get(id) || (id.startsWith('p:') ? M.nodes.get(joinOf(id)?.provider) : null);
 export const area2d = () => $('#viewport').getBoundingClientRect();
 const mid2d = box => ({x: box.x + box.w / 2, y: box.y + box.h / 2});
@@ -190,7 +189,7 @@ export function foot2d() {
   const bottom = root.getBoundingClientRect().bottom, shows = VIEW.hoverInfo || 'name+summary';
   let most = shows === 'name' || shows === 'off' ? 0 : FOOT2D.card || restingCard(root);
   for (const one of root.children) {
-    if (one.matches('#viewport, .bar2d, .readout, .hovercard') || one.hidden) continue;
+    if (one.matches('#viewport, .crumbs, .readout, .hovercard') || one.hidden) continue;
     const style = getComputedStyle(one), box = one.getBoundingClientRect();
     if (style.position !== 'absolute' || !box.height || style.display === 'none' || bottom - box.bottom > 48) continue;
     most = Math.max(most, bottom - box.top);
@@ -249,11 +248,14 @@ export function aim2d(center = null, now = false) {
   const view = place2d(scale, center || (here ? focus2d(here, area) : mid2d(M.bounds)), area);
   if (now || !M.cam) setCam(view); else moveCam(view);
 }
-/* Auto zoom, web_node_zoom, on unless the person turns it off: a selection eases the camera to frame the node with its
- * neighbours, and the view is held there; off, a selection never moves the 2D camera. */
+/* The agent the person follows, A, `followFigure` in figures/eyes.js: its ticket and the node its figure is on. */
+export const FOLLOW = {work: null, node: null};
+/* The 2D map is fit-all, except while the person follows an agent: then it eases to frame the agent's node with its
+ * neighbours, and the view is held there. A selection, or an agent's start, never moves the 2D camera. */
 export function autoZoom2d(id) {
   const area = area2d(), center = center2d(id);
-  if (VIEW.nodeZoom === false || !center || !M.svg || !M.bounds || !area.width || !area.height) return;
+  if (!M.svg || !M.bounds || !area.width || !area.height) return;
+  if (!id || id !== FOLLOW.node || !center) return aim2d();  // full fit refits, a view held by hand stays
   drawing2d();
   const scale = framing2d(id, center, area);
   MODE.free = scale > scaleFor(area) * 1.001;  // a framing no closer than the fit is full fit, and refits as it does
@@ -274,11 +276,9 @@ export function fullFit2d() {
   MODE.page = null;  // read again, in case the page's text has changed since
   aim2d();
 }
-/* 0, and Home: the 2D map back to full fit, and the large 3D map to Zoom at its farthest, the name a quarter of the
- * view's width. */
+/* 0, and Home: full fit, the whole of each map in view, the 2D map's and the large 3D map's. */
 export function resetZoom() {
   fullFit2d();
   note2d('Full fit');
-  NAME.level = 1;
-  setMode3d('zoom', 1);
+  if (G && !small3d()) fit3d();  // the mode stays: the next selection still meets its name at the zoom 1 chose
 }

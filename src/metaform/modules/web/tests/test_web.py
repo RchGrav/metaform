@@ -600,9 +600,9 @@ def test_the_page_draws_each_join_as_its_path_and_both_views_select_together(run
 
 @pytest.mark.req('VIEW-007')
 @pytest.mark.req('VIEW-008')
-def test_the_layers_list_opens_from_the_header_and_back_and_forward_sit_clear_of_the_2d_map(run, web, mapped, browser):
-    """The layers are chosen with checkboxes from a Layers button at the top right of the header;
-    Back and Forward sit in the 2D map's top left corner on a strip of their own, never under the map's nodes."""
+def test_the_layers_list_opens_from_the_header_and_the_2d_map_fills_its_area_with_no_bar(run, web, mapped, browser):
+    """The layers are chosen with checkboxes from a Layers button at the top right of the header; the 2D map has no
+    bar: its drawing fills its area to the top, and back and forward are Alt with Left and Right."""
     started(run)
     page, problems, _ = opened(browser, web)
     width = page.viewport_size['width']
@@ -623,14 +623,9 @@ def test_the_layers_list_opens_from_the_header_and_back_and_forward_sit_clear_of
     page.keyboard.press('Escape')
     assert not page.is_visible('#layerlist')
     page.evaluate('() => { const svg = document.querySelector("#map2d svg"); svg.setAttribute("viewBox", "-400 -400 1600 1600"); }')
-    peeked(page)  # the large map's modes, in its bar
-    for name in ('#backBtn', '#forwardBtn', '.peekpart:not([hidden])'):
-        hit = page.evaluate(f"""(() => {{ const box = document.querySelector('{name}').getBoundingClientRect();
-            const found = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
-            return found && found.closest('{name}') !== null; }})()""")
-        assert hit, name  # nothing of the map covers it
-    strip = page.locator('#map2d .bar2d').bounding_box()
-    assert page.locator('#map2d svg').bounding_box()['y'] >= strip['y'] + strip['height'] - 1
+    assert page.evaluate("document.querySelectorAll('.bar2d, .bar3d, #backBtn, #swapBtn, .peekpart').length") == 0
+    area, viewport = page.locator('#map2d').bounding_box(), page.locator('#viewport').bounding_box()
+    assert viewport['y'] == pytest.approx(area['y'], abs=1) and viewport['height'] == pytest.approx(area['height'], abs=1)
     assert problems == []
 
 
@@ -1121,7 +1116,7 @@ def test_a_click_selects_and_goes_inside_escape_lets_go_then_backs_out_and_an_ed
     # an edge: the point on an edge's line farthest from every node's area, its box and its reach around its centre,
     # half the spacing to its nearest neighbour, inside the map; the click takes the nearest edge, and a node whose area
     # covers the pointer wins, so the 2D map is put in the large area where its edges are long
-    page.click('#swapBtn')
+    map_key(page, 's')
     page.wait_for_function('() => document.querySelector("main #map2d") !== null')
     page.wait_for_timeout(1200)  # the map is drawn again for its new area
     view = page.locator('#viewport').bounding_box()
@@ -1712,7 +1707,7 @@ def under(page, point):
 
 def to_large_area(page):
     """The 2D map put in the large area, VIEW-028, drawn there and still."""
-    page.click('#swapBtn')
+    map_key(page, 's')
     page.wait_for_function("""() => { const box = name => document.querySelector(name).getBoundingClientRect();
         return box('#map2d').width * box('#map2d').height > 2 * box('#stage').width * box('#stage').height; }""")
     page.wait_for_function('() => window.metaform.loaded() && document.querySelector("#map2d svg g.node")')
@@ -1785,9 +1780,16 @@ def arrival(page):
     return f'window.metaform.changes() > {page.evaluate("window.metaform.changes()")} && window.metaform.loaded()'
 
 
-def peeked(page):
-    """The large map's controls in view in its own bar row, where they always stand."""
-    page.wait_for_selector('.peekpart.two:not([hidden]), .peekpart.three:not([hidden])')
+def map_key(page, key):
+    """A map's key pressed with the focus on the page itself, as over the map: the maps have no bar, and their keys,
+    which ? lists, do what its buttons did."""
+    page.evaluate('document.activeElement?.blur()')
+    page.keyboard.press(key)
+
+
+def mode3d(page):
+    """The large 3D map's mode, VIEW-005: whole, zoom or free."""
+    return page.evaluate("import('/page/app/camera/flight.js').then(part => part.V3.mode)")
 
 
 def press(page, selector):
@@ -1882,32 +1884,31 @@ def test_inside_a_node_each_purpose_box_shows_its_purpose_with_the_elements_that
 
 @pytest.mark.req('VIEW-041')
 @pytest.mark.req('VIEW-008')
-def test_auto_zoom_frames_each_selection_and_off_leaves_the_2d_view_where_it_is(run, web, mapped, browser):
-    """The 2D map's bar holds one button, Auto zoom, with its key 3, which turns web_node_zoom on and off for both maps
-    and is kept, VIEW-041. Off, a click in the 3D map, a click, the arrow keys and a selection by id each leave the 2D
-    view where it is; turned on, the selection eases to its node with every part one join away; letting go of the
-    selection leaves the view where it is, and 0 goes back to full fit. No node carries a hover title: the readout
-    names what the pointer is on."""
-    from metaform.data import Store
-    thirty(Store('proj'))
+def test_the_2d_map_stays_fitted_through_selections_and_frames_the_node_of_the_agent_followed(run, web, mapped, browser):
+    """The 2D map is fit-all, VIEW-041: a click in the 3D map, a click, the arrow keys and a selection by id each leave
+    it where it is. A follows an agent: none, then each agent on the map in turn, then none again, each press said at
+    the map's corner; while one is followed the 2D map frames its node with every part one join away, and with none it
+    goes back to full fit. V sees the large 3D map through the followed agent's own eyes, its camera the agent's and
+    never orbiting, and back; with the 3D map in the small area it says so and changes nothing. No node carries a
+    hover title: the readout names what the pointer is on."""
+    from metaform.data import Node, Store
+    store = Store('proj')
+    thirty(store)
+    run('enable', 'dispatch')
+    # held left to right, so the framing below is read on one layout: in Auto the row may be drawn top to bottom with
+    # its layers held narrow, where the followed node and the timer it serves span the whole map
+    run('set', '--web-map-direction', 'across')
+    worked = store.add_work(Node('element', 'code.part.number27'), None, task='a steadier tick')
+    store.take_work(worked.id, by='claude')
+    live_session(worked.id)
     page, problems = opened_on(browser, web, run)
+    page.wait_for_function(f'() => window.metaform.figures().some(one => one.work_id === "{worked.id}")', timeout=15000)
     expected, at = keys_of(web)
     part = lambda number: at[f'code.part.number{number}']
-    bar = lambda: page.eval_on_selector_all('.peekpart.two .modes2d button', 'found => found.map(one => ['
-                                            'one.textContent, one.getAttribute("aria-keyshortcuts"),'
-                                            ' one.getAttribute("aria-pressed")])')
-    assert bar() == [['Auto zoom On3', '3', 'true']]
     assert mode(page) == 'full' and fitted(page)
     tips = '[...document.querySelectorAll("#map2d svg g.node")].filter(g => g.querySelector(":scope > title")).length'
     # the readout at the top of the map names what the pointer is on at every size, so no node carries a hover title
     assert page.evaluate(tips) == 0
-    acted(page, lambda: page.keyboard.press('3'), must=False)  # off: nothing moves
-    assert bar() == [['Auto zoom Off3', '3', 'false']]
-    kept = lambda: {row['key']: row['value'] for row in api(web, '/api/settings?project=proj')[1]['settings']}
-    deadline = time.monotonic() + 10
-    while kept().get('web_node_zoom') is not False and time.monotonic() < deadline:
-        page.wait_for_timeout(200)
-    assert kept()['web_node_zoom'] is False               # kept
     whole = view_box(page)
     selected = lambda: page.evaluate('window.metaform.selected()')
     for act in (lambda: page.evaluate(f'window.metaform.click3d("{part(5)}")'),
@@ -1918,9 +1919,13 @@ def test_auto_zoom_frames_each_selection_and_off_leaves_the_2d_view_where_it_is(
         acted(page, act, must=False)
         assert selected() != before
         assert view_box(page) == pytest.approx(whole, rel=1e-6), selected()
-    # on again: the selection and every part one join away fill the view, closer than the fit
-    acted(page, lambda: page.keyboard.press('3'))
-    assert bar() == [['Auto zoom On3', '3', 'true']]
+    acted(page, lambda: page.keyboard.press('Escape'), must=False)
+    followed = lambda: page.evaluate("import('/page/app/map2d/camera.js').then(part => part.FOLLOW.work)")
+    said = lambda: page.evaluate('document.querySelector("#note2d")?.textContent || ""')
+    # A: the one agent on the map is followed, and the view frames its node and every part one join away
+    acted(page, lambda: page.keyboard.press('a'))
+    assert followed() == worked.id
+    assert said().startswith('Following: the ') and said().endswith(' on code.part.number27'), said()
     near = {part(27)} | {join['receiver'] for join in expected['joins']
                          if part(27) in [held['element_id'] for held in join['elements']]} | {
         held['element_id'] for join in expected['joins'] if join['receiver'] == part(27) for held in join['elements']}
@@ -1929,12 +1934,34 @@ def test_auto_zoom_frames_each_selection_and_off_leaves_the_2d_view_where_it_is(
         box = window.metaform.box2d("{key}"); return box.left >= view.left - 1 && box.right <= view.right + 1
         && box.top >= view.top - 1 && box.bottom <= view.bottom + 1; }})()""")
     assert all(inside(key) for key in near), near
-    # letting go of the selection leaves the view; 0 goes back to full fit
     framed = view_box(page)
-    acted(page, lambda: page.keyboard.press('Escape'), must=False)
-    assert selected() is None and view_box(page) == pytest.approx(framed, rel=1e-6)
-    acted(page, lambda: page.keyboard.press('0'))
+    acted(page, lambda: page.evaluate(f'window.metaform.select("{part(5)}")'), must=False)  # a selection: it stays
+    assert view_box(page) == pytest.approx(framed, rel=1e-6)
+    # V: with the 3D map in the small area, the agent's view is not taken
+    eyes = lambda: page.evaluate("import('/page/app/figures/eyes.js').then(part => [part.EYE.view, part.EYE.agent])")
+    page.keyboard.press('v')
+    assert eyes() == [False, False] and said() == "The agent's view is the large 3D map's: S swaps the maps"
+    # A again: past the last agent, none, and the 2D map back to full fit
+    acted(page, lambda: page.keyboard.press('a'))
+    assert followed() is None and said() == 'Following: none'
     assert mode(page) == 'full' and fitted(page)
+    page.keyboard.press('v')
+    assert eyes() == [False, False] and said() == 'No agent is followed: A follows one'
+    # in the large area, V sees through the followed agent's eyes, where the hand no longer turns the camera, and V
+    # again gives the person's view back
+    page.clock.resume()
+    map_key(page, 's')
+    page.wait_for_function("""() => { const box = name => document.querySelector(name).getBoundingClientRect();
+        return box('#stage').width * box('#stage').height > box('#map2d').width * box('#map2d').height; }""")
+    page.keyboard.press('a')
+    assert followed() == worked.id
+    page.keyboard.press('v')
+    assert eyes() == [True, True] and said().startswith('View: the ')
+    hand = "import('/page/app/map3d/graph3d.js').then(part => part.G.controls().enabled)"
+    assert page.evaluate(hand) is False
+    assert page.evaluate("import('/page/app/camera/flight.js').then(part => part.V3.eyes)") is True
+    page.keyboard.press('v')
+    assert eyes() == [False, False] and said() == 'View: yours'
     assert problems == []
 
 
@@ -1942,8 +1969,8 @@ def test_auto_zoom_frames_each_selection_and_off_leaves_the_2d_view_where_it_is(
 def test_the_wheel_zooms_the_2d_map_about_the_pointer_and_the_view_stays_where_it_is_left(run, web, mapped, browser):
     """Free zoom, VIEW-041: the wheel zooms the map at any time, with nothing selected and with a selection, about the
     pointer, the point of the map under it staying there, and no further out than half the full fit; the view then
-    stays where it is left, through a selection with auto zoom off, letting go of it and a pane of another size; a
-    digit typed in a text field chooses nothing."""
+    stays where it is left, through a selection, letting go of it and a pane of another size; a digit typed in a text
+    field chooses nothing."""
     from metaform.data import Store
     thirty(Store('proj'))
     page, problems = opened_on(browser, web, run)
@@ -1966,8 +1993,7 @@ def test_the_wheel_zooms_the_2d_map_about_the_pointer_and_the_view_stays_where_i
     assert zoomed[2] < whole[2]
     page.wait_for_timeout(800)
     assert view_box(page) == zoomed                       # held: nothing eases after the wheel
-    acted(page, lambda: page.keyboard.press('3'), must=False)  # auto zoom off: a selection leaves the view
-    _, at = keys_of(web)
+    _, at = keys_of(web)                                  # a selection leaves the view
     acted(page, lambda: page.evaluate(f'window.metaform.select("{at["code.part.number27"]}")'), must=False)
     assert view_box(page) == pytest.approx(zoomed, rel=1e-6)
     point = pointer_at(page, (0.5, 0.7))                  # with a selection the wheel zooms about the pointer too
@@ -1991,9 +2017,9 @@ def test_the_wheel_zooms_the_2d_map_about_the_pointer_and_the_view_stays_where_i
 @pytest.mark.req('VIEW-008')
 def test_in_the_small_area_the_view_holds_through_selections_a_drag_and_a_redraw_and_every_move_eases(
         run, web, mapped, browser):
-    """The view holds in the small area as in the large one, VIEW-041: zoomed by hand and with auto zoom off, a run of
-    selections leaves it where it is; a drag stops 40 pixels past the map's edge; the map drawn again as a node arrives
-    keeps the zoom; and with auto zoom on, every move to a selection eases."""
+    """The view holds in the small area as in the large one, VIEW-041: zoomed by hand, a run of selections leaves it
+    where it is; a drag stops 40 pixels past the map's edge; and the map drawn again as a node arrives keeps the
+    zoom."""
     from metaform.data import Store
     thirty(Store('proj'))
     page, problems = opened_on(browser, web, run, large=False)
@@ -2001,7 +2027,6 @@ def test_in_the_small_area_the_view_holds_through_selections_a_drag_and_a_redraw
     assert mode(page) == 'full'
     acted(page, lambda: zoomed_to(page, page.evaluate(HEADING)), must=False)
     assert page.evaluate(TEXT_PX) == pytest.approx(page.evaluate(HEADING), abs=1)
-    page.keyboard.press('3')                              # auto zoom off
     zoom = view_box(page)
     for address in ('code.part.number3', 'code.part.number27', 'code.timer.kitchen', 'code.part.number14'):
         acted(page, lambda address=address: page.evaluate(f'window.metaform.select("{at[address]}")'), must=False)
@@ -2016,10 +2041,6 @@ def test_in_the_small_area_the_view_holds_through_selections_a_drag_and_a_redraw
     still2d(page)
     assert margins(page)['left'] == pytest.approx(40, abs=1) and view_box(page)[2:] == pytest.approx(zoom, rel=1e-6)
     assert acted(page, lambda: arrives(run, mapped), must=False, until=arrival(page))[2:] == pytest.approx(zoom, rel=1e-6)
-    page.keyboard.press('3')                              # auto zoom on: each move to a selection eases
-    still2d(page)
-    for act in (lambda: page.keyboard.press('ArrowUp'), lambda: press(page, '#backBtn')):
-        acted(page, act)
     assert problems == []
 
 
@@ -2152,7 +2173,8 @@ def test_in_3d_every_item_of_the_layers_turned_on_is_its_own_node_joined_to_its_
 @pytest.mark.req('VIEW-008')
 @pytest.mark.req('VIEW-012')
 def test_back_and_forward_step_through_the_selected_nodes(run, web, mapped, browser):
-    """Back and forward buttons in the 2D map's top left corner step through the nodes selected."""
+    """Alt with Left and Right step back and forward through the nodes selected, as a browser's history does; past
+    either end they do nothing, and the browser's own history step on them is held back."""
     started(run)
     page, problems, _ = opened(browser, web)
     _, at = keys_of(web)
@@ -2161,16 +2183,20 @@ def test_back_and_forward_step_through_the_selected_nodes(run, web, mapped, brow
     selected = lambda: page.evaluate('window.metaform.selected()')
     for key in (cook, kitchen, alarm):
         page.evaluate(f'window.metaform.select("{key}")')
-    page.click('#backBtn')
+    address = page.url
+    map_key(page, 'Alt+ArrowLeft')
     assert selected() == kitchen
-    page.click('#backBtn')
+    map_key(page, 'Alt+ArrowLeft')
     assert selected() == cook
-    page.click('#forwardBtn')
+    map_key(page, 'Alt+ArrowRight')
     assert selected() == kitchen
     page.evaluate(f'window.metaform.select("{display}")')
-    assert page.is_disabled('#forwardBtn')
-    page.click('#backBtn')
+    map_key(page, 'Alt+ArrowRight')                       # nothing forward of the newest
+    assert selected() == display
+    map_key(page, 'Alt+ArrowLeft')
     assert selected() == kitchen
+    map_key(page, 'Alt+ArrowDown')                        # no other Alt key is the map's
+    assert selected() == kitchen and page.url == address
     assert problems == []
 
 
@@ -2184,7 +2210,7 @@ def test_pointing_at_a_node_shows_its_name_above_the_node_clear_of_the_pointer(r
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
     page.wait_for_timeout(2500)
-    page.click('#pauseBtn')  # hold the layout still so the node stays where the pointer goes
+    map_key(page, 'p')  # hold the layout still so the node stays where the pointer goes
     stage = page.locator('#stage').bounding_box()
     kitchen = page.evaluate('(() => { const tag = window.metaform.labels3d().find(label => label.text === "dish timer");'
                             ' return window.metaform.screen3d(tag.id); })()')
@@ -2205,17 +2231,27 @@ def test_pointing_at_a_node_shows_its_name_above_the_node_clear_of_the_pointer(r
     assert problems == []
 
 
-def test_the_layout_menu_of_the_large_maps_bar_opens_on_the_first_click(run, web, mapped, browser):
-    """The bar's Layout choice opens its menu on the first click: a press in the bar names its parts again, which once
-    made a button's contents anew between the press and the release, so the first click was lost."""
+def test_the_3d_layout_is_switched_paused_and_run_again_by_its_keys(run, web, mapped, browser):
+    """The 3D map has no bar: 3 switches its layout, said at the 2D map's corner, P pauses and resumes it and R runs
+    it again from new places, each said in a toast where a button said it before."""
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
-    peeked(page)
-    press(page, '.peekpart.three .physicsbtn')
-    page.wait_for_function('() => !document.querySelector("#physicsmenu").hidden', timeout=2000)
-    page.keyboard.press('Escape')
-    page.wait_for_function('() => document.querySelector("#physicsmenu").hidden')
+    layout = lambda: page.evaluate("import('/page/app/views/bar.js').then(part => part.PHYS.name)")
+    paused = lambda: page.evaluate("import('/page/app/map3d/graph3d.js').then(part => part.LAYOUT.paused)")
+    toast = lambda: page.inner_text('#toast')
+    assert layout() == 'organic' and page.query_selector('#physicsmenu') is None
+    map_key(page, '3')
+    assert layout() == 'flat' and page.inner_text('#note2d') == 'Layout: Flat'
+    map_key(page, 'p')
+    assert paused() is True and 'paused' in toast()
+    map_key(page, 'p')
+    assert paused() is False and 'runs again' in toast()
+    map_key(page, 'p')
+    map_key(page, 'r')
+    assert paused() is False and 'new places' in toast()
+    map_key(page, '3')
+    assert layout() == 'organic' and page.inner_text('#note2d') == 'Layout: Organic'
     assert problems == []
 
 
@@ -2294,7 +2330,7 @@ def test_selecting_a_node_turns_the_3d_map_to_it_and_comes_in_close(run, web, ma
     _, at = keys_of(web)
     cook = at['exterior.cook']
     still3d(page, 1)
-    page.click('#pauseBtn')  # the layout held, so what is read is where the camera put it
+    map_key(page, 'p')  # the layout held, so what is read is where the camera put it
     observe_met_sign(page)
     page.evaluate(f'window.metaform.click3d("{cook}")')
     page.wait_for_function(f'() => window.metaform.selected() === "{cook}"')
@@ -2303,11 +2339,9 @@ def test_selecting_a_node_turns_the_3d_map_to_it_and_comes_in_close(run, web, ma
     seen = page.evaluate(f'window.metaform.screen3d("{cook}")')
     off = math.hypot(seen['x'] - stage['x'] - stage['width'] / 2, seen['y'] - stage['y'] - stage['height'] / 2)
     assert off < 0.1 * min(stage['width'], stage['height']), (seen, stage)
-    whole = page.locator('.peekpart.three .modes3d button').filter(has_text='Whole')
-    peeked(page)
-    whole.click()
+    page.evaluate('window.metaform.mode3d("whole")')
     still(page, '() => window.metaform.away3d()')
-    assert whole.get_attribute('aria-checked') == 'true'
+    assert mode3d(page) == 'whole'
     assert page.is_hidden('#stage .metsign')
     assert page.evaluate('window.metaform.selected()') == cook
     assert problems == []
@@ -2371,7 +2405,7 @@ def test_3d_selection_frames_different_names_and_join_titles_at_the_chosen_width
     page, problems, _ = opened(browser, web)
     graph, at = keys_of(web)
     still3d(page, 1)
-    page.click('#pauseBtn')
+    map_key(page, 'p')
     observe_met_sign(page)
     names = [at[address] for address in ('exterior.cook', 'code.loop.tick')]
     join = 'p:' + next(join['id'] for join in graph['joins'] if join['receiver'] == names[0])
@@ -2385,55 +2419,64 @@ def test_3d_selection_frames_different_names_and_join_titles_at_the_chosen_width
         assert_met_sign_share(page, share)
         page.evaluate('key => window.metaform.select(key)', names[1])
         assert_met_sign_share(page, share)
-        if level == '4':  # Fit frames the whole map once and leaves the mode, Zoom, as it is
-            zoom = page.locator('.peekpart.three .modes3d button').filter(has_text='Zoom')
-            whole = page.locator('.peekpart.three .modes3d button').filter(has_text='Whole')
-            assert zoom.get_attribute('aria-checked') == 'true'
-            peeked(page)
-            page.click('#fit3dBtn')
+        if level == '4':  # F frames the whole map once and leaves the mode, Zoom, as it is
+            assert mode3d(page) == 'zoom'
+            map_key(page, 'f')
             still(page, '() => window.metaform.away3d()')
-            assert zoom.get_attribute('aria-checked') == 'true' and whole.get_attribute('aria-checked') == 'false'
+            assert mode3d(page) == 'zoom'
             assert page.is_hidden('#stage .metsign')
-            zoom.click()
+            page.evaluate('window.metaform.mode3d("zoom")')
             assert_met_sign_share(page, share)
-            assert zoom.get_attribute('aria-checked') == 'true'
+            assert mode3d(page) == 'zoom'
     assert problems == []
 
 
 @pytest.mark.req('VIEW-005')
 @pytest.mark.req('VIEW-008')
 def test_3d_zoom_keys_belong_to_the_large_map_and_yield_to_fields_and_windows(run, web, mapped, browser):
+    """1 steps the large 3D map's zoom, the selected name a quarter, a half or three quarters of its width, each
+    press said at the 2D map's corner; a window or a text field takes the key; the small area takes no zoom and
+    always meets a selection at four fifths, node zoom on or off, VIEW-005."""
     started(run)
     page, problems, _ = opened(browser, web)
     _, at = keys_of(web)
     still3d(page, 1)
-    page.click('#pauseBtn')
+    map_key(page, 'p')
     observe_met_sign(page)
     page.evaluate('key => window.metaform.select(key)', at['exterior.cook'])
-    page.keyboard.press('6')
+    page.keyboard.press('1')  # from a half, the zoom it opens at, to three quarters
     assert_met_sign_share(page, 0.75)
+    assert page.inner_text('#note2d') == '3D zoom: 3/4'
     page.keyboard.press('?')
     page.wait_for_selector('#help:not([hidden])')
-    page.keyboard.press('4')
+    page.keyboard.press('1')
     page.keyboard.press('Escape')
     assert_met_sign_share(page, 0.75)
     page.click('#searchBtn')
     page.locator('#search .query').fill('')
-    page.keyboard.press('2')
-    assert page.locator('#search .query').input_value() == '2'
+    page.keyboard.press('1')
+    assert page.locator('#search .query').input_value() == '1'
     page.keyboard.press('Escape')
     assert_met_sign_share(page, 0.75)
-    page.click('#swap3dBtn')
+    map_key(page, 's')
     assert_met_sign_fits(page)
-    for key in ('6', '5', '4'):  # the small area takes no zoom keys
-        page.keyboard.press(key)
+    for _ in range(3):  # the small area takes no zoom key
+        page.keyboard.press('1')
         assert_met_sign_fits(page)
-    page.click('#swap3dBtn')
+    # with node zoom off the small area still meets each selection at four fifths
+    page.evaluate("import('/page/app/views/lens.js').then(part => part.toggleNodeZoom(false))")
+    page.evaluate('key => window.metaform.select(key)', at['code.loop.tick'])
+    assert_met_sign_fits(page)
+    page.evaluate("import('/page/app/views/lens.js').then(part => part.toggleNodeZoom(true))")
+    page.evaluate('key => window.metaform.select(key)', at['exterior.cook'])
+    assert_met_sign_fits(page)
+    map_key(page, 's')
     assert_met_sign_share(page, 0.75)
     page.evaluate('key => window.metaform.select(key)', at['code.loop.tick'])
     assert_met_sign_share(page, 0.75)  # ignored keys must not change the large view's next selection
-    page.keyboard.press('0')  # the reset puts the large 3D map's zoom back to its farthest, a quarter of the width
+    page.keyboard.press('1')  # round again: a quarter of the width
     assert_met_sign_share(page, 0.25)
+    assert page.inner_text('#note2d') == '3D zoom: 1/4'
     assert problems == []
 
 
@@ -2444,7 +2487,7 @@ def test_divider_resizes_the_3d_canvas_and_keeps_the_selected_name_at_its_width_
     page, problems, _ = opened(browser, web)
     _, at = keys_of(web)
     still3d(page, 1)
-    page.click('#pauseBtn')
+    map_key(page, 'p')
     observe_met_sign(page)
     page.evaluate('key => window.metaform.select(key)', at['code.loop.tick'])
     assert_met_sign_share(page, 0.5)
@@ -2479,7 +2522,7 @@ def test_divider_resizes_the_3d_canvas_and_keeps_the_selected_name_at_its_width_
     renderer_fits()
     assert_met_sign_share(page, 0.5)
 
-    page.click('#swap3dBtn')
+    map_key(page, 's')
     assert_met_sign_fits(page)
     small = width()
     drag('#sideSplit', dx=120 * side)
@@ -3723,17 +3766,16 @@ def test_the_two_views_change_places_on_demand_and_each_works_in_either_place(ru
     area = lambda box: box[0] * box[1]
     first = boxes()
     assert area(first['#stage']) > 2 * area(first['#map2d']) and first['#stage canvas'] == first['#stage']
-    page.click('#swapBtn')
+    map_key(page, 's')
     page.wait_for_function("""() => { const box = name => document.querySelector(name).getBoundingClientRect();
         const size = name => [Math.round(box(name).width), Math.round(box(name).height)].join();
         return box('#map2d').width * box('#map2d').height > 2 * box('#stage').width * box('#stage').height
             && size('#stage canvas') === size('#stage'); }""")  # the graph library sizes its canvas after the swap returns
     swapped = boxes()
-    # each view is its bar and its map, and the two areas are what change hands
+    # each view is its map, filling its area, and the two areas are what change hands
     assert swapped['#map2d'] == first['#big3d'] and swapped['#stage canvas'] == swapped['#stage']
-    assert swapped['#big3d'][0] == first['#map2d'][0]
-    peeked(page)                                          # the large map's bar, brought out, holds the 2D modes
-    assert page.locator('#map2d svg g.node').count() > 0 and page.is_visible('.peekpart.two .modes2d') and page.is_visible('#swapBtn')
+    assert swapped['#big3d'][0] == first['#map2d'][0] and swapped['#stage'] == first['#map2d']
+    assert page.locator('#map2d svg g.node').count() > 0
     page.evaluate(f'window.metaform.select("{kitchen}")')
     page.evaluate(f'window.metaform.click3d("{alarm}")')  # the small 3D map takes a click
     page.wait_for_function(f'() => window.metaform.selected() === "{alarm}"')
@@ -3746,7 +3788,7 @@ def test_the_two_views_change_places_on_demand_and_each_works_in_either_place(ru
     page.reload()
     page.wait_for_function('() => window.metaform && window.metaform.loaded() && window.metaform.linkColors().length > 0')
     assert boxes()['#map2d'] == swapped['#map2d']        # the choice is kept
-    page.click('#swapBtn')
+    map_key(page, 's')
     page.wait_for_function("""() => { const box = name => document.querySelector(name).getBoundingClientRect();
         const size = name => [Math.round(box(name).width), Math.round(box(name).height)].join();
         return box('#stage').width * box('#stage').height > 2 * box('#map2d').width * box('#map2d').height
@@ -3830,7 +3872,7 @@ def staged(page, places, camera):
     which starts 2.2 seconds after the page selects its first node, once the 2D map is drawn, and takes 0.8 seconds."""
     page.wait_for_function('() => window.metaform.selected()')
     page.wait_for_timeout(3300)
-    page.click('#pauseBtn')
+    map_key(page, 'p')
     for node, (x, y, z) in places.items():
         page.evaluate(f'window.metaform.pin3d("{node}", {x}, {y}, {z})')
     page.evaluate(f'window.metaform.view3d({json.dumps(camera[0])}, {json.dumps(camera[1])})')
@@ -4113,54 +4155,43 @@ def test_a_question_is_answered_with_one_click_on_a_choice_or_by_typing_and_each
 
 @pytest.mark.req('VIEW-028')
 @pytest.mark.req('VIEW-021')
-def test_each_view_has_its_own_zoom_controls_and_swap_and_the_messages_button_is_at_the_top(run, web, mapped, browser):
-    """Both views get their own zoom controls, the 2D map its modes and the 3D map its Fit, and a Swap button, and the
-    messages box goes to the top of the screen."""
+def test_the_maps_swap_zoom_and_fit_by_their_keys_and_the_messages_button_is_at_the_top(run, web, mapped, browser):
+    """The maps have no bar: S swaps them, a Ctrl-click fits the 2D map and F the large 3D map, each moving only its
+    own map; and the messages box goes to the top of the screen."""
     from metaform.data import Node, Store
     Store('proj').ask(Node('element', 'code.alarm.audible'), 'Is the quiet tone still wanted?')
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
-    swaps = lambda: [page.is_visible(name) for name in ('#swapBtn', '#swap3dBtn')]
     larger = lambda: page.evaluate("""() => { const area = name => { const box = document.querySelector(name).getBoundingClientRect();
         return box.width * box.height; }; return area('#map2d') > area('#stage') ? '2d' : '3d'; }""")
-
-    def bar():
-        """What the large map's bar holds once it is out: the 2D modes, the 3D modes, the 3D map's Fit."""
-        peeked(page)
-        return [page.is_visible(name) for name in ('.peekpart.two .modes2d', '.peekpart.three .modes3d', '#fit3dBtn')]
-    assert swaps() == [True] * 2 and larger() == '3d' and bar() == [False, True, True]
+    assert larger() == '3d' and page.evaluate("document.querySelectorAll('.bar2d, .bar3d').length") == 0
     assert page.evaluate('Boolean(document.querySelector("#messages").closest("header"))') and page.is_visible('#messages')
-    page.click('#swap3dBtn')                                          # the 3D view's own Swap
+    map_key(page, 's')                                                # S swaps, the 2D map to the large area
     page.wait_for_function("""() => { const area = name => { const box = document.querySelector(name).getBoundingClientRect();
         return box.width * box.height; }; return area('#map2d') > area('#stage'); }""")
-    assert swaps() == [True] * 2 and larger() == '2d'                 # each keeps its Swap in either place
-    assert bar() == [True, False, False]                              # the small 3D map has no modes and no Fit
+    assert larger() == '2d'
     still(page, '() => window.metaform.away3d()')                     # the swap's flight over
     zoomed_to(page, 3 * page.evaluate(HEADING))                       # zoomed in, full fit has a move to make
     still2d(page)
     whole, chart = page.evaluate('window.metaform.away3d()'), page.evaluate('document.querySelector("#map2d svg").getAttribute("viewBox")')
-    peeked(page)
-    page.click('.peekpart.two .modes2d button[aria-keyshortcuts="3"]')     # the 2D map's auto zoom, on to off
-    assert page.get_attribute('.peekpart.two .modes2d button', 'aria-pressed') == 'false'
     page.click('#map2d', modifiers=['Meta' if sys.platform == 'darwin' else 'Control'])  # a Ctrl-click: full fit
     still2d(page)
     assert abs(page.evaluate('window.metaform.away3d()') - whole) < 1  # the 3D map did not move
     assert page.evaluate('document.querySelector("#map2d svg").getAttribute("viewBox")') != chart
-    page.click('#swapBtn')                                            # and the 2D view's own
+    map_key(page, 's')                                                # and back
     page.wait_for_function("""() => { const area = name => { const box = document.querySelector(name).getBoundingClientRect();
         return box.width * box.height; }; return area('#stage') > area('#map2d'); }""")
     still(page, '() => window.metaform.away3d()')
     page.evaluate('window.metaform.zoom3d(0.2)')                      # far in, so the whole map is no longer in view
     page.wait_for_timeout(300)
     near, chart = page.evaluate('window.metaform.away3d()'), page.evaluate('document.querySelector("#map2d svg").getAttribute("viewBox")')
-    peeked(page)
-    page.click('#fit3dBtn')                                           # the 3D map's Fit: the whole map, once
+    map_key(page, 'f')                                                # the 3D map's fit: the whole map, once
     page.wait_for_function(f'() => window.metaform.away3d() > {near} * 1.5', timeout=15000)
     still(page, '() => window.metaform.away3d()')
     assert page.evaluate('document.querySelector("#map2d svg").getAttribute("viewBox")') == chart  # the 2D map did not move
     fitted3d = page.evaluate('window.metaform.away3d()')
-    page.click('#fit3dBtn')                                           # again: still the whole map, not in on the node
+    map_key(page, 'f')                                                # again: still the whole map, not in on the node
     still(page, '() => window.metaform.away3d()')
     assert page.evaluate('window.metaform.away3d()') == pytest.approx(fitted3d, rel=0.05)
     page.evaluate("try { localStorage.removeItem('metaform.swapped') } catch (error) {}")
@@ -4839,7 +4870,7 @@ def test_the_memories_of_a_node_open_from_its_menu_as_a_graph_of_their_own_in_bo
     assert page.evaluate('document.querySelectorAll("#map2d svg g.node").length') == base
     assert selected() == kitchen and not page.is_visible('#crumbs')
 
-    # from the 3D map: the node's right-click; back by the breadcrumb, and by the Back button
+    # from the 3D map: the node's right-click; back by the breadcrumb, and by Alt and Left
     page.evaluate(f'window.metaform.menu("{kitchen}")')
     page.click('#menu button.memories')
     page.wait_for_function(f'() => window.metaform.memory() && window.metaform.memory().key === "{kitchen}"')
@@ -4848,7 +4879,7 @@ def test_the_memories_of_a_node_open_from_its_menu_as_a_graph_of_their_own_in_bo
     page.wait_for_function('() => !window.metaform.memory() && document.querySelector("#map2d svg[data-base]")')
     page.evaluate(f'window.metaform.memories("{kitchen}")')
     page.wait_for_function('() => window.metaform.memory()')
-    page.click('#backBtn')
+    map_key(page, 'Alt+ArrowLeft')
     page.wait_for_function('() => !window.metaform.memory() && document.querySelector("#map2d svg[data-base]")')
 
     # a node with no memories cannot open them
@@ -5098,6 +5129,12 @@ def test_the_board_holds_the_tickets_in_four_columns_and_a_card_dragged_moves_it
     store.step_work(doing.id, 'Traced the pin.')
     done = store.add_work(kitchen, None, task='the display')
     store.finish_work(done.id, 'built')
+    # one card per finding: none for a record the intake replaced, one for a finding on an element and its join
+    join = store.joins('code.timer.kitchen').results[0]
+    finding = store.add_work(Node('element', join.elements[0].address), 'broken', note='never sounds')
+    repeated = store.add_work(Node('join', join.id), 'broken', note='never sounds')
+    replaced = store.add_work(kitchen, 'missing', note='no display')
+    store.finish_work(replaced.id, 'Replaced by broken.')
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
@@ -5110,7 +5147,8 @@ def test_the_board_holds_the_tickets_in_four_columns_and_a_card_dragged_moves_it
         if (x < board.left || x > board.right || y < board.top || y > board.bottom) return true;
         return document.querySelector("#board").contains(document.elementFromPoint(x, y)); })''')
     count = lambda column: page.text_content(f'#board .column[data-column="{column}"] .tally')
-    held = Store('proj').work(limit=0).results
+    held = [record for record in Store('proj').work(limit=0).results if record.id not in (repeated.id, replaced.id)]
+    assert page.locator(f'#board .card[data-id="{finding.id}"]').count() == 1
     expected = [str(sum(record.column == column for record in held)) for column in ('backlog', 'todo', 'doing', 'done')]
     assert [count(column) for column in ('backlog', 'todo', 'doing', 'done')] == expected
     card = page.locator(f'#board .card[data-id="{todo.id}"]')
@@ -5574,7 +5612,7 @@ def test_an_agent_reads_the_pointers_ray_and_what_it_takes_and_captures_the_view
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
-    page.evaluate('() => document.querySelector("#pauseBtn").click()')  # the layout holds still under the pointer
+    map_key(page, 'p')  # the layout holds still under the pointer
     on_screen = '''async id => { const {G} = await import('/page/app/map3d/graph3d.js');
         const THREE = await import('three'); const node = G.graphData().nodes.find(one => one.id === id);
         const v = new THREE.Vector3(node.x, node.y, node.z).project(G.camera());
@@ -5651,7 +5689,7 @@ def test_an_agent_brings_its_own_figure_to_what_the_pointer_takes_for_as_long_as
     page, problems, _ = opened(browser, web)
     drawn = f'window.metaform.figures().find(one => one.work_id === "{worked.id}")'
     page.wait_for_function(f'() => {drawn}?.stage === "circling"', timeout=20000)
-    page.evaluate('() => document.querySelector("#pauseBtn").click()')  # the layout holds still under the pointer
+    map_key(page, 'p')  # the layout holds still under the pointer
     on_screen = '''async id => { const {G} = await import('/page/app/map3d/graph3d.js');
         const THREE = await import('three'); const node = G.graphData().nodes.find(one => one.id === id);
         const v = new THREE.Vector3(node.x, node.y, node.z).project(G.camera());
@@ -5679,6 +5717,48 @@ def test_an_agent_brings_its_own_figure_to_what_the_pointer_takes_for_as_long_as
     said = json.loads(run('web', 'say', 'over here', 'speak=true', '--json', cwd=mapped, env=own).stdout)
     speaks = page.evaluate('async () => (await import("/page/voice.js")).mayAnnounce()')
     assert said['spoken'] is speaks and (speaks or 'voice settings' in said['why'])  # as the voice settings have it
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-005')
+def test_the_system_agent_takes_its_own_figure_whose_acts_arrive_and_say_where_it_ended_up_and_sees_what_it_can(
+        run, web, mapped, browser):
+    """web_embody from the system agent gives it its own figure, never the person's mascot. Its acts move that figure
+    and answer once it is done: a move to an address arrives beside it, a step forward goes the distance asked, a turn
+    faces what it names, each saying where it is, which way it faces, whether it is at rest and what stopped it. A look
+    at an address is taken once the figure faces it, and see lists only what it perceives, nearest first, capped."""
+    from metaform.data import Node, Store
+    store = Store('proj')
+    run('enable', 'dispatch')
+    system = store.add_work(Node('element', 'code.alarm.audible'), None, task='Conversation with the system agent',
+                            held=True)
+    live_session(system.id)
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
+    own = {'METAFORM_WORK': system.id, 'METAFORM_ROLE': 'system'}
+    taken = json.loads(run('web', 'embody', 'owl', '--json', cwd=mapped, env=own).stdout)
+    assert (taken['figure'], taken['mascot']) == (True, False), taken
+    drawn = f'window.metaform.figures().find(one => one.work_id === "{system.id}")'
+    page.wait_for_function(f'() => ["going", "circling"].includes({drawn}?.stage)', timeout=20000)
+    assert page.evaluate('window.metaform.mascot().shown') is False   # the person's mascot is not its body
+    went = json.loads(run('web', 'move', 'address=code.timer.kitchen', '--json', cwd=mapped, env=own).stdout)
+    assert (went['who'], went['stopped_by'], went['at_rest']) == ('your figure', 'arrived', True), went
+    assert went['target']['address'] == 'code.timer.kitchen' and went['off'] < 1, went
+    assert abs(went['moved'] - went['asked']) < went['asked'] * 0.1, went
+    stepped = json.loads(run('web', 'move', 'forward=12', '--json', cwd=mapped, env=own).stdout)
+    assert stepped['stopped_by'] == 'arrived' and stepped['asked'] == 12 and abs(stepped['moved'] - 12) < 1, stepped
+    turned = json.loads(run('web', 'turn', 'address=exterior.cook', '--json', cwd=mapped, env=own).stdout)
+    assert turned['stopped_by'] in ('turned', 'arrived') and turned['at_rest'], turned
+    looked = json.loads(run('web', 'look', 'address=code.alarm.audible', '--json', cwd=mapped, env=own).stdout)
+    assert looked['turn'] in ('turned', 'arrived') and looked['from']['as'] == 'your figure', looked
+    alarm = [one for one in looked['in_view'] if one['address'] == 'code.alarm.audible']
+    assert not alarm or 'ahead' in alarm[0]['bearing'], looked     # faced, unless something nearer hides it
+    seen = json.loads(run('web', 'see', '--json', cwd=mapped, env=own).stdout)
+    distances = [one['distance'] for one in seen['in_view']]
+    assert distances == sorted(distances) and len(distances) <= 12 and 'nearest' not in seen, seen
+    assert max(abs(one - two) for one, two in zip(seen['from']['gaze'], looked['from']['gaze'])) < 0.1, seen  # held
+    assert all('visible' not in one and one['distance'] <= seen['range'] for one in seen['in_view']), seen
     assert problems == []
 
 
@@ -5812,7 +5892,7 @@ def test_an_agents_figure_is_big_enough_to_see_with_the_whole_map_in_view_and_ci
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.figures().length === 2'
                            ' && window.metaform.figures().every(one => one.stage === "circling")', timeout=30000)
     page.wait_for_timeout(2600)                                       # the page's own fit of the whole map
-    page.click('#pauseBtn')
+    map_key(page, 'p')
     page.evaluate(f'window.metaform.pin3d("{far}", 600, 0, 0)')       # a map that spans hundreds of units
     page.evaluate('window.metaform.view3d({x: 300, y: 0, z: 900}, {x: 300, y: 0, z: 0})')  # seen whole
     page.wait_for_timeout(800)
@@ -5882,7 +5962,7 @@ def test_the_labels_wrap_keep_the_draw_order_and_the_hover_says_what_a_part_does
     # The hover's details are in the card at the lower left; the name across the top shows only for a node whose
     # own label cannot be read. In Organic a sign faces out from the middle and may be seen edge on; in Flat every
     # sign faces the eye, and the kitchen timer's can be read.
-    page.locator('body').press('l')
+    page.locator('body').press('3')
     page.wait_for_function('() => window.metaform.physics() === "flat"')
     page.wait_for_function('() => Math.abs(Math.sin(window.metaform.cameraAt().tilt) * Math.cos(window.metaform.cameraAt().turn))'
                            ' > 0.99', timeout=15000)  # the camera turned to face the plane
@@ -6133,6 +6213,25 @@ def test_a_message_naming_a_fork_goes_to_the_fork_through_dispatch_fork_and_neve
     # /fork makes a new fork of the session, which names none; with no text the fork is made and waits
     server.Handler.dispatch_fork(handler, {'project': 'proj', 'work_id': 'w1', 'session': 's1', 'text': '  '})
     assert ran[-1] == ('dispatch', 'fork', ['w1', 'session=s1'], None), ran
+
+
+@pytest.mark.req('VIEW-039')
+def test_dispatch_from_the_page_runs_on_the_base_it_shows_and_an_intake_on_the_active_one(mapped, monkeypatch):
+    """The board's Start, Stop, Cancel and chat run dispatch with METAFORM_BASE set to the base the page shows when it
+    is not the active one; on the active base nothing is bound, and an intake follows the active base."""
+    from metaform.data import Store
+    from metaform.modules.web import server
+    other = Store('proj').add_base('other', activate=False).id
+    active = Store('proj').active_base().id
+    bound = []
+    monkeypatch.setattr(server.subprocess, 'run', lambda command, **given: bound.append(
+        (given.get('env') or {}).get('METAFORM_BASE')) or subprocess.CompletedProcess(command, 0, '{}', ''))
+    server.cli_result({'project': 'proj', 'base': other}, 'dispatch', 'start', ['w1', 'claude'])
+    server.cli_result({'project': 'proj', 'base': other}, 'dispatch', 'intake', [])
+    server.cli_result({'project': 'proj', 'base': active}, 'dispatch', 'stop', ['w1'])
+    server.cli_result({'project': 'proj', 'base': other}, 'workflow', 'cancel', ['run=r1'])
+    server.run_dispatch('proj', 'sessions', ['id=w1'], server.chosen_base({'project': 'proj', 'base': other}))
+    assert bound == [other, None, None, None, other]
 
 
 @pytest.mark.req('VIEW-039')
@@ -7203,7 +7302,7 @@ def test_the_side_column_and_its_split_are_dragged_to_size_kept_and_reset(run, w
     height = lambda: page.locator('#small').bounding_box()['height']
     before = (width(), height())
     handle = page.locator('#sideSplit').bounding_box()
-    middle = handle['y'] + handle['height'] / 2  # the edge is grabbed where it crosses the bar at the top, VIEW-028
+    middle = handle['y'] + handle['height'] / 2  # the edge is grabbed halfway down the column
     # the side column opens on the right by default: its edge is dragged away from it, to the left, to widen it
     side = -1 if page.evaluate("document.querySelector('.app').classList.contains('side-right')") else 1
     page.mouse.move(handle['x'] + 4, middle)
@@ -7537,9 +7636,18 @@ def test_start_all_uses_one_agent_choice_and_starts_each_free_glyph_once_in_boar
     choose_agent(page, '#dispatch', 'codex')
     expected = [tickets[2], tickets[3]] if distributed else [tickets[2], tickets[3], tickets[1], tickets[0]]
     assert page.eval_on_selector_all('#dispatch .ticket', 'rows => rows.map(row => row.dataset.id)') == expected
+    # the launches' own permissions, at the project's setting until chosen, approving everything saying its risk
+    page.wait_for_selector('#dispatch .permissions select.prompts')
+    assert page.text_content('#dispatch .permissions select.prompts option') == 'Project setting: Ask every prompt as ' \
+        'a question at the ticket' and page.is_hidden('#dispatch .permissions .risk')
+    page.select_option('#dispatch .permissions select.prompts', 'approve-all')
+    assert 'without asking' in page.text_content('#dispatch .permissions .risk:not([hidden])')
     page.click('#dispatch .start-all')
     page.wait_for_selector('#dispatch', state='hidden', timeout=30000)
-    assert [(one['work_id'], one['agent']) for one in sent] == [(work_id, 'codex') for work_id in expected]
+    assert [(one['work_id'], one['agent'], one.get('prompts')) for one in sent] \
+        == [(work_id, 'codex', 'approve-all') for work_id in expected]
+    from metaform.modules.dispatch import launch_options
+    assert all(launch_options(store, work_id) == {'prompts': 'approve-all'} for work_id in expected)
     for work_id in expected:
         eventually(lambda work_id=work_id: store.ticket(work_id).work.taken)
     assert store.ticket(excluded).work.taken is None and store.ticket(busy).work.taken is None
@@ -8495,13 +8603,10 @@ def test_an_agents_permission_request_is_answered_from_its_own_buttons(run, web,
 @pytest.mark.req('VIEW-039')
 def test_an_agents_question_is_answered_from_its_card_and_its_notices_show(run, web, mapped, browser, tmp_path,
                                                                           watch_dispatch):
-    """ACP's elicitation on the page: Claude's AskUserQuestion, a choice and its "Other" box, shows as a card with
-    the choices as buttons beside Decline; the person presses one and the agent gets that choice. The agent's session
-    notice is a line of its own."""
+    """ACP's elicitation on the page: the head agent's AskUserQuestion, a choice and its "Other" box, shows as a card
+    with the choices as buttons beside Decline; the person presses one and the agent gets that choice. Only the sentinel
+    and the head agent ask the person, VIEW-045. The agent's session notice is a line of its own."""
     import sys
-
-    from metaform.data import Node, Store
-    work = Store('proj').add_work(Node('element', 'code.alarm.audible'), 'unbuilt', task='Pick a colour').id
     log = tmp_path / 'fake.jsonl'
     run('enable', 'dispatch')
     run('set', '--dispatch-codex', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
@@ -8510,10 +8615,8 @@ def test_an_agents_question_is_answered_from_its_card_and_its_notices_show(run, 
     page, problems, _ = opened(browser, web)
     watch_dispatch(page)
     page.wait_for_function('() => window.metaform.loaded()')
-    page.click('#boardBtn')
-    page.click(f'#board .card[data-id="{work}"] button.start')
-    choose_agent(page, '#dispatch', 'codex')
-    page.click(f'#dispatch .ticket[data-id="{work}"] button.start')
+    work = page.evaluate("""fetch('/api/system-chat', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({project: 'proj', agent: 'codex'})}).then(r => r.json())""")['work_id']
     page.wait_for_selector('#dockTab.asks', timeout=60000)              # a question waiting counts on the tab
     page.keyboard.press('Escape')
     page.evaluate(f'window.metaform.agent("{work}")')
@@ -8526,6 +8629,7 @@ def test_an_agents_question_is_answered_from_its_card_and_its_notices_show(run, 
     assert logged_by(log, lambda entry: 'elicited' in entry)['elicited'] \
         == {'action': 'accept', 'content': {'question_0': 'Blue'}}
     page.wait_for_selector('#helpdesk .elicitation.answered', timeout=30000)
+    run('dispatch', 'stop', work, cwd=mapped)
     assert problems == []
 
 
@@ -8591,26 +8695,24 @@ def test_the_text_size_buttons_scale_the_page_and_reset_puts_every_size_back(run
 
 
 @pytest.mark.req('VIEW-028')
-def test_the_side_column_moves_to_the_right_by_its_top_bar_and_stays_there(run, web, mapped, browser):
-    """Dragging the side column's top bar to the right edge of the page puts the column on the right, and a reload
-    keeps it there; its edge is grabbed anywhere along the column."""
+def test_the_side_column_moves_to_the_right_by_its_splitter_and_stays_there(run, web, mapped, browser):
+    """Dragging the side column's splitter on to the right edge of the page puts the column on the right, and a reload
+    keeps it there; its edge is grabbed anywhere along the column. The maps have no bar to drag it by."""
     started(run)
     page, problems, _ = opened(browser, web)
     page.evaluate("localStorage.setItem('metaform.sideAt', 'left')")  # it opens on the right unless left is chosen
     page.reload()
     page.wait_for_function('() => window.metaform.loaded()')
     assert not page.evaluate("document.querySelector('.app').classList.contains('side-right')")
-    bar = page.evaluate("(() => { const bar = document.querySelector('aside .bar2d, aside .bar3d'), r = bar.getBoundingClientRect();"
-                        " const y = r.top + r.height / 2;"  # an empty part of the bar: a press on a button stays a click
-                        " for (let x = r.left + 4; x < r.right; x += 4) if (document.elementFromPoint(x, y) === bar) return [x, y, r.height];"
-                        " return null; })()")
+    assert page.evaluate("document.querySelectorAll('aside .bar2d, aside .bar3d').length") == 0
     edge = page.locator('#sideSplit').bounding_box()
     assert edge['height'] == pytest.approx(page.locator('aside').bounding_box()['height'], abs=1)
-    page.mouse.move(bar[0], bar[1])
+    y = edge['y'] + edge['height'] / 2
+    page.mouse.move(edge['x'] + edge['width'] / 2, y)
     page.mouse.down()
-    page.mouse.move(page.viewport_size['width'] - 100, bar[1], steps=10)
+    page.mouse.move(page.viewport_size['width'] - 100, y, steps=10)
     assert not page.evaluate("document.querySelector('.app').classList.contains('side-right')")  # not near enough
-    page.mouse.move(page.viewport_size['width'] - 10, bar[1], steps=4)
+    page.mouse.move(page.viewport_size['width'] - 10, y, steps=4)
     page.mouse.up()
     page.reload()
     page.wait_for_function('() => window.metaform.loaded()')
@@ -8668,6 +8770,13 @@ def test_a_setting_the_command_line_would_refuse_is_refused_with_its_next_step_a
 @pytest.mark.req('VIEW-011')
 def test_the_settings_screen_opens_from_the_agents_menu_and_saves_each_change_as_it_is_made(run, web, mapped, browser):
     from metaform import settings
+    from metaform.data import Store
+    run('enable', 'dispatch')
+    with Store('proj', module='dispatch').tables() as tx:  # what Claude Code offered at its last session here
+        tx.insert('catalog', {'agent': 'claude', 'version': '1', 'name': 'Claude', 'seen': '2026-10-14T00:00:00Z',
+                              'seq': 1, 'settings': [{'id': 'mode', 'category': 'mode', 'type': 'select', 'options': [
+                                  {'value': 'default', 'name': 'Manual'},
+                                  {'value': 'acceptEdits', 'name': 'Accept edits', 'description': 'Accepts edits'}]}]})
     started(run)
     page, problems, remote = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
@@ -8693,6 +8802,15 @@ def test_the_settings_screen_opens_from_the_agents_menu_and_saves_each_change_as
     page.click(f'{row("debug")} button.reset')
     page.wait_for_selector(f'{row("debug")} .state.off')
     assert settings.value('debug', mapped) is False
+    page.click('#settings .setpicker > button')                         # an agent's options, under its own heading
+    page.click('#settings button[data-focus="page:dispatch"]')
+    page.wait_for_selector('#settings .setgroup .setgroup:has(h3:text-is("Agent options · Claude Code")) '
+                           '.setrow[data-key="dispatch_claude_mode"]')
+    page.select_option(f'{row("dispatch_claude_mode")} select', 'acceptEdits')
+    page.wait_for_selector(f'{row("dispatch_claude_mode")} .state.ok')
+    assert settings.value('dispatch_claude_mode', mapped) == 'acceptEdits'
+    assert settings.state('dispatch_claude_model', mapped) == 'default', 'one option set leaves the others'
+    assert 'Accept edits' in page.inner_text(f'{row("dispatch_claude_mode")} .hint')
     assert [one for one in problems if 'status of 400' not in one] == [] and remote == []  # the refusal's own 400
 
 
@@ -8742,11 +8860,79 @@ def test_a_dispatched_sessions_thread_opens_in_the_dock_with_its_messages_and_to
         run('dispatch', 'stop', work, cwd=mapped, ok=False)
 
 
+@pytest.mark.req('VIEW-051')
+def test_4_sets_the_depth_and_a_click_breaks_out_a_nodes_next_level_in_place_on_both_maps(run, web, mapped, browser):
+    """4 steps the depth through 1, 2, 3, 4 and all, kept in web_map_depth; a part deeper than the depth stays inside
+    the node it serves, which counts what it holds, in both maps alike. A click on that node breaks out its next level
+    on the same map and a click again folds it; a part chosen while held is broken out; a new depth folds every node
+    opened; Enter still goes inside."""
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    _, at = keys_of(web)
+    cook, kitchen, tick, alarm = (at[one] for one in ('exterior.cook', 'code.timer.kitchen', 'code.loop.tick',
+                                                       'code.alarm.audible'))
+    drawn = lambda: page.evaluate("""async () => {
+        const [{G}, {M}] = await Promise.all([import('/page/app/map3d/graph3d.js'), import('/page/app/map2d/build.js')]);
+        const nodes = G.graphData().nodes.filter(node => node.t === 'el');
+        return {d3: nodes.map(node => node.id).sort(), d2: [...M.nodes.keys()].sort(),
+                names: Object.fromEntries(nodes.map(node => [node.id, node.name]))};
+    }""")
+
+    def shows(want, hidden=()):  # both maps draw the same parts, these among them and not those
+        deadline, now = time.monotonic() + 15, drawn()
+        while not (now['d3'] == now['d2'] and set(want) <= set(now['d3']) and not set(hidden) & set(now['d3'])):
+            assert time.monotonic() < deadline, (want, hidden, now)
+            page.wait_for_timeout(100)
+            now = drawn()
+        return now
+
+    def kept(value):  # each press's save lands one after another
+        deadline = time.monotonic() + 10
+        while (now := {row['key']: row['value'] for row in api(web, '/api/settings?project=proj')[1]['settings']}
+               ).get('web_map_depth') != value:
+            assert time.monotonic() < deadline, now.get('web_map_depth')
+            page.wait_for_timeout(100)
+
+    shows([cook, kitchen, tick, alarm])  # all levels, the default
+    map_key(page, '4')
+    now = shows([cook], [kitchen, tick, alarm])
+    assert now['names'][cook].endswith(' +3')  # the cook holds the timer, the tick and the alarm beneath them
+    assert page.evaluate('document.querySelector("#note2d.on")?.textContent') == 'Depth: 1 level'
+    still2d(page)
+    box = box_of(page, 'exterior.cook')
+    page.mouse.click(box['x'] + 6, box['y'] + 6)  # breaks out its next level, in place, and selects it
+    now = shows([cook, kitchen, tick], [alarm])
+    assert page.evaluate('window.metaform.selected()') == cook and not page.evaluate('window.metaform.inside()')
+    assert now['names'][kitchen].endswith(' +1')
+    still2d(page)
+    box = box_of(page, 'exterior.cook')
+    page.mouse.click(box['x'] + 6, box['y'] + 6)  # folds them back
+    shows([cook], [kitchen, tick, alarm])
+    assert not page.evaluate('window.metaform.inside()')
+    page.evaluate(f'window.metaform.select("{alarm}")')  # chosen while held: its way down is broken out
+    shows([cook, kitchen, alarm])
+    map_key(page, '4')  # a new depth folds what was opened
+    shows([cook, kitchen, tick], [alarm])
+    kept('2')
+    page.evaluate(f'window.metaform.select("{kitchen}")')
+    page.keyboard.press('Enter')  # Enter alone still goes inside
+    page.wait_for_function('() => window.metaform.inside().length > 0')
+    page.keyboard.press('Shift+Enter')
+    page.wait_for_function('() => window.metaform.inside().length === 0')
+    for _ in range(3):
+        map_key(page, '4')
+    shows([cook, kitchen, tick, alarm])
+    kept('all')
+    assert not problems
+
+
 @pytest.mark.req('VIEW-005')
-def test_d_steps_the_flow_through_hover_selection_and_all_then_each_with_the_edges_hidden(run, web, mapped, browser):
-    """D steps the flow through hover, the selection and all with the joins' lines drawn, then the three again with the
-    lines hidden so only what flows shows; each step is said at the 2D map's corner and kept in web_flow_mode and
-    web_flow_edges. In hover the 2D map's flow runs on the edges of the node the pointer is on."""
+def test_2_steps_the_flow_through_every_mode_then_each_again_with_the_edges_hidden(run, web, mapped, browser):
+    """2 steps the flow through every mode, off, hover, the selection, all and live, with the joins' lines drawn, then
+    the five again with the lines hidden so only what flows shows, and round again; each step is said at the 2D map's
+    corner and kept in web_flow_mode and web_flow_edges. In hover the 2D map's flow runs on the edges of the node the
+    pointer is on."""
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
@@ -8755,16 +8941,17 @@ def test_d_steps_the_flow_through_hover_selection_and_all_then_each_with_the_edg
     seen = []
     assert (page.evaluate('window.metaform.flowMode()'), hidden()) == ('selected', False)  # the default
     reads = page.evaluate('window.metaform.changes()')
-    for _ in range(5):
-        page.keyboard.press('d')
+    for _ in range(9):
+        map_key(page, '2')
         seen.append((page.evaluate('window.metaform.flowMode()'), hidden(), note()))
-    assert seen == [('all', False, 'Flow: All'), ('hover', True, 'Flow: Hover, edges hidden'),
+    assert seen == [('all', False, 'Flow: All'), ('live', False, 'Flow: Live'),
+                    ('off', True, 'Flow: Off, edges hidden'), ('hover', True, 'Flow: Hover, edges hidden'),
                     ('selected', True, 'Flow: Selection, edges hidden'), ('all', True, 'Flow: All, edges hidden'),
-                    ('hover', False, 'Flow: Hover')]
+                    ('live', True, 'Flow: Live, edges hidden'), ('off', False, 'Flow: Off'), ('hover', False, 'Flow: Hover')]
     kept = lambda: {row['key']: row['value'] for row in api(web, '/api/settings?project=proj')[1]['settings']}
-    deadline = time.monotonic() + 10                      # each setting's saves land one after another, in order
-    while (kept()['web_flow_mode'], kept()['web_flow_edges']) != ('hover', True) and time.monotonic() < deadline:
-        page.wait_for_timeout(200)
+    # each setting's saves land one after another, in order: one more of each, of the value in force, lands after all
+    page.evaluate("""() => import('/page/app/views/settings.js').then(part => Promise.all(
+        [part.saveView('web_flow_mode', 'hover'), part.saveView('web_flow_edges', true)]))""")
     assert (kept()['web_flow_mode'], kept()['web_flow_edges']) == ('hover', True)
     page.wait_for_timeout(1000)
     assert page.evaluate('window.metaform.changes()') == reads  # a saved view choice reads no map again
@@ -8794,7 +8981,7 @@ def test_choosing_flat_turns_the_camera_to_face_the_plane_and_a_selection_keeps_
     page.evaluate('window.metaform.view3d({x: 300, y: 120, z: 40}, {x: 0, y: 0, z: 0})')  # seen from the side
     square = 'Math.abs(Math.sin(window.metaform.cameraAt().tilt) * Math.cos(window.metaform.cameraAt().turn)) > 0.99'
     assert not page.evaluate(square)
-    page.locator('body').press('l')
+    page.locator('body').press('3')
     assert page.evaluate('window.metaform.physics()') == 'flat'
     page.wait_for_function(f'() => {square}', timeout=15000)
     page.evaluate('window.metaform.select(window.metaform.graph().nodes.find(node => node.t === "el"'
@@ -8823,7 +9010,9 @@ def test_the_2d_map_is_laid_out_by_elk_the_way_that_fits_its_pane_and_again_when
     to_large_area(page)
     svg = '#map2d svg'
     assert page.get_attribute(svg, 'data-layout') == 'elk'
-    assert page.get_attribute(svg, 'data-direction') == 'LR'  # wide drawn top to bottom, so left to right in this pane
+    # never the thin strip plain top to bottom draws in this pane: left to right, or top to bottom with its layers
+    # held narrow, whichever is drawn larger
+    assert page.get_attribute(svg, 'data-direction') == 'LR' or page.get_attribute(svg, 'data-layering')
     _, at = keys_of(web)
     kitchen = at['code.timer.kitchen']
     page.evaluate(f'window.metaform.select("{kitchen}")')
@@ -9608,3 +9797,100 @@ def test_the_brief_read_names_the_latest_item_and_the_range_the_last_session_num
     last = body['last_session']
     assert last['session'] == 'session-one' and last['count'] == 2 and last['last'] == body['latest']['number']
     assert last['first'] == last['last'] - 1
+
+
+@pytest.mark.req('BASE-066')
+def test_a_running_roundtable_has_a_tab_with_its_table_its_discussion_and_the_chairs_controls(
+        run, web, mapped, browser, home):
+    """Rich, 2026-10-14: why isn't there a GUI. The tab shows only while a table runs; it draws the table with the
+    roundtable's own scene, the discussion with a vetoed turn as its four scores and a link to its text, renews the
+    watch, counts the pause down, holds, and goes when the table ends; Open roundtable in the Agents menu opens one."""
+    from metaform.data import Store
+    from metaform.modules.roundtable import store as tables
+    held = Store('proj', module='roundtable')
+    number = tables.opened(held, {'address': 'code.alarm.audible', 'subject': 'how-loud', 'opening': 'How loud?',
+                                  'chair': 'person'}, [{'kind': 'agent', 'id': 'agent:ann'},
+                                                       {'kind': 'agent', 'id': 'agent:bob'}])
+    tables.record(held, number, {'round': 1, 'position': 0, 'seat': 'agent:ann', 'name': 'Ann', 'kind': 'seat',
+                                 'text': 'Loud enough to hear from the garden.', 'accepted': True,
+                                 'new': 0.9, 'valuable': 0.9, 'relevant': 0.95, 'keep': 0.9})
+    tables.record(held, number, {'round': 1, 'position': 1, 'seat': 'agent:bob', 'name': 'Bob', 'kind': 'seat',
+                                 'text': 'Very loud.', 'accepted': False,
+                                 'new': 0.2, 'valuable': 0.5, 'relevant': 0.9, 'keep': 0.4})
+    # OpenRouter's model list as the roundtable keeps it for a day, so the form's read calls no network
+    (home / 'cache').mkdir(parents=True, exist_ok=True)
+    (home / 'cache' / 'roundtable-models.json').write_text(json.dumps(
+        {'read': time.time(), 'models': {'anthropic/claude-haiku-5.5': ['text']}}), encoding='utf-8')
+    started(run)
+    page, problems, _ = opened(browser, web)
+    acts = []
+
+    def chaired(route):  # continue, comment, end and open start the table's runner; they are taken here instead
+        body = json.loads(route.request.post_data or '{}')
+        if body.get('act') in ('watch', 'hold'):
+            return route.continue_()
+        acts.append(body)
+        route.fulfill(status=200, content_type='application/json',
+                      body=json.dumps({'discussion': 2, 'address': body.get('address')}))
+    page.route('**/api/roundtable', chaired)
+    page.wait_for_selector('#rtStrip:not([hidden])')
+    assert 'Roundtable 1' in page.text_content('#t-roundtable')
+    page.click('#t-roundtable')
+    page.wait_for_selector('#roundtable:not([hidden]) .rtscene canvas')
+    page.wait_for_function('() => document.querySelectorAll("#roundtable .rtlog li").length === 2')
+    assert 'garden' in page.text_content('#roundtable .rtlog li.kept')
+    vetoed = page.locator('#roundtable .rtlog li.vetoed')
+    assert vetoed.locator('.scores span').all_text_contents() == ['new 0.20', 'valuable 0.50', 'relevant 0.90',
+                                                                  'keep 0.40']
+    vetoed.locator('button.text').click()
+    page.wait_for_function('() => document.querySelector("#roundtable .rtlog li.vetoed .said").textContent '
+                           '=== "Very loud."')
+    # the page tells the table the person watches it, and a turn that enters is followed by the pause, counted down
+    deadline = time.monotonic() + 10
+    while tables.discussion(held, number)['watched'] <= time.time() and time.monotonic() < deadline:
+        time.sleep(0.2)
+    assert tables.discussion(held, number)['watched'] > time.time()
+    tables.record(held, number, {'round': 2, 'position': 0, 'seat': 'agent:ann', 'name': 'Ann', 'kind': 'seat',
+                                 'text': 'A chime first.', 'accepted': True, 'new': 0.9, 'valuable': 0.9,
+                                 'relevant': 0.9, 'keep': 0.9})
+    page.wait_for_selector('#roundtable .rtcount:not([hidden])')
+    assert 'Next turn in' in page.text_content('#roundtable .rtcount')
+    # a click on a seat shows what it sees from its own eyes
+    at = page.evaluate('''async () => {
+      const {RT} = await import('/page/app/roundtable/table.js');
+      const THREE = await import('three');
+      const seat = RT.scene.seats[1], box = RT.view.renderer.domElement.getBoundingClientRect();
+      const point = new THREE.Vector3(seat.x, RT.scene.table.seat_y, seat.z).project(RT.view.camera);
+      return [box.left + (point.x + 1) / 2 * box.width, box.top + (1 - point.y) / 2 * box.height];
+    }''')
+    page.mouse.click(*at)
+    page.wait_for_selector('#roundtable .rteye:not([hidden])')
+    assert page.get_attribute('#roundtable .rteye img', 'src').startswith('data:image/png')
+    assert 'Bob' in page.text_content('#roundtable .rteye .title')
+    page.fill('#roundtable .rtcomment textarea', 'Think of the neighbours.')
+    page.click('#roundtable .rtcomment button')
+    page.click('#roundtable .hold')
+    page.wait_for_function('() => window.metaform.roundtable().state === "held"')
+    assert tables.discussion(held, number)['state'] == 'held'
+    page.click('#roundtable .go')
+    assert [act['act'] for act in acts] == ['comment', 'continue']
+    assert acts[0]['text'] == 'Think of the neighbours.' and acts[0]['discussion'] == number
+    # the tab goes when the table ends
+    tables.change(held, number, state='ended')
+    page.wait_for_selector('#rtStrip', state='hidden')
+    assert page.is_hidden('#roundtable')
+    # Open roundtable, from the Agents menu
+    page.click('#agentsMenuBtn')
+    page.click('#roundtableBtn')
+    page.wait_for_selector('#rtopen:not([hidden])')
+    page.fill('#rtopen .address', 'code.alarm.audible')
+    page.wait_for_function('() => document.querySelector("#rtmodels option")')
+    page.fill('#rtopen .add.model input', 'anthropic/claude-haiku-5.5')
+    page.click('#rtopen .add.model button')
+    page.fill('#rtopen .rounds', '3')
+    page.fill('#rtopen .opening', 'Which tone?')
+    page.click('#rtopen .put')
+    page.wait_for_selector('#rtopen', state='hidden')
+    assert acts[-1] == {'project': 'proj', 'base': acts[-1]['base'], 'act': 'open', 'address': 'code.alarm.audible',
+                        'seats': 'anthropic/claude-haiku-5.5', 'opening': 'Which tone?', 'rounds': 3}
+    assert problems == []

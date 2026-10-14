@@ -6,8 +6,8 @@ import * as THREE from 'three';
 import {$, reduced, h} from '/page/app/core/dom.js';
 import {opened} from '/page/app/core/overlays.js';
 import {S} from '/page/app/core/reads.js';
-import {ROAM, nodeById, ticketNode, isSystemTalk, embody} from '/page/app/figures/agents.js';
-import {RESTLESS} from '/page/app/figures/walk.js';
+import {ROAM, nodeById, ticketNode, isSystemTalk, embody, ballOf, sizeOf} from '/page/app/figures/agents.js';
+import {RESTLESS, drivePace, facingOf, driveGoal, driveFace} from '/page/app/figures/walk.js';
 import {MASCOT, mascotGlyph, mascotDriven, driveMascot, releaseMascot, dropHeld} from '/page/app/figures/mascot.js';
 import {BUBBLE, say} from '/page/app/figures/cut.js';
 import {sight, viewing, approachPoint, capture} from '/page/app/figures/eyes.js';
@@ -136,10 +136,213 @@ export function mascotEvent(payload) {
   // its system agent leads it now: autonomy pauses until the agent lets go, `mascotDriven`
   if (body && !own) driveMascot(act === 'take' ? {reason: String(payload.reason || '')} : null);
   const tell = (words, seconds = 2.4) => say(words, seconds);
-  const said = Object.hasOwn(MASCOT_ACTS, act) ? MASCOT_ACTS[act](payload, node, {own, body, tell}) : null;
-  answer({done: true, ...(said && typeof said === 'object' ? said : {})});
+  // the body the act moves: the caller's own figure, or else the person's mascot
+  const figure = own ? ROAM.figures.get(own) : null, mover = figure ? figureBody(figure) : body ? mascotBody() : null;
+  if (bodily && mover && act !== 'say') mover.bump();
+  const said = mover && Object.hasOwn(MOVES, act) ? MOVES[act](payload, node, mover)
+    : figure && Object.hasOwn(OWN_ACTS, act) ? OWN_ACTS[act](payload, node, figure, mover)
+    : Object.hasOwn(MASCOT_ACTS, act) ? MASCOT_ACTS[act](payload, node, {own, body, tell}) : null;
+  // an act that moves the body answers once it is done, `settle`, with where it is
+  Promise.resolve(said).then(result => {
+    if (result?.error) return answer({error: result.error});
+    const told = result && typeof result === 'object' ? result : {};
+    answer({done: true, ...(bodily && mover && !told.at ? stateOf(mover) : {}), ...told});
+  });
   wake3d(4000);
   wake2d();
+}
+/* The body an act moves, VIEW-005: the calling agent's own figure, or the person's mascot, read live, so an answer
+ * says where it is when it is given. `bump` counts its acts, so a later act stops the wait of an earlier one. */
+const figureBody = figure => ({who: 'your figure', character: figure.glyph, mesh: () => figure.mesh, vel: figure.vel,
+  drive: () => figure.drive, acts: () => figure.acts || 0, bump: () => { figure.acts = (figure.acts || 0) + 1; },
+  ended: () => figure.done || ROAM.figures.get(figure.id) !== figure ? 'its conversation ended' : null,
+  send: drive => sendFigure(figure, drive)});
+const mascotBody = () => ({who: "the person's mascot", character: MASCOT.glyph, mesh: () => MASCOT.mesh,
+  vel: MASCOT.vel, drive: () => MASCOT.job?.drive || null, acts: () => MASCOT.acts || 0,
+  bump: () => { MASCOT.acts = (MASCOT.acts || 0) + 1; },
+  ended: () => !MASCOT.mesh ? 'the mascot left the map' : !mascotDriven() ? 'its agent let it go' : null,
+  send: drive => sendMascot(drive)});
+/* Where an act sends a body, its `drive`: a goal, beside a node or a point, and a way to face, each kept from its last
+ * act when the new one leaves it out, else where it stands and the way it faces now. It goes fast enough that a long
+ * way ends in about three seconds, `drivePace`. False when the body cannot be sent, a figure on its way home. */
+function sendBody(body, goal, face) {
+  const mesh = body.mesh(), was = body.drive();
+  if (!mesh) return false;
+  const drive = {node: null, offset: null, point: null,
+    ...(goal || (was ? {node: was.node, offset: was.offset, point: was.point} : {point: mesh.position.clone()})),
+    face: face || was?.face || {dir: facingOf(mesh, new THREE.Vector3())}};
+  const goes = driveGoal(drive, G.graphData(), new THREE.Vector3());
+  drive.away = goes ? mesh.position.distanceTo(goes) : 0;
+  return body.send(drive) ? drive : false;
+}
+// a figure leaving the map is not led any more; one still coming goes where it is sent once it is here, `arriving`
+const LEAVING = ['flourish', 'returning', 'leaving'];
+function sendFigure(figure, drive) {
+  if (figure.done || LEAVING.includes(figure.stage)) return false;
+  const m = figure.motion, top = ROAM.speed * (m?.speed ?? 1), fast = drivePace(top, drive.away);
+  Object.assign(drive, {top: top * fast, accel: ROAM.accel * (m?.accel ?? 1) * fast});
+  if (!figure.drive && figure.stage !== 'arriving') {
+    if (figure.stage === 'going') figure.vel.copy(figure.heading).setLength(figure.speed || 0);
+    figure.pos.copy(figure.mesh.position);
+    Object.assign(figure, {stage: 'driven', clock: 0});
+  }
+  figure.drive = drive;
+  return true;
+}
+function sendMascot(drive) {
+  drive.fast = drivePace(ROAM.speed * (MASCOT.motion?.speed ?? 1) * 0.9, drive.away);
+  MASCOT.call = null;
+  MASCOT.facing = null;
+  MASCOT.job = {kind: 'move', node: null, point: null, agent: true, drive};
+  return true;
+}
+/* A goal beside a node: on the side the body comes from, level with it unless `height` says, `distance` from its
+ * surface, its own size by default; the offset is fixed now, so the goal moves with the node and nothing else. */
+function besideGoal(node, at, size, distance, height) {
+  const there = nodeById(G.graphData(), node);
+  if (!there || there.x === undefined) return null;
+  const center = new THREE.Vector3(there.x, there.y, there.z);
+  const side = new THREE.Vector3().subVectors(at, center).setY(0);
+  if (side.lengthSq() < 1e-6) side.subVectors(G.camera().position, center).setY(0);
+  if (side.lengthSq() < 1e-6) side.set(1, 0, 0);
+  const away = ballOf(there) + Math.max(0, distance ?? size * 1.2);
+  return {node, offset: side.setLength(away).setY(Number(height || 0))};
+}
+/* An act that moves a body: it answers once the body is at rest where it was sent and faces the way asked, or once it
+ * stops for something else, `settle`. */
+const MOVES = {
+  go: (payload, node, body) => {
+    if (!node) return {error: `Nothing at ${payload.address || 'that address'} is drawn on the map.`};
+    const goal = besideGoal(node, body.mesh().position, drawnSize(), payload.distance ?? null, payload.height);
+    if (!goal || !sendBody(body, goal, {node})) return {error: cannot(body)};
+    return settle(body, {address: payload.address});
+  },
+  move: (payload, node, body) => {  // to a point, an address, or by a step from where it stands and faces
+    const mesh = body.mesh(), at = mesh.position;
+    const steps = ['forward', 'right', 'up'].some(key => payload[key] != null);
+    let goal = null, face = null;
+    if (Array.isArray(payload.point)) {
+      const point = new THREE.Vector3(...payload.point.map(Number)), way = point.clone().sub(at).setY(0);
+      goal = {point};
+      if (way.lengthSq() > 1e-6) face = {dir: way.normalize()};
+    } else if (steps) {
+      const ahead = facingOf(mesh, new THREE.Vector3());
+      goal = {point: stepFrom(at, ahead, payload)};
+      face = {dir: ahead};
+    } else if (node) {
+      goal = besideGoal(node, at, drawnSize());
+      face = {node};
+    } else return {error: `Nothing at ${payload.address || 'that address'} is drawn on the map.`};
+    if (!goal || !sendBody(body, goal, face)) return {error: cannot(body)};
+    return settle(body, {address: node && !steps && !payload.point ? payload.address : null});
+  },
+  turn: (payload, node, body) => {  // to face a node, or by degrees from the way it faces, right positive
+    const mesh = body.mesh();
+    let face = node ? {node} : null;
+    if (!face && Number.isFinite(Number(payload.degrees))) {
+      const by = -Number(payload.degrees) * Math.PI / 180;  // right is clockwise seen from above
+      face = {dir: facingOf(mesh, new THREE.Vector3()).applyAxisAngle(THREE.Object3D.DEFAULT_UP, by)};
+    }
+    if (!face) return {error: `Nothing at ${payload.address || 'that address'} is drawn on the map.`};
+    if (!sendBody(body, null, face)) return {error: cannot(body)};
+    return settle(body, {address: node ? payload.address : null});
+  },
+  point: (payload, node, body) => {  // it turns to a node and gestures at it
+    if (!node) return {error: `Nothing at ${payload.address || 'that address'} is drawn on the map.`};
+    if (!sendBody(body, null, {node})) return {error: cannot(body)};
+    if (body.who === "the person's mascot") MASCOT.point = {node, at: MASCOT.clock, long: 2.4};
+    return settle(body, {address: payload.address});
+  },
+};
+const cannot = body => `${body.who[0].toUpperCase()}${body.who.slice(1)} cannot be sent now: ${body.ended()
+  || 'it is on its way off the map'}.`;
+const drawnSize = () => ROAM.drawn || (G ? sizeOf(G.graphData()) : 1);
+/* The acts of an agent's own figure that do not move it far: a feeling shown, held still where it stands with a
+ * reason, let go back to its conversation's way. Pushing and carrying elements are the mascot's alone. */
+const OWN_ACTS = {
+  emote: (payload, node, figure, body) => {
+    if (!sendBody(body, null, null)) return {error: cannot(body)};
+    figure.emote = {kind: payload.emote, at: figure.clock, long: payload.emote === 'sleep' ? 6 : 1.8};
+    return null;
+  },
+  take: (payload, node, figure, body) => {
+    if (!sendBody(body, {point: figure.mesh.position.clone()}, null)) return {error: cannot(body)};
+    if (payload.reason) say(String(payload.reason).slice(0, 140), 4, null, figure.id, '');
+    return null;
+  },
+  release: (payload, node, figure) => { figure.drive = null; return null; },
+  push: () => ({error: PUSHING}), drag: () => ({error: PUSHING}), drop: () => ({error: PUSHING}),
+};
+const PUSHING = "Your own figure goes, turns, points and shows feelings; pushing and carrying elements are the "
+  + "person's mascot's.";
+/* Where a body is now and which way it faces, whether it is at rest, for every act's answer. */
+const tenth = value => Math.round(value * 10) / 10;
+function stateOf(body) {
+  const mesh = body.mesh();
+  if (!mesh) return {who: body.who};
+  return {who: body.who, character: body.character, at: mesh.position.toArray().map(tenth),
+    heading: facingOf(mesh, new THREE.Vector3()).toArray().map(one => Math.round(one * 100) / 100),
+    at_rest: body.vel.length() < restSpeed()};
+}
+const restSpeed = () => Math.max(0.05, drawnSize() * 0.2);
+/* How far a body is turned from the way its drive asks it to face, in degrees, flat; 0 when it is asked to face the
+ * way it goes. */
+const FACE = new THREE.Vector3(), FACING = new THREE.Vector3();
+function turnLeft(drive, mesh, data) {
+  if (!drive || !mesh) return 0;
+  const face = driveFace(drive, mesh.position, data, FACE);
+  if (!face) return 0;
+  face.sub(mesh.position).setY(0);
+  if (face.lengthSq() < 1e-8) return 0;
+  return facingOf(mesh, FACING).angleTo(face.normalize()) * 180 / Math.PI;
+}
+/* The wait for an act on a body, VIEW-005: it is done once the body is at rest where it was sent, within a tenth of
+ * its size, and turned within TURNED degrees of the way asked; or stopped, by a later act, its target leaving the map,
+ * its conversation ending or the mascot let go, or after `most` milliseconds still on its way. Its answer says where
+ * the body is and faces, whether it is at rest, what stopped it, how far it was asked to go and went, how far it is
+ * from where it was sent, and how far it is from the surface of the element it went to. */
+export const ACT_MOST = 6000, TURNED = 3;
+export function settle(body, {address = null, most = ACT_MOST} = {}) {
+  const mine = body.acts(), began = performance.now(), mesh = body.mesh(), data = G.graphData();
+  const from = mesh.position.clone(), facing = facingOf(mesh, new THREE.Vector3()), drive = body.drive();
+  const goal = drive && driveGoal(drive, data, new THREE.Vector3());
+  const asked = goal ? from.distanceTo(goal) : 0, turn = turnLeft(drive, mesh, data);
+  wake3d(most + 1000);
+  return new Promise(done => {
+    const check = () => {
+      const now = body.drive(), at = body.mesh(), size = drawnSize(), data = G.graphData();
+      const there = now && driveGoal(now, data, new THREE.Vector3());
+      const off = there && at ? at.position.distanceTo(there) : 0;
+      const arrived = at && body.vel.length() < restSpeed() && off <= Math.max(0.1, size * 0.1)
+        && turnLeft(now, at, data) <= TURNED;
+      const why = body.acts() !== mine ? 'a later act' : body.ended() || (!now || !at ? 'its agent let it go'
+        : now.node && !there ? 'its target left the map' : arrived ? (asked > size * 0.1 ? 'arrived' : 'turned')
+        : performance.now() - began > most ? 'time' : null);
+      if (!why) { setTimeout(check, 50); return; }
+      const answer = {...stateOf(body), stopped_by: why};
+      if (asked > size * 0.1) Object.assign(answer, {asked: tenth(asked), moved: tenth(from.distanceTo(at.position))});
+      if (turn >= 1 && at) {
+        Object.assign(answer, {asked_degrees: Math.round(turn),
+          turned_degrees: Math.round(facing.angleTo(facingOf(at, FACING)) * 180 / Math.PI)});
+      }
+      if (there) answer.off = tenth(off);
+      const target = address && now ? (now.node || now.face?.node) : null, seen = target && nodeById(data, target);
+      if (seen && seen.x !== undefined && at) {
+        answer.target = {address, distance: tenth(Math.max(0,
+          at.position.distanceTo(new THREE.Vector3(seen.x, seen.y, seen.z)) - ballOf(seen)))};
+      }
+      done(answer);
+    };
+    setTimeout(check, 50);
+  });
+}
+/* see and look with an address: the body turns to face it, and what it sees is read once it has. */
+export function faceToward(who, node, address) {
+  const body = who.figure?.talk ? figureBody(who.figure) : who.mascot && mascotGlyph() ? mascotBody() : null;
+  if (!body) return null;
+  body.bump();
+  if (!sendBody(body, null, {node})) return null;
+  return settle(body, {address, most: 3000});
 }
 const BODILY = ['say', 'go', 'turn', 'point', 'emote', 'move', 'push', 'drag', 'drop', 'take', 'release'];
 /* web_come: the caller's own figure, or else the person's mascot, comes to the person to get their attention, as the
@@ -198,18 +401,6 @@ const MASCOT_ACTS = {
     return {spoken: aloud, ...(aloud ? {} : {why: 'The person\'s voice settings do not speak here: voice is off, or '
       + 'set never to speak.'})};
   },
-  go: (payload, node) => {
-    if (!node) return;
-    MASCOT.call = {node, until: MASCOT.driven, distance: payload.distance, height: payload.height, agent: true};
-    MASCOT.facing = null;
-    MASCOT.job = null;
-  },
-  move: (payload, node) => {  // to a point, an address, or by a step relative to its heading
-    const point = Array.isArray(payload.point) ? new THREE.Vector3(...payload.point.map(Number)) : null;
-    const step = ['forward', 'right', 'up'].some(key => payload[key] != null) ? stepFrom(payload) : null;
-    MASCOT.call = null;
-    MASCOT.job = {kind: 'move', node: point || step ? null : node, point: point || step, agent: true};
-  },
   push: (payload, node) => {
     if (!node) return;
     MASCOT.call = null;
@@ -224,8 +415,6 @@ const MASCOT_ACTS = {
       beside: payload.beside ? nodeOfAddress(payload.beside) : null, agent: true};
   },
   drop: () => { dropHeld(); MASCOT.job = null; },
-  turn: (payload, node) => turnMascot(node, payload.degrees),
-  point: (payload, node) => { if (node) MASCOT.point = {node, at: MASCOT.clock, long: 2.4}; },
   emote: payload => {
     MASCOT.emote = {kind: payload.emote, at: MASCOT.clock, long: payload.emote === 'sleep' ? 6 : 1.8};
   },
@@ -260,11 +449,10 @@ const MASCOT_ACTS = {
     tell(`Physics: ${payload.preset}.`);
   },
 };
-/* A step from where the mascot stands, measured along its heading: forward, to its right, and up. */
-function stepFrom(payload) {
-  const ahead = MASCOT.heading.clone().setY(0).normalize();
+/* A step from where a body stands, measured along the way it faces, `ahead`, flat: forward, to its right, and up. */
+function stepFrom(at, ahead, payload) {
   const side = new THREE.Vector3().crossVectors(ahead, THREE.Object3D.DEFAULT_UP).normalize();
-  return MASCOT.pos.clone().addScaledVector(ahead, Number(payload.forward || 0))
+  return at.clone().addScaledVector(ahead, Number(payload.forward || 0))
     .addScaledVector(side, Number(payload.right || 0)).add(new THREE.Vector3(0, Number(payload.up || 0), 0));
 }
 /* Which way a push goes: up, down, or toward another node, else wherever the mascot comes from. */
@@ -300,12 +488,4 @@ function nodeOfAddress(address) {
     return join ? 'p:' + join.id : null;
   }
   return partAt(receiver)?.id ?? null;
-}
-export function turnMascot(node, degrees) {
-  if (node) MASCOT.facing = {node};
-  else if (Number.isFinite(Number(degrees))) {
-    const by = -Number(degrees) * Math.PI / 180;  // right is clockwise seen from above
-    MASCOT.facing = {dir: MASCOT.heading.clone().setY(0).normalize().applyAxisAngle(THREE.Object3D.DEFAULT_UP, by)};
-  }
-  MASCOT.driven = performance.now() + 120000;
 }

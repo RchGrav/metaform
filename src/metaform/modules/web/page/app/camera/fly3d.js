@@ -3,16 +3,16 @@
 import '/page/app/camera/flight.js';  // the part before runs first, so the parts run in the page's order
 // The graph, glass and figures share the import map's one local Three.js runtime, VIEW-003 and VIEW-025.
 import * as THREE from 'three';
-import {$, reduced, h} from '/page/app/core/dom.js';
+import {$, reduced} from '/page/app/core/dom.js';
 import {S, MEM} from '/page/app/core/reads.js';
 import {ROAM, ballOf, sizeOf} from '/page/app/figures/agents.js';
 import {shownNode} from '/page/app/map3d/light.js';
 import {endOf} from '/page/app/map3d/waves.js';
-import {G, FRAMES, wake3d} from '/page/app/map3d/graph3d.js';
+import {G, FRAMES, wake3d, LAYOUT} from '/page/app/map3d/graph3d.js';
 import {LABEL, tags, layered, MET, middle, signsOut} from '/page/app/map3d/labels.js';
 import {V3, FLIGHT, cameraNow, flyTo, framed, ball, fitTrim, fitBalls, fit3d,
   facingOf} from '/page/app/camera/flight.js';
-import {flatNow, flatFacing, setMode3d} from '/page/app/views/bar.js';
+import {flatNow, flatFacing} from '/page/app/views/bar.js';
 
 /* A selection meets its name at a fixed share of the panel's width, VIEW-005. The large area's levels are a quarter,
  * a half and three quarters, opening at 2; the small area always uses four fifths. Unnamed nodes use their neighbors
@@ -203,34 +203,18 @@ export function frameWhileSpreading(now, data) {
  * hand or a selection has moved the camera since the page last fitted it, or the layout is held, or the camera already
  * shows it so. */
 export function settled3d() {
-  if (!G || !V3.auto || FLIGHT.on || MEM.key || $('#pauseBtn').dataset.paused === 'true') return;
+  if (!G || !V3.auto || FLIGHT.on || MEM.key || LAYOUT.paused) return;
   const balls = fitBalls(G.graphData());
   if (!balls.length) return;
   const view = framed(balls, {mass: fitTrim()}), here = cameraNow();
   const off = Math.hypot(view.x - here.x, view.y - here.y, view.z - here.z) / Math.exp(here.far);
   if (Math.abs(view.far - here.far) > 0.06 || off > 0.04) fit3d(1100);
 }
-/* The 3D map's modes in the large area, VIEW-005: Whole keeps the whole map framed through selections, layout changes
- * and new sizes; Zoom follows the selection close up, at the name level 4, 5 or 6 chose; Free moves the camera only by
- * hand. The mode chosen is the one checked, whatever the camera does meanwhile. A hand on the camera always takes
- * over: the mode moves it again at the next selection or change. Fit, beside them, fits the whole map once and leaves
- * the mode as it is. The small area is not configured: it has neither these nor Fit, takes no keys, and meets each
- * selection on its own, while the hand still moves it. */
-export const MODES3D = {box: null, buttons: new Map(), said: ''};
-const MODES3D_LIST = [
-  ['whole', 'Whole', '', 'The whole map in view, kept so through selections and layout changes'],
-  ['zoom', 'Zoom', '4–6', 'Close on each node selected, turned to face you; 4, 5 and 6 stand far, medium and close'],
-  ['free', 'Free', '', 'The camera moves only by hand']];
-function modeButton([name, word, key, title]) {
-  const choose = event => { event.stopPropagation(); setMode3d(name); };
-  const button = h('button', {type: 'button', role: 'radio', 'aria-checked': 'false', title,
-    'aria-keyshortcuts': key === '4–6' ? '4 5 6' : key || null, onclick: choose}, h('span', {class: 'long'}, word),
-    key ? h('kbd', {}, key) : null);
-  MODES3D.buttons.set(name, button);
-  return button;
-}
-MODES3D.box = h('div', {class: 'segmented modes3d', role: 'radiogroup', 'aria-label': 'How the 3D map is framed'},
-  MODES3D_LIST.map(modeButton));
+/* The 3D map's modes in the large area, VIEW-005, `V3.mode`, `setMode3d`: Whole keeps the whole map framed through
+ * selections, layout changes and new sizes; Zoom follows the selection close up, at the name level 4, 5 or 6 chose;
+ * Free moves the camera only by hand. A hand on the camera always takes over: the mode moves it again at the next
+ * selection or change. F fits the whole map once and leaves the mode as it is. The small area is not configured: it
+ * takes none of these keys and meets each selection on its own, while the hand still moves it. */
 /* The page's easing tokens: one set for every motion, defined once here and as CSS custom properties in app.css's
  * :root (--ease-arrive, --ease-leave, --ease-move, --dur-1 to --dur-3), the same curves. What arrives settles with a
  * spring's ease-out and no overshoot; what leaves goes with a gentle ease-in; a move from one place to another eases

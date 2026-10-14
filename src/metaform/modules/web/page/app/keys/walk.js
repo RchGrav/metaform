@@ -3,13 +3,18 @@ import '/page/app/map2d/wire.js';  // the part before runs first, so the parts r
 import {overlayHolds} from '/page/app/core/overlays.js';
 import {S, MEM} from '/page/app/core/reads.js';
 import {joinOf} from '/page/app/graph/data.js';
-import {DIRECTION_KEYS, chooseDirection} from '/page/app/camera/flight.js';
-import {peek} from '/page/app/views/settings.js';
+import {NAME, small3d} from '/page/app/camera/fly3d.js';
 import {setMode3d} from '/page/app/views/bar.js';
-import {M} from '/page/app/map2d/build.js';
+import {M, build2D} from '/page/app/map2d/build.js';
 import {IN, enter, goTo} from '/page/app/map2d/inside.js';
 import {leaveMemories} from '/page/app/memory/graph.js';
-import {resetZoom} from '/page/app/map2d/camera.js';
+import {note2d} from '/page/app/map2d/hover.js';
+import {fullFit2d} from '/page/app/map2d/camera.js';
+import {draw3D} from '/page/app/map3d/draw3d.js';
+import {G} from '/page/app/map3d/graph3d.js';
+import {V3, fit3d} from '/page/app/camera/flight.js';
+import {renderLegend} from '/page/app/views/lens.js';
+import {saveView} from '/page/app/views/settings.js';
 
 /* The keys walk the join tree, Down goes deeper, to the providers of the node's joins and then to
  * the nodes inside it; Up goes back to the parent; Left and Right move between the nodes connected to the parent.
@@ -96,34 +101,143 @@ export function levelUp() {
   if (MEM.key) return leaveMemories();
   if (IN.length) return goTo(IN.length - 1);
 }
-/* Which keys the maps take. A key typed into a text is a letter of it and never a shortcut. While a menu, a popover or
- * a modal window is open, or the focus is in any window, the maps' keys rest: the key belongs to what is open, VIEW-030
- * and VIEW-041. Enter and Space on a button or a link press it, and the arrows on a tab, a menu item or a choice move
- * between those; every other control leaves the keys to the maps. Escape that reaches here has closed nothing. */
+/* Which keys the maps take. A key typed into a text is a letter of it and never a shortcut. A key held with Ctrl,
+ * Meta or Alt is the system's or a tool's, `toolKeys`, except Alt with Left or Right alone, the 2D map's back and
+ * forward, `HISTORY_KEYS`: the maps take those, so the browser's own history step on them is held back only when a map
+ * takes the key. While a menu, a popover or a modal window is open, or the focus is in any window, the maps' keys
+ * rest: the key belongs to what is open, VIEW-030 and VIEW-041. Enter and Space on a button or a link press it, and
+ * the arrows on a tab, a menu item or a choice move between those; every other control leaves the keys to the maps.
+ * Escape that reaches here has closed nothing. */
 const ARROWS_OWN = ['select', '[role=tab]', '[role=tablist]', '[role=menuitem]', '[role=option]', '[role=listbox]',
   '[role=radio]', '[role=radiogroup]', '[role=slider]', 'input[type=range]'].join(',');
 const PRESSABLE = ['button', 'a[href]', 'summary', '[role=button]', '[role=tab]', '[role=menuitem]', '[role=option]',
   '[role=switch]', '[role=checkbox]', '[role=radio]', 'input[type=checkbox]', 'input[type=radio]'].join(',');
+const HISTORY_KEYS = ['ArrowLeft', 'ArrowRight'];
+const historyKey = event => event.altKey && !event.shiftKey && HISTORY_KEYS.includes(event.key);
 export function mapKeys(event) {
   const target = event.target instanceof Element ? event.target : document.body;
-  if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return false;
+  if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey) return false;
+  if (event.altKey && !historyKey(event)) return false;
   const typing = target.closest('select, input, textarea, .CodeMirror, [contenteditable="true"]');
   if (typing && !target.matches('input[type=checkbox],input[type=radio]')) return false;
   if (overlayHolds(target)) return false;
-  const onMap = target.closest('#map2d, #stage') && !target.closest('.bar2d, .bar3d');
+  const onMap = target.closest('#map2d, #stage') && !target.closest('.crumbs');
   if ((event.key === 'Enter' || event.key === ' ') && !onMap && target.closest(PRESSABLE)) return false;
   if (event.key.startsWith('Arrow') && target.closest(ARROWS_OWN)) return false;
   return true;
 }
-/* The digits, VIEW-041 and VIEW-005: 0 and Home put the 2D map back to full fit and the large 3D map to Zoom at its
- * farthest; 4, 5 and 6 the large 3D map's zoom, far, medium and close on the selection; 7, 8 and 9 the 2D map's
- * direction. 1 and 2 are free; 3, auto zoom, is the key table's own. The small area takes no 3D zoom. The bar peeks
- * with the new choice checked. */
-export function largeKey(key) {
-  // the 2D map's keys, wherever it is: 0 its full fit, 7 to 9 its direction
-  if (key === '0' || key === 'Home') return resetZoom();
-  if (DIRECTION_KEYS[key]) { chooseDirection(DIRECTION_KEYS[key]); peek('key'); return; }
-  // the large 3D map's zoom, its name a quarter, a half or three quarters wide
-  const level = {4: 1, 5: 2, 6: 3}[key];
-  if (level) { setMode3d('zoom', level); peek('key'); }
+/* 1, VIEW-005: the large 3D map's zoom on the selection, its name a quarter, a half or three quarters of the view's
+ * width, and round again. The small area takes no 3D zoom: it always meets a node at four fifths. */
+export function zoomKey() {
+  if (small3d()) return note2d("3D zoom is the large 3D map's: S swaps the maps");
+  const level = NAME.level % 3 + 1;
+  NAME.level = level;
+  setMode3d('zoom', level);
+  note2d(`3D zoom: ${['1/4', '1/2', '3/4'][level - 1]}`);
+}
+
+/* 4, web_map_depth, VIEW-051: how many levels of the map show, 1, 2, 3, 4 or all, counted along the joins from
+ * `roots()`, the CQUs and every other top at level 1, what serves them at 2, and so on. A part's level is its shortest
+ * way down from a top, so a part serving two receivers shows when either does. A part deeper than the depth stays
+ * inside the receiver it is reached through, which counts every part held beneath it. A click on a node holding parts
+ * breaks out its next level in place, `DEPTH.open`, and a click again folds it with what was opened under it; a change
+ * of depth clears them. Both maps draw the same parts, `depthView`; the inside view, VIEW-016, is not depth's. */
+export const DEPTH = {level: 'all', open: new Set()};
+export const DEPTHS = ['1', '2', '3', '4', 'all'];
+/* What the depth shows now: `shown`, the elements drawn, or null when every level is; `held`, how many parts each
+ * node drawn holds beneath it; `via`, the receiver each part is first reached through. */
+export function depthView() {
+  if (DEPTH.level === 'all' || !S.elements.size) return {shown: null, held: new Map(), via: new Map()};
+  const most = Number(DEPTH.level), below = new Map();
+  for (const join of S.joins) {
+    if (!S.elements.has(join.receiver)) continue;
+    const row = below.get(join.receiver) || below.set(join.receiver, new Set()).get(join.receiver);
+    for (const id of join.providers) if (S.elements.has(id) && id !== join.receiver) row.add(id);
+  }
+  const level = new Map(), via = new Map(), queue = [];
+  for (const top of roots()) if (!level.has(top)) { level.set(top, 1); queue.push(top); }
+  while (queue.length) {  // breadth first, so a level is the shortest way down
+    const key = queue.shift();
+    for (const next of below.get(key) || []) {
+      if (!level.has(next)) { level.set(next, level.get(key) + 1); via.set(next, key); queue.push(next); }
+    }
+  }
+  const shown = new Set([...level].filter(([, at]) => at <= most).map(([key]) => key));
+  const opened = [...shown].filter(key => DEPTH.open.has(key));
+  while (opened.length) {  // a node broken out shows its next level, and so on for what it shows that is open too
+    for (const next of below.get(opened.shift()) || []) {
+      if (!shown.has(next)) { shown.add(next); if (DEPTH.open.has(next)) opened.push(next); }
+    }
+  }
+  const held = new Map();
+  for (const key of shown) {
+    const inside = new Set(), walk = [key];
+    while (walk.length) {
+      for (const next of below.get(walk.pop()) || []) {
+        if (!shown.has(next) && !inside.has(next)) { inside.add(next); walk.push(next); }
+      }
+    }
+    if (inside.size) held.set(key, inside.size);
+  }
+  return {shown, held, via};
+}
+/* The node drawn that holds a part, the part itself when it is drawn. */
+export function holderOf(key, view = depthView()) {
+  if (!view.shown || !key) return key;
+  const join = key.startsWith('p:') ? joinOf(key) : null;
+  if (join) return view.shown.has(join.receiver) && join.providers.some(id => view.shown.has(id)) ? key
+    : holderOf(join.receiver, view);
+  let at = key;
+  while (at && !view.shown.has(at)) at = view.via.get(at);
+  return at || key;
+}
+/* 4: the next depth, said at the 2D map's corner and kept in web_map_depth. */
+export function stepDepth() {
+  const next = DEPTHS[(DEPTHS.indexOf(DEPTH.level) + 1) % DEPTHS.length];
+  setDepth(next);
+  saveView('web_map_depth', next);
+}
+export function setDepth(level, said = true) {
+  if (!DEPTHS.includes(level)) level = 'all';
+  DEPTH.level = level;
+  DEPTH.open.clear();
+  if (said) note2d(level === 'all' ? 'Depth: all levels' : `Depth: ${level} level${level === '1' ? '' : 's'}`);
+  if (S.elements.size) redrawDepth();
+}
+/* A click on an element: one broken out folds, with whatever was opened beneath it; one holding parts breaks out its
+ * next level. Says whether it did either, so the click does not also go inside. */
+export function toggleDepth(key) {
+  if (DEPTH.level === 'all' || IN.length || MEM.key || !S.elements.has(key)) return false;
+  if (DEPTH.open.has(key)) {
+    DEPTH.open.delete(key);
+    for (let view = depthView(), before = -1; before !== DEPTH.open.size; view = depthView()) {
+      before = DEPTH.open.size;
+      for (const one of [...DEPTH.open]) if (!view.shown.has(one)) DEPTH.open.delete(one);
+    }
+  } else if (depthView().held.has(key)) DEPTH.open.add(key);
+  else return false;
+  redrawDepth();
+  return true;
+}
+/* A part chosen while it is held, from the search, a link, the keys or an agent, is shown: every receiver on its way
+ * down is broken out, as clicks would. A join shows with its receiver broken out. */
+export function revealDepth(key) {
+  if (DEPTH.level === 'all' || IN.length || MEM.key) return;
+  const join = key.startsWith('p:') ? joinOf(key) : null, view = depthView();
+  const part = join ? join.receiver : key;
+  if (!view.shown || !S.elements.has(part)) return;
+  const opening = join && !join.providers.some(id => view.shown.has(id)) ? [part] : [];
+  for (let at = view.shown.has(part) ? null : view.via.get(part); at; at = view.via.get(at)) {
+    opening.push(at);
+    if (view.shown.has(at)) break;  // the receiver drawn that held it, broken out
+  }
+  if (!opening.length) return;
+  for (const one of opening) DEPTH.open.add(one);
+  redrawDepth();
+}
+/* Both maps drawn again with what the depth shows, and fitted whole. */
+function redrawDepth() {
+  draw3D(); renderLegend();
+  if (G && !small3d()) { V3.auto = true; fit3d(); }
+  build2D().then(fullFit2d);
 }

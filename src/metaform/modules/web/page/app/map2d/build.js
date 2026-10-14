@@ -4,6 +4,7 @@ import {$, css, h, fill} from '/page/app/core/dom.js';
 import {S, MEM} from '/page/app/core/reads.js';
 import {underHiddenRoot} from '/page/app/header/layers.js';
 import {noMetaform, noneYet} from '/page/app/header/admin.js';
+import {drawEmpty} from '/page/app/intake/intake.js';
 import {figures2d} from '/page/app/figures/roam2d.js';
 import {paintInUse, typeOf} from '/page/app/map3d/light.js';
 import {shape2d, vertical2d, fitPin2d, fitPick2d, drawnAt, settle2D, mountSvg, placeIn, boundsOf,
@@ -11,8 +12,10 @@ import {shape2d, vertical2d, fitPin2d, fitPick2d, drawnAt, settle2D, mountSvg, p
 import {IN, labelOf, drawInside, renderCrumbs} from '/page/app/map2d/inside.js';
 import {drawMemory2d} from '/page/app/memory/graph.js';
 import {setCam, aim2d} from '/page/app/map2d/camera.js';
-import {showModes, hits2d} from '/page/app/map2d/hover.js';
+import {hits2d} from '/page/app/map2d/hover.js';
 import {ends2d, pointed, focus2D} from '/page/app/map2d/flow2d.js';
+import {heldName} from '/page/app/graph/data.js';
+import {depthView} from '/page/app/keys/walk.js';
 
 /* ---------- 2D: the whole map, short names, no text on the edges; the camera moves node to node ---------- */
 export const M = {svg: null, nodes: new Map(), edges: [], cam: null, to: null, bounds: null, frame: 0, generation: 0};
@@ -26,28 +29,25 @@ export const MAP2D = 5000;
 const EDGES2D = MAP2D * 10;
 const ELK2D = {layout: 'elk', elk: {nodePlacementStrategy: 'NETWORK_SIMPLEX'}, maxEdges: EDGES2D,
   maxTextSize: MAP2D * 40 + EDGES2D * 32};
-/* The 2D map fills its pane as well as ELK can draw it, P043. ELK lays the map out a few ways off screen: left to
- * right and top to bottom, and, for a map more than three layers deep, each of those folded, so a long run goes on in
- * rows or columns as text runs on in lines. A run is folded only where one edge alone joins its two halves, so a
- * branching part is never cut and a small tree is never folded on its own. The parts of the map not joined to each
- * other are laid out apart and packed together to a width to height ELK is given, `fitOptions2d`. A map whose few
- * layers each hold so many elements that the likelier direction comes out `narrow` times too long along its layers
- * for the pane is also laid out with each layer cut to fewer elements, so it fills the pane, `narrowFor`.
+/* The 2D map fills its pane as well as ELK can draw it, P043. ELK lays the map out several ways off screen, `waysFor`:
+ * left to right and top to bottom; for a map more than three layers deep, left to right folded into rows, so a long
+ * run goes on in the next row as text runs on in lines, ELK's wrapping with the `correction` it is given; for a map of
+ * at most `small` elements, top to bottom with its layers held narrow; and, for a map whose few layers each hold so
+ * many elements that the likelier direction comes out `narrow` times too long along its layers for the pane, with
+ * each layer cut to fewer elements, `narrowFor`. The parts of the map not joined to each other are laid out apart and
+ * packed together to the pane's width to height, `fitOptions2d`. The drawing kept is the one whose whole map is drawn
+ * largest in the pane at full fit, with the fit's margin and the room at its foot, so the map fills as much of the
+ * pane as it can. The setting web_map_direction holds the map to one direction, across or down, unfolded.
  *
- * ELK reaches the width to height it is given only roughly, so each way is first laid out for the pane's, and the way
- * that comes out best is laid out again for the width to height that corrects what it missed by, at most `refine`
- * times. The drawing kept is the one whose whole map can be drawn largest in the pane. A folded way is kept only when
- * it is `fold` times larger, as its runs turn back across the map, and the way drawn now is kept unless another is
- * `keep` times larger, so a pane near the point between two ways never turns the map back and forth. The setting
- * web_map_direction holds the map to one direction, across or down, unfolded, its parts still packed to the pane.
- *
- * The pane's shape is taken in steps, `fitStep2d`, each a quarter wider or narrower than the last, and a step is held
- * until the pane is well into the next, so a pane resized within one is not laid out again. The way chosen for each
- * step is kept with the map's layers when it was chosen, and the last `most` drawings with the map's text, so a pane
- * swapped back and forth gets its own picture again at once. A map whose layers change by a quarter is chosen for
- * again. Laying out stops after `budget` ms once one way is drawn, so a large map costs about that and no more. */
-export const FIT2D = {config: null, step: Math.log(1.25), stay: 0.75, keep: 1.12, fold: 1.15, refine: 2, budget: 2000,
-  narrow: 2, most: 16, chosen: new Map(), drawn: new Map()};
+ * The map is chosen for again whenever its text changes, as a node or an edge comes or goes, and whenever the pane
+ * turns into another step of width to height, `fitStep2d`, each a quarter wider or narrower than the last; a step is
+ * held until the pane is well into the next, so a pane resized within one is not laid out again. The choice is made
+ * while the map drawn before stays on the page, and replaces it once made, `fitPick2d`. The way chosen for the same
+ * text in the same step is kept, and the last `most` drawings, so a pane swapped back and forth, or a map redrawn as
+ * it was, gets its own picture again at once. Laying out stops after `budget` ms once one way is drawn, so a large map
+ * costs about that and no more; `since` is when the first choice not yet shown began. */
+export const FIT2D = {config: null, step: Math.log(1.25), stay: 0.75, budget: 6000, correction: 0.5, small: 100,
+  narrow: 2, most: 24, chosen: new Map(), drawn: new Map(), since: null};
 /* A name as a 2D label: the characters Mermaid would read as its own taken out, and a name longer than `most` cut at
  * the last break between words that keeps most of it, with an ellipsis, so a label never ends in half a word and always
  * says it goes on. The whole name is in the panel and in the 3D map's tooltip. */
@@ -69,42 +69,53 @@ export async function build2D(keep = true) {
   const host = $('#viewport');
   if (!window.mermaid) return emptyIn(host, 'The 2D map could not load.');
   if (!mermaidReady) startMermaid();
-  const shown2d = [...S.elements].filter(([, {element}]) => !underHiddenRoot(element.address));
+  const depth = depthView();  // the parts the depth shows, as the 3D map draws them, VIEW-051
+  const shown2d = [...S.elements].filter(([id, {element}]) => !underHiddenRoot(element.address)
+    && (!depth.shown || depth.shown.has(id)));
   const keys = new Map(shown2d.map(([id], index) => [id, `n${index}`]));
   // One edge between a join's receiver and each element it holds, drawn the way its information goes, as the Mermaid
   // export writes it: from the element served to the receiver when the receiver receives, `ends2d`.
   const drawn = S.joins.filter(join => keys.has(join.receiver))
     .flatMap(join => join.providers.filter(id => keys.has(id)).map(provider => ({join, provider})));
   const shape = shape2d(keys, drawn);
-  const lines = mapLines(shown2d, keys, drawn);
+  const lines = mapLines(shown2d, keys, drawn, depth.held);
   if (!S.elements.size || S.elements.size > MAP2D) { IN.length = 0; M.base = null; renderCrumbs(); }
   if (!S.elements.size) {
     return emptyIn(host, noMetaform() ? noneYet() : 'This metaform has no elements in these layers.');
   }
   if (S.elements.size > MAP2D) {
-    M.svg = null; M.nodes = new Map(); M.edges = []; showModes();
+    M.svg = null; M.nodes = new Map(); M.edges = [];
     return emptyIn(host, `The 2D map lays out at most ${MAP2D} elements; these layers show ${S.elements.size}. `
       + 'The 3D view shows them all.');
   }
   let picked = null, layout = 'elk';
-  try { picked = await fitPick2d(lines.join('\n'), shape, generation); }
+  try { picked = await choosing(() => fitPick2d(lines.join('\n'), shape, generation)); }
   catch (error) {
     // ELK failing never leaves the pane empty: the same map is drawn with Mermaid's other layout, dagre, P043
     layout = 'dagre';
-    try { picked = await dagre2d(lines, shape, generation); }
+    try { picked = await choosing(() => dagre2d(lines, shape, generation)); }
     catch (again) { return emptyIn(host, 'The 2D map could not be drawn.'); }
   }
   if (generation !== M.generation || !picked) return;
+  // the map read again while it was chosen for, as a load begins with none: the build that load makes draws it
+  if ([...keys.keys()].some(id => !S.elements.has(id))) return;
   const {result, way} = picked, vertical = way.vertical;
-  M.way = way;  // the way the whole map is drawn now, which a later choice keeps unless another is clearly better
+  M.way = way;  // the way the whole map is drawn now, which a later choice tries first
+  // a choice cut short by its budget is made again once it is shown, going on with the ways not drawn, `fitPick2d`;
+  // the page counts as opening until that choice has begun, `choosing`
+  if (picked.hurried) {
+    S.opening++;
+    setTimeout(() => { try { if (generation === M.generation) build2D(); } finally { opened2d(); } });
+  }
   // The whole map drawn again keeps its camera and eases from there to its mode's framing, VIEW-041.
   const was = keep && M.base && M.svg === M.base.svg && M.cam ? {...M.cam} : null;
   const inside = IN.length > 0 || Boolean(MEM.key);
   const before = was && !inside ? drawnAt(M.base) : null;  // where each node is drawn now, to move it from there
   const svg = mountSvg(result, host, inside);
-  // what laid it out, which way, whether its layers run on in rows or columns, and the most a layer holds if narrowed
-  Object.assign(svg.dataset, {layout, direction: vertical ? 'TB' : 'LR', wrapped: String(way.wrap),
-    narrowed: String(way.narrow || 0)});
+  // what laid it out, which way, whether and where its layers run on in rows, the most a layer holds if narrowed, and
+  // the layering ELK was given, if any
+  Object.assign(svg.dataset, {layout, direction: vertical ? 'TB' : 'LR', wrapped: String(way.wrap || false),
+    narrowed: String(way.narrow || 0), layering: `${way.layering || ''}${way.bound || ''}`});
   const nodes = nodesIn(svg, keys), edges = edgesIn(svg, drawn);
   hits2d(edges);
   // The base map is kept while a node is entered and shown again as it was, VIEW-016.
@@ -118,6 +129,13 @@ export async function build2D(keep = true) {
   if (before) settle2D(before, nodes, svg);
   if (S.selected) focus2D(S.selected, false); else aim2d();  // drawn again, the view stays, VIEW-041
 }
+/* A choice of the 2D map's layout counts as opening, as a load does, so loaded() is not true while the map on the page
+ * is still to be replaced by the one chosen for it, `fitPick2d`. */
+async function choosing(work) {
+  S.opening++;
+  try { return await work(); } finally { opened2d(); }
+}
+function opened2d() { S.opening--; if (!S.opening) drawEmpty(); }
 /* A word in the empty 2D pane, in place of the map. */
 function emptyIn(host, text) {
   fill(host, h('p', {class: 'empty', style: {padding: '16px'}}, text));
@@ -135,10 +153,11 @@ function startMermaid() {
 }
 /* The map as Mermaid reads it, without its direction, which the layout chosen for the pane gives it, `fitPick2d`:
  * each element shown in its type's shape, and each edge, numbered so its path is found again. */
-function mapLines(shown2d, keys, drawn) {
+function mapLines(shown2d, keys, drawn, held) {
   const lines = [];
   for (const [id, {element}] of shown2d) {
-    const shape = typeOf(element) && SHAPES2D[typeOf(element)], label = plain2d(labelOf(element));
+    const shape = typeOf(element) && SHAPES2D[typeOf(element)];
+    const label = heldName(plain2d(labelOf(element)), held.get(id));
     lines.push(shape ? `${keys.get(id)}@{ shape: ${shape}, label: "${label}" }` : `${keys.get(id)}["${label}"]`);
   }
   drawn.forEach(({join, provider}, index) => {

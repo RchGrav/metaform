@@ -15,13 +15,14 @@ import {select, workPill, MERGE, renderMerges} from '/page/app/selection/select.
 import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
 import {Q, renderMessages} from '/page/app/board/messages.js';
 import {B} from '/page/app/board/refs.js';
-import {drawBoard} from '/page/app/board/board.js';
+import {drawBoard, boardTickets} from '/page/app/board/board.js';
 import {renderAgents} from '/page/app/agents/dispatch.js';
 import {renderWork} from '/page/app/panel/object.js';
 import {buildEvent} from '/page/app/build/build.js';
 import {LIVE, following, recordingNow, changed} from '/page/app/live/stream.js';
 import {progressOf} from '/page/app/loading/load.js';
 import {debugAt, dlog, traced, loadWorkspace} from '/page/app/workspace/workspace.js';
+import {roundtableChanged} from '/page/app/roundtable/table.js';
 
 /* The ops since the drawn sequence, applied to what is drawn, STORE-046 and VIEW-018: an element or a join added,
  * changed or removed, an item or a property of a layer in view. The map, the panel and the board are drawn from what
@@ -209,7 +210,7 @@ export async function ticketsChanged() {
 }
 export function boardFromTickets() {
   if ($('#board').hidden || !S.tickets) return;
-  B.tickets = S.tickets;
+  B.tickets = boardTickets(S.tickets);
   drawBoard();
 }
 /* Each node's open work as the map read gives it, MAP-050: the states its open records hold, in row order, then what
@@ -272,6 +273,7 @@ export function listen() {
   source.onopen = () => {
     recordingNow().catch(error => toast(error.message));
     agentsChanged();
+    roundtableChanged();  // the project's running table, read on every open as the agents are
   };
 }
 /* The topics the page takes apart from the map's changes. */

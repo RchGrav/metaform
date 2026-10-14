@@ -30,6 +30,7 @@ from tempfile import TemporaryDirectory
 from typing import Any, cast
 
 from metaform import home, settings
+from metaform.data import BASE_VARIABLE
 from metaform.module import Context, Module, Noun, Pane, Stop, ToolbarItem, Verb, child_environment
 
 from .workspace import DEFAULT, check_layout, check_toolbar, check_workspaces, workspace_choices
@@ -145,6 +146,15 @@ settings.choice('web_flow_mode', ['off', 'hover', 'selected', 'all', 'live'], 's
                         "node's joins only, so a large map costs nothing; all on every join; live only what agents "
                         "really do; off draws nothing, agents' activity included. A change eases the dots in or out. "
                         'D steps through hover, selected and all, with the edges drawn and then hidden.')
+# How many levels of the map show, counted along the joins from the CQUs and the other tops, VIEW-051: a large map
+# read a few levels at a time, its deeper parts held inside the node they serve. The key 4 steps through them.
+settings.choice('web_map_depth', ['1', '2', '3', '4', 'all'], 'all', scope='global',
+                help='How many levels of the map show, counted along the joins from the top: 1, 2, 3, 4 or all.',
+                details='The CQUs and the other tops are level 1, what serves them level 2, and so on, by the '
+                        'shortest way down, so a part serving two receivers shows when either does. A deeper part stays inside '
+                        'its receiver, which counts what it holds; a click on that node breaks out its next level and '
+                        'a click again folds it. Both maps show the same parts; the inside view shows every level. '
+                        '4 in the web GUI steps through them.')
 settings.boolean('web_flow_edges', True, scope='global',
                  help="Draw the joins' lines on the maps; off hides them, and only what flows along them shows.",
                  details='D steps it with the flow: hover, selected and all with the edges, then the three without.')
@@ -386,7 +396,9 @@ def check_free(bind: str, port: int) -> None:
 def spawn(bind: str, port: int, nonce: str) -> subprocess.Popen[bytes]:
     """The server as a process detached from the terminal, so it runs until stopped, VIEW-002. Its standard output
     is a pipe back to `start`, on which it writes one line once it listens; its standard error is the log. It is the
-    person's page, so the role of an agent that ran `start` never passes to it, BASE-052."""
+    person's page, so the role of an agent that ran `start` never passes to it, BASE-052, nor the base its ticket
+    is on: the page shows whichever base the person chooses."""
+    env = {name: value for name, value in child_environment().items() if name != BASE_VARIABLE}
     folder = run_dir()
     folder.mkdir(parents=True, exist_ok=True)
     command = [sys.executable, '-m', 'metaform.modules.web.server', '--bind', bind, '--port', str(port),
@@ -395,9 +407,9 @@ def spawn(bind: str, port: int, nonce: str) -> subprocess.Popen[bytes]:
         if os.name == 'nt':
             flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
             return subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=log,
-                                    cwd=home.home(), env=child_environment(), creationflags=flags)
+                                    cwd=home.home(), env=env, creationflags=flags)
         return subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=log,
-                                cwd=home.home(), env=child_environment(), start_new_session=True)
+                                cwd=home.home(), env=env, start_new_session=True)
 
 
 def ready_line(process: subprocess.Popen[bytes]) -> bytes | None:
@@ -538,8 +550,8 @@ def serve(ctx: Context) -> None:
 
 # The person's mascot, web_mascot, and every agent's figure, VIEW-005: what they do and see on the open page. Each act
 # goes to the running web GUI, which hands it to every open page of the project with an id of its own; an act that asks
-# something, what a figure sees, a picture from its eyes, or what the person is looking at, waits up to five seconds
-# for the page's answer. Nothing is written. With no page open it is refused, with what to do next. An agent asks from
+# something, what a figure sees, a picture from its eyes, or what the person is looking at, and an act of the body,
+# which the page answers once the body is done with where it ended up, waits for the page's answer. Nothing is written. With no page open it is refused, with what to do next. An agent asks from
 # its own figure, METAFORM_WORK, the ticket its runner gave it; the person's system agent and the person from the
 # mascot.
 EMOTES = ('wave', 'think', 'celebrate', 'shrug', 'sleep')
@@ -795,21 +807,21 @@ MODULE = Module(
              nouns=(Noun('text', 'What the mascot says, a line or two.'),
                     Noun('speak', 'true says it aloud too, where the person\'s voice settings speak; the answer says if it was.',
                          required=False)), effect='read', open_world=False),
-        Verb('go', go, "Walk the person's mascot to a part of the map, or to a viewpoint near it.",
+        Verb('go', go, "Walk your figure, or else the person's mascot, to a part of the map and face it; answers where it ended up.",
              nouns=(Noun('address', 'The address of the element it goes to.'),
-                    Noun('distance', 'How far from it to stand, in the map\'s units, as see measures them.', required=False),
+                    Noun('distance', 'How far from its surface to stand, in the map\'s units, as see measures them.', required=False),
                     Noun('height', 'How far above it to stand, in the map\'s units.', required=False)),
              effect='read', open_world=False),
-        Verb('turn', turn, "Turn the person's mascot to face a part of the map, or by some degrees, left is negative.",
+        Verb('turn', turn, "Turn your figure, or else the person's mascot, to face a part of the map, or by some degrees, left negative.",
              nouns=(Noun('address', 'The address of the element to face.', required=False),
                     Noun('degrees', 'How far to turn instead, in degrees, left negative, right positive.', required=False)),
              effect='read', open_world=False),
-        Verb('point', point, "Turn the person's mascot toward a part of the map and gesture at it.",
+        Verb('point', point, "Turn your figure, or else the person's mascot, toward a part of the map and gesture at it.",
              nouns=(Noun('address', 'The address of the element it points at.'),), effect='read', open_world=False),
-        Verb('emote', emote, "Show a feeling with the person's mascot: wave, think, celebrate, shrug or sleep.",
+        Verb('emote', emote, "Show a feeling with your figure, or else the person's mascot: wave, think, celebrate, shrug or sleep.",
              nouns=(Noun('emote', 'One of wave, think, celebrate, shrug, sleep.'),), effect='read', open_world=False),
         # The mascot's body in the map's space: only the layout's positions move, as a node dragged by hand does.
-        Verb('move', move, "Move the person's mascot freely through the 3D map: to an element, a point, or a step from its heading.",
+        Verb('move', move, "Move your figure, or else the person's mascot, through the 3D map: to an element, a point, or a step from where it faces.",
              nouns=(Noun('address', 'The element it goes to.', required=False),
                     Noun('point', 'A point x,y,z in the units web_see measures.', required=False),
                     Noun('forward', 'A step ahead, negative back.', required=False),
@@ -827,11 +839,11 @@ MODULE = Module(
                     Noun('beside', 'An element to set it down beside.', required=False)), effect='read', open_world=False),
         Verb('drop', drop, "Have the person's mascot let go of the element it carries; the map settles round it.",
              effect='read', open_world=False),
-        Verb('take', take, "Hold the person's mascot under your lead past your turn, its own will paused, until web_release.",
+        Verb('take', take, "Hold your figure still where it stands, or the person's mascot under your lead past your turn, until web_release.",
              nouns=(Noun('reason', 'Why, in a few words, said in its bubble.'),), effect='read', open_world=False),
-        Verb('release', release, "Give the person's mascot back its own will; it goes on from where it stands.",
+        Verb('release', release, "Let your figure, or the person's mascot, go its own way again from where it stands.",
              effect='read', open_world=False),
-        Verb('see', see, 'List what your figure sees on the 3D map now: each node in view, how far, which way, and the nearest.',
+        Verb('see', see, 'List what your figure perceives on the 3D map now: the nearest parts in view and not hidden, how far, which way.',
              nouns=(Noun('address', 'Turn to face this element first.', required=False),), effect='read', open_world=False),
         Verb('look', look, "A picture of the 3D map from your figure's own eyes, with what it sees.",
              nouns=(Noun('address', 'Turn to face this element first.', required=False),), effect='read', open_world=False),

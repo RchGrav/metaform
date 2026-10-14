@@ -2,20 +2,21 @@
 import '/page/app/keys/walk.js';  // the part before runs first, so the parts run in the page's order
 import {$, h, fill} from '/page/app/core/dom.js';
 import {S, MEM} from '/page/app/core/reads.js';
-import {G, touched} from '/page/app/map3d/graph3d.js';
+import {G, touched, pauseLayout, relayout} from '/page/app/map3d/graph3d.js';
 import {PLAIN, setTheme} from '/page/app/map3d/draw3d.js';
-import {fit3d} from '/page/app/camera/flight.js';
+import {fit3d, swapMaps} from '/page/app/camera/flight.js';
 import {small3d} from '/page/app/camera/fly3d.js';
 import {peek} from '/page/app/views/settings.js';
-import {stepFlow, PHYS, choosePhysics} from '/page/app/views/bar.js';
-import {toggleNodeZoom} from '/page/app/views/lens.js';
+import {stepFlow, PHYS, PHYSICS, choosePhysics} from '/page/app/views/bar.js';
 import {M} from '/page/app/map2d/build.js';
 import {entryOf} from '/page/app/map2d/fit.js';
 import {IN} from '/page/app/map2d/inside.js';
-import {MAC} from '/page/app/map2d/camera.js';
-import {deselect} from '/page/app/map2d/wire.js';
+import {MAC, resetZoom} from '/page/app/map2d/camera.js';
+import {note2d} from '/page/app/map2d/hover.js';
+import {deselect, step} from '/page/app/map2d/wire.js';
+import {followNext, agentView} from '/page/app/figures/eyes.js';
 import {across, below, besideDrawn, besideOnLevel, childrenOf, parentOf, roots, goInside, levelUp, mapKeys,
-  largeKey} from '/page/app/keys/walk.js';
+  zoomKey, stepDepth} from '/page/app/keys/walk.js';
 import {select} from '/page/app/selection/select.js';
 import {dockGoingAway, dockState} from '/page/app/dock/embody.js';
 import {putChatAway} from '/page/app/dock/helpdesk.js';
@@ -24,36 +25,52 @@ import {chatDocked, WS} from '/page/app/workspace/workspace.js';
 
 /* Every key the page takes, in one table: the reference `?` opens is drawn from it, grouped and searchable, and the
  * map's keys run from it, `KEY_RUN`, so the two never part. `keys` is what the reference shows, `match` the keys that
- * run `run`; an entry with no `run` is a key another handler takes, written here so it is listed. The Alt digits are
- * the physics presets, `PHYSICS`, run by their own listener by the key's place. */
+ * run `run`, a key held with Alt matched as `Alt+` and its name; an entry with no `run` is a key another handler takes,
+ * written here so it is listed. The maps have no bar: these keys do what its buttons did. */
 const KEYS = [
   {group: 'Anywhere', keys: ['/'], what: 'Search the map', match: ['/'], run: () => openSearch()},
   {group: 'Anywhere', keys: ['?'], what: 'Keyboard shortcuts', match: ['?'], run: () => openHelp()},
-  {group: 'Anywhere', keys: ['V'], what: 'View menu', match: ['v', 'V'], run: () => $('#settingsBtn').click()},
   {group: 'Anywhere', keys: ['Esc'], what: 'Close, or deselect'},
   {group: 'Maps', keys: ['↑', '↓', '←', '→'], what: 'Move between nodes'},
   {group: 'Maps', keys: ['Enter'], what: 'Go inside'},
   {group: 'Maps', keys: ['Shift', 'Enter'], what: 'Go out'},
-  // the 2D map zooms by the wheel at any time, VIEW-041; 3 and Z turn auto zoom, web_node_zoom, on and off for both
-  {group: 'Zoom', keys: ['3', 'Z'], what: 'Auto zoom on/off, both maps', match: ['3', 'z', 'Z'],
-    run: () => toggleNodeZoom()},
-  {group: 'Zoom', keys: ['4', '5', '6'], what: '3D zoom: 25%, 50%, 75%', match: ['4', '5', '6'], run: largeKey},
-  {group: 'Zoom', keys: ['0'], what: '2D full fit, 3D zoom reset', match: ['0', 'Home'], run: largeKey},
+  {group: 'Maps', keys: [MAC ? '⌥' : 'Alt', '←'], what: 'Back to the node selected before', match: ['Alt+ArrowLeft'],
+    run: () => step(-1)},
+  {group: 'Maps', keys: [MAC ? '⌥' : 'Alt', '→'], what: 'Forward again', match: ['Alt+ArrowRight'],
+    run: () => step(1)},
+  {group: 'Maps', keys: ['S'], what: 'Swap the two maps', match: ['s', 'S'], run: () => swapMaps()},
+  // A follows an agent, and V sees the large 3D map through its eyes, `followNext` and `agentView` in figures/eyes.js
+  {group: 'Agents', keys: ['A'], what: 'Follow an agent: none, then each on the map in turn', match: ['a', 'A'],
+    run: () => followNext()},
+  {group: 'Agents', keys: ['V'], what: "Your view or the followed agent's view", match: ['v', 'V'],
+    run: () => agentView()},
+  // each digit cycles one setting, and each press says its new value at the 2D map's corner; the 2D map is fit-all,
+  // zooming by the wheel at any time, VIEW-041, and onto a followed agent's node
+  {group: 'Zoom', keys: ['1'], what: '3D zoom: 1/4, 1/2, 3/4', match: ['1'], run: zoomKey},
+  {group: 'Zoom', keys: ['0'], what: 'Full fit, both maps', match: ['0', 'Home'], run: () => resetZoom()},
   {group: 'Zoom', keys: ['F'], what: 'Fit once (3D)', match: ['f', 'F'],
     run: () => { if (G && !small3d()) { fit3d(); peek('key'); } }},
-  {group: 'Zoom', keys: ['7', '8', '9'], what: '2D direction', match: ['7', '8', '9'], run: largeKey},
-  {group: 'Looks', keys: ['L'], what: 'Layout: Organic or Flat', match: ['l', 'L'],
-    run: () => choosePhysics(PHYS.name === 'flat' ? 'organic' : 'flat')},
-  {group: 'Looks', keys: ['D'], what: 'Flow: hover, selection, all, then each with edges hidden', match: ['d', 'D'],
-    run: () => stepFlow()},
+  {group: 'Looks', keys: ['2'], what: 'Flow: off, hover, selection, all, live, then each with edges hidden',
+    match: ['2'], run: () => stepFlow()},
+  {group: 'Looks', keys: ['3'], what: 'Layout: Organic or Flat', match: ['3'], run: stepLayout},
+  {group: 'Looks', keys: ['4'], what: 'Depth: 1, 2, 3, 4 or all levels', match: ['4'], run: () => stepDepth()},
+  {group: 'Looks', keys: ['P'], what: 'Pause or resume the 3D layout', match: ['p', 'P'], run: () => pauseLayout()},
+  {group: 'Looks', keys: ['R'], what: 'Re-run the 3D layout from new places', match: ['r', 'R'],
+    run: () => relayout()},
   {group: 'Looks', keys: ['U'], what: 'Space theme on/off', match: ['u', 'U'],  // the space theme or the last plain one
     run: () => setTheme(document.documentElement.dataset.theme === 'space' ? PLAIN.last : 'space')},
   {group: 'Chat', keys: ['C'], what: 'Open or hide chat', match: ['c', 'C'], run: toggleChat},
   {group: 'Chat', keys: ['Enter'], what: 'Send'},
   {group: 'Chat', keys: ['Shift', 'Enter'], what: 'New line'},
   {group: 'Chat', keys: [MAC ? '⌘' : 'Ctrl', '.'], what: 'Interrupt the agent'},
+  {group: 'Chat', keys: ['Space'], what: 'Hold to talk to the agent; release sends'},
   {group: 'Chat', keys: [MAC ? '⌥' : 'Ctrl', 'Space'], what: 'Talk'},
 ];
+function stepLayout() {
+  const name = PHYS.name === 'flat' ? 'organic' : 'flat';
+  choosePhysics(name);
+  note2d(`Layout: ${PHYSICS.find(([one]) => one === name)[1]}`);
+}
 function toggleChat() {
   const open = $('#dock').className.startsWith('open') && !chatDocked() && !dockGoingAway();
   return open ? putChatAway() : dockState('open');
@@ -62,7 +79,7 @@ const KEY_RUN = new Map(KEYS.filter(entry => entry.run).flatMap(entry => entry.m
 /* The reference, drawn from `KEYS`, centered over the page: its tabs, the everyday keys first, then the developer's,
  * then the looks and the zoom; each group a card of what a key does with its keys beside it; and a search that keeps
  * the keys whose words match, across every tab. A tab with no keys is not offered. */
-const HELP_TABS = [['Shortcuts', ['Anywhere', 'Maps', 'Chat', 'Tools']], ['Dev keys', ['Developer']],
+const HELP_TABS = [['Shortcuts', ['Anywhere', 'Maps', 'Agents', 'Chat', 'Tools']], ['Dev keys', ['Developer']],
   ['Visuals', ['Zoom', 'Looks']]];
 const HELP = {tab: 'Shortcuts'};
 export function openHelp() {
@@ -107,8 +124,9 @@ function mapKey(event) {
   if (!mapKeys(event)) return;
   touched();  // a map key holds an agent start's auto zoom off for a while, `TOUCHED`, VIEW-041
   // The keys of the key table, `KEYS`, each run by its entry, so the reference `?` opens says what each does.
-  const entry = KEY_RUN.get(event.key);
+  const entry = KEY_RUN.get(event.altKey ? `Alt+${event.key}` : event.key);
   if (entry) { event.preventDefault(); entry.run(event.key); return; }
+  if (event.altKey) return;  // only the Alt keys of the table are the maps'
   // Escape lets go of the selection, and with nothing selected backs out one level; Shift+Enter always backs out.
   if (event.key === 'Escape') {
     event.preventDefault();

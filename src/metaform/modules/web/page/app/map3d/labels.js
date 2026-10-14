@@ -22,7 +22,6 @@ import {flow3d} from '/page/app/flow/fx3d.js';
 import {flight} from '/page/app/camera/flight.js';
 import {small3d, SMALL_NAME, MEET, frameWhileSpreading, holdMet} from '/page/app/camera/fly3d.js';
 import {PHYS, signsFacing} from '/page/app/views/bar.js';
-import {showModes3d} from '/page/app/views/lens.js';
 import {joinTitle} from '/page/app/map2d/inside.js';
 
 /* The labels of the 3D map, VIEW-038, are drawn inside the scene, each its element's whole name, wrapped at word
@@ -297,6 +296,23 @@ function placeSign(sprite, node, place, ball, wide, tall) {
   const behind = (eye.x - at.x) * OUT.x + (eye.y - at.y) * OUT.y + (eye.z - at.z) * OUT.z < 0;
   sprite.lookAt(AT.copy(at).addScaledVector(OUT, behind ? -1 : 1));
 }
+/* The signs turned for one picture from an eye other than the person's, a figure's own, `lookFrom`: a facing sign
+ * turned to that eye, an outward one turned round on its upright axis when that eye is behind it, so the picture reads
+ * every name as written. Gives back what puts each sign as the person's view has it. */
+const FACE = new THREE.Vector3(), TOWARD_EYE = new THREE.Vector3();
+const TURNED = new THREE.Quaternion().setFromAxisAngle(Y_UP, Math.PI);
+export function signsFor(camera) {
+  const kept = [];
+  for (const tag of tags.values()) {
+    const sprite = tag.sprite;
+    if (!sprite.visible) continue;
+    kept.push([sprite, sprite.quaternion.clone()]);
+    if (signsFacing()) { sprite.quaternion.copy(camera.quaternion); continue; }
+    FACE.set(0, 0, 1).applyQuaternion(sprite.quaternion);  // a sign's face is its plane's +z
+    if (FACE.dot(TOWARD_EYE.subVectors(camera.position, sprite.position)) < 0) sprite.quaternion.multiply(TURNED);
+  }
+  return () => { for (const [sprite, turn] of kept) sprite.quaternion.copy(turn); };
+}
 /* OUT, the way from the map's middle to a node, or up at the middle itself. */
 function outward(node) {
   OUT.set(node.x - middle.x, node.y - middle.y, node.z - middle.z);
@@ -395,7 +411,6 @@ export function prepare3d() {
   if (BLOOM) BLOOM.enabled = !ULTRA.on() && (Boolean(R.key) || signaled);
   ULTRA.frame(now, data);
   placeTip();
-  showModes3d();
   FRAMES.busy = !reduced() && (Boolean(R.key) || ROAM.figures.size > 0 || GHOSTS.built.size > 0 || signaled
     || mascotAwake());
   FRAMES.flowing = !reduced() && FLOW.count > 0 && FLOW.held === null;

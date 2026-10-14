@@ -6,6 +6,7 @@ import {underHiddenRoot} from '/page/app/header/layers.js';
 import {keyOf, labelOf} from '/page/app/map2d/inside.js';
 import {memoryLayer, memoryKey} from '/page/app/memory/graph.js';
 import {itemText} from '/page/app/panel/object.js';
+import {depthView} from '/page/app/keys/walk.js';
 
 /* ---------- the graph data ---------- */
 /* The graph as the approved prototype draws it: each join uncollapsed as its receiver, a purpose vertex and the
@@ -20,16 +21,23 @@ export function graphData() {
   addMemories(graph, drawn);
   return graph;
 }
-/* Each element shown, linked to its nearest parent element. */
+/* Each element shown, linked to its nearest parent element; one deeper than the depth stays inside the node that
+ * holds it, which says how many it holds, VIEW-051. */
 function addElements({nodes, links}) {
   const byAddress = new Map([...S.elements.values()].map(entry => [entry.element.address, entry.element.id]));
+  const {shown, held} = depthView();
   for (const {element, parent} of S.elements.values()) {
     if (underHiddenRoot(element.address)) continue;  // an edge of the project the viewer turned off
-    nodes.push({id: element.id, t: 'el', name: labelOf(element), address: element.address,
-      role: element.role, work: element.open_work || [], layer: element.layer});
-    if (parent && byAddress.has(parent)) links.push({source: byAddress.get(parent), target: element.id, k: 'tree'});
+    if (shown && !shown.has(element.id)) continue;
+    nodes.push({id: element.id, t: 'el', name: heldName(labelOf(element), held.get(element.id)),
+      address: element.address, role: element.role, work: element.open_work || [], layer: element.layer,
+      held: held.get(element.id) || 0});
+    const above = parent && byAddress.get(parent);  // a parent held deeper than the depth is not drawn to
+    if (above && (!shown || shown.has(above))) links.push({source: above, target: element.id, k: 'tree'});
   }
 }
+/* A node's name with the count of the parts it holds beneath it, VIEW-051. */
+export const heldName = (name, held) => held ? `${name} +${held}` : name;
 /* Each join whose receiver and some provider are drawn: its purpose vertex, a link from the receiver to it, and an
  * encounter on to each provider drawn. */
 function addJoins({nodes, links}) {

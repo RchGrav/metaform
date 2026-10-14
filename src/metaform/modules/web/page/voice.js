@@ -4,6 +4,8 @@
  * Click it to start or stop listening; hold Ctrl+Space (or Option+Space on a Mac) to talk while held, or tap it to
  * start and tap again to stop. What is said appears in the box as it is said, editable; voice_send review leaves it
  * there for Enter, auto sends it after a pause. Escape while listening stops and drops what was not yet heard.
+ * Space alone, held while the focus is not where Space types or presses, talks into the chat: release sends what was
+ * heard to the agent the chat talks to, and a press that heard nothing sends nothing.
  *
  * Which engine hears is the voice module's choice, /api/voice/status: Whisper on this machine's server when it serves
  * speech well, or Whisper in this page's own worker, voice-worker.js, on WebGPU or WebAssembly; the person's own
@@ -191,9 +193,10 @@ async function start(field, button, mode) {
   if (V.engine === 'off' || V.field) return;
   const missing = need();
   if (missing && !(await ask(button, missing))) return;
+  if (mode === 'space' && !V.space) return;  // Space was let go while the model was asked for
   if (W.on && !W.suspended) { W.suspended = true; closeMic(); }  // one microphone: the box has it while spoken into
   Object.assign(V, {field, button, mode, base: field.value, live: '', clip: null, segment: null, speaking: false,
-    lead: [], quiet: 0, busy: false, lastPartial: 0});
+    lead: [], quiet: 0, busy: false, lastPartial: 0, before: field.value});
   if (V.base && !/\s$/.test(V.base)) V.base += ' ';
   button.classList.add('listening');
   button.setAttribute('aria-pressed', 'true');
@@ -203,6 +206,7 @@ async function start(field, button, mode) {
     if (V.engine === 'browser-speech') return listenWithBrowser();
     if (V.engine === 'browser') warmWorker();
     await openMic();
+    if (V.field !== field && !W.on) closeMic();  // a short press let go before the microphone opened
   } catch (error) {
     stop(true);
     note(error?.name === 'NotAllowedError' ? 'The microphone was not allowed. Allow it in the browser to speak.'
@@ -210,7 +214,7 @@ async function start(field, button, mode) {
   }
 }
 async function stop(cancel) {
-  const field = V.field, button = V.button;
+  const field = V.field, button = V.button, mode = V.mode;
   if (!field) return;
   if (V.recognition) { const it = V.recognition; V.recognition = null; try { it.stop(); } catch { /* ended */ } }
   if (V.segment && !cancel && V.speaking) finishSegment();
@@ -224,8 +228,13 @@ async function stop(cancel) {
   await V.finals;
   if (cancel) { V.live = ''; write(field); }
   field.classList.remove('voice-live', 'voice-partial');
-  if (!cancel && V.status?.send === 'auto' && field.value.trim()) submitSoon(field, 0);
-  field.focus();
+  if (mode === 'space') {  // Space sends what it heard, and only that; the focus goes back to where Space was pressed
+    if (!cancel && field.value.trim() !== V.before.trim()) submitSoon(field, 0);
+    if (document.activeElement === field) { field.blur(); V.back?.focus?.({preventScroll: true}); }
+  } else {
+    if (!cancel && V.status?.send === 'auto' && field.value.trim()) submitSoon(field, 0);
+    field.focus();
+  }
   if (W.on && W.suspended) { W.suspended = false; openMic().catch(() => wakeOff('The microphone could not open again.')); }
 }
 async function openMic() {
@@ -460,6 +469,18 @@ function isKey(event) {
   return event.code === 'Space' && !event.shiftKey && !event.metaKey
     && ((event.ctrlKey && !event.altKey) || (MAC && event.altKey && !event.ctrlKey));
 }
+/* Space alone talks, except where Space types or presses: a text field, the prompt editor, a button or another control.
+ * A node on the maps is not pressed by Space, so there it talks too. */
+const TYPES = 'input, select, textarea, .CodeMirror, [contenteditable]:not([contenteditable="false"])';
+const PRESSES = 'button, a[href], summary, [role=button], [role=tab], [role=menuitem], [role=option], [role=listbox], '
+  + '[role=switch], [role=checkbox], [role=radio]';
+function spaceTalks(event) {
+  if (event.code !== 'Space' || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey || event.isComposing)
+    return false;
+  const target = event.target instanceof Element ? event.target : document.body;
+  if (target.closest(TYPES)) return false;
+  return !target.closest(PRESSES) || Boolean(target.closest('#map2d, #stage') && !target.closest('.crumbs'));
+}
 function targetField() {
   const active = document.activeElement;
   if (active?.matches?.(FIELDS)) return active;
@@ -480,6 +501,16 @@ addEventListener('keydown', event => {
     if (!event.repeat) { if (W.on) wakeOff(); else wakeOn(); }
     return;
   }
+  if (V.space && event.code === 'Space') { event.preventDefault(); event.stopPropagation(); return; }  // held
+  if (spaceTalks(event) && !V.field && V.engine !== 'off' && !V.hiddenWhy) {
+    event.preventDefault();
+    event.stopPropagation();
+    const field = targetField();
+    if (!field) return;
+    Object.assign(V, {space: true, back: document.activeElement});
+    start(field, micOf(field), 'space');
+    return;
+  }
   if (!isKey(event) || V.engine === 'off' || V.hiddenWhy) return;
   event.preventDefault();
   event.stopPropagation();
@@ -492,6 +523,13 @@ addEventListener('keydown', event => {
   start(field, micOf(field), 'hold');
 }, true);
 addEventListener('keyup', event => {
+  if (V.space && event.code === 'Space') {  // Space let go: what was heard is sent
+    event.preventDefault();
+    event.stopPropagation();
+    V.space = false;
+    if (V.field && V.mode === 'space') stop(false);
+    return;
+  }
   if (!V.pressed || !(event.code === 'Space' || event.key === 'Control' || event.key === 'Alt')) return;
   const held = performance.now() - V.pressed;
   V.pressed = 0;
@@ -499,6 +537,11 @@ addEventListener('keyup', event => {
   if (held < TAP) { V.mode = 'free'; return; }  // a tap: listening goes on hands-free until the next tap
   stop(false);
 }, true);
+addEventListener('blur', () => {  // the page lost the key while Space was held: nothing is sent
+  if (!V.space) return;
+  V.space = false;
+  if (V.field && V.mode === 'space') stop(true);
+});
 
 /* ---------- an agent that takes audio: the recording rides beside its transcript ---------- */
 /* What app.js adds to a chat message: the clip of what was just said, kept on the server for the agent, when the

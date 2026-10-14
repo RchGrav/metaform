@@ -7,18 +7,21 @@ import {eyeOf} from '/page/agents3d.js';
 import {$, css, reduced} from '/page/app/core/dom.js';
 import {S} from '/page/app/core/reads.js';
 import {joinOf} from '/page/app/graph/data.js';
-import {ROAM, ballOf, isSystemTalk, conversing} from '/page/app/figures/agents.js';
-import {PULL, TOWARD, SPOT} from '/page/app/figures/walk.js';
+import {ROAM, ballOf, isSystemTalk, conversing, sizeOf} from '/page/app/figures/agents.js';
+import {PULL, TOWARD, SPOT, facingOf} from '/page/app/figures/walk.js';
 import {MASCOT, mascotGlyph} from '/page/app/figures/mascot.js';
-import {turnMascot} from '/page/app/figures/attention.js';
+import {faceToward, TURNED} from '/page/app/figures/attention.js';
 import {INUSE, shownNode} from '/page/app/map3d/light.js';
 import {G, FRAMES, wake3d} from '/page/app/map3d/graph3d.js';
-import {AT} from '/page/app/map3d/labels.js';
+import {AT, signsFor} from '/page/app/map3d/labels.js';
 import {flowModeNow} from '/page/app/flow/flow.js';
 import {tintOf, fxDot, fxLine} from '/page/app/flow/fx3d.js';
 import {MODE, V3} from '/page/app/camera/flight.js';
+import {small3d} from '/page/app/camera/fly3d.js';
 import {PHYS} from '/page/app/views/bar.js';
 import {labelOf} from '/page/app/map2d/inside.js';
+import {FOLLOW, autoZoom2d, fullFit2d} from '/page/app/map2d/camera.js';
+import {note2d} from '/page/app/map2d/hover.js';
 import {ticketOf} from '/page/app/agents/dispatch.js';
 import {tabNow} from '/page/app/panel/prompts.js';
 import {WS} from '/page/app/workspace/workspace.js';
@@ -46,7 +49,7 @@ function seer(work, role) {
 /* A figure's eyes as a camera: at its eye anchor, facing its gaze, with its own field of view, `eyeOf`. */
 export const EYE = {camera: new THREE.PerspectiveCamera(68, 1.5, 0.05, 1e6), at: new THREE.Vector3(),
   dir: new THREE.Vector3(), look: new THREE.Vector3(), width: 768, height: 512, target: null, debug: false, view: false,
-  saved: null, k: 0};
+  saved: null, k: 0, mesh: null, agent: false};
 function eyeCamera(mesh, aspect = EYE.width / EYE.height) {
   eyeOf(mesh, EYE.at, EYE.dir);
   const camera = EYE.camera;
@@ -61,26 +64,35 @@ function eyeCamera(mesh, aspect = EYE.width / EYE.height) {
   camera.updateMatrixWorld(true);
   return camera;
 }
-/* What a figure sees now: every element in its field of view, with how far, which way, whether something nearer hides
- * it, and whether it is selected or being worked; the figures in view; and the elements nearest it, seen or not. */
+/* What a figure perceives now, VIEW-005: the elements and joins in its field of view, within SIGHT of its size and
+ * hidden by nothing nearer, nearest first, at most SEEN of them and the rest as a count; each with how far its surface
+ * is, which way it is, and whether it is in reach, selected or being worked; the figures it perceives so; and the
+ * nearest one ahead, what it faces. Nothing it cannot perceive is listed. */
+const SIGHT = 12, SEEN = 12, FIGURES = 6, REACH = 1.5;
 function seeFrom(mesh, camera) {
-  const data = G.graphData(), eye = EYE.at, seen = [], near = [];
+  const data = G.graphData(), eye = EYE.at, seen = [], size = ROAM.drawn || sizeOf(data), range = size * SIGHT;
   const drawn = node => node.x !== undefined && node.__threeObj?.visible !== false && shownNode(node);
   const balls = data.nodes.filter(drawn);
   for (const node of balls) {
     if (node.t !== 'el' && node.t !== 'purpose') continue;
     const point = new THREE.Vector3(node.x, node.y, node.z), away = point.distanceTo(eye);
-    const v = point.clone().project(camera), entry = seenEntry(node, away);
-    if (node.t === 'el') near.push(entry);
-    if (inFrame(v)) seen.push({...entry, bearing: bearingOf(v), visible: !hiddenBehind(balls, eye, point, away, node)});
+    const surface = Math.max(0, away - ballOf(node)), v = point.clone().project(camera);
+    if (surface > range || !inFrame(v) || hiddenBehind(balls, eye, point, away, node)) continue;
+    seen.push(perceived(node, surface, bearingOf(v), size));
   }
-  const figures = figuresSeen(mesh, camera, eye);
   seen.sort((one, two) => one.distance - two.distance);
-  near.sort((one, two) => one.distance - two.distance);
-  const first = one => one.bearing === 'ahead' ? 0 : 1;
-  const ahead = seen.filter(one => one.visible).sort((one, two) => first(one) - first(two))[0];
-  return {fov: Math.round(camera.fov), facing: ahead?.address || null, in_view: seen, figures,
-    nearest: near.slice(0, 6)};
+  const figures = figuresSeen(mesh, camera, eye, balls, range);
+  const ahead = seen.find(one => one.bearing === 'ahead') || seen[0];
+  return {fov: Math.round(camera.fov), range: Math.round(range), facing: ahead?.address || null,
+    in_view: seen.slice(0, SEEN), ...(seen.length > SEEN ? {more: seen.length - SEEN} : {}),
+    figures: figures.slice(0, FIGURES), ...(figures.length > FIGURES ? {more_figures: figures.length - FIGURES} : {})};
+}
+/* An element or a join as a figure perceives it: its address, name and kind, how far its surface is and which way,
+ * and, only when so, in reach, selected or being worked. */
+function perceived(node, surface, bearing, size) {
+  const {address, name, kind, selected, active} = seenEntry(node, surface);
+  return {address, name, kind, distance: Math.round(surface * 10) / 10, bearing,
+    ...(surface <= size * REACH ? {in_reach: true} : {}), ...(selected ? {selected} : {}), ...(active ? {active} : {})};
 }
 /* A point projected by a camera is in its frame: in front of it and inside its edges. */
 const inFrame = v => v.z > -1 && v.z < 1 && Math.abs(v.x) <= 1 && Math.abs(v.y) <= 1;
@@ -110,19 +122,19 @@ function seenEntry(node, away) {
     name: join ? (join.purpose || 'a join') : node.name, kind: join ? 'join' : 'element',
     distance: Math.round(away * 10) / 10, selected: S.selected === node.id, active: worked};
 }
-/* The other figures in view, the mascot among them. */
-function figuresSeen(mesh, camera, eye) {
+/* The other figures it perceives, the mascot among them: in view, in range and hidden by no node, nearest first. */
+function figuresSeen(mesh, camera, eye, balls, range) {
   const mascot = MASCOT.mesh ? [{mesh: MASCOT.mesh, glyph: MASCOT.glyph, mascot: true}] : [];
   const figures = [];
   for (const figure of [...ROAM.figures.values(), ...mascot]) {
     if (figure.mesh === mesh) continue;
-    const point = figure.mesh.position, v = point.clone().project(camera);
-    if (!inFrame(v)) continue;
+    const point = figure.mesh.position, v = point.clone().project(camera), away = point.distanceTo(eye);
+    if (away > range || !inFrame(v) || hiddenBehind(balls, eye, point, away, null)) continue;
     figures.push({character: figure.glyph,
       who: figure.mascot ? "the person's mascot" : `the agent on ${partAddress(figure.target) || 'its ticket'}`,
-      distance: Math.round(point.distanceTo(eye) * 10) / 10, bearing: bearingOf(v)});
+      distance: Math.round(away * 10) / 10, bearing: bearingOf(v)});
   }
-  return figures;
+  return figures.sort((one, two) => one.distance - two.distance);
 }
 const partAddress = id => S.elements.get(id)?.element.address
   || (String(id).startsWith('p:') ? joinOf(id)?.receiver_address : null) || null;
@@ -137,6 +149,8 @@ function lookFrom(mesh, camera, width = EYE.width, height = EYE.height) {
   }
   const was = renderer.getRenderTarget(), shown = mesh?.visible;
   if (mesh) mesh.visible = false;
+  // the signs read as written from this eye too, for this picture only; the person's view keeps its own
+  const signsBack = camera === G.camera() ? null : signsFor(camera);
   try {
     renderer.setRenderTarget(EYE.target);
     renderer.clear();
@@ -155,6 +169,7 @@ function lookFrom(mesh, camera, width = EYE.width, height = EYE.height) {
   } finally {
     renderer.setRenderTarget(was);
     if (mesh) mesh.visible = shown;
+    signsBack?.();
   }
 }
 /* The pointer's ray drawn into a picture as the camera that took it sees it, from `pointerNow`: the line from where the
@@ -193,18 +208,37 @@ function drawPointer(pen, camera, width, height) {
   if (hit) { pen.beginPath(); pen.arc(hit[0], hit[1], 11, 0, Math.PI * 2); pen.stroke(); }
   pen.restore();
 }
-/* see and look: from the caller's own figure; turned first toward an address when one is given. */
+/* see and look: from the caller's own figure; with an address, it turns to face it first, and what it sees is read
+ * once it does, `faceToward`, so the picture is taken facing it. A figure at work on its ticket glances at it. */
 export function sight(payload, node, answer) {
   if (!G) return answer({error: 'The 3D map is not open on this page.'});
   const who = seer(payload.work, payload.role);
   if (who.refuse) return answer({error: who.refuse});
-  let wait = 0;
-  if (node) {
-    if (who.mascot) { turnMascot(node); wait = reduced() ? 0 : 900; }
-    else if (who.figure) { who.figure.lookAt = {node, until: who.figure.clock + 3}; wait = reduced() ? 0 : 900; }
+  const seen = turn => answer({...seenBy(who, payload.act === 'look'), ...(turn ? {turn} : {})});
+  wake3d(1500);
+  if (!node) return seen(null);
+  const turning = faceToward(who, node, payload.address);
+  if (turning) return turning.then(turned => seen(turned.stopped_by));
+  if (who.figure) {
+    who.figure.lookAt = {node, until: who.figure.clock + 4};
+    return facingThen(who.mesh, node, 3000, seen);
   }
-  wake3d(wait + 1500);
-  setTimeout(() => answer(seenBy(who, payload.act === 'look')), wait);
+  seen(null);
+}
+/* Once a figure faces a node, within TURNED degrees, or after `most` milliseconds: then(turned or time). */
+function facingThen(mesh, node, most, then) {
+  const began = performance.now(), facing = new THREE.Vector3(), toward = new THREE.Vector3();
+  wake3d(most + 500);
+  const check = () => {
+    const there = G.graphData().nodes.find(one => one.id === node);
+    if (!there || there.x === undefined) return then('its target left the map');
+    toward.set(there.x, there.y, there.z).sub(mesh.position).setY(0);
+    const off = toward.lengthSq() < 1e-8 ? 0 : facingOf(mesh, facing).angleTo(toward.normalize()) * 180 / Math.PI;
+    if (off <= TURNED) return then('turned');
+    if (performance.now() - began > most) return then('time');
+    setTimeout(check, 50);
+  };
+  setTimeout(check, 50);
 }
 /* What a figure sees, from where and which way, and with `picture` a picture of it. */
 function seenBy(who, picture) {
@@ -217,7 +251,8 @@ function seenBy(who, picture) {
 }
 /* What the person is looking at now: the selection, the large map, each map's mode, the side tab, the flow, the
  * physics, the panes open, the elements in the 3D view, where the person's 3D view is, in the units see measures,
- * the mouse pointer on it, and what they share with agents. */
+ * the mouse pointer on it, the agent they follow and whether they see through its eyes, and what they share with
+ * agents. */
 export function viewing() {
   const inView = [];
   if (G) for (const node of G.graphData().nodes) {
@@ -228,7 +263,8 @@ export function viewing() {
   return {selected: selectedNow(), large: $('.app').classList.contains('swapped') ? '2d' : '3d', mode3d: V3.mode,
     zoom2d: MODE.free ? 'free' : 'full fit', tab: tabNow(), flow: flowModeNow(), physics: PHYS.name,
     board: !$('#board').hidden, chat: !$('#helpdesk').hidden, panes: WS.on ? WS.layout() : null, in_view_3d: inView,
-    view_3d: view3d(), pointer: pointerNow(), mascot_eyes: EYE.view, sharing: sharing() ? shareSaid() : null};
+    view_3d: view3d(), pointer: pointerNow(), mascot_eyes: EYE.view && !EYE.agent, following: FOLLOW.work,
+    agent_eyes: EYE.agent, sharing: sharing() ? shareSaid() : null};
 }
 const rounded = (v, by = 10) => v.toArray().map(one => Math.round(one * by) / by);
 /* Where the person's 3D view is and which way it looks, in the units see measures. */
@@ -402,27 +438,35 @@ function selectedNow() {
   if (on) return {address: on.address, name: labelOf(on)};
   return join ? {join: join.purpose, receiver: join.receiver_address} : null;
 }
-/* The mascot's eyes, for the person: the large 3D view eases to where the mascot sees from and follows it, and back
- * to where the camera was. */
-export function mascotEyes(on = !EYE.view) {
-  if (!G || !MASCOT.mesh) return false;
+/* A figure's eyes, for the person: the large 3D view eases to where the figure sees from, its own eye camera,
+ * `eyeCamera`, and goes with it, never orbiting, and back to where the camera was. The mascot's, E; a followed agent's,
+ * V. `mesh` is the body seen from; a new one while the view is on takes the view over to it. */
+export function eyesOf(mesh, on = !EYE.view) {
+  if (!G || (on && !mesh)) return false;
   const camera = G.camera(), controls = G.controls();
   if (on && !EYE.view) EYE.saved = {at: camera.position.clone(), turn: camera.quaternion.clone(), fov: camera.fov};
-  EYE.view = Boolean(on);
+  if (on && EYE.mesh && EYE.mesh !== mesh) EYE.mesh.visible = true;
+  if (on) EYE.mesh = mesh;
+  EYE.view = V3.eyes = Boolean(on);
+  EYE.agent = EYE.view && mesh !== MASCOT.mesh;
   EYE.k = 0;
   controls.enabled = !EYE.view && !EYE.saved;
   wake3d(1500);
   return EYE.view;
 }
+export const mascotEyes = (on = !EYE.view) => MASCOT.mesh ? eyesOf(MASCOT.mesh, on) : false;
 const EYEQ = new THREE.Quaternion();
-export function eyes3d(passed) {  // each frame: the large camera toward the mascot's eyes, or back to where it was
+export function eyes3d(passed) {  // each frame: the large camera toward the figure's eyes, or back to where it was
+  followWatch();
+  // the agent's view is the large 3D map's: put in the small area, the map goes back to the person's view
+  if (EYE.view && small3d()) eyesOf(null, false);
   if (!G || (!EYE.view && !EYE.saved)) return;
-  const camera = G.camera();
+  const camera = G.camera(), mesh = EYE.mesh;
   EYE.k = reduced() ? 1 : Math.min(1, EYE.k + passed / 0.9);
   const k = 1 - Math.pow(1 - EYE.k, 3);
-  if (MASCOT.mesh) MASCOT.mesh.visible = !(EYE.view || (EYE.saved && EYE.k < 0.6));  // never seen from inside
-  if (EYE.view && MASCOT.mesh) {
-    const eye = eyeCamera(MASCOT.mesh, camera.aspect);
+  if (mesh) mesh.visible = !(EYE.view || (EYE.saved && EYE.k < 0.6));  // never seen from inside
+  if (EYE.view && mesh) {
+    const eye = eyeCamera(mesh, camera.aspect);
     camera.position.lerp(eye.position, Math.max(k, 0.25));
     camera.quaternion.slerp(EYEQ.copy(eye.quaternion), Math.max(k, 0.25));
     camera.fov += (eye.fov - camera.fov) * Math.max(k, 0.25);
@@ -433,11 +477,53 @@ export function eyes3d(passed) {  // each frame: the large camera toward the mas
     if (EYE.k >= 1) {
       EYE.saved = null;
       G.controls().enabled = true;
-      if (MASCOT.mesh) MASCOT.mesh.visible = true;
+      if (mesh) mesh.visible = true;
+      EYE.mesh = null;
     }
   }
   camera.updateProjectionMatrix();
   FRAMES.moved = true;
+}
+/* The agents the person can follow, A: each agent's figure on the 3D map still at work, the oldest first. */
+const onScreen = () => [...ROAM.figures.values()].filter(figure => figure.mesh && !figure.done);
+const followSaid = figure => figure
+  ? `Following: the ${figure.glyph} on ${partAddress(figure.target) || 'its ticket'}` : 'Following: none';
+/* Follow an agent's figure, or none: the 2D map frames its node, `autoZoom2d`, and goes back to full fit when none is
+ * followed; seen through an agent's eyes, the view goes over to the new one's, or back to the person's. */
+export function followFigure(figure, say = true) {
+  Object.assign(FOLLOW, {work: figure?.id || null, node: figure?.target || null});
+  if (EYE.agent) {
+    if (figure) eyesOf(figure.mesh, true); else eyesOf(null, false);
+  }
+  if (figure) autoZoom2d(figure.target); else fullFit2d();
+  if (say) note2d(followSaid(figure));
+}
+/* A: none, then each agent on the map in turn, then none again. */
+export function followNext() {
+  const all = onScreen(), at = all.findIndex(figure => figure.id === FOLLOW.work);
+  followFigure(at < 0 ? all[0] || null : all[at + 1] || null);
+}
+/* V: the large 3D map seen from the followed agent's own eyes, or the person's view again. */
+export function agentView() {
+  if (EYE.view) { eyesOf(null, false); note2d('View: yours'); return; }
+  const figure = FOLLOW.work ? ROAM.figures.get(FOLLOW.work) : null;
+  if (!figure?.mesh) return note2d('No agent is followed: A follows one');
+  if (small3d()) return note2d("The agent's view is the large 3D map's: S swaps the maps");
+  eyesOf(figure.mesh, true);
+  note2d(`View: the ${figure.glyph}'s`);
+}
+/* Each frame: a followed agent that has left is replaced by the newest still on the map, or none; one that moves on
+ * to another node takes the 2D map with it. */
+function followWatch() {
+  if (!FOLLOW.work) return;
+  const figure = ROAM.figures.get(FOLLOW.work);
+  if (!figure || figure.done) return followFigure(onScreen().at(-1) || null);
+  if (figure.target !== FOLLOW.node) { FOLLOW.node = figure.target; autoZoom2d(figure.target); }
+}
+/* A project left: nothing followed, and the person's own view. */
+export function leaveFollow() {
+  Object.assign(FOLLOW, {work: null, node: null});
+  if (EYE.agent) eyesOf(null, false);
 }
 export function eyeDebug3d() {  // the eye anchor and the gaze ray of every figure, drawn for a check of `look`
   for (const mesh of [MASCOT.mesh, ...[...ROAM.figures.values()].map(figure => figure.mesh)]) {

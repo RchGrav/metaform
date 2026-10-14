@@ -16,7 +16,7 @@
   --r-sm:4px; --r:6px; --r-lg:10px; --r-pill:999px;
   --t-xs:calc(11px * var(--ui)); --t-sm:calc(12px * var(--ui)); --t-md:calc(13px * var(--ui)); --t-base:calc(14px * var(--ui));
   --t-lg:calc(16px * var(--ui)); --t-xl:calc(20px * var(--ui));
-  --ctl:calc(32px * var(--ui)); --ctl-sm:calc(26px * var(--ui)); --ctl-lg:calc(40px * var(--ui)); --bar:calc(38px * var(--ui));
+  --ctl:calc(32px * var(--ui)); --ctl-sm:calc(26px * var(--ui)); --ctl-lg:calc(40px * var(--ui));
   --ring:2px; --ease:cubic-bezier(.2,.7,.2,1); --quick:.14s;
   /* The easing tokens, mirrored in app.js's EASE for motion drawn in script: --ease-arrive settles what comes in like
    * a spring with no overshoot, --ease-leave lets what goes gently gather speed, --ease-move carries a thing from one
@@ -419,11 +419,6 @@ aside{grid-area:side;border-right:1px solid var(--line);background:var(--panel);
  * cursor; it looks the plain line of the column's border. */
 .splitter.side{position:absolute;top:0;bottom:0;right:-4px;width:8px;cursor:col-resize}
 .splitter.split{height:6px;margin-top:-3px;cursor:row-resize}
-/* The side column on either side of the page: its top bar is dragged across, and the column goes to the other side
- * once the pointer nears that edge; the bar looks the same under the pointer, only the cursor says it can be dragged. */
-aside .bar2d,aside .bar3d{cursor:grab}
-aside .bar2d button,aside .bar3d button,aside .bar2d nav{cursor:pointer}
-body.moving-side,body.moving-side *{cursor:grabbing!important}
 .app.side-right{grid-template-columns:1fr var(--side-width,max(320px,25vw));grid-template-areas:"top top" "stage side"}
 .app.side-right aside{border-right:0;border-left:1px solid var(--line)}
 .app.side-right .splitter.side{right:auto;left:-4px}
@@ -537,8 +532,8 @@ dl.facts dd.addr{font:var(--t-sm)/1.6 var(--mono);color:var(--signal)}
 .small{position:relative;height:var(--small-height,clamp(240px,38vh,380px));border-bottom:1px solid var(--line);overflow:hidden;flex:none}
 #big3d{position:absolute;inset:0;background:var(--ground)}
 .map2d{position:absolute;inset:0;background:var(--ground);overflow:hidden;-webkit-user-select:none;user-select:none}
-.small #big3d .legend,.small #big3d .count,.small #big3d #pauseBtn,.small #big3d #relayoutBtn{display:none}
-.map2d .viewport{position:absolute;left:0;right:0;bottom:0;top:var(--bar)}
+.small #big3d .legend,.small #big3d .count{display:none}
+.map2d .viewport{position:absolute;inset:0}
 .map2d svg{position:absolute;inset:0;width:100%;height:100%;max-width:none!important;cursor:grab}
 .map2d:focus-visible{outline:2px solid var(--signal);outline-offset:-2px}
 .map2d .node rect,.map2d .node polygon{fill:var(--node)!important;stroke:var(--node-line)!important;transition:stroke .3s,fill .3s,opacity .3s}
@@ -582,12 +577,16 @@ dl.facts dd.addr{font:var(--t-sm)/1.6 var(--mono);color:var(--signal)}
 .map2d .cluster.sel rect{stroke:var(--signal)!important;stroke-width:2px!important}
 .map2d .cluster.near rect{stroke:var(--intake)!important}
 .map2d marker path{fill:var(--edge)!important;stroke:none!important}
-/* Each view has the same bar: what steps or moves it on the left, Fit and Swap on the right. */
-.map2d .bar2d,.bar3d{position:absolute;left:0;right:0;top:0;height:var(--bar);display:flex;align-items:center;gap:var(--s2);padding:0 var(--s2);background:var(--panel);border-bottom:1px solid var(--line);z-index:2}
-.map2d .mapbtns,.bar3d .mapbtns{display:flex;gap:2px;margin-left:auto}
-.map2d .navbtns,.bar3d .navbtns{display:flex;gap:2px;flex:none}
-.view3d{position:absolute;left:0;right:0;top:var(--bar);bottom:0;overflow:hidden}
-.map2d .crumbs{flex:1 1 auto;min-width:0;font:var(--t-xs) var(--mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* The maps have no bar: each fills its area, and its keys, listed by ?, do what a bar's buttons did. Inside a node
+ * the 2D map says where it is in a small label at its top left, each crumb going out to that level, VIEW-016; the
+ * readout of what the pointer is on stands below it while it shows, `--crumbs`. */
+.view3d{position:absolute;inset:0;overflow:hidden}
+.map2d{--crumbs:0px}
+.map2d:has(> .crumbs:not([hidden])){--crumbs:calc(var(--t-xs) * 1.6 + .4em + var(--s2))}
+.map2d .crumbs{position:absolute;left:var(--s2);top:var(--s2);z-index:6;max-width:calc(100% - 2 * var(--s2));
+  padding:.2em .6em;border-radius:var(--r);background:color-mix(in srgb,var(--ground) 78%,transparent);
+  font:var(--t-xs)/1.6 var(--mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.map2d .crumbs[hidden]{display:none}
 .map2d .crumbs a{color:var(--signal);text-decoration:none;cursor:pointer}
 .map2d .crumbs b{color:var(--text);font-weight:500}
 .map2d .cluster.layergroup rect{stroke:var(--c,var(--node-line))!important}
@@ -759,7 +758,7 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 #dispatch .ticket .start{grid-column:2;grid-row:1 / span 2}
 #dispatch .body > .start-all{justify-self:start}
 #dispatch .tickets:empty::after{content:'No open ticket here waits for an agent.';color:var(--faint)}
-.agents{position:absolute;top:calc(var(--bar) + var(--s3));right:var(--s4);z-index:6;min-width:200px;max-width:340px;display:grid;gap:var(--s2);padding:var(--s3);background:color-mix(in srgb,var(--panel) 92%,transparent);border:1px solid var(--line-2);border-radius:var(--r-lg);box-shadow:var(--lift-2)}
+.agents{position:absolute;top:var(--s3);right:var(--s4);z-index:6;min-width:200px;max-width:340px;display:grid;gap:var(--s2);padding:var(--s3);background:color-mix(in srgb,var(--panel) 92%,transparent);border:1px solid var(--line-2);border-radius:var(--r-lg);box-shadow:var(--lift-2)}
 .agents .title{font:600 var(--t-sm) var(--sans);color:var(--muted)}
 .agents .list{display:grid;gap:6px}
 .agents .agent{display:grid;grid-template-columns:32px 1fr;gap:2px var(--s3);align-items:center;text-align:left;background:var(--panel-2);border:1px solid var(--line-2);border-radius:var(--r);padding:6px var(--s2);cursor:pointer;color:var(--text)}
@@ -1163,7 +1162,7 @@ button.toolhead:hover{border-color:var(--control)}
 .slash [role="option"][aria-selected="true"]{background:var(--panel-2);box-shadow:inset 0 0 0 1px var(--control)}
 
 /* The intake: a bar over the map while it runs, the window it starts from, and a project with no map yet. */
-.intakebar{position:absolute;top:calc(var(--bar) + var(--s4));left:50%;transform:translateX(-50%);z-index:6;display:flex;align-items:center;gap:var(--s3);
+.intakebar{position:absolute;top:var(--s4);left:50%;transform:translateX(-50%);z-index:6;display:flex;align-items:center;gap:var(--s3);
   width:max-content;max-width:calc(100% - 2 * var(--s3));
   padding:var(--s2) var(--s2) var(--s2) var(--s3);background:var(--panel);border:1px solid var(--line-2);border-left:3px solid var(--intake);border-radius:var(--r-lg);
   box-shadow:var(--lift-2);font:var(--t-md)/1.3 var(--sans);color:var(--text)}
@@ -1260,7 +1259,7 @@ button.toolhead:hover{border-color:var(--control)}
   .modrow > input{grid-area:box}
   .modrow .name{grid-area:name} .modrow .about{grid-area:about} .modrow .tags{grid-area:tags;justify-content:flex-start}
   .modrow.locked .i-lock{grid-area:box}
-  .intakebar{top:calc(var(--bar) + var(--s2));flex-wrap:wrap}
+  .intakebar{top:var(--s2);flex-wrap:wrap}
   .emptystage .card{padding:var(--s5) var(--s4)}
   .sessionbar select{max-width:150px}
 }
@@ -1353,7 +1352,6 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
   aside,.app.side-right aside{border-right:0;border-left:0;border-top:1px solid var(--line)}
   .app.side-right{grid-template-columns:minmax(0,1fr);grid-template-areas:"top" "stage" "side"}
   .splitter{display:none}
-  aside .bar2d,aside .bar3d{cursor:auto}
   .hfield.proj select{max-width:none}
   .menu > button{min-height:var(--ctl)}
   .layerrow{min-height:40px}
@@ -1391,23 +1389,20 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
 /* A node grows and moves about its own center when the 2D map moves between layouts, VIEW-041. */
 .map2d .node{transform-box:fill-box;transform-origin:center}
 
-/* ---------- the graph stage: the maps' own controls ----------
- * The 2D map's seven modes, VIEW-041, as the page's segmented control in the map's bar: the mode the map is in is the
- * one checked, and each names its key. In the small area each shows a short name, its key in its tip. */
-.map2d .mapbtns .modes2d{margin-right:var(--s2)}
-.map2d .mapbtns .modes2d[hidden]{display:none}
-.modes2d{display:inline-flex;align-items:center;gap:var(--s1)}
-.modes2d button kbd{font:500 var(--t-xs)/1 var(--mono);color:var(--faint);background:none;border:0;padding:0;min-width:0;height:auto}
-.modes2d button[aria-pressed="true"]{color:var(--signal)}
 /* The intake's agent's model, thinking and the rest, chosen before it starts. */
 #intake .intakesettings .controls{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s3)}
 #intake .intakesettings .setting{display:flex;flex-direction:column;gap:2px;font-size:var(--t-sm);color:var(--muted)}
 #intake .intakesettings .hint{margin:0;color:var(--muted);font-size:var(--t-sm)}
 #intake .intakesettings .hint:empty{display:none}
+#dispatch .permissions .controls{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s3)}
+#dispatch .permissions .setting{display:flex;flex-direction:column;gap:2px;font-size:var(--t-sm);color:var(--muted)}
+#dispatch .permissions .hint{margin:0;color:var(--muted);font-size:var(--t-sm)}
+#dispatch .permissions .hint:empty{display:none}
+#dispatch .permissions .risk{margin:0;padding:var(--s2) var(--s3);border-left:3px solid var(--danger);border-radius:var(--r);background:var(--panel-2);color:var(--text)}
 /* The joins' lines hidden, web_flow_edges: only what flows along them shows. */
 #map2d.noedges .edgePaths path,#map2d.noedges .edgeLabels{opacity:0}
 /* The 2D map's choice said a moment at its top right as it is made, `note2d`, then faded. */
-.note2d{position:absolute;top:calc(var(--bar) + var(--s2));right:var(--s3);z-index:6;padding:.2em .6em;border-radius:var(--r);
+.note2d{position:absolute;top:var(--s2);right:var(--s3);z-index:6;padding:.2em .6em;border-radius:var(--r);
   background:color-mix(in srgb,var(--ground) 72%,transparent);color:var(--text);font:600 var(--t-base)/1.3 var(--sans);
   opacity:0;pointer-events:none;transition:opacity var(--dur-2) var(--ease-leave)}
 .note2d.on{opacity:1;transition:opacity var(--dur-1) var(--ease-arrive)}
@@ -1450,10 +1445,6 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
 @media (prefers-reduced-motion: reduce){.mascot-bubble,.mascot-card{transition:none}}
 /* Scissors out on the 3D map, `CUT`: the pointer is a pair of scissors. */
 #stage.scissors canvas{cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23f5f7fa' stroke-width='1.8' stroke-linecap='round'%3E%3Ccircle cx='6' cy='6' r='3'/%3E%3Ccircle cx='6' cy='18' r='3'/%3E%3Cpath d='M8.1 8.1 20 20M8.1 15.9 20 4'/%3E%3C/svg%3E") 12 12,crosshair}
-.bar3d .mapbtns .modes3d{margin-right:var(--s2)}
-/* In the small area the bar is narrow: the modes are set tighter, and the breadcrumb keeps room to be read. */
-.small .mapbtns .modes2d button,.small .mapbtns .modes3d button{padding:0 var(--s1)}
-.map2d .bar2d .crumbs{min-width:72px}
 /* the met sign, drawn on the screen over the map where the sign in the scene would be, VIEW-005 */
 .metsign{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:1}
 /* met: the map behind the met sign out of focus, a shallow depth of field on the name, back in focus at a touch */
@@ -1477,6 +1468,15 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
     transform:none!important;max-height:calc(100vh - var(--head-bottom,60px) - 2 * var(--s2))}
   #settingsbox{position:fixed;left:auto;right:var(--s3);top:calc(var(--head-bottom,60px) + 6px)}
 }
+.setpicker{position:relative;display:flex;align-items:center;gap:var(--s2);margin-bottom:var(--s2)}
+.setpicker .btn{display:inline-flex;align-items:center;gap:var(--s2);font-weight:600}
+.setcount{color:var(--muted);font-weight:400;font-variant-numeric:tabular-nums}
+.setpages{position:absolute;top:100%;left:0;z-index:5;display:grid;min-width:220px;max-height:60vh;overflow:auto;
+  margin-top:4px;padding:4px;background:var(--panel);border:1px solid var(--line);border-radius:8px;
+  box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.setpages button{display:flex;justify-content:space-between;gap:var(--s3);padding:6px 10px;border:0;border-radius:6px;
+  background:none;color:var(--text);font:inherit;text-align:left;cursor:pointer}
+.setpages button:hover,.setpages button:focus-visible,.setpages button[aria-selected="true"]{background:var(--panel-2)}
 .setgroup{display:grid;gap:var(--s2);grid-template-columns:minmax(0,1fr)}
 .setgroup .head{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--s1) var(--s3)}
 .setgroup h3{margin:0;font:600 var(--t-base)/1.3 var(--sans);color:var(--text)}
@@ -1764,10 +1764,6 @@ body.ws-dragging,body.ws-dragging *{cursor:grabbing!important;user-select:none}
 .map2d :is(.node.work-question,.node.work-message) :is(polygon,path.label-container,.label-container > path,.label-container > g > path){stroke:var(--question)!important;stroke-width:2px}
 .map2d :is(.node.work-broken,.node.work-trouble) :is(polygon,path.label-container,.label-container > path,.label-container > g > path){stroke:var(--broken)!important;animation:flash var(--pace,1s) ease-in-out infinite}
 @media (prefers-reduced-motion: reduce){.map2d :is(.node.work-broken,.node.work-trouble) :is(polygon,path.label-container,.label-container > path,.label-container > g > path){animation:none;fill:var(--node-broken)!important}}
-/* Each map's own controls, in parts of its bar row: the large map's show, the small area's do not. */
-.peekpart{display:flex;align-items:center;gap:var(--s1)}
-.peekpart[hidden]{display:none}
-.peekpart + .peekpart:not([hidden]){padding-left:var(--s2);border-left:1px solid var(--line)}
 /* The agents window slides in from the right as an agent starts work and away completely after. */
 main #agents{transition:translate var(--dur-2) var(--ease-arrive),opacity var(--dur-2) var(--ease-arrive),transform var(--dur-2) var(--ease-arrive)}
 main #agents.away{translate:calc(100% + var(--s5)) 0;opacity:0;pointer-events:none;
@@ -1807,7 +1803,7 @@ html.frame .viewslot #viewbar{position:static}
 @media (max-width:820px){.dockedge{display:none!important}}
 /* The hover readout across the top of a map's window: what the pointer is on, eased in and faded out, over the map
  * and never under the pointer's click; the pointing finger over anything a click picks. */
-.readout{position:absolute;left:0;right:0;top:var(--bar);z-index:5;pointer-events:none;padding:var(--s2) var(--s4) var(--s4);
+.readout{position:absolute;left:0;right:0;top:0;z-index:5;pointer-events:none;padding:var(--s2) var(--s4) var(--s4);
   background:linear-gradient(to bottom,color-mix(in srgb,var(--ground) 82%,transparent) 55%,transparent);
   font:500 clamp(13px,0.55rem + 0.75vw,22px)/1.35 var(--sans);color:var(--text);text-shadow:0 0 6px var(--ground),0 0 2px var(--ground);
   max-width:none;border:0;border-radius:0;opacity:0;translate:0 -6px;
@@ -1821,7 +1817,7 @@ html.frame .viewslot #viewbar{position:static}
 .readout .why{color:var(--muted)}
 .readout .statechip{font-size:.75em;vertical-align:middle}
 .small .readout .said{-webkit-line-clamp:1;line-clamp:1;display:block;white-space:nowrap;text-overflow:ellipsis}
-#tip3d.readout{left:0!important;top:var(--bar)!important;transform:none!important}
+#tip3d.readout{left:0!important;top:0!important;transform:none!important}
 @media (prefers-reduced-motion: reduce){.readout,.readout.on{transition:none;translate:none}}
 #stage.pickable canvas,#viewport.pickable,#viewport.picking{cursor:pointer}
 /* the 2D map's own grab gives way to the finger wherever a click would take a node or an edge, `nodeAt2d`/`edgeAt2d` */
@@ -1862,7 +1858,6 @@ html.frame .viewslot #viewbar{position:static}
 .voice-ask.leaving{opacity:0;translate:0 6px;transition:opacity .2s var(--ease-leave),translate .2s var(--ease-leave)}
 @media (prefers-reduced-motion:reduce){.voice-mic,.voice-mic .voice-ring,.voice-mic .voice-halo,.voice-ask,.voice-note,.voice-ask .voice-bar span{transition:none;transform:none;translate:none}}
 #helpdesk .compose textarea.voice-live{field-sizing:content}  /* a spoken message grows its box as it is heard, where the browser can */
-.peekpart{flex-wrap:nowrap}
 .physicsmenu kbd{font:500 var(--t-xs)/1 var(--mono);color:var(--faint);background:none;border:0;padding:0;min-width:0;height:auto}
 .physicsmenu{position:fixed;z-index:1200;min-width:200px}
 .physicsmenu [role="menuitemradio"]{display:flex;align-items:center;justify-content:space-between;gap:var(--s4);min-height:var(--ctl);
@@ -1926,7 +1921,7 @@ html.frame .viewslot #viewbar{position:static}
  * the pane, three lines at most, two in the small area, then an ellipsis. */
 .view3d,.map2d{--hover-inset:clamp(11px,1.32vw,18px)}
 .small .view3d,.small .map2d,.small.view3d,.small.map2d{--hover-inset:10px}
-.readout,#tip3d.readout{display:grid;left:var(--hover-inset)!important;top:calc(var(--bar) + var(--hover-inset))!important;
+.readout,#tip3d.readout{display:grid;left:var(--hover-inset)!important;top:calc(var(--crumbs,0px) + var(--hover-inset))!important;
   max-width:min(70%,640px);padding:.16em .45em;border-radius:var(--r);background:color-mix(in srgb,var(--ground) 62%,transparent);
   font:600 clamp(18px,2.2vw,30px)/1.22 var(--sans);letter-spacing:-.005em;text-shadow:0 1px 2px var(--ground),0 0 8px var(--ground)}
 .small .readout,.small #tip3d.readout{font-size:clamp(15px,1.3vw,18px);max-width:calc(100% - 2 * var(--hover-inset))}
@@ -1941,8 +1936,6 @@ html.frame .viewslot #viewbar{position:static}
 .hovercard :is(.text,.more,.work){overflow-wrap:anywhere;-webkit-line-clamp:3;line-clamp:3}
 .small .hovercard .text{-webkit-line-clamp:2;line-clamp:2}
 @media (prefers-reduced-motion: reduce){.readout .said.leaving{transition:none}.readout .said.arriving{animation:none}}
-/* A part lends its controls to the bar row it stands in, so they wrap with the row's own. */
-.peekpart:not([hidden]){display:contents}
 /* The agent's settings in the chat: one quiet line under the head, its controls a popover over the thread, which
  * keeps its room. */
 #helpdesk .sessionbar{gap:var(--s2);padding:var(--s1) var(--s3)}
@@ -2209,12 +2202,47 @@ body:has(.window.mcpwin > .bar:active) .appframe{pointer-events:none}  /* a pane
   #helpdesk .avatar{transition:none}
 }
 
-/* Each map's controls in its own bar row, beside Swap, always in view. */
-.bar3d .peekpart, .bar2d .peekpart{display:flex;align-items:center;gap:var(--s2);flex-wrap:nowrap}
-.bar3d .peekpart[hidden], .bar2d .peekpart[hidden]{display:none}
-.bar3d .mapbtns, .bar2d .mapbtns{display:flex;align-items:center;gap:var(--s3)}
-.bar3d .peeklabel, .bar2d .peeklabel{font:600 var(--t-xs)/1 var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);white-space:nowrap}
-
 /* Out of sight until laid out, then in once: `booting`, theme.js. */
 html.booting body > *{opacity:0}
 body > *{transition:opacity .28s var(--ease-arrive, ease-out)}
+/* The roundtable's tab, BASE-066: the strip at the top left of the large area while a table runs, and its panel over
+ * the map: the table drawn from above on the left, the discussion and the chair's controls in a column on the right. */
+.rtstrip{position:absolute;top:var(--s2);left:var(--s3);z-index:7;display:flex;gap:2px;padding:2px;border-radius:var(--r);
+  background:color-mix(in srgb,var(--panel) 90%,transparent);border:1px solid var(--line-2);box-shadow:var(--lift-2)}
+.rtstrip[hidden],.roundtable[hidden],.rteye[hidden],.rtcount[hidden]{display:none}
+.rtstrip button{min-height:30px;padding:0 var(--s3);background:none;border:0;border-radius:calc(var(--r) - 2px);color:var(--muted);
+  font:500 var(--t-sm)/1 var(--sans);cursor:pointer}
+.rtstrip button:hover{color:var(--text)}
+.rtstrip button[aria-selected="true"]{color:var(--text);background:var(--panel-2)}
+.roundtable{position:absolute;inset:0;z-index:5;display:grid;grid-template-columns:minmax(0,1fr) clamp(300px,32%,440px);background:var(--ground)}
+.rtscene{position:relative;min-width:0;min-height:0;overflow:hidden}
+.rtscene canvas{display:block;width:100%;height:100%;cursor:grab}
+.rteye{position:absolute;right:var(--s3);bottom:var(--s3);width:min(360px,60%);display:grid;background:var(--panel);
+  border:1px solid var(--line-2);border-radius:var(--r-lg);box-shadow:var(--lift-3);overflow:hidden}
+.rteye .bar{display:flex;align-items:center;gap:var(--s2);padding:var(--s1) var(--s1) var(--s1) var(--s3);font:600 var(--t-sm)/1.3 var(--sans);color:var(--text)}
+.rteye .title{flex:1;min-width:0}
+.rteye img{width:100%;display:block;aspect-ratio:4/3;background:#0b0e16}
+.rtside{display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--line);background:var(--panel)}
+.rtstate{margin:0;padding:var(--s2) var(--s4);font:var(--t-sm)/1.4 var(--sans);color:var(--muted);border-bottom:1px solid var(--line)}
+.rtlog{flex:1;min-height:0;overflow:auto;margin:0;padding:var(--s2) var(--s4);list-style:none;display:grid;align-content:start;gap:var(--s3)}
+.rtlog li{display:grid;gap:2px;font:var(--t-md)/1.45 var(--sans);color:var(--text)}
+.rtlog .who{font:600 var(--t-sm)/1.3 var(--sans);color:var(--muted)}
+.rtlog .who small{font-weight:400;color:var(--faint);margin-left:var(--s2)}
+.rtlog .said{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.rtlog li.vetoed .said,.rtlog li.none .said{color:var(--faint)}
+.rtlog li.comment .said{font-style:italic}
+.rtlog .scores{display:flex;flex-wrap:wrap;gap:var(--s1) var(--s3);margin:0;font:var(--t-xs)/1.4 var(--mono);color:var(--muted)}
+.rtlog .scores .low{color:var(--broken)}
+.rtlog .text{justify-self:start;padding:0;background:none;border:0;color:var(--signal);font:var(--t-sm)/1.4 var(--sans);cursor:pointer;text-decoration:underline}
+.rtchair{display:grid;gap:var(--s2);padding:var(--s3) var(--s4);border-top:1px solid var(--line)}
+.rtcount{margin:0;font:600 var(--t-sm)/1.3 var(--sans);color:var(--signal)}
+.rtcomment{display:flex;gap:var(--s2);align-items:end}
+.rtcomment textarea{flex:1;min-width:0;resize:vertical}
+.rtchair .acts{display:flex;gap:var(--s2);justify-content:flex-end}
+#rtopen{width:min(560px,calc(100vw - 2 * var(--s3)))}
+#rtopen .seats .chosen{margin:var(--s1) 0;padding-left:1.4em;display:grid;gap:var(--s1);color:var(--text)}
+#rtopen .seats .chosen li button{margin-left:var(--s2)}
+#rtopen .seats .add{display:flex;gap:var(--s2);margin-top:var(--s1)}
+#rtopen .seats .add :is(select,input){flex:1;min-width:0}
+#rtopen .kindrow{display:flex;gap:var(--s3)}
+#rtopen .kindrow .field{flex:1}

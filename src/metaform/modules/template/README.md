@@ -54,7 +54,7 @@ Each verb, what it returns, and its CLI form `metaform <id> <verb>` and tool for
 
 ## Settings
 
-Each setting the module declares, its default, and which verbs read it as a switch. A list of `<name>=<value>` entries that holds one value per name declares `exclusive='='`, so the settings screen and the TUI offer one value of each name and two are refused.
+Each setting the module declares, its default, and which verbs read it as a switch. A list of `<name>=<value>` entries that holds one value per name declares `exclusive='='`, so the settings screen and the TUI offer one value of each name and two are refused. A setting declares `section='Heading/Subheading'` to sit in a menu of its own on the settings screen and the TUI, and `choice_help={choice: plain words}` (or a function of a Context) to say what each choice does.
 
 ## Events
 

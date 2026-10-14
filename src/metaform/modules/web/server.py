@@ -44,6 +44,7 @@ from urllib.parse import parse_qs, quote, urlsplit
 from metaform import events, home, prompt_files, settings
 from metaform import module as chassis
 from metaform.data import (
+    BASE_VARIABLE,
     COLUMNS,
     CONDITIONS,
     SCHEMA_VERSION,
@@ -54,6 +55,7 @@ from metaform.data import (
     Store,
     StoreError,
     WorkRecord,
+    on_base,
     plain,
     prompts,
     query_read,
@@ -68,7 +70,10 @@ from metaform.outline import mermaid_limits
 from . import WAIT, WILDCARDS, host_port, loopback, opened_project, reach, ready_line, run_file, spawn, token
 
 HERE = Path(__file__).parent
-STATIC = {'page': HERE / 'page', 'vendor': HERE / 'vendor'}
+# the roundtable's scene module, which the page's Roundtable tab draws a table with, read from the module and never
+# copied, so the tab, the runner's watch page and its renderer draw one scene
+STATIC = {'page': HERE / 'page', 'vendor': HERE / 'vendor',
+          'roundtable': HERE.parent / 'roundtable' / 'resources' / 'scene'}
 COOKIE = 'metaform_token'
 RESERVED = ('project', 'metaform', 'layers')  # what picks the store and its layers; never a read's own argument
 TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -101,12 +106,14 @@ def dispatch_change(payload: dict[str, Any]) -> bool:
 
 
 COALESCE = 0.3  # seconds a page's stream holds dispatch-only events to merge them, VIEW-018
-# The acts of the person's mascot a page takes, VIEW-005; those that ask the page something wait this long for it
+# The acts of the person's mascot a page takes, VIEW-005; those that ask the page something, and the body's acts, which
+# answer once the body is done, at most six seconds on the page, wait this long for it
 MASCOT_ACTS = {'say', 'go', 'turn', 'point', 'emote', 'look', 'see', 'select', 'camera', 'tab', 'open', 'swap',
                'flow', 'physics', 'viewing', 'embody', 'move', 'push', 'drag', 'drop', 'take', 'release', 'come',
                'capture'}
-MASCOT_ASKS = {'look', 'see', 'viewing', 'embody', 'come', 'capture'}
-MASCOT_WAIT = 5.0
+MASCOT_ASKS = {'look', 'see', 'viewing', 'embody', 'come', 'capture', 'go', 'turn', 'point', 'emote', 'move', 'push',
+               'drag', 'drop', 'take', 'release'}
+MASCOT_WAIT = 10.0
 
 
 def dispatch_only(event: dict[str, Any]) -> bool:
@@ -168,7 +175,7 @@ class Server(ThreadingHTTPServer):
         self.watching: dict[queue.SimpleQueue[dict[str, Any]], str] = {}
         self.listening = threading.Lock()
         self.dispatch_lock = threading.Lock()
-        self.dispatch_pending: set[str] = set()
+        self.dispatch_pending: set[tuple[str, str | None]] = set()  # each project, with the page's base or None
         self.dispatch_busy = False
         self.dispatch_errors: dict[str, str] = {}  # each project's last automatic-dispatch error, logged once
         self.merge_timers: dict[tuple[str, str], threading.Timer] = {}  # VIEW-044: one per merge waiting for review
@@ -226,10 +233,11 @@ class Server(ThreadingHTTPServer):
         with self.listening:
             return set(self.watching.values())
 
-    def schedule_dispatch(self, project: str) -> None:
-        """Queue a dispatch check on a change, without blocking page reads or starting concurrent batches."""
+    def schedule_dispatch(self, project: str, base: str | None = None) -> None:
+        """Queue a dispatch check on a change, without blocking page reads or starting concurrent batches; on the active
+        base, or on `base`, a base the page shows that is not the active one."""
         with self.dispatch_lock:
-            self.dispatch_pending.add(project)
+            self.dispatch_pending.add((project, base))
             if self.dispatch_busy:
                 return
             self.dispatch_busy = True
@@ -285,7 +293,7 @@ class Server(ThreadingHTTPServer):
                 if not self.dispatch_pending:
                     self.dispatch_busy = False
                     return
-                project_id = self.dispatch_pending.pop()
+                project_id, base = self.dispatch_pending.pop()
             with chassis.request_scope(fresh=True):
                 chassis.refresh_modules()
                 project = home.project(project_id)
@@ -293,7 +301,8 @@ class Server(ThreadingHTTPServer):
                     continue
                 self.schedule_merges(project_id)
                 try:
-                    started = module_verb({'project': project_id}, 'dispatch', 'autostart', {})
+                    started = module_verb({'project': project_id, 'base': base or ''}, 'dispatch', 'autostart', {},
+                                          chosen=bool(base))
                     self.schedule_retry(project_id, cast(dict[str, Any], started).get('retry_due')
                                         if isinstance(started, dict) else None)
                 except StoreError as error:
@@ -496,6 +505,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.item({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/agent-view':
             return self.agent_view({key: values[-1] for key, values in query.items() if key != 't'})
+        if url.path == '/api/roundtable':
+            return self.roundtable({key: values[-1] for key, values in query.items() if key != 't'})
+        if url.path == '/api/roundtable-submission':
+            return self.roundtable_submission({key: values[-1] for key, values in query.items() if key != 't'})
+        if url.path == '/api/roundtable-seats':
+            return self.roundtable_seats({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path.startswith('/api/memory-'):
             return self.memory_read(url.path[len('/api/memory-'):],
                                     {key: values[-1] for key, values in query.items() if key != 't'})
@@ -752,7 +767,7 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/dispatch-configure': self.dispatch_configure,
                   '/api/workflow-answer': self.workflow_answer, '/api/workflow-cancel': self.workflow_cancel,
                   '/api/settings': self.set_setting, '/api/settings/reset': self.reset_setting,
-                  '/api/modules': self.set_module}
+                  '/api/modules': self.set_module, '/api/roundtable': self.roundtable_act}
         if path not in writes:
             return self.send(404, {'error': f'No such write: {path}.'})
         try:
@@ -1028,11 +1043,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def dispatch_call(self, given: dict[str, Any], verb: str, nouns: list[str]) -> tuple[bool, dict[str, Any]]:
         """One dispatch verb run as the command line runs it, for a write that goes on after it."""
-        return run_dispatch(str(given.get('project', '')), verb, nouns)
+        return run_dispatch(str(given.get('project', '')), verb, nouns, chosen_base(given))
 
     def list_merges(self, given: dict[str, str]) -> None:
         """The merges waiting for review, VIEW-044, for the page's Review notice."""
-        ok, data = run_dispatch(str(given.get('project', '')), 'merges', [])
+        ok, data = run_dispatch(str(given.get('project', '')), 'merges', [], chosen_base(given))
         self.send(200, data if ok else {'merges': []})
 
     def review_merge(self, given: dict[str, Any]) -> None:
@@ -1040,7 +1055,7 @@ class Handler(BaseHTTPRequestHandler):
         work_id, project = given.get('work_id'), str(given.get('project', ''))
         if not isinstance(work_id, str) or not work_id:
             return self.send(400, {'error': 'Review names the ticket whose merge waits.'})
-        ok, data = run_dispatch(project, 'review', [work_id])
+        ok, data = run_dispatch(project, 'review', [work_id], chosen_base(given))
         self.gui.cancel_merge(project, work_id)
         if not ok:
             return self.send(400, {'error': f'No merge of work {work_id} is waiting for review.'})
@@ -1256,7 +1271,9 @@ class Handler(BaseHTTPRequestHandler):
         work_id, agent = given.get('work_id'), given.get('agent')
         if not isinstance(work_id, str) or not work_id or not isinstance(agent, str) or not agent:
             return self.send(400, {'error': 'An agent is started on a ticket: its work id and the agent.'})
-        self.dispatched(given, 'start', [work_id, agent])
+        # the launch's own permissions, when the person chose them; dispatch start checks them
+        own = [f'{key}={given[key]}' for key in ('prompts', 'mode') if isinstance(given.get(key), str) and given[key]]
+        self.dispatched(given, 'start', [work_id, agent, *own])
 
     def dispatch_autostart(self, given: dict[str, Any]) -> None:
         """Read automatic dispatch settings in the registered project's folder, VIEW-042."""
@@ -1295,7 +1312,7 @@ class Handler(BaseHTTPRequestHandler):
                 settings.put(key, value, folder)
         except (settings.SettingError, Stop) as error:
             return self.refuse(error, 400)
-        self.gui.schedule_dispatch(project.project_id)
+        self.gui.schedule_dispatch(project.project_id, chosen_base(given))
         self.dispatch_autostart(given)
 
     def dispatch_agents(self, given: dict[str, Any]) -> None:
@@ -1446,7 +1463,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def dispatch_options(self, given: dict[str, str]) -> None:
         """What an agent offered at its last session in this project, its model, effort, mode and the rest, with the
-        value dispatch_agent_options gives each, as `metaform dispatch options` lists them, so the chat offers them
+        value dispatch_<agent>_<option> gives each, as `metaform dispatch options` lists them, so the chat offers them
         before the agent is called; it never primes an agent. With dispatch not enabled, none."""
         try:
             found = module_verb(given, 'dispatch', 'options', {'agent': given['agent']} if given.get('agent') else {})
@@ -1455,6 +1472,75 @@ class Handler(BaseHTTPRequestHandler):
         except Stop as error:
             if 'not on this project' in str(error):
                 return self.send(200, {'agents': []})
+            return self.refuse(error, 400)
+        self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
+
+    def roundtable(self, given: dict[str, str]) -> None:
+        """The table running in the project, for the page's Roundtable tab, BASE-066: its status, its scene as the
+        roundtable's scene module draws it, and its turns after `since`, with the pause after each turn; `table` none
+        when every table has ended. With the roundtable module off, `enabled` false."""
+        try:
+            listed = cast(dict[str, Any], module_verb(given, 'roundtable', 'list', {}))
+            running = next((row for row in cast(list[dict[str, Any]], listed['discussions'])
+                            if row['state'] != 'ended'), None)
+            if running is None:
+                return self.send(200, {'enabled': True, 'table': None})
+            number = {'discussion': running['discussion']}
+            found = {'enabled': True, 'table': module_verb(given, 'roundtable', 'status', number),
+                     'scene': module_verb(given, 'roundtable', 'scene', number),
+                     'turns': module_verb(given, 'roundtable', 'read',
+                                          {**number, 'since': int(given.get('since') or 0)}),
+                     'pause': settings.value('roundtable_pause', project_folder(given)[1]),
+                     'keep': int(settings.value('roundtable_keep', project_folder(given)[1])) / 100}
+        except StoreError as error:
+            return self.refuse(error, 404)
+        except Stop as error:
+            if 'not on this project' in str(error):
+                return self.send(200, {'enabled': False, 'table': None})
+            return self.refuse(error, 400)
+        self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
+
+    def roundtable_seats(self, given: dict[str, str]) -> None:
+        """The seats a table can be opened with, for the page's Open roundtable form: `roundtable seats`."""
+        try:
+            found = module_verb(given, 'roundtable', 'seats', {})
+        except StoreError as error:
+            return self.refuse(error, 404)
+        except Stop as error:
+            return self.refuse(error, 400)
+        self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
+
+    def roundtable_submission(self, given: dict[str, str]) -> None:
+        """The text a seat submitted, for a vetoed turn's link in the tab: `roundtable submission`."""
+        try:
+            numbers = {key: int(given.get(key) or '') for key in ('discussion', 'submission')}
+        except ValueError:
+            return self.send(400, {'error': 'A submission is read by its table\'s number and its own.'})
+        try:
+            found = module_verb(given, 'roundtable', 'submission', numbers)
+        except StoreError as error:
+            return self.refuse(error, 404)
+        except Stop as error:
+            return self.refuse(error, 400)
+        self.send(200, {'text': str(found).rstrip('\n')})
+
+    def roundtable_act(self, given: dict[str, Any]) -> None:
+        """The person chairs a table from the page, BASE-066: `act` is open, hold, continue, comment, end or watch, each
+        the roundtable verb of that name, run as the person's, the page's surface."""
+        act = given.get('act')
+        if act == 'open':
+            arguments = {key: given[key] for key in ('address', 'seats', 'opening', 'rounds', 'spend')
+                         if given.get(key) not in (None, '')}
+        elif act in ('hold', 'continue', 'end', 'watch', 'comment'):
+            arguments = {'discussion': given.get('discussion'),
+                         **({'text': given.get('text')} if act == 'comment' else {})}
+        else:
+            return self.send(400, {'error': 'A table is opened, held, continued, commented at, ended or watched.'})
+        try:
+            found = module_verb(given, 'roundtable', act, arguments)
+        except StoreError as error:
+            return self.refuse(error, 404)
+        except Stop as error:
             return self.refuse(error, 400)
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
@@ -1525,7 +1611,7 @@ class Handler(BaseHTTPRequestHandler):
             nouns: dict[str, Any] = {'id': given['id']} if given.get('id') else {}
             if given.get('thread') == 'false':
                 nouns['thread'] = False
-            found = module_verb(given, 'dispatch', 'sessions', nouns)
+            found = module_verb(given, 'dispatch', 'sessions', nouns, chosen=True)
         except StoreError as error:  # the project is gone or its store cannot be read; a StoreError is a Stop too
             return self.refuse(error, 404)
         except Stop:
@@ -1536,7 +1622,7 @@ class Handler(BaseHTTPRequestHandler):
         """The work claims and the sentinels' proposals, from the dispatch module's own tables, LAYER-029 and VIEW-045.
         With dispatch not enabled there are none."""
         try:
-            found = module_verb(given, 'dispatch', 'claims', {})
+            found = module_verb(given, 'dispatch', 'claims', {}, chosen=True)
         except StoreError as error:  # the project is gone or its store cannot be read; a StoreError is a Stop too
             return self.refuse(error, 404)
         except Stop:
@@ -2017,9 +2103,11 @@ def cli_result(given: dict[str, Any], module_id: str, verb: str, nouns: list[str
         return 404, {'error': f'No project {given.get("project", "")} is registered.', 'next': 'metaform list projects'}
     command = [sys.executable, '-m', 'metaform', module_id, verb, *nouns, '--json', '--project',
                project.project_id, *(['--', text] if text is not None else [])]
+    # dispatch acts on the base the page shows; an intake follows the active base, whichever its finish makes active
+    base = chosen_base(given) if module_id == 'dispatch' and verb != 'intake' else None
     try:
         done = subprocess.run(command, cwd=project.path, capture_output=True, text=True, encoding='utf-8',
-                              stdin=subprocess.DEVNULL, timeout=DISPATCH_LIMIT, check=False)
+                              stdin=subprocess.DEVNULL, timeout=DISPATCH_LIMIT, check=False, env=based(base))
     except (OSError, subprocess.TimeoutExpired) as error:
         return 500, {'error': f'metaform {module_id} {verb} did not finish: {error}'}
     if done.returncode == 0:
@@ -2031,22 +2119,38 @@ def cli_result(given: dict[str, Any], module_id: str, verb: str, nouns: list[str
     return 400, refusal(done)
 
 
-def run_dispatch(project_id: str, verb: str, nouns: list[str]) -> tuple[bool, dict[str, Any]]:
-    """One dispatch verb run as the command line runs it, in the project's folder: whether it succeeded, and its
-    result."""
+def run_dispatch(project_id: str, verb: str, nouns: list[str], base: str | None = None) -> tuple[bool, dict[str, Any]]:
+    """One dispatch verb run as the command line runs it, in the project's folder, on `base` when one is given:
+    whether it succeeded, and its result."""
     project = home.project(project_id)
     if project is None:
         return False, {}
     command = [sys.executable, '-m', 'metaform', 'dispatch', verb, *nouns, '--json', '--project', project.project_id]
     try:
         done = subprocess.run(command, cwd=project.path, capture_output=True, text=True, encoding='utf-8',
-                              stdin=subprocess.DEVNULL, timeout=DISPATCH_LIMIT, check=False)
+                              stdin=subprocess.DEVNULL, timeout=DISPATCH_LIMIT, check=False, env=based(base))
     except (OSError, subprocess.TimeoutExpired):
         return False, {}
     try:
         return done.returncode == 0, json.loads(done.stdout) if done.returncode == 0 else {}
     except ValueError:
         return done.returncode == 0, {}
+
+
+def chosen_base(given: dict[str, Any]) -> str | None:
+    """The base the page shows when it is not the project's active one, None otherwise. Dispatch runs on it, and the
+    runner and agent it starts stay on it, since their ticket is there; on the active base nothing is bound, so they
+    follow whichever base is active, as before."""
+    base, project = str(given.get('base') or ''), home.project(str(given.get('project', '')))
+    if not base or project is None:
+        return None
+    active = home.active_base(project.project_id)
+    return None if active is not None and active.id == base else base
+
+
+def based(base: str | None) -> dict[str, str] | None:
+    """The environment of a command run on `base`, METAFORM_BASE set to it; None, this process's own, with none."""
+    return {**os.environ, BASE_VARIABLE: base} if base else None
 
 
 MODULE_ID = re.compile(r'^[A-Za-z0-9_][A-Za-z0-9_-]*$')  # a module's id as `enable` and `disable` take it
@@ -2117,9 +2221,10 @@ def declared(row: dict[str, Any]) -> dict[str, Any]:
     setting = settings.SCHEMA.get(str(row.get('key')))
     if setting is None or setting.owner != row.get('owner'):
         return {'label': str(row.get('key', '')).replace('_', ' ').capitalize(), 'details': '', 'min': None,
-                'max': None, 'negative': None, 'person_only': None, 'exclusive': None}
+                'max': None, 'negative': None, 'person_only': None, 'exclusive': None, 'section': None}
     return {'label': setting.label, 'details': setting.details, 'min': setting.min, 'max': setting.max,
-            'negative': setting.negative, 'person_only': setting.person_only, 'exclusive': setting.exclusive}
+            'negative': setting.negative, 'person_only': setting.person_only, 'exclusive': setting.exclusive,
+            'section': setting.section}
 
 
 def switch_of(folder: Path, key: Any) -> tuple[str, str, str] | None:
@@ -2163,7 +2268,8 @@ def module_verb(given: dict[str, Any], module_id: str, name: str, arguments: dic
     if chosen and given.get('base'):
         ctx.store = Store(project.project_id, toggled=switches['layers'], base=str(given['base']),
                           module=module_id)
-    return chassis.call(verb.run, ctx)
+    with on_base(chosen_base(given) if chosen else None):  # a module's own stores, and what it starts, on that base too
+        return chassis.call(verb.run, ctx)
 
 
 def _stage(store: Store, target: Node, condition: str) -> Any:

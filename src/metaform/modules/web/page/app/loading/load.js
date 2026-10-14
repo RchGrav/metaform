@@ -10,6 +10,7 @@ import {foldHeader} from '/page/app/header/menus.js';
 import {emptyPanel} from '/page/app/header/admin.js';
 import {withProviders, joinOf, READY} from '/page/app/graph/data.js';
 import {ROAM, figures} from '/page/app/figures/agents.js';
+import {leaveFollow} from '/page/app/figures/eyes.js';
 import {ROAM2D} from '/page/app/figures/roam2d.js';
 import {G} from '/page/app/map3d/graph3d.js';
 import {draw3D} from '/page/app/map3d/draw3d.js';
@@ -254,6 +255,7 @@ function leaveAgents() {
   $('#agents').hidden = true;
   for (const [work, figure] of ROAM.figures) { G?.scene().remove(figure.mesh); releaseGlyph(work); }
   ROAM.figures.clear(); ROAM.seen.clear();
+  leaveFollow();  // and the agent the person followed there, with the view from its eyes
   D.subagents = [];  // and the subagents of the project left, which are drawn from it
   for (const [work, figure] of ROAM2D.figures) { figure.g.remove(); releaseGlyph(work); }  // and the 2D map's
   ROAM2D.figures.clear(); ROAM2D.seen.clear();

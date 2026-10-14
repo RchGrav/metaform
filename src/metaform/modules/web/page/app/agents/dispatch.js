@@ -76,8 +76,18 @@ export const ownGlyph = ticket => ticket?.map?.glyph;
 export const glyphFor = workId => drawGlyph(workId, ownGlyph(ticketOf(workId)) || bodyOf(workId),
   typeGlyph(workId));
 export const glyphOf = workId => `/page/agent-glyphs/${glyphFor(workId)}.svg`;
-export async function startAgent(workId, agent) {
-  if (!await wrote('/api/dispatch-start', {work_id: workId, agent})) return false;
+/* How each dispatch_prompts choice reads, and what approving every prompt risks; the Agents menu and the start window
+ * say them alike. */
+export const PROMPT_WORDS = {
+  'approve-all': ['Approve every prompt',
+    'Agents run any tool without asking, including ones that change or delete files.'],
+  'approve-reads': ['Approve reads and searches; ask for the rest', ''],
+  ask_all: ['Ask every prompt as a question at the ticket', '']};
+/* The harness modes that let the agent act without asking, whatever the prompts answer. */
+const OPEN_MODES = ['bypassPermissions', 'agent-full-access'];
+const promptWords = choice => PROMPT_WORDS[choice]?.[0] || choice;
+export async function startAgent(workId, agent, own = {}) {
+  if (!await wrote('/api/dispatch-start', {work_id: workId, agent, ...own})) return false;
   toast(`${agentName(agent)} is starting on the ticket. It shows under Agent deployed while it is working.`);
   return true;
 }
@@ -101,12 +111,63 @@ export function startWindow(title, tickets, all = false) {
     fill($('#dispatch .tickets'), shown.map(ticket => h('div', {class: 'ticket', 'data-id': ticket.id},
       conditionLabel(ticket), startButton(ticket, agent, pick),
       h('div', {class: 'task'}, ...taskWords(ticket.task || ticket.note || '')))));
+    drawPermissions(agent);
   };
   START.draw = draw;
+  START.own = {prompts: '', mode: ''};
+  START.permissionsFor = null;  // drawn afresh, at the project's settings
   draw();
   $('#dispatch').hidden = false;
   readHarnesses().then(() => { if (!$('#dispatch').hidden && START.draw === draw) draw(); });
 }
+/* The window's permissions, for the launches it starts only: how the agent's permission prompts are answered,
+ * dispatch_prompts, and its harness's own mode, as it offered them at its last session here, `dispatch options`.
+ * Each starts at the project's setting and says what that is; approving everything says what it risks. */
+async function drawPermissions(agent) {
+  const box = $('#dispatch .permissions'), project = S.project;
+  if (START.permissionsFor === `${project}:${agent}`) return;
+  START.permissionsFor = `${project}:${agent}`;
+  START.own.mode = '';  // a mode is the agent's own, so another agent starts at the project's again
+  let prompts = null, found = null;
+  try { prompts = await read('dispatch-prompts'); } catch { prompts = null; }
+  try { found = agent ? (await read('dispatch-options', {agent})).agents?.[0] || null : null; } catch { found = null; }
+  if (S.project !== project || START.permissionsFor !== `${project}:${agent}`) return;
+  const own = START.own;
+  const choices = prompts?.choices || Object.keys(PROMPT_WORDS);
+  const promptsPick = h('select', {'aria-label': 'Permission prompts', class: 'prompts',
+    onchange: () => { own.prompts = promptsPick.value; sayRisk(); }},
+  h('option', {value: ''}, `Project setting: ${prompts ? promptWords(prompts.value) : 'unknown'}`),
+  choices.map(choice => h('option', {value: choice, selected: choice === own.prompts},
+    promptWords(choice))));
+  const setting = (found?.settings || []).find(one => one.key === 'mode');
+  const modes = setting?.choices || [];
+  const named = value => modes.find(one => one.value === value)?.name || value;
+  const projectMode = setting ? setting.chosen ?? setting.current : null;
+  const modePick = setting ? h('select', {'aria-label': 'Agent mode', class: 'mode',
+    onchange: () => { own.mode = modePick.value; sayRisk(); }},
+  h('option', {value: ''}, `Project setting: ${named(projectMode)}`),
+  modes.map(one => h('option', {value: one.value, title: one.description || ''}, one.name || one.value))) : null;
+  fill(box.querySelector('.controls'), h('label', {class: 'setting'}, h('span', {}, 'Permission prompts'), promptsPick),
+    modePick ? h('label', {class: 'setting'}, h('span', {}, 'Mode'), modePick) : null);
+  box.querySelector('.hint').textContent = (modePick ? '' : found?.next
+    ? `${agentName(agent)} offers its modes once it has run here: ${found.next}. `
+    : agent ? `${agentName(agent)} offers no mode to choose. ` : '')
+    + 'Left at the project setting, each start follows the settings; a choice here is for the agents this window '
+    + 'starts, and the settings stay as they are.';
+  const sayRisk = () => {
+    const prompting = own.prompts || prompts?.value, mode = own.mode || projectMode;
+    const said = [prompting === 'approve-all' ? PROMPT_WORDS['approve-all'][1] : '',
+      OPEN_MODES.includes(mode) ? `In ${named(mode)} mode the agent acts without asking: `
+        + `${modes.find(one => one.value === mode)?.description || 'it accepts every permission'}.` : '']
+      .filter(Boolean);
+    const risk = box.querySelector('.risk');
+    risk.textContent = said.length ? `${said.join(' ')} Nothing stops a wrong or harmful action.` : '';
+    risk.hidden = !said.length;
+  };
+  sayRisk();
+}
+/* The permissions chosen for this launch, only those changed from the project's. */
+const launchOwn = () => Object.fromEntries(Object.entries(START.own || {}).filter(([, value]) => value));
 /* Start all offers the tickets the agent chosen may take, one for each glyph, since a glyph's tickets are one
  * agent's, done one at a time. */
 function startable(candidates, agent) {
@@ -135,7 +196,7 @@ async function startAllTickets(tickets, pick, startAll) {
   for (const ticket of pending) {
     const button = buttons[tickets.indexOf(ticket)];
     try {
-      if (await startAgent(ticket.id, agent)) { started++; button.textContent = 'Starting'; }
+      if (await startAgent(ticket.id, agent, launchOwn())) { started++; button.textContent = 'Starting'; }
       else { button.disabled = false; button.textContent = 'Retry'; }
     } catch (error) { toast(error.message); button.disabled = false; button.textContent = 'Retry'; }
   }
@@ -153,7 +214,7 @@ function startButton(ticket, agent, pick) {
     const chosen = pick.value();
     event.target.disabled = true;
     try {
-      if (await startAgent(ticket.id, chosen)) { $('#dispatch').hidden = true; await renderBoard(); }
+      if (await startAgent(ticket.id, chosen, launchOwn())) { $('#dispatch').hidden = true; await renderBoard(); }
       else event.target.disabled = false;
     } catch (error) { toast(error.message); event.target.disabled = false; }
   };
@@ -161,10 +222,11 @@ function startButton(ticket, agent, pick) {
     title: allowsAgent(ticket, agent) ? 'Start the agent chosen above on this ticket'
       : `Eligible agents: ${eligibleAgents(ticket).map(agentName).join(', ')}`, onclick: start}, 'Start');
 }
-const START = {draw: null};  // the start window's tickets, drawn again for the agent chosen
-$('#dispatch .close').onclick = () => { $('#dispatch').hidden = true; };
+// the start window's tickets, drawn again for the agent chosen, and the permissions chosen for its launches
+const START = {draw: null, own: {prompts: '', mode: ''}, permissionsFor: null};
+$('#dispatch .close').onclick = () => { $('#dispatch').hidden = true; START.permissionsFor = null; };
 overlay($('#dispatch'), {kind: 'dialog', focus: () => $('#dispatch .choice > .btn'),
-  close: () => { $('#dispatch').hidden = true; START.draw = null; }});
+  close: () => { $('#dispatch').hidden = true; START.draw = null; START.permissionsFor = null; }});
 /* The agents key: each agent working in the project now, with its flat icon and in words what it is; a click opens its
  * session's thread. An ended session leaves the key and the map; its log stays in the node's work history, VIEW-036.
  * Sessions are the dispatch module's own tables, never the map. */

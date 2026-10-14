@@ -68,8 +68,8 @@ function splitter(handle, which, measure) {
 const FLIP_SIDE = 40;
 const nearRight = x => x > innerWidth - FLIP_SIDE, nearLeft = x => x < FLIP_SIDE;
 /* The side column's splitter resizes it; dragged on to the far edge, away from the column's own side, it moves the
- * column to that side, keeping the width it had when the drag began, as dragging its top bar does, and back again if
- * the pointer returns past the middle. While held the splitter shows its grip, the cursor says resize, and once
+ * column to that side, keeping the width it had when the drag began, and back again if the pointer returns past the
+ * middle. While held the splitter shows its grip, the cursor says resize, and once
  * across, move. */
 const SIDE_DRAG = {width: 0, right: true, across: false};
 function startSideSplit() {
@@ -99,9 +99,8 @@ function measureSide(moved) {
 }
 $('#sideSplit').addEventListener('pointerdown', startSideSplit, true);
 splitter($('#sideSplit'), 'side', measureSide);
-/* The side column goes on the left or the right of the page: its top bar, whichever map is in the small area, is
- * dragged across and the column follows the pointer once it reaches the other edge, `FLIP_SIDE`; a press that does
- * not move is an ordinary click. The View menu chooses the side too. The side is kept in this browser. */
+/* The side column goes on the left or the right of the page: its splitter dragged on to the other edge, `FLIP_SIDE`,
+ * or the View menu's Side column moves it. The side is kept in this browser. */
 const SIDE_AT = 'metaform.sideAt';
 export function sideAt(right, ease = false) {
   const app = document.querySelector('.app');
@@ -119,30 +118,6 @@ export function sideAt(right, ease = false) {
   });
   dispatchEvent(new Event('resize'));
 }
-function dragSideByBar(event) {
-  if (event.button !== 0 || !event.target.closest('aside .bar2d, aside .bar3d')) return;
-  if (event.target.closest('button, input, select, textarea, a, nav')) return;
-  if (matchMedia('(max-width: 820px)').matches) return;
-  const from = event.clientX, pointer = event.pointerId;
-  let moving = false;
-  const move = moved => {
-    if (moved.pointerId !== pointer) return;
-    if (!moving && Math.abs(moved.clientX - from) < 6) return;
-    moving = true;
-    document.body.classList.add('moving-side');
-    const right = document.querySelector('.app').classList.contains('side-right'), x = moved.clientX;
-    sideAt(right ? !nearLeft(x) : nearRight(x), true);
-  };
-  // a drag ends however the pointer is let go: released, cancelled by the system, or the window losing focus
-  const end = () => {
-    document.body.classList.remove('moving-side');
-    removeEventListener('pointermove', move);
-    for (const type of ['pointerup', 'pointercancel', 'blur']) removeEventListener(type, end);
-  };
-  addEventListener('pointermove', move);
-  for (const type of ['pointerup', 'pointercancel', 'blur']) addEventListener(type, end);
-}
-$('aside').addEventListener('pointerdown', dragSideByBar);
 $('#sideat').onchange = event => sideAt(event.target.value === 'right', true);
 /* The reading column opens on the right, where the person reads without turning to the left; left only when chosen. */
 function keptSideRight() {

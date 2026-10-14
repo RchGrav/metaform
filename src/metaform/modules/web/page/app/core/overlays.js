@@ -131,10 +131,11 @@ new MutationObserver(followHidden)
   .observe(document.body, {attributes: true, attributeFilter: ['hidden'], subtree: true});
 /* Escape closes the top overlay and only that one; the chat dock counts only while the focus is in it, so the chat
  * left open at the side never takes an Escape meant for the map. With none open it reaches the maps. A search box of
- * the prompt editor takes its own Escape. */
+ * the prompt editor takes its own Escape, and so does a list open inside a window that says so with data-own-escape,
+ * such as the settings screen's page list. */
 function escapeTop(event) {
   if (event.key !== 'Escape' || event.isComposing || !OVERLAY.stack.length) return;
-  if (event.target.closest?.('.CodeMirror-dialog')) return;
+  if (event.target.closest?.('.CodeMirror-dialog, [data-own-escape="true"]')) return;
   const active = document.activeElement;
   const target = [...OVERLAY.stack].reverse().find(entry => entry.kind !== 'dock' || entry.box.contains(active));
   if (!target) return;

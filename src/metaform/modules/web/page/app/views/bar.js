@@ -1,5 +1,5 @@
-/* The large map's compact choices: info, flow steps, the edges shown, the 3D layout and its physics, lens, signs and
- * the Ultra graphics menu. */
+/* The view's compact choices: info, flow steps, the edges shown, the 3D layout and its physics, lens, signs and the
+ * Ultra graphics menu. */
 import '/page/app/views/settings.js';  // the part before runs first, so the parts run in the page's order
 // the forces the 3D map's physics presets add, from the same library the graph runs, `applyPhysics`
 import {forceX, forceY, forceZ, forceRadial} from 'd3-force-3d';
@@ -14,9 +14,9 @@ import {G, wake3d} from '/page/app/map3d/graph3d.js';
 import {PLAIN, setTheme} from '/page/app/map3d/draw3d.js';
 import {V3, cameraNow, flyTo, framed, fitTrim, fitBalls, fit3d} from '/page/app/camera/flight.js';
 import {NAME, small3d, fly3d} from '/page/app/camera/fly3d.js';
-import {VIEW, INFOSET, FLOWSET, NODEZOOM, LENS, SIGNS, saveView, PEEK, peekParts, peek, FLOW_MODES, flowModes, flowNow,
+import {VIEW, INFOSET, FLOWSET, NODEZOOM, LENS, SIGNS, saveView, PEEK, peekParts, peek, FLOW_MODES, flowNow,
   chooseFlow, HOVER_INFO, chooseInfo} from '/page/app/views/settings.js';
-import {toggleNodeZoom, showModes3d, chooseLens, showLens} from '/page/app/views/lens.js';
+import {toggleNodeZoom, chooseLens, showLens} from '/page/app/views/lens.js';
 import {note2d} from '/page/app/map2d/hover.js';
 
 /* A choice of the large map's bar made less often: one compact button naming the choice in force, "Lens Natural L ▾",
@@ -84,19 +84,16 @@ NODEZOOM.button = h('button', {class: 'btn sm quiet nodezoom', type: 'button', '
   h('span', {class: 'state'}, 'On'), h('kbd', {}, 'Z'));
 $('#nodezoomat').onchange = event => toggleNodeZoom(event.target.checked);
 $('#flowat').onchange = event => chooseFlow(event.target.value);
-/* D steps the flow through hover, the selection and all, with the edges drawn, then the three again with the edges
- * hidden, so only what flows shows; off and live stay in the View menu and the bar. The edges' choice is
- * web_flow_edges, said at the corner as the flow's is. */
-const FLOW_STEPS = [['hover', true], ['selected', true], ['all', true], ['hover', false], ['selected', false],
-  ['all', false]];
+/* 2 steps the flow through every mode, off, hover, the selection, all and live, with the joins' lines drawn, then the
+ * five again with the lines hidden, so only what flows shows, and round again; said at the 2D map's corner. The edges'
+ * choice is web_flow_edges. */
+const FLOW_STEPS = [true, false].flatMap(edges => FLOW_MODES.map(([name]) => [name, edges]));
 export function stepFlow() {
   const now = FLOW_STEPS.findIndex(([name, edges]) => name === flowNow() && edges === (VIEW.edges !== false));
   const [name, edges] = FLOW_STEPS[(now + 1) % FLOW_STEPS.length];
   chooseFlow(name);
-  showEdges(edges);
-  saveView('web_flow_edges', edges);
-  const word = FLOW_MODES.find(([one]) => one === name)?.[1];
-  note2d(`Flow: ${word}${edges ? '' : ', edges hidden'}`);
+  if (edges !== (VIEW.edges !== false)) { showEdges(edges); saveView('web_flow_edges', edges); }
+  note2d(`Flow: ${FLOW_MODES.find(([one]) => one === name)[1]}${edges ? '' : ', edges hidden'}`);
 }
 /* The joins' lines drawn or hidden, web_flow_edges, in both maps; hidden, the flow still runs where they were. Only a
  * change does anything, and in 3D it shows or hides the lines already drawn: handing the graph its link rule again
@@ -115,22 +112,16 @@ export function showEdges(on) {
 }
 export function showFlow(name = flowNow()) {
   FLOWSET.name = name;
-  const offered = new Set(flowModes().map(([one]) => one));
-  for (const [one, button] of FLOWSET.buttons) {
-    button.hidden = !offered.has(one);
-    button.setAttribute('aria-checked', String(one === name));
-  }
   if ($('#flowat')) $('#flowat').value = name;
 }
-/* The 3D map's layout, web_physics, VIEW-005: Organic or Flat, chosen in the bar's Layout menu, and L switches between
- * them. Each is a named way for the layout to move, with what it helps the reader see. The forces are d3-force-3d's,
- * which the graph runs: a change is only new forces and a warmed layout, so the nodes ease to their new places from
- * where they stand. */
+/* The 3D map's layout, web_physics, VIEW-005: Organic or Flat; 3 switches between them. Each is a named way for the
+ * layout to move, with what it helps the reader see. The forces are d3-force-3d's, which the graph runs: a change is
+ * only new forces and a warmed layout, so the nodes ease to their new places from where they stand. */
 export const PHYSICS = [
   ['organic', 'Organic', 'The natural layout', {}],
   ['flat', 'Flat', 'Everything on one plane', {flat: true, facing: true}],
 ];
-export const PHYS = {name: 'organic', decay: 0.4, buttons: new Map()};
+export const PHYS = {name: 'organic', decay: 0.4};
 /* The views whose layout turns outward signs sideways to the eye face their signs forward instead, those views only. */
 export const signsFacing = () => VIEW.signs === 'facing'
   || Boolean(PHYSICS.find(([name]) => name === PHYS.name)?.[3].facing);
@@ -233,23 +224,6 @@ export function choosePhysics(name) {
   peek('key');
   saveView('web_physics', name);
 }
-/* The layout in the bar: one button naming the layout in force, opening the list of both, each by its name and what it
- * helps the reader see, so the bar stays one quiet row; L switches between them. */
-function physicsItem([name, word, why]) {
-  const button = checkItem(word, {'aria-checked': String(name === PHYS.name), 'aria-keyshortcuts': 'L',
-    title: `${why} (L)`}, () => { PHYS.list.hidden = true; choosePhysics(name); });
-  PHYS.buttons.set(name, button);
-  return button;
-}
-PHYS.list = h('div', {class: 'menu physicsmenu', id: 'physicsmenu', role: 'menu', hidden: true,
-  'aria-label': "The 3D map's layout"}, PHYSICS.map(physicsItem));
-document.body.append(PHYS.list);
-overlay(PHYS.list, {kind: 'menu'});
-PHYS.shown = h('button', {class: 'btn sm quiet physicsbtn', type: 'button', 'aria-haspopup': 'menu',
-  'aria-controls': 'physicsmenu', 'aria-expanded': 'false',
-  title: "How the 3D map is laid out, Organic or Flat; L switches between them",
-  onclick: event => toggleBelow(event, PHYS.list, PHYS.shown)});
-PEEK.physics.append(PHYS.shown);
 // the 3D map's lens, its names and its graphics, each a compact choice of the bar beside the modes, `barPick`; L, S
 // and U still step through them
 LENS.pick = barPick({id: 'lensmenu', label: 'Lens', key: 'L',
@@ -287,21 +261,11 @@ export function showSigns() {
   if ($('#signsat')) $('#signsat').value = VIEW.signs || 'outward';
 }
 showSigns();
-export function showPhysics() {
-  const at = PHYSICS.findIndex(([one]) => one === PHYS.name), preset = PHYSICS[Math.max(0, at)];
-  if (PHYS.drawn === preset[0]) return;  // as `barPick`: made again only on a change, so a press on it is never lost
-  PHYS.drawn = preset[0];
-  fill(PHYS.shown, h('span', {class: 'peeklabel'}, 'Layout'), h('span', {class: 'value'}, preset[1]),
-    h('i', {class: 'i i-chev', 'aria-hidden': 'true'}));  // each preset's key is in its menu
-  PHYS.shown.setAttribute('aria-label', `Physics: ${preset[1]}`);
-}
-showPhysics();
 // No Alt shortcuts: Alt with a digit is taken by the system on some machines; L switches the layout.
 export function setMode3d(mode, level = null) {
   if (!G || small3d()) return;
   V3.mode = mode;
   if (level) NAME.level = level;
-  showModes3d();
   if (mode === 'whole') fit3d();
   else if (mode === 'zoom' && S.selected) fly3d(S.selected, true);
   else if (mode === 'free') V3.auto = false;  // the layout no longer refits it either

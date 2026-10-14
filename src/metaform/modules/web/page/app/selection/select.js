@@ -7,6 +7,7 @@ import {toast} from '/page/app/core/controls.js';
 import {FRAMED, S, MEM, read} from '/page/app/core/reads.js';
 import {largeView} from '/page/app/header/menus.js';
 import {joinOf, addressOf} from '/page/app/graph/data.js';
+import {revealDepth} from '/page/app/keys/walk.js';
 import {noticeAttention} from '/page/app/figures/attention.js';
 import {setReach} from '/page/app/map3d/waves.js';
 import {G, touched} from '/page/app/map3d/graph3d.js';
@@ -14,7 +15,6 @@ import {follow3d} from '/page/app/views/lens.js';
 import {IN, samePath, renderThing} from '/page/app/map2d/inside.js';
 import {memoryThing, renderMemories} from '/page/app/memory/graph.js';
 import {focus2D} from '/page/app/map2d/flow2d.js';
-import {showSteps} from '/page/app/map2d/wire.js';
 import {openHelpdesk} from '/page/app/dock/threads.js';
 import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
 import {nodeOf} from '/page/app/board/messages.js';
@@ -31,6 +31,7 @@ import {WS, wsSelected} from '/page/app/workspace/workspace.js';
  * such as the prompt being edited. */
 export function select(id, fly, keepTrail = false, stepping = false, again = false) {
   if (!id) return;
+  revealDepth(id);  // a part held deeper than the depth is broken out to be seen, VIEW-051
   if (fly && !again) touched();  // a node chosen holds an agent start's auto zoom off for a while, `TOUCHED`, VIEW-041
   const drawn = selectNow(id, fly, keepTrail, stepping, again), moved = S.panelFor !== id;
   // a new object is read from its top
@@ -55,7 +56,6 @@ function selectNow(id, fly, keepTrail, stepping, again) {
   if (!known && !thing) return;
   if (!keepTrail) S.trail = [];
   if (!stepping && !MEM.key) remember(id);
-  showSteps();
   // auto zoom frames what the person selects anew, not the map loaded or read again, nor the node selected again as
   // a level is entered or left, VIEW-041
   const frame = !again && S.selected !== id;

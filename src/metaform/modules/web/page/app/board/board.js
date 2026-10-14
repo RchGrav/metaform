@@ -223,11 +223,27 @@ async function dropCard(event, cards, column) {
     return Boolean(back);
   });
 }
+/* The tickets the board draws, one card per finding: a record the intake closed as replaced by a newer condition is
+ * left out, and a finding written with the same condition and note on an element and on a purpose record it holds or
+ * receives is drawn once, at the element. */
+export function boardTickets(records) {
+  const finding = ticket => !ticket.task && ticket.condition
+    ? [ticket.condition, ticket.note || '', Boolean(ticket.done)].join('\n') : null;
+  const atElements = new Set(records.filter(ticket => ticket.node_kind === 'element' && finding(ticket))
+    .map(ticket => `${ticket.address}\n${finding(ticket)}`));
+  const repeated = ticket => ticket.node_kind === 'join' && finding(ticket)
+    && [ticket.receiver_address, ticket.provider_address].some(end => atElements.has(`${end}\n${finding(ticket)}`));
+  return records.filter(ticket => !(ticket.done && (ticket.resolution || '').startsWith('Replaced by '))
+    && !repeated(ticket));
+}
 export async function renderBoard() {
   if ($('#board').hidden || !S.project) return;
   const project = S.project, metaform = S.base;  // the agents are read on dispatch events only, VIEW-018
-  try { B.tickets = (await read('work', {limit: 0})).results || []; } catch (error) { toast(error.message); return; }
-  if (S.project !== project || S.base !== metaform) return;
+  let tickets;
+  try { tickets = boardTickets((await read('work', {limit: 0})).results || []); }
+  catch (error) { toast(error.message); return; }
+  if (S.project !== project || S.base !== metaform) return;  // a later choice's read draws its own tickets
+  B.tickets = tickets;
   drawBoard();
 }
 $('#boardBtn').onclick = async () => {

@@ -9,8 +9,8 @@ import {noMetaform} from '/page/app/header/admin.js';
 import {CONDITIONS} from '/page/app/figures/agents.js';
 import {G, wake3d} from '/page/app/map3d/graph3d.js';
 import {swap, V3, fitBalls, fit3d} from '/page/app/camera/flight.js';
-import {small3d, fly3d, MODES3D, EASE, easeCurve} from '/page/app/camera/fly3d.js';
-import {VIEW, NODEZOOM, LENS, FOV3D, LENSES, LENS_WORDS, saveView, FIT3D, peek} from '/page/app/views/settings.js';
+import {small3d, fly3d, EASE, easeCurve} from '/page/app/camera/fly3d.js';
+import {VIEW, NODEZOOM, LENS, FOV3D, LENSES, LENS_WORDS, saveView, peek} from '/page/app/views/settings.js';
 import {following} from '/page/app/live/stream.js';
 import {autoZoom2d} from '/page/app/map2d/camera.js';
 
@@ -21,7 +21,9 @@ import {autoZoom2d} from '/page/app/map2d/camera.js';
  * chosen, by 1, 0 or the bar, a selection in the large pane no longer flew to its node, which hid what the map is for.
  */
 export function follow3d(id) {
-  if (VIEW.nodeZoom === false) return true;
+  // the small area always meets the node at four fifths of its width, NAME.in, whatever node zoom says; the large one
+  // seen through a followed agent's eyes, V3.eyes, stays with them
+  if (!small3d() && (VIEW.nodeZoom === false || V3.eyes)) return true;
   if (!small3d() && V3.mode === 'free') return true;  // Free leaves the camera to the hand
   // Whole turns the map round the node so it faces the eye near the middle, labelled, at the whole map's distance,
   // so the map shows around it; Zoom, and the small pane, fly close
@@ -39,22 +41,11 @@ export function toggleNodeZoom(on = VIEW.nodeZoom === false) {
   saveView('web_node_zoom', on);
 }
 export function showNodeZoom() {
-  for (const button of [NODEZOOM.button, NODEZOOM.button2d]) {  // the 3D map's bar and the 2D map's, VIEW-041
-    button?.setAttribute('aria-pressed', String(VIEW.nodeZoom !== false));
-    const state = button?.querySelector('.state');
-    if (state) state.textContent = VIEW.nodeZoom !== false ? 'On' : 'Off';
-  }
+  NODEZOOM.button?.setAttribute('aria-pressed', String(VIEW.nodeZoom !== false));
+  const state = NODEZOOM.button?.querySelector('.state');
+  if (state) state.textContent = VIEW.nodeZoom !== false ? 'On' : 'Off';
   if ($('#nodezoomat')) $('#nodezoomat').checked = VIEW.nodeZoom !== false;
 }
-export function showModes3d() {
-  MODES3D.box.hidden = small3d();
-  FIT3D.hidden = small3d();
-  const said = small3d() ? '' : V3.mode;
-  if (said === MODES3D.said) return;
-  MODES3D.said = said;
-  for (const [name, button] of MODES3D.buttons) button.setAttribute('aria-checked', String(name === said));
-}
-FIT3D.onclick = () => { if (G && !small3d()) fit3d(); };
 // The 2D map opens in the large area, where its names are read, unless this browser has put the 3D map there: the
 // chart is the map a person reads, and the 3D map keeps the whole in view beside it, VIEW-028.
 function openSwapped() {

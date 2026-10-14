@@ -188,8 +188,6 @@ function create3D() {
   listen3d($('#stage'));
   resize();
   wake3d();
-  $('#pauseBtn').onclick = pauseLayout;
-  $('#relayoutBtn').onclick = relayout;
 }
 /* How the graph draws the map: its nodes and their shapes, colors and visibility, the links as fibers, the dots, the
  * layout's settling, and what a drag, a click and a right-click do. */
@@ -297,22 +295,27 @@ function clickFigure(event) {
   const work = figureAt(event.clientX, event.clientY);
   if (work) openFigure(work);
 }
-/* Pausing pins every vertex where it is; resuming frees them and warms the layout. */
-function pauseLayout() {
-  const paused = $('#pauseBtn').dataset.paused === 'true';
+/* The 3D layout held still or running, P and R, which ? lists: `paused` while every vertex is pinned where it is. */
+export const LAYOUT = {paused: false};
+/* Pausing pins every vertex where it is; resuming frees them and warms the layout. A toast says which, as no button
+ * shows it. */
+export function pauseLayout() {
+  if (!G) return;
+  const paused = LAYOUT.paused;
   for (const node of G.graphData().nodes) Object.assign(node, paused ? {fx: undefined, fy: undefined, fz: undefined}
     : {fx: node.x, fy: node.y, fz: node.z});
   if (paused) G.d3ReheatSimulation(); else wake3d();
-  $('#pauseBtn').dataset.paused = String(!paused);
-  $('#pauseBtn').textContent = paused ? 'Pause layout' : 'Resume layout';
+  LAYOUT.paused = !paused;
+  toast(paused ? 'The 3D layout runs again.' : 'The 3D layout is paused; P resumes it.');
 }
 /* A new layout: every vertex given a new place, settled again and fitted to the view as it settles. */
-function relayout() {
+export function relayout() {
+  if (!G) return;
   const data = G.graphData();
   const placed = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'fx', 'fy', 'fz'];
   for (const node of data.nodes) for (const key of placed) delete node[key];
-  $('#pauseBtn').dataset.paused = 'false';
-  $('#pauseBtn').textContent = 'Pause layout';
+  LAYOUT.paused = false;
+  toast('The 3D layout runs again from new places.');
   V3.auto = true;
   G.graphData(data);  // the layout gives vertices without a position new ones and settles again
 }

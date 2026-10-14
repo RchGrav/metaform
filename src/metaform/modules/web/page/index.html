@@ -53,6 +53,7 @@
           <div class="menu-field agent-prompts" title="How agents' permission prompts are answered. Saved as the dispatch_prompts setting; every agent reads it at its next prompt, so a change reaches agents already running"><label for="promptsPick">Agent prompts</label><select id="promptsPick" disabled></select><p class="said" id="promptsSaid" role="status"></p></div>
           <button id="shareBtn" type="button" role="menuitem">Share a screen with agents…</button>
           <button id="agentViewBtn" type="button" role="menuitem" aria-controls="agentview" title="Exactly what an agent connecting to this project receives: the connect message, the glossary with its tools, and the selected node's brief, each with its size">What an agent sees…</button>
+          <button id="roundtableBtn" type="button" role="menuitem" aria-controls="rtopen" title="Open a roundtable at an Address: the seats you choose speak in turn, and Jev keeps only what is a real contribution">Open roundtable…</button>
           <button id="allSettingsBtn" type="button" role="menuitem" aria-controls="settings" title="Every setting of this project's folder and its modules, and which modules are on, as metaform config shows them">All settings…</button>
           <div class="sep" role="separator"></div>
           <button id="resetAgentsBtn" class="danger" type="button" role="menuitem" title="After crashes: every ticket a dead agent still holds goes back on the board, and dead sessions are closed. Working agents are left alone; nothing is deleted">Reset agents</button>
@@ -90,8 +91,8 @@
         </div>
       </div>
       <div class="settingspick pick">
-        <!-- The View menu: how this page draws the maps, its colors and its keys (V). -->
-        <button class="btn quiet viewbtn" id="settingsBtn" type="button" aria-label="View settings" aria-expanded="false" aria-controls="settingsbox" aria-keyshortcuts="V" title="View settings (V)"><i class="i i-more" aria-hidden="true"></i><span class="lbl">View</span></button>
+        <!-- The View menu: how this page draws the maps, its colors and its keys. -->
+        <button class="btn quiet viewbtn" id="settingsBtn" type="button" aria-label="View settings" aria-expanded="false" aria-controls="settingsbox" title="View settings"><i class="i i-more" aria-hidden="true"></i><span class="lbl">View</span></button>
         <div class="menu right" id="settingsbox" hidden role="dialog" aria-label="View settings">
           <div class="label">View</div>
           <div class="menu-field themepick"><label for="theme">Colors</label>
@@ -109,14 +110,14 @@
           <div class="menu-field themepick" title="Also Alt and +, Alt and −, Alt and 0 for the default"><label for="textsize">Text size</label>
             <select id="textsize"></select>
           </div>
-          <div class="menu-field themepick" title="Or drag the side column's top bar across the page"><label for="sideat">Side column</label>
+          <div class="menu-field themepick" title="Which side of the page the side column stands on"><label for="sideat">Side column</label>
             <select id="sideat"><option value="right">Right</option><option value="left">Left</option></select>
           </div>
           <div class="menu-field themepick" title="Out while agents work, pinned out, or pinned away (A)"><label for="agentsat">Agents window</label>
             <select id="agentsat" aria-keyshortcuts="A"><option value="auto">While at work</option><option value="open">Pinned out</option><option value="hidden">Pinned away</option></select>
           </div>
-          <div class="menu-field themepick" title="The 3D map's names: outward from its middle, or facing you (S)"><label for="signsat">Signs</label>
-            <select id="signsat" aria-keyshortcuts="S"><option value="outward">Outward</option><option value="facing">Facing</option></select>
+          <div class="menu-field themepick" title="The 3D map's names: outward from its middle, or facing you"><label for="signsat">Signs</label>
+            <select id="signsat"><option value="outward">Outward</option><option value="facing">Facing</option></select>
           </div>
           <div class="menu-field themepick" title="How far the 3D map's view opens as its pane grows tall (L)"><label for="lensat">Lens</label>
             <select id="lensat" aria-keyshortcuts="L"><option value="natural">Natural</option><option value="wide">Wide</option><option value="fisheye">Fisheye</option></select>
@@ -143,14 +144,10 @@
 
   <aside>
     <div class="splitter side" id="sideSplit" role="separator" aria-orientation="vertical" aria-label="The side column's width"
-         title="Drag to resize; double-click to reset. Drag the bar beside it to move the column to the other side"></div>
+         title="Drag to resize; double-click to reset. Drag it on to the far edge to move the column to the other side"></div>
     <div class="small" id="small">
-    <div class="map2d" id="map2d" tabindex="0" aria-label="The whole map. Down goes deeper, Up back to the parent, Left and Right across; Enter goes inside, Escape lets go of the selection, then out; the wheel zooms at the pointer, 0 fits the whole map, 3 turns auto zoom on or off. Press ? for every key.">
-      <div class="bar2d">
-        <div class="navbtns"><button id="backBtn" class="btn icon sm quiet" type="button" aria-label="Back" title="Back to the node selected before" disabled><i class="i i-back" aria-hidden="true"></i></button><button id="forwardBtn" class="btn icon sm quiet" type="button" aria-label="Forward" title="Forward again" disabled><i class="i i-forward" aria-hidden="true"></i></button></div>
-        <nav class="crumbs" id="crumbs" hidden aria-label="Where you are inside the map"></nav>
-        <div class="mapbtns"><button id="swapBtn" class="btn sm quiet" type="button" title="Put this map in the large area, and the 3D map here">Swap</button></div>
-      </div>
+    <div class="map2d" id="map2d" tabindex="0" aria-label="The whole map. Down goes deeper, Up back to the parent, Left and Right across; Enter goes inside, Escape lets go of the selection, then out; Alt with Left or Right goes back or forward through the nodes selected; the wheel zooms at the pointer, 0 fits the whole map, 3 turns auto zoom on or off, S swaps the two maps. Press ? for every key.">
+      <nav class="crumbs" id="crumbs" hidden aria-label="Where you are inside the map"></nav>
       <div class="viewport" id="viewport"></div>
     </div>
     </div>
@@ -184,6 +181,27 @@
   </aside>
 
   <main>
+    <!-- The roundtable's tab, BASE-066: shown only while a table runs, at the top of the large area, with the map's tab to
+         go back. The panel holds the table drawn by the roundtable's own scene module, the discussion as it happens and
+         the chair's controls; while it shows, the page tells the table the person is watching. -->
+    <div class="rtstrip" id="rtStrip" role="tablist" aria-label="The large area" hidden>
+      <button role="tab" id="t-map" type="button" aria-selected="true">Map</button>
+      <button role="tab" id="t-roundtable" type="button" aria-selected="false" aria-controls="roundtable" tabindex="-1">Roundtable</button>
+    </div>
+    <section class="roundtable" id="roundtable" role="tabpanel" aria-labelledby="t-roundtable" hidden>
+      <div class="rtscene" aria-label="The table from above: drag to look round, scroll to zoom, click a seat to see what it sees">
+        <div class="rteye" hidden role="dialog" aria-label="A seat's own view"><div class="bar"><span class="title"></span><button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close"><i class="i i-close" aria-hidden="true"></i></button></div><img alt=""></div>
+      </div>
+      <div class="rtside">
+        <p class="rtstate" role="status"></p>
+        <ol class="rtlog" aria-label="The discussion" aria-live="polite"></ol>
+        <div class="rtchair">
+          <p class="rtcount" role="timer" hidden></p>
+          <form class="rtcomment"><textarea rows="2" placeholder="A comment, entered at the next gap between turns" aria-label="Your comment"></textarea><button class="btn sm" type="submit">Comment</button></form>
+          <div class="acts"><button class="hold btn sm" type="button" title="Hold the table after the turn in flight">Hold</button><button class="go btn sm primary" type="button" title="Continue a held table, or start the next turn now">Continue</button><button class="end btn sm danger" type="button" title="End the table: its report is written into docs/roundtables/">End</button></div>
+        </div>
+      </div>
+    </section>
     <!-- The agents deployed stand at the top right of the large area, whichever map is there, VIEW-039. -->
     <div class="agents" id="agents" hidden aria-label="The agents deployed in this project">
       <div class="title">Agent deployed</div>
@@ -191,10 +209,6 @@
       <p class="none" hidden>No agent is at work.</p>
     </div>
     <div id="big3d">
-    <div class="bar3d">
-      <div class="navbtns"><button id="pauseBtn" class="btn sm quiet" type="button" data-paused="false">Pause layout</button><button id="relayoutBtn" class="btn sm quiet" type="button">Re-run layout</button></div>
-      <div class="mapbtns"><button id="fit3dBtn" class="btn sm quiet" type="button" title="The whole map in view, or close on the selected node">Fit</button><button id="swap3dBtn" class="btn sm quiet" type="button" title="Put this map in the small area, and the 2D map here">Swap</button></div>
-    </div>
     <div class="view3d">
     <div id="stage" aria-label="3D map of the metaform" tabindex="0"></div>
     <div class="tip3d" id="tip3d" hidden></div>
@@ -330,6 +344,7 @@
   <div class="bar"><span class="title"></span><button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button></div>
   <div class="body">
     <div class="field"><span>Agent</span><div class="pickhost"></div></div>
+    <div class="field permissions"><span>Permissions <small>· this launch only</small></span><div class="controls"></div><p class="hint"></p><p class="risk warnline" hidden></p></div>
     <button class="start-all btn primary" type="button" hidden>Start all</button>
     <div class="tickets"></div>
   </div>
@@ -381,6 +396,22 @@
 <div id="agentview" class="window dialog wide agentview" hidden role="dialog" aria-modal="true" aria-labelledby="agentviewTitle">
   <div class="bar"><span class="title" id="agentviewTitle">What an agent sees here</span><button class="again btn sm quiet" type="button" title="Read it again from the MCP server">Read again</button><button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button></div>
   <div class="body"></div>
+</div>
+<!-- Open roundtable, from the Agents menu: the Address, the seats in speaking order, the table's own limits and the
+     opening message; `roundtable open`, the person chairing. -->
+<div id="rtopen" class="window movable" hidden role="dialog" aria-label="Open a roundtable">
+  <div class="bar"><span class="title">Open a roundtable</span><button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button></div>
+  <div class="body">
+    <label class="field">Address <input class="address" list="rtaddresses" placeholder="code.alarm" autocomplete="off"></label>
+    <datalist id="rtaddresses"></datalist>
+    <div class="field seats"><span>Seats, in speaking order</span><ol class="chosen"></ol>
+      <div class="add agent"><select aria-label="An agent and its model"></select><button class="btn sm" type="button">Add</button></div>
+      <div class="add model"><input list="rtmodels" placeholder="A model through OpenRouter, such as anthropic/claude-haiku-5.5" aria-label="A model through OpenRouter" autocomplete="off"><button class="btn sm" type="button">Add</button></div>
+      <datalist id="rtmodels"></datalist><p class="hint"></p></div>
+    <div class="kindrow"><label class="field">Rounds <input class="rounds" type="number" min="1" max="1000" step="1"></label><label class="field">Spend, US dollars <input class="spend" type="number" min="0" step="0.5"></label></div>
+    <label class="field">Opening message <textarea class="opening" rows="4" placeholder="What the table discusses"></textarea></label>
+    <button class="put btn primary" type="button">Open the table</button>
+  </div>
 </div>
 <!-- The page's own dialogs: a confirmation, the search of the map, and the keyboard shortcuts. -->
 <div id="confirm" class="window dialog" hidden role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle">

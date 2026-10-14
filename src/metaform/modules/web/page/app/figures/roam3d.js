@@ -7,7 +7,7 @@ import {releaseGlyph, orientAgent} from '/page/agents3d.js';
 import {reduced} from '/page/app/core/dom.js';
 import {ROAM, nodeById, ballOf, sizeOf, routeOf, retarget, reglyph} from '/page/app/figures/agents.js';
 import {placed, CORNERS, walk, AHEAD, TOWARD, easeBoth, STIFF, ACTS, actGap, moodOf, springTo, nudgeNode, sway3d,
-  markTrail, dockPoint, WANT, SPOT} from '/page/app/figures/walk.js';
+  markTrail, dockPoint, WANT, SPOT, steer, driveGoal, driveFace} from '/page/app/figures/walk.js';
 import {MASCOT, mascotGlyph, mascot3d, mascotDriven} from '/page/app/figures/mascot.js';
 import {placeBubble, CUT, cut3d} from '/page/app/figures/cut.js';
 import {eyes3d, approachPoint} from '/page/app/figures/eyes.js';
@@ -191,7 +191,7 @@ function gone(id, figure) {
   ROAM.seen.delete(id);
 }
 /* What each stage does in a frame; a stage that answers false has ended the figure's frame, nothing more is drawn. */
-const STAGES = {arriving, going: travelling, returning: travelling, circling, flourish: finishing, leaving};
+const STAGES = {arriving, going: travelling, returning: travelling, circling, driven, flourish: finishing, leaving};
 /* One figure's frame: its character checked again once a second, its stage, and then how it is drawn. */
 function stepFigure(id, figure, data, size, lift, passed) {
   figure.checked = (figure.checked || 0) + passed;
@@ -202,8 +202,9 @@ function stepFigure(id, figure, data, size, lift, passed) {
   const target = nodeById(data, figure.target), home = nodeById(data, figure.home);
   if (!target || target.x === undefined || !home || home.x === undefined) return;
   const grown = ROAM.focus === id ? ROAM.focused : 1;
-  if (reduced()) {  // no walking: the figure stands on its node while the ticket is worked
-    mesh.position.set(target.x, target.y + ballOf(target) + size, target.z);
+  if (reduced()) {  // no walking: the figure stands on its node while the ticket is worked, or where its agent put it
+    if (figure.drive && !figure.done) standDriven(figure, data);
+    else mesh.position.set(target.x, target.y + ballOf(target) + size, target.z);
     mesh.scale.setScalar(size * grown);
     if (figure.done) gone(id, figure);
     return;
@@ -219,7 +220,10 @@ function arriving(figure, {home, size, lift, pose}) {
   const k = Math.min(1, figure.clock / ROAM.appear);
   ({scale: pose.scale, tall: pose.tall} = arrival(figure, AT.set(home.x, home.y + lift, home.z), size, k, false));
   figure.mesh.position.copy(WANT);
-  if (k >= 1) Object.assign(figure, {stage: 'going', u: 0, clock: 0});
+  if (k < 1) return;
+  // its agent led it while it came: it goes where it was sent, `driven`
+  if (figure.drive) { figure.pos.copy(figure.mesh.position); figure.vel.set(0, 0, 0); }
+  Object.assign(figure, {stage: figure.drive ? 'driven' : 'going', u: 0, clock: 0});
 }
 /* Along the map's own edges, to its node or home again. */
 function travelling(figure, {data, target, size, lift, passed, pose}) {
@@ -302,6 +306,63 @@ function circling(figure, {data, target, size, passed, pose}) {
     figure.stride += passed * m.stride * 0.8;
   markTrail(figure, size);
   if (figure.done) { figure.from.copy(mesh.position); Object.assign(figure, {stage: 'flourish', clock: 0}); }
+}
+/* Led by its own agent, VIEW-005: an embodied conversation agent's acts, web_go, web_move, web_turn and the rest, put
+ * its figure here, `drive` in attention.js. It goes where it was sent and stays there, facing the way asked, until its
+ * agent sends it on or lets it go, web_release, or its conversation ends; it comes to the person when asked, web_come,
+ * and shows a feeling, web_emote, where it stands. */
+function driven(figure, {data, target, size, passed, pose}) {
+  const mesh = figure.mesh, drive = figure.drive;
+  if (figure.done || !drive) {  // let go, it swings onto its orbit from where it stands; done, its flourish
+    figure.drive = null;
+    figure.from.copy(mesh.position);
+    figure.angle = figure.motion.dir * Math.atan2(mesh.position.z - target.z, mesh.position.x - target.x)
+      - figure.lane * Math.PI;
+    Object.assign(figure, {stage: figure.done ? 'flourish' : 'circling', clock: 0});
+    return;
+  }
+  let want = driveGoal(drive, data, WANT) || WANT.copy(figure.pos);
+  let face = driveFace(drive, figure.pos, data, AT);
+  if (figure.come && figure.clock < figure.come.until && approachPoint(figure.come, size, SPOT)) {
+    want = WANT.copy(SPOT);
+    face = AT.copy(G.camera().position);
+  }
+  steer(figure, want, passed, drive.top, drive.accel);
+  mesh.position.copy(figure.pos);
+  figure.speed = figure.vel.length();
+  figure.top = drive.top;
+  if (figure.speed > 1e-2) figure.heading.lerp(AHEAD.copy(figure.vel).normalize(), 0.2);
+  figure.stride += figure.speed * passed / size;
+  markTrail(figure, size);
+  // at rest facing what its agent asked, it holds its gaze there, `attend` in agents3d.js
+  pose.state = figure.speed > size * 0.2 ? 'travel' : face ? 'attend' : 'idle';
+  pose.face = face;
+  emoting(figure, pose, passed);
+}
+/* With reduced motion a driven figure stands where it was sent at once, facing the way asked. */
+function standDriven(figure, data) {
+  const want = driveGoal(figure.drive, data, WANT) || WANT.copy(figure.mesh.position);
+  figure.pos.copy(want);
+  figure.vel.set(0, 0, 0);
+  figure.mesh.position.copy(want);
+  const face = driveFace(figure.drive, want, data, AT);
+  if (face) orientAgent(figure.mesh, AHEAD.subVectors(face, want), 1);
+}
+/* A feeling its agent shows, web_emote: a wave, a think, a celebration, a shrug, or sleep, as the mascot shows them. */
+function emoting(figure, pose, passed) {
+  const feeling = figure.emote, m = figure.motion;
+  const u = feeling ? (figure.clock - feeling.at) / feeling.long : 1;
+  if (u >= 1) { figure.emote = null; return; }
+  if (feeling.kind === 'wave') {
+    pose.turn = Math.sin(u * Math.PI * 6) * 0.35;
+    figure.stride += passed * m.stride * 0.8;
+  } else if (feeling.kind === 'celebrate') {
+    pose.turn = easeBoth(u) * Math.PI * 2;
+    pose.scale = 1 + 0.12 * Math.sin(Math.PI * u);
+    figure.stride += passed * m.stride * 2;
+  } else if (feeling.kind === 'shrug') pose.scale = 1 + 0.06 * Math.sin(Math.PI * u);
+  else if (feeling.kind === 'think') pose.turn = Math.sin(u * Math.PI) * 0.5;
+  else if (feeling.kind === 'sleep') pose.state = 'sleep';
 }
 /* Done: a little flourish of its own, then home. */
 function finishing(figure, {data, size, passed, pose}) {

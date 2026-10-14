@@ -7,7 +7,8 @@ import {createAgent, orientAgent, motionOf, strokeOf, reserveGlyph, GLYPHS} from
 import {$, css, reduced} from '/page/app/core/dom.js';
 import {S} from '/page/app/core/reads.js';
 import {ROAM, nodeById, primaryOf, ballOf, BODIES, bodyKey, isSystemTalk} from '/page/app/figures/agents.js';
-import {AHEAD, PULL, TOWARD, easeBoth, nudgeNode, markTrail, SPOT} from '/page/app/figures/walk.js';
+import {AHEAD, TOWARD, easeBoth, nudgeNode, markTrail, SPOT, steer, driveGoal, driveFace}
+  from '/page/app/figures/walk.js';
 import {CUT, mascotForCut} from '/page/app/figures/cut.js';
 import {EYE} from '/page/app/figures/eyes.js';
 import {G, FRAMES, DRAG_FRICTION, wake3d} from '/page/app/map3d/graph3d.js';
@@ -32,7 +33,8 @@ const ASIDE = new THREE.Vector3(), UPWARD = new THREE.Vector3(), FACEAT = new TH
 /* web_mascot is the person's preferred character, the one the body picker suggests first; it draws nothing. The
  * mascot is the person's system agent once it has a body: no figure is on the map until the system agent offers to
  * take one and the person accepts, or the person gives it one. It is drawn while that conversation runs, and a
- * resumed conversation, the same session again, comes back in the same body; a new one is offered a body afresh. */
+ * resumed conversation, the same session again, comes back in the same body; a new one is offered a body afresh. A
+ * body the system agent took itself, web_embody, is its own figure and not the mascot. */
 export function preferredGlyph() {
   const chosen = WS.view().mascot;
   return GLYPHS.includes(chosen) ? chosen : null;
@@ -40,7 +42,7 @@ export function preferredGlyph() {
 export function mascotGlyph() {
   const ticket = (S.tickets || []).find(isSystemTalk);
   const held = ticket ? BODIES.chosen[bodyKey(ticket.id)] : null;
-  if (!held || !GLYPHS.includes(held.glyph)) return null;
+  if (!held || held.by === 'agent' || !GLYPHS.includes(held.glyph)) return null;
   const live = D.sessions.filter(one => one.work_id === ticket.id && one.state === 'running').at(-1);
   return live && (!held.session || held.session === live.session_id) ? held.glyph : null;
 }
@@ -89,17 +91,6 @@ export function releaseMascot() {
 const mischief = () => WS.view().mascot_mischief || 'playful';
 export function mascotAwake() {  // it keeps the 3D map drawing only while it is up and about
   return Boolean(MASCOT.mesh) && !reduced() && !MASCOT.sleeping;
-}
-function steer(body, want, passed, top, accel) {  // toward a place, as fast as it can still stop there gently
-  TOWARD.subVectors(want, body.pos);
-  const away = TOWARD.length(), speed = Math.min(top, Math.sqrt(2 * accel * Math.max(0, away - 0.05)));
-  TOWARD.multiplyScalar(away > 1e-4 ? speed / away : 0);
-  PULL.subVectors(TOWARD, body.vel);
-  const most = accel * passed * 1.5;
-  if (PULL.length() > most) PULL.setLength(most);
-  body.vel.add(PULL);
-  body.pos.addScaledVector(body.vel, passed);
-  return away;
 }
 function besideNode(node, size, out) {  // beside a node on the screen's right, below where its name is drawn
   const camera = G.camera();
@@ -199,8 +190,13 @@ function mascotJob(data, size) {
   MASCOT.job = null;
   return null;
 }
-/* Going beside a node or to a point; its own move ends once it is there. */
+/* Going beside a node or to a point; its own move ends once it is there. Where its agent sent it, `drive` in
+ * attention.js, it goes at the pace fixed when it was sent and stays, facing the way asked. */
 function moveJob(job, data, size) {
+  if (job.drive) {
+    return {want: driveGoal(job.drive, data, SPOT) || SPOT.copy(MASCOT.pos),
+      face: driveFace(job.drive, MASCOT.pos, data, FACEAT), fast: job.drive.fast || 1};
+  }
   const node = job.node ? nodeById(data, job.node) : null;
   const want = node && node.x !== undefined ? besideNode(node, size, SPOT) : job.point ? SPOT.copy(job.point) : null;
   if (!want || MASCOT.pos.distanceTo(want) < size * 0.3 && !job.agent) { MASCOT.job = null; return null; }
@@ -250,28 +246,13 @@ function dragJob(job, node, data, size) {
   G.d3ReheatSimulation();
   return {want, face: null, fast: 0.8};
 }
-/* Who leads it, shown quietly: a faint ring at its feet while its agent drives it. */
-function ringMascot(size, on) {
-  if (!MASCOT.mesh) return;
-  if (!MASCOT.ring) {
-    MASCOT.ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.5, 40), new THREE.MeshBasicMaterial({
-      color: new THREE.Color(css('--signal')), transparent: true, opacity: 0, depthWrite: false,
-      side: THREE.DoubleSide}));
-    MASCOT.ring.rotation.x = -Math.PI / 2;
-    MASCOT.ring.raycast = () => {};
-  }
-  if (MASCOT.ring.parent !== MASCOT.mesh) MASCOT.mesh.add(MASCOT.ring);
-  const material = MASCOT.ring.material;
-  material.opacity += ((on ? 0.45 : 0) - material.opacity) * 0.12;  // eased in and out
-  MASCOT.ring.visible = material.opacity > 0.01;
-}
 /* The mascot's body, made the first time it is drawn, beside the map's primary node; never in the way of a click. */
 function makeMascot(glyph, home, size) {
   const mesh = createAgent(glyph);
   mesh.traverse(object => { object.raycast = () => {}; });
   mesh.userData.motion = MASCOT.motion = motionOf(glyph, 'mascot');
   G.scene().add(mesh);
-  Object.assign(MASCOT, {glyph, mesh, clock: 0, greeted: null, wander: null, fade: undefined, ring: null});
+  Object.assign(MASCOT, {glyph, mesh, clock: 0, greeted: null, wander: null, fade: undefined});
   besideNode(home, size, MASCOT.pos);
   MASCOT.vel.set(0, 0, 0);
 }
@@ -303,11 +284,11 @@ export function mascot3d(data, size, passed) {
   const job = !leaving && MASCOT.job && (driven || !MASCOT.job.agent) ? mascotJob(data, size) : null;
   if (MASCOT.job?.agent && !driven) { dropHeld(); MASCOT.job = null; }  // let go: what the agent had it do ends
   const mending = leaving || driven || job ? null : mascotForCut(size);  // an edge the person cut, `CUT`
-  ringMascot(size, driven);  // a faint ring at its feet while its agent leads it
   const aim = mascotAim(data, size, passed, {leaving, driven, job, mending, home, now});
-  if (reduced()) {  // it just stands there
+  if (reduced()) {  // it just stands there, facing what it is asked to at once
     if (aim.want) MASCOT.pos.copy(aim.want);
     mesh.position.copy(MASCOT.pos);
+    if (aim.face) orientAgent(mesh, AHEAD.subVectors(aim.face, MASCOT.pos), 1);
     mesh.userData.update(0, {move: {speed: 0, stride: 0, state: 'idle'}});
     return;
   }
@@ -347,6 +328,7 @@ function mascotAim(data, size, passed, {leaving, driven, job, mending, home, now
     else if (MASCOT.fade !== undefined) aim.puff = Math.max(0.01, 1 - easeBoth(1 - MASCOT.fade));
   } else if (job) {
     Object.assign(aim, {want: given(job.want, null), face: given(job.face, null), fast: given(job.fast, 1)});
+    if (MASCOT.job?.drive && aim.face) aim.state = 'attend';  // it holds its gaze where its agent has it face
   } else if (driven) {  // its system agent leads it: where it was sent, or it stays where it was taken
     const spot = MASCOT.call?.agent ? callSpot(data, size) : null;
     if (spot) Object.assign(aim, {want: spot.want, face: given(spot.face, null)});

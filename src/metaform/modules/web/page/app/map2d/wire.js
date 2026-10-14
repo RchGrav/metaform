@@ -1,20 +1,17 @@
-/* Letting go of the selection, the 2D map's own wiring of pointer and wheel, and Back and Forward through the nodes
+/* Letting go of the selection, the 2D map's own wiring of pointer and wheel, and back and forward through the nodes
  * selected. */
 import '/page/app/map2d/flow2d.js';  // the part before runs first, so the parts run in the page's order
 import {$, h, fill} from '/page/app/core/dom.js';
 import {S, MEM} from '/page/app/core/reads.js';
 import {setReach} from '/page/app/map3d/waves.js';
 import {G, wake3d, touched} from '/page/app/map3d/graph3d.js';
-import {MODE} from '/page/app/camera/flight.js';
 import {meetEnds} from '/page/app/camera/fly3d.js';
-import {PEEK, NODEZOOM, VIEW} from '/page/app/views/settings.js';
-import {toggleNodeZoom} from '/page/app/views/lens.js';
 import {M} from '/page/app/map2d/build.js';
 import {showBase} from '/page/app/map2d/fit.js';
 import {IN, samePath, drawInside} from '/page/app/map2d/inside.js';
 import {leaveMemories} from '/page/app/memory/graph.js';
 import {setCam, stopCam, area2d, labelSize, scaleFor, focus2d, place2d, aim2d, hold2d} from '/page/app/map2d/camera.js';
-import {showModes, EDGE_PICK, edgeAt2d, nodeAt2d, pickNode2d, pickEdge2d, unmark2D} from '/page/app/map2d/hover.js';
+import {EDGE_PICK, edgeAt2d, nodeAt2d, pickNode2d, pickEdge2d, unmark2D} from '/page/app/map2d/hover.js';
 import {clicked2d, modified2d} from '/page/app/map2d/flow2d.js';
 import {select} from '/page/app/selection/select.js';
 
@@ -37,11 +34,6 @@ export function noneSelected() {
 const PAN = {drag: null, dragged: false};
 function wire2D() {
   const host = $('#map2d');
-  MODE.box = modeButtons();
-  PEEK.two.prepend(MODE.box);
-  showModes();
-  $('#backBtn').onclick = event => { event.stopPropagation(); step(-1); };
-  $('#forwardBtn').onclick = event => { event.stopPropagation(); step(1); };
   // A drag moves the view within the mode's limits, VIEW-041, and is not a click on what it started on.
   host.addEventListener('pointerdown', startPan);
   host.addEventListener('pointermove', pan);
@@ -56,21 +48,10 @@ function wire2D() {
   // full fit refits as the pane changes size, and a view held keeps its zoom, VIEW-041
   new ResizeObserver(() => aim2d()).observe($('#viewport'));
 }
-/* Auto zoom on the map's bar, VIEW-041: web_node_zoom, pressed while each selection frames its node, with its key;
- * `showNodeZoom` says on or off here as on the 3D map's bar. */
-function modeButtons() {
-  const on = VIEW.nodeZoom !== false;
-  NODEZOOM.button2d = h('button', {type: 'button', class: 'btn sm quiet', 'aria-keyshortcuts': '3',
-    'aria-pressed': String(on), title: 'Auto zoom: each node selected is framed with its neighbours, on both maps;'
-      + ' off, a selection leaves both where they are (3)',
-    onclick: event => { event.stopPropagation(); toggleNodeZoom(); }},
-  h('span', {class: 'value'}, 'Auto zoom '), h('span', {class: 'state'}, on ? 'On' : 'Off'), h('kbd', {}, '3'));
-  return h('div', {class: 'modes2d', role: 'group', 'aria-label': 'How the 2D map is framed'}, NODEZOOM.button2d);
-}
 function startPan(event) {
   PAN.dragged = false;
-  // the bar across the top is controls and the grip that moves the side column, never a place a pan starts
-  if (event.target.closest('button, a, .bar2d') || !M.cam) return;
+  // the crumbs inside a node are links, never a place a pan starts
+  if (event.target.closest('button, a, .crumbs') || !M.cam) return;
   PAN.drag = {x: event.clientX, y: event.clientY, cam: {...M.cam}, moving: false};
 }
 function pan(event) {
@@ -86,9 +67,9 @@ function pan(event) {
   const to = {x: at.x - (event.clientX - drag.x) / scale, y: at.y - (event.clientY - drag.y) / scale};
   setCam(place2d(scale, to, area));
 }
-/* What a click on the map would not take: off the map, on its bar, a button or an agent's figure, which keeps its own.
- */
-const offMap = target => !M.svg || target.closest?.('.bar2d, button, g.agent2d') || !target.closest?.('#viewport');
+/* What a click on the map would not take: off the map, on its crumbs, a button or an agent's figure, which keeps its
+ * own. */
+const offMap = target => !M.svg || target.closest?.('.crumbs, button, g.agent2d') || !target.closest?.('#viewport');
 /* The edge a click would take, marked as the pointer moves, once a frame; a node under the pointer takes it instead:
  * the node nearest the pointer within reach, then the nearest edge. */
 function markUnderPointer(event) {
@@ -139,8 +120,9 @@ function zoomByWheel(event, delta, area) {
   return setCam(place2d(zoom, pointer, area));
 }
 wire2D();
-/* Back and forward step through the nodes selected, as a browser does; a new selection drops the steps forward. */
-async function step(by) {
+/* Back and forward step through the nodes selected, as a browser does, Alt with Left and Right, which ? lists; a new
+ * selection drops the steps forward. */
+export async function step(by) {
   if (MEM.key) { if (by < 0) leaveMemories(); return; }  // back from a memory network is back to the map, VIEW-031
   const to = S.at + by;
   if (to < 0 || to >= S.history.length) return;
@@ -153,8 +135,4 @@ async function step(by) {
     if (IN.length) await drawInside(); else showBase();
   }
   select(entry.id, true, false, true);
-}
-export function showSteps() {
-  $('#backBtn').disabled = !MEM.key && S.at <= 0;
-  $('#forwardBtn').disabled = Boolean(MEM.key) || S.at >= S.history.length - 1;
 }

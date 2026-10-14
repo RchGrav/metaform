@@ -1,5 +1,5 @@
 /* The developer level, the workspace's toolbar, panes and their places, window.metaform's workspace reads, and main. */
-import '/page/app/loading/load.js';  // the part before runs first, so the parts run in the page's order
+import '/page/app/roundtable/table.js';  // the part before runs first, so the parts run in the page's order
 // The graph, glass and figures share the import map's one local Three.js runtime, VIEW-003 and VIEW-025.
 import * as THREE from 'three';
 // The toolbar, the panes and their places, and the views the page draws only as panes.

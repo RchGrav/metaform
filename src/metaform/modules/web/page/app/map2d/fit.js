@@ -5,23 +5,23 @@ import {$, reduced, fill} from '/page/app/core/dom.js';
 import {FRAMED, S} from '/page/app/core/reads.js';
 import {paceOf} from '/page/app/map3d/light.js';
 import {MARGIN} from '/page/app/camera/flight.js';
-import {VIEW, PEEK, peekParts} from '/page/app/views/settings.js';
+import {VIEW, PEEK} from '/page/app/views/settings.js';
 import {M, FIT2D, build2D} from '/page/app/map2d/build.js';
 import {renderCrumbs} from '/page/app/map2d/inside.js';
 import {frame, arrive, into, setCam, stopCam, moveCam, area2d, focus2d, aim2d,
-  center2d} from '/page/app/map2d/camera.js';
+  center2d, foot2d} from '/page/app/map2d/camera.js';
 import {clicked2d} from '/page/app/map2d/flow2d.js';
 import {menu} from '/page/app/board/messages.js';
 import {getJson} from '/page/app/panel/prompts.js';
 
 /* The map's layers as ELK ranks them, near enough to choose its direction before it is drawn, P043: each element at
  * the longest path to it from an element nothing points to, with the edges that close a loop left out, as ELK breaks
- * loops. `layers` is how many there are and `widest` the most elements in one. */
+ * loops. `layers` is how many there are, `widest` the most elements in one and `nodes` how many elements in all. */
 export function shape2d(keys, drawn) {
   const {kept, into} = loopsBroken(keys, drawn), rank = ranksOf(keys, kept, into);
   const counts = new Map();
   for (const layer of rank.values()) counts.set(layer, (counts.get(layer) || 0) + 1);
-  return {layers: Math.max(1, counts.size), widest: Math.max(1, ...counts.values())};
+  return {layers: Math.max(1, counts.size), widest: Math.max(1, ...counts.values()), nodes: keys.size};
 }
 /* The edges kept once those that close a loop are left out, each element's out of it, and how many point into each. */
 function loopsBroken(keys, drawn) {
@@ -86,18 +86,22 @@ function fitStep2d(area, was = null) {
 }
 /* ELK's options for one way, laid out for the width to height `aim`. The map has no subgraphs, so its root is laid out
  * on its own rather than with its children, which lets ELK lay out each part not joined to the rest apart, pack the
- * parts together to `aim` and close the gaps between them. A folded way also cuts each part's layers into rows or
- * columns for `aim`, ELK's single-edge wrapping: only where one edge alone crosses between two layers, so a long run
- * is folded and a branching part, or a part that fits as it is, is left whole. Mermaid passes on its own few ELK
- * options; these reach the layout as `elk.rootLayoutOptions` in its configuration, which the vendored mermaid.min.js
- * was changed to forward, vendor/README.md. */
-function fitOptions2d({wrap, aim, narrow}) {
+ * parts together to `aim` and close the gaps between them. A folded way also cuts each part's run of layers into rows
+ * or columns, ELK's wrapping across several edges, cut where `wrap` names, MSD or ARD, with the correction `FIT2D`
+ * gives, so a run too long for the pane goes on in the next row. A way may also name ELK's `layering`: MIN_WIDTH, its
+ * layers held to about `bound` times the widest node, or STRETCH_WIDTH. Mermaid passes on its own few ELK options;
+ * these reach the layout as `elk.rootLayoutOptions` in its configuration, which the vendored mermaid.min.js was
+ * changed to forward, vendor/README.md. */
+function fitOptions2d({wrap, aim, narrow, layering, bound}) {
   return {'elk.hierarchyHandling': 'SEPARATE_CHILDREN', 'elk.aspectRatio': String(aim),
     'elk.separateConnectedComponents': 'true', 'elk.layered.compaction.connectedComponents': 'true',
-    ...(wrap ? {'elk.layered.wrapping.strategy': 'SINGLE_EDGE'} : {}),
+    ...(wrap ? {'elk.layered.wrapping.strategy': 'MULTI_EDGE', 'elk.layered.wrapping.cutting.strategy': wrap,
+      'elk.layered.wrapping.correctionFactor': String(FIT2D.correction)} : {}),
     // a narrowed way, `narrowFor`: ELK's Coffman-Graham layering, which holds each layer to the bound it is given
     ...(narrow ? {'elk.layered.layering.strategy': 'COFFMAN_GRAHAM',
-      'elk.layered.layering.coffmanGraham.layerBound': String(narrow)} : {})};
+      'elk.layered.layering.coffmanGraham.layerBound': String(narrow)} : {}),
+    ...(layering ? {'elk.layered.layering.strategy': layering} : {}),
+    ...(bound ? {'elk.layered.layering.minWidth.upperBoundOnWidth': String(bound)} : {})};
 }
 /* One drawing with ELK's options given, Mermaid's configuration put back as it was once it is drawn, so the graph
  * inside a node and the memory network are laid out as before. */
@@ -106,27 +110,34 @@ async function fitDraw2d(id, text, options) {
   try { return await window.mermaid.render(id, text, $('#draw')); }
   finally { window.mermaid.initialize(FIT2D.config); }
 }
-/* How large the whole drawing is drawn in the pane, in screen pixels to a unit of it, with the margin a fit leaves,
- * `scaleFor`. */
+/* How large the whole drawing is drawn in the pane, in screen pixels to a unit of it, with the margin a fit leaves and
+ * the room kept at its foot, as full fit draws it, `scaleFor`. */
 function fitScale2d({w, h}, area) {
   const room = side => Math.min(MARGIN, side / 10);
   return Math.min((area.width - 2 * room(area.width)) / Math.max(1, w),
-    (area.height - 2 * room(area.height)) / Math.max(1, h));
+    (area.height - Math.min(foot2d(), area.height / 3) - 2 * room(area.height)) / Math.max(1, h));
 }
-// a way apart from the width to height it was laid out for: its direction, whether it is folded, and its layers' bound
-const fitWay2d = ({vertical, wrap, narrow}) =>
-  `${vertical ? 'TB' : 'LR'}${wrap ? 'w' : ''}${narrow ? `n${narrow}` : ''}`;
-/* web_map_direction as this page last read it, kept with the bar's direction buttons, `PEEK`: auto, across or down,
+// a way apart from the width to height it was laid out for: its direction, its fold, its layers' bound and layering
+const fitWay2d = ({vertical, wrap, narrow, layering, bound}) =>
+  `${vertical ? 'TB' : 'LR'}${wrap ? `w${wrap}` : ''}${narrow ? `n${narrow}` : ''}`
+  + `${layering ? `-${layering}${bound || ''}` : ''}`;
+/* web_map_direction as this page last read it, kept in `PEEK`: auto, across or down,
  * its directions also taken as Mermaid names them, LR and TB. */
 export const fitPin2d = () => ({LR: 'across', TB: 'down'})[PEEK.direction] || PEEK.direction || 'auto';
-const fitNear2d = (a, b) => Boolean(a && b)
-  && [a.layers / b.layers, a.widest / b.widest].every(part => part > 0.8 && part < 1.25);
 function fitHash2d(text) {  // the map's text in a few characters, to know a drawing of it again
   let hash = 0x811c9dc5;
   for (let at = 0; at < text.length; at++) hash = Math.imul(hash ^ text.charCodeAt(at), 0x01000193);
   return `${text.length}.${(hash >>> 0).toString(36)}`;
 }
-/* The map's text laid out for the pane, `FIT2D`: the drawing and its way, or null once a later drawing has begun. The
+/* The map's text laid out for the pane, `FIT2D`: the drawing, its way, and whether it was `hurried`, or null once a
+ * later drawing has begun. Every map whose text differs, and every step of the pane, is chosen for afresh; only the
+ * same text in the same step and direction gets the way chosen for it before, once every way was drawn for it. The
+ * map on the page stays, and takes the person's input between one drawing and the next, until the choice is made.
+ * Each drawing is kept as it is made, so a choice begun again for the same map, as a change to its tickets alone
+ * begins it, goes on where it was. The budget is counted from the first choice not yet shown, so changes that come
+ * faster than the budget still show, each with the ways drawn by then. A choice that runs out of budget with ways
+ * left, whether its own drawings or those of the choices before it spent it, is `hurried`: it is shown, and made
+ * again once shown, going on with the ways not yet drawn, so a slow machine reaches the same choice later. The
  * project's settings are waited for while the page reads them, so a map held to one direction is drawn that way from
  * the first, and a direction changed while the map is laid out lays it out again. It fails only when ELK lays out
  * none of the ways. */
@@ -134,12 +145,13 @@ export async function fitPick2d(body, shape, generation) {
   if (S.project && VIEW.read === S.project) await VIEW.reading;
   if (generation !== M.generation) return null;
   const area = area2d(), step = M.bucket = fitStep2d(area, M.bucket ?? null), pane = Math.exp(step * FIT2D.step);
-  const pin = fitPin2d(), mark = `${pin} ${step}`, held = FIT2D.chosen.get(mark), reuse = fitNear2d(held?.shape, shape);
-  const ways = reuse ? [held.way] : waysFor(shape, pin, Number(pane.toPrecision(3)));
-  const text = fitHash2d(body), start = performance.now(), tried = new Set();
-  let best = null, again = reuse ? 0 : FIT2D.refine;
+  const pin = fitPin2d(), text = fitHash2d(body), mark = `${pin} ${step} ${text}`, held = FIT2D.chosen.get(mark);
+  const ways = held ? [held] : waysFor(shape, pin, Number(pane.toPrecision(3)));
+  const since = FIT2D.since ??= performance.now(), tried = new Set();
+  let best = null, hurried = false;
   for (let at = 0; at < ways.length; at++) {
-    if (best && performance.now() - start > FIT2D.budget) break;
+    const now = performance.now();
+    if (best && now - since > FIT2D.budget) { hurried = true; break; }  // the ways left are drawn when it is shown
     if (ways[at].narrow === true) {  // its layers' bound once the likelier direction is drawn, `narrowFor`
       const narrow = best && narrowFor(shape, best, pane);
       if (!narrow) continue;
@@ -151,45 +163,46 @@ export async function fitPick2d(body, shape, generation) {
     let drawing = FIT2D.drawn.get(key);
     FIT2D.drawn.delete(key);
     if (!drawing) {
-      drawing = await drawWay(way, body, `map2d${generation}n${at}`);
+      await new Promise(go => setTimeout(go));  // the page takes its input, as one layout by ELK holds it
       if (generation !== M.generation) return null;
-      if (!drawing) continue;  // the other ways may still be laid out
+      drawing = await drawWay(way, body, `map2d${generation}n${at}`);
+      if (!drawing) { if (generation !== M.generation) return null; continue; }  // the other ways may still be drawn
     }
     FIT2D.drawn.set(key, drawing);  // the latest last, and the oldest let go
     while (FIT2D.drawn.size > FIT2D.most) FIT2D.drawn.delete(FIT2D.drawn.keys().next().value);
-    const score = fitScale2d(drawing, area) / (way.wrap ? FIT2D.fold : 1)
-      * (M.way && fitWay2d(M.way) === fitWay2d(way) ? FIT2D.keep : 1);
+    if (generation !== M.generation) return null;  // kept for the choice that follows
+    const score = fitScale2d(drawing, area);
     if (!best || score > best.score) best = {...drawing, way, score};
-    // every way laid out, the best is laid out again for the width to height that makes up what it missed the pane by
-    const miss = Math.log(pane / (best.w / best.h));
-    if (at === ways.length - 1 && again > 0 && Math.abs(miss) > FIT2D.step / 2) {
-      again--;
-      const aim = Math.min(pane * 4, Math.max(pane / 4, best.way.aim * Math.exp(miss)));
-      ways.push({...best.way, aim: Number(aim.toPrecision(3))});
-    }
   }
-  if (!best) throw new Error('ELK laid out none of the ways.');
-  if (!reuse) FIT2D.chosen.set(mark, {way: best.way, shape});
+  if (!best) { FIT2D.since = null; throw new Error('ELK laid out none of the ways.'); }
   if (fitPin2d() !== pin) return fitPick2d(body, shape, generation);  // its direction was changed meanwhile
-  return {result: best.result, way: best.way};
+  if (!hurried) FIT2D.chosen.set(mark, best.way);
+  while (FIT2D.chosen.size > FIT2D.most) FIT2D.chosen.delete(FIT2D.chosen.keys().next().value);
+  FIT2D.since = null;
+  return {result: best.result, way: best.way, hurried};
 }
-/* The ways to lay the map out for the pane: the one web_map_direction holds it to; else the likelier direction
- * first, then it with its layers narrowed where they came out too wide for the pane, `narrowFor`, both folded for a
- * map more than three layers deep, and the other direction last. The narrowed way comes second, after the drawing it
- * is reckoned from, and so the budget leaves it out for a map slow to lay out, as narrowing adds to ELK's work. */
+/* The ways to lay the map out for the pane, in the order they fill it best for the time they take: the one
+ * web_map_direction holds it to; else the likelier direction first; then it with its layers narrowed where they came
+ * out too wide for the pane, `narrowFor`, which is slow but the only way that reshapes such a map, and is reckoned from
+ * the first drawing; then, for a map more than three layers deep, left to right folded into rows, cut both ways ELK
+ * offers, which reshapes a long run in a pane of any shape; then, for a map of at most `small` elements, top to bottom
+ * with its layers held narrow, MIN_WIDTH at three bounds and STRETCH_WIDTH, as these can take minutes on a large map
+ * and one layout by ELK cannot be stopped; and the other direction last. */
 function waysFor(shape, pin, aim) {
   if (pin === 'across' || pin === 'down') return [{vertical: pin === 'down', wrap: false, aim}];
-  const first = vertical2d(shape, M.way?.vertical ?? null);
+  const first = vertical2d(shape, M.way?.vertical ?? null), small = shape.nodes <= FIT2D.small;
   return [{vertical: first, wrap: false, aim}, {vertical: first, wrap: false, aim, narrow: true},
-    ...(shape.layers > 3 ? [{vertical: first, wrap: true, aim}, {vertical: !first, wrap: true, aim}] : []),
+    ...(shape.layers > 3 ? ['MSD', 'ARD'].map(wrap => ({vertical: false, wrap, aim})) : []),
+    ...(small ? [1, 2, 4].map(bound => ({vertical: true, wrap: false, aim, layering: 'MIN_WIDTH', bound})) : []),
+    ...(small ? [{vertical: true, wrap: false, aim, layering: 'STRETCH_WIDTH'}] : []),
     {vertical: !first, wrap: false, aim}];
 }
-/* One way laid out now, with its size; null where ELK fails it. */
+/* One way laid out now, with its size; null where ELK fails it, or Mermaid gives back a drawing with no size. */
 async function drawWay(way, body, id) {
   try {
     const {svg} = await fitDraw2d(id, `flowchart ${way.vertical ? 'TB' : 'LR'}\n${body}`, fitOptions2d(way));
     const box = (svg.match(/viewBox="([^"]+)"/)?.[1] || '').split(/[\s,]+/).map(Number);
-    return {result: {svg}, w: box[2] || 1, h: box[3] || 1};
+    return box[2] > 0 && box[3] > 0 ? {result: {svg}, w: box[2], h: box[3]} : null;
   } catch (error) { return null; }
 }
 /* A pane reshaped into another step of width to height, `fitStep2d`, lays the map out again, P043: 150 ms after it
@@ -205,13 +218,12 @@ function relayoutSoon() {
   }, 150);
 }
 new ResizeObserver(relayoutSoon).observe($('#viewport'));
-/* web_map_direction as the page reads it again, `fitPin2d`: a change draws the map in it and checks the bar's button.
+/* web_map_direction as the page reads it again, `fitPin2d`: a change draws the map in it.
  * It is read with the workspace, and again whenever the page is looked at, its window focused or its tab shown, since
  * a direction set with `metaform set` while the page is open is not announced to it; the page takes it up then. */
 export function fitDirection2d(direction) {
   if (!direction || direction === (PEEK.direction || 'auto')) return;
   PEEK.direction = direction;
-  if (PEEK.two) peekParts();
   if (M.base) build2D();
 }
 async function fitRecheck2d() {

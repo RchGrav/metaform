@@ -1,18 +1,18 @@
-/* The view settings the page follows, each map's own bar controls, the agents window, the flow's modes and what the
- * maps say of what the pointer is on. */
+/* The view settings the page follows, the agents window, the flow's modes and what the maps say of what the pointer
+ * is on. */
 import '/page/app/camera/fly3d.js';  // the part before runs first, so the parts run in the page's order
 // Ultra graphics, web_graphics: the 3D map in outer space, drawn by its own module through the hooks marked ULTRA.
 import * as ULTRA from '/page/ultra.js';
-import {$, reduced, h} from '/page/app/core/dom.js';
+import {$, reduced} from '/page/app/core/dom.js';
 import {toast} from '/page/app/core/controls.js';
 import {S, read} from '/page/app/core/reads.js';
 import {readout} from '/page/app/map3d/readout.js';
-import {DIRECTION_KEYS, chooseDirection} from '/page/app/camera/flight.js';
-import {small3d, MODES3D, EASE} from '/page/app/camera/fly3d.js';
-import {showEdges, showFlow, PHYS, applyPhysics, showUltra, showSigns, showPhysics} from '/page/app/views/bar.js';
+import {EASE} from '/page/app/camera/fly3d.js';
+import {showEdges, showFlow, PHYS, applyPhysics, showUltra, showSigns} from '/page/app/views/bar.js';
 import {showNodeZoom, showLens, lens3d} from '/page/app/views/lens.js';
 import {flows2d} from '/page/app/map2d/flow2d.js';
 import {posted} from '/page/app/intake/intake.js';
+import {DEPTH, setDepth} from '/page/app/keys/walk.js';
 
 /* The view settings of the web module that the page follows, read once a project is shown: the agents window,
  * web_agents_window; the 3D map's physics, web_physics; the 2D map's direction,
@@ -22,12 +22,12 @@ export const VIEW = {agents: 'auto', physics: 'organic', read: null, reading: nu
 // the bar's Info choice, web_hover_info, `showInfo`, drawn as the view is read
 export const INFOSET = {buttons: new Map()};
 // declared before the view settings are read, which shows them: the flow modes and the node zoom switch
-export const FLOWSET = {name: null, buttons: new Map()};
-export const NODEZOOM = {button: null, button2d: null};
+export const FLOWSET = {name: null};
+export const NODEZOOM = {button: null};
 export const LENS = {name: 'natural', button: null, frame: 0};
 const LENS_NEXT = {natural: 'wide', wide: 'fisheye', fisheye: 'natural'};
 /* The signs, web_signs: outward, the map's names standing out from its middle as signs in the scene, or facing, each
- * turned to the eye. S switches them, as do the large map's bar and the View menu. */
+ * turned to the eye. The View menu switches them. */
 export const SIGNS = {button: null, words: {outward: 'Outward', facing: 'Facing'}};
 export const FOV3D = {least: 30, most: 55};  // the 3D map's field of view in degrees, top to bottom, `resize`
 export const LENSES = {natural: 55, wide: 80, fisheye: 120};  // web_lens: the widest the view opens
@@ -44,7 +44,7 @@ export function readView() {
   })();
   return VIEW.reading;
 }
-/* The view settings read, each applied to the page and shown in the bars and the View menu. */
+/* The view settings read, each applied to the page and shown in the View menu. */
 function followView(rows) {
   const value = (key, otherwise) => rows.find(row => row.key === key)?.value ?? otherwise;
   VIEW.agents = value('web_agents_window', 'auto');
@@ -64,6 +64,7 @@ function followView(rows) {
   const physics = value('web_physics', 'organic');
   if (physics !== PHYS.name) applyPhysics(physics);
   showFlow(String(value('web_flow_mode', flowNow())));
+  if (String(value('web_map_depth', 'all')) !== DEPTH.level) setDepth(String(value('web_map_depth', 'all')), false);
   showEdges(value('web_flow_edges', true) !== false);
   VIEW.nodeZoom = value('web_node_zoom', true) !== false;
   showNodeZoom();
@@ -85,44 +86,13 @@ export function saveView(key, value) {
   return save;
 }
 
-/* Each map's own controls, in its bar row beside Swap and always in view, so nothing slides out over the map: the 2D
- * map's modes and direction, and the 3D map's framings, Fit and layout. Only the large map's show; the small area is
- * not configured. */
-export const PEEK = {two: null, three: null, physics: null, direction: null};
-export const FIT3D = $('#fit3dBtn');
-PEEK.two = h('div', {class: 'peekpart two'});
-PEEK.three = h('div', {class: 'peekpart three'}, MODES3D.box, FIT3D);
-PEEK.physics = h('div', {class: 'peekpart physics'});
-FIT3D.title = 'Fit the whole map in view once, leaving the mode as it is (F)';
-FIT3D.setAttribute('aria-keyshortcuts', 'F');
-PEEK.directions = new Map();
-const DIRECTION_WORDS = {auto: ['Auto', 'As suits the pane'], across: ['→', 'Left to right'],
-  down: ['↓', 'Top to bottom']};
-function directionButton([key, direction]) {
-  const words = DIRECTION_WORDS[direction];
-  const choose = event => { event.stopPropagation(); chooseDirection(direction); };
-  const button = h('button', {type: 'button', role: 'radio', 'aria-checked': 'false', 'aria-label': words[1],
-    'aria-keyshortcuts': key, title: `${words[1]} (${key})`, onclick: choose},
-  h('span', {class: 'long'}, words[0]), h('kbd', {}, key));
-  PEEK.directions.set(direction, button);
-  return button;
-}
-PEEK.two.append(h('div', {class: 'segmented directions', role: 'radiogroup', 'aria-label': "The 2D map's direction"},
-  Object.entries(DIRECTION_KEYS).map(directionButton)));
-$('#big3d .bar3d .mapbtns').prepend(PEEK.three);
-$('.bar2d .mapbtns').prepend(PEEK.two);
-PEEK.three.append(PEEK.physics);
+/* What the page keeps of the view as it last read it: the 2D map's direction, web_map_direction, `fitPin2d`, and the
+ * Ultra graphics' choice, `showUltra`. The maps have no bar: their keys, which ? lists, do what its buttons did. */
+export const PEEK = {direction: null, ultra: null};
 export function peekParts() {
-  PEEK.two.hidden = !small3d();  // `small3d`: the 3D map in the small area, the 2D map in the large one
-  PEEK.three.hidden = small3d();
-  for (const [direction, button] of PEEK.directions) {
-    button.setAttribute('aria-checked', String(direction === PEEK.direction));
-  }
-  for (const [name, button] of PHYS.buttons) button.setAttribute('aria-checked', String(name === PHYS.name));
-  if (PHYS.shown) showPhysics();
-  if (PEEK.ultra) showUltra();  // U pressed elsewhere: the bar names the look the map has now
+  if (PEEK.ultra) showUltra();  // U pressed elsewhere: the choice names the look the map has now
 }
-/* A choice changed, by a key or a click: the bars name it at once. */
+/* A choice changed, by a key or a click: what shows it names it at once. */
 export function peek() { peekParts(); }
 $('#agentsat').onchange = event => chooseAgents(event.target.value);
 
@@ -162,17 +132,12 @@ function chooseAgents(choice) {
 }
 
 /* Which joins the dots flow along, web_flow_mode, the flow's own setting: off, the selection's joins, all of them, or
- * live, only what agents really do. The flow draws it, `window.metaform.flowMode`; this is its choice in the map's bar,
- * the View menu and the key D, which steps through them, the new one shown as the bar peeks. */
+ * live, only what agents really do. The flow draws it, `window.metaform.flowMode`; this is its choice in the View menu,
+ * every mode, and the key 2, which steps through them all, said at the 2D map's corner. */
 export const FLOW_MODES = [['off', 'Off', 'No dots flow'],
   ['hover', 'Hover', 'Dots flow along the joins of the node under the pointer'],
   ['selected', 'Selection', "Dots flow along the selection's joins"],
   ['all', 'All', 'Dots flow along every join'], ['live', 'Live', 'Dots show only what agents really do']];
-export function flowModes() {
-  const offered = window.metaform?.flowModes;
-  const names = Array.isArray(offered) ? offered.map(one => (typeof one === 'string' ? one : one?.name)) : null;
-  return names?.length ? FLOW_MODES.filter(([name]) => names.includes(name)) : FLOW_MODES;
-}
 export function flowNow() {
   const asked = typeof window.metaform?.flowMode === 'function' ? window.metaform.flowMode() : null;
   return (typeof asked === 'string' && asked) || FLOWSET.name || 'all';
@@ -181,22 +146,10 @@ export function chooseFlow(name) {
   FLOWSET.name = name;
   if (typeof window.metaform?.flowMode === 'function') window.metaform.flowMode(name);
   flows2d();  // the 2D map's edges that carry it follow the choice
-  for (const [one, button] of FLOWSET.buttons) button.setAttribute('aria-checked', String(one === name));
   if ($('#flowat')) $('#flowat').value = name;
   peek('key');
   saveView('web_flow_mode', name);
 }
-function flowButton([name, word, why]) {
-  const choose = event => { event.stopPropagation(); chooseFlow(name); };
-  const button = h('button', {type: 'button', role: 'radio', 'aria-checked': 'false', 'aria-keyshortcuts': 'D',
-    title: `${why} (D steps through them)`, onclick: choose}, word);
-  FLOWSET.buttons.set(name, button);
-  return button;
-}
-FLOWSET.box = h('div', {class: 'segmented flowset', role: 'radiogroup',
-  'aria-label': 'Which joins the dots flow along (D)'}, FLOW_MODES.map(flowButton));
-PEEK.three.append(h('span', {class: 'peekpair'}, h('span', {class: 'peeklabel', 'aria-hidden': 'true'}, 'Flow'),
-  FLOWSET.box));
 /* What the maps say of what the pointer is on, web_hover_info: the name and the card, the name alone, the card alone,
  * or nothing; in the bar as Info, the View menu and the key I, which steps through them, applied at once. */
 export const HOVER_INFO = [

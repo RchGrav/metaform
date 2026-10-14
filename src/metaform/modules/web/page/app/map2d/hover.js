@@ -18,10 +18,6 @@ export function note2d(text, held = false) {
   clearTimeout(MODE.note);
   if (!held) MODE.note = setTimeout(() => box.classList.remove('on'), 1600);
 }
-/* The 2D map's bar of modes, auto zoom, shown while there is a map to frame; `showNodeZoom` says it on or off. */
-export function showModes() {
-  if (MODE.box) MODE.box.hidden = !M.svg;
-}
 /* A node's name is its hovertext only while the map's text is drawn smaller than Small, VIEW-041: there the eye
  * cannot read it, and above it a tip would cover a map that can be read. */
 export function hover2d() {

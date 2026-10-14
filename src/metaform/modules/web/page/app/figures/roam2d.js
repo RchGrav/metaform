@@ -12,6 +12,7 @@ import {FRAMES} from '/page/app/map3d/graph3d.js';
 import {M} from '/page/app/map2d/build.js';
 import {DOCK} from '/page/app/dock/embody.js';
 import {glyphFor} from '/page/app/agents/dispatch.js';
+import {holderOf} from '/page/app/keys/walk.js';
 
 /* The agents in 2D, VIEW-035: the same agents as the 3D map's figures, each drawn as its flat glyph,
  * page/agent-glyphs/<glyph>.svg, the glyph its 3D figure is drawn with. It appears on the DE, walks the 2D map's own
@@ -45,11 +46,11 @@ export function spot2d(base, key) {  // where a 2D figure stands: an element's b
   return {x: middle.x, y: middle.y, w: 0, h: 0};
 }
 function target2d(base, ticket) {  // the ticket's place, and the element its walk ends at
-  if (ticket.node_kind !== 'join') {
-    return base.nodes.has(ticket.node_id) ? {key: ticket.node_id, last: ticket.node_id} : null;
-  }
-  const edge = base.edges.find(one => one.join.id === ticket.node_id);
-  return edge ? {key: 'p:' + ticket.node_id, last: edge.join.receiver} : null;
+  // a part held deeper than the depth is worked at the node that holds it, VIEW-051
+  const at = holderOf(ticket.node_kind === 'join' ? 'p:' + ticket.node_id : ticket.node_id);
+  if (!at.startsWith('p:')) return base.nodes.has(at) ? {key: at, last: at} : null;
+  const edge = base.edges.find(one => 'p:' + one.join.id === at);
+  return edge ? {key: at, last: edge.join.receiver} : null;
 }
 function back2d(base, figure) {  // the way home, from the middle of a join's edge through its receiver
   const way = route2d(base, figure.last, figure.home);

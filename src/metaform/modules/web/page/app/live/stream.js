@@ -21,6 +21,7 @@ import {appliedOps, settled, briefTouched, ticketsOnly, opsOnly, ticketsChanged,
   agentsChanged, listen} from '/page/app/live/ops.js';
 import {loadGraph, loadProject, toProject} from '/page/app/loading/load.js';
 import {PANE_VIEWS, WS} from '/page/app/workspace/workspace.js';
+import {roundtableChanged} from '/page/app/roundtable/table.js';
 
 /* ---------- live: the server pushes what modules publish, and the page redraws; nothing polls, VIEW-018 ----------
  * An intake being recorded is drawn as each object arrives, BASE-039; any other write to the metaform shown is read
@@ -116,6 +117,8 @@ export async function changed(event) {
     for (const page of ['messages', 'runs']) if (WS.isShown(WS.paneOfPage(page)?.id)) PANE_VIEWS[page].show();
   } else if (WS.active) WS.refresh();
   const named = event.payload.tables;
+  // a roundtable's own tables change no map: its tab reads the table again, and nothing else is read
+  if (allTables(named, table => table.startsWith('roundtable.'))) return roundtableChanged();
   if (briefTouched(named)) LIVE.brief = true;
   if (allTables(named, table => table.startsWith('jev.'))) {
     if (!LIVE.busy) { if (!$('#p-brief').hidden) renderBrief(); LIVE.brief = false; }

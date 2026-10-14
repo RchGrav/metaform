@@ -144,6 +144,45 @@ export function figureReached(workId, to) {
   if (figure && to) figure.reach = {to, at: figure.clock};
   if (figure2d && to) figure2d.reach = {to, at: figure2d.clock};
 }
+/* Toward a place, as fast as it can still stop there gently: `body` has pos and vel. Says how far it was. The mascot
+ * and a figure its agent leads steer so. */
+export function steer(body, want, passed, top, accel) {
+  TOWARD.subVectors(want, body.pos);
+  const away = TOWARD.length(), speed = Math.min(top, Math.sqrt(2 * accel * Math.max(0, away - 0.05)));
+  TOWARD.multiplyScalar(away > 1e-4 ? speed / away : 0);
+  PULL.subVectors(TOWARD, body.vel);
+  const most = accel * passed * 1.5;
+  if (PULL.length() > most) PULL.setLength(most);
+  body.vel.add(PULL);
+  body.pos.addScaledVector(body.vel, passed);
+  return away;
+}
+/* How much faster than its own pace a body its agent sends `away` goes, at least 1: enough that a long way still
+ * ends in about three seconds, setting off and arriving gently. */
+export const drivePace = (top, away) => Math.max(1, away / 2 / Math.max(1e-3, top));
+/* The way a body faces, flat on the ground plane, into `out`. */
+export function facingOf(mesh, out) {
+  mesh.getWorldDirection(out).setY(0);
+  return out.lengthSq() > 1e-8 ? out.normalize() : out.set(0, 0, 1);
+}
+/* Where an agent sent its body, its `drive`, VIEW-005: beside a node at the offset fixed when it was sent, so it
+ * follows the node as the layout moves it and never the person's camera, or a point of the scene; into `out`. Null
+ * once the node has left the map. */
+export function driveGoal(drive, data, out) {
+  if (!drive.node) return drive.point ? out.copy(drive.point) : null;
+  const node = nodeById(data, drive.node);
+  return node && node.x !== undefined ? out.set(node.x, node.y, node.z).add(drive.offset) : null;
+}
+/* The point a driven body faces, into `out`: the node it was asked to face, or a way from where it stands `at`; null
+ * when it faces the way it goes. */
+export function driveFace(drive, at, data, out) {
+  const face = drive.face;
+  if (face?.node) {
+    const node = nodeById(data, face.node);
+    return node && node.x !== undefined ? out.set(node.x, node.y, node.z) : null;
+  }
+  return face?.dir ? out.copy(at).add(face.dir) : null;
+}
 export function springTo(figure, want, passed, stiff) {  // a critically damped spring toward where it means to be
   const damp = 2 * Math.sqrt(stiff);
   PULL.subVectors(want, figure.pos).multiplyScalar(stiff).addScaledVector(figure.vel, -damp);

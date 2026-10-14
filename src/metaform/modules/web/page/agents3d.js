@@ -19,12 +19,6 @@ export const GLYPHS = [
   'seahorse',
 ];
 
-// A harness's ring colour, by the agent id the dispatch module names it with, claude, codex or gemini, VIEW-039,
-// and by the longer names harnesses go by.
-export const HARNESS_RING = {
-  claude: 0xd97757, 'claude-code': 0xd97757, codex: 0xe8e8e8, gemini: 0x4f8cff, 'gemini-cli': 0x4f8cff, pi: 0xff5fa2,
-  hermes: 0x38e0a0, opencode: 0xf5c542, crush: 0xa78bfa, other: 0x7d88b0,
-};
 
 // ---------------------------------------------------------------- how each one moves
 
@@ -296,8 +290,10 @@ const BUILD = {
     FOUND_EYES.push(eye);
     return (t, s, ctx) => {
       gear.rotation.z = ctx ? -(ctx.stride || 0) * 2.6 + t * 0.15 : t * 0.8 * s;
-      { const a = Math.sin(t * 1.6 * s) * 0.55; eye.position.set(Math.sin(a) * 0.39, 0, Math.cos(a) * 0.39); }
-      body.rotation.y = Math.sin(t * 0.8) * 0.15;
+      // its eye roves about, and holds on what its agent has it face, `attend`
+      const roving = ctx?.state === 'attend' ? 0 : 1;
+      { const a = Math.sin(t * 1.6 * s) * 0.55 * roving; eye.position.set(Math.sin(a) * 0.39, 0, Math.cos(a) * 0.39); }
+      body.rotation.y = Math.sin(t * 0.8) * 0.15 * roving;
     };
   },
 
@@ -636,8 +632,10 @@ const BUILD = {
       const blink = (t % 4) > 3.82 ? 1 : 0;
       lids.forEach((l) => (l.scale.y = blink ? 1 : 0.05));
       const flying = ctx && ctx.speed > 0.02;
-      // a perched owl turns its head about; one in flight looks ahead, beating its wings, then gliding with them out
-      body.rotation.y = flying ? Math.sin(t * 0.7) * 0.08 : Math.sin(t * 0.7) * 0.35 + Math.sin(t * 0.23) * 0.4;
+      // a perched owl turns its head about, but holds it on what its agent has it face, `attend`; one in flight looks
+      // ahead, beating its wings, then gliding with them out
+      body.rotation.y = ctx?.state === 'attend' ? 0 : flying ? Math.sin(t * 0.7) * 0.08
+        : Math.sin(t * 0.7) * 0.35 + Math.sin(t * 0.23) * 0.4;
       const open = flying ? (ctx.stroke.thrust > 0 ? 0.2 + Math.sin(ctx.stroke.phase / 0.6 * Math.PI * 4) * 0.5 : 0.9)
         : 0.1 + Math.max(0, Math.sin(t * 3 * s)) * 0.3 * (ctx ? 0.3 : 1);
       wings.forEach(({ piv, s: side }) => (piv.rotation.z = side * open));
@@ -835,9 +833,9 @@ const BUILD = {
 
 // ---------------------------------------------------------------- public API
 
-// Build one agent. Pass { halo: true, harness } to add a ring in the harness colour.
+// Build one agent; `harness` names the agent it stands for.
 const _wq = new THREE.Quaternion(), _wp = new THREE.Vector3(), _ev = new THREE.Euler();
-export function createAgent(name, { harness = 'other', halo = false } = {}) {
+export function createAgent(name, { harness = 'other' } = {}) {
   if (!BUILD[name]) throw new Error(`unknown agent glyph: ${name}`);
   const agent = new THREE.Group(); agent.name = `agent-${name}`;
   // `gait` carries how the whole body moves with its stride, `MOTION`: a hop's arc and its squash and stretch, a
@@ -854,13 +852,6 @@ export function createAgent(name, { harness = 'other', halo = false } = {}) {
   fit.scale.setScalar(1.6 / Math.max(size.x, size.y, size.z));
   centre.position.copy(box.getCenter(new THREE.Vector3())).negate();
 
-  let ring;
-  if (halo) {
-    const col = HARNESS_RING[harness] ?? HARNESS_RING.other;
-    ring = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.035, 12, 64),
-      new THREE.MeshBasicMaterial({ color: col, toneMapped: false, transparent: true, opacity: 0.95 }));
-    ring.rotation.x = Math.PI / 2; ring.position.y = -0.95; agent.add(ring);
-  }
 
   let t = Math.random() * 10, prev = null, wasPhase = 0, landed = 9, sway = 0;
   const smooth = { turn: 0, climb: 0 };
@@ -909,7 +900,6 @@ export function createAgent(name, { harness = 'other', halo = false } = {}) {
       agent.userData.turnRate = smooth.turn;   // read by orientAgent, which leans a flyer into its turn
       anim(t, m.state === 'sleep' ? 0.35 : 1 + busy * 1.5, { busy, turn: smooth.turn, climb: smooth.climb, dt,
         speed: m.speed, stride: m.stride || 0, stroke, landed, state: m.state });
-      if (ring) { ring.rotation.z += dt * (0.6 + busy * 3); ring.material.opacity = 0.75 + Math.sin(t * 3) * 0.2 + busy * 0.05; }
     },
   };
   return agent;

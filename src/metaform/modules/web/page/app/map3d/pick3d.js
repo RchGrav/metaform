@@ -15,6 +15,7 @@ import {fiberOf, G, nodeSize, wake3d} from '/page/app/map3d/graph3d.js';
 import {readout, readoutOf, edgeWords, short} from '/page/app/map3d/readout.js';
 import {EDGE_PICK, segmentAway} from '/page/app/map2d/hover.js';
 import {select} from '/page/app/selection/select.js';
+import {toggleDepth} from '/page/app/keys/walk.js';
 
 /* The join edge nearest the pointer on the screen, within EDGE_PICK.most CSS pixels, each edge projected to the screen
  * as the camera sees it, VIEW-008: the edge a click on no node takes and the one the pointer marks. A join's edges run
@@ -142,6 +143,7 @@ function pickedFiber(link) {
 /* A click on any vertex selects that object itself: an element or a join's purpose vertex. */
 export function clicked3d(node) {
   if (!node) return;
+  toggleDepth(node.id);  // a node holding parts deeper than the depth breaks them out in place, or folds them, VIEW-051
   select(node.id, true);
 }
 /* A node takes the pointer anywhere on its sphere, not only at its center, a ghost of a part not built as every
