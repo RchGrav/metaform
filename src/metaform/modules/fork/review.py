@@ -176,3 +176,19 @@ def upkeep(ctx: Context) -> dict[str, Any]:
                 changelog='\n\n'.join(newer))})
             call(dispatch, ctx, record.id, str(ctx.setting('fork_agent')))
     return {'tickets': records, 'template_version': latest}
+
+
+def installed(payload: dict[str, Any], ctx: Context) -> dict[str, Any]:
+    """A newer successful installation brings registered module repositories through the manual upkeep path."""
+    results: dict[str, Any] = {}
+    for project in home.projects():
+        folder = Path(project.path)
+        if not repository.is_repository(folder):
+            continue
+        try:
+            target = context('fork', folder, project=project.project_id, sink=ctx.sink, surface=ctx.surface)
+            results[project.project_id] = call(upkeep, target)
+        except Exception as error:  # noqa: BLE001  one repository's failure must not hide upkeep in the others
+            results[project.project_id] = {'error': str(error)}
+            ctx.say(f'Template upkeep in {folder}: {error}. Next: run metaform fork upkeep in {folder}.')
+    return results

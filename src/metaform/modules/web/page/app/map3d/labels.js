@@ -9,6 +9,7 @@ import {$, css, reduced, h} from '/page/app/core/dom.js';
 import {S} from '/page/app/core/reads.js';
 import {ROAM} from '/page/app/figures/agents.js';
 import {roam3d} from '/page/app/figures/roam3d.js';
+import {bubbles3d} from '/page/app/figures/bubble3d.js';
 import {mascotAwake} from '/page/app/figures/mascot.js';
 import {has, colorOf, dim, dimmed, colored, DRIFT, isGlass} from '/page/app/map3d/light.js';
 import {R, endOf, wave3d} from '/page/app/map3d/waves.js';
@@ -400,6 +401,7 @@ export function prepare3d() {
   DRIFT.value = reduced() ? 0 : now / 1000;  // the distortion of the glass drifts, VIEW-025
   wave3d(data);
   roam3d(data);
+  bubbles3d();  // what each agent at work says, beside its figure
   ghost3d(data, now);
   const signaled = paintSignals(data);
   layered();

@@ -306,3 +306,126 @@ def test_upkeep_records_newer_entries_once_and_dispatches_a_pr_task(fork_context
     assert len(first['tickets']) == len(second['tickets']) == 1
     assert first['tickets'] == second['tickets']
     assert len(fork_context.require_store().work(open=True, limit=0).results) == 1
+
+
+@pytest.mark.req('BASE-047')
+@pytest.mark.parametrize('transition', ['newer', 'handed', 'first', 'same', 'downgrade', 'blocked', 'failed'])
+def test_install_transition_runs_existing_upkeep_only_after_a_newer_success(
+        fork_context, monkeypatch, tmp_path, transition):
+    from metaform import home, install, loader
+    from metaform.module import Stop, call
+
+    (fork_context.folder / 'pyproject.toml').write_text(
+        '[tool.metaform.fork]\nrepository = true\n', encoding='utf-8')
+    candidate(fork_context.folder, 'old', '0.2.0')
+    candidate(fork_context.folder, 'current', '0.3.0')
+    # Installation is global, so the caller need not be inside the module repository.
+    monkeypatch.chdir(tmp_path)
+    loader.follow_enabled()
+    module = next(item for item in loader.enabled() if item.id == 'fork')
+    upkeep = next(verb.run for verb in module.verbs if verb.name == 'upkeep')
+    review = sys.modules[upkeep.__module__]
+    repository = review.repository
+    monkeypatch.setattr(install, '__version__', '2026.10.1.10')
+    previous = {'same': '2026.10.1.10', 'downgrade': '2026.10.1.11',
+                'blocked': '2026.10.1.11'}.get(transition, '2026.9.30.9')
+    if transition != 'first':
+        home.set_meta('installed_version', previous)
+    monkeypatch.setattr(install.shutil, 'which', lambda name: None)
+    commands = []
+    def run(tool, argv, **kwargs):
+        commands.append(argv)
+        return subprocess.CompletedProcess(argv, 1 if transition == 'failed' else 0, '', 'install failed')
+    monkeypatch.setattr(install, '_run', run)
+    if transition == 'handed':
+        monkeypatch.setattr(loader, 'withdrawn', lambda: frozenset({'dispatch'}))
+    monkeypatch.setattr(repository, 'template_changelog', lambda: '## 0.3.0\n- New contract.\n')
+    monkeypatch.setattr(repository, 'update_worktree', lambda root, work_id: root)
+    started = []
+    async def dispatch(ctx, work_id, agent):
+        # The stage's write transaction must already be committed before upkeep writes or launches an agent.
+        assert home.meta('installed_version') == '2026.10.1.10'
+        assert ctx.project == fork_context.project and ctx.folder == fork_context.folder
+        record = ctx.require_store().ticket(work_id).work
+        assert record.address == 'code.module.old'
+        assert 'New contract.' in record.task and 'pull request' in record.task
+        started.append(work_id)
+        ctx.require_store().finish_work(work_id, 'https://github.example.invalid/module/pull/1')
+    monkeypatch.setattr(review, 'dispatch', dispatch)
+    output = []
+    wheel = tmp_path / 'metaform.whl'
+    if transition in ('failed', 'blocked'):
+        with pytest.raises(install.Failed if transition == 'failed' else Stop):
+            install.stage(wheel, 'uv', False, output.append, 'retry')
+        assert home.meta('installed_version') == previous
+    else:
+        install.stage(wheel, 'uv', transition == 'downgrade', output.append, 'retry')
+    if transition == 'handed':
+        assert not started and not fork_context.require_store().work(limit=0).results
+        # The installed process consumes the stage's handover before AI-tool setup.
+        monkeypatch.delenv('METAFORM_WHEEL', raising=False)
+        monkeypatch.setenv(install.HANDED, str(wheel))
+        monkeypatch.setenv(install.UPKEEP, install.__version__)
+        monkeypatch.setattr(install, '_python_ok', lambda: False)
+        with pytest.raises(Stop, match='older than Metaform needs'):
+            install.install([], output.append)
+        assert install.UPKEEP not in os.environ
+    work = fork_context.require_store().work(limit=0).results
+    if transition in ('newer', 'handed', 'first'):
+        assert len(started) == len(work) == 1, output
+        # Reinstalling and manual upkeep retain the completed PR and its original work record.
+        install.stage(wheel, 'uv', False, output.append, 'retry')
+        assert call(upkeep, fork_context)['tickets'] == started
+        assert len(started) == 1
+    else:
+        assert started == [] and not work
+    assert bool(commands) == (transition != 'blocked')
+
+
+def test_install_upkeep_failure_retains_manual_retry_and_continues_other_repositories(
+        fork_context, monkeypatch, tmp_path):
+    from metaform import home, loader
+    from metaform.data import Store
+    from metaform.module import Stop, call
+    monkeypatch.chdir(tmp_path)
+    loader.follow_enabled()
+    module = next(item for item in loader.enabled() if item.id == 'fork')
+    upkeep = next(verb.run for verb in module.verbs if verb.name == 'upkeep')
+    review = sys.modules[upkeep.__module__]
+    repository = review.repository
+
+    other = tmp_path / 'other-fork'
+    ordinary = tmp_path / 'ordinary-project'
+    other.mkdir()
+    ordinary.mkdir()
+    home.add_project('other', other)
+    home.add_project('ordinary', ordinary)
+    for folder in (fork_context.folder, other):
+        (folder / 'pyproject.toml').write_text('[tool.metaform.fork]\nrepository = true\n', encoding='utf-8')
+        candidate(folder, 'old')
+    # An ordinary project can hold Python packages without being a module repository.
+    candidate(ordinary, 'unrelated')
+    monkeypatch.setattr(repository, 'template_changelog', lambda: '## 0.3.0\n- New contract.\n')
+    def worktree(root, work_id):
+        if root == fork_context.folder:
+            raise Stop('Commit your module repository changes.', 'metaform help fork upkeep')
+        return root
+    monkeypatch.setattr(repository, 'update_worktree', worktree)
+    started = []
+    async def dispatch(ctx, work_id, agent):
+        started.append(ctx.project)
+        ctx.require_store().finish_work(work_id, 'https://github.example.invalid/module/pull/1')
+    monkeypatch.setattr(review, 'dispatch', dispatch)
+    output = []
+    fork_context.sink = output.append
+    delivered = fork_context.publish('install.completed', {'version': '2026.10.1.10'})
+    assert next(item for item in delivered if item['module'] == 'fork')['status'] == 'completed'
+    assert started == ['other']
+    assert len(Store('other').work(limit=0).results) == 1
+    assert not Store('ordinary').work(limit=0).results
+    waiting = fork_context.require_store().work(open=True, limit=0).results
+    assert len(waiting) == 1
+    assert any('metaform fork upkeep' in line and str(fork_context.folder) in line for line in output)
+    monkeypatch.setattr(repository, 'update_worktree', lambda root, work_id: root)
+    assert call(upkeep, fork_context)['tickets'] == [waiting[0].id]
+    assert started == ['other', fork_context.project]

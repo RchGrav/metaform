@@ -1,17 +1,16 @@
 """A project's history: its artifact boundary, origins and variants, and reconstruction, PROJ-010 to PROJ-024.
 
-An origin is the baseline a history starts from: a repository's commit, whose
-files git keeps, or a full copy of a plain folder. A variant is one piece of
-work against an origin, stored as the files that differ from it: whole when
-the variant's changed text is small, as a diff against the origin's file when
-it is large, binaries always whole. Every variant is stored against its
-origin, never against another variant, so each reconstructs on its own with
-Python alone. The rows live in the project's history database and the
+An origin retains a repository's committed source or a plain folder's source.
+Variants under 10 MB of source are complete copies. Larger variants retain
+changes against their origin, with text diffs and whole binary files. Every
+variant reconstructs independently with Python alone, without its source.
+The rows live in the project's history database and the
 payloads under the project's folder in `origins/<mform_sha_id>/`, Q53, PROJ-023 and PROJ-026.
 """
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import secrets
@@ -26,7 +25,7 @@ from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
 
-from .. import home, sqlite
+from .. import __version__, home, sqlite
 from ..errors import StoreError
 from .records import Record
 
@@ -65,8 +64,17 @@ CREATE TABLE IF NOT EXISTS variant_files(
   FOREIGN KEY(mform_sha_id, variant_id) REFERENCES variants(mform_sha_id, variant_id)
 );
 """
-WHOLE_LIMIT = 3 * 1024 * 1024  # changed text under this, in total, is kept whole; at or over it, as diffs, PROJ-016
+WHOLE_LIMIT = 10 * 1024 * 1024  # source bytes alone, including unchanged files and binaries, PROJ-029
 PROVENANCE = ('module', 'workflow', 'prompt', 'model', 'role', 'blinded')
+# Generated outputs and dependency/cache folders are not authored source, PROJ-026/029.
+BUILT_FOLDERS = frozenset({'.git', '__pycache__', 'build', 'dist', 'node_modules', '.venv', 'venv',
+                           '.pytest_cache', '.mypy_cache', '.ruff_cache', '.tox'})
+
+
+def _source(path: str) -> bool:
+    parts = Path(path).parts
+    return not any(part in BUILT_FOLDERS or part.endswith('.egg-info') for part in parts) \
+        and Path(path).suffix not in ('.pyc', '.pyo')
 
 
 @dataclass(frozen=True)
@@ -140,6 +148,7 @@ def boundary(folder: Path) -> list[Entry]:
     """The files of the artifact at the folder: what git tracks or would offer to track in a repository, every file
     of a plain folder; never a `.git` folder. A tracked file's mode is git's, so it is the same on every system."""
     entries: list[Entry] = []
+    retained = home.home().resolve()
     if repository(folder) is not None:
         listed = _git(folder, 'ls-files', '-z', '--cached', '--others', '--exclude-standard').stdout
         tracked: dict[str, str] = {}
@@ -150,14 +159,15 @@ def boundary(folder: Path) -> list[Entry]:
         for raw in sorted(set(listed.split(b'\0'))):
             path = raw.decode('utf-8')
             file = folder / path
-            if path and file.is_file() and '.git' not in Path(path).parts:
+            if path and file.is_file() and _source(path) and not file.resolve().is_relative_to(retained):
                 entries.append(Entry(path, tracked.get(path) or _mode(file), file))
         return sorted(entries, key=lambda entry: entry.path)
     for root, folders, files in os.walk(folder):
-        folders[:] = sorted(name for name in folders if name != '.git')
+        folders[:] = sorted(name for name in folders if _source(name)
+                            and not (Path(root) / name).resolve().is_relative_to(retained))
         for name in files:
             file = Path(root) / name
-            if file.is_file():
+            if file.is_file() and _source(file.relative_to(folder).as_posix()):
                 entries.append(Entry(file.relative_to(folder).as_posix(), _mode(file), file))
     return sorted(entries, key=lambda entry: entry.path)
 
@@ -243,7 +253,7 @@ def _committed(folder: Path, commit: str) -> dict[str, tuple[bytes, str]]:
     files: dict[str, tuple[bytes, str]] = {}
     with tarfile.open(fileobj=BytesIO(archive)) as tar:
         for member in tar.getmembers():
-            if member.isfile():
+            if member.isfile() and _source(member.name):
                 handle = tar.extractfile(member)
                 assert handle is not None
                 files[member.name] = (handle.read(), '755' if member.mode & 0o111 else '644')
@@ -255,21 +265,46 @@ def _read(entries: Iterable[Entry]) -> dict[str, tuple[bytes, str]]:
 
 
 def origin_files(project_id: str, item: Origin) -> dict[str, tuple[bytes, str]]:
-    """The origin's files: from git for a repository origin, from the unit's copy for a folder origin."""
-    if item.kind == 'repo':
-        assert item.commit_id is not None
-        return _committed(Path(item.source_path), item.commit_id)
-    copy = _unit(project_id, item.mform_sha_id) / 'origin'
-    modes = _modes(_unit(project_id, item.mform_sha_id) / 'manifest.txt')
-    return {path: ((copy / path).read_bytes(), modes.get(path, '644')) for path in modes}
+    """Read the retained source, never the repository it came from, PROJ-026."""
+    unit = _unit(project_id, item.mform_sha_id)
+    return _copied_files(unit / 'origin', unit / 'manifest.txt')
 
 
-def _modes(manifest_file: Path) -> dict[str, str]:
-    found: dict[str, str] = {}
-    for line in manifest_file.read_text(encoding='utf-8').splitlines():
-        path, _, mode = line.split('\t')
-        found[path] = mode
-    return found
+def _copied_files(copy: Path, listing: Path) -> dict[str, tuple[bytes, str]]:
+    """Read a complete source copy, checking every file against its manifest."""
+    files: dict[str, tuple[bytes, str]] = {}
+    try:
+        for line in listing.read_text(encoding='utf-8').splitlines():
+            path, digest, mode = line.split('\t')
+            data = (copy / path).read_bytes()
+            if _sha(data) != digest:
+                raise StoreError(f'{path} in {copy} does not match its recorded hash.', 'restore the project backup')
+            files[path] = (data, mode)
+    except OSError as error:
+        raise StoreError(f'The retained source at {copy} is unavailable: {error}.',
+                         'restore the project backup') from error
+    return files
+
+
+def capture_registration(project_id: str, registered: str) -> None:
+    """Retain the registration baseline and its immutable provenance together, PROJ-026."""
+    baseline = add_origin(project_id)
+    folder = origins_folder(project_id).parent
+    source = origin_files(project_id, baseline)
+    staging = folder / '.origin-staging'
+    home.mkdir_private(staging)
+    try:
+        for path, (body, mode) in source.items():
+            _write(staging / path, body, mode)
+        os.replace(staging, folder / 'origin')
+        provenance = folder / '.metaform' / 'provenance.json'
+        home.mkdir_private(provenance.parent)
+        home.write_private(provenance, json.dumps({'source': baseline.source_path, 'registered': registered,
+                                                   'metaform': __version__, 'commit': baseline.commit_id,
+                                                   'content_hash': baseline.origin_sha256}, indent=2) + '\n')
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging)
 
 
 def add_origin(project_id: str) -> Origin:
@@ -281,10 +316,10 @@ def add_origin(project_id: str) -> Origin:
     folder = Path(record.path)
     commit = None
     if repository(folder) is not None:
-        commit = _git(folder, 'rev-parse', 'HEAD').stdout.decode('utf-8').strip()
-        files = _committed(folder, commit)
-    else:
-        files = _read(boundary(folder))
+        head = _git(folder, 'rev-parse', '--verify', 'HEAD', check=False)
+        if head.returncode == 0:
+            commit = head.stdout.decode('utf-8').strip()
+    files = _committed(folder, commit) if commit is not None else _read(boundary(folder))
     listing = manifest(files)
     digest = _sha(listing)
     staging = origins_folder(project_id) / f'.staging-{secrets.token_hex(8)}'
@@ -292,9 +327,9 @@ def add_origin(project_id: str) -> Origin:
     made: Origin | None = None
     try:
         home.write_private(staging / 'manifest.txt', listing)
-        if commit is None:
-            for path, (data, mode) in files.items():
-                _write(staging / 'origin' / path, data, mode)
+        home.mkdir_private(staging / 'origin')
+        for path, (data, mode) in files.items():
+            _write(staging / 'origin' / path, data, mode)
         # One writer at a time for the project, so an origin of the same content found here is not made twice.
         with _db(project_id, write=True) as db:
             same = db.execute('SELECT * FROM origins WHERE origin_sha256=? ORDER BY established DESC LIMIT 1',
@@ -379,8 +414,10 @@ def _diff(before: bytes, after: bytes) -> bytes:
         old, new = Path(scratch) / 'a', Path(scratch) / 'b'
         old.write_bytes(before)
         new.write_bytes(after)
-        made = subprocess.run(['git', 'diff', '--no-index', '--no-color', '--no-ext-diff', '--full-index', str(old),
-                               str(new)], check=False, capture_output=True)
+        # Diff the stored bytes without the caller's line-ending conversion or text attributes.
+        made = subprocess.run(['git', '-c', 'core.autocrlf=false', '-c', f'core.attributesFile={os.devnull}',
+                               'diff', '--no-index', '--no-color', '--no-ext-diff', '--no-textconv', '--full-index',
+                               str(old), str(new)], cwd=scratch, check=False, capture_output=True)
     if made.returncode not in (0, 1):
         raise StoreError(f'git diff failed: {made.stderr.decode("utf-8", "replace").strip()}', 'install git')
     return made.stdout
@@ -388,7 +425,7 @@ def _diff(before: bytes, after: bytes) -> bytes:
 
 def add_variant(project_id: str, folder: Path, mform_id: str | None = None, *, remove: bool = False,
                 provenance: dict[str, object] | None = None) -> Variant:
-    """Collect a folder as a variant of an origin: the files that differ from it, stored against it alone. The
+    """Collect a source copy under 10 MB, otherwise its changes against the origin. The
     payload is written to a staging folder, the rows committed, then the folder moved into place, PROJ-023."""
     item = origin(project_id, mform_id)
     if remove:
@@ -397,26 +434,32 @@ def add_variant(project_id: str, folder: Path, mform_id: str | None = None, *, r
     entries = boundary(folder)
     current = _read(entries)
     changed = _changes(base, current)
-    text_size = sum(len(current[path][0]) for path, change in changed
-                    if change != 'removed' and _text(current[path][0]))
+    whole = sum(len(data) for data, _ in current.values()) < WHOLE_LIMIT
     unit = _unit(project_id, item.mform_sha_id)
     given = {key: (provenance or {}).get(key) for key in PROVENANCE}
     staging = unit / 'variants' / f'.staging-{secrets.token_hex(4)}'
     home.mkdir_private(staging)
     try:
+        if whole:
+            home.mkdir_private(staging / 'files')
+            for path, (data, mode) in current.items():
+                _write(staging / 'files' / path, data, mode)
+            home.write_private(staging / 'manifest.txt', manifest(current))
         rows: list[tuple[str, str, str | None, str | None, str | None]] = []
         for path, change in changed:
             if change == 'removed':
                 rows.append((path, change, None, None, None))
                 continue
             data, mode = current[path]
-            if change == 'modified' and _text(data) and text_size >= WHOLE_LIMIT and _text(base[path][0]):
+            before = base.get(path, (b'', '644'))[0]
+            if not whole and _text(data) and _text(before):
                 stored = (staging / 'diffs' / f'{path}.diff')
                 home.mkdir_private(stored.parent)
-                home.write_private(stored, f'base_sha256 {_sha(base[path][0])}\n'.encode() + _diff(base[path][0], data))
+                home.write_private(stored, f'base_sha256 {_sha(before)}\n'.encode() + _diff(before, data))
                 rows.append((path, change, 'diff', _sha(data), mode))
             else:
-                _write(staging / 'files' / path, data, mode)
+                if not whole:
+                    _write(staging / 'files' / path, data, mode)
                 rows.append((path, change, 'whole', _sha(data), mode))
         with _db(project_id, write=True) as db:
             last = db.execute('SELECT MAX(variant_id) FROM variants WHERE mform_sha_id=?',
@@ -543,11 +586,13 @@ def reconstruct(project_id: str, made: Variant, base: dict[str, tuple[bytes, str
                 ) -> dict[str, tuple[bytes, str]]:
     """A variant's files: the origin's, with its changes applied and each checked against its recorded hash."""
     item = origin(project_id, made.mform_id)
-    files = dict(base if base is not None else origin_files(project_id, item))
     payload = _unit(project_id, item.mform_sha_id) / 'variants' / made.variant_id
     pending = payload.with_name(f'.pending-{made.variant_id}')
     if not payload.exists() and pending.exists():
         os.replace(pending, payload)  # a crash came between committing the rows and moving the payload in
+    whole = (payload / 'manifest.txt').exists()
+    files = _copied_files(payload / 'files', payload / 'manifest.txt') if whole \
+        else dict(base if base is not None else origin_files(project_id, item))
     for change in made.files:
         if change.change == 'removed':
             files.pop(change.path, None)
@@ -557,7 +602,7 @@ def reconstruct(project_id: str, made: Variant, base: dict[str, tuple[bytes, str
         else:
             stored = (payload / 'diffs' / f'{change.path}.diff').read_bytes()
             header, _, diff = stored.partition(b'\n')
-            before = files[change.path][0]
+            before = files.get(change.path, (b'', '644'))[0]
             if header.decode('utf-8') != f'base_sha256 {_sha(before)}':
                 raise StoreError(f'The diff of {change.path} in {made.variant_id} is not against this origin\'s file.',
                                  f'metaform list variants origin={item.mform_id}')
@@ -573,14 +618,13 @@ def extract(project_id: str, ids: Sequence[str], target: Path, mform_id: str | N
     """Write each variant's files into its own folder under the target, or into the target for exactly one."""
     item = origin(project_id, mform_id)
     chosen = variants(project_id, item.mform_id, None if list(ids) == ['all'] else ids)
-    base = origin_files(project_id, item)
     single = len(chosen) == 1 and list(ids) != ['all']
     written: list[Path] = []
     for made in chosen:
         folder = target if single else target / made.variant_id
         if folder.exists() and any(folder.iterdir()):
             raise StoreError(f'{folder} is not empty.', f'metaform extract {made.variant_id} <empty folder>')
-        files = reconstruct(project_id, made, base)
+        files = reconstruct(project_id, made)
         for path, (data, mode) in files.items():
             _write(folder / path, data, mode)
         if home.is_home_path(folder):

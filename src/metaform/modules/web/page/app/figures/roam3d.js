@@ -16,8 +16,7 @@ import {AT, tags} from '/page/app/map3d/labels.js';
 
 /* Where a figure means to be on its node this frame, `WANT`, and what it looks at, if anything but the way it goes:
  * beside the label while working, its orbit when restless, or beside the node while waiting, then an act, a reach,
- * something it
- * was asked to look at, and a glance at a figure nearby, each later one turning its face over the one before. */
+ * a requested look, and a glance nearby when it is not working, each later one turning its face over the one before. */
 function onNode(figure, target, size, data) {
   const m = figure.motion, ball = ballOf(target), c = figure.clock;
   let face = null;
@@ -35,7 +34,7 @@ function onNode(figure, target, size, data) {
   }
   if (figure.reach) face = reachFor(figure, target, size, ball, data) ?? face;
   if (figure.lookAt && c < figure.lookAt.until) face = lookedAt(figure, data) ?? face;  // asked to look, `sight`
-  if (figure.glance && c < figure.glance.until) face = glancedAt(figure) ?? face;
+  if (figure.mood !== 'working' && figure.glance && c < figure.glance.until) face = glancedAt(figure) ?? face;
   if (figure.come && c < figure.come.until && approachPoint(figure.come, size, SPOT)) {  // to the person, web_come
     WANT.copy(SPOT);
     face = AT.copy(G.camera().position);
@@ -286,7 +285,6 @@ function travelling(figure, {data, target, size, lift, passed, pose}) {
   AHEAD.subVectors(mesh.position, previous);
   if (AHEAD.lengthSq() > 1e-8) figure.heading.copy(AHEAD.normalize());
   markTrail(figure, size);
-  pose.face = noticeMascot(figure, size);
   if (arrived) {
     figure.pos.copy(mesh.position); figure.vel.copy(figure.heading).multiplyScalar(figure.speed * 0.5);
     figure.from.copy(mesh.position);
@@ -325,17 +323,6 @@ function mischief(figure, data, size) {
     figure.teased = figure.clock + 15;
     break;
   }
-}
-/* An agent passing the mascot notices it, and faces it while it glances. */
-function noticeMascot(figure, size) {
-  const near = MASCOT.mesh && figure.mesh.position.distanceTo(MASCOT.mesh.position) < size * 4;
-  if (near && figure.clock > (figure.noticed || 0)) {
-    figure.noticed = figure.clock + 12;
-    figure.glance = {other: 'mascot', until: figure.clock + 0.9};
-  }
-  if (figure.glance?.other === 'mascot' && figure.clock < figure.glance.until && MASCOT.mesh)
-    return AT.copy(MASCOT.mesh.position);
-  return null;
 }
 /* On its node, in its own way, `onNode`, following where it means to be on its spring. */
 function circling(figure, {data, target, size, passed, pose}) {

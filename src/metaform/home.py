@@ -589,7 +589,7 @@ def add_project(project_id: str, path: Path | str, target_type: str | None = Non
 
 
 def register(record: Project) -> Path:
-    """Write a project's folder: `source.txt`, its registration and, once, its provenance, PROJ-026. A folder
+    """Write a project's folder, registration and retained source with immutable provenance, PROJ-026. A folder
     named for the source that holds no registration, one whose project was removed, is taken again, so what it
     kept is the project's again. The source folder itself need not exist here, as when an export is imported. The id
     is held to the rule `add_project` holds a typed one to, whoever registers it, since it names files."""
@@ -608,6 +608,7 @@ def register(record: Project) -> Path:
     key = path_key(record.path)
     taken = _numbered(record.path)
     folder = next((one for one in taken if (_source_of(one) or '') and path_key(_source_of(one) or '') == key), None)
+    created = folder is None
     if folder is None:
         numbers = [int(one.name.rsplit('-', 1)[1]) for one in taken]
         folder = projects_dir() / f'{folder_name(record.path)}-{(max(numbers) if numbers else 0) + 1:03d}'
@@ -620,11 +621,17 @@ def register(record: Project) -> Path:
                    'VALUES (?, ?, ?, ?, ?, ?)',
                    (record.project_id, record.path, key, record.target_type, record.target_value, registered))
     provenance = folder / '.metaform' / 'provenance.json'
-    if not provenance.exists():  # written once and never changed, PROJ-026
-        from . import __version__
-        provenance.parent.mkdir(mode=0o700, exist_ok=True)
-        write_private(provenance, json.dumps({'source': record.path, 'registered': registered,
-                                              'metaform': __version__}, indent=2) + '\n')
+    try:
+        if not provenance.exists() and Path(record.path).is_dir():
+            from .data import history
+            history.capture_registration(record.project_id, registered)
+    except BaseException:
+        # A failed capture is not a registered project. Keep any data a removed project left behind.
+        with project_db(folder, write=True) as db:
+            db.execute('DELETE FROM projects WHERE project_id=?', (record.project_id,))
+        if created:
+            shutil.rmtree(folder)
+        raise
     changes.note(record.project_id)
     return folder
 

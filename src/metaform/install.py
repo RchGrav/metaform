@@ -30,7 +30,7 @@ from typing import Any, cast
 
 from . import __version__, _build_info, agent_setup, harness, home, instructions, loader, settings
 from .errors import Stop
-from .module import on_this_system
+from .module import Context, on_this_system
 from .probe import probe, probe_http
 
 UV_INSTALL = {'windows': 'powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"'}
@@ -188,6 +188,7 @@ def tools() -> dict[str, Tool]:
 
 
 HANDED = 'METAFORM_INSTALL_WHEEL'  # the wheel a run from it handed the setup over with, `hand_over`
+UPKEEP = 'METAFORM_INSTALL_UPKEEP'  # a newer stage hands its follow-up to the installed dependency environment
 
 
 def source() -> Path:
@@ -960,12 +961,13 @@ def backstage(force: bool = False) -> None:
                            'ON CONFLICT(key) DO UPDATE SET value=excluded.value', (key, __version__))
 
 
-def stage(wheel: Path, uv: str, force: bool, say: Callable[[str], None], retry: str) -> None:
+def stage(wheel: Path, uv: str, force: bool, say: Callable[[str], None], retry: str) -> bool:
     """Install the running wheel before setting up AI tools; record only a successful install, BASE-047."""
     next_step = f'python "{wheel}" install force=true'
     # Keep preflight, executable replacement and approval together. Concurrent installs and
     # first runs use the same chassis write lock, so an older preflight cannot outlive a newer install.
     with home.chassis(write=True) as db:
+        previous = None
         installed = shutil.which('metaform')
         if installed:
             probe_next = f'"{installed}" --version'
@@ -976,6 +978,8 @@ def stage(wheel: Path, uv: str, force: bool, say: Callable[[str], None], retry: 
             previous = result.stdout.strip().removeprefix('metaform ')
             _check_downgrade(previous, force, next_step)
         versions = dict(db.execute("SELECT key, value FROM meta WHERE key IN ('installed_version', 'last_run_version')"))
+        known = [version for version in [previous, *versions.values()] if version]
+        newer = not known or _version(__version__) > max(_version(version) for version in known)
         for version in versions.values():
             _check_downgrade(version, force, next_step)
         result = _run('uv', [uv, 'tool', 'install', '--force', str(wheel)], next_step=retry)
@@ -984,9 +988,21 @@ def stage(wheel: Path, uv: str, force: bool, say: Callable[[str], None], retry: 
         db.execute("INSERT INTO meta(key, value) VALUES ('installed_version', ?) "
                    'ON CONFLICT(key) DO UPDATE SET value=excluded.value', (__version__,))
     say(f'Installed: Metaform {__version__} from {wheel}')
+    if newer and not loader.withdrawn():
+        notify_install(wheel, say)
+    return newer
 
 
-def hand_over(uv: str, wheel: Path, words: list[str]) -> None:
+def notify_install(wheel: Path, say: Callable[[str], None]) -> None:
+    """Deliver after the approval commits, with installed dependencies available for upkeep agents."""
+    source_context = Context(module='install', folder=Path.cwd(), sink=say)
+    for delivery in source_context.publish('install.completed', {'version': __version__, 'wheel': str(wheel)}):
+        if delivery['status'] != 'completed':
+            say(f'Install follow-up ({delivery["module"]}): '
+                f'{delivery.get("error", delivery["status"])}')
+
+
+def hand_over(uv: str, wheel: Path, words: list[str], *, newer: bool = False) -> None:
     """Set the tools up with the Metaform the wheel has just installed. Run straight from the wheel, the modules whose
     compiled dependencies it cannot carry are left out, mcp among them, BASE-042, so this process would register no
     server; the installed copy has them all, and registers the same wheel."""
@@ -995,7 +1011,9 @@ def hand_over(uv: str, wheel: Path, words: list[str]) -> None:
     retry = 'metaform install ' + ' '.join(words) if words else BOTH_FORMS
     if installed is None:
         raise Failed('Metaform is installed, but its command was not found to set the tools up.', retry)
-    environment = {key: value for key, value in os.environ.items() if key != 'METAFORM_WHEEL'}
+    environment = {key: value for key, value in os.environ.items() if key not in ('METAFORM_WHEEL', UPKEEP)}
+    if newer:
+        environment[UPKEEP] = __version__
     sys.stdout.flush()  # what this process said comes before what the installed copy says
     done = subprocess.run([installed, 'install', *words], env={**environment, HANDED: str(wheel)}, check=False)
     if done.returncode != 0:
@@ -1015,9 +1033,11 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
         if force:
             retry_words.append('force=true')
         retry = subprocess.list2cmdline(retry_words) if os.name == 'nt' else shlex.join(retry_words)
-        stage(wheel, uv, force, say, retry)
+        newer = stage(wheel, uv, force, say, retry)
         if loader.withdrawn():
-            return hand_over(uv, wheel, [word for word in words if not word.startswith('force=')])
+            return hand_over(uv, wheel, [word for word in words if not word.startswith('force=')], newer=newer)
+    elif os.environ.pop(UPKEEP, None) == __version__ and os.environ.get(HANDED):
+        notify_install(source(), say)
     say(f'System: {system()}')
     say(f'Python: {platform.python_version()} (needs {_build_info.REQUIRES_PYTHON})')
     if not _python_ok():

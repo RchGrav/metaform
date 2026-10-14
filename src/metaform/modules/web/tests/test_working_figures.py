@@ -55,6 +55,7 @@ def test_working_figures_hold_separate_places_face_the_label_and_resume_after_an
         };
         step(200);
         const places = figures.map(f => f.mesh.position.clone()), radius = [0, 0], angles = [], eyes = [];
+        figures[0].glance = {other: figures[1].id, until: figures[0].clock + 1000};
         for (let n = 0; n < 200; n++) {
             step(1);
             for (const [i, f] of figures.entries()) {
@@ -67,6 +68,7 @@ def test_working_figures_hold_separate_places_face_the_label_and_resume_after_an
             }
         }
         const f = figures[0], before = f.mesh.position.clone();
+        f.glance = null;
         f.act = {kind: 'peek', at: f.clock, long: 1, hit: false};
         step(10);
         const departure = f.mesh.position.distanceTo(before);

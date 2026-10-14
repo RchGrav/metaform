@@ -1947,7 +1947,8 @@ def run_reserved(ctx: Context, reservation: str, given: dict[str, str | None] | 
     keep_launch(store, work_id, given or {'prompts': None, 'mode': None})
     log = os.path.join(tempfile.gettempdir(), f'metaform-dispatch-{work_id}.log')
     try:
-        with open(log, 'ab') as written:
+        with (os.fdopen(os.open(log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), 'ab')
+              if home.is_home_path(Path(log)) else open(log, 'ab')) as written:
             process = subprocess.Popen([sys.executable, '-m', 'metaform', 'dispatch', 'run', work_id, agent,
                                         'reservation=' + reservation,
                                         *([f'chosen={ctx.nouns["chosen"]}'] if ctx.nouns.get('chosen') else []),
@@ -1976,7 +1977,8 @@ def prep(ctx: Context) -> dict[str, Any]:
     if found_command(ctx, agent) is None:
         raise Stop(f'The start command of {agent} is not found on this system.', f'metaform set --dispatch-{agent} "<command>"')
     log = os.path.join(tempfile.gettempdir(), f'metaform-dispatch-prep-{work_id}.log')
-    with open(log, 'ab') as written:
+    with (os.fdopen(os.open(log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), 'ab')
+          if home.is_home_path(Path(log)) else open(log, 'ab')) as written:
         process = subprocess.Popen([sys.executable, '-m', 'metaform', 'dispatch', 'run', work_id, agent, 'prep=true',
                                     '--project', store.project_id],
                                    cwd=store.project().path, stdin=subprocess.DEVNULL, stdout=written, stderr=written,
@@ -2018,7 +2020,8 @@ def converse(ctx: Context, store: Store, work_id: str, agent: str, extra: Sequen
     if found_command(ctx, agent) is None:
         raise Stop(f'The start command of {agent} is not found on this system.', f'metaform set --dispatch-{agent} "<command>"')
     log = os.path.join(tempfile.gettempdir(), f'metaform-dispatch-talk-{work_id}.log')
-    with open(log, 'ab') as written:
+    with (os.fdopen(os.open(log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), 'ab')
+          if home.is_home_path(Path(log)) else open(log, 'ab')) as written:
         process = subprocess.Popen([sys.executable, '-m', 'metaform', 'dispatch', 'run', work_id, agent, 'system=true',
                                     *extra, '--project', store.project_id],
                                    cwd=store.project().path, stdin=subprocess.DEVNULL, stdout=written, stderr=written,
@@ -2955,7 +2958,8 @@ def configure(ctx: Context) -> dict[str, Any]:
 def spawn(store: Store, work_id: str, agent: str, extra: list[str], name: str) -> dict[str, Any]:
     """A runner started detached from the terminal in the project's folder, its output in the log named for it."""
     log = os.path.join(tempfile.gettempdir(), f'metaform-dispatch-{name}-{work_id}.log')
-    with open(log, 'ab') as written:
+    with (os.fdopen(os.open(log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), 'ab')
+          if home.is_home_path(Path(log)) else open(log, 'ab')) as written:
         process = subprocess.Popen([sys.executable, '-m', 'metaform', 'dispatch', 'run', work_id, agent, *extra,
                                     '--project', store.project_id],
                                    cwd=store.project().path, stdin=subprocess.DEVNULL, stdout=written, stderr=written,

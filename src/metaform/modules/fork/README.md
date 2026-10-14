@@ -33,7 +33,7 @@ Maintain a user's own modules over the released chassis, BASE-027. The harness s
 
 ## Events
 
-Long commands publish `map.changed` after creating tickets, so an open GUI sees the work while it runs. There are no subscriptions.
+Long commands publish `map.changed` after creating tickets, so an open GUI sees the work while it runs. The module subscribes to `install.completed`, published after the install stage commits a successful newer version. It runs the same upkeep command for registered projects whose `pyproject.toml` declares `[tool.metaform.fork] repository = true`. Reinstalls, downgrades and failed installs do not publish this event. A repository's upkeep failure is reported with the manual retry command and does not prevent upkeep of other repositories or undo the installation.
 
 ## Sync and async
 
@@ -45,7 +45,7 @@ The mutable, hideable `fork` layer records the modules whose tickets the harness
 
 ## Lifecycle and cleanup
 
-There are no start/stop hooks or background tasks. Test/build homes are temporary and removed after use. Upkeep worktrees and branches remain beside their ticket for review or resumption. Agents do not merge them. Release-triggered automatic upkeep still needs an installation-stage public event or hook, pending D122 on the parent ticket.
+There are no start/stop hooks or background tasks. Test/build homes are temporary and removed after use. Upkeep worktrees and branches remain beside their ticket for review or resumption. Agents do not merge them. Automatic upkeep follows a successful newer installation while fork is enabled. Manual upkeep remains available for retries and installations performed outside the wheel install stage.
 
 ## Modules relied on
 
@@ -69,4 +69,4 @@ Both use the running package as the chassis source. Wheel building never needs a
 metaform fork init ./my-modules alarm
 ```
 
-Follow the generated README to implement a feature and its tests, register the repository, publish it, and configure the Actions secret. Commit the repository's current state and authenticate `gh`, then run `uv run metaform fork upkeep` after updating its pinned Metaform release. Only released template entries trigger upkeep. No automatic installation-stage trigger has been connected.
+Follow the generated README to implement a feature and its tests, register the repository, publish it, and configure the Actions secret. Commit the repository's current state and authenticate `gh` before installing a newer wheel. The install stage triggers upkeep for registered module repositories. After updating the pinned release through `uv sync`, or to retry an interrupted update, run `uv run metaform fork upkeep`. Only released template entries trigger upkeep.

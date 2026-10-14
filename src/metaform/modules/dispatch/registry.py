@@ -186,7 +186,9 @@ def _unpacked(data: bytes, archive: str, into: Path) -> None:
                     home.mkdir_private(target)
                 else:
                     home.mkdir_private(target.parent)
-                    home.write_private(target, packed.read(member))
+                    descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                    with os.fdopen(descriptor, 'wb') as output, packed.open(member) as source:
+                        shutil.copyfileobj(source, output)
         return
     raw = into / Path(name).name  # a raw binary, kept under its own name
     home.write_private(raw, data)

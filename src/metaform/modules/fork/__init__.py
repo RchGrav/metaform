@@ -5,11 +5,11 @@ from pathlib import Path
 from typing import Any
 
 from metaform import settings
-from metaform.module import Context, Module, Noun, Verb
+from metaform.module import Context, Module, Noun, Subscription, Verb
 
 from . import repository
 from .checks import check
-from .review import upkeep, wheel
+from .review import installed, upkeep, wheel
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -40,7 +40,7 @@ MODULE = Module(
             'wheel needs all six check reports and the configured agent secret. upkeep opens tickets for released '
             'template entries newer than each README Template version and runs their agents in turn. '
             'The agent owns its credentials. A dispatched upkeep agent opens a pull request through the repository\'s '
-            'own authenticated GitHub CLI. The install-stage trigger is not connected yet.',
+            'own authenticated GitHub CLI. A successful newer install also runs upkeep for registered repositories.',
     verbs=(
         Verb('init', init, 'Create a repository for your own Metaform modules, in a new or empty folder.',
              nouns=(Noun('folder', 'The local repository folder.'), Noun('module', 'The first module identifier.')),
@@ -53,4 +53,5 @@ MODULE = Module(
                                'pull request.',
              switches=('fork_agent',), open_world=True),
     ),
+    subscriptions=(Subscription('install.completed', installed),),
 )

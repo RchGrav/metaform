@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import tokenize
+import tomllib
 from importlib import resources
 from pathlib import Path
 from typing import Any, cast
@@ -113,6 +114,20 @@ def modules(root: Path) -> list[Path]:
     if not found:
         raise Stop(f'{root} holds no module folders.', 'metaform help fork init')
     return found
+
+
+def is_repository(root: Path) -> bool:
+    """The scaffold's explicit marker distinguishes module repositories from unrelated registered projects."""
+    try:
+        config = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+        return False
+    for key in ('tool', 'metaform', 'fork'):
+        section = config.get(key)
+        if not isinstance(section, dict):
+            return False
+        config = cast(dict[str, Any], section)
+    return config.get('repository') is True
 
 
 def files(folder: Path) -> list[Path]:

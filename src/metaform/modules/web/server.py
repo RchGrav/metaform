@@ -1639,6 +1639,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.refuse(error, 404)
         except Stop:
             return self.send(200, {'sessions': [], 'lines': [], 'states': {}})
+        if given.get('thread') == 'false' and isinstance(found, dict):
+            said(given, cast(list[dict[str, Any]], cast(dict[str, Any], found).get('sessions') or []))
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
     def dispatch_claims(self, given: dict[str, str]) -> None:
@@ -1995,6 +1997,33 @@ PROMPT_READS: dict[str, Callable[[dict[str, str]], Any]] = {
 
 
 DISPATCH_LIMIT = 120.0  # the one wait for a dispatch verb; its own waits for an agent are at most 30 s each
+
+# The newest line each running agent said in its thread, kept per session as (its seq, its text), so each read of the
+# sessions takes only the lines begun since, and the line still being written, and never the whole thread again.
+SAID: dict[str, tuple[int, str]] = {}
+
+
+def said(given: dict[str, str], sessions: list[dict[str, Any]]) -> None:
+    """Give each running session the newest line its agent said, `said`, for the speech bubble over its figure on the
+    map. A line still streaming keeps its seq and grows in place, so the read starts at the newest line seen."""
+    running = [session for session in sessions if session.get('state') == 'running' and session.get('session_id')]
+    project = home.project(given.get('project', ''))
+    if not running or project is None:
+        return
+    try:
+        store = Store(project.project_id, base=given.get('base') or None, module='dispatch')
+        with store.tables(write=False) as tx:
+            for session in running:
+                key = str(session['session_id'])
+                seq, text = SAID.get(key, (0, ''))
+                for row in tx.rows('lines', {'session_id': key}, by=('session_id', 'seq'), limit=0,
+                                   after=json.dumps([seq - 1, ''])).results:
+                    if row['kind'] == 'agent_message_chunk' and int(row['seq']) >= seq and str(row['text']).strip():
+                        seq, text = int(row['seq']), str(row['text'])
+                SAID[key] = (seq, text)
+                session['said'] = {'seq': seq, 'text': text} if text else None
+    except (Stop, StoreError):
+        return
 ATTACH_LIMIT = 25 * 1024 * 1024  # the largest file the chat dock takes
 ITEMS = 40  # the items of a node's brief listed at a time, newest first; the page asks for the next ones below
 # The characters Claude Code keeps of a server's instructions and of each tool's description by default, MCP-029: its

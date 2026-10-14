@@ -93,6 +93,7 @@ def test_outside_a_repository_the_boundary_is_every_file_but_a_git_folder(photos
 
 @pytest.mark.req('PROJ-012')
 @pytest.mark.req('PROJ-013')
+@pytest.mark.req('PROJ-026')
 def test_a_repository_origin_records_its_commit_and_a_digest_of_the_committed_files(repo, home):
     origin = Store('app').add_origin()
     assert origin.kind == 'repo' and origin.commit_id == git(repo, 'rev-parse', 'HEAD').strip()
@@ -102,7 +103,8 @@ def test_a_repository_origin_records_its_commit_and_a_digest_of_the_committed_fi
     assert re.fullmatch(r'[0-9a-f]{64}', origin.mform_sha_id) and origin.mform_sha_id == digest[:60] + '0000'
     assert re.fullmatch(r'[0-9a-f]{16}', origin.mform_id) and origin.mform_id == digest[:12] + '0000'
     assert origin.suffix == '0000' and origin.source_path == str(repo)
-    assert not (units('app') / origin.mform_sha_id / 'origin').exists()
+    assert on_disk(units('app') / origin.mform_sha_id / 'origin') == {
+        path: data for path, (data, _) in files.items()}
 
 
 @pytest.mark.req('PROJ-012')
@@ -164,6 +166,9 @@ def test_an_origin_is_never_rewritten_and_a_new_baseline_is_a_new_unit(repo, hom
 @pytest.mark.req('PROJ-012')
 @pytest.mark.req('PROJ-017')
 def test_a_dirty_working_tree_is_collected_as_the_first_variant(repo):
+    # Establish a new baseline after the origin already captured by registration.
+    (repo / 'src' / 'main.py').write_text('print("new baseline")\n', encoding='utf-8')
+    git(repo, 'commit', '-q', '-am', 'new baseline')
     (repo / 'src' / 'main.py').write_text('print("uncommitted")\n', encoding='utf-8')
     store = Store('app')
     origin = store.add_origin()
@@ -214,11 +219,11 @@ def test_a_worktrees_work_reconstructs_byte_identical_and_nothing_ignored_comes_
     assert on_disk(out) == expected
 
 
-@pytest.mark.req('PROJ-016')
+@pytest.mark.req('PROJ-029')
 @pytest.mark.req('PROJ-018')
-def test_small_changed_text_is_kept_whole_and_large_as_a_diff_and_both_reconstruct(repo, tmp_path, home):
-    big = ''.join(f'line {number} of a large generated file\n' for number in range(120000)).encode('utf-8')
-    assert len(big) > 4 * 1024 * 1024
+def test_large_source_uses_diffs_even_for_small_text_edits_and_both_reconstruct(repo, tmp_path, home):
+    big = ''.join(f'line {number} of a large source file\n' for number in range(320000)).encode('utf-8')
+    assert len(big) > 10 * 1024 * 1024
     (repo / 'data.txt').write_bytes(big)
     git(repo, 'add', 'data.txt')
     git(repo, 'commit', '-q', '-m', 'big file')
@@ -232,7 +237,7 @@ def test_small_changed_text_is_kept_whole_and_large_as_a_diff_and_both_reconstru
     edited = big.replace(b'line 60000 of', b'LINE SIXTY THOUSAND of').replace(b'line 119999 of', b'last line of')
     (large / 'data.txt').write_bytes(edited)
     first, second = store.add_variant(small), store.add_variant(large)
-    assert [(change.path, change.storage) for change in first.files] == [('src/main.py', 'whole')]
+    assert [(change.path, change.storage) for change in first.files] == [('src/main.py', 'diff')]
     assert [(change.path, change.storage) for change in second.files] == [('data.txt', 'diff')]
     payload = units('app') / origin.mform_sha_id / 'variants' / second.variant_id
     stored = (payload / 'diffs' / 'data.txt.diff').read_bytes()
@@ -320,8 +325,8 @@ def test_a_collection_that_fails_partway_leaves_no_rows_and_no_folder(repo, work
 def test_the_history_commands_work_with_every_feature_module_off(run, repo, tmp_path):
     for module in ('intake', 'map', 'mcp', 'memory', 'web'):
         run('disable', module)
-    none_yet = run('list', 'variants', cwd=repo, ok=False)
-    assert none_yet.returncode != 0 and none_yet.stderr.splitlines()[-1] == 'Next: metaform add origin'
+    none_yet = run('list', 'variants', cwd=repo)
+    assert none_yet.stdout == ''  # registration already established the origin
     added = run('add', 'origin', cwd=repo).stdout
     mform_id = re.search(r'\b[0-9a-f]{16}\b', added).group(0)
     commit = git(repo, 'rev-parse', 'HEAD').strip()
