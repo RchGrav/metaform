@@ -1,0 +1,1 @@
+It already ran: a `metaform` process started after the code landed. ... I'll fix the migration to explicitly set `default` for options only inherited from parents, and apply that correction to the two affected folders.

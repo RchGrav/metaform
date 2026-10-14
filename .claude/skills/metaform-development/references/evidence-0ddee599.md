@@ -1,0 +1,1 @@
+ERROR: Tests without a kind of run: tests/test_zz_scratch_roundtable_limits.py::test_rounds_limit: no @pytest.mark.kind of fixture, simulation or real ... no tests ran in 0.03s

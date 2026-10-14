@@ -1,0 +1,1 @@
+The failure is at the debug row, before my new lines. Checking whether the unmodified test passes, by copying the file aside rather than stashing: ... screen.js holds other agents' uncommitted work too. Taking out just my two hunks, running the test, then restoring:

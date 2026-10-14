@@ -1,0 +1,5 @@
+{"role":"assistant","text":"Verifying in a real browser against a private server with a throwaway script outside the repo."}
+{"type":"text","text":"Checks pass; the long lines are pre-existing, none of mine."}
+Tool result: "Evaluating a string as JavaScript violates the following Content Security Policy directive because 'unsafe-eval' is not an allowed source of script: script-src 'self' 'wasm-unsafe-eval' ..."
+Memory observation: "Checking it in a browser: launch Chromium with --use-fake-device-for-media-stream --use-fake-ui-for-media-stream, bypass_csp=True (the page CSP blocks Playwright's string predicates), route /api/voice/status to engine 'server' with server.installed/downloaded true, route /api/voice/transcribe to {text}, and add a capture submit listener on #helpdesk .compose that calls stopImmediatePropagation so no agent starts."
+Assistant: "keys.js already had someone else's uncommitted changes; I only added the one shortcut line. Any page you already have open needs a reload to pick this up."

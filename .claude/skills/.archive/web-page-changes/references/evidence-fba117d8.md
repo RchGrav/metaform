@@ -1,0 +1,1 @@
+"My board.js fix is no longer on disk; someone else changed the file since. Checking what changed before I re-apply it:" ... git diff --stat: " src/metaform/modules/web/page/app/board/board.js | 16 +++++++++++++++-" ... "Another session is writing board.js and its save dropped my edit. I'll re-apply the same small change on top of their version:"

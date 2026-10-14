@@ -1,0 +1,1 @@
+Spec records not edited (Rich's): drafts in the note. ... I didn't edit the specs. Draft wording for `04-chassis-modules.md:814` and the person-only list in `05-cli-settings.md:174` is in the ticket note.

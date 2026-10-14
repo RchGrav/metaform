@@ -1,0 +1,1 @@
+Code: settings roundtable_rounds (8) and roundtable_spend (2, int dollars since settings.number is int), tables v4 with discussions.rounds/spend/spent ... open takes rounds= and spend=; a head agent may only set them at or below the settings, since they are person_only.

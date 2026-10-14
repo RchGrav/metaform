@@ -1,0 +1,1 @@
+Settings may declare section='Agent options/Claude Code' (TUI opens it as a menu: agent > option > value; web groups under the heading) and choice_help (mapping or function of a Context; shown as plain words in the TUI picker and details, web hint, config --show --json).

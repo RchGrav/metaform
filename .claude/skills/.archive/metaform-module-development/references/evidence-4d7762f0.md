@@ -1,0 +1,1 @@
+Trap: a list setting stored at a folder hides its parent's whole list, but per-key settings inherit one by one. Converting a list into separate settings must write default for keys only a parent set, or a parent's value (here claude bypassPermissions at /home/rich) silently starts applying in child folders.

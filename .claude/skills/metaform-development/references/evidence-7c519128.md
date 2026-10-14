@@ -1,0 +1,1 @@
+Two acp:codex seats never shared a session; their UUIDv7 ids share the first 8 characters. Roundtable 1 (2026-10-14): Astra and Sol had separate dispatch sessions, 01a1393a-fc9a-7ad2-… and 01a1393a-fcd4-76b3-…, with separate runner pids (589635/589636). Codex mints time-ordered UUIDv7 ids, so sessions started in the same millisecond share their 8-character short form.

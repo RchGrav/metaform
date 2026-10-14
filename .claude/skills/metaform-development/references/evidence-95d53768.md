@@ -1,0 +1,1 @@
+1 passed, 237 deselected in 25.89s — Test homes left these metaform processes running; they are now ended: 778962 /home/rich/metaform/.venv/bin/python3 -m metaform dispatch run 02b10d0b4aa94474ae40bcc0bf361f3e codex system=true --project proj

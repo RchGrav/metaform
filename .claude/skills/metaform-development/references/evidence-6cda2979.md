@@ -1,0 +1,2 @@
+{"type":"tool_result","content":"Error: A worker agent writes no ticket: tickets are written by the person and the agents that serve them. Write what you found in your own ticket's note.\nNext: call map_work op=edit id=<your work id> note=\"...\""}
+From Rich's orchestrator: do not wait for Rich; decide, record each choice and its why with map_work op=step, finish, and close the ticket with op=done. Spec text you would show Rich goes to artifacts/specs-draft/, never specifications/.

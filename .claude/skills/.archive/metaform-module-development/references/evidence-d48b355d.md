@@ -1,0 +1,1 @@
+Running Metaform processes started before the change (the MCP server on 7434, live runners) still read the removed dispatch_agent_options and apply no agent options until restarted.

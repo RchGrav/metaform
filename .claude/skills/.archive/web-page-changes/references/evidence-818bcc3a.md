@@ -1,0 +1,1 @@
+My selector doubled the `#settings` prefix. Fixing it in my version and re-running only my steps: ... waiting for locator("#settings .setgroup .setgroup:has(h3:text-is(\"Agent options · Claude Code\")) #settings .setrow[data-key=\"dispatch_claude_mode\"]") to be visible

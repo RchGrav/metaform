@@ -1,0 +1,1 @@
+"ACP's elicitation on the page: the head agent's AskUserQuestion, a choice and its \"Other\" box, shows as a card with the choices as buttons beside Decline; the person presses one and the agent gets that choice. Only the sentinel and the head agent ask the person, VIEW-045."

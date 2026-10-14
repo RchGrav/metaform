@@ -1,0 +1,1 @@
+metaform.errors.StoreError: dispatch declares no tables. ... Dispatch is disabled in a fresh test home: a TUI test that needs dispatch settings calls loader.set_enabled('dispatch', True) first.

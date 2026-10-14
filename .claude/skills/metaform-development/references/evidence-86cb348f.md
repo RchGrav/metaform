@@ -1,0 +1,1 @@
+/home/rich/metaform/src/metaform/modules/roundtable/seats.py:131:5 - error: Type of "usage" is partially unknown ... Type of "get" is partially unknown (reportUnknownMemberType) ... 0 errors, 0 warnings, 0 informations

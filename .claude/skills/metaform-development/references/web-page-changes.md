@@ -1,0 +1,40 @@
+# Changing the Metaform web page and its browser tests
+
+Make the page change surgically, then make every browser test that touched the old control pass against the new one before reporting it done.
+
+## Settings and controls
+- A setting the page shows is read when its control opens and again when the setting changes elsewhere. In `page/app/settings/screen.js`, `afterSetting(key)` is where a Settings-screen change reaches other controls: wire both paths and test both.
+- Removing a control: delete its HTML, its CSS rules (scoped by the old id, for example `#prompts .choice`) and its JS in one edit. Then grep the tests for the old id, because a test still clicking it fails only at that line: `grep -rn "promptsBtn\|#prompts" src/metaform/modules/web/tests`.
+- A refused save: the control goes back to the value in force and says why, in the field and as a toast. Test the refusal with `page.route(..., lambda route: route.fulfill(status=400, ...))`. The browser logs that 400 as a console error, so the `problems` list must expect exactly `'Failed to load resource: the server responded with a status of 400 (Bad Request)'`; an empty `problems` list on that path is wrong.
+- A setting that declares a `section` renders in a nested group under its `h3` heading (`setGroup`, for example `Agent options/Claude Code` shown as "Agent options · Claude Code"), after the top-level rows.
+- `row(key)` already starts with `#settings`. Never prefix a second `#settings` in front of it: `#settings .setgroup ... #settings .setrow[...]` matches nothing and times out. To reach a setting under a section, use `'#settings .setgroup .setgroup:has(h3:text-is("Agent options · Claude Code")) .setrow[data-key="dispatch_claude_mode"]'`.
+
+## Shared tree and scope
+- The page tree is shared and may be edited by other agents at the same time. Edit only the files your ticket names. Never revert or reformat a file wholesale. A concurrent save can drop your edit after you made it: before reporting done, grep the file for your new text (or `git diff -- FILE`), and if it is gone, re-apply the change on the file as it now stands.
+- When a subagent takes a fix, give it an explicit file allowlist and forbid commit, worktree and branch creation.
+- Never `git stash` on the shared tree. When a browser test fails at a locator your edit never touched (for example `Page.select_option: Timeout ... #settings .setrow[data-key="dispatch_prompts"] select`), prove it is not yours first: copy the touched file aside, revert only your change in the copy, run that one test, copy the file back, and grep for your new text.
+- When an earlier step of a long browser test fails for reasons outside your change, test your own steps alone: keep the fixture setup, cut the body down to your lines, run that one test, then restore the test file from a copy. To show a failure predates your change, put the HEAD version of the test function in place of yours in a copy, run it, and restore.
+
+## Figures and per-project state
+- Agent figures are drawn twice: in 3D (`page/app/figures/agents.js`) and in the 2D map (`figures/roam2d.js`), which once wrote the same rule by hand. When a figure rule changes, grep both (`grep -rn "figure.done\|moodOf" page/app`) and point the 2D copy at the shared helper (`drawnWorking`) rather than a second copy.
+- Agent figures are decided in `page/app/figures/agents.js`: `conversing(ticket)` is true for a held ticket, or for a done one that has a running session which started after the ticket's `done` time. So a chat about a done ticket gets a figure (and `web_look` works), while the finished worker's figure still walks back. When a browser test times out at a `wait_for_function`, read the predicate it waits for and the function that decides that state before changing the test or its timeout.
+- Per-project page state is cleared when the person leaves a project. `leaveAgents()` in `page/app/loading/load.js` resets the agent lists and figures; any new per-project list (for example `D.subagents`) is cleared there too, or the old project's figures stay on the next one.
+- Async handlers that set shared page state (`B.tickets`, `S.*`, `D.*`): an `await` lets the person switch project or base, so check the project and base are still the ones that started the call before assigning. Read into a local first, then guard, then assign, for example `let tickets; try { tickets = ... } catch {...}; if (S.project !== project || S.base !== metaform) return; B.tickets = tickets;`. Assigning inside the `try` lets a stale response overwrite the current project's board.
+
+## Modules, imports and reloads
+- Python changes under `modules/web` or `modules/dispatch` need the web GUI restarted (`metaform web start`), because the running server still serves the code it started with. Reload the browser after a page or server change before judging it by eye.
+- The page the person has open runs the JS it loaded, so it shows old code until they reload. Browser tests load the page fresh; judge a page change by them, not by an open tab.
+- `node --check` only parses a part; it never resolves imports. When an export moves to another part (`PROMPT_WORDS` moved from `page/app/settings/screen.js` to `page/app/agents/dispatch.js`), grep every importer for the name and its path, and load a browser test that reaches each importing part. A missing named export shows up only as a module-load failure in the browser.
+
+## Checks, each isolated
+- `node --check` on every changed JS part, then a line-length scan such as `awk 'length > 120 {print FILENAME": "FNR}' FILE`, and fix what it flags.
+- `uv run ruff check` on changed test files.
+- `timeout 400 uv run pytest -m browser -n 0 src/metaform/modules/web/tests/test_web.py -k NAME -q` (about 35 s a test). Never the full suite.
+- Reuse the fixtures already in `test_web.py`: `opened(browser, web)` opens the page on the project, and `run('enable', 'dispatch')` plus `started(run)` prepare a dispatch-backed page. Do not add a test file.
+- Browser tests can read page state through `window.metaform` (for example `window.metaform.figures()`) and wait on it with `page.wait_for_function`. A test can also call a page function directly with `page.evaluate` and a dynamic `import('/page/app/...')`.
+- A browser test that seeds a tool result or runner record builds it from the real command's output (`run(..., '--json')`) rather than a hand-written shape. A hand-written shape can omit fields the runner keeps, so the test passes while the page gets less.
+- Authority and refusal changes: test the refusal path as well as the happy path, and report what the page still allows.
+
+## Rendering
+- Mermaid fences in chat text (`diagramBlock` in `session/text.js`): parse the source before rendering so a bad source leaves no error SVG; import the returned SVG through `DOMParser`, never `innerHTML`; cache drawings by source so a streamed re-render does not redraw. Reuse the strict Mermaid config the 2D map sets rather than a second one.
+- Content that grows after its thread row is placed (a diagram drawn late, an MCP view sized in) must keep a pinned thread at its end: call `followLog()` from `page/app/dock/helpdesk.js` after the growth, guarded by `DOCK.pinned`. The guard leaves a thread the person scrolled up from being pulled down.
