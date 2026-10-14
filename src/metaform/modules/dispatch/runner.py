@@ -92,6 +92,7 @@ from . import (
     billable,
     claimed,
     end_group,
+    eyes_line,
     glyph_of,
     group_options,
     handoff_parts,
@@ -899,6 +900,10 @@ def metaform_called(known: dict[str, Any], data: dict[str, Any], title: str) -> 
     called: dict[str, Any] = {'tool': f'{module}_{verb}', 'input': given}
     if data.get('status') in ('completed', 'failed'):
         called['result'] = {'content': text, 'isError': data.get('status') == 'failed'}
+        # the structured result too, where the agent passed it on, since a view paints from it before it reads
+        structured = cast(dict[str, Any], output).get('structuredContent') if isinstance(output, dict) else None
+        if isinstance(structured, dict) and len(json.dumps(structured, default=str)) <= CALLED_MOST:
+            called['result']['structuredContent'] = structured
     return called
 
 
@@ -1003,7 +1008,9 @@ class Session:
         self.opening = False
         self.interrupt_lock = asyncio.Lock()  # cancellation cannot spill into the next queued prompt
         self.pending: deque[str] = deque()  # prompts wait in arrival order while one turn is in flight
-        self.voiced: deque[Any] = deque()  # beside each, the person's recording as an ACP audio block, or None
+        # beside each, the ACP blocks of the person's recording and the frame they sent, the ones its agent takes
+        self.voiced: deque[list[Any]] = deque()
+        self.timers: dict[str, dict[str, Any]] = {}  # the agent's own timers, `dispatch timer`, by id
         self.idle = asyncio.Event()
         self.idle.set()
         self.lock = asyncio.Lock()
@@ -2831,7 +2838,7 @@ class Session:
             text = await asyncio.to_thread(workflow_skill, self.ctx, 'sentinel', given)
         elif self.system and self.ctx.nouns.get('talk'):  # the person clicked something to talk about: no ticket work
             about, read = await asyncio.to_thread(subject, self.store, self.work_id, str(self.ctx.nouns['talk']))
-            text = prompt('talk', about=about, read=read)
+            text = prompt('talk', about=about, read=read, eyes=await asyncio.to_thread(eyes_line, Path(self.root)))
         elif self.system:  # the person's own, and their mascot's voice when they have one
             text = prompt('system', project=self.store.project_id,
                           mascot=await asyncio.to_thread(mascot_line, Path(self.root)))
@@ -2984,12 +2991,59 @@ class Session:
             file.unlink(missing_ok=True)
         return acp.audio_block(base64.b64encode(data).decode('ascii'), 'audio/wav') if data else None
 
-    def turn(self, text: str, audio: Any = None) -> None:
+    def picture(self, path: str) -> Any:
+        """A frame the person sent with a message as an ACP image block, ContentBlock::Image, beside its text: only for
+        a session whose agent declared promptCapabilities.image, never assumed, and only a frame the web GUI kept under
+        the home's run/captures. The file is removed once read, sent or not."""
+        if not path:
+            return None
+        frames = (home.home() / 'run' / 'captures').resolve()
+        file = Path(path).resolve()
+        kinds = {'.jpg': 'image/jpeg', '.png': 'image/png'}
+        if file.parent != frames or file.suffix not in kinds:
+            return None
+        try:
+            data = file.read_bytes() if self.acp['capabilities'].get('image') else None
+        except OSError:
+            data = None
+        finally:
+            file.unlink(missing_ok=True)
+        return acp.image_block(base64.b64encode(data).decode('ascii'), kinds[file.suffix]) if data else None
+
+    def timer(self, asked: dict[str, Any]) -> dict[str, Any]:
+        """The agent's own timers, `dispatch timer`, held by this runner and so never outliving the session they wake:
+        set, one wakes the session after its seconds with the agent's note as a turn; cancel takes one back by its id;
+        with neither, the timers set."""
+        if asked.get('cancel'):
+            held = self.timers.pop(str(asked['cancel']), None)
+            if held is not None:
+                held['handle'].cancel()
+            return {'timer': str(asked['cancel']), 'cancelled': held is not None}
+        if asked.get('seconds') is None:
+            return {'timers': [{'timer': key, 'due': one['due'], 'text': one['text']} for key, one in self.timers.items()]}
+        if self.ending or self.session_id is None:
+            return {'error': 'The session has not started or is ending.'}
+        key, seconds = secrets.token_hex(4), float(asked['seconds'])
+        due = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() + seconds))
+        handle = asyncio.get_running_loop().call_later(seconds, lambda: self.spawn(self.timer_due(key)))
+        self.timers[key] = {'handle': handle, 'text': str(asked.get('text') or ''), 'due': due, 'set': stamp()}
+        return {'timer': key, 'due': due, 'work_id': self.work_id, 'session_id': self.session_id}
+
+    async def timer_due(self, key: str) -> None:
+        """A timer is due: its note goes in the thread, and the session takes a turn with it, after any before it."""
+        held = self.timers.pop(key, None)
+        if held is None or self.ending:
+            return
+        async with self.lock:
+            await self.note(None, 'timer', f'Timer {key}, set at {held["set"]}, is due: {held["text"]}')
+        self.turn(prompt('timer', timer=key, set=held['set'], note=held['text']))
+
+    def turn(self, text: str, audio: Any = None, image: Any = None) -> None:
         if self.ending:
             return
         self.replaying = False  # what comes from here on is the session's own, never a replay
         self.pending.append(text)
-        self.voiced.append(audio)
+        self.voiced.append([block for block in (audio, image) if block is not None])
         if self.turns == 0:
             self.progress_at = time.monotonic()
         if self.turns:
@@ -3011,7 +3065,7 @@ class Session:
                     current = self.active_turn or ActiveTurn()
                     self.active_turn = current
                     text = self.pending.popleft()
-                    audio = self.voiced.popleft() if self.voiced else None
+                    beside = self.voiced.popleft() if self.voiced else []
                 self.heard = stamp()  # a tool call of this turn began no earlier than its prompt
                 began_ns: int | None = None
                 try:
@@ -3026,7 +3080,7 @@ class Session:
                         self.arm()  # the turn's silence clock, P040
                         self.intake_clock()  # an intake's first-record clock starts with its first turn, M04
                         began_ns = time.time_ns()
-                        blocks: list[Any] = [acp.text_block(text), *([audio] if audio is not None else [])]
+                        blocks: list[Any] = [acp.text_block(text), *beside]
                         blocks += [acp.resource_link_block(one['name'], one['uri'], title=one.get('title'))
                                    for one in self.attached]  # the hand-off's links, typed, beside its text
                         self.attached = []
@@ -3282,6 +3336,7 @@ class Session:
                     return
                 text, by = str(asked.get('text', '')), str(asked.get('by') or '')
                 audio = self.recording(str(asked.get('audio') or '')) if not by else None
+                image = self.picture(str(asked.get('image') or '')) if not by else None
                 async with self.lock:  # the sender's words in the thread, where the agent's reply follows
                     await self.flush()
                     # an agent's message is never shown as the person's, BASE-052
@@ -3290,7 +3345,7 @@ class Session:
                 # it waits its turn, in order.
                 current = self.active_turn
                 steered = (await self.steer(text) if self.turns and not self.pending and current is not None
-                           and current.sent and not current.cancel_requested and audio is None
+                           and current.sent and not current.cancel_requested and audio is None and image is None
                            and not self.opening else False)
                 if steered is not False:
                     async with self.lock:
@@ -3299,8 +3354,22 @@ class Session:
                                         'have reached the turn, so it is not sent again. Send it again if it did not.')
                     await self.reply(writer, {**said, 'sent': True, 'steered': steered})
                     return
-                self.turn(text, audio)
-                await self.reply(writer, {**said, 'sent': True, 'steered': False, 'audio': audio is not None})
+                self.turn(text, audio, image)
+                await self.reply(writer, {**said, 'sent': True, 'steered': False, 'audio': audio is not None,
+                                          'image': image is not None})
+            elif op == 'timer':  # the agent's own timers, `dispatch timer`
+                await self.reply(writer, {**said, **self.timer(asked)})
+            elif op == 'attach':  # a file the agent attached to its chat, `dispatch attach`, after its words so far
+                given_attachment: Any = asked.get('attachment')
+                if self.session_id is None or not isinstance(given_attachment, dict):
+                    await self.reply(writer, {**said, 'attached': False, 'error': 'The session has not started.'})
+                    return
+                attachment = cast(dict[str, Any], given_attachment)
+                async with self.lock:
+                    await self.flush()
+                    await self.note(f'attachment:{attachment.get("id")}', 'attachment',
+                                    json.dumps(attachment, ensure_ascii=False))
+                await self.reply(writer, {**said, 'attached': True})
             elif op == 'interrupt':
                 try:
                     requested = await self.interrupt()
@@ -3350,6 +3419,9 @@ class Session:
         self.ending, self.how = True, how
         self.pending.clear()
         self.voiced.clear()
+        for held in self.timers.values():  # a timer never outlives the session it wakes
+            held['handle'].cancel()
+        self.timers.clear()
         try:
             # Cancelling startup would abandon to_thread writes or a child being created. Let the current
             # acquisition finish and let begin observe ending before proceeding, then clean up its resources.

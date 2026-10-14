@@ -17,7 +17,7 @@
  *  - The selection: the selected body is ringed by a fine orbit of light and glows, both held to a size that is seen
  *    from across the whole map and never fills the view up close; the bodies away from it, the ones the page dims,
  *    recede grey and dark, so the selection and what it joins lead.
- *  - The small leaves, a part's items and properties, as moons; a join's purpose vertex as a small bright knot.
+ *  - The small leaves, a part's items and properties, as moons; a join's purpose vertex as a small bright bead.
  *  - The joins as luminous filaments: light added to the sky, bright along their middle and gone at their edges.
  *  - Bloom, its own pass at the end of the render chain while ultra is on: what is over full brightness spreads into a
  *    soft glow that stays close to it, the wide levels of the glow weighed less than the near ones. The selected
@@ -57,7 +57,7 @@ const QUALITY = [
  * hidden tab or a machine asleep, rather than a frame. */
 const GOVERNOR = {low: 40, span: 3000, stall: 4000};
 const STAR_COUNT = 9000;
-const LOOK = {gain: 2.2, bloom: 0.62, spread: 0.6, vignette: 0.16, reveal: 1600};  // chosen by eye
+const LOOK = {gain: 3, bloom: 0.62, spread: 0.6, vignette: 0.16, reveal: 1600};  // chosen by eye
 
 const U = {
   G: null, ctx: null, mode: 'clean', drawn: 'clean', wanted: null, turn: 0, quality: 0,
@@ -828,12 +828,13 @@ function makeBody(node) {
   const geometry = kind === 'crystal' ? shape(`crystal:${radius}`, () => new THREE.OctahedronGeometry(radius * 1.12, 0).scale(0.9, 1.45, 0.9))
     : kind === 'rocky' ? rock(radius, Math.floor(seed * 4))
     : kind === 'banded' ? shape(`giant:${radius}`, () => new THREE.SphereGeometry(radius, 40, 28).scale(1.2, 0.8, 1.2))
-    : kind === 'knot' ? shape(`knot:${radius}`, () => new THREE.TorusKnotGeometry(radius * 0.36, radius * 0.15, 72, 10))
+    : kind === 'knot' ? sphere(radius * 0.45, 16, 12)
     : kind === 'pulsar' ? sphere(radius * 0.55)
     : kind === 'sink' ? sphere(radius * 0.62)
     : kind === 'moon' ? sphere(radius, 20, 14)
     : sphere(radius, 40, 28);
-  material.uniforms.radius.value = kind === 'pulsar' ? radius * 0.55 : kind === 'sink' ? radius * 0.62 : radius;
+  material.uniforms.radius.value = kind === 'pulsar' ? radius * 0.55 : kind === 'sink' ? radius * 0.62
+    : kind === 'knot' ? radius * 0.45 : radius;
   material.color.set(G.nodeColor()(node));
   const object = new THREE.Mesh(geometry, material);
   Object.assign(object.userData, {ultra: true, kind, radius, select: 0, dim: 0, paint: node.t !== 'el'});
@@ -892,10 +893,9 @@ function filament(color, kind) {
   const quiet = kind === 'tree' || kind === 'layer' || kind === 'item', key = `${color}|${quiet}`;
   if (!U.fibers.has(key)) U.fibers.set(key, new THREE.ShaderMaterial({transparent: true, depthWrite: false,
     blending: THREE.AdditiveBlending,
-    // widened as the page's fibers are, `widen`, so a filament seen from far stays at least a pixel and a half wide
-    uniforms: {tint: {value: new THREE.Color(color)}, strength: {value: quiet ? 0.5 : 0.95}, pixel: U.ctx.pixel},
-    vertexShader: `varying vec3 vNormal; varying vec3 vView; ${U.ctx.widen}
-      void main() { vNormal = normalize(normalMatrix * normal); vec4 at = widened(modelViewMatrix * vec4(position, 1.0), vNormal);
+    uniforms: {tint: {value: new THREE.Color(color)}, strength: {value: quiet ? 0.5 : 0.95}},
+    vertexShader: `varying vec3 vNormal; varying vec3 vView;
+      void main() { vec4 at = modelViewMatrix * vec4(position, 1.0); vNormal = normalize(normalMatrix * normal);
         vView = normalize(-at.xyz); gl_Position = projectionMatrix * at; }`,
     fragmentShader: `uniform vec3 tint; uniform float strength; varying vec3 vNormal; varying vec3 vView;
       void main() { float facing = abs(dot(normalize(vNormal), normalize(vView)));

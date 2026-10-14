@@ -1,0 +1,1041 @@
+Line 7: import * as THREE from 'three';
+Line 8: import ForceGraph3D from '3d-force-graph';
+Line 9: import {createAgent, drawGlyph, releaseGlyph, orientAgent, motionOf, s
+Line 12: import {MeshTransmissionMaterial} from '/vendor/drei-vanilla/MeshTrans
+Line 13: import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGe
+Line 15: import {forceX, forceY, forceZ, forceRadial} from 'd3-force-3d';
+Line 17: import {createWorkspace} from '/page/workspace.js';
+Line 18: import {createViews} from '/page/views.js';
+Line 19: import {voiceAudio} from '/page/voice.js';  // speech to text in the b
+Line 21: import * as ULTRA from '/page/ultra.js';
+Line 23: const $ = selector => document.querySelector(selector);
+Line 24: const css = name => getComputedStyle(document.documentElement).getProp
+Line 25: const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').m
+Line 26: const SVG = 'http://www.w3.org/2000/svg';
+Line 29: function h(tag, props = {}, ...children) {
+Line 41: function put(node, children, replace = true) {
+Line 47: const fill = (node, ...children) => put(node, children);
+Line 50: function keepFill(node, kids) {
+Line 56: function keyedFill(node, rows) {
+Line 79: const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]
+Line 81: const OVERLAY = {stack: [], known: new Map(), base: 1000, closing: new
+Line 84: function rememberReached(node) {
+Line 91: const shown = node => Boolean(node && node.isConnected && node.getClie
+Line 92: const focusables = box => [...box.querySelectorAll(FOCUSABLE)].filter(
+Line 95: function overlay(box, {kind = 'window', close = null, guard = null, fo
+Line 100: const overlayOf = box => OVERLAY.stack.find(entry => entry.box === box
+Line 101: const topOverlay = () => OVERLAY.stack.at(-1) || null;
+Line 103: function overlayHolds(target = document.activeElement) {
+Line 107: function opened(box) {
+Line 134: function closed(box) {
+Line 157: function onClosed(box, hook) { OVERLAY.closing.set(box, [...(OVERLAY.c
+Line 159: const SCRIM = h('div', {id: 'scrim', hidden: true, 'aria-hidden': 'tru
+Line 161: function restack() {
+Line 241: const PLACES = 'metaform.places';
+Line 242: function places() { try { return JSON.parse(localStorage.getItem(PLACE
+Line 243: function place(box) {
+Line 259: function keepPlace(box) {
+Line 268: const TOAST = {timer: null, held: false, ms: 0};
+Line 269: function toast(message, {action = null, run = null, ms = null} = {}) {
+Line 277: function toastLater(ms) {
+Line 285: function undoable(message, undo) {
+Line 294: function confirmAct({title = 'Are you sure?', text = '', lost = [], ke
+Line 327: function segmented({label, options, value, onchange}) {
+Line 353: function progressBar({label, value = null, words = ''}) {
+Line 374: function copyField({label, text, rows = 0}) {
+Line 392: function choice({label, options, value, onchange}) {
+Line 468: const FRAMED = document.documentElement.classList.contains('frame');
+Line 475: const S = {
+Line 484: const MEM = {key: null, network: null, drawn: false, levels: [], posit
+Line 488: const DOWN = 'The server was restarting and did not get that. Try agai
+Line 505: const viewLayers = () => S.view === null ? {} : {layers: [...S.view].j
+Line 508: const KNOWLEDGE = ['--k1', '--k2', '--k3', '--k4', '--k5', '--k6'];
+Line 509: function colorVar(layerName) {
+Line 517: const layerColor = name => css(colorVar(name));
+Line 518: const folderOn = () => new Set(S.layers.filter(layer => layer.on).map(
+Line 519: const shownOn = () => S.view ?? folderOn();
+Line 520: const same = (a, b) => a.size === b.size && [...a].every(x => b.has(x)
+Line 525: const ROOTS = ['upstream', 'downstream'];
+Line 528: const SIZES = {side: ['metaform.sideWidth', '--side-width', 320, () =>
+Line 531: function sized(which, pixels) {
+Line 540: function splitter(handle, which, measure) {
+Line 557: const FLIP_SIDE = 40;
+Line 558: const nearRight = x => x > innerWidth - FLIP_SIDE, nearLeft = x => x <
+Line 563: const SIDE_DRAG = {width: 0, right: true, across: false};
+Line 591: const SIDE_AT = 'metaform.sideAt';
+Line 592: function sideAt(right, ease = false) {
+Line 634: const rootsOff = () => { try { return new Set(JSON.parse(localStorage.
+Line 635: const rootOf = address => (address || '').split('.')[0];
+Line 636: const underHiddenRoot = address => rootsOff().has(rootOf(address));
+Line 640: function renderChips() {
+Line 689: function toggler(button, box, open = () => {}) {
+Line 696: function showLayers(open) { $('#layerlist').hidden = !open; }
+Line 704: const headBottom = () => document.documentElement.style.setProperty('-
+Line 717: const TEXTSIZE = {steps: [0.84, 0.92, 1, 1.08, 1.17, 1.27, 1.38, 1.5],
+Line 718: function textStep() {
+Line 722: function textSize(index) {
+Line 740: function foldHeader() {
+Line 763: const largeView = () => $('.app').classList.contains('swapped') ? $('#
+Line 782: function showAdmin(open) { $('#adminbox').hidden = !open; }
+Line 789: function showClear(open) { $('#clearbox').hidden = !open; }
+Line 806: function backupTime(name) {
+Line 833: function showExport(open) { $('#exportbox').hidden = !open; }
+Line 947: const noMetaform = () => !S.bases.length;
+Line 948: const noneYet = () => `${S.project} has no metaform yet. The next inta
+Line 950: function emptyPanel() {
+Line 957: function emptyActs(box) {
+Line 980: function graphData() {
+Line 1036: const withProviders = join => ({...join, providers: (join.elements || 
+Line 1038: const accessed = (value, item) => typeof value === 'function' ? value(
+Line 1039: const joinOf = key => S.joins.find(join => 'p:' + join.id === key);
+Line 1042: const addressOf = id => {
+Line 1048: const READY = {done: null};
+Line 1211: const BOX = new THREE.Box3();
+Line 1212: function onScreen(mesh) {  // how many pixels a figure spans in the 3D
+Line 1221: const toHex = color => { const found = (color || '').match(/\d+/g);
+Line 1223: function look(id) {
+Line 1258: const CONDITIONS = ['missing', 'unbuilt', 'under-construction', 'broke
+Line 1274: const ROAM = {figures: new Map(), seen: new Set(), last: 0, speed: 70,
+Line 1284: const nodeById = (data, id) => data.nodes.find(node => node.id === id)
+Line 1285: const primaryOf = data => data.nodes.find(node => node.t === 'el' && n
+Line 1286: const ticketNode = ticket => ticket.node_kind === 'join' ? 'p:' + tick
+Line 1287: const ballOf = node => Math.cbrt(nodeSize(node)) * 3;
+Line 1288: function sizeOf(data) {  // a figure's size: a share of half the drawn
+Line 1297: function routeOf(data, from, to) {  // the fewest edges of the drawn m
+Line 1313: const liveWork = () => new Set(D.sessions.filter(one => one.state === 
+Line 1315: function figures(tickets) {
+Line 1356: const SYSTEM_TALK = 'Conversation with the system agent';  // the syst
+Line 1357: const BODIES = {chosen: (() => { try { return JSON.parse(localStorage.
+Line 1358: const bodyKey = work => `${S.project}|${work}`;
+Line 1360: function bodyOf(work) {
+Line 1366: const isSystemTalk = ticket => Boolean(ticket?.held && ticket.task ===
+Line 1367: const talking = ticket => D.sessions.some(one => one.work_id === ticke
+Line 1369: function drawnWorking(ticket, live = liveWork()) {
+Line 1379: function talkTarget(ticket, data) {
+Line 1394: function retarget(figure, data) {
+Line 1403: function embody(work, glyph, by = 'person') {
+Line 1428: function bodies() {
+Line 1437: const TEMPERS = [[0.2, 'serious'], [0.45, 'steady'], [0.7, 'playful'],
+Line 1438: function characters() {
+Line 1445: function previewOf(canvas, name) {
+Line 1480: function reglyph(figure) {
+Line 1499: function placed(figure, data, lift) {
+Line 1517: const HEAD = new THREE.Vector3(), NEXT = new THREE.Vector3();
+Line 1519: const CORNERS = {bank: {slow: 0.35, turn: 0.16}, pivot: {slow: 0.9, tu
+Line 1521: function walk(figure, passed, size = ROAM.size) {
+Line 1550: function onOrbit(figure, target) {
+Line 1555: const AHEAD = new THREE.Vector3(), ORBIT = new THREE.Vector3(), WANT =
+Line 1556: const TOWARD = new THREE.Vector3(), SPOT = new THREE.Vector3();
+Line 1557: const easeBoth = k => k * k * (3 - 2 * k);  // from rest to rest
+Line 1571: const STIFF = {dart: 40, roll: 30, walk: 26, hover: 24, flutter: 30, f
+Line 1573: const RESTLESS = ['spinning-calls', 'spinning-time', 'repeated-failure
+Line 1574: const ACTS = {perch: 4.5, peek: 3, poke: 1.6, nudge: 2.2, circle: 0}; 
+Line 1577: const actGap = (motion, clock) => (6 + 20 * (1 - (motion.temper ?? 0.5
+Line 1578: function moodOf(workId) {
+Line 1586: function typeGlyph(workId) {
+Line 1596: function figureReached(workId, to) {
+Line 1601: function springTo(figure, want, passed, stiff) {  // a critically damp
+Line 1608: const SWAYS = new Map();
+Line 1609: function nudgeNode(node, k) {
+Line 1615: function sway3d() {
+Line 1628: const MARKS = [];
+Line 1629: function markTrail(figure, size) {
+Line 1641: function fxMarks(color) {
+Line 1650: const DOCKAT = new THREE.Vector3();
+Line 1651: function dockPoint(near) {
+Line 1661: function onNode(figure, target, size, data) {
+Line 1733: const FLOURISH = 1.4;
+Line 1734: function flourish(figure, size, u) {
+Line 1746: function arrival(figure, at, size, k, leaving) {
+Line 1758: function roam3d(data) {
+Line 1911: const MASCOT = {glyph: null, mesh: null, motion: null, pos: new THREE.
+Line 1914: const ASIDE = new THREE.Vector3(), UPWARD = new THREE.Vector3(), FACEA
+Line 1919: const preferredGlyph = () => { const chosen = WS.view().mascot; return
+Line 1920: function mascotGlyph() {
+Line 1929: const MASCOT_GONE = {glyph: null, since: 0};
+Line 1930: function mascotFigure() {
+Line 1943: const DRIVE_HOLD = 20000, DRIVE_TAKEN = 600000;
+Line 1944: function mascotDriven() {
+Line 1954: function driveMascot(take = null) {
+Line 1960: function releaseMascot() {
+Line 1966: const mischief = () => WS.view().mascot_mischief || 'playful';
+Line 1967: function mascotAwake() {  // it keeps the 3D map drawing only while it
+Line 1970: function steer(body, want, passed, top, accel) {  // toward a place, a
+Line 1981: function besideNode(node, size, out) {  // beside a node on the screen
+Line 1989: function callSpot(data, size) {
+Line 2001: function wanderTo(data, size) {
+Line 2013: function mischiefDue(data, size, m, keeping) {
+Line 2029: const HANDDRAG = {node: null};
+Line 2030: const pushable = node => node && node.id !== S.selected && node !== HA
+Line 2033: function dropHeld() {
+Line 2043: function shove(node, dir, strength, size) {
+Line 2053: function mascotJob(data, size, passed) {
+Line 2108: function ringMascot(size, on) {
+Line 2121: function mascot3d(data, size, passed) {
+Line 2256: const BUBBLE = {el: null, text: '', until: 0, click: null};
+Line 2257: function bubble() {
+Line 2264: function say(text, seconds = 4, onClick = null, who = null, name = '')
+Line 2273: function hush() { BUBBLE.until = 0; BUBBLE.el?.classList.remove('on');
+Line 2274: function placeBubble() {  // over the mascot as it is drawn: the large
+Line 2300: const CUT = {on: false, job: null, saved: null};
+Line 2301: const CROSS = {jelly: 'Hey! I felt that one in every tentacle.', gearl
+Line 2308: function cutMode(on) {
+Line 2316: function restoreCut() {  // everything back where it was, at once
+Line 2330: function supportedFrom(data, start, cut) {  // what still reaches the 
+Line 2340: function cutLink(link) {
+Line 2369: function floorAt(at) {  // the foot of the view, at the depth of a poi
+Line 2377: function cut3d(size, passed) {
+Line 2432: function mascotForCut(size) {
+Line 2466: function startSpring(job) {
+Line 2483: const ATTN = {seen: new Set(), queue: [], last: 0, timer: 0, card: nul
+Line 2484: function attend(key, text, node, open) {
+Line 2490: function pumpAttention() {
+Line 2503: function bringCard(call) {  // a note card, carried from the mascot to
+Line 2529: function noticeAttention() {
+Line 2552: function mascotEvent(payload) {
+Line 2634: function openFor(payload, tell) {  // what the agent opens on the page
+Line 2648: function nodeOfAddress(address) {
+Line 2658: function turnMascot(node, degrees) {
+Line 2668: function seer(work, role) {
+Line 2679: const EYE = {camera: new THREE.PerspectiveCamera(68, 1.5, 0.05, 1e6), 
+Line 2681: function eyeCamera(mesh, aspect = EYE.width / EYE.height) {
+Line 2697: function seeFrom(mesh, camera) {
+Line 2733: const partAddress = id => S.elements.get(id)?.element.address || (Stri
+Line 2736: function lookFrom(mesh, camera) {
+Line 2763: function sight(payload, node, answer) {
+Line 2782: function viewing() {
+Line 2797: function mascotEyes(on = !EYE.view) {
+Line 2807: const EYEQ = new THREE.Quaternion();
+Line 2808: function eyes3d(passed) {  // each frame: the large camera toward the 
+Line 2828: function eyeDebug3d() {  // the eye anchor and the gaze ray of every f
+Line 2840: const ASKING = {open: false, sent: 0, heard: null, base: null, pending
+Line 2841: function mascotScreen() {  // where the 3D mascot is on the page, for 
+Line 2846: function mascotAt(x, y) {
+Line 2852: function replyField() {
+Line 2871: function closeReply() {
+Line 2895: function mascotHeard(target, lines) {
+Line 2913: const FIGURE_PICK = {ray: new THREE.Raycaster(), at: new THREE.Vector2
+Line 2914: function figureAt(x, y) {
+Line 2930: function openFigure(workId) {
+Line 2942: const ROAM2D = {figures: new Map(), seen: new Set(), frame: 0, last: 0
+Line 2947: const home2d = () => [...S.elements.values()].find(item => item.elemen
+Line 2949: function route2d(base, from, to) {  // the fewest edges of the 2D map 
+Line 2962: function spot2d(base, key) {  // where a 2D figure stands: an element'
+Line 2970: function target2d(base, ticket) {  // the ticket's place, and the elem
+Line 2975: function back2d(base, figure) {  // the way home, from the middle of a
+Line 2979: function figures2d(tickets) {
+Line 3006: function again2d() { if ((ROAM2D.figures.size || mascotGlyph() || MASC
+Line 3007: function layer2d(base) {  // the figures are drawn over the boxes, in 
+Line 3020: function curve2d(points, u) {
+Line 3031: function walk2d(figure, points, passed) {
+Line 3059: function home2dFrom(base, figure) {
+Line 3065: function gait2d(figure, moving) {
+Line 3080: function roam2d() {
+Line 3214: const MASCOT2D = {g: null, glyph: null, x: null, y: null, vx: 0, vy: 0
+Line 3215: function mascot2d(base, layer, perPixel, passed) {
+Line 3276: const LIGHTS = [['broken', '--broken'], ['trouble', '--broken']];  // 
+Line 3277: const FLASH = {slow: 1.2, fast: 0.24, step: 0.35};
+Line 3278: function paceOf(node) {
+Line 3287: const INUSE = {off: new Set(), parts: new Map(), preview: new Set()};
+Line 3289: function idsAt(addresses) {
+Line 3293: function paintInUse() {
+Line 3317: const shownNode = node => INUSE.parts.get(typeof node === 'object' ? n
+Line 3318: const lightOf = node => LIGHTS.find(([condition]) => has(node, conditi
+Line 3319: const has = (node, condition) => (node.work || []).includes(condition)
+Line 3320: function colorOf(node) {
+Line 3327: const ownColor = node => colorOf({...node, work: []});
+Line 3329: function dim(color) {
+Line 3334: const dimmed = node => S.selected && node.t === 'el' && node.id !== S.
+Line 3337: function colored(material, color) {
+Line 3351: const GLASS = {transmission: 0.7, thickness: 9, roughness: 0.3, ior: 1
+Line 3355: const DRIFT = {value: 0};  // the one clock the distortion of every no
+Line 3356: const shapes = new Map();
+Line 3357: let SEGMENTS = 16;  // as the graph draws its own nodes; 32 halves the
+Line 3358: const isGlass = node => node.t === 'el';
+Line 3359: const ballShape = radius => shapes.get(radius) || shapes.set(radius, n
+Line 3365: const VIEW_SETTINGS = {shapes: true};
+Line 3366: const TYPE_ROOTS = ['code', 'document', 'media', 'data', 'collection',
+Line 3367: const typeOf = node => {
+Line 3371: function stacked(parts) {
+Line 3383: function typeShape(type, radius) {
+Line 3398: const nodeShape = (node, radius) => (typeOf(node) && typeShape(typeOf(
+Line 3400: function shapes3d() {
+Line 3408: function bead(node) {
+Line 3435: const BEHIND = {back: null, main: null, scale: 0.5};
+Line 3436: function addBehind() {
+Line 3473: const LIGHT = 2.6;  // the light a node gives off when it is lit, chos
+Line 3474: function shine(material, color, lit) {
+Line 3486: const R = {key: null, color: null, home: null, nodes: new Set(), edges
+Line 3487: const endOf = end => end?.id ?? end;
+Line 3488: const inReach = link => R.key && link.k === 'tree' && R.nodes.has(endO
+Line 3494: const TIMES = {every: 3, cross: 1, hold: 0.25, opacity: 0.6, gaussian:
+Line 3495: const timed = name => TIMES[name] * (TIMES.gaussian.includes(name) ? M
+Line 3496: const W = {clock: 0, last: 0, next: 0, dots: [], held: [], pulses: new
+Line 3497: function setReach(key) {
+Line 3519: function glowOf(color) {
+Line 3527: const channels = color => [1, 3, 5].map(at => parseInt(color.slice(at,
+Line 3528: const colorFrom = parts => '#' + parts.map(part => Math.round(Math.min
+Line 3530: function reached(id, from, outward) {
+Line 3537: function send(data, id, from, outward) {
+Line 3557: function pulse3d(node, depth) {
+Line 3575: function wave3d(data) {
+Line 3612: let BLOOM = null;
+Line 3613: const SOFT = 12;  // over how many units nearer than a light its glow 
+Line 3614: const SAMPLES = 4;
+Line 3615: const samplesFor = name => /swiftshader|llvmpipe|software|basic render
+Line 3616: function drawnBy() {
+Line 3620: function addBloom() {
+Line 3713: const GHOST = {opacity: 0.25, solid: 1.2, sign: 0.35, near: 2, close: 
+Line 3714: const unbuilt = node => has(node, 'missing') || has(node, 'unbuilt') |
+Line 3715: const GHOSTS = {now: new Set(), built: new Map()};   // the ids drawn 
+Line 3717: function ghostly(material, opacity) {
+Line 3723: function nodeObject(node, glass = true) {
+Line 3735: const eased = share => share * share * (3 - 2 * share);
+Line 3736: const risenOf = (id, now) => Math.min(1, (now - GHOSTS.built.get(id)) 
+Line 3737: function ghost3d(data, now) {
+Line 3752: function ghostSign(node, grown, now) {
+Line 3762: const SIGNALS = [['broken', '--broken'], ['trouble', '--broken'], ['qu
+Line 3769: function paint3d(node) {
+Line 3795: function linkColor(link) {
+Line 3805: const FIBERS = new Map();
+Line 3806: function fiberOf(link) {
+Line 3819: let G = null;
+Line 3820: const nodeSize = node => node.t === 'el' ? (node.role === 'DE' ? 9 : n
+Line 3826: function grounded() { G.scene().background = new THREE.Color(css('--gr
+Line 3833: function solid() {
+Line 3840: function start3D() {
+Line 3861: const FRAMES = {id: 0, timer: 0, held: false, until: 0, active: 0, las
+Line 3866: const DAMPING = 0.12;
+Line 3867: const DRAG_FRICTION = 0.65;  // the share of its speed a node loses ea
+Line 3868: function wake3d(ms = FRAMES.grace) {
+Line 3878: function frame3d(now) {
+Line 3904: const WAKERS = new Set(['refresh', 'd3ReheatSimulation', 'resumeAnimat
+Line 3905: const READERS = new Set(['graph2ScreenCoords', 'screen2GraphCoords', '
+Line 3906: function wakeful(graph) {
+Line 3924: function create3D() {
+Line 4047: const LINK_ENDS = [new THREE.Vector3(), new THREE.Vector3()];
+Line 4048: function linkAt3d(x, y) {
+Line 4066: const purposeOf = link => endOf(link.k === 'purpose' ? link.target : l
+Line 4074: const REACH = {most: 60, d3: null, d2: null};
+Line 4075: function reachOf(list) {  // list: {x, y, r} in CSS pixels, r the node
+Line 4092: const NODE_AT = new THREE.Vector3();
+Line 4093: function reaches3d() {
+Line 4111: function nodeAt3d(x, y) {
+Line 4122: function clickedAt3d(event) {
+Line 4130: function clickedLink3d(event) {
+Line 4136: let PICKED_FIBER = null;
+Line 4137: function pick3d(link) {
+Line 4156: function clicked3d(node) {
+Line 4162: const PICK = {edge: 2};  // the pixels past a sphere that the picture 
+Line 4163: const PICKED = {center: new THREE.Vector3(), at: new THREE.Vector3(), 
+Line 4164: function picked(raycaster, hits) {
+Line 4176: function tipFor(node) {
+Line 4185: function servedBy(node) {
+Line 4191: let hovered = null;
+Line 4196: const TIP = {out: true};
+Line 4197: function hover3d(node) {
+Line 4215: const READOUT = {timers: {}, now: {}, want: {}, settle: 120, stay: 400
+Line 4216: function readoutBox(which) {
+Line 4224: function readout(which, info) {
+Line 4266: function rehover3d() {
+Line 4277: const READABLE = 11;
+Line 4278: function labelReadable(id, which) {
+Line 4300: function readoutOf(node, which = '3d') {
+Line 4323: function edgeWords(join) {
+Line 4329: function figureWords(workId) {
+Line 4338: const CARD = {timers: {}, now: {}};
+Line 4339: function cardBox(which) {
+Line 4348: function hoverCard(which, card) {
+Line 4373: function placeTip() {}
+Line 4374: const short = (text, most) => text.length > most ? text.slice(0, most 
+Line 4399: const LABEL_PRESETS = {
+Line 4410: const RIGHT = new THREE.Vector3();
+Line 4414: const OUTWARD_SIGNS = {place: 'out', least: 7, most: Infinity, declutt
+Line 4415: const LABEL = {size: 11, chosen: 13, wide: 9, line: 1.15, padX: 6, pad
+Line 4420: const tags = new Map();   // by node id: the label's sprite, its canva
+Line 4421: const LABELS = {group: null, plane: null, on: true, only: null, pen: n
+Line 4422: const OUT = new THREE.Vector3(), UP = new THREE.Vector3(), AT = new TH
+Line 4423: const Y_UP = new THREE.Vector3(0, 1, 0);  // the map's own up, which a
+Line 4424: const fontOf = look => `${look.weight} ${look.size}px ${look.family}`;
+Line 4427: function wrapped(text, look, oneLine = false) {
+Line 4449: function painted(tag, look, ratio, shape) {
+Line 4468: function labelFor(node) {
+Line 4500: function dropLabel(id) {
+Line 4508: function lookOf(classes, palette) {
+Line 4518: function layered() {
+Line 4650: const MET = {box: null, pen: null, corner: new THREE.Vector3()};
+Line 4651: function metSign(tag) {
+Line 4680: function prepare3d() {
+Line 4745: const FLOW = {clock: 0, last: 0, held: null, count: 0, ask: 0.45, repl
+Line 4747: const cycles = new Map();  // each join's current cycle: when it began
+Line 4750: function cycleOf(join, active, driven = false) {
+Line 4767: function replyData() {
+Line 4771: const asksOf = join => join?.ifd === 'receives' || join?.ifd === 'both
+Line 4773: const pulseMean = () => (Number(WS.view().pulse_ms) || FLOW.mean * 100
+Line 4776: function flowShown(join) {
+Line 4786: const FLOW_MODE_LIST = [{name: 'off', label: 'Off', help: 'No dots flo
+Line 4792: const hoveredNow = () => hovered?.id ?? HOVER2D.on ?? null;
+Line 4793: const flowModeNow = () => FLOW.mode || (FLOW_MODE_LIST.some(one => one
+Line 4794: function flowMode(name) {
+Line 4804: function flowNet() {
+Line 4816: function flowAt(join) {
+Line 4830: function recorded(join) {  // a record leaves on the join now, unless 
+Line 4834: function flowTick(now) {  // the clock moves on by the time that passe
+Line 4843: function flowLive(kind, from, to, edit = false) {
+Line 4854: const flowNode = place => place ? (place.kind === 'join' ? 'p:' + plac
+Line 4858: function flowEvent(payload) {
+Line 4867: function flowWritten(ops) {
+Line 4879: const WORKED = {seen: null, of: null};
+Line 4880: function flowTickets(tickets) {
+Line 4897: const FX = {scene: null, points: null, lines: null, n: 0, m: 0, cap: 0
+Line 4898: const WHITE = new THREE.Color(1, 1, 1), LIT = new THREE.Color();
+Line 4899: function tintOf(color) {
+Line 4903: function fxMake() {
+Line 4953: function fxGrow(points) {
+Line 4969: function fxDot(at, size, color, alpha, shape, least, most) {
+Line 4976: function fxLine(a, b, color, glowA, glowB) {  // a segment fading from
+Line 4986: function fxDone() {
+Line 4999: function wayAt(way, share, out = {x: 0, y: 0, z: 0}) {
+Line 5005: const TAIL = Array.from({length: 11}, () => ({x: 0, y: 0, z: 0}));
+Line 5006: function fxRequest(way, t, live) {  // tiny, white, glimmering, with a
+Line 5016: function fxTrain(way, t, back, color, live, count = 8) {
+Line 5033: function fxBurst(node, u, color, live) {  // a ring that opens on a no
+Line 5040: function fxRecord(way, since, color, live) {  // a card on its way, th
+Line 5050: function live3d(data, colors) {
+Line 5074: const phases = new Map();
+Line 5075: function phaseOf(join) {
+Line 5083: function flow3d(now, data) {
+Line 5143: function draw3D(previous = null) {
+Line 5171: function arrivals(data) {
+Line 5196: const PLACE = new Set(['x', 'y', 'z', 'vx', 'vy', 'vz', 'fx', 'fy', 'f
+Line 5197: const end = value => value && typeof value === 'object' ? value.id : v
+Line 5198: const linkKey = link => `${end(link.source)}>${end(link.target)}>${lin
+Line 5199: function inPlace(data) {
+Line 5221: const PLAIN = {last: 'black'};
+Line 5222: function setTheme(name, keep = true) {
+Line 5246: const FITS2D = [['all', 'Fit all'], ['width', 'Fit width'], ['height',
+Line 5247: const ZOOMS2D = [['neighbors', 'Zoom: neighbors'], ['distance', 'Zoom:
+Line 5250: const DIRECTION_KEYS = {7: 'auto', 8: 'across', 9: 'down'};
+Line 5261: const MODE = {fit: 'all', zoom: 'neighbors', distance: 0, chosen: fals
+Line 5263: const MARGIN = 40;  // the most screen pixels shown beyond the map's e
+Line 5289: const V3 = {whole: 0, fits: 0, layouts: 0, ticks: 0, auto: true, follo
+Line 5291: const away3d = () => G.camera().position.distanceTo(G.controls().targe
+Line 5300: const FLIGHT = {on: false, from: null, to: null, rate: null, start: 0,
+Line 5301: const PARTS = ['x', 'y', 'z', 'turn', 'tilt', 'far'];
+Line 5302: function cameraNow() {
+Line 5308: function putCamera(at) {
+Line 5317: function hermite(from, to, rate, length, s) {
+Line 5322: function flightAt(now) {
+Line 5330: function flyTo(to, {length = null, done = null} = {}) {
+Line 5351: function flight(now) {
+Line 5364: const LOOK = {back: new THREE.Vector3(), right: new THREE.Vector3(), u
+Line 5365: function framed(balls, {room = 60, on = null, toward = 0, facing = nul
+Line 5429: function foot3d() {
+Line 5441: const ball = node => ({x: node.x, y: node.y, z: node.z, r: ballOf(node
+Line 5442: const drawnBalls = data => data.nodes.filter(node => node.x !== undefi
+Line 5446: const FIT = {large: 0.1, small: 0.12};
+Line 5447: const fitTrim = () => $('.app').classList.contains('swapped') ? FIT.sm
+Line 5448: const fitBalls = data => drawnBalls(data);
+Line 5449: function fit3d(time = 700, room = 60) {
+Line 5467: const TILT = 0.85;  // the most the camera rises above or falls below 
+Line 5468: function facingOf(node, balls) {
+Line 5479: const NAME = {in: 0.8, level: 2, tall: 0.8, floor: 12};  // the small 
+Line 5480: const small3d = () => $('.app').classList.contains('swapped');
+Line 5488: const SMALL_NAME = {id: null};
+Line 5489: function nameFar(node, share) {
+Line 5511: function fly3d(id, close = true) {
+Line 5565: const MEET = {on: false, back: null, own: null, from: 0, to: 0, start:
+Line 5566: function easeNear(to, length = 0.35) {
+Line 5579: function meetBegins(reach, clear = reach) {
+Line 5590: function meetEnds() {
+Line 5600: function frameWhileSpreading(now, data) {
+Line 5609: function settled3d() {
+Line 5623: const MODES3D = {box: null, buttons: new Map(), said: ''};
+Line 5624: const MODES3D_LIST = [['whole', 'Whole', '1', 'The whole map in view, 
+Line 5641: const EASE = {arrive: [0.16, 1, 0.3, 1], leave: [0.5, 0, 0.75, 0], mov
+Line 5642: const durFor = pixels => Math.round(Math.min(EASE.long, EASE.short + M
+Line 5644: function easeCurve([x1, y1, x2, y2]) {
+Line 5659: const VIEW = {agents: 'auto', physics: 'organic', read: null, reading:
+Line 5660: const INFOSET = {buttons: new Map()};  // the bar's Info choice, web_h
+Line 5662: const FLOWSET = {name: null, buttons: new Map()};
+Line 5663: const NODEZOOM = {button: null};
+Line 5664: const LENS = {name: 'natural', button: null, frame: 0};
+Line 5665: const LENS_NEXT = {natural: 'wide', wide: 'fisheye', fisheye: 'natural
+Line 5668: const SIGNS = {button: null, words: {outward: 'Outward', facing: 'Faci
+Line 5669: const FOV3D = {least: 30, most: 55};  // the 3D map's field of view in
+Line 5670: const LENSES = {natural: 55, wide: 80, fisheye: 120};  // web_lens: th
+Line 5671: const LENS_WORDS = {natural: 'Natural', wide: 'Wide', fisheye: 'Fishey
+Line 5672: function readView() {
+Line 5718: const SAVING = new Map();
+Line 5719: function saveView(key, value) {
+Line 5732: const PEEK = {two: null, three: null, physics: null, direction: null};
+Line 5733: const FIT3D = $('#fit3dBtn');
+Line 5752: function peekParts() {
+Line 5761: function peek() { peekParts(); }
+Line 5767: const AGENTS_WINDOW = {timer: 0, working: 0};
+Line 5768: function agentsWindow(count = AGENTS_WINDOW.working) {
+Line 5779: function slideIn(box) {
+Line 5786: function slideOut(box) {
+Line 5791: function chooseAgents(choice) {
+Line 5802: const FLOW_MODES = [['off', 'Off', 'No dots flow'], ['hover', 'Hover',
+Line 5805: function flowModes() {
+Line 5810: function flowNow() {
+Line 5814: function chooseFlow(name) {
+Line 5833: const HOVER_INFO = [['name+summary', 'Both', 'The name where it cannot
+Line 5836: function chooseInfo(name) {
+Line 5843: function showInfo() {
+Line 5852: function barPick({id, label, key, title, list, choose}) {
+Line 5894: function stepInfo() {
+Line 5907: const FLOW_STEPS = [['hover', true], ['selected', true], ['all', true]
+Line 5908: function stepFlow() {
+Line 5920: function showEdges(on) {
+Line 5933: function showFlow(name = flowNow()) {
+Line 5943: const PHYSICS = [
+Line 5947: const PHYS = {name: 'organic', decay: 0.4, buttons: new Map()};
+Line 5949: const signsFacing = () => VIEW.signs === 'facing' || Boolean(PHYSICS.f
+Line 5950: const baseCharge = node => node.t === 'el' ? -140 : node.t === 'item' 
+Line 5951: const baseDistance = link => link.k === 'layer' ? 8 : link.k === 'item
+Line 5954: function serviceSteps(data) {
+Line 5973: function partsGravity(strength) {
+Line 5999: function applyPhysics(name, warm = true) {
+Line 6021: const flatNow = () => Boolean(PHYSICS.find(([name]) => name === PHYS.n
+Line 6022: const flatFacing = () => ({turn: Math.cos(cameraNow().turn) >= 0 ? 0 :
+Line 6023: function faceFlat() {
+Line 6028: function choosePhysics(name) {
+Line 6075: function showUltra() { PEEK.ultra.show(ULTRA.stats().mode === 'ultra' 
+Line 6077: function chooseSigns(name) {
+Line 6084: function showSigns() {
+Line 6089: function showPhysics() {
+Line 6099: function setMode3d(mode, level = null) {
+Line 6113: function follow3d(id) {
+Line 6121: function toggleNodeZoom(on = VIEW.nodeZoom === false) {
+Line 6129: function showNodeZoom() {
+Line 6135: function showModes3d() {
+Line 6154: function chooseLens(name, keep = true) {
+Line 6175: function showLens() {
+Line 6179: function lens3d(name) {  // the lens chosen, its widest field of view,
+Line 6186: function resize() {
+Line 6214: function renderLegend() {
+Line 6235: const M = {svg: null, nodes: new Map(), edges: [], cam: null, to: null
+Line 6236: const MAP2D = 5000;  // the most elements Mermaid lays out; above it t
+Line 6242: const EDGES2D = MAP2D * 10;
+Line 6243: const ELK2D = {layout: 'elk', elk: {nodePlacementStrategy: 'NETWORK_SI
+Line 6263: const FIT2D = {config: null, step: Math.log(1.25), stay: 0.75, keep: 1
+Line 6268: function plain2d(text, most = 30) {
+Line 6274: let mermaidReady = false;
+Line 6278: const SHAPES2D = {code: 'rect', document: 'doc', media: 'curv-trap', d
+Line 6361: function shape2d(keys, drawn) {
+Line 6393: const BOX2D = {w: 152, h: 45, across: 40, between: 50, clearly: 0.15};
+Line 6394: function vertical2d(shape, was = null) {
+Line 6404: function fitStep2d(area, was = null) {
+Line 6416: function fitOptions2d({wrap, aim}) {
+Line 6430: function fitScale2d({w, h}, area) {
+Line 6435: const fitWay2d = ({vertical, wrap}) => `${vertical ? 'TB' : 'LR'}${wra
+Line 6438: const fitPin2d = () => ({LR: 'across', TB: 'down'})[PEEK.direction] ||
+Line 6439: const fitNear2d = (a, b) => Boolean(a && b) && [a.layers / b.layers, a
+Line 6440: function fitHash2d(text) {  // the map's text in a few characters, to 
+Line 6497: const RELAYOUT2D = {timer: 0};
+Line 6507: function fitDirection2d(direction) {
+Line 6523: function drawnAt(base) {
+Line 6536: const SETTLE = {frame: 0};
+Line 6537: function settle2D(before, nodes, svg) {
+Line 6574: function mountSvg(result, host, hidden) {
+Line 6584: function placeIn(nodes, id, group, title, work, tip = title) {
+Line 6598: function boundsOf(svg) {
+Line 6602: const entryOf = () => [...S.elements.values()].find(item => item.eleme
+Line 6603: function showBase(left = null) {
+Line 6625: const IN = [];  // the levels entered from the base map: {key, label, 
+Line 6626: const GROUP = 20;
+Line 6627: const PURPOSE2D = 64;  // a join's purpose in its box inside a node, V
+Line 6628: let insideGen = 0;
+Line 6629: const kindOf = key => key.startsWith('p:') ? 'join' : 'element';
+Line 6630: const bareId = key => key.replace(/^p:/, '');
+Line 6631: const keyOf = node => !node ? null : node.kind === 'join' ? 'p:' + nod
+Line 6632: const label2d = (text, most = 30) => plain2d(String(text ?? '').replac
+Line 6633: const samePath = (a, b) => a.length === b.length && a.every((level, in
+Line 6637: const labelOf = element => element.name || element.short_name || eleme
+Line 6638: const joinLabel = join => join?.purpose || '';
+Line 6640: function joinTitle(node) {
+Line 6644: function nameOf(key, fallback = key) {
+Line 6768: function renderCrumbs() {
+Line 6816: function renderThing(thing) {
+Line 6838: const emptyMemory = () => ({entities: new Map(), relations: [], joins:
+Line 6839: const memoryLayer = () => S.layers.find(layer => layer.kind === 'memor
+Line 6840: const memoryKey = name => 'e:' + name;
+Line 6841: const memoryName = key => key.slice(2);
+Line 6844: function nodeAt(join) {
+Line 6867: const memoriesAt = key => S.memory.at.get(key) || [];
+Line 6868: function memoryThing(key) {
+Line 6874: function networkOf(key) {
+Line 6885: function entityNode(key) {
+Line 6894: function memoryData() {
+Line 6903: function into3d(key) {
+Line 6914: function into2d(key) {
+Line 6920: const shown3d = to => fade($('#stage'), to);  // the labels are drawn 
+Line 6972: function dropMemories() {
+Line 7018: function renderMemories(id) {
+Line 7043: function keepDrafts(pane, draw) {
+Line 7050: const EDITING = new Set();  // the editors open in the memory panel, k
+Line 7051: function joinPlace(join) {
+Line 7054: function renderEntity(name, pane = $('#p-object')) {
+Line 7158: const plural = (count, one, many = one + 's') => `${count} ${count ===
+Line 7159: function remade(name) {
+Line 7207: const O = {open: false};
+Line 7227: function renderOrphans() {
+Line 7236: const PROMPT_WORDS = {'approve-all': ['Approve every prompt', 'Agents 
+Line 7255: function showAgentMenu(open) { $('#agentbox').hidden = !open; }
+Line 7309: const CONFIG = {data: null, filter: '', errors: new Map()};
+Line 7310: const SHOWN_MODULES = 'modules';  // the chassis setting shown with th
+Line 7334: function refusalBox(body) {
+Line 7339: function shownValue(key, value) {
+Line 7344: function renderSettings() {
+Line 7379: function arrowSwitch(event, input) {
+Line 7387: function arrowSelect(event, select) {
+Line 7395: function moduleRow(module) {
+Line 7432: function settingRow(row, label = row.label) {
+Line 7461: function settingControl(row, id, label) {
+Line 7492: function checklist(row, choices, id, label) {
+Line 7555: function afterSetting(key) {
+Line 7571: function aspect() { const box = $('#viewport').getBoundingClientRect()
+Line 7572: function frame(box) {
+Line 7580: function fade(svg, to, ms = 480) {
+Line 7590: function arrive(svg) {
+Line 7595: const into = node => ({x: node.x - node.w * 0.6, y: node.y - node.h * 
+Line 7597: function setCam(cam) {
+Line 7610: const near = (a, b) => Boolean(a && b) && ['x', 'y', 'w', 'h'].every(k
+Line 7611: function stopCam() { cancelAnimationFrame(M.frame); M.to = null; }
+Line 7619: const MOVE = {from: null, to: null, rate: null, start: null, length: 0
+Line 7620: const CAM_PARTS = ['x', 'y', 'w', 'h'];
+Line 7621: const camParts = cam => ({x: cam.x + cam.w / 2, y: cam.y + cam.h / 2, 
+Line 7622: function camAt(now) {  // the camera of the move under way at `now`, h
+Line 7632: function moveCam(target, {length = 0.7, dive = false} = {}) {
+Line 7654: const at2d = id => !id ? null : M.nodes.get(id) || (id.startsWith('p:'
+Line 7655: const area2d = () => $('#viewport').getBoundingClientRect();
+Line 7656: const mid2d = box => ({x: box.x + box.w / 2, y: box.y + box.h / 2});
+Line 7657: const MAC = /Mac|iPhone|iPad/.test(navigator.userAgentData?.platform |
+Line 7658: function smallestText(svg) {  // the smallest font size of the diagram
+Line 7665: function labelSize(svg) {  // read once for each drawing, while it is 
+Line 7672: function pageText() {
+Line 7691: function scaleFor(fit, area = area2d()) {
+Line 7700: function scale2d(area = area2d()) {
+Line 7718: const distance2d = () => MODE.distance || 2 * pageText().small;
+Line 7719: function neighbors2d(id) {
+Line 7731: const FOOT2D = {card: 0, gap: 8};
+Line 7732: function foot2d() {
+Line 7746: function restingCard(root) {
+Line 7761: function focus2d(view, area = area2d()) {
+Line 7765: function place2d(scale, center, area = area2d()) {
+Line 7776: function aim2d(center = null, now = false) {
+Line 7784: function center2d(id) {
+Line 7791: function setFit(fit) {
+Line 7799: function setZoom(zoom) {
+Line 7806: const stepped = (list, now) => list[(list.findIndex(([name]) => name =
+Line 7807: function stepFit() {
+Line 7813: function stepZoom() {
+Line 7821: function setDistance() {
+Line 7836: function armSetting() {
+Line 7840: function endSetting() {
+Line 7845: function cancelSetting() {
+Line 7854: function resetZoom() {
+Line 7865: function note2d(text, held = false) {
+Line 7874: function showModes() {
+Line 7884: function hover2d() {
+Line 7893: function hits2d(edges) {
+Line 7909: const EDGE_PICK = {most: 24, edge2d: null, node2d: null, link3d: null,
+Line 7910: const segmentAway = (x, y, x1, y1, x2, y2) => {
+Line 7916: function edgePoints(edge) {
+Line 7925: function edgeAt2d(x, y) {
+Line 7947: function reaches2d() {
+Line 7963: function nodeAt2d(x, y) {
+Line 7975: function pickNode2d(key) {
+Line 7984: function pickEdge2d(edge) {
+Line 7994: const HOVER2D = {on: null};
+Line 8014: function unmark2D() {
+Line 8022: const flowOf = join => join?.ifd === 'receives' ? ['back'] : join?.ifd
+Line 8026: const flowArrow = join => join?.ifd === 'both' ? '↔' : join?.ifd === '
+Line 8030: const ends2d = (join, provider) => join?.ifd === 'receives' ? [provide
+Line 8032: function pointed(edge) {
+Line 8042: const FLOW2D = {id: 0, edges: []};
+Line 8044: const color2d = id => { const node = G?.graphData().nodes.find(one => 
+Line 8045: function flows2d() {
+Line 8075: function wake2d() {
+Line 8081: function sampled(one) {
+Line 8088: function pointOn(one, distance) {
+Line 8094: function frame2d(now) {
+Line 8142: function focus2D(id) {
+Line 8166: function clicked2d(id, event) {
+Line 8170: function modified2d(event) {
+Line 8178: function deselect() {
+Line 8187: function noneSelected() {
+Line 8299: function showSteps() {
+Line 8307: function across(keys) {  // in their order across the 2D map
+Line 8314: function below(key) {
+Line 8327: function besideDrawn(key, by) {
+Line 8336: function besideOnLevel(key, parent, by) {
+Line 8350: function childrenOf(key) {
+Line 8355: function parentOf(key) {
+Line 8359: function roots() {  // the nodes nothing receives from, CQUs first; th
+Line 8372: function goInside(key) { if (!MEM.key) enter(key); }  // a memory netw
+Line 8375: function levelUp() {
+Line 8383: const ARROWS_OWN = 'select,[role=tab],[role=tablist],[role=menuitem],[
+Line 8384: const PRESSABLE = 'button,a[href],summary,[role=button],[role=tab],[ro
+Line 8385: function mapKeys(event) {
+Line 8399: function largeKey(key) {
+Line 8413: const KEYS = [
+Line 8442: const KEY_RUN = new Map(KEYS.filter(entry => entry.run).flatMap(entry 
+Line 8446: const HELP_TABS = [['Shortcuts', ['Anywhere', 'Maps', 'Chat', 'Tools']
+Line 8448: const HELP = {tab: 'Shortcuts'};
+Line 8449: function openHelp() {
+Line 8523: function select(id, fly, keepTrail = false, stepping = false, again = 
+Line 8535: function selectNow(id, fly, keepTrail, stepping, again) {
+Line 8576: function refsOf(refs) {
+Line 8581: function workPill(condition) { return h('span', {class: `pill work-${c
+Line 8585: const FORM_PARTS = [['#1 Specifications reviewed:', 'Investigate why t
+Line 8588: function formParts(text) {
+Line 8598: function asked(record, metaform = S.base, full = false) {
+Line 8645: const MERGE = {rows: [], chat: null, since: 0};
+Line 8681: const DOCK = {target: null, session: null, label: '', since: 0, notes:
+Line 8686: const SEEN = {at: new Map(), sessions: new Set()};
+Line 8687: const clockOf = (when, day = false) => {
+Line 8693: const STANDBY = 'Please stand by while we contact an agent for you.';
+Line 8694: const DOCKMOTION = {anim: null, dir: null};  // the chat going into it
+Line 8695: const dockGoingAway = () => Boolean(DOCKMOTION.anim) && (DOCKMOTION.di
+Line 8702: const EMBODY = {offered: new Set(), given: new Set(), since: new Map()
+Line 8704: const embodyHooks = () => ['embody', 'characters', 'bodies'].every(nam
+Line 8705: const hooked = (name, ...given) => { try { return window.metaform[name
+Line 8708: const embodiable = chat => Boolean(chat && ['system', 'conversation'].
+Line 8709: const bodyFor = work => (hooked('bodies') || []).find(one => one.work 
+Line 8710: function characterList(work) {
+Line 8718: function stopPreviews() { for (const stop of EMBODY.stops.splice(0)) {
+Line 8720: function embodyAs(work, glyph, quiet = false) {
+Line 8736: function embodyOffer(work, session, lines, busy) {
+Line 8758: function askEmbody() {
+Line 8770: function embodyRows(work) {
+Line 8794: function paintAvatar(work) {
+Line 8815: function drawEmbody() { if ($('#helpdesk') && !$('#helpdesk').hidden) 
+Line 8818: const SOURCES = {agent: 'Agent at work', intake: 'Intake', system: 'Yo
+Line 8820: const sourceOf = workId => isIntake(workId) ? 'intake' : workId === DO
+Line 8822: const sourceChip = source => h('span', {class: 'src', 'data-source': s
+Line 8823: function dockState(state) {
+Line 8846: function dockNote(text) { DOCK.notes.push({at: Date.now(), text}); dra
+Line 8851: function openHelpdesk(workId, label = 'an agent', waiting = 'Waiting f
+Line 8866: function showChat(chat, {focus = false} = {}) {
+Line 8879: function focusThread(chat) {
+Line 8889: function drawProposals() {
+Line 8916: function drawTabs() {
+Line 8926: function drawThreadBar(session) {
+Line 8992: function drawSubagents() {
+Line 9009: const SPEND = {work: null, at: 0, data: null};
+Line 9033: function sessionStatus(session, signals = D.signals || []) {
+Line 9054: function ticketStatus(ticket) {
+Line 9064: const statusChip = status => status ? h('span', {class: `statechip ${s
+Line 9081: function chatActivity(session) {
+Line 9223: function followLog(force = false) {
+Line 9233: function markUnread() { DOCK.unread = true; drawDockTab(); }
+Line 9239: const CHAT_AWAY = {timer: 0, for: null, had: false, wait: 15000};
+Line 9240: function chatAway(session, changed = false) {
+Line 9251: function awayNow() {
+Line 9267: function launcherRect() {
+Line 9274: function towardsTab(panel, tab) {
+Line 9280: const dockCurve = name => `cubic-bezier(${EASE[name].join(',')})`;
+Line 9281: function moveDock(dir, tab) {
+Line 9309: function reverseDock() {
+Line 9315: function growFrom(tab) { moveDock('back', tab); }
+Line 9316: function putChatAway() {
+Line 9326: const ASKED = {drawn: new Map(), session: null};
+Line 9343: const DOCK_COMMANDS = [{name: 'help', description: 'What the chat\'s c
+Line 9348: const dockOffered = () => {
+Line 9448: function reaching(started) {
+Line 9451: const beingReached = chat => Boolean(chat?.starting) && Date.now() - c
+Line 9455: function ensureAgent() {
+Line 9464: function queuedRows() {
+Line 9470: let QUEUE_ID = 0;
+Line 9489: function startFailed(reason, next = null) {
+Line 9496: const chatButton = (given, label) => h('button', {class: 'chat', title
+Line 9499: function nodeTalk(id) {
+Line 9551: function stayedOff(stopped) {
+Line 9610: function openSessionPop() {
+Line 9617: const DOCKMENU = overlay($('#dockMenu'), {kind: 'menu'});
+Line 9618: function drawDockMenu() {
+Line 9639: function growSay() {
+Line 9669: const DOCK_PLACE = 'metaform.dock', DOCK_BOX = 'metaform.dockBox';
+Line 9670: const DOCK_MIN = {width: 340, height: 360}, DOCK_EDGE = 12, DOCK_SNAP 
+Line 9671: const narrowPage = () => matchMedia('(max-width: 820px)').matches;
+Line 9672: const keptBox = () => { try { return JSON.parse(localStorage.getItem(D
+Line 9674: function fitBox({left, top, width, height}) {
+Line 9681: function setBox(given, keep = true) {
+Line 9688: function placeDock(place, keep = true) {
+Line 9705: function dockLayout() {
+Line 9714: function settleFrom(before) {
+Line 9723: const dockMovable = () => !narrowPage() && !chatDocked() && $('#dock')
+Line 9764: function resetDock() {
+Line 9823: const Q = {open: []};
+Line 9824: const nodeOf = record => record.node_kind === 'element' ? record.node_
+Line 9825: const targetOf = id => id.startsWith('p:') ? `join:${id.slice(2)}` : `
+Line 9826: const calledOf = id => (G ? G.graphData().nodes.find(node => node.id =
+Line 9889: const B = {tickets: [], off: new Set()};
+Line 9890: const KINDS = ['broken', 'flawed', 'enhancement'];  // a ticket's kind
+Line 9891: const BOARD = [['backlog', 'Backlog'], ['todo', 'To do'], ['doing', 'D
+Line 9894: const CONDITION_WORDS = {missing: 'missing', trouble: 'trouble', unbui
+Line 9897: const KIND_WORDS = {broken: 'broken', flawed: 'flawed', enhancement: '
+Line 9898: function conditionLabel(ticket, extra = '') {
+Line 9905: const dated = text => { const d = new Date(text || ''); return isNaN(d
+Line 9906: const ago = text => {
+Line 9911: const partAt = address => [...S.elements.values()].map(entry => entry.
+Line 9912: function nodeChip(target, role) {
+Line 9926: const REF = /\b(?:[A-Z]{2,6}-\d{3}|D\d{2,4}|(?<!intake-)[0-9a-f]{8,32}
+Line 9927: function linked(text) {
+Line 9938: const LOOKED = new Map();  // project and reference → what it stands f
+Line 9939: const looked = ref => {
+Line 9955: const POP = h('div', {id: 'refPop', role: 'dialog', 'aria-label': 'Wha
+Line 10001: function taskWords(text) {  // a node named inline, [[name|address]], 
+Line 10013: const FRONTEND_WORDS = new Set(['gui', 'web', 'page', 'viewer', 'view'
+Line 10014: const defaultAgent = address => (address || '').split('.').some(word =
+Line 10015: const eligibleAgents = ticket => Array.isArray(ticket?.map?.eligible) 
+Line 10016: const allowsAgent = (ticket, agent) => !eligibleAgents(ticket).length 
+Line 10017: function eligibilityPicker(agents, save) {
+Line 10041: const FIVE_AGENTS = ['jelly', 'gearling', 'kite', 'moth', 'drone'];  /
+Line 10042: function ticketControls(ticket) {
+Line 10073: function card(ticket, place, total) {
+Line 10126: function shownOnBoard(box) {
+Line 10130: function drawBoard() {
+Line 10205: const COLUMN_NAMES = {backlog: 'backlog', todo: 'to do', doing: 'doing
+Line 10206: const columnOf = ticket => ticket.done ? 'done' : ticket.taken ? 'doin
+Line 10207: const when = text => (text || '').replace('T', ' ').replace('Z', '');
+Line 10245: const F = {id: null, which: null, ids: new Set(), drawn: new Map(), ba
+Line 10267: function noted(record) {
+Line 10285: function movable(box, {handle = '.bar', start = null, end = null} = {}
+Line 10316: const D = {sessions: [], starting: false};
+Line 10318: const WAITS_ON_PERSON = ['permission-waiting', 'question-waiting'];
+Line 10319: const AUTO = {value: false, agents: null};
+Line 10345: const waiting = ticket => !ticket.done && !ticket.taken && (ticket.tas
+Line 10348: const ticketOf = workId => (S.tickets || []).find(ticket => ticket.id 
+Line 10349: function ticketPart(ticket) {
+Line 10354: const ownGlyph = ticket => ticket?.map?.glyph;
+Line 10358: const glyphFor = workId => drawGlyph(workId, ownGlyph(ticketOf(workId)
+Line 10359: const glyphOf = workId => `/page/agent-glyphs/${glyphFor(workId)}.svg`
+Line 10367: function startWindow(title, tickets, all = false) {
+Line 10432: const START = {draw: null};  // the start window's tickets, drawn agai
+Line 10488: function agentAt(workId, sessionId = null) {
+Line 10501: const K = {nodes: [], chosen: null, at: null, generation: 0, project: 
+Line 10502: const partOf = address => [...S.elements.values()].map(entry => entry.
+Line 10503: const named = element => labelOf(element);
+Line 10504: function chip(element, remove = null) {
+Line 10508: function linkedNodes() {
+Line 10541: function giveWork(id, text = '') {
+Line 10568: function choose(address) {
+Line 10578: const C = {generation: 0, cam: null, whole: null};
+Line 10579: function camera(cam) {
+Line 10648: function keepCursor() {
+Line 10684: const taskText = () => [...$('#task .text').childNodes].map(function t
+Line 10729: const discard = (what, kept) => confirmAct({title: `Discard ${what}?`,
+Line 10737: const N = {node: null};
+Line 10738: const NOTE_LIMIT = 2048;
+Line 10740: function noteBy(note) {
+Line 10744: function noteCount() { $('#notes .count').textContent = `${$('#notes t
+Line 10768: const E = {node: null, from: ''};
+Line 10769: function addElement(id) {
+Line 10874: function layerPill(name) { return h('span', {class: 'pill layer', styl
+Line 10875: function elementLink(id, address) {
+Line 10880: function joinCard(join, side) {
+Line 10892: const filled = value => value !== null && value !== undefined && value
+Line 10893: const fieldText = value => value && typeof value === 'object' ? JSON.s
+Line 10894: function itemText(value) {
+Line 10901: function itemView(value) {
+Line 10907: function renderJoin(join) {
+Line 10997: const BR = {address: null, generation: 0, data: null, kind: 'all', ope
+Line 10999: const BRIEF_SEEN = 'metaform.seen';  // the latest item shown at each 
+Line 11000: function seenAt(project) {
+Line 11003: function keepSeen() {  // the latest number shown at the address the b
+Line 11013: const ITEM_KINDS = {all: ['All', ''], memory: ['Memories', 'memory'], 
+Line 11015: const kindAsked = () => ITEM_KINDS[BR.kind][1] ? {kind: ITEM_KINDS[BR.
+Line 11016: const hex = number => `#${Number(number).toString(16)}`;
+Line 11017: const counted = (count, unit = 'bytes') => `${Number(count).toLocaleSt
+Line 11018: const ITEM_REF = /([^\s#]+)#([0-9a-fA-F]{1,15})\b/;
+Line 11019: function briefAddress(id = S.selected) {
+Line 11024: const elementAt = address => [...S.elements.values()].find(entry => en
+Line 11026: function briefCopy(label, text, words = 'Copy') {
+Line 11034: function budgetMeter(label, used, budget, unit = 'bytes') {
+Line 11046: function addressLink(address, label = address) {
+Line 11052: function briefTo(id, open = null) {
+Line 11058: function linkedAddresses(text) {
+Line 11063: function aroundTree(brief) {
+Line 11100: function drawBrief() {
+Line 11128: function itemsSection() {
+Line 11148: function newHere(latest, last) {
+Line 11157: function drawItems(list = $('#p-brief ul.items')) {
+Line 11209: function itemDetail(ref) {
+Line 11228: function walkTo(ref, back = false) {
+Line 11236: function walkBack() {
+Line 11248: const AV = {generation: 0, tab: 'connect', data: null};
+Line 11249: const AV_TABS = [['connect', 'Connect'], ['glossary', 'Glossary'], ['t
+Line 11269: function drawAgentView() {
+Line 11309: function entryRow(name, bytes, said, entry, marks = []) {
+Line 11315: function agentPart(key) {
+Line 11359: let provLayer = null;
+Line 11395: const P = {editor: null, name: null, number: null, versions: [], asked
+Line 11438: function lineDiff(a, b) {
+Line 11454: function showDiff() {
+Line 11476: const TABS = {object: '#p-object', brief: '#p-brief', prov: '#p-prov',
+Line 11477: const tabNow = () => WS.on ? (WS.isShown('map.brief') ? 'brief' : 'obj
+Line 11479: function showTab(tab) {
+Line 11508: const TAB_PAGES = {object: 'object', brief: 'brief', provenance: 'prov
+Line 11520: function classicTabs(panes, tabs, off) {
+Line 11538: function promptFull(on) {
+Line 11556: const SEARCH = {generation: 0, results: [], active: -1, timer: null, i
+Line 11557: const wordsOf = text => String(text || '').toLowerCase().split(/[^\p{L
+Line 11558: function matchScore(query, fields) {
+Line 11575: function searchParts(query) {
+Line 11589: function marked(text, query) {
+Line 11594: function drawSearch(query) {
+Line 11611: function paintSearch() {
+Line 11622: function searchItems(query) {
+Line 11642: function chooseFound(index) {
+Line 11649: function openSearch() {
+Line 11684: const HARNESS = {project: null, enabled: null, default: null, room: nu
+Line 11686: const SUMMON = {agent: null, chosen: false};  // the agent new chats, 
+Line 11708: function forgetHarnesses() {
+Line 11714: const harness = agent => HARNESS.agents.find(one => one.agent === agen
+Line 11715: const agentName = agent => harness(agent)?.label || agent || 'An agent
+Line 11719: function usableAgent(chosen) {
+Line 11723: function paintPickers() {
+Line 11747: function agentPicker({label = 'Agent', holder = null, onchange = null,
+Line 11797: function agentSelect(value, onchange, label = 'Preferred agent') {
+Line 11803: const summonAgent = () => HARNESS.enabled === false ? null : SUMMON.ch
+Line 11805: const PICKERS = {};
+Line 11806: function summonPicker(name, options = {}) {
+Line 11811: function drawDockTab() {
+Line 11827: const clip = (text, most) => { const said = String(text ?? ''); return
+Line 11828: const isIntake = workId => String(workId || '').startsWith('intake-');
+Line 11830: const workPart = workId => isIntake(workId) ? 'the intake' : ticketPar
+Line 11833: const SKIPS = /bypass|yolo|full[-_ ]?access|danger|skip[-_ ]?perm|no[-
+Line 11834: const skipsPrompts = option => Boolean(option) && SKIPS.test(`${option
+Line 11835: const OPENED = new Set();  // the tool calls opened to their detail, b
+Line 11836: const TOOL_ICON = {read: 'i-file', edit: 'i-pen', delete: 'i-trash', m
+Line 11838: const STATUS_WORDS = {pending: 'pending', in_progress: 'running', comp
+Line 11839: const statusOf = line => line.data?.status || /\(([\w ]+)\)\s*$/.exec(
+Line 11840: const titleOf = line => line.data?.title || String(line.text || '').re
+Line 11841: const countOf = number => number >= 1e6 ? `${(number / 1e6).toFixed(1)
+Line 11844: function unifiedDiff(patch) {
+Line 11866: function nodeChips(nodes = []) {
+Line 11876: function fileDetail(diff) {
+Line 11886: function toolDetail(data) {
+Line 11895: function toolRow(line, tag, key) {
+Line 11922: function permissionCard(line, work, tag, agent) {
+Line 11956: function elicitationCard(line, work, tag, agent) {
+Line 12025: function noticeRow(line) {
+Line 12032: function signalWords(text) {
+Line 12049: const APPS = {project: null, at: 0, tools: {}, views: [], reading: nul
+Line 12050: const APPFRAMES = new Map();  // key -> {key, app, scope, frame, holde
+Line 12051: const APP_PROTOCOL = '2026-01-26';
+Line 12052: function readApps(force = false) {
+Line 12064: function appOf(line) {
+Line 12071: const appName = uri => APPS.views.find(one => one.uri === uri)?.name |
+Line 12072: function appRow(key, app, scope) {
+Line 12086: const appAway = key => h('p', {class: 'appaway'}, 'Shown in a panel of
+Line 12088: function mountApp(key, holder, app, scope, mode) {
+Line 12100: function appPost(entry, message) { entry.frame?.contentWindow?.postMes
+Line 12102: function appFed(key, call) {
+Line 12108: function feedApp(entry) {
+Line 12117: function appContext(entry) {
+Line 12170: function teardownApp(entry) { if (entry.frame) appPost(entry, {id: `te
+Line 12172: function popApp(key, mode = 'pip') {
+Line 12193: function closeApp(key) {
+Line 12201: function bringBack(key) {
+Line 12213: function showGallery() {
+Line 12218: function galleryRows() {
+Line 12232: function threadRows(lines, {work, agent}) {
+Line 12282: function messageRow(text, {mine, who, first, at, pending = null}) {
+Line 12292: function copyButton(text, label = 'Copy') {
+Line 12311: const BLOCK_START = /^\s*(```|~~~|#{1,6}\s|>|[-*+]\s|\d{1,3}[.)]\s|([-
+Line 12312: function richText(text) {
+Line 12354: const INLINE = /(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)|\*\*([^*\n]+?)\*\*|
+Line 12355: function inlineText(text) {
+Line 12370: function codeBlock(code, lang) {
+Line 12375: function drawPlan(box, plan) {
+Line 12399: function drawSession(box, {work, session, state}) {
+Line 12459: const SESSIONPOP = {el: null};
+Line 12460: function sessionPop() {
+Line 12467: function optionWords(setting) {
+Line 12475: const DOCKPICK = {row: null, picker: null};
+Line 12476: function dockPicker() {
+Line 12483: function refreshPreCall() {
+Line 12487: function sessionSummary(box, {agent, settings, usage, controls, used, 
+Line 12518: const PRECALL = {agent: null, at: 0, data: null};
+Line 12542: function agentOptionControls(agent, found) {
+Line 12584: function slashCommands(say, offered) {
+Line 12649: const commandsOf = (state, agent) => (state?.commands || []).filter(on
+Line 12657: const INTAKE = {work: null, session: null, agent: null, waiting: 0, re
+Line 12658: const STARTING = 180000;  // how long an intake's launch may take befo
+Line 12659: const INTAKE_KEY = project => `metaform.intake.${project}`;
+Line 12660: function keptIntake(project = S.project) { try { return localStorage.g
+Line 12661: function keepIntake(work, project = S.project) {
+Line 12665: const intakeRunning = () => Boolean(INTAKE.session && INTAKE.session.s
+Line 12703: const INTAKE_SIGNALS = {
+Line 12716: function drawIntake() {
+Line 12749: function openIntakeChat(work = INTAKE.work, session = INTAKE.session?.
+Line 12815: function showIntakeRefusal(body) {
+Line 12841: function drawEmpty() {
+Line 12869: const BUILD = {options: null, kind: null, picks: {}, files: true, task
+Line 12871: const BUILD_KEY = project => `metaform.build.${project}`;
+Line 12872: function keptBuild(project) { try { return JSON.parse(localStorage.get
+Line 12873: function keepBuild() {
+Line 12880: const kindOfBuild = () => BUILD.options?.kinds.find(kind => kind.id ==
+Line 12881: const shapeOf = id => BUILD.options?.shapes.find(shape => shape.id ===
+Line 12884: function pickOf(kind) {
+Line 12894: const sameSet = (one, two) => one.length === two.length && one.every(i
+Line 12895: const STAGE_WORDS = {resolve: 'Resolve dependencies', collect: 'Collec
+Line 12897: const bytesOf = bytes => bytes >= 1048576 ? `${(bytes / 1048576).toFix
+Line 12917: function drawBuild() {
+Line 12958: function modulesSection(kind) {
+Line 12993: function promptSection() {
+Line 13004: function drawBuildRun() {
+Line 13095: function showRun() {
+Line 13122: function showBuildPrompt(tab) {
+Line 13134: function buildPromptChanged() {
+Line 13149: function wrappedPreview() {
+Line 13170: const promptKept = () => !['wrapper', 'onboarding'].some(tab => BUILD.
+Line 13173: function closeBuildPrompt() {
+Line 13187: const LIVE = {layer: null, base: null, seen: '', busy: false, again: f
+Line 13189: const following = () => LIVE.layer !== null && S.base === LIVE.base;
+Line 13244: const ELSEWHERE = {followed: new Set(), busy: false};
+Line 13324: const plainWords = address => address.split('.').reverse().map(part =>
+Line 13325: const shortName = (address, length) => {
+Line 13329: function layerInView(layerId) {
+Line 13338: function holderOf(element) {
+Line 13342: function nearestParent(address) {
+Line 13351: function heldOf(ids) {
+Line 13429: const QUIET = 800, SPACING = 3000;
+Line 13430: const HANDS = {at: 0, down: false};
+Line 13445: const TICKET_TABLES = new Set(['work', 'work_links', 'work_steps', 'me
+Line 13449: const BRIEF_TABLES = new Set(['work', 'work_links', 'work_steps', 'mes
+Line 13450: function briefTouched(named) {
+Line 13455: const ticketsOnly = payload => Array.isArray(payload.tables) && payloa
+Line 13459: const opsOnly = named => Array.isArray(named) && named.length > 0 && n
+Line 13476: function boardFromTickets() {
+Line 13483: function openWork() {
+Line 13492: function workInPanel() {
+Line 13510: const BATCH = 500;
+Line 13511: const AGENTS = {busy: false, again: false, whole: false, at: -Infinity
+Line 13512: const linesOnly = payload => payload.tables === 'dispatch' && Array.is
+Line 13531: let STREAM = null;
+Line 13532: function listen() {
+Line 13597: function loadGraph(agents = true) { return opening(() => readGraph(age
+Line 13661: function loadProject(wanted = null) { return opening(() => readProject
+Line 13683: function baseButtons() {
+Line 13711: function toProject(id) {
+Line 13749: const DEBUG = {level: 'off', rows: [], most: 400};
+Line 13750: const DEBUG_LEVELS = ['off', 'info', 'verbose', 'trace'];
+Line 13751: const debugAt = level => DEBUG_LEVELS.indexOf(DEBUG.level) >= DEBUG_LE
+Line 13752: function dlog(level, ...said) { if (debugAt(level)) console.info(`[met
+Line 13753: function traced(row) {
+Line 13776: const TAB_VIEWS = {object: 'object', brief: 'brief', prov: 'provenance
+Line 13777: const PANE_VIEWS = createViews({h, fill, read, wrote, toast, confirmAc
+Line 13789: function overlayDocked(box, on) {
+Line 13802: function chatPane(on) {
+Line 13819: const chatDocked = () => $('#dock').dataset.place === 'pane';
+Line 13866: const VIEWS = {
+Line 13877: const COMMANDS = {
+Line 13893: const WS = createWorkspace({h, fill, toast, confirmAct, overlay, movab
+Line 13959: function wsSelected() {
+Line 13992: function revealed() {

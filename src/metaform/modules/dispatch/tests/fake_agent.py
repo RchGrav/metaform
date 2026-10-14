@@ -28,7 +28,8 @@ and takes it into a turn in flight; FAKE_ACP_SUBAGENT=1 starts one subagent sess
 word and completes; FAKE_ACP_AUTH=1 offers an agent login method, advertises authStatus and pushes a logged-out
 status after initialize, and takes authenticate; FAKE_ACP_USAGE=<n> answers every prompt with n tokens used;
 FAKE_ACP_STDERR=1 writes two lines to stderr when it starts, one holding a secret-looking key.
-FAKE_ACP_AUDIO=1 declares promptCapabilities.audio, so a person's spoken message may carry its recording.
+FAKE_ACP_AUDIO=1 declares promptCapabilities.audio, so a person's spoken message may carry its recording;
+FAKE_ACP_IMAGE=1 declares promptCapabilities.image, so a person's message may carry a frame of their shared screen.
 FAKE_ACP_ELICIT=form puts one question to the person in its first turn with ACP's elicitation/create, a choice of
 Red or Blue, and logs the answer as `elicited`; FAKE_ACP_ELICIT=url asks it to open a page, logs the answer, and sends
 elicitation/complete; FAKE_ACP_ELICIT=ask asks as claude-agent-acp's AskUserQuestion does, a choice of Red or Blue
@@ -406,8 +407,11 @@ def main():
                              + ([TERMINAL_LOGIN] if message['params'].get('clientCapabilities', {}).get('auth', {})
                                 .get('terminal') is True else []),
                              'agentCapabilities': {'loadSession': os.environ.get('FAKE_ACP_LOAD') == '1',
-                                                   **({'promptCapabilities': {'audio': True}}
-                                                      if os.environ.get('FAKE_ACP_AUDIO') == '1' else {}),
+                                                   **({'promptCapabilities': {
+                                                       kind: True for kind in ('audio', 'image')
+                                                       if os.environ.get(f'FAKE_ACP_{kind.upper()}') == '1'}}
+                                                      if os.environ.get('FAKE_ACP_AUDIO') == '1'
+                                                      or os.environ.get('FAKE_ACP_IMAGE') == '1' else {}),
                                                    **({'mcpCapabilities': {'acp': True}} if MCP_ACP else {}),
                                                    **({'sessionCapabilities': sessions} if sessions else {}),
                                                    **({'_meta': {'authStatus': {}}} if auth else {})},

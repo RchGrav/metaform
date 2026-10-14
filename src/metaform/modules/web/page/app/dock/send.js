@@ -1,0 +1,321 @@
+/* Sending from the chat: the agent started when none is there, queued messages, failures said in the chat, dismiss,
+ * resume and stay connected, the chat's keys, menu and message box. */
+import '/page/app/dock/commands.js';  // the part before runs first, so the parts run in the page's order
+// speech to text in the boxes a person writes to agents in, the voice module
+import {voiceAudio} from '/page/voice.js';
+import {$, reduced, h, fill} from '/page/app/core/dom.js';
+import {FOCUSABLE, overlay} from '/page/app/core/overlays.js';
+import {toast} from '/page/app/core/controls.js';
+import {S, read} from '/page/app/core/reads.js';
+import {joinOf} from '/page/app/graph/data.js';
+import {ROAM} from '/page/app/figures/agents.js';
+import {MAC} from '/page/app/map2d/camera.js';
+import {openHelp} from '/page/app/keys/keys.js';
+import {MERGE} from '/page/app/selection/select.js';
+import {DOCK, embodyHooks, embodiable, askEmbody, dockState, dockNote} from '/page/app/dock/embody.js';
+import {showChat, drawTabs, interruptChat} from '/page/app/dock/threads.js';
+import {drawHelpdesk, followLog, putChatAway} from '/page/app/dock/helpdesk.js';
+import {dockCommand, callSystem, talkAbout} from '/page/app/dock/commands.js';
+import {narrowPage, resetDock} from '/page/app/dock/place.js';
+import {wrote} from '/page/app/board/history.js';
+import {isIntake} from '/page/app/session/tools.js';
+import {showGallery, withContext} from '/page/app/session/apps.js';
+import {messageRow} from '/page/app/session/text.js';
+import {sessionPop} from '/page/app/session/settings.js';
+import {posted} from '/page/app/intake/intake.js';
+import {sharing, startShare, shareFrame} from '/page/app/figures/eyes.js';
+
+/* A start that answered before its session runs: a resume names its session at once, though the session is live only
+ * once the resume is done. Until then the thread is being reached, and a message written meanwhile waits for it and
+ * starts nothing more; a start that never comes is given up after a minute and a half. */
+export function reaching(started) {
+  if (DOCK.chat && DOCK.chat.target === started.work_id) {
+    DOCK.chat.starting = started.state === 'running' ? 0 : Date.now();
+  }
+}
+const beingReached = chat => Boolean(chat?.starting) && Date.now() - chat.starting < 90000;
+/* Sending with no agent there starts one, as Call does, or, on a thread whose agent has ended, as Continue does; the
+ * message waits in the thread, marked as waiting, and goes as the first message once the session is there, after a
+ * resume has finished. What is written meanwhile waits behind it, in order. */
+function ensureAgent() {
+  // being reached already
+  if (DOCK.calling || DOCK.talking || (DOCK.target && !DOCK.session) || beingReached(DOCK.chat)) return;
+  if (!DOCK.target) { callSystem(); return; }
+  if (DOCK.live) return;
+  const chat = DOCK.chat;
+  if (!chat || isIntake(chat.target)) {
+    startFailed('This conversation has ended; an intake is not taken up again from here.');
+    return;
+  }
+  if (chat.source === 'system' || chat.target === DOCK.mine && chat.source !== 'conversation') { callSystem(); return; }
+  talkAbout({session: `${chat.target}:${chat.session}`}, chat.label);
+}
+export function queuedRows() {
+  // a message sent is let go once the agent has it, or half a minute on
+  const settled = item => item.state === 'sent' && (DOCK.heard.has(item.text.trim()) || Date.now() - item.at > 30000);
+  DOCK.queue = DOCK.queue.filter(item => !settled(item));
+  return DOCK.queue.map((item, index) => ({key: `queued:${item.id}`, text: `${item.state}:${index}`,
+    make: () => messageRow(item.text, {mine: true, who: 'You', first: index === 0, at: item.at,
+      pending: {waiting: 'Sent once the agent is there', sending: 'Sending…', sent: 'Sent'}[item.state] || ''})}));
+}
+let QUEUE_ID = 0;
+export async function deliverQueued(session) {
+  if (DOCK.delivering || DOCK.calling || session?.state !== 'running' || session.session_id !== DOCK.session
+    || !DOCK.queue.some(one => one.state === 'waiting')) return;
+  const work = DOCK.target;
+  DOCK.delivering = true;
+  try {
+    for (const item of DOCK.queue.filter(one => one.state === 'waiting')) {
+      if (DOCK.target !== work) return;
+      item.state = 'sending';
+      item.text = withContext({work, session: session.session_id}, item.text);  // what its views kept for the agent
+      const done = await posted('/api/dispatch-message', {work_id: work, session: session.session_id, text: item.text});
+      if (!done.ok) {
+        item.state = 'waiting';
+        startFailed(done.body?.error || 'The message was not sent.', done.body?.next);
+        return;
+      }
+      item.state = 'sent';
+    }
+  } finally { DOCK.delivering = false; }
+  drawHelpdesk();
+}
+/* A start or a send that failed: why, in the chat, and every message still waiting back in the box, so nothing
+ * written is lost. */
+export function startFailed(reason, next = null) {
+  const waiting = DOCK.queue.filter(item => item.state !== 'sent').map(item => item.text);
+  DOCK.queue = DOCK.queue.filter(item => item.state === 'sent');
+  const box = $('#helpdesk .say');
+  if (waiting.length) { box.value = [...waiting, box.value.trim()].filter(Boolean).join('\n\n'); growSay(); }
+  dockNote(`${reason}${next ? ` Next: ${next}` : ''}${waiting.length ? ' Your message is back in the box.' : ''}`);
+}
+export const chatButton = (given, label) => h('button', {class: 'chat', title: `Talk with an agent about ${label}`,
+  onclick: event => { event.stopPropagation(); talkAbout(given, label); }}, 'Chat');
+/* What a node is called to the agent: an element's address, or a join's receiver, which holds it. */
+export function nodeTalk(id) {
+  const join = id.startsWith('p:') ? joinOf(id) : null;
+  return {node: join ? join.receiver_address : S.elements.get(id)?.element.address || id};
+}
+async function dismiss() {
+  if (DOCK.queue.some(item => item.state !== 'sent')) startFailed('Not sent: the agent was dismissed.');
+  if (DOCK.calling) {
+    DOCK.calling = null;
+    $('#helpdesk .call').textContent = DOCK.target ? 'Dismiss' : 'Call';
+    return dockNote('The call was cancelled.');
+  }
+  const chat = DOCK.chat;
+  // the agent the person summoned is stopped; an agent at work on its ticket goes on, and only its thread closes
+  const summoned = Boolean(chat && (chat.mine || chat.target === DOCK.mine));
+  const stopped = summoned ? await wrote('/api/dispatch-stop', {work_id: chat.target}) : null;
+  if (DOCK.target === DOCK.mine) DOCK.mine = null;
+  DOCK.chats = DOCK.chats.filter(one => one !== chat);
+  if (ROAM.focus === chat?.target) ROAM.focus = null;
+  dockNote(summoned || !chat ? 'The agent was dismissed.' + stayedOff(stopped)
+    : 'The thread was closed; its agent works on, under Agent deployed.');
+  if (DOCK.chats.length) return showChat(DOCK.chats.at(-1));  // the next open chat comes on view
+  // no agent is there now: a message sent next starts one, as Call does, and the chat says how to start again
+  Object.assign(DOCK, {target: null, session: null, label: '', chat: null, live: false, state: null, agent: null});
+  MERGE.chat = null;
+  $('#helpdesk .call').textContent = 'Call';
+  drawTabs();
+  drawHelpdesk();
+}
+$('#helpdesk .interrupt').onclick = () => interruptChat(DOCK.target, DOCK.session, $('#helpdesk .interrupt'));
+$('#helpdesk .call').onclick = () => (DOCK.target || DOCK.calling ? dismiss() : callSystem());
+/* Resume and Stay connected beside Call: the dispatch_resume_chats and dispatch_stay_connected settings of this
+ * project, read when the dock opens and saved on a change. */
+export async function syncResume() {
+  const project = S.project, box = $('#helpdesk .resume input'), stay = $('#helpdesk .stay input');
+  if (!project) return;  // read with the project's own settings, once one is shown
+  try {
+    const rows = (await read('settings')).settings || [];
+    const row = rows.find(one => one.key === 'dispatch_resume_chats');
+    const kept = rows.find(one => one.key === 'dispatch_stay_connected');
+    if (S.project === project && row) box.checked = row.value !== false;
+    if (S.project === project && kept) stay.checked = kept.value === true;
+  } catch { /* the box keeps what it shows */ }
+}
+/* A switch beside Call saved as its setting; a refused save turns it back and says why. */
+async function saveSwitch(event, key, what) {
+  const done = await posted('/api/settings', {key, value: event.target.checked});
+  if (!done.ok) {
+    event.target.checked = !event.target.checked;
+    dockNote(done.body.error || `${what} was not saved.`);
+  }
+  return done.ok;
+}
+$('#helpdesk .resume input').onchange = event => saveSwitch(event, 'dispatch_resume_chats', 'Resume');
+$('#helpdesk .stay input').onchange = async event => {
+  if (await saveSwitch(event, 'dispatch_stay_connected', 'Stay connected') && event.target.checked) {
+    dockNote('Your system agent stays connected to this project; closing the chat never stops it, and Dismiss turns '
+      + 'this off.');
+  }
+};
+/* The person's stop of their system agent turns Stay connected off for the project, dispatch's `disconnect`: the box
+ * follows, and the dock says so. `stopped` is the stop's answer. */
+export function stayedOff(stopped) {
+  if (stopped?.stay_connected !== false) return '';
+  $('#helpdesk .stay input').checked = false;
+  return ' Stay connected is off for this project until you check it again.';
+}
+/* What the person writes goes to the agent on view, with the files attached; a /command is the chat's or the
+ * agent's; with no agent there yet it waits in the thread, and one is reached. */
+async function sendMessage(event) {
+  event.preventDefault();
+  const box = $('#helpdesk .say'), text = box.value.trim();
+  if (!text && !DOCK.files.length) return;
+  if (text.startsWith('/')) { box.value = ''; return dockCommand(text); }
+  const attached = DOCK.files.length
+    ? '\n\nAttached files, saved in the project:\n' + DOCK.files.map(file => `- ${file}`).join('\n') : '';
+  box.value = '';
+  growSay();
+  followLog(true);  // what the person sends is followed to the end of the thread
+  // a fork's thread on view is written to as the fork, which takes the words alone; an agent's own subagent is not
+  // written to, so what is written there goes to its parent. Words for a fork never wait for its parent's agent
+  const open = DOCK.child && (DOCK.subagents || []).find(one => one.session_id === DOCK.child);
+  const fork = open?.fork === true ? DOCK.child : null;
+  // a frame of the share goes as a picture only to a running session whose agent takes pictures, never as words alone
+  const frame = DOCK.frame;
+  const refused = !frame ? null : fork ? 'A fork takes words only, so the frame was not sent.'
+    : !DOCK.live ? 'The frame goes once the agent is running; send it then.'
+      : DOCK.state?.capabilities?.image !== true ? 'This agent does not take pictures, so the frame was not sent; '
+        + 'remove it to send your words alone.' : null;
+  if (refused) { box.value = text; growSay(); return toast(refused); }
+  if (!fork && (!DOCK.live || DOCK.queue.some(item => item.state !== 'sent'))) {
+    DOCK.queue.push({id: ++QUEUE_ID, text: text + attached, state: 'waiting', at: Date.now()});
+    DOCK.files = []; fill($('#helpdesk .files'));
+    ensureAgent();
+    drawHelpdesk();
+    return;
+  }
+  // a spoken message's recording goes with it, where the agent takes audio
+  const audio = await voiceAudio(text, !fork && DOCK.state?.capabilities?.audio === true);
+  const said = fork ? text + attached : withContext({work: DOCK.target, session: DOCK.session}, text + attached);
+  const sent = await wrote('/api/dispatch-message', {work_id: DOCK.target, session: DOCK.session, text: said,
+    ...(fork ? {fork} : {}), ...audio, ...(frame ? {image: frame.jpeg} : {})});
+  if (sent) {
+    DOCK.files = []; DOCK.frame = null; drawAttached(); drawHelpdesk();
+    if (frame && sent.image !== true) toast('Your words were sent, but the frame did not reach the agent.');
+  } else { box.value = text; growSay(); }
+}
+$('#helpdesk .compose').onsubmit = sendMessage;
+/* Enter sends, Shift+Enter starts a new line; an IME's Enter confirms the word it composes and never sends:
+ * isComposing, or Safari's 229 as composition ends. Page Up and Page Down read the conversation without leaving the
+ * box. */
+function sayKeys(event) {
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
+    event.preventDefault();
+    $('#helpdesk .compose').requestSubmit();
+  }
+  if ((event.key === 'PageUp' || event.key === 'PageDown') && !event.altKey && !event.ctrlKey && !event.metaKey) {
+    event.preventDefault();
+    const log = $('#helpdesk .log');
+    const by = (event.key === 'PageUp' ? -1 : 1) * log.clientHeight * 0.85;
+    log.scrollBy({top: by, behavior: reduced() ? 'auto' : 'smooth'});
+  }
+}
+$('#helpdesk .say').addEventListener('keydown', sayKeys);
+/* The chat's own keys, anywhere in it, each in the `?` reference: interrupt the turn, the thread before or after, the
+ * newest message, the agent's settings. */
+function chatKeys(event) {
+  if (event.isComposing) return;
+  const mod = MAC ? event.metaKey : event.ctrlKey;
+  if (mod && event.key === '.') {
+    event.preventDefault();
+    if (!$('#helpdesk .interrupt').disabled) $('#helpdesk .interrupt').click();
+    return;
+  }
+  if (!event.altKey || event.ctrlKey || event.metaKey) return;
+  if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+    if (DOCK.chats.length < 2) return;
+    event.preventDefault();
+    const at = DOCK.chats.indexOf(DOCK.chat), by = event.key === 'ArrowUp' ? -1 : 1;
+    showChat(DOCK.chats[(at + by + DOCK.chats.length) % DOCK.chats.length], {focus: true});
+  } else if (event.key === 'End') { event.preventDefault(); followLog(true); }
+  else if (event.key === ',') { event.preventDefault(); openSessionPop(); }
+}
+$('#helpdesk').addEventListener('keydown', chatKeys);
+function openSessionPop() {
+  const line = $('#helpdesk .sessionline');
+  if (!line) return toast("The agent's settings show once one is chosen.");
+  if (sessionPop().hidden) line.click();
+  requestAnimationFrame(() => sessionPop().querySelector(FOCUSABLE)?.focus());
+}
+/* The head's menu: what is used now and then, each with its key. */
+const DOCKMENU = overlay($('#dockMenu'), {kind: 'menu'});
+function drawDockMenu() {
+  const big = $('#dock').className === 'open big', side = ['left', 'right'].includes($('#dock').dataset.place);
+  const item = (label, key, run, shown = true) => shown ? h('button', {type: 'button', role: 'menuitem',
+    onclick: () => { DOCKMENU.hidden = true; run(); }}, h('span', {}, label), key ? h('kbd', {}, key) : null) : null;
+  fill(DOCKMENU,
+    item('Give this agent a body…', 'B', askEmbody, embodyHooks() && embodiable(DOCK.chat)),
+    item('Agent and settings…', 'Alt ,', openSessionPop),
+    item('Apps…', '/apps', showGallery),
+    item(big ? 'Back to its size' : 'Make it large', null, () => $('#helpdesk .big').click(), !narrowPage()),
+    item(side ? 'Float it' : 'Dock it at the side', null, () => $('#helpdesk .place').click(), !narrowPage()),
+    item('Put it back in its corner', 'Double-click head', resetDock, !narrowPage() && !big),
+    h('hr'),
+    item('Keyboard shortcuts', '?', () => openHelp()));
+}
+function toggleDockMenu(event) {
+  event.stopPropagation();
+  if (!DOCKMENU.hidden) { DOCKMENU.hidden = true; return; }
+  drawDockMenu();
+  DOCKMENU.hidden = false;
+}
+$('#helpdesk .more').onclick = toggleDockMenu;
+/* The message box grows with what is typed, from one line to about five, and scrolls only past that. */
+function growSay() {
+  const box = $('#helpdesk .say'), most = parseFloat(getComputedStyle(box).lineHeight || '20') * 5 + 14;
+  box.style.height = 'auto';
+  box.style.height = `${Math.min(box.scrollHeight + 2, most)}px`;
+  box.style.overflowY = box.scrollHeight + 2 > most ? 'auto' : 'hidden';
+}
+$('#helpdesk .say').addEventListener('input', growSay);
+$('#helpdesk .compose').addEventListener('submit', () => requestAnimationFrame(growSay));
+/* A file's contents as base64, read in the browser. */
+function readBase64(file) {
+  return new Promise(done => {
+    const reader = new FileReader();
+    reader.onload = () => done(String(reader.result).split(',')[1] || '');
+    reader.readAsDataURL(file);
+  });
+}
+/* Files attached with the paperclip: each saved in the project, and shown as a chip until the message goes. */
+async function attachFiles(event) {
+  for (const file of event.target.files) {
+    const saved = await wrote('/api/attach', {name: file.name, data: await readBase64(file)});
+    if (saved) DOCK.files.push(saved.path);
+  }
+  event.target.value = '';
+  drawAttached();
+}
+$('#helpdesk .clip input').onchange = attachFiles;
+/* A frame of what the person shares with agents, from the screen button: sent with the next message as a picture.
+ * With nothing shared the button starts the share first, the browser's picker opened by this click. */
+async function attachFrame() {
+  if (!sharing() && !await startShare()) return;
+  const frame = shareFrame();
+  if (frame.error) return toast(frame.error);
+  DOCK.frame = frame;
+  drawAttached();
+}
+$('#helpdesk .frame').onclick = attachFrame;
+/* What goes with the next message: each file attached, and the frame, which can be taken off. */
+function drawAttached() {
+  const frame = DOCK.frame && h('span', {class: 'chip'}, `Screen ${DOCK.frame.width}×${DOCK.frame.height} `,
+    h('button', {class: 'btn icon sm quiet', type: 'button', 'aria-label': 'Remove the frame',
+      onclick: () => { DOCK.frame = null; drawAttached(); }}, '×'));
+  fill($('#helpdesk .files'), ...DOCK.files.map(file => h('span', {class: 'chip'}, file.split('/').pop())), frame);
+}
+$('#dockTab').onclick = () => dockState('open');
+$('#dockTab').onkeydown = event => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  dockState('open');
+};
+$('#helpdesk .min').onclick = () => putChatAway();  // eased away; its threads are kept
+$('#helpdesk .min').title = 'Put the chat away; its conversation is kept (C, or Escape inside it)';
+// On the overlay stack as the dock: Escape puts it away only from inside it, and it stays usable over the board.
+overlay($('#helpdesk'), {kind: 'dock', close: () => putChatAway(), focus: '.say'});
+$('#helpdesk .big').onclick = () => dockState($('#dock').className === 'open big' ? 'open' : 'open big');

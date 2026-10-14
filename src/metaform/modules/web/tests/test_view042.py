@@ -79,9 +79,8 @@ def test_dispatch_autostart_api_reads_and_saves_the_project_settings(run, web, m
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
     page.click('#agentsMenuBtn')  # the agents' own menu, apart from Administration's removals
-    page.click('#promptsBtn')
-    page.wait_for_selector('#prompts:not([hidden])')
-    assert page.locator('#adminbox #promptsBtn').count() == 0 and page.locator('#adminbox #resetAgentsBtn').count() == 0
+    page.wait_for_selector('#agentbox #promptsPick')
+    assert page.locator('#adminbox #promptsPick').count() == 0 and page.locator('#adminbox #resetAgentsBtn').count() == 0
     page.keyboard.press('Escape')
     page.click('#agentsMenuBtn')
     page.wait_for_selector('#agentbox:not([hidden])')

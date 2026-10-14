@@ -647,6 +647,11 @@ function character() {
   const chosen = V.status?.wake?.mascot;
   return chosen && V.status.tts.voices[chosen] ? chosen : null;
 }
+/* Whether an agent's line asked to be said aloud is spoken: the person's voice settings speak, in any way but never. */
+export function mayAnnounce() {
+  const tts = V.status?.tts;
+  return Boolean(tts && tts.engine !== 'off' && tts.speak !== 'never');
+}
 export function speakReply(text) {
   const words = speakable(text);
   if (!words) return Promise.resolve();

@@ -225,15 +225,28 @@
      web module is on. <character/> is the character. <persona/> is where its persona is written, the element
      persona_<character> of the web module's prompts.xml with that file's path, which the agent reads when it needs
      it: the persona itself is never pushed. <tools/> are the mascot's tools on the folder's surface, of web_say,
-     web_go, web_point, web_emote, web_look, web_see and web_turn, so the agent is never told to use one it does not
-     have. Its second sentence lets the agent offer the person, once, a body of its own on the map through web_embody,
-     the web module's verb that gives a conversation agent a character's figure. Empty sends nothing and leaves the
-     mascot to the page alone. -->
+     web_go, web_point, web_emote, web_look, web_see, web_turn and web_come, so the agent is never told to use one it
+     does not have. Its second sentence lets the agent offer the person, once, a body of its own on the map through
+     web_embody, the web module's verb that gives a conversation agent a character's figure. Empty sends nothing and
+     leaves the mascot to the page alone. -->
 <mascot>  +> You speak as <character/>, the person's mascot on the map: read who it is in <persona/> before you first speak as it, keep what you say to the person short and in its voice, and act through its body with <tools/>. Once you and the person have worked together a while, you may offer them, once and only once, a body of your own on the map, which web_embody gives you.
 </mascot>
 
+<!-- The one line that tells a conversation agent how it can be on the map with the person: a body of its own, its
+     eyes, where the person looks and points, a picture of what they see or share, and flying up in front of their view
+     to get their attention. Placed in <talk> as one of its constraints, with its line break, while the web module is
+     on with all six tools it names. Empty sends nothing, and the agent is not told of the map. -->
+<eyes>  +> The person watches the map on Metaform's web page: web_embody gives you a body there, web_look and web_see show what it sees, web_viewing says what the person is looking at, where their view is and what their pointer points at, web_capture shows you their view or the screen they share, web_come brings you to their view, their pointer or what it points at for as long as you choose, and dispatch_timer wakes you later to look again.
+</eyes>
+
+<!-- The turn an agent's own timer wakes it with, set with dispatch timer: <timer/> is its id, <set/> when it was set,
+     <note/> what the agent wrote it for. Sent by the agent's runner when the timer is due, while the session runs; a
+     timer ends with its session. Must not be deleted: the code requires it. -->
+<timer>Your timer <timer/>, set at <set/>, is due: <note/>. What you knew when you set it may have changed: read what is current, such as web_viewing, before you act on it.</timer>
+
 <!-- A conversation about one item the person clicked on the web page: a ticket, a node, a question or an ended session.
      Sent as the first message to the agent started from an item's Chat button on the web page, or with dispatch talk.
+     <eyes/> is the one line of <eyes> above while the web module is on, and nothing otherwise.
      Must not be deleted: the code requires it. If it is empty, dispatch talk refuses to start. -->
 <talk>
 
@@ -246,7 +259,7 @@
   +> Answer what they ask about it plainly and completely; validate what you say against the map and the specifications.
   +> Stay and answer each message until the person closes the chat.
   !> This is a conversation, never ticket work: do not take, reopen or close any ticket, and do not change code or files unless the person explicitly asks you to.
-
+<eyes/>
 @CONDITION:
   ?IF ( {About} has not been read ) -&gt; read it with {Read} first
   :ELSE -&gt; {State}:=LISTEN

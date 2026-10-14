@@ -152,10 +152,10 @@ settings.number('web_pulse_ms', 3000, min=200, max=30000, scope='global',
                 help='The usual wait, in milliseconds, between one request and reply on a join and the next.',
                 details='Each join waits (random + random) times this after each cycle, a fresh wait every time, so '
                         'the flow bunches about this pace and never pulses in step, in the 3D and the 2D map.')
-settings.boolean('web_idle_flow', False, scope='global',
-                 help='Keep the dots flowing slowly for as long as the page is open, past web_flow_seconds.',
-                 details='On, an idle 3D map is still drawn 15 times a second so the flow never stops, as the map '
-                         'was drawn before; off, it stops and the machine rests.')
+settings.boolean('web_idle_flow', True, scope='global',
+                 help='Keep the dots flowing for as long as the page is open, past web_flow_seconds.',
+                 details='On, an idle map is still drawn at the full frame rate so the flow never stops and stays '
+                         'smooth; off, it stops after web_flow_seconds and the machine rests.')
 # What agents really do is drawn in the flow's own looks, a little larger and brighter than the flow the map shows of
 # itself: a session starting, each part of the map a tool call reaches, and each note, item or work record written on
 # a node. It comes from the page's event stream as it happens and costs nothing while nothing happens.
@@ -190,26 +190,10 @@ settings.choice('web_map_direction', ['auto', 'across', 'down'], 'auto', scope='
                         'columns when it is long, and keeps the one its pane shows largest with the whole map in '
                         'view; it is laid out again when the pane changes shape. across and down hold it to that '
                         'direction, unfolded.')
-# How the 2D map is framed, the same in the large area and the small one: 2 steps its fit, 3 its zoom on a selection,
-# and 1 sets the zoom's distance by example; 0 puts the fit and the zoom back.
-settings.choice('web_map_fit', ['all', 'width', 'height'], 'all', scope='global',
-                help="The 2D map's fit: all, width or height.",
-                details="all fits the whole map in its pane; width fits its width, and the wheel scrolls up and "
-                        "down; height fits its height, and the wheel scrolls across. 2 steps through them.")
-settings.choice('web_map_zoom', ['neighbors', 'distance', 'off'], 'neighbors', scope='global',
-                help="What the 2D map does on a selection: neighbors, distance or off.",
-                details='neighbors zooms in until the node and every part one join away fill the view, no closer '
-                        'than the distance; distance zooms the node in to the distance set with 1; off keeps the fit, '
-                        'centering the node only as far as the map runs past its pane. Letting go of the selection '
-                        'goes back to the fit. 3 steps through them.')
-settings.number('web_map_distance', 0, min=0, scope='global',
-                help="The 2D map's zoom distance, as the height in pixels its text is drawn at; 0 for twice the "
-                     "page's smallest text.",
-                details='Set on the page by example: 1, the wheel to the distance that reads well from where the '
-                        'map is watched, and 1 again to keep it.')
 # Node zoom: each node selected in the 3D map is flown to, framed close with its neighbours, in either pane and
-# whatever framing or physics is in force; it is what shows a part in its place. Off, a selection never moves the
-# camera; Whole and Free then hold the view.
+# whatever framing or physics is in force; it is what shows a part in its place. It is also the 2D map's auto zoom,
+# VIEW-041: each selection eases the 2D map to the node with its neighbours. Off, a selection never moves either
+# camera; Whole and Free then hold the 3D view, and the 2D map stays where the person left it.
 # What the maps say of what the pointer is on: its name across the top where the map shows none that can be read, and
 # a card of its details at the lower right, both by default.
 settings.choice('web_hover_info', ['name+summary', 'name', 'summary', 'off'], 'name+summary', scope='global',
@@ -219,10 +203,11 @@ settings.choice('web_hover_info', ['name+summary', 'name', 'summary', 'off'], 'n
                         'with its kind, address and purpose or EF, an agent\'s work and status. I in the web GUI, the '
                         'map bar and the View menu choose it.')
 settings.boolean('web_node_zoom', True, scope='global',
-                 help='Fly the 3D camera to each node selected and frame it with its neighbours.',
+                 help='Move both maps to each node selected and frame it with its neighbours.',
                  details='On, every selection in 3D flies there, in the large and the small pane, whatever Whole, '
-                         'Free or physics is chosen; those frame the map while nothing is being flown to. Off, a '
-                         'selection never moves the camera. Z in the web GUI, the map bar and the View menu toggle it.')
+                         'Free or physics is chosen; those frame the map while nothing is being flown to; and the 2D '
+                         'map eases to the node with its neighbours, its auto zoom. Off, a selection never moves '
+                         'either camera. Z or 3 in the web GUI, the map bars and the View menu toggle it.')
 # The window of the agents at work: auto slides it out as an agent starts work and away a few seconds after the last
 # one stops; open keeps it out, hidden keeps it away.
 settings.choice('web_agents_window', ['auto', 'open', 'hidden'], 'auto', scope='global',
@@ -609,7 +594,8 @@ def number(ctx: Context, name: str) -> float | None:
 
 
 def say(ctx: Context) -> dict[str, Any]:
-    return mascot_act(ctx, 'say', text=str(ctx.nouns['text']))
+    speak = str(ctx.nouns.get('speak') or '').lower() in ('true', 'yes', '1')
+    return mascot_act(ctx, 'say', text=str(ctx.nouns['text']), **({'speak': True} if speak else {}))
 
 
 def go(ctx: Context) -> dict[str, Any]:
@@ -694,17 +680,36 @@ def see(ctx: Context) -> dict[str, Any]:
 def look(ctx: Context) -> dict[str, Any]:
     """A picture from the figure's own eyes, with what it sees. Over MCP the picture is the tool's image; elsewhere it
     is saved under the home and its path given, so a terminal is not filled with it."""
-    found = ask_page(ctx, 'look', address=str(ctx.nouns.get('address') or ''))
-    picture = str(found.pop('png', '') or '')
+    return pictured(ctx, ask_page(ctx, 'look', address=str(ctx.nouns.get('address') or '')))
+
+
+def pictured(ctx: Context, found: dict[str, Any]) -> dict[str, Any]:
+    """The page's picture, `png` or `jpeg`, as the tool's image over MCP, so it reaches the agent that asked as image
+    content; elsewhere saved under the home and its path given."""
+    kind = 'png' if found.get('png') else 'jpeg'
+    picture = str(found.pop('png', '') or found.pop('jpeg', '') or '')
     if picture and ctx.surface == 'mcp':
-        found['image'] = {'data': picture, 'mimeType': 'image/png'}
+        found['image'] = {'data': picture, 'mimeType': f'image/{kind}'}
     elif picture:
         import base64
-        saved = home.home() / 'run' / 'looks' / f'look-{secrets.token_hex(4)}.png'
+        saved = home.home() / 'run' / 'looks' / f'look-{secrets.token_hex(4)}.{"png" if kind == "png" else "jpg"}'
         saved.parent.mkdir(parents=True, exist_ok=True)
         saved.write_bytes(base64.b64decode(picture))
         found['file'] = str(saved)
     return found
+
+
+CAPTURES = ('view', 'screen')
+
+
+def capture(ctx: Context) -> dict[str, Any]:
+    """What the person sees, for the agent that asks: `view`, a picture from their own 3D camera with the mouse
+    pointer's ray drawn in, and the pointer's ray and what it takes; or `screen`, a frame of the screen, window or tab
+    they share with agents from the page, refused with how to start one while nothing is shared."""
+    source = str(ctx.nouns.get('source') or 'view')
+    if source not in CAPTURES:
+        raise Stop(f'{source} is not a capture: {", ".join(CAPTURES)}.', 'metaform web capture source=view')
+    return pictured(ctx, ask_page(ctx, 'capture', source=source))
 
 
 def select(ctx: Context) -> dict[str, Any]:
@@ -748,6 +753,20 @@ def viewing(ctx: Context) -> dict[str, Any]:
     return ask_page(ctx, 'viewing')
 
 
+COMES = ('view', 'pointer', 'hit')
+
+
+def come(ctx: Context) -> dict[str, Any]:
+    """The calling agent's figure, or else the person's mascot, comes to the person to get their attention, as the
+    agent chooses: where, whether it follows, and for how long; seconds=0 ends the approach."""
+    to = str(ctx.nouns.get('to') or 'view')
+    if to not in COMES:
+        raise Stop(f'{to} is not where a body comes: {", ".join(COMES)}.', 'metaform web come to=view')
+    seconds = number(ctx, 'seconds')
+    follow = str(ctx.nouns.get('follow') or 'true').lower() not in ('false', 'no', '0')
+    return mascot_act(ctx, 'come', to=to, follow=follow, **({'seconds': seconds} if seconds is not None else {}))
+
+
 def embody(ctx: Context) -> dict[str, Any]:
     """The calling agent asks for a body of its own on the map, one of the characters: the page gives it unless the
     person chose its body already or another figure at work has that character."""
@@ -773,7 +792,9 @@ MODULE = Module(
         # The mascot's and the figures' acts change no map and write nothing: each is told to the open pages, which
         # draw it, and what they see comes back from the page.
         Verb('say', say, "Say a short line in the person's mascot's word bubble on the map.",
-             nouns=(Noun('text', 'What the mascot says, a line or two.'),), effect='read', open_world=False),
+             nouns=(Noun('text', 'What the mascot says, a line or two.'),
+                    Noun('speak', 'true says it aloud too, where the person\'s voice settings speak; the answer says if it was.',
+                         required=False)), effect='read', open_world=False),
         Verb('go', go, "Walk the person's mascot to a part of the map, or to a viewpoint near it.",
              nouns=(Noun('address', 'The address of the element it goes to.'),
                     Noun('distance', 'How far from it to stand, in the map\'s units, as see measures them.', required=False),
@@ -834,8 +855,17 @@ MODULE = Module(
              effect='read', open_world=False),
         Verb('embody', embody, 'Take a body of your own on the map, one of the characters, unless the person chose yours.',
              nouns=(Noun('character', 'The character, such as owl, beetle or puffer.'),), effect='read', open_world=False),
-        Verb('viewing', viewing, 'Read what the person is looking at now: the selection, each view, the open panes and the nodes in view.',
+        Verb('viewing', viewing, 'Read what the person is looking at now: the selection, each view, the open panes, the nodes in view and where their 3D view is.',
              effect='read', open_world=False),
+        Verb('come', come, "Bring your figure, or else the person's mascot, to the person to get their attention: their view, pointer or what it points at.",
+             nouns=(Noun('to', 'view, in front of their 3D view, the default; pointer, under their mouse pointer; or hit, beside what the pointer points at.',
+                         required=False),
+                    Noun('seconds', 'How long it stays, 10 when not given, at most 3600; 0 ends the approach now.', required=False),
+                    Noun('follow', 'true, the default, keeps up with the view or the pointer as it moves; false stays where it went.',
+                         required=False)), effect='read', open_world=False),
+        Verb('capture', capture, "A picture of what the person sees: their 3D view with the mouse pointer's ray, or the screen they share.",
+             nouns=(Noun('source', 'view, their own 3D view, the default; or screen, the screen, window or tab they share with agents.',
+                         required=False),), effect='read', open_world=False),
         Verb('serve', serve, 'Serve reconstructed web variants together, each on its own local port.',
              nouns=(Noun('origin', 'The origin id; the latest origin when omitted.', required=False),
                     Noun('variants', 'Variant ids, or all to serve every variant of the origin.', many=True)),

@@ -39,7 +39,7 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, cast
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
 from metaform import events, home, prompt_files, settings
 from metaform import module as chassis
@@ -73,7 +73,7 @@ COOKIE = 'metaform_token'
 RESERVED = ('project', 'metaform', 'layers')  # what picks the store and its layers; never a read's own argument
 TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
          '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
-         '.json': 'application/json', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.md': 'text/plain; charset=utf-8',
+         '.json': 'application/json', '.svg': 'image/svg+xml', '.jpg': 'image/jpeg', '.woff2': 'font/woff2', '.md': 'text/plain; charset=utf-8',
          '.txt': 'text/plain; charset=utf-8'}  # fixed, since Windows's registry can give .js a type browsers refuse
 PAGE_POLICY = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'"
 # Scripts come only from the server; WebAssembly may be compiled, for the voice module's in-browser Whisper, whose
@@ -103,8 +103,9 @@ def dispatch_change(payload: dict[str, Any]) -> bool:
 COALESCE = 0.3  # seconds a page's stream holds dispatch-only events to merge them, VIEW-018
 # The acts of the person's mascot a page takes, VIEW-005; those that ask the page something wait this long for it
 MASCOT_ACTS = {'say', 'go', 'turn', 'point', 'emote', 'look', 'see', 'select', 'camera', 'tab', 'open', 'swap',
-               'flow', 'physics', 'viewing', 'embody', 'move', 'push', 'drag', 'drop', 'take', 'release'}
-MASCOT_ASKS = {'look', 'see', 'viewing', 'embody'}
+               'flow', 'physics', 'viewing', 'embody', 'move', 'push', 'drag', 'drop', 'take', 'release', 'come',
+               'capture'}
+MASCOT_ASKS = {'look', 'see', 'viewing', 'embody', 'come', 'capture'}
 MASCOT_WAIT = 5.0
 
 
@@ -487,6 +488,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.xml({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/mermaid':
             return self.mermaid({key: values[-1] for key, values in query.items() if key != 't'})
+        if url.path == '/api/attachment':
+            return self.attachment({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/brief':
             return self.brief({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/item':
@@ -782,7 +785,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(409, {'error': f'No page shows {project or "the project"}, so the mascot is on no map.',
                                    'next': 'open the page, at the address metaform web prints, on this project'})
         ident = secrets.token_hex(8)
-        asks = act in MASCOT_ASKS
+        # a line asked to be said aloud waits to hear whether it was
+        asks = act in MASCOT_ASKS or act == 'say' and bool(given.get('speak'))
         if asks:
             self.gui.mascot_waiting[ident] = {'event': threading.Event(), 'result': None}
         for waiting in pages:
@@ -1115,6 +1119,33 @@ class Handler(BaseHTTPRequestHandler):
         target.write_bytes(raw)
         self.send(200, {'path': str(target)})
 
+    def attachment(self, given: dict[str, str]) -> None:
+        """A file an agent attached to its chat, `dispatch attach`, downloaded by its project, session and id: read
+        only from where the attach kept it under the project's folder in the Metaform home, never from a path the page
+        gives. `check=1` says whether it is still kept, for the chat's card, without its bytes."""
+        folder = home.project_folder(given.get('project', ''))
+        session, ident = given.get('session', ''), given.get('id', '')
+        if folder is None:
+            return self.send(404, {'error': f'No project {given.get("project", "")} is registered.'})
+        if not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', session) or not re.fullmatch(r'[0-9a-f]{16}', ident):
+            return self.send(400, {'error': 'An attachment is named by its session and its id.'})
+        kept = folder / 'published' / session / ident
+        try:
+            meta = json.loads((kept / 'meta.json').read_text(encoding='utf-8'))
+            name = str(meta['name'])
+            body = None if given.get('check') else (kept / name).read_bytes()
+            present = (kept / name).is_file()
+        except (OSError, ValueError, KeyError, TypeError):
+            meta, name, body, present = None, '', None, False
+        if not meta or not present or '/' in name or '\\' in name or name.startswith('.'):
+            return self.send(404, {'error': 'That file is no longer kept here.'})
+        if given.get('check'):
+            return self.send(200, {'kept': True, 'size': (kept / name).stat().st_size, 'sha256': meta.get('sha256')})
+        plain_name = ''.join(char if char.isascii() and (char.isalnum() or char in '._-') else '_' for char in name)
+        self.reply(200, cast(bytes, body), str(meta.get('type') or 'application/octet-stream'), {
+            'Content-Disposition': f'attachment; filename="{plain_name}"; filename*=UTF-8\'\'{quote(name, safe="")}',
+            'Content-Security-Policy': 'sandbox', 'Cache-Control': 'no-store'})
+
     def move_ticket(self, given: dict[str, Any]) -> None:
         """Put a ticket in a column of the board and at a place in it, VIEW-037 and STORE-042."""
         work_id, column, position = given.get('work_id'), given.get('column'), given.get('position')
@@ -1366,8 +1397,12 @@ class Handler(BaseHTTPRequestHandler):
         # a spoken message's recording, kept by /api/voice/clip, for an agent that takes audio
         from .voice import clip_path
         clip = clip_path(given['audio']) if isinstance(given.get('audio'), str) else None
+        frame = kept_frame(given['image']) if isinstance(given.get('image'), str) else None
+        if given.get('image') is not None and frame is None:
+            return self.send(400, {'error': 'A frame is a JPEG or PNG picture, as base64, of at most 16 MB.'})
         self.dispatched(given, 'message', [work_id, *([f'session={session}'] if session else []),
-                                           *([f'audio={clip}'] if clip else [])], text.strip())
+                                           *([f'audio={clip}'] if clip else []),
+                                           *([f'image={frame}'] if frame else [])], text.strip())
 
     def dispatch_fork(self, given: dict[str, Any]) -> None:
         """Fork a running session into a side conversation with the dispatch module's fork, P030; the text, when there
@@ -1772,6 +1807,30 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         if self.command != 'HEAD':
             self.wfile.write(body)
+
+
+FRAME_MOST = 16 << 20  # bytes of one frame the person sends an agent
+FRAME_HOURS = 1  # a frame not sent within the hour is the person's screen left lying about, so it is removed
+
+
+def kept_frame(data: str) -> Path | None:
+    """A frame of the person's shared screen, base64 JPEG or PNG from the page, kept under the home's run/captures for
+    the one message it goes with, which removes it once read; None for anything that is not such a picture."""
+    try:
+        body = base64.b64decode(data, validate=True)
+    except ValueError:
+        return None
+    suffix = '.jpg' if body.startswith(b'\xff\xd8\xff') else '.png' if body.startswith(b'\x89PNG\r\n\x1a\n') else None
+    if suffix is None or len(body) > FRAME_MOST:
+        return None
+    place = home.home() / 'run' / 'captures'
+    place.mkdir(parents=True, exist_ok=True)
+    for old in place.iterdir():
+        if time.time() - old.stat().st_mtime > FRAME_HOURS * 3600:
+            old.unlink(missing_ok=True)
+    kept = place / f'{secrets.token_hex(16)}{suffix}'
+    kept.write_bytes(body)
+    return kept
 
 
 def current_copy(given: str | None, tag: str) -> bool:

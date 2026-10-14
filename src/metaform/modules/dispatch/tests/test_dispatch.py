@@ -466,6 +466,157 @@ def test_a_spoken_message_carries_its_recording_only_to_an_agent_that_declares_a
     dispatch.stop()
 
 
+@pytest.mark.req('VIEW-005')
+def test_an_agents_timer_wakes_its_own_session_with_its_note_and_can_be_listed_and_taken_back(dispatch, run, tmp_path):
+    """An agent's timer is held by its own session's runner: set from that session it wakes it with the note as a
+    turn; listed and cancelled by id; refused to a caller that is not that running session."""
+    gates = tmp_path / 'turns'
+    gates.mkdir()
+    for number in range(4):                                          # each turn ends as soon as it is sent
+        (gates / str(number)).touch()
+    dispatch.start('replace', FAKE_ACP_TURN_GATES=str(gates))
+    eventually(lambda: dispatch.received('session/prompt'))
+    found = json.loads(run('dispatch', 'sessions', f'id={dispatch.id}', 'thread=false', '--json',
+                           cwd=dispatch.folder).stdout)['sessions'][-1]
+    own = {'METAFORM_WORK': dispatch.id, 'METAFORM_SESSION': found['runner']}
+    refused = run('dispatch', 'timer', 'seconds=1', '--', 'x', cwd=dispatch.folder, ok=False,
+                  env={'METAFORM_WORK': dispatch.id, 'METAFORM_SESSION': 'not-its-runner'})
+    assert 'not running here' in refused.stderr
+    later = json.loads(run('dispatch', 'timer', 'seconds=60', '--json', '--', 'later', cwd=dispatch.folder, env=own).stdout)
+    listed = json.loads(run('dispatch', 'timer', '--json', cwd=dispatch.folder, env=own).stdout)
+    assert [one['timer'] for one in listed['timers']] == [later['timer']]
+    taken = json.loads(run('dispatch', 'timer', f'cancel={later["timer"]}', '--json', cwd=dispatch.folder,
+                           env=own).stdout)
+    assert taken['cancelled'] is True
+    assert json.loads(run('dispatch', 'timer', '--json', cwd=dispatch.folder, env=own).stdout)['timers'] == []
+    soon = json.loads(run('dispatch', 'timer', 'seconds=1', '--json', '--', 'look where the person points',
+                          cwd=dispatch.folder, env=own).stdout)
+    assert (soon['work_id'], soon['session_id']) == (dispatch.id, found['session_id'])
+    woke = eventually(lambda: [one for one in dispatch.received('session/prompt')
+                               if f'Your timer {soon["timer"]}' in json.dumps(one)])
+    assert 'look where the person points' in woke[0]['params']['prompt'][0]['text']
+    assert woke[0]['params']['sessionId'] == dispatch.received('session/prompt')[0]['params']['sessionId']
+    dispatch.stop()
+
+
+def test_a_metaform_calls_structured_result_is_kept_for_the_view_that_paints_it():
+    """A view paints its call's result from the structured content before it reads anything, so the thread keeps it
+    where the agent passed it on, and keeps none too large for the thread."""
+    from metaform.modules.dispatch.runner import CALLED_MOST, metaform_called
+    said = {'content': [{'type': 'text', 'text': 'the item'}], 'structuredContent': {'item': 'code.alarm#1'}}
+    called = metaform_called({'rawInput': {'item': 'code.alarm#1'}}, {'status': 'completed', 'rawOutput': said},
+                             'mcp__metaform__map_item')
+    assert called == {'tool': 'map_item', 'input': {'item': 'code.alarm#1'}, 'result': {
+        'content': [{'type': 'text', 'text': 'the item'}], 'isError': False, 'structuredContent': {'item': 'code.alarm#1'}}}
+    large = {**said, 'structuredContent': {'body': 'x' * CALLED_MOST}}
+    assert 'structuredContent' not in metaform_called({}, {'status': 'completed', 'rawOutput': large},
+                                                      'mcp__metaform__map_item')['result']
+
+
+@pytest.mark.req('VIEW-039')
+def test_an_agent_attaches_a_file_of_the_project_to_its_own_chat_and_the_person_downloads_those_bytes(
+        dispatch, run, home, tmp_path):
+    """code.interface.graphical#18: an agent's file reaches its own chat as an attachment line, its bytes copied apart
+    by session and id, so a second file of the same name, or a change to the first, replaces nothing; the web server
+    gives back exactly those bytes by session and id, and no other project's or path's. A caller that is not the
+    running session, a file outside the project and a missing file are refused, and attach nothing."""
+    import http.client
+    import threading
+
+    from metaform import home as metaform_home
+    from metaform.modules.web.server import Server
+    gates = tmp_path / 'turns'
+    gates.mkdir()
+    (gates / '0').touch()
+    dispatch.start('replace', FAKE_ACP_TURN_GATES=str(gates))
+    eventually(lambda: dispatch.received('session/prompt'))
+    found = json.loads(run('dispatch', 'sessions', f'id={dispatch.id}', 'thread=false', '--json',
+                           cwd=dispatch.folder).stdout)['sessions'][-1]
+    own = {'METAFORM_WORK': dispatch.id, 'METAFORM_SESSION': found['runner']}
+    report = Path(dispatch.folder) / 'artifacts' / 'metaform-agent-embodiment-research-brief-2026-10-13.txt'
+    report.parent.mkdir(exist_ok=True)
+    first_bytes = 'The brief, é and ✓\r\n'.encode() + bytes(range(256))
+    report.write_bytes(first_bytes)
+    relative = 'path=artifacts/metaform-agent-embodiment-research-brief-2026-10-13.txt'
+    refused = run('dispatch', 'attach', relative, cwd=dispatch.folder, ok=False,
+                  env={'METAFORM_WORK': dispatch.id, 'METAFORM_SESSION': 'not-its-runner'})
+    assert 'not running here' in refused.stderr
+    outside = tmp_path / 'secret.txt'
+    outside.write_text('not the project')
+    assert 'outside the project' in run('dispatch', 'attach', f'path={outside}', cwd=dispatch.folder, ok=False,
+                                        env=own).stderr
+    assert 'No file at' in run('dispatch', 'attach', 'path=artifacts/none.txt', cwd=dispatch.folder, ok=False,
+                               env=own).stderr
+    first = json.loads(run('dispatch', 'attach', relative, '--json', cwd=dispatch.folder, env=own).stdout)['attached']
+    report.write_bytes(b'a later report under the same name')
+    second = json.loads(run('dispatch', 'attach', relative, '--json', cwd=dispatch.folder, env=own).stdout)['attached']
+    assert first['name'] == second['name'] == report.name and first['id'] != second['id']
+    assert (first['size'], first['session_id'], first['work_id']) == (len(first_bytes), found['session_id'], dispatch.id)
+    project = next(one.project_id for one in metaform_home.projects() if Path(one.path) == Path(dispatch.folder))
+    kept = metaform_home.project_folder(project) / 'published'
+    assert str(kept).startswith(str(home))                           # in the Metaform home, never the source tree
+    lines = json.loads(run('dispatch', 'sessions', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)['lines']
+    attached = [line['data'] for line in lines if line['kind'] == 'attachment']
+    assert [one['id'] for one in attached] == [first['id'], second['id']]
+    server = Server('127.0.0.1', 0, None)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    def get(query):
+        connection = http.client.HTTPConnection('127.0.0.1', server.server_address[1], timeout=10)
+        connection.request('GET', f'/api/attachment?{query}', headers={'Host': f'127.0.0.1:{server.server_address[1]}'})
+        answer = connection.getresponse()
+        return answer.status, answer.read(), dict(answer.getheaders())
+
+    try:
+        status, body, headers = get(f'project={project}&session={found["session_id"]}&id={first["id"]}')
+        assert status == 200 and body == first_bytes                     # the bytes attached, not the file's now
+        assert headers['Content-Disposition'].startswith(f'attachment; filename="{report.name}"')
+        assert get(f'project={project}&session={found["session_id"]}&id={second["id"]}')[1] == report.read_bytes()
+        assert get(f'project={project}&session=another&id={first["id"]}')[0] == 404
+        assert get(f'project=elsewhere&session={found["session_id"]}&id={first["id"]}')[0] == 404
+        assert get(f'project={project}&session=..&id=../../etc')[0] == 400
+        (kept / found['session_id'] / first['id'] / report.name).unlink()
+        assert get(f'project={project}&session={found["session_id"]}&id={first["id"]}&check=1')[0] == 404
+    finally:
+        server.shutdown()
+        server.server_close()
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.parametrize('declared', [True, False])
+def test_a_frame_the_person_sends_reaches_only_an_agent_that_declares_images_and_only_that_session(
+        dispatch, run, home, tmp_path, declared):
+    """A frame of the person's shared screen goes beside their words as an ACP image block to the session the message
+    names, only where its agent declared promptCapabilities.image; never from an agent, nor from outside run/captures."""
+    import base64
+    gates = tmp_path / 'turns'
+    gates.mkdir()
+    dispatch.start('replace', FAKE_ACP_TURN_GATES=str(gates), **({'FAKE_ACP_IMAGE': '1'} if declared else {}))
+    eventually(lambda: dispatch.received('session/prompt'))
+    frames = home / 'run' / 'captures'
+    frames.mkdir(parents=True)
+    frame = frames / ('cd' * 16 + '.jpg')
+    frame.write_bytes(b'\xff\xd8\xff-fake-jpeg')
+    outside = tmp_path / 'elsewhere.jpg'
+    outside.write_bytes(b'\xff\xd8\xff-fake-jpeg')
+    refused = run('dispatch', 'message', dispatch.id, f'image={outside}', '--', 'look', cwd=dispatch.folder, ok=False)
+    assert refused.returncode != 0 and 'a frame goes with a person' in refused.stderr.lower()
+    sent = json.loads(run('dispatch', 'message', dispatch.id, f'image={frame}', '--json', '--', 'what is this',
+                          cwd=dispatch.folder).stdout)
+    assert sent['image'] is declared
+    assert not frame.exists()  # read and removed, sent or not
+    (gates / '1').touch()
+    prompts = eventually(lambda: dispatch.received('session/prompt')[1:])
+    blocks = [{'type': 'text', 'text': 'what is this'}]
+    if declared:
+        blocks.append({'type': 'image', 'mimeType': 'image/jpeg',
+                       'data': base64.b64encode(b'\xff\xd8\xff-fake-jpeg').decode()})
+    assert prompts[0]['params']['prompt'] == blocks
+    assert prompts[0]['params']['sessionId'] == dispatch.received('session/prompt')[0]['params']['sessionId']
+    dispatch.stop()
+
+
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('CLI-003')
 def test_the_help_shows_how_a_message_that_is_a_switch_name_reaches_the_agent_as_written(dispatch, run, tmp_path):

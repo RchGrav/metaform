@@ -1,0 +1,231 @@
+/* The chat dock's state, when the page first saw each line, and a body for the chat's agent on the map, web_embody. */
+import '/page/app/selection/select.js';  // the part before runs first, so the parts run in the page's order
+import {$, h, fill} from '/page/app/core/dom.js';
+import {toast} from '/page/app/core/controls.js';
+import {VIEW} from '/page/app/views/settings.js';
+import {drawHelpdesk, followLog, launcherRect, reverseDock, growFrom} from '/page/app/dock/helpdesk.js';
+import {setBox, dockLayout} from '/page/app/dock/place.js';
+import {D, ticketOf} from '/page/app/agents/dispatch.js';
+import {drawDockTab} from '/page/app/agents/pickers.js';
+import {isIntake} from '/page/app/session/tools.js';
+import {chatDocked} from '/page/app/workspace/workspace.js';
+
+/* The chat dock: a thin sliver at the lower right that lifts when the pointer comes near and opens, on a click, into
+ * the page's one place for conversations with agents. Every thread is an ACP session, kept by its session id, and a
+ * tab of its own: an agent dispatched on a ticket, the intake, the person's system agent, a chat the person started, a
+ * sentinel, each with a chip saying where it comes from. A thread shows the agent's words, its thinking, its tool calls
+ * and its permission requests in order, with its plan and its settings above; Call reaches the person's system agent,
+ * the +1 outside the agent limit, and /list and /chat <n> talk with an agent at work, VIEW-039 and VIEW-045. Bubbles
+ * alternate: the person's on the right, the agent's on the left. A file attached with the paperclip is saved in the
+ * project and the agent is told where. The dock rests in the corner, docks at either side of the page, or floats where
+ * its head is dragged. */
+export const DOCK = {target: null, session: null, label: '', since: 0, notes: [], list: [], files: [], mine: null,
+  waiting: '', calling: null,
+  chats: [], chat: null,  // chats: every open thread, one a tab; chat: the one on view
+  pinned: true,
+  queue: [],  // messages written before the agent was there, sent in order once it is
+  unread: false, heard: new Set()};
+/* When the page first saw each message of a thread. A thread's lines carry no time of their own, so those already
+ * there when its session was first read have none, and each one after that has the moment it arrived. */
+export const SEEN = {at: new Map(), sessions: new Set()};
+export const clockOf = (when, day = false) => {
+  const date = new Date(when);
+  if (isNaN(date)) return '';
+  const today = new Date().toDateString() === date.toDateString();
+  const dated = day && !today ? {month: 'short', day: 'numeric'} : {};
+  return date.toLocaleString([], {hour: '2-digit', minute: '2-digit', ...dated});
+};
+export const STANDBY = 'Please stand by while we contact an agent for you.';
+// the chat going into its tab, 'away', or coming out of it, 'back'
+export const DOCKMOTION = {anim: null, dir: null};
+export const dockGoingAway = () => Boolean(DOCKMOTION.anim)
+  && (DOCKMOTION.dir === 'away') === (DOCKMOTION.anim.playbackRate > 0);
+/* A body for the chat's agent on the map, web_embody: offered once per chat, inline at the top of its thread and never
+ * as a window, at a pause after web_embody_turns turns or web_embody_minutes minutes, whichever comes first; always
+ * gives it the person's last choice, or the mascot to the system agent; never gives none. The choice folds into the
+ * chat's head as a small avatar of the character, which, like B, opens the choice again. The figure is the flow's:
+ * `window.metaform.characters()` lists the characters and `window.metaform.embody(workId, glyph)` gives one; until
+ * those exist nothing is offered and nothing breaks. */
+export const EMBODY = {offered: new Set(), given: new Set(), since: new Map(), open: null, last: null, stops: []};
+try { EMBODY.last = localStorage.getItem('metaform.embodied') || null; } catch { /* storage can be blocked */ }
+export const embodyHooks = () => ['embody', 'characters', 'bodies']
+  .every(name => typeof window.metaform?.[name] === 'function');
+const hooked = (name, ...given) => { try { return window.metaform[name](...given); } catch { return null; } };
+/* Only a conversation's agent takes a body this way, the system agent or a chat the person started; an agent at work
+ * on a ticket walks as its own figure already. */
+export const embodiable = chat => Boolean(chat && ['system', 'conversation'].includes(chat.source)
+  && !isIntake(chat.target));
+const bodyFor = work => (hooked('bodies') || []).find(one => one.work === work) || null;
+function characterList(work) {
+  const system = DOCK.chat?.source === 'system', mine = bodyFor(work)?.character;
+  // the person's own character, web_mascot, first for their system agent; with none set, none is put first
+  const list = (hooked('characters') || []).filter(one => one?.name && (!one.mascot || system)).map(one => ({...one,
+    src: `/page/agent-glyphs/${one.name}.svg`, free: one.free !== false || one.name === mine || (one.mascot && system),
+    preferred: Boolean(one.preferred && system)}));
+  return [...list.filter(one => one.preferred), ...list.filter(one => !one.preferred)];
+}
+function stopPreviews() {
+  for (const stop of EMBODY.stops.splice(0)) { try { stop(); } catch { /* already still */ } }
+}
+/* Give the chat's agent the character chosen; the flow says no when it is taken, and the chat says why. */
+function embodyAs(work, glyph, quiet = false) {
+  if (!work || !glyph || !embodyHooks()) return false;
+  const done = hooked('embody', work, glyph);
+  if (!done || done.error) {
+    if (!quiet) dockNote(done?.error || 'That body could not be given.');
+    return false;
+  }
+  EMBODY.last = glyph;
+  try { localStorage.setItem('metaform.embodied', glyph); } catch { /* storage can be blocked */ }
+  EMBODY.given.add(work);
+  if (EMBODY.open === work) { EMBODY.open = null; stopPreviews(); }
+  if (quiet) drawHelpdesk();
+  else dockNote(done.mascot ? `Your system agent walks the map as the ${glyph} now, your mascot while you talk.`
+    : `It walks the map as the ${glyph} now.`);
+  return true;
+}
+/* web_embody: offer asks once per conversation, in its thread, after web_embody_turns turns or web_embody_minutes
+ * minutes, whichever comes first, and only at a pause, as a turn ends or a ticket closes, never while it works;
+ * always gives each conversation the person's last choice, or the mascot to the system agent; never offers nothing.
+ * The person asks at any time with the avatar in the head, the head's menu or B. */
+export function embodyOffer(work, session, lines, busy) {
+  paintAvatar(work);
+  if (!work || !session || !embodyHooks() || VIEW.embody === 'never' || !embodiable(DOCK.chat)) return;
+  if (!EMBODY.since.has(work)) EMBODY.since.set(work, Date.now());
+  const chosen = Boolean(bodyFor(work)?.by);
+  if (VIEW.embody === 'always') {
+    if (!chosen && !EMBODY.given.has(work)) embodyAlways(work);
+    return;
+  }
+  if (chosen || EMBODY.offered.has(work)) return;
+  if (offerDue(work, session, lines, busy)) { EMBODY.offered.add(work); EMBODY.open = work; }
+}
+/* web_embody always: the person's last choice, else their own character, else the first free one. */
+function embodyAlways(work) {
+  EMBODY.given.add(work);
+  const list = characterList(work), free = name => list.find(one => one.name === name && one.free);
+  const glyph = [EMBODY.last, list.find(one => one.preferred)?.name, list.find(one => one.free && !one.mascot)?.name]
+    .find(free);
+  if (glyph) embodyAs(work, glyph, true);
+}
+/* The offer is due after its turns or its minutes, at a pause: a turn ended, or its ticket closed. */
+function offerDue(work, session, lines, busy) {
+  const turns = lines.filter(line => line.kind === 'turn').length;
+  const minutes = (Date.now() - EMBODY.since.get(work)) / 60000;
+  const due = turns >= (VIEW.embodyTurns ?? 8) || minutes >= (VIEW.embodyMinutes ?? 20);
+  const ticket = ticketOf(work);
+  const pause = !busy && session.state === 'running' && session.activity === 'idle' || Boolean(ticket?.done);
+  return due && (pause || (VIEW.embodyTurns ?? 8) === 0);
+}
+/* Open the choice now, as the person asked: in the thread, where the offer stands. */
+export function askEmbody() {
+  const work = DOCK.target;
+  if (!embodyHooks()) return toast('Bodies on the map are not ready on this page yet.');
+  if (!work || !embodiable(DOCK.chat)) return toast('Open a chat with your system agent, or one you started, first.');
+  EMBODY.open = EMBODY.open === work ? null : work;
+  EMBODY.offered.add(work);
+  if (!EMBODY.open) stopPreviews();
+  if (!$('#dock').className.startsWith('open')) dockState('open');
+  drawHelpdesk().then(() => { if (EMBODY.open) followLog(true); });
+}
+/* The offer in the thread, a row of the conversation: each character moving in its own way on a small canvas, with
+ * its name and temper, those taken by another agent unavailable, and Not now. */
+export function embodyRows(work) {
+  if (!work || EMBODY.open !== work || !embodyHooks()) { if (EMBODY.stops.length) stopPreviews(); return []; }
+  const body = bodyFor(work), list = characterList(work);
+  const text = `${body?.character || ''}:${list.map(one => `${one.name}${one.free ? '' : '-'}`).join(',')}`;
+  return [{key: `embody:${work}`, text, make: () => embodyChoice(work, body, list)}];
+}
+function embodyChoice(work, body, list) {
+  stopPreviews();
+  const notNow = () => { EMBODY.open = null; stopPreviews(); drawHelpdesk(); };
+  return h('div', {class: 'embody', role: 'group', 'aria-label': 'Give this agent a body on the map'},
+    h('p', {class: 'ask'},
+      h('b', {}, body?.by ? 'Change its body?' : `Give ${DOCK.label || 'this agent'} a body on the map?`),
+      h('small', {}, 'It walks the map in that shape as it works. Change it at any time with its avatar or B.')),
+    h('div', {class: 'choices'}, list.map(one => characterButton(work, body, one))),
+    h('div', {class: 'acts'}, h('button', {type: 'button', class: 'btn sm quiet notnow', onclick: notNow}, 'Not now')));
+}
+/* One character to choose: moving on its canvas, its name and temper; one at work already cannot be chosen. */
+function characterButton(work, body, one) {
+  const canvas = h('canvas', {width: '96', height: '96', 'aria-hidden': 'true'});
+  const stop = previewOn(one, canvas);
+  if (typeof stop === 'function') EMBODY.stops.push(stop);
+  const on = body?.by && body.character === one.name;
+  const title = `${one.name}: ${one.temperament || ''}${one.moves ? `, it ${one.moves}s` : ''}`
+    + (one.free ? '' : ' · at work already');
+  return h('button', {type: 'button', class: `character${on ? ' on' : ''}`, disabled: !one.free, title,
+    'aria-pressed': String(Boolean(on)), onclick: () => embodyAs(work, one.name)},
+  canvas, h('span', {class: 'name'}, one.name),
+  h('small', {}, one.preferred ? 'your character' : one.temperament || ''));
+}
+/* A character moving on its canvas, and what stops it; nothing where it cannot be drawn. */
+function previewOn(one, canvas) {
+  if (typeof one.preview !== 'function') return null;
+  try { return one.preview(canvas); } catch { return null; }
+}
+/* The head's avatar: the agent's body when it has one, else the letter; a click opens the choice. */
+function paintAvatar(work) {
+  const avatar = $('#helpdesk .head .avatar');
+  if (!avatar) return;
+  if (!avatar.dataset.letter) avatar.dataset.letter = avatar.textContent;
+  const hooks = embodyHooks(), can = hooks && work && embodiable(DOCK.chat);
+  const body = can ? bodyFor(work) : null, glyph = body && (body.by || body.drawn) ? body.character : null;
+  if (avatar.dataset.glyph !== (glyph || '')) {
+    avatar.dataset.glyph = glyph || '';
+    fill(avatar, glyph ? h('img', {src: `/page/agent-glyphs/${glyph}.svg`, alt: ''}) : avatar.dataset.letter);
+  }
+  avatar.classList.toggle('embodied', Boolean(glyph));
+  avatar.classList.toggle('choosable', Boolean(can));
+  avatar.setAttribute('role', can ? 'button' : 'img');
+  avatar.setAttribute('tabindex', can ? '0' : '-1');
+  avatar.setAttribute('aria-hidden', String(!can));
+  const words = glyph ? `Its body on the map: the ${glyph}. Change it` : 'Give this agent a body on the map';
+  avatar.setAttribute('aria-label', can ? words : '');
+  avatar.title = can ? `${words} (B)` : '';
+  avatar.onclick = can ? () => askEmbody() : null;
+  avatar.onkeydown = can ? pressAvatar : null;
+}
+function pressAvatar(event) {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  askEmbody();
+}
+/* Kept for the flow's own callers: the avatar and the offer are drawn with the chat. */
+function drawEmbody() { if ($('#helpdesk') && !$('#helpdesk').hidden) drawHelpdesk(); }
+/* Where a thread comes from, said on its chip. The system agent and a chat the person started are the person's own;
+ * a session the page did not start is known only as an agent at work, an intake or a sentinel. */
+export const SOURCES = {agent: 'Agent at work', intake: 'Intake', system: 'Your system agent',
+  conversation: 'Your chat', sentinel: 'Sentinel', merge: 'Merge help'};
+export const sourceOf = workId => isIntake(workId) ? 'intake' : workId === DOCK.mine ? 'system'
+  : (D.proposals || {})[workId] ? 'sentinel' : 'agent';
+export const sourceChip = source => h('span', {class: 'src', 'data-source': source}, SOURCES[source] || SOURCES.agent);
+export function dockState(state) {
+  const box = $('#helpdesk'), was = !box.hidden, open = state === 'open' || state === 'open big';
+  const anim = DOCKMOTION.anim;
+  if (open && dockGoingAway()) {  // called back on its way
+    reverseDock();
+    if (state === $('#dock').className) return;
+  }
+  if (!open && anim) {  // put away at once, as another project is chosen: no motion left running
+    Object.assign(DOCKMOTION, {anim: null, dir: null});
+    anim.cancel();
+    $('#dockTab').classList.remove('launch');
+    Object.assign(box.style, {transformOrigin: '', willChange: ''});
+  }
+  // measured while the tab still shows
+  const from = open && !was && !chatDocked() ? launcherRect() : null;
+  $('#dock').className = state;
+  box.hidden = !open;
+  dockLayout();
+  if (open && !was) {  // opened, even empty, it says what it is and how to start, and grows out of its tab
+    // the window may be smaller now
+    if ($('#dock').dataset.place === 'float' && box.style.left) setBox(box.getBoundingClientRect(), false);
+    DOCK.unread = false;
+    drawDockTab();
+    drawHelpdesk();
+    if (from) growFrom(from);
+  }
+  if (!open) stopPreviews();
+}
+export function dockNote(text) { DOCK.notes.push({at: Date.now(), text}); drawHelpdesk(); }

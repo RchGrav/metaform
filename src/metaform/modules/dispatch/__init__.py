@@ -18,8 +18,10 @@ from __future__ import annotations
 
 import asyncio
 import ctypes
+import hashlib
 import inspect
 import json
+import mimetypes
 import os
 import secrets
 import shlex
@@ -558,7 +560,20 @@ def work_line(work_id: str, folder: Path, node: str) -> str:
 
 
 # The mascot's body: the web module's verbs that move it and let it see, each the MCP tool web_<verb>.
-MASCOT_VERBS = ('say', 'go', 'point', 'emote', 'look', 'see', 'turn')
+MASCOT_VERBS = ('say', 'go', 'point', 'emote', 'look', 'see', 'turn', 'come')
+# A conversation agent's place on the map: a body, its eyes, where the person looks, and coming up before their view.
+EYES_VERBS = frozenset({'embody', 'look', 'see', 'viewing', 'capture', 'come'})
+
+
+def eyes_line(folder: Path) -> str:
+    """The one line that tells an agent the person talks with about something how it can be on the map with them,
+    VIEW-005, while the web module on the folder's surface has every one of those tools; empty otherwise, so the
+    agent is never told to use a tool it does not have."""
+    web = next((module for module in surface(folder) if module.id == 'web'), None)
+    if web is None or not EYES_VERBS <= {verb.name for verb in web.verbs}:
+        return ''
+    line = prompt('eyes')
+    return f'  {line}' if line else ''
 
 
 def mascot_line(folder: Path) -> str:
@@ -2144,6 +2159,12 @@ def message(ctx: Context) -> dict[str, Any]:
             raise Stop('A recording goes with a person\'s own message, as a clip the web GUI kept.',
                        f'metaform dispatch message {ctx.nouns["id"]} -- "<text>"')
         given_by['audio'] = str(audio)
+    if ctx.nouns.get('image'):  # a frame the person sent, beside their words where the agent takes images
+        image = Path(str(ctx.nouns['image'])).expanduser().resolve()
+        if role or image.parent != (home.home() / 'run' / 'captures').resolve() or not image.is_file():
+            raise Stop('A frame goes with a person\'s own message, as one the web GUI kept.',
+                       f'metaform dispatch message {ctx.nouns["id"]} -- "<text>"')
+        given_by['image'] = str(image)
     return _told(_running_or_stop(store, ctx.nouns['id'], ctx.nouns.get('session')), 'message', text=text, **given_by)
 
 
@@ -2162,6 +2183,113 @@ def fork(ctx: Context) -> dict[str, Any]:
     if answer.get('error'):
         raise Stop(str(answer['error']), f'metaform dispatch sessions id={ctx.nouns["id"]}')
     return answer
+
+
+TIMER_MOST = 86400  # seconds an agent's timer may run, a day
+
+
+def timer(ctx: Context) -> dict[str, Any]:
+    """An agent's own timer, VIEW-005: set with seconds and a note, its session's runner wakes that session with the
+    note as a turn when it is due; cancel=<id> takes one back; with neither, the timers set. It is the agent's own,
+    found by the work and runner its session was started with, so it wakes no other session, and it ends with the
+    session, since its runner holds it."""
+    work, runner = os.environ.get('METAFORM_WORK'), os.environ.get('METAFORM_SESSION')
+    if not work or not runner:
+        raise Stop("A timer is an agent's own: it is set from an agent's session, for that session.",
+                   'metaform help dispatch timer')
+    store = ctx.require_store()
+    held = (intake_store(store, work) or store) if intake_id(work) else store
+    row = next((one for one in sessions(held, work, verify=False)
+                if one.get('runner') == runner and one.get('state') == 'running'), None)
+    if row is None or session_status(own_store(held), row, done=False)['state'] != 'running':
+        raise Stop('Your session is not running here, so no timer can wake it.', f'metaform dispatch sessions id={work}')
+    if ctx.nouns.get('cancel'):
+        return _told(row, 'timer', cancel=str(ctx.nouns['cancel']))
+    given: Any = ctx.nouns.get('text') or []
+    note = ' '.join(str(word) for word in cast(list[Any], given)) if isinstance(given, (list, tuple)) else str(given)
+    if ctx.nouns.get('seconds') in (None, ''):
+        if note.strip():
+            raise Stop('A timer is set with its seconds and what it wakes you for.', 'metaform dispatch timer seconds=60 -- "<note>"')
+        return _told(row, 'timer')
+    try:
+        seconds = float(str(ctx.nouns['seconds']))
+    except ValueError:
+        seconds = -1.0
+    if not 1 <= seconds <= TIMER_MOST or not note.strip():
+        raise Stop(f'A timer runs from 1 to {TIMER_MOST} seconds and says what it wakes you for.',
+                   'metaform dispatch timer seconds=60 -- "look where the person points"')
+    return _told(row, 'timer', seconds=seconds, text=note.strip())
+
+
+ATTACH_MOST = 25 * 1024 * 1024  # the largest file an agent attaches to its chat, as the person's own attachments
+PUBLISHED = 'published'  # under the project's folder in the Metaform home: <session>/<id>/<name> and meta.json
+
+
+def attach(ctx: Context) -> dict[str, Any]:
+    """A file an agent made, attached to its own chat for the person to download, VIEW-039. It is the agent's own,
+    found as its timer is, so it reaches only the thread of the session that published it. The file is read from the
+    project's folder, a worktree in it among them, and copied whole under the project's folder in the Metaform home,
+    by the session and an id of its own, so a later file of the same name, or a change to this one, never replaces
+    what was attached; the page serves it by that session and id alone, never by a path."""
+    work, runner = os.environ.get('METAFORM_WORK'), os.environ.get('METAFORM_SESSION')
+    if not work or not runner:
+        raise Stop("An attachment is an agent's own: it is published from an agent's session, into that session's "
+                   'chat.', 'metaform help dispatch attach')
+    store = ctx.require_store()
+    held = (intake_store(store, work) or store) if intake_id(work) else store
+    row = next((one for one in sessions(held, work, verify=False)
+                if one.get('runner') == runner and one.get('state') == 'running'), None)
+    if row is None or session_status(own_store(held), row, done=False)['state'] != 'running':
+        raise Stop('Your session is not running here, so there is no chat to attach the file to; nothing was '
+                   'attached.', f'metaform dispatch sessions id={work}')
+    root = Path(store.project().path).resolve()
+    given = Path(str(ctx.nouns['path'])).expanduser()
+    source = (given if given.is_absolute() else Path.cwd() / given).resolve()
+    if not source.is_relative_to(root) and not given.is_absolute():
+        source = (root / given).resolve()
+    if not source.is_relative_to(root):
+        raise Stop(f'{given} is outside the project, {root}; only a file of the project is attached.',
+                   'write the file in the project, such as under artifacts/, and attach it from there')
+    if not source.is_file():
+        raise Stop(f'No file at {source}; nothing was attached.', 'metaform dispatch attach path=<a file of the project>')
+    size = source.stat().st_size
+    if size > ATTACH_MOST:
+        raise Stop(f'{source.name} is {size // 1024 // 1024} MB; an attachment is at most '
+                   f'{ATTACH_MOST // 1024 // 1024} MB.', 'attach a smaller file, or say where it is')
+    folder = home.project_folder(store.project_id)
+    if folder is None:
+        raise Stop(f'No project {store.project_id} is registered.', 'metaform list projects')
+    name = str(ctx.nouns.get('name') or source.name)
+    safe = ''.join(char if char.isalnum() or char in '._-' else '_' for char in Path(name).name).lstrip('.') or 'file'
+    ident = secrets.token_hex(8)
+    session_id = str(row['session_id'])
+    target = folder / PUBLISHED / ''.join(char for char in session_id if char.isalnum() or char in '_-') / ident
+    target.mkdir(parents=True, exist_ok=True)
+    data = source.read_bytes()
+    (target / safe).write_bytes(data)
+    meta = {'id': ident, 'name': safe, 'size': len(data), 'type': mimetypes.guess_type(safe)[0] or
+            'application/octet-stream', 'sha256': hashlib.sha256(data).hexdigest(),
+            'source': source.relative_to(root).as_posix(), 'work_id': work, 'session_id': session_id,
+            'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+    (target / 'meta.json').write_text(json.dumps(meta, ensure_ascii=False), encoding='utf-8')
+    def taken_back() -> None:  # a file the chat did not take leaves nothing behind
+        shutil.rmtree(target, ignore_errors=True)
+        try:
+            target.parent.rmdir()
+        except OSError:
+            pass  # the session has other attachments
+
+    try:
+        told = _told(row, 'attach', attachment=meta)
+    except Stop:
+        taken_back()
+        raise
+    if told.get('error') or not told.get('attached'):
+        taken_back()
+        raise Stop(f'Your chat did not take the file: {told.get("error") or "no answer"}; nothing was attached.',
+                   f'metaform dispatch sessions id={work}')
+    return {'attached': meta, 'said': f'{safe} is attached to your chat, {len(data)} bytes; the person downloads it '
+                                      'there.'}
 
 
 def interrupt(ctx: Context) -> dict[str, Any]:
@@ -2382,7 +2510,7 @@ def threaded(lines: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[st
         kind = line['kind']
         if kind == 'unlisted':  # serve's mark of a session an editor deleted from its list, BASE-062: no line of it
             continue
-        if kind in ('state', 'tool_detail', 'permission', 'subagent', 'elicitation', 'agent_notice'):
+        if kind in ('state', 'tool_detail', 'permission', 'subagent', 'elicitation', 'agent_notice', 'attachment'):
             try:
                 value: Any = json.loads(str(line['text']))
             except ValueError:
@@ -2403,6 +2531,9 @@ def threaded(lines: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[st
             if found is not None:
                 line['data'] = found
     return kept, states
+
+
+SUBAGENTS_READ = 50  # the most of a running session's subagents the agents key reads, for their figures
 
 
 def read_sessions(ctx: Context) -> dict[str, Any]:
@@ -2438,6 +2569,11 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
                 else:
                     lines += [dict(row) for row in tx.rows('lines', {'session_id': session['session_id'],
                                                                      'name': 'state'}, limit=1).results]
+                    if session.get('state') == 'running':  # its subagents' lines, for their figures, VIEW-035
+                        lines += [dict(row) for row in tx.rows('lines', {'session_id': session['session_id']},
+                                                               after=json.dumps(['subagent:']),
+                                                               limit=SUBAGENTS_READ).results
+                                  if str(row['name']).startswith('subagent:')]
     except StoreError:
         pass
     lines, states = threaded(lines)
@@ -3087,6 +3223,8 @@ MODULE = Module(
                                     'none is given.', required=False),
                     Noun('audio', 'A wav recording of the message, sent beside it as an ACP audio block when the '
                                   "agent's session declares audio; removed once read.", required=False),
+                    Noun('image', 'A frame the web GUI kept, sent beside the message as an ACP image block when the '
+                                  "agent's session declares images; removed once read.", required=False),
                     Noun('text', 'The message.', many=True)),
              examples=(('metaform dispatch message 198452e1... "also run the tests"', 'Sends it as session/prompt.'),
                        ('metaform dispatch message 198452e1... -- "--json"',
@@ -3100,6 +3238,19 @@ MODULE = Module(
                     Noun('text', 'The fork\'s first turn, or its next with fork=<id>.', required=False, many=True)),
              examples=(('metaform dispatch fork 198452e1... -- "What else did you consider?"',
                         'Asks a fork of the session, leaving the session itself at its work.'),), open_world=True),
+        Verb('timer', timer, 'Set a timer that wakes your own session later with a note, cancel one, or list yours.',
+             nouns=(Noun('seconds', 'How long until it wakes you, from 1 to 86400.', required=False),
+                    Noun('cancel', 'The id of one of your timers, to take it back.', required=False),
+                    Noun('text', 'What it wakes you for, said to you when it is due.', many=True, required=False)),
+             examples=(('metaform dispatch timer seconds=30 -- "see if the person looked at the figure"',
+                        'Wakes this session in 30 seconds with that note.'),
+                       ('metaform dispatch timer cancel=1a2b3c4d', 'Takes that timer back.')), open_world=False),
+        Verb('attach', attach, 'Attach a file you made to your own chat, for the person to download there.',
+             nouns=(Noun('path', 'The file, in the project; a path from the project folder or your working folder.'),
+                    Noun('name', 'The name the person sees and downloads it as; the file\'s own when none is given.',
+                         required=False)),
+             examples=(('metaform dispatch attach artifacts/brief.txt',
+                        'Shows brief.txt in your chat as an attachment with Download.'),), open_world=False),
         Verb('interrupt', interrupt, 'Interrupt the turn of the agent working a ticket, keeping its conversation open.',
              nouns=(Noun('id', 'The work id of the ticket.'),
                     Noun('session', 'The chat session id, to avoid interrupting a replacement session.', required=False)),
