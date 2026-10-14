@@ -31,12 +31,12 @@ DEPENDENCIES = ('mcp>=2.2,<3', 'a2a-sdk[http-server]>=1.2.2,<2')
 SHIPS_DISABLED = False
 REMOTE_AGENT = False  # a hosted agent reaches Metaform through the CLI, and mcp's compiled dependencies do not travel
 
-settings.boolean('mcp_http', False, switches=('--http', '--no-http'), label='Serve over HTTP',
+settings.boolean('mcp_http', False, switches=('--http', '--no-http'), label='Serve over HTTP', per_call=True,
                  help='Serve this run over Streamable HTTP on 127.0.0.1 instead of stdio.',
-                 details='Given on the command line, metaform mcp serve --http, for the one run. Stored, every metaform '
-                         'mcp serve in its scope serves HTTP, the servers AI tools and dispatch start over stdio '
-                         'included, so it is meant for the command line; mcp_transport is what tells metaform install '
-                         'to register the HTTP server.')
+                 details='Given on the command line, metaform mcp serve --http, for the one run, and never stored: '
+                         'stored, every metaform mcp serve in its scope would serve HTTP, the servers AI tools and '
+                         'dispatch start over stdio included. mcp_transport is what tells metaform install to register '
+                         'the HTTP server.')
 settings.number('mcp_port', 7434, min=1, max=65535, scope='global', switches=('--mcp-port', '--port'),
                 label='MCP HTTP port', help='The port the HTTP MCP server listens on at 127.0.0.1.',
                 details='Read by metaform mcp serve --http, and by metaform install when mcp_transport is http, '
@@ -107,6 +107,11 @@ settings.choice('mcp_recovery', ['relay', 'manual'], 'relay', label='Schema upgr
                 help='On a newer store, relay this connection to changed code on disk, or require a manual restart.',
                 details='Relay preserves the host connection and retries calls refused before dispatch. '
                         'Manual returns the schema error. Unchanged package code never starts a replacement.')
+settings.choice('skill_index', ['auto', 'on', 'off'], 'auto', label='Skill index at MCP connect',
+                help='auto lists discoverable skills unless this harness has a recorded native deployment; '
+                     'on always lists them and off omits the index.',
+                details='The index tells an agent when to choose each skill and how to load it over MCP. '
+                        'Internal skills remain loadable by address and never appear in this index.')
 # A2A, P004 and P005: other agents send work to Metaform as tickets. Who may reach it and where it may call out to are
 # the person's to decide, CLI-011, so both are person_only; how long a send waits only paces the caller, so it is not.
 settings.boolean('mcp_a2a', True, scope='global', person_only=True, label='Serve A2A',

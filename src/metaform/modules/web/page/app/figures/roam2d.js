@@ -13,6 +13,19 @@ import {M} from '/page/app/map2d/build.js';
 import {DOCK} from '/page/app/dock/embody.js';
 import {glyphFor} from '/page/app/agents/dispatch.js';
 import {holderOf} from '/page/app/keys/walk.js';
+import {openFigure} from '/page/app/figures/ask.js';
+import {figureWords} from '/page/app/map3d/readout.js';
+
+/* A figure takes its own click while its press still reaches the map's pan handler. Keep the same four-pixel
+ * threshold as that handler, including a drag that returns to where it started. */
+const FIGURE2D_PICK = {down: null};
+$('#map2d').addEventListener('pointermove', event => {
+  const down = FIGURE2D_PICK.down;
+  if (down && event.pointerId === down.pointer && Math.hypot(event.clientX - down.x, event.clientY - down.y) >= 4) {
+    down.dragged = true;
+  }
+}, true);
+$('#map2d').addEventListener('pointercancel', () => { FIGURE2D_PICK.down = null; }, true);
 
 /* The agents in 2D, VIEW-035: the same agents as the 3D map's figures, each drawn as its flat glyph,
  * page/agent-glyphs/<glyph>.svg, the glyph its 3D figure is drawn with. It appears on the DE, walks the 2D map's own
@@ -63,6 +76,7 @@ export function figures2d(tickets) {
   for (const ticket of tickets) {
     const figure = ROAM2D.figures.get(ticket.id);
     if (figure) {
+      figure.g.querySelector('text').textContent = figureWords(ticket.id).card.title;
       const done = !drawnWorking(ticket, live);
       if (figure.done && !done) turnRound2d(figure, base);
       figure.done = done;
@@ -106,6 +120,24 @@ function startFigure2d(ticket, base, home, target) {
   const glyph = ROAM.figures.get(ticket.id)?.glyph || glyphFor(ticket.id);
   const g = glyph2d(glyph, 'agent2d');
   g.dataset.glyph = glyph;
+  g.style.pointerEvents = 'auto';  // only the glyph and its name, never the empty layer around them
+  const name = document.createElementNS(SVG, 'text');
+  name.setAttribute('class', 'agent-name');
+  name.textContent = figureWords(ticket.id).card.title;
+  name.setAttribute('text-anchor', 'middle');
+  name.style.fontFamily = 'var(--sans)';
+  name.style.fill = 'var(--text)';
+  g.append(name);
+  g.addEventListener('pointerdown', event => {
+    FIGURE2D_PICK.down = event.button === 0 ? {id: ticket.id, pointer: event.pointerId,
+      x: event.clientX, y: event.clientY, dragged: false} : null;
+  });
+  g.addEventListener('click', event => {
+    event.stopPropagation();
+    const down = FIGURE2D_PICK.down;
+    FIGURE2D_PICK.down = null;
+    if (down?.id === ticket.id && !down.dragged && event.button === 0) openFigure(ticket.id);
+  });
   ROAM2D.seen.add(ticket.id);
   const way = [...route2d(base, home, target.last), ...(target.key !== target.last ? [target.key] : [])];
   const motion = motionOf(glyph, ticket.id);
@@ -241,9 +273,13 @@ function stepFigure2d(id, figure, base, layer, perPixel, passed) {
   const {x, y, scale, lift, squash, spin} = pose;
   Object.assign(figure, {x, y, size: size * scale});
   const drawn = size * scale, foot = y + drawn / 2 - lift * size;
-  const placed = [x - drawn / 2, foot, drawn, figure.lean, squash, spin].map(hundredths).join(' ');
+  const nameSize = Math.max(drawn * 0.18, 11 * perPixel), nameY = foot + Math.max(drawn * 0.22, 12 * perPixel);
+  const placed = [x - drawn / 2, foot, drawn, figure.lean, squash, spin, nameSize, nameY].map(hundredths).join(' ');
   if (placed === figure.drawn) return false;   // nothing to draw again
   figure.drawn = placed;
+  const name = figure.g.querySelector('text');
+  name.setAttribute('x', x); name.setAttribute('y', nameY);
+  name.style.fontSize = `${nameSize}px`;
   // it leans the way it goes, squashes and stretches from its feet, and turns about its middle in a flourish
   drawFlat(figure.g.firstChild, x, foot, drawn, figure.lean + spin, squash);
   return true;

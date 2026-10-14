@@ -3,23 +3,22 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import time
 from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from importlib import resources
-from itertools import takewhile
 from pathlib import Path
 from typing import Any, cast
 
-from metaform import axiom, prompt_files, settings
+from metaform import axiom, home, prompt_files, settings
+from metaform import skills as skill_registry
 from metaform.data import Store, StoreError, prompts
 from metaform.module import Context, Module, Noun, Stop, Verb, held_role
 
 from . import catalog, executor, runs
 from . import preprocess as preprocessing
-from .binding import Lookup, destination
-from .element import Value, element_value
+from .binding import Logic, Lookup, destination
+from .element import ElementValue, Value, element_value
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -45,16 +44,14 @@ settings.choice('preprocess_knowledge', ['context', 'whole'], 'context',
                         'retain the map\'s always_show items. Default context keeps the job\'s prepared context small.')
 
 
-SECTIONS = ('axiom-language', 'metaform-system', 'namespace-rules', 'workflow-logic', 'metaform-tools',
-            'delexicalization-rules')
-LIBS = ('lib_axiom', 'lib_metaform', 'lib_workflow', 'lib_quality')
+LIBS = skill_registry.LIBS
 SKILLS = ('scan', 'write_workflow', 'import_workflow', 'workflow_efficiency', 'prompt_efficiency',
           'workflow_builder', 'workflow_evaluator', 'sentinel', 'code_links')
 
 
 def _prompts() -> None:
-    for name in (*SECTIONS, 'prompt-lexicalization'):
-        prompts.shipped(name, 'text', prompt_files.required(PACKAGE, name))
+    skill_registry.seed()
+    prompts.shipped('prompt-lexicalization', 'text', prompt_files.required(PACKAGE, 'prompt-lexicalization'))
 
 
 def lexicalize(ctx: Context) -> dict[str, Any]:
@@ -133,7 +130,12 @@ def export(ctx: Context) -> Any:
         return doc
     path = _path(ctx, n['file'])
     try:
-        path.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+        text = json.dumps(doc, ensure_ascii=False, indent=2) + '\n'
+        if home.is_home_path(path):
+            home.mkdir_private(path.parent)
+            home.write_private(path, text)
+        else:
+            path.write_text(text, encoding='utf-8')
     except OSError as error:
         raise Stop(f'Cannot write {path}: {error.strerror or error}.',
                    f'metaform workflow export {n["address"]} {n["layer"]} file=<a writable path>') from error
@@ -159,7 +161,13 @@ def _values(data: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _lookup(store: Store) -> Lookup:
-    return lambda address, name: catalog.lookup(store, address, name)
+    def lookup(address: str, name: str) -> tuple[Logic, Any]:
+        if address == 'logic.skill':
+            one = skill_registry.get(name)
+            return (Logic('skill', f'{one.address}@{one.version}', one.name, skill_registry.procedure(one.name)),
+                    ElementValue(one.metadata()))
+        return catalog.lookup(store, address, name)
+    return lookup
 
 
 def _call_store(store: Store, text: str) -> Store:
@@ -190,6 +198,8 @@ def _store(runs_store: Store, word: str) -> Store:
 def _shown(runs_store: Store, word: str) -> dict[str, Any]:
     _prompts()
     result = executor.view(runs_store, word)
+    if result['logic']['type'] == 'skill':
+        result['libs'] = skill_registry.libraries(skill_registry.get(result['address']))
     result['instructions'] = prompt_files.required(PACKAGE, 'execution', run=word)
     return result
 
@@ -385,95 +395,59 @@ def _words(given: Any) -> str:
     return ' '.join(map(str, cast(list[Any], given))) if isinstance(given, list) else str(given or '')
 
 
-def _fills() -> dict[str, str]:
-    """Each shared section's newest stored version and its number, for the libs that carry them, MCP-034."""
-    _prompts()
-    fills: dict[str, str] = {}
-    for section in SECTIONS:
-        version = prompts.prompt_version(section)
-        fills[section] = version.text
-        fills[f'{section}-version'] = str(version.number)
-    return fills
-
-
-def _overridden(served: str) -> str:
-    """A line naming each section of a lib served from a person's edit in place of the shipped text: the shipped file
-    is the source, and an edit kept in the prompt store over it is said, never silent."""
-    edited = [section for section in SECTIONS if (stored := prompts.prompt_version(section).text) in served
-              and stored != prompt_files.required(PACKAGE, section)]
-    return (f'\n\nServed from an edit in the prompt store in place of the shipped text: {", ".join(edited)}.'
-            if edited else '')
-
-
 def _known(name: str, held: tuple[str, ...], kind: str) -> str:
     if name not in held:
         raise Stop(f'workflow has no {kind} {name}.', f'metaform workflow {kind}s')
     return name
 
 
-def _requires(skill_name: str) -> list[str]:
-    """The libs a skill names on its own `# requires:` line, in LIBS order, so the list is written once."""
-    text = prompt_files.required(PACKAGE, skill_name)
-    line = next((one for one in text.splitlines() if one.strip().startswith('# requires:')), '')
-    named = set(re.findall(r'lib_\w+', line))
-    return [name for name in LIBS if name in named]
-
-
 def _about(skill_name: str) -> str:
-    """What a skill does, from its own `# skill:` line and the indented lines that continue it, the text after the
-    name and `·`, so the skill's own header is the one place it is written, MCP-032 and MCP-034."""
-    lines = prompt_files.required(PACKAGE, skill_name).splitlines()
-    start = next(index for index, one in enumerate(lines) if one.startswith('# skill:'))
-    header = [lines[start], *takewhile(lambda one: one.startswith('#  '), lines[start + 1:])]
-    return ' '.join(one.lstrip('#').strip() for one in header).split('·', 1)[1].strip()
+    return skill_registry.get(skill_name).description
 
 
 def lib(ctx: Context) -> str:
-    served = prompt_files.required(PACKAGE, _known(ctx.nouns['name'], LIBS, 'lib'), **_fills())
-    return served + _overridden(served)
+    return skill_registry.library(_known(ctx.nouns['name'], LIBS, 'lib'))
 
 
 def libs(ctx: Context) -> list[dict[str, str]]:
-    fills = _fills()
-    return [{'name': name, 'marker': prompt_files.required(PACKAGE, name, **fills).splitlines()[0]} for name in LIBS]
+    return [{'name': name, 'marker': skill_registry.library(name).splitlines()[0]} for name in LIBS]
 
 
 def skill(ctx: Context) -> str:
-    return prompt_files.required(PACKAGE, _known(ctx.nouns['name'], SKILLS, 'skill'))
+    return skill_registry.procedure(ctx.nouns['name'])
 
 
 def skills(ctx: Context) -> list[dict[str, Any]]:
-    return [{'name': name, 'about': _about(name), 'requires': _requires(name)} for name in SKILLS]
+    return [{'name': one.name.replace('-', '_'), 'about': _about(one.name), 'requires': list(one.requires)}
+            for one in skill_registry.catalog() if one.discover]
 
 
 def scan(ctx: Context) -> str:
     bound = prompt_files.required(PACKAGE, 'scan_input', workflow=ctx.nouns['workflow'],
                                   task=ctx.nouns.get('task') or 'other')
-    return prompt_files.required(PACKAGE, 'scan') + '\n\n' + bound
+    return skill_registry.procedure('scan') + '\n\n' + bound
 
 
 def _assignment(held: Store, word: str) -> str:
     """A skill handed by run id: its libs, the skill, the input and the line that closes it, MCP-034."""
     value = executor.held(held, word).value['assignment']
-    fills = _fills()
-    served = '\n\n'.join(prompt_files.required(PACKAGE, name, **fills) for name in _requires(value['skill']))
+    served = '\n\n'.join(skill_registry.libraries(skill_registry.get(value['skill'])).values())
     given, answered = value.get('input'), value.get('answer')
     bound = [prompt_files.required(PACKAGE, 'assignment_input', input=given) if given else '',
              prompt_files.required(PACKAGE, 'assignment_answer', found=answered['question'],
                                    answer=answered['answer']) if answered else '']
     return prompt_files.required(
-        PACKAGE, 'assignment', libs=served, skill=prompt_files.required(PACKAGE, value['skill']),
+        PACKAGE, 'assignment', libs=served, skill=skill_registry.procedure(value['skill']),
         input='\n\n'.join(one for one in bound if one), run=word, project=held.project_id)
 
 
 def served(name: str, given: str | None = None) -> str:
     """A skill whole, for an agent already connected over ACP: its libs, the skill and the input bound as data, with
     no run record. Dispatch sends it as a purpose agent's first turn; nothing is resumed."""
-    skill_name = _known(name, SKILLS, 'skill')
-    fills = _fills()
-    libs = '\n\n'.join(prompt_files.required(PACKAGE, lib_name, **fills) for lib_name in _requires(skill_name))
+    skill_name = skill_registry.get(name).name
+    libs = '\n\n'.join(skill_registry.libraries(skill_registry.get(skill_name)).values())
     return prompt_files.required(
-        PACKAGE, 'served', libs=libs, skill=prompt_files.required(PACKAGE, skill_name),
+        PACKAGE, 'served', libs=libs, skill=skill_registry.procedure(skill_name),
         input=prompt_files.required(PACKAGE, 'assignment_input', input=given) if given else '')
 
 
@@ -485,7 +459,7 @@ def assign(ctx: Context) -> Any:
     """A run record of kind assign holding the skill and its input, for a fresh agent to read by its run id with
     resume and close with complete, BASE-051."""
     store = ctx.require_store()
-    name = _known(_words(ctx.nouns.get('skill')), SKILLS, 'skill')
+    name = skill_registry.get(_words(ctx.nouns.get('skill'))).name.replace('-', '_')
     word = runs.start(store, 'assign', {'assignment': {'skill': name, 'input': ctx.nouns.get('input')}})
     return {'run': word, 'read': f'metaform workflow resume run={word} --project {store.project_id}'}
 
@@ -597,8 +571,8 @@ MODULE = Module(
              nouns=(Noun('name', 'lib_axiom, lib_metaform, lib_workflow or lib_quality.'),), effect='read'),
         Verb('libs', libs, 'List the Axiom libs, each with its first line, its marker.', effect='read'),
         Verb('skill', skill, "Read one workflow skill's Axiom, to follow it.", nouns=(Noun('name', 'The skill name.'),), effect='read'),
-        Verb('skills', skills, 'List the workflow skills, each with what it does and the libs it requires. Read from '
-                               "each skill's # skill: and # requires: lines.", effect='read'),
+        Verb('skills', skills, 'List discoverable workflow skills with their descriptions and required libs.',
+             effect='read'),
         Verb('serve', serve, 'Read one skill whole, its libs first and an input bound as data, as dispatch sends it to '
                              'an agent it started.',
              nouns=(Noun('name', 'The skill name.'), Noun('input', 'The input, bound as data.', required=False)),

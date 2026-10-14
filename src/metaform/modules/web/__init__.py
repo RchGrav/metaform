@@ -42,6 +42,9 @@ REMOTE_AGENT = False  # the web GUI needs a screen and a browser
 
 WAIT = 15.0  # the limit on `start`'s one wait for the server's ready line, and on `stop`'s for its stream to end
 WILDCARDS = ('0.0.0.0', '::', '')
+# Behind a Metaform Node's gate: the per-deploy secret Caddy adds to every page request, which the server reads from
+# this variable once, at start (the node module's gate.env gives it to Caddy and the web container only).
+GATE_SECRET = 'METAFORM_GATE_SECRET'
 IN_USE = {errno.EADDRINUSE, errno.EACCES, 10048, 10013}  # 10048 and 10013 are Windows's in use and access denied
 
 settings.number('web_port', 7433, min=1, max=65535, scope='global',
@@ -110,6 +113,14 @@ settings.number('web_embody_turns', 8, min=0, max=100, scope='global',
                 help='Turns of a chat before it offers to give its agent a body; 0 offers at once.')
 settings.number('web_embody_minutes', 20, min=0, max=600, scope='global',
                 help='Minutes of a chat before it offers to give its agent a body, if its turns come later.')
+# What a chat's thread shows of the agent's work. Off, it shows what the agent says to the person, its messages and the
+# lines it says on the map, so an agent that comes out in the chat speaks without its tool calls and thinking between
+# its words; those are debug detail, shown with this on, or for one page with W.
+settings.boolean('web_chat_details', False, scope='global',
+                 help="Show the agent's work in the chat: its tool calls, their details and its thinking.",
+                 details='Off, a thread shows only what the agent says to you, its messages and the lines it says on '
+                         'the map, with its permission requests and questions. W in the web GUI shows or hides the '
+                         'work on that page until it is reloaded, and saves nothing.')
 # The 3D map's names: outward stands each as a sign facing away from the map's middle, turned round where the eye is
 # behind it so it never reads mirrored; facing turns each to the eye.
 settings.choice('web_signs', ['outward', 'facing'], 'outward', scope='global',
@@ -256,6 +267,11 @@ def run_file() -> Path:
     return run_dir() / 'web.json'
 
 
+def write_run(path: Path, text: str) -> None:
+    """Write one of the server's run files, readable by its owner alone, as the token is."""
+    home.write_private(path, text)
+
+
 def token_file() -> Path:
     return run_dir() / 'web-token'
 
@@ -270,8 +286,8 @@ def opened(project: str | None) -> None:
     A folder of no project leaves no choice behind, so an older folder's choice does not outlive it."""
     try:
         if project:
-            run_dir().mkdir(parents=True, exist_ok=True)
-            opened_file().write_text(project, encoding='utf-8')
+            home.mkdir_private(run_dir())
+            write_run(opened_file(), project)
         else:
             opened_file().unlink(missing_ok=True)
     except OSError:
@@ -332,7 +348,7 @@ def token(create: bool = False) -> str | None:
         return path.read_text(encoding='utf-8').strip()
     if not create:
         return None
-    path.parent.mkdir(parents=True, exist_ok=True)
+    home.mkdir_private(path.parent)
     made = secrets.token_urlsafe(24)
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, 'w', encoding='utf-8') as handle:
@@ -393,17 +409,21 @@ def check_free(bind: str, port: int) -> None:
         raise Stop(f'The web GUI cannot bind to {bind}: {reason}.', 'metaform set --web-bind <address>')
 
 
-def spawn(bind: str, port: int, nonce: str) -> subprocess.Popen[bytes]:
+def spawn(bind: str, port: int, nonce: str, origin: str = '', gate: str | None = None) -> subprocess.Popen[bytes]:
     """The server as a process detached from the terminal, so it runs until stopped, VIEW-002. Its standard output
     is a pipe back to `start`, on which it writes one line once it listens; its standard error is the log. It is the
     person's page, so the role of an agent that ran `start` never passes to it, BASE-052, nor the base its ticket
-    is on: the page shows whichever base the person chooses."""
+    is on: the page shows whichever base the person chooses. A server behind a Node's gate hands its public origin
+    and gate secret to its replacement, and to nothing else."""
     env = {name: value for name, value in child_environment().items() if name != BASE_VARIABLE}
     folder = run_dir()
-    folder.mkdir(parents=True, exist_ok=True)
+    home.mkdir_private(folder)
     command = [sys.executable, '-m', 'metaform.modules.web.server', '--bind', bind, '--port', str(port),
                '--nonce', nonce]
-    with open(folder / 'web.log', 'ab') as log:
+    if origin and gate:
+        command += ['--origin', origin]
+        env[GATE_SECRET] = gate
+    with os.fdopen(os.open(folder / 'web.log', os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), 'ab') as log:
         if os.name == 'nt':
             flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
             return subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=log,
@@ -448,8 +468,8 @@ def starting(ctx: Context) -> dict[str, Any]:
     bind, port = str(ctx.setting('web_bind')), int(ctx.setting('web_port'))
     opened(ctx.project)
     try:
-        run_dir().mkdir(parents=True, exist_ok=True)
-        debug_file().write_text(str(ctx.setting('web_debug') or 'off'), encoding='utf-8')
+        home.mkdir_private(run_dir())
+        write_run(debug_file(), str(ctx.setting('web_debug') or 'off'))
     except OSError:
         pass  # the page then follows the setting alone
     record = recorded()
@@ -705,8 +725,8 @@ def pictured(ctx: Context, found: dict[str, Any]) -> dict[str, Any]:
     elif picture:
         import base64
         saved = home.home() / 'run' / 'looks' / f'look-{secrets.token_hex(4)}.{"png" if kind == "png" else "jpg"}'
-        saved.parent.mkdir(parents=True, exist_ok=True)
-        saved.write_bytes(base64.b64decode(picture))
+        home.mkdir_private(saved.parent)
+        home.write_private(saved, base64.b64decode(picture))
         found['file'] = str(saved)
     return found
 
@@ -744,7 +764,9 @@ def tab(ctx: Context) -> dict[str, Any]:
 def open_on_page(ctx: Context) -> dict[str, Any]:
     if ctx.nouns['what'] not in OPENS:
         raise Stop(f'{ctx.nouns["what"]} cannot be opened: {", ".join(OPENS)}.', 'metaform web open board')
-    return mascot_act(ctx, 'open', what=str(ctx.nouns['what']), id=str(ctx.nouns.get('id') or ''))
+    what, which = str(ctx.nouns['what']), str(ctx.nouns.get('id') or '')
+    # the page's `id` is the act's own, the one its answer comes back under, so the ticket or pane goes as `which`
+    return {'act': 'open', 'what': what, 'id': which, **ask_page(ctx, 'open', what=what, which=which)}
 
 
 def swap(ctx: Context) -> dict[str, Any]:

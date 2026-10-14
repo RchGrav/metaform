@@ -1,4 +1,4 @@
-"""The workflow agent's libs and skills are served from prompts.xml and the prompt store, MCP-034."""
+"""Workflow compatibility serves canonical skill folders and current library sections, MCP-034 and BASE-059."""
 import asyncio
 import json
 import re
@@ -6,6 +6,7 @@ import re
 import pytest
 
 from metaform import prompt_files
+from metaform import skills as skill_registry
 from metaform.data import Store, prompts
 from metaform.modules.mcp.server import run_tool
 from metaform.modules.workflow import MODULE, PACKAGE, SKILLS, _about, executor, runs
@@ -46,15 +47,13 @@ def test_skills_list_the_libs_their_requires_line_names(run, project_folder):
         'workflow_efficiency': ['lib_axiom', 'lib_metaform', 'lib_workflow', 'lib_quality'],
         'prompt_efficiency': ['lib_axiom', 'lib_quality'],
         'workflow_builder': ['lib_axiom', 'lib_metaform', 'lib_workflow'],
-        'workflow_evaluator': ['lib_axiom', 'lib_metaform', 'lib_workflow'],
-        'sentinel': ['lib_metaform'],
         'code_links': ['lib_metaform'],
     }
 
 
 def test_skills_list_what_each_skill_header_says(run, project_folder):
     for one in read(run, project_folder, 'workflow', 'skills'):
-        flat = ' '.join(prompt_files.required(PACKAGE, one['name']).replace('#', ' ').split())
+        flat = ' '.join(skill_registry.procedure(one['name']).replace('#', ' ').split())
         assert one['about'] and f"skill: {one['name']} · {one['about']} requires:" in flat
 
 
@@ -63,7 +62,7 @@ def test_assignment_serves_each_lib_once_then_skill_then_input_and_closes(run, p
     given = 'Write a workflow that reviews the kitchen timer.'
     word = read(run, project_folder, 'workflow', 'assign', 'write_workflow', f'input={given}')['run']
     served = run('workflow', 'resume', f'run={word}', cwd=project_folder).stdout
-    skill = prompt_files.required(PACKAGE, 'write_workflow')
+    skill = skill_registry.procedure('write_workflow')
     head = served[:served.index(skill)]
     places = [head.index(markers[name]) for name in ('lib_axiom', 'lib_metaform', 'lib_workflow')]
     assert places == sorted(places)
@@ -96,7 +95,8 @@ def test_complete_on_a_call_without_return_is_refused_with_a_next_step(run, proj
 def test_each_skill_is_a_slash_command_running_skill():
     commands = [(tag, attributes) for tag, attributes, *_ in prompt_files.commands(PACKAGE)
                 if attributes.get('verb') == 'skill']
-    assert sorted(attributes['name'] for _, attributes in commands) == sorted(SKILLS)
+    assert sorted(attributes['name'] for _, attributes in commands) == sorted(
+        name for name in SKILLS if skill_registry.get(name).discover)
     assert all(tag == attributes['name'] for tag, attributes in commands)
 
 
@@ -104,7 +104,7 @@ def test_each_skill_is_a_slash_command_running_skill():
 def test_each_skill_command_summary_is_its_skill_header():
     summaries = {attributes['name']: attributes.get('summary') for _, attributes, *_ in prompt_files.commands(PACKAGE)
                  if attributes.get('verb') == 'skill'}
-    assert summaries == {name: _about(name) for name in SKILLS}
+    assert summaries == {name: _about(name) for name in SKILLS if skill_registry.get(name).discover}
 
 
 def test_every_workflow_verb_the_instructions_name_is_a_verb():

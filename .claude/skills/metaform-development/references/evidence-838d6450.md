@@ -1,0 +1,1 @@
+Before you load this live: the existing markers on your board, 11 this morning, all become tickets. With Autostart agents on, each starts a paid agent, one per node, up to `dispatch_agents` at a time. Some of their notes say a decision of yours comes first, such as the D117 routing. You may want to hold those before loading it.

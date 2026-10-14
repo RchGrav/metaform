@@ -103,7 +103,7 @@ def test_collapse_command_preserves_current_map_and_switches_back_to_its_history
     current = store.roots().to_dict()
     before = store.history(join.id).to_dict()
 
-    made = j(run, 'collapse', 'fresh', cwd=mapped)
+    made = j(run, 'collapse', 'fresh', '--confirm', cwd=mapped)
     assert made['name'] == 'fresh' and made['active']
     assert made['id'] != old.id
     assert any('stay with' in notice['message'] for notice in made['notices'])
@@ -113,7 +113,7 @@ def test_collapse_command_preserves_current_map_and_switches_back_to_its_history
     assert {form['name']: form['active'] for form in j(run, 'bases', cwd=mapped)['results']} == {
         old.name: False, 'fresh': True}
 
-    j(run, 'activate', old.name, cwd=mapped)
+    j(run, 'activate', old.name, '--confirm', cwd=mapped)
     assert store.active_base().id == old.id
     assert store.history(join.id).to_dict() == before
 

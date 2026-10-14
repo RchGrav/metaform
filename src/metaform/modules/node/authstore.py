@@ -31,6 +31,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
+from metaform import home
 from metaform.data import DataConnection, private_database
 
 DURABLE = """
@@ -99,7 +100,10 @@ class AuthStore:
     transient = SCHEMA  # the tables kept on disk beside the accounts; the broker keeps none
 
     def __init__(self, path: Path) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
+        if home.is_home_path(path):
+            home.mkdir_private(path.parent)
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
         self.lock = threading.RLock()
         self.db = private_database(path)

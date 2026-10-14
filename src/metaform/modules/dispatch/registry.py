@@ -102,8 +102,8 @@ def read(url: str = URL, *, max_age: float = 86_400.0, refresh: bool = False) ->
         raise Stop(f'The ACP Registry could not be read from {url}: {error}.',
                    'metaform set --dispatch-registry-url "<url or file>"') from None
     now = time.time()
-    kept_at.parent.mkdir(parents=True, exist_ok=True)
-    kept_at.write_text(json.dumps({'url': url, 'fetched': now, 'registry': registry}), encoding='utf-8')
+    home.mkdir_private(kept_at.parent)
+    home.write_private(kept_at, json.dumps({'url': url, 'fetched': now, 'registry': registry}))
     return {**cast(dict[str, Any], registry), 'fetched': now, 'url': url, 'stale': False}
 
 
@@ -157,8 +157,18 @@ def _unpacked(data: bytes, archive: str, into: Path) -> None:
     filter, which refuses absolute paths, links out of the folder and device files; zip by checking every name."""
     name = urllib.parse.urlparse(archive).path.lower()
     if name.endswith(('.tar.gz', '.tgz', '.tar.bz2', '.tbz2')):
+        def private_member(member: tarfile.TarInfo, destination: str) -> tarfile.TarInfo:
+            filtered = tarfile.data_filter(member, destination)
+            target = into / filtered.name
+            home.mkdir_private(target.parent)
+            if filtered.isfile():
+                home.write_private(target, b'')
+            if os.name != 'nt' and not filtered.issym() and not filtered.islnk():
+                filtered.mode = 0o700 if filtered.isdir() else 0o600 | ((filtered.mode or 0) & stat.S_IXUSR)
+            return filtered
+
         with tarfile.open(fileobj=io.BytesIO(data), mode='r:*') as packed:
-            packed.extractall(into, filter='data')
+            packed.extractall(into, filter=private_member)
         return
     if name.endswith('.zip'):
         root = into.resolve()
@@ -168,10 +178,16 @@ def _unpacked(data: bytes, archive: str, into: Path) -> None:
                 if root != target and root not in target.parents:
                     raise Stop(f'The archive {archive} names {member}, outside its folder; it is not unpacked.',
                                'metaform dispatch registry')
-            packed.extractall(into)
+            for member in packed.infolist():
+                target = into / member.filename
+                if member.is_dir():
+                    home.mkdir_private(target)
+                else:
+                    home.mkdir_private(target.parent)
+                    home.write_private(target, packed.read(member))
         return
     raw = into / Path(name).name  # a raw binary, kept under its own name
-    raw.write_bytes(data)
+    home.write_private(raw, data)
 
 
 def pin(entry: dict[str, Any], *, system: str | None = None) -> dict[str, Any]:
@@ -187,7 +203,7 @@ def pin(entry: dict[str, Any], *, system: str | None = None) -> dict[str, Any]:
                    f'no binary for {system or platform()}.', 'metaform dispatch registry')
     kind, spec = chosen
     into = folder_of(agent, version)
-    into.mkdir(parents=True, exist_ok=True)
+    home.mkdir_private(into)
     held: dict[str, Any] = {'agent': agent, 'version': version, 'kind': kind, 'entry': entry,
                             'args': [str(one) for one in cast(list[Any], spec.get('args') or [])],
                             'env': {str(key): str(value) for key, value in cast(dict[str, Any], spec.get('env') or {}).items()},
@@ -214,9 +230,10 @@ def pin(entry: dict[str, Any], *, system: str | None = None) -> dict[str, Any]:
         if into.resolve() not in cmd.parents or not cmd.is_file():
             raise Stop(f'{agent} {version}: its command {spec.get("cmd")} is not in its archive.',
                        'metaform dispatch registry')
-        cmd.chmod(cmd.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        cmd.chmod((cmd.stat().st_mode & 0o700) | stat.S_IXUSR if os.name != 'nt' else
+                  cmd.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         held.update(path=str(cmd), sha256=digest, verified=bool(wanted))
-    (into / 'pin.json').write_text(json.dumps(held, indent=1), encoding='utf-8')
+    home.write_private(into / 'pin.json', json.dumps(held, indent=1))
     return held
 
 

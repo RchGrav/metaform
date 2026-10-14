@@ -1,4 +1,4 @@
-/* Sending from the chat: the agent started when none is there, queued messages, failures said in the chat, dismiss,
+/* Sending from the chat: the agent started when none is there, queued messages, failures said in the chat, closing,
  * resume and stay connected, the chat's keys, menu and message box. */
 import '/page/app/dock/commands.js';  // the part before runs first, so the parts run in the page's order
 // speech to text in the boxes a person writes to agents in, the voice module
@@ -8,10 +8,8 @@ import {FOCUSABLE, overlay} from '/page/app/core/overlays.js';
 import {toast} from '/page/app/core/controls.js';
 import {S, read} from '/page/app/core/reads.js';
 import {joinOf} from '/page/app/graph/data.js';
-import {ROAM} from '/page/app/figures/agents.js';
 import {MAC} from '/page/app/map2d/camera.js';
 import {openHelp} from '/page/app/keys/keys.js';
-import {MERGE} from '/page/app/selection/select.js';
 import {DOCK, embodyHooks, embodiable, askEmbody, dockState, dockNote} from '/page/app/dock/embody.js';
 import {showChat, drawTabs, interruptChat} from '/page/app/dock/threads.js';
 import {drawHelpdesk, followLog, putChatAway} from '/page/app/dock/helpdesk.js';
@@ -96,32 +94,8 @@ export function nodeTalk(id) {
   const join = id.startsWith('p:') ? joinOf(id) : null;
   return {node: join ? join.receiver_address : S.elements.get(id)?.element.address || id};
 }
-async function dismiss() {
-  if (DOCK.queue.some(item => item.state !== 'sent')) startFailed('Not sent: the agent was dismissed.');
-  if (DOCK.calling) {
-    DOCK.calling = null;
-    $('#helpdesk .call').textContent = DOCK.target ? 'Dismiss' : 'Call';
-    return dockNote('The call was cancelled.');
-  }
-  const chat = DOCK.chat;
-  // the agent the person summoned is stopped; an agent at work on its ticket goes on, and only its thread closes
-  const summoned = Boolean(chat && (chat.mine || chat.target === DOCK.mine));
-  const stopped = summoned ? await wrote('/api/dispatch-stop', {work_id: chat.target}) : null;
-  if (DOCK.target === DOCK.mine) DOCK.mine = null;
-  DOCK.chats = DOCK.chats.filter(one => one !== chat);
-  if (ROAM.focus === chat?.target) ROAM.focus = null;
-  dockNote(summoned || !chat ? 'The agent was dismissed.' + stayedOff(stopped)
-    : 'The thread was closed; its agent works on, under Agent deployed.');
-  if (DOCK.chats.length) return showChat(DOCK.chats.at(-1));  // the next open chat comes on view
-  // no agent is there now: a message sent next starts one, as Call does, and the chat says how to start again
-  Object.assign(DOCK, {target: null, session: null, label: '', chat: null, live: false, state: null, agent: null});
-  MERGE.chat = null;
-  $('#helpdesk .call').textContent = 'Call';
-  drawTabs();
-  drawHelpdesk();
-}
 $('#helpdesk .interrupt').onclick = () => interruptChat(DOCK.target, DOCK.session, $('#helpdesk .interrupt'));
-$('#helpdesk .call').onclick = () => (DOCK.target || DOCK.calling ? dismiss() : callSystem());
+$('#helpdesk .call').onclick = () => callSystem();
 /* Resume and Stay connected beside Call: the dispatch_resume_chats and dispatch_stay_connected settings of this
  * project, read when the dock opens and saved on a change. */
 export async function syncResume() {
@@ -147,7 +121,7 @@ async function saveSwitch(event, key, what) {
 $('#helpdesk .resume input').onchange = event => saveSwitch(event, 'dispatch_resume_chats', 'Resume');
 $('#helpdesk .stay input').onchange = async event => {
   if (await saveSwitch(event, 'dispatch_stay_connected', 'Stay connected') && event.target.checked) {
-    dockNote('Your system agent stays connected to this project; closing the chat never stops it, and Dismiss turns '
+    dockNote('Your system agent stays connected to this project; closing the chat never stops it, and Stop agent turns '
       + 'this off.');
   }
 };
@@ -219,6 +193,12 @@ $('#helpdesk .say').addEventListener('keydown', sayKeys);
  * newest message, the agent's settings. */
 function chatKeys(event) {
   if (event.isComposing) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    putChatAway();
+    return;
+  }
   const mod = MAC ? event.metaKey : event.ctrlKey;
   if (mod && event.key === '.') {
     event.preventDefault();
@@ -314,8 +294,8 @@ $('#dockTab').onkeydown = event => {
   event.preventDefault();
   dockState('open');
 };
-$('#helpdesk .min').onclick = () => putChatAway();  // eased away; its threads are kept
-$('#helpdesk .min').title = 'Put the chat away; its conversation is kept (C, or Escape inside it)';
+$('#helpdesk .close').onclick = () => putChatAway();  // eased away; its threads are kept
+$('#helpdesk .close').title = 'Close chat without stopping the agent (Escape)';
 // On the overlay stack as the dock: Escape puts it away only from inside it, and it stays usable over the board.
 overlay($('#helpdesk'), {kind: 'dock', close: () => putChatAway(), focus: '.say'});
 $('#helpdesk .big').onclick = () => dockState($('#dock').className === 'open big' ? 'open' : 'open big');

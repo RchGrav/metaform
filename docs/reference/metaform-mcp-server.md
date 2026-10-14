@@ -67,8 +67,6 @@ Over HTTP and the cloud tunnel the server also offers the two tools ChatGPT call
 | `metaform://prompts/{name}` | A stored prompt's newest text and version, by name |
 | `metaform://reports/{name}` | One report, feedback or shape file exactly, by the name `metaform_list_reports` gives |
 | `metaform://intake/procedure`, `metaform://intake/schema` | The intake procedure and its forms, declared by the intake module |
-| `metaform://roundtable/discussion{discussion}/submission{submission}` | The text one seat submitted at a roundtable, and nothing else, declared by the roundtable module as a resource template |
-| `metaform://roundtable/discussion{discussion}/review` | A roundtable's full review: the four questions, then every submission with its turn, seat, whether it was kept, its four nouls as `[new, valuable, relevant, keep]` and its link |
 | `metaform://{address}` | One node's brief, such as `metaform://code.manager.route`: the map's `where` read of it as a session's first read gives it |
 | `metaform://{address}/items/{n}` | The one memory, ticket, question or message numbered n at the address, n in hex as shown, such as `metaform://code.manager.route/items/1f` (the fragment form `metaform://code.manager.route#1f` is read too): its title, why, body and links. A missing address or item is refused with `-32602` and a next step |
 
@@ -112,7 +110,7 @@ Start an agent on a ticket through ACP, follow it, message it and stop it.
 | `dispatch_resume` | Resume an ended agent session in place, so the agent keeps its memory and its thread goes on. It works where the agent can load or resume a session, and waits for your next message. | write, open world |
 | `dispatch_review` | Hold a waiting merge for the person's review, cancelling its automatic merge for good. | write |
 | `dispatch_sessions` | List the agent sessions of a ticket, or of every ticket, each with its thread. | read |
-| `dispatch_signals` | Read the signals raised on agent sessions, such as an agent that stopped with its ticket open. With active=false, the cleared ones too. | read |
+| `dispatch_signals` | Read the signals raised on agent sessions, such as an agent that stopped with its ticket open. With active=false, the cleared ones too. | write, open world |
 | `dispatch_spend` | Read what agents have spent today, on a ticket and by run, in billable tokens and reported cost, against the budgets; sessions that report no usage are named. | read |
 | `dispatch_start` | Start an agent on a ticket; it returns at once, and the map shows the agent at work. On a ticket with an agent glyph, the agent then works the glyph's other tickets in turn. | write, open world |
 | `dispatch_stop` | Stop the agent working a ticket. | write, open world |
@@ -137,7 +135,7 @@ Serve the intake and record its result as it is reasoned.
 | Tool | What it does | Effect |
 |---|---|---|
 | `intake_element` | Record one element of the intake at its address; recording it again replaces the fields given. | write |
-| `intake_finish` | Finish the intake and make its base the active map, keeping the earlier one whole. Switch back with metaform map activate <previous-name>. After finish the metaform changes by refining, metaform map refine, or by another intake. | write |
+| `intake_finish` | Finish the intake and make its base the active map, keeping the earlier one whole. Switch back with metaform map activate <previous-name>. After finish the metaform changes by refining, metaform map refine, or by another intake. | write, open world |
 | `intake_prompt` | Read the intake instructions an agent follows to record this project's map. | read |
 | `intake_purpose` | Record one purpose record: a receiver's OP and the elements that serve it, with its EF. Recorded again with an element it holds, the fields given replace its own and new elements are added. | write |
 | `intake_remove` | Remove one element, one purpose record, or one element from a purpose record, from the intake being recorded. Each is named by addresses. | remove |
@@ -152,8 +150,8 @@ Read and write this project's functional map and its layers.
 
 | Tool | What it does | Effect |
 |---|---|---|
-| `map_activate` | Make one of the project's bases the active map. | write |
-| `map_add-base` | Start a new, empty base for the project and make it the active map. | write |
+| `map_activate` | Make one of the project's bases the active map. Caution: This changes the active map for every agent and the page of the project. The previous base is kept; map activate <its name> switches back. | write |
+| `map_add-base` | Start a new, empty base for the project and make it the active map. Caution: This changes the active map for every agent and the page of the project. The previous base is kept; map activate <its name> switches back. | write |
 | `map_answer` | Answer a blind-spot challenge the critic raised: A, B or C. | write |
 | `map_bases` | List the project's bases, the maps it keeps, and which one is active. | read |
 | `map_challenges` | Read the answer prompt with each challenge of a blind-spot layer and its state. | read |
@@ -167,7 +165,7 @@ Read and write this project's functional map and its layers.
 | `map_code-link` | Link code symbols to the Address whose purpose they provide for, with a why, as your work shows it; or unlink, move, propose, accept or reject. | write |
 | `map_code-search` | Find code symbols by words, a name or qn pattern, a file pattern or a label, each with the Addresses it is the code of. | read |
 | `map_code-trace` | Trace calls between Addresses: the shortest call path from one Address or symbol to another, or every Address reached within depth calls. | read |
-| `map_collapse` | Rewrite the current map as a new base of one base layer and make it active; the old one is kept whole. Each element and join is written once, with the same ids. | write |
+| `map_collapse` | Rewrite the current map as a new base of one base layer and make it active; the old one is kept whole. Each element and join is written once, with the same ids. Caution: This changes the active map for every agent and the page of the project. The previous base is kept; map activate <its name> switches back. | write |
 | `map_context` | Read the properties that apply at an address, and those attached toward the leaves that are visible there. | read |
 | `map_critic` | Start a blind-spot critic run: a new blind-spot layer, and the critic prompt with the whole base. | write |
 | `map_cypher` | Ask the map a question in Cypher: a read-only query over the graph of the layers in view or named. | read |
@@ -221,26 +219,6 @@ A memory graph, presented at each node of the map as the MCP reference memory se
 | `memory_rekey` | Move the memory joins and notes at an old address to the address that replaced it. | write |
 | `memory_search_nodes` | Search memory entities by name, type and observation text, at a node or in the whole memory graph. | read |
 | `memory_unjoin` | Detach one memory join from its node by its id; the entity stays in the memory graph. | remove |
-
-### roundtable
-
-A discussion among models at an Address, where only what Jev finds new, valuable, relevant and worth keeping enters, BASE-066. `open`, `comment`, `hold`, `continue` and `end` are the person's and the head agent's: an MCP call from any other session is refused. `roundtable run` is on the command line only.
-
-| Tool | What it does | Effect |
-|---|---|---|
-| `roundtable_open` | Open a roundtable at an Address with an opening message and its seats. | write, open world |
-| `roundtable_comment` | Comment at a table, inline at the next gap between turns; unjudged, no limit. | write |
-| `roundtable_hold` | Hold a table after the turn in flight until it is continued. | write |
-| `roundtable_continue` | Continue a held table, or end the pause after a turn now. | write, open world |
-| `roundtable_end` | End a table; its report is written into docs/roundtables/. | write, open world |
-| `roundtable_watch` | Say the person is watching a table, for a few seconds; the page renews it. | write |
-| `roundtable_status` | Read a table: its state, whose turn it is, each seat's kept against taken. | read |
-| `roundtable_list` | List the project's tables, newest first. | read |
-| `roundtable_read` | Read a table's turns after a cursor, each as the seats see it, with its nouls. | read |
-| `roundtable_turn` | As an agent seat, read your turn: what happened since your last reply. | read |
-| `roundtable_submit` | As an agent seat, submit your turn, at most 512 characters. | write |
-| `roundtable_submission` | Read the text one seat submitted, and nothing else. | read |
-| `roundtable_review` | Read the full review: every submission with its four nouls. | read |
 
 ### twilio
 
@@ -309,7 +287,7 @@ Write, import and run reusable Axiom subroutines.
 | `workflow_runs` | List the open workflow runs, or those in one state, with what stopped a paused one. | read |
 | `workflow_scan` | Read the scan skill, which decides the libs a task needs, with a workflow and its task bound as data. | read |
 | `workflow_skill` | Read one workflow skill's Axiom, to follow it. | read |
-| `workflow_skills` | List the workflow skills, each with what it does and the libs it requires. Read from each skill's # skill: and # requires: lines. | read |
+| `workflow_skills` | List discoverable workflow skills with their descriptions and required libs. | read |
 | `workflow_submit` | Record a workflow element, which holds Axiom subroutines, in an ordinary knowledge layer. | write |
 
 ### metaform
@@ -333,4 +311,11 @@ Metaform's own commands: settings, feedback and reports, and the project's histo
 | `metaform_register` | Register this folder as a Metaform project, so its map can be recorded and read. As metaform add project does; a folder already in a project is left as it is. Returns the project and the instructions for it now. Always available. | write |
 | `metaform_save_prompt` | Save a named prompt as a new version, creating it or adding an edit; earlier versions stay unchanged. | write |
 | `metaform_set` | Save Metaform settings for the server's folder, as metaform set does. | write |
+| `metaform_skills` | List discoverable skills, load a skill by name or Address with current prompt-store libraries, or read one of its files. Internal skills remain explicitly loadable. `all=true` lists them for administrative inspection. Always available. | read |
 
+`metaform_skills` takes `op=list|load|read`, `name` for load and read, and
+`path` for read. The skill Address is `logic.skill.<kebab-name>` with its
+version in frontmatter metadata. At connect, `skill_index=auto` adds a compact
+index unless a current completed native deployment is recorded for the actual
+client. `on` forces this index and `off` omits it. Internal skills appear in no
+ordinary discovery list.

@@ -104,9 +104,14 @@ def private_database(path: Any) -> DataConnection:
     map or travels with a project, STORE-023."""
     from pathlib import Path
 
-    from ..sqlite import BUSY_SECONDS
+    from .. import home
+    from ..sqlite import BUSY_SECONDS, private
     file = Path(path)
-    file.parent.mkdir(parents=True, exist_ok=True)
+    if home.is_home_path(file):
+        home.mkdir_private(file.parent)
+    else:
+        file.parent.mkdir(parents=True, exist_ok=True)
+    private(file)  # before write-ahead logging is on, so its log and shared memory are the owner's alone too
     db = _sqlite3.connect(str(file), isolation_level=None, timeout=BUSY_SECONDS, check_same_thread=False)
     db.execute(f'PRAGMA busy_timeout={BUSY_SECONDS * 1000}')
     db.execute('PRAGMA journal_mode=WAL')

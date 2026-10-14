@@ -28,7 +28,7 @@ import webbrowser
 from pathlib import Path
 from typing import Any, cast
 
-from metaform import settings
+from metaform import home, settings
 from metaform.module import Context, Module, Noun, Stop, Subscription, Verb, child_environment
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
@@ -225,10 +225,11 @@ def web_started(payload: dict[str, Any], ctx: Context) -> dict[str, Any] | None:
         return None
     folder = Path(str(payload.get('folder') or ctx.folder))
     log = state_file().with_name('connect.log')
-    log.parent.mkdir(parents=True, exist_ok=True)
+    home.mkdir_private(log.parent)
     options: dict[str, Any] = {'start_new_session': True} if os.name != 'nt' else \
         {'creationflags': getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0) | getattr(subprocess, 'DETACHED_PROCESS', 0)}
-    with log.open('ab') as written:
+    descriptor = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    with os.fdopen(descriptor, 'ab') as written:
         process = subprocess.Popen([sys.executable, '-m', 'metaform', 'cloud', 'connect'], cwd=folder,
                                    stdin=subprocess.DEVNULL, stdout=written, stderr=written, env=child_environment(),
                                    **options)

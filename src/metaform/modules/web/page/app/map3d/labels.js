@@ -23,6 +23,7 @@ import {flight} from '/page/app/camera/flight.js';
 import {small3d, SMALL_NAME, MEET, frameWhileSpreading, holdMet} from '/page/app/camera/fly3d.js';
 import {PHYS, signsFacing} from '/page/app/views/bar.js';
 import {joinTitle} from '/page/app/map2d/inside.js';
+import {placeThoughts3d} from '/page/app/figures/thoughts.js';
 
 /* The labels of the 3D map, VIEW-038, are drawn inside the scene, each its element's whole name, wrapped at word
  * breaks, painted on a canvas and shown as a sign in the scene, standing out from the map's middle and facing the eye.
@@ -388,8 +389,8 @@ function cornersOnScreen(sprite) {
 }
 /* The page's work for each frame of the 3D map, run in the render chain before anything is drawn, `create3D`: the
  * camera's flight, the colors, the wave, the figures, the text, the lights, the labels, the dots and the tooltip. It
- * says whether the next frame has something of its own to show, `FRAMES.busy`, and whether the dots flow,
- * `FRAMES.flowing`. */
+ * says whether the next frame has an ambient animation of its own to show, `FRAMES.busy`, drawn slowly once the map
+ * is left alone, and whether the dots flow, `FRAMES.flowing`. */
 export function prepare3d() {
   const now = performance.now(), data = G.graphData();
   frameWhileSpreading(now, data);
@@ -403,6 +404,7 @@ export function prepare3d() {
   ghost3d(data, now);
   const signaled = paintSignals(data);
   layered();
+  placeThoughts3d();
   flow3d(now, data);
   // The bloom runs while a reach is lit and while any part has a record that gives off light, VIEW-029, for as long
   // as the record is open and not only at the moments of its flash: the glass's highlights are over full brightness

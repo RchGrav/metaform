@@ -102,7 +102,7 @@ export const easeBoth = k => k * k * (3 - 2 * k);  // from rest to rest
  * be is worked out each frame and it follows that place on a critically damped spring, `springTo`, so every move eases
  * in and out and any of them can be turned aside at once; how stiffly it follows is its character's, `STIFF`: a comet
  * snaps, a wisp drifts. What it does there comes from its session, `moodOf`:
- *  - working: it circles in its own orbit, lap and direction, and every so often does something with the node in its
+ *  - working: it stays beside its node facing the label, and every so often does something with the node in its
  *    own way, its `act`: perches on top, pokes it, nudges it so the node sways, peeks in close;
  *  - a tool call, told by the event stream, `figureReached`: a quick, purposeful move toward the part touched, a lean
  *    and a reach, and back; on its own node, a poke;

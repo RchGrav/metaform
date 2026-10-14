@@ -39,8 +39,8 @@ def inventory(tmp_path, monkeypatch, symbols, paths=None, settings=None, coverag
         assert kwargs['index_missing']
         yield Server()
 
-    from metaform.modules.refactor.parser import SUFFIXES, parse
-    capabilities = [('refactor', {'suffixes': SUFFIXES, 'parse': parse})] if parser else []
+    from metaform.modules.source_placement.parser import SUFFIXES, parse
+    capabilities = [('source_placement', {'suffixes': SUFFIXES, 'parse': parse})] if parser else []
     monkeypatch.setattr(preparation, 'provided', lambda *_: capabilities)
     monkeypatch.setattr(preparation, 'code_graph_server', server)
     monkeypatch.setattr(preparation.home, 'ignore_patterns', lambda _: ['private/'])

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import stat
 from pathlib import Path
 
 import pytest
@@ -61,6 +62,44 @@ def test_every_file_created_is_under_the_home(home, tmp_path, run, monkeypatch):
     assert outside() == before
     assert not any(user_home.iterdir())
     assert (own('work') / 'project.sqlite3').is_file()
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='on Windows the home keeps the access its parent folder gives it')
+def test_a_new_home_is_its_owners_alone_and_an_open_one_is_closed_once(home, tmp_path, run):
+    from metaform.modules import web
+    folder = tmp_path / 'work'
+    folder.mkdir()
+    run('add', 'project', 'work', str(folder), cwd=folder)
+    def assert_private(root):
+        for path in (root, *root.rglob('*')):
+            if not path.is_symlink():
+                assert path.stat().st_mode & 0o077 == 0, f'{path}: {oct(stat.S_IMODE(path.stat().st_mode))}'
+    assert_private(home)
+    store = Store('work')
+    store.add_element(store.layer('notes', 'test', 'Notes.', mutable=True, hideable=True,
+                                  provenance={'module': 'test'}).name, 'code.engine')
+    web.opened('work')
+    files = [home / 'metaform.sqlite3', own('work') / 'project.sqlite3', *own('work').glob('*.metaform.sqlite3'),
+             web.opened_file()]
+    def modes():
+        return {str(path): oct(stat.S_IMODE(path.stat().st_mode)) for path in (home, *files)}
+    private = {str(home): '0o700', **{str(path): '0o600' for path in files}}
+    assert len(files) == 4 and modes() == private
+    home.chmod(0o755)
+    for path in files:
+        path.chmod(0o644)
+    run('list', 'projects', cwd=folder)
+    assert modes() == private
+    home.chmod(0o755)
+    run('list', 'projects', cwd=folder)
+    assert modes()[str(home)] == '0o755'
+    real = tmp_path / 'real'
+    real.mkdir(mode=0o755)
+    real.chmod(0o755)
+    (tmp_path / 'link').symlink_to(real, target_is_directory=True)
+    run('add', 'project', 'work', str(folder), cwd=folder, env={'METAFORM_HOME': str(tmp_path / 'link')})
+    assert stat.S_IMODE(real.stat().st_mode) == 0o700, 'a home reached through a link is closed at its target'
+    assert_private(real)
 
 
 @pytest.mark.req('STORE-002')

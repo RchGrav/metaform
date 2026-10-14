@@ -1,0 +1,1 @@
+Ticket resolution: "The check failed before (caught: []) and passes after, and the guard test now fails if the walk goes blind again." Step 5: "It flips map add-base, activate, collapse, work and memory delete_entities to effect='read' with dataclasses.replace and asserts exactly those five are reported." Step 5 also: "9 of 146, each with its reason."

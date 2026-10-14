@@ -574,7 +574,8 @@ def _backup(path: Path, module: str, version: int) -> None:
     reader does not wait on that writer."""
     folder = (home.home() / 'backups' / f'module-{module}-{version}' /
               home.now().replace(':', '').replace('-', '') / path.parent.name)
-    folder.mkdir(parents=True, exist_ok=True)
+    home.mkdir_private(folder)
+    sqlite.private(folder / path.name)
     source = sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)  # as_uri escapes #, ? and %
     copy = sqlite3.connect(folder / path.name)
     try:

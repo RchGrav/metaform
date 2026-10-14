@@ -3,12 +3,12 @@
 import '/page/app/session/text.js';  // the part before runs first, so the parts run in the page's order
 import {$, h, fill, keepFill} from '/page/app/core/dom.js';
 import {overlay} from '/page/app/core/overlays.js';
-import {toast} from '/page/app/core/controls.js';
+import {toast, confirmAct} from '/page/app/core/controls.js';
 import {S, read} from '/page/app/core/reads.js';
 import {DOCK} from '/page/app/dock/embody.js';
 import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
 import {HARNESS, readHarnesses, agentName, summonAgent, summonPicker} from '/page/app/agents/pickers.js';
-import {countOf} from '/page/app/session/tools.js';
+import {countOf, skipsPrompts} from '/page/app/session/tools.js';
 import {posted} from '/page/app/intake/intake.js';
 
 /* The session's settings folded to one quiet line under the chat's head, "Codex · Sol · High · Fast · 94k/475k": a
@@ -31,7 +31,7 @@ function optionWords(setting) {
 }
 /* The agent is the line's first word and the popover's first field. Before Call it is the one choice of the agent a
  * call starts, the summon choice every start shares, with its default star; choosing another shows that agent's own
- * options at once. Once an agent runs, the field names it: another one is chosen by Dismiss, then Call. */
+ * options at once. Once an agent runs, the field names it: another one is chosen after Stop agent, then Call. */
 const DOCKPICK = {row: null, picker: null};
 function dockPicker() {
   if (!DOCKPICK.row) {
@@ -64,7 +64,7 @@ export function sessionSummary(box, {agent, settings, usage, controls, used, res
   h('span', {class: 'said'}, line || 'Settings'), h('i', {class: 'i i-chev', 'aria-hidden': 'true'}));
   fill(box, open, h('span', {class: 'grow'}), resume);
   const running = h('div', {class: 'setting agent'}, h('span', {}, 'Agent'),
-    h('b', {title: 'To talk with another agent, Dismiss this one, choose it here and Call'}, agent));
+    h('b', {title: 'To talk with another agent, Stop this agent, choose another here and Call'}, agent));
   // the agent's own row is kept in place, so a choice being made in it keeps the focus as the rest is drawn again;
   // a setting of the same agent just chosen in the open popover keeps its control, and only the line says it
   const same = !pop.hidden && pop.contains(document.activeElement) && pop.dataset.for === `${before}:${agent}`;
@@ -122,7 +122,7 @@ function optionSwitch(agent, setting) {
 function optionSelect(agent, setting) {
   const pick = h('select', {'aria-label': setting.name, disabled: !setting.setting,
     title: setting.setting ? null : 'Metaform has no setting for this option; the agent keeps its own.',
-    onchange: () => keepAgentOption(agent, setting, pick.value)},
+    onchange: () => keepAgentOption(agent, setting, pick.value, pick)},
   (setting.options || []).map(option => h('option', {value: option.value, selected: option.value === setting.current},
     option.name || option.value)));
   return h('label', {class: 'setting'}, h('span', {}, setting.name), pick);
@@ -142,9 +142,20 @@ export async function drawIntakeSettings() {
     : `${agentName(agent)} offers no settings to choose.`;
   box.hidden = false;
 }
-/* A choice is kept in the option's own setting, dispatch_<agent>_<option>, so keeping one never touches another. */
-async function keepAgentOption(agent, setting, value) {
-  const done = await posted('/api/settings', {key: setting.setting, value});
+/* A choice is kept in the option's own setting, dispatch_<agent>_<option>, so keeping one never touches another. A
+ * value that skips the agent's own permission prompts is kept for every session it starts only once confirmed, as
+ * metaform set asks for --confirm. */
+async function keepAgentOption(agent, setting, value, pick) {
+  const option = (setting.options || []).find(one => one.value === value);
+  const risky = skipsPrompts(option);
+  if (risky && !await confirmAct({title: `Let ${agentName(agent)} act without asking?`,
+    text: [`${option.name || value}: every session ${agentName(agent)} starts here skips its own permission prompts. `
+      + 'It edits files and runs commands without asking you first.'],
+    verb: 'Yes, keep it', cancel: 'Keep it as it is'})) {
+    pick.value = setting.current;
+    return;
+  }
+  const done = await posted('/api/settings', {key: setting.setting, value, ...(risky ? {confirm: true} : {})});
   if (!done.ok) return toast(done.body.error || 'That choice was not kept.');
   refreshPreCall();  // the line says the choice at once
   toast(`${agentName(agent)} starts with ${setting.name} ${value}.`);

@@ -71,7 +71,7 @@ from typing import Any
 
 from .. import home
 from ..errors import StoreError
-from ..sqlite import COMPATIBLE_FROM, SCHEMA_VERSION, stamp
+from ..sqlite import COMPATIBLE_FROM, SCHEMA_VERSION, private, stamp
 from . import tables
 from .schema import LAYOUT_20, STORE_SCHEMA
 
@@ -96,7 +96,8 @@ def upgrade(db: sqlite3.Connection, path: Path, found: str) -> bool:
     tables_held = {str(row[0]) for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     if 'ops' in tables_held and 'elements' not in tables_held:  # the log already, under an earlier number
         kept = _kept_folder(path)
-        kept.mkdir(parents=True, exist_ok=True)
+        home.mkdir_private(kept)
+        private(kept / path.name)
         copy = sqlite3.connect(kept / path.name)
         try:
             db.backup(copy)  # a copy is kept before anything changes, as every upgrade keeps one, STORE-029
@@ -117,6 +118,7 @@ def upgrade(db: sqlite3.Connection, path: Path, found: str) -> bool:
     fresh = path.with_name(path.name + '.new')
     for stale in (work, fresh):
         stale.unlink(missing_ok=True)
+    private(work)
     copy = sqlite3.connect(work)
     try:
         db.backup(copy)
@@ -130,7 +132,7 @@ def upgrade(db: sqlite3.Connection, path: Path, found: str) -> bool:
     finally:
         old.close()
     kept = _kept_folder(path)
-    kept.mkdir(parents=True, exist_ok=True)
+    home.mkdir_private(kept)
     db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
     # The caller's connection reads the old file and is reconnected after this returns; it is closed before the file
     # moves, since Windows refuses to move or delete a file a connection holds open.
@@ -154,6 +156,7 @@ def _to_log(old: sqlite3.Connection, fresh: Path, found: str) -> None:
     """Read a layout 20 store into the ops of a new file, in the order its rows were written, with the modules'
     own tables copied as they are."""
     old.row_factory = sqlite3.Row
+    private(fresh)
     new = sqlite3.connect(fresh, isolation_level=None)
     try:
         new.execute('PRAGMA journal_mode=WAL')

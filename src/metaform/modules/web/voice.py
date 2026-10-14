@@ -59,8 +59,7 @@ def answer(handler: Handler, method: str, path: str, query: dict[str, list[str]]
             return files(handler, name[len('files/'):])
         if method != 'POST':
             return handler.send(404, {'error': f'Nothing at {path}.'})
-        origin = handler.headers.get('Origin')
-        if origin is None or origin.lower() != f'http://{handler.headers.get("Host", "")}'.lower():
+        if not handler.same_origin():
             return handler.send(403, {'error': "Voice is taken only from the web GUI's own page."})
         if name == 'download':
             body: Any = handler.json_body()
@@ -133,14 +132,14 @@ def audio(handler: Handler, name: str, given: dict[str, str]) -> None:
                                   'next': f'metaform set --voice-max-seconds {seconds * 2}'})
     body = handler.rfile.read(length)
     place = run_folder() / ('clips' if name == 'clip' else 'heard')
-    place.mkdir(parents=True, exist_ok=True)
+    home.mkdir_private(place)
     if name == 'clip':
         prune(place)
         clip = secrets.token_hex(16)
-        (place / f'{clip}.wav').write_bytes(body)
+        home.write_private(place / f'{clip}.wav', body)
         return handler.send(200, {'clip': clip, 'bytes': length})
     path = place / f'{secrets.token_hex(16)}{suffix}'
-    path.write_bytes(body)
+    home.write_private(path, body)
     try:
         arguments: dict[str, Any] = {'file': str(path)}
         if given.get('partial') in ('1', 'true'):

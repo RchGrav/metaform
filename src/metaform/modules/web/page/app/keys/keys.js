@@ -20,6 +20,7 @@ import {across, below, besideDrawn, besideOnLevel, childrenOf, parentOf, roots, 
 import {select} from '/page/app/selection/select.js';
 import {dockGoingAway, dockState} from '/page/app/dock/embody.js';
 import {putChatAway} from '/page/app/dock/helpdesk.js';
+import {toggleWork} from '/page/app/session/apps.js';
 import {openSearch} from '/page/app/search/search.js';
 import {chatDocked, WS} from '/page/app/workspace/workspace.js';
 
@@ -60,6 +61,8 @@ const KEYS = [
   {group: 'Looks', keys: ['U'], what: 'Space theme on/off', match: ['u', 'U'],  // the space theme or the last plain one
     run: () => setTheme(document.documentElement.dataset.theme === 'space' ? PLAIN.last : 'space')},
   {group: 'Chat', keys: ['C'], what: 'Open or hide chat', match: ['c', 'C'], run: toggleChat},
+  // the agent's tool calls and thinking in every thread, on this page until it is reloaded, `toggleWork`
+  {group: 'Chat', keys: ['W'], what: "Show the agent's work", match: ['w', 'W'], run: () => toggleWork()},
   {group: 'Chat', keys: ['Enter'], what: 'Send'},
   {group: 'Chat', keys: ['Shift', 'Enter'], what: 'New line'},
   {group: 'Chat', keys: [MAC ? '⌘' : 'Ctrl', '.'], what: 'Interrupt the agent'},

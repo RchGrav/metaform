@@ -1,0 +1,1 @@
+$ uv run pytest -n 0 -m browser --collect-only -q  →  "178/1856 tests collected (1678 deselected) in 2.86s". Then: "METAFORM_BUILD_VIEWS=1 timeout 600 uv run pytest -q -m browser src/metaform/modules/web/tests/test_view042.py -k test_dispatch_autostart_api_reads_and_saves_the_project_settings" → "bringing up nodes... 1 passed in 33.93s". actionlint: "ACTIONLINT_OK".

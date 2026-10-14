@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlsplit
 
-from metaform import settings
+from metaform import home, settings
 from metaform.module import Context, Module, Noun, Provides, Stop, Verb, VoiceEngine, provided
 
 from . import engine, models, relay, service, speech
@@ -330,6 +330,9 @@ def speak(ctx: Context) -> dict[str, Any]:
     if ctx.surface == 'web':
         return {'stream': audio, 'engine': name, 'format': concrete}
     target = Path(str(ctx.nouns.get('file') or 'speech.audio')).expanduser()
+    if home.is_home_path(target):
+        home.mkdir_private(target.parent)
+        home.write_private(target, b'')
     with target.open('wb') as out:
         for chunk in audio:
             out.write(chunk)

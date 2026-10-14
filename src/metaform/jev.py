@@ -459,7 +459,8 @@ def _cache(write: bool) -> Generator[sqlite3.Connection, None, None]:
     """One transaction on the answer cache, `<home>/jev.sqlite3`: answers by hash, never the state itself, and the
     model each requested name last answered as. Deleting the file only means paying again."""
     path = home.home() / CACHE
-    path.parent.mkdir(parents=True, exist_ok=True)
+    home.mkdir_private(path.parent)
+    sqlite.private(path)
     with sqlite.writer_lock(path) if write else nullcontext():
         db = sqlite.connect(path)
         try:

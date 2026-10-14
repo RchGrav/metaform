@@ -1,0 +1,1 @@
+node_projects, node_host, node_ssh_identity, node_ssh_public_key (node/__init__.py) and intake_file (intake/__init__.py) are person_only=True; MCP set_schema hides them and refuse_person_only refuses them.

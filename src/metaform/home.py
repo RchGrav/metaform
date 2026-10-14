@@ -18,6 +18,7 @@ import os
 import re
 import shutil
 import sqlite3
+import stat
 import sys
 import threading
 import uuid
@@ -135,6 +136,66 @@ def home() -> Path:
 
 def chassis_path() -> Path:
     return home() / 'metaform.sqlite3'
+
+
+def make_private() -> list[str]:
+    """Keep the home its owner's alone, at the start of every command. A home that does not exist yet is made 0700;
+    its databases are made 0600 as they are created (`sqlite.private`). A home made before this, with access for its
+    group or other users, is tightened once: every folder and file in it loses its group and other bits, so folders
+    are 0700 and files 0600 (0700 when executable), symbolic links inside it left as they are (a home that is itself
+    reached through a link is tightened at the link's target), and `home_private` is recorded once the home is closed
+    so a home loosened again on purpose is not walked again. Gives the paths it could not tighten, and records
+    nothing then, so the next start tries again. On Windows the home keeps the access its parent folder gives it."""
+    if os.name == 'nt':
+        return []
+    root = home()
+    if not root.exists():
+        root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        return []
+    root = root.resolve()  # a home reached through a link: the link's target is tightened, never the link
+    if not root.stat().st_mode & 0o077 or meta('home_private') is not None:
+        return []
+    failed: list[str] = []
+    try:
+        os.chmod(root, stat.S_IMODE(root.stat().st_mode) & ~0o077)
+    except OSError:
+        failed.append(str(root))
+    for folder, _, files in os.walk(root):
+        for path in (folder, *(os.path.join(folder, name) for name in files)):
+            try:
+                found = os.lstat(path)
+                if not stat.S_ISLNK(found.st_mode) and found.st_mode & 0o077:
+                    os.chmod(path, stat.S_IMODE(found.st_mode) & ~0o077)
+            except OSError:
+                failed.append(path)
+    if not failed and not root.stat().st_mode & 0o077:  # a root still open is tried again at the next start
+        set_meta('home_private', now())
+    return failed
+
+
+def is_home_path(path: Path) -> bool:
+    """Whether a destination is inside the home, including a home reached through a symbolic link."""
+    return path.resolve().is_relative_to(home().resolve())
+
+
+def mkdir_private(path: Path) -> None:
+    """Create missing home folders with owner-only access, including missing parents. Existing modes stay as set."""
+    if not path.exists() and path.parent != path:
+        mkdir_private(path.parent)
+    path.mkdir(mode=0o700, exist_ok=True)
+
+
+def write_private(path: Path, text: str | bytes) -> None:
+    """Write a home file with owner-only access at creation. Windows keeps its inherited access."""
+    if os.name == 'nt':
+        if isinstance(text, str):
+            path.write_text(text, encoding='utf-8')
+        else:
+            path.write_bytes(text)
+        return
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, 'wb') as handle:
+        handle.write(text.encode('utf-8') if isinstance(text, str) else text)
 
 
 def now() -> str:
@@ -550,8 +611,9 @@ def register(record: Project) -> Path:
     if folder is None:
         numbers = [int(one.name.rsplit('-', 1)[1]) for one in taken]
         folder = projects_dir() / f'{folder_name(record.path)}-{(max(numbers) if numbers else 0) + 1:03d}'
-        folder.mkdir(parents=True)
-        (folder / SOURCE).write_text(record.path + '\n', encoding='utf-8')
+        mkdir_private(projects_dir())
+        folder.mkdir(mode=0o700)
+        write_private(folder / SOURCE, record.path + '\n')
     registered = now()
     with project_db(folder, write=True) as db:
         db.execute('INSERT INTO projects(project_id, path, path_key, target_type, target_value, registered) '
@@ -560,9 +622,9 @@ def register(record: Project) -> Path:
     provenance = folder / '.metaform' / 'provenance.json'
     if not provenance.exists():  # written once and never changed, PROJ-026
         from . import __version__
-        provenance.parent.mkdir(exist_ok=True)
-        provenance.write_text(json.dumps({'source': record.path, 'registered': registered,
-                                          'metaform': __version__}, indent=2) + '\n', encoding='utf-8')
+        provenance.parent.mkdir(mode=0o700, exist_ok=True)
+        write_private(provenance, json.dumps({'source': record.path, 'registered': registered,
+                                              'metaform': __version__}, indent=2) + '\n')
     changes.note(record.project_id)
     return folder
 
@@ -894,8 +956,9 @@ def remove_base(project_id: str, name: str) -> Removed:
         base_id = str(row[0])
         path = store_path(project_id, base_id)
         kept = home() / 'backups' / 'remove-base' / project_id / now().replace(':', '').replace('-', '')
-        kept.mkdir(parents=True, exist_ok=True)
+        mkdir_private(kept)
         if path.exists():
+            sqlite.private(kept / path.name)
             copy = sqlite3.connect(kept / path.name)
             try:
                 with closing(sqlite3.connect(path)) as source:
@@ -1021,7 +1084,7 @@ def to_clear(project_id: str) -> Cleared:
 
 
 def clear_project(project_id: str) -> Cleared:
-    """Remove every base of the project with its store, and its report files, PROJ-025.
+    """Remove every base of the project with its store, its report files and its source placement runs, PROJ-025.
 
     The registration, the settings, the history and everything else in the project's folder stay, PROJ-026. The
     rows go whatever happens to the files; a file or folder that cannot be removed is named in the result.
@@ -1044,6 +1107,8 @@ def clear_project(project_id: str) -> Cleared:
     for store in stores:
         _remove_files(store, failed)
     _remove_tree(folder / 'reports', failed)
+    # Every base is gone. Its placement runs and launch receipts cannot be resumed, and stay removed on restore.
+    _remove_tree(folder / 'source_placement', failed)
     changes.note(project_id)
     return Cleared(found.project_id, found.bases, found.reports, _innermost(failed),
                    saved.name if saved is not None else None)
@@ -1076,16 +1141,23 @@ def _copied(source: Path, target: Path) -> None:
     for path in sorted(source.rglob('*')):
         to = target / path.relative_to(source)
         if path.is_dir():
-            to.mkdir(parents=True, exist_ok=True)
+            mkdir_private(to)
         elif path.suffix == '.sqlite3':
-            to.parent.mkdir(parents=True, exist_ok=True)
+            mkdir_private(to.parent)
+            sqlite.private(to)
             # closed on the way out whatever happens; a connection's `with` only commits, it never closes
             with closing(_read_only(path)) as read, \
                     closing(sqlite3.connect(to)) as write:
                 read.backup(write)
         elif not path.name.endswith(('.sqlite3-wal', '.sqlite3-shm')):
-            to.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(path, to)
+            mkdir_private(to.parent)
+            write_private(to, path.read_bytes())
+            found = path.stat()
+            if os.name == 'nt':
+                shutil.copystat(path, to)
+            else:
+                to.chmod(stat.S_IMODE(found.st_mode) & ~0o077)
+                os.utime(to, ns=(found.st_atime_ns, found.st_mtime_ns))
 
 
 def backup_project(project_id: str) -> Backup | None:
@@ -1094,20 +1166,20 @@ def backup_project(project_id: str) -> Backup | None:
     if not found.bases and not found.reports:
         return None
     stamp = datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')
-    _backups(project_id).mkdir(parents=True, exist_ok=True)
+    mkdir_private(_backups(project_id))
     name, number = stamp, 1
     while (_backups(project_id) / name).exists():
         number += 1
         name = f'{stamp}-{number}'
     kept = _backups(project_id) / name
-    kept.mkdir()
+    kept.mkdir(mode=0o700)
     forms = bases(project_id)
     rows = {'bases': [{'id': form.id, 'name': form.name, 'created': form.created}
                           for form in forms],
             'active': next((form.id for form in forms if form.active), None), 'reports': found.reports}
     folder = _folder_of_project(project_id)
     try:
-        (kept / 'stores').mkdir()
+        (kept / 'stores').mkdir(mode=0o700)
         for store in _stores(folder):
             try:
                 _copied_store(store, kept / 'stores' / store.name)
@@ -1116,10 +1188,10 @@ def backup_project(project_id: str) -> Backup | None:
         if (folder / 'reports').is_dir():
             _copied(folder / 'reports', kept / 'reports')
         else:
-            (kept / 'reports').mkdir()
+            (kept / 'reports').mkdir(mode=0o700)
         if (folder / 'modules').is_dir():  # the modules' project-level stores, which a clear keeps, STORE-045
             _copied(folder / 'modules', kept / 'modules')
-        (kept / 'rows.json').write_text(json.dumps(rows, indent=2) + '\n', encoding='utf-8')
+        write_private(kept / 'rows.json', json.dumps(rows, indent=2) + '\n')
     except BaseException:
         # This call made the folder and it holds no whole backup: none lists or restores it, so it would only be
         # clutter beside the real backups.
@@ -1289,7 +1361,8 @@ def _remove_files(store: Path, failed: list[tuple[str, str]]) -> None:
 
 def _copied_store(source: Path, target: Path) -> None:
     """A store copied through SQLite's own backup, so one another program holds open is copied as it stands."""
-    target.parent.mkdir(parents=True, exist_ok=True)
+    mkdir_private(target.parent)
+    sqlite.private(target)
     with closing(_read_only(source)) as read, \
             closing(sqlite3.connect(target)) as write:  # closed whatever happens; `with` on a connection never closes
         read.backup(write)

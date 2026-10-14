@@ -845,6 +845,7 @@ export function createAgent(name, { harness = 'other' } = {}) {
   FOUND_EYES = [];
   const anim = BUILD[name](body);
   const seeing = FOUND_EYES;
+  const eyeRest = seeing.map(eye => eye.quaternion.clone());
 
   // fit to ~1.6 units, centred on the pivot (measured at rest)
   anim(0, 1); body.position.set(0, 0, 0); body.rotation.set(0, 0, 0); body.updateMatrixWorld(true);
@@ -882,10 +883,16 @@ export function createAgent(name, { harness = 'other' } = {}) {
       sway += ((motion.go === 'swim' ? Math.sin(stroke.phase * Math.PI * 2) * 0.16 * stroke.thrust * Math.min(1, m.speed * 2) : 0)
         - sway) * Math.min(1, dt * 10);
       if (m.state === 'sleep') { squash = 0.06 + Math.sin(t * 0.9) * 0.03; pitch = 0.25; }
+      if (m.state === 'attend') {
+        y = Math.sin(t * (0.65 + motion.phase * 0.3) + motion.phase * 6.28) * 0.025;
+        squash = 0;
+        pitch = 0;
+      }
       landed += dt; wasPhase = stroke.phase;
       gait.position.y = y - squash * 0.8;
       gait.scale.set(1 + squash * 0.6, 1 - squash, 1 + squash * 0.6);
       gait.rotation.set(pitch, sway, 0);
+      if (m.state === 'attend') gait.rotation.z = Math.sin(t * 0.7 + motion.phase * 6.28) * 0.025;
       // turn rate and climb rate, read from how the graph moved the agent since last frame
       agent.getWorldQuaternion(_wq); agent.getWorldPosition(_wp);
       _ev.setFromQuaternion(_wq, 'YXZ');
@@ -898,8 +905,15 @@ export function createAgent(name, { harness = 'other' } = {}) {
       smooth.turn += (turn - smooth.turn) * Math.min(1, dt * 4);
       smooth.climb += (climb - smooth.climb) * Math.min(1, dt * 4);
       agent.userData.turnRate = smooth.turn;   // read by orientAgent, which leans a flyer into its turn
+      seeing.forEach((eye, index) => eye.quaternion.copy(eyeRest[index]));
       anim(t, m.state === 'sleep' ? 0.35 : 1 + busy * 1.5, { busy, turn: smooth.turn, climb: smooth.climb, dt,
         speed: m.speed, stride: m.stride || 0, stroke, landed, state: m.state });
+      // The eye camera follows these very anchors. Aim the visible eyes after the character's bob and lean, so
+      // its picture and its gaze agree while it attends to the work. Poses without a target restore its own gaze.
+      if (agent.userData.gaze) {
+        agent.updateMatrixWorld(true);
+        for (const eye of seeing) eye.lookAt(agent.userData.gaze);
+      }
     },
   };
   return agent;
@@ -941,12 +955,13 @@ const LEAN = 0.09, MOST_LEAN = 0.35;   // radians of lean for each radian a seco
 // Built from yaw and a small pitch, so facing straight backward never flips.
 // `smoothing` is the share of the way turned in a frame at 60 frames a second; given the frame's `dt` in seconds, the
 // share is that of the time that passed, so a figure turns at one pace whatever the frame rate.
-export function orientAgent(agent, direction, smoothing = 0.2, dt = null) {
+// A figure travelling or attending to work pitches all the way to its direction or label.
+export function orientAgent(agent, direction, smoothing = 0.2, dt = null, aligned = false) {
   const h = Math.hypot(direction.x, direction.z);
-  if (h < 1e-6) return;
+  if (h < 1e-6 && (!aligned || Math.abs(direction.y) < 1e-6)) return;
   const lean = UPRIGHT.has(agent.userData.glyph) ? 0
     : Math.max(-MOST_LEAN, Math.min(MOST_LEAN, -(agent.userData.turnRate || 0) * LEAN));
-  _e.set(-Math.atan2(direction.y, h) * 0.35, Math.atan2(direction.x, direction.z), lean);
+  _e.set(-Math.atan2(direction.y, h) * (aligned ? 1 : 0.35), Math.atan2(direction.x, direction.z), lean);
   _q.setFromEuler(_e);
   agent.quaternion.slerp(_q, dt === null ? smoothing : 1 - Math.pow(1 - smoothing, Math.max(0, dt) * 60));
 }

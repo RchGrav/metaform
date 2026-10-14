@@ -171,6 +171,10 @@ def _call_expression(text: str) -> tuple[tuple[str, ...], bool, ast.Call]:
             targets, unpack = _targets(text[:offset])
             expression = text[offset + 2:]
             break
+    # Skill folder names are kebab-case. Normalize only the callable at the start,
+    # leaving quoted data and argument expressions intact.
+    expression = re.sub(r'^(\s*logic\.skill\.)([a-z0-9]+(?:-[a-z0-9]+)*)(?=\s*\()',
+                        lambda match: match[1] + match[2].replace('-', '_'), expression)
     node = _expression(expression)
     if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
         raise TypeError('A call names an element address and a subroutine name.')
@@ -198,6 +202,8 @@ def prepare(text: str, variables: Mapping[str, Any], this: Any, lookup: Lookup,
             raise TypeError(f'Duplicate keyword argument: {key}')
         arguments[key] = _value(keyword.value, variables, this, resolve)
     logic, owner = lookup(address, name)
+    if logic.type == 'skill':
+        address = owner.address
     return Call(address, logic, parameters(logic.content, arguments, owner), owner, targets, unpack)
 
 

@@ -38,6 +38,7 @@ import ipaddress
 import json
 import os
 import secrets
+import shutil
 import socket
 import time
 import urllib.parse
@@ -94,7 +95,7 @@ from metaform import home
 
 from . import tokens
 from .authstore import Account, AuthStore, digest
-from .config import KNOWN_SCOPES, LABEL, scopes_for
+from .config import KNOWN_SCOPES, LABEL, page_classes, scopes_for
 from .device import DeviceGrants
 
 ACCESS_SECONDS = 3600
@@ -112,8 +113,39 @@ DEFAULT_INSTANCE = 'default'
 DCR_SECONDS = 10 * 365 * 86400  # a registered client's id holds until its signing key leaves the key set
 
 
+AUTH_FOLDER = 'METAFORM_NODE_AUTH'  # set only in the Node's auth container, to the auth volume's mount
+
+
+def node_folder() -> Path:
+    """What the authorization server keeps: the accounts store, the signing keys, the issuer and the role. In the
+    Node's auth container it is the auth volume, which no other container mounts, so the page, MCP and every agent
+    they start cannot read or write the accounts; anywhere else it is `<home>/node`."""
+    given = os.environ.get(AUTH_FOLDER)
+    return Path(given) if given else home.home() / 'node'
+
+
+def move_from_home() -> list[str]:
+    """Once, on the auth container's first start after the auth volume was added: what an older Node kept in
+    `<home>/node`, on the volume every container shares, is moved to the auth volume and the old folder removed, so
+    the accounts are kept and leave the shared volume. Returns the names moved."""
+    old, new = home.home() / 'node', node_folder()
+    if old.resolve() == new.resolve() or not old.is_dir():
+        return []
+    if home.is_home_path(new):
+        home.mkdir_private(new)
+    else:
+        new.mkdir(parents=True, exist_ok=True)
+    moved: list[str] = []
+    for entry in sorted(old.iterdir()):
+        if not (new / entry.name).exists():
+            shutil.move(str(entry), str(new / entry.name))
+            moved.append(entry.name)
+    shutil.rmtree(old)
+    return moved
+
+
 def store_path() -> Path:
-    return home.home() / 'node' / 'auth.sqlite'
+    return node_folder() / 'auth.sqlite'
 
 
 def introspection_secret_file() -> Path:
@@ -127,7 +159,7 @@ def introspection_secret(create: bool = False) -> str | None:
         return path.read_text(encoding='utf-8').strip() or None
     if not create:
         return None
-    path.parent.mkdir(parents=True, exist_ok=True)
+    home.mkdir_private(path.parent)
     made = secrets.token_urlsafe(32)
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, 'w', encoding='utf-8') as handle:
@@ -813,11 +845,14 @@ class Node:
         return JSONResponse({'ok': True, 'owner': self.store.owner_exists()})
 
     async def gate(self, request: Request) -> Response:
-        """Caddy's forward_auth: 200 with the account for a signed-in request, else sign-in for a page load and
-        401 for anything else."""
+        """Caddy's forward_auth: 200 for a signed-in request, with the account, its role and the classes of page route
+        it may use, which Caddy hands the page server; else sign-in for a page load and 401 for anything else."""
         found = self.signed_in(request)
         if found is not None:
-            return Response(status_code=200, headers={'X-Metaform-Account': found[0].name})
+            account = found[0]
+            return Response(status_code=200, headers={
+                'X-Metaform-Account': account.name, 'X-Metaform-Role': account.role,
+                'X-Metaform-Classes': ' '.join(page_classes(self.policy.capability, account.role))})
         method = request.headers.get('x-forwarded-method', 'GET')
         if method == 'GET' and 'text/html' in request.headers.get('accept', ''):
             target = _safe_next(request.headers.get('x-forwarded-uri'))
@@ -1077,8 +1112,8 @@ def bootstrap(store: AuthStore, folder: Path) -> str | None:
 
 
 def keys_folder() -> Path:
-    """The broker's signing keys: its identity, owner-readable only, on the home volume."""
-    return home.home() / 'node' / 'keys'
+    """The broker's signing keys: its identity, owner-readable only, in the authorization server's own folder."""
+    return node_folder() / 'keys'
 
 
 def make_broker(policy: Policy, store: AuthStore, *, replay: str = 'memory', limits: Any = None,

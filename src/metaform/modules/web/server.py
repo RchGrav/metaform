@@ -67,13 +67,23 @@ from metaform.outline import markdown as map_markdown
 from metaform.outline import mermaid as map_mermaid
 from metaform.outline import mermaid_limits
 
-from . import WAIT, WILDCARDS, host_port, loopback, opened_project, reach, ready_line, run_file, spawn, token
+from . import (
+    GATE_SECRET,
+    WAIT,
+    WILDCARDS,
+    host_port,
+    loopback,
+    opened_project,
+    reach,
+    ready_line,
+    run_file,
+    spawn,
+    token,
+    write_run,
+)
 
 HERE = Path(__file__).parent
-# the roundtable's scene module, which the page's Roundtable tab draws a table with, read from the module and never
-# copied, so the tab, the runner's watch page and its renderer draw one scene
-STATIC = {'page': HERE / 'page', 'vendor': HERE / 'vendor',
-          'roundtable': HERE.parent / 'roundtable' / 'resources' / 'scene'}
+STATIC = {'page': HERE / 'page', 'vendor': HERE / 'vendor'}
 COOKIE = 'metaform_token'
 RESERVED = ('project', 'metaform', 'layers')  # what picks the store and its layers; never a read's own argument
 TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -105,6 +115,61 @@ def dispatch_change(payload: dict[str, Any]) -> bool:
     return bool(DISPATCH_CHANGES.intersection(cast(list[str], tables)))
 
 
+# Behind a Metaform Node's gate, the page server trusts who is calling only from requests carrying the per-deploy
+# secret Caddy adds (GATE_SECRET), and serves each route only to an account whose classes, which the gate sends,
+# include the route's class.
+GATE_HEADER, CLASSES_HEADER, ACCOUNT_HEADER = 'X-Metaform-Gate', 'X-Metaform-Classes', 'X-Metaform-Account'
+# Every page write by class. Reads are `read`, but for the build panel and the developer panes, which are admin. write
+# changes the map, its tickets and memories; dispatch starts or steers agents, and needs the Node's dispatch
+# capability; admin is the owner's: settings, the page's toolbar, layout and workspaces, which are home-global settings,
+# modules, prompts, bases, backups, removing or clearing a project, builds, and any tool call through the MCP Apps host,
+# which can run any verb. A toolbar tool's run passes the route as a read and is classed by its verb, verb_class, in
+# workspace.run. A write not listed is admin, so a new one is refused to members until it is classed here.
+WRITE_ROUTES = frozenset({
+    '/api/apply-layers', '/api/answer', '/api/reopen', '/api/read', '/api/task', '/api/state', '/api/element',
+    '/api/note', '/api/move', '/api/distribute', '/api/ticket', '/api/eligible', '/api/memory', '/api/ignore',
+    '/api/attach', '/api/mascot', '/api/mascot-result', '/api/voice/transcribe', '/api/voice/clip', '/api/voice/speak'})
+DISPATCH_ROUTES = frozenset({
+    '/api/raise', '/api/talk', '/api/system-chat', '/api/merge-review', '/api/merge-assist', '/api/dispatch-start',
+    '/api/dispatch-message', '/api/dispatch-fork', '/api/dispatch-stop', '/api/dispatch-interrupt',
+    '/api/dispatch-cancel', '/api/dispatch-intake', '/api/dispatch-resume', '/api/dispatch-permit',
+    '/api/dispatch-configure', '/api/workflow-answer', '/api/workflow-cancel'})
+ADMIN_ROUTES = frozenset({
+    '/api/save-prompt', '/api/clear-project', '/api/remove-project', '/api/restore', '/api/activate-base',
+    '/api/remove-base', '/api/dispatch-prompts', '/api/dispatch-autostart', '/api/dispatch-agents',
+    '/api/dispatch-reset', '/api/settings', '/api/settings/reset', '/api/modules', '/api/mcp-call',
+    '/api/voice/download', '/api/build', '/api/workspace/arrangement', '/api/workspace/reset',
+    '/api/workspace/save', '/api/workspace/select', '/api/workspace/delete'})
+ADMIN_PREFIXES = ('/api/build/', '/api/debug/')
+TOOL_RUN = '/api/workspace/run'
+
+
+def route_class(method: str, path: str) -> str:
+    """The class of one page route: read, write, dispatch or admin. A path that is both read and written, such as
+    /api/settings, is read by GET and classed by its write for POST."""
+    if path == '/api/build' or path.startswith(ADMIN_PREFIXES):
+        return 'admin'
+    if method != 'POST' or path == TOOL_RUN:  # a tool's run is classed again by its verb, verb_class
+        return 'read'
+    if path in WRITE_ROUTES:
+        return 'write'
+    if path in DISPATCH_ROUTES:
+        return 'dispatch'
+    return 'admin'  # ADMIN_ROUTES, and any write not yet classed
+
+
+def verb_class(module_id: str, verb: chassis.Verb, arguments: dict[str, Any]) -> str:
+    """The class a toolbar tool's verb needs, as an MCP tool call is scoped by its effect (mcp.oauth.required_scope):
+    admin for a verb with a caution or given a setting only the person sets; dispatch for the dispatch module's verbs
+    and any that changes something past the map; read for a read; write otherwise."""
+    if verb.caution or any((setting := settings.SCHEMA.get(key)) is not None and setting.person_only
+                           for key in arguments if key in verb.switches):
+        return 'admin'
+    if module_id == 'dispatch' or (verb.open_world and verb.effect != 'read'):
+        return 'dispatch'
+    return 'read' if verb.effect == 'read' else 'write'
+
+
 COALESCE = 0.3  # seconds a page's stream holds dispatch-only events to merge them, VIEW-018
 # The acts of the person's mascot a page takes, VIEW-005; those that ask the page something, and the body's acts, which
 # answer once the body is done, at most six seconds on the page, wait this long for it
@@ -112,7 +177,7 @@ MASCOT_ACTS = {'say', 'go', 'turn', 'point', 'emote', 'look', 'see', 'select', '
                'flow', 'physics', 'viewing', 'embody', 'move', 'push', 'drag', 'drop', 'take', 'release', 'come',
                'capture'}
 MASCOT_ASKS = {'look', 'see', 'viewing', 'embody', 'come', 'capture', 'go', 'turn', 'point', 'emote', 'move', 'push',
-               'drag', 'drop', 'take', 'release'}
+               'drag', 'drop', 'take', 'release', 'open'}
 MASCOT_WAIT = 10.0
 
 
@@ -166,9 +231,11 @@ class Server(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = os.name != 'nt'  # on Windows it would let a second server share the port
 
-    def __init__(self, bind: str, port: int, nonce: str) -> None:
+    def __init__(self, bind: str, port: int, nonce: str, origin: str = '', gate: str | None = None) -> None:
         self.address_family = socket.AF_INET6 if ':' in bind else socket.AF_INET
         self.bind, self.nonce = bind, nonce
+        # Behind a Node's gate: the public origin the browser's Host and Origin name, and the secret Caddy adds.
+        self.origin, self.gate = origin.rstrip('/').lower(), gate or None
         self.token = None if loopback(bind) else token()
         self.listeners: set[queue.SimpleQueue[dict[str, Any]]] = set()
         # The project each open page shows, so the page that opens a project runs its agent starter at once.
@@ -209,10 +276,12 @@ class Server(ThreadingHTTPServer):
 
     def own_host(self, host: str | None) -> bool:
         """The Host header names this server. On a wildcard bind every name of the machine is its own, so only the
-        port is checked there, and the token guards every request."""
+        port is checked there, and the token guards every request. Behind a Node's gate it is the public origin's."""
         if not host:
             return False
         host = host.strip().lower()
+        if self.origin:
+            return host == urlsplit(self.origin).netloc
         if self.bind in WILDCARDS:
             return host.rsplit(':', 1)[-1] == str(self.port) and ':' in host
         return host in self.hosts
@@ -334,7 +403,7 @@ class Server(ThreadingHTTPServer):
         if not self.replacing:
             return
         try:
-            process = spawn(self.bind, self.port, secrets.token_hex(8))
+            process = spawn(self.bind, self.port, secrets.token_hex(8), self.origin, self.gate)
             self.successor = bool(ready_line(process))
             log(f'Handed over to process {process.pid}' if self.successor else
                 f'Hand-over failed: process {process.pid} did not say it listens')
@@ -369,12 +438,11 @@ class Server(ThreadingHTTPServer):
 
     def record(self) -> None:
         path = run_file()
-        path.parent.mkdir(parents=True, exist_ok=True)
+        home.mkdir_private(path.parent)
         written = path.with_suffix('.tmp')
-        written.write_text(json.dumps({'pid': os.getpid(), 'bind': self.bind, 'port': self.port,
+        write_run(written, json.dumps({'pid': os.getpid(), 'bind': self.bind, 'port': self.port,
                                        'home': str(home.home()), 'nonce': self.nonce,
-                                       'started': datetime.now(UTC).isoformat(timespec='seconds')}),
-                           encoding='utf-8')
+                                       'started': datetime.now(UTC).isoformat(timespec='seconds')}))
         os.replace(written, path)
 
 
@@ -430,12 +498,41 @@ class Handler(BaseHTTPRequestHandler):
         if self.gui.token is not None and not (given and hmac.compare_digest(given, self.gui.token)):
             self.send(403, {'error': 'This request needs the token that metaform web prints.'})
             return True
+        gated = self.headers.get(GATE_HEADER) or ''
+        if self.gui.gate is not None and not hmac.compare_digest(gated.encode(), self.gui.gate.encode()):
+            self.send(403, {'error': "This request did not come through the Node's sign-in."})
+            return True
         return False
+
+    def permitted(self, method: str, path: str) -> bool:
+        """Behind a Node's gate, whether the signed-in account may use this route, by its class and the classes the
+        gate sent for the account; refused with 403 when not. Without a gate the page is the person's own."""
+        return self.holds(route_class(method, path), path)
+
+    def holds(self, needed: str, path: str) -> bool:
+        """Behind a Node's gate, whether the account's classes include `needed`; refused with 403 when not."""
+        if self.gui.gate is None:
+            return True
+        allowed = (self.headers.get(CLASSES_HEADER) or '').split()
+        if needed in allowed:
+            return True
+        account = self.headers.get(ACCOUNT_HEADER) or 'this account'
+        self.send(403, {'error': f'{path} needs {needed}, which {account} may not use here.',
+                        'next': 'only the owner changes settings, modules and prompts; writes need a Node at write '
+                                'capability, dispatch a Node at dispatch capability'})
+        return False
+
+    def same_origin(self) -> bool:
+        """A write comes from the GUI's own page: its Origin is the server's own, the public origin behind a Node's
+        gate, else http://<Host>."""
+        origin = self.headers.get('Origin')
+        expected = self.gui.origin or f'http://{self.headers.get("Host", "")}'
+        return origin is not None and origin.lower() == expected.lower()
 
     def route(self, method: str) -> None:
         url = urlsplit(self.path)
         query = parse_qs(url.query, keep_blank_values=True)
-        if self.refused(query):
+        if self.refused(query) or not self.permitted(method, url.path):
             return
         if url.path == '/api/build' or url.path.startswith('/api/build/'):  # the build panel, BASE-060
             from . import builds
@@ -505,12 +602,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.item({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/agent-view':
             return self.agent_view({key: values[-1] for key, values in query.items() if key != 't'})
-        if url.path == '/api/roundtable':
-            return self.roundtable({key: values[-1] for key, values in query.items() if key != 't'})
-        if url.path == '/api/roundtable-submission':
-            return self.roundtable_submission({key: values[-1] for key, values in query.items() if key != 't'})
-        if url.path == '/api/roundtable-seats':
-            return self.roundtable_seats({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path.startswith('/api/memory-'):
             return self.memory_read(url.path[len('/api/memory-'):],
                                     {key: values[-1] for key, values in query.items() if key != 't'})
@@ -739,8 +830,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def write(self, path: str) -> None:
         """One of the eighteen writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body."""
-        origin = self.headers.get('Origin')
-        if origin is None or origin.lower() != f'http://{self.headers.get("Host", "")}'.lower():
+        if not self.same_origin():
             return self.send(403, {'error': "A write is taken only from the web GUI's own page."})
         if (self.headers.get('Content-Type') or '').split(';')[0].strip().lower() != 'application/json':
             return self.send(415, {'error': 'A write takes a JSON body.'})
@@ -767,7 +857,7 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/dispatch-configure': self.dispatch_configure,
                   '/api/workflow-answer': self.workflow_answer, '/api/workflow-cancel': self.workflow_cancel,
                   '/api/settings': self.set_setting, '/api/settings/reset': self.reset_setting,
-                  '/api/modules': self.set_module, '/api/roundtable': self.roundtable_act}
+                  '/api/modules': self.set_module}
         if path not in writes:
             return self.send(404, {'error': f'No such write: {path}.'})
         try:
@@ -789,8 +879,8 @@ class Handler(BaseHTTPRequestHandler):
     def mascot_request(self, given: dict[str, Any]) -> None:
         """An act of the person's mascot, from the web module's verbs, VIEW-005: handed to every open page of the
         project as a `mascot` event with an id of its own. An act that asks something, what the mascot sees or a
-        picture from its eyes, or what the person is looking at, waits up to MASCOT_WAIT seconds for the first page's
-        answer, `mascot_result`; the rest answer at once. With no page open on the project it is refused plainly."""
+        picture from its eyes, or what the person is looking at, or that opens a box on the page, waits up to
+        MASCOT_WAIT seconds for the first page's answer, `mascot_result`; the rest answer at once. With no page open on the project it is refused plainly."""
         project, act = str(given.get('project') or ''), str(given.get('act') or '')
         if act not in MASCOT_ACTS:
             return self.send(400, {'error': f'{act or "Nothing"} is not an act of the mascot.'})
@@ -1130,8 +1220,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(413, {'error': f'An attachment is at most {ATTACH_LIMIT // 1024 // 1024} MB.'})
         safe = re.sub(r'[^A-Za-z0-9._-]', '_', os.path.basename(name)).lstrip('.') or 'file'
         target = folder / 'attachments' / f'{datetime.now(UTC):%Y%m%d-%H%M%S}-{secrets.token_hex(2)}-{safe}'
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(raw)
+        home.mkdir_private(target.parent)
+        home.write_private(target, raw)
         self.send(200, {'path': str(target)})
 
     def attachment(self, given: dict[str, str]) -> None:
@@ -1445,10 +1535,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def dispatch_stop(self, given: dict[str, Any]) -> None:
         """Stop the agent working a ticket with the dispatch module's stop, VIEW-039."""
-        work_id = given.get('work_id')
+        work_id, session = given.get('work_id'), given.get('session')
         if not isinstance(work_id, str) or not work_id:
             return self.send(400, {'error': 'An agent is stopped by the work id of its ticket.'})
-        self.dispatched(given, 'stop', [work_id])
+        if session is not None and (not isinstance(session, str) or not session):
+            return self.send(400, {'error': 'The chat session id must be a nonempty string.'})
+        self.dispatched(given, 'stop', [work_id, *([f'session={session}'] if session else [])])
 
     def dispatch_cancel(self, given: dict[str, Any]) -> None:
         """Cancel a ticket with the dispatch module's cancel: its agent is stopped as the person's own stop, so
@@ -1472,75 +1564,6 @@ class Handler(BaseHTTPRequestHandler):
         except Stop as error:
             if 'not on this project' in str(error):
                 return self.send(200, {'agents': []})
-            return self.refuse(error, 400)
-        self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
-
-    def roundtable(self, given: dict[str, str]) -> None:
-        """The table running in the project, for the page's Roundtable tab, BASE-066: its status, its scene as the
-        roundtable's scene module draws it, and its turns after `since`, with the pause after each turn; `table` none
-        when every table has ended. With the roundtable module off, `enabled` false."""
-        try:
-            listed = cast(dict[str, Any], module_verb(given, 'roundtable', 'list', {}))
-            running = next((row for row in cast(list[dict[str, Any]], listed['discussions'])
-                            if row['state'] != 'ended'), None)
-            if running is None:
-                return self.send(200, {'enabled': True, 'table': None})
-            number = {'discussion': running['discussion']}
-            found = {'enabled': True, 'table': module_verb(given, 'roundtable', 'status', number),
-                     'scene': module_verb(given, 'roundtable', 'scene', number),
-                     'turns': module_verb(given, 'roundtable', 'read',
-                                          {**number, 'since': int(given.get('since') or 0)}),
-                     'pause': settings.value('roundtable_pause', project_folder(given)[1]),
-                     'keep': int(settings.value('roundtable_keep', project_folder(given)[1])) / 100}
-        except StoreError as error:
-            return self.refuse(error, 404)
-        except Stop as error:
-            if 'not on this project' in str(error):
-                return self.send(200, {'enabled': False, 'table': None})
-            return self.refuse(error, 400)
-        self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
-
-    def roundtable_seats(self, given: dict[str, str]) -> None:
-        """The seats a table can be opened with, for the page's Open roundtable form: `roundtable seats`."""
-        try:
-            found = module_verb(given, 'roundtable', 'seats', {})
-        except StoreError as error:
-            return self.refuse(error, 404)
-        except Stop as error:
-            return self.refuse(error, 400)
-        self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
-
-    def roundtable_submission(self, given: dict[str, str]) -> None:
-        """The text a seat submitted, for a vetoed turn's link in the tab: `roundtable submission`."""
-        try:
-            numbers = {key: int(given.get(key) or '') for key in ('discussion', 'submission')}
-        except ValueError:
-            return self.send(400, {'error': 'A submission is read by its table\'s number and its own.'})
-        try:
-            found = module_verb(given, 'roundtable', 'submission', numbers)
-        except StoreError as error:
-            return self.refuse(error, 404)
-        except Stop as error:
-            return self.refuse(error, 400)
-        self.send(200, {'text': str(found).rstrip('\n')})
-
-    def roundtable_act(self, given: dict[str, Any]) -> None:
-        """The person chairs a table from the page, BASE-066: `act` is open, hold, continue, comment, end or watch, each
-        the roundtable verb of that name, run as the person's, the page's surface."""
-        act = given.get('act')
-        if act == 'open':
-            arguments = {key: given[key] for key in ('address', 'seats', 'opening', 'rounds', 'spend')
-                         if given.get(key) not in (None, '')}
-        elif act in ('hold', 'continue', 'end', 'watch', 'comment'):
-            arguments = {'discussion': given.get('discussion'),
-                         **({'text': given.get('text')} if act == 'comment' else {})}
-        else:
-            return self.send(400, {'error': 'A table is opened, held, continued, commented at, ended or watched.'})
-        try:
-            found = module_verb(given, 'roundtable', act, arguments)
-        except StoreError as error:
-            return self.refuse(error, 404)
-        except Stop as error:
             return self.refuse(error, 400)
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
@@ -1645,7 +1668,7 @@ class Handler(BaseHTTPRequestHandler):
         if found is None:
             return self.send(400, {'error': 'Agent prompts are a setting of the dispatch module, which is not enabled.',
                                    'next': 'metaform enable dispatch'})
-        self.send(200, {'value': found['value'], 'choices': found.get('choices', [])})
+        self.send(200, {'value': found['value'], 'choices': found.get('choices', []), 'risky': found.get('risky', [])})
 
     def set_dispatch_prompts(self, given: dict[str, Any]) -> None:
         """Set how agents' permission prompts are answered, as `metaform set --dispatch-prompts` sets it, so the choice
@@ -1656,7 +1679,9 @@ class Handler(BaseHTTPRequestHandler):
                                    'next': 'metaform list projects'})
         if not isinstance(value, str) or not value:
             return self.send(400, {'error': 'Agent prompts are set to one of their choices.'})
-        done = subprocess.run([sys.executable, '-m', 'metaform', 'set', f'--dispatch-prompts={value}'], cwd=project.path,
+        confirmed = ['--confirm'] if given.get('confirm') is True else []  # approve-all is stored only when confirmed
+        done = subprocess.run([sys.executable, '-m', 'metaform', 'set', *confirmed, f'--dispatch-prompts={value}'],
+                              cwd=project.path,
                               capture_output=True, text=True, encoding='utf-8', stdin=subprocess.DEVNULL,
                               timeout=DISPATCH_LIMIT, check=False)
         if done.returncode == 0:
@@ -1679,7 +1704,7 @@ class Handler(BaseHTTPRequestHandler):
     def set_setting(self, given: dict[str, Any]) -> None:
         """Save one setting as `metaform set` saves it, run in the project's folder: the same switch, the same checks,
         and its refusal with the next step; with `glue` true, glued as `--glue` glues it. A boolean is true or false,
-        a list is a list of its items or its comma-separated text, any other value its text; an empty list of a setting
+        a list is a list of its items, never its text, any other value its text; an empty list of a setting
         shown as all when empty is sent as the word all, which clears it. Answers with every setting as it is now and
         the notices `set` gave for what it kept."""
         project, key, value = home.project(str(given.get('project', ''))), given.get('key'), given.get('value')
@@ -1695,7 +1720,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(404, {'error': f'No setting {key} here.', 'next': 'metaform config --show'})
         switch, negative, kind = found
         if kind == 'list' and isinstance(value, str):
-            value = value.split(',')
+            return self.send(400, {'error': f'{switch} is a list: send its items as an array.', 'key': key})
+        if kind == 'list' and isinstance(value, list) and settings.SCHEMA.get(str(key)) is not None:
+            return self.save_list(folder, str(key), cast(list[Any], value), glue=given.get('glue') is True)
         if kind == 'bool':
             if not isinstance(value, bool):
                 return self.send(400, {'error': f'{switch} is on or off: true or false.', 'key': key})
@@ -1711,7 +1738,8 @@ class Handler(BaseHTTPRequestHandler):
         else:
             return self.send(400, {'error': f'{switch} takes its value as text.', 'key': key})
         try:
-            done = metaform_cli(folder, 'set', *(['--glue'] if given.get('glue') is True else []), argument)
+            done = metaform_cli(folder, 'set', *(['--glue'] if given.get('glue') is True else []),
+                                *(['--confirm'] if given.get('confirm') is True else []), argument)
         except Stop as error:
             return self.refuse(error, 500)
         if done.returncode != 0:
@@ -1722,6 +1750,26 @@ class Handler(BaseHTTPRequestHandler):
             self.gui.schedule_dispatch(project.project_id)
         try:
             self.send(200, {**configured(folder), 'key': key, 'notices': notices})
+        except Stop as error:
+            self.refuse(error, 400)
+
+    def save_list(self, folder: Path, key: str, value: list[Any], *, glue: bool) -> None:
+        """Save a list setting this server declares as the list it is, member by member, so an item may hold a comma:
+        joined into the command line's comma text it was split again at every comma, CLI-027. Checked and stored as
+        `metaform set` checks and stores it; an empty list of a setting shown as all when empty clears it."""
+        if not all(isinstance(item, str) for item in value):
+            return self.send(400, {'error': f'{key} is a list of names.', 'key': key})
+        chassis.refresh_modules()  # a module turned off since this server started has no setting to save
+        if key not in settings.SCHEMA:
+            return self.send(404, {'error': f'No setting {key} here.', 'next': 'metaform config --show'})
+        members = [item.strip() for item in cast(list[str], value) if item.strip()]
+        try:
+            settings.checked(key, members, folder, typed=True)
+            assigned = settings.put(key, members, folder, glue=glue)
+        except (settings.SettingError, Stop) as error:
+            return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None), 'key': key})
+        try:
+            self.send(200, {**configured(folder), 'key': key, 'notices': list(assigned.notices)})
         except Stop as error:
             self.refuse(error, 400)
 
@@ -1799,8 +1847,13 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(text, str):
             return self.send(400, {'error': 'The ignore list is text, one pattern per line.'})
         path = Path(found.path) / home.IGNORE_FILE
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text if text.endswith('\n') or not text else text + '\n', encoding='utf-8')
+        text = text if text.endswith('\n') or not text else text + '\n'
+        if home.is_home_path(path):
+            home.mkdir_private(path.parent)
+            home.write_private(path, text)
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding='utf-8')
         self.send(200, {'file': home.IGNORE_FILE, 'patterns': home.ignore_patterns(found.path)})
 
     def clear_project(self, given: dict[str, Any]) -> None:
@@ -1910,12 +1963,12 @@ def kept_frame(data: str) -> Path | None:
     if suffix is None or len(body) > FRAME_MOST:
         return None
     place = home.home() / 'run' / 'captures'
-    place.mkdir(parents=True, exist_ok=True)
+    home.mkdir_private(place)
     for old in place.iterdir():
         if time.time() - old.stat().st_mtime > FRAME_HOURS * 3600:
             old.unlink(missing_ok=True)
     kept = place / f'{secrets.token_hex(16)}{suffix}'
-    kept.write_bytes(body)
+    home.write_private(kept, body)
     return kept
 
 
@@ -2315,7 +2368,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--bind', required=True)
     parser.add_argument('--port', type=int, required=True)
     parser.add_argument('--nonce', required=True)
+    parser.add_argument('--origin', default='', help="the public origin, behind a Metaform Node's gate only")
     given = parser.parse_args(argv)
+    # The gate secret is read once and taken out of the environment, so no process this server starts inherits it.
+    given.gate = os.environ.pop(GATE_SECRET, '') or None
+    if bool(given.origin) != bool(given.gate):
+        log('--origin and METAFORM_GATE_SECRET go together: a public origin is served only behind the Node\'s gate')
+        return 1
     if threading.current_thread() is threading.main_thread():  # only the main thread may set it; tests run main in one
         signal.signal(signal.SIGTERM, stopped)
     try:
@@ -2327,7 +2386,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def serve(given: argparse.Namespace) -> int:
     try:
-        server = Server(given.bind, given.port, given.nonce)
+        server = Server(given.bind, given.port, given.nonce, given.origin, given.gate)
     except OSError as error:
         log(f'cannot listen at {host_port(given.bind, given.port)}: {error}')
         return 1

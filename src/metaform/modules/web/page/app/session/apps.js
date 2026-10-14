@@ -3,8 +3,9 @@
 import '/page/app/session/tools.js';  // the part before runs first, so the parts run in the page's order
 import {h, fill} from '/page/app/core/dom.js';
 import {overlay} from '/page/app/core/overlays.js';
-import {confirmAct} from '/page/app/core/controls.js';
+import {confirmAct, toast} from '/page/app/core/controls.js';
 import {S, read} from '/page/app/core/reads.js';
+import {VIEW} from '/page/app/views/settings.js';
 import {DOCK, SEEN} from '/page/app/dock/embody.js';
 import {drawHelpdesk, followLog} from '/page/app/dock/helpdesk.js';
 import {linked} from '/page/app/board/refs.js';
@@ -375,16 +376,79 @@ function openView(one) {
 const UNDRAWN = ['plan', 'state', 'tool_detail', 'turn'];  // drawn apart, or not lines of the conversation
 const MESSAGES = ['agent_message_chunk', 'person', 'user_message_chunk'];
 const SYSTEM_LINES = ['setting', 'approved', 'failed', 'notice'];
+/* The agent's work in a thread: its tool calls with their details, the calls its permission prompts approved, and its
+ * thinking. A thread shows what the agent says to the person, its messages and the lines it says on the map; its work
+ * shows with web_chat_details on, or on this page after W, `toggleWork`, until the page is reloaded. */
+const WORK_LINES = ['approved', 'agent_thought_chunk'];
+export const CHATWORK = {shown: null};  // W's choice on this page; null follows web_chat_details
+export const workShown = () => CHATWORK.shown ?? VIEW.chatDetails === true;
+export function toggleWork() {
+  CHATWORK.shown = !workShown();
+  toast(CHATWORK.shown ? "The chat shows the agent's work on this page; web_chat_details in Settings keeps it shown."
+    : 'The chat shows only what the agent says on this page; web_chat_details in Settings keeps it so.');
+  drawHelpdesk();
+}
+/* A line the agent said on the map with web_say, as the chat shows it: its words, or null for any other call, or one
+ * that failed. */
+export function spokenOf(line) {
+  const data = line.data, call = data?.call;
+  if ((line.kind !== 'tool_call' && line.kind !== 'tool_call_update') || call?.tool !== 'web_say'
+    || data.status === 'failed' || call.result?.isError) return null;
+  const said = call.input?.text ?? call.result?.structuredContent?.text;
+  return typeof said === 'string' && said.trim() ? said.trim() : null;
+}
+/* Words as compared for saying the same: case, quotes, spaces and the punctuation at their ends aside. */
+export const sameWords = text => String(text ?? '').toLowerCase().replace(/[’‘]/g, "'").replace(/[“”]/g, '"')
+  .replace(/\s+/g, ' ').replace(/^[\s"'.,!?…]+|[\s"'.,!?…]+$/g, '');
+/* Those words one by one, each word's own punctuation aside, so they compare as whole words. */
+const wordsOf = text => sameWords(text).split(' ').map(word => word.replace(/^["'.,!?…:;]+|["'.,!?…:;]+$/g, ''))
+  .filter(Boolean);
+/* Whether a message's words say all the spoken words, in order, as whole words: 'Look' is not said by 'Looking'. */
+function saysAll(words, spoken) {
+  for (let at = 0; at + spoken.length <= words.length; at++) {
+    if (spoken.every((word, index) => words[at + index] === word)) return true;
+  }
+  return false;
+}
+/* Whether a message still being written is on its way to the spoken words: its words begin them, its last word
+ * perhaps cut where the stream has got to. */
+const growsInto = (words, spoken) => words.length > 0 && words.length <= spoken.length && words.every(
+  (word, index) => (index === words.length - 1 ? spoken[index].startsWith(word) : spoken[index] === word));
+/* What the agent's messages say in each turn of a thread, by turn, so a line it also said on the map is shown once:
+ * each message's place in the lines and its words. */
+function messagesByTurn(lines) {
+  const said = [[]];
+  lines.forEach((line, index) => {
+    if (line.kind === 'turn') said.push([]);
+    else if (line.kind === 'agent_message_chunk') said.at(-1).push({index, words: wordsOf(line.text)});
+  });
+  return said;
+}
 export function threadRows(lines, {work, agent}) {
-  const rows = [];
+  const rows = [], shown = workShown(), said = messagesByTurn(lines);
+  const growing = new Map();  // a message still being written toward a line said on the map: its place, that line
   let sender = null;  // who wrote the message before, so a run of one sender's messages is named once
+  let turn = 0;
   DOCK.heard = new Set();
-  for (const line of lines) {
+  for (const [index, line] of lines.entries()) {
     const key = `${line.session_id}:${line.name ?? line.seq}`;
     const kind = line.kind;
     const text = `${kind}\n${line.text}\n${line.data ? JSON.stringify(line.data) : ''}`;
-    if (UNDRAWN.includes(kind)) continue;
-    if (kind === 'tool_call' || kind === 'tool_call_update') toolRows(rows, line, key, text, work);
+    if (kind === 'turn') turn++;
+    if (UNDRAWN.includes(kind) || (!shown && WORK_LINES.includes(kind))) continue;
+    const spoken = spokenOf(line);
+    // a line said on the map is the agent's words, once: not again when a message of its turn says the same, and
+    // not beside the message of its turn still being written toward it, which shows the line in its place until
+    // it is written, so the one bubble neither doubles nor moves
+    const words = spoken ? wordsOf(spoken) : [], last = turn === said.length - 1 ? said[turn].at(-1) : null;
+    const unsaid = spoken && !said[turn].some(one => saysAll(one.words, words));
+    if (unsaid && last?.index > index && growsInto(last.words, words)) growing.set(last.index, spoken);
+    else if (unsaid) {
+      const who = agentName(agent), first = who !== sender, at = seenAt(`said:${key}`, line);
+      sender = who;
+      rows.push({key: `said:${key}`, text: `said\n${spoken}\n${first}`, make: () => spokenRow(spoken, who, first, at)});
+    }
+    if (kind === 'tool_call' || kind === 'tool_call_update') toolRows(rows, line, key, text, work, shown);
     else if (kind === 'permission') rows.push({key, text, make: () => permissionCard(line, work, 'div', agent)});
     else if (kind === 'elicitation') rows.push({key, text, make: () => elicitationRow(line, work, agent)});
     else if (kind === 'agent_notice') rows.push({key, text, make: () => noticeRow(line)});
@@ -394,11 +458,12 @@ export function threadRows(lines, {work, agent}) {
       if (words) rows.push({key, text, make: () => h('div', {class: 'system signal'}, words)});
     } else if (MESSAGES.includes(kind)) {
       const mine = kind !== 'agent_message_chunk', who = mine ? 'You' : agentName(agent);
-      const first = who !== sender, at = SEEN.at.get(key) ?? (SEEN.sessions.has(line.session_id) ? Date.now() : 0);
-      SEEN.at.set(key, at);
+      const first = who !== sender, at = seenAt(key, line);
       sender = who;
       if (mine) DOCK.heard.add(String(line.text).trim());
-      rows.push({key, text: `${text}\n${first}`, make: () => messageRow(line.text, {mine, who, first, at})});
+      const toward = growing.get(index);
+      if (toward) rows.push({key, text: `said\n${toward}\n${first}`, make: () => spokenRow(toward, who, first, at)});
+      else rows.push({key, text: `${text}\n${first}`, make: () => messageRow(line.text, {mine, who, first, at})});
     } else if (kind === 'agent_thought_chunk') rows.push({key, text, make: () => thoughtRow(line)});
     else if (SYSTEM_LINES.includes(kind)) {
       rows.push({key, text, make: () => h('div', {class: `system ${kind}`}, line.text)});
@@ -407,9 +472,23 @@ export function threadRows(lines, {work, agent}) {
   for (const line of lines) SEEN.sessions.add(line.session_id);  // a line read later than this one arrived now
   return rows;
 }
-/* A tool call's row, and under it the view of a Metaform tool that has one, fed the call's input and its result. */
-function toolRows(rows, line, key, text, work) {
-  rows.push({key, text, make: () => toolRow(line, 'div', key)});
+/* When the page first saw a row: none for those already there when its session was first read, `SEEN`. */
+function seenAt(key, line) {
+  const at = SEEN.at.get(key) ?? (SEEN.sessions.has(line.session_id) ? Date.now() : 0);
+  SEEN.at.set(key, at);
+  return at;
+}
+/* A line the agent said on the map, web_say: its bubble, marked as said there. */
+function spokenRow(spoken, who, first, at) {
+  const row = messageRow(spoken, {mine: false, who, first, at});
+  row.classList.add('spoken');
+  row.querySelector('.bubble').title = 'Said on the map';
+  return row;
+}
+/* A tool call's row, shown with the agent's work, and under it the view of a Metaform tool that has one, fed the
+ * call's input and its result, which shows either way: the agent shows it to the person. */
+function toolRows(rows, line, key, text, work, shown) {
+  if (shown) rows.push({key, text, make: () => toolRow(line, 'div', key)});
   const app = appOf(line);
   if (app) {
     rows.push({key: `app:${key}`, text: app.uri,

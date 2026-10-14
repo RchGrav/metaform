@@ -1,0 +1,1 @@
+the board shows 5 of 8 because I recorded steps 3–6 as one note.

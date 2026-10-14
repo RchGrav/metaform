@@ -27,7 +27,7 @@ import {readout, readoutOf} from '/page/app/map3d/readout.js';
 import {tags, LABELS} from '/page/app/map3d/labels.js';
 import {FLOW, FLOW_MODE_LIST, flowMode, flowLive} from '/page/app/flow/flow.js';
 import {FX} from '/page/app/flow/fx3d.js';
-import {MODE, V3, cameraNow} from '/page/app/camera/flight.js';
+import {FLIGHT, MODE, V3, cameraNow} from '/page/app/camera/flight.js';
 import {meetEnds} from '/page/app/camera/fly3d.js';
 import {VIEW, LENS, peek, agentsWindow} from '/page/app/views/settings.js';
 import {PHYS, setMode3d} from '/page/app/views/bar.js';
@@ -203,9 +203,13 @@ function pin3d(id, x, y, z) {
   const node = node3d(id);
   if (node) { Object.assign(node, {x, y, z, fx: x, fy: y, fz: z}); G.d3ReheatSimulation(); }
 }
-/* The camera put at a view, as a hand would move it there: a meeting is released, as a hand releases it. */
+/* The camera put at a view, as a hand would move it there: a meeting is released, as a hand releases it, and a flight
+ * under way and the fits that follow the map end, as a hand's start ends them in `steer3d`, so no later refit takes
+ * the camera from where it was put. */
 function view3d(from, to) {
-  if (G) { meetEnds(); G.cameraPosition(from, to, 0); }
+  if (!G) return;
+  FLIGHT.on = false; V3.auto = false; V3.focus = V3.hold = null;
+  meetEnds(); G.cameraPosition(from, to, 0);
 }
 function screen3d(id) {
   const node = node3d(id);

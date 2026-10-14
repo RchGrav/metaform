@@ -15,6 +15,8 @@ import time
 from pathlib import Path
 from typing import Any, cast
 
+from metaform import home
+
 from .login import folder
 
 ROTATE_BYTES = 10 * 1024 * 1024
@@ -65,7 +67,7 @@ def write(record: dict[str, Any], full: bool) -> None:
     line = json.dumps({'time': time.strftime('%Y-%m-%dT%H:%M:%S%z'), **kept}, ensure_ascii=False) + '\n'
     with contextlib.suppress(OSError):
         target = path()
-        target.parent.mkdir(parents=True, exist_ok=True)
+        home.mkdir_private(target.parent)
         if target.exists() and target.stat().st_size > ROTATE_BYTES:
             for number in range(KEPT - 1, 0, -1):
                 older = target.with_name(f'audit.{number}.jsonl')

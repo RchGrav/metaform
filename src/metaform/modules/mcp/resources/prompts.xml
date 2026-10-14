@@ -29,6 +29,11 @@
      2,048 characters Claude Code keeps with every module on and the first-run notice, so keep it short. Empty sends
      nothing in its place. -->
 <instructions_tools>If your AI tool lists Metaform's tools by name only, metaform://tools says what each is for.</instructions_tools>
+<!-- BASE-059: fallback discovery appended to connect instructions where the connecting harness has no completed
+     native skill deployment. skill_index auto/on/off controls this index. <skills/> holds discoverable skills only,
+     one name and usage description per line. Internal skills remain available through explicit address loading. -->
+<skill_index>Skills: load one with metaform_skills op=load name=&lt;name&gt; or name=logic.skill.&lt;name&gt;.
+<skills/></skill_index>
 <!-- metaform://<project> while the map module, which generates the project's glossary, is off for the folder or
      cannot read it: sent after the register standard the map module ships, so the agent knows why no terms follow. -->
 <project_glossary_absent>// No project terms here: the map module, which generates them from the project's map, is off for this folder or the folder has no map yet.</project_glossary_absent>

@@ -1,0 +1,1 @@
+    environment = {**os.environ, 'METAFORM_HOME': str(home), **(env or {})}

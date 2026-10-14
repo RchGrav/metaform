@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<prompts>
+<!-- Source placement is an optional procedure module. Its intake is served as Axiom to the agent preparing the work.
+     Edit the intake below to change that procedure. Reading it creates no layer and performs no refactoring.
+     Its records use the existing map and code-layer tools, so they remain readable through ordinary map reads. -->
+<instructions>Use source_placement_intake to prepare reusable refactoring knowledge from the functional map and its implementation. Follow its Axiom procedure to record the inference in the source_placement layer. Read an element's prepared knowledge with map_where address=&lt;address&gt;@source_placement.</instructions>
+<!-- The refactoring preparation procedure itself, BASE-063: served as written by source_placement intake and the
+     source_placement_intake tool, as Axiom rather than this store's usual XML, because it is the procedure the owner
+     refined. Reading it is read-only: it opens no layer and records nothing. The caller's optional task text is
+     bound after it by the input prompt below. Must not be deleted: the module's one procedure. -->
+<intake><![CDATA[#! AXIOM/2.0 name=source_placement_intake
+
+@PURPOSE:
+  Perform the inference needed to refactor an AUE before assigning implementation work.
+  Connect the existing functional map to the code that realizes its encounters. Preserve the reasoning,
+  evidence and intended changes at the RE so subsequent agents can retrieve and apply that understanding.
+
+@STATE_INIT:
+  {Prompt}     := optional JSON text in the Refactor input block following this procedure
+  {Scope}      := the functional Addresses and source files implicated by {Prompt}; otherwise the current map
+  {Layer}      := source_placement
+  {Base}       := the active base inspected for this intake
+  {Evidence}   := source revision or file hashes, graph generation, coverage and the queries actually used
+  {Unresolved} := []
+
+@SEMANTICS:
+  Read metaform://glossary and intake_schema. Apply their definitions as written.
+  Work from each RE's OP and the PE's EF for that encounter. Retain IFD as the map defines it.
+  The same ordinary element can be RE in one purpose record and PE in another. Follow this form at every depth.
+  Source symbols identify implementation. Keep their file and qualified name separate from functional Addresses.
+  One element may use several symbols; one symbol may serve several purposes, each with its own reason.
+  A call edge is implementation evidence. Its direction does not determine IFD or semantic ownership.
+  Refactoring knowledge belongs to the RE in {Layer}; exact implementation links belong in the code layer.
+  Keep source observations, inferred associations and proposed changes distinguishable, with their reasons.
+
+@EXECUTE_PIPELINE(Orient):
+  [1] Read the active base and layers with map_bases and map_layers. Resolve {Scope} against the map and
+      the actual artifacts. Read the project instructions and honor its excluded paths.
+  [2] Read each receiving element and its purposes with map_where. Read the code and applicable specifications
+      before inferring a boundary. If the functional map is absent, report the intake needed to establish it.
+  [3] If {Layer} exists, inspect and extend its relevant items. Otherwise create it:
+      map_knowledge(op="create", layer="source_placement", module="source_placement", mutable=true, hideable=true,
+        variable="The code serving each receiving element's purpose and the inferred context needed to refactor that code while preserving its required behavior.",
+        sources=[the inspected base layer name]).
+      Record the procedure revision, scope and evidence with the work. Retain existing records when resuming.
+  => EXECUTE_PIPELINE(Structure)
+
+@EXECUTE_PIPELINE(Structure):
+  [1] Inspect the connected code-graph server's project and schema. For codebase-memory use list_projects,
+      get_graph_schema and check_index_coverage for the evidence paths. Read source for stale, missing or
+      unresolved coverage. Record what the graph can and cannot establish.
+  [2] Use Cypher for bounded evidence retrieval. Use map_cypher for the functional map, and the code-graph
+      server's query_graph for symbols and implementation relationships. Their schemas are different.
+      The functional map's direct RE-to-PE edges have kind="join" and retain purpose, ef and ifd:
+        MATCH (re)-[r]->(pe) WHERE r.kind = "join"
+        RETURN re.address, r.purpose, r.ef, r.ifd, pe.address LIMIT 200
+      Narrow queries to the current scope and follow returned pages. Retrieve isolated symbols as well as
+      edges. On the code graph, query the relationships its schema actually exposes, including calls,
+      callback references, state uses/writes, imports and tests where available. Save the actual queries.
+  [3] Import or refresh the code layer with map_code_import using the available provider. For the connected
+      codebase-memory provider use from="mcp". Read map_code_gaps and map_code_context for this scope.
+      A source-file citation may have linked every declaration in that file. Examine those unreviewed links
+      rather than treating a shared file or line range as proof that every symbol serves every cited element.
+      Follow pagination and reported additional counts; use scoped searches when a context read is truncated.
+  [4] Read source around the candidate symbols and their registration sites. Capture callbacks, event names,
+      state ownership and lifecycle, asynchronous ordering, external interfaces and relevant tests. A missing
+      graph edge remains unknown until examined; a zero-caller function can still be an event handler.
+  => EXECUTE_PIPELINE(Analyze)
+
+@EXECUTE_PIPELINE(Analyze):
+  [1] Use NetworkX on the retrieved evidence. Keep the functional graph and implementation graph distinct.
+      Build a MultiDiGraph keyed by (file, qualified_name) for implementation symbols, retaining each edge's
+      kind and evidence. Include isolated symbols. Build a directed call-dependency projection for analysis.
+  [2] Compute strongly_connected_components to find mutually dependent groups, and condensation to examine
+      dependencies between those groups. Inspect incoming/outgoing edges across candidate boundaries,
+      shared state and reachability from known entry points. Self-recursion and incomplete graph coverage
+      must remain distinguishable from dependencies between separate responsibilities.
+      NetworkX sketch over retrieved symbols and call edges:
+        import networkx as nx
+        calls = nx.DiGraph()
+        calls.add_nodes_from(symbol_keys)
+        calls.add_edges_from(call_edges)
+        groups = list(nx.strongly_connected_components(calls))
+        condensed = nx.condensation(calls, groups)
+      Caller-to-callee order is not automatically an implementation sequence. Reason about the functional
+      requirements, state lifecycle and preserved interfaces before deciding what can move together.
+  [3] Reconcile structural evidence with each RE's OP. Use map_code_search and source reads to identify the
+      narrowest functional element served. Record exact symbols through map_code_link, with the why.
+      For a specific encounter, node=<RE address> and provider=<PE address> identify the purpose served.
+      The existing workflow skill code_links can perform this association pass; its proposals remain
+      proposals until accepted through its existing lifecycle. Keep any unresolved associations explicit.
+  => EXECUTE_PIPELINE(Record)
+
+@EXECUTE_PIPELINE(Record):
+  [1] Record each useful inference when resolved, as an item of {Layer} at its receiving element:
+      map_knowledge(op="add-item", layer="source_placement", node="element:<RE address>", value=<structured knowledge>,
+        refs=[["path", <source path>], ["symbol", <qualified name>], ...]).
+      Include a short title and why in the value. For an encounter-specific item, identify its receiver
+      and provider in the value, keeping the item at the RE. Read the existing items before adding or
+      updating one; use map_knowledge(op="edit", layer="source_placement", id=<existing item id>, value=<updated knowledge>)
+      for the same inference, keeping unrelated items intact.
+  [2] Record the information that makes the contemplated work actionable:
+      - exact implementation symbols and how they serve the recorded purpose;
+      - entry points, callers, callees, event/callback wiring and external contracts implicated by the change;
+      - state owners, lifetime, side effects and ordering that affect the proposed boundary;
+      - required behavior to preserve and the evidence establishing it;
+      - the proposed change boundary, dependencies between work assignments and the reason for the sequence;
+      - existing verification commands/tests, what each establishes, and checks still needed;
+      - unresolved questions, their affected decisions, and the evidence needed to resolve them;
+      - source revision or hashes and graph coverage so later changes can identify stale reasoning.
+      Shape each record around its RE and purpose. Omit inapplicable fields rather than manufacturing content.
+      Keep existing faults separate from behavior that must be preserved. A graph score alone decides neither.
+  [3] The procedure prepares the refactor. Describe contemplated source changes as proposals; implementation
+      follows the resulting assignments. Keep reusable inference in the layer instead of base note fields.
+  => EXECUTE_PIPELINE(Proof)
+
+@EXECUTE_PIPELINE(Proof):
+  [1] Read the recorded knowledge back with map_where address=<RE address>@source_placement and the code associations
+      with map_code_context address=<address>. For a building layer, use map_node with raw=true to inspect
+      its items before finishing it. Check each addressed purpose against its symbols and source evidence.
+  [2] Account for the requested scope: prepared responsibilities, shared dependencies, unplaced symbols,
+      missing behavior and unresolved evidence. Make gaps explicit rather than assigning code by proximity.
+  [3] Finish the source_placement layer with map_knowledge(op="finish", layer="source_placement") when the pass is recorded.
+      Report the prepared Addresses and how an editing agent reads each assignment and its evidence.
+      Subsequent work refreshes the code evidence and reexamines affected inference when code changes.
+  => YIELD the source_placement layer and its scope, prepared work, verification and unresolved decisions.
+]]></intake>
+<!-- The caller's optional text is JSON encoded by the serving tool and bound as data after the procedure.
+     Keep the text slot when editing this prompt. -->
+<input>Refactor input (JSON text):
+<text/></input>
+<!-- The optional bulk association pass, BASE-064: added to the procedure above only when the caller asks for it
+     with association=jev, its <confidence/> slot filled with that run's threshold percentage. Empty leaves the
+     agent's own association pass, which is the default; reading it sends nothing anywhere. -->
+<jev>Optional bulk category selection: Jev
+Match confidence threshold (percent): <confidence/>
+
+During Analyze, use source_placement_associate to classify implementation code by provider category.
+Build named evidence items keyed by stable IDs containing only the function name and its source code.
+Keep exact file and symbol identities, source revision and graph coverage limitations locally for verification.
+Omit candidates to use every eligible provider in the current base. Exclude the literal code root and
+namespaces rooted at upstream or downstream: these are the organizing root and external elements,
+not the project implementation being placed. Keep every other provider unless explicitly excluded.
+When supplying candidates explicitly, include that complete eligible provider list, keyed by named IDs,
+with provider namespace and verbatim ef. There is no none category.
+For a provider appearing more than once, retain its distinct EF descriptions under one category.
+
+The tool defines shared criteria once and reuses them for one Choice question per code item:
+"Which category does the code in `items.&lt;item_id&gt;` belong to?"
+Every option is presented as Category: followed by the reversed namespace, with code rendered as
+Program Code, then the verbatim EF text on the next line. For example:
+Category: Session Controller Program Code
+Supplies offered agent options, session status, start/stop operations and intake-specific conversation routing.
+The complete category list is available in every question. Batching splits code items,
+never category alternatives. No receiving-purpose interpretation is requested in this selection.
+
+source_placement_associate sends the supplied evidence and categories to Jev through OpenRouter. Use it for
+private evidence only when that disclosure is authorized. Reading this procedure sends nothing.
+Pass the threshold above as confidence. Oversized items with the full category list require smaller
+relevant evidence, never silent truncation or an omitted category. Use named records, not array positions.
+
+Attach implementation code directly to the selected provider ELEMENT acting as RE, never to a purpose
+or join record. Record matched associations through the existing code-link operations with that element
+as node and an evidence-based why. Retain the model, confidence, probabilities, category identity and
+source freshness in that element's source_placement knowledge. Spot-check accepted matches against source. Investigate review outcomes through
+source reads and retain unresolved items. Jev selects the category; the intake agent
+writes the reasoning and plan. Record returned usage and timing. Existing proposals retain their lifecycle.
+</jev>
+<!-- A normal work session places classifications left below the automated confidence threshold.
+     The run and base stay explicit so a later active-base switch cannot redirect its writes. -->
+<remainder>Place the remaining implementation code in the provider categories of the existing intake.
+Project: <project/>
+Run: <run/>
+Intake base: <base/>
+
+Read the queue with source_placement_pending run=<run/> base=<base/>.
+Use the complete eligible provider categories and their descriptions held by this run. Never select
+the literal code root or a namespace rooted at upstream or downstream. Every other provider remains
+eligible unless explicitly excluded from the run. Attach each implementation directly to the selected
+provider ELEMENT acting as RE, never to a purpose or join record. Read the actual source and
+relevant callers, surrounding code, state and callback context to decide where each remaining item belongs.
+A low-confidence Jev choice is a suggestion for investigation. Record your supported placement with
+source_placement_resolve run=<run/> base=<base/> item=&lt;item id&gt; provider=&lt;provider address&gt; why=&lt;evidence-based reason&gt;.
+Include the run and intake base on every pending and resolve call. If the recorded base cannot be accessed
+or the call reports a base mismatch, leave the work pending and report that condition. Do not substitute the
+currently active base or activate another base to bypass it. If the source changed or the evidence still
+cannot support placement, retain that item in the queue and report the missing evidence.
+
+This task records code associations. Do not edit source files or redefine the intake's categories.
+Continue through the remaining items and re-read source_placement_pending run=<run/> base=<base/> before marking
+this work ticket done. Complete the ticket only when that run's remaining queue is empty.
+</remainder>
+<!-- Offers the same procedure as a client prompt, without a separate workflow or stored copy. -->
+<commands><source_placement-intake verb="intake"/></commands>
+</prompts>

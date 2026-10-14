@@ -77,7 +77,11 @@ def _export_base(project_id: str, base: home.Base, layer_names: Sequence[str]) -
             document['prior_schema_version'] = str(prior[0])
         db.execute('COMMIT')
     if layer_names:
-        known = {op['data']['name']: op['id'] for op in ops if op['kind'] == 'layer' and op['op'] == 'add'}
+        named: dict[str, str] = {}  # layer id to its name now: a rename is a change of name, layering.rename
+        for op in ops:
+            if op['kind'] == 'layer' and op['op'] in ('add', 'change') and 'name' in op['data']:
+                named[op['id']] = op['data']['name']
+        known = {name: ident for ident, name in named.items()}
         missing = [name for name in layer_names if name not in known]
         if missing:
             raise StoreError(f'No layer {missing[0]}.', 'metaform map layers')

@@ -267,6 +267,20 @@ def reexamined(tx: Tx, layer: str) -> Outcome:
     return Outcome()
 
 
+def rename(tx: Tx, layer: str, name: str, module: str) -> Outcome:
+    """Give a layer a new name and owning module, keeping its id, items and provenance, so a module renamed keeps its
+    layer's knowledge under the new names. A name already taken, or one that would be read as an id, is refused."""
+    found = rows.layer(tx, layer)
+    if not LAYER_NAME.fullmatch(name) or is_id(name):
+        raise StoreError(f'{name!r} cannot be a layer name.', 'metaform map layers')
+    if found.name == name and found.module == module:
+        return Outcome()
+    if found.name != name and tx.base.layer_by_name(name) is not None:
+        return Outcome((Notice('name', f'A layer named {name} already exists; {found.name} was not renamed.'),))
+    tx.emit('change', 'layer', found.id, found.id, {'name': name, 'module': module})
+    return Outcome()
+
+
 def selection(tx: Tx, address: str, layer: str, kind: str) -> Outcome:
     """A select or mask row at an address, STORE-019."""
     found = rows.layer(tx, layer)

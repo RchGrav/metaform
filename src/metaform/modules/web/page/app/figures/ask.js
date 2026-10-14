@@ -16,6 +16,7 @@ import {callSystem} from '/page/app/dock/commands.js';
 import {wrote} from '/page/app/board/history.js';
 import {D, agentAt} from '/page/app/agents/dispatch.js';
 import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
+import {spokenOf, sameWords} from '/page/app/session/apps.js';
 
 /* Chat with the mascot: a click on it, where no node takes the click, opens a small reply field under its bubble.
  * What the person writes goes to their system agent, the one the chat dock's Call starts, and the answer comes back
@@ -92,6 +93,9 @@ export function mascotHeard(target, lines) {
   const words = String(last?.text || '').replace(/\s+/g, ' ').trim();
   if (!words || words === ASKING.heard) return;
   ASKING.heard = words;
+  // what the agent said on the map with web_say since the person asked is in the bubble already, and not said twice
+  const onMap = lines.filter(line => (Number(line.seq) || 0) > ASKING.base).map(spokenOf).filter(Boolean);
+  if (onMap.some(said => sameWords(words).includes(sameWords(said)))) return;
   const short = words.length > 160 ? words.slice(0, 157) + '…' : words;
   const own = ROAM.figures.get(DOCK.mine)?.talk ? DOCK.mine : null;  // an embodied system agent answers from its figure
   say(short, Math.min(12, 3 + words.length / 25), () => agentAt(DOCK.mine), own);

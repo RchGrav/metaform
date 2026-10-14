@@ -164,8 +164,8 @@
 
 <!-- The answer a worker gets at once when it puts a question to the person through ACP's elicitation, such as Claude
      Code's AskUserQuestion: only the sentinel and the head agent ask the person, VIEW-045. Sent as the answer to each
-     question, in its own-words field; the person never sees the question. Every agent but the sentinel, the head agent
-     and a roundtable seat gets it. -->
+     question, in its own-words field; the person never sees the question. Every agent but the sentinel and the head
+     agent gets it. -->
 <decide>Nobody will answer this question: the person is not asked. Decide it yourself with your best judgment, record the choice and why in the ticket with map_work op=step, and go on.</decide>
 
 <!-- The first line of a hand-off, ahead of the ticket's fields, what its node is for, the node's brief with the call

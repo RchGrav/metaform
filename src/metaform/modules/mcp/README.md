@@ -24,6 +24,20 @@ Started from template 0.2.0.
 
 ## Verbs
 
+`metaform_skills` is always available, including when workflow is disabled or
+omitted from the build. `op=list` lists discoverable skills, `op=load name=`
+accepts a name or `logic.skill.<name>` Address and returns its procedure with
+current libraries, and `op=read name= path=` reads a skill file. `all=true` on
+list includes internal skills for administrative inspection. Sentinel and
+workflow-evaluator are internal, so ordinary discovery never lists them.
+
+The connect message appends a compact skill index when the connecting harness
+has no current, completed native deployment record. `skill_index=auto` is the
+default. `on` forces the index and `off` omits it. The installer deploys
+discoverable folders and their current libraries to native discovery harnesses
+and records their contents. Unknown clients and stale deployment records keep
+the index, so missing native discovery does not hide available procedures.
+
 `serve`: runs the server over stdio until the host closes it, or with `--http` over Streamable HTTP at `http://127.0.0.1:<mcp_port>/mcp` until it is stopped. It is never itself a tool. Beside the module tools it always serves the chassis tools `metaform_set`, `metaform_feedback`, `metaform_list_reports`, `metaform_read_report`, `metaform_instructions` and `metaform_register`, which narrowing never hides, and while the chassis is on the folder's command surface, `metaform_add_origin`, `metaform_list_origins`, `metaform_add_variant`, `metaform_list_variants`, `metaform_extract`, `metaform_prompts`, `metaform_prompt`, `metaform_save_prompt` and `metaform_clear_project`, the history, prompt and clear commands as tools. `metaform_clear_project` removes the project's bases and reports, as `metaform clear project` does; a backup is made first, and `metaform restore project` brings it back. It is `destructiveHint` true, and like any tool with a caution it runs only with the person's yes: given in a form their AI tool shows, or as `confirm=true` where no form can be shown; without it, it says what it would remove.
 
 Consent, CLI-011 and MCP-006: a call with a caution, and an agent asking to change a setting only the person sets, are put to the person where their AI tool shows forms (MCP elicitation) and `mcp_consent` is `ask`, the default. On the 2026-07-28 wire the call answers `input_required` with the form, and the client calls again with the person's answer and the state it was given, which the SDK seals and binds to the call and its arguments; each answer counts once. On the 2025 handshake the server sends `elicitation/create` while the call waits. The form carries the caution with one box to tick, and each setting as a field with its choices, the agent's value filled in and its help as the reason it is the person's. A dispatched agent's calls are never put to a form. Where none can be shown, `confirm=true` and the refusal of a person-only setting stand.

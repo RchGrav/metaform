@@ -84,7 +84,7 @@ def test_bundled_map_imports_explicitly_into_a_fork_and_reimport_is_idle(run, ho
     run('import', str(file), 'fork')
     assert Store('fork').active_base() == active
     assert export_document(['fork'], metaform=active.name)['projects'][0]['bases'][0] == before_import
-    run('map', 'activate', 'metaform-release', cwd=folder)
+    run('map', 'activate', 'metaform-release', '--confirm', cwd=folder)
     ops = json.loads(data)['projects'][0]['bases'][0]['ops']
     defining = next(op['data']['address'] for op in ops if op['kind'] == 'element' and op['data'].get('role') == 'DE')
     read = json.loads(run('map', 'where', defining, '--json', cwd=folder).stdout)

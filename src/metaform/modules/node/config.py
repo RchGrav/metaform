@@ -42,7 +42,12 @@ WEB_PORT, MCP_PORT, AUTH_PORT, GATE_PORT = 7433, 7434, 7435, 7440
 TWILIO_PORT = 7441  # the twilio module's phone bridge, `metaform twilio serve`, when the person runs it here
 UID = 10001
 HOME_IN_IMAGE = '/data/home'
+AUTH_IN_IMAGE = '/data/auth'  # the auth volume: accounts, passkeys and keys, mounted into the auth container only
 PROJECTS_IN_IMAGE = '/srv/projects'
+# The per-deploy secret Caddy adds to every request it hands the page, after the gate, so the page server trusts the
+# account headers only from Caddy. Written once beside compose.yaml and given to caddy and web only, as env_file.
+GATE_FILE = 'gate.env'
+GATE_SECRET = 'METAFORM_GATE_SECRET'
 MODES = ('acme', 'dns', 'relay', 'internal')
 ROLES = ('node', 'broker')
 CAPABILITIES = ('read', 'write', 'dispatch')
@@ -152,6 +157,22 @@ def scopes_for(capability: str) -> dict[str, tuple[str, ...]]:
     return {'mcp': tuple(mcp), 'a2a': tuple(a2a)}
 
 
+def page_classes(capability: str, role: str) -> tuple[str, ...]:
+    """The classes of page route an account may use, which the gate hands the page server, as scopes_for grants MCP's:
+    every signed-in account reads; write, which changes the map, its tickets and memories, only at the write or
+    dispatch capability, as mcp:write; dispatch, which starts and steers agents, only at the dispatch capability, as
+    mcp:dispatch; admin (settings, the page's arrangement and workspaces, modules, prompts, bases, removing or clearing
+    a project, builds) only for the owner."""
+    allowed = ['read']
+    if capability in ('write', 'dispatch'):
+        allowed.append('write')
+    if capability == 'dispatch':
+        allowed.append('dispatch')
+    if role == 'owner':
+        allowed.append('admin')
+    return tuple(allowed)
+
+
 # ---------------------------------------------------------------------------------------------------- the files
 
 BROKER_ROUTES = """
@@ -235,8 +256,11 @@ def caddyfile(spec: NodeSpec) -> str:
 			flush_interval -1
 		}}
 	}}
-	# The page, only behind the authorization server's session: a request from another site's page is refused, and
-	# the page server, which checks a loopback Host and Origin, is handed its own.
+	# The page, only behind the authorization server's session: a request from another site's page is refused. Who
+	# is calling is said only by the gate: what a client sent under its header names is dropped first, the gate's
+	# account, role and route classes are copied in, and the per-deploy secret tells the page server the request came
+	# through here. Host and Origin reach the page server as the browser sent them; it checks them against its public
+	# origin.
 	handle {{
 		route {{
 			@foreign {{
@@ -244,14 +268,16 @@ def caddyfile(spec: NodeSpec) -> str:
 				not header Origin https://{domain}
 			}}
 			respond @foreign 403
+			request_header -X-Metaform-Account
+			request_header -X-Metaform-Role
+			request_header -X-Metaform-Classes
+			request_header -X-Metaform-Gate
 			forward_auth 127.0.0.1:{AUTH_PORT} {{
 				uri /node/gate
-				copy_headers X-Metaform-Account
+				copy_headers X-Metaform-Account X-Metaform-Role X-Metaform-Classes
 			}}
-			@origin header Origin *
-			request_header @origin Origin http://127.0.0.1:{WEB_PORT}
 			reverse_proxy 127.0.0.1:{WEB_PORT} {{
-				header_up Host 127.0.0.1:{WEB_PORT}
+				header_up X-Metaform-Gate {{env.{GATE_SECRET}}}
 				flush_interval -1
 			}}
 		}}
@@ -275,7 +301,7 @@ COPY wheels/ /tmp/wheels/
 # constraints.txt holds the versions node deploy built and tested with, so the host resolves the same ones.
 RUN if [ -f /tmp/wheels/constraints.txt ]; then set -- --constraint /tmp/wheels/constraints.txt; fi \\
  && pip install --root-user-action=ignore "$@" /tmp/wheels/*.whl && rm -rf /tmp/wheels \\
- && mkdir -p {HOME_IN_IMAGE} {PROJECTS_IN_IMAGE} && chown -R metaform:metaform /data {PROJECTS_IN_IMAGE}
+ && mkdir -p {HOME_IN_IMAGE} {AUTH_IN_IMAGE} {PROJECTS_IN_IMAGE} && chown -R metaform:metaform /data {PROJECTS_IN_IMAGE}
 USER metaform
 WORKDIR {PROJECTS_IN_IMAGE}
 VOLUME ["{HOME_IN_IMAGE}"]
@@ -310,7 +336,8 @@ def _service(command: list[str], service: str, *, mounts: list[str], entrypoint:
 
 def compose(spec: NodeSpec) -> dict[str, Any]:
     """The compose project: Caddy owns the network namespace and is the only service with ports; auth, mcp and web
-    share it and bind 127.0.0.1."""
+    share it and bind 127.0.0.1. The accounts are on the `auth` volume, which only auth mounts; the gate secret is
+    given to caddy and web only."""
     domain = spec.domain.lower()
     projects = [f'{folder}:{PROJECTS_IN_IMAGE}/{PurePosixPath(folder).name}' for folder in spec.projects]
     caddy: dict[str, Any] = {
@@ -328,19 +355,23 @@ def compose(spec: NodeSpec) -> dict[str, Any]:
     public = f'https://{domain}'
     auth = _service(['node', 'auth', '--node-domain', domain, '--node-capability', spec.capability,
                      *(['--node-dcr'] if spec.dcr else []), *(['--node-role', 'broker'] if spec.role == 'broker' else [])],
-                    'auth', mounts=['./bootstrap:/run/metaform-bootstrap:ro'], depends=False)
+                    'auth', mounts=['auth:' + AUTH_IN_IMAGE, './bootstrap:/run/metaform-bootstrap:ro'], depends=False)
+    auth['environment']['METAFORM_NODE_AUTH'] = AUTH_IN_IMAGE
     auth['build'] = {'context': '.'}
+    volumes: dict[str, Any] = {'home': {}, 'auth': {}, 'caddy-data': {}, 'caddy-config': {}}
     if spec.role == 'broker':  # no Metaform is served here: no mcp, no page, no project
-        return {'name': 'metaform-node', 'services': {'caddy': caddy, 'auth': auth},
-                'volumes': {'home': {}, 'caddy-data': {}, 'caddy-config': {}}}
+        return {'name': 'metaform-node', 'services': {'caddy': caddy, 'auth': auth}, 'volumes': volumes}
+    gate = {'path': './' + GATE_FILE, 'required': True}
+    caddy['env_file'] = [*caddy.get('env_file', []), gate]
     mcp = _service(['mcp', 'serve', '--http', '--mcp-port', str(MCP_PORT), '--mcp-bind', '127.0.0.1',
                     '--mcp-public-url', public], 'mcp', mounts=projects)
     if spec.capability != 'dispatch':
         # Below dispatch no agent is started here: the dispatch module is off before the server starts, and the
         # authorization server never grants mcp:dispatch.
         mcp['entrypoint'] = ['sh', '-c', 'metaform disable dispatch >/dev/null 2>&1; exec metaform "$@"', 'metaform']
-    web = _service(['--bind', '127.0.0.1', '--port', str(WEB_PORT), '--nonce', 'node'], 'web', mounts=projects,
-                   entrypoint=['python', '-m', 'metaform.modules.web.server'])
+    web = _service(['--bind', '127.0.0.1', '--port', str(WEB_PORT), '--nonce', 'node', '--origin', public], 'web',
+                   mounts=projects, entrypoint=['python', '-m', 'metaform.modules.web.server'])
+    web['env_file'] = [gate]
     services: dict[str, Any] = {'caddy': caddy, 'auth': auth, 'mcp': mcp, 'web': web}
     if spec.mode == 'relay':
         services['frpc'] = {
@@ -348,8 +379,7 @@ def compose(spec: NodeSpec) -> dict[str, Any]:
             'command': ['-c', '/etc/frp/frpc.toml'], 'volumes': ['./frpc.toml:/etc/frp/frpc.toml:ro'],
             'env_file': [{'path': './secrets.env', 'required': True}],
             'read_only': True, 'cap_drop': ['ALL'], 'security_opt': ['no-new-privileges:true']}
-    return {'name': 'metaform-node', 'services': services,
-            'volumes': {'home': {}, 'caddy-data': {}, 'caddy-config': {}}}
+    return {'name': 'metaform-node', 'services': services, 'volumes': volumes}
 
 
 def frpc_toml(spec: NodeSpec) -> str:

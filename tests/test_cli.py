@@ -1013,7 +1013,7 @@ def test_a_clear_backs_the_project_up_first_and_restore_brings_it_back_as_it_was
     import re
     noted(run, project, 'Counts down.')
     run('add', 'base', 'fresh', cwd=project)
-    run('map', 'activate', 'main', cwd=project)
+    run('map', 'activate', 'main', '--confirm', cwd=project)
     run('feedback', 'The subtype fields did not match.', cwd=project)
     before = {'metaforms': lines(run('list', 'bases', cwd=project)),
               'memory': run('map', 'layer', 'notes', '--json', cwd=project).stdout,
@@ -1092,3 +1092,33 @@ def test_tab_completes_a_settings_switch_and_its_choices(home, tmp_path):
     assert cli.completions('metaform set --project o', work) == ['other']
     assert cli.completions('metaform set --project=o', work) == ['other'], 'bash completes the word after ='
     assert cli.completions('metaform se', work) == ['set']
+
+
+@pytest.mark.req('CLI-014')
+@pytest.mark.req('CLI-016')
+def test_a_reset_in_a_subfolder_never_reaches_the_folder_above_and_names_it(run, toggles, tmp_path):
+    parent, child = (tmp_path / 'p').resolve(), (tmp_path / 'p' / 'c').resolve()
+    child.mkdir(parents=True)
+    run('set', '--panes', '3', '--modules', 'chassis,toggles', cwd=parent)
+    assert f'  panes: 3  (inherited from {parent})' in lines(run('config', '--show', cwd=child))
+    refused = run('unset', '--panes', cwd=child, ok=False)
+    assert refused.returncode == 2
+    assert refused.stderr.splitlines()[-2:] == [
+        f'Error: panes is inherited from {parent}; nothing is stored here to reset.',
+        f'Next: metaform unset --panes folder={parent}']
+    assert run('set', '--modules', 'all', cwd=child, ok=False).returncode == 2  # all clears only what is stored here
+    assert (shown(run, cwd=parent)['panes']['value'], shown(run, cwd=parent)['modules']['value']) == \
+        (3, ['chassis', 'toggles'])
+
+
+@pytest.mark.req('CLI-011')
+def test_a_per_call_switch_is_given_on_its_verb_and_never_stored(run, tmp_path):
+    from metaform import home as metaform_home
+    from metaform import settings
+    refused = run('set', '--http', ok=False)
+    assert refused.returncode == 2 and refused.stderr.splitlines()[-1] == 'Next: metaform mcp serve --http'
+    assert 'mcp_http' not in shown(run)
+    # a value stored before the switch was marked per-call is never read, and unset still clears it
+    metaform_home.save(metaform_home.path_key(tmp_path), 'mcp', 'mcp_http', [True], folder=tmp_path.resolve())
+    assert settings.value('mcp_http', tmp_path) is False
+    assert lines(run('unset', '--http')) == ['Reset one setting: mcp_http']

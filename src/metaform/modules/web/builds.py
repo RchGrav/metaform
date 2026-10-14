@@ -126,8 +126,7 @@ def _request(given: dict[str, Any]) -> Any:
 def start(handler: Handler, path: str) -> None:
     """Start one build from the GUI's own page only, with the same check every write of the server makes: the
     request's Origin is the server's own address, and its body is JSON."""
-    origin = handler.headers.get('Origin')
-    if origin is None or origin.lower() != f'http://{handler.headers.get("Host", "")}'.lower():
+    if not handler.same_origin():
         return handler.send(403, {'error': "A write is taken only from the web GUI's own page."})
     if (handler.headers.get('Content-Type') or '').split(';')[0].strip().lower() != 'application/json':
         return handler.send(415, {'error': 'A write takes a JSON body.'})

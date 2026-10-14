@@ -134,8 +134,14 @@ def _fetch(url: str, target: Path, size: int, key: str, sha256: str | None = Non
     if target.is_file() and target.stat().st_size == size:
         PROGRESS[key]['done'] += size
         return
-    target.parent.mkdir(parents=True, exist_ok=True)
+    private = home.is_home_path(target)
+    if private:
+        home.mkdir_private(target.parent)
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
     part = target.with_name(target.name + '.part')
+    if private:
+        home.write_private(part, b'')
     digest = hashlib.sha256()
     request = urllib.request.Request(url, headers={'User-Agent': 'metaform-voice'})
     with urllib.request.urlopen(request, timeout=TIMEOUT) as answer, part.open('wb') as out:

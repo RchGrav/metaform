@@ -1,0 +1,1 @@
+The real home has already migrated (16:24): another Metaform process on this shared tree started the new module once the hook was wired. Checking the result is consistent, read-only.  ...  module_state [('source_placement', 1)] / main 928 2026-10-14T20:24:20Z change c6ba4b77 {'name': 'source_placement', 'module': 'source_placement'}

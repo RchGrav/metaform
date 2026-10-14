@@ -68,10 +68,12 @@ def show(key: str, value: Any) -> str:
     return str(value)
 
 
-def setting_row(key: str, value: Any, state: str) -> str:
-    """One setting as `config --show` and the settings screen print it: `*` glued, `(set)` or `(glued)`, CLI-026."""
+def setting_row(key: str, value: Any, state: str, source: str | None = None) -> str:
+    """One setting as `config --show` and the settings screen print it: `*` glued, `(set)`, `(glued)` or
+    `(inherited from <folder>)`, CLI-026 and CLI-014."""
     mark = '*' if state == 'glued' else ' '
-    note = '' if state == 'default' else f'  ({state})'
+    note = '' if state == 'default' else f'  (inherited from {source})' if state == 'inherited' and source \
+        else f'  ({state})'
     return f'{mark} {key}: {show(key, value)}{note}'
 
 
@@ -120,9 +122,7 @@ def status(args: list[str], folder: Path) -> None:
 
 
 def _folder_of(scope: str) -> str:
-    with home.settings_db(scope) as db:
-        row = db.execute('SELECT path FROM folders WHERE path_key=?', (scope,)).fetchone()
-    return str(row[0]) if row else scope
+    return settings.folder_of(scope)
 
 
 def status_lines(folder: Path, project: str | None) -> list[str]:
@@ -439,7 +439,7 @@ def _setting_for(switch: str, verb: str) -> tuple[settings.Setting, bool]:
 def set_(args: list[str], folder: Path) -> None:
     named = any(arg.startswith('folder=') for arg in args)
     args, folder = _split_folder(args, folder)
-    glue = quiet = ended = False
+    glue = quiet = ended = confirm = False
     pairs: list[tuple[settings.Setting, Any]] = []
     index = 0
     while index < len(args):
@@ -451,6 +451,8 @@ def set_(args: list[str], folder: Path) -> None:
             ended = True
         elif arg == '--glue':
             glue = True
+        elif arg == '--confirm':
+            confirm = True  # a risky choice is stored only when it is confirmed; it is never a setting, CLI-018
         elif arg in ('-q', '--quiet'):
             quiet = True
         else:
@@ -468,6 +470,8 @@ def set_(args: list[str], folder: Path) -> None:
                 inline = args[index]
                 index += 1
             pairs.append((setting, inline))
+    if not pairs and confirm:
+        raise Stop('--confirm is not a setting.', 'metaform help --confirm')
     if not pairs:
         raise Stop('set needs at least one setting switch.', 'metaform set --help')
     for setting, raw in pairs:
@@ -476,6 +480,9 @@ def set_(args: list[str], folder: Path) -> None:
         except settings.SettingError as error:
             raise Stop(str(error), error.next_step or ('metaform list projects' if setting.key == 'project'
                                                        else f'metaform help {setting.switch}')) from None
+        if not confirm and (risked := settings.risk(setting.key, raw, folder)):
+            raise Stop(f'{setting.switch} {raw} is stored only when you confirm it: {risked}',
+                       f'metaform set {setting.switch} {raw} --confirm')
     before_groups = settings.value('modules', folder)
     updates: list[tuple[str, Any, Any]] = []
     glued: list[str] = []
@@ -528,8 +535,9 @@ def completions(line: str, folder: Path) -> list[str]:
             found = named[0].options(folder) if named[0].choices is not None else []
         else:
             found = sorted({item for setting in settings.SCHEMA.values() for item in setting.switches
-                            if item.startswith('--') and (words[1] == 'set' or not item.startswith('--no-'))}
-                           | ({'--glue', '--quiet'} if words[1] == 'set' else {'--unglue', '--quiet'}))
+                            if item.startswith('--') and (words[1] == 'set' or not item.startswith('--no-'))
+                            and not (words[1] == 'set' and setting.per_call)}  # given on its verb, never set
+                           | ({'--glue', '--quiet', '--confirm'} if words[1] == 'set' else {'--unglue', '--quiet'}))
     else:
         found = []
     return [item for item in dict.fromkeys(found) if item.startswith(typed)]
@@ -556,6 +564,11 @@ def unset(args: list[str], folder: Path) -> None:
         # Only the settings stored at this folder, D36, of the modules loaded now, D53.
         keys = [key for key, setting in settings.SCHEMA.items()
                 if settings.scope_of(setting, folder) == settings.own_scope_of(setting, folder)]
+    for key in keys:  # every one is checked before any is reset
+        try:
+            settings.check_reset(key, folder)
+        except settings.SettingError as error:
+            raise Stop(str(error), error.next_step or 'metaform config --show') from None
     results_by_key = {key: settings.reset(key, folder, unglue=unglue) for key in keys}
     if quiet:
         return
@@ -597,7 +610,7 @@ def config(args: list[str], folder: Path) -> None:
         out(json.dumps(rows, default=str, ensure_ascii=False))
         return
     for row in rows:
-        out(setting_row(row['key'], row['value'], row['state']))
+        out(setting_row(row['key'], row['value'], row['state'], row.get('from')))
     out('')
     out('* glued: kept by unset all until unglued.')
 
@@ -687,7 +700,11 @@ def export(args: list[str], folder: Path) -> None:
     text = json.dumps(document, ensure_ascii=False, indent=1)
     if 'file' in named:
         target = _named_folder(folder, named['file'][0])
-        target.write_text(text + '\n', encoding='utf-8')
+        if home.is_home_path(target):
+            home.mkdir_private(target.parent)
+            home.write_private(target, text + '\n')
+        else:
+            target.write_text(text + '\n', encoding='utf-8')
         out(f'Exported to {target}')
     else:
         out(text)
@@ -1351,6 +1368,9 @@ def _command(args: list[str], folder: Path) -> int:
         if args[:1] == ['--version']:
             out(f'metaform {__version__}')
             return 0
+        if failed := home.make_private():  # the home is its owner's alone, made or tightened before anything reads it
+            sys.stderr.write(f'Notice: {counted(len(failed), "path", "paths")} in the home could not be closed to '
+                             f'other users, such as {failed[0]}; make this user their owner and run metaform again.\n')
         loader.follow_enabled()  # it reads the home, so a home it cannot read is reported as every error is, CLI-009
         from . import install
         force = (install.install_options(args[1:])[2]

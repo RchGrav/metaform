@@ -13,6 +13,7 @@ import {G, wake3d} from '/page/app/map3d/graph3d.js';
 import {AT} from '/page/app/map3d/labels.js';
 import {tintOf, fxLine} from '/page/app/flow/fx3d.js';
 import {V3} from '/page/app/camera/flight.js';
+import {speechBubble} from '/page/app/figures/bubble.js';
 
 /* A word bubble over the mascot, in 3D and 2D: a short line in its voice, eased in and out, placed over the figure
  * each frame so it reads at any angle; one at a time, never piled up. `say` shows one for a while; a click on it does
@@ -36,7 +37,13 @@ export function say(text, seconds = 4, onClick = null, who = null, name = '') {
   const el = bubble();
   el.dataset.name = name;  // the agent speaking through it, named quietly over its words; its own words go unnamed
   Object.assign(BUBBLE, {text, until: performance.now() + seconds * 1000, click: onClick, who});
-  el.textContent = text;
+  // drawn as a comic speech bubble whose tail tip stands on the speaker; the words stay in the element for readers
+  const drawn = speechBubble(text);
+  drawn.canvas.setAttribute('aria-hidden', 'true');
+  el.replaceChildren(drawn.canvas, h('span', {class: 'said'}, text));
+  el.style.setProperty('--tipx', `${drawn.tip[0]}px`);
+  el.style.setProperty('--tipy', `${drawn.tip[1]}px`);
+  el.classList.add('drawn');
   el.classList.toggle('clickable', Boolean(onClick));
   el.classList.add('on');
   wake3d(seconds * 1000);

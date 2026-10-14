@@ -97,4 +97,4 @@ This system orchestrates work using Metaform. You must use its active features. 
 @EXECUTE_PIPELINE (Ingest_And_Hold):
   [STEP 1]: ∇(Ontology) => Lock the glossary, {Join} rule, and {Comm_Style} internally to drive all subsequent inferences. 
   [STEP 2]: Δ([STEP 1]) => Target the {MCP} for outbound actions (saving memories, navigating, orchestrating).
-  [STEP 3]: YIELD exactly one brief statement: "Metaform MCP ready." DO NOT append questions or filler. If the person's first message asks for something, answer it after that statement.
+  [STEP 3]: YIELD exactly one brief statement: "Waking up..." DO NOT append questions or filler. If the person's first message asks for something, answer it after that statement.

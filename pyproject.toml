@@ -24,7 +24,7 @@ voice-gpu = ["faster-whisper>=1.2,<2", "nvidia-cublas-cu12>=12.4,<13; sys_platfo
 
 [tool.metaform]
 # The chassis's own dependencies, pure Python only, BASE-026; copied into metaform/_build_info.py, BASE-041.
-chassis-dependencies = ["prompt_toolkit>=3.0", "networkx>=3.3", "grand-cypher>=0.12"]
+chassis-dependencies = ["prompt_toolkit>=3.0", "networkx>=3.3", "grand-cypher>=0.12", "PyYAML>=6.0"]
 
 [tool.hatch.metadata.hooks.custom]
 
@@ -68,4 +68,3 @@ venv = ".venv"
 # until it is chosen, Ruff's default rules apply.
 line-length = 120
 target-version = "py311"
-

@@ -1,12 +1,12 @@
-/* The chat's own commands, Call for the system agent, stops that land once a start answers, and chat on anything the
+/* The chat's own commands, Call for the system agent, and chat on anything the
  * page shows. */
 import '/page/app/dock/helpdesk.js';  // the part before runs first, so the parts run in the page's order
 import {$} from '/page/app/core/dom.js';
 import {read} from '/page/app/core/reads.js';
-import {DOCK, STANDBY, dockState, dockNote} from '/page/app/dock/embody.js';
+import {DOCK, STANDBY, dockState, dockNote, dockGoingAway} from '/page/app/dock/embody.js';
 import {openHelpdesk} from '/page/app/dock/threads.js';
 import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
-import {reaching, startFailed, syncResume, stayedOff} from '/page/app/dock/send.js';
+import {reaching, startFailed, syncResume} from '/page/app/dock/send.js';
 import {wrote} from '/page/app/board/history.js';
 import {agentName, summonAgent} from '/page/app/agents/pickers.js';
 import {isIntake, workPart} from '/page/app/session/tools.js';
@@ -82,44 +82,28 @@ export async function callSystem() {
   syncResume();
   dockState($('#dock').className.startsWith('open') ? $('#dock').className : 'open');
   Object.assign(DOCK, {since: Date.now(), waiting: STANDBY});
-  $('#helpdesk .call').textContent = 'Dismiss';
+  $('#helpdesk .call').disabled = true;
   const call = DOCK.calling = {};
   drawHelpdesk();  // the chat says it is reaching the agent, where its first words will come
   const agent = summonAgent();
   const done = await posted('/api/system-chat', agent ? {agent} : {});
   const started = done.ok ? done.body : null;
-  if (DOCK.calling !== call) {  // dismissed while it was being reached: it is stopped as soon as it answers
-    if (started) stayedOff(await stopOnceStarted(started.work_id));
-    return null;
-  }
+  if (DOCK.calling !== call) return null;
   DOCK.calling = null;
+  $('#helpdesk .call').disabled = false;
   if (!started) {
-    $('#helpdesk .call').textContent = DOCK.target ? 'Dismiss' : 'Call';
     startFailed(done.body?.error || 'The agent did not start.', done.body?.next);
     return null;
   }
+  const closed = $('#helpdesk').hidden || dockGoingAway();
   DOCK.mine = started.work_id;
   openHelpdesk(started.work_id, 'your system agent', STANDBY, started.session_id, 'system');
   reaching(started);
+  if (closed) dockState('resting');
   return started;
 }
-/* An agent dismissed while it was being reached is still starting when the start answers, and a stop sent then finds
- * nothing to stop yet: it is stopped once its session is there, looked for every half second for up to half a
- * minute, or not at all when its start failed. */
-async function stopOnceStarted(work) {
-  for (let tries = 0; tries < 60; tries++) {
-    let rows = [];
-    try { rows = (await read('dispatch-sessions', {id: work, thread: 'false'})).sessions || []; } catch { rows = []; }
-    if (rows.some(one => one.state === 'running')) return wrote('/api/dispatch-stop', {work_id: work});
-    const failedNow = one => /^it (failed|did not start)/.test(one.how || '')
-      && Date.now() - Date.parse(one.started || '') < 60000;
-    if (rows.some(failedNow)) return null;
-    await new Promise(wait => setTimeout(wait, 500));
-  }
-  return null;
-}
 /* Chat on anything the page shows, VIEW-042: a ticket, open or done, a node, a question, or an agent's session. An
- * agent at work on it is talked to directly; otherwise one starts to talk, and Dismiss stops it. */
+ * agent at work on it is talked to directly; otherwise one starts to talk. Closing the dock keeps it running. */
 export async function talkAbout(given, label) {
   // an intake's agent is a conversation already, never a ticket: its chat opens on its session
   if (isIntake(given.id)) return openIntakeChat(given.id, null);

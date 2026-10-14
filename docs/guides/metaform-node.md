@@ -21,14 +21,16 @@ internet ──443──> Caddy (TLS, Let's Encrypt) ── one network namespac
 
 - **Caddy** (2.11.7, pinned by digest) is the only service with ports. It was chosen because automatic HTTPS is its
   default: it obtains and renews certificates with HTTP-01 and TLS-ALPN-01, DNS-01 through `caddy-dns` modules, and
-  its `forward_auth` directive is how the page sits behind the Node's session without the page server changing.
+  its `forward_auth` directive is how the page sits behind the Node's session.
 - **auth**, **mcp** and **web** run the same image (`python:3.13.13-slim-trixie`, pinned; user `metaform`, uid 10001;
   read-only root filesystem; all capabilities dropped; `no-new-privileges`; the home on the `home` volume; project
-  folders mounted at `/srv/projects/<name>`). Each has a health check (`python -m metaform.modules.node.health`);
+  folders mounted at `/srv/projects/<name>`). The accounts, passkeys and keys are on the `auth` volume, mounted at
+  `/data/auth` into auth only, so nothing running in mcp or web, agents included, can read or change them. Each has a health check (`python -m metaform.modules.node.health`);
   mcp and web start once auth is healthy.
 - The page server is `python -m metaform.modules.web.server`, the process `metaform web start` itself spawns, run in
-  the foreground. Caddy hands it the loopback Host and Origin it checks, after refusing any request whose Origin is
-  another site; the page needs no change.
+  the foreground with `--origin https://<domain>` and the gate secret from `gate.env`. Caddy refuses any request whose
+  Origin is another site, then passes Host and Origin through unchanged; the page server checks them against its
+  public origin, and takes the account only from requests that carry the gate secret.
 - **The one-port merge is a drop-in.** The authorization server is a Starlette app (`authserver.Node.app()`), the
   resource-server pieces are ASGI (`oauth.py`), and Caddy's routes are by path. When MCP, A2A and the page become one
   ASGI service, the three upstreams become one and the gate moves from `forward_auth` into middleware; the paths, the
@@ -80,7 +82,15 @@ name to type). TOTP is not built: with passkeys only and recovery through the ho
 keep without closing a gap.
 
 **The page** is behind the same sign-in: Caddy asks `/node/gate` before every request; the session cookie is
-`__Host-`, Secure, HttpOnly, SameSite=Lax, seven days.
+`__Host-`, Secure, HttpOnly, SameSite=Lax, seven days. The gate says who is calling and which classes of page route
+the account may use: every account reads; writes (the map, tickets, notes, memories) need a Node at `write`
+capability; `dispatch` (starting and steering agents) needs a Node at `dispatch` capability; `admin` (settings, the
+page's toolbar, layout and saved workspaces, modules, prompts, bases, backups, removing or clearing a project, builds,
+MCP Apps tool calls) is the owner's only. A toolbar tool that runs a verb is classed by that verb, as an MCP tool call
+is scoped: a read is `read`, a write `write`, a dispatch verb or one that reaches past the map `dispatch`, and a verb
+with a caution or a person-only setting `admin`. Caddy drops any client-sent copies of those
+headers and adds the per-deploy secret in `gate.env`; the page server refuses a request without it, and a route
+whose class the account was not given.
 
 **A2A** gets its own credential: a token for audience `https://<domain>/a2a` with scope `a2a:tickets`, from the same
 authorization server. Its Agent Card declares an OAuth 2.0 authorization-code scheme (PKCE required) with the
@@ -106,8 +116,9 @@ not built. No outside company is in the sign-in path.
 | Client metadata fetch, introspection | httpx | 0.28 | already a dependency |
 | A2A | a2a-sdk | 1.2.2 | the OAuth2 security scheme types |
 
-Secrets are `secrets.token_urlsafe(32)` and are stored only as SHA-256. The store is `node/auth.sqlite` in the home,
-apart from every project's map.
+Secrets are `secrets.token_urlsafe(32)` and are stored only as SHA-256. The store is `auth.sqlite` on the `auth`
+volume, which only the auth container mounts, apart from every project's map and from the home the other containers
+share.
 
 ## Deploying
 
@@ -222,9 +233,9 @@ the source (an IPv4 address, an IPv6 /64) and the signed-in account: ten in ten 
 
 ### What the server stores
 
-On disk, `node/auth.sqlite`: `accounts` (id, name, role, created, disabled, `generation`, and one pending invitation
+On disk, on the `auth` volume, `auth.sqlite`: `accounts` (id, name, role, created, disabled, `generation`, and one pending invitation
 as its hash and expiry) and `passkeys` (credential id, public key, sign count, transports). The Node's signing keys
-are in `node/keys/`, mode 0600: they are the server's identity, not anyone's data. Nothing else: no maps, memories,
+are in `keys/` beside it, mode 0600: they are the server's identity, not anyone's data. Nothing else: no maps, memories,
 tool arguments or results, no token or grant table, no audit log.
 
 In memory, lost on a restart by design: WebAuthn challenges, page sessions (one hour, each naming the generation it

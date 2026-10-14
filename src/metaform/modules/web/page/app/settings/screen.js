@@ -14,13 +14,16 @@ import {AUTO, PROMPT_WORDS, readAutostart, renderAgents} from '/page/app/agents/
 import {HARNESS, readHarnesses, paintPickers, makeDefault, agentPicker, PICKERS} from '/page/app/agents/pickers.js';
 import {posted} from '/page/app/intake/intake.js';
 import {WS} from '/page/app/workspace/workspace.js';
+import {VIEW} from '/page/app/views/settings.js';
+import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
+import {CHATWORK} from '/page/app/session/apps.js';
 
 /* Agent prompts, VIEW-039: how agents' permission prompts are answered, dispatch_prompts, chosen in the Agents menu and
  * shown there as the settings hold it, read again each time the menu opens and whenever the settings screen changes
  * it, so the administrator's choice is the one every agent follows and never reverts. Each choice reads in plain
  * words with its setting's value, and approving every prompt says what it risks. A choice is saved as it is made,
  * through metaform set; a refused save puts back the one in force and says why. */
-const PROMPTS = {value: null, saving: false};
+const PROMPTS = {value: null, saving: false, risky: []};
 const promptWords = choice => (PROMPT_WORDS[choice] || [choice, ''])[0];
 function sayPrompts(text, risky = false) {
   $('#promptsSaid').textContent = text;
@@ -37,6 +40,7 @@ async function readPrompts() {
     return sayPrompts(error.body?.next ? `${error.message} Next: ${error.body.next}` : error.message);
   }
   PROMPTS.value = found.value;
+  PROMPTS.risky = found.risky || [];
   const listed = found.choices.includes(found.value) ? found.choices : [found.value, ...found.choices];
   fill(pick, listed.map(choice => h('option', {value: choice, selected: choice === found.value},
     `${promptWords(choice)} · ${choice}`)));
@@ -45,8 +49,13 @@ async function readPrompts() {
 }
 async function choosePrompts(event) {
   const pick = event.target, before = PROMPTS.value, choice = pick.value;
+  const risky = PROMPTS.risky.includes(choice);
+  if (risky && !await confirmRisk('Agent prompts', promptWords(choice), PROMPT_WORDS[choice]?.[1])) {
+    pick.value = before;
+    return;
+  }
   pick.disabled = PROMPTS.saving = true;
-  const done = await posted('/api/dispatch-prompts', {value: choice});
+  const done = await posted('/api/dispatch-prompts', {value: choice, ...(risky ? {confirm: true} : {})});
   pick.disabled = PROMPTS.saving = false;
   if (!done.ok) {
     pick.value = before;
@@ -60,6 +69,13 @@ async function choosePrompts(event) {
   toast(`Agent prompts: ${promptWords(choice)}.`);
 }
 $('#promptsPick').onchange = choosePrompts;
+/* A choice that lets agents act without asking is stored only once the person confirms it, here and in the settings
+ * screen alike, as metaform set asks for --confirm. */
+function confirmRisk(label, choice, risk) {
+  return confirmAct({title: `Let agents act without asking?`, text: [`${label}: ${choice}.`,
+    risk || 'Agents take actions without asking you first.'],
+  verb: 'Yes, set it', cancel: 'Keep it as it is'});
+}
 /* The Agents menu: the agents' own settings and repair, kept apart from Administration's project-wide removals. */
 export function showAgentMenu(open) { $('#agentbox').hidden = !open; }
 overlay($('#agentbox'), {kind: 'menu', focus: '#agentCount'});
@@ -122,7 +138,7 @@ $('#resetAgentsBtn').onclick = resetAgents;
  * modules come first, each switched on or off as metaform enable and disable do, with the modules setting under them
  * as the modules this folder shows; then the chassis's settings and each module's. A setting reads with its label, its
  * help, its state (default, set or glued), Glue and Reset, and takes the control its kind needs: a switch, a number, a
- * list of its choices, a checklist, or text, a list as its items separated by commas. A change is saved as it is made,
+ * list of its choices, a checklist, or text, a list as its items one per line. A change is saved as it is made,
  * through metaform set and unset in the project's folder, so it is checked as the command line checks it, and a
  * refusal is said under the setting with its next step. Left and Right change a switch or a choice, as on the
  * terminal's settings screen. */
@@ -267,11 +283,15 @@ function arrowSwitch(event, input) {
   input.checked = on;
   input.dispatchEvent(new Event('change'));
 }
-function arrowSelect(event, select) {
+function arrowSelect(event, select, risky = []) {
   if (!['ArrowLeft', 'ArrowRight'].includes(event.key) || select.disabled) return;
   event.preventDefault();
   const next = select.selectedIndex + (event.key === 'ArrowRight' ? 1 : -1);
   if (next < 0 || next >= select.options.length || select.options[next].disabled) return;
+  if (risky.includes(select.options[next].value)) {  // never stepped onto: picked from the list, then confirmed
+    toast(`${select.options[next].value} lets agents act without asking: pick it from the list to confirm it.`);
+    return;
+  }
   select.selectedIndex = next;
   select.dispatchEvent(new Event('change'));
 }
@@ -322,10 +342,12 @@ function settingRow(row, label = row.label) {
   const error = CONFIG.errors.get(id);
   const control = settingControl(row, id, label);
   const glue = glueButton(row), reset = resetButton(row), state = STATE_BADGES[row.state] || ['badge', ''];
+  const stateTitle = row.state === 'inherited' && row.from ? `Inherited from ${row.from}, which sets it for every `
+    + 'folder below it; change or reset it there' : state[1];
   return h('div', {class: 'setrow', 'data-key': row.key},
     h('div', {class: 'what'},
       h('div', {class: 'name'}, h('span', {class: 'label'}, label), h('code', {}, row.switch),
-        h('span', {class: `${state[0]} state`, title: state[1]}, row.state),
+        h('span', {class: `${state[0]} state`, title: stateTitle}, row.state),
         row.scope === 'global' ? h('span', {class: 'badge', title: 'Applies in every folder'}, 'global') : null,
         row.person_only ? h('span', {class: 'badge', title: 'Only you change it, here or on the command line; '
           + 'an agent is refused it over MCP'}, 'yours') : null),
@@ -337,7 +359,8 @@ function settingRow(row, label = row.label) {
 }
 const STATE_BADGES = {default: ['badge off', 'The default: nothing is saved for it'],
   set: ['badge ok', 'Saved for this folder'],
-  glued: ['badge warn', 'Kept through metaform unset all until it is unglued']};
+  glued: ['badge warn', 'Kept through metaform unset all until it is unglued'],
+  inherited: ['badge', 'Set by a folder above this one']};
 /* Glue, for a value set and not glued yet, as metaform set --glue keeps it. */
 function glueButton(row) {
   const empty = Array.isArray(row.value) && !row.value.length && CONFIG.data.all_when_empty.includes(row.key);
@@ -348,11 +371,12 @@ function glueButton(row) {
 }
 /* Reset, or Unglue for a glued value, back to its default as metaform unset does. */
 function resetButton(row) {
-  const glued = row.state === 'glued';
-  return h('button', {class: 'btn sm quiet reset', type: 'button', disabled: row.state === 'default',
+  const glued = row.state === 'glued', inherited = row.state === 'inherited';
+  return h('button', {class: 'btn sm quiet reset', type: 'button', disabled: row.state === 'default' || inherited,
     'data-focus': `reset:${row.key}`, onclick: () => resetSetting(row),
-    title: glued ? `Unglue it and return it to its default, as metaform unset --unglue ${row.switch} does`
-      : `Return it to its default, as metaform unset ${row.switch} does`}, glued ? 'Unglue' : 'Reset');
+    title: inherited ? `Nothing is stored here to reset: it is inherited from ${row.from}, and reset there`
+      : glued ? `Unglue it and return it to its default, as metaform unset --unglue ${row.switch} does`
+        : `Return it to its default, as metaform unset ${row.switch} does`}, glued ? 'Unglue' : 'Reset');
 }
 /* The control a setting's kind takes; `wide` goes under the row, as a checklist does. */
 function settingControl(row, id, label) {
@@ -371,19 +395,34 @@ function settingControl(row, id, label) {
   if (row.kind === 'select' && choices) {
     const listed = choices.includes(row.value) ? choices : [row.value ?? '', ...choices];
     const said = row.choice_help || {};  // each choice in plain words, the one in force said under the row
-    const select = h('select', {'aria-label': label, 'data-focus': id, onchange: () => save(select.value),
-      onkeydown: event => arrowSelect(event, select)},
+    const risky = row.risky || [];
+    const chosen = async () => {
+      const choice = select.value;
+      if (!risky.includes(choice)) return save(choice);
+      if (!await confirmRisk(label, choice, said[choice])) { select.value = row.value ?? ''; return; }
+      saveSetting(row, choice, {confirm: true});
+    };
+    const select = h('select', {'aria-label': label, 'data-focus': id, onchange: chosen,
+      onkeydown: event => arrowSelect(event, select, risky)},
       listed.map(choice => h('option', {value: choice, selected: choice === row.value, title: said[choice] || null,
         disabled: !choices.includes(choice)}, choice === '' ? '(none)' : choice)));
     return {main: select, wide: said[row.value] ? h('p', {class: 'hint'}, said[row.value]) : null};
   }
   if (row.kind === 'list' && choices) return {main: null, wide: checklist(row, choices, id, label)};
-  const all = CONFIG.data.all_when_empty.includes(row.key);
-  const text = Array.isArray(row.value) ? row.value.join(',') : String(row.value ?? '');
-  const input = h('input', {type: 'text', value: text, 'aria-label': label, 'data-focus': id, spellcheck: 'false', autocomplete: 'off',
-    placeholder: row.kind === 'list' ? (all ? 'all' : 'names, separated by commas') : '(none)',
-    onchange: () => save(input.value)});
+  if (row.kind === 'list') return {main: itemsBox(row, id, label, save)};
+  const input = h('input', {type: 'text', value: String(row.value ?? ''), 'aria-label': label, 'data-focus': id,
+    spellcheck: 'false', autocomplete: 'off', placeholder: '(none)', onchange: () => save(input.value)});
   return {main: input};
+}
+/* A list without choices, one item per line, saved as the list of its lines: an item may hold a comma. */
+function itemsBox(row, id, label, save) {
+  const items = Array.isArray(row.value) ? row.value : [];
+  const all = CONFIG.data.all_when_empty.includes(row.key);
+  const box = h('textarea', {rows: Math.max(2, items.length), 'aria-label': label, 'data-focus': id,
+    spellcheck: 'false', autocomplete: 'off', placeholder: all ? 'all' : 'one per line',
+    onchange: () => save(box.value.split('\n').map(item => item.trim()).filter(Boolean))});
+  box.value = items.join('\n');
+  return box;
 }
 /* A list's choices, each checked or not. A list that means all when it is empty shows every choice checked then, and
  * is saved empty when every one is checked again; one choice at least stays checked, since none would mean all. */
@@ -414,10 +453,11 @@ function checklist(row, choices, id, label) {
     all ? h('span', {class: 'hint'}, 'Every one checked, the default, shows them all.') : null);
 }
 /* Save one setting, or glue it, and say so with Undo; Undo puts back what it was. A refusal is said under it. */
-async function saveSetting(row, value, {glue = false, quiet = false} = {}) {
+async function saveSetting(row, value, {glue = false, quiet = false, confirm = false} = {}) {
   const id = `setting:${row.key}`;
   const before = {state: row.state, value: row.value};
-  const done = await posted('/api/settings', {key: row.key, value, ...(glue ? {glue: true} : {})});
+  const done = await posted('/api/settings', {key: row.key, value, ...(glue ? {glue: true} : {}),
+    ...(confirm ? {confirm: true} : {})});
   if (!done.ok) { CONFIG.errors.set(id, done.body); renderSettings(); return false; }
   CONFIG.errors.delete(id);
   CONFIG.data = done.body;
@@ -429,8 +469,14 @@ async function saveSetting(row, value, {glue = false, quiet = false} = {}) {
   const said = [told, ...(done.body.notices || [])].join(' ');
   if (glue) toast(said);
   else undoable(said, () => before.state === 'default' ? resetSetting(now || row, {quiet: true})
-    : saveSetting(now || row, before.value, {quiet: true}));
+    : restoreSetting(now || row, before.value));
   return true;
+}
+/* Undo puts back what it was; a risky choice put back is confirmed as choosing it is. */
+async function restoreSetting(row, value, {glue = false} = {}) {
+  const risky = (row.risky || []).includes(value);
+  if (risky && !await confirmRisk(row.label, value, row.choice_help?.[value])) return false;
+  return saveSetting(row, value, {glue, quiet: true, confirm: risky});
 }
 async function resetSetting(row, {quiet = false} = {}) {
   const id = `setting:${row.key}`, glued = row.state === 'glued';
@@ -447,7 +493,7 @@ async function resetSetting(row, {quiet = false} = {}) {
   if (quiet) return true;
   const now = done.body.settings.find(one => one.key === row.key);
   undoable(`${row.label}: back to its default, ${shownValue(row.key, now?.value)}.`,
-    () => saveSetting(now || row, before, {glue: glued, quiet: true}));
+    () => restoreSetting(now || row, before, {glue: glued}));
   return true;
 }
 /* What the rest of the page shows from a setting follows it: the Autostart switch, Agent prompts, and the folder's
@@ -460,6 +506,11 @@ function afterSetting(key) {
       .catch(error => toast(error.message));
   }
   // ULTRA: the 3D map fades to the graphics chosen, as U does
+  if (key === 'web_chat_details') {  // saved here, it rules over W's choice on this page, and every thread follows
+    VIEW.chatDetails = CONFIG.data?.settings?.find(one => one.key === key)?.value === true;
+    CHATWORK.shown = null;
+    drawHelpdesk();
+  }
   if (key === 'web_graphics') {  // set on the Settings screen: the theme follows, space for ultra
     const ultra = CONFIG.data?.settings?.find(one => one.key === key)?.value === 'ultra';
     if (ultra !== (document.documentElement.dataset.theme === 'space')) setTheme(ultra ? 'space' : PLAIN.last, false);

@@ -22,7 +22,6 @@ import {buildEvent} from '/page/app/build/build.js';
 import {LIVE, following, recordingNow, changed} from '/page/app/live/stream.js';
 import {progressOf} from '/page/app/loading/load.js';
 import {debugAt, dlog, traced, loadWorkspace} from '/page/app/workspace/workspace.js';
-import {roundtableChanged} from '/page/app/roundtable/table.js';
 
 /* The ops since the drawn sequence, applied to what is drawn, STORE-046 and VIEW-018: an element or a join added,
  * changed or removed, an item or a property of a layer in view. The map, the panel and the board are drawn from what
@@ -273,7 +272,6 @@ export function listen() {
   source.onopen = () => {
     recordingNow().catch(error => toast(error.message));
     agentsChanged();
-    roundtableChanged();  // the project's running table, read on every open as the agents are
   };
 }
 /* The topics the page takes apart from the map's changes. */

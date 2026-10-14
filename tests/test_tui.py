@@ -30,7 +30,7 @@ def test_screen_shows_every_setting_in_the_schema(home, tmp_path):
     # Every setting of the chassis and of each loaded module; a disabled module another test imported in this process
     # has settings in the schema that the screen rightly does not show.
     loaded = {'chassis'} | {item.id for item in loader.discover() if item.module is not None}
-    assert shown == {key for key, item in settings.SCHEMA.items() if item.owner in loaded}
+    assert shown == {key for key, item in settings.SCHEMA.items() if item.owner in loaded and not item.per_call}
 
 
 def test_help_key_on_a_setting_shows_its_details(home, tmp_path):
@@ -228,3 +228,58 @@ def test_a_section_opens_as_a_menu_of_its_settings_and_lists_are_alphabetical(ho
             screen._back(); screen._back()  # the picker closes, then back out to the agents
             return screen.section, screen.entries[screen.setting_index]
         assert asyncio.run(drive()) == (('Agent options',), 'Claude Code')
+
+
+@pytest.mark.req('CLI-027')
+def test_a_list_whose_items_hold_commas_is_saved_from_the_screen_as_it_reads(home, tmp_path):
+    loader.set_enabled('dispatch', True)  # off in a new home
+    pipe, screen = _screen(tmp_path)
+    with pipe:
+        async def drive():
+            await screen.refresh()
+            setting = settings.SCHEMA['dispatch_agent_strengths']
+            edited = [*setting.default[:2], 'gemini=large reads, across many files']
+            screen._stage('dispatch', setting, edited)
+            screen._save_changes()
+            await screen.last_task
+            return edited, screen.error
+        edited, failed = asyncio.run(drive())
+    assert not failed
+    assert settings.value('dispatch_agent_strengths', tmp_path) == edited
+
+
+@pytest.mark.req('VIEW-039')
+def test_a_risky_choice_is_never_stepped_onto_and_is_stored_only_when_confirmed(home, tmp_path):
+    from metaform import cli
+    loader.set_enabled('dispatch', True)
+    pipe, screen = _screen(tmp_path)
+    with pipe:
+        async def drive():
+            await screen.refresh()
+            screen.module_index = [row.id for row in screen.rows].index('dispatch')
+            screen._focus('settings')
+            screen.setting_index = [getattr(one, 'key', None) for one in screen.entries].index('dispatch_prompts')
+            setting = screen.current
+            stepped = []
+            for amount in (1, -1, -1):  # from ask_all, wrapping onto approve-all is refused; then approve-reads; then
+                # approve-all is refused again
+                screen._side(amount)
+                stepped.append(screen._value('dispatch', setting))
+            screen._edit()  # picked from the list, it waits for the person's yes
+            screen.pick_index = screen.pick_choices.index('approve-all')
+            screen._pick_apply()
+            asked = screen.confirm_open, screen._value('dispatch', setting)
+            screen._confirm(False)
+            refused = screen._value('dispatch', setting)
+            screen._edit()
+            screen.pick_index = screen.pick_choices.index('approve-all')
+            screen._pick_apply()
+            screen._confirm(True)
+            return stepped, asked, refused, screen._value('dispatch', setting)
+        stepped, asked, refused, confirmed = asyncio.run(drive())
+    assert stepped == ['ask_all', 'approve-reads', 'approve-reads']
+    assert asked == (True, 'approve-reads') and refused == 'approve-reads' and confirmed == 'approve-all'
+    assert cli.main(['set', '--dispatch-prompts', 'approve-all', f'folder={tmp_path}']) == 2
+    assert settings.value('dispatch_prompts', tmp_path) == 'ask_all'
+    assert cli.main(['set', '--dispatch-prompts', 'approve-all', '--confirm', f'folder={tmp_path}']) == 0
+    assert settings.value('dispatch_prompts', tmp_path) == 'approve-all'

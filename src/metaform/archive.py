@@ -343,7 +343,11 @@ def _review_folder(source: Path) -> Path:
     candidate, number = base, 1
     while True:
         try:
-            candidate.mkdir(parents=True)
+            if home.is_home_path(candidate):
+                home.mkdir_private(candidate.parent)
+                candidate.mkdir(mode=0o700)
+            else:
+                candidate.mkdir(parents=True)
             return candidate
         except FileExistsError:
             number += 1
@@ -353,8 +357,12 @@ def _review_folder(source: Path) -> Path:
 def _write_into(folder: Path, files: Mapping[str, bytes]) -> None:
     for name, data in files.items():
         target = _target(folder, name)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
+        if home.is_home_path(target):
+            home.mkdir_private(target.parent)
+            home.write_private(target, data)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
 
 
 def import_archive(source: Path, project: str | None = None) -> Imported:
@@ -577,7 +585,11 @@ def write_return(folder: Path, note: str = '', file: Path | None = None) -> Retu
     if target.suffix.lower() != SUFFIX:
         raise Stop(f'{target} does not end in {SUFFIX}; an archive is a zip.', f'python {held.wheel.name} return '
                    f'file=<name>{SUFFIX}')
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(packed('return', project, document, origin=held.archive.origin, changes=changes, note=note,
-                              layer=layer))
+    body = packed('return', project, document, origin=held.archive.origin, changes=changes, note=note, layer=layer)
+    if home.is_home_path(target):
+        home.mkdir_private(target.parent)
+        home.write_private(target, body)
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(body)
     return Returned(target.resolve(), names, changed, added, removed, held.archive.origin is not None, left)

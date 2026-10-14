@@ -18,7 +18,7 @@ import re
 from pathlib import Path
 from typing import Any, cast
 
-from metaform import settings
+from metaform import home, settings
 from metaform.module import Context, Module, Noun, Provides, Stop, Verb, VoiceEngine
 
 from . import api
@@ -219,6 +219,9 @@ def speak(ctx: Context) -> dict[str, Any]:
     output = str(ctx.nouns.get('format') or ctx.setting('elevenlabs_format'))
     audio = speak_engine(ctx, text, str(ctx.nouns.get('character') or '') or None, output)
     target = Path(str(ctx.nouns.get('file') or f'speech.{output.split("_", 1)[0]}')).expanduser()
+    if home.is_home_path(target):
+        home.mkdir_private(target.parent)
+        home.write_private(target, b'')
     with target.open('wb') as out:
         for chunk in audio:
             out.write(chunk)

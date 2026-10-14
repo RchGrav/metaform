@@ -11,6 +11,7 @@ layout, a newer one included, and leaves both numbers as they are.
 """
 from __future__ import annotations
 
+import os
 import sqlite3
 import threading
 from collections.abc import Callable, Generator
@@ -47,6 +48,18 @@ def reset_reads(path: Path | str | None = None) -> None:
     corrupted stores under concurrent writers, artifacts/incident-2026-10-05."""
 
 
+def private(path: Path) -> None:
+    """Create a database file that does not exist yet readable and writable by its owner alone, before SQLite opens
+    it, so its write-ahead log and shared memory, which SQLite gives the database file's mode, are too. A file that
+    exists is left as it is. On Windows the file keeps the default its folder gives it."""
+    if os.name == 'nt':
+        return
+    try:
+        os.close(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+    except FileExistsError:
+        pass
+
+
 def connect(path: Path | str) -> sqlite3.Connection:
     """A connection in autocommit mode: every transaction is begun explicitly."""
     db = sqlite3.connect(str(path), isolation_level=None, timeout=BUSY_SECONDS)
@@ -75,7 +88,12 @@ def opened(path: Path, schema: str, *, write: bool, version: str, compatible: st
     try:
         db: sqlite3.Connection | None = None
         if write:
-            path.parent.mkdir(parents=True, exist_ok=True)
+            from . import home
+            if home.is_home_path(path):
+                home.mkdir_private(path.parent)
+            else:
+                path.parent.mkdir(parents=True, exist_ok=True)
+            private(path)
             db = _prepared(path, schema, create=True, version=version, compatible=compatible, upgrade=upgrade)
             assert db is not None  # a write creates the file
         else:

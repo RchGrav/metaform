@@ -4,6 +4,7 @@ name: checks
 on:
   push:
   pull_request:
+  workflow_dispatch:  # a run started by hand on a branch, as when Actions comes back after a stop
 
 # A newer push to the same branch cancels the older run, so runs for superseded commits do not queue.
 concurrency:
@@ -14,6 +15,10 @@ jobs:
   checks:
     name: ${{ matrix.os }}, Python ${{ matrix.python }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 120  # a hung leg fails within two hours, not GitHub's six
+    permissions:
+      contents: read
+      pull-requests: read  # the browser tests' path filter reads a pull request's changed files from the API
     strategy:
       fail-fast: false
       matrix:
@@ -22,6 +27,20 @@ jobs:
         python: ['3.11', '3.14']
     steps:
       - uses: actions/checkout@v4
+      # The browser tests take most of a full run's time, so they run when a change can reach the page they drive:
+      # the web module, the MCP Apps views and their build, the test setup and the pinned browser driver, VIEW-012.
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            page:
+              - 'src/metaform/modules/web/**'
+              - 'src/metaform/modules/mcp/**'
+              - 'scripts/**'
+              - 'conftest.py'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - '.github/workflows/checks.yml'
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python }}
@@ -47,3 +66,9 @@ jobs:
         env:
           METAFORM_BUILD_VIEWS: '1'  # the map view was built above, so the views' test requires it current
         run: uv run pytest -q
+      - name: Browser tests, VIEW-012
+        if: ${{ !cancelled() && steps.changes.outputs.page == 'true' }}  # reports on its own, as each check does
+        timeout-minutes: 60  # about 25 minutes on four Linux cores; a hang, as Windows had, fails here
+        env:
+          METAFORM_BUILD_VIEWS: '1'
+        run: uv run pytest -q -m browser  # the -m here replaces addopts' -m "not browser"

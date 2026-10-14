@@ -171,8 +171,9 @@ def write_log(line: str) -> None:
     """One line of what the bridge did, with its time: never what was said, never a credential."""
     stamped = f'{time.strftime("%Y-%m-%dT%H:%M:%S")} {line}'
     with contextlib.suppress(OSError):
-        run_dir().mkdir(parents=True, exist_ok=True)
-        with log_file().open('a', encoding='utf-8') as out:
+        home.mkdir_private(run_dir())
+        descriptor = os.open(log_file(), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        with os.fdopen(descriptor, 'a', encoding='utf-8') as out:
             out.write(stamped + '\n')
     print(stamped, file=sys.stderr, flush=True)
 
@@ -405,7 +406,7 @@ def serve(ctx: Context) -> dict[str, Any]:
     def stopped(number: int, frame: Any) -> None:
         raise KeyboardInterrupt  # SIGTERM, from systemd, docker stop or a process manager, stops it as Ctrl-C does
 
-    run_dir().mkdir(parents=True, exist_ok=True)
+    home.mkdir_private(run_dir())
     record = {'pid': os.getpid(), 'port': port, 'project': project, 'folder': str(ctx.folder),
               'control': config.control_token, 'started': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
     descriptor = os.open(run_file(), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -530,10 +531,11 @@ def web_started(payload: dict[str, Any], ctx: Context) -> dict[str, Any] | None:
     if not ctx.setting('twilio_enabled') or running() is not None or problems(ctx, project):
         return None
     folder = Path(str(payload.get('folder') or ctx.folder))
-    run_dir().mkdir(parents=True, exist_ok=True)
+    home.mkdir_private(run_dir())
     options: dict[str, Any] = {'start_new_session': True} if os.name != 'nt' else \
         {'creationflags': getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0) | getattr(subprocess, 'DETACHED_PROCESS', 0)}
-    with log_file().open('ab') as written:
+    descriptor = os.open(log_file(), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    with os.fdopen(descriptor, 'ab') as written:
         process = subprocess.Popen([sys.executable, '-m', 'metaform', 'twilio', 'serve'], cwd=folder,
                                    stdin=subprocess.DEVNULL, stdout=written, stderr=written, env=child_environment(),
                                    **options)

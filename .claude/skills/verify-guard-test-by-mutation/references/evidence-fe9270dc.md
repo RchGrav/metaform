@@ -1,0 +1,1 @@
+/tmp/t45/copy reverted copy: "assert page.evaluate('window.heldAtOnce') == 1" -> "AssertionError: assert 2 == 1"; fixed tree: "1 passed, 242 deselected in 39.38s"; then "rm -rf /tmp/t45"

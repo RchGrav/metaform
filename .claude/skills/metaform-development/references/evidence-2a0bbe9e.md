@@ -1,0 +1,1 @@
+unset METAFORM_ROLE METAFORM_SESSION METAFORM_WORK METAFORM_NODE; METAFORM_BUILD_VIEWS=1 timeout 400 uv run pytest -q -m browser -n 0 src/metaform/modules/web/tests/test_web.py -k test_a_dispatched_sessions_thread_opens_in_the_dock

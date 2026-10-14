@@ -19,6 +19,8 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any, cast
 
+from metaform import home
+
 from .authstore import made
 from .config import FRPS_IMAGE, GATE_PORT, IMAGE, LABEL, RESERVED, to_yaml
 
@@ -85,16 +87,23 @@ class Enrolments:
         secret = made()
         held = self.read()
         held[name] = {'sha256': sha256(secret.encode()).hexdigest(), 'enrolled': time.time()}
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(held, indent=2) + '\n', encoding='utf-8')
-        self.path.chmod(0o600)
+        if home.is_home_path(self.path):
+            home.mkdir_private(self.path.parent)
+            home.write_private(self.path, json.dumps(held, indent=2) + '\n')
+        else:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(json.dumps(held, indent=2) + '\n', encoding='utf-8')
+            self.path.chmod(0o600)
         return secret
 
     def withdraw(self, name: str) -> bool:
         held = self.read()
         if held.pop(name.lower(), None) is None:
             return False
-        self.path.write_text(json.dumps(held, indent=2) + '\n', encoding='utf-8')
+        if home.is_home_path(self.path):
+            home.write_private(self.path, json.dumps(held, indent=2) + '\n')
+        else:
+            self.path.write_text(json.dumps(held, indent=2) + '\n', encoding='utf-8')
         return True
 
 

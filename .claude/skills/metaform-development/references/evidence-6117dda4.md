@@ -1,0 +1,1 @@
+Dispatch's seat support was roundtable-only ... and was deleted with it: the seat verb, run's seat noun, runner self.seat branches, SUBSCRIPTION_ONLY/agent_env, the fake agent's FAKE_ACP_ECHO.

@@ -148,12 +148,13 @@ export function permissionCard(line, work, tag, agent) {
       onclick: event => permit(event, option)}, option.name)));
   async function permit(event, option) {
     const buttons = [...answer.querySelectorAll('button')];
+    const picked = event.currentTarget;  // read before the await, after which the event has no currentTarget
     for (const button of buttons) button.disabled = true;
-    event.currentTarget.classList.add('chosen');
+    picked.classList.add('chosen');
     const done = await wrote('/api/dispatch-permit', {work_id: work, request: data.request, option: option.option_id});
     if (!done) {
       for (const button of buttons) button.disabled = false;
-      event.currentTarget.classList.remove('chosen');
+      picked.classList.remove('chosen');
       return;
     }
     card.classList.replace('waiting', 'answered');

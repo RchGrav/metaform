@@ -4,12 +4,15 @@ Checks come first and change nothing. Each chosen tool is registered through
 its own command where it has one, or by merging one entry into its user-level
 JSON config, always with the uvx entry of MCP-010; every file that changes is
 backed up first. The metaform skill is copied to the shared folders and each
-chosen tool's folder; Claude Code also gets the metaform-node skill while map
-is enabled and on the folder's surface. Then the exact registered command is started and proved,
+chosen tool's folder. Discoverable universal skills and their current libraries
+are copied to harnesses with native discovery, with the exact deployed files recorded.
+Claude Code also gets the metaform-node skill while map is enabled and on the folder's surface.
+Then the exact registered command is started and proved,
 and the run ends with one next step.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import platform
@@ -400,8 +403,18 @@ def _backup(path: Path, folder: Path) -> Path | None:
     except ValueError:
         relative = Path(*path.resolve().parts[1:])
     target = folder / relative
-    target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(path, target)
+    if home.is_home_path(target):
+        home.mkdir_private(target.parent)
+        home.write_private(target, path.read_bytes())
+        found = path.stat()
+        if os.name == 'nt':
+            shutil.copystat(path, target)
+        else:
+            target.chmod(found.st_mode & 0o700)
+            os.utime(target, ns=(found.st_atime_ns, found.st_mtime_ns))
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, target)
     return target
 
 
@@ -747,6 +760,118 @@ def _record(tool: str, wheel: Path | None, skill: Path | None) -> None:
                    (tool, str(wheel) if wheel is not None else '', str(skill) if skill else None, home.now()))
 
 
+_NATIVE_SKILLS = frozenset(('claude', 'codex', 'gemini', 'cursor'))
+_SKILL_CLIENTS = {
+    'claude': 'claude', 'claude code': 'claude', 'claude-code': 'claude',
+    'codex': 'codex', 'codex-mcp-client': 'codex',
+    'gemini': 'gemini', 'gemini cli': 'gemini', 'gemini-cli': 'gemini',
+    'cursor': 'cursor',
+}
+
+
+@dataclass(frozen=True)
+class _SkillDeployment:
+    root: Path
+    files: dict[Path, bytes]
+    versions: dict[str, str]
+
+
+def _skill_plan(tool: Tool) -> _SkillDeployment | None:
+    """Only verified harnesses known to inject native discovery receive universal skills, BASE-059."""
+    if not tool.verified or tool.name not in _NATIVE_SKILLS or (root := tool.skills()) is None:
+        return None
+    from . import skills
+    files: dict[Path, bytes] = {}
+    versions: dict[str, str] = {}
+    for skill in skills.catalog():
+        if not skill.discover:
+            continue
+        versions[skill.address] = skill.version
+        for relative, content in skills.deployment_files(skill).items():
+            path = root / skill.name / relative
+            if not path.is_relative_to(root) or '..' in path.relative_to(root).parts:
+                raise ValueError(f'Skill deployment path escapes its folder: {relative}')
+            files[path] = content
+    return _SkillDeployment(root, files, versions)
+
+
+def _deployment_record(tool: str) -> dict[str, Any]:
+    raw = home.meta(f'skill_deployment.{tool}')
+    try:
+        record: object = json.loads(raw) if raw else {}
+    except (ValueError, TypeError):
+        return {}
+    return cast(dict[str, Any], record) if isinstance(record, dict) else {}
+
+
+def _skill_hash(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()
+
+
+def _remove_deployed(tool: str, backups: Path, keep: set[Path] | None = None) -> None:
+    """Remove recorded bytes only: user additions and edits retain their ownership."""
+    record = _deployment_record(tool)
+    root, files = record.get('root'), record.get('files')
+    if not isinstance(root, str) or not isinstance(files, dict):
+        return
+    root_path = Path(root)
+    for name, digest in cast(dict[str, object], files).items():
+        path = Path(name)
+        if (not path.is_relative_to(root_path) or '..' in path.relative_to(root_path).parts
+                or (keep is not None and path in keep) or not path.is_file() or path.is_symlink()
+                or _skill_hash(path.read_bytes()) != digest):
+            continue
+        _backup(path, backups)
+        path.unlink()
+        parent = path.parent
+        while parent != root_path and not any(parent.iterdir()):
+            parent.rmdir()
+            parent = parent.parent
+
+
+def _deploy_skills(tool: Tool, plan: _SkillDeployment, backups: Path) -> None:
+    previous = _deployment_record(tool.name)
+    # Keep ownership of old files for a retry, but never claim a partial update supplies discovery.
+    home.set_meta(f'skill_deployment.{tool.name}', json.dumps({**previous, 'complete': False}))
+    _remove_deployed(tool.name, backups, set(plan.files))
+    old_files = previous.get('files')
+    owned = dict(cast(dict[str, str], old_files)) if previous.get('root') == str(plan.root) and \
+        isinstance(old_files, dict) else {}
+    for path, content in plan.files.items():
+        _backup(path, backups)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        owned[str(path)] = _skill_hash(content)
+        home.set_meta(f'skill_deployment.{tool.name}', json.dumps({
+            'complete': False, 'root': str(plan.root), 'files': owned,
+        }))
+    home.set_meta(f'skill_deployment.{tool.name}', json.dumps({
+        'complete': True, 'package_version': __version__, 'root': str(plan.root), 'skills': plan.versions,
+        'files': {str(path): _skill_hash(content) for path, content in plan.files.items()},
+    }))
+
+
+def skills_deployed(client_name: str) -> bool:
+    """Whether this MCP client has the current discoverable skills and libraries on disk, BASE-059."""
+    name = _SKILL_CLIENTS.get(client_name.strip().casefold())
+    tool = tools().get(name) if name else None
+    if tool is None:
+        return False
+    record = _deployment_record(tool.name)
+    if record.get('complete') is not True or record.get('package_version') != __version__:
+        return False
+    plan = _skill_plan(tool)
+    if plan is None or not plan.files or record.get('root') != str(plan.root) or record.get('skills') != plan.versions:
+        return False
+    expected = {str(path): _skill_hash(content) for path, content in plan.files.items()}
+    if record.get('files') != expected:
+        return False
+    try:
+        return all(path.is_file() and _skill_hash(path.read_bytes()) == expected[str(path)] for path in plan.files)
+    except OSError:
+        return False
+
+
 def _choose(names: list[str], everything: bool, detected: dict[str, Tool], say: Callable[[str], None]) -> list[Tool]:
     offered = {name: tool for name, tool in detected.items() if tool.verified}
     if everything:
@@ -955,6 +1080,14 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
     skill_files = list(shared) + [folder / 'metaform' / 'SKILL.md' for tool in chosen if (folder := tool.skills())]
     for path in skill_files:
         say(f'  skill: {path}')
+    deployments = {tool.name: plan for tool in chosen if (plan := _skill_plan(tool)) is not None}
+    for name, plan in deployments.items():
+        for path in plan.files:
+            say(f'  skill: {path}; backed up under {backups}')
+        if isinstance(previous_files := _deployment_record(name).get('files'), dict):
+            for path in cast(dict[str, object], previous_files):
+                if Path(path) not in plan.files:
+                    say(f'  skill: remove {path} if unchanged; backed up under {backups}')
     node = _node_plan(Path.cwd()) if any(tool.name == 'claude' for tool in chosen) else None
     _say_node(node, say)
     if asking and input('Apply these changes? [y/N] ').strip().lower() not in ('y', 'yes'):
@@ -1010,8 +1143,15 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
             harness.done(binary)
     for path in skill_files:
         _backup(path, backups)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(skill)
+        if home.is_home_path(path):
+            home.mkdir_private(path.parent)
+            home.write_private(path, skill)
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(skill)
+    for tool in chosen:
+        if tool.name not in unmerged and (plan := deployments.get(tool.name)) is not None:
+            _deploy_skills(tool, plan, backups)
     _apply_node(node, backups)
     failed: list[str] = []
     servers = [tool for tool in chosen if tool.agent is None]
@@ -1139,6 +1279,11 @@ def uninstall(words: list[str], say: Callable[[str], None]) -> None:
     skill_files = [Path(path) for tool in chosen if (path := installed.get(tool.name))] + shared
     for path in skill_files:
         say(f'  skill: remove {path}')
+    for tool in chosen:
+        record = _deployment_record(tool.name)
+        if isinstance(files := record.get('files'), dict):
+            for path in cast(dict[str, object], files):
+                say(f'  skill: remove {path} if unchanged; backed up under {backups}')
     node = _node_plan(Path.cwd(), remove=True) if any(tool.name == 'claude' for tool in chosen) else None
     _say_node(node, say, remove=True)
     if not names and not everything and input('Apply these changes? [y/N] ').strip().lower() not in ('y', 'yes'):
@@ -1161,8 +1306,10 @@ def uninstall(words: list[str], say: Callable[[str], None]) -> None:
         skill = installed.get(tool.name)
         if skill:
             _remove_file(Path(skill), backups)
+        _remove_deployed(tool.name, backups)
         with home.chassis(write=True) as db:
             db.execute('DELETE FROM installs WHERE tool=?', (tool.name,))
+            db.execute('DELETE FROM meta WHERE key=?', (f'skill_deployment.{tool.name}',))
         say(f'Removed: {tool.name}')
     for path in shared:
         _remove_file(path, backups)

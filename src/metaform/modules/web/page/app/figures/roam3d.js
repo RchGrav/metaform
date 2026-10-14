@@ -12,19 +12,27 @@ import {MASCOT, mascotGlyph, mascot3d, mascotDriven} from '/page/app/figures/mas
 import {placeBubble, CUT, cut3d} from '/page/app/figures/cut.js';
 import {eyes3d, approachPoint} from '/page/app/figures/eyes.js';
 import {G} from '/page/app/map3d/graph3d.js';
-import {AT} from '/page/app/map3d/labels.js';
+import {AT, tags} from '/page/app/map3d/labels.js';
 
 /* Where a figure means to be on its node this frame, `WANT`, and what it looks at, if anything but the way it goes:
- * its orbit, or beside the node while it waits, then what it does with the node, a tool call's reach, something it
+ * beside the label while working, its orbit when restless, or beside the node while waiting, then an act, a reach,
+ * something it
  * was asked to look at, and a glance at a figure nearby, each later one turning its face over the one before. */
 function onNode(figure, target, size, data) {
   const m = figure.motion, ball = ballOf(target), c = figure.clock;
-  orbitPlace(figure, target, size, ball);
-  let face = figure.mood === 'waiting' ? waitBeside(figure, target, size, ball) : null;
+  let face = null;
+  if (figure.mood === 'working') face = workBeside(figure, target, size, ball);
+  else {
+    orbitPlace(figure, target, size, ball);
+    if (figure.mood === 'waiting') face = waitBeside(figure, target, size, ball);
+  }
   // now and then while it works, something of its own with the node
   if (figure.mood === 'working' && !figure.act && c > figure.nextAct && ACTS[m.act])
     figure.act = {kind: m.act, at: c, long: ACTS[m.act], hit: false};
-  if (figure.act) face = actWith(figure, target, size, ball) ?? face;
+  if (figure.act) {
+    const acted = actWith(figure, target, size, ball);
+    if (figure.act) face = acted;
+  }
   if (figure.reach) face = reachFor(figure, target, size, ball, data) ?? face;
   if (figure.lookAt && c < figure.lookAt.until) face = lookedAt(figure, data) ?? face;  // asked to look, `sight`
   if (figure.glance && c < figure.glance.until) face = glancedAt(figure) ?? face;
@@ -33,6 +41,28 @@ function onNode(figure, target, size, data) {
     face = AT.copy(G.camera().position);
   }
   return face;
+}
+/* Work has a place, separate from the orbit used by a restless figure. Keep the side chosen on arrival, so turning
+ * the person's camera never sends a worker round its node. Leave enough room for both the label and the node in the
+ * character's own field of view. Lanes spread coworkers across that side, without adding anything to the map. */
+function workBeside(figure, target, size, ball) {
+  const sign = tags.get(target.id)?.sprite;
+  const label = sign?.position || SPOT.set(target.x, target.y, target.z);
+  if (figure.workTarget !== target.id) {
+    figure.workTarget = target.id;
+    figure.workSide = new THREE.Vector3(0, 0, 1);
+    if (sign) figure.workSide.applyQuaternion(sign.quaternion).setY(0);
+    if (figure.workSide.lengthSq() < 1e-6) figure.workSide.set(0, 0, 1);
+    figure.workSide.normalize();
+  }
+  const fov = (figure.mesh.userData.fov || 68) * Math.PI / 360;
+  const extent = Math.max(ball * 2, size * 2, sign ? sign.scale.x / 2 : 0,
+    Math.hypot(label.x - target.x, label.y - target.y, label.z - target.z) + ball);
+  const away = extent * 1.5 / Math.tan(fov);
+  WANT.copy(label).addScaledVector(figure.workSide, away + figure.lane * size * 0.4);
+  TOWARD.set(figure.workSide.z, 0, -figure.workSide.x);
+  WANT.addScaledVector(TOWARD, figure.lane * size * 2.4);
+  return AT.copy(label);
 }
 /* The figure's place on its orbit: the angle always grows at its lap's pace, and which way round it goes is its
  * character's, `dir`; restless, it circles unevenly, never frantic; glancing, it nearly stops; waiting, it stays. */
@@ -170,14 +200,15 @@ function drawnSize(data, now) {
 }
 /* Figures on one node take lanes apart, and notice each other as they pass. */
 function takeLanes(size) {
-  const lanes = new Map();
+  const lanes = new Map(), still = reduced();
   for (const figure of [...ROAM.figures.values()].sort((one, two) => one.id < two.id ? -1 : 1)) {
-    if (figure.stage !== 'circling') continue;
+    if (figure.stage !== 'circling' && !still) continue;
     figure.lane = lanes.get(figure.target) || 0;
     lanes.set(figure.target, figure.lane + 1);
   }
   for (const one of ROAM.figures.values()) for (const two of ROAM.figures.values()) {
-    if (one.id >= two.id || one.stage !== 'circling' || two.stage !== 'circling' || one.target !== two.target) continue;
+    if (one.id >= two.id || one.stage !== 'circling' || two.stage !== 'circling' || one.target !== two.target
+      || moodOf(one.id) === 'working' || moodOf(two.id) === 'working') continue;
     if (one.clock < one.nextGlance || one.mesh.position.distanceTo(two.mesh.position) > size * 3) continue;
     one.glance = {other: two.id, until: one.clock + 1.1}; two.glance = {other: one.id, until: two.clock + 1.1};
     one.nextGlance = one.clock + 9; two.nextGlance = two.clock + 9;
@@ -202,14 +233,23 @@ function stepFigure(id, figure, data, size, lift, passed) {
   const target = nodeById(data, figure.target), home = nodeById(data, figure.home);
   if (!target || target.x === undefined || !home || home.x === undefined) return;
   const grown = ROAM.focus === id ? ROAM.focused : 1;
+  figure.mood = moodOf(id);
   if (reduced()) {  // no walking: the figure stands on its node while the ticket is worked, or where its agent put it
-    if (figure.drive && !figure.done) standDriven(figure, data);
-    else mesh.position.set(target.x, target.y + ballOf(target) + size, target.z);
     mesh.scale.setScalar(size * grown);
+    mesh.userData.gaze = null;
+    if (figure.drive && !figure.done) standDriven(figure, data);
+    else if (figure.mood === 'working' && !figure.done) {
+      const face = workBeside(figure, target, size, ballOf(target));
+      mesh.position.copy(WANT);
+      figure.pos.copy(WANT); figure.vel.set(0, 0, 0);
+      mesh.userData.gaze = face;
+      orientAgent(mesh, AHEAD.subVectors(face, WANT), 1, null, true);
+      mesh.userData.update(0, {move: {speed: 0, stride: 0, state: 'attend'}});
+    }
+    else mesh.position.set(target.x, target.y + ballOf(target) + size, target.z);
     if (figure.done) gone(id, figure);
     return;
   }
-  figure.mood = moodOf(id);
   const pose = {state: 'travel', scale: 1, tall: 1, turn: 0, bow: 0, face: null};
   const on = STAGES[figure.stage]?.(figure, {id, data, target, home, size, lift, passed, pose});
   if (on === false) return;
@@ -228,6 +268,8 @@ function arriving(figure, {home, size, lift, pose}) {
 /* Along the map's own edges, to its node or home again. */
 function travelling(figure, {data, target, size, lift, passed, pose}) {
   const mesh = figure.mesh, m = figure.motion, going = figure.stage === 'going';
+  const previous = figure.travelFrom ||= new THREE.Vector3();
+  previous.copy(mesh.position);
   if (!placed(figure, data, lift)) {  // a node of its way left the map: it goes on to what comes next
     figure.pos.copy(mesh.position); figure.vel.set(0, 0, 0);
     figure.from.copy(mesh.position);
@@ -240,6 +282,9 @@ function travelling(figure, {data, target, size, lift, passed, pose}) {
   if (AHEAD.lengthSq() > 1e-8) figure.heading.copy(AHEAD);
   swerve(figure, size);
   mischief(figure, data, size);
+  // The drawn path includes its character's sideways motion. Face that motion rather than the unmodified curve.
+  AHEAD.subVectors(mesh.position, previous);
+  if (AHEAD.lengthSq() > 1e-8) figure.heading.copy(AHEAD.normalize());
   markTrail(figure, size);
   pose.face = noticeMascot(figure, size);
   if (arrived) {
@@ -298,11 +343,12 @@ function circling(figure, {data, target, size, passed, pose}) {
   pose.face = onNode(figure, target, size, data);
   springTo(figure, WANT, passed, STIFF[m.go] || 20);
   mesh.position.copy(figure.pos);
-  pose.state = figure.mood === 'waiting' ? 'wait' : figure.mood;
+  pose.state = figure.mood === 'waiting' ? 'wait' : figure.mood === 'working' && pose.face ? 'attend' : figure.mood;
   if (figure.vel.lengthSq() > 1e-4) figure.heading.lerp(AHEAD.copy(figure.vel).normalize(), 0.2);
   figure.stride += figure.vel.length() * passed / size;
   // a hopper hops in place now and then while it idles
-  if (m.go === 'hop' && figure.vel.length() < size * 0.3 && Math.sin(figure.clock * 0.6 + m.phase * 6) > 0.2)
+  if (figure.mood !== 'working' && m.go === 'hop' && figure.vel.length() < size * 0.3
+    && Math.sin(figure.clock * 0.6 + m.phase * 6) > 0.2)
     figure.stride += passed * m.stride * 0.8;
   markTrail(figure, size);
   if (figure.done) { figure.from.copy(mesh.position); Object.assign(figure, {stage: 'flourish', clock: 0}); }
@@ -331,12 +377,12 @@ function driven(figure, {data, target, size, passed, pose}) {
   mesh.position.copy(figure.pos);
   figure.speed = figure.vel.length();
   figure.top = drive.top;
-  if (figure.speed > 1e-2) figure.heading.lerp(AHEAD.copy(figure.vel).normalize(), 0.2);
+  if (figure.speed > 1e-2) figure.heading.copy(figure.vel).normalize();
   figure.stride += figure.speed * passed / size;
   markTrail(figure, size);
   // at rest facing what its agent asked, it holds its gaze there, `attend` in agents3d.js
   pose.state = figure.speed > size * 0.2 ? 'travel' : face ? 'attend' : 'idle';
-  pose.face = face;
+  pose.face = figure.speed > size * 0.2 ? null : face;
   emoting(figure, pose, passed);
 }
 /* With reduced motion a driven figure stands where it was sent at once, facing the way asked. */
@@ -396,7 +442,11 @@ function drawFigure(figure, size, grown, passed, {state, scale, tall, turn, bow,
   if (mesh.scale.x > most) mesh.scale.multiplyScalar(most / mesh.scale.x);
   if (face) AHEAD.subVectors(face, mesh.position); else AHEAD.copy(figure.heading);
   if (turn) AHEAD.applyAxisAngle(THREE.Object3D.DEFAULT_UP, turn);
-  orientAgent(mesh, AHEAD, CORNERS[m.corner]?.turn ?? 0.25, passed);
+  mesh.userData.gaze = state === 'attend' && figure.stage === 'circling' ? face : null;
+  const forward = !face && (figure.stage === 'going' || figure.stage === 'returning'
+    || figure.stage === 'driven' && state === 'travel');
+  orientAgent(mesh, AHEAD, forward ? 1 : CORNERS[m.corner]?.turn ?? 0.25, passed,
+    Boolean(mesh.userData.gaze) || forward);
   if (bow) mesh.rotateX(bow);
   const top = figure.top || ROAM.speed * m.speed;
   const speed = figure.stage === 'circling' || figure.stage === 'flourish' ? figure.vel.length() : figure.speed;

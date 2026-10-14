@@ -1,0 +1,1 @@
+Ticket step 1-4 and final resolution: "Reach.writes in test_mcp.py now holds every public home function ... 38 in all"; "after steps 1-3 still left 58 write verbs with no sink"; mutation check: "before the fix it printed caught: []"; "the guard test cannot see their writes (110 of 155 write verbs are invisible to it)".

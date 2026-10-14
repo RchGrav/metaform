@@ -1,0 +1,1 @@
+Memories at code.analyzer.refactoring: replaced refactor-jev-consent-gate and refactor-follow-on-test-module-reload (their paths, decision point and module names went stale with the rename) with source-placement-jev-consent-gate (#b) and source-placement-follow-on-test-module-reload (#c), same facts under the new names; added source-placement-rename-and-migration (#d)

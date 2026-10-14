@@ -758,7 +758,7 @@ def test_dispatch_prompts_approve_all_answers_every_request_without_asking(dispa
     """A setting sets the default behavior for an agent's interactive prompts: approve-all,
     approve-reads or ask_all. With approve-all, Metaform answers each request with its allow option, and the thread
     says so."""
-    run('set', '--dispatch-prompts=approve-all', cwd=dispatch.folder)
+    run('set', '--dispatch-prompts=approve-all', '--confirm', cwd=dispatch.folder)
     dispatch.start('ask')
     [outcome] = eventually(lambda: dispatch.logged('permission'))
     assert outcome == {'outcome': {'outcome': 'selected', 'optionId': 'allow'}}
@@ -1135,6 +1135,31 @@ def test_autostart_starts_each_ticket_with_an_agent_eligible_for_it(dispatch, ru
     assert launched == [(dispatch.id, 'codex'), (claude_only, 'claude')]
 
 
+@pytest.mark.req('MAP-046')
+@pytest.mark.req('VIEW-042')
+def test_a_marker_starts_with_its_note_as_task_once_its_node_has_no_taken_ticket_and_one_at_a_time(
+        dispatch, run, monkeypatch):
+    """Ticket adaf488c: an open trouble, broken or missing marker with no task was never started, so nobody fixed
+    it. It waits behind a ticket taken at its node, and its node starts one marker at a time."""
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    broken = dispatch.store.add_work(dispatch.node, 'broken', note='It never sounds.').id
+    dispatch.store.add_work(dispatch.node, 'missing', note='No display.')
+    dispatch.store.take_work(dispatch.id, by='claude')
+    run('set', '--dispatch-autostart', cwd=dispatch.folder)
+    launched = []
+    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation: launched.append(ctx.nouns['id']) or
+                        {'work_id': ctx.nouns['id']})
+    module.autostart(context('dispatch', dispatch.folder, project='proj'))
+    assert launched == []
+    dispatch.store.finish_work(dispatch.id, 'Done.')
+    for _ in range(2):
+        module.autostart(context('dispatch', dispatch.folder, project='proj'))
+    assert launched == [broken]
+    read = json.loads(run('map', 'work', f'id={broken}', '--json', cwd=dispatch.folder).stdout)
+    assert read['task'] == f'It never sounds.\n\n{module.MARKERS["broken"]}'
+
+
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('VIEW-039')
 def test_interrupt_keeps_the_session_and_delivers_queued_messages_in_order(dispatch, run, tmp_path):
@@ -1301,46 +1326,6 @@ def test_the_person_sets_a_running_sessions_mode_and_model_and_a_choice_it_does_
     refused = run('dispatch', 'configure', dispatch.id, 'model', '--', 'huge', cwd=dispatch.folder, ok=False)
     assert refused.returncode != 0 and 'Small (small), Large (large)' in refused.stderr
     dispatch.stop()
-
-
-@pytest.mark.req('BASE-066')
-def test_two_seats_of_one_agent_at_a_table_have_sessions_of_their_own_each_on_its_models(dispatch, run, monkeypatch):
-    """Two harness seats of one agent at one table, each started with `dispatch seat` on the table's held ticket, are
-    two sessions, each made and kept on the model its seat names, and the table records the model each agent reported
-    beside its own session's whole id."""
-    from metaform.module import Context
-    from metaform.modules.roundtable import harness
-    from metaform.modules.roundtable import store as tables
-    for key, value in {'FAKE_ACP_LOG': str(dispatch.log), 'FAKE_ACP_MODE': 'ask', 'FAKE_ACP_RICH': '1'}.items():
-        monkeypatch.setenv(key, value)
-    models = ('small', 'large')
-    number = tables.opened(dispatch.store, {'address': NODE, 'subject': 'models', 'opening': 'Which?',
-                                            'chair': 'person'},
-                           [{'kind': 'acp', 'id': f'acp:codex/{model}', 'agent': 'codex', 'model': model}
-                            for model in models])
-    found = tables.change(dispatch.store, number, seat_work=dispatch.id)
-    for position, model in enumerate(models):  # one after another, as the fake counts its sessions from its log
-        run('dispatch', 'seat', f'id={dispatch.id}', 'agent=codex', f'seat={harness.name(number, position)}',
-            f'model={model}', cwd=dispatch.folder)
-        eventually(lambda count=position + 1: len([one for one in read(run, dispatch)['sessions']
-                                                   if one['state'] == 'running']) == count)
-    def on_their_models():
-        got = read(run, dispatch)['states']
-        return got if [next(one['current'] for one in state['settings'] if one['id'] == 'model')
-                       for state in got.values()] == list(models) else None
-    states = eventually(on_their_models)
-    assert [state['seat'] for state in states.values()] == [harness.name(number, 0), harness.name(number, 1)]
-    made = dispatch.received('session/new')
-    assert len(made) == 2 and len(states) == 2, 'one session/new and one session for each seat'
-    [chosen] = dispatch.received('session/set_config_option')  # the second seat's model; the first is the default
-    assert (chosen['params']['sessionId'], chosen['params']['value']) == (list(states)[1], 'large')
-    ctx = Context('roundtable', dispatch.folder, project='proj', store=dispatch.store)
-    for seat in tables.seats(dispatch.store, number):
-        harness.session_of(ctx, dispatch.store, found, seat, time.time() + LIMIT, lambda: False)
-    assert [(seat['session'], seat['reported']) for seat in tables.seats(dispatch.store, number)] == \
-        list(zip(states, models, strict=True))
-    for session in states:
-        run('dispatch', 'stop', f'id={dispatch.id}', f'session={session}', cwd=dispatch.folder)
 
 
 @pytest.mark.req('BASE-052')
@@ -1812,6 +1797,73 @@ def test_a_dispatch_verb_bound_to_a_base_acts_on_the_ticket_in_that_base(run, pr
         'hosts confirm it, as destructive'
 
 
+def test_a_day_cost_budget_still_counts_spend_after_switching_base(dispatch, run):
+    """A base switch must not reset a project's day budget or hide the earlier run from spend reporting."""
+    from metaform.data import Store
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    with Store('proj', module='dispatch').tables() as tx:
+        tx.insert('spend', {'session_id': 'earlier', 'seq': 1, 'work_id': dispatch.id, 'run': 'run-a',
+                            'day': module.today(), 'tokens': 80, 'cost': 0.07, 'currency': 'USD'})
+    run('map', 'add-base', 'other', '--confirm', cwd=dispatch.folder)
+    run('map', 'activate', 'other', '--confirm', cwd=dispatch.folder)
+    run('set', '--dispatch-budget-cost-day=5', cwd=dispatch.folder)
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    reached = module.over_budget(ctx, Store('proj', module='dispatch'))
+    assert reached is not None and reached['budget'] == 'day'
+    assert (reached['spent'], reached['limit'], reached['currency']) == (7, 5, 'USD')
+    shown = json.loads(run('dispatch', 'spend', '--json', cwd=dispatch.folder).stdout)
+    assert (shown['today']['cost'], shown['today']['tokens']) == (0.07, 80)
+    assert [(one['run'], one['cost']) for one in shown['runs']] == [('run-a', 0.07)]
+    assert module.spent(Store('proj'), work_id=dispatch.id)['cost'] == 0.07
+
+
+def test_spend_sums_each_base_preserving_filters_currencies_and_unmetered_sessions(dispatch):
+    """Spend filters apply in every base, with separate currency totals and the existing unmetered accounting."""
+    from metaform.data import Store
+    from metaform.modules import dispatch as module
+    first = Store('proj').bound_base().id
+    second = Store('proj').add_base('other').id
+    Store('proj').add_base('empty')
+    for base, session, day, tokens, cost, currency, metered in (
+            (first, 'usd', module.today(), 80, 0.07, 'USD', True),
+            (second, 'eur', module.today(), 20, 0.03, 'EUR', True),
+            (second, 'tokens-only', module.today(), 10, None, None, True),
+            (second, 'unmetered', module.today(), 0, None, None, False),
+            (second, 'old', '2000-01-01', 90, 0.09, 'USD', True)):
+        with Store('proj', base=base, module='dispatch').tables() as tx:
+            tx.insert('spend', {'session_id': session, 'seq': 1, 'work_id': dispatch.id, 'run': 'run-a',
+                                'day': day, 'tokens': tokens, 'cost': cost, 'currency': currency, 'metered': metered})
+    # Even a store explicitly bound to the first base sees the project's total.
+    bound = Store('proj', base=first)
+    held = module.spent(bound, day=module.today())
+    assert held['tokens'] == 110
+    assert held['cost'] is None and held['currency'] is None
+    assert held['costs'] == {'USD': 0.07, 'EUR': 0.03}
+    assert held['unmetered'] == {'tokens': ['unmetered'], 'cost': ['tokens-only', 'unmetered']}
+    assert module.spent(bound, run='run-a')['tokens'] == 200
+    assert module.spent(bound, work_id=dispatch.id)['costs'] == {'USD': 0.16, 'EUR': 0.03}
+    assert module.spent(bound, run='absent')['tokens'] == 0
+
+
+def test_budget_checks_read_spend_once_per_field(dispatch, run, monkeypatch):
+    """Token and cost limits on the same field reuse one total instead of reopening every base twice."""
+    from metaform.data import Store
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    run('set', *(f'--{key.replace("_", "-")}=1000' for key, *_ in module.BUDGETS), cwd=dispatch.folder)
+    reads = []
+
+    def spent(store, **where):
+        reads.append(where)
+        return {'tokens': 1, 'costs': {'USD': 0.01}}
+
+    monkeypatch.setattr(module, 'spent', spent)
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    assert module.over_budget(ctx, Store('proj'), work_id=dispatch.id, run='run-a') is None
+    assert reads == [{'work_id': dispatch.id}, {'run': 'run-a'}, {'day': module.today()}]
+
+
 @pytest.mark.req('BASE-052')
 def test_a_turns_tokens_are_spent_against_the_budgets(dispatch, run):
     """M01: each turn's tokens are summed per ticket, run and day; a budget reached raises the budget signal and
@@ -1877,7 +1929,7 @@ def test_an_agents_question_is_put_to_the_person_and_the_answer_reaches_it_as_ac
     """ACP's elicitation: the runner advertises both modes; a form question is asked at the ticket's node with its
     choices, never answered by dispatch_prompts, and the person's answer reaches the agent as accept with content
     its schema asks for. Asked in a terminal-free way: a question, not a permission."""
-    run('set', '--dispatch-prompts', 'approve-all', cwd=dispatch.folder)
+    run('set', '--dispatch-prompts', 'approve-all', '--confirm', cwd=dispatch.folder)
     dispatch.start('hold', 'system=true', FAKE_ACP_ELICIT='form')
     init = eventually(lambda: dispatch.received('initialize'))[0]['params']['clientCapabilities']
     assert init['elicitation'] == {'form': {}, 'url': {}} and init['session']['notices'] == {}

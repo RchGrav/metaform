@@ -1,18 +1,28 @@
 """The mcp module: surfaced tools, calls and project selection."""
 from __future__ import annotations
 
+import ast
 import asyncio
+import contextlib
+import dataclasses
+import functools
+import importlib
+import importlib.util
+import inspect
 import json
 import os
+import subprocess
 import sys
+import textwrap
 import time
+import typing
 
 import pytest
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from metaform.data import Node, Store
-from metaform.modules.mcp.server import mcp_next
+from metaform.modules.mcp.server import mcp_next, startup_instructions
 
 
 def own(project_id):
@@ -24,7 +34,7 @@ pytestmark = pytest.mark.kind('fixture')
 
 OS = "SUPPORTED_OS = ('linux', 'macos', 'windows')"
 CHASSIS_TOOLS = {'metaform_set', 'metaform_feedback', 'metaform_list_reports', 'metaform_read_report',
-                 'metaform_instructions', 'metaform_register'}
+                 'metaform_instructions', 'metaform_register', 'metaform_skills'}
 
 
 def session(home, folder, fn, heard=None):
@@ -50,12 +60,13 @@ def session(home, folder, fn, heard=None):
 def test_workflow_skills_read_the_same_skill_by_tool_and_prompt(run, home, mapped):
     run('enable', 'workflow')
     from metaform.modules.workflow import SKILLS
-    names = SKILLS
+    names = tuple(name for name in SKILLS if name not in ('sentinel', 'workflow_evaluator'))
 
     async def check(client, init):
         assert 'workflow_skill' in await listed(client)
         declared = {one.name for one in (await client.list_prompts()).prompts}
         assert set(names) <= declared
+        assert not {'sentinel', 'workflow_evaluator'} & declared
         results = {}
         for name in names:
             tool = await called(client, 'workflow_skill', {'name': name})
@@ -283,7 +294,7 @@ def test_a_server_started_outside_every_project_selects_one_with_set(run, home, 
         return init.instructions, before.is_error, text(before), chosen.is_error, after.is_error, text(after)
     instructions, before_error, before, chosen_error, after_error, after = session(home, outside, call)
     # At connect only the short pointer to the bootstrap; the folder's state comes in tool results
-    assert 'metaform://metaform' in instructions and len(instructions) <= 2048
+    assert 'metaform://metaform' in instructions and len(startup_instructions(outside)) <= 2048
     assert before_error and before[0].splitlines()[-1] == ('Next: call metaform_register for this folder, or '
                                                            'metaform set --project <id> for a registered one')
     assert not chosen_error and not after_error
@@ -758,6 +769,19 @@ def test_clear_project_is_a_caution_tool_while_the_chassis_is_on_the_surface(run
     assert told == {'project': 'proj', 'bases': ['main'], 'reports': 1}
     assert run('list', 'bases', cwd=mapped).stdout == ''
     assert not (own('proj') / 'reports').exists()
+
+
+@pytest.mark.req('MCP-006')
+def test_switching_the_active_base_asks_for_confirm(run, home, mapped):
+    """map activate, add-base and collapse change the active map for every agent and the page of a project, and any
+    project is named with `project`, so each is a caution tool: without confirm the call stops with its caution."""
+    async def check(client, init):
+        return await client.call_tool('map_activate', {'name': 'x'}), await listed(client)
+    refused, tools = session(home, mapped, check)
+    said = '\n'.join(text(refused))
+    assert refused.is_error and 'confirm' in said and 'active map for every agent' in said
+    assert all('Caution:' in tools[name].description for name in ('map_activate', 'map_add-base', 'map_collapse'))
+    assert Store('proj').active_base().name == 'main'  # the caution alone changed nothing
     run('set', '--modules', 'map', cwd=mapped)
 
     async def narrowed(client, init):
@@ -858,6 +882,383 @@ def test_each_command_is_its_own_tool_described_once_with_typed_arguments_and_an
         'Error: No tool map_nothing on this surface.', 'Next: list the tools']
     assert json.loads(text(ran)[-1]) == json.loads(run('map', 'joins', 'code.timer.kitchen', '--json', cwd=mapped).stdout)
     assert ran.structured_content == json.loads(text(ran)[-1])                  # an object result is also data
+
+
+LOOPBACK = ('127.0.0.1', 'localhost', '::1')
+# web's calls to its own page server, at the address its run record holds: Metaform's own process, not the open world
+OWN_SERVER = ('answering', 'held_open', 'ask_page')
+# home functions that open a write transaction for bookkeeping: the first base made on first use, the chassis meta
+HOME_BOOKKEEPING = ('ensure_base', 'set_meta')
+# functions whose module-table writes are bookkeeping: memory carries the old memory layer into its graph once
+TABLE_BOOKKEEPING = ('_carry',)
+# files written as bookkeeping: a store made 0600 before SQLite opens it, a module's resources copied, the page token
+FILE_BOOKKEEPING = ('metaform.sqlite.private', 'metaform.loader._copy_resources', 'metaform_module_system_web.token')
+# read verbs that write only on a surface the MCP server is not: the note is written from the web page alone
+WEB_ONLY_WRITES = {'memory_note': 'writes only from the web page; a call from any other surface with text is refused'}
+# These reads save only the screenshot the caller requests, rather than changing the map or the viewed page.
+SCREENSHOT_ONLY_WRITES = {
+    'web_look': 'reads the page through Playwright; only an explicitly requested screenshot is saved',
+    'web_capture': 'reads a frame of the page and saves the requested screenshot',
+}
+
+
+class Reach:
+    """What a verb reaches, read from the source of each function it can call: names through the function's globals,
+    closure and the imports inside it; `ctx.`, `store.` and `self.` methods through their classes; a published topic
+    through its subscribers; a `metaform <module> <verb>` process it starts through that verb. A sink is `network`, a
+    connection that is not to this machine; `write`, a Store method that writes the map, or a change to the settings;
+    `send`, project text sent to a third party through `metaform.jev`, which spends the person's credit. Bookkeeping
+    is no write: a module's tables made or upgraded on first use, a cache, what a session was shown. Three more kinds
+    say a verb does something without making it a write of the map: `local`, a request to Metaform's own process on
+    this machine; `process`, a process started; `file`, a file written outside the stores. Calls on any other object,
+    a module's table rows among them, are not followed, so a reach found is certain and one missed is possible."""
+
+    def __init__(self, modules):
+        import http.client
+        import shutil
+        import socket
+        import urllib.request
+
+        from metaform import home, jev
+        from metaform.module import Context
+        self.modules = modules
+        self.subscribers = {}
+        for module in modules:
+            for subscription in module.subscriptions:
+                self.subscribers.setdefault(subscription.topic, []).append(subscription.handler)
+        self.typed = {'ctx': Context, 'store': Store}
+        self.network = {urllib.request.urlopen, http.client.HTTPConnection, http.client.HTTPSConnection,
+                        socket.create_connection}
+        self.writes = {*(method for name, method in vars(Store).items()
+                         if inspect.isfunction(method) and not name.startswith('_')
+                         and 'self._write()' in inspect.getsource(method)),
+                       *(function for name, function in vars(home).items()
+                         if inspect.isfunction(function) and function.__module__ == home.__name__
+                         and not name.startswith('_') and name not in HOME_BOOKKEEPING
+                         and 'write=True)' in inspect.getsource(function))}
+        # a module's data operations, which Store runs by name: a write operation is a write of the map
+        self.operations = {name: declared for module in modules if module.data is not None
+                           for name, declared in module.data.operations.items()}
+        self.writes |= {declared.run for declared in self.operations.values() if declared.write}
+        self.send = jev.post
+        self.processes = {subprocess.run, subprocess.call, subprocess.check_call, subprocess.check_output}
+        self.files = {os.replace, os.rename, os.remove, os.unlink, shutil.copy, shutil.copy2, shutil.copyfile,
+                      shutil.copytree, shutil.move, shutil.rmtree}
+        self.read = {}
+
+    def verb(self, module_id, name):
+        return next((verb.run for module in self.modules if module.id == module_id
+                     for verb in module.verbs if verb.name == name), None)
+
+    def sinks(self, start):
+        """Each sink the function reaches, with the calls that lead to it."""
+        found, seen, queue = {}, set(), [(start, [])]
+        while queue:
+            fn, path = queue.pop(0)
+            if fn in seen:
+                continue
+            seen.add(fn)
+            here = [*path, f'{fn.__module__}.{fn.__qualname__}']
+            callees, sinks = self.parsed(fn)
+            for kind, what in sinks:
+                found.setdefault(kind, [*here, what])
+            queue += [(callee, here) for callee in callees]
+        return found
+
+    def parsed(self, fn):
+        if fn not in self.read:
+            self.read[fn] = self._parse(fn)
+        return self.read[fn]
+
+    def _parse(self, fn):
+        fn = inspect.unwrap(fn)
+        fn = getattr(fn.func if isinstance(fn, functools.partial) else fn, '__func__', fn)
+        try:
+            tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+            scope = {**fn.__globals__, **inspect.getclosurevars(fn).nonlocals, **self.imported(tree, fn)}
+        except (OSError, TypeError, SyntaxError, ValueError, AttributeError):
+            return [], []
+        owner = scope.get(fn.__qualname__.split('.')[0]) if '.' in fn.__qualname__ else None
+        local = {node.arg for node in ast.walk(tree) if isinstance(node, ast.arg)} | {
+            node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)}
+        scope = {name: value for name, value in scope.items() if name not in local}
+        assigned = {target.id: node.value for node in ast.walk(tree) if isinstance(node, ast.Assign)
+                    for target in node.targets if isinstance(target, ast.Name)}
+        callees, sinks = [], []
+        for call in (node for node in ast.walk(tree) if isinstance(node, ast.Call)):
+            targets = [self.resolved(call.func, scope, owner)]
+            targets += [self.resolved(arg, scope, owner) for arg in [*call.args, *(k.value for k in call.keywords)]
+                        if isinstance(arg, (ast.Name, ast.Attribute))]  # a function handed on, to a thread or a hook
+            if isinstance(call.func, ast.Attribute) and call.func.attr in ('publish', 'publish_async') and call.args \
+                    and isinstance(call.args[0], ast.Constant):
+                callees += self.subscribers.get(call.args[0].value, [])
+            if isinstance(call.func, ast.Attribute) and call.func.attr == 'tables' \
+                    and fn.__name__ not in TABLE_BOOKKEEPING and not any(
+                    k.arg == 'write' and isinstance(k.value, ast.Constant) and k.value.value is False
+                    for k in call.keywords):
+                sinks.append(('write', f'{ast.unparse(call.func)}()'))  # a module's tables, written
+            if f'{fn.__module__}.{fn.__qualname__}' not in FILE_BOOKKEEPING and self.writes_file(call, targets[0]):
+                sinks.append(('file', ast.unparse(call.func)))
+            for target in filter(None, targets):
+                if target in self.network:
+                    said = [ast.unparse(arg) for arg in call.args[:1]]
+                    said += [ast.unparse(assigned[arg.id]) for arg in call.args[:1]
+                             if isinstance(arg, ast.Name) and arg.id in assigned]
+                    if fn.__name__ not in OWN_SERVER and not any(host in one for one in said for host in LOOPBACK):
+                        sinks.append(('network', target.__qualname__))
+                    else:
+                        sinks.append(('local', target.__qualname__))
+                elif target in self.processes:
+                    sinks.append(('process', target.__qualname__))
+                elif target in self.writes:
+                    sinks.append(('write', target.__qualname__))
+                elif target is self.send:
+                    sinks += [('send', 'jev.post'), ('network', 'jev.post')]
+                elif target is subprocess.Popen and call.args:
+                    sinks.append(('process', 'Popen'))
+                    command = assigned.get(call.args[0].id) if isinstance(call.args[0], ast.Name) else call.args[0]
+                    words = [one.value for one in getattr(command, 'elts', []) if isinstance(one, ast.Constant)]
+                    at = words.index('metaform') if 'metaform' in words else -1
+                    run = self.verb(*words[at + 1:at + 3]) if 0 <= at < len(words) - 2 else None
+                    callees += [run] if run else []
+                elif inspect.isfunction(target) and target.__module__.startswith('metaform') and not any(
+                        k.arg in ('create', 'write') and isinstance(k.value, ast.Constant) and k.value.value is False
+                        for k in call.keywords):  # create=False and write=False are this code's reads
+                    callees.append(target)
+        return callees, sinks
+
+    def writes_file(self, call, target):
+        """Whether the call writes a file: a Path's write_text or write_bytes, open or os.open for writing, or a copy,
+        move or removal through os and shutil."""
+        if isinstance(call.func, ast.Attribute) and call.func.attr in ('write_text', 'write_bytes'):
+            return True
+        if isinstance(call.func, ast.Name) and call.func.id == 'open':
+            mode = [*call.args[1:2], *(k.value for k in call.keywords if k.arg == 'mode')]
+            return any(isinstance(one, ast.Constant) and set(str(one.value)) & set('wax+') for one in mode)
+        if target is os.open:
+            return any(flag in ast.unparse(call) for flag in ('O_WRONLY', 'O_RDWR', 'O_CREAT'))
+        return target in self.files
+
+    def resolved(self, node, scope, owner):
+        """The function a call's target names, or None."""
+        names = []
+        while isinstance(node, ast.Attribute):
+            names.insert(0, node.attr)
+            node = node.value
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == 'require_store':
+            found = Store
+        elif isinstance(node, ast.Call) and self.returns(self.resolved(node.func, scope, owner)) is Store:
+            found = Store  # `_other_project(ctx).add_base(...)`, a call that gives a Store
+        elif isinstance(node, ast.Name) and node.id == 'self' and isinstance(owner, type):
+            found = owner
+        elif isinstance(node, ast.Name):
+            found = self.typed.get(node.id, scope.get(node.id))
+        else:
+            return None
+        for name in names:
+            operation = self.operations.get(name) if found is Store and not hasattr(Store, name) else None
+            found = operation.run if operation else getattr(found, name, None)
+        found = inspect.unwrap(found) if callable(found) else found
+        found = getattr(found.func if isinstance(found, functools.partial) else found, '__func__', found)
+        return found if inspect.isroutine(found) or isinstance(found, type) else None
+
+    @staticmethod
+    def returns(fn):
+        """What the function's return annotation names, or None."""
+        try:
+            return typing.get_type_hints(fn).get('return') if inspect.isfunction(fn) else None
+        except (NameError, TypeError):  # an annotation that names what the module does not import at run time
+            return None
+
+    @staticmethod
+    def imported(tree, fn):
+        """The names the function imports inside its body, as `from . import jev`."""
+        package = fn.__module__ if hasattr(sys.modules.get(fn.__module__), '__path__') else fn.__module__.rpartition('.')[0]
+        names = {}
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            source = importlib.util.resolve_name('.' * node.level + (node.module or ''), package) if node.level \
+                else node.module or ''
+            try:
+                held = importlib.import_module(source)
+            except ImportError:
+                continue
+            for alias in node.names:
+                one = getattr(held, alias.name, None)
+                if one is None:
+                    with contextlib.suppress(ImportError):
+                        one = importlib.import_module(f'{source}.{alias.name}')
+                names[alias.asname or alias.name] = one
+        return names
+
+
+@pytest.mark.req('MCP-003')
+@pytest.mark.req('BASE-006')
+def test_every_verb_that_reaches_the_network_or_writes_declares_it_in_its_annotation(home):
+    """The annotations come from what each verb declares, so a declaration that hides a reach misleads every host,
+    H17: a verb that reaches external services or agents declares open_world. Map, settings and file writes and
+    third-party sends cannot be declared read without a reasoned exception. Every module is enabled and walked."""
+    modules = every_module()
+    wrong = undeclared(Reach(modules), modules)
+    assert len(modules) > 10 and not wrong, '\n'.join(wrong)
+
+
+# Write/remove verbs without write, send or file evidence, even when the walk sees network, local or process sinks.
+# Keep the set exact so losing a declaration or a previously visible write cannot silently pass.
+UNSEEN = {
+    'cloud_logout': 'revokes at the broker through an httpx client and forgets the sign-in through the login module',
+    'dispatch_permit': 'answers an agent permission or question through the local runner control socket',
+    'dispatch_configure': 'changes a live agent setting through the local runner control socket',
+    'dispatch_message': 'queues a new agent turn through the local runner control socket',
+    'dispatch_fork': 'forks or prompts an agent session through the local runner control socket',
+    'dispatch_timer': 'sets or cancels a runner-held timer which queues a future agent turn',
+    'dispatch_interrupt': 'cancels the current agent turn through the local runner control socket',
+    'dispatch_login': 'starts and authenticates an agent through an ACP Session object',
+    'dispatch_options': 'prime=true starts each agent once through a runner object to read the options it offers',
+    'dispatch_serve': 'serves ACP and forwards requests through stateful frontend and agent objects',
+    'node_invite': 'creates an account and invitation through the auth store object, locally or through SSH',
+    'node_revoke': 'disables an account through the auth store object, locally or through SSH',
+    'node_signout': 'bumps an account generation through the auth store object, invalidating sessions and tokens',
+    'node_rotate-key': 'writes signing keys through the Keys object, locally or through SSH',
+    'node_relay-enrol': "writes the relay's enrolments file through an Enrolments object",
+    'node_relay-gate': 'starts the relay gate server, uvicorn, in the foreground',
+    'twilio_call': 'places a paid call through the local bridge, whose Phone object sends it to Twilio',
+    'twilio_text': 'sends a paid text through the local bridge or a Twilio Client object',
+    'web_stop': 'asks the local page server to shut down through its control endpoint',
+    'hello_follow': 'waits for the next map change and shows it; it writes nothing',
+    'packet_check': 'reads a packet and says whether it is as sealed; it writes nothing',
+    'workflow_resume': 'reads a workflow run by its id; it writes nothing',
+    'workflow_serve': 'reads a skill whole, as dispatch sends it; it writes nothing',
+}
+
+
+@pytest.mark.req('MCP-003')
+@pytest.mark.req('BASE-006')
+def test_a_write_declared_read_is_caught_by_the_network_or_writes_check(home):
+    """Every write/remove declaration must be protected by observed evidence or the exact fallback registry."""
+    modules = every_module()
+    reach = Reach(modules)
+    declared = {f'{module.id}_{verb.name}': verb for module in modules for verb in module.verbs}
+    sinks = {tool: reach.sinks(verb.run) for tool, verb in declared.items()}
+    unseen = unseen_writes(declared, sinks)
+    missed = []
+    for module in modules:
+        for verb in module.verbs:
+            if verb.effect not in ('write', 'remove'):
+                continue
+            tool = f'{module.id}_{verb.name}'
+            changed = {tool: dataclasses.replace(verb, effect='read')}
+            one = dataclasses.replace(module, verbs=(verb,), resources=(), toolbar=(), panes=())
+            wrong = undeclared(reach, [one], changed)
+            if not any(line.startswith(f'{tool} declared read,') for line in wrong) and (
+                    unseen_writes({**declared, **changed}, sinks) == unseen):
+                missed.append(tool)
+    assert not missed, 'write/remove mutations missed: ' + ', '.join(missed)
+    assert unseen == set(UNSEEN), f'Write evidence registry differs: {sorted(unseen ^ set(UNSEEN))}'
+    assert all(UNSEEN.values())
+
+
+def unseen_writes(declared, sinks):
+    return {tool for tool, verb in declared.items()
+            if verb.effect in ('write', 'remove') and not {'write', 'send', 'file'} & sinks[tool].keys()}
+
+
+# These verbs reach beyond the home and map through objects, callbacks or local runners rather than a direct
+# network sink the walk recognizes. This is evidence of open-world behavior, not an exemption from declaring it.
+UNSEEN_OPEN_WORLD = {
+    'cloud_login': 'signs in through an httpx Client object',
+    'cloud_connect': 'connects to the broker through a Connection object and its nested async entry point',
+    'cloud_logout': 'revokes the sign-in through an httpx Client object',
+    'dispatch_recover': 'signals verified agent process groups through platform process handles',
+    'dispatch_permit': 'answers the agent through the local runner, which resolves the ACP permission or question',
+    'dispatch_configure': 'the local runner applies a setting through ACP session mode or config methods',
+    'dispatch_message': 'the local runner sends a new ACP prompt to the agent',
+    'dispatch_fork': 'the local runner forks or prompts an ACP agent session',
+    'dispatch_timer': 'the local runner queues a new agent turn when the timer expires',
+    'dispatch_interrupt': 'the local runner cancels the ACP agent turn',
+    'dispatch_stop': 'the local runner cancels the agent and ends its process group',
+    'dispatch_options': 'prime=true starts an ACP agent through a Session object',
+    'dispatch_tune': 'the local runner applies model and effort to the live ACP agent',
+    'dispatch_cancel': 'the local runner cancels and ends the ACP agent session',
+    'dispatch_login': 'opens an ACP agent Session and invokes its authentication method',
+    'dispatch_serve': 'forwards editor requests to agents through stateful ACP frontend and adapter objects',
+    'fork_wheel': 'selects dispatch.run dynamically from the loaded module to start a review agent',
+    'fork_upkeep': 'selects dispatch.run dynamically from the loaded module to start upkeep agents',
+    'map_code-import': 'the MCP SDK client and provider callbacks can reach the configured HTTP code server',
+    'mcp_a2a_send': 'sends to the remote agent through a factory-built A2A Client object',
+    'mcp_a2a_exchanges': 'polls remote agents through factory-built A2A Client objects',
+    'mcp_a2a_cancel': 'cancels remote work through a factory-built A2A Client object',
+    'node_logs': 'reads logs on the remote host through an SSH subprocess',
+    'node_relay': 'builds and starts the relay tunnel through executable plan callbacks and subprocesses',
+    'paperclip_status': 'reads the external Paperclip service through a Client object and injected opener',
+    'paperclip_brief': 'reads the external Paperclip service through a Client object and injected opener',
+    'paperclip_link': 'reads the external issue before linking it through a Client object and injected opener',
+    'paperclip_sync': 'synchronizes external issues through a Client object and injected opener',
+    'twilio_serve': 'serves phone callbacks whose Phone object reaches Twilio and the selected voice engine',
+    'twilio_call': 'the local bridge places the outbound call through a Phone object',
+    'twilio_text': 'the local bridge or a Client object sends the outbound text to Twilio',
+    'voice_speak': 'selects a module-provided engine callback, which can use an external speech service',
+}
+
+
+@pytest.mark.req('MCP-003')
+@pytest.mark.req('BASE-006')
+def test_an_open_world_verb_declared_closed_is_caught_by_the_annotation_check(home):
+    """Removing open_world from any verb must be observable, including agent control through a local runner."""
+    modules = every_module()
+    reach = Reach(modules)
+    declared = {f'{module.id}_{verb.name}': verb for module in modules for verb in module.verbs}
+    sinks = {tool: reach.sinks(verb.run) for tool, verb in declared.items()}
+    unseen = unseen_open_world(declared, sinks)
+    missed = []
+    for module in modules:
+        for verb in module.verbs:
+            if not verb.open_world:
+                continue
+            tool = f'{module.id}_{verb.name}'
+            changed = {tool: dataclasses.replace(verb, open_world=False)}
+            one = dataclasses.replace(module, verbs=(verb,), resources=(), toolbar=(), panes=())
+            wrong = undeclared(reach, [one], changed)
+            if not any(line.startswith(f'{tool} ') for line in wrong) and (
+                    unseen_open_world({**declared, **changed}, sinks) == unseen):
+                missed.append(tool)
+    assert not missed, 'open_world mutations missed: ' + ', '.join(missed)
+    assert unseen == set(UNSEEN_OPEN_WORLD), (
+        f'Open-world evidence registry differs: {sorted(unseen ^ set(UNSEEN_OPEN_WORLD))}')
+    assert all(UNSEEN_OPEN_WORLD.values())
+
+
+def unseen_open_world(declared, sinks):
+    return {tool for tool, verb in declared.items() if verb.open_world and 'network' not in sinks[tool]}
+
+
+def every_module():
+    from metaform import loader
+    for found in loader.discover():
+        loader.set_enabled(found.id, True)
+    return loader.enabled()
+
+
+def undeclared(reach, modules, changed=None):
+    """Each verb whose declaration hides what it reaches, with the calls that lead there; `changed` swaps in a verb's
+    declaration by tool name, as a wrong one would be written."""
+    wrong = []
+    for module in modules:
+        for verb in module.verbs:
+            tool = f'{module.id}_{verb.name}'
+            verb = (changed or {}).get(tool, verb)
+            sinks = reach.sinks(verb.run)
+            if 'network' in sinks and not verb.open_world:
+                wrong.append(f'{tool} reaches the network, open_world False: ' + ' > '.join(sinks['network']))
+            if tool in UNSEEN_OPEN_WORLD and not verb.open_world:
+                wrong.append(f'{tool} reaches outside the home and map, open_world False: ' + UNSEEN_OPEN_WORLD[tool])
+            for kind in ('write', 'send', 'file'):
+                exempt = (kind == 'write' and tool in WEB_ONLY_WRITES) or (
+                    kind == 'file' and tool in SCREENSHOT_ONLY_WRITES)
+                if kind in sinks and verb.effect == 'read' and not exempt:
+                    wrong.append(f'{tool} declared read, {kind}s: ' + ' > '.join(sinks[kind]))
+    return wrong
 
 
 @pytest.mark.req('CLI-039')
@@ -969,8 +1370,8 @@ def help_agents(run, folder):
 def over_mcp(folder):
     """The connect message the MCP server sends for the folder, MCP-029: mcp's instructions prompt as written, each
     module's connect line, mcp's closing line, then what the folder's state calls for."""
-    from metaform.instructions import startup
-    return startup(folder)
+    from metaform.modules.mcp.server import connect_instructions
+    return connect_instructions(folder)
 
 
 @pytest.mark.req('CLI-037')
@@ -1043,12 +1444,13 @@ def test_a_module_s_full_instructions_come_on_entering_its_tool_and_skills_are_t
         prompts = {one.name: one.description for one in (await client.list_prompts()).prompts}
         return init.instructions, entered, asked, wrong, prompts
     started, entered, asked, wrong, prompts = session(home, mapped, check)
-    assert full not in started and len(started) <= 2048
+    assert full not in started and len(startup_instructions(mapped)) <= 2048
     assert entered['instructions'].strip() == full and [block.strip() for block in asked] == [full]
     assert wrong.is_error
     from metaform.modules.workflow import SKILLS
-    described = [prompts[name] for name in SKILLS]
-    assert len(set(described)) == len(SKILLS) and all(described)
+    described = [prompts[name] for name in SKILLS if name not in ('sentinel', 'workflow_evaluator')]
+    assert len(set(described)) == len(SKILLS) - 2 and all(described)
+    assert not {'sentinel', 'workflow_evaluator'} & prompts.keys()
 
 
 @pytest.mark.req('MCP-004')
@@ -1236,39 +1638,32 @@ def test_a_direct_claim_over_mcp_is_honored_by_the_agent_the_client_names_at_ini
 def test_resources_serve_the_instructions_and_what_a_module_declares(run, home, mapped):
     """What an agent reads at discovery, before any tool runs: the instructions, a module's instructions, and the
     resources a module declares, each read through one of its verbs; a command's arguments are in its tool. The intake module
-    declares its procedure and its forms; the roundtable module declares templates, read through its verbs with the
-    URI's fields as their nouns, and one naming what is not there is refused as missing. A URI nothing serves is
-    refused with a next step."""
+    declares its procedure and its forms. A URI nothing serves is refused with a next step."""
     async def check(client, init):
         fixed = {one.uri: one for one in (await client.list_resources()).resources}
         templates = {one.uri_template for one in (await client.list_resource_templates()).resource_templates}
         texts = {uri: (await client.read_resource(uri)).contents[0].text for uri in (
             'metaform://instructions', 'metaform://instructions/intake', 'metaform://intake/procedure',
             'metaform://intake/schema')}
-        refusals = []
-        for uri in ('metaform://instructions/nothing', 'metaform://roundtable/discussion7/review'):
-            try:
-                await client.read_resource(uri)
-                refusals.append(None)
-            except Exception as error:  # noqa: BLE001
-                refusals.append(str(error))
-        return init.capabilities.resources.list_changed, fixed, templates, texts, refusals
-    changed, fixed, templates, texts, (refused, absent) = session(home, mapped, check)
+        try:
+            await client.read_resource('metaform://instructions/nothing')
+            refused = None
+        except Exception as error:  # noqa: BLE001
+            refused = str(error)
+        return init.capabilities.resources.list_changed, fixed, templates, texts, refused
+    changed, fixed, templates, texts, refused = session(home, mapped, check)
     assert changed and set(fixed) == {'metaform://metaform', 'metaform://proj', 'metaform://tools',
                                       'metaform://instructions', 'metaform://intake/procedure',
                                       'metaform://intake/schema'}
     assert all(one.description and one.name for one in fixed.values())
     assert templates == {'metaform://instructions/{module}', 'metaform://prompts/{name}', 'metaform://reports/{name}',
-                         'metaform://{address}', 'metaform://{address}/items/{n}',
-                         'metaform://roundtable/discussion{discussion}/submission{submission}',
-                         'metaform://roundtable/discussion{discussion}/review'}
+                         'metaform://{address}', 'metaform://{address}/items/{n}'}
     from metaform import prompt_files
     assert texts['metaform://instructions'].startswith(prompt_files.chassis('surface_mcp'))  # the guide, served
     assert texts['metaform://instructions/intake'] == run('help', 'agents', 'intake', cwd=mapped).stdout.strip()
     assert texts['metaform://intake/procedure'].strip() == run('intake', 'prompt', cwd=mapped).stdout.strip()
     assert texts['metaform://intake/schema'].strip() == run('intake', 'schema', cwd=mapped).stdout.strip()
     assert refused and 'No resource metaform://instructions/nothing' in refused and 'Next:' in refused
-    assert absent and 'No roundtable discussion 7' in absent and 'Next:' in absent
 
 
 @pytest.mark.req('CLI-011')
@@ -1380,7 +1775,7 @@ def test_connect_points_to_the_glossary_and_the_glossary_resource_serves_it_whol
         read = await client.read_resource('metaform://metaform')
         return init.instructions, listed, read.contents[0].text
     started, listed, served = session(home, mapped, check)
-    assert 'metaform://metaform, then metaform://proj' in started and len(started) <= 2048
+    assert 'metaform://metaform, then metaform://proj' in started and len(startup_instructions(mapped)) <= 2048
     assert listed[:3] == ['metaform://metaform', 'metaform://proj', 'metaform://tools']
     assert served == glossary.strip() + '\n' and len(served) > 2048  # whole and alone, past the connect text's cut
 
@@ -2208,6 +2603,8 @@ def test_the_map_view_in_an_ai_tool_draws_the_brief_and_its_items_as_the_web_gui
                                                    'observations': ['The tone is too quiet.']}]),
         'node=code.alarm.audible', cwd=mapped)
     apps = {'extensions': {'io.modelcontextprotocol/ui': {'mimeTypes': ['text/html;profile=mcp-app']}}}
+    # a view older than the page is not served and the node view, which has no Brief tab, stands in, `views.built`
+    assert views.built(), 'the map view is older than the page: node scripts/build_map_view.mjs, as CI runs first'
     wire = july_wire(home, mapped)
     try:
         html = declaring(wire, 'resources/read', {'uri': 'ui://metaform/map'}, apps)['contents'][0]['text']

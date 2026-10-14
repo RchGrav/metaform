@@ -130,9 +130,9 @@ export function pickNode2d(key) {
   M.nodes.get(EDGE_PICK.node2d)?.g.classList.remove('pick');
   EDGE_PICK.node2d = key;
   M.nodes.get(key)?.g.classList.add('pick');
-  HOVER2D.on = key;
+  if (!HOVER2D.on?.startsWith('figure:')) HOVER2D.on = key;
   if (flowModeNow() === 'hover') flows2d();
-  if (key) readout('2d', readoutOf(key, '2d'));
+  if (key && !HOVER2D.on?.startsWith('figure:')) readout('2d', readoutOf(key, '2d'));
 }
 export function pickEdge2d(edge) {
   if (EDGE_PICK.edge2d === edge) return;
@@ -143,6 +143,7 @@ export function pickEdge2d(edge) {
   }
   EDGE_PICK.edge2d = edge;
   $('#viewport').classList.toggle('picking', Boolean(edge));
+  if (HOVER2D.on?.startsWith('figure:')) return;
   if (edge) readout('2d', edgeWords(edge.join));
   else if (!HOVER2D.on) readout('2d', null);
 }
@@ -164,7 +165,8 @@ function hoverOut(event) {
   const from = event.target.closest?.('g.agent2d, g.node');
   if (!from || from.contains(event.relatedTarget)) return;
   HOVER2D.on = EDGE_PICK.node2d;  // a node still within reach keeps the readout, `nodeAt2d`
-  if (!EDGE_PICK.edge2d && !EDGE_PICK.node2d) readout('2d', null);
+  readout('2d', EDGE_PICK.node2d ? readoutOf(EDGE_PICK.node2d, '2d')
+    : EDGE_PICK.edge2d ? edgeWords(EDGE_PICK.edge2d.join) : null);
 }
 $('#viewport').addEventListener('pointerover', hoverOver);
 $('#viewport').addEventListener('pointerout', hoverOut);

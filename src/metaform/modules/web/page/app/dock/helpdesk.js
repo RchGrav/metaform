@@ -11,7 +11,7 @@ import {asked} from '/page/app/selection/select.js';
 import {DOCK, clockOf, STANDBY, DOCKMOTION, dockGoingAway, embodyOffer, embodyRows,
   dockState} from '/page/app/dock/embody.js';
 import {showChat, drawProposals, drawTabs, drawThreadBar, drawSubagents, drawSpend, sessionStatus,
-  chatActivity} from '/page/app/dock/threads.js';
+  chatActivity, drawAgentSessions} from '/page/app/dock/threads.js';
 import {queuedRows, deliverQueued, startFailed} from '/page/app/dock/send.js';
 import {messagesOf} from '/page/app/board/messages.js';
 import {D, ticketOf, agentAt} from '/page/app/agents/dispatch.js';
@@ -43,6 +43,8 @@ export async function drawHelpdesk(trouble) {
   DOCK.agent = session?.agent || null;
   DOCK.live = session?.state === 'running';
   drawThreadBar(session);
+  drawAgentSessions();
+  $('#helpdesk .call').hidden = Boolean(DOCK.live || DOCK.calling);
   drawAsked(target, session, lines);
   mascotHeard(target, lines);  // the system agent's answer to the mascot, said in its bubble too
   drawProposals();
@@ -195,11 +197,10 @@ export function followLog(force = false) {
 $('#helpdesk .latest').onclick = () => { followLog(true); $('#helpdesk .say').focus({preventScroll: true}); };
 /* What came while the chat was put away: a dot on its tab, cleared as it opens. */
 function markUnread() { DOCK.unread = true; drawDockTab(); }
-/* The chat puts itself away 15 seconds after its agent is gone, its session ended, stopped or the thread dismissed:
+/* The chat puts itself away 15 seconds after its agent is gone or its session has ended:
  * it eases away and leaves no gap, and its threads are kept, so opening it again shows the conversation. The count
  * waits while the person types in it, has the focus in it or the pointer over it; a line arriving or the agent back,
- * a resume, stops it. The minus in its head, Escape inside it and C put it away at any time. Docked in a pane of the
- * workspace it stays, as a pane does. */
+ * a resume, stops it. The close × in its head, Escape inside it and C put it away at any time. In a workspace pane it stays open until explicitly closed. */
 const CHAT_AWAY = {timer: 0, for: null, had: false, wait: 15000};
 function chatAway(session, changed = false) {
   const open = $('#dock').className.startsWith('open') && !chatDocked();
@@ -230,7 +231,7 @@ function awayNow() {
  * only a transform, a translation and a scale about the tab's middle, and its opacity, so its own size and place,
  * as moved and sized, are exactly what they were. Away leaves on the leaving curve, back arrives on the arriving one,
  * each about 260 to 340 ms by the way it travels; one interrupted turns back from where it is. The tab answers with
- * a small pulse as the chat lands in it. Under reduced motion only the opacity changes. The minus, Escape, C and the
+ * a small pulse as the chat lands in it. Under reduced motion only the opacity changes. The close ×, Escape, C and the
  * put-away after an agent leaves all go this way, as a chat docked at a side does. */
 export function launcherRect() {
   const dock = $('#dock');
@@ -288,7 +289,8 @@ export function reverseDock() {
 export function growFrom(tab) { moveDock('back', tab); }
 export function putChatAway() {
   const box = $('#helpdesk');
-  if (box.hidden || chatDocked()) return;
+  if (box.hidden) return;
+  if (chatDocked()) { box.hidden = true; return; }
   if (DOCKMOTION.anim) {  // on its way out of the tab: it turns back
     if (!dockGoingAway()) reverseDock();
     return;

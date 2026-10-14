@@ -1,6 +1,7 @@
 """Review every prompt an agent reads, in a terminal: `metaform prompts review`, STORE-044.
 
-The catalog is every element of the chassis's and each module's `resources/prompts.xml`: its text, the comment
+The catalog is every element of the chassis's, skill registry's and each module's `resources/prompts.xml`,
+plus the skill folders' Axiom procedures: its text, the comment
 written above it in the file (its purpose), and the lines of code that load it. The list shows them; Enter shows
 one whole; e opens its text in an editor. A changed text is saved as a new version in the prompt store, and then
 written where the prompt lives when that can be done exactly; otherwise it becomes a packet under
@@ -23,7 +24,7 @@ from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from . import home, loader
+from . import home, loader, skills
 from .data import prompts as store
 from .errors import Stop
 
@@ -86,6 +87,11 @@ def _uses(code: Path, name: str) -> list[str]:
 def catalog() -> list[Entry]:
     chassis = Path(str(resources.files('metaform')))
     entries = _entries('chassis', chassis / 'resources' / 'prompts.xml', chassis)
+    entries.extend(_entries('skills', chassis / 'skills' / 'resources' / 'prompts.xml', chassis))
+    for one in skills.catalog():
+        source = Path(str(one.folder / 'references' / 'procedure.axiom'))
+        entries.append(Entry('skill', one.name, source, skills.procedure(one.name), one.description,
+                             ['skills.py:procedure']))
     for item in loader.discover():
         path = Path(str(item.path))
         file = path / 'resources' / 'prompts.xml'
@@ -131,7 +137,8 @@ def register(key: str, source: str, *, element: str = '', purpose: str = '', use
     items = [i for i in registered() if i['key'] != key]
     item = {'key': key, 'source': str(path), 'element': element, 'purpose': purpose, 'used': used}
     items.append(item)
-    _registry_path().write_text(json.dumps(items, indent=1), encoding='utf-8')
+    home.mkdir_private(_registry_path().parent)
+    home.write_private(_registry_path(), json.dumps(items, indent=1))
     return item
 
 
@@ -204,24 +211,33 @@ def update_source(entry: Entry, new_text: str) -> bool:
 def packet(entry: Entry, new_text: str, folder: Path | None = None) -> Path:
     """The edit as a packet an agent applies, for a prompt the review could not update itself."""
     folder = folder or packet_folder()
-    folder.mkdir(parents=True, exist_ok=True)
+    if home.is_home_path(folder):
+        home.mkdir_private(folder)
+    else:
+        folder.mkdir(parents=True, exist_ok=True)
     version = store.prompt_version(entry.key)
     when = datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
     packet = folder / f'{entry.owner}--{entry.name}.md'
-    packet.write_text(
+    text = (
         f'# Prompt edit: {entry.key}\n\n'
         f'- Source file: `{entry.source}`\n- Element: `{_element_of(entry)}`\n'
         f'- Stored as prompt `{entry.key}` version {version.number}\n- Saved: {when}\n'
         f'- Used at: {", ".join(entry.used_at) or "no code line found"}\n'
         f'- Purpose, from the comment above it: {entry.purpose or "none written"}\n\n'
         f'## Apply\n\n{_apply_of(entry)}\n\n'
-        f'## Old text\n\n```\n{entry.text}\n```\n\n## New text\n\n```\n{new_text}\n```\n', encoding='utf-8')
+        f'## Old text\n\n```\n{entry.text}\n```\n\n## New text\n\n```\n{new_text}\n```\n')
+    if home.is_home_path(packet):
+        home.write_private(packet, text)
+    else:
+        packet.write_text(text, encoding='utf-8')
     _index(folder)
     return packet
 
 
 def _tag(entry: Entry) -> str | None:
     """The element the prompt is the text of, or None when it is a registered file's whole text."""
+    if entry.owner == 'skill':
+        return None  # a skill's authored procedure is one whole Axiom file
     reg = next((i for i in registered() if i['key'] == entry.key), None)
     if reg is not None:
         return reg.get('element') or None
@@ -241,6 +257,8 @@ def _parses(text: str) -> bool:
 
 
 def _element_of(entry: Entry) -> str:
+    if entry.owner == 'skill':
+        return 'the whole file'
     reg = next((i for i in registered() if i['key'] == entry.key), None)
     if reg is not None:
         return f'<{reg["element"]}>' if reg.get('element') else 'the whole file'
@@ -261,7 +279,11 @@ def _index(folder: Path) -> None:
              ('Each file holds one prompt: where it lives, its old text and the new text. To apply them, tell an agent: '
               'apply every packet in artifacts/prompt-edits, then delete the packet it applied.\n')]
     lines += [f'- `{p.name}`' for p in packets]
-    (folder / 'README.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    path = folder / 'README.md'
+    if home.is_home_path(path):
+        home.write_private(path, '\n'.join(lines) + '\n')
+    else:
+        path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
 
 # ---------------------------------------------------------------- the editor

@@ -1413,8 +1413,10 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
  * node's edges carry it. */
 :root{--record:#ffbe55}
 .map2d .flows2d *{pointer-events:none}
-.map2d .flows2d .bead{stroke:none;filter:drop-shadow(0 0 1.5px currentColor)}
-.map2d .flows2d .ask{fill:var(--spark);filter:drop-shadow(0 0 1.5px var(--spark))}
+/* a dot is the round end of a dash of no length on a copy of its edge's path: 2.1px across each side, 1.9 for a request */
+.map2d .flows2d .bead{fill:none;stroke-width:4.2px;stroke-linecap:round;filter:drop-shadow(0 0 1.5px currentColor)}
+.map2d .flows2d .ask{fill:none;stroke:var(--spark);stroke-width:3.8px;stroke-linecap:round;
+  filter:drop-shadow(0 0 1.5px var(--spark))}
 .map2d .flows2d .record{fill:var(--record);stroke:var(--spark);stroke-width:.6px}
 .map2d .flows2d .ring{fill:none;stroke:var(--record);stroke-width:1.4px}
 /* The mascot's word bubble, over the figure wherever it is drawn: eased in and out, one line or two, never in the way
@@ -1429,6 +1431,12 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
 .mascot-bubble.on{opacity:1;transform:translate(-50%,calc(-100% - 10px)) scale(1)}
 .mascot-bubble.on.clickable{pointer-events:auto;cursor:pointer}
 .mascot-bubble.clickable:hover{border-color:var(--signal)}
+.mascot-bubble.drawn:not(.asking){max-width:none;padding:0;border:0;border-radius:0;background:none;box-shadow:none;
+  transform:translate(calc(-1 * var(--tipx)),calc(-1 * var(--tipy) - 4px)) scale(.92);transform-origin:var(--tipx) var(--tipy)}
+.mascot-bubble.drawn.on:not(.asking){transform:translate(calc(-1 * var(--tipx)),calc(-1 * var(--tipy) - 4px)) scale(1)}
+.mascot-bubble.drawn:not(.asking)::after{display:none}
+.mascot-bubble.drawn canvas{display:block}
+.mascot-bubble.drawn .said{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .mascot-bubble.asking{pointer-events:auto;display:flex;flex-direction:column;gap:6px;max-width:300px}
 .mascot-bubble .reply{width:240px;min-height:28px;padding:0 8px;font:inherit}
 /* The note card the mascot brings when something needs the person, set down near the pointer: a click on its words
@@ -1495,6 +1503,7 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
 .setrow .control{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:var(--s1) var(--s2)}
 .setrow .control :where(input[type=text],select){width:220px;max-width:100%}
 .setrow .control input[type=number]{width:104px}
+.setrow .control textarea{width:420px;max-width:100%;resize:vertical;white-space:pre;overflow-x:auto}
 .setrow .checks{grid-column:1 / -1;display:flex;flex-wrap:wrap;align-items:center;gap:var(--s1) var(--s4)}
 .setrow .checks code{font:var(--t-sm)/1.3 var(--mono)}
 .setrow .setfail{grid-column:1 / -1;padding:var(--s2) var(--s3);font-size:var(--t-sm)}
@@ -2205,44 +2214,28 @@ body:has(.window.mcpwin > .bar:active) .appframe{pointer-events:none}  /* a pane
 /* Out of sight until laid out, then in once: `booting`, theme.js. */
 html.booting body > *{opacity:0}
 body > *{transition:opacity .28s var(--ease-arrive, ease-out)}
-/* The roundtable's tab, BASE-066: the strip at the top left of the large area while a table runs, and its panel over
- * the map: the table drawn from above on the left, the discussion and the chair's controls in a column on the right. */
-.rtstrip{position:absolute;top:var(--s2);left:var(--s3);z-index:7;display:flex;gap:2px;padding:2px;border-radius:var(--r);
-  background:color-mix(in srgb,var(--panel) 90%,transparent);border:1px solid var(--line-2);box-shadow:var(--lift-2)}
-.rtstrip[hidden],.roundtable[hidden],.rteye[hidden],.rtcount[hidden]{display:none}
-.rtstrip button{min-height:30px;padding:0 var(--s3);background:none;border:0;border-radius:calc(var(--r) - 2px);color:var(--muted);
-  font:500 var(--t-sm)/1 var(--sans);cursor:pointer}
-.rtstrip button:hover{color:var(--text)}
-.rtstrip button[aria-selected="true"]{color:var(--text);background:var(--panel-2)}
-.roundtable{position:absolute;inset:0;z-index:5;display:grid;grid-template-columns:minmax(0,1fr) clamp(300px,32%,440px);background:var(--ground)}
-.rtscene{position:relative;min-width:0;min-height:0;overflow:hidden}
-.rtscene canvas{display:block;width:100%;height:100%;cursor:grab}
-.rteye{position:absolute;right:var(--s3);bottom:var(--s3);width:min(360px,60%);display:grid;background:var(--panel);
-  border:1px solid var(--line-2);border-radius:var(--r-lg);box-shadow:var(--lift-3);overflow:hidden}
-.rteye .bar{display:flex;align-items:center;gap:var(--s2);padding:var(--s1) var(--s1) var(--s1) var(--s3);font:600 var(--t-sm)/1.3 var(--sans);color:var(--text)}
-.rteye .title{flex:1;min-width:0}
-.rteye img{width:100%;display:block;aspect-ratio:4/3;background:#0b0e16}
-.rtside{display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--line);background:var(--panel)}
-.rtstate{margin:0;padding:var(--s2) var(--s4);font:var(--t-sm)/1.4 var(--sans);color:var(--muted);border-bottom:1px solid var(--line)}
-.rtlog{flex:1;min-height:0;overflow:auto;margin:0;padding:var(--s2) var(--s4);list-style:none;display:grid;align-content:start;gap:var(--s3)}
-.rtlog li{display:grid;gap:2px;font:var(--t-md)/1.45 var(--sans);color:var(--text)}
-.rtlog .who{font:600 var(--t-sm)/1.3 var(--sans);color:var(--muted)}
-.rtlog .who small{font-weight:400;color:var(--faint);margin-left:var(--s2)}
-.rtlog .said{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
-.rtlog li.vetoed .said,.rtlog li.none .said{color:var(--faint)}
-.rtlog li.comment .said{font-style:italic}
-.rtlog .scores{display:flex;flex-wrap:wrap;gap:var(--s1) var(--s3);margin:0;font:var(--t-xs)/1.4 var(--mono);color:var(--muted)}
-.rtlog .scores .low{color:var(--broken)}
-.rtlog .text{justify-self:start;padding:0;background:none;border:0;color:var(--signal);font:var(--t-sm)/1.4 var(--sans);cursor:pointer;text-decoration:underline}
-.rtchair{display:grid;gap:var(--s2);padding:var(--s3) var(--s4);border-top:1px solid var(--line)}
-.rtcount{margin:0;font:600 var(--t-sm)/1.3 var(--sans);color:var(--signal)}
-.rtcomment{display:flex;gap:var(--s2);align-items:end}
-.rtcomment textarea{flex:1;min-width:0;resize:vertical}
-.rtchair .acts{display:flex;gap:var(--s2);justify-content:flex-end}
-#rtopen{width:min(560px,calc(100vw - 2 * var(--s3)))}
-#rtopen .seats .chosen{margin:var(--s1) 0;padding-left:1.4em;display:grid;gap:var(--s1);color:var(--text)}
-#rtopen .seats .chosen li button{margin-left:var(--s2)}
-#rtopen .seats .add{display:flex;gap:var(--s2);margin-top:var(--s1)}
-#rtopen .seats .add :is(select,input){flex:1;min-width:0}
-#rtopen .kindrow{display:flex;gap:var(--s3)}
-#rtopen .kindrow .field{flex:1}
+
+/* A stopped session stays recoverable in the chat and the Agents menu. */
+#helpdesk .head .close{font-size:24px;line-height:1}
+#helpdesk .stopped-agents{max-height:180px;overflow:auto;border-bottom:1px solid var(--line)}
+#agentbox .agent-sessions{max-height:260px;overflow:auto;border-bottom:1px solid var(--line)}
+.agent-session{display:flex;align-items:center;gap:var(--s2);padding:var(--s2) var(--s3)}
+.agent-session > img{width:28px;height:28px;flex:none}
+.agent-session .details{display:flex;flex-direction:column;min-width:0;flex:1;font:var(--t-xs)/1.4 var(--sans)}
+.agent-session .task{max-width:36ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.agent-session time{color:var(--faint)}
+.agent-session > button{flex:none}
+/* A figure's latest public work line, held in screen pixels above its plain name. */
+.agent-thought{position:fixed;z-index:22;pointer-events:none;width:0;height:0;
+  font:500 12px/1.4 var(--sans);text-align:center;visibility:hidden;transition:visibility 0s .45s}
+.agent-thought.figure-visible{visibility:visible;transition-delay:0s}
+.agent-thought-cloud{position:absolute;width:max-content;opacity:0;transition:opacity .45s ease}
+.agent-thought.on .agent-thought-cloud{opacity:1}
+.agent-thought-cloud canvas{display:block}
+.agent-thought-words{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip-path:inset(50%);white-space:nowrap;border:0}
+.agent-thought-name{position:absolute;left:0;top:10px;transform:translateX(-50%);
+  color:var(--text);font:500 11px/1.3 var(--sans);white-space:nowrap;
+  text-shadow:0 1px 3px var(--ground),1px 0 2px var(--ground),-1px 0 2px var(--ground)}
+.agent-thought[data-map="2d"] .agent-thought-name{display:none}
+@media(prefers-reduced-motion:reduce){.agent-thought-cloud{transition:none}}

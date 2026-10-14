@@ -1,0 +1,1 @@
+Ticket code.interface.graphical#42 "Correction: Page route classes ignore the Node's capability and let members write home-global settings through /api/workspace" — the work turned on route_class and workspace.run, which the old trigger did not name.

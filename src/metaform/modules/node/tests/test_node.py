@@ -8,6 +8,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import os
 import secrets
 import urllib.parse
 
@@ -50,6 +51,16 @@ def test_only_caddy_listens_and_the_page_passes_the_session_gate_first():
     before = caddy[:caddy.index('\thandle {')]  # discovery and sign-in answer before any credential
     assert '/.well-known/oauth-authorization-server' in before and '/.well-known/oauth-protected-resource' in before
     assert '/.well-known/agent-card.json' in before and 'forward_auth' not in before
+    # who is calling is the gate's word only, and the page server gets the browser's own Host and Origin
+    for name in ('Account', 'Role', 'Classes', 'Gate'):
+        assert page.index(f'request_header -X-Metaform-{name}') < page.index('forward_auth')
+    assert 'copy_headers X-Metaform-Account X-Metaform-Role X-Metaform-Classes' in page
+    assert 'header_up X-Metaform-Gate {env.METAFORM_GATE_SECRET}' in page
+    assert 'header_up Host' not in caddy and 'request_header @origin' not in caddy
+    gate = {'path': './gate.env', 'required': True}
+    assert services['caddy']['env_file'] == services['web']['env_file'] == [gate]
+    assert 'env_file' not in services['mcp'] and 'env_file' not in services['auth']
+    assert services['web']['command'][-2:] == ['--origin', ISSUER]
 
 
 def test_dispatch_keeps_its_module_and_relay_and_dns_modes_change_only_how_tls_is_had():
@@ -270,6 +281,128 @@ def test_the_gate_lets_a_session_through_and_sends_a_page_load_to_sign_in(tmp_pa
     assert web.get('/node/gate', headers={'X-Forwarded-Uri': '//evil.example'}).status_code == 401
     signed_in(store, web)
     assert web.get('/node/gate').headers['x-metaform-account'] == 'rich'
+
+
+def test_a_second_non_owner_account_is_refused_every_owner_route(tmp_path, home):
+    """C1: behind the Node's gate the page server takes who is calling only from Caddy, by the per-deploy secret, and
+    serves each route only to an account whose classes, which the gate gives, include the route's class. A member
+    reads, writes at write capability only, and is refused every admin route, the page's home-global workspace
+    settings among them; dispatch needs a Node at dispatch; a request that did not come through the gate, or names
+    another host, is refused whatever it claims."""
+    import http.client
+    import threading
+
+    from metaform import home as homes
+    from metaform import settings
+    from metaform.modules.node.config import page_classes
+    from metaform.modules.web import server as page_server
+    assert page_classes('read', 'member') == ('read',)
+    assert page_classes('read', 'owner') == ('read', 'admin')
+    node, store = server(tmp_path)  # capability write
+    heard = {}
+    for name, role in (('rich', 'owner'), ('bob', 'member')):
+        web = client_for(node)
+        session, _ = store.open_session(store.add_account(name, role), 3600)
+        web.cookies.set('__Host-metaform-session', session, domain=DOMAIN)
+        answer = web.get('/node/gate')
+        assert answer.headers['x-metaform-account'] == name and answer.headers['x-metaform-role'] == role
+        heard[name] = {key: answer.headers[key] for key in ('x-metaform-account', 'x-metaform-classes')}
+    assert heard['bob']['x-metaform-classes'] == 'read write'
+    assert heard['rich']['x-metaform-classes'] == 'read write admin'
+    page = page_server.Server('127.0.0.1', 0, 'nonce', origin=ISSUER, gate='gate-secret')
+    threading.Thread(target=page.serve_forever, daemon=True).start()
+
+    def call(path, account=None, method='POST', gate='gate-secret', host=DOMAIN, body=b'{}'):
+        connection = http.client.HTTPConnection('127.0.0.1', page.server_address[1], timeout=30)
+        headers = {'Host': host, 'Origin': ISSUER, 'Content-Type': 'application/json', 'X-Metaform-Gate': gate,
+                   **(heard[account] if account else {})}
+        try:
+            connection.request(method, path, body=body if method == 'POST' else None, headers=headers)
+            reply = connection.getresponse()
+            return reply.status, reply.read().decode()
+        finally:
+            connection.close()
+    try:
+        owner_routes = [('POST', path) for path in sorted(page_server.ADMIN_ROUTES)]
+        owner_routes += [('GET', '/api/build/options'), ('GET', '/api/debug/prompts'), ('POST', '/api/not-classed')]
+        for method, path in owner_routes:
+            assert page_server.route_class(method, path) == 'admin', path
+            status, body = call(path, 'bob', method)
+            assert status == 403 and 'needs admin, which bob may not use' in body, (path, status, body)
+        assert 'may not use' not in call('/api/settings', 'rich')[1]  # the owner passes; the body is then judged
+        assert 'may not use' not in call('/api/note', 'bob')[1]  # a write is a member's too
+        assert 'may not use' not in call('/api/settings', 'bob', 'GET')[1]  # reading the settings is a read
+        for account in ('rich', 'bob'):  # dispatch is not this Node's at write, for anyone
+            assert f'needs dispatch, which {account} may not use' in call('/api/dispatch-start', account)[1]
+        before = settings.value('web_workspaces', homes.home())
+        for path in ('arrangement', 'reset', 'save', 'select', 'delete'):  # the page's home-global settings
+            status, body = call(f'/api/workspace/{path}', 'bob', body=json.dumps({'name': 'bob-was-here'}).encode())
+            assert status == 403 and 'needs admin, which bob may not use' in body, (path, status, body)
+        assert settings.value('web_workspaces', homes.home()) == before
+        heard['reader'] = {'x-metaform-account': 'bob', 'x-metaform-classes': ' '.join(page_classes('read', 'member'))}
+        for path in ('/api/note', '/api/ignore'):  # at read capability a member only reads
+            status, body = call(path, 'reader')
+            assert status == 403 and 'needs write, which bob may not use' in body, (path, status, body)
+        forged = {'x-metaform-account': 'bob', 'x-metaform-classes': 'read write dispatch admin'}
+        heard['forged'] = forged
+        assert call('/api/modules', 'forged', gate='guessed')[0] == 403  # not through Caddy: refused, whatever it says
+        assert call('/api/modules', 'forged', gate='')[0] == 403
+        assert call('/api/settings', 'rich', host='127.0.0.1:7433')[0] == 403  # Host is the public origin's only
+    finally:
+        page.shutdown()
+        page.server_close()
+
+
+def test_an_mcp_caller_cannot_change_the_five_hosting_settings(home, tmp_path):
+    """H2: which folders a Node exposes, the host deploy reaches, the SSH key it uses, the key a created VM trusts
+    for root, and the intake file every intake agent follows are the person's: MCP's set does not offer them and
+    refuses them, stored or given for one call."""
+    from metaform import loader
+    from metaform.module import Stop
+    from metaform.modules.mcp.server import refuse_person_only, set_schema
+    loader.enabled()  # every module loaded, its settings declared, as the MCP server has them when it starts
+    five = ('node_projects', 'node_host', 'node_ssh_identity', 'node_ssh_public_key', 'intake_file')
+    for key in five:
+        with pytest.raises(Stop, match=f'{key} is set only by the person'):
+            refuse_person_only([key], tmp_path)
+    assert not set(five) & set(set_schema(tmp_path)['properties'])
+
+
+def test_the_auth_database_is_not_reachable_from_the_web_container(tmp_path, home, monkeypatch):
+    """C1: the accounts, passkeys and keys live on the `auth` volume, which only the auth container mounts; the page
+    and MCP containers, and every agent they start, share `home` without them. An older Node's accounts move there
+    from the shared home on auth's first start, and the old copy is removed."""
+    from metaform import home as homes
+    from metaform.modules.node import authserver, config, write_project
+    for made in (config.compose(spec()), config.compose(spec(role='broker', projects=()))):
+        services = made['services']
+        assert 'auth' in made['volumes']
+        assert f'auth:{config.AUTH_IN_IMAGE}' in services['auth']['volumes']
+        assert services['auth']['environment']['METAFORM_NODE_AUTH'] == config.AUTH_IN_IMAGE
+        for name, service in services.items():
+            if name == 'auth':
+                continue
+            mounts = service.get('volumes', [])
+            assert not [one for one in mounts if one.split(':')[0] == 'auth' or config.AUTH_IN_IMAGE in one], name
+    assert config.AUTH_IN_IMAGE in config.dockerfile()  # made the metaform user's in the image, so the volume is too
+    old = homes.home() / 'node'
+    (old / 'keys').mkdir(parents=True)
+    (old / 'auth.sqlite').write_text('accounts', encoding='utf-8')
+    (old / 'keys' / 'k1.json').write_text('key', encoding='utf-8')
+    volume = tmp_path / 'auth-volume'
+    monkeypatch.setenv(authserver.AUTH_FOLDER, str(volume))
+    assert authserver.store_path() == volume / 'auth.sqlite' and authserver.keys_folder() == volume / 'keys'
+    assert authserver.move_from_home() == ['auth.sqlite', 'keys']
+    assert (volume / 'auth.sqlite').read_text(encoding='utf-8') == 'accounts' and (volume / 'keys' / 'k1.json').is_file()
+    assert not old.exists() and authserver.move_from_home() == []
+    folder = tmp_path / 'project'
+    write_project(folder, spec())
+    secret = (folder / config.GATE_FILE).read_text(encoding='utf-8')
+    assert secret.startswith('METAFORM_GATE_SECRET=') and len(secret) > 40
+    write_project(folder, spec())
+    assert (folder / config.GATE_FILE).read_text(encoding='utf-8') == secret  # kept, so Caddy and the page agree
+    if os.name != 'nt':
+        assert (folder / config.GATE_FILE).stat().st_mode & 0o777 == 0o600
 
 
 def test_a_setup_link_works_once_and_only_for_its_account(tmp_path):

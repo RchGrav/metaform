@@ -77,8 +77,10 @@ def write(project_id: str | None, run: str, kind: str, text: str, *, store: Stor
     """Write one file, or append a section to it, and record its row. Returns the file name."""
     name = f'{run}-{FILES[kind]}'
     target = folder(project_id) / name
-    target.parent.mkdir(parents=True, exist_ok=True)
-    with _THREADS, target.open('ab') as stream, _locked(stream):
+    home.mkdir_private(target.parent)
+    with _THREADS, (target.open('ab') if os.name == 'nt' else
+                   os.fdopen(os.open(target, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), 'ab')) as stream, \
+            _locked(stream):
         # Writes to one file take turns, so none replaces another: the first writes the text, each later one a
         # section. On Windows an append is not one step, so the lock is what keeps them apart, BASE-045.
         stream.seek(0, os.SEEK_END)

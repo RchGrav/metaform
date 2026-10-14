@@ -1,0 +1,1 @@
+RULE FROM RICH: the specifications have not kept up with the code. Never change code to match a specification record; that would roll back features. The code as it is now is the reference.

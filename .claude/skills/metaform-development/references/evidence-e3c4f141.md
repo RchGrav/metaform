@@ -1,0 +1,1 @@
+Dispatch's seat support was roundtable-only ... and was deleted with it: the seat verb, run's seat noun, runner self.seat branches. Kept as generic: stop session=, the worker decide() elicitation (VIEW-045).

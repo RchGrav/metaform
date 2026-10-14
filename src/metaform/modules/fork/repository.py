@@ -4,6 +4,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -12,6 +13,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, cast
 
+from metaform import home
 from metaform.module import Stop, chassis_version
 
 IDENTIFIER = re.compile(r'^[a-z][a-z0-9_-]*$')
@@ -133,6 +135,23 @@ def resource(name: str) -> str:
     return resources.files(__package__ or 'metaform.modules.fork').joinpath('resources', name).read_text(encoding='utf-8')
 
 
+def _mkdir(path: Path, *, exist_ok: bool = False) -> None:
+    if home.is_home_path(path):
+        home.mkdir_private(path.parent)
+        path.mkdir(mode=0o700, exist_ok=exist_ok)
+    else:
+        path.mkdir(parents=True, exist_ok=exist_ok)
+
+
+def _write(path: Path, content: str | bytes) -> None:
+    if home.is_home_path(path):
+        home.write_private(path, content)
+    elif isinstance(content, str):
+        path.write_text(content, encoding='utf-8')
+    else:
+        path.write_bytes(content)
+
+
 def init(root: Path, name: str, agent: str, secret: str) -> dict[str, str]:
     """Scaffold into a new or empty directory, never overwrite a user's existing repository."""
     if not IDENTIFIER.fullmatch(name):
@@ -141,51 +160,59 @@ def init(root: Path, name: str, agent: str, secret: str) -> dict[str, str]:
         raise Stop('The CI secret name must be an uppercase environment variable name.', 'metaform help fork init')
     if root.exists() and (not root.is_dir() or any(root.iterdir())):
         raise Stop(f'{root} is not an empty folder; no files were changed.', 'metaform help fork init')
-    root.mkdir(parents=True, exist_ok=True)
+    _mkdir(root, exist_ok=True)
     target = root / name
     source = template_root()
     def copy(item: Any, destination: Path) -> None:
         if item.is_dir():
-            destination.mkdir(parents=True, exist_ok=True)
+            _mkdir(destination, exist_ok=True)
             for child in item.iterdir():
                 # Template's tests check the shipped hello/template pair in the chassis repository.
                 if child.name not in ('tests', '__pycache__', '.github'):
                     copy(child, destination / child.name)
         else:
-            destination.write_bytes(item.read_bytes())
+            _write(destination, item.read_bytes())
     copy(source, target)
     entry = target / '__init__.py'
-    entry.write_text(entry.read_text(encoding='utf-8').replace("id='template'", f"id='{name}'"), encoding='utf-8')
+    _write(entry, entry.read_text(encoding='utf-8').replace("id='template'", f"id='{name}'"))
     prompt_file = target / 'resources' / 'prompts.xml'
-    prompt_file.write_text(prompt_file.read_text(encoding='utf-8').replace('template', name), encoding='utf-8')
-    (target / 'tests').mkdir()
-    (target / 'tests' / 'README.md').write_text('Add tests of this module\'s requirements before implementing them.\n',
-                                             encoding='utf-8')
+    _write(prompt_file, prompt_file.read_text(encoding='utf-8').replace('template', name))
+    _mkdir(target / 'tests')
+    _write(target / 'tests' / 'README.md', 'Add tests of this module\'s requirements before implementing them.\n')
     releases = entries(template_changelog())
     if releases:
         readme = target / 'README.md'
-        readme.write_text(re.sub(r'(## Template version\s*\n).*?(?=\n## )',
-                                 lambda match: match[1] + releases[0][0] + '\n',
-                                 readme.read_text(encoding='utf-8'), count=1, flags=re.DOTALL), encoding='utf-8')
+        _write(readme, re.sub(r'(## Template version\s*\n).*?(?=\n## )',
+                             lambda match: match[1] + releases[0][0] + '\n',
+                             readme.read_text(encoding='utf-8'), count=1, flags=re.DOTALL))
     workflow = root / '.github' / 'workflows' / 'metaform.yml'
-    workflow.parent.mkdir(parents=True)
-    workflow.write_text(resource('metaform.yml').replace('@AGENT@', agent).replace('@SECRET@', secret), encoding='utf-8')
-    (root / 'pyproject.toml').write_text(resource('project.toml.template').replace('@VERSION@', chassis_version()),
-                                        encoding='utf-8')
-    (root / 'README.md').write_text(resource('repository.md').replace('@SECRET@', secret).replace('@AGENT@', agent),
-                                  encoding='utf-8')
-    (root / '.gitignore').write_text('.venv/\n.metaform/\ndist/\n__pycache__/\n.pytest_cache/\n.ruff_cache/\n',
-                                    encoding='utf-8')
+    _mkdir(workflow.parent)
+    _write(workflow, resource('metaform.yml').replace('@AGENT@', agent).replace('@SECRET@', secret))
+    _write(root / 'pyproject.toml', resource('project.toml.template').replace('@VERSION@', chassis_version()))
+    _write(root / 'README.md', resource('repository.md').replace('@SECRET@', secret).replace('@AGENT@', agent))
+    _write(root / '.gitignore', '.venv/\n.metaform/\ndist/\n__pycache__/\n.pytest_cache/\n.ruff_cache/\n')
     return {'repository': str(root), 'module': name, 'secret': secret}
 
 
 def save_report(path: Path, data: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    _mkdir(path.parent, exist_ok=True)
+    _write(path, json.dumps(data, ensure_ascii=False, indent=2) + '\n')
 
 
 def copy_module(source: Path, target: Path) -> None:
-    shutil.copytree(source, target, ignore=shutil.ignore_patterns('__pycache__', '.pytest_cache', '.ruff_cache', '.git'))
+    ignore = shutil.ignore_patterns('__pycache__', '.pytest_cache', '.ruff_cache', '.git')
+    if home.is_home_path(target):
+        _mkdir(target)
+        ignored = ignore(str(source), [entry.name for entry in source.iterdir()])
+        for entry in source.iterdir():
+            if entry.name in ignored:
+                continue
+            if entry.is_dir():
+                copy_module(entry, target / entry.name)
+            else:
+                home.write_private(target / entry.name, entry.read_bytes())
+    else:
+        shutil.copytree(source, target, ignore=ignore)
 
 
 def update_worktree(root: Path, work_id: str) -> Path:
@@ -196,7 +223,8 @@ def update_worktree(root: Path, work_id: str) -> Path:
     def git(*args: str) -> str:
         try:
             result = subprocess.run(['git', '-C', str(root), *args], capture_output=True, text=True,
-                                    encoding='utf-8', timeout=60, check=False)
+                                    encoding='utf-8', timeout=60, check=False,
+                                    umask=0o077 if os.name != 'nt' and home.is_home_path(target) else -1)
         except (OSError, subprocess.TimeoutExpired) as error:
             raise Stop(f'Template upkeep cannot prepare its branch: {error}.', 'metaform help fork upkeep') from None
         if result.returncode:
@@ -205,6 +233,6 @@ def update_worktree(root: Path, work_id: str) -> Path:
         return result.stdout.strip()
     if git('status', '--porcelain'):
         raise Stop('Commit your module repository changes before template upkeep.', 'metaform help fork upkeep')
-    target.parent.mkdir(parents=True, exist_ok=True)
+    _mkdir(target.parent, exist_ok=True)
     git('worktree', 'add', '-b', f'metaform-template-{work_id}', str(target), 'HEAD')
     return target

@@ -13,6 +13,7 @@ import {showNodeZoom, showLens, lens3d} from '/page/app/views/lens.js';
 import {flows2d} from '/page/app/map2d/flow2d.js';
 import {posted} from '/page/app/intake/intake.js';
 import {DEPTH, setDepth} from '/page/app/keys/walk.js';
+import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
 
 /* The view settings of the web module that the page follows, read once a project is shown: the agents window,
  * web_agents_window; the 3D map's physics, web_physics; the 2D map's direction,
@@ -53,14 +54,14 @@ function followView(rows) {
   VIEW.embody = String(value('web_embody', 'offer'));
   VIEW.embodyTurns = Number(value('web_embody_turns', 8));
   VIEW.embodyMinutes = Number(value('web_embody_minutes', 20));
+  const details = value('web_chat_details', false) === true;  // the agent's work in the chat, `workShown`
+  if (details !== Boolean(VIEW.chatDetails)) { VIEW.chatDetails = details; drawHelpdesk(); }
   showSigns();
   LENS.name = String(value('web_lens', 'natural'));
   lens3d(LENS.name);
   showLens();
-  // the theme decides the look, and web_graphics records it, so the settings say what the map shows
-  const look = document.documentElement.dataset.theme === 'space' ? 'ultra' : 'clean';
-  ULTRA.setting(look);
-  if (value('web_graphics', 'clean') !== look) saveView('web_graphics', look);
+  // the theme decides the look; web_graphics is written only when the person changes the look, never on a read
+  ULTRA.setting(document.documentElement.dataset.theme === 'space' ? 'ultra' : 'clean');
   const physics = value('web_physics', 'organic');
   if (physics !== PHYS.name) applyPhysics(physics);
   showFlow(String(value('web_flow_mode', flowNow())));

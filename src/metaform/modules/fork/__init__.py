@@ -48,7 +48,7 @@ MODULE = Module(
         Verb('check', check, 'Run type checking, lint and tests for each module, and save this matrix job\'s report.',
              surfaces=('cli',)),
         Verb('wheel', wheel, 'Dispatch a quality review per module, then build a wheel with those that passed.',
-             switches=('fork_agent', 'fork_secret'), surfaces=('cli',)),
+             switches=('fork_agent', 'fork_secret'), surfaces=('cli',), open_world=True),
         Verb('upkeep', upkeep, 'Bring the older modules of a module repository up to the current template, each as a '
                                'pull request.',
              switches=('fork_agent',), open_world=True),

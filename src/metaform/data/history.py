@@ -288,10 +288,10 @@ def add_origin(project_id: str) -> Origin:
     listing = manifest(files)
     digest = _sha(listing)
     staging = origins_folder(project_id) / f'.staging-{secrets.token_hex(8)}'
-    staging.mkdir(parents=True)
+    home.mkdir_private(staging)
     made: Origin | None = None
     try:
-        (staging / 'manifest.txt').write_bytes(listing)
+        home.write_private(staging / 'manifest.txt', listing)
         if commit is None:
             for path, (data, mode) in files.items():
                 _write(staging / 'origin' / path, data, mode)
@@ -361,10 +361,16 @@ def _changes(old: dict[str, tuple[bytes, str]], new: dict[str, tuple[bytes, str]
 
 
 def _write(path: Path, data: bytes, mode: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(data)
-    if os.name != 'nt':
-        path.chmod(0o755 if mode == '755' else 0o644)
+    if home.is_home_path(path):
+        home.mkdir_private(path.parent)
+        home.write_private(path, data)
+        if os.name != 'nt':
+            path.chmod(0o700 if mode == '755' else 0o600)
+    else:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        if os.name != 'nt':
+            path.chmod(0o755 if mode == '755' else 0o644)
 
 
 def _diff(before: bytes, after: bytes) -> bytes:
@@ -396,7 +402,7 @@ def add_variant(project_id: str, folder: Path, mform_id: str | None = None, *, r
     unit = _unit(project_id, item.mform_sha_id)
     given = {key: (provenance or {}).get(key) for key in PROVENANCE}
     staging = unit / 'variants' / f'.staging-{secrets.token_hex(4)}'
-    staging.mkdir(parents=True)
+    home.mkdir_private(staging)
     try:
         rows: list[tuple[str, str, str | None, str | None, str | None]] = []
         for path, change in changed:
@@ -406,8 +412,8 @@ def add_variant(project_id: str, folder: Path, mform_id: str | None = None, *, r
             data, mode = current[path]
             if change == 'modified' and _text(data) and text_size >= WHOLE_LIMIT and _text(base[path][0]):
                 stored = (staging / 'diffs' / f'{path}.diff')
-                stored.parent.mkdir(parents=True, exist_ok=True)
-                stored.write_bytes(f'base_sha256 {_sha(base[path][0])}\n'.encode() + _diff(base[path][0], data))
+                home.mkdir_private(stored.parent)
+                home.write_private(stored, f'base_sha256 {_sha(base[path][0])}\n'.encode() + _diff(base[path][0], data))
                 rows.append((path, change, 'diff', _sha(data), mode))
             else:
                 _write(staging / 'files' / path, data, mode)
@@ -577,6 +583,9 @@ def extract(project_id: str, ids: Sequence[str], target: Path, mform_id: str | N
         files = reconstruct(project_id, made, base)
         for path, (data, mode) in files.items():
             _write(folder / path, data, mode)
-        folder.mkdir(parents=True, exist_ok=True)
+        if home.is_home_path(folder):
+            home.mkdir_private(folder)
+        else:
+            folder.mkdir(parents=True, exist_ok=True)
         written.append(folder)
     return written

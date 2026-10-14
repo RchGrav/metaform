@@ -149,9 +149,9 @@ class Voice:
     def _hear(self, folder: Path, samples: array.array[int], rate: int, *, language: str | None, engine: str | None,
               partial: bool) -> str | None:
         place = home.home() / 'run' / 'voice' / 'heard'
-        place.mkdir(parents=True, exist_ok=True)
+        home.mkdir_private(place)
         path = place / f'{secrets.token_hex(16)}.wav'
-        path.write_bytes(wav(samples, rate))
+        home.write_private(path, wav(samples, rate))
         try:
             heard = self.transcribe(folder, path, language=language, engine=engine, partial=partial)
         finally:

@@ -90,8 +90,10 @@ export function start3D() {
  * one motion that never ends: they keep flowing, and once nothing has been done or changed for `idle` they are drawn
  * `idleRate` times a second, a flow nobody is watching closely, at its own speed. `rest`, when set, is how long after
  * that the flow stops until the next act or change; null keeps it flowing at the full frame rate, as VIEW-005 draws
- * it, since a flow watched without touching is still watched. With reduced motion nothing flows, so an idle map draws
- * nothing at all. */
+ * it, since a flow watched without touching is still watched. The flash and pulse of a part's record, a ghost rising,
+ * an agent's figure, a lit reach and the mascot up and about are ambient, `busy`: drawn at once until the map has
+ * been left alone for `idle`, then `idleRate` times a second, each at its own speed. With reduced motion nothing
+ * flows or flashes, so an idle map draws nothing at all. */
 export const FRAMES = {id: 0, timer: 0, held: false, until: 0, active: 0, last: 0, drawn: 0, engine: false,
   moved: false, busy: false, flowing: false, grace: 700, idle: 30000, idleRate: 15, rest: 0};
 // `idle` and `rest` are the web module's settings, web_flow_seconds and web_idle_flow, read with the workspace: the
@@ -126,15 +128,19 @@ function frame3d(now) {
   FRAMES.drawn++;
   const still = now - FRAMES.active;
   if (moving3d(now, still)) FRAMES.id = requestAnimationFrame(frame3d);
-  else if (FRAMES.flowing && (FRAMES.rest === null || still < FRAMES.idle + FRAMES.rest)) {
-    FRAMES.timer = setTimeout(idleFrame, 1000 / FRAMES.idleRate);
+  else if (FRAMES.busy || (FRAMES.flowing && (FRAMES.rest === null || still < FRAMES.idle + FRAMES.rest))) {
+    // timed from this frame's start and a little early, so the screen's next refresh after it is the one
+    // 1/idleRate on: waiting the whole time and then for a refresh drew 12 frames a second, not 15
+    FRAMES.timer = setTimeout(idleFrame, Math.max(0, now + 1000 / FRAMES.idleRate - 4 - performance.now()));
   }
 }
-/* Whether the next frame is drawn at once: something changed lately, the layout or the camera moves, a flight or
- * other work is under way, or the flow runs and the page has not yet been left alone for `idle`, or rests never. */
+/* Whether the next frame is drawn at once: something changed lately, the layout or the camera moves, a flight is
+ * under way, or the flow or an ambient animation runs and the page has not yet been left alone for `idle`; the flow
+ * also when it rests never. Left alone longer, an ambient animation is drawn `idleRate` times a second. */
 function moving3d(now, still) {
-  if (now < FRAMES.until || FRAMES.engine || FRAMES.moved || FLIGHT.on || FRAMES.busy) return true;
-  return FRAMES.flowing && (still < FRAMES.idle || FRAMES.rest === null);
+  if (now < FRAMES.until || FRAMES.engine || FRAMES.moved || FLIGHT.on) return true;
+  if ((FRAMES.busy || FRAMES.flowing) && still < FRAMES.idle) return true;
+  return FRAMES.flowing && FRAMES.rest === null;
 }
 /* One frame of the flow left alone, drawn at its slow rate. */
 function idleFrame() {

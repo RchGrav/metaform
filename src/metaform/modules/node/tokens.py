@@ -46,6 +46,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from jwt.algorithms import OKPAlgorithm
 
+from metaform import home
+
 ALGORITHM = 'EdDSA'
 CLI_CLIENT = 'metaform-cli'  # the local service, `metaform cloud login`: built in, a public client with no redirect
 DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code'
@@ -156,7 +158,10 @@ class Keys:
         """A new signing key. The one it replaces is kept for checking until its tokens have all expired, or, with
         `revoke_old`, removed at once with every other older key: what to do when a key may have been copied."""
         with self.lock:
-            self.folder.mkdir(parents=True, exist_ok=True)
+            if home.is_home_path(self.folder):
+                home.mkdir_private(self.folder)
+            else:
+                self.folder.mkdir(parents=True, exist_ok=True)
             with contextlib.suppress(OSError):
                 self.folder.chmod(0o700)
             kid = secrets.token_urlsafe(9)

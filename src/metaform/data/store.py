@@ -194,6 +194,11 @@ class Store:
         with self._write() as tx:
             return layering.reexamined(tx, layer)
 
+    def rename_layer(self, layer: str, name: str, module: str) -> Outcome:
+        """Rename a layer and its owning module in place, for a module whose id changed."""
+        with self._write() as tx:
+            return layering.rename(tx, layer, name, module)
+
     def select(self, address: str, layer: str) -> Outcome:
         with self._write() as tx:
             return layering.selection(tx, address, layer, 'select')

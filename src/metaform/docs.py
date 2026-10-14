@@ -113,8 +113,12 @@ def switch_page(name: str, folder: Any = None) -> str:
         lines = [f'{setting.switch}: {setting.help}', '']
         if setting.details:
             lines += [setting.details, '']
-        lines += ['Usage', f'  metaform set {setting.switch}' + ('' if setting.kind == 'bool' else ' <value>'),
-                  f'  metaform unset {setting.switch}', '']
+        if setting.per_call:  # given on its verbs alone, never stored
+            lines += ['Usage', *(f'  {call}' for call in settings.calls_of(setting)), '',
+                      'Given on the call alone; it is never stored.', '']
+        else:
+            lines += ['Usage', f'  metaform set {setting.switch}' + ('' if setting.kind == 'bool' else ' <value>'),
+                      f'  metaform unset {setting.switch}', '']
         if setting.kind == 'select' or setting.kind == 'list' and setting.choices is not None:
             try:
                 options = setting.options(folder)

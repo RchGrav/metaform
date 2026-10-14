@@ -1,0 +1,1 @@
+A test calling mcp.server.set_schema must call loader.enabled() first: set_schema iterates settings.SCHEMA while setting_schema can load modules, which raises 'dictionary changed size during iteration'.

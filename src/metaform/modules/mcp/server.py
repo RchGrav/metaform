@@ -2,7 +2,7 @@
 
 Every command is its own tool, MCP-003 and CLI-037: each surfaced module verb is
 `<module>_<verb>`, and the chassis's own commands are `metaform_<command>`, `set`,
-`feedback`, `list_reports`, `read_report`, `instructions` and `register` always,
+`feedback`, `list_reports`, `read_report`, `instructions`, `register` and `skills` always,
 CLI-022 and BASE-045, and the history, prompt and clear commands while the chassis
 is on the folder's surface, MCP-004. A tool is described once, where it is listed:
 its description is the verb's summary, its input schema is built from the verb's
@@ -158,8 +158,10 @@ def tools(folder: Path) -> dict[str, tuple[Module, Verb]]:
 
 def set_schema(folder: Path) -> dict[str, Any]:
     properties = {key: setting_schema(setting, folder) for key, setting in settings.SCHEMA.items()
-                  if not setting.person_only}
+                  if not setting.person_only and not setting.per_call}  # a per-call switch is given on its verb
     properties['glue'] = {'type': 'boolean', 'description': 'Keep these settings through unset all.'}
+    properties['confirm'] = {'type': 'boolean', 'description': 'The person confirmed a choice that lets an agent act '
+                                                               'without asking; without it such a choice is refused.'}
     return {'type': 'object', 'properties': properties, 'additionalProperties': False}
 
 
@@ -213,6 +215,15 @@ CHASSIS: dict[str, tuple[str, dict[str, Any]]] = {
                  {'type': 'object', 'additionalProperties': False,
                   'properties': {'id': _text('The project id: lowercase letters, digits, - and _. Without it, the '
                                              "folder's name.")}}),
+    'skills': (('List discoverable skills, load a skill with fresh libs, or read one of its files. '
+                'A name or logic.skill.<name> address loads internal skills too. Always available.'),
+               {'type': 'object', 'additionalProperties': False, 'properties': {
+                   'op': {'type': 'string', 'enum': ['list', 'load', 'read'],
+                          'description': 'list by default, load the procedure and libs, or read one file.'},
+                   'name': _text('The skill name or logic.skill.<name> address, required for load and read.'),
+                   'path': _text('The relative skill file path, required for read.'),
+                   'all': {'type': 'boolean', 'description': 'Include internal skills in an administrative list.'},
+                   'project': PROJECT}}),
 }
 ORIGIN = _text('The origin, by its short id; without it, the project\'s selected origin, the one established last.')
 CONFIRM = {'type': 'boolean', 'description': 'Run it. Without it the tool only explains.'}
@@ -279,7 +290,7 @@ SURFACED: dict[str, tuple[str, dict[str, Any]]] = {
 # annotations, MCP-003. add_variant can remove the worktree it collects.
 CHASSIS_EFFECTS: dict[str, Effect] = {
     'set': 'write', 'feedback': 'write', 'list_reports': 'read', 'read_report': 'read', 'instructions': 'read',
-    'register': 'write', 'add_origin': 'write', 'list_origins': 'read', 'add_variant': 'remove',
+    'register': 'write', 'skills': 'read', 'add_origin': 'write', 'list_origins': 'read', 'add_variant': 'remove',
     'list_variants': 'read', 'prompts': 'read', 'prompt': 'read', 'save_prompt': 'write', 'clear_project': 'remove',
     'extract': 'write'}
 # The chassis tools whose result is text, not data, so it has no structured form.
@@ -366,6 +377,7 @@ def run_set(folder: Path, arguments: dict[str, Any], consented: bool = False) ->
     """The `set` tool stores settings for the server's folder, as `metaform set` would, PROJ-005 and CLI-033.
     `consented`: the person gave the person-only values among them in their AI tool, so they are not refused."""
     glue = arguments.pop('glue', False)
+    confirm = arguments.pop('confirm', False) is True or consented  # a person's own answer to the form confirms it
     changes: list[dict[str, Any]] = []
     notices: list[dict[str, str]] = []
     try:
@@ -381,6 +393,9 @@ def run_set(folder: Path, arguments: dict[str, Any], consented: bool = False) ->
                 settings.checked(key, value, folder, typed=True)
             except settings.SettingError as error:
                 raise Stop(str(error), error.next_step or 'metaform help switches') from None
+            if not confirm and (risked := settings.risk(key, value, folder)):
+                raise Stop(f'{key} {value} is stored only when the person confirms it: {risked}',
+                           'ask the person, then call set again with confirm true')
         for key, value in typed.items():
             try:
                 old, new, noted = settings.put(key, value, folder, glue=glue)
@@ -397,8 +412,7 @@ def run_set(folder: Path, arguments: dict[str, Any], consented: bool = False) ->
 
 
 def run_chassis(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
-    """`feedback`, `list_reports`, `read_report` and `instructions`: always on the surface, so an agent can always
-    report and read what it is to do."""
+    """The always-available chassis tools: an agent can report, read instructions and load skills on any surface."""
     notices: list[str] = []
     try:
         given = _checked(name, arguments, CHASSIS[name][1], notices)
@@ -416,11 +430,66 @@ def run_chassis(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
             result = instructions(folder, project, surface='mcp')
         elif name == 'register':
             result = result_json(register(folder, given.get('id')))
+        elif name == 'skills':
+            result = result_json(run_skills(given))
         else:
             result = read_report(folder, given['name'], project=project)
     except Stop as stop:
         return _error(stop, folder)
     return False, (['\n'.join(notices)] if notices else []) + [result]
+
+
+def run_skills(given: dict[str, Any]) -> dict[str, Any]:
+    """The universal BASE-059 skill surface, independent of the workflow module's enabled state."""
+    from metaform import skills
+    op = given.get('op', 'list')
+    if op == 'list':
+        return {'skills': skills.listing(discoverable=not given.get('all', False))}
+    if op not in ('load', 'read'):
+        raise Stop(f'No skills operation {op}.', f'call {OWN}_skills with op=list, load or read')
+    name = given.get('name')
+    if not name:
+        raise Stop(f'skills {op} needs name.', schema_step(f'{OWN}_skills'))
+    if op == 'load':
+        return skills.load(name)
+    path = given.get('path')
+    if not path:
+        raise Stop('skills read needs path.', schema_step(f'{OWN}_skills'))
+    return {'name': name, 'path': path, 'text': skills.read(name, path)}
+
+
+def client_name(ctx: Any) -> str | None:
+    """Use the connecting request's identity, including modern per-request metadata, before session identity."""
+    params = getattr(ctx, 'params', None)
+    if isinstance(params, dict):
+        given = cast(dict[str, Any], params)
+        meta = given.get('_meta')
+        info: Any = given.get('clientInfo') or (cast(dict[str, Any], meta).get('io.modelcontextprotocol/clientInfo')
+                                                if isinstance(meta, dict) else None)
+        if isinstance(info, dict):
+            name = cast(dict[str, Any], info).get('name')
+            if isinstance(name, str):
+                return name
+    initialized = ctx.session.client_params
+    return initialized.client_info.name if initialized is not None else None
+
+
+def skill_index(folder: Path, client: str | None = None) -> str:
+    """Fallback discovery only where a completed native deployment does not provide it, BASE-059."""
+    from metaform import install, skills
+    mode = settings.value('skill_index', folder)
+    if mode == 'off' or (mode == 'auto' and client and install.skills_deployed(client)):
+        return ''
+    entries = skills.listing(discoverable=True)
+    if not entries:
+        return ''
+    lines = '\n'.join(f'{one["name"]}: {one["description"]}' for one in entries)
+    return prompt_files.module('mcp', 'skill_index', skills=lines) or ''
+
+
+def connect_instructions(folder: Path, client: str | None = None) -> str:
+    """The usual startup instructions followed by the connecting harness's fallback skill discovery."""
+    return '\n'.join(one for one in (startup_instructions(folder), skill_index(folder, client)) if one)
 
 
 def project_id_for(folder: Path) -> str:
@@ -1338,8 +1407,7 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
         focus[viewer(ctx)] = {'address': said, 'tool': name, 'seq': int(held.get('seq', 0)) + 1}
 
     def client_of(ctx: Any) -> str | None:
-        initialized = ctx.session.client_params
-        return initialized.client_info.name if initialized is not None else None
+        return client_name(ctx)
 
     def tool(one: Listed, shown: bool) -> Any:
         hints = one.annotations()
@@ -1790,7 +1858,7 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
             except NewerStore as error:
                 return refused(ctx, error)
             if ctx.method in ('initialize', 'server/discover') and isinstance(result, dict):
-                composed = await anyio.to_thread.run_sync(startup_instructions, folder)
+                composed = await anyio.to_thread.run_sync(connect_instructions, folder, client_of(ctx))
                 result = {**cast(dict[str, Any], result), 'instructions': composed}
             return result
     server.middleware.append(live)

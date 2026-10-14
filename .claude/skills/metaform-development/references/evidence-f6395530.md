@@ -1,0 +1,1 @@
+What happened to your runs:** within a minute of the start hook going live, another session started Metaform on its scratch home (`…/03f6ea00…/scratchpad/wave2-tests/home`). That home is a full copy of `~/.metaform`, so it has project `metaform` at `/home/rich/metaform`. Its start hook moved all five runs (448M) into that scratch home.

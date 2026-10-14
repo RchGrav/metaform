@@ -394,11 +394,11 @@ def _folder() -> Path:
     included."""
     stamp = datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')
     root = home.home() / 'builds'
-    root.mkdir(parents=True, exist_ok=True)
+    home.mkdir_private(root)
     folder, number = root / stamp, 1
     while True:
         try:
-            folder.mkdir()
+            folder.mkdir(mode=0o700)
             return folder
         except FileExistsError:
             number += 1
@@ -410,6 +410,7 @@ def _written(path: Path, write: Callable[[Path], object]) -> None:
     part way, by an error or by the web GUI's server stopping, never leaves a file that looks finished."""
     partial = path.with_name(path.name + '.part')
     try:
+        home.write_private(partial, b'')
         write(partial)
         os.replace(partial, path)
     finally:
@@ -489,7 +490,7 @@ def make(request: Request, folder: Path | None = None,
 
     _written(wheel, zipped)
     if prompt is not None:
-        (target / 'prompt.md').write_text(prompt, encoding='utf-8')
+        home.write_private(target / 'prompt.md', prompt)
     if chosen.kind in ('installer', 'full'):  # what install registers; a project wheel is for a remote agent, MCP-010
         home.set_meta('last_build', str(wheel))
     return Built(wheel, chosen.kind, chosen.project, tuple(item.id for item in carried), tuple(told + compiled),

@@ -23,6 +23,7 @@ import inspect
 import json
 import mimetypes
 import os
+import re
 import secrets
 import shlex
 import shutil
@@ -498,6 +499,22 @@ def option_words(agent: str, key: str) -> Callable[[Context], dict[str, str]]:
     return words
 
 
+# A value that lets the agent act without asking, named so by the agents that offer one, as bypassPermissions, yolo or
+# full access are: choosing it as the agent's default is confirmed on every surface, as the page's session bar confirms
+# it for one session, VIEW-039.
+SKIPS_PROMPTS = re.compile(r'bypass|yolo|full[-_ ]?access|danger|skip[-_ ]?perm|no[-_ ]?approv|never[-_ ]?ask|'
+                           r'without[-_ ]?ask', re.IGNORECASE)
+
+
+def option_risky(agent: str, key: str) -> Callable[[Context], list[str]]:
+    """The values the agent offered for the option that skip its own permission prompts."""
+    def risky(ctx: Context) -> list[str]:
+        offered = offered_option(ctx.store, agent, key) or {}
+        return [str(choice.get('value')) for choice in cast(list[dict[str, Any]], offered.get('options') or [])
+                if SKIPS_PROMPTS.search(f'{choice.get("value")} {choice.get("name")}')]
+    return risky
+
+
 def chosen_options(ctx: Context, agent: str) -> dict[str, str]:
     """An agent's options as its settings give them, by category or id; one left at default is left out."""
     found: dict[str, str] = {}
@@ -512,6 +529,7 @@ for _agent, (_name, _command) in AGENTS.items():
     for _key, _label, _option in option_settings(_agent):
         settings.choice(_key, option_choices(_agent, _option), AGENT_DEFAULT, person_only=True, label=_label,
                         section=f'Agent options/{_name}', choice_help=option_words(_agent, _option),
+                        risky=option_risky(_agent, _option),
                         help=f'{_name}\'s {_label.lower()} for every session it starts here: a value it offers, or '
                              f'default to leave it to {_name}.',
                         details=f'The choices are what {_name} offered at its last session in this project; until it '
@@ -565,8 +583,9 @@ def migrate_agent_options(ctx: Context | None = None) -> list[str]:
             said.append(f'{scope}: {key} = {value}')
         home.clear(scope, 'dispatch', 'dispatch_agent_options')
         home.set_glue(scope, 'dispatch', 'dispatch_agent_options', False)
-    if not unread:
-        marker.write_text('\n'.join(said) + '\n', encoding='utf-8')
+    if not unread:  # the home is its owner's alone, so the marker is made 0600
+        with os.fdopen(os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w', encoding='utf-8') as out:
+            out.write('\n'.join(said) + '\n')
     return said
 
 
@@ -575,7 +594,7 @@ def migrate_agent_options(ctx: Context | None = None) -> list[str]:
 # search and asks for anything else; ask_all asks every one as a question at the ticket's node, BASE-052.
 PROMPTS = ['approve-all', 'approve-reads', 'ask_all']
 READS = ('read', 'search')  # the tool kinds of ACP that only read
-settings.choice('dispatch_prompts', PROMPTS, 'ask_all', person_only=True,
+settings.choice('dispatch_prompts', PROMPTS, 'ask_all', person_only=True, risky=('approve-all',),
                 help='How an agent\'s permission prompts are answered: approve-all, approve-reads or ask_all.',
                 choice_help={
                     'approve-all': 'Allow everything without asking: the agent runs commands, edits and deletes files '
@@ -1251,6 +1270,18 @@ def billable(counts: dict[str, int | None]) -> int:
     return count('input') + count('output') + count('cache_write') + -(-count('cache_read') // 10)
 
 
+def spend_rows(store: Store, where: dict[str, str]) -> list[dict[str, Any]]:
+    """Spend matching the filters across every base of this project, including bases not active or bound now."""
+    rows: list[dict[str, Any]] = []
+    for base in Store(store.project_id).bases(limit=0).results:
+        try:
+            with Store(store.project_id, base=base.id, module='dispatch').tables(write=False) as tx:
+                rows.extend(dict(row) for row in tx.rows('spend', where, limit=0).results)
+        except StoreError:
+            continue
+    return rows
+
+
 def spent(store: Store, *, work_id: str | None = None, run: str | None = None,
           day: str | None = None) -> dict[str, Any]:
     """What was spent on a ticket, by a run or on a UTC day: the billable tokens the agents reported at each turn's
@@ -1259,11 +1290,7 @@ def spent(store: Store, *, work_id: str | None = None, run: str | None = None,
     can see, `unmetered`: under tokens those whose agent reported no usage at all, under cost those whose agent
     reports tokens but no cost, as codex-acp does."""
     where = {key: value for key, value in (('work_id', work_id), ('run', run), ('day', day)) if value}
-    try:
-        with own_store(store).tables(write=False) as tx:
-            rows: list[dict[str, Any]] = [dict(row) for row in tx.rows('spend', where, limit=0).results]
-    except StoreError:
-        rows = []
+    rows = spend_rows(store, where)
     sessions = {str(row['session_id']) for row in rows}
     tokened = {str(row['session_id']) for row in rows if row['cost'] is None and row['metered'] in (None, True, 1)}
     costed = {str(row['session_id']) for row in rows if row['cost'] is not None}
@@ -1300,11 +1327,14 @@ def over_budget(ctx: Context, store: Store, *, work_id: str | None = None, run: 
     of 0 sets no limit, M01. `pending` is a turn's provisional token estimate, counted on the token budgets. A cost
     budget is held against each currency's own sum, never a sum across currencies."""
     given = {'work_id': work_id, 'run': run, 'day': today()}
+    totals: dict[str, dict[str, Any]] = {}
     for key, field, name, measure in BUDGETS:
         limit, value = int(ctx.setting(key) or 0), given[field]
         if not limit or not value:
             continue
-        held = spent(store, **{field: value})
+        if field not in totals:
+            totals[field] = spent(store, **{field: value})
+        held = totals[field]
         currency = None
         if measure == 'tokens':
             used = int(held['tokens']) + pending
@@ -1408,13 +1438,6 @@ def summoned(row: dict[str, Any]) -> bool:
     return isinstance(pid, int) and any(word.startswith(('question=', 'prep=', 'system=')) for word in command_line(pid))
 
 
-def seated(row: dict[str, Any]) -> bool:
-    """A roundtable seat's session, BASE-066: its runner was started with seat=. It is neither a worker nor an agent
-    the person summoned, so it takes no agent slot; the table it sits at starts and stops it."""
-    pid = row.get('pid')
-    return isinstance(pid, int) and any(word.startswith('seat=') for word in command_line(pid))
-
-
 STALE_START = 180  # seconds a start may take before its reservation is taken for a start that died
 
 
@@ -1444,6 +1467,29 @@ def autostart(ctx: Context) -> dict[str, Any]:
     return {**started, **connected, **({'retry_due': min(due)} if due else {})}
 
 
+MARKERS = {'trouble': 'This part is marked trouble: it does not do its job. Fix it as the note says.',
+           'broken': 'This part is marked broken: it does not do its job. Fix it as the note says.',
+           'missing': 'This part is marked missing: it should exist and does not. Build it as the note says.'}
+
+
+def marker_task(record: WorkRecord) -> str:
+    """The task of a marker that came with none, MAP-046's amendment of 2026-10-14: its note, then what to do."""
+    note = (record.note or '').strip()
+    return f'{note}\n\n{MARKERS[record.condition]}' if note else MARKERS[record.condition]
+
+
+def one_node(a: WorkRecord, b: WorkRecord) -> bool:
+    """Whether two work records are at one node: the same element or purpose record, or an element and a purpose
+    record that holds it or that it holds."""
+    if (a.node_kind, a.node_id) == (b.node_kind, b.node_id):
+        return True
+    for element, join in ((a, b), (b, a)):
+        if element.node_kind == 'element' and join.node_kind == 'join' and \
+                element.address in (join.receiver_address, join.provider_address):
+            return True
+    return False
+
+
 def start_work(ctx: Context, store: Store, recovered: dict[str, Any]) -> dict[str, Any]:
     """The tickets the agent starter starts and the workers' sessions the supervisor resumes, `autostart`, only while
     Autostart agents is checked."""
@@ -1471,10 +1517,11 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any]) -> dict[st
         opened = store.work(open=True, limit=0).results
         open_work = [record for record in opened
                      if not kept.get(record.id, {}).get('hold')]
-        candidates = [record for record in open_work if not record.taken and (record.task or '').strip()]
+        candidates = [record for record in open_work
+                      if not record.taken and ((record.task or '').strip() or record.condition in MARKERS)]
         active = [row for row in sessions(store, open_work=opened) if row['state'] == 'running']
         editing = {row['work_id'] for row in active if editor(row)}  # the person's editor sessions take no slot
-        workers = [row for row in active if not summoned(row) and not editor(row) and not seated(row)]
+        workers = [row for row in active if not summoned(row) and not editor(row)]
         candidates.sort(key=lambda record: (record.held, record.position is None, record.position or 0))
         glyph = {work_id: held.get('glyph') for work_id, held in kept.items()}
         occupied = {glyph.get(row['work_id']) for row in active} - {None}
@@ -1504,6 +1551,14 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any]) -> dict[st
             mark = glyph.get(record.id)
             if mark is not None and mark in occupied:
                 continue
+            # A marker waits behind a ticket held or taken at its node, and its node starts one marker at a time,
+            # MAP-046's amendment of 2026-10-14.
+            if record.condition in MARKERS and (
+                    any(other.id != record.id and one_node(record, other) and (
+                        (other.taken and other not in stale) or other.held or kept.get(other.id, {}).get('hold'))
+                        for other in opened)
+                    or any(one_node(record, other) for other, _, _ in reserved if other.condition in MARKERS)):
+                continue
             raw: Any = kept.get(record.id, {}).get('eligible', [])
             if not isinstance(raw, list) or any(not isinstance(agent, str) for agent in cast(list[Any], raw)):
                 continue  # unreadable eligibility is refused, as by the individual start check
@@ -1524,6 +1579,8 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any]) -> dict[st
             if over_budget(ctx, store, work_id=record.id) is not None:  # its own budget spent, M01
                 continue
             reservation = 'dispatch starting ' + secrets.token_hex(16)
+            if not (record.task or '').strip():  # a marker with no task, from the person or a critic
+                store.edit_work(record.id, {'task': marker_task(record)})
             store.take_work(record.id, by=reservation)
             reserved.append((record, agent, reservation))
             capacity -= 1
@@ -1927,31 +1984,6 @@ def prep(ctx: Context) -> dict[str, Any]:
     return {'state': 'starting', 'work_id': work_id, 'agent': agent, 'pid': process.pid, 'log': log}
 
 
-def seat(ctx: Context) -> dict[str, Any]:
-    """Start an agent as a seat at a roundtable, BASE-066: one session on the table's held ticket, which it never
-    takes, that lasts until the table stops it. It is sent no turn of dispatch's own: each of its turns is the table's,
-    through `message`. Its session state names the seat, so the table finds it among the sessions on the ticket; its
-    model is the one the seat names, over every other choice; it reads and never writes, and it runs on the agent's
-    own login, never an API key, `runner`."""
-    may_steer(ctx)
-    store = ctx.require_store()
-    agent, work_id, named = agent_named(str(ctx.nouns['agent'])), str(ctx.nouns['id']), str(ctx.nouns['seat'])
-    runnable(ctx, agent)
-    record = ticket(store, work_id)
-    if record.done:
-        raise Stop(f'Work {work_id} was done at {record.done}.', 'metaform map work open=true')
-    model = str(ctx.nouns.get('model') or '').strip()
-    log = os.path.join(tempfile.gettempdir(), f'metaform-dispatch-seat-{work_id}.log')
-    with open(log, 'ab') as written:
-        process = subprocess.Popen([sys.executable, '-m', 'metaform', 'dispatch', 'run', work_id, agent,
-                                    f'seat={named}',
-                                    *([f'chosen={json.dumps({"model": model})}'] if model else []),
-                                    '--project', store.project_id],
-                                   cwd=store.project().path, stdin=subprocess.DEVNULL, stdout=written, stderr=written,
-                                   env=child_environment(), **group_options())
-    return {'state': 'starting', 'work_id': work_id, 'agent': agent, 'seat': named, 'pid': process.pid, 'log': log}
-
-
 SYSTEM_TASK = 'Conversation with the system agent'  # the ticket that anchors the person's system agent chat; held, so no agent works it
 
 
@@ -2121,7 +2153,7 @@ def summon_room(ctx: Context, store: Store) -> int:
         launching = [row for row in tx.rows('raised', by=('seq',), limit=0).results if row['started'] is not None
                      and row['work_id'] not in made and time.time() - row['started'] < STALE_START]
     working = ({record.id for record in opened if record.taken and not record.done} - chatting) | {
-        row['work_id'] for row in active if not summoned(row) and not editor(row) and not seated(row)}
+        row['work_id'] for row in active if not summoned(row) and not editor(row)}
     free = max(0, int(ctx.setting('dispatch_agents')) - len(working))
     return max(0, 1 + free - len(called) - len(launching))
 
@@ -2409,14 +2441,14 @@ def attach(ctx: Context) -> dict[str, Any]:
     ident = secrets.token_hex(8)
     session_id = str(row['session_id'])
     target = folder / PUBLISHED / ''.join(char for char in session_id if char.isalnum() or char in '_-') / ident
-    target.mkdir(parents=True, exist_ok=True)
+    home.mkdir_private(target)
     data = source.read_bytes()
-    (target / safe).write_bytes(data)
+    home.write_private(target / safe, data)
     meta = {'id': ident, 'name': safe, 'size': len(data), 'type': mimetypes.guess_type(safe)[0] or
             'application/octet-stream', 'sha256': hashlib.sha256(data).hexdigest(),
             'source': source.relative_to(root).as_posix(), 'work_id': work, 'session_id': session_id,
             'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
-    (target / 'meta.json').write_text(json.dumps(meta, ensure_ascii=False), encoding='utf-8')
+    home.write_private(target / 'meta.json', json.dumps(meta, ensure_ascii=False))
     def taken_back() -> None:  # a file the chat did not take leaves nothing behind
         shutil.rmtree(target, ignore_errors=True)
         try:
@@ -2681,6 +2713,22 @@ def threaded(lines: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[st
 SUBAGENTS_READ = 50  # the most of a running session's subagents the agents key reads, for their figures
 
 
+def latest_message(rows: Sequence[Any], session_id: str) -> dict[str, Any] | None:
+    """A bounded public line for the map, from this session alone. No tools or private thinking leave here.
+
+    Rows arrive from this session's ascending index. A later record marks the streamed message complete,
+    even when that record is a tool call or thinking.
+    """
+    message = next((row for row in reversed(rows)
+                    if row['kind'] == 'agent_message_chunk' and str(row['text']).strip()), None)
+    if message is None:
+        return None
+    text = next((line.strip() for line in reversed(str(message['text']).splitlines()) if line.strip()), '')
+    return {'session_id': session_id, 'name': message['name'], 'seq': message['seq'],
+            'kind': 'agent_message_chunk', 'text': text[:600],
+            'complete': bool(rows and rows[-1]['seq'] > message['seq'])}
+
+
 def read_sessions(ctx: Context) -> dict[str, Any]:
     """The sessions of one ticket or of every ticket, each with the lines of its thread in order, for the page's agent
     window and a node's work history, VIEW-036 and VIEW-039; with thread=false, the sessions alone, for the agents key.
@@ -2698,6 +2746,11 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
     try:
         with store.tables(write=False) as tx:
             for session in found:
+                session_lines = None
+                if session.get('state') == 'running' and (ctx.nouns.get('thread') is False or since is None):
+                    session_lines = tx.rows('lines', {'session_id': session['session_id']},
+                                            by=('session_id', 'seq'), limit=0).results
+                    session['latest_message'] = latest_message(session_lines, str(session['session_id']))
                 if ctx.nouns.get('thread') is not False and since is not None:
                     # Only the lines begun after `since`, one range of the (session_id, seq) index read from the
                     # cursor at that seq, for a caller that polls a thread; a line grown in place keeps the seq it
@@ -2709,8 +2762,9 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
                     lines += [dict(row) for row in tx.rows('lines', {'session_id': session['session_id'],
                                                                      'name': 'state'}, limit=1).results]
                 elif ctx.nouns.get('thread') is not False:
-                    lines += [dict(row) for row in tx.rows('lines', {'session_id': session['session_id']},
-                                                           by=('session_id', 'seq'), limit=0).results]
+                    lines += [dict(row) for row in (session_lines if session_lines is not None else
+                              tx.rows('lines', {'session_id': session['session_id']},
+                                      by=('session_id', 'seq'), limit=0).results)]
                 else:
                     lines += [dict(row) for row in tx.rows('lines', {'session_id': session['session_id'],
                                                                      'name': 'state'}, limit=1).results]
@@ -2738,7 +2792,17 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
                                                               by=('session_id', 'seq'), limit=0).results]
             except StoreError:
                 pass
-        children.append({**child, 'parent': line['session_id'], 'lines': threaded(own_lines)[0]})
+        summary = latest_message(own_lines, str(child.get('session_id') or ''))
+        if ctx.nouns.get('thread') is False:
+            try:
+                with store.tables(write=False) as tx:
+                    child_id = str(child.get('session_id') or '')
+                    summary = latest_message(tx.rows('lines', {'session_id': child_id},
+                                                     by=('session_id', 'seq'), limit=0).results, child_id)
+            except StoreError:
+                pass
+        children.append({**child, 'parent': line['session_id'], 'lines': threaded(own_lines)[0],
+                         'latest_message': summary})
     if ctx.nouns.get('thread') is False:
         lines = []
     from .signals import rows
@@ -2878,9 +2942,14 @@ def publication(ctx: Context) -> dict[str, Any]:
     out = ctx.nouns.get('out')
     if out:
         folder = Path(str(out)).expanduser() / agent_id
-        folder.mkdir(parents=True, exist_ok=True)
-        (folder / 'agent.json').write_text(json.dumps(built['entry'], indent=2) + '\n', encoding='utf-8')
-        (folder / 'icon.svg').write_text(built['icon'], encoding='utf-8')
+        if home.is_home_path(folder):
+            home.mkdir_private(folder)
+            home.write_private(folder / 'agent.json', json.dumps(built['entry'], indent=2) + '\n')
+            home.write_private(folder / 'icon.svg', built['icon'])
+        else:
+            folder.mkdir(parents=True, exist_ok=True)
+            (folder / 'agent.json').write_text(json.dumps(built['entry'], indent=2) + '\n', encoding='utf-8')
+            (folder / 'icon.svg').write_text(built['icon'], encoding='utf-8')
         result['written'] = [str(folder / 'agent.json'), str(folder / 'icon.svg')]
     return result
 
@@ -3154,11 +3223,7 @@ def spend_read(ctx: Context) -> dict[str, Any]:
     budget can see."""
     store = ctx.require_store()
     day = today()
-    try:
-        with own_store(store).tables(write=False) as tx:
-            runs = sorted({str(row['run']) for row in tx.rows('spend', {'day': day}, limit=0).results})
-    except StoreError:
-        runs = []
+    runs = sorted({str(row['run']) for row in spend_rows(store, {'day': day})})
 
     def budgets(*keys: str) -> dict[str, int]:
         return {key.removeprefix('dispatch_budget_'): int(ctx.setting(key) or 0) for key in keys}
@@ -3201,7 +3266,8 @@ MODULE = Module(
              'Read the signals raised on agent sessions, such as an agent that stopped with its ticket open. With '
              'active=false, the cleared ones too.',
              nouns=(Noun('id', 'A work id; omit for every ticket.', required=False),
-                    Noun('active', 'true reads waiting signals, false reads cleared signals.', kind='bool', required=False)), effect='read'),
+                    Noun('active', 'true reads waiting signals, false reads cleared signals.', kind='bool', required=False)),
+             open_world=True),  # with jev on and its triage chosen, the waiting signals go to Jev, spending credit
         Verb('wait', wait, 'Wait until a ticket is done, its agent stops with it open, or a signal is raised on it. '
                            'With no id, until any ticket of the project is, naming which. It answers pending with the '
                            'call to make next after dispatch_wait_seconds.',
@@ -3308,7 +3374,7 @@ MODULE = Module(
                     Noun('request', 'The permission request or question, as its line in the session\'s thread names it.'),
                     Noun('option', 'The option\'s id or name; for a question, the answer, or decline.', many=True)),
              examples=(('metaform dispatch permit 198452e1... 7c1e... -- allow', 'Answers with the option allow.'),),
-             surfaces=('cli',)),
+             surfaces=('cli',), open_world=True),
         Verb('configure', configure, 'Set one of a running agent session\'s settings as its agent offers them: its '
                                      'mode, its model or another option, by the setting\'s id.',
              nouns=(Noun('id', 'The work id of the agent\'s ticket, or an intake agent\'s work id.'),
@@ -3316,7 +3382,7 @@ MODULE = Module(
                     Noun('value', 'A choice\'s value or name, or on or off for a switch.', many=True)),
              examples=(('metaform dispatch configure 198452e1... model -- opus', 'Sets the session\'s model.'),
                        ('metaform dispatch configure 198452e1... mode -- plan', 'Sets the session\'s mode.')),
-             surfaces=('cli',)),
+             surfaces=('cli',), open_world=True),
         Verb('raise', raise_issue, 'Raise an issue on a node: a sentinel investigates it and brings proposals to the chat; '
                                    'the person chooses one, and it becomes held tickets.',
              nouns=(Noun('node', 'The address of the part the issue is about.'),
@@ -3324,7 +3390,7 @@ MODULE = Module(
                     Noun('text', 'What is wrong, in the person\'s words.', many=True)),
              examples=(('metaform dispatch raise code.alarm.audible -- "The alarm plays twice when the timer ends."',
                         'Starts the sentinel on the alarm with that report.'),),
-             surfaces=('cli',)),
+             surfaces=('cli',), open_world=True),
         Verb('propose', propose, "Record a sentinel's proposals for the issue it was raised on, for the person to "
                                  'choose one on the page. Each is presented beside the part of the map it reserves.',
              nouns=(Noun('issue', 'The work id of the issue the sentinel was raised on.'),
@@ -3348,12 +3414,6 @@ MODULE = Module(
                     Noun('agent', 'claude, codex or gemini.', required=False)), open_world=True),
         Verb('prep', prep, "Start an agent in a merge's worktree to prepare its code for the person's review.",
              nouns=(Noun('id', 'The work id of the ticket whose merge is under review.'),), open_world=True),
-        Verb('seat', seat, 'Start an agent as a roundtable seat on the table\'s held ticket: a session that reads, '
-                           'never writes, and takes each turn the table sends it.',
-             nouns=(Noun('id', 'The work id of the table\'s held ticket.'), Noun('agent', 'claude, codex or gemini.'),
-                    Noun('seat', 'The seat, as the table names it; the session\'s state keeps it.'),
-                    Noun('model', 'The model the seat names, a value its agent offers.', required=False)),
-             surfaces=('cli',), open_world=True),
         Verb('run', run, 'Run one ticket\'s ACP session in this process until it ends. start runs it detached.',
              nouns=(Noun('id', 'The work id of the ticket.'), Noun('agent', 'claude, codex or gemini.'),
                     Noun('prep', 'true: help the person prepare a merge under review, in its worktree, VIEW-044.',
@@ -3374,10 +3434,8 @@ MODULE = Module(
                     Noun('run', 'The run whose budget it spends against, a retry\'s the run of the session it resumes.',
                          required=False),
                     Noun('chosen', 'Jev\'s choice of model and effort, as JSON by ACP category, applied under the '
-                                   'person\'s own; a seat\'s model, applied over them.', required=False),
-                    Noun('seat', 'A roundtable seat, as the table names it: no first turn, reads only, the agent\'s '
-                                 'own login.', required=False)),
-             switches=('dispatch_claude', 'dispatch_codex', 'dispatch_gemini'), surfaces=('cli',)),
+                                   'person\'s own.', required=False)),
+             switches=('dispatch_claude', 'dispatch_codex', 'dispatch_gemini'), surfaces=('cli',), open_world=True),
         Verb('message', message, 'Send a person\'s message to the agent working a ticket.',
              nouns=(Noun('id', 'The work id of the ticket.'),
                     Noun('session', 'The chat session id, for one of several sessions on the ticket; the latest when '
@@ -3405,7 +3463,7 @@ MODULE = Module(
                     Noun('text', 'What it wakes you for, said to you when it is due.', many=True, required=False)),
              examples=(('metaform dispatch timer seconds=30 -- "see if the person looked at the figure"',
                         'Wakes this session in 30 seconds with that note.'),
-                       ('metaform dispatch timer cancel=1a2b3c4d', 'Takes that timer back.')), open_world=False),
+                       ('metaform dispatch timer cancel=1a2b3c4d', 'Takes that timer back.')), open_world=True),
         Verb('attach', attach, 'Attach a file you made to your own chat, for the person to download there.',
              nouns=(Noun('path', 'The file, in the project; a path from the project folder or your working folder.'),
                     Noun('name', 'The name the person sees and downloads it as; the file\'s own when none is given.',
@@ -3454,7 +3512,8 @@ MODULE = Module(
                          required=False),
                     Noun('effort', 'A thought level its agent offers, as dispatch options lists it; none clears it.',
                          required=False)),
-             examples=(('metaform dispatch tune 198452e1... model=opus effort=high', 'Sets both for this ticket.'),)),
+             examples=(('metaform dispatch tune 198452e1... model=opus effort=high', 'Sets both for this ticket.'),),
+             open_world=True),
         Verb('cancel', cancel, 'Cancel a ticket, the person\'s own: its agent\'s turn is cancelled with session/cancel, '
                                'its session ends, and the ticket is closed with the outcome cancelled, never completed.',
              nouns=(Noun('id', 'The work id of the ticket.'),
@@ -3466,7 +3525,7 @@ MODULE = Module(
              nouns=(Noun('agent', 'claude, codex or gemini.'),
                     Noun('method', 'The id of one of the agent\'s auth methods.', required=False)),
              examples=(('metaform dispatch login codex', 'Lists the ways Codex can log in, or uses its only one.'),),
-             surfaces=('cli',)),
+             surfaces=('cli',), open_world=True),
         Verb('spend', spend_read, 'Read what agents have spent today, on a ticket and by run, in billable tokens and '
                                   'reported cost, against the budgets; sessions that report no usage are named.',
              nouns=(Noun('id', 'A work id, for that ticket\'s spend too.', required=False),),

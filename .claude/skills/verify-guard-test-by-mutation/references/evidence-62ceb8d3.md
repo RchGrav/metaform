@@ -1,0 +1,1 @@
+I found that one of table 6's checks was passing for the wrong reason—it matched the seat's second reply instead of the lost first reply. I'll tighten that check to require the held text.

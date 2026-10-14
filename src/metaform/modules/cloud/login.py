@@ -169,7 +169,7 @@ def save(made: Credentials) -> None:
     """Written whole to a temporary file the owner alone reads, then moved over the old one, so a crash never leaves
     half a file and the refresh token is never readable by anyone else, even for a moment."""
     path = credentials_file()
-    path.parent.mkdir(parents=True, exist_ok=True)
+    home.mkdir_private(path.parent)
     with contextlib.suppress(OSError):
         path.parent.chmod(0o700)
     temporary = path.with_name(f'.credentials.{secrets.token_hex(4)}.tmp')

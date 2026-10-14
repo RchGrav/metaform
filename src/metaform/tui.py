@@ -50,11 +50,13 @@ class _Owner:
 
 @dataclass(frozen=True)
 class _Stored:
-    """One setting as the folder holds it: its value, and whether it is set or glued."""
+    """One setting as the folder holds it: its value, whether it is set or glued here, and the folder above it is
+    inherited from, if any."""
     key: str
     value: Any
     saved: bool
     glued: bool
+    inherited: str | None = None
 
 
 class _Backend:
@@ -68,14 +70,16 @@ class _Backend:
 
     def rows(self) -> list[_Row]:
         found = loader.discover()  # cached; only enable and disable reset it, BASE-037
-        self.modules = {'chassis': _Owner(tuple(item for item in settings.SCHEMA.values() if item.owner == 'chassis'),
+        self.modules = {'chassis': _Owner(tuple(item for item in settings.SCHEMA.values()
+                                                if item.owner == 'chassis' and not item.per_call),
                                           description='Settings of the chassis itself.')}
         self.load_errors = {}
         rows = [_Row('chassis', True, str(self.root))]
         for item in sorted(found, key=lambda one: one.id.casefold()):  # the chassis first, then the modules by name
             if item.module is not None:
                 self.modules[item.id] = _Owner(
-                    tuple(setting for setting in settings.SCHEMA.values() if setting.owner == item.id),
+                    tuple(setting for setting in settings.SCHEMA.values()
+                          if setting.owner == item.id and not setting.per_call),  # per-call: given on its verb
                     description=item.module.summary, help=item.module.summary)  # the summary, for people; purpose is for agents
             if item.problem:
                 self.load_errors[item.id] = item.problem
@@ -86,8 +90,8 @@ class _Backend:
         return self.modules[owner]
 
     def describe(self, owner: str) -> list[_Stored]:
-        return [_Stored(str(row['key']), row['value'], row['state'] != 'default', row['state'] == 'glued')
-                for row in settings.describe(self.folder) if row['owner'] == owner]
+        return [_Stored(str(row['key']), row['value'], row['state'] in ('set', 'glued'), row['state'] == 'glued',
+                        row.get('from')) for row in settings.describe(self.folder) if row['owner'] == owner]
 
 
 STYLE = Style.from_dict({
@@ -119,6 +123,8 @@ HELP = ('SETUP KEYS\n\n'
         '                  choices opens a list to pick from; a section,\n'
         '                  marked ▸, opens its settings (→ also opens it,\n'
         '                  ← and Esc go back out)\n'
+        'Y / N             Confirm or refuse a choice that lets agents\n'
+        '                  act without asking; ← / → never step onto one\n'
         'Space             Stage module or boolean toggle\n'
         'F2                Selected module or setting help from its\n'
         '                  declaration\n'
@@ -149,6 +155,7 @@ class ChassisTUI:
         self.values: dict[Key, Any] = {}
         self.saved: dict[Key, bool] = {}
         self.glued: dict[Key, bool] = {}
+        self.inherited: dict[Key, str | None] = {}  # the folder above a value comes from, CLI-014
         self.module_index = 0
         self.setting_index = 0
         self.panel = 'modules'
@@ -159,6 +166,10 @@ class ChassisTUI:
         self.module_help_open = False
         self.quit_open = False
         self.preview_open = False
+        # A risky choice waits here for the person's yes before it is staged
+        self.confirm_open = False
+        self.confirm_target: tuple[str, settings.Setting, Any] | None = None
+        self.confirm_text = ''
         self.filter_text = ''
         self.filtering = False
         self.pending_settings: dict[Key, tuple[str, Any]] = {}
@@ -226,6 +237,10 @@ class ChassisTUI:
             'There are unsaved changes.\n\n'
             'S  Save and exit\nD  Discard and exit\nEsc  Continue editing'),
             height=7), padding=1), title='Save changes?', width=52)
+        confirm_dialog = Frame(Box(Window(FormattedTextControl(
+            lambda: f'{self.confirm_text}\n\nY  Yes, stage it\nN  No, keep what it is'),
+            wrap_lines=True, height=Dimension(max=10)), padding=1), title='Let agents act without asking?',
+            width=Dimension(preferred=64), style='class:error')
         self.preview_text = TextArea(read_only=True, scrollbar=True, wrap_lines=True)
         preview_dialog = Frame(self.preview_text, title='Pending changes · Esc closes',
                                width=Dimension(preferred=76), height=Dimension(preferred=22))
@@ -237,6 +252,7 @@ class ChassisTUI:
             Float(content=ConditionalContainer(pick_dialog, Condition(lambda: self.picking))),
             Float(content=ConditionalContainer(help_dialog, Condition(lambda: self.help_open))),
             Float(content=ConditionalContainer(quit_dialog, Condition(lambda: self.quit_open))),
+            Float(content=ConditionalContainer(confirm_dialog, Condition(lambda: self.confirm_open))),
             Float(content=ConditionalContainer(preview_dialog, Condition(lambda: self.preview_open))),
             Float(content=ConditionalContainer(module_help_dialog, Condition(lambda: self.module_help_open))),
         ])
@@ -361,8 +377,9 @@ class ChassisTUI:
             value = self._value(selected.id, setting)
             pending = self.pending_settings.get(identity)
             saved = pending[0] != 'reset' if pending else self.saved.get(identity, False)
-            state = 'glued' if self._glued(identity) else ('set' if saved else 'default')
-            row = setting_row(self._name(setting), value, state).replace('\n', '\\n')
+            source = None if pending else self.inherited.get(identity)
+            state = 'glued' if self._glued(identity) else ('set' if saved else 'inherited' if source else 'default')
+            row = setting_row(self._name(setting), value, state, source).replace('\n', '\\n')
             result.append((style, f' {">" if index == self.setting_index else " "}{row}\n'))
         return result
 
@@ -415,6 +432,7 @@ class ChassisTUI:
                     self.values[row.id, item.key] = item.value
                     self.saved[row.id, item.key] = item.saved
                     self.glued[row.id, item.key] = item.glued
+                    self.inherited[row.id, item.key] = item.inherited
                 self.definition_errors.pop(row.id, None)
             except Exception as error:  # noqa: BLE001  a group that cannot be described shows its error
                 self.definition_errors[row.id] = str(error)
@@ -529,10 +547,26 @@ class ChassisTUI:
 
     def _stage(self, module: str, setting: settings.Setting, value: Any) -> None:
         identity = (module, setting.key)
+        if value != self._value(module, setting) and (risked := settings.risk(setting.key, value, self.backend.folder)):
+            # a choice that lets agents act without asking is staged only on the person's yes
+            self.confirm_target, self.confirm_text, self.confirm_open = (module, setting, value), \
+                f'{setting.key}: {value}\n{risked}', True
+            return
+        self._put_stage(identity, setting, value)
+
+    def _confirm(self, yes: bool) -> None:
+        target, self.confirm_open, self.confirm_target = self.confirm_target, False, None
+        if yes and target is not None:
+            self._put_stage((target[0], target[1].key), target[1], target[2])
+        else:
+            self.message = 'Not staged; the value stays as it is.'
+
+    def _put_stage(self, identity: Key, setting: settings.Setting, value: Any) -> None:
         if value == self.values.get(identity, setting.default):
             self.pending_settings.pop(identity, None)
         else:
             self.pending_settings[identity] = ('set', value)
+        self.error = False
         self.message = 'Setting staged. S saves; P previews pending changes.'
 
     def _reset(self, group: bool = False) -> None:
@@ -542,15 +576,26 @@ class ChassisTUI:
         if not group and self.current is None:
             return
         entries = self.definitions[row.id].settings if group else (cast(settings.Setting, self.current),)
+        held: list[tuple[settings.Setting, str]] = []
         for setting in entries:
             identity = (row.id, setting.key)
             if self._glued(identity):
+                continue
+            if not self.saved.get(identity, False) and (source := self.inherited.get(identity)):
+                held.append((setting, source))  # held by a folder above: not this folder's to reset, CLI-014
+                self.pending_settings.pop(identity, None)
                 continue
             if self.saved.get(identity, False):
                 self.pending_settings[identity] = ('reset', None)
             else:
                 self.pending_settings.pop(identity, None)
         self.message = 'Defaults staged. S saves the change.'
+        if held:
+            setting, source = held[0]
+            more = f' {len(held) - 1} more inherited were left too.' if len(held) > 1 else ''
+            self.error = True
+            self.message = (f'{setting.key} is inherited from {source}; nothing is stored here to reset.{more} '
+                            f'Next: metaform unset {setting.switch} folder={source}')
 
     def _glued(self, identity: Key) -> bool:
         return self.pending_glue.get(identity, self.glued.get(identity, False))
@@ -662,7 +707,12 @@ class ChassisTUI:
             if not choices:
                 return False
             index = choices.index(value) + amount if value in choices else (0 if amount > 0 else -1)
-            self._stage(row.id, setting, choices[index % len(choices)])
+            chosen = choices[index % len(choices)]
+            if settings.risk(setting.key, chosen, self.backend.folder):
+                # a choice that lets agents act without asking is never reached by stepping, nor by wrapping round
+                self.message = f'{chosen} is not stepped onto: Enter opens the choices to pick and confirm it.'
+                return True
+            self._stage(row.id, setting, chosen)
         else:
             return False
         return True
@@ -790,7 +840,9 @@ class ChassisTUI:
             self._focus(self.panel)
 
     def _back(self) -> None:
-        if self.picking:
+        if self.confirm_open:
+            self._confirm(False)
+        elif self.picking:
             self._pick_close()
         elif self.module_help_open:
             self.module_help_open = False
@@ -821,11 +873,13 @@ class ChassisTUI:
     def _bindings(self) -> KeyBindings:
         keys = KeyBindings()
         browsing = Condition(lambda: not self.editing and not self.help_open and not self.quit_open
-                             and not self.preview_open and not self.module_help_open and not self.picking)
+                             and not self.preview_open and not self.module_help_open and not self.picking
+                             and not self.confirm_open)
         editable = browsing & Condition(lambda: not self.busy)
         dialogs_closed = Condition(lambda: not self.editing and not self.quit_open and not self.preview_open
-                                   and not self.module_help_open and not self.picking)
-        picking = Condition(lambda: self.picking)
+                                   and not self.module_help_open and not self.picking and not self.confirm_open)
+        picking = Condition(lambda: self.picking and not self.confirm_open)
+        confirming = Condition(lambda: self.confirm_open)
         quitting = Condition(lambda: self.quit_open)
 
         def bind(key: str, callback: Callable[[], object], filter: FilterOrBool = editable) -> None:
@@ -874,6 +928,10 @@ class ChassisTUI:
         for key in ('a', 'A'):
             bind(key, lambda: self._pick_check(everything=True), picking)
         bind('enter', self._pick_apply, picking)
+        for key in ('y', 'Y'):
+            bind(key, lambda: self._confirm(True), confirming)
+        for key in ('n', 'N'):
+            bind(key, lambda: self._confirm(False), confirming)
         bind('escape', self._back, True)
         bind('q', self._exit)
         bind('Q', self._exit)

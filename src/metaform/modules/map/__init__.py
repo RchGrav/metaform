@@ -19,7 +19,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
-from metaform import prompt_files, settings
+from metaform import home, prompt_files, settings
 from metaform.data import (
     CONDITIONS,
     PLACE_KINDS,
@@ -79,8 +79,11 @@ SHIPS_DISABLED = False
 REMOTE_AGENT = True  # reading and writing the map is the work a remote agent does
 DATA_SOURCE = 'storage.py'
 
-settings.boolean('raw', False, help='Read every stored layer, building, hidden and masked ones included.')
-settings.boolean('critic', False, help='map critic: the critic also reads the code and writes tickets; '
+# Given on the call alone, never stored: stored, raw would unmask every read below the folder, and critic would
+# silently make every blind-spot run the sighted one, LAYER-014.
+settings.boolean('raw', False, per_call=True,
+                 help='Read every stored layer, building, hidden and masked ones included.')
+settings.boolean('critic', False, per_call=True, help='map critic: the critic also reads the code and writes tickets; '
                  'fast mode, blind to the code, when off.')
 settings.boolean('tasks', True, help='Assign and track work on the map like a kanban. Turn it off when the project '
                  'keeps its own board.')
@@ -123,6 +126,10 @@ def _said(result: dict[str, Any], done: Any) -> dict[str, Any]:
     if notices:
         result['notices'] = notices
     return result
+
+
+BASE_SWITCH = ('This changes the active map for every agent and the page of the project. The previous base is kept; '
+               'map activate <its name> switches back.')
 
 
 def _other_project(ctx: Context) -> Store:
@@ -366,7 +373,11 @@ def _document(ctx: Context, verb: str, text: str) -> Any:
         return text
     path = Path(target) if Path(target).is_absolute() else ctx.folder / target
     try:
-        path.write_text(text, encoding='utf-8')
+        if home.is_home_path(path):
+            home.mkdir_private(path.parent)
+            home.write_private(path, text)
+        else:
+            path.write_text(text, encoding='utf-8')
     except OSError as error:
         raise Stop(f'The {verb} document could not be written to {path}: {error.strerror or error}.',
                    f'name a file in a folder that exists, or leave out file= and metaform map {verb} prints it') from None
@@ -1644,16 +1655,19 @@ MODULE = Module(
         Verb('bases', bases, "List the project's bases, the maps it keeps, and which one is active.",
              nouns=(_noun('project', 'A project id.'), *PAGING), effect='read'),
         Verb('add-base', add_base, 'Start a new, empty base for the project and make it the active map.',
-             nouns=(Noun('name', 'The base name.'), _noun('project', 'A project id.'))),
+             nouns=(Noun('name', 'The base name.'), _noun('project', 'A project id.')),
+             caution=BASE_SWITCH),
         Verb('activate', activate, "Make one of the project's bases the active map.",
-             nouns=(Noun('name', 'The base name.'), _noun('project', 'A project id.'))),
+             nouns=(Noun('name', 'The base name.'), _noun('project', 'A project id.')),
+             caution=BASE_SWITCH),
         Verb('remove-base', remove_base, 'Take one base out of the project; a copy of its store is kept.',
              nouns=(Noun('name', 'The base name.'), _noun('project', 'A project id.')),
              caution='Removes the base and its store; a copy is kept under backups/remove-base. The active base '
                      'is refused.', effect='remove'),
         Verb('collapse', collapse, 'Rewrite the current map as a new base of one base layer and make it active; the '
                                    'old one is kept whole. Each element and join is written once, with the same ids.',
-             nouns=(Noun('name', 'The new base name.'), _noun('project', 'A project id.'))),
+             nouns=(Noun('name', 'The new base name.'), _noun('project', 'A project id.')),
+             caution=BASE_SWITCH),
         Verb('promote', promote, 'Give a join an element of its own at an address, keeping the join and its history, '
                                  'memories and work.',
              nouns=(_noun('receiver', 'The address of the element that holds the join.'),

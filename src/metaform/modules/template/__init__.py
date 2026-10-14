@@ -83,7 +83,7 @@ act on, such as workflow's `assign`, declares neither.
 A module serves read-only texts over MCP with `resources=`, `Resource`s of
 `metaform.module`, each read through one of its verbs, MCP-037. A URI with
 `{field}` parts is a template, read by calling the verb with the fields as
-its nouns; the roundtable module's `submission` and `review` show it.
+its nouns.
 
 A module adds tools to the web GUI's toolbar with `toolbar=`, `ToolbarItem`s,
 and panes to its workspace with `panes=`, `Pane`s, both of `metaform.module`.

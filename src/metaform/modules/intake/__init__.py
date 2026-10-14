@@ -61,8 +61,9 @@ def _field_words(group: str) -> dict[str, str]:
 
 ELEMENT_WORDS, PURPOSE_WORDS = _field_words('element'), _field_words('purpose')
 
-settings.text('intake_file', '', help='An intake file to serve instead of the Canonical Intake. Empty means the '
-                                      'Canonical Intake.')
+# person_only: the file decides what every intake agent is told to do, so an agent never chooses it.
+settings.text('intake_file', '', person_only=True,
+              help='An intake file to serve instead of the Canonical Intake. Empty means the Canonical Intake.')
 
 
 def _escape(text: str) -> str:
@@ -465,7 +466,9 @@ def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], t
                                                          'nothing was added.'})
         return
     if same:
-        if (same[0].note, same[0].task) != (note, task):
+        # a note this ticket already holds, as one a purpose record's marker joined, is kept with what joined it
+        if not (note and note.strip() and note.strip() in (same[0].note or '')) and \
+                (same[0].note, same[0].task) != (note, task):
             _note(notices, rec.store.edit_work(same[0].id, {'note': note, 'task': task}))
         return
     if kind == 'element':
@@ -475,9 +478,31 @@ def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], t
         found = [rec.store.element(address, raw=True) for address in ends]
         around = [row for each in found if each is not None
                   for row in rec.store.work(Node('element', each.id), open=True, limit=0).results]
-    if any(_finding(row) and row.condition == condition and row.note == note for row in around):
-        notices.append({'where': 'condition', 'message': 'The same condition and note are open on the element and on '
-                                                         'its purpose record; the finding is kept once.'})
+    # A merged note still holds each original finding, even after an agent takes its ticket.
+    for row in around:
+        exact = row.condition == condition and row.note == note
+        held = task is not None and note and note.strip() and row.condition in FIX and note.strip() in (row.note or '')
+        if _finding(row) and (exact or held):
+            if row.taken:
+                notices.append({'where': 'condition', 'message': f'{condition} is open here and an agent has taken it; '
+                                                                 'nothing was added.'})
+            elif exact:
+                notices.append({'where': 'condition', 'message': 'The same condition and note are open on the element '
+                                                                 'and on its purpose record; the finding is kept once.'})
+            else:
+                notices.append({'where': 'condition', 'message': 'A marker is open on the element and its purpose '
+                                                                 f'record; this one is kept in {row.id}.'})
+            return
+    # An element and its purpose record are one node: a marker there joins the open marker ticket no agent has taken,
+    # its note added, so the node has one ticket. One already taken stays as it is, and this one waits behind it.
+    joined = next((row for row in around if task is not None and _finding(row) and row.condition in FIX
+                   and not row.taken), None)
+    if joined is not None:
+        if note and note.strip() and note.strip() not in (joined.note or ''):
+            merged = f'{joined.note.strip()}\n\n{note.strip()}' if joined.note and joined.note.strip() else note
+            _note(notices, rec.store.edit_work(joined.id, {'note': merged, 'task': _task(joined.condition, merged)}))
+        notices.append({'where': 'condition', 'message': f'A marker is open on the element and its purpose record; '
+                                                         f'this one is kept in {joined.id}.'})
         return
     _note(notices, rec.store.add_work(Node(kind, thing), condition, note=note, task=task))
 
@@ -885,7 +910,8 @@ MODULE = Module(
                                    'anything not working or partially working. On the command line a file is read '
                                    'and - is standard input.', required=False),
                     Noun('feedback', 'Feedback on the Metaform process: bad semantics, a tool that did not match its '
-                                     'schema, where you got stuck.', required=False))),
+                                     'schema, where you got stuck.', required=False)),
+             open_world=True),  # its intake.finished subscriber, source_placement's, can start a run that sends to Jev
         Verb('status', status_verb, 'Say whether this project has an intake, and whether one is being recorded.',
              effect='read'),
     ),

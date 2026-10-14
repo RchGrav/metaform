@@ -28,17 +28,22 @@ atomically combines branch returns. `metaform.prompt_files` serves the module's 
 
 ## Prompts
 
-`resources/prompts.xml` holds the six shared sections, the
-prompt-lexicalization script, module instructions and call/handoff transport
-instructions. Serving a lib, a skill or a call registers the shipped sections
-in the prompt store lazily; previous prompt versions remain available.
+`resources/prompts.xml` holds the prompt-lexicalization script, module instructions
+and call/handoff transport instructions. The shared registry, `metaform.skills`,
+owns the canonical `metaform/skills/<name>/SKILL.md` folders and their
+`references/procedure.axiom` files, BASE-059. Legacy underscore names still load
+the same procedures through workflow skill, serve and assign.
 
-The same file holds the workflow agent's libs and skills, MCP-034. `lib_axiom`,
-`lib_metaform` and `lib_workflow` are composed at serve time from the newest
-stored version of each shared section they carry, so an edit saved in the
-prompt store reaches them. `lib_quality` and the skills are held whole.
-Each skill is a child of `<commands>`, so it is a slash command,
-`/metaform:<skill>`, as well as a command.
+The registry's `skills/resources/prompts.xml` holds the shared library sections
+and templates. Libraries use the newest stored sections at load or deployment
+time, preserving prompt-store edits and earlier versions. This ownership keeps
+skill loading available in builds that omit workflow.
+
+Discoverable skills remain slash commands `/metaform:<skill>`. Internal sentinel
+and workflow-evaluator appear in no discovery list and remain callable by name
+or Address. The always available MCP `metaform_skills` tool lists discoverable
+skills, loads a skill and its libraries, and reads its files. An explicit
+`all=true` administrative list includes internal skills.
 
 ## Verbs
 
@@ -70,8 +75,9 @@ metaform workflow assign workflow_builder input="<request and target layer>"
 metaform workflow assign workflow_evaluator input="<result, criteria, nodes and evidence>"
 ```
 
-Give each returned run id to the agent holding that role. The same skills are
-MCP prompts `/metaform:workflow_builder` and `/metaform:workflow_evaluator`.
+Give each returned run id to the agent holding that role. The builder also has
+the MCP prompt `/metaform:workflow_builder`. The internal evaluator is loaded
+explicitly with `metaform_skills op=load name=logic.skill.workflow-evaluator`.
 All incoming work, including small fixes, goes through the builder under
 D117; a small fix may use a single pass so it receives its rules with little
 preparation overhead. Automatic routing is not implemented, and its mechanism
@@ -154,7 +160,12 @@ Start a call, passing an element by address or using the entry's `this`:
 ```sh
 metaform workflow run '({ok}, {issues}) := workflow.quality.code.review(target=code.engine.game)'
 metaform workflow run '({ok}, {issues}) := workflow.quality.code.review(target=this)' element=code.engine.game
+metaform workflow run '{verdict} := logic.skill.workflow-evaluator(Result="<result>", Criteria="<criteria>")'
 ```
+
+Skill calls use their unversioned Address directly, including kebab names, and
+return their required libraries beside the unchanged procedure. Skill versions
+live in frontmatter metadata.
 
 The returned `run` is the id of the call's run record, which holds its frozen
 content, arguments, element values and continuation. `metaform workflow resume

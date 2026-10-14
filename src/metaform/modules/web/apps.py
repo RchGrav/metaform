@@ -177,8 +177,7 @@ def answer(handler: Handler, method: str, path: str, query: dict[str, list[str]]
         if path == '/api/mcp-app' and method == 'GET':
             return document(handler, given)
         if path == '/api/mcp-call' and method == 'POST':
-            origin = handler.headers.get('Origin')
-            if origin is None or origin.lower() != f'http://{handler.headers.get("Host", "")}'.lower():
+            if not handler.same_origin():
                 return handler.send(403, {'error': "A view's call is taken only from the web GUI's own page."})
             body: Any = handler.json_body()
             if not isinstance(body, dict):

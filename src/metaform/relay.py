@@ -42,7 +42,7 @@ class Listener:
         self.socket.listen()
         self.port = int(self.socket.getsockname()[1])
         self.path = folder() / f'{module}-{os.getpid()}-{self.token[:8]}.json'
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        home.mkdir_private(self.path.parent)
         written = self.path.with_suffix('.tmp')
         descriptor = os.open(written, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(descriptor, 'w', encoding='utf-8') as handle:

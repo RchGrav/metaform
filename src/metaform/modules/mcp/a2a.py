@@ -178,7 +178,7 @@ def token(create: bool = False) -> str | None:
         return path.read_text(encoding='utf-8').strip() or None
     if not create:
         return None
-    path.parent.mkdir(parents=True, exist_ok=True)
+    home.mkdir_private(path.parent)
     made = secrets.token_urlsafe(32)
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, 'w', encoding='utf-8') as handle:

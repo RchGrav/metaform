@@ -1,7 +1,7 @@
 /* The chat's threads: their sources and tabs, proposals, the thread bar, subagents, spend, and a ticket's status,
  * cancel and interrupt. */
 import '/page/app/dock/embody.js';  // the part before runs first, so the parts run in the page's order
-import {$, h, fill} from '/page/app/core/dom.js';
+import {$, h, fill, keyedFill} from '/page/app/core/dom.js';
 import {toast, confirmAct} from '/page/app/core/controls.js';
 import {S, read} from '/page/app/core/reads.js';
 import {joinOf} from '/page/app/graph/data.js';
@@ -9,15 +9,15 @@ import {ROAM, ticketNode} from '/page/app/figures/agents.js';
 import {INUSE, idsAt, paintInUse} from '/page/app/map3d/light.js';
 import {wake3d} from '/page/app/map3d/graph3d.js';
 import {select, MERGE} from '/page/app/selection/select.js';
-import {DOCK, SOURCES, sourceOf, sourceChip, dockState} from '/page/app/dock/embody.js';
+import {DOCK, SOURCES, sourceOf, sourceChip, dockState, clockOf} from '/page/app/dock/embody.js';
 import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
+import {stayedOff} from '/page/app/dock/send.js';
 import {talkAbout} from '/page/app/dock/commands.js';
 import {renderBoard} from '/page/app/board/board.js';
 import {wrote} from '/page/app/board/history.js';
 import {D, ticketOf, glyphFor, glyphOf, renderAgents} from '/page/app/agents/dispatch.js';
 import {agentName} from '/page/app/agents/pickers.js';
 import {isIntake, countOf} from '/page/app/session/tools.js';
-import {stopIntake} from '/page/app/intake/intake.js';
 
 /* session: the session the thread is with, when it is known. A thread stays with its session, so a later session of
  * the same ticket opens a thread of its own and never swaps the conversation; with none known yet, the thread waits
@@ -44,7 +44,7 @@ export function showChat(chat, {focus = false} = {}) {
     since: chat.since});
   if (moved) { DOCK.pinned = true; DOCK.child = null; }  // another thread opens on its own agent, not a subagent
   MERGE.chat = chat.target;
-  $('#helpdesk .call').textContent = 'Dismiss';
+  dockState($('#dock').className === 'open big' ? 'open big' : 'open');
   drawTabs();
   drawHelpdesk();
   if (focus) focusThread(chat);
@@ -101,8 +101,66 @@ export function drawTabs() {
     title: `${SOURCES[chat.source] || SOURCES.agent}: ${chat.label}`, onclick: () => showChat(chat, {focus: true})},
     h('i', {class: 'srcdot', 'aria-hidden': 'true'}), chat.label.replace(/^the /, ''))));
 }
-/* The thread's own bar: the chip of where it comes from, its agent's glyph and its task, Show on map, Stop while its
- * session runs, and Continue once it has ended, which starts an agent that reads the thread first. */
+/* Recovery is attached to the session, never to whichever ticket happens to run next. Dispatch retains the
+ * session and its end signals across reloads. A stop made here also keeps its timestamp in this browser. */
+const stoppedSession = session => session && session.state !== 'running' && session.how !== 'the ticket is done';
+const stopKey = () => `metaform.stopped-agents.${S.project}`;
+function stopTimes() { try { return JSON.parse(localStorage.getItem(stopKey()) || '{}'); } catch { return {}; } }
+function rememberStop(session, at) {
+  try { localStorage.setItem(stopKey(), JSON.stringify({...stopTimes(), [session]: at})); } catch { /* signals remain */ }
+}
+function sessionTask(session, state = D.states?.[session.session_id]) {
+  const ticket = ticketOf(session.work_id);
+  const conversation = state?.about === 'system' ? 'Conversation with your system agent'
+    : state?.about ? `Conversation about ${state.about.replace(/^[^:]+:/, '')}`
+    : ticket?.held ? 'Conversation' : null;
+  return conversation || ticket?.task || ticket?.map?.title || ticket?.note || `ticket ${session.work_id}`;
+}
+export function drawAgentSessions() {
+  const stopped = D.sessions.filter(stoppedSession);
+  const dock = $('#helpdesk .stopped-agents'), menu = $('#agentbox .agent-sessions');
+  dock.hidden = !stopped.length;
+  menu.hidden = !D.sessions.length;
+  const row = session => ({key: session.session_id,
+    text: JSON.stringify([session.state, session.how, agentName(session.agent), glyphOf(session.work_id), sessionTask(session),
+      stopTimes()[session.session_id], D.signals?.filter(one => one.session_id === session.session_id)]),
+    make: () => sessionRow(session)});
+  keyedFill(dock, stopped.map(row));
+  keyedFill(menu, D.sessions.map(row));
+}
+function sessionRow(session) {
+  const stopped = stoppedSession(session), name = agentName(session.agent), task = sessionTask(session);
+  const signals = (D.signals || []).filter(one => one.session_id === session.session_id
+    && one.reason === session.how && one.at).sort((a, b) => a.at.localeCompare(b.at));
+  const at = signals.at(-1)?.at || stopTimes()[session.session_id] || null;
+  const open = () => {
+    $('#agentbox').hidden = true;
+    openHelpdesk(session.work_id, `${name} on ${task}`, '', session.session_id,
+      D.states?.[session.session_id]?.about === 'system' ? 'system' : null, {focus: true});
+  };
+  const resume = async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const done = await wrote('/api/dispatch-resume', {work_id: session.work_id, session: session.session_id});
+      if (!done) return;
+      open();
+      if (done.state !== 'running') DOCK.chat.starting = Date.now();
+      toast(`${name} is resuming with its memory.`);
+      await renderAgents();
+      await drawHelpdesk();
+    } finally { button.disabled = false; }
+  };
+  return h('div', {class: `agent-session${stopped ? ' stopped-agent' : ''}`, 'data-session': session.session_id},
+    h('img', {src: glyphOf(session.work_id), alt: glyphFor(session.work_id)}),
+    h('div', {class: 'details'}, h('b', {}, name), h('span', {class: 'task'}, task),
+      stopped ? at ? h('time', {datetime: at, title: new Date(at).toLocaleString()}, `Stopped ${clockOf(at, true)}`)
+        : h('span', {class: 'meta'}, 'Stopped · time unavailable') : h('span', {class: 'meta'}, 'Running')),
+    h('button', {type: 'button', class: 'btn sm open-chat', onclick: open}, 'Chat'),
+    stopped ? h('button', {type: 'button', class: 'btn sm resume', onclick: resume}, 'Resume') : null);
+}
+/* The thread's own bar: the chip of where it comes from, its agent's glyph and its task, Show on map and Stop agent while
+ * its session runs. A stopped session has its own Resume row; Continue on a completed ticket starts a conversation. */
 export function drawThreadBar(session) {
   const bar = $('#helpdesk .threadbar'), chat = DOCK.chat, target = DOCK.target;
   bar.hidden = !target || !chat;
@@ -129,15 +187,13 @@ export function drawThreadBar(session) {
   const inEditor = running && DOCK.state?.editor === true;
   (bar.querySelector('.where') || editorNote(bar)).hidden = !inEditor;
   bar.querySelector('.stop').hidden = !running || inEditor;
-  bar.querySelector('.stop').disabled = false;
-  bar.querySelector('.again').hidden = !ended || isIntake(target);
+  bar.querySelector('.stop').disabled = STOPPING.has(session?.session_id);
+  bar.querySelector('.again').hidden = !ended || stoppedSession(session) || isIntake(target);
   const cancel = bar.querySelector('.cancel') || cancelButton(bar);
   cancel.hidden = !ticket || Boolean(ticket.done) || chat.source !== 'agent';
-  // the person's own chat says whom it is with in the head, and Dismiss ends it: no chip, no Stop, and no bar at all
-  // when nothing else is left to show in it
+  // The person's own chat names its agent in the head. Stop agent remains a separate explicit action.
   const own = ['system', 'conversation'].includes(chat.source);
   bar.querySelector('.source').hidden = own;
-  if (own) bar.querySelector('.stop').hidden = true;
   bar.hidden = own && !task && [...bar.querySelectorAll('button')].every(one => one.hidden);
 }
 /* A session an editor runs through metaform dispatch serve ends in that editor, BASE-062: said where Stop would be. */
@@ -156,15 +212,30 @@ function cancelButton(bar) {
   bar.querySelector('.stop').after(cancel);
   return cancel;
 }
+/* Stop is session-specific and asks once while a turn or an open ticket is at stake. Closing keeps both intact. */
+const STOPPING = new Set();
 async function stopThread(event) {
-  const button = event.currentTarget, work = DOCK.target;
-  if (isIntake(work)) return stopIntake();
+  const button = event.currentTarget, work = DOCK.target, sessionId = DOCK.session;
+  if (STOPPING.has(sessionId)) return;
+  STOPPING.add(sessionId);
   button.disabled = true;
-  if (await wrote('/api/dispatch-stop', {work_id: work})) {
-    toast('The agent was stopped.');
+  try {
+    const found = await read('dispatch-sessions', {id: work, thread: 'false'});
+    const session = (found.sessions || []).find(one => one.session_id === sessionId);
+    if (session?.state !== 'running') return;
+    const ticket = ticketOf(work), name = agentName(session.agent);
+    const task = sessionTask(session, found.states?.[sessionId]);
+    if ((chatActivity(session).busy || ticket && !ticket.done) && !await confirmAct({
+      title: `Stop ${name}?`, text: `It is working on ${task}. You can resume it later with its memory.`,
+      verb: 'Stop agent', cancel: 'Keep working'})) return;
+    const stopped = await wrote('/api/dispatch-stop', {work_id: work, session: sessionId});
+    if (!stopped) return;
+    rememberStop(sessionId, new Date().toISOString());
+    toast(`${name} stopped. Resume its session below or in the Agents menu.${stayedOff(stopped)}`);
     await renderAgents();
-    drawHelpdesk();
-  } else button.disabled = false;
+    await drawHelpdesk();
+  } catch (error) { toast(error.message); }
+  finally { STOPPING.delete(sessionId); button.disabled = false; }
 }
 /* Continue, once a session has ended: an agent that reads the thread first. */
 function continueThread() {

@@ -493,8 +493,7 @@ def serve_file(handler: Handler, folder: Path, rest: str) -> None:
 
 def write(handler: Handler, path: str) -> None:
     """One write of the workspace, from the GUI's own page only, with the checks every write of the server makes."""
-    origin = handler.headers.get('Origin')
-    if origin is None or origin.lower() != f'http://{handler.headers.get("Host", "")}'.lower():
+    if not handler.same_origin():
         return handler.send(403, {'error': "A write is taken only from the web GUI's own page."})
     if (handler.headers.get('Content-Type') or '').split(';')[0].strip().lower() != 'application/json':
         return handler.send(415, {'error': 'A write takes a JSON body.'})
@@ -611,9 +610,10 @@ def delete(folder: Path, given: dict[str, Any]) -> None:
 
 def run(handler: Handler, folder: Path, given: dict[str, Any]) -> None:
     """Run a tool's verb, as a tool call runs it, with its fixed arguments and the selection: only a declared tool, so
-    the page can run nothing else through here. A caution verb runs only with confirm true, after the page has shown
+    the page can run nothing else through here; behind a Node's gate, only for an account with the class its verb
+    needs, server.verb_class. A caution verb runs only with confirm true, after the page has shown
     its caution. A write is announced as the server's other writes are, so every open page redraws."""
-    from .server import module_verb
+    from .server import module_verb, verb_class
     items, _ = contributed(folder)
     found = items.get(str(given.get('item', '')))
     if found is None or found[1].verb is None:
@@ -621,6 +621,10 @@ def run(handler: Handler, folder: Path, given: dict[str, Any]) -> None:
                                   'next': f'GET {PREFIX} lists the tools'})
     owner, item = found
     verb = next(verb for verb in _module(owner, folder).verbs if verb.name == item.verb)
+    # Behind a Node's gate, the account needs the class the verb's effect calls for; the form adds only nouns, so the
+    # tool's fixed arguments say whether it is given a setting only the person sets.
+    if not handler.holds(verb_class(owner, verb, dict(item.arguments)), f'{PREFIX}/run {item.title}'):
+        return
     if verb.caution and given.get('confirm') is not True:
         return handler.send(409, {'error': verb.caution, 'next': 'send confirm true if you are sure', 'confirm': True})
     arguments = dict(item.arguments)

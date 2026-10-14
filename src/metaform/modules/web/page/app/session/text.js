@@ -365,9 +365,10 @@ function usageLine(usage) {
 }
 function resumeButton(work, session, agent) {
   async function resume(event) {
-    event.currentTarget.disabled = true;
+    const button = event.currentTarget;  // read before the await, after which the event has no currentTarget
+    button.disabled = true;
     const done = await wrote('/api/dispatch-resume', {work_id: work, session: session.session_id});
-    if (!done) { event.currentTarget.disabled = false; return; }
+    if (!done) { button.disabled = false; return; }
     toast(done.state === 'running' ? `${agent} is running already; talk to it here.`
       : `${agent} is resuming its session; it waits for your next message.`);
     await renderAgents();

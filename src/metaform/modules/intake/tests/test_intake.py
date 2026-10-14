@@ -945,9 +945,10 @@ def test_a_condition_given_with_an_element_or_a_join_is_an_open_work_record_at_i
     element = recorded(run, project, 'element', 'code.auth', 'role=SE', 'name=auth', 'condition=trouble',
                        'note=Non-debug modes are forced to debug.')
     run('intake', 'element', 'code.timer', 'role=DE', 'name=timer', cwd=project)
-    join = recorded(run, project, 'purpose', 'code.timer', '["code.auth"]', 'purpose=p', 'ef=f', 'ifd=receives',
-                    'condition=missing', 'note=The demo does not declare its autoap dependency.')
     plain = recorded(run, project, 'element', 'code.clock', 'role=SE', 'name=clock')
+    # a purpose record apart from code.auth, which would be one node with it, MAP-046's amendment of 2026-10-14
+    join = recorded(run, project, 'purpose', 'code.timer', '["code.clock"]', 'purpose=p', 'ef=f', 'ifd=receives',
+                    'condition=missing', 'note=The demo does not declare its autoap dependency.')
     for made in (element, join, plain):
         assert made['notices'] == []
     recorded(run, project, 'finish')
@@ -1124,16 +1125,48 @@ def test_the_procedures_marks_are_taken_as_written(run, project):
 
 
 @pytest.mark.req('MAP-046')
-def test_a_finding_on_an_element_and_its_purpose_record_is_written_once(run, project):
-    """The same condition and note on an element and on a purpose record it serves is one finding, one record."""
+@pytest.mark.parametrize('first', ['element', 'join'])
+def test_a_finding_on_an_element_and_its_purpose_record_is_written_once(run, project, first):
+    """Replaying either merged marker keeps one ticket, including after take, and completion clears the node."""
     recorded(run, project, 'start')
-    recorded(run, project, 'element', 'code.alarm.audible', 'role=SE', 'condition=BKN', 'note=never sounds')
-    said = recorded(run, project, 'purpose', 'code.timer.kitchen', '["code.alarm.audible"]', 'purpose=p', 'ef=f',
-                    'ifd=receives', 'condition=BKN', 'note=never sounds')
+    markers = {'element': ('element', 'code.alarm.audible', 'role=SE'),
+               'join': ('purpose', 'code.timer.kitchen', '["code.alarm.audible"]', 'purpose=p', 'ef=f', 'ifd=receives')}
+    second = 'join' if first == 'element' else 'element'
+    recorded(run, project, *markers[first], 'condition=BKN', 'note=never sounds')
+    said = recorded(run, project, *markers[second], 'condition=BKN', 'note=never sounds')
     assert 'kept once' in said['notices'][-1]['message']
-    recorded(run, project, 'purpose', 'code.timer.kitchen', '["code.alarm.audible"]', 'condition=BKN', 'note=other')
-    assert sorted((w.node_kind, w.note) for w in Store('timer').work(open=True, limit=0).results) == \
-        [('element', 'never sounds'), ('join', 'other')]
+    merged = recorded(run, project, *markers[second], 'condition=BKN', 'note=other')
+    assert 'is kept in' in merged['notices'][-1]['message']  # an element and its purpose record are one node
+    store = Store('timer')
+    assert [(w.node_kind, w.note) for w in store.work(open=True, limit=0).results] == \
+        [(first, 'never sounds\n\nother')]
+    [ticket] = store.work(open=True, limit=0).results
+    for kind, note in ((first, 'never sounds'), (second, 'other')):
+        recorded(run, project, *markers[kind], 'condition=BKN', f'note={note}')
+    assert [(w.id, w.note) for w in store.work(open=True, limit=0).results] == \
+        [(ticket.id, 'never sounds\n\nother')]
+    store.take_work(ticket.id, by='claude')
+    repeated = [recorded(run, project, *markers[kind], 'condition=BKN', f'note={note}')
+                for kind, note in ((first, 'never sounds'), (second, 'other'))]
+    assert len(store.work(open=True, limit=0).results) == 1
+    assert [(w.id, w.condition, w.note) for w in store.work(open=True, limit=0).results] == \
+        [(ticket.id, 'trouble', 'never sounds\n\nother')]
+    assert all('taken' in said['notices'][-1]['message'] for said in repeated)
+    store.finish_work(ticket.id, 'Alarm repaired.')
+    assert store.work(open=True, limit=0).results == ()
+    shown = recorded(run, project, 'show')
+    assert all(held.get('condition') != 'trouble' for held in shown['purposes'])
+    assert all(element.get('condition') != 'trouble' for element in shown['elements'])
+    # A genuinely new note at the other part still waits behind the ticket an agent has taken.
+    recorded(run, project, *markers[first], 'condition=BKN', 'note=never sounds')
+    recorded(run, project, *markers[second], 'condition=BKN', 'note=other')
+    [active] = store.work(open=True, limit=0).results
+    store.take_work(active.id, by='claude')
+    recorded(run, project, *markers[second], 'condition=BKN', 'note=volume is wrong')
+    open_work = store.work(open=True, limit=0).results
+    assert len(open_work) == 2
+    assert [(w.id, w.note) for w in open_work if w.taken] == [(active.id, 'never sounds\n\nother')]
+    assert [(w.node_kind, w.note) for w in open_work if not w.taken] == [(second, 'volume is wrong')]
 
 
 @pytest.mark.req('MAP-046')
@@ -1269,7 +1302,7 @@ def test_follow_on_is_not_published_without_a_finished_code_intake(run, project,
 
 
 def test_finished_code_intake_without_subscribers_keeps_regular_result(run, project):
-    run('disable', 'refactor', cwd=project)
+    run('disable', 'source_placement', cwd=project)
     recorded(run, project, 'start')
     recorded(run, project, 'element', 'code.example', 'role=DE')
     result = recorded(run, project, 'finish')

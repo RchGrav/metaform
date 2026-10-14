@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import inspect
 import re
-from collections.abc import Callable, Generator, Mapping
+from collections.abc import Callable, Generator, Iterable, Mapping
 from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
@@ -64,6 +64,14 @@ class Setting:
     # Where the setting sits among its owner's, as a path of headings, such as `Agent options/Claude Code`: the
     # settings screen and the page group the settings of one section under it, a menu in a menu. None: at the top.
     section: str | None = None
+    # A switch given on the call alone, never stored: a stored value would silently change later calls of another
+    # kind, such as a transport, a dry run or the type of a blind-spot run. `set`, the settings screen, `config --show`
+    # and the agent's set tool leave it out, and a value stored before it was marked is never read.
+    per_call: bool = False
+    # The choices that let an agent act without asking, such as approve-all: every surface asks the person to confirm
+    # one before it is stored, and stepping through the choices never lands on one. A function of a Context reads
+    # them as choices are, for choices an agent offers.
+    risky: Callable[..., Iterable[str]] | tuple[str, ...] = field(default=(), compare=False)
 
     @property
     def switch(self) -> str:
@@ -88,6 +96,14 @@ class Setting:
             from .context import build
             return dict(self.choice_help(build(self.owner, folder or Path.cwd())))
         return dict(self.choice_help)
+
+    def risks(self, folder: Path | None = None) -> set[str]:
+        """The choices that are confirmed before they are stored: the declared ones, or the owning module's function
+        of a Context."""
+        if callable(self.risky):
+            from .context import build
+            return {str(one) for one in self.risky(build(self.owner, folder or Path.cwd()))}
+        return set(self.risky)
 
     def needs_project(self) -> bool:
         """A module's select reads its choices from the project's store, CLI-019; the chassis's never do."""
@@ -227,8 +243,35 @@ def _stored_value(setting: Setting, scope: str) -> Any:
 
 def value(key: str, folder: Path) -> Any:
     setting = SCHEMA[key]
+    if setting.per_call:  # only the call gives it; a value stored before it was marked is never read
+        return default(setting, folder)
     scope = scope_of(setting, folder)
     return _stored_value(setting, scope) if _has(scope, setting) else default(setting, folder)
+
+
+def folder_of(scope: str) -> str:
+    """A folder scope's path as it was stored, for saying where a value comes from; the scope itself when unknown."""
+    with home.settings_db(scope) as db:
+        row = db.execute('SELECT path FROM folders WHERE path_key=?', (scope,)).fetchone()
+    return str(row[0]) if row else scope
+
+
+def inherited_from(key: str, folder: Path) -> str | None:
+    """The folder above whose stored or glued value this folder takes, or None when the value is this folder's own
+    or the default, CLI-014."""
+    setting = SCHEMA[key]
+    scope = scope_of(setting, folder)
+    if scope == own_scope_of(setting, folder):
+        return None
+    return folder_of(scope) if _has(scope, setting) or home.glued(scope, setting.owner, key) else None
+
+
+def _inherited(setting: Setting, folder: Path, what: str) -> SettingError:
+    """A change that would reach the folder above that holds the value, refused with that folder named: a folder acts
+    only on its own value, CLI-014, so a subfolder never undoes the choice made for every folder below another."""
+    source = inherited_from(setting.key, folder)
+    return SettingError(f'{setting.key} is inherited from {source}; nothing is stored here to {what}.',
+                        f'metaform unset {setting.switch} folder={source}')
 
 
 def toggled_layers(folder: Path) -> list[str]:
@@ -240,8 +283,11 @@ def toggled_layers(folder: Path) -> list[str]:
 
 
 def state(key: str, folder: Path) -> str:
+    """default, set or glued here, or inherited from a folder above, CLI-013 and CLI-014."""
     setting = SCHEMA[key]
     scope = scope_of(setting, folder)
+    if scope != own_scope_of(setting, folder) and inherited_from(key, folder) is not None:
+        return 'inherited'
     if home.glued(scope, setting.owner, key):
         return 'glued'
     return 'set' if _has(scope, setting) else 'default'
@@ -267,14 +313,7 @@ def parse(setting: Setting, raw: str, folder: Path | None = None) -> Any:
     if setting.kind == 'bool':
         raise SettingError(f'{setting.switch} takes no value: use {setting.switch} or {setting.negative}.')
     if setting.kind == 'list':
-        items = [item.strip() for item in raw.split(',') if item.strip()]
-        if setting.exclusive:
-            names = [item.partition(setting.exclusive)[0].strip() for item in items]
-            twice = sorted({name for name in names if names.count(name) > 1})
-            if twice:
-                raise SettingError(f'{setting.switch} holds one value for each name; {", ".join(twice)} '
-                                   f'{"is" if len(twice) == 1 else "are"} given more than one.')
-        return items
+        return _members(setting, raw.split(','), text=True)
     if setting.kind == 'select':
         options = setting.options(folder)
         if not options and setting.needs_project():
@@ -288,6 +327,69 @@ def parse(setting: Setting, raw: str, folder: Path | None = None) -> Any:
     return raw
 
 
+def _members(setting: Setting, given: Iterable[str], *, text: bool = False) -> list[str]:
+    """A list's members, trimmed, with empty ones left out. A list of `<name><exclusive><value>` holds one value per
+    name, and a member without the mark is refused, so a list item split at a comma on the command line is never
+    stored as a broken entry."""
+    items = [item.strip() for item in given if item.strip()]
+    if setting.exclusive:
+        mark = setting.exclusive
+        unnamed = [item for item in items if mark not in item]
+        if unnamed:
+            raise SettingError(f'{setting.switch} takes items of the form <name>{mark}<value>; '
+                               f'{", ".join(repr(item) for item in unnamed)} {"is" if len(unnamed) == 1 else "are"} '
+                               f'not.' + (' On the command line a comma separates items.' if text else ''),
+                               f'metaform help {setting.switch}')
+        names = [item.partition(mark)[0].strip() for item in items]
+        twice = sorted({name for name in names if names.count(name) > 1})
+        if twice:
+            raise SettingError(f'{setting.switch} holds one value for each name; {", ".join(twice)} '
+                               f'{"is" if len(twice) == 1 else "are"} given more than one.')
+    return items
+
+
+def _typed(setting: Setting, typed: Any, folder: Path) -> Any:
+    """A typed value, as the settings screen, the agent's set tool and the page give it, read and checked as `parse`
+    reads its CLI text. A list is taken member by member as given, never joined into text and split again, so a
+    member may hold a comma, CLI-027."""
+    if setting.kind == 'bool':
+        return bool(typed)
+    if setting.kind == 'list' and isinstance(typed, list):
+        return _members(setting, (str(member) for member in cast(list[Any], typed)))
+    return parse(setting, str(typed), folder)
+
+
+def calls_of(setting: Setting) -> list[str]:
+    """The commands that take a setting's switch on the call, such as `metaform mcp serve --http`."""
+    from . import loader
+    return [f'metaform {item.id} {verb.name} {setting.switch}' for item in loader.discover() if item.module
+            for verb in item.module.verbs if setting.key in verb.switches]
+
+
+def _per_call(setting: Setting) -> SettingError:
+    """A per-call switch is refused wherever a value would be stored, with the call that takes it."""
+    verbs = calls_of(setting)
+    return SettingError(f'{setting.switch} is given on the call alone and never stored: stored, it would change '
+                        'every later call.', verbs[0] if verbs else f'metaform help {setting.switch}')
+
+
+def risk(key: str, value: Any, folder: Path) -> str | None:
+    """What a risky choice risks, in its own words, when `value` is one of the setting's risky choices; else None.
+    Every surface confirms such a choice with the person before it is stored."""
+    setting = SCHEMA[key]
+    if setting.kind != 'select' or not setting.risky:
+        return None
+    try:
+        risky = setting.risks(folder)
+    except Exception:  # noqa: BLE001  a module's failing function still confirms a choice it cannot judge
+        return f'{setting.key}: {value} could not be checked for its risk.'
+    if str(value) not in risky:
+        return None
+    with suppress(Exception):
+        if said := setting.helps(folder).get(str(value)):
+            return said
+    return f'{setting.key} {value} lets an agent act without asking you.'
+
 class Assigned(NamedTuple):
     """A stored setting: its value before and after, and what did not fit and was kept, BASE-044."""
     old: Any
@@ -298,15 +400,26 @@ class Assigned(NamedTuple):
 EMPTY_IS_ALL = ('modules', 'layers', 'jev_decisions')  # shown as all when empty, CLI-031, and cleared when set to the word all
 
 
-def assign(key: str, raw: Any, folder: Path, *, glue: bool = False) -> Assigned:
-    """Store one setting from its CLI form, or a typed boolean."""
-    setting = SCHEMA[key]
-    new = raw if setting.kind == 'bool' else parse(setting, raw, folder)
-    if key in EMPTY_IS_ALL and new == ['all']:
+def _clears(setting: Setting, folder: Path) -> bool:
+    """Whether the word all clears a value stored at this folder; refused when the value is held above, since an
+    empty list is not stored apart from no choice, so all cannot be kept here over an inherited list."""
+    if _has(own_scope_of(setting, folder), setting):
+        return True
+    if inherited_from(setting.key, folder) is not None:
+        raise _inherited(setting, folder, 'clear')
+    return False
+
+
+def _store(setting: Setting, new: Any, folder: Path, glue: bool) -> Assigned:
+    key = setting.key
+    if setting.per_call:
+        raise _per_call(setting)
+    if key in EMPTY_IS_ALL and new in (['all'], []):
         # The word the setting is shown as when it is empty means the same when it is set: the setting is cleared.
         # Stored as the word, it named no module and no layer, and turned every one off.
         old = value(key, folder)
-        home.clear(scope_of(setting, folder), setting.owner, key)
+        if _clears(setting, folder):
+            home.clear(own_scope_of(setting, folder), setting.owner, key)
         return Assigned(old, [], ())
     notices = (setting.check(new, folder) or []) if setting.check is not None else []
     old = value(key, folder)
@@ -317,45 +430,59 @@ def assign(key: str, raw: Any, folder: Path, *, glue: bool = False) -> Assigned:
     return Assigned(old, new, tuple(notices))
 
 
-def _raw(setting: Setting, typed: Any) -> Any:
-    """A typed value in the form `assign` reads: the CLI text, or a boolean."""
-    if setting.kind == 'list' and isinstance(typed, list):
-        return ','.join(str(member) for member in cast(list[Any], typed))
-    if setting.kind == 'bool':
-        return bool(typed)
-    return str(typed)
+def assign(key: str, raw: Any, folder: Path, *, glue: bool = False) -> Assigned:
+    """Store one setting from its CLI form, or a typed boolean."""
+    setting = SCHEMA[key]
+    return _store(setting, raw if setting.kind == 'bool' else parse(setting, raw, folder), folder, glue)
 
 
 def put(key: str, typed: Any, folder: Path, *, glue: bool = False) -> Assigned:
-    """Store one setting from a typed value, as the settings screen does."""
-    return assign(key, _raw(SCHEMA[key], typed), folder, glue=glue)
+    """Store one setting from a typed value, as the settings screen, the agent's set tool and the page do."""
+    setting = SCHEMA[key]
+    return _store(setting, _typed(setting, typed, folder), folder, glue)
 
 
 def checked(key: str, value: Any, folder: Path, *, typed: bool = False) -> None:
     """Parse and check a value as `assign` or `put` would, storing nothing, so a `set` of several settings stores
     them only when every one fits. Raises `SettingError`."""
     setting = SCHEMA[key]
-    raw = _raw(setting, value) if typed else value
-    new = raw if setting.kind == 'bool' else parse(setting, raw, folder)
-    if key in EMPTY_IS_ALL and new == ['all']:  # it clears the setting, so there is no name to check
+    if setting.per_call:
+        raise _per_call(setting)
+    if typed:
+        new = _typed(setting, value, folder)
+    else:
+        new = value if setting.kind == 'bool' else parse(setting, value, folder)
+    if key in EMPTY_IS_ALL and new in (['all'], []):  # it clears the setting, so there is no name to check
+        _clears(setting, folder)
         return
     if setting.check is not None:
         setting.check(new, folder)
 
 
 def glue(key: str, folder: Path, on: bool) -> None:
-    """Glue or unglue a setting. Gluing a default keeps the default through unset all."""
+    """Glue or unglue a setting at this folder. Gluing a default keeps the default through unset all."""
     setting = SCHEMA[key]
-    scope = scope_of(setting, folder) if not on else own_scope_of(setting, folder)
+    scope = own_scope_of(setting, folder)
+    if not on and not home.glued(scope, setting.owner, key) and inherited_from(key, folder) is not None:
+        raise _inherited(setting, folder, 'unglue')
     if on and not _has(scope, setting):
         _save(setting, scope, value(key, folder), folder)
     home.set_glue(scope, setting.owner, key, on, folder=folder.resolve())
 
 
+def check_reset(key: str, folder: Path) -> None:
+    """Refuse a reset whose value is held by a folder above, naming it, CLI-014: nothing is stored here to reset, and
+    the folder above keeps its choice for every folder below it. Raises `SettingError`."""
+    if state(key, folder) == 'inherited':
+        raise _inherited(SCHEMA[key], folder, 'reset')
+
+
 def reset(key: str, folder: Path, *, unglue: bool = False) -> tuple[str, bool]:
-    """Reset one setting: (reset, skipped because glued, or unchanged) and whether it was unglued, CLI-016."""
+    """Reset one setting at this folder: (reset, skipped because glued, or unchanged) and whether it was unglued,
+    CLI-016. A value held by a folder above is refused with that folder named, CLI-014."""
     setting = SCHEMA[key]
-    scope = scope_of(setting, folder)
+    check_reset(key, folder)
+    scope = own_scope_of(setting, folder)
     unglued = False
     if home.glued(scope, setting.owner, key):
         if not unglue:
@@ -369,17 +496,26 @@ def reset(key: str, folder: Path, *, unglue: bool = False) -> tuple[str, bool]:
 
 
 def describe(folder: Path) -> list[dict[str, Any]]:
+    """Every stored setting as the screens show it; a per-call switch is no setting to store, so it is left out. An
+    inherited value names the folder it comes from, and a select names its risky choices."""
     described: list[dict[str, Any]] = []
     for key, setting in SCHEMA.items():
+        if setting.per_call:
+            continue
         entry = {'key': key, 'switch': setting.switch, 'owner': setting.owner, 'kind': setting.kind,
                  'scope': setting.scope, 'value': value(key, folder), 'default': default(setting, folder),
                  'state': state(key, folder), 'help': setting.help}
+        if entry['state'] == 'inherited':
+            entry['from'] = inherited_from(key, folder)
         if setting.kind in ('select', 'list') and setting.choices is not None:
             with suppress(Exception):  # a module's failing choices function leaves the entry without them
                 entry['choices'] = setting.options(folder)
             with suppress(Exception):
                 if helps := setting.helps(folder):
                     entry['choice_help'] = helps
+        if setting.kind == 'select' and setting.risky:
+            with suppress(Exception):
+                entry['risky'] = sorted(setting.risks(folder))
         described.append(entry)
     return described
 

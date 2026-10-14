@@ -37,9 +37,14 @@ export function pointed(edge) {
  * `FLOW`: a tiny white request from the receiver to the element served, the answer back as a short bright streak, the
  * way the information goes, and on a join whose receiver sends, a record card that lands with a ring. Only the
  * selected node's, so the map stays still to read and the flow says what the selection takes from where. Each edge
- * gets a group of shapes over it, moved along the edge each frame, `frame2d`, while the page is in use, as the 3D map
- * draws its flow, `FRAMES`; with reduced motion nothing moves and nothing is shown. */
-const FLOW2D = {id: 0, edges: []};
+ * gets its shapes once, in a group just over the edges, so they run under the node boxes; each frame, `frame2d`, while
+ * the page is in use, as the 3D map draws its flow, `FRAMES`, moves them with as few writes as it can: a train of dots
+ * is a copy of its edge's path whose round dashes are the dots, moved along by one value, its head, and a shape is
+ * shown or hidden only when its part of the cycle begins or ends; with reduced motion nothing moves and nothing is
+ * shown. Each write inside the map's SVG makes the browser paint it again, so one per dot every frame held the page. */
+const FLOW2D = {id: 0, edges: [], opacity: ''};
+const BEAD = 2.1;  // a dot's radius
+const TAIL = [0.75, 0.5, 0.25];  // the last three dots of a train fade
 // an element's own colour on the map, as the 3D map draws it, for what comes from it
 function color2d(id) {
   const node = G?.graphData().nodes.find(one => one.id === id);
@@ -48,18 +53,19 @@ function color2d(id) {
 export function flows2d() {
   for (const old of M.svg?.querySelectorAll('g.flows2d') || []) old.remove();
   FLOW2D.edges = [];
+  FLOW2D.opacity = '';
   const on = flowing2d();
   if (!on.length) return;
   // a group of their own just over the edges, so the edges stay what they are
   const flows = document.createElementNS(SVG, 'g'), edges = on[0].path.closest('.edgePaths') || on[0].path.parentNode;
   flows.setAttribute('class', 'flows2d');
   edges.after(flows);
-  const made = (tag, name, attributes = {}) => {
+  const made = (tag, name, attributes = {}, parent = flows) => {
     const shape = document.createElementNS(SVG, tag);
     shape.setAttribute('class', name);
     for (const [key, value] of Object.entries(attributes)) shape.setAttribute(key, value);
     shape.style.display = 'none';
-    flows.append(shape);
+    parent.append(shape);
     return shape;
   };
   for (const edge of on) FLOW2D.edges.push(edgeShapes(edge, made));
@@ -71,19 +77,52 @@ function flowing2d() {
   return M.edges.filter(edge => edge.join && (mode === 'all' || (hover ? edge.join.receiver === hover
     || edge.provider === hover : edge.path?.classList.contains('on'))));
 }
-/* One edge's shapes: a reply's train of dots each way, in the colour of the element it comes from, `fxTrain`; the
- * request; the record card and the ring it lands with. */
+/* One edge's shapes: a reply's train each way, in the colour of the element it comes from, `fxTrain`, one path for its
+ * dots at full strength and one for each fading dot; the request, one dot on a path of its own; the record card and
+ * the ring it lands with. The dots' paths run through the edge's curve sampled, `sampled`, with the edge's length as
+ * their own, so a dot sits where `pointOn` puts it: the browser measures a curve's dashes a pixel or two shorter than
+ * `getTotalLength`, which would leave out a dot at an edge's end. A gap longer than the edge twice over keeps a dot
+ * from coming round again. */
 function edgeShapes(edge, made) {
-  return {edge, length: edge.path.getTotalLength(),
-    trains: [0, 1].map(way => ({color: color2d(way === 0 ? edge.provider : edge.join.receiver),
-      beads: Array.from({length: 12}, () => made('circle', 'bead', {r: 2.1}))})),
-    ask: made('circle', 'ask', {r: 1.9}),
+  const length = edge.path.getTotalLength(), far = 3 * length + 100, one = {edge, length, far};
+  const d = sampled(one).map((point, i) => `${i ? 'L' : 'M'}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join('');
+  const along = (name, attributes = {}, parent) => made('path', name, {d, pathLength: length, ...attributes}, parent);
+  return Object.assign(one, {
+    trains: [0, 1].map(way => {
+      const train = made('g', 'train');
+      train.style.stroke = color2d(way === 0 ? edge.provider : edge.join.receiver);
+      return {g: train, key: '', solid: along('bead', {}, train),
+        tail: TAIL.map(opacity => along('bead', {opacity, 'stroke-dasharray': `0 ${far}`}, train))};
+    }),
+    ask: along('ask', {'stroke-dasharray': `0 ${far}`}),
     record: made('rect', 'record', {x: -4.5, y: -3.2, width: 9, height: 6.4, rx: 1.4}),
-    ring: made('circle', 'ring', {r: 4})};
+    ring: made('circle', 'ring', {r: 4})});
 }
 export function wake2d() {
   if (!FLOW2D.id && FLOW2D.edges.length && !reduced()) FLOW2D.id = requestAnimationFrame(frame2d);
   again2d();  // the figures and the mascot on the 2D map wake with any act too
+  clearTimeout(AMBIENT2D.timer);
+  if (AMBIENT2D.at) for (const one of ambients2d()) if (one.playState === 'paused') one.play();
+  AMBIENT2D.at = 0;
+  AMBIENT2D.timer = setTimeout(rest2d, FRAMES.idle);
+}
+/* The 2D map's ambient animations, the flash of a part's record and the pulse of one under construction, VIEW-029,
+ * are the page's CSS and run at the screen's rate while the page is in use. Once nothing has been done or changed for
+ * `FRAMES.idle` they are held and stepped on `FRAMES.idleRate` times a second, at their own speed, as the 3D map's
+ * are, and the next act lets them run again, `wake2d`. Only those that repeat for ever: a fade runs out by itself. */
+const AMBIENT2D = {timer: 0, at: 0};
+const ambients2d = () => ($('#map2d')?.getAnimations({subtree: true}) || []).filter(one => one instanceof CSSAnimation
+  && one.effect?.getTiming().iterations === Infinity);
+function rest2d() {
+  const now = performance.now(), still = now - FRAMES.active;
+  if (still < FRAMES.idle) { AMBIENT2D.timer = setTimeout(rest2d, FRAMES.idle - still); return; }
+  const passed = AMBIENT2D.at ? now - AMBIENT2D.at : 0;
+  AMBIENT2D.at = now;
+  for (const one of ambients2d()) {  // a part drawn since they were held is held at its next step
+    if (one.playState === 'running') one.pause();
+    else if (one.playState === 'paused') one.currentTime = Number(one.currentTime || 0) + passed;
+  }
+  AMBIENT2D.timer = setTimeout(rest2d, 1000 / FRAMES.idleRate);
 }
 /* A point at a distance along an edge, looked up in the edge's curve sampled once, `sampled`, never measured again each
  * frame: measuring a curve for every dot on every frame was the page's own heaviest work. */
@@ -112,56 +151,72 @@ function frame2d(now) {
   const wanted = ['hover', 'selected', 'all'].includes(flowModeNow()) ? 1 : 0, was = FLOW2D.fade ?? wanted;
   FLOW2D.fade = was + (wanted - was) * (1 - Math.exp(-Math.max(0, FLOW.clock - (FLOW2D.at ?? FLOW.clock)) * FLOW.ease));
   FLOW2D.at = FLOW.clock;
-  const group = shown[0].ask.parentNode;
-  if (group) group.style.opacity = FLOW2D.fade.toFixed(3);
+  const group = shown[0].ask.parentNode, opacity = FLOW2D.fade.toFixed(3);
+  if (group && opacity !== FLOW2D.opacity) group.style.opacity = FLOW2D.opacity = opacity;
   if (FLOW2D.fade < 0.01 && !wanted) {
-    for (const shape of group?.children || []) shape.style.display = 'none';
+    for (const one of shown) flowEdge2d(one, true);
     return;
   }
   for (const one of shown) flowEdge2d(one, resting);
   if (!resting) FLOW2D.id = requestAnimationFrame(frame2d);
 }
-const place2dShape = (shape, point) => {
-  shape.style.display = '';
-  shape.setAttribute('transform', `translate(${point.x} ${point.y})`);
+// a shape is shown or hidden only when that changes, so a frame writes only what moves
+const show2d = (shape, on) => {
+  if (Boolean(shape.on2d) !== on) shape.style.display = (shape.on2d = on) ? '' : 'none';
 };
+const placed = point => `translate(${point.x} ${point.y})`;
 /* One edge's flow this frame, the way its information goes: its records, its ring as one lands, its request, and its
  * reply's trains. Resting, nothing is shown. */
 function flowEdge2d(one, resting) {
   const {edge, length, trains, ask, record, ring} = one, join = edge.join, receives = join.ifd === 'receives';
   const along = share => (receives ? 1 - share : share) * length;  // the edge runs the way its information goes
   const at = share => pointOn(one, along(Math.min(1, Math.max(0, share))));
-  for (const shape of [ask, record, ring, ...trains.flatMap(train => train.beads)]) shape.style.display = 'none';
-  if (resting) return;
-  const {asks, since, amount = 7, reply = FLOW.reply} = flowAt(join);
-  if (!asks) {
-    if (since < FLOW.send) { const t = since / FLOW.send; place2dShape(record, at(t * t * (3 - 2 * t))); }
-    else if (since < FLOW.send + FLOW.burst) {
-      const u = (since - FLOW.send) / FLOW.burst;
-      place2dShape(ring, at(1));
-      ring.setAttribute('r', String(4 + 14 * u));
-      ring.style.opacity = String(Math.pow(1 - u, 1.5));
+  const {asks, since = 0, amount = 7, reply = FLOW.reply} = resting ? {} : flowAt(join);
+  const live = !resting, sends = live && !asks;
+  const recording = sends && since < FLOW.send, ringing = sends && !recording && since < FLOW.send + FLOW.burst;
+  const asking = live && asks && since < FLOW.ask, replying = live && asks && !asking && since < FLOW.ask + reply;
+  if (recording) { const t = since / FLOW.send; record.setAttribute('transform', placed(at(t * t * (3 - 2 * t)))); }
+  show2d(record, recording);
+  if (ringing) {
+    const u = (since - FLOW.send) / FLOW.burst;
+    if (!ring.on2d) ring.setAttribute('transform', placed(at(1)));
+    ring.setAttribute('r', String(4 + 14 * u));
+    ring.style.opacity = String(Math.pow(1 - u, 1.5));
+  }
+  show2d(ring, ringing);
+  if (asking) ask.style.strokeDashoffset = `${-along(Math.min(1, Math.max(0, since / FLOW.ask)))}px`;
+  show2d(ask, asking);
+  // the reply: a train of dots the way the data goes, both ways on a join whose information goes both ways
+  const ways = replying ? (join.ifd === 'both' ? [true, false] : [true]) : [];
+  trains.forEach((train, index) => {
+    if (index < ways.length) train2d(train, (since - FLOW.ask) / reply, ways[index], amount, one, receives);
+    show2d(train.g, index < ways.length);
+  });
+}
+/* A reply's train of dots along the edge, spaced so they read as dots, the last few fading. The dots are the round
+ * ends of dashes of no length on a copy of the edge's path, so the train moves by one value, `--head`, its head's
+ * place along the path; how many dots it has, and which way it runs, set its dashes when they change. */
+function train2d(train, t, back, amount, {length, far}, receives) {
+  const spacing = Math.max(0.03, BEAD * 2 * 2.3 / Math.max(1, length));
+  const shown = Math.max(2, Math.min(12, amount, Math.floor(0.6 / spacing) + 1));
+  const head = t * (1 + spacing * (shown - 1)), forward = receives === back, gap = spacing * length;
+  const key = `${shown} ${forward}`;
+  if (train.key !== key) {
+    train.key = key;
+    // dot i is i gaps behind the head; a dash's place along the path is its place in the pattern less the offset
+    const behind = i => (forward ? i : -i) * gap, solid = shown - 3;
+    show2d(train.solid, solid > 0);
+    if (solid > 0) {
+      train.solid.setAttribute('stroke-dasharray', [...Array(solid - 1).fill(`0 ${gap}`), `0 ${far}`].join(' '));
+      train.solid.style.strokeDashoffset = `calc(var(--head) + ${forward ? (solid - 1) * gap : 0}px)`;
     }
-  } else if (since < FLOW.ask) place2dShape(ask, at(since / FLOW.ask));
-  else if (since < FLOW.ask + reply) {  // the reply: a train of dots the way the data goes
-    const t = (since - FLOW.ask) / reply;
-    (join.ifd === 'both' ? [true, false] : [true]).forEach((back, index) => {
-      train2d(trains[index], t, back, amount, length, at);
+    train.tail.forEach((dot, j) => {
+      const i = shown - 3 + j;
+      show2d(dot, i >= 0);
+      if (i >= 0) dot.style.strokeDashoffset = `calc(var(--head) + ${behind(i)}px)`;
     });
   }
-}
-/* A reply's train of beads along the edge, spaced so they read as dots, the last few fading. */
-function train2d({beads, color}, t, back, amount, length, at) {
-  const spacing = Math.max(0.03, 2.1 * 2 * 2.3 / Math.max(1, length));
-  const shown = Math.max(2, Math.min(beads.length, amount, Math.floor(0.6 / spacing) + 1));
-  const head = t * (1 + spacing * (shown - 1));
-  beads.forEach((bead, i) => {
-    const s = head - spacing * i;
-    if (i >= shown || s < 0 || s > 1) return;
-    place2dShape(bead, at(back ? 1 - s : s));
-    bead.style.fill = color;
-    bead.style.opacity = String(i < shown - 3 ? 1 : 1 - (i - (shown - 4)) / 4);
-  });
+  train.g.style.setProperty('--head', `${-(forward ? head : 1 - head) * length}px`);
 }
 export function focus2D(id, frame = true) {
   const join = id.startsWith('p:') ? joinOf(id) : null;

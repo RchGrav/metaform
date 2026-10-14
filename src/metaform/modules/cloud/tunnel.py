@@ -33,7 +33,7 @@ from typing import Any, cast
 
 import httpx
 
-from metaform import frames
+from metaform import frames, home
 from metaform.module import Stop, provided
 
 from . import audit
@@ -418,7 +418,7 @@ def write_state(record: dict[str, Any]) -> None:
     """What `cloud status` shows: the connection's state and a heartbeat, so a stopped one is seen as stopped."""
     with contextlib.suppress(OSError):
         target = state_file()
-        target.parent.mkdir(parents=True, exist_ok=True)
+        home.mkdir_private(target.parent)
         temporary = target.with_suffix('.tmp')
-        temporary.write_text(json.dumps({**record, 'beat': time.time()}), encoding='utf-8')
+        home.write_private(temporary, json.dumps({**record, 'beat': time.time()}))
         temporary.replace(target)

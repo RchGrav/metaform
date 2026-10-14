@@ -21,7 +21,11 @@ effort option (category thought_level) at session/new, then its slash commands, 
 session/set_config_option, and its first turn edits FAKE_ACP_RICH_PATH, a diff at a location, and reports its usage.
 FAKE_ACP_LOAD=1 offers session/load, which takes the session id it is given and replays one message of its history
 before it answers. FAKE_ACP_APP=<address> makes its first turn call mcp__metaform__map_where on that address, a tool
-with an MCP App view, its result what the real metaform map where prints.
+with an MCP App view, its result what the real metaform map where prints. FAKE_ACP_SAY=<text> makes its first turn call
+mcp__metaform__web_say with that text, running the real metaform web say, and then say the same text as a message, as
+agents that speak through the mascot do; FAKE_ACP_SAY_STREAM=<seconds> sends that message a word at a time, that many
+seconds apart, as a model writes it, and with FAKE_ACP_SAY_GATE naming a file it starts the message once that file
+exists.
 
 The extensions the real adapters advertise, each on its own switch: FAKE_ACP_STEER=1 advertises `_session/steering`
 and takes it into a turn in flight; FAKE_ACP_SUBAGENT=1 starts one subagent session in its first turn, which says a
@@ -60,10 +64,6 @@ FAKE_ACP_MASCOT=1 makes it a system agent that drives the person's mascot: each 
 metaform web say, web go (to FAKE_ACP_MASCOT_GO, when set, then web see and web look there) and web emote wave, then
 answers in one message; with FAKE_ACP_MASCOT_SCRIPT naming a file, it first runs each metaform command of its lines, a JSON
 list of words each, or waits the seconds a line gives alone.
-FAKE_ACP_ECHO=1 makes it a roundtable seat's agent: its session is named by its process, so seats started at once never
-share one, and every prompt, the first among them, is answered with one message saying how long it was; with
-FAKE_ACP_SEAT_SCRIPT naming a file, it first runs each metaform command of its lines on a prompt that holds
-FAKE_ACP_SEAT_ON, as a seat calls its controls.
 To a client whose clientCapabilities.auth.terminal is true it offers a terminal login, and started with that
 login's --login it logs its arguments and exits 0, speaking no ACP.
 """
@@ -73,6 +73,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 LOG = os.environ['FAKE_ACP_LOG']
@@ -89,7 +90,6 @@ PROMPT_LOCK = threading.Lock()
 RICH = os.environ.get('FAKE_ACP_RICH') == '1'
 MCP_ACP = os.environ.get('FAKE_ACP_MCP_ACP') == '1'
 V2 = os.environ.get('FAKE_ACP_V2') == '1'
-ECHO = os.environ.get('FAKE_ACP_ECHO') == '1'
 MODES = {'currentModeId': 'default', 'availableModes': [{'id': 'default', 'name': 'Default'},
                                                          {'id': 'plan', 'name': 'Plan', 'description': 'Plans only'}]}
 MODEL = ['small']
@@ -218,6 +218,23 @@ def first_turn(prompt_id, text):
         update({'sessionUpdate': 'tool_call_update', 'toolCallId': 't-app', 'status': 'completed',
                 'rawOutput': {'content': [{'type': 'text', 'text': printed}], 'isError': False},
                 'content': [{'type': 'content', 'content': {'type': 'text', 'text': printed}}]})
+    if os.environ.get('FAKE_ACP_SAY'):  # a line said in the bubble as an MCP tool, and the same line as a message
+        line = os.environ['FAKE_ACP_SAY']
+        update({'sessionUpdate': 'tool_call', 'toolCallId': 't-say', 'title': 'mcp__metaform__web_say',
+                'kind': 'other', 'status': 'in_progress', 'rawInput': {'text': line}})
+        printed = subprocess.run([sys.executable, '-m', 'metaform', 'web', 'say', line, '--json'], capture_output=True,
+                                 text=True, check=False).stdout
+        update({'sessionUpdate': 'tool_call_update', 'toolCallId': 't-say', 'status': 'completed',
+                'rawOutput': {'content': [{'type': 'text', 'text': printed}], 'isError': False},
+                'content': [{'type': 'content', 'content': {'type': 'text', 'text': printed}}]})
+        gate = os.environ.get('FAKE_ACP_SAY_GATE')
+        while gate and not os.path.exists(gate) and not CANCELLED.wait(0.05):
+            pass
+        pause = float(os.environ.get('FAKE_ACP_SAY_STREAM') or 0)
+        pieces = [(' ' if at else '') + word for at, word in enumerate(line.split(' '))] if pause else [line]
+        for piece in pieces:  # sent whole, or a word at a time as a model writes it
+            update({'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': piece}})
+            time.sleep(pause)
     if os.environ.get('FAKE_ACP_NOTICE') == '1' and NOTICES[0]:
         update({'sessionUpdate': 'notice', 'severity': 'warning', 'title': 'MCP server unavailable',
                 'description': 'Continuing without it.'})
@@ -357,21 +374,6 @@ def mascot_turn(prompt_id, text):
     send({'jsonrpc': '2.0', 'id': prompt_id, 'result': {'stopReason': 'end_turn', **used()}})
 
 
-def echo_turn(prompt_id, said):
-    """A roundtable seat's turn: with FAKE_ACP_SEAT_SCRIPT naming a file, each line a metaform command as a JSON list of
-    words, run when the prompt holds FAKE_ACP_SEAT_ON (any prompt when unset), as the seat's controls are called;
-    then one message saying how long the prompt was."""
-    script = Path(os.environ.get('FAKE_ACP_SEAT_SCRIPT') or '')
-    if script.is_file() and os.environ.get('FAKE_ACP_SEAT_ON', '') in said:
-        for at, line in enumerate(script.read_text(encoding='utf-8').splitlines()):
-            if line.strip():
-                words = json.loads(line)
-                log({'seat_script': words, 'printed': tool(f's-script-{at}', ' '.join(words), [*words, '--json'])[:600]})
-    reply = f'Turn {PROMPTS[0]} of {SESSION}: {len(said)} characters.'
-    update({'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': reply}})
-    send({'jsonrpc': '2.0', 'id': prompt_id, 'result': {'stopReason': 'end_turn'}})
-
-
 def used():
     """What a prompt's answer says it used, ACP's end-turn token usage, when FAKE_ACP_USAGE sets it."""
     tokens = int(os.environ.get('FAKE_ACP_USAGE') or 0)
@@ -451,7 +453,7 @@ def main():
         elif method == 'session/new':
             with WRITING, open(LOG, encoding='utf-8') as handle:
                 count = sum(json.loads(line).get('message', {}).get('method') == 'session/new' for line in handle)
-            SESSION = f'fake-echo-{os.getpid()}' if ECHO else f'fake-session-{count}'
+            SESSION = f'fake-session-{count}'
             answer = {'jsonrpc': '2.0', 'id': ident, 'result': {'sessionId': SESSION, **made()}}
             if os.environ.get('FAKE_ACP_ELICIT') == 'setup':  # a sign-in asked before the session is made
                 threading.Thread(target=setup, args=(ident, answer), daemon=True).start()
@@ -499,9 +501,6 @@ def main():
                         log({'replaced': ACTIVE_PROMPT[0]})
                     ACTIVE_PROMPT[0] = ident
                 threading.Thread(target=replacing_turn, args=(ident, PROMPTS[0]), daemon=True).start()
-            elif ECHO:
-                said = ' '.join(block.get('text', '') for block in message['params'].get('prompt', []))
-                threading.Thread(target=echo_turn, args=(ident, said), daemon=True).start()
             elif PROMPTS[0] == 1:
                 said = ' '.join(block.get('text', '') for block in message['params'].get('prompt', []))
                 threading.Thread(target=turn_of, args=(first_turn, ident, said), daemon=True).start()

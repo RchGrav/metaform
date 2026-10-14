@@ -1,0 +1,1 @@
+Final report: "Coverage gap: a change that only touches the chassis (`src/metaform/data/`, `settings.py` and so on) can break the page through the server's reads, and it won't trigger the browser tests. Widening the filter to `src/metaform/**` would close that gap, but the tests would then run on almost every change."

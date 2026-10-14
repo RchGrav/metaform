@@ -46,10 +46,11 @@ function seer(work, role) {
   return {refuse: mascotGlyph() ? 'The mascot is not drawn yet: the 3D map is not open.'
     : 'No mascot is chosen: web_mascot is none.'};
 }
-/* A figure's eyes as a camera: at its eye anchor, facing its gaze, with its own field of view, `eyeOf`. */
+/* A figure's eyes as a camera: at its eye anchor, facing its gaze, with its own field of view, `eyeOf`. `agent`, the
+ * view is an agent's eyes now; `agentMode`, the agent view V turns on and off and A never changes. */
 export const EYE = {camera: new THREE.PerspectiveCamera(68, 1.5, 0.05, 1e6), at: new THREE.Vector3(),
   dir: new THREE.Vector3(), look: new THREE.Vector3(), width: 768, height: 512, target: null, debug: false, view: false,
-  saved: null, k: 0, mesh: null, agent: false};
+  saved: null, k: 0, mesh: null, agent: false, agentMode: false};
 function eyeCamera(mesh, aspect = EYE.width / EYE.height) {
   eyeOf(mesh, EYE.at, EYE.dir);
   const camera = EYE.camera;
@@ -444,7 +445,8 @@ function selectedNow() {
 export function eyesOf(mesh, on = !EYE.view) {
   if (!G || (on && !mesh)) return false;
   const camera = G.camera(), controls = G.controls();
-  if (on && !EYE.view) EYE.saved = {at: camera.position.clone(), turn: camera.quaternion.clone(), fov: camera.fov};
+  // still easing back to the person's view, the place it eases to is the one kept
+  if (on && !EYE.view && !EYE.saved) EYE.saved ={at: camera.position.clone(), turn: camera.quaternion.clone(), fov: camera.fov};
   if (on && EYE.mesh && EYE.mesh !== mesh) EYE.mesh.visible = true;
   if (on) EYE.mesh = mesh;
   EYE.view = V3.eyes = Boolean(on);
@@ -458,8 +460,12 @@ export const mascotEyes = (on = !EYE.view) => MASCOT.mesh ? eyesOf(MASCOT.mesh, 
 const EYEQ = new THREE.Quaternion();
 export function eyes3d(passed) {  // each frame: the large camera toward the figure's eyes, or back to where it was
   followWatch();
-  // the agent's view is the large 3D map's: put in the small area, the map goes back to the person's view
-  if (EYE.view && small3d()) eyesOf(null, false);
+  // the agent's view is the large 3D map's: put in the small area, the agent view ends and the map goes back to the
+  // person's view
+  if ((EYE.view || EYE.agentMode) && small3d()) {
+    EYE.agentMode = false;
+    if (EYE.view) eyesOf(null, false);
+  }
   if (!G || (!EYE.view && !EYE.saved)) return;
   const camera = G.camera(), mesh = EYE.mesh;
   EYE.k = reduced() ? 1 : Math.min(1, EYE.k + passed / 0.9);
@@ -489,12 +495,12 @@ const onScreen = () => [...ROAM.figures.values()].filter(figure => figure.mesh &
 const followSaid = figure => figure
   ? `Following: the ${figure.glyph} on ${partAddress(figure.target) || 'its ticket'}` : 'Following: none';
 /* Follow an agent's figure, or none: the 2D map frames its node, `autoZoom2d`, and goes back to full fit when none is
- * followed; seen through an agent's eyes, the view goes over to the new one's, or back to the person's. */
+ * followed; with the agent view on, the view goes over to the new one's eyes, or back to the person's for none, and
+ * the agent view stays on for the next. */
 export function followFigure(figure, say = true) {
   Object.assign(FOLLOW, {work: figure?.id || null, node: figure?.target || null});
-  if (EYE.agent) {
-    if (figure) eyesOf(figure.mesh, true); else eyesOf(null, false);
-  }
+  if (EYE.agentMode && figure) eyesOf(figure.mesh, true);
+  else if (EYE.agent) eyesOf(null, false);
   if (figure) autoZoom2d(figure.target); else fullFit2d();
   if (say) note2d(followSaid(figure));
 }
@@ -503,12 +509,19 @@ export function followNext() {
   const all = onScreen(), at = all.findIndex(figure => figure.id === FOLLOW.work);
   followFigure(at < 0 ? all[0] || null : all[at + 1] || null);
 }
-/* V: the large 3D map seen from the followed agent's own eyes, or the person's view again. */
+/* V: the agent view on, the large 3D map seen from the followed agent's own eyes and from each agent A follows next,
+ * or off, the person's view again. */
 export function agentView() {
-  if (EYE.view) { eyesOf(null, false); note2d('View: yours'); return; }
+  if (EYE.view || EYE.agentMode) {
+    EYE.agentMode = false;
+    if (EYE.view) eyesOf(null, false);
+    note2d('View: yours');
+    return;
+  }
   const figure = FOLLOW.work ? ROAM.figures.get(FOLLOW.work) : null;
   if (!figure?.mesh) return note2d('No agent is followed: A follows one');
   if (small3d()) return note2d("The agent's view is the large 3D map's: S swaps the maps");
+  EYE.agentMode = true;
   eyesOf(figure.mesh, true);
   note2d(`View: the ${figure.glyph}'s`);
 }

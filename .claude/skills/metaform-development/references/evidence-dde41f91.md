@@ -1,0 +1,1 @@
+ruff output: "ISC004 Unparenthesized implicit string concatenation in collection --> tests/test_cli.py:1106:49 ... assert refused.stderr.splitlines()[-2:] == [f'Error: panes is inherited from {parent}; nothing is stored here '\n 'to reset.', ...]". Fix applied: the pieces were moved to their own lines in a list.

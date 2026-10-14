@@ -216,7 +216,7 @@ class Resource:
     """A read-only text a module serves over MCP as a resource, MCP-037: an agent reads it by its URI at
     discovery, before any tool runs. `verb` names the module verb whose result, called with no arguments, is the
     text; a module serves nothing it cannot also give on the command line. A URI holding `{field}` parts, such as
-    `metaform://roundtable/discussion{discussion}/review`, is a template: listed among the resource templates, each
+    `metaform://<module>/item{item}`, is a template: listed among the resource templates, each
     field matching one path segment or part of one, and read by calling `verb` with the fields as its nouns, so
     every field names a noun of the verb."""
     uri: str

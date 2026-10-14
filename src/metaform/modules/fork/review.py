@@ -13,7 +13,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
-from metaform import prompt_files
+from metaform import home, prompt_files
 from metaform.data import Node, WorkRecord
 from metaform.module import Context, Stop, call, context, surface
 
@@ -143,8 +143,12 @@ def wheel(ctx: Context) -> dict[str, Any]:
         if carried != {item.name for item in approved}:
             raise Stop('The built wheel does not hold exactly the approved modules.', 'metaform help fork wheel')
         output = ctx.folder / 'dist' / built.name
-        output.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(built, output)
+        if home.is_home_path(output):
+            home.mkdir_private(output.parent)
+            home.write_private(output, built.read_bytes())
+        else:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(built, output)
     return {'wheel': str(output), 'approved': [item.name for item in approved], 'excluded': excluded, 'notes': notes}
 
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import shlex
 import sys
 from pathlib import Path
@@ -59,7 +60,9 @@ settings.choice('node_relay_capability', list(config.CAPABILITIES), 'read', scop
                 help='The capability a Node reached through a relay has: read unless you raise it.',
                 details='Used instead of node_capability by metaform node relay, so dispatch is reachable through a '
                         'relay only when you set this to dispatch yourself.')
-settings.items('node_projects', (), scope=G, label='Node project folders',
+# node_projects, node_host, node_ssh_identity and node_ssh_public_key are person_only like their neighbours: they say
+# which folders the Node exposes, which host deploy reaches and which key a created VM trusts for root.
+settings.items('node_projects', (), scope=G, person_only=True, label='Node project folders',
                help='Folders on the host mounted into the Node, each at /srv/projects/<its name>.')
 settings.text('node_dns_provider', '', scope=G, label='DNS provider',
               help='The caddy-dns module for DNS-01, such as cloudflare, vultr or route53; its token goes in '
@@ -90,8 +93,9 @@ settings.boolean('node_member_dispatch', False, scope=G, person_only=True, label
 settings.boolean('node_dcr', False, scope=G, person_only=True, label='Dynamic client registration',
                  help='Let older AI tools register themselves (RFC 7591), which the MCP specification of 2026-07-28 '
                       'deprecates in favour of Client ID Metadata Documents.')
-settings.text('node_host', '', scope=G, label='Node host', help='The host deploy reaches over SSH, a name or address.')
-settings.text('node_ssh_identity', '', scope=G, label='SSH identity',
+settings.text('node_host', '', scope=G, person_only=True, label='Node host',
+              help='The host deploy reaches over SSH, a name or address.')
+settings.text('node_ssh_identity', '', scope=G, person_only=True, label='SSH identity',
               help='The private key file deploy uses; empty uses your SSH agent and configuration.')
 settings.text('node_dir', 'metaform-node', label='Node folder',
               help='The folder, under this one, that holds the Node\'s compose project.')
@@ -102,7 +106,7 @@ settings.text('node_vultr_plan', 'vhf-1c-1gb', scope=G, label='Vultr plan',
               help='The plan id: GET https://api.vultr.com/v2/plans lists them.')
 settings.number('node_vultr_os', 2284, min=1, scope=G, label='Vultr OS id',
                 help='The OS id, 2284 for Ubuntu 24.04 LTS x64: GET https://api.vultr.com/v2/os lists them.')
-settings.text('node_ssh_public_key', '~/.ssh/id_ed25519.pub', scope=G, label='SSH public key',
+settings.text('node_ssh_public_key', '~/.ssh/id_ed25519.pub', scope=G, person_only=True, label='SSH public key',
               help='The public key a created VM lets in, for root and the working user.')
 settings.text('node_relay_server', '', scope=G, label='Relay server',
               help='The relay this Metaform dials, such as relay.metaform.ing.')
@@ -110,7 +114,7 @@ settings.number('node_relay_port', 7000, min=1, max=65535, scope=G, label='Relay
                 help='The port the relay\'s frps takes tunnel clients on; 7000 unless the operator says otherwise.')
 settings.text('node_relay_domain', '', scope=G, label='Relay domain',
               help='On the relay\'s own host: the domain whose names it routes, such as metaform.ing.')
-settings.boolean('node_dry_run', False, switches=('--dry-run', '--no-dry-run'), label='Dry run',
+settings.boolean('node_dry_run', False, switches=('--dry-run', '--no-dry-run'), label='Dry run', per_call=True,
                  help='Print every step, API calls and cloud-init included, and run none.',
                  details='Given on the command line for the one run; deploy and update with it change nothing.')
 
@@ -141,6 +145,17 @@ def _spec(ctx: Context, domain: str, mode: str | None = None) -> config.NodeSpec
         role=str(ctx.setting('node_role')) if mode != 'relay' else 'node')
 
 
+def _keep_gate(folder: Path, spec: config.NodeSpec) -> None:
+    """The gate secret beside the compose project, made once and owner-readable only: init and update keep it, so
+    Caddy and the page server go on agreeing. A broker serves no page and has none."""
+    path = folder / config.GATE_FILE
+    if spec.role != 'node' or path.exists():
+        return
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, 'w', encoding='utf-8') as handle:
+        handle.write(f'{config.GATE_SECRET}={secrets.token_urlsafe(32)}\n')
+
+
 def write_project(folder: Path, spec: config.NodeSpec) -> dict[str, Any]:
     """The compose project for `spec`, refused while anything in it would be unsafe; the owner's setup link only
     when this folder has none yet, since only its hash is kept."""
@@ -150,6 +165,7 @@ def write_project(folder: Path, spec: config.NodeSpec) -> dict[str, Any]:
     first = not (folder / 'bootstrap' / 'owner-invite.json').exists()
     secret, invite = config.owner_invite(spec) if first else (None, None)
     written = _write(folder, config.files(spec, invite))
+    _keep_gate(folder, spec)
     shown: dict[str, Any] = {'folder': str(folder), 'files': written, 'issuer': spec.issuer,
                              'capability': spec.capability, 'mode': spec.mode}
     if secret:
@@ -235,6 +251,7 @@ def update(ctx: Context) -> dict[str, Any]:
     if not target.host:
         raise Stop('No host recorded for this Node.', 'metaform set --node-host <name or address>')
     _write(folder, {name: text for name, text in config.files(spec, None).items() if not name.startswith('bootstrap')})
+    _keep_gate(folder, spec)  # a Node deployed before the gate secret gets one here
     steps = plans.update_plan(spec, target)
     if ctx.setting('node_dry_run'):
         return {'dry_run': True, 'host': target.host, 'plan': plans.show(steps)}
@@ -276,7 +293,8 @@ def logs(ctx: Context) -> str:
 # ---------------------------------------------------------------------------------------------------- accounts
 
 def _issuer(ctx: Context) -> str:
-    kept = home.home() / 'node' / 'issuer'
+    from .authserver import node_folder
+    kept = node_folder() / 'issuer'
     if kept.is_file():
         return kept.read_text(encoding='utf-8').strip()
     domain = str(ctx.setting('node_domain'))
@@ -377,16 +395,24 @@ def rotate_key(ctx: Context) -> Any:
 
 
 def auth(ctx: Context) -> None:
-    from .authserver import Policy, serve
+    from .authserver import Policy, move_from_home, node_folder, serve
     domain = str(ctx.setting('node_domain')).lower()
     if not domain:
         raise Stop('The authorization server needs the Node\'s domain.', 'metaform node auth --node-domain <domain>')
+    moved = move_from_home()
+    if moved:
+        print(f'Moved {", ".join(moved)} from the shared home to the auth volume.', file=sys.stderr, flush=True)
     issuer = 'https://' + domain
-    kept = home.home() / 'node' / 'issuer'
-    kept.parent.mkdir(parents=True, exist_ok=True)
-    kept.write_text(issuer + '\n', encoding='utf-8')
+    kept = node_folder() / 'issuer'
     role = str(ctx.setting('node_role'))
-    (kept.parent / 'role').write_text(role + '\n', encoding='utf-8')  # what `metaform node signout` opens it as
+    if home.is_home_path(kept):
+        home.mkdir_private(kept.parent)
+        home.write_private(kept, issuer + '\n')
+        home.write_private(kept.parent / 'role', role + '\n')
+    else:
+        kept.parent.mkdir(parents=True, exist_ok=True)
+        kept.write_text(issuer + '\n', encoding='utf-8')
+        (kept.parent / 'role').write_text(role + '\n', encoding='utf-8')  # what `metaform node signout` opens it as
     serve(Policy(issuer, str(ctx.setting('node_capability')), bool(ctx.setting('node_dcr')),
                  broker=role == 'broker',
                  member_dispatch=bool(ctx.setting('node_member_dispatch'))), config.AUTH_PORT,

@@ -1,0 +1,1 @@
+Handler.same_origin is the single Origin check used by server.write, builds, voice, apps and workspace; test_web's _Handler stand-in has a same_origin too. ... A new page write must be classed there or members get 403.

@@ -4,7 +4,6 @@ import '/page/app/figures/cut.js';  // the part before runs first, so the parts 
 // The graph, glass and figures share the import map's one local Three.js runtime, VIEW-003 and VIEW-025.
 import * as THREE from 'three';
 import {$, reduced, h} from '/page/app/core/dom.js';
-import {opened} from '/page/app/core/overlays.js';
 import {S} from '/page/app/core/reads.js';
 import {ROAM, nodeById, ticketNode, isSystemTalk, embody, ballOf, sizeOf} from '/page/app/figures/agents.js';
 import {RESTLESS, drivePace, facingOf, driveGoal, driveFace} from '/page/app/figures/walk.js';
@@ -358,8 +357,9 @@ function come(payload) {
   if (!COMES.includes(to)) return {error: `${to} is not where a body comes: ${COMES.join(', ')}.`};
   if (!(seconds >= 0 && seconds <= COME_MOST)) return {error: `seconds is from 0 to ${COME_MOST}.`};
   const figure = payload.work ? ROAM.figures.get(payload.work) : null;
-  if (!figure && !MASCOT.mesh) {
-    return {error: 'You have no figure on the map and the mascot is not drawn: take a body with web_embody.'};
+  if (!figure && !MASCOT.mesh) {  // the mascot is drawn once the person gives their system agent a body
+    return {error: 'You have no figure on the map and the mascot is not drawn: take a body with web_embody.',
+      next: 'web_embody with a character, then web_come again'};
   }
   const who = figure ? 'your figure' : "the person's mascot";
   if (!seconds) {  // the approach ends now
@@ -433,7 +433,7 @@ const MASCOT_ACTS = {
     MASCOT.emote = {kind: 'wave', at: MASCOT.clock, long: 1.2};
     tell(`The ${payload.tab} tab.`);
   },
-  open: (payload, node, {tell}) => opened(payload, tell),
+  open: (payload, node, {tell}) => openFor(payload, tell),
   swap: (payload, node, {tell}) => {
     swap(payload.large === '2d');
     tell(`The ${payload.large.toUpperCase()} map, large.`);
@@ -465,18 +465,25 @@ function pushDirection(payload, node) {
   const other = nodeById(G.graphData(), toward);
   return other ? [other.x - at.x, other.y - at.y, other.z - at.z] : null;
 }
-function openFor(payload, tell) {  // what the agent opens on the page for the person
+/* What the agent opens on the page for the person, `which` naming the ticket or pane (`id` is the act's own): an
+ * error when nothing opens, so `web open` never answers success for a box it did not open. */
+function openFor(payload, tell) {
+  const which = payload.which;
   if (payload.what === 'board') { if ($('#board').hidden) $('#boardBtn').click(); tell('The board.'); }
   else if (payload.what === 'settings') { openSettings(); tell('Settings.'); }
-  else if (payload.what === 'pane' && payload.id && WS.on) { WS.reveal(payload.id); tell('There.'); }
-  else if (payload.what === 'ticket' && payload.id) {  // its node, its work in the panel
-    const ticket = ticketOf(payload.id);
-    if (!ticket) return tell('I cannot find that ticket.');
+  else if (payload.what === 'pane') {  // a page's pane, or a pane by its own id
+    if (!WS.on) return {error: `The workspace is off, so there is no pane ${which} to open.`};
+    if (!which || !(WS.reveal(which) || WS.activate(which))) return {error: `No pane ${which} in the workspace.`};
+    tell('There.');
+  } else if (payload.what === 'ticket') {  // its node, its work in the panel
+    const ticket = which ? ticketOf(which) : null;
+    if (!ticket) { tell('I cannot find that ticket.'); return {error: `No ticket ${which} on this map.`}; }
     const node = ticketNode(ticket);
     MASCOT.call = {node, until: MASCOT.driven, agent: true};
     setTimeout(() => { select(node, true); showTab('object'); }, reduced() ? 0 : 900);
     tell(`Ticket on ${ticketPart(ticket)}.`);
-  }
+  } else return {error: `${payload.what} cannot be opened.`};
+  return {done: true};
 }
 // an element by its address, or a join written receiver>provider, as the node the maps draw for it
 function nodeOfAddress(address) {

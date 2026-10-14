@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from metaform import settings
+from metaform import home, settings
 from metaform.module import Context, Module, Noun, Stop, Verb
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
@@ -94,7 +94,11 @@ def seal_(ctx: Context) -> Any:
     except seal.Malformed as found:
         raise Stop(str(found), 'metaform help packet seal') from None
     target = _path(ctx, ctx.nouns['file'])
-    target.write_bytes(packet)
+    if home.is_home_path(target):
+        home.mkdir_private(target.parent)
+        home.write_private(target, packet)
+    else:
+        target.write_bytes(packet)
     return {'written': str(target), 'work': len(work), 'size': len(packet)}
 
 
@@ -115,8 +119,12 @@ def open_(ctx: Context) -> Any:
             path = (target / part / name).resolve()
             if not path.is_relative_to((target / part).resolve()):
                 raise Stop(f'{name} would be written outside {target}.', 'metaform help packet open')
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(body)
+            if home.is_home_path(path):
+                home.mkdir_private(path.parent)
+                home.write_private(path, body)
+            else:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(body)
     return {'written': str(target), 'work': len(found.work), 'data': len(found.data)}
 
 
