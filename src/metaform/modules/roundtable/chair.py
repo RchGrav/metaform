@@ -21,6 +21,8 @@ from typing import Any, cast
 
 from metaform.module import Context, Stop, call, context, surface
 
+from . import names
+
 ROLE = 'roundtable'  # the role the runner sends the head agent its turns under, BASE-052
 
 
@@ -50,6 +52,41 @@ def head_session(ctx: Context) -> dict[str, str] | None:
     rows = cast(list[dict[str, Any]], held) if isinstance(held, list) else []
     row = next((one for one in rows if one.get('runner') == runner and one.get('state') == 'running'), None)
     return None if row is None else {'work': work, 'session': str(row['session_id'])}
+
+
+def head_model(ctx: Context, agent: str) -> str | None:
+    """The model the head agent's harness runs, as dispatch's options give it: the value dispatch_<agent>_<option>
+    chose, else the one the agent last reported; its `default` read as the model the agent says that is."""
+    found: Any = verb_call(ctx, 'dispatch', 'options', {'agent': agent})
+    listed = cast(list[dict[str, Any]], cast(dict[str, Any], found).get('agents') or []) if isinstance(found, dict) \
+        else []
+    model = next((one for row in listed for one in cast(list[dict[str, Any]], row.get('settings') or [])
+                  if one.get('category') == 'model'), None)
+    if model is None:
+        return None
+    value = str(model.get('chosen') or model.get('current') or '')
+    if value in ('', 'default'):
+        choices = cast(list[dict[str, Any]], model.get('choices') or [])
+        value = next((str(one.get('description') or '') for one in choices if one.get('value') == 'default'), '')
+    return value or None
+
+
+def head_name(ctx: Context, work: str | None, session: str | None, taken: list[str]) -> str | None:
+    """The name the head agent goes by at its table, made from the model its session's harness runs, unique against
+    the seats' names; None when dispatch cannot say which agent the session is."""
+    if not work or not session:
+        return None
+    try:
+        found: Any = verb_call(ctx, 'dispatch', 'sessions', {'id': work, 'thread': False})
+        rows = cast(list[dict[str, Any]], cast(dict[str, Any], found).get('sessions') or []) \
+            if isinstance(found, dict) else []
+        agent = next((str(one['agent']) for one in rows if str(one.get('session_id')) == session and one.get('agent')),
+                     None)
+        if agent is None:
+            return None
+        return names.head(agent, head_model(ctx, agent), taken)
+    except (Stop, RuntimeError, OSError, KeyError, TypeError, ValueError):
+        return None
 
 
 def caller(ctx: Context, what: str) -> dict[str, str]:

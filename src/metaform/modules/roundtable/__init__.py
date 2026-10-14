@@ -4,12 +4,19 @@ The person or their head agent opens a table at an Address with an opening messa
 in turn, round robin, in a fixed order, each at most 512 characters, and a submission enters the discussion only
 when Jev finds it new, valuable, relevant and worth keeping, each at roundtable_keep or above. A vetoed submission
 is shown to every seat as its verdict, the four questions with their nouls and the link to its text. The table ends
-after a full round that kept nothing, or when its chair ends it, and one model writes the report into
-docs/roundtables/.
+after a full round that kept nothing, at its most rounds or OpenRouter dollars (roundtable_rounds, roundtable_spend,
+or its own from open), or when its chair ends it, and one model writes the report into docs/roundtables/.
 
-The parts: `store` the tables, `seats` who sits and a model's turn through OpenRouter, `judge` Jev's four nouls,
+The table is also a place: the seats sit round a round table in speaking order, each seat's figure fixed at its
+chair, a plant in the middle; every seat has a short name, can turn in place and look from its own eyes, and has a
+moment to explore those controls before the first turn.
+
+The parts: `store` the tables, `seats` who sits and a model's turn through OpenRouter, `harness` a harness seat's
+turn in its own dispatch session, `judge` Jev's four nouls,
 `render` every text a seat, the head agent, the review and the report read, `chair` who may chair and how turns
-reach the head agent, `runner` the detached process that runs a table.
+reach the head agent, `runner` the detached process that runs a table; `names` each seat's short name, `scene` where
+the seats sit and what each sees, `controls` a seat's turn, look and look-at, `toolloop` a model seat's turn with its
+controls as tools, `explore` the seats' time to explore, `stage` the runner's watch server and headless renderer.
 """
 from __future__ import annotations
 
@@ -19,7 +26,7 @@ from typing import Any, cast
 from metaform import settings
 from metaform.module import Context, Module, Noun, Resource, Stop, Verb
 
-from . import chair, render, runner, seats, store
+from . import chair, controls, harness, render, runner, scene, seats, store
 from .render import LIMIT, said
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
@@ -36,8 +43,16 @@ settings.number('roundtable_pause', 5, min=0, max=60, person_only=True,
                 help='Seconds after each turn, while the person watches the table, to hold, comment, continue or end.')
 settings.number('roundtable_agent_wait', 300, min=10, max=3600, person_only=True,
                 help='Seconds an agent seat has to submit on its turn before the turn passes with no submission.')
+settings.number('roundtable_explore', 60, min=0, max=600, person_only=True,
+                help='Seconds every seat has to explore its controls, turning and looking, before the first turn.')
+settings.number('roundtable_rounds', 8, min=1, max=1000, person_only=True,
+                help='The most rounds a table runs before it ends itself and its report is written.')
+settings.number('roundtable_spend', 2, min=0, max=1000, person_only=True,
+                help='The most US dollars a table spends through OpenRouter, its seats, Jev and its reporter, counted '
+                     'from the cost OpenRouter returns, before it ends itself and its report is written.')
 settings.text('roundtable_reporter', 'anthropic/claude-opus-5.5', person_only=True,
-              help='The OpenRouter model that writes the report when a table ends.')
+              help='Who writes the report when a table ends: an OpenRouter model id, or a harness seat at the table, '
+                   'acp:<agent>/<model>, which writes it in its own session on the person\'s own login.')
 
 
 def number_of(ctx: Context) -> int:
@@ -61,17 +76,45 @@ def open_table(ctx: Context) -> dict[str, Any]:
     opening = text_of(ctx, 'opening')
     if not opening:
         raise Stop('A table opens with its opening message.', f'metaform roundtable open {address} -- "<opening>"')
-    chosen = seats.chosen(ctx.nouns.get('seats'))
+    chosen, notices = harness.check(ctx, seats.chosen(ctx.nouns.get('seats')))
     if seats.missing_key(chosen):
         raise Stop(f'{seats.KEY} is not set, and a model seat is called through OpenRouter.',
                    f'set {seats.KEY} in the environment Metaform runs in')
     subject = render.slug(str(ctx.nouns.get('subject') or opening))
+    rounds, spend = limits(ctx, who['chair'])
     number = store.opened(held, {'address': address, 'subject': subject, 'opening': opening, 'chair': who['chair'],
-                                 'chair_work': who.get('work'), 'chair_session': who.get('session')}, chosen)
+                                 'chair_work': who.get('work'), 'chair_session': who.get('session'),
+                                 'rounds': rounds, 'spend': spend}, chosen)
     pid = runner.spawn(ctx, number)
     return {'discussion': number, 'address': address, 'subject': subject, 'chair': who['chair'],
-            'seats': [seat['id'] for seat in chosen], 'runner': pid, 'privacy': said('privacy'),
-            'next': ctx.calls(f'metaform roundtable status {number}')}
+            'seats': [{'seat': seat['id'], 'name': seat['name']} for seat in store.seats(held, number)],
+            'runner': pid, 'privacy': said('privacy'),
+            **({'notices': notices} if notices else {}), 'next': ctx.calls(f'metaform roundtable status {number}')}
+
+
+def limits(ctx: Context, chair_is: str) -> tuple[int | None, float | None]:
+    """The table's own most rounds and dollars, from `open`'s rounds= and spend=, none for the settings'. The settings
+    are the person's, so a head agent may set a table's lower than them, never higher."""
+    rounds: int | None = None
+    spend: float | None = None
+    if ctx.nouns.get('rounds') not in (None, ''):
+        rounds = int(ctx.nouns['rounds'])
+        if rounds < 1:
+            raise Stop('rounds is one at least.', 'metaform help roundtable open')
+    if ctx.nouns.get('spend') not in (None, ''):
+        try:
+            spend = float(str(ctx.nouns['spend']).strip().lstrip('$'))
+        except ValueError:
+            raise Stop('spend is US dollars, such as 2 or 0.50.', 'metaform help roundtable open') from None
+        if not spend >= 0:  # also refuses nan
+            raise Stop('spend is zero dollars at least.', 'metaform help roundtable open')
+    if chair_is != 'person':
+        most_rounds, most_spend = int(ctx.setting('roundtable_rounds')), float(ctx.setting('roundtable_spend'))
+        if (rounds or 0) > most_rounds or (spend or 0) > most_spend:
+            raise Stop(f'A head agent may open a table with at most roundtable_rounds ({most_rounds}) rounds and '
+                       f'roundtable_spend (${most_spend:g}); only the person can raise them.',
+                       'ask the person to open it, or to raise the setting')
+    return rounds, spend
 
 
 def open_one(ctx: Context) -> dict[str, Any]:
@@ -139,15 +182,23 @@ def watch(ctx: Context) -> dict[str, Any]:
 
 def status_of(ctx: Context, found: dict[str, Any]) -> dict[str, Any]:
     held = store.seats(ctx.require_store(), found['number'])
-    turn = held[int(found['position'])]['id'] if found['state'] in ('running', 'held') and held else None
+    turn = held[int(found['position'])]['name'] if found['state'] in ('running', 'held') and held else None
     latest = store.submissions(ctx.require_store(), found['number'])
     return {'discussion': found['number'], 'address': found['address'], 'subject': found['subject'],
             'state': found['state'], 'reason': found['reason'], 'chair': found['chair'], 'round': found['round'],
-            'turn_of': turn, 'latest': latest[-1]['number'] if latest else 0, 'report': found['report'],
+            'turn_of': turn, 'latest': latest[-1]['number'] if latest else 0,
+            'rounds': found.get('rounds') or int(ctx.setting('roundtable_rounds')),
+            'spend': found['spend'] if found.get('spend') is not None else float(ctx.setting('roundtable_spend')),
+            'spent': round(float(found.get('spent') or 0), 4), 'report': found['report'],
             **({'report_error': found['report_error']} if found['report_error'] else {}),
             'runner': 'running' if runner.alive(found) else 'stopped',
-            'seats': [{'seat': seat['id'], 'kind': seat['kind'], 'kept': seat['kept'], 'taken': seat['taken']}
-                      for seat in held]}
+            **({'watch': found['scene']['url']} if runner.alive(found) and isinstance(found.get('scene'), dict)
+               and found['scene'].get('url') else {}),
+            'seats': [{'seat': seat['id'], 'name': seat['name'], 'kind': seat['kind'], 'kept': seat['kept'],
+                       'taken': seat['taken'], **({'gone': seat['gone']} if seat['gone'] else {}),
+                       # a harness seat's own session, whole, and the model its agent reported it runs
+                       **({'session': seat['session'], 'reported': seat.get('reported')} if seat['kind'] == 'acp'
+                          else {})} for seat in held]}
 
 
 def status(ctx: Context) -> dict[str, Any]:
@@ -244,6 +295,31 @@ def review(ctx: Context) -> str:
                          int(ctx.setting('roundtable_keep')) / 100)
 
 
+def scene_of(ctx: Context) -> dict[str, Any]:
+    """The table as its scene module draws it, for the person's page: every seat's place, facing, name, hand and
+    bubble."""
+    return scene.state(store.own(ctx.require_store()), number_of(ctx))
+
+
+def offered(ctx: Context) -> dict[str, Any]:
+    """The seats a table can be opened with, for the person's page: each agent dispatch starts with the models it
+    offered at its last session here, and OpenRouter's models; with the most rounds and dollars in force."""
+    agents: list[dict[str, Any]] = []
+    try:
+        listed: Any = chair.verb_call(ctx, 'dispatch', 'agents', {})
+    except Stop:
+        listed = {}
+    for row in cast(list[dict[str, Any]], cast(dict[str, Any], listed).get('agents') or []):
+        if not row.get('available'):
+            continue
+        models = [{'value': str(one.get('value')), 'name': str(one.get('name') or one.get('value'))}
+                  for one in harness.offered_models(ctx, str(row['agent'])) if one.get('value') != 'default']
+        agents.append({'agent': row['agent'], 'label': row.get('label') or row['agent'], 'models': models})
+    return {'agents': agents, 'models': sorted(seats.listed_models()), 'key': not seats.missing_key(
+        [{'kind': 'openrouter'}]), 'rounds': int(ctx.setting('roundtable_rounds')),
+        'spend': float(ctx.setting('roundtable_spend')), 'pause': int(ctx.setting('roundtable_pause'))}
+
+
 def run(ctx: Context) -> dict[str, Any]:
     """The table's runner, started detached by open, continue, comment and end."""
     return runner.Table(ctx, number_of(ctx)).run()
@@ -254,25 +330,38 @@ SEAT = Noun('seat', 'The agent seat, agent:<name>, as the table was opened with 
 TEXT = Noun('text', 'The text, every word after the nouns.', many=True)
 OPEN_EXAMPLE = ('metaform roundtable open code.alarm seats=anthropic/claude-haiku-5.5,agent:me -- '
                 '"How loud should the alarm be?"')
-SEAT_LIST = 'A JSON list or a comma-separated list of seats: model ids such as anthropic/claude-haiku-5.5, or ' \
+FOR_SEAT = (Noun('discussion', 'An agent seat\'s table; a harness seat is known by its session.', kind='int',
+                 required=False),
+            Noun('seat', 'An agent seat, agent:<name>; a harness seat is known by its session.', required=False))
+HARNESS_EXAMPLE = ('metaform roundtable open code.alarm seats=acp:claude/opus,acp:codex/gpt-6-astra -- '
+                   '"How loud should the alarm be?"')
+SEAT_LIST = 'A JSON list or a comma-separated list of seats: model ids such as anthropic/claude-haiku-5.5, ' \
+            'acp:<agent>/<model> for a harness dispatch runs on your own login, such as acp:codex/gpt-6-astra, or ' \
             'agent:<name> for an agent that submits its own turns.'
 
 MODULE = Module(
     id='roundtable',
     summary='Hold a discussion among models at an Address, keeping only what Jev finds a real contribution.',
-    purpose='Opens a roundtable at an Address: seats, models through OpenRouter or agents, speak in turn, each at '
-            'most 512 characters, and Jev keeps only what is new, valuable, relevant and worth keeping. The person '
-            'and their head agent chair it, and a report is written when it ends. Details: metaform help roundtable.',
+    purpose='Opens a roundtable at an Address: seats, models through OpenRouter, harnesses through dispatch or '
+            'agents, speak in turn, each at most 512 characters, and Jev keeps only what is new, valuable, relevant '
+            'and worth keeping. The person and their head agent chair it, and a report is written when it ends. '
+            'Details: metaform help roundtable.',
     details='',
     tables=store.TABLES,
+    status=controls.connect,
     verbs=(
         Verb('open', open_table, 'Open a roundtable at an Address with an opening message and its seats.',
              nouns=(Noun('address', 'The Address the discussion is about.'),
                     Noun('seats', SEAT_LIST + ' Every table names its seats.'),
                     Noun('subject', 'A few words naming the subject, for the report\'s file name; the opening\'s first '
                                     'words when none.', required=False),
+                    Noun('rounds', 'The most rounds this table runs, in place of roundtable_rounds.', kind='int',
+                         required=False),
+                    Noun('spend', 'The most US dollars this table spends through OpenRouter, such as 0.50, in place '
+                                  'of roundtable_spend.', required=False),
                     Noun('opening', 'The opening message, every word after the nouns.', many=True)),
-             examples=((OPEN_EXAMPLE, 'Opens a table with one model and one agent seat.'),),
+             examples=((OPEN_EXAMPLE, 'Opens a table with one model and one agent seat.'),
+                       (HARNESS_EXAMPLE, 'Opens a table with Claude Code and Codex seats, on your subscriptions.')),
              effect='write', open_world=True),
         Verb('comment', comment, 'Comment at a table, inline at the next gap between turns; unjudged, no limit.',
              nouns=(DISCUSSION, TEXT), effect='write'),
@@ -300,6 +389,21 @@ MODULE = Module(
              effect='read'),
         Verb('review', review, 'Read the full review: every submission with its four nouls.', nouns=(DISCUSSION,),
              effect='read'),
+        Verb('rotate', controls.rotate_verb, 'As a seat, turn your figure in place: degrees=<n>, positive to your '
+             'right, or to=<n> from facing the table.',
+             nouns=(Noun('degrees', 'Degrees to turn by, positive to your right.', kind='int', required=False),
+                    Noun('to', 'A facing to turn to, in degrees from facing the table, positive to your right.',
+                         kind='int', required=False), *FOR_SEAT),
+             details='Your figure stays at its chair and turns about its own vertical axis. Returns your new facing '
+                     'and who is in front of you. It changes only your own facing at the table.', effect='read'),
+        Verb('look', controls.look_verb, 'As a seat, see straight ahead from your own eyes: a picture and what is in '
+             'view.', nouns=FOR_SEAT, effect='read'),
+        Verb('look-at', controls.look_at_verb, 'As a seat, turn to face a seat by its name, or the plant, and look.',
+             nouns=(Noun('name', 'The name of the seat to look at, or plant.'), *FOR_SEAT), effect='read'),
+        Verb('scene', scene_of, 'Read a table as its scene draws it: each seat\'s place, facing, name, hand and '
+             'bubble.', nouns=(DISCUSSION,), surfaces=('cli',), effect='read'),
+        Verb('seats', offered, 'List the seats a table can be opened with: the agents and their models, and '
+             'OpenRouter\'s models.', surfaces=('cli',), effect='read', open_world=True),
         Verb('run', run, 'Run a table; started detached by open, and by continue, comment and end when it stopped.',
              nouns=(DISCUSSION,), surfaces=('cli',), effect='write', open_world=True),
     ),

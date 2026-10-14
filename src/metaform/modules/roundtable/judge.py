@@ -14,9 +14,9 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from metaform import jev, settings
 
@@ -63,14 +63,17 @@ def config(folder: Path) -> jev.Config:
     return jev.Config(endpoint, model, key, STATE_TOKENS)
 
 
-def ask(folder: Path, given: Mapping[str, Any]) -> dict[str, float]:
-    """The four nouls for the contribution in `given`, by name; Failed when Jev does not answer usably."""
+def ask(folder: Path, given: Mapping[str, Any], paid: Callable[[float], None] | None = None) -> dict[str, float]:
+    """The four nouls for the contribution in `given`, by name, the request's usage cost told to `paid`; Failed when
+    Jev does not answer usably."""
     cfg = config(folder)
     asked = questions()
     body = {'model': cfg.model, 'state': dict(given),
             'questions': {name: question.payload() for name, question in asked.items()}}
     try:
         reply = jev.post(cfg, body)
+        if paid is not None:
+            paid(float(cast(dict[str, Any], reply.get('usage') or {}).get('cost') or 0))
         raw: Any = reply['answers']
         return {name: float(jev.checked(question, raw[name], cfg.model).value) for name, question in asked.items()}
     except (OSError, ValueError, KeyError, TypeError, ImportError) as error:

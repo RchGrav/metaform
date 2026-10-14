@@ -34,9 +34,15 @@ def link(discussion: int, number: int) -> str:
 
 
 def who(row: Mapping[str, Any]) -> str:
-    """Who a turn is credited to: its seat, or the person or the head agent for a comment."""
+    """Who a turn is credited to: its seat by the name it goes by at the table (its id, on a turn recorded before
+    seats had names), the person for a comment, or the head agent for a comment by its name (the head agent, on one
+    recorded before it had one)."""
     kind = row['kind']
-    return said('name_person') if kind == 'person' else said('name_head') if kind == 'head' else str(row['seat'])
+    if kind == 'person':
+        return said('name_person')
+    if kind == 'head':
+        return str(row.get('name') or said('name_head'))
+    return str(row.get('name') or row['seat'])
 
 
 def entered(row: Mapping[str, Any]) -> bool:

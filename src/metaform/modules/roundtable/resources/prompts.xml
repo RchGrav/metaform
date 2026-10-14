@@ -11,7 +11,7 @@
 <!-- roundtable's instructions. Returned by metaform_instructions with module roundtable, at
      metaform://instructions/roundtable, and printed by metaform help agents roundtable. Off until the module is
      enabled. -->
-<instructions>roundtable holds a discussion among models at an Address: seats speak in turn, at most 512 characters each, and Jev keeps only what is new, valuable, relevant and worth keeping. The person and their head agent open a table and chair it: roundtable_open, roundtable_comment, roundtable_hold, roundtable_continue, roundtable_end. An agent seated at a table reads its turn with roundtable_turn and answers with roundtable_submit. Read a table with roundtable_status and roundtable_read, a vetoed submission's text at metaform://roundtable/discussion&lt;N&gt;/submission&lt;M&gt;, and every submission's four nouls at metaform://roundtable/discussion&lt;N&gt;/review.</instructions>
+<instructions>roundtable holds a discussion among models at an Address: seats speak in turn, at most 512 characters each, and Jev keeps only what is new, valuable, relevant and worth keeping. The person and their head agent open a table and chair it: roundtable_open, roundtable_comment, roundtable_hold, roundtable_continue, roundtable_end. An agent seated at a table reads its turn with roundtable_turn and answers with roundtable_submit. Every seat sits as a figure at a round table and has its controls: roundtable_rotate turns it in place, roundtable_look shows what it sees from its own eyes, and roundtable_look-at turns it to face another seat by name and looks. Read a table with roundtable_status and roundtable_read, a vetoed submission's text at metaform://roundtable/discussion&lt;N&gt;/submission&lt;M&gt;, and every submission's four nouls at metaform://roundtable/discussion&lt;N&gt;/review.</instructions>
 <!-- Nothing is counted at a node: the roundtable has no node_count. -->
 <counts></counts>
 <!-- roundtable's rules, gathered at the end of metaform://tools, each "[roundtable] <rule> Why: <why>". -->
@@ -20,9 +20,10 @@
 </rules>
 
 <!-- What a seat receives on its first turn: the opening message, every turn before its own, and the limit. Sent as
-     the first user message of a model's conversation through OpenRouter, and returned by roundtable_turn to an agent
-     seat. <opening/> is the opening message as the chair wrote it; <turns/> the turns, one <turn_entry> or verdict
-     each, a blank line between; <limit/> the 512-character limit. -->
+     the first user message of a model's conversation through OpenRouter, as the first turn of a harness seat's
+     dispatch session, and returned by roundtable_turn to an agent seat. <opening/> is the opening message as the
+     chair wrote it; <turns/> the turns, one <turn_entry> or verdict each, a blank line between; <limit/> the
+     512-character limit. -->
 <seat_first><opening/>
 
 <turns/>
@@ -58,9 +59,16 @@ Answer viewable here: <link/></verdict_over>
 <no_reply_time>it did not submit within <seconds/> seconds.</no_reply_time>
 <!-- Why a seat made no submission, filled into <verdict_none>: its model failed, with the error it gave. -->
 <no_reply_model>its model did not answer: <error/></no_reply_model>
+<!-- Why a harness seat made no submission, filled into <verdict_none>: its agent's turn ended with no text. -->
+<no_reply_harness>its agent did not answer: <error/></no_reply_harness>
+<!-- Why a harness seat made no submission and left the table, filled into <verdict_none>: its dispatch session
+     ended, or did not start, and <how/> says how. Its later turns are skipped. -->
+<seat_gone>its session ended, so it has left the table: <how/></seat_gone>
 <!-- Who a comment the person typed is credited to, in the discussion and in the review. -->
 <name_person>the person</name_person>
-<!-- Who a comment the head agent made is credited to, in the discussion and in the review. -->
+<!-- Who a comment the head agent made is credited to, in the discussion and in the review, when its name cannot be
+     made: a comment recorded before the head agent had one, or dispatch not saying which agent its session is. The
+     head agent otherwise goes by the name made from its model, as a seat does. -->
 <name_head>the head agent</name_head>
 
 <!-- What Jev is asked of each seat submission, four nouls in one request over the same state, BASE-066:
@@ -115,8 +123,17 @@ Its text: <text/></chair_vetoed>
 <held_by_chair>held by its chair.</held_by_chair>
 <!-- Why a table holds: Jev did not answer, and nothing enters a discussion unjudged. -->
 <held_jev>Jev did not judge the last submission: <error/> Nothing enters unjudged.</held_jev>
+<!-- Why a table holds: OpenRouter refused a model seat's call for want of credits, HTTP 402. Asking again cannot
+     help until the person adds credits, so the table holds once rather than passing the turn; continue gives the same
+     seat its turn again. <seat/> is the seat's name, <error/> what OpenRouter said. -->
+<ended_credits>Ended: OpenRouter has no credits left for this table: <error/></ended_credits>
 <!-- Why a table ends: a whole round was vetoed, so the discussion has stopped producing. -->
 <ended_round>a full round passed with no submission kept.</ended_round>
+<!-- Why a table ends: it finished its last round, roundtable_rounds or the rounds it was opened with. -->
+<ended_rounds>it reached its limit of <rounds/> rounds.</ended_rounds>
+<!-- Why a table ends: what it spent through OpenRouter, its seats, Jev and its reporter, reached roundtable_spend or
+     the spend it was opened with. <spend/> is that limit and <spent/> what it spent, in US dollars. -->
+<ended_spend>it reached its limit of $<spend/> spent through OpenRouter, having spent $<spent/>.</ended_spend>
 <!-- Why a table ends: the chair ended it. -->
 <ended_by_chair>ended by its chair.</ended_by_chair>
 
@@ -152,4 +169,45 @@ Jev asked four questions of each seat submission: does it add something new; is 
 <!-- One turn's line in <record/>: its turn, its seat, one of the status words above, and its text, so the
      reporting model sees the vetoed turns as well as what entered. -->
 <record_entry><turn/> <seat/> (<status/>): <text/></record_entry>
+<!-- The table as a place, BASE-066. Sent to every seat that has a table to explore, once, before the first turn: a
+     harness seat in its session, a model seat as a message of its conversation with its controls as tools. It may
+     turn and look until it answers or roundtable_explore seconds pass; its answer is not a submission. -->
+<explore>Please take a moment to explore your controls.</explore>
+<!-- Told to a harness seat's agent as it connects, by its own Metaform server, BASE-066: which seat it is and what
+     its controls are, so its time to explore finds them. Sent to a roundtable seat's session only. <seat/> is its
+     name, <discussion/> the table's number, <others/> the other seats' names. -->
+<seat_connect>You sit at roundtable <discussion/> as <seat/>, a figure at a round table with <others/>, a plant in the middle. You stay at your chair and can turn in place. Your controls: roundtable_rotate turns you (degrees, positive to your right), roundtable_look shows what you see from your own eyes, and roundtable_look-at turns you to face a seat by name and looks.</seat_connect>
+<!-- What the model seats' tools say they do, in their turn's tool loop, toolloop.py. A harness seat reads the same
+     controls as Metaform's tools, roundtable_rotate, roundtable_look and roundtable_look-at, described by the verbs.
+     <tool_turn> turns the figure in place; its two parameters below. -->
+<tool_turn>Turn your figure in place at the table, by degrees or to a facing. Returns your new facing and who is in front of you.</tool_turn>
+<tool_turn_degrees>Degrees to turn by: positive to your right, negative to your left.</tool_turn_degrees>
+<tool_turn_to>A facing to turn to, in degrees from facing the middle of the table: 0 faces the table, positive to your right.</tool_turn_to>
+<!-- The look tool: the picture from the seat's own eyes, and the list of what is in view. -->
+<tool_look>See straight ahead from your own eyes: a picture, when you take pictures, and the list of who and what is in view, each with its bearing (degrees from straight ahead, positive to your right) and distance.</tool_look>
+<!-- The look-at tool and its one parameter. -->
+<tool_look_at>Turn to face a seat by its name, or the plant, and see them from your own eyes, as look does.</tool_look_at>
+<tool_look_at_name>The name of the seat to look at, or plant.</tool_look_at_name>
+<!-- Answered to a model seat that calls a tool it was not given. -->
+<tool_unknown>There is no tool named <tool/>.</tool_unknown>
+<!-- Sent with the pictures a model seat's looks drew, as a message after the tools' answers, to a model that takes
+     pictures. -->
+<view_image>The view from your own eyes:</view_image>
+<!-- What a picture becomes in the conversation a model seat keeps, so it is sent once only. -->
+<view_image_kept>(You saw the view from your own eyes here.)</view_image_kept>
+<!-- The plant in the middle of the table, as a seat sees it and names it to look at it. -->
+<scene_plant>plant</scene_plant>
+<!-- Where something is from a seat, in a look's list: straight ahead, within its view to one side, out of view to one
+     side, or behind it. -->
+<side_ahead>straight ahead</side_ahead>
+<side_ahead_right>ahead, to your right</side_ahead_right>
+<side_ahead_left>ahead, to your left</side_ahead_left>
+<side_right>out of view, on your right</side_right>
+<side_left>out of view, on your left</side_left>
+<side_behind>behind you</side_behind>
+<!-- Who is in front of a seat, as a turn and a look answer it: one or more names straight ahead; else the nearest in
+     view and where; else nothing in view. -->
+<facing_front>In front of you: <names/>.</facing_front>
+<facing_near>Nobody is straight in front of you; nearest in view is <seat/>, <where/>.</facing_near>
+<facing_away>You face away from the table; nobody is in view.</facing_away>
 </prompts>
