@@ -497,10 +497,10 @@ def test_an_intake_is_recorded_over_mcp_one_object_per_call_and_read_back_while_
                                                               'refs': [{'key': 'path', 'value': 'src/main.c'}]})
         named = json.loads(text(described)[-1])['notices']
         await called(client, 'intake_element', {'namespace_address': 'code.loop.tick', 'role': 'SE'})
-        made = await called(client, 'intake_join', {'receiver': 'code.timer.kitchen', 'elements': ['code.alarm.audible'],
+        made = await called(client, 'intake_purpose', {'receiver': 'code.timer.kitchen', 'elements': ['code.alarm.audible'],
                                                       'purpose': 'Get attention.', 'ef': 'rings', 'ifd': 'receives'})
         # Recorded again with an element it holds, the join takes the new elements: parts annealed into one join.
-        annealed = await called(client, 'intake_join', {'receiver': 'code.timer.kitchen',
+        annealed = await called(client, 'intake_purpose', {'receiver': 'code.timer.kitchen',
                                                           'elements': ['code.alarm.audible', 'code.loop.tick',
                                                                        'code.loop.beat']})
         shown = json.loads(text(await called(client, 'intake_show', {}))[-1])
@@ -510,17 +510,17 @@ def test_an_intake_is_recorded_over_mcp_one_object_per_call_and_read_back_while_
                 (annealed.is_error, json.loads(text(made)[-1])), one)
     names, error, shown, finished, named, described_error, joined, one = session(home, folder, call)
     assert joined[0] is False and set(joined[1]) == {'receiver', 'elements', 'layer', 'notices'}
-    assert [row['elements'] for row in one['joins']] == [['code.alarm.audible', 'code.loop.tick', 'code.loop.beat']]
-    assert {'intake_start', 'intake_element', 'intake_join', 'intake_show', 'intake_remove', 'intake_finish'} <= names
-    assert not names & {'intake_add_purpose', 'intake_subtype', 'intake_absorb', 'intake_edit'}
+    assert [row['elements'] for row in one['purposes']] == [['code.alarm.audible', 'code.loop.tick', 'code.loop.beat']]
+    assert {'intake_start', 'intake_element', 'intake_purpose', 'intake_show', 'intake_remove', 'intake_finish'} <= names
+    assert not names & {'intake_join', 'intake_add_purpose', 'intake_subtype', 'intake_absorb', 'intake_edit'}
     assert error is False and described_error is False
     assert named == []  # the element's name is its own field
-    assert [(row['purpose'], row['ef'], row['ifd']) for row in shown['joins']] == [('Get attention.', 'rings',
+    assert [(row['purpose'], row['ef'], row['ifd']) for row in shown['purposes']] == [('Get attention.', 'rings',
                                                                                      'receives')]
     assert [(row['namespace_address'], row['role']) for row in shown['elements']] == [
         ('code.alarm.audible', None), ('code.loop.beat', None), ('code.loop.tick', 'SE'), ('code.timer.kitchen', 'DE')]
     assert shown['undescribed'] == ['code.alarm.audible', 'code.loop.beat']
-    assert (finished['elements'], finished['joins']) == (4, 1)
+    assert (finished['elements'], finished['purposes']) == (4, 1)
     store = Store('fresh')
     kitchen = store.element('code.timer.kitchen')
     assert (kitchen.short_name, kitchen.name) == ('kitchen timer', 'kitchen timer')
@@ -1236,32 +1236,39 @@ def test_a_direct_claim_over_mcp_is_honored_by_the_agent_the_client_names_at_ini
 def test_resources_serve_the_instructions_and_what_a_module_declares(run, home, mapped):
     """What an agent reads at discovery, before any tool runs: the instructions, a module's instructions, and the
     resources a module declares, each read through one of its verbs; a command's arguments are in its tool. The intake module
-    declares its procedure and its forms. A URI nothing serves is refused with a next step."""
+    declares its procedure and its forms; the roundtable module declares templates, read through its verbs with the
+    URI's fields as their nouns, and one naming what is not there is refused as missing. A URI nothing serves is
+    refused with a next step."""
     async def check(client, init):
         fixed = {one.uri: one for one in (await client.list_resources()).resources}
         templates = {one.uri_template for one in (await client.list_resource_templates()).resource_templates}
         texts = {uri: (await client.read_resource(uri)).contents[0].text for uri in (
             'metaform://instructions', 'metaform://instructions/intake', 'metaform://intake/procedure',
             'metaform://intake/schema')}
-        try:
-            await client.read_resource('metaform://instructions/nothing')
-            refused = None
-        except Exception as error:  # noqa: BLE001
-            refused = str(error)
-        return init.capabilities.resources.list_changed, fixed, templates, texts, refused
-    changed, fixed, templates, texts, refused = session(home, mapped, check)
+        refusals = []
+        for uri in ('metaform://instructions/nothing', 'metaform://roundtable/discussion7/review'):
+            try:
+                await client.read_resource(uri)
+                refusals.append(None)
+            except Exception as error:  # noqa: BLE001
+                refusals.append(str(error))
+        return init.capabilities.resources.list_changed, fixed, templates, texts, refusals
+    changed, fixed, templates, texts, (refused, absent) = session(home, mapped, check)
     assert changed and set(fixed) == {'metaform://metaform', 'metaform://proj', 'metaform://tools',
                                       'metaform://instructions', 'metaform://intake/procedure',
                                       'metaform://intake/schema'}
     assert all(one.description and one.name for one in fixed.values())
     assert templates == {'metaform://instructions/{module}', 'metaform://prompts/{name}', 'metaform://reports/{name}',
-                         'metaform://{address}', 'metaform://{address}/items/{n}'}
+                         'metaform://{address}', 'metaform://{address}/items/{n}',
+                         'metaform://roundtable/discussion{discussion}/submission{submission}',
+                         'metaform://roundtable/discussion{discussion}/review'}
     from metaform import prompt_files
     assert texts['metaform://instructions'].startswith(prompt_files.chassis('surface_mcp'))  # the guide, served
     assert texts['metaform://instructions/intake'] == run('help', 'agents', 'intake', cwd=mapped).stdout.strip()
     assert texts['metaform://intake/procedure'].strip() == run('intake', 'prompt', cwd=mapped).stdout.strip()
     assert texts['metaform://intake/schema'].strip() == run('intake', 'schema', cwd=mapped).stdout.strip()
     assert refused and 'No resource metaform://instructions/nothing' in refused and 'Next:' in refused
+    assert absent and 'No roundtable discussion 7' in absent and 'Next:' in absent
 
 
 @pytest.mark.req('CLI-011')
@@ -2468,3 +2475,53 @@ def test_a_write_over_mcp_answers_one_line_with_its_number_not_the_record(run, h
     record = json.loads(run('map', 'work', 'op=edit', f'id={work_id}', 'note=kept', '--json', cwd=mapped).stdout)
     assert record['id'] == work_id and record['task'] == 'Make the alarm louder.'  # the command line keeps the record
 
+
+
+@pytest.mark.req('MCP-041')
+@pytest.mark.req('MCP-042')
+@pytest.mark.req('MCP-043')
+def test_an_a2a_send_carries_its_address_and_sender_and_what_the_peer_does_lands_at_the_address(run, home, mapped,
+                                                                                               monkeypatch):
+    import httpx
+    from a2a.types import Message, Part, Role, TaskState, TaskStatus
+    from starlette.applications import Starlette
+
+    from metaform.module import Stop, context
+    run('enable', 'dispatch')
+    card_url = 'http://127.0.0.1:7491/.well-known/agent-card.json'  # never reached: the peer is in-process
+    run('set', '--mcp-a2a-peers', f'peer={card_url} PEER_TOKEN', cwd=mapped)
+    # imported after the last command, which may load the modules again, so the stub reaches the code that runs
+    from metaform.modules.mcp import a2a as served
+    from metaform.modules.mcp import a2a_out, a2a_records
+    from metaform.modules.mcp.server import gateway_session
+    app = Starlette()  # the stubbed peer: Metaform's own A2A routes
+    served.attach(app, mapped, 7491)
+    monkeypatch.setattr(a2a_out, 'TRANSPORT', httpx.ASGITransport(app=app))
+    monkeypatch.setenv('PEER_TOKEN', served.token() or '')
+
+    def verb(name, **nouns):  # a child agent's own session, never its parent's, MCP-042
+        return getattr(a2a_out, name)(context('mcp', mapped, nouns=nouns, surface='mcp', session='child-session'))
+    with pytest.raises(Stop, match=r'\(peer\)'):  # the list, in its refusal, MCP-040
+        verb('send', peer='stranger', address='code.alarm.audible', text='Make it louder')
+    sent = verb('send', peer='peer', address='code.alarm.audible', text='Make it louder\nThe cook misses it.')
+    assert sent['state'] == 'submitted' and sent['sender'] == 'child-session'
+    ticket = Store('proj').ticket(sent['peer_task']).work  # the peer's task is the ticket the message opened there
+    assert ticket.address == 'code.alarm.audible' and 'child-session' in (ticket.note or '')
+    assert a2a_records.kept_card('proj', 'peer', card_url)
+    run('map', 'work', 'op=take', f'id={sent["peer_task"]}', cwd=mapped)
+    run('map', 'work', 'op=done', f'id={sent["peer_task"]}', 'resolution=Louder now', 'why=The cook hears it',
+        cwd=mapped)
+    assert verb('exchanges', id=sent['exchange'])['state'] == 'completed'  # read again: no server follows it here
+    held = Store('proj').messages(Node('element', 'code.alarm.audible'), limit=0).results
+    assert [one.text for one in held if one.by == 'a2a peer'] == ['Louder now']  # the artifact, an item there
+    other = verb('send', peer='peer', address='code.alarm.audible', text='Make it flash')
+    question = TaskStatus(state=TaskState.TASK_STATE_INPUT_REQUIRED, message=Message(
+        message_id='q-1', role=Role.ROLE_AGENT, parts=[Part(text='Which fan is it?')]))
+    for _ in range(2):  # heard twice, by two followers: asked once
+        a2a_out.heard('proj', other['exchange'], question)
+    held = Store('proj').messages(Node('element', 'code.alarm.audible'), limit=0).results
+    assert [one.kind for one in held if one.text == 'Which fan is it?'] == ['question']
+    cancelled = verb('cancel', id=other['exchange'])
+    assert cancelled['state'] == 'cancelled' and Store('proj').ticket(other['peer_task']).work.outcome == 'cancelled'
+    gateway = {'x-paperclip-agent-id': 'a-7', 'x-paperclip-run-id': 'r-9'}
+    assert gateway_session(gateway) == 'paperclip:agent=a-7,run=r-9' and gateway_session({}) is None

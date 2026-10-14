@@ -1,0 +1,459 @@
+"""A2A outbound, MCP-040 to MCP-043: an agent sends a peer the person names a message about an Address, and what the
+peer's task does comes back to that Address, over the official `a2a-sdk` client.
+
+- Peers are the person's, `mcp_a2a_peers`: each `<name>=<card URL> <token variable>`. The token is read from that
+  variable when a message is sent and never stored. A peer's Agent Card is read when it is first used and kept in
+  the project, `a2a_peers`; it is read again when a call fails with a version or interface error, MCP-040.
+- `mcp a2a_send` sends one message with the Address as its `contextId`, the Address extension Metaform reads inbound,
+  P005, and the sending agent instance under the same extension's metadata, `sender`, as the User-Agent says it too,
+  MCP-042. The exchange is kept before the message leaves, `a2a_exchanges`, so a reply after any restart finds its
+  Address and its ticket, MCP-043.
+- What the peer's task does is recorded as it is heard: a state change on the exchange, an artifact as a message at
+  the Address, numbered there, and a question the peer asks, its input-required status, as an open question at the
+  Address on the exchange's ticket, MAP-050. Each is written once however many followers hear it, `records.moved`.
+- `metaform mcp serve --http` follows every open exchange of every project while it runs, `attach`: by the peer's
+  stream where its card offers one, else by reading the task again, and again after each restart. Without a server,
+  `mcp a2a_exchanges` reads the open ones again when it lists them. Receiving the peer's push notifications needs a
+  webhook this server serves, and is not built.
+
+Specification: https://a2a-protocol.org/latest/specification/ (1.0); SDK: https://github.com/a2aproject/a2a-python.
+"""
+from __future__ import annotations
+
+import contextlib
+import logging
+import os
+import re
+import uuid
+import zlib
+from collections.abc import AsyncGenerator, Callable
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, TypeVar, cast
+
+import anyio
+import httpx
+from a2a.client import A2ACardResolver, A2AClientError, Client, ClientConfig, ClientFactory
+from a2a.client.card_resolver import parse_agent_card
+from a2a.types import (
+    AgentCard,
+    Artifact,
+    CancelTaskRequest,
+    GetTaskRequest,
+    Message,
+    Part,
+    Role,
+    SendMessageConfiguration,
+    SendMessageRequest,
+    StreamResponse,
+    SubscribeToTaskRequest,
+    Task,
+    TaskState,
+    TaskStatus,
+    VersionNotSupportedError,
+)
+from a2a.utils.constants import TransportProtocol
+from a2a.utils.errors import A2AError
+from google.protobuf.json_format import MessageToDict
+from starlette.applications import Starlette
+
+from metaform import events, home, prompt_files, settings
+from metaform.data import Node, Store, StoreError
+from metaform.module import Context, Stop, chassis_version, first_line, request_scope
+
+from . import a2a_records as records
+from .a2a import EXTENSION, SLOW, Changes
+
+log = logging.getLogger(__name__)
+_T = TypeVar('_T')
+
+NAME = re.compile(r'^[a-z0-9][a-z0-9_-]*$')
+VARIABLE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+TIMEOUT = 30.0  # seconds a call to a peer may take; a stream is read without one
+BINDINGS = [TransportProtocol.JSONRPC.value, TransportProtocol.HTTP_JSON.value]
+# A2A's task states in the status vocabulary of work: a peer's interrupted states ask this side to act.
+STATES: dict[int, str] = {
+    TaskState.TASK_STATE_SUBMITTED: 'submitted', TaskState.TASK_STATE_WORKING: 'running',
+    TaskState.TASK_STATE_INPUT_REQUIRED: 'input_required', TaskState.TASK_STATE_AUTH_REQUIRED: 'input_required',
+    TaskState.TASK_STATE_COMPLETED: 'completed', TaskState.TASK_STATE_FAILED: 'failed',
+    TaskState.TASK_STATE_REJECTED: 'failed', TaskState.TASK_STATE_CANCELED: 'cancelled'}
+ENDED = ('completed', 'failed', 'cancelled')
+TRANSPORT: httpx.AsyncBaseTransport | None = None  # what the calls go through; tests put a peer's app in-process here
+
+
+# ---------------------------------------------------------------------------------------------------- peers
+
+@dataclass(frozen=True)
+class Peer:
+    """A peer the person names: its short name, its Agent Card's URL and the variable that holds its token."""
+    name: str
+    url: str
+    token_env: str | None
+
+    @property
+    def token(self) -> str | None:
+        return os.environ.get(self.token_env) or None if self.token_env else None
+
+
+def parse_peer(entry: str) -> Peer:
+    """One entry of `mcp_a2a_peers`, `<name>=<card URL> <token variable>`; the variable may be left out for a peer
+    that takes no token."""
+    name, _, rest = entry.partition('=')
+    url, _, variable = rest.strip().partition(' ')
+    name, url, variable = name.strip(), url.strip(), variable.strip()
+    if not NAME.fullmatch(name) or not url.startswith(('http://', 'https://')) or ' ' in variable \
+            or (variable and not VARIABLE.fullmatch(variable)):
+        raise settings.SettingError(
+            f'--mcp-a2a-peers takes <name>=<card URL> <token variable>, such as '
+            f'"other=http://127.0.0.1:7440/.well-known/agent-card.json OTHER_A2A_TOKEN"; not {entry!r}.',
+            'metaform help --mcp-a2a-peers')
+    return Peer(name, url, variable or None)
+
+
+def check_peers(value: Any, folder: Path) -> list[str] | None:
+    """Refuse an entry that cannot be read, and say which token variables are not set where this runs, MCP-040."""
+    peers = [parse_peer(str(one)) for one in cast(list[Any], value or [])]
+    unset = [f'{one.name}: {one.token_env} is not set here' for one in peers if one.token_env and not one.token]
+    return [f'{"; ".join(unset)}.'] if unset else None
+
+
+def peers(folder: Path) -> dict[str, Peer]:
+    return {one.name: one for one in (parse_peer(str(entry)) for entry in
+                                      cast(list[Any], settings.value('mcp_a2a_peers', folder) or []))}
+
+
+def peer(folder: Path, name: str) -> Peer:
+    """A peer on the person's list, or a refusal that lists them: Metaform sends to no other, MCP-040."""
+    known = peers(folder)
+    if name not in known:
+        listed = ', '.join(sorted(known)) or 'none yet'
+        raise Stop(f'{name} is not one of the A2A peers the person names ({listed}).',
+                   'ask the person to add it: metaform set --mcp-a2a-peers "<name>=<card URL> <token variable>"')
+    return known[name]
+
+
+def prompt(name: str, **fills: str) -> str:
+    return ' '.join((prompt_files.module('mcp', name, **fills) or '').split())
+
+
+# ---------------------------------------------------------------------------------------------------- the client
+
+def _http(peer: Peer, sender: str | None, timeout: float | None = TIMEOUT) -> httpx.AsyncClient:
+    """The HTTP client one peer is reached with: its bearer token, and a User-Agent naming the sending agent, which a
+    Metaform peer records on the ticket it opens, MCP-042."""
+    headers = {'User-Agent': f'Metaform/{chassis_version()} ({sender or "person"})'}
+    if peer.token:
+        headers['Authorization'] = f'Bearer {peer.token}'
+    return httpx.AsyncClient(timeout=timeout, headers=headers, transport=TRANSPORT)
+
+
+async def card(project: str, peer: Peer, http: httpx.AsyncClient, fresh: bool = False) -> AgentCard:
+    """The peer's Agent Card: kept from its first read, or read again when `fresh`, MCP-040."""
+    kept = None if fresh else await _off(records.kept_card, project, peer.name, peer.url)
+    if kept is not None:
+        return parse_agent_card(kept)
+    read = await A2ACardResolver(http, peer.url).get_agent_card(relative_card_path='/')
+    await _off(records.keep_card, project, peer.name, peer.url, MessageToDict(read))
+    return read
+
+
+async def connect(project: str, peer: Peer, http: httpx.AsyncClient, *, streaming: bool,
+                  fresh: bool = False) -> tuple[Client, AgentCard]:
+    found = await card(project, peer, http, fresh)
+    config = ClientConfig(streaming=streaming, httpx_client=http, supported_protocol_bindings=BINDINGS)
+    return ClientFactory(config).create(found), found
+
+
+async def calling(project: str, peer: Peer, sender: str | None, call: Callable[[Client], Any]) -> Any:
+    """One call to a peer; on a version or interface error its card is read again and the call made once more."""
+    async with _http(peer, sender) as http:
+        for fresh in (False, True):
+            try:
+                client, _ = await connect(project, peer, http, streaming=False, fresh=fresh)
+                return await call(client)
+            except (VersionNotSupportedError, ValueError, A2AClientError, httpx.TransportError) as error:
+                # an interface the kept card names that no longer answers, or none of it fits (ValueError)
+                if fresh:
+                    raise Stop(f'{peer.name} cannot be reached over A2A: {error}', 'ask the person to check the '
+                               'peer\'s card URL') from None
+
+
+async def _off(function: Callable[..., _T], *args: Any) -> _T:
+    def run() -> _T:
+        with request_scope(fresh=True):
+            return function(*args)
+    return await anyio.to_thread.run_sync(run)
+
+
+# ---------------------------------------------------------------------------------------------------- what comes back
+
+def _said(parts: Any) -> str:
+    return '\n\n'.join(part.text for part in cast(list[Part], parts) if part.WhichOneof('content') == 'text'
+                       and part.text.strip())
+
+
+def heard(project: str, exchange_id: str, status: TaskStatus | None = None, artifacts: tuple[Artifact, ...] = (),
+          peer_task_id: str | None = None) -> records.Exchange | None:
+    """What a peer told of an exchange's task, recorded where the work lives: the state on the exchange; each new
+    artifact as a message at its Address; a question it asks as an open question there, on the exchange's ticket,
+    MCP-041. A key per artifact and per question, claimed with the state in one transaction, writes each once."""
+    state = STATES.get(status.state) if status is not None else None
+    said = _said(status.message.parts) if status is not None and status.HasField('message') else None
+    claims = [f'artifact:{one.artifact_id}' for one in artifacts if _said(one.parts)]
+    if state == 'input_required' and said:
+        asked = status.message.message_id if status is not None and status.message.message_id else ''
+        claims.append(f'question:{asked or format(zlib.crc32(said.encode()), "08x")}')
+    now, _, taken = records.moved(project, exchange_id, state=state, said=said, peer_task_id=peer_task_id,
+                                  claims=tuple(claims))
+    if now is None or not taken:
+        return now
+    store, node, by = Store(project), Node('element', now.address), f'a2a {now.peer}'
+    for one in artifacts:
+        if f'artifact:{one.artifact_id}' in taken:
+            text = _said(one.parts)
+            store.tell(node, text, by=by, title=one.name or _title(text))
+    if any(key.startswith('question:') for key in taken) and said:
+        work = now.work_id if now.work_id and _ticket(store, now.work_id) else None
+        store.ask(node, said, by=by, work=work, title=_title(said), why=prompt('a2a_peer_question_why', peer=now.peer))
+    return now
+
+
+def _title(text: str) -> str:
+    """An item's title from what the peer said: its first line, cut short when it is long."""
+    return first_line(text) or (first_line(text, 0) or '')[:120].rstrip()
+
+
+def _ticket(store: Store, work_id: str) -> bool:
+    try:
+        return store.ticket(work_id) is not None
+    except (Stop, StoreError, AttributeError):
+        return False
+
+
+def heard_task(project: str, exchange_id: str, task: Task) -> records.Exchange | None:
+    return heard(project, exchange_id, task.status, tuple(task.artifacts), task.id or None)
+
+
+def heard_event(project: str, exchange_id: str, event: StreamResponse) -> records.Exchange | None:
+    kind = event.WhichOneof('payload')
+    if kind == 'task':
+        return heard_task(project, exchange_id, event.task)
+    if kind == 'status_update':
+        return heard(project, exchange_id, event.status_update.status)
+    if kind == 'artifact_update':
+        return heard(project, exchange_id, artifacts=(event.artifact_update.artifact,))
+    return records.exchange(project, exchange_id)
+
+
+# ---------------------------------------------------------------------------------------------------- the verbs
+
+def _shown(found: records.Exchange) -> dict[str, Any]:
+    return {'exchange': found.exchange_id, 'peer': found.peer, 'peer_task': found.peer_task_id,
+            'address': found.address, 'state': found.state, 'said': found.said, 'sender': found.sender,
+            'work': found.work_id, 'created': found.created, 'updated': found.updated}
+
+
+def send(ctx: Context) -> Any:
+    """Send a peer one message about an Address and keep the exchange, MCP-041: the Address is the `contextId`, and
+    the sending agent instance is named in the metadata, MCP-042. Returns the exchange id and the peer's task id."""
+    store = ctx.require_store()
+    project = str(ctx.project)
+    to = peer(ctx.folder, str(ctx.nouns['peer']))
+    address, text = str(ctx.nouns['address']).strip(), str(ctx.nouns['text']).strip()
+    if store.element(address) is None:
+        raise Stop(f'{address} is no Address in this project\'s map; what the peer returns is kept at the Address.',
+                   'metaform map where <address>')
+    if not text:
+        raise Stop('The message holds no text.', 'give text="<the work>"')
+    sender = ctx.session or 'person'
+    work = str(ctx.nouns.get('work') or os.environ.get('METAFORM_WORK') or '') or None
+    made = records.send(project, records.Exchange(uuid.uuid4().hex, to.name, address, text, sender=sender,
+                                                  work_id=work))
+    detail = {'sender': sender, **({'work': work} if work else {}),
+              **({'title': str(ctx.nouns['title'])} if ctx.nouns.get('title') else {})}
+    message = Message(message_id=made.exchange_id, role=Role.ROLE_USER, parts=[Part(text=text)], context_id=address,
+                      metadata={EXTENSION: detail}, extensions=[EXTENSION])
+    request = SendMessageRequest(message=message, configuration=SendMessageConfiguration(return_immediately=True))
+
+    async def go(client: Client) -> list[StreamResponse]:
+        return [event async for event in client.send_message(request)]
+    try:
+        answered = cast(list[StreamResponse], anyio.run(calling, project, to, sender, go))
+    except Exception as error:  # the exchange is kept as failed, with what the peer said
+        records.moved(project, made.exchange_id, state='failed', said=str(error))
+        events.announce(ctx.folder, 'a2a')
+        if isinstance(error, Stop):
+            raise
+        raise Stop(f'{to.name} did not take the message: {error}', 'metaform mcp a2a_exchanges') from None
+    now: records.Exchange | None = made
+    for event in answered:
+        if event.WhichOneof('payload') == 'message':  # the peer answered at once, with no task to follow
+            said = _said(event.message.parts)
+            if said:
+                Store(project).tell(Node('element', address), said, by=f'a2a {to.name}', title=_title(said))
+            now, _, _ = records.moved(project, made.exchange_id, state='completed', said=said)
+        else:
+            now = heard_event(project, made.exchange_id, event)
+    events.announce(ctx.folder, 'a2a')
+    shown = _shown(now or made)
+    return {**shown, 'next': f'metaform mcp a2a_exchanges id={made.exchange_id}'}
+
+
+def _reread(project: str, found: records.Exchange, folder: Path) -> records.Exchange:
+    """An open exchange read again from its peer, for a listing made with no server following it."""
+    if found.state in ENDED or not found.peer_task_id:
+        return found
+    try:
+        to = peer(folder, found.peer)
+        task_id = found.peer_task_id
+
+        async def go(client: Client) -> Task:
+            return await client.get_task(GetTaskRequest(id=task_id))
+        task = cast(Task, anyio.run(calling, project, to, found.sender, go))
+    except Exception as error:  # noqa: BLE001  the listing still shows what was last heard
+        log.info('A2A exchange %s was not read again: %s', found.exchange_id, error)
+        return found
+    return heard_task(project, found.exchange_id, task) or found
+
+
+def exchanges(ctx: Context) -> Any:
+    """The exchanges this project sent, newest first, or one by its id, or those about one Address; an open one is
+    read again from its peer first, MCP-041 and VIEW-050."""
+    ctx.require_store()
+    project = str(ctx.project)
+    if ctx.nouns.get('id'):
+        found = records.exchange(project, str(ctx.nouns['id']))
+        if found is None:
+            raise Stop(f'No exchange {ctx.nouns["id"]} in this project.', 'metaform mcp a2a_exchanges')
+        listed = [found]
+    else:
+        listed = records.exchanges(project, str(ctx.nouns.get('address') or '') or None)
+    shown = [_shown(_reread(project, one, ctx.folder)) for one in listed]
+    return shown[0] if ctx.nouns.get('id') else {'exchanges': shown}
+
+
+def cancel(ctx: Context) -> Any:
+    """Cancel an exchange's task at its peer, MCP-041; the state the peer answers with is recorded."""
+    ctx.require_store()
+    project = str(ctx.project)
+    found = records.exchange(project, str(ctx.nouns['id']))
+    if found is None:
+        raise Stop(f'No exchange {ctx.nouns["id"]} in this project.', 'metaform mcp a2a_exchanges')
+    if found.state in ENDED or not found.peer_task_id:
+        raise Stop(f'Exchange {found.exchange_id} is {found.state}; there is nothing to cancel.',
+                   f'metaform mcp a2a_exchanges id={found.exchange_id}')
+    task_id = found.peer_task_id
+
+    async def go(client: Client) -> Task:
+        return await client.cancel_task(CancelTaskRequest(id=task_id))
+    try:
+        task = cast(Task, anyio.run(calling, project, peer(ctx.folder, found.peer), found.sender, go))
+    except Stop:
+        raise
+    except Exception as error:  # noqa: BLE001  the peer's refusal, such as a task that cannot be cancelled
+        raise Stop(f'{found.peer} did not cancel its task: {error}',
+                   f'metaform mcp a2a_exchanges id={found.exchange_id}') from None
+    now = heard_task(project, found.exchange_id, task) or found
+    events.announce(ctx.folder, 'a2a')
+    return _shown(now)
+
+
+# ---------------------------------------------------------------------------------------------------- following
+
+class Wakes(Changes):
+    """The A2A server's change listener, also woken by a change to any project, so a new exchange is followed as soon
+    as it is sent, from this process or another of the home, BASE-053."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.any: anyio.Event | None = None
+
+    def _wake(self, project: str) -> None:
+        super()._wake(project)
+        if self.any is not None:
+            self.any.set()
+
+    async def anything(self, seconds: float = SLOW) -> None:
+        self.bind()
+        self.any = anyio.Event()
+        with anyio.move_on_after(seconds):
+            await self.any.wait()
+
+
+@dataclass
+class Followers:
+    """Follows every open exchange of every registered project while the HTTP server runs, MCP-043."""
+    folder: Path
+    wakes: Wakes
+    group: Any = None
+
+    def __post_init__(self) -> None:
+        self.following: set[tuple[str, str]] = set()
+
+    async def run(self) -> None:
+        while True:
+            try:
+                for project, found in await _off(_open_exchanges):
+                    key = (project, found.exchange_id)
+                    if key not in self.following and self.group is not None:
+                        self.following.add(key)
+                        self.group.start_soon(self.follow, project, found)
+            except Exception:  # the next round reads them again
+                log.exception('A2A exchanges were not read')
+            await self.wakes.anything()
+
+    async def follow(self, project: str, found: records.Exchange) -> None:
+        """One exchange to its end: the peer's stream where its card offers one, else its task read again, every slow
+        interval; a stream that closes on input-required is opened again only once the task moves on."""
+        try:
+            to = await _off(peer, self.folder, found.peer)
+            now: records.Exchange | None = found
+            while now is not None and now.state not in ENDED and now.peer_task_id:
+                task_id = now.peer_task_id
+                async with _http(to, now.sender, timeout=None) as http:
+                    client, offered = await connect(project, to, http, streaming=True)
+                    if offered.capabilities.streaming and now.state != 'input_required':
+                        with contextlib.suppress(A2AError, httpx.HTTPError, NotImplementedError):
+                            async for event in client.subscribe(SubscribeToTaskRequest(id=task_id)):
+                                now = await _off(heard_event, project, found.exchange_id, event)
+                    task = await client.get_task(GetTaskRequest(id=task_id))
+                    now = await _off(heard_task, project, found.exchange_id, task)
+                if now is not None and now.state not in ENDED:
+                    await self.wakes.wait(project, self.wakes.count(project))
+        except Stop as stop:  # the person took the peer off the list: the exchange waits until it is back
+            log.warning('A2A exchange %s is not followed: %s', found.exchange_id, stop)
+        except Exception:  # read again on the next round
+            log.exception('A2A exchange %s stopped being followed', found.exchange_id)
+            await anyio.sleep(SLOW)
+        finally:
+            self.following.discard((project, found.exchange_id))
+
+
+def _open_exchanges() -> list[tuple[str, records.Exchange]]:
+    found: list[tuple[str, records.Exchange]] = []
+    for project in home.projects():
+        try:
+            found += [(project.project_id, one) for one in records.exchanges(project.project_id, open_only=True)]
+        except (Stop, StoreError):
+            continue
+    return found
+
+
+def attach(app: Starlette, folder: Path) -> None:
+    """Follow the open exchanges while the HTTP server runs, from its start, so every one sent before a restart is
+    followed again, MCP-043."""
+    followers = Followers(folder, Wakes())
+    inner: Callable[[Any], Any] = app.router.lifespan_context
+
+    @contextlib.asynccontextmanager
+    async def lifespan(started: Any) -> AsyncGenerator[Any]:
+        async with inner(started) as state, anyio.create_task_group() as group:
+            followers.wakes.listen()
+            followers.group = group
+            group.start_soon(followers.run)
+            try:
+                yield state
+            finally:
+                group.cancel_scope.cancel()
+                followers.wakes.close()
+    app.router.lifespan_context = lifespan

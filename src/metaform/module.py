@@ -215,12 +215,32 @@ class Subscription:
 class Resource:
     """A read-only text a module serves over MCP as a resource, MCP-037: an agent reads it by its URI at
     discovery, before any tool runs. `verb` names the module verb whose result, called with no arguments, is the
-    text; a module serves nothing it cannot also give on the command line."""
+    text; a module serves nothing it cannot also give on the command line. A URI holding `{field}` parts, such as
+    `metaform://roundtable/discussion{discussion}/review`, is a template: listed among the resource templates, each
+    field matching one path segment or part of one, and read by calling `verb` with the fields as its nouns, so
+    every field names a noun of the verb."""
     uri: str
     name: str
     description: str
     verb: str
     mime_type: str = 'text/plain'
+
+    @property
+    def fields(self) -> tuple[str, ...]:
+        """The template's fields, in order; none for a fixed URI."""
+        return tuple(TEMPLATE_FIELD.findall(self.uri))
+
+    def matched(self, uri: str) -> dict[str, str] | None:
+        """The fields `uri` gives this template, or None when it is not one of its URIs or this is a fixed URI."""
+        if not self.fields:
+            return None
+        pattern = TEMPLATE_FIELD.sub(lambda field: f'(?P<{field.group(1)}>[^/?#]+?)', re.escape(self.uri)
+                                     .replace(r'\{', '{').replace(r'\}', '}'))
+        found = re.fullmatch(pattern, uri)
+        return None if found is None else found.groupdict()
+
+
+TEMPLATE_FIELD = re.compile(r'\{([a-z][a-z0-9_]*)\}')  # a field of a resource template, named for a noun
 
 
 # Panes and the toolbar: what a module adds to the web GUI's workspace, declared once like its verbs. The page draws a
@@ -518,6 +538,11 @@ class Module:
         for resource in self.resources:
             if resource.verb not in names:
                 raise ValueError(f'Module {self.id}: resource {resource.uri} reads verb {resource.verb}, not declared.')
+            verb = next(one for one in self.verbs if one.name == resource.verb)
+            unknown = [field for field in resource.fields if field not in {noun.name for noun in verb.nouns}]
+            if unknown:
+                raise ValueError(f'Module {self.id}: resource {resource.uri} fills {", ".join(unknown)}, not a noun '
+                                 f'of verb {resource.verb}.')
         check_workspace(self.id, self.verbs, self.toolbar, self.panes)
 
 

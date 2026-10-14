@@ -130,6 +130,36 @@ same port, built on the official `a2a-sdk`, `a2a.py`. Other agents send Metaform
 The extended card, `GetExtendedAgentCard`, lists one interface per registered project, its id as the tenant. The
 wording other agents read, the card, the status messages and the errors, is in `resources/prompts.xml` under `a2a_`.
 
+### A2A outbound
+
+Agents here send work to other A2A agents, `a2a_out.py`, MCP-040 to MCP-043, through the official `a2a-sdk` client:
+
+- `mcp_a2a_peers` (global, person-only) lists the peers, each `<name>=<card URL> <token variable>`, such as
+  `other=http://127.0.0.1:7440/.well-known/agent-card.json OTHER_A2A_TOKEN`. The token is read from that variable
+  in the process that sends or follows, so set it where `metaform mcp serve` runs; it is never stored. Setting the
+  list says which variables are not set there. Metaform sends to no other agent; a send to another name is refused
+  with the list.
+- `mcp a2a_send <peer> <address> <text> [title=] [work=]`, the tool `mcp_a2a_send`, sends one message whose
+  `contextId` is the Address, which this project's map must hold, with the sending agent instance (its
+  `METAFORM_SESSION`, a child its own) as `sender` in the Address extension's metadata and in the User-Agent, which a
+  Metaform peer writes on the ticket it opens. It returns the exchange id and the peer's task id. The peer's card is
+  read on first use and kept in `a2a_peers`, and read again when a call fails with a version or interface error.
+- Each exchange is kept in `a2a_exchanges` before the message leaves: peer, peer task id, Address, sender, ticket,
+  state in the status vocabulary of work, the peer's last word. `metaform mcp serve --http` follows every open
+  exchange of every project of its home from its start: by the peer's stream when its card offers one, else by
+  reading the task again every 20 seconds. An artifact becomes a message at the Address, numbered there, and an
+  input-required status an open question there on the exchange's ticket, `a2a_peer_question_why` its why; each is
+  written once, however many followers hear it.
+- `mcp a2a_exchanges [id=] [address=]` lists them, newest first, reading each open one again from its peer first, so
+  they follow without a server too; `mcp a2a_cancel <id>` cancels the peer's task.
+- Not built yet: receiving the peer's push notifications, sending the answer to a peer's question back on its task,
+  and the page's view of exchanges, VIEW-050.
+
+A call that reaches the HTTP server through Paperclip's tool gateway is credited to the agent the gateway names: the
+forwarded `x-paperclip-agent-id`, `-issue-id` and `-run-id` become the call's session,
+`paperclip:agent=<id>,issue=<id>,run=<id>`, so `sender` names that agent and what one run was shown is kept apart from
+another, MCP-039 and MCP-042.
+
 ## Resources
 
 `resources/list` serves `metaform://metaform`, Metaform's glossary as written and nothing else (it replaced `metaform://glossary`, with no alias kept); `metaform://<project>`, the folder's project's own glossary as `metaform.module.project_glossary` generates it from the map, the register standard then its terms, or the standard and a note while the map module is off; `metaform://tools`, every tool in one line under its module's prefix, for an AI tool that lists tools by name only; `metaform://instructions`, the composed instructions; and each surfaced module's declared resources; the templates are `metaform://instructions/{module}`, `metaform://prompts/{name}` and `metaform://reports/{name}`. A command's arguments are in its tool's input schema, so no resource repeats them. `metaform://tools` ends with the rules block: every enabled module's `<rules>`, one line each, `[<module>] <rule> Why: <why>`. `completion/complete` fills an Address one segment at a time, from the map's own `children` read, for the address templates and for a slash command's `address`, `node` or `item` argument; a number at an address, or `<address>#<n>`, from the items numbered there; a module id and a stored prompt's name for their templates. A client that names `metaform://<address>` in a `subscriptions/listen` stream, or in `resources/subscribe` on the 2025 handshake, is sent `notifications/resources/updated` for it when an item is numbered there, by this server's calls or another process of the home: a one-line notice to read the brief again, never the items. The views, `ui://metaform/map`, `node`, `trace` and `glossary`, are listed with their `_meta.ui` only to a client the views are offered to. A module declares a resource with `Resource(uri, name, description, verb)` in its `Module.resources`; reading it runs that verb with no arguments. The intake module declares `metaform://intake/procedure` and `metaform://intake/schema`. A change to the surface is announced with `notifications/resources/list_changed`, as for tools and prompts.

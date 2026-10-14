@@ -508,7 +508,8 @@ def _no_project() -> str:
 
 
 def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dict[str, Any],
-             lines: list[str], client: str | None = None, consented: bool = False) -> Context:
+             lines: list[str], client: str | None = None, consented: bool = False,
+             session: str | None = None) -> Context:
     project = arguments.get('project')
     layers = arguments.get('layers')
     confirmed = arguments.get('confirm', False)
@@ -528,7 +529,23 @@ def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dic
     if layers is not None:
         switches['layers'] = [str(item) for item in cast(list[Any], layers)]
     return context(module.id, folder, project=project, nouns=nouns, switches=switches, sink=lines.append,
-                   surface='mcp', client=client)
+                   surface='mcp', client=client, session=session)
+
+
+# The headers Paperclip's tool gateway forwards with each call, its connection's forwardContextHeaders, ticket T3 of
+# artifacts/swarm-2026-10-11/PAPERCLIP-INTEGRATION.md: the agent, the issue and the run the call is made in.
+PAPERCLIP_HEADERS = (('agent', 'x-paperclip-agent-id'), ('issue', 'x-paperclip-issue-id'), ('run', 'x-paperclip-run-id'))
+
+
+def gateway_session(headers: Any) -> str | None:
+    """The agent session of a call through Paperclip's gateway, from the headers it forwards, MCP-042: credited to
+    that agent, and kept apart per run, so what one run was shown is never taken as shown to another, MCP-039. None
+    for a call that carries none of them, which keeps the session this server gives."""
+    if headers is None:
+        return None
+    given = [(name, str(headers.get(header) or '').strip()) for name, header in PAPERCLIP_HEADERS]
+    named = ','.join(f'{name}={value}' for name, value in given if value)
+    return f'paperclip:{named}' if named else None
 
 
 OWN = 'metaform'  # the prefix of the chassis's own tools, metaform_<command>, as a module's are <module>_<verb>
@@ -676,7 +693,7 @@ async def run_tool(folder: Path, name: str, arguments: dict[str, Any], *, client
 
 
 async def answer(folder: Path, name: str, arguments: dict[str, Any], *, client: str | None = None,
-                 consented: bool = False) -> tuple[bool, list[str], dict[str, Any] | None]:
+                 consented: bool = False, session: str | None = None) -> tuple[bool, list[str], dict[str, Any] | None]:
     """A call to one listed tool, as `run_tool`, with the result's structured form when it is an object, BASE-036:
     the same data as the text block holding it, for a host that reads tool output as data. `consented`: the person
     said yes to the call in their AI tool, so its caution and its person-only settings need no more from the agent."""
@@ -697,7 +714,7 @@ async def answer(folder: Path, name: str, arguments: dict[str, Any], *, client: 
     lines: list[str] = []
     try:
         ctx = await anyio.to_thread.run_sync(_prepare, folder, module, verb, name, dict(arguments), lines, client,
-                                             consented)
+                                             consented, session)
         if inspect.iscoroutinefunction(verb.run):
             result = await verb.run(ctx)
         else:
@@ -928,8 +945,15 @@ def resource_list(folder: Path) -> list[dict[str, Any]]:
                'mime_type': 'text/plain'}]
     for module in surface(folder):
         listed += [{'uri': held.uri, 'name': held.name, 'description': held.description, 'mime_type': held.mime_type}
-                   for held in module.resources]
+                   for held in module.resources if not held.fields]
     return listed
+
+
+def module_templates(folder: Path) -> list[tuple[str, str, str, str]]:
+    """Each surfaced module's resource templates, a URI with `{field}` parts each read through the module's verb
+    with the fields as its nouns, MCP-037: as (template, name, description, media type)."""
+    return [(held.uri, held.name, held.description, held.mime_type)
+            for module in surface(folder) for held in module.resources if held.fields]
 
 
 async def read_resource_text(folder: Path, uri: str, *, client: str | None = None) -> tuple[str, str] | None:
@@ -939,8 +963,15 @@ async def read_resource_text(folder: Path, uri: str, *, client: str | None = Non
         return await anyio.to_thread.run_sync(glossary, folder), 'text/plain'
     for module in await anyio.to_thread.run_sync(surface, folder):
         for held in module.resources:
-            if held.uri == uri:
-                error, blocks = await run_tool(folder, f'{module.id}_{held.verb}', {}, client=client)
+            fields = held.matched(uri)
+            if held.uri == uri or fields is not None:
+                kinds = {noun.name: noun.kind for verb in module.verbs if verb.name == held.verb for noun in verb.nouns}
+                given = {name: int(value) if kinds.get(name) == 'int' and value.isdigit() else value
+                         for name, value in (fields or {}).items()}  # a number in the path is a number noun
+                error, blocks = await run_tool(folder, f'{module.id}_{held.verb}', given, client=client)
+                if error and fields is not None:  # a template's URI naming what is not there, MCP-037
+                    message, _, step = blocks[0].removeprefix('Error: ').partition('\nNext: ')
+                    raise Missing(message, step or 'list the resources and their templates')
                 if error:
                     raise Stop(blocks[0], 'read resource ' + INSTRUCTIONS_URI)
                 return '\n'.join(blocks), held.mime_type
@@ -1488,8 +1519,10 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
             project = await anyio.to_thread.run_sync(tasked.owning, folder)
             if project is not None:  # a folder that is no project's keeps no task, so its call is answered as ever
                 return await start_task(project, name, given, client, approved)
+        session = gateway_session(ctx.request.headers if ctx.request is not None else None)
         try:
-            error, blocks, structured = await answer(folder, name, given, client=client, consented=approved)
+            error, blocks, structured = await answer(folder, name, given, client=client, consented=approved,
+                                                     session=session)
         finally:  # what the tool changed, fired on the event bus from a worker thread, VIEW-018; a module enabled or
             # disabled since this server started is loaded or dropped first, BASE-037
             await anyio.to_thread.run_sync(events.announce, folder, 'mcp')
@@ -1578,9 +1611,11 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
         if apps(ctx):  # where a node or an item is shown: the node view, the one map_item and map_node open
             for template in addressed:
                 template.meta = {'ui': {'resourceUri': views.NODE}}
+        modules = [types.ResourceTemplate(uri_template=uri, name=name, description=description, mime_type=mime)
+                   for uri, name, description, mime in await anyio.to_thread.run_sync(module_templates, folder)]
         return types.ListResourceTemplatesResult(resource_templates=[
             *(types.ResourceTemplate(uri_template=uri, name=name, description=description, mime_type='text/plain')
-              for uri, name, description in TEMPLATES), *addressed])
+              for uri, name, description in TEMPLATES), *modules, *addressed])
 
     def web_address(project: str | None) -> str:
         """The web GUI's address on this machine, open at the folder's project, for a view's link to the full page;
@@ -1813,7 +1848,9 @@ def serve(folder: Path, *, http: bool = False, port: int = 0, bind: str | None =
         print(f'Metaform MCP server for {folder} at {where}', file=sys.stderr, flush=True)
         if settings.value('mcp_a2a', folder):  # A2A on the same port, P004 and P005
             from .a2a import attach
+            from .a2a_out import attach as follow_exchanges
             print(attach(app, folder, port, exposed), file=sys.stderr, flush=True)
+            follow_exchanges(app, folder)  # what agents here sent to peers, followed to its end, MCP-043
         uvicorn.Server(uvicorn.Config(app, host=bind, port=port, log_level='warning')).run()
         return
     from mcp.server.lowlevel import NotificationOptions

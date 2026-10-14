@@ -220,4 +220,9 @@
 <a2a_webhook_refused>This webhook is not one the person allows. They list the allowed webhooks in the setting mcp_a2a_webhooks.</a2a_webhook_refused>
 <!-- CancelTask on a ticket while dispatch, which cancels tickets, is off for the project. -->
 <a2a_no_cancel>Tickets are cancelled by dispatch, which is off for this project; ask the person to cancel it.</a2a_no_cancel>
+<!-- A2A outbound, MCP-041: what an agent here sends a peer comes back to the Address it was about. A question the
+     peer's task asks, its input-required status, is asked at that Address as an open question, MAP-050, titled from
+     its first line; this is the why the person and the next agent read beside it. <peer/> takes the peer's name in
+     mcp_a2a_peers. Empty asks the question with no why. -->
+<a2a_peer_question_why><peer/> asks this about the work sent to it over A2A; its task waits for the answer.</a2a_peer_question_why>
 </prompts>

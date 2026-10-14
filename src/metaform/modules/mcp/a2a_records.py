@@ -39,7 +39,19 @@ ASKS = Table('a2a_asks', place='project', key=('task_id',), columns=(
 PUSH = Table('a2a_push', place='project', key=('work_id', 'config_id'), columns=(
     Column('work_id', required=True), Column('config_id', required=True), Column('url', required=True),
     Column('token'), Column('scheme'), Column('credentials'), Column('owner'), Column('created', required=True)))
-TABLES = Tables(version=2, tables=(TASKS, ASKS, PUSH), compatible_from=1)  # 2 only adds a2a_asks
+# What Metaform sends out, MCP-040 to MCP-043: the Agent Card each peer served when it was last read, and one row per
+# exchange, a message sent to a peer about an Address and the task the peer opened for it.
+PEERS = Table('a2a_peers', place='project', key=('name',), columns=(
+    Column('name', required=True), Column('url', required=True), Column('card', 'json', required=True),
+    Column('read', required=True)))
+EXCHANGES = Table('a2a_exchanges', place='project', key=('exchange_id',), columns=(
+    Column('exchange_id', required=True), Column('peer', required=True), Column('peer_task_id'),
+    Column('address', required=True), Column('sender'), Column('work_id'), Column('state', required=True),
+    Column('said'), Column('text', required=True), Column('seen', 'json'), Column('created', required=True),
+    Column('updated', required=True), Column('seq', 'int', required=True)),
+    indexes=(Index(('peer', 'peer_task_id')), Index(('address',)), Index(('state',)), Index(('seq',))))
+# 2 only adds a2a_asks, 3 only a2a_peers and a2a_exchanges, so every earlier version still reads the rest.
+TABLES = Tables(version=3, tables=(TASKS, ASKS, PUSH, PEERS, EXCHANGES), compatible_from=1)
 
 
 @dataclass(frozen=True)
@@ -195,3 +207,103 @@ def delete_push(project: str, work_id: str, config_id: str | None = None) -> int
     """Delete one configuration, or every one on the task; deleting what is not there deletes nothing."""
     with _own(project).tables() as tx:
         return tx.delete('a2a_push', {'work_id': work_id, **({'config_id': config_id} if config_id else {})})
+
+
+# ---------------------------------------------------------------------------------------------------- outbound
+
+@dataclass(frozen=True)
+class Exchange:
+    """One message sent to a peer about an Address, MCP-043: the peer and the task it opened, the Address and the
+    ticket it belongs to, the agent instance that sent it, the task's state in the status vocabulary of work with the
+    peer's last word on it, and what of the task was already written at the Address."""
+    exchange_id: str
+    peer: str
+    address: str
+    text: str
+    state: str = 'submitted'
+    peer_task_id: str | None = None
+    sender: str | None = None
+    work_id: str | None = None
+    said: str | None = None
+    seen: list[str] = field(default_factory=list[str])
+    created: str = ''
+    updated: str = ''
+
+
+def _exchange(row: Any) -> Exchange:
+    seen: Any = row['seen']
+    return Exchange(str(row['exchange_id']), str(row['peer']), str(row['address']), str(row['text']),
+                    str(row['state']), row['peer_task_id'], row['sender'], row['work_id'], row['said'],
+                    [str(one) for one in cast(list[Any], seen)] if isinstance(seen, list) else [],
+                    str(row['created']), str(row['updated']))
+
+
+def keep_card(project: str, name: str, url: str, card: dict[str, Any]) -> None:
+    """The Agent Card a peer served, kept until a send fails with a version or interface error, MCP-040."""
+    row = {'url': url, 'card': card, 'read': _now()}
+    with _own(project).tables() as tx:
+        if tx.update('a2a_peers', {'name': name}, row) is None:
+            tx.insert('a2a_peers', {'name': name, **row})
+
+
+def kept_card(project: str, name: str, url: str) -> dict[str, Any] | None:
+    """The card kept for a peer, while the person still names it at the same URL."""
+    with _own(project).tables(write=False) as tx:
+        row = tx.get('a2a_peers', {'name': name})
+    card: Any = row['card'] if row is not None and row['url'] == url else None
+    return cast(dict[str, Any], card) if isinstance(card, dict) else None
+
+
+def send(project: str, made: Exchange) -> Exchange:
+    """Keep an exchange before its message leaves, so a reply after any restart finds it."""
+    with _own(project).tables() as tx:
+        stamp = _now()
+        row = tx.insert('a2a_exchanges', {
+            'exchange_id': made.exchange_id, 'peer': made.peer, 'peer_task_id': made.peer_task_id,
+            'address': made.address, 'sender': made.sender, 'work_id': made.work_id, 'state': made.state,
+            'said': made.said, 'text': made.text, 'seen': [], 'created': stamp, 'updated': stamp,
+            'seq': time.time_ns()})
+    return _exchange(row)
+
+
+def exchange(project: str, exchange_id: str) -> Exchange | None:
+    with _own(project).tables(write=False) as tx:
+        row = tx.get('a2a_exchanges', {'exchange_id': exchange_id})
+    return None if row is None else _exchange(row)
+
+
+def exchanges(project: str, address: str | None = None, open_only: bool = False) -> list[Exchange]:
+    """The project's exchanges, or those about one Address, newest first; with `open_only`, those whose task has
+    not ended."""
+    with _own(project).tables(write=False) as tx:
+        found = tx.rows('a2a_exchanges', {'address': address} if address else None, limit=0).results
+    made = [_exchange(row) for row in sorted(found, key=lambda row: -int(row['seq']))]
+    return [one for one in made if one.state not in ('completed', 'failed', 'cancelled')] if open_only else made
+
+
+def moved(project: str, exchange_id: str, *, state: str | None = None, said: str | None = None,
+          peer_task_id: str | None = None, claims: tuple[str, ...] = ()) -> tuple[Exchange | None, bool, list[str]]:
+    """Record what a peer told of an exchange's task in one transaction: its state and last word when they changed,
+    and each of `claims`, the keys of the artifacts and questions not yet written at the Address. Returns the
+    exchange, whether its state changed, and the claims this call took, so two followers of one task never write the
+    same item twice."""
+    with _own(project).tables() as tx:
+        row = tx.get('a2a_exchanges', {'exchange_id': exchange_id})
+        if row is None:
+            return None, False, []
+        before = _exchange(row)
+        taken = [key for key in dict.fromkeys(claims) if key not in before.seen]
+        change: dict[str, Any] = {}
+        if state and state != before.state:
+            change['state'] = state
+        if said is not None and said != before.said:
+            change['said'] = said
+        if peer_task_id and peer_task_id != before.peer_task_id:
+            change['peer_task_id'] = peer_task_id
+        if taken:
+            change['seen'] = [*before.seen, *taken]
+        if not change:
+            return before, False, []
+        change['updated'] = _now()
+        after = tx.update('a2a_exchanges', {'exchange_id': exchange_id}, change)
+    return _exchange(after) if after is not None else before, 'state' in change, taken
