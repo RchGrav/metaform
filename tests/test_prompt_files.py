@@ -77,7 +77,7 @@ def test_the_full_instructions_are_the_instructions_prompt_with_the_surfaced_mod
 
 INTAKE = (('element', 'code.timer.kitchen', 'role=DE', 'name_length=2', 'name=kitchen timer'),
           ('element', 'code.alarm.audible', 'role=SE', 'name_length=2', 'name=alarm'),
-          ('join', 'code.timer.kitchen', '["code.alarm.audible"]', 'purpose=Get attention.', 'ef=Rings.',
+          ('purpose', 'code.timer.kitchen', '["code.alarm.audible"]', 'purpose=Get attention.', 'ef=Rings.',
            'ifd=receives'))
 
 

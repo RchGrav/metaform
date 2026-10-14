@@ -27,6 +27,8 @@ def home(tmp_path, monkeypatch):
     # the tickets the agent's role may not write, MAP-050.
     for name in ('METAFORM_ROLE', 'METAFORM_SESSION', 'METAFORM_WORK', 'METAFORM_NODE'):
         monkeypatch.delenv(name, raising=False)
+    # Intake's optional live classifier must never inherit real billing credentials in fixture tests.
+    monkeypatch.delenv('OPENROUTER_API_KEY', raising=False)
     yield path
     loader.reset()
 

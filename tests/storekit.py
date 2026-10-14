@@ -70,7 +70,7 @@ def record_intake(run, folder, elements, env=None, finish=()):
     for element in elements:
         for join in element.get('joins', []):
             held = [join['provider'], *(subtype['element']['namespace_address'] for subtype in join.get('subtypes', []))]
-            call('join', element['namespace_address'], json.dumps(held), *_named(join, ('purpose', 'ef', 'ifd')))
+            call('purpose', element['namespace_address'], json.dumps(held), *_named(join, ('purpose', 'ef', 'ifd')))
     return call('finish', *finish)
 
 

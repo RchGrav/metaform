@@ -13,8 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 OWNER = re.compile(r'\b' + 'R' + r'ich\b|\b' + 'r' + r'ichs\b|' + 'Gra' + 'ver')  # spelled apart so this file does not match itself
 # The question form's third heading, which the page matches word for word against what agents write; it changes
 # together with the form's text, which is not in this repository.
-KEPT = {('src/metaform/modules/web/page/app.js', '#3 Unexplained "' + 'R' + 'ich said":'),
-        # the MCP Apps map view, built from app.js by scripts/build_map_view.mjs, carries the same heading
+KEPT = {('src/metaform/modules/web/page/app/selection/select.js', '#3 Unexplained "' + 'R' + 'ich said":'),
+        # the MCP Apps map view, built from the page's script by scripts/build_map_view.mjs, carries the same heading
         ('src/metaform/modules/mcp/resources/views/map.html', '#3 Unexplained "' + 'R' + 'ich said":'),
         # the official MCP Apps SDK, vendored unchanged in meaning, describes its host context in these words
         ('src/metaform/modules/mcp/resources/views/ext-apps.js', 'R' + 'ich context about the host environment.'),

@@ -49,7 +49,7 @@ def test_the_tools_that_write_the_metaform_take_no_field_beyond_its_shape():
     taken = {verb.name: {noun.name for noun in verb.nouns} for verb in MODULE.verbs}
     # Refs, an element's or a join's, go to the sources layer, never into the metaform, BASE-039 amendment 2026-10-08.
     assert taken['element'] - TICKET == ELEMENT | {'refs'}, sorted(taken['element'])
-    assert taken['join'] - TICKET == JOIN | {'refs'}, sorted(taken['join'])
+    assert taken['purpose'] - TICKET == JOIN | {'refs'}, sorted(taken['purpose'])
     from metaform.modules.map import READS, REFINE_FIELDS
     assert READS['add-element'] <= {'address', 'name_length', 'name', 'role', 'refs'}, sorted(READS['add-element'])
     assert READS['add-join'] <= {'receiver', 'elements', 'purpose', 'ef', 'ifd', 'type'}, sorted(READS['add-join'])

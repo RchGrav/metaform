@@ -22,9 +22,9 @@ from fakes import calls, recorder
 pytestmark = [pytest.mark.kind('simulation'), pytest.mark.req('MCP-024')]
 
 ROOT = Path(__file__).parents[1]
-SPEC = ROOT / 'src' / 'metaform' / 'modules' / 'intake' / 'resources' / 'intake.xml'  # the served intake
+SPEC = ROOT / 'src' / 'metaform' / 'modules' / 'intake' / 'resources' / 'intake.axiom'  # the served intake
 FIXTURE = json.loads((ROOT / 'tests' / 'fixtures' / 'intake_timer.json').read_text(encoding='utf-8'))
-TOOLS = {'intake_prompt', 'intake_start', 'intake_element', 'intake_join', 'intake_remove',
+TOOLS = {'intake_prompt', 'intake_start', 'intake_element', 'intake_purpose', 'intake_remove',
          'intake_show', 'intake_finish', 'memory_create_entities', 'memory_open_nodes', 'map_select', 'map_mask',
          'map_clear', 'map_node', 'map_layers', 'map_tag', 'map_untag', 'map_knowledge', 'map_work', 'metaform_feedback',
          'metaform_list_reports', 'metaform_read_report', 'metaform_set'}
@@ -126,7 +126,9 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
     try:
         listed = commands(host)
         modules = {name.split('_', 1)[0] for name in listed}
-        assert modules == {'intake', 'map', 'memory', 'web', 'fork', 'metaform'}  # fork ships enabled, BASE-017
+        # fork ships enabled, BASE-017; mcp carries the A2A outbound tools, MCP-040; refactor and roundtable ship
+        # enabled, BASE-065 and BASE-066.
+        assert modules == {'intake', 'map', 'mcp', 'memory', 'refactor', 'roundtable', 'web', 'fork', 'metaform'}
         assert TOOLS <= listed and not any(name.startswith(('hello_', 'template_')) for name in listed)
 
         # 5 and 6: the subagent reads its instructions by name, unaltered.
@@ -161,14 +163,14 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
             for join in element.get('joins', []):
                 held = [join['provider'], *(subtype['element']['namespace_address']
                                             for subtype in join.get('subtypes', []))]
-                record('intake_join', {'receiver': element['namespace_address'], 'elements': held, **{
+                record('intake_purpose', {'receiver': element['namespace_address'], 'elements': held, **{
                     key: value for key, value in join.items() if key in ('purpose', 'ef', 'ifd')}})
         # The condition of an object is a work record, apart from the map, written by the intake agent with the
         # element it marks; an agent never adds a ticket through map_work over MCP, MAP-046.
         record('intake_element', {'namespace_address': 'code.alarm.audible', 'condition': 'trouble',
                                   'note': 'the pin is never released'})
         report = record('intake_finish', {'report': REPORT, 'feedback': FEEDBACK})
-        assert (report['elements'], report['joins'], report['work']) == (4, 2, 1)
+        assert (report['elements'], report['purposes'], report['work']) == (4, 2, 1)
         # Each element of the fixture carries its name, kept on the element with no notice.
         assert noticed == ['purpose']
     finally:
