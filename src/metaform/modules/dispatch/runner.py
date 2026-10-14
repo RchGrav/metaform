@@ -99,11 +99,13 @@ from . import (
     intake_id,
     intake_prompt,
     intake_store,
+    launch_options,
     mascot_line,
     memory_read,
     module_read,
     next_ticket,
     option_key,
+    option_values,
     over_budget,
     prompt,
     release,
@@ -121,6 +123,7 @@ from . import (
     workflow_skill,
 )
 from .merge import checkpoint
+from .signals import add_line
 
 START_LIMIT = 300.0  # the one wait for the agent to start and make its session; npx may download it first
 END_LIMIT = 10.0  # the one wait for a cancelled turn to end, and for the agent to end once its input is closed
@@ -160,6 +163,21 @@ AUTH_REQUIRED = -32000  # ACP's auth_required error: the agent needs a login bef
 # config options it offers, and set_config_option answers with the whole new set, so what depends on the model goes
 # after it, session-config-options. Anything else follows in the order it was chosen.
 APPLY_ORDER = ('mode', 'model', 'model_config', 'thought_level')
+# What a roundtable seat's agent is started without, BASE-066: the keys that would bill an API account in place of the
+# person's own login to Claude Code or Codex.
+SUBSCRIPTION_ONLY = ('ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'OPENAI_API_KEY', 'CODEX_API_KEY')
+# The modes a seat's session is put in, the first its agent offers: Codex's read-only sandbox, else the agent's own
+# default, so a person's own default of a mode that writes never reaches a seat.
+SEAT_MODES = ('read-only', 'default')
+# What a seat's session/new, load and resume carry in `_meta` for claude-agent-acp, BASE-066; other agents ignore it.
+# Claude Code applies the allow rules of the folder's own settings before it asks the client, so a seat's mode alone
+# would let a folder that allows Edit or Bash write without one request reaching Metaform: its built-in tools are cut
+# to the ones that read, the writing ones refused by name as well, and its MCP servers are only the one Metaform
+# passes it.
+SEAT_META: dict[str, Any] = {'claudeCode': {'options': {
+    'tools': ['Read', 'Grep', 'Glob'],
+    'disallowedTools': ['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Task', 'Agent'],
+    'strictMcpConfig': True}}}
 ELICIT_WORDS = {'decline': 'decline', 'cancel': 'cancel', 'skip': 'decline'}  # an answer that is an action, not content
 # The limits a field of a form elicitation may set, the restricted JSON Schema of ACP's elicitation; `pattern` is ACP's.
 ELICIT_LIMITS = ('minLength', 'maxLength', 'pattern', 'format', 'minimum', 'maximum', 'minItems', 'maxItems')
@@ -221,10 +239,13 @@ def server_environment(**own: str) -> list[EnvVariable]:
 
 def role(nouns: dict[str, Any], work_id: str) -> str:
     """What a session's agent is, from the nouns its runner was started with, BASE-052: an intake agent, one of the
-    agents the person summons (the sentinel on an issue, a talk, the system agent), a merge preparation, or a worker
+    agents the person summons (the sentinel on an issue, a talk, the system agent), a roundtable seat, a merge
+    preparation, or a worker
     on its ticket. The nouns decide and not the session's flags, since intake and the summoned agents run as prep too."""
     if intake_id(work_id):
         return 'intake'
+    if nouns.get('seat'):  # a roundtable seat, BASE-066
+        return 'seat'
     if nouns.get('system'):
         return 'sentinel' if nouns.get('sentinel') else 'talk' if nouns.get('talk') else 'system'
     return 'prep' if nouns.get('prep') else 'worker'
@@ -602,6 +623,17 @@ def elicit_question(name: str, message: str, fields: list[dict[str, Any]], url: 
     return '\n'.join(lines) + after
 
 
+def decided(fields: list[dict[str, Any]]) -> AcceptElicitationResponse | DeclineElicitationResponse:
+    """The answer dispatch gives at once to a question from an agent that may not ask the person, a worker among them:
+    the `decide` prompt in each own-words field, which claude-agent-acp's AskUserQuestion and codex-acp read as the
+    answer; a form with no such field, one that requires a field, or a page to open is declined."""
+    notes = [field['key'] for field in fields if field['note_of']]
+    if not notes or any(field['required'] for field in fields):
+        return DeclineElicitationResponse(action='decline')
+    reply = prompt('decide')
+    return AcceptElicitationResponse(action='accept', content={key: reply for key in notes})
+
+
 class Exits(asyncio.subprocess.SubprocessStreamProtocol):
     """The agent's process protocol, which says when the process itself has ended. `Process.wait` waits also for its
     pipes, which a process it started may hold open after it ends."""
@@ -638,6 +670,9 @@ async def dispatch(ctx: Context) -> dict[str, Any]:
         held = await asyncio.to_thread(ticket, store, work_id)
         return await moved_on(store, await Session(ctx, store, held, agent, command, resumed, prep=True, system=True,
                                                    resume=resume).run())
+    if ctx.nouns.get('seat'):  # BASE-066: a roundtable seat, on the table's held ticket, which it never takes
+        held = await asyncio.to_thread(ticket, store, work_id)
+        return await moved_on(store, await Session(ctx, store, held, agent, command, prep=True).run())
     if ctx.nouns.get('prep'):  # VIEW-044: an agent helps the person prepare a merge under review, in its worktree
         from .merge import worktree_of
         held = await asyncio.to_thread(ticket, store, work_id)
@@ -939,6 +974,12 @@ class Session:
                  resume: str | None = None) -> None:
         self.system = system  # the person's system agent: no ticket work, a conversation that lasts until stopped
         self.prep = prep  # helping the person prepare a merge, VIEW-044: it takes no ticket and lives between turns
+        # A roundtable seat, BASE-066, named as its table names it: no first turn of dispatch's own, every turn the
+        # table's; it reads and never writes, its requests answered at once and never put to the person, and it runs
+        # on its agent's own login, never an API key.
+        self.seat = str(ctx.nouns.get('seat') or '') or None
+        # The agent a start launched on its ticket, which takes that launch's own permissions, `launch_options`
+        self.launched = record is not None and not (system or prep or self.seat)
         self.ctx, self.store, self.agent, self.command = ctx, store, agent, command
         # An intake agent has no ticket and no node: its work id names its session alone, and a permission it asks
         # for is put to the person on the page only, as a choice among its options.
@@ -978,7 +1019,8 @@ class Session:
                                     # intake agent's first call and record, M04
                                     'files': [], 'intake': None,
                                     # what a conversation is about, so the person's next Call or Chat on it resumes it
-                                    'about': str(ctx.nouns.get('talk') or 'system') if system else None}
+                                    'about': str(ctx.nouns.get('talk') or 'system') if system else None,
+                                    'seat': self.seat}  # the roundtable seat it is, found by its table
         self.modes: dict[str, Any] | None = None  # the agent's session modes: current and available
         self.config: list[dict[str, Any]] = []  # the agent's config options, as it sent them
         self.offered = False  # the last session/new, load or resume answer named its modes or config options
@@ -1159,9 +1201,11 @@ class Session:
             raise
         return result
 
-    async def table(self, change: Callable[[Any], Any], *, name: str = 'lines') -> Any:
+    async def table(self, change: Callable[[Any], Any], *, name: str = 'lines', fatal: bool = True) -> Any:
         """One write to this module's own tables, off the loop, then `map.changed` naming the dispatch tables, so an
-        open agent window shows it at once and an open page reads only its agents again, not the map, STORE-045."""
+        open agent window shows it at once and an open page reads only its agents again, not the map, STORE-045. A
+        write that is not `fatal`, a line of a thread, is logged when it fails and the runner goes on without it,
+        code.dispatcher.agent#12."""
         def done() -> Any:
             with self.store.tables() as tx:
                 return change(tx)
@@ -1172,6 +1216,10 @@ class Session:
             else:
                 await self.changed(tables='dispatch', dispatch_tables=[f'dispatch.{name}'])
         except Exception as error:
+            if not fatal:
+                sys.stderr.write(f'A line of session {self.session_id} on work {self.work_id} was not written: '
+                                 f'{error}\n')
+                return None
             self.fail(error)
             raise
         return result
@@ -1226,17 +1274,12 @@ class Session:
         for `key` changed in place. An agent started only to be asked something keeps no thread."""
         if self.session_id is None or self.probe:
             return
-        session_id = self.session_id
-        if key and key in self.named:
-            await self.table(lambda tx: tx.update('lines', {'session_id': session_id, 'name': key}, {'text': text}))
-            return
-        self.lines += 1
-        seq = self.lines
-        name = key or f'line:{seq}'
-        if key:
-            self.named.add(key)
-        await self.table(lambda tx: tx.insert('lines', {'session_id': session_id, 'name': name, 'work_id': self.work_id,
-                                                        'kind': kind, 'text': text, 'seq': seq}))
+        session_id, known = self.session_id, self.lines
+        written = await self.table(lambda tx: add_line(tx, session_id, self.work_id, key, kind, text, known),
+                                   fatal=False)
+        if written is not None:
+            self.named.add(written[0])
+            self.lines = max(self.lines, written[1])
 
     async def checked(self, text: str) -> str:
         """A prompt this module sends, checked before it is sent, BASE-057: a flagged one is still sent, with a notice
@@ -1455,7 +1498,8 @@ class Session:
 
     async def remember(self) -> None:
         """What the agent offered, kept per agent and version in this project, P199: the settings of this session, its
-        logins and extensions. dispatch_agent_options offers them as its choices, and dispatch options lists them."""
+        logins and extensions. The dispatch_<agent>_<option> settings offer them as their choices, and dispatch
+        options lists them."""
         info = cast(dict[str, Any], self.acp['agent_info'] or {})
         caps = cast(dict[str, Any], self.acp['capabilities'])
         row = {'agent': self.agent, 'version': str(info.get('version') or 'unknown'), 'name': info.get('title')
@@ -1486,8 +1530,8 @@ class Session:
         return {key: str(value) for key, value in given.items() if key in ('model', 'thought_level') and value}
 
     async def apply_options(self) -> list[dict[str, Any]]:
-        """Give the session the settings chosen for it, P199 and P015: dispatch_agent_options for its agent, then its
-        ticket's own model and effort, each matched to the agent's settings by ACP category or by id and set through
+        """Give the session the settings chosen for it, P199 and P015: its agent's dispatch_<agent>_<option> settings,
+        then its ticket's own model and effort, each matched to the agent's settings by ACP category or by id and set through
         session/set_config_option, or session/set_mode for a mode, in APPLY_ORDER, so a model switch never undoes the
         effort chosen with it. A choice the agent does not offer is said once in the thread and left; one already
         current, as the agent's latest answer has it, is not sent again."""
@@ -1495,7 +1539,17 @@ class Session:
             return []
         wanted = await asyncio.to_thread(wanted_options, self.ctx, self.store, self.agent,
                                          None if self.node is None else self.work_id)
-        wanted = {**self.jev_chosen(), **wanted}  # Jev's choice, H23, under every choice of the person's
+        if self.seat:  # a seat's model, the one it names, over the person's; and a mode that only reads, BASE-066
+            none: list[str] = []
+            modes = next((option_values(one) for one in self.settings() if option_key(one) == 'mode'), none)
+            mode = next((one for one in SEAT_MODES if one in modes), None)
+            wanted = {**{key: value for key, value in wanted.items() if key != 'mode'}, **self.jev_chosen(),
+                      **({'mode': mode} if mode else {})}
+        else:
+            wanted = {**self.jev_chosen(), **wanted}  # Jev's choice, H23, under every choice of the person's
+            if self.launched:  # the mode its start gave this launch, over dispatch_<agent>_<option>
+                found = await asyncio.to_thread(launch_options, self.store, self.work_id)
+                wanted = {**wanted, **({'mode': found['mode']} if 'mode' in found else {})}
         rank = {key: at for at, key in enumerate(APPLY_ORDER)}
         done: list[dict[str, Any]] = []
         for key, value in sorted(wanted.items(), key=lambda pair: rank.get(pair[0], len(APPLY_ORDER))):
@@ -1580,16 +1634,11 @@ class Session:
     async def child_note(self, child: str, key: str | None, kind: str, text: str) -> None:
         """A line of a subagent's own thread, under its session id: a new one, or the one kept for `key`."""
         held = self.children[child]
-        named = cast(set[str], held['named'])
-        if key and key in named:
-            await self.table(lambda tx: tx.update('lines', {'session_id': child, 'name': key}, {'text': text}))
-            return
-        held['lines'] += 1
-        seq, name = int(held['lines']), key or f'line:{held["lines"]}'
-        if key:
-            named.add(key)
-        await self.table(lambda tx: tx.insert('lines', {'session_id': child, 'name': name, 'work_id': self.work_id,
-                                                        'kind': kind, 'text': text, 'seq': seq}))
+        known = int(held['lines'])
+        written = await self.table(lambda tx: add_line(tx, child, self.work_id, key, kind, text, known), fatal=False)
+        if written is not None:
+            cast(set[str], held['named']).add(written[0])
+            held['lines'] = max(known, written[1])
 
     async def child_update(self, child: str, kind: str, data: dict[str, Any]) -> None:
         """One update of a subagent's session, in its own thread: its words and thinking growing in place, each tool
@@ -2007,6 +2056,8 @@ class Session:
                               **kwargs: Any) -> WriteTextFileResponse | None:
         """ACP's fs/write_text_file: the file written whole, made with its folders when it does not exist; refused
         inside a part of the map another ticket's claim reserves, LAYER-029."""
+        if self.seat:
+            raise await self.refuse('write', path, 'a roundtable seat only reads')
         found = await self.confined('write', path)
         named = relative(str(found), [self.folder, self.root])
         for place in placed(await self.places(), named):
@@ -2030,6 +2081,8 @@ class Session:
         """ACP's terminal/create: the command started at once in a process group of its own, in the session's folder
         or a folder inside it, with the agent's environment and the variables it names; its output, stdout and stderr
         together, kept up to its limit, or dispatch_terminal_kb when it names none."""
+        if self.seat:
+            raise await self.refuse('run', command, 'a roundtable seat only reads')
         folder = await self.confined('run a terminal in', cwd) if cwd else Path(self.folder)
         given = {**child_environment(), **{one.name: one.value for one in env or []}}
         try:
@@ -2310,11 +2363,27 @@ class Session:
         waiting: asyncio.Future[str | None] = asyncio.get_running_loop().create_future()
         title = str(tool_call.title or tool_call.kind or 'a tool call')
         how = await asyncio.to_thread(self.ctx.setting, 'dispatch_prompts')  # as set now, so a change reaches this agent
+        own = (await asyncio.to_thread(launch_options, self.store, self.work_id)).get('prompts') \
+            if self.launched else None
+        how, said = (own, f'this launch\'s prompts={own}') if own else (how, f'dispatch_prompts={how}')
         allow = next((option for option in options if str(option.kind) == 'allow_once'), None)
+        if self.seat:  # a seat reads and never writes, BASE-066: answered at once, never put to the person
+            reject = next((option for option in options if str(option.kind) == 'reject_once'), None)
+            # a read, or a call of Metaform's own server, which serves a seat only the tools that read and a seat's own
+            # controls at its table; Claude Code names its MCP tools mcp__<server>__<tool> and gives them kind other
+            reads = allow is not None and (str(tool_call.kind) in READS or title.startswith('mcp__metaform__'))
+            async with self.lock:
+                await self.flush()
+                await self.note(None, 'approved' if reads else 'notice',
+                                f'{title}: {"approved" if reads else "refused"}, a roundtable seat only reads')
+            if reads or reject is not None:
+                return RequestPermissionResponse(outcome=AllowedOutcome(
+                    option_id=cast(PermissionOption, allow if reads else reject).option_id, outcome='selected'))
+            return RequestPermissionResponse(outcome=DeniedOutcome(outcome='cancelled'))
         if allow is not None and (how == 'approve-all' or (how == 'approve-reads' and str(tool_call.kind) in READS)):
             async with self.lock:
                 await self.flush()
-                await self.note(None, 'approved', f'{title}: approved by dispatch_prompts={how}')
+                await self.note(None, 'approved', f'{title}: approved by {said}')
             return RequestPermissionResponse(outcome=AllowedOutcome(option_id=allow.option_id, outcome='selected'))
         call = tool_call.model_dump(mode='json', by_alias=True, exclude_none=True)
         detail = await self.tool_detail({**call, 'title': title})  # what it would act on, shown before it does
@@ -2363,7 +2432,13 @@ class Session:
 
     async def check(self) -> None:
         """Resolve permission requests the person answered on the page, and end the session once its ticket is done
-        while no prompt of its own runs, whatever turn closed it, VIEW-035."""
+        while no prompt of its own runs, whatever turn closed it, VIEW-035. A roundtable seat ends when its table's
+        ticket is closed, so a seat that made its session after its table ended does not stay, BASE-066."""
+        if self.seat and not self.ending and self.session_id is not None:
+            record = await asyncio.to_thread(ticket, self.store, self.work_id)
+            if record.done and not self.ending:
+                self.spawn(self.end('the table ended'))
+                return
         if not self.ending and self.turns == 0 and not self.prep:
             record = await asyncio.to_thread(ticket, self.store, self.work_id)
             if record.done and not self.ending and self.turns == 0:
@@ -2425,7 +2500,10 @@ class Session:
         scope = {'session_id': getattr(mode, 'session_id', None), 'tool_call_id': getattr(mode, 'tool_call_id', None)}
         deadline = next((float(mark['autoResolutionMs']) / 1000 for mark in meta_records(kwargs)
                          if isinstance(mark.get('autoResolutionMs'), (int, float))), None)
-        how = await asyncio.to_thread(self.ctx.setting, 'dispatch_elicitation')
+        if not (self.system or self.seat):  # only the sentinel and the head agent ask the person, VIEW-045
+            self.incoming.pop(rpc, None)
+            return decided(fields)
+        how ='decline' if self.seat else await asyncio.to_thread(self.ctx.setting, 'dispatch_elicitation')
         stopping = self.ending or (self.active_turn is not None and self.active_turn.cancel_requested)
         if how == 'decline' or stopping or rpc in self.withdrawn:
             self.incoming.pop(rpc, None)
@@ -2736,7 +2814,10 @@ class Session:
         server = await asyncio.to_thread(mcp_server, Path(self.root))
         self.runner = secrets.token_hex(8)
         identity = {'METAFORM_ROLE': self.role, 'METAFORM_SESSION': self.runner, 'METAFORM_WORK': self.work_id,
-                    **({'METAFORM_NODE': self.at} if self.at else {})}
+                    **({'METAFORM_NODE': self.at} if self.at else {}),
+                    # a roundtable seat's name, roundtable:<table>:<position>, so its server can tell it which seat it
+                    # is as it connects, before the session's row names it, BASE-066
+                    **({'METAFORM_SEAT': self.seat} if self.seat else {})}
         await self.open_agent(identity)
         if self.ending or self.process is None:
             return
@@ -2749,6 +2830,9 @@ class Session:
         # environment beside its identity, so only this session's server withholds them.
         if self.intake is not None:
             self.withheld = [str(one) for one in cast(list[Any], self.option('dispatch_intake_withheld', []) or [])]
+        elif self.seat:  # a seat's server serves only the tools that read, BASE-066
+            self.withheld = await asyncio.to_thread(lambda: [f'{module.id}_{verb.name}' for module in surface(
+                Path(self.root)) for verb in module.verbs if verb.effect != 'read'])
         withheld = {WITHHELD: ','.join(self.withheld)} if self.withheld else {}
         servers = [McpServerStdio(name='metaform', command=sys.executable, args=['-m', *server],
                                   env=server_environment(**identity, **withheld))] if server else []
@@ -2757,8 +2841,8 @@ class Session:
             if self.resume:
                 made = await asyncio.wait_for(self.reopen(servers), START_LIMIT)
             else:
-                made = await asyncio.wait_for(self.conn.new_session(cwd=self.folder, mcp_servers=servers),
-                                              START_LIMIT)
+                made = await asyncio.wait_for(self.conn.new_session(cwd=self.folder, mcp_servers=servers,
+                                                                    **(SEAT_META if self.seat else {})), START_LIMIT)
                 async with self.lock:  # what the agent asked while the session was made moves to it
                     await self.waits_moved(str(made.session_id))
         except acp.RequestError as error:
@@ -2822,8 +2906,16 @@ class Session:
             if bound is not None:
                 self.store = Store(self.store.project_id, base=bound.id, module=self.store.module)
         await self.save_state()
-        await self.apply_options()  # dispatch_agent_options and the ticket's own, on new, load and resume, P199
+        # dispatch_<agent>_<option> and the ticket's own, on new, load and resume, P199
+        applied = await self.apply_options()
         if self.ending:
+            return
+        # A seat runs on the model it names, in a mode that only reads, or not at all; its turns are the table's.
+        if self.seat:
+            refused = [one for one in applied if one['key'] in ('model', 'mode') and 'error' in one]
+            if refused:
+                raise RuntimeError('; '.join(f'{one["key"]} {one["value"]}: {one["error"]}' for one in refused))
+            self.spawn(self.check())  # a table that ended while the session was made ends it now
             return
         if self.resume:  # a resumed session waits for the person's next message, or goes on when the supervisor retries
             if self.retrying and self.node is not None and not self.budget:
@@ -2879,7 +2971,7 @@ class Session:
         transport, protocol = await loop.subprocess_exec(
             lambda: Exits(LINE_LIMIT, loop), *self.command, stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=self.folder,
-            env={**agent_environment(**identity), **start_environment(self.agent)}, **group_options())
+            env=self.agent_env(identity), **group_options())
         self.process, self.exited = asyncio.subprocess.Process(transport, protocol, loop), protocol.exited
         if self.process.stderr is not None:
             self.spawn(self.read_stderr(self.process.stderr))
@@ -2924,6 +3016,15 @@ class Session:
                                f'Metaform speaks version {acp.PROTOCOL_VERSION}')
         return init
 
+    def agent_env(self, identity: dict[str, str]) -> dict[str, str]:
+        """The agent's environment; a seat's without the API keys its agent would bill instead of its login, so a
+        roundtable seat always runs on the person's own subscription, BASE-066."""
+        env = {**agent_environment(**identity), **start_environment(self.agent)}
+        if self.seat:
+            for name in SUBSCRIPTION_ONLY:
+                env.pop(name, None)
+        return env
+
     def asked_for(self) -> str:
         """What the person asked the intake for, from the row its launch holds its slot in, so their words never go in
         an argument; taken before the session is made, while the row is still there, and cleared once read. Nothing
@@ -2940,13 +3041,14 @@ class Session:
         else session/load, which replays the history the thread already holds and is not written again."""
         caps = cast(dict[str, Any], self.acp['capabilities'])
         session_id = cast(str, self.resume)
+        meta = SEAT_META if self.seat else {}  # a seat's read-only tools, whichever way its session is made
         if caps.get('resume'):
             self.acp['resumed'] = 'resume'
-            return await self.conn.resume_session(session_id=session_id, cwd=self.folder, mcp_servers=servers)
+            return await self.conn.resume_session(session_id=session_id, cwd=self.folder, mcp_servers=servers, **meta)
         if caps.get('load'):
             self.acp['resumed'] = 'load'
             self.replaying = True
-            return await self.conn.load_session(cwd=self.folder, session_id=session_id, mcp_servers=servers)
+            return await self.conn.load_session(cwd=self.folder, session_id=session_id, mcp_servers=servers, **meta)
         raise RuntimeError(f'{self.name} offers neither session/resume nor session/load, so session {session_id} '
                            'cannot be resumed')
 

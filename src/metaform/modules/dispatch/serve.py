@@ -59,6 +59,7 @@ from metaform.module import (
 
 from . import AGENTS, REPLY_LIMIT, SERVED, anchor, argv, end_group, group_options, prompt, runner_of, sessions
 from . import proxy as layers
+from .signals import add_line
 
 settings.choice('dispatch_serve_agent', ['default', 'none', *AGENTS], 'default', person_only=True,
                 label='Editor agent',
@@ -1309,15 +1310,16 @@ class Record:
                           'agent_info': self.served.agent_info,
                           'commands': _dicts(self.served.agent_commands.get(session_id))})
 
-    async def table(self, change: Callable[[Any], Any], name: str = 'lines') -> None:
-        def done() -> None:
+    async def table(self, change: Callable[[Any], Any], name: str = 'lines') -> Any:
+        def done() -> Any:
             with self.store.tables() as tx:
-                change(tx)
-        await asyncio.to_thread(done)
+                return change(tx)
+        result = await asyncio.to_thread(done)
         if name == 'lines':
             await self.lines_changed()
         else:
             await self.changed([f'dispatch.{name}'])
+        return result
 
     async def changed(self, tables: list[str] | None = None) -> None:
         if self.base_id is None:
@@ -1343,18 +1345,14 @@ class Record:
         """A line of the thread: a new one, or the one kept for `key` changed in place."""
         if self.closed:
             return
-        session_id = self.session.session_id
-        if key and key in self.named:
-            await self.table(lambda tx: tx.update('lines', {'session_id': session_id, 'name': key}, {'text': text}))
+        session_id, known = self.session.session_id, self.lines
+        try:  # numbered from the table, so another writer on the session takes no name of ours, code.dispatcher.agent#12
+            written = await self.table(lambda tx: add_line(tx, session_id, self.work_id, key, kind, text, known))
+        except Exception as error:  # noqa: BLE001  a line not written never ends the session; it is logged
+            sys.stderr.write(f'A line of session {session_id} on work {self.work_id} was not written: {error}\n')
             return
-        self.lines += 1
-        seq = self.lines
-        name = key or f'line:{seq}'
-        if key:
-            self.named.add(key)
-        await self.table(lambda tx: tx.insert('lines', {'session_id': session_id, 'name': name,
-                                                        'work_id': self.work_id, 'kind': kind, 'text': text,
-                                                        'seq': seq}))
+        self.named.add(written[0])
+        self.lines = max(self.lines, written[1])
 
     async def flush(self) -> None:
         kind, text, key = self.flow_kind, self.flow_text, self.flow_key
@@ -1448,13 +1446,9 @@ class Record:
                 with contextlib.suppress(ValueError, TypeError):
                     held = cast(dict[str, Any], json.loads(str(found['text'])))
             text = json.dumps({**held, **more}, ensure_ascii=False)
-            if found is not None:
-                tx.update('lines', {'session_id': session_id, 'name': 'state'}, {'text': text})
-            else:
-                self.lines += 1
-                self.named.add('state')
-                tx.insert('lines', {'session_id': session_id, 'name': 'state', 'work_id': self.work_id,
-                                    'kind': 'state', 'text': text, 'seq': self.lines})
+            _, seq = add_line(tx, session_id, self.work_id, 'state', 'state', text, self.lines)
+            self.named.add('state')
+            self.lines = max(self.lines, seq)
         if not self.closed:
             await self.table(merged)
 

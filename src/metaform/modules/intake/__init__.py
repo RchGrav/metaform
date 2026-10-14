@@ -24,6 +24,7 @@ import json
 import os
 import re
 import sys
+from collections.abc import Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
 from importlib import resources
@@ -31,7 +32,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from metaform import home, prompt_files, settings
-from metaform.data import Element, GraphPage, Item, Join, Layer, Node, Notice, Store, StoreError
+from metaform.data import Element, GraphPage, Item, Join, Layer, Node, Notice, Store, StoreError, WorkRecord
 from metaform.module import Context, Module, Noun, Resource, Status, Stop, ToolbarItem, Verb, save_report
 
 from .schema import ELEMENTS, IFD, NAME_LENGTH, REFS, ROLE
@@ -414,22 +415,71 @@ def element(ctx: Context) -> Any:
     return {ADDRESS: address, 'layer': rec.layer.name, 'notices': notices}
 
 
+FIX = {'trouble': 'The intake found this part does not do its job: fix it as the note says.',
+       'missing': 'The intake found this part should exist and does not: build it as the note says.'}
+
+
+def _task(condition: str | None, note: str | None) -> str | None:
+    """The task a trouble or missing finding carries, so the agent starter starts an agent on it, MAP-046's amendment
+    of 2026-10-14: its note, then what to do. The note comes first, so the ticket's title is still the finding."""
+    if condition not in FIX:
+        return None
+    return f'{note.strip()}\n\n{FIX[condition]}' if note and note.strip() else FIX[condition]
+
+
+def _finding(row: WorkRecord) -> bool:
+    """A work record the intake wrote: no task, or the task built from its own condition and note. Once someone
+    rewrites the task it is their ticket, and a condition recorded again leaves it alone."""
+    return not row.task or row.task == _task(row.condition, row.note)
+
+
 def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], thing: str | None,
-               notices: Notices) -> None:
+               notices: Notices, ends: Sequence[str] = ()) -> None:
     """A condition given with what was recorded is an open work record at it, with its note, MAP-046: the missing,
-    broken and exclude marks of the intake, apart from the map. A note alone is no finding and opens nothing."""
+    broken and exclude marks of the intake, apart from the map. A note alone is no finding and opens nothing. Trouble
+    and missing carry a task built from the note, so they are tickets an agent starts on. A finding already open with
+    the same condition and note on an element and a purpose record it holds or receives, at `ends` of a purpose record,
+    is not written twice."""
     if ctx.nouns.get('condition') == 'exclude':  # not a judgment the intake makes: the person's ignore list
         notices.append({'where': 'condition', 'message': f'exclude is the ignore list: {home.IGNORE_FILE}'})
         return
     if thing is None or not ctx.nouns.get('condition'):  # none or empty: no finding; a note is kept on the object
         return
+    condition, note = str(ctx.nouns['condition']), ctx.nouns.get('note')
+    task = _task(condition, note)
     # A part has one condition: recorded again, as verification does once it has read the source, the new one
-    # replaces the last, which closes, so the read-back shows what was found most recently.
+    # replaces the last, which closes, so the read-back shows what was found most recently. The same condition
+    # recorded again on a finding not yet taken is that finding, kept in place with its id and place on the board.
+    # A finding an agent has taken, and a ticket at the part, outlive a new condition recorded there.
     # Read at this one part, not every open record of the project, so an intake's calls stay linear in its size.
+    same: list[WorkRecord] = []
     for row in rec.store.work(Node(kind, thing), open=True, limit=0).results:
-        if not row.task:  # a ticket at the part outlives a new condition recorded there
-            rec.store.finish_work(row.id, f'Replaced by {ctx.nouns["condition"]}.')
-    _note(notices, rec.store.add_work(Node(kind, thing), str(ctx.nouns['condition']), note=ctx.nouns.get('note')))
+        if not _finding(row):
+            continue
+        if row.condition == condition:
+            same.append(row)
+        elif not row.taken:
+            rec.store.finish_work(row.id, f'Replaced by {condition}.')
+    if any(row.taken for row in same):
+        notices.append({'where': 'condition', 'message': f'{condition} is open here and an agent has taken it; '
+                                                         'nothing was added.'})
+        return
+    if same:
+        if (same[0].note, same[0].task) != (note, task):
+            _note(notices, rec.store.edit_work(same[0].id, {'note': note, 'task': task}))
+        return
+    if kind == 'element':
+        around = [row for row in rec.store.work(Node(kind, thing), open=True, limit=0, joins=True).results
+                  if row.node_kind == 'join']
+    else:
+        found = [rec.store.element(address, raw=True) for address in ends]
+        around = [row for each in found if each is not None
+                  for row in rec.store.work(Node('element', each.id), open=True, limit=0).results]
+    if any(_finding(row) and row.condition == condition and row.note == note for row in around):
+        notices.append({'where': 'condition', 'message': 'The same condition and note are open on the element and on '
+                                                         'its purpose record; the finding is kept once.'})
+        return
+    _note(notices, rec.store.add_work(Node(kind, thing), condition, note=note, task=task))
 
 
 def _close_work(store: Store, things: set[str], resolution: str) -> None:
@@ -457,7 +507,7 @@ def purpose(ctx: Context) -> Any:
                                       for key in JOIN_FIELDS) and \
                 set(elements) <= {each.address for each in held_map[0].elements}:
             _join_refs(ctx, mapped, held_map[0].id, receiver, notices)
-            _condition(ctx, mapped, 'join', held_map[0].id, notices)
+            _condition(ctx, mapped, 'join', held_map[0].id, notices, [receiver, *elements])
             return {'receiver': receiver, 'elements': elements, 'layer': mapped.layer.name, 'base': mapped.metaform,
                     'notices': notices}
     if not elements:  # checked before an intake is started or a base opened, since nothing is recorded
@@ -489,7 +539,7 @@ def purpose(ctx: Context) -> Any:
         if changes:
             _note(notices, rec.store.edit(held.id, changes), words)
         _join_refs(ctx, rec, held.id, receiver, notices)
-        _condition(ctx, rec, 'join', held.id, notices)
+        _condition(ctx, rec, 'join', held.id, notices, [receiver, *elements])
         return result
     for field in JOIN_FIELDS:
         if ctx.nouns.get(field) is None:
@@ -502,7 +552,7 @@ def purpose(ctx: Context) -> Any:
         _note(notices, rec.store.edit(join_id, {'note': ctx.nouns['note']}))
     if join_id is not None:
         _join_refs(ctx, rec, join_id, receiver, notices)
-    _condition(ctx, rec, 'join', join_id, notices)
+    _condition(ctx, rec, 'join', join_id, notices, [receiver, *elements])
     return result
 
 

@@ -119,10 +119,11 @@ class Dispatch:
         return {**os.environ, 'METAFORM_HOME': str(self.home), 'FAKE_ACP_LOG': str(self.log),
                 'FAKE_ACP_MODE': mode, 'FAKE_ACP_WORK': self.id, 'FAKE_SECRET': 'the-person-own-value', **more}
 
-    def start(self, mode='ask', **more):
-        """`metaform dispatch run <id> claude`, the runner, in the foreground of its own process."""
-        self.process = subprocess.Popen([sys.executable, '-m', 'metaform', 'dispatch', 'run', self.id, 'claude'],
-                                        cwd=self.folder, env=self.env(mode, **more), stdout=subprocess.PIPE,
+    def start(self, mode='ask', *nouns, **more):
+        """`metaform dispatch run <id> claude`, the runner, in the foreground of its own process; nouns such as
+        system=true go after it."""
+        self.process = subprocess.Popen([sys.executable, '-m', 'metaform', 'dispatch', 'run', self.id, 'claude',
+                                         *nouns], cwd=self.folder, env=self.env(mode, **more), stdout=subprocess.PIPE,
                                         stderr=subprocess.PIPE)
         return self
 
@@ -441,6 +442,32 @@ def test_a_person_message_reaches_the_agent_as_session_prompt(dispatch, run, tmp
 
 
 @pytest.mark.req('BASE-052')
+def test_a_second_writer_on_the_session_never_ends_the_runner_and_lines_keep_one_order(dispatch, run, tmp_path):
+    """code.dispatcher.agent#12: another writer on the session, as a second runner resuming it, numbers lines from its
+    own count; the runner's next lines take the numbers after them and it goes on."""
+    from metaform.data import Store
+    gates = tmp_path / 'turns'
+    gates.mkdir()
+    dispatch.start('replace', FAKE_ACP_TURN_GATES=str(gates))
+    eventually(lambda: dispatch.received('session/prompt'))
+    session_id = dispatch.session().extra['session_id']
+    last = max((line.extra['seq'] for line in dispatch.items('note')), default=0)
+    with Store('proj', module='dispatch').tables() as tx:
+        for seq in range(last + 1, last + 4):
+            tx.insert('lines', {'session_id': session_id, 'name': f'line:{seq}', 'work_id': dispatch.id,
+                                'kind': 'stderr', 'text': 'the other writer', 'seq': seq})
+    run('dispatch', 'message', dispatch.id, 'also', 'run', 'the', 'tests', cwd=dispatch.folder)
+    (gates / '1').touch()
+    eventually(lambda: dispatch.received('session/prompt')[1:])
+    lines = eventually(lambda: [line for line in dispatch.items('note') if line.value == 'also run the tests'])
+    assert lines[0].extra['seq'] > last + 3
+    assert dispatch.process.poll() is None
+    seqs = [line.extra['seq'] for line in dispatch.items('note') if line.extra['session_id'] == session_id]
+    assert len(seqs) == len(set(seqs))
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
 @pytest.mark.parametrize('declared', [True, False])
 def test_a_spoken_message_carries_its_recording_only_to_an_agent_that_declares_audio(dispatch, run, home, tmp_path,
                                                                                     declared):
@@ -739,6 +766,38 @@ def test_dispatch_prompts_approve_all_answers_every_request_without_asking(dispa
     assert eventually(lambda: [item for item in dispatch.items('note') if 'Write notes.txt' in str(item.value)
                                and item.extra['update'] == 'approved'])
     dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+def test_a_launchs_own_prompts_answer_over_the_project_setting_and_only_the_person_gives_them(dispatch, run):
+    """The person's start gives its launch its own prompts and mode, over dispatch_prompts and dispatch_agent_options;
+    an agent over MCP is refused them, and a value dispatch_prompts or the agent does not offer is refused."""
+    from metaform.data import Store
+    from metaform.module import Stop, context
+    from metaform.modules import dispatch as module
+    with Store('proj', module='dispatch').tables() as tx:
+        tx.insert('catalog', {'agent': 'claude', 'version': '9', 'name': 'Claude Code', 'seen': '2026-10-14T00:00:00Z',
+                              'seq': 1, 'settings': [{'id': 'mode', 'category': 'mode', 'type': 'select',
+                                                      'options': [{'value': 'default'}, {'value': 'plan'}]}]})
+    for nouns, said in (({'prompts': 'approve-all'}, 'the person'), ({'prompts': 'yes'}, 'ask_all'),
+                        ({'mode': 'bogus'}, 'default, plan')):
+        with pytest.raises(Stop, match=said):
+            module.launch_permissions(context('dispatch', dispatch.folder, project='proj', nouns=nouns,
+                                              surface='mcp' if said == 'the person' else 'cli'), dispatch.store, 'claude')
+    given, _ = module.launch_permissions(context('dispatch', dispatch.folder, project='proj',
+                                                 nouns={'prompts': 'approve-all', 'mode': 'plan'}), dispatch.store,
+                                         'claude')
+    module.keep_launch(dispatch.store, dispatch.id, given)
+    shown = json.loads(run('map', 'work', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)
+    assert shown['dispatch']['options'] == {'prompts': 'approve-all', 'mode': 'plan'}
+    dispatch.start('ask')  # dispatch_prompts is still ask_all
+    [outcome] = eventually(lambda: dispatch.logged('permission'))
+    assert outcome == {'outcome': {'outcome': 'selected', 'optionId': 'allow'}} and not dispatch.questions()
+    assert eventually(lambda: [item for item in dispatch.items('note')
+                               if "this launch's prompts=approve-all" in str(item.value)])
+    dispatch.stop()
+    module.keep_launch(dispatch.store, dispatch.id, {'prompts': None, 'mode': None})  # the next start leaves them
+    assert module.launch_options(dispatch.store, dispatch.id) == {}
 
 
 @pytest.mark.req('BASE-052')
@@ -1244,6 +1303,46 @@ def test_the_person_sets_a_running_sessions_mode_and_model_and_a_choice_it_does_
     dispatch.stop()
 
 
+@pytest.mark.req('BASE-066')
+def test_two_seats_of_one_agent_at_a_table_have_sessions_of_their_own_each_on_its_models(dispatch, run, monkeypatch):
+    """Two harness seats of one agent at one table, each started with `dispatch seat` on the table's held ticket, are
+    two sessions, each made and kept on the model its seat names, and the table records the model each agent reported
+    beside its own session's whole id."""
+    from metaform.module import Context
+    from metaform.modules.roundtable import harness
+    from metaform.modules.roundtable import store as tables
+    for key, value in {'FAKE_ACP_LOG': str(dispatch.log), 'FAKE_ACP_MODE': 'ask', 'FAKE_ACP_RICH': '1'}.items():
+        monkeypatch.setenv(key, value)
+    models = ('small', 'large')
+    number = tables.opened(dispatch.store, {'address': NODE, 'subject': 'models', 'opening': 'Which?',
+                                            'chair': 'person'},
+                           [{'kind': 'acp', 'id': f'acp:codex/{model}', 'agent': 'codex', 'model': model}
+                            for model in models])
+    found = tables.change(dispatch.store, number, seat_work=dispatch.id)
+    for position, model in enumerate(models):  # one after another, as the fake counts its sessions from its log
+        run('dispatch', 'seat', f'id={dispatch.id}', 'agent=codex', f'seat={harness.name(number, position)}',
+            f'model={model}', cwd=dispatch.folder)
+        eventually(lambda count=position + 1: len([one for one in read(run, dispatch)['sessions']
+                                                   if one['state'] == 'running']) == count)
+    def on_their_models():
+        got = read(run, dispatch)['states']
+        return got if [next(one['current'] for one in state['settings'] if one['id'] == 'model')
+                       for state in got.values()] == list(models) else None
+    states = eventually(on_their_models)
+    assert [state['seat'] for state in states.values()] == [harness.name(number, 0), harness.name(number, 1)]
+    made = dispatch.received('session/new')
+    assert len(made) == 2 and len(states) == 2, 'one session/new and one session for each seat'
+    [chosen] = dispatch.received('session/set_config_option')  # the second seat's model; the first is the default
+    assert (chosen['params']['sessionId'], chosen['params']['value']) == (list(states)[1], 'large')
+    ctx = Context('roundtable', dispatch.folder, project='proj', store=dispatch.store)
+    for seat in tables.seats(dispatch.store, number):
+        harness.session_of(ctx, dispatch.store, found, seat, time.time() + LIMIT, lambda: False)
+    assert [(seat['session'], seat['reported']) for seat in tables.seats(dispatch.store, number)] == \
+        list(zip(states, models, strict=True))
+    for session in states:
+        run('dispatch', 'stop', f'id={dispatch.id}', f'session={session}', cwd=dispatch.folder)
+
+
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('VIEW-039')
 def test_a_permission_request_is_a_choice_among_its_options_that_the_person_answers_from_the_page(dispatch, run):
@@ -1577,12 +1676,22 @@ def test_the_handoff_is_the_brief_the_ticket_its_node_and_counts_under_three_kil
 
 @pytest.mark.req('BASE-052')
 def test_an_agents_options_are_kept_offered_as_settings_and_applied_with_the_tickets_own(dispatch, run):
-    """P199 and P015: what session/new offered is kept per agent and version and offered as the choices of
-    dispatch_agent_options; the agent's default and the ticket's own effort are set with session/set_config_option
-    when the session starts, and a choice already current is not sent again."""
+    """P199 and P015: what session/new offered is kept per agent and version and offered as the choices of the
+    agent's own settings, dispatch_claude_model and the rest; the agent's default and the ticket's own effort are set
+    with session/set_config_option when the session starts, and a choice already current is not sent again."""
+    from metaform import settings
+    from metaform.data import Store
     empty = json.loads(run('dispatch', 'options', 'agent=claude', '--json', cwd=dispatch.folder).stdout)['agents'][0]
     assert empty['version'] is None and empty['next'] == 'metaform dispatch options agent=claude prime=true'
-    run('set', '--dispatch-agent-options', 'claude.model=large,claude.thought_level=low', cwd=dispatch.folder)
+    assert settings.SCHEMA['dispatch_claude_model'].options(dispatch.folder) == ['default'], 'none offered yet'
+    with Store('proj', module='dispatch').tables() as tx:  # what an earlier session offered
+        tx.insert('catalog', {'agent': 'claude', 'version': '0.9', 'name': 'Claude', 'seen': '2026-10-12T00:00:00Z',
+                              'seq': 1, 'settings': [
+                                  {'id': 'model', 'category': 'model', 'type': 'select',
+                                   'options': [{'value': 'small'}, {'value': 'large'}]},
+                                  {'id': 'reasoning', 'category': 'thought_level', 'type': 'select',
+                                   'options': [{'value': 'low'}, {'value': 'high'}]}]})
+    run('set', '--dispatch-claude-model', 'large', '--dispatch-claude-effort', 'low', cwd=dispatch.folder)
     run('dispatch', 'tune', dispatch.id, 'effort=high', cwd=dispatch.folder)
     dispatch.start('hold', **rich(dispatch))
     eventually(lambda: dispatch.logged('grandchild'))
@@ -1593,8 +1702,8 @@ def test_an_agents_options_are_kept_offered_as_settings_and_applied_with_the_tic
     effort = next(one for one in listed['settings'] if one['key'] == 'thought_level')
     assert (effort['name'], effort['chosen'], [one['value'] for one in effort['choices']]) == ('Effort', 'low',
                                                                                               ['low', 'high'])
-    from metaform import settings
-    assert 'claude.thought_level=high' in settings.SCHEMA['dispatch_agent_options'].options(dispatch.folder)
+    assert effort['setting'] == 'dispatch_claude_effort'
+    assert settings.SCHEMA['dispatch_claude_effort'].options(dispatch.folder) == ['default', 'low', 'high']
     dispatch.stop()
 
 
@@ -1680,6 +1789,24 @@ def test_cancel_sends_session_cancel_and_records_the_ticket_cancelled_not_done(d
     assert [one['outcome'] for one in rows if one['id'] == dispatch.id] == ['cancelled'], 'and so does the list'
     waited = json.loads(run('dispatch', 'wait', 'until=done', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)
     assert (waited['state'], waited['next']) == ('cancelled', None)
+
+
+@pytest.mark.req('BASE-052')
+def test_a_dispatch_verb_bound_to_a_base_acts_on_the_ticket_in_that_base(run, project_folder, monkeypatch):
+    """The page runs dispatch on the base it shows with METAFORM_BASE: a ticket of a base that is not active is found
+    there, where without it dispatch reads the active base and finds no such ticket."""
+    from metaform.data import Node, Store
+    run('enable', 'dispatch')
+    Store('proj').add_element(None, 'code', name_length=1, name='code', role='DE')
+    other = Store('proj').add_base('other', activate=False).id
+    there = Store('proj', base=other)
+    there.add_element(None, 'code', name_length=1, name='code', role='DE')
+    work_id = there.add_work(Node('element', 'code'), 'unbuilt', task='Elsewhere').id
+    refused = run('dispatch', 'cancel', work_id, cwd=project_folder, ok=False)
+    assert refused.returncode != 0 and 'No work record' in refused.stdout + refused.stderr
+    monkeypatch.setenv('METAFORM_BASE', other)
+    run('dispatch', 'cancel', work_id, '--', 'Not needed', cwd=project_folder)
+    assert there.ticket(work_id).work.outcome == 'cancelled'
     from metaform.modules import dispatch as module
     assert next(verb for verb in module.MODULE.verbs if verb.name == 'cancel').effect == 'remove', \
         'hosts confirm it, as destructive'
@@ -1751,7 +1878,7 @@ def test_an_agents_question_is_put_to_the_person_and_the_answer_reaches_it_as_ac
     choices, never answered by dispatch_prompts, and the person's answer reaches the agent as accept with content
     its schema asks for. Asked in a terminal-free way: a question, not a permission."""
     run('set', '--dispatch-prompts', 'approve-all', cwd=dispatch.folder)
-    dispatch.start('hold', FAKE_ACP_ELICIT='form')
+    dispatch.start('hold', 'system=true', FAKE_ACP_ELICIT='form')
     init = eventually(lambda: dispatch.received('initialize'))[0]['params']['clientCapabilities']
     assert init['elicitation'] == {'form': {}, 'url': {}} and init['session']['notices'] == {}
     [question] = eventually(dispatch.questions)
@@ -1767,7 +1894,7 @@ def test_a_page_to_open_is_shown_with_its_host_and_consent_is_the_persons_answer
     """URL-mode elicitation, as an MCP server's sign-in asks it: the full address and its host are put to the person,
     Metaform opens nothing, accept is their consent, and elicitation/complete marks the line done. A session notice is
     a line of its own."""
-    dispatch.start('hold', FAKE_ACP_ELICIT='url', FAKE_ACP_NOTICE='1')
+    dispatch.start('hold', 'system=true', FAKE_ACP_ELICIT='url', FAKE_ACP_NOTICE='1')
     [question] = eventually(dispatch.questions)
     assert 'https://auth.example.com/login?state=x' in question.text and 'Host: auth.example.com' in question.text
     [line] = [one['data'] for one in read(run, dispatch)['lines'] if one['kind'] == 'elicitation']
@@ -1787,13 +1914,28 @@ def test_a_page_to_open_is_shown_with_its_host_and_consent_is_the_persons_answer
 def test_claudes_ask_user_question_is_one_question_with_its_choices_offered(dispatch, run):
     """claude-agent-acp sends AskUserQuestion as a choice field and an optional free-text "Other" beside it, nothing
     required: it is one question, its choices are the suggestions, and a choice named reaches the choice field."""
-    dispatch.start('hold', FAKE_ACP_ELICIT='ask')
+    dispatch.start('hold', 'system=true', FAKE_ACP_ELICIT='ask')
     [question] = eventually(dispatch.questions)
     assert list(question.suggestions) == ['Red', 'Blue', 'decline']
     [line] = [one['data'] for one in read(run, dispatch)['lines'] if one['kind'] == 'elicitation']
     assert line['tool_call_id'] == 't-ask'
     run('map', 'reply', question.id, 'answer=Blue', cwd=dispatch.folder)
     assert eventually(lambda: dispatch.logged('elicited')) == [{'action': 'accept', 'content': {'question_0': 'Blue'}}]
+    dispatch.stop()
+
+
+@pytest.mark.req('VIEW-045')
+def test_a_workers_question_never_reaches_the_person_and_it_is_told_to_decide(dispatch, run):
+    """Only the sentinel and the head agent ask the person: a worker's AskUserQuestion is answered at once, its own-words
+    field telling it to decide and record why, with nothing at the node, in the thread or among the signals."""
+    from metaform.modules.dispatch import prompt
+    dispatch.start('hold', FAKE_ACP_ELICIT='ask')
+    assert eventually(lambda: dispatch.logged('elicited')) == [
+        {'action': 'accept', 'content': {'question_0_custom': prompt('decide')}}]
+    assert not dispatch.questions() and not dispatch.questions(open=False)
+    assert not [one for one in read(run, dispatch)['lines'] if one['kind'] == 'elicitation']
+    said = run('dispatch', 'signals', 'active=false', '--json', cwd=dispatch.folder).stdout
+    assert not [one for one in json.loads(said)['signals'] if one['signal'] == 'question-waiting']
     dispatch.stop()
 
 
@@ -1804,7 +1946,7 @@ def test_a_question_asked_while_the_session_is_made_moves_to_the_session(dispatc
     def waiting():
         said = run('dispatch', 'signals', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout
         return [one for one in json.loads(said)['signals'] if one['signal'] == 'question-waiting']
-    dispatch.start('hold', FAKE_ACP_ELICIT='setup')
+    dispatch.start('hold', 'system=true', FAKE_ACP_ELICIT='setup')
     [line] = eventually(lambda: [one['data'] for one in read(run, dispatch)['lines'] if one['kind'] == 'elicitation'])
     assert (line['url'], line['state']) == ('https://auth.example.com/login?state=s', 'waiting')
     [signal] = eventually(lambda: [one for one in waiting() if one['session_id']])
@@ -1850,7 +1992,7 @@ def test_a_question_the_agent_withdraws_is_closed_and_the_silence_clock_goes_on(
     node, clears question-waiting, marks the line withdrawn, answers the request with -32800, and the silence clock,
     paused while it waited, runs again."""
     run('set', '--dispatch-silence-seconds', '1', cwd=dispatch.folder)
-    dispatch.start('hold', FAKE_ACP_ELICIT='withdraw')
+    dispatch.start('hold', 'system=true', FAKE_ACP_ELICIT='withdraw')
     [answer] = eventually(lambda: dispatch.logged('elicited'))
     assert answer['error']['code'] == -32800
     assert not dispatch.questions() and dispatch.questions(open=False)
@@ -1869,7 +2011,7 @@ def test_a_question_the_agent_withdraws_is_closed_and_the_silence_clock_goes_on(
 def test_a_page_completed_out_of_band_closes_its_question(dispatch, run):
     """An MCP server's sign-in that finished in the browser before the person answered: elicitation/complete closes
     the waiting question, the agent gets accept, and the line says completed."""
-    dispatch.start('hold', FAKE_ACP_ELICIT='complete')
+    dispatch.start('hold', 'system=true', FAKE_ACP_ELICIT='complete')
     assert eventually(lambda: dispatch.logged('elicited')) == [{'action': 'accept'}]
     assert not dispatch.questions()
     assert eventually(lambda: [one for one in read(run, dispatch)['lines']
@@ -1882,7 +2024,7 @@ def test_a_page_completed_before_its_question_is_asked_closes_it_as_it_is_asked(
     """A sign-in done at once: elicitation/complete can reach the runner before the question it closes is asked, while
     the runner still reads its settings; the question is closed as completed the moment it is asked, and the agent
     gets accept instead of waiting on a question already done with."""
-    dispatch.start('hold', FAKE_ACP_ELICIT='complete-first')
+    dispatch.start('hold', 'system=true', FAKE_ACP_ELICIT='complete-first')
     assert eventually(lambda: dispatch.logged('elicited')) == [{'action': 'accept'}]
     assert not dispatch.questions()
     assert eventually(lambda: [one for one in read(run, dispatch)['lines']
@@ -1946,8 +2088,9 @@ def test_a_cost_budget_counts_each_reports_addition_and_interrupts_the_turn_when
 @pytest.mark.req('CLI-011')
 def test_cancel_and_tune_are_the_persons_and_tune_takes_only_what_the_agent_offers(dispatch, run):
     """P232 and P015: over MCP an agent is refused cancel and tune while agents_may_set_control is off; tune refuses
-    a value the ticket's agent did not offer at its last session, and the ticket read shows what it keeps; one value
-    per agent and setting in dispatch_agent_options."""
+    a value the ticket's agent did not offer at its last session, and the ticket read shows what it keeps; each of an
+    agent's options is its own setting, so setting one leaves the others, and a value it never offered is refused
+    with the list."""
     from metaform.data import Store
     from metaform.module import Stop, context
     from metaform.modules import dispatch as module
@@ -1964,8 +2107,34 @@ def test_cancel_and_tune_are_the_persons_and_tune_takes_only_what_the_agent_offe
     run('dispatch', 'tune', dispatch.id, 'model=large', cwd=dispatch.folder)
     shown = json.loads(run('map', 'work', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)
     assert shown['dispatch']['options'] == {'model': 'large'}
-    twice = run('set', '--dispatch-agent-options', 'claude.model=a,claude.model=b', cwd=dispatch.folder, ok=False)
-    assert twice.returncode != 0 and 'one value for each name' in twice.stdout + twice.stderr
+    run('set', '--dispatch-codex-mode', 'default', cwd=dispatch.folder)
+    run('set', '--dispatch-codex-model', 'large', cwd=dispatch.folder)
+    from metaform import settings
+    assert (settings.value('dispatch_codex_model', dispatch.folder),
+            settings.state('dispatch_codex_mode', dispatch.folder)) == ('large', 'set'), 'the mode set before is kept'
+    wrong = run('set', '--dispatch-codex-model', 'bogus', cwd=dispatch.folder, ok=False)
+    assert wrong.returncode != 0 and 'Choices: default, small, large' in wrong.stdout + wrong.stderr
+
+
+@pytest.mark.req('BASE-052')
+def test_the_old_agent_options_move_once_into_each_options_own_setting(dispatch):
+    """Rich, 2026-10-14: each stored dispatch_agent_options entry becomes its own setting at the same scope and the
+    old setting is removed; an entry no setting holds is dropped and said; what only a list above a folder's own set
+    stays default there, as the folder's list hid it; it runs once per home."""
+    from metaform import home, settings
+    from metaform.modules import dispatch as module
+    scope = home.path_key(dispatch.folder)
+    home.save('global', 'dispatch', 'dispatch_agent_options', ['claude.mode=bypassPermissions'])
+    home.save(scope, 'dispatch', 'dispatch_agent_options', ['codex.mode=agent-full-access', 'claude.model_config=false',
+                                                            'claude.unknown=x'])
+    (home.home() / 'migrated-dispatch-agent-options').unlink(missing_ok=True)
+    said = module.migrate_agent_options()
+    assert (settings.value('dispatch_codex_mode', dispatch.folder),
+            settings.value('dispatch_claude_fast', dispatch.folder)) == ('agent-full-access', 'false')
+    assert settings.value('dispatch_claude_mode', dispatch.folder) == 'default', 'the folder\'s list hid the global one'
+    assert home.stored(scope, 'dispatch', 'dispatch_agent_options') is None
+    assert any('claude.unknown=x' in line and 'dropped' in line for line in said)
+    assert module.migrate_agent_options() == [], 'once per home'
 
 
 @pytest.mark.req('BASE-052')

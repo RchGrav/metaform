@@ -15,6 +15,30 @@ def own_store(store: Store) -> Store:
     return store if store.module == 'dispatch' else Store(store.project_id, module='dispatch')
 
 
+def add_line(tx: Any, session_id: str, work_id: str, key: str | None, kind: str, text: str,
+             known: int = 0) -> tuple[str, int]:
+    """A line of a session's thread, written inside the caller's write transaction and numbered from the table, so
+    every writer on the session, a runner, a second runner resuming it, a served session, takes the next number and
+    none fails on a name another took, code.dispatcher.agent#12. A keyed line already kept is changed in place; any
+    other takes the seq after the session's last, read from the rows past `known`, the last seq the writer saw.
+    Returns its name and seq."""
+    if key:
+        kept = tx.get('lines', {'session_id': session_id, 'name': key})
+        if kept is not None:
+            tx.update('lines', {'session_id': session_id, 'name': key}, {'text': text})
+            return key, int(kept['seq'])
+    later = tx.rows('lines', {'session_id': session_id}, by=('session_id', 'seq'), after=json.dumps([known, '']),
+                    limit=0).results
+    seq = max((int(row['seq']) for row in later), default=known) + 1
+    name = key or f'line:{seq}'
+    while not key and tx.get('lines', {'session_id': session_id, 'name': name}) is not None:
+        seq += 1
+        name = f'line:{seq}'
+    tx.insert('lines', {'session_id': session_id, 'name': name, 'work_id': work_id, 'kind': kind, 'text': text,
+                        'seq': seq})
+    return name, seq
+
+
 def record(store: Store, signal: str, *, work_id: str = '', session_id: str = '', key: str = '',
            active: bool = True, **details: Any) -> dict[str, Any] | None:
     """Keep one signal per source/key; repeated evidence does not raise duplicate events."""

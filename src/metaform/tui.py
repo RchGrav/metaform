@@ -72,7 +72,7 @@ class _Backend:
                                           description='Settings of the chassis itself.')}
         self.load_errors = {}
         rows = [_Row('chassis', True, str(self.root))]
-        for item in found:
+        for item in sorted(found, key=lambda one: one.id.casefold()):  # the chassis first, then the modules by name
             if item.module is not None:
                 self.modules[item.id] = _Owner(
                     tuple(setting for setting in settings.SCHEMA.values() if setting.owner == item.id),
@@ -116,7 +116,9 @@ HELP = ('SETUP KEYS\n\n'
         'Home / End        First / last item\n'
         'Page Up / Down    Move one page\n'
         'Enter             Open settings or edit a value; a setting with\n'
-        '                  choices opens a list to pick from\n'
+        '                  choices opens a list to pick from; a section,\n'
+        '                  marked ▸, opens its settings (→ also opens it,\n'
+        '                  ← and Esc go back out)\n'
         'Space             Stage module or boolean toggle\n'
         'F2                Selected module or setting help from its\n'
         '                  declaration\n'
@@ -173,10 +175,13 @@ class ChassisTUI:
         self.pick_choices: list[str] = []
         self.pick_checked: set[str] = set()
         self.pick_index = 0
+        self.section: tuple[str, ...] = ()  # the section of the selected group open in the settings panel
+        self.words: dict[Key, dict[str, str]] = {}  # each setting's choices in plain words, read once per refresh
         self.modules_control = FormattedTextControl(self._module_lines, focusable=True,
                                                     get_cursor_position=lambda: Point(0, self.module_index))
-        self.settings_control = FormattedTextControl(self._setting_lines, focusable=True,
-                                                     get_cursor_position=lambda: Point(0, self.setting_index))
+        self.settings_control = FormattedTextControl(
+            self._setting_lines, focusable=True,
+            get_cursor_position=lambda: Point(0, self.setting_index + (1 if self.section else 0)))
         self.editor = TextArea(multiline=False, wrap_lines=False)
         self.modules_window = Window(self.modules_control, wrap_lines=False, always_hide_cursor=True)
         self.settings_window = Window(self.settings_control, wrap_lines=False, always_hide_cursor=True)
@@ -210,7 +215,10 @@ class ChassisTUI:
             Window(FormattedTextControl(self._pick_label), height=2, wrap_lines=True),
             self.pick_window,
             Window(FormattedTextControl(self._pick_keys), height=2, wrap_lines=True),
-        ]), padding=1), title='Choose', width=Dimension(preferred=60))
+            ConditionalContainer(Window(FormattedTextControl(self._pick_about), height=Dimension(max=4),
+                                        wrap_lines=True, style='class:details'),
+                                 Condition(lambda: bool(self._pick_about()))),
+        ]), padding=1), title='Choose', width=Dimension(preferred=72))
         self.help_text = TextArea(text=HELP, read_only=True, scrollbar=True, wrap_lines=True)
         help_dialog = Frame(self.help_text, title='Keyboard help · ↑↓ scroll',
                             width=Dimension(preferred=64), height=Dimension(preferred=26))
@@ -250,12 +258,72 @@ class ChassisTUI:
 
     @property
     def declared_settings(self) -> tuple[settings.Setting, ...]:
+        """Every setting of the selected group the filter leaves, whatever its section, by name."""
         definition = self.definitions.get(self.selected.id) if self.selected else None
         if not definition:
             return ()
         query = self.filter_text.casefold()
-        return tuple(item for item in definition.settings
-                     if query in item.key.casefold() or query in item.help.casefold())
+        return tuple(sorted((item for item in definition.settings
+                             if query in item.key.casefold() or query in item.help.casefold()),
+                            key=lambda item: item.key.casefold()))
+
+    def _name(self, setting: settings.Setting) -> str:
+        """The name a setting is listed by: its label inside a section, where its section says whose it is, such as
+        Mode under Claude Code; its key elsewhere."""
+        return (setting.label or setting.key) if self.section and not self.filter_text else setting.key
+
+    @property
+    def entries(self) -> list[settings.Setting | str]:
+        """What the settings panel lists, alphabetically by the name shown: with a filter, every setting it leaves;
+        else the settings in the open section and the sections inside it, each a name that opens it."""
+        found = self.declared_settings
+        if self.filter_text:
+            return list(found)
+        depth, listed = len(self.section), list[str]()
+        named: list[tuple[str, settings.Setting | str]] = []
+        for item in found:
+            path = tuple(item.section.split('/')) if item.section else ()
+            if path[:depth] != self.section:
+                continue
+            if len(path) == depth:
+                named.append((self._name(item), item))
+            elif path[depth] not in listed:
+                listed.append(path[depth])
+                named.append((path[depth], path[depth]))
+        return [entry for _, entry in sorted(named, key=lambda pair: pair[0].casefold())]
+
+    @property
+    def current(self) -> settings.Setting | None:
+        """The setting selected in the settings panel; None on a section or with none listed."""
+        entries = self.entries
+        entry = entries[self.setting_index] if 0 <= self.setting_index < len(entries) else None
+        return entry if isinstance(entry, settings.Setting) else None
+
+    def _open_section(self) -> bool:
+        """Open the section selected in the settings panel; False when a setting is selected."""
+        entries = self.entries
+        entry = entries[self.setting_index] if 0 <= self.setting_index < len(entries) else None
+        if not isinstance(entry, str):
+            return False
+        self.section, self.setting_index = (*self.section, entry), 0
+        return True
+
+    def _close_section(self) -> bool:
+        """Go back out of the open section, to the row that opened it; False at the top."""
+        if not self.section or self.filter_text:
+            return False
+        left, self.section = self.section[-1], self.section[:-1]
+        self.setting_index = next((index for index, entry in enumerate(self.entries) if entry == left), 0)
+        return True
+
+    def _words(self, module: str, setting: settings.Setting) -> dict[str, str]:
+        """A setting's choices in plain words, read once until the values are read again."""
+        if (module, setting.key) not in self.words:
+            try:
+                self.words[module, setting.key] = setting.helps(self.backend.folder)
+            except Exception:  # noqa: BLE001  a module's failing function leaves the choices as their values
+                self.words[module, setting.key] = {}
+        return self.words[module, setting.key]
 
     def _module_lines(self) -> StyleAndTextTuples:
         result: StyleAndTextTuples = []
@@ -280,16 +348,21 @@ class ChassisTUI:
             return [('class:disabled', '  Enable and save to configure.' if selected.id not in self.backend.modules
                      else '  No matching settings.')]
         result: StyleAndTextTuples = []
-        for index, setting in enumerate(self.declared_settings):
+        if self.section:  # where the panel is, and the way back
+            result.append(('class:details', f' ‹ {" / ".join(self.section)}\n'))
+        for index, setting in enumerate(self.entries):
             style = ''
             if index == self.setting_index:
                 style = 'class:selection' if self.panel == 'settings' else 'class:selected-inactive'
+            if isinstance(setting, str):
+                result.append((style, f' {">" if index == self.setting_index else " "}  {setting} ▸\n'))
+                continue
             identity = (selected.id, setting.key)
             value = self._value(selected.id, setting)
             pending = self.pending_settings.get(identity)
             saved = pending[0] != 'reset' if pending else self.saved.get(identity, False)
             state = 'glued' if self._glued(identity) else ('set' if saved else 'default')
-            row = setting_row(setting.key, value, state).replace('\n', '\\n')
+            row = setting_row(self._name(setting), value, state).replace('\n', '\\n')
             result.append((style, f' {">" if index == self.setting_index else " "}{row}\n'))
         return result
 
@@ -299,9 +372,18 @@ class ChassisTUI:
             return ''
         definition = self.definitions.get(row.id)
         error = self.definition_errors.get(row.id) or self.backend.load_errors.get(row.id)
-        if self.panel == 'settings' and self.declared_settings:
-            setting = self.declared_settings[self.setting_index]
-            return (f'{row.id}.{setting.key}  |  {setting.type.__name__}\n{setting.help}\n'
+        if self.panel == 'settings' and self.entries and self.current is None:
+            entry = str(self.entries[self.setting_index])
+            inside = [item for item in self.declared_settings
+                      if (item.section or '').split('/')[:len(self.section) + 1] == [*self.section, entry]]
+            return (f'{entry}  |  {len(inside)} settings\n'
+                    + ', '.join(self._name(item) if item.section == '/'.join((*self.section, entry)) else item.key
+                                for item in inside[:8]) + '\nEnter or → opens it; Esc or ← goes back.')
+        if self.panel == 'settings' and (setting := self.current):
+            # The current choice in plain words comes before the help, which the panel's few lines may cut off
+            about = self._words(row.id, setting).get(str(self._value(row.id, setting)))
+            return (f'{row.id}.{setting.key}  |  {setting.type.__name__}\n'
+                    + (f'Now: {about}\n' if about else '') + f'{setting.help}\n'
                     f'Default: {json.dumps(setting.default, ensure_ascii=False)}\n'
                     f'CLI: metaform set {setting.switch} VALUE\n'
                     f'Reset: metaform unset {setting.switch}   '
@@ -337,7 +419,8 @@ class ChassisTUI:
             except Exception as error:  # noqa: BLE001  a group that cannot be described shows its error
                 self.definition_errors[row.id] = str(error)
         self.module_index = next((index for index, row in enumerate(self.rows) if row.id == previous), 0)
-        self.setting_index = min(self.setting_index, max(0, len(self.declared_settings) - 1))
+        self.words = {}
+        self.setting_index = min(self.setting_index, max(0, len(self.entries) - 1))
         self.app.invalidate()
 
     def _focus(self, panel: str) -> None:
@@ -348,11 +431,12 @@ class ChassisTUI:
         if self.panel == 'modules':
             size, index = len(self.rows), self.module_index
         else:
-            size, index = len(self.declared_settings), self.setting_index
+            size, index = len(self.entries), self.setting_index
         index = max(0, min(size - 1, index + amount if amount is not None else (size - 1 if end else 0)))
         if self.panel == 'modules':
             self.module_index = index
             self.setting_index = 0
+            self.section = ()
         else:
             self.setting_index = index
 
@@ -425,9 +509,11 @@ class ChassisTUI:
 
     def _edit(self) -> None:
         row = self.selected
-        if row is None or not self.declared_settings:
+        if row is None or self._open_section():
             return
-        setting = self.declared_settings[self.setting_index]
+        setting = self.current
+        if setting is None:
+            return
         value = self._value(row.id, setting)
         if setting.type is bool:
             self._stage(row.id, setting, not value)
@@ -451,9 +537,11 @@ class ChassisTUI:
 
     def _reset(self, group: bool = False) -> None:
         row = self.selected
-        if row is None or self.panel != 'settings' or not self.declared_settings:
+        if row is None or self.panel != 'settings' or not self.entries:
             return
-        entries = self.definitions[row.id].settings if group else (self.declared_settings[self.setting_index],)
+        if not group and self.current is None:
+            return
+        entries = self.definitions[row.id].settings if group else (cast(settings.Setting, self.current),)
         for setting in entries:
             identity = (row.id, setting.key)
             if self._glued(identity):
@@ -468,10 +556,9 @@ class ChassisTUI:
         return self.pending_glue.get(identity, self.glued.get(identity, False))
 
     def _toggle_glue(self) -> None:
-        row = self.selected
-        if row is None or self.panel != 'settings' or not self.declared_settings:
+        row, setting = self.selected, self.current
+        if row is None or self.panel != 'settings' or setting is None:
             return
-        setting = self.declared_settings[self.setting_index]
         identity = (row.id, setting.key)
         glue = not self._glued(identity)
         if glue == self.glued.get(identity, False):
@@ -516,6 +603,7 @@ class ChassisTUI:
             self.filter_text = self.editor.text
             self.filtering = self.editing = False
             self.setting_index = 0
+            self.section = ()
             self._focus('settings')
             self.message = f'Filter: {self.filter_text or "all settings"}'
             return
@@ -561,10 +649,9 @@ class ChassisTUI:
     def _step(self, amount: int) -> bool:
         """Change the selected setting's value by one step: a number up or down, on/off switched, a choice to the
         next or previous of its choices. False when the setting has no steps, such as text."""
-        row = self.selected
-        if row is None or self.panel != 'settings' or not self.declared_settings:
+        row, setting = self.selected, self.current
+        if row is None or self.panel != 'settings' or setting is None:
             return False
-        setting = self.declared_settings[self.setting_index]
         value = self._value(row.id, setting)
         if setting.type is int:
             self._stage(row.id, setting, value + amount)
@@ -581,8 +668,10 @@ class ChassisTUI:
         return True
 
     def _side(self, amount: int) -> None:
-        """← and →: on a setting with steps they change its value; elsewhere they switch panels."""
-        if self.panel == 'settings' and self._step(amount):
+        """← and →: on a setting with steps they change its value; → opens a section and ← goes back out of one;
+        elsewhere they switch panels."""
+        if self.panel == 'settings' and (self._step(amount) or (self._open_section() if amount > 0
+                                                                 else self._close_section())):
             return
         self._focus('modules' if amount < 0 else 'settings')
 
@@ -624,6 +713,12 @@ class ChassisTUI:
         if self.pick_target and self.pick_target[1].kind == 'list':
             return '↑↓ Select   Space / ←→ Check   A All   Enter Stage   Esc Cancel'
         return '↑↓ Select   Enter Stage   Esc Cancel'
+
+    def _pick_about(self) -> str:
+        """Beneath the list: what the highlighted choice does, and what it risks, in plain words."""
+        if not self.pick_target or not self.pick_choices or self.pick_target[1].kind != 'select':
+            return ''
+        return self._words(*self.pick_target).get(self.pick_choices[self.pick_index], '')
 
     def _pick_lines(self) -> StyleAndTextTuples:
         many = bool(self.pick_target and self.pick_target[1].kind == 'list')
@@ -679,9 +774,8 @@ class ChassisTUI:
         self.module_help_text.text = row.id + '\n\n' + ((definition.help or definition.description) if definition
                                                         else 'Enable and save this module to load its help and '
                                                              'settings.')
-        if self.panel == 'settings' and self.declared_settings:
+        if self.panel == 'settings' and (setting := self.current):
             # A setting's own help page, its details and the folder's choices with it, as `metaform help <switch>`
-            setting = self.declared_settings[self.setting_index]
             found = settings.by_switch(setting.switch) if setting.switches else None
             if found is not None and (found[0].owner, found[0].key) == (setting.owner, setting.key):
                 self.module_help_text.text = docs.switch_page(setting.switch, self.backend.folder)
@@ -713,7 +807,8 @@ class ChassisTUI:
             self.editing = self.filtering = False
             self._focus('settings')
         elif self.panel == 'settings':
-            self._focus('modules')
+            if not self._close_section():
+                self._focus('modules')
         else:
             self._exit()
 

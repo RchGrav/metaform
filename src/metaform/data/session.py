@@ -9,6 +9,7 @@ connection and transaction, and nested blocks join the outer one.
 """
 from __future__ import annotations
 
+import os
 import sqlite3
 import uuid
 from collections.abc import Generator
@@ -137,12 +138,39 @@ def open_store(path: Path, *, write: bool,
         yield db
 
 
+# The base a store that names none opens instead of the active one: the page's chosen base, bound for the dispatch
+# commands it runs on a ticket of that base, so the runner, its agent and that agent's MCP server, which inherit the
+# variable, read and write the base the ticket is in. It applies only to a project that has that base.
+BASE_VARIABLE = 'METAFORM_BASE'
+_BOUND: ContextVar[str | None] = ContextVar('metaform_base', default=None)
+
+
+@contextmanager
+def on_base(base_id: str | None) -> Generator[None, None, None]:
+    """Inside the block, a store that names no base opens `base_id`, as METAFORM_BASE does for a whole process."""
+    token = _BOUND.set(base_id or None)
+    try:
+        yield
+    finally:
+        _BOUND.reset(token)
+
+
+def bound_base() -> str | None:
+    """The base bound for this call or process, if any: `on_base`'s, else METAFORM_BASE."""
+    return _BOUND.get() or os.environ.get(BASE_VARIABLE) or None
+
+
+def _bound_for(project_id: str) -> str | None:
+    named = bound_base()
+    return named if named and home.base_by_id(project_id, named) is not None else None
+
+
 class Session:
-    """Opens transactions on one base of one project: the active one, or the one named."""
+    """Opens transactions on one base of one project: the one named, else the one bound, else the active one."""
 
     def __init__(self, project_id: str, base_id: str | None = None) -> None:
         self.project_id = project_id
-        self.base_id = base_id
+        self.base_id = base_id if base_id is not None else _bound_for(project_id)
 
     def _metaform(self, *, create: bool) -> home.Base | None:
         if self.base_id is not None:

@@ -202,3 +202,29 @@ def test_a_list_of_one_value_per_name_unchecks_the_others_of_a_name_when_one_is_
         assert screen.pick_checked == {'claude.model=large', 'codex.model=small'}
         screen._pick_check()
         assert screen.pick_checked == {'codex.model=small'}, 'unchecking leaves the name with none'
+
+
+def test_a_section_opens_as_a_menu_of_its_settings_and_lists_are_alphabetical(home, tmp_path):
+    loader.set_enabled('dispatch', True)  # off in a new home
+    pipe, screen = _screen(tmp_path)
+    with pipe:
+        async def drive():
+            await screen.refresh()
+            ids = [row.id for row in screen.rows]
+            assert ids == ['chassis', *sorted(ids[1:], key=str.casefold)]
+            screen.module_index = ids.index('dispatch')
+            screen._focus('settings')
+            top = screen.entries
+            assert 'Agent options' in top and 'dispatch_claude_mode' not in [getattr(one, 'key', one) for one in top]
+            screen.setting_index = top.index('Agent options')
+            screen._edit()  # Enter opens the section: the agents
+            assert screen.entries == ['Claude Code', 'Codex', 'Gemini CLI']
+            screen._side(1)  # → opens the agent's options, each by its label
+            assert [one.label for one in screen.entries] == ['Agent', 'Effort', 'Fast mode', 'Mode', 'Model']
+            screen.setting_index = 3
+            screen._edit()  # the option's values, default the one in force
+            assert screen.picking and screen.pick_choices[0] == 'default' and screen.pick_checked == {'default'}
+            assert 'Claude Code' in screen._pick_about()
+            screen._back(); screen._back()  # the picker closes, then back out to the agents
+            return screen.section, screen.entries[screen.setting_index]
+        assert asyncio.run(drive()) == (('Agent options',), 'Claude Code')

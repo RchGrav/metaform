@@ -1078,3 +1078,17 @@ def test_every_chassis_command_name_is_refused_as_a_module_id(module_row, user_m
     rows = {verb: module_row(verb) for verb in ('provision', 'instructions')}
     assert all(row[1] == 'error' and 'chassis' in row[3] for row in rows.values()), rows
     assert {'provision', 'instructions'} <= set(cli.VERBS)
+
+
+@pytest.mark.req('CLI-026')
+def test_tab_completes_a_settings_switch_and_its_choices(home, tmp_path):
+    from metaform import cli
+    from metaform import home as metaform_home
+    work, other = tmp_path / 'work', tmp_path / 'other'
+    work.mkdir(); other.mkdir()
+    metaform_home.add_project('work', work)
+    metaform_home.add_project('other', other)
+    assert '--project' in cli.completions('metaform set --proj', work)
+    assert cli.completions('metaform set --project o', work) == ['other']
+    assert cli.completions('metaform set --project=o', work) == ['other'], 'bash completes the word after ='
+    assert cli.completions('metaform se', work) == ['set']

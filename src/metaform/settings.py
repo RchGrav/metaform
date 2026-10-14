@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import inspect
 import re
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
@@ -57,6 +57,13 @@ class Setting:
     # A list whose entries are `<name><exclusive><value>`, such as `claude.model=opus` with `=`, holds one value per
     # name: two are refused, and a picker that checks one unchecks the others of its name.
     exclusive: str | None = None
+    # A select's choices in plain words, each with what it does and what it risks, shown beside the choice wherever
+    # it is picked; a choice without one shows as its value alone. A function of a Context reads them as choices are.
+    choice_help: Mapping[str, str] | Callable[..., Mapping[str, str]] = field(default_factory=dict[str, str],
+                                                                             compare=False)
+    # Where the setting sits among its owner's, as a path of headings, such as `Agent options/Claude Code`: the
+    # settings screen and the page group the settings of one section under it, a menu in a menu. None: at the top.
+    section: str | None = None
 
     @property
     def switch(self) -> str:
@@ -74,6 +81,13 @@ class Setting:
             from .context import build
             return list(self.choices(build(self.owner, folder or Path.cwd())))
         return list(self.choices or [])
+
+    def helps(self, folder: Path | None = None) -> dict[str, str]:
+        """Each choice's plain words: the declared ones, or the owning module's function of a Context."""
+        if callable(self.choice_help):
+            from .context import build
+            return dict(self.choice_help(build(self.owner, folder or Path.cwd())))
+        return dict(self.choice_help)
 
     def needs_project(self) -> bool:
         """A module's select reads its choices from the project's store, CLI-019; the chassis's never do."""
@@ -363,6 +377,9 @@ def describe(folder: Path) -> list[dict[str, Any]]:
         if setting.kind in ('select', 'list') and setting.choices is not None:
             with suppress(Exception):  # a module's failing choices function leaves the entry without them
                 entry['choices'] = setting.options(folder)
+            with suppress(Exception):
+                if helps := setting.helps(folder):
+                    entry['choice_help'] = helps
         described.append(entry)
     return described
 

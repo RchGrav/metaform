@@ -33,7 +33,7 @@ import sys
 import tempfile
 import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from importlib import resources
 from pathlib import Path
 from typing import Any, cast
@@ -84,7 +84,9 @@ REMOTE_AGENT = False  # it launches agents on this machine, which a hosted sandb
 # each usage update added, never the session's running total; a cancelled ticket is the map's own outcome, so version
 # 10's `outcomes` is gone; version 10 was never released. The new columns may be empty, so version 5's code still
 # reads and writes the tables.
-TABLES = Tables(version=11, compatible_from=5, tables=(  # 5: agents do not ask; 6, 7, 10 and 11 only add
+# Version 12 adds `prompts` and `mode` to ticket_options, a launch's own permissions; both may be empty, so version 5's
+# code still reads and writes the tables.
+TABLES = Tables(version=12, compatible_from=5, tables=(  # 5: agents do not ask; 6, 7, 10, 11 and 12 only add
     Table('sessions', key=('session_id',),
           columns=(Column('session_id', required=True), Column('work_id', required=True), Column('agent', required=True),
                    Column('state', required=True), Column('nonce'), Column('pid', 'int'), Column('port', 'int'),
@@ -127,11 +129,13 @@ TABLES = Tables(version=11, compatible_from=5, tables=(  # 5: agents do not ask;
                    Column('settings', 'json'), Column('auth', 'json'), Column('extensions', 'json'),
                    Column('seen', required=True), Column('seq', 'int', required=True)),
           indexes=(Index(('agent', 'seq')),)),
-    # A ticket's own choices for the agent that works it, applied over dispatch_agent_options: model and effort, the
-    # ACP categories `model` and `thought_level`.
+    # A ticket's own choices for the agent that works it, applied over dispatch_<agent>_<option>: model and effort, the
+    # ACP categories `model` and `thought_level`; and the permissions of its latest launch, `prompts` over
+    # dispatch_prompts and the harness's own `mode`, written by each start, so they last for that launch and its
+    # retries and the next start sets them again or leaves them to the project's settings.
     Table('ticket_options', key=('work_id',),
-          columns=(Column('work_id', required=True), Column('model'), Column('effort'),
-                   Column('seq', 'int', required=True))),
+          columns=(Column('work_id', required=True), Column('model'), Column('effort'), Column('prompts'),
+                   Column('mode'), Column('seq', 'int', required=True))),
     # What a session spent, one row per report: a turn's tokens as the agent reported them at its end, each kind
     # apart, `tokens` their billable sum (billable() says how), or the cost a usage update added since the one before,
     # in its currency. `metered` is false for a turn that ended with no usage at all, so a session whose agent
@@ -439,7 +443,7 @@ def catalog_rows(store: Store | None) -> dict[str, dict[str, Any]]:
 
 
 def option_key(setting: dict[str, Any]) -> str:
-    """How dispatch_agent_options names one of an agent's settings: by its ACP category when it has a reserved one,
+    """How dispatch's settings name one of an agent's options: by its ACP category when it has a reserved one,
     or else by its id."""
     category = setting.get('category')
     return str(category) if category in CATEGORIES else str(setting.get('id'))
@@ -451,68 +455,119 @@ def option_values(setting: dict[str, Any]) -> list[str]:
     return [str(choice.get('value')) for choice in cast(list[dict[str, Any]], setting.get('options') or [])]
 
 
-def option_choices(ctx: Context) -> list[str]:
-    """Every choice the agents have offered in this project, as `<agent>.<category or id>=<value>`, for the settings
-    screen's checklist; none until an agent has run once, or `dispatch options agent=<agent> prime=true` has asked it."""
-    found: list[str] = []
-    for agent, row in catalog_rows(ctx.store).items():
-        for setting in cast(list[dict[str, Any]], row.get('settings') or []):
-            found += [f'{agent}.{option_key(setting)}={value}' for value in option_values(setting)]
+# Each agent's own default for one of its options is a setting of its own, dispatch_<agent>_<name>, so setting one
+# never touches another, P199, Rich 2026-10-14: (name, label, the option's ACP category, or its id when it has none).
+# Every agent has the four categories; an option with no category is a setting only where it is named here.
+AGENT_OPTIONS = (('mode', 'Mode', 'mode'), ('model', 'Model', 'model'), ('effort', 'Effort', 'thought_level'),
+                 ('fast', 'Fast mode', 'model_config'))
+OWN_OPTIONS = {'claude': (('agent', 'Agent', 'agent'),),
+               'codex': (('collaboration_mode', 'Collaboration mode', 'collaboration_mode'),)}
+AGENT_DEFAULT = 'default'  # the value of each that sends nothing, leaving the agent's own
+
+
+def option_settings(agent: str) -> list[tuple[str, str, str]]:
+    """The settings that hold an agent's options: (setting key, label, the option's category or id)."""
+    return [(f'dispatch_{agent}_{name}', label, key) for name, label, key in (*AGENT_OPTIONS, *OWN_OPTIONS.get(agent, ()))]
+
+
+def offered_option(store: Store | None, agent: str, key: str) -> dict[str, Any] | None:
+    """The option an agent offered at its last session here under a category or id, or None."""
+    row = catalog_rows(store).get(agent)
+    return next((one for one in cast(list[dict[str, Any]], (row or {}).get('settings') or [])
+                 if option_key(one) == key), None)
+
+
+def option_choices(agent: str, key: str) -> Callable[[Context], list[str]]:
+    """A setting's choices: default, then each value the agent offered for the option at its last session here; only
+    default until it has run once, or `dispatch options agent=<agent> prime=true` has asked it."""
+    def choices(ctx: Context) -> list[str]:
+        offered = offered_option(ctx.store, agent, key)
+        return [AGENT_DEFAULT, *(value for value in (option_values(offered) if offered else []) if value != AGENT_DEFAULT)]
+    return choices
+
+
+def option_words(agent: str, key: str) -> Callable[[Context], dict[str, str]]:
+    """Each value in the agent's own words, its name and description as it offered them."""
+    def words(ctx: Context) -> dict[str, str]:
+        offered = offered_option(ctx.store, agent, key) or {}
+        said = {AGENT_DEFAULT: f'Leave it to {agent_label(agent)}: Metaform sends nothing for it.'}
+        for choice in cast(list[dict[str, Any]], offered.get('options') or []):
+            if (value := str(choice.get('value'))) != AGENT_DEFAULT:
+                said[value] = ': '.join(str(part) for part in (choice.get('name'), choice.get('description')) if part)
+        return said
+    return words
+
+
+def chosen_options(ctx: Context, agent: str) -> dict[str, str]:
+    """An agent's options as its settings give them, by category or id; one left at default is left out."""
+    found: dict[str, str] = {}
+    for key, _, option in option_settings(agent):
+        value = ctx.setting(key) if key in settings.SCHEMA else None
+        if value and value != AGENT_DEFAULT:
+            found[option] = str(value)
     return found
 
 
-def parse_options(entries: Sequence[str]) -> dict[str, dict[str, str]]:
-    """dispatch_agent_options as a mapping: agent, then category or option id, then value. Refuses an entry that is
-    not `<agent>.<key>=<value>` with a known agent, and two values for one setting of an agent."""
-    found: dict[str, dict[str, str]] = {}
-    for entry in entries:
-        named, said, value = str(entry).partition('=')
-        agent, dot, key = named.strip().partition('.')
-        if not (said and dot and key.strip() and value.strip()) or agent not in agent_choices():
-            raise settings.SettingError(f'--dispatch-agent-options takes <agent>.<category or option id>=<value>, '
-                                        f'such as claude.model=opus, with the agent one of '
-                                        f'{", ".join(agent_choices())}; not '
-                                        f'{entry!r}.', 'metaform dispatch options')
-        held = found.setdefault(agent, {})
-        if key.strip() in held:
-            raise settings.SettingError(f'--dispatch-agent-options sets {agent}.{key.strip()} twice.',
-                                        'metaform dispatch options')
-        held[key.strip()] = value.strip()
-    return found
+for _agent, (_name, _command) in AGENTS.items():
+    for _key, _label, _option in option_settings(_agent):
+        settings.choice(_key, option_choices(_agent, _option), AGENT_DEFAULT, person_only=True, label=_label,
+                        section=f'Agent options/{_name}', choice_help=option_words(_agent, _option),
+                        help=f'{_name}\'s {_label.lower()} for every session it starts here: a value it offers, or '
+                             f'default to leave it to {_name}.',
+                        details=f'The choices are what {_name} offered at its last session in this project; until it '
+                                f'has run once there is only default: start it, or run dispatch options agent={_agent} '
+                                'prime=true, which starts it, reads its options and closes it without a prompt. Applied '
+                                'to every session it starts, new, loaded or resumed. A ticket\'s own model and effort, '
+                                'set with dispatch tune, go over these.')
 
 
-def check_options(entries: Any, folder: Path) -> list[str] | None:
-    """Each entry well formed; one the agent has not offered here is kept, with a notice, since it applies once the
-    agent offers it."""
-    wanted = parse_options(cast(Sequence[str], entries))
-    try:
-        known = catalog_rows(context('dispatch', folder).store)
-    except Exception:  # noqa: BLE001  a folder with no project has no catalog; the entries stand as written
-        known = {}
-    notices: list[str] = []
-    for agent, chosen in wanted.items():
-        row = known.get(agent)
-        offered = {option_key(one): option_values(one) for one in cast(list[dict[str, Any]], (row or {}).get('settings')
-                                                                         or [])}
-        for key, value in chosen.items():
-            if row is None:
-                notices.append(f'{agent} has not run in this project yet, so {key}={value} is kept unchecked and '
-                               f'applied if {agent} offers it.')
-            elif key not in offered or value not in offered[key]:
-                notices.append(f'{agent} {row["version"]} does not offer {key}={value}; it is kept and applied if a '
-                               'later version does.')
-    return notices or None
-
-
-settings.items('dispatch_agent_options', (), person_only=True, label='Agent options', choices=option_choices,
-               check=check_options, exclusive='=',
-               help='Each agent\'s default settings, by ACP category or option id: claude.model=opus, '
-                    'codex.thought_level=high. Applied to every session it starts, new, loaded or resumed.',
-               details='The choices are what each agent offered at its last session in this project, its own option '
-                       'ids and values; dispatch options lists them with their names. Until an agent has run once '
-                       'there are none: start it, or run dispatch options agent=<agent> prime=true, which starts it, reads '
-                       'its options and closes it without a prompt. A ticket\'s own model and effort, set with '
-                       'dispatch tune, go over these.')
+def migrate_agent_options(ctx: Context | None = None) -> list[str]:
+    """Once per home, as dispatch starts: each stored dispatch_agent_options entry, `<agent>.<category or id>=<value>`,
+    becomes the value of its own setting at the same scope, and the old setting is removed, Rich 2026-10-14. An entry
+    with no setting to hold it is dropped and said. A marker in the home, listing what moved, keeps it from running
+    again."""
+    del ctx
+    marker = home.home() / 'migrated-dispatch-agent-options'
+    if marker.exists():
+        return []
+    said: list[str] = []
+    held: dict[str, list[str]] = {}
+    unread = False
+    for scope in dict.fromkeys(['global', *(home.path_key(record.path) for record in home.projects())]):
+        try:
+            with home.settings_db(scope) as db:
+                rows = db.execute("SELECT scope, value FROM settings WHERE owner='dispatch' AND "
+                                  "key='dispatch_agent_options' ORDER BY scope, position").fetchall()
+        except Exception as error:  # noqa: BLE001  a project that cannot be read is said and left for the next start
+            said.append(f'{scope}: not read, {error}')
+            unread = True
+            continue
+        for found_scope, raw in rows:
+            held.setdefault(str(found_scope), []).append(str(json.loads(raw)))
+    moved: dict[str, dict[str, str]] = {}
+    for scope, entries in held.items():
+        for entry in entries:
+            named, _, value = entry.partition('=')
+            agent, _, option = named.strip().partition('.')
+            key = next((key for key, _, one in option_settings(agent) if one == option.strip()), None)
+            if key is None or not value.strip():
+                said.append(f'{scope}: {entry} has no setting to hold it and was dropped.')
+                continue
+            moved.setdefault(scope, {})[key] = value.strip()
+    for scope in held:
+        # A folder's list hid every entry of the lists above it, so what only those set is default here, as it was
+        above = {key for over in held if over != scope and (over == 'global' or (scope != 'global'
+                                                                                and Path(scope).is_relative_to(over)))
+                 for key in moved.get(over, {})}
+        for key, value in {**dict.fromkeys(above - set(moved.get(scope, {})), AGENT_DEFAULT),
+                           **moved.get(scope, {})}.items():
+            home.save(scope, 'dispatch', key, [value])
+            said.append(f'{scope}: {key} = {value}')
+        home.clear(scope, 'dispatch', 'dispatch_agent_options')
+        home.set_glue(scope, 'dispatch', 'dispatch_agent_options', False)
+    if not unread:
+        marker.write_text('\n'.join(said) + '\n', encoding='utf-8')
+    return said
 
 
 # How an agent's interactive prompts are answered, as the administrator sets it, read at each request so a change
@@ -522,6 +577,13 @@ PROMPTS = ['approve-all', 'approve-reads', 'ask_all']
 READS = ('read', 'search')  # the tool kinds of ACP that only read
 settings.choice('dispatch_prompts', PROMPTS, 'ask_all', person_only=True,
                 help='How an agent\'s permission prompts are answered: approve-all, approve-reads or ask_all.',
+                choice_help={
+                    'approve-all': 'Allow everything without asking: the agent runs commands, edits and deletes files '
+                                   'on its own. Fastest; nothing stops a wrong or harmful action.',
+                    'approve-reads': 'Allow reading and searching without asking; ask you before anything else. '
+                                     'Reads cannot change files, but the agent can read any file it can reach.',
+                    'ask_all': 'Ask you before every action, reads included. Safest; the agent waits on you at '
+                               'each prompt.'},
                 details='approve-all answers every prompt with its allow option; approve-reads answers a read or a '
                         'search and asks for anything else; ask_all asks every prompt as a question at the ticket\'s '
                         'node. It is read at each prompt, so a change reaches agents already running. A question the '
@@ -530,8 +592,8 @@ settings.choice('dispatch_prompts', PROMPTS, 'ask_all', person_only=True,
 # or an MCP server's form or sign-in page. Asked at the ticket's node and on the page, as a permission prompt is, or
 # declined at once, the agent going on without the answer.
 settings.choice('dispatch_elicitation', ['ask', 'decline'], 'ask', person_only=True, label='Agent questions',
-                help='A question an agent asks you, a form or a page to open: ask puts it to you at the ticket\'s '
-                     'node and on the page; decline answers no at once.',
+                help='A question the sentinel or your system agent asks you, a form or a page to open: ask puts it to '
+                     'you at the ticket\'s node and on the page; decline answers no at once. A worker never asks.',
                 details='ACP\'s elicitation, advertised in both of its modes. A form\'s answer is checked against what '
                         'it asks for; a page to open, such as an MCP server\'s sign-in, is never opened by Metaform: '
                         'you open it, and answering accept is your consent. dispatch_prompts never answers a '
@@ -926,6 +988,7 @@ def work_read(ctx: Context, record: WorkRecord) -> dict[str, Any] | None:
     from .signals import rows
     signals = rows(ctx.store, record.id)
     chosen = ticket_options(ctx.store, record.id)  # the ticket's own model and effort, P015, shown where it is read
+    chosen = {**chosen, **launch_options(ctx.store, record.id)}  # and its latest launch's permissions
     if not found and not signals and not chosen:
         return None
     return {'sessions': [{**{key: value for key, value in session.items() if key not in PRIVATE},
@@ -1109,25 +1172,70 @@ def release(store: Store, work_id: str, by: str, took: bool, session_id: str | N
                 publish(ctx, 'requeue', work_id=work_id, session_id=session_id or '', key=by, reason=how)
 
 
-def ticket_options(store: Store, work_id: str) -> dict[str, str]:
-    """A ticket's own model and effort, by the ACP category each sets: `model` and `thought_level`."""
+def ticket_row(store: Store, work_id: str) -> dict[str, Any] | None:
+    """The ticket's row of ticket_options, or None."""
     try:
         with own_store(store).tables(write=False) as tx:
-            row = tx.get('ticket_options', {'work_id': work_id})
+            return tx.get('ticket_options', {'work_id': work_id})
     except StoreError:
-        return {}
+        return None
+
+
+def ticket_options(store: Store, work_id: str) -> dict[str, str]:
+    """A ticket's own model and effort, by the ACP category each sets: `model` and `thought_level`."""
+    row = ticket_row(store, work_id)
     if row is None:
         return {}
     return {key: str(row[field]) for key, field in (('model', 'model'), ('thought_level', 'effort')) if row[field]}
 
 
+def launch_options(store: Store, work_id: str) -> dict[str, str]:
+    """The permissions the ticket's latest launch was given, `prompts` over dispatch_prompts and `mode` over
+    dispatch_<agent>_<option>; each left out when the launch left it to the project's settings. Only the agent that
+    launch started on the ticket takes them, never a conversation about it."""
+    row = ticket_row(store, work_id)
+    if row is None:
+        return {}
+    return {field: str(row[field]) for field in ('prompts', 'mode') if row.get(field)
+            and (field != 'prompts' or row[field] in PROMPTS)}
+
+
+def launch_permissions(ctx: Context, store: Store, agent: str) -> tuple[dict[str, str | None], list[dict[str, str]]]:
+    """The permissions a start gives its launch, `prompts` and `mode`, checked: prompts one of dispatch_prompts' own,
+    mode one the agent offered at its last session here, or kept unchecked with a notice when it has not run here.
+    The person's own, since they decide what the agent may do without asking."""
+    given = {field: str(ctx.nouns.get(field) or '').strip() or None for field in ('prompts', 'mode')}
+    notices: list[dict[str, str]] = []
+    if not any(given.values()):
+        return given, notices
+    persons_own(ctx, 'An agent\'s permissions')
+    if given['prompts'] is not None and given['prompts'] not in PROMPTS:
+        raise Stop(f'prompts is one of {", ".join(PROMPTS)}, not {given["prompts"]}.', 'metaform help dispatch start')
+    if given['mode'] is not None:
+        offered = offered_values(store, agent, 'mode')
+        if offered is None:
+            notices.append({'where': 'mode', 'message': f'{agent} has not run in this project yet, so mode='
+                            f'{given["mode"]} is kept unchecked; metaform dispatch options agent={agent} prime=true '
+                            'lists what it offers.'})
+        elif given['mode'] not in offered:
+            raise Stop(f'{agent_label(agent)} offers mode {", ".join(offered) or "none"} at its last session here, '
+                       f'not {given["mode"]}.', f'metaform dispatch options agent={agent}')
+    return given, notices
+
+
+def keep_launch(store: Store, work_id: str, given: dict[str, str | None]) -> None:
+    """Write a launch's permissions over the previous launch's, keeping the ticket's own model and effort."""
+    with own_store(store).tables() as tx:
+        held = tx.get('ticket_options', {'work_id': work_id})
+        kept = {**{field: (held[field] if held else None) for field in ('model', 'effort')}, **given}
+        tx.delete('ticket_options', {'work_id': work_id})
+        if any(kept.values()):
+            tx.insert('ticket_options', {'work_id': work_id, **kept, 'seq': time.time_ns()})
+
+
 def wanted_options(ctx: Context, store: Store, agent: str, work_id: str | None) -> dict[str, str]:
-    """The settings a session of the agent is given: dispatch_agent_options for it, then its ticket's own."""
-    try:
-        chosen = parse_options(cast(Sequence[str], ctx.setting('dispatch_agent_options') or [])).get(agent, {})
-    except settings.SettingError:
-        chosen = {}
-    return {**chosen, **(ticket_options(store, work_id) if work_id and not intake_id(work_id) else {})}
+    """The settings a session of the agent is given: its dispatch_<agent>_<option> settings, then its ticket's own."""
+    return {**chosen_options(ctx, agent), **(ticket_options(store, work_id) if work_id and not intake_id(work_id) else {})}
 
 
 def today() -> str:
@@ -1300,6 +1408,13 @@ def summoned(row: dict[str, Any]) -> bool:
     return isinstance(pid, int) and any(word.startswith(('question=', 'prep=', 'system=')) for word in command_line(pid))
 
 
+def seated(row: dict[str, Any]) -> bool:
+    """A roundtable seat's session, BASE-066: its runner was started with seat=. It is neither a worker nor an agent
+    the person summoned, so it takes no agent slot; the table it sits at starts and stops it."""
+    pid = row.get('pid')
+    return isinstance(pid, int) and any(word.startswith('seat=') for word in command_line(pid))
+
+
 STALE_START = 180  # seconds a start may take before its reservation is taken for a start that died
 
 
@@ -1359,7 +1474,7 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any]) -> dict[st
         candidates = [record for record in open_work if not record.taken and (record.task or '').strip()]
         active = [row for row in sessions(store, open_work=opened) if row['state'] == 'running']
         editing = {row['work_id'] for row in active if editor(row)}  # the person's editor sessions take no slot
-        workers = [row for row in active if not summoned(row) and not editor(row)]
+        workers = [row for row in active if not summoned(row) and not editor(row) and not seated(row)]
         candidates.sort(key=lambda record: (record.held, record.position is None, record.position or 0))
         glyph = {work_id: held.get('glyph') for work_id, held in kept.items()}
         occupied = {glyph.get(row['work_id']) for row in active} - {None}
@@ -1754,20 +1869,25 @@ def start(ctx: Context) -> dict[str, Any]:
     folder = store.project().path
     mcp_server(Path(folder))  # a server the runner could not choose is refused here, the ticket left in To do, BASE-052
     budget_stop(ctx, store, str(work_id))  # a reached token budget is the person's to raise, M01
+    given, notices = launch_permissions(ctx, store, agent)
     reservation = 'dispatch starting ' + secrets.token_hex(16)
     with store.atomic():
         record = ticket(store, work_id)
         startable(ctx, store, record, agent)
         store.take_work(work_id, by=reservation)
-    return run_reserved(ctx, reservation)
+    started = run_reserved(ctx, reservation, given)
+    return {**started, **{field: value for field, value in given.items() if value},
+            **({'notices': notices} if notices else {})}
 
 
-def run_reserved(ctx: Context, reservation: str) -> dict[str, Any]:
+def run_reserved(ctx: Context, reservation: str, given: dict[str, str | None] | None = None) -> dict[str, Any]:
     """Start the runner of a ticket reserved for it, as a process detached from the terminal, and return at once; a
-    runner that cannot be started gives the ticket back where it waited."""
+    runner that cannot be started gives the ticket back where it waited. `given` is the launch's own permissions; a
+    launch without them, autostart's, leaves them to the project's settings."""
     store = ctx.require_store()
     agent, work_id = str(ctx.nouns['agent']), str(ctx.nouns['id'])
     folder = store.project().path
+    keep_launch(store, work_id, given or {'prompts': None, 'mode': None})
     log = os.path.join(tempfile.gettempdir(), f'metaform-dispatch-{work_id}.log')
     try:
         with open(log, 'ab') as written:
@@ -1805,6 +1925,31 @@ def prep(ctx: Context) -> dict[str, Any]:
                                    cwd=store.project().path, stdin=subprocess.DEVNULL, stdout=written, stderr=written,
                                    env=child_environment(), **group_options())
     return {'state': 'starting', 'work_id': work_id, 'agent': agent, 'pid': process.pid, 'log': log}
+
+
+def seat(ctx: Context) -> dict[str, Any]:
+    """Start an agent as a seat at a roundtable, BASE-066: one session on the table's held ticket, which it never
+    takes, that lasts until the table stops it. It is sent no turn of dispatch's own: each of its turns is the table's,
+    through `message`. Its session state names the seat, so the table finds it among the sessions on the ticket; its
+    model is the one the seat names, over every other choice; it reads and never writes, and it runs on the agent's
+    own login, never an API key, `runner`."""
+    may_steer(ctx)
+    store = ctx.require_store()
+    agent, work_id, named = agent_named(str(ctx.nouns['agent'])), str(ctx.nouns['id']), str(ctx.nouns['seat'])
+    runnable(ctx, agent)
+    record = ticket(store, work_id)
+    if record.done:
+        raise Stop(f'Work {work_id} was done at {record.done}.', 'metaform map work open=true')
+    model = str(ctx.nouns.get('model') or '').strip()
+    log = os.path.join(tempfile.gettempdir(), f'metaform-dispatch-seat-{work_id}.log')
+    with open(log, 'ab') as written:
+        process = subprocess.Popen([sys.executable, '-m', 'metaform', 'dispatch', 'run', work_id, agent,
+                                    f'seat={named}',
+                                    *([f'chosen={json.dumps({"model": model})}'] if model else []),
+                                    '--project', store.project_id],
+                                   cwd=store.project().path, stdin=subprocess.DEVNULL, stdout=written, stderr=written,
+                                   env=child_environment(), **group_options())
+    return {'state': 'starting', 'work_id': work_id, 'agent': agent, 'seat': named, 'pid': process.pid, 'log': log}
 
 
 SYSTEM_TASK = 'Conversation with the system agent'  # the ticket that anchors the person's system agent chat; held, so no agent works it
@@ -1976,7 +2121,7 @@ def summon_room(ctx: Context, store: Store) -> int:
         launching = [row for row in tx.rows('raised', by=('seq',), limit=0).results if row['started'] is not None
                      and row['work_id'] not in made and time.time() - row['started'] < STALE_START]
     working = ({record.id for record in opened if record.taken and not record.done} - chatting) | {
-        row['work_id'] for row in active if not summoned(row) and not editor(row)}
+        row['work_id'] for row in active if not summoned(row) and not editor(row) and not seated(row)}
     free = max(0, int(ctx.setting('dispatch_agents')) - len(working))
     return max(0, 1 + free - len(called) - len(launching))
 
@@ -2307,7 +2452,7 @@ def stop(ctx: Context) -> dict[str, Any]:
     agent turns dispatch_stay_connected off for the project, `disconnect`, and the result says so."""
     may_steer(ctx)
     store = ctx.require_store()
-    row = _running_or_stop(store, ctx.nouns['id'])
+    row = _running_or_stop(store, ctx.nouns['id'], ctx.nouns.get('session'))
     off = disconnect(ctx, store, row)
     result = _told(row, 'stop')
     if result.get('error'):  # a session that ends elsewhere, such as in the person's editor, BASE-062
@@ -2867,7 +3012,7 @@ def intake(ctx: Context) -> dict[str, Any]:
 
 async def options(ctx: Context) -> dict[str, Any]:
     """What each agent offered at its last session in this project, P199: its settings with their names and choices,
-    the value dispatch_agent_options gives each, its auth methods and its extensions. An agent that has not run has
+    the value dispatch_<agent>_<option> gives each, its auth methods and its extensions. An agent that has not run has
     none yet, and its next step primes it: prime=true starts it, makes one session with no MCP server and no prompt,
     reads what session/new answered, and closes it, so no tokens are spent."""
     store = ctx.require_store()
@@ -2880,10 +3025,7 @@ async def options(ctx: Context) -> dict[str, Any]:
         from .runner import prime
         await prime(ctx, store, named)
     rows = await asyncio.to_thread(catalog_rows, store)
-    try:
-        chosen = parse_options(cast(Sequence[str], ctx.setting('dispatch_agent_options') or []))
-    except settings.SettingError:
-        chosen = {}
+    chosen = {agent: chosen_options(ctx, agent) for agent in agent_choices()}
     listed: list[dict[str, Any]] = []
     for agent in [agent_named(named)] if named else agent_choices():
         row = rows.get(agent)
@@ -2895,7 +3037,9 @@ async def options(ctx: Context) -> dict[str, Any]:
                           'category': one.get('category'), 'type': one.get('type'), 'current': one.get('current'),
                           'choices': [{key: choice.get(key) for key in ('value', 'name', 'description')}
                                       for choice in cast(list[dict[str, Any]], one.get('options') or [])],
-                          'chosen': chosen.get(agent, {}).get(option_key(one))} for one in offered],
+                          'chosen': chosen.get(agent, {}).get(option_key(one)),
+                          'setting': next((key for key, _, option in option_settings(agent)
+                                           if option == option_key(one)), None)} for one in offered],
             'unmatched': {key: value for key, value in chosen.get(agent, {}).items()
                           if key not in {option_key(one) for one in offered}},
             'auth': row['auth'] if row else None, 'extensions': row['extensions'] if row else None,
@@ -2926,7 +3070,7 @@ def offered_values(store: Store, agent: str, key: str) -> list[str] | None:
 
 
 def tune(ctx: Context) -> dict[str, Any]:
-    """A ticket's own model and effort, P015, kept in this module's tables and applied over dispatch_agent_options
+    """A ticket's own model and effort, P015, kept in this module's tables and applied over dispatch_<agent>_<option>
     to every session of the ticket; a running one takes them at once through session/set_config_option. The person's
     own, since it changes what the ticket costs. A value the ticket's agent did not offer at its last session is
     refused with the values it offers; one for an agent that has not run here is kept with a notice."""
@@ -2955,13 +3099,14 @@ def tune(ctx: Context) -> dict[str, Any]:
                        f'not {said}.', f'metaform dispatch options agent={agent}')
     with own_store(store).tables() as tx:
         held = tx.get('ticket_options', {'work_id': record.id})
-        kept = {field: (held[field] if held else None) for field in ('model', 'effort')}
+        kept = {field: (held[field] if held else None) for field in ('model', 'effort', 'prompts', 'mode')}
         kept.update({field: None if str(value).strip() in ('', 'none') else str(value).strip()
                      for field, value in given.items()})
         tx.delete('ticket_options', {'work_id': record.id})
         if any(kept.values()):
             tx.insert('ticket_options', {'work_id': record.id, **kept, 'seq': time.time_ns()})
-    result: dict[str, Any] = {'work_id': record.id, 'agent': agent, **kept,
+    result: dict[str, Any] = {'work_id': record.id, 'agent': agent,
+                              **{field: kept[field] for field in ('model', 'effort')},
                               **({'notices': notices} if notices else {})}
     if live is not None:
         result['applied'] = tell(live, 'tune')
@@ -3077,9 +3222,17 @@ MODULE = Module(
              switches=('dispatch_recovery',), open_world=True),
         Verb('start', start, 'Start an agent on a ticket; it returns at once, and the map shows the agent at work. On '
                              "a ticket with an agent glyph, the agent then works the glyph's other tickets in turn.",
-             nouns=(Noun('id', 'The work id of the ticket.'), Noun('agent', 'claude, codex or gemini.')),
+             nouns=(Noun('id', 'The work id of the ticket.'), Noun('agent', 'claude, codex or gemini.'),
+                    Noun('prompts', 'For this launch only, how its permission prompts are answered: approve-all, '
+                                    'approve-reads or ask_all; dispatch_prompts when none is given. The person\'s own.',
+                         required=False),
+                    Noun('mode', 'For this launch only, the agent\'s own mode, a value dispatch options lists for it; '
+                                 'dispatch_<agent>_<option> when none is given. The person\'s own.', required=False)),
              switches=('dispatch_claude', 'dispatch_codex', 'dispatch_gemini'),
-             examples=(('metaform dispatch start 198452e1... claude', 'Starts Claude Code on the ticket.'),), open_world=True),
+             examples=(('metaform dispatch start 198452e1... claude', 'Starts Claude Code on the ticket.'),
+                       ('metaform dispatch start 198452e1... claude prompts=approve-reads mode=acceptEdits',
+                        'Starts it allowing reads and its own edits without asking, for this launch only.')),
+             open_world=True),
         Verb('reset', reset, 'Put agent bookkeeping back in order after a crash, returning tickets no live agent holds '
                              'to the queue. Dead sessions are recorded as ended; live agents are left alone.',
              examples=(('metaform dispatch reset', 'Release every ticket a dead agent still holds.'),)),
@@ -3195,6 +3348,12 @@ MODULE = Module(
                     Noun('agent', 'claude, codex or gemini.', required=False)), open_world=True),
         Verb('prep', prep, "Start an agent in a merge's worktree to prepare its code for the person's review.",
              nouns=(Noun('id', 'The work id of the ticket whose merge is under review.'),), open_world=True),
+        Verb('seat', seat, 'Start an agent as a roundtable seat on the table\'s held ticket: a session that reads, '
+                           'never writes, and takes each turn the table sends it.',
+             nouns=(Noun('id', 'The work id of the table\'s held ticket.'), Noun('agent', 'claude, codex or gemini.'),
+                    Noun('seat', 'The seat, as the table names it; the session\'s state keeps it.'),
+                    Noun('model', 'The model the seat names, a value its agent offers.', required=False)),
+             surfaces=('cli',), open_world=True),
         Verb('run', run, 'Run one ticket\'s ACP session in this process until it ends. start runs it detached.',
              nouns=(Noun('id', 'The work id of the ticket.'), Noun('agent', 'claude, codex or gemini.'),
                     Noun('prep', 'true: help the person prepare a merge under review, in its worktree, VIEW-044.',
@@ -3215,7 +3374,9 @@ MODULE = Module(
                     Noun('run', 'The run whose budget it spends against, a retry\'s the run of the session it resumes.',
                          required=False),
                     Noun('chosen', 'Jev\'s choice of model and effort, as JSON by ACP category, applied under the '
-                                   'person\'s own.', required=False)),
+                                   'person\'s own; a seat\'s model, applied over them.', required=False),
+                    Noun('seat', 'A roundtable seat, as the table names it: no first turn, reads only, the agent\'s '
+                                 'own login.', required=False)),
              switches=('dispatch_claude', 'dispatch_codex', 'dispatch_gemini'), surfaces=('cli',)),
         Verb('message', message, 'Send a person\'s message to the agent working a ticket.',
              nouns=(Noun('id', 'The work id of the ticket.'),
@@ -3255,7 +3416,10 @@ MODULE = Module(
              nouns=(Noun('id', 'The work id of the ticket.'),
                     Noun('session', 'The chat session id, to avoid interrupting a replacement session.', required=False)),
              examples=(('metaform dispatch interrupt 198452e1...', 'Requests cancellation; the session stays available.'),), open_world=True),
-        Verb('stop', stop, 'Stop the agent working a ticket.', nouns=(Noun('id', 'The work id of the ticket.'),), open_world=True),
+        Verb('stop', stop, 'Stop the agent working a ticket.',
+             nouns=(Noun('id', 'The work id of the ticket.'),
+                    Noun('session', 'The session id, for one of several on the ticket; the latest when none is given.',
+                         required=False)), open_world=True),
         Verb('sessions', read_sessions, 'List the agent sessions of a ticket, or of every ticket, each with its '
                                         'thread.',
              nouns=(Noun('id', 'The work id of the ticket; none for every ticket.', required=False),
@@ -3274,17 +3438,16 @@ MODULE = Module(
                         'Prints the full worker\'s brief, then the hand-off.')),
              effect='read'),
         Verb('options', options, 'List the settings each agent offers, its model, effort, mode and the rest, as it '
-                                 'offered them at its last session in this project, and the ones dispatch_agent_options '
+                                 'offered them at its last session in this project, and the ones dispatch_<agent>_<option> '
                                  'gives it. prime=true starts the agent once to read them, with no prompt.',
              nouns=(Noun('agent', 'claude, codex or gemini; every agent when none is given.', required=False),
                     Noun('prime', 'true: start the agent, read its options from session/new, and close it.',
                          kind='bool', required=False)),
-             switches=('dispatch_agent_options',),
              examples=(('metaform dispatch options', 'Lists what each agent offered, or how to find out.'),
                        ('metaform dispatch options agent=claude prime=true', 'Starts Claude Code once to read its options.'),
-                       ('metaform set --dispatch-agent-options claude.model=opus,codex.thought_level=high',
+                       ('metaform set --dispatch-claude-model opus --dispatch-codex-effort high',
                         'Gives each agent its default model or effort.')), open_world=True),
-        Verb('tune', tune, 'Set the model and effort the agent working a ticket uses, over dispatch_agent_options; the '
+        Verb('tune', tune, 'Set the model and effort the agent working a ticket uses, over dispatch_<agent>_<option>; the '
                            'person\'s own. A running session takes them at once.',
              nouns=(Noun('id', 'The work id of the ticket.'),
                     Noun('model', 'A model value its agent offers, as dispatch options lists it; none clears it.',
@@ -3347,7 +3510,7 @@ MODULE = Module(
     subscriptions=(Subscription('work.requeued', requeued), Subscription('dispatch.rework-limit', rework_limit),
                    Subscription('signal.raised', collect)),
     work_read=work_read,
-    start=None,
+    start=migrate_agent_options,
     stop=None,
     status=None,
 )

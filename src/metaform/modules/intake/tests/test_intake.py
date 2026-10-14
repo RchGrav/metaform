@@ -1123,6 +1123,41 @@ def test_the_procedures_marks_are_taken_as_written(run, project):
         [('code.alarm.audible', 'trouble'), ('code.display.digit', 'missing')]  # the last condition replaces
 
 
+@pytest.mark.req('MAP-046')
+def test_a_finding_on_an_element_and_its_purpose_record_is_written_once(run, project):
+    """The same condition and note on an element and on a purpose record it serves is one finding, one record."""
+    recorded(run, project, 'start')
+    recorded(run, project, 'element', 'code.alarm.audible', 'role=SE', 'condition=BKN', 'note=never sounds')
+    said = recorded(run, project, 'purpose', 'code.timer.kitchen', '["code.alarm.audible"]', 'purpose=p', 'ef=f',
+                    'ifd=receives', 'condition=BKN', 'note=never sounds')
+    assert 'kept once' in said['notices'][-1]['message']
+    recorded(run, project, 'purpose', 'code.timer.kitchen', '["code.alarm.audible"]', 'condition=BKN', 'note=other')
+    assert sorted((w.node_kind, w.note) for w in Store('timer').work(open=True, limit=0).results) == \
+        [('element', 'never sounds'), ('join', 'other')]
+
+
+@pytest.mark.req('MAP-046')
+def test_trouble_and_missing_are_tickets_an_agent_starts_and_recording_them_again_adds_none(run, project):
+    """An open trouble or missing finding with no task was never started by the agent starter, so nobody fixed it."""
+    recorded(run, project, 'start')
+    recorded(run, project, 'element', 'code.alarm.audible', 'role=SE', 'condition=BKN', 'note=never sounds')
+    recorded(run, project, 'element', 'code.display.digit', 'role=SE', 'condition=MISS')
+    recorded(run, project, 'element', 'code.timer.kitchen', 'role=DE', 'condition=OK')
+    store = Store('timer')
+    first = {w.address: w for w in store.work(open=True, limit=0).results}
+    assert first['code.alarm.audible'].task.startswith('never sounds\n\n') and first['code.display.digit'].task
+    assert first['code.timer.kitchen'].task is None
+    recorded(run, project, 'element', 'code.alarm.audible', 'role=SE', 'condition=BKN', 'note=never sounds; wire it')
+    recorded(run, project, 'purpose', 'code.timer.kitchen', '["code.alarm.audible"]', 'purpose=p', 'ef=f',
+             'ifd=receives', 'condition=BKN', 'note=never sounds; wire it')
+    [again] = [w for w in store.work(open=True, limit=0).results if w.condition == 'trouble']
+    assert (again.id, again.note) == (first['code.alarm.audible'].id, 'never sounds; wire it')
+    store.take_work(again.id, by='claude')
+    said = recorded(run, project, 'element', 'code.alarm.audible', 'role=SE', 'condition=BKN', 'note=other')
+    assert 'taken' in said['notices'][-1]['message']
+    assert [w.id for w in store.work(open=True, limit=0).results if w.condition == 'trouble'] == [again.id]
+
+
 @pytest.mark.req('BASE-039')
 def test_a_verify_pass_writes_conditions_and_refs_onto_the_finished_map_without_a_new_base(run, project):
     """An intake on a project that already has one re-examines the finished map and records what it found on it;

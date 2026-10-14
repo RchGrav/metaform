@@ -102,7 +102,7 @@ Start an agent on a ticket through ACP, follow it, message it and stop it.
 | `dispatch_intake` | Start an agent on this project's intake, recording the map as it follows the intake prompt. An open page follows it. It counts as a summoned agent; one intake runs at a time. | write, open world |
 | `dispatch_interrupt` | Interrupt the turn of the agent working a ticket, keeping its conversation open. | write, open world |
 | `dispatch_merges` | List the agents' merges waiting for the person's review, the soonest first. | read |
-| `dispatch_options` | List the settings each agent offers, its model, effort, mode and the rest, as it offered them at its last session in this project, and the ones dispatch_agent_options gives it. prime=true starts the agent once to read them, with no prompt. | write, open world |
+| `dispatch_options` | List the settings each agent offers, its model, effort, mode and the rest, as it offered them at its last session in this project, and the ones dispatch_<agent>_<option> gives it. prime=true starts the agent once to read them, with no prompt. | write, open world |
 | `dispatch_message` | Send a person's message to the agent working a ticket. | write, open world |
 | `dispatch_prep` | Start an agent in a merge's worktree to prepare its code for the person's review. | write, open world |
 | `dispatch_propose` | Record a sentinel's proposals for the issue it was raised on, for the person to choose one on the page. Each is presented beside the part of the map it reserves. | write |
@@ -117,7 +117,7 @@ Start an agent on a ticket through ACP, follow it, message it and stop it.
 | `dispatch_start` | Start an agent on a ticket; it returns at once, and the map shows the agent at work. On a ticket with an agent glyph, the agent then works the glyph's other tickets in turn. | write, open world |
 | `dispatch_stop` | Stop the agent working a ticket. | write, open world |
 | `dispatch_system` | Start the person's system agent, who talks with them about anything in the project, or reuse the running one. | write, open world |
-| `dispatch_tune` | Set the model and effort the agent working a ticket uses, over dispatch_agent_options; the person's own. A running session takes them at once. Refused to an agent while agents_may_set_control is off. | write |
+| `dispatch_tune` | Set the model and effort the agent working a ticket uses, over dispatch_<agent>_<option>; the person's own. A running session takes them at once. Refused to an agent while agents_may_set_control is off. | write |
 | `dispatch_talk` | Talk with an agent about a ticket, a node, or an ended agent's session. The ticket may be open or done; an agent at work on it is talked to directly. | write, open world |
 | `dispatch_wait` | Wait until a ticket is done, its agent stops with it open, or a signal is raised on it. With no id, until any ticket of the project is, naming which. It answers pending with the call to make next after dispatch_wait_seconds. | read |
 

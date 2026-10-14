@@ -60,6 +60,10 @@ FAKE_ACP_MASCOT=1 makes it a system agent that drives the person's mascot: each 
 metaform web say, web go (to FAKE_ACP_MASCOT_GO, when set, then web see and web look there) and web emote wave, then
 answers in one message; with FAKE_ACP_MASCOT_SCRIPT naming a file, it first runs each metaform command of its lines, a JSON
 list of words each, or waits the seconds a line gives alone.
+FAKE_ACP_ECHO=1 makes it a roundtable seat's agent: its session is named by its process, so seats started at once never
+share one, and every prompt, the first among them, is answered with one message saying how long it was; with
+FAKE_ACP_SEAT_SCRIPT naming a file, it first runs each metaform command of its lines on a prompt that holds
+FAKE_ACP_SEAT_ON, as a seat calls its controls.
 To a client whose clientCapabilities.auth.terminal is true it offers a terminal login, and started with that
 login's --login it logs its arguments and exits 0, speaking no ACP.
 """
@@ -85,6 +89,7 @@ PROMPT_LOCK = threading.Lock()
 RICH = os.environ.get('FAKE_ACP_RICH') == '1'
 MCP_ACP = os.environ.get('FAKE_ACP_MCP_ACP') == '1'
 V2 = os.environ.get('FAKE_ACP_V2') == '1'
+ECHO = os.environ.get('FAKE_ACP_ECHO') == '1'
 MODES = {'currentModeId': 'default', 'availableModes': [{'id': 'default', 'name': 'Default'},
                                                          {'id': 'plan', 'name': 'Plan', 'description': 'Plans only'}]}
 MODEL = ['small']
@@ -352,6 +357,21 @@ def mascot_turn(prompt_id, text):
     send({'jsonrpc': '2.0', 'id': prompt_id, 'result': {'stopReason': 'end_turn', **used()}})
 
 
+def echo_turn(prompt_id, said):
+    """A roundtable seat's turn: with FAKE_ACP_SEAT_SCRIPT naming a file, each line a metaform command as a JSON list of
+    words, run when the prompt holds FAKE_ACP_SEAT_ON (any prompt when unset), as the seat's controls are called;
+    then one message saying how long the prompt was."""
+    script = Path(os.environ.get('FAKE_ACP_SEAT_SCRIPT') or '')
+    if script.is_file() and os.environ.get('FAKE_ACP_SEAT_ON', '') in said:
+        for at, line in enumerate(script.read_text(encoding='utf-8').splitlines()):
+            if line.strip():
+                words = json.loads(line)
+                log({'seat_script': words, 'printed': tool(f's-script-{at}', ' '.join(words), [*words, '--json'])[:600]})
+    reply = f'Turn {PROMPTS[0]} of {SESSION}: {len(said)} characters.'
+    update({'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': reply}})
+    send({'jsonrpc': '2.0', 'id': prompt_id, 'result': {'stopReason': 'end_turn'}})
+
+
 def used():
     """What a prompt's answer says it used, ACP's end-turn token usage, when FAKE_ACP_USAGE sets it."""
     tokens = int(os.environ.get('FAKE_ACP_USAGE') or 0)
@@ -431,7 +451,7 @@ def main():
         elif method == 'session/new':
             with WRITING, open(LOG, encoding='utf-8') as handle:
                 count = sum(json.loads(line).get('message', {}).get('method') == 'session/new' for line in handle)
-            SESSION = f'fake-session-{count}'
+            SESSION = f'fake-echo-{os.getpid()}' if ECHO else f'fake-session-{count}'
             answer = {'jsonrpc': '2.0', 'id': ident, 'result': {'sessionId': SESSION, **made()}}
             if os.environ.get('FAKE_ACP_ELICIT') == 'setup':  # a sign-in asked before the session is made
                 threading.Thread(target=setup, args=(ident, answer), daemon=True).start()
@@ -479,6 +499,9 @@ def main():
                         log({'replaced': ACTIVE_PROMPT[0]})
                     ACTIVE_PROMPT[0] = ident
                 threading.Thread(target=replacing_turn, args=(ident, PROMPTS[0]), daemon=True).start()
+            elif ECHO:
+                said = ' '.join(block.get('text', '') for block in message['params'].get('prompt', []))
+                threading.Thread(target=echo_turn, args=(ident, said), daemon=True).start()
             elif PROMPTS[0] == 1:
                 said = ' '.join(block.get('text', '') for block in message['params'].get('prompt', []))
                 threading.Thread(target=turn_of, args=(first_turn, ident, said), daemon=True).start()

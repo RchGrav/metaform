@@ -70,6 +70,7 @@ from .records import (
     WorkRecord,
     plain,
 )
+from .session import BASE_VARIABLE, on_base
 from .session import Tx as DataTx
 from .store import Store
 from .tables import Column, Index, Table, Tables, TableTx
@@ -117,6 +118,7 @@ def private_database(path: Any) -> DataConnection:
     return db
 
 __all__ = [
+    'BASE_VARIABLE',
     'COLUMNS',
     'CONDITIONS',
     'FAULTS',
@@ -187,6 +189,7 @@ __all__ = [
     'import_document',
     'new_id',
     'now',
+    'on_base',
     'paged',
     'parse_reference',
     'plain',

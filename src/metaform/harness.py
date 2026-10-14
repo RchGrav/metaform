@@ -256,5 +256,8 @@ def child_environment(**own: str) -> dict[str, str]:
     agent's role never reaches a page server or a runner it starts. Windows keeps names upper case in `os.environ`,
     so the names match on every system."""
     env = {name: value for name, value in os.environ.items() if name not in IDENTITY}
+    from .data.session import BASE_VARIABLE, bound_base
+    if bound := bound_base():  # a base bound for this call goes on to what it starts
+        env[BASE_VARIABLE] = bound
     env.update(own)
     return env

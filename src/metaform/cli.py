@@ -12,11 +12,13 @@ import codecs
 import inspect
 import io
 import json
+import os
 import signal
 import sys
 import threading
 import zipfile
 from collections.abc import Callable
+from contextlib import suppress
 from importlib import resources
 from pathlib import Path
 from typing import Any, cast
@@ -509,6 +511,28 @@ def set_(args: list[str], folder: Path) -> None:
         out(f'Commands shown here: {", ".join(after_groups)}.')
         out('All other commands and help, including yours, are now hidden and will not run.')
         out('To restore them: metaform unset --modules')
+
+
+def completions(line: str, folder: Path) -> list[str]:
+    """What can follow the typed line, for the shell's tab, as bash's `complete -C` asks: a command first, then
+    after set or unset a setting's switch, and after a switch with choices one of its choices, as `--switch value` or
+    `--switch=value`; bash completes the word after `=` by itself."""
+    words = line.split()
+    typed = '' if not words or line.endswith((' ', '\t')) else words.pop()
+    if len(words) <= 1:
+        found = [*VERBS, *(item.id for item in loader.discover())]
+    elif words[1] in ('set', 'unset'):
+        switch, equals, typed = typed.partition('=') if typed.startswith('--') and '=' in typed else ('', '', typed)
+        named = settings.by_switch(switch or words[-1]) if (equals or words[-1].startswith('--')) else None
+        if named is not None and named[0].kind != 'bool' and (equals or not typed.startswith('-')):
+            found = named[0].options(folder) if named[0].choices is not None else []
+        else:
+            found = sorted({item for setting in settings.SCHEMA.values() for item in setting.switches
+                            if item.startswith('--') and (words[1] == 'set' or not item.startswith('--no-'))}
+                           | ({'--glue', '--quiet'} if words[1] == 'set' else {'--unglue', '--quiet'}))
+    else:
+        found = []
+    return [item for item in dict.fromkeys(found) if item.startswith(typed)]
 
 
 def unset(args: list[str], folder: Path) -> None:
@@ -1069,7 +1093,11 @@ docs.command(Command('set', 'Save settings. Each setting is a switch.',
                      description='Saves one or more settings. Folder settings apply to the folder you run it in and '
                                  'every folder below it.',
                      details='Out of the box every setting is at its default, and the defaults work. A glued setting '
-                             'keeps its value when you run unset all.',
+                             'keeps its value when you run unset all. A setting with choices takes one of them, and '
+                             'a value that is not one is refused with the list. Tab completes the switches and each '
+                             'setting\'s choices once your shell asks metaform for them: in bash, complete -C '
+                             'metaform metaform; in zsh, autoload bashcompinit; bashcompinit; complete -C metaform '
+                             'metaform.',
                      examples=(('metaform set --project notes', 'Work on notes from this folder.'),
                                ('metaform set --project notes --glue', 'Same, and keep it through unset all.')),
                      see_also=('unset', 'config')))
@@ -1296,6 +1324,13 @@ def main(argv: list[str] | None = None) -> int:
     _utf8_streams()
     args = list(sys.argv[1:] if argv is None else argv)
     folder = Path.cwd()
+    if argv is None and 'COMP_LINE' in os.environ and 'COMP_POINT' in os.environ:  # the shell's tab, complete -C
+        with suppress(Exception):  # a tab that finds nothing offers nothing
+            loader.follow_enabled()
+            loader.discover()  # the modules' settings are switches too
+            line = os.environ['COMP_LINE'][:int(os.environ['COMP_POINT'])]
+            out('\n'.join(completions(line, folder)))
+        return 0
     if args[:1] == ['--version']:
         return _command(args, folder)
     with loader.request_scope():
