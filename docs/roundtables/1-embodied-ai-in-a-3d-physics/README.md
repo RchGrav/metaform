@@ -12,7 +12,7 @@ Everything recorded about roundtable 1 ("Effective Approaches for embodied AI in
 | `raw/*.json` | Every row Metaform stored about this table, untransformed: the roundtable's own tables (`roundtable.discussions`, `roundtable.seats` with each seat's full stored conversation, `roundtable.submissions`), the table's ticket (`work`, `map.ticket_settings`), and dispatch's records of the five Claude Code/Codex sessions (`dispatch.sessions`, all 839 thread lines in `dispatch.lines`, and 600 rows of per-turn token and cost accounting in `dispatch.spend`: input, output, cache read, cache write, thought, cost). |
 | `all-in-one.json` | The derived files above in one file. |
 
-Scores are always `[new, valuable, relevant, keep]`; a turn entered only at 0.83 or above on all four. In a model's conversation, `table`/`received` is what the roundtable sent it; the person typed nothing into this table.
+Every text a model received or replied is exactly as sent, unaltered; only scores are written as arrays. Scores are always `[new, valuable, relevant, keep]`; a turn entered only at 0.83 or above on all four. In a model's conversation, `table`/`received` is what the roundtable sent it; the person typed nothing into this table.
 
 This is everything Metaform stored about the table. Not recorded by the version that ran: Jev's input, raw answer and cost per judgment; OpenRouter request bodies, per-call tokens, cache use, cost and stop reason. No views existed for this table.
 
