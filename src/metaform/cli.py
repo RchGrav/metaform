@@ -18,7 +18,7 @@ import sys
 import threading
 import zipfile
 from collections.abc import Callable
-from contextlib import suppress
+from contextlib import AbstractContextManager, nullcontext, suppress
 from importlib import resources
 from pathlib import Path
 from typing import Any, cast
@@ -320,6 +320,33 @@ def feedback(args: list[str], folder: Path) -> None:
     result = results.noted(reports.feedback(folder, positional[0], layer=given.get('layer'), report=report,
                                             shape=shape), notices)
     sys.stdout.write(results.as_json(result) + '\n' if as_json else results.as_text(result))
+
+
+def report_(args: list[str], folder: Path) -> None:
+    """`report [<text>] [files=true|false]`: one zip of what is needed to see a problem, written here, BASE-045."""
+    positional, named = _nouns(args, ('files',), 'report')
+    if len(positional) > 1:
+        raise Stop('report takes one line; put it in quotes.', 'metaform help report')
+    files: bool | None = None
+    if 'files' in named:
+        if named['files'][-1] not in ('true', 'false'):
+            raise Stop('files= takes true or false.', 'metaform help report')
+        files = named['files'][-1] == 'true'
+    description = positional[0].strip() if positional else ''
+    if not description:
+        if not sys.stdin.isatty():
+            raise Stop('report needs one line saying what went wrong.', 'metaform report "what went wrong"')
+        description = input('What went wrong, in one line: ').strip()
+        if not description:
+            raise Stop('report needs one line saying what went wrong.', 'metaform report "what went wrong"')
+        if files is None:
+            files = input("Include the project's own files? [y/N] ").strip().lower() in ('y', 'yes')
+    from . import problem_report
+    path, held = problem_report.write(folder, description, files=bool(files))
+    out(f'Wrote {path}, holding:')
+    for line in held:
+        out(f'  {line}')
+    out(f'Nothing was sent. {problem_report.SEND_TO}')
 
 
 def activate(args: list[str], folder: Path) -> None:
@@ -788,6 +815,16 @@ def install_(args: list[str], folder: Path) -> None:
     install.install(args, out)
 
 
+def start_(args: list[str], folder: Path) -> None:
+    from . import start
+    start.start(args, folder, out)
+
+
+def demo_(args: list[str], folder: Path) -> None:
+    from . import demo  # `main` has already moved this process into the demo's own home, CLI-042
+    demo.run(args, folder, out)
+
+
 def prompts_(args: list[str], folder: Path) -> None:
     if args == ['review']:  # every prompt agents read, browsed and edited in the terminal, STORE-044
         from . import prompt_review
@@ -889,6 +926,8 @@ def build_(args: list[str], folder: Path) -> None:
     out(f'Wheel: {built.path}')
     if built.prompt is not None:
         out(f'Prompt: {built.path.parent / "prompt.md"}')
+    if built.bundle is not None:
+        out(f'Zip: {built.bundle}')
 
 
 def _read_task(path: Path) -> str:
@@ -924,9 +963,9 @@ def return_(args: list[str], folder: Path) -> None:
 VERBS: dict[str, Callable[[list[str], Path], None]] = {
     'help': help_, 'add': add, 'list': list_, 'set': set_, 'unset': unset, 'config': config, 'enable': enable,
     'disable': disable, 'activate': activate, 'import': import_, 'export': export, 'query': query_,
-    'install': install_, 'uninstall': uninstall_, 'build': build_, 'return': return_, 'feedback': feedback, 'read': read,
-    'extract': extract, 'prompts': prompts_, 'prompt': prompt_, 'clear': clear, 'restore': restore, 'remove': remove,
-    'instructions': instructions_, 'provision': provision, 'alias': alias}
+    'start': start_, 'install': install_, 'uninstall': uninstall_, 'build': build_, 'return': return_, 'feedback': feedback, 'read': read,
+    'report': report_, 'extract': extract, 'prompts': prompts_, 'prompt': prompt_, 'clear': clear, 'restore': restore, 'remove': remove,
+    'instructions': instructions_, 'provision': provision, 'alias': alias, 'demo': demo_}
 
 
 def always(verb: str, rest: list[str]) -> bool:
@@ -1243,6 +1282,22 @@ docs.command(Command('prompt', "Show a stored prompt's text, its newest version 
                              'adds a prompt kept in any file to the review, metaform prompts review, by its owner and '
                              'name; element= names the XML element inside the file when it holds several.',
                      see_also=('prompts',)))
+docs.command(Command('start', 'Map the project in this folder: one command, and its map opens in your browser.',
+                     ('metaform start',),
+                     description='Run it in your own project folder. It registers the folder as a project named '
+                                 'after it, turns on the modules it needs, connects Claude Code to this project, '
+                                 'starts the intake agent with what the files already say, starts the web GUI and '
+                                 'opens your browser on the project, where the map grows as each part is recorded.',
+                     details='It asks only what the files cannot say, at most two short questions, and only at a '
+                             'terminal: what the project is for when no README or manifest says it, and who it is for '
+                             'when the folder holds no code yet, in which case the map records intent only. Claude '
+                             'Code gets the metaform MCP server in the project\'s .mcp.json, as claude mcp add --scope '
+                             'project writes it, unless metaform install already connected it everywhere; any other '
+                             'AI tool is named with metaform install <tool>. The intake agent is the AI tool found, '
+                             'unless you chose another with metaform set --dispatch-agent. Running it again changes '
+                             'nothing already done and opens the page again.',
+                     examples=(('cd ~/my-project && metaform start', 'Map my-project and open its map.'),),
+                     see_also=('install', 'web', 'intake')))
 docs.command(Command('uninstall', 'Remove Metaform from your AI tools.',
                      ('metaform uninstall', 'metaform uninstall <tool>...', 'metaform uninstall all'),
                      description="Previews every change with its backup, then removes Metaform's registration and "
@@ -1261,6 +1316,21 @@ docs.command(Command('feedback', 'Save feedback on the Metaform process, and a r
                      examples=((('metaform feedback "The join fields did not match the intake text." '
                                  'layer=intake-20260925T041500Z-3fa2c1'), "Feedback on an intake run."),),
                      see_also=('list', 'read')))
+docs.command(Command('report', 'Report a problem: one file holding what is needed to see it, to send to rchgrav on '
+                     'Discord.',
+                     ('metaform report', 'metaform report <text> [files=true|false]'),
+                     description='Writes metaform-report-<time>.zip in this folder: your one line saying what went '
+                                 'wrong, the Metaform version and modules, the system and Python, the last lines of '
+                                 "the home's logs and the dispatch runner logs, the errors found in them, and the "
+                                 'settings in force here. Every key, token, password and phone number is masked, '
+                                 'keeping its last two characters.',
+                     details="Without a line it asks for one, and asks whether to include the project's own files; "
+                             'with one it includes them only with files=true. It never sends anything: send the '
+                             'file to rchgrav on Discord. The page\'s View menu has the same, Report a problem, which '
+                             'adds the browser and its console errors.',
+                     examples=(('metaform report "The map stopped drawing after I opened Agents."',
+                                'Write the report here.'),),
+                     see_also=('feedback',)))
 docs.command(Command('read', 'Read one report, feedback or shape file exactly.',
                      ('metaform read report <file name> [<project>]',), see_also=('list', 'feedback')))
 docs.command(Command('clear', "Remove a project's bases and reports; its registration, settings and history stay.",
@@ -1314,7 +1384,10 @@ docs.command(Command('build', 'Build a Metaform wheel, a project archive, or a w
                              'learns the project and waits. files= includes the project\'s files, true by default. '
                              'Building never turns a module on or off at home. A wheel carries its pure-Python '
                              'dependencies and runs directly with python <wheel>; everything is written under the '
-                             "home's builds folder, a project wheel's prompt beside it as prompt.md.",
+                             "home's builds folder, a project wheel's prompt beside it as prompt.md. installer, full "
+                             'and project also write metaform-<version>-<kind>.zip there, the file to send a tester: '
+                             'the wheel, the prompt of a project build, and a README.md made from this version\'s '
+                             'commands and modules that takes them from install to their first intake.',
                      examples=(('metaform build kind=project project=notes shape=remote',
                                 'A wheel carrying notes, for a remote agent.'),
                                ('metaform build kind=archive files=false', "The folder's project's data alone.")),
@@ -1327,6 +1400,22 @@ docs.command(Command('return', "Write a project wheel's work back as one archive
                      details='The archive goes to file=, or into the project\'s folder named <project>-return-<time>'
                              '.zip. The person adds it to their Metaform with metaform import <file>.',
                      see_also=('build', 'import')))
+docs.command(Command('demo', 'Watch Metaform at work: a sample project\'s map with agents on it, in your browser.',
+                     ('metaform demo', 'metaform demo --reset'),
+                     description='Asks nothing and needs no AI tool, API key or account. It opens the finished map of '
+                                 'Pocket Ledger, a tiny expense app with a planted bug, starts the web GUI on a free '
+                                 'port, opens your browser on it and prints the address. Three scripted demo agents '
+                                 'work tickets on the map, say what they find, and one finds the bug; your mascot '
+                                 'greets you. It keeps going until Ctrl+C.',
+                     details='It runs in a home of its own, demo inside the Metaform home, so your projects and '
+                             'settings are never read or changed. Its agents call no model and no network service and '
+                             'spend nothing. Run again, it reuses that home; --reset removes it first and starts '
+                             'fresh. The card on the page names the next steps: metaform install claude, and metaform '
+                             'start in your own project.',
+                     examples=(('metaform demo', 'Open the demo map with its agents at work.'),
+                               ('metaform demo --reset', 'Start the demo fresh.')),
+                     see_also=('start', 'install', 'web')))
+docs.switch(Switch('--reset', 'Remove the demo\'s home and start it fresh.', used_by=('demo',)))
 docs.switch(Switch('--glue', 'Keep the settings you set through unset all.',
                    'A glued setting is skipped by unset all until you unset it with --unglue.', ('set',)))
 docs.switch(Switch('--unglue', 'Reset glued settings too, and unglue them.', used_by=('unset',)))
@@ -1344,6 +1433,9 @@ def _utf8_streams() -> None:
             stream.reconfigure(encoding='utf-8')
 
 
+VERSION = f'metaform {__version__}'  # what metaform --version prints; the build README quotes it
+
+
 def main(argv: list[str] | None = None) -> int:
     _utf8_streams()
     args = list(sys.argv[1:] if argv is None else argv)
@@ -1357,7 +1449,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args[:1] == ['--version']:
         return _command(args, folder)
-    with loader.request_scope():
+    own_home: AbstractContextManager[Any] = nullcontext()
+    if args[:1] == ['demo'] and not {'-h', '--help'} & set(args[1:]):
+        from . import demo  # the demo's own home, before anything reads one, so the person's is never touched, CLI-042
+        own_home = demo.own_home()
+    with own_home, loader.request_scope():
         code = 1
         try:
             code = _command(args, folder)
@@ -1373,7 +1469,7 @@ def main(argv: list[str] | None = None) -> int:
 def _command(args: list[str], folder: Path) -> int:
     try:
         if args[:1] == ['--version']:
-            out(f'metaform {__version__}')
+            out(VERSION)
             return 0
         if failed := home.make_private():  # the home is its owner's alone, made or tightened before anything reads it
             sys.stderr.write(f'Notice: {counted(len(failed), "path", "paths")} in the home could not be closed to '

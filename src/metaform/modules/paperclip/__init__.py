@@ -1242,4 +1242,5 @@ MODULE = Module(
     status=module_status,
     tables=TABLES,
     work_read=work_read,
+    settings_category='integrations',
 )

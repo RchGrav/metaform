@@ -3,7 +3,9 @@
  * whatever its size, a soft shadow below and right, and a pointed tail from its lower left to the figure's head. The
  * words are set large and bold and wrap; the body grows and shrinks around them while the outline, corners and tail
  * keep their size. The drawing becomes the texture of a plane in the scene, not a layer over the map: it faces the
- * camera, is as large on the screen as its distance makes it, and what stands in front of it hides it, so an agent
+ * camera, is the same readable size on the screen at any distance, and is drawn over the map so its words can be read; a
+ * nearer bubble covers a farther one, and farther ones are drawn dimmer, still solid. A new line shows for
+ * web_bubble_seconds (5 by default) and goes; the pointer on an agent brings its last line back. So an agent
  * looked at closely shows its words large and the others' small in the distance. It is drawn again only when its
  * words change, never each frame. The words are the newest line the agent said in its thread, `said` on its
  * session from the server, never its tool calls or its thinking. */
@@ -18,15 +20,16 @@ import {WS} from '/page/app/workspace/workspace.js';
 const LOOK = {
   most: 140,  // the most characters shown; a longer line is cut at a word with an ellipsis
   width: 340,  // the widest the words run, SVG pixels
-  font: 26, lines: 4, lineGap: 1.18,
+  font: 26, lines: 3, lineGap: 1.18,
   family: "'Comic Neue', 'Comic Sans MS', 'Chalkboard SE', 'Trebuchet MS', sans-serif",
   padX: 22, padY: 16, minWidth: 90,
   tilt: -4,  // degrees; negative rises to the right
   outline: 6, radius: 22, shadow: [7, 8],
   tail: {at: 0.16, base: 34, length: 40, lean: -18},  // along the bottom edge, its width, how far down and left
   scale: 3,  // texture pixels per SVG pixel, so the bubble stays sharp up close
-  world: 0.019,  // world units per SVG pixel, per unit of the figure's size
-  lift: 1.0, aside: 0.7,  // where the tail's point sits: up and to the right of the head, in figure sizes
+  dimmest: 0.33,  // the brightness of the farthest bubbles
+  lift: 0.6, aside: 0.4,  // where the tail's point sits: up and to the right of the head, in figure sizes
+  screen: 0.75,  // CSS pixels on the screen per SVG pixel: every bubble the same readable size, at any distance
   pop: 320,  // ms of the pop when new words arrive
 };
 const BUBBLES = new Map();  // figure id -> {mesh, texture, text, drawn, born, shown}
@@ -98,14 +101,16 @@ function made(id) {
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = G.renderer().capabilities.getMaxAnisotropy();
-  const material = new THREE.MeshBasicMaterial({map: texture, transparent: true, depthWrite: false, toneMapped: false,
+  // drawn over the map, `layer`, so its words can always be read
+  const material = new THREE.MeshBasicMaterial({map: texture, transparent: true, depthTest: false, depthWrite: false,
+    alphaTest: 0.05, toneMapped: false,
     fog: false, opacity: 0});
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
-  mesh.renderOrder = 5;
+  mesh.renderOrder = 1000;
   mesh.visible = false;
   mesh.raycast = () => {};  // never in the way of a click
   G.scene().add(mesh);
-  const bubble = {id, mesh, canvas, texture, text: '', drawn: null, born: 0, shown: 0};
+  const bubble = {id, mesh, canvas, texture, text: '', drawn: null, born: 0, shown: 0, line: '', lineAt: 0};
   BUBBLES.set(id, bubble);
   return bubble;
 }
@@ -133,44 +138,118 @@ function draw(bubble, text) {
 function saying(figure) {
   const session = figure.child ? null
     : D.sessions.filter(one => one.work_id === figure.id && one.state === 'running').at(-1);
-  if (!session || session.activity !== 'working' || !session.said?.text) return '';
-  return bubbleText(session.said.text);
+  if (!session || session.activity !== 'working' || !session.said?.text) return null;
+  return {text: bubbleText(session.said.text), line: `${session.session_id}:${session.said.seq}`};
+}
+/* A bubble moved up, along the screen's up, until its box on the screen overlaps none of the bubbles placed before it
+ * this frame; then its box is added to them. Bubbles of agents side by side stack instead of covering each other. */
+const CORNER = new THREE.Vector3(), UP = new THREE.Vector3();
+function boxOf(mesh, camera) {
+  const box = {x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity};
+  for (const [x, y] of [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]]) {
+    CORNER.set(x, y, 0).applyMatrix4(mesh.matrixWorld).project(camera);
+    box.x0 = Math.min(box.x0, CORNER.x); box.x1 = Math.max(box.x1, CORNER.x);
+    box.y0 = Math.min(box.y0, CORNER.y); box.y1 = Math.max(box.y1, CORNER.y);
+  }
+  return box;
+}
+function apart(mesh, camera, placed) {
+  UP.set(0, 1, 0).applyQuaternion(camera.quaternion);
+  for (let tries = 0; tries < 8; tries++) {
+    mesh.updateMatrixWorld();
+    const box = boxOf(mesh, camera);
+    const under = placed.find(one => box.x0 < one.x1 && box.x1 > one.x0 && box.y0 < one.y1 && box.y1 > one.y0);
+    if (!under) { placed.push(box); return; }
+    // up by the overlap and a small gap, in world units: the box's height on screen is its plane's height
+    const rise = (under.y1 - box.y0 + 0.01) / Math.max(1e-6, box.y1 - box.y0) * mesh.scale.y;
+    mesh.position.addScaledVector(UP, rise);
+  }
+  mesh.updateMatrixWorld();
+  placed.push(boxOf(mesh, camera));
+}
+/* Every bubble is drawn over the map, never hidden by it, so its words can be read: the farthest first and the nearest
+ * last, so a nearer bubble covers a farther one, each dimmer the farther back it is. */
+function layer() {
+  [...BUBBLES.values()].filter(one => one.mesh.visible).sort((a, b) => b.far - a.far)
+    .forEach((one, n) => { one.mesh.renderOrder = 1000 + n; });
+}
+/* The agent the pointer is over, read once a frame from the 3D map's own pointer, `figureUnder`: its last bubble shows
+ * for as long as the pointer stays on it. */
+const HOVER = {id: null, x: 0, y: 0, moved: false};
+const RAY = new THREE.Raycaster(), AT = new THREE.Vector2(), BALL = new THREE.Sphere(), MIDDLE = new THREE.Vector3();
+addEventListener('pointermove', event => {
+  HOVER.x = event.clientX; HOVER.y = event.clientY; HOVER.moved = true;
+}, {passive: true});
+function figureUnder() {
+  if (!HOVER.moved) return HOVER.id;
+  HOVER.moved = false;
+  const area = G.renderer().domElement.getBoundingClientRect();
+  if (!area.width || HOVER.x < area.left || HOVER.x > area.right || HOVER.y < area.top || HOVER.y > area.bottom) {
+    return (HOVER.id = null);
+  }
+  AT.set((HOVER.x - area.left) / area.width * 2 - 1, -(HOVER.y - area.top) / area.height * 2 + 1);
+  RAY.setFromCamera(AT, G.camera());
+  let best = null, nearest = Infinity;
+  for (const [id, figure] of ROAM.figures) {
+    const size = Math.max(0.5, figure.mesh.scale.x), middle = figure.mesh.getWorldPosition(MIDDLE);
+    BALL.set(middle, size);
+    if (!RAY.ray.intersectsSphere(BALL)) continue;
+    const off = RAY.ray.distanceToPoint(middle) / size;
+    if (off < nearest) { nearest = off; best = id; }
+  }
+  return (HOVER.id = best);
 }
 const easeOut = k => 1 + 2.4 * (k - 1) ** 3 + 1.4 * (k - 1) ** 2;  // overshoots a little, then settles
 /* Each frame: every working figure's bubble placed over its head, facing the camera, its tail's point at the head. */
 export function bubbles3d() {
   if (!G) return;
-  const camera = G.camera(), now = performance.now(), live = new Set();
+  const camera = G.camera(), now = performance.now(), live = new Set(), placed = [], under = figureUnder();
   for (const [id, figure] of ROAM.figures) {
-    const text = figure.stage === 'leaving' || figure.done ? '' : saying(figure);
+    const said = figure.stage === 'leaving' || figure.done ? null : saying(figure), text = said?.text || '';
     let bubble = BUBBLES.get(id);
     if (!text && !bubble) continue;
     bubble ||= made(id);
     live.add(id);
+    // a new line starts its time; the same line growing as it streams is drawn again but keeps its time, so no
+    // bubble stays up past web_bubble_seconds however long its agent talks
+    if (said && said.line !== bubble.line) { bubble.line = said.line; bubble.lineAt = now; }
     if (text && text !== bubble.text) draw(bubble, text);
-    // each line stays up web_bubble_seconds; the next line brings the bubble back
-    const shows = 1000 * (Number(WS.view()?.bubble_seconds) || 10);
-    const want = text && bubble.drawn && now - bubble.born < shows ? 1 : 0;
+    // a new line shows for web_bubble_seconds and goes; the pointer on the agent brings its last line back
+    const shows = 1000 * (Number(WS.view()?.bubble_seconds) || 5);
+    const fresh = text && now - bubble.lineAt < shows, hovered = under === id && bubble.text;
+    const want = bubble.drawn && (fresh || hovered) ? 1 : 0;
     bubble.shown += (want - bubble.shown) * (reduced() ? 1 : 0.18);
     const {mesh, drawn} = bubble;
     if (mesh.parent !== G.scene()) G.scene().add(mesh);  // a whole reload of the map makes a new scene
     mesh.visible = bubble.shown > 0.02 && Boolean(drawn) && figure.mesh.visible;
     if (!mesh.visible) continue;
     mesh.material.opacity = Math.min(1, bubble.shown);
-    const k = reduced() ? 1 : Math.min(1, (now - bubble.born) / LOOK.pop);
+    const k = reduced() ? 1 : Math.min(1, (now - bubble.lineAt) / LOOK.pop);
     const grow = 0.55 + 0.45 * easeOut(k);
-    const unit = LOOK.world * Math.max(0.5, figure.mesh.scale.x) * grow;
-    mesh.scale.set(drawn.width * unit, drawn.height * unit, 1);
     mesh.quaternion.copy(camera.quaternion);
     // the tail's point sits just above the figure's head: the plane's middle is moved from it by the point's offset
     eyeOf(figure.mesh, HEAD, GAZE);
     HEAD.y += LOOK.lift * figure.mesh.scale.x;
     HEAD.addScaledVector(SIDE.set(1, 0, 0).applyQuaternion(camera.quaternion), LOOK.aside * figure.mesh.scale.x);
+    // the same size on the screen at any distance: a world unit per screen pixel at the head's distance
+    const view = G.renderer().domElement.clientHeight || 1;
+    const pixel = 2 * HEAD.distanceTo(camera.position) * Math.tan(camera.fov * Math.PI / 360) / view;
+    const unit = LOOK.screen * pixel * grow;
+    mesh.scale.set(drawn.width * unit, drawn.height * unit, 1);
     SHIFT.set((drawn.width / 2 - drawn.tip[0]) * unit, (drawn.tip[1] - drawn.height / 2) * unit, 0)
       .applyQuaternion(camera.quaternion);
     mesh.position.copy(HEAD).add(SHIFT);
+    apart(mesh, camera, placed);  // never on top of another bubble
+    bubble.far = mesh.position.distanceTo(camera.position);
+    // the farther behind where the camera looks, the dimmer it is drawn, still solid: full brightness at that distance
+    // or nearer, fading toward a third; it is only see-through while it comes and goes
+    const focus = camera.position.distanceTo(G.controls().target) || bubble.far;
+    const depth = Math.max(LOOK.dimmest, Math.min(1, (focus / Math.max(1e-6, bubble.far)) ** 1.5));
+    mesh.material.color.setScalar(depth);
+    mesh.material.opacity = Math.min(1, bubble.shown);
     if (k < 1 || Math.abs(bubble.shown - want) > 0.02) wake3d(50);
   }
+  layer();
   for (const [id, bubble] of BUBBLES) {
     if (live.has(id)) continue;
     bubble.mesh.removeFromParent();

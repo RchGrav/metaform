@@ -96,6 +96,7 @@ from . import (
     glyph_of,
     group_options,
     handoff_parts,
+    holder,
     intake_id,
     intake_prompt,
     intake_store,
@@ -110,6 +111,7 @@ from . import (
     prompt,
     release,
     require_eligible,
+    resuming_path,
     runner_of,
     session_cost,
     session_state,
@@ -654,6 +656,12 @@ async def dispatch(ctx: Context) -> dict[str, Any]:
     except Stop:
         await asyncio.to_thread(given_back, store, work_id, ctx.nouns.get('reservation'))
         raise
+    if resume:  # a session a live runner holds is never resumed a second time, before its agent is even started
+        holds = (intake_store(store, work_id) or store) if intake_id(work_id) else store
+        pid = await asyncio.to_thread(holder, holds, work_id, resume, besides=os.getpid())
+        if pid is not None:
+            raise Stop(f'Session {resume} is held by its live runner, process {pid}, so it is not resumed again.',
+                       f'metaform dispatch sessions id={work_id}')
     resumed = await asyncio.to_thread(worked_in, store, work_id, resume) if resume else None
     if intake_id(work_id):  # an intake agent, VIEW-045: no ticket; its session lives in the metaform it began in
         held_in = await asyncio.to_thread(intake_store, store, work_id) or store
@@ -2845,6 +2853,8 @@ class Session:
                         tx.update('sessions', {'session_id': self.session_id},
                                   {key: row[key] for key in ('state', 'recovery', 'pid', 'port', 'token', 'how',
                                                              'runner', 'origin')})
+                        with contextlib.suppress(OSError):  # its row holds it now, not the file its start left
+                            resuming_path(str(self.session_id)).unlink()
                     else:
                         tx.insert('sessions', row)
                 if not self.prep:

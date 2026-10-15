@@ -198,6 +198,8 @@ function baseButtons() {
   const chosen = S.bases.find(item => item.id === $('#mf').value);
   $('#activateBase').disabled = !chosen || chosen.active;
   $('#removeBase').disabled = !chosen || chosen.active;
+  // with one base or none there is no other to activate or remove, so neither shows until a second base is added
+  $('#activateBase').hidden = $('#removeBase').hidden = S.bases.length < 2;
 }
 async function activateBase() {
   const chosen = S.bases.find(item => item.id === $('#mf').value);

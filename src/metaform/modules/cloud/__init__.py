@@ -264,4 +264,5 @@ MODULE = Module(
              effect='read'),
     ),
     subscriptions=(Subscription('web.started', web_started),),
+    settings_category='integrations',
 )

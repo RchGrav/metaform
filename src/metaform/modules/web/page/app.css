@@ -295,6 +295,11 @@ select option{background:var(--panel);color:var(--text)}
 .window.dialog{left:50%;top:max(8vh,var(--s5));transform:translateX(-50%);width:min(480px,calc(100vw - 2 * var(--s3)));
   max-height:calc(100vh - max(8vh,var(--s5)) - var(--s3))}
 .window.dialog.wide{width:min(760px,calc(100vw - 2 * var(--s3)))}
+/* Report a problem: the one line, the box for the project's files, what the file holds, and what was saved. */
+#report .reportfiles{display:flex;align-items:center;gap:var(--s2);color:var(--text)}
+#report .hint{margin:0;font-size:var(--t-sm)}
+#report .said{margin:0;color:var(--text);white-space:pre-line}
+#report .said:empty{display:none}
 /* The backdrop under a modal window: the page behind it is shown and cannot be used. */
 #scrim{position:fixed;inset:0;background:color-mix(in srgb,var(--ground) 55%,transparent);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
 /* The confirmation: what is asked, what is lost, what stays, and the two answers; the same everywhere. */
@@ -1192,6 +1197,54 @@ button.toolhead:hover{border-color:var(--control)}
 .emptystage small{color:var(--faint);font:var(--t-sm)/1.4 var(--sans)}
 .emptypanel{display:grid;gap:var(--s3);justify-items:start}
 
+/* The first screen, onboard/welcome.js: one sentence of what Metaform is and two large choices, over the whole page;
+ * while it shows, the workbench behind it and the chat are out of the way. */
+.welcome{position:fixed;inset:0;z-index:25;display:grid;place-items:center;overflow:auto;padding:var(--s5);
+  background:radial-gradient(ellipse at 50% 35%,color-mix(in srgb,var(--intake) 9%,var(--ground)),var(--ground) 70%)}
+.welcome .inner{display:grid;justify-items:center;gap:var(--s5);width:min(720px,100%);text-align:center}
+.welcome .brand{font-size:calc(30px * var(--ui));margin:0}
+.welcome h1{margin:0;max-width:600px;font:500 var(--t-xl)/1.45 var(--sans);color:var(--text)}
+.welcome .choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s4);width:100%}
+.welcome .choice{display:grid;justify-items:start;align-content:start;gap:var(--s2);min-height:150px;padding:var(--s5);text-align:left;cursor:pointer;
+  background:var(--panel);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r-lg);box-shadow:var(--lift-2);
+  transition:border-color var(--quick),background var(--quick)}
+.welcome .choice:hover:not(:disabled),.welcome .choice:focus-visible{border-color:var(--signal);background:var(--panel-2)}
+.welcome .choice:disabled{cursor:progress;opacity:.7}
+.welcome .choice .i{width:24px;height:24px;color:var(--signal)}
+.welcome .choice b{font:600 var(--t-lg)/1.3 var(--sans)}
+.welcome .choice span{font:var(--t-base)/1.5 var(--sans);color:var(--muted)}
+.welcome .picker{display:grid;gap:var(--s3);width:100%;text-align:left;padding:var(--s4);background:var(--panel);border:1px solid var(--line-2);border-radius:var(--r-lg)}
+.welcome .pickhead{display:grid;gap:var(--s1)}
+.welcome .pickhead .at{font:var(--t-sm)/1.4 var(--mono);color:var(--muted);overflow-wrap:anywhere}
+.welcome .folders{display:grid;align-content:start;gap:1px;max-height:min(46vh,420px);overflow:auto;border:1px solid var(--line);border-radius:var(--r)}
+.welcome .folders button{display:flex;gap:var(--s2);align-items:baseline;padding:var(--s2) var(--s3);text-align:left;cursor:pointer;
+  background:transparent;color:var(--text);border:0;font:var(--t-base)/1.3 var(--sans)}
+.welcome .folders button:hover,.welcome .folders button:focus-visible{background:var(--panel-2)}
+.welcome .folders small{color:var(--faint)}
+.welcome .folders .none{margin:0;padding:var(--s3);color:var(--muted)}
+.welcome .acts{display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center}
+.welcome .grow,.hintcard .grow{flex:1}
+.welcome .failed{display:grid;gap:var(--s1);width:100%;padding:var(--s3) var(--s4);text-align:left;border-radius:var(--r);
+  border:1px solid color-mix(in srgb,var(--danger) 60%,transparent);background:color-mix(in srgb,var(--danger) 8%,var(--panel))}
+.welcome .failed code{font:var(--t-sm) var(--mono)}
+.linkish{background:none;border:0;padding:var(--s1);color:var(--muted);font:var(--t-sm) var(--sans);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.linkish:hover{color:var(--text)}
+html.welcoming .app,html.welcoming #dock,html.welcoming #reviewNotice,html.welcoming .voice-wake,
+html.welcoming .mascot-bubble,html.welcoming .mascot-card,html.welcoming .toast{visibility:hidden}
+@media (max-width:640px){.welcome .choices{grid-template-columns:minmax(0,1fr)}}
+
+/* A first-run hint, onboard/hints.js: one small card at a time beside what it is about. */
+.hintcard{position:fixed;z-index:950;width:min(320px,calc(100vw - 2 * var(--s3)));display:grid;gap:var(--s2);padding:var(--s3) var(--s4);
+  background:var(--panel);color:var(--text);border:1px solid var(--signal);border-radius:var(--r-lg);box-shadow:var(--lift-3)}
+.hintcard .text{margin:0;font:var(--t-base)/1.5 var(--sans)}
+.hintcard .acts{display:flex;align-items:center;gap:var(--s2)}
+.hintcard .tipno{font:var(--t-xs) var(--sans);color:var(--faint)}
+/* The workbench's controls, quiet until the person first reaches for them: every one is there, at a lower voice, and
+ * comes up at the pointer or the keyboard; once used, its region speaks as usual for good. */
+html.quiet-header header > :not(.brand):not(.proj):not(.searchbtn),html.quiet-tabs aside .tabs{opacity:.42;transition:opacity var(--dur-1) var(--ease)}
+html.quiet-header header > :hover,html.quiet-header header > :focus-within,html.quiet-tabs aside .tabs:hover,
+html.quiet-tabs aside .tabs:focus-within{opacity:1}
+
 /* The build panel: the four builds as large choices, then what the chosen one takes, one Build, and its run. */
 .buildpanel{width:min(860px,calc(100vw - 2 * var(--s3)))!important}
 .buildpanel > .body{gap:var(--s4);grid-template-columns:minmax(0,1fr)}
@@ -1453,6 +1506,15 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
 .mascot-card .x{all:unset;cursor:pointer;width:22px;height:22px;text-align:center;border-radius:6px;color:var(--muted)}
 .mascot-card .x:hover{background:var(--control);color:var(--text)}
 @media (prefers-reduced-motion: reduce){.mascot-bubble,.mascot-card{transition:none}}
+/* The next step once an intake the page followed finishes, intake.js `offerNext`: one card at the top of the map. */
+.nextcard{position:fixed;z-index:40;left:50%;top:calc(64px + var(--s4));transform:translateX(-50%);display:grid;gap:var(--s2);
+  width:min(440px,calc(100vw - 2 * var(--s3)));padding:var(--s3) var(--s4);background:var(--panel);color:var(--text);
+  border:1px solid var(--signal);border-radius:var(--r-lg);box-shadow:var(--lift-3)}
+.nextcard .text{margin:0;font:500 var(--t-base)/1.5 var(--sans);padding-right:var(--s4)}
+.nextcard .acts{display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center}
+.nextcard .x{all:unset;position:absolute;right:var(--s2);top:var(--s2);cursor:pointer;width:22px;height:22px;text-align:center;
+  border-radius:6px;color:var(--muted)}
+.nextcard .x:hover{background:var(--control);color:var(--text)}
 /* Scissors out on the 3D map, `CUT`: the pointer is a pair of scissors. */
 #stage.scissors canvas{cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23f5f7fa' stroke-width='1.8' stroke-linecap='round'%3E%3Ccircle cx='6' cy='6' r='3'/%3E%3Ccircle cx='6' cy='18' r='3'/%3E%3Cpath d='M8.1 8.1 20 20M8.1 15.9 20 4'/%3E%3C/svg%3E") 12 12,crosshair}
 /* the met sign, drawn on the screen over the map where the sign in the scene would be, VIEW-005 */
@@ -1470,56 +1532,102 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
 #settingsbox .menu-field input[type=checkbox]{flex:none;margin-right:calc(158px - 18px)}
 #settingsbox .label:not(:first-child){margin-top:var(--s1);border-top:1px solid var(--line);padding-top:var(--s3)}
 
-/* The settings screen: the modules, then each group's settings, one row each: what it is and its state, its control,
- * Glue and Reset, a checklist under it when it takes one, and a refusal under that. */
-.settingspanel{width:min(860px,calc(100vw - 2 * var(--s3)))!important}
-.settingspanel > .body{gap:var(--s4);grid-template-columns:minmax(0,1fr)}
-.settingspanel > .bar .search{flex:0 1 240px;min-width:120px;height:var(--ctl-sm);min-height:0;font-size:var(--t-sm)}
-.settingspanel .hint{margin:0}
+/* The settings screen, as an app's settings are: the categories down the side and the one chosen on the right, the
+ * only part that scrolls, at a comfortable size, never the whole screen. Headings are the View menu's: small, faint
+ * capitals. Each row is what it is (its label, its state and one line of help) on the left, its control in one
+ * column of one width, and Reset beside it, so every control lines up; a checklist, a choice's words and a refusal go
+ * under the row. */
+.settingspanel{width:min(1000px,calc(100vw - 2 * var(--s3)))!important;height:min(720px,calc(100vh - 2 * var(--s3)))}
+.settingspanel > .bar .search{flex:0 1 260px;min-width:120px;height:var(--ctl-sm);min-height:0;font-size:var(--t-sm)}
+.settingspanel > .body{display:block;flex:1;padding:0;overflow:hidden;container-type:inline-size}
 /* The configuration surfaces always open at the window's right edge, just below the header, at their own width,
  * whichever side the side column is on, whichever map is large, and wherever the workspace's panes stand; a phone keeps
  * its sheets. `--head-bottom` is where the header ends, kept by the page. */
 @media (min-width:821px){
   #settings.settingspanel:not(.docked){left:auto!important;right:var(--s3)!important;top:calc(var(--head-bottom,60px) + var(--s2))!important;
-    transform:none!important;max-height:calc(100vh - var(--head-bottom,60px) - 2 * var(--s2))}
+    transform:none!important;height:min(720px,calc(100vh - var(--head-bottom,60px) - 2 * var(--s2)));
+    max-height:calc(100vh - var(--head-bottom,60px) - 2 * var(--s2))}
   #settingsbox{position:fixed;left:auto;right:var(--s3);top:calc(var(--head-bottom,60px) + 6px)}
 }
-.setpicker{position:relative;display:flex;align-items:center;gap:var(--s2);margin-bottom:var(--s2)}
-.setpicker .btn{display:inline-flex;align-items:center;gap:var(--s2);font-weight:600}
-.setcount{color:var(--muted);font-weight:400;font-variant-numeric:tabular-nums}
-.setpages{position:absolute;top:100%;left:0;z-index:5;display:grid;min-width:220px;max-height:60vh;overflow:auto;
-  margin-top:4px;padding:4px;background:var(--panel);border:1px solid var(--line);border-radius:8px;
-  box-shadow:0 8px 24px rgba(0,0,0,.35)}
-.setpages button{display:flex;justify-content:space-between;gap:var(--s3);padding:6px 10px;border:0;border-radius:6px;
-  background:none;color:var(--text);font:inherit;text-align:left;cursor:pointer}
-.setpages button:hover,.setpages button:focus-visible,.setpages button[aria-selected="true"]{background:var(--panel-2)}
+.setframe{display:grid;grid-template-columns:196px minmax(0,1fr);height:100%;min-height:0}
+.setside{display:flex;flex-direction:column;gap:2px;padding:var(--s3) var(--s2);border-right:1px solid var(--line);
+  overflow:auto;min-height:0}
+.setside button{display:flex;align-items:center;justify-content:space-between;gap:var(--s2);flex:none;height:var(--ctl);
+  padding:0 var(--s3);border:0;border-radius:var(--r);background:none;color:var(--muted);font:500 var(--t-md)/1 var(--sans);
+  text-align:left;cursor:pointer}
+.setside button:hover:not(:disabled){background:var(--panel-2);color:var(--text)}
+.setside button[aria-current="page"]{background:var(--panel-2);color:var(--text);box-shadow:inset 2px 0 0 var(--signal)}
+.setside button.under{padding-left:calc(var(--s3) + var(--s4));font-size:var(--t-sm)}
+.setside button:disabled{opacity:.4;cursor:default}
+.setcount{color:var(--faint);font-weight:400;font-variant-numeric:tabular-nums}
+.setmain{display:grid;align-content:start;gap:var(--s4);height:100%;min-height:0;overflow:auto;padding:var(--s4) var(--s5)}
+.sethead h2{margin:0;font:600 var(--t-lg)/1.3 var(--sans);color:var(--text)}
+.sethead p{margin:2px 0 0;font:var(--t-sm)/1.45 var(--sans);color:var(--muted)}
+.setmain .hint{margin:0}
+.setmain .hint.folder code{font:var(--t-sm)/1.3 var(--mono);color:var(--text)}
 .setgroup{display:grid;gap:var(--s2);grid-template-columns:minmax(0,1fr)}
-.setgroup .head{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--s1) var(--s3)}
-.setgroup h3{margin:0;font:600 var(--t-base)/1.3 var(--sans);color:var(--text)}
-.setlist{display:grid;gap:2px;padding:2px;border:1px solid var(--line);border-radius:var(--r);background:var(--ground)}
-.setrow{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:var(--s2) var(--s3);padding:var(--s2) var(--s3);
-  border-radius:var(--r);color:var(--text)}
-.setrow:hover,.setrow:focus-within{background:var(--panel-2)}
-.setrow .what{display:grid;gap:2px;min-width:0}
-.setrow .name{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s1) var(--s2);font:500 var(--t-md)/1.35 var(--sans)}
-.setrow .name code{font:var(--t-xs)/1.3 var(--mono);color:var(--faint)}
-.setrow .name code.id{font:500 var(--t-md)/1.3 var(--mono);color:var(--text)}
-.setrow .help{font:var(--t-sm)/1.45 var(--sans);color:var(--muted)}
-.setrow details{font:var(--t-sm)/1.45 var(--sans);color:var(--faint)}
-.setrow details summary{cursor:pointer;width:max-content}
-.setrow details p{margin:var(--s1) 0 0}
-.setrow .control{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:var(--s1) var(--s2)}
-.setrow .control :where(input[type=text],select){width:220px;max-width:100%}
-.setrow .control input[type=number]{width:104px}
-.setrow .control textarea{width:420px;max-width:100%;resize:vertical;white-space:pre;overflow-x:auto}
-.setrow .checks{grid-column:1 / -1;display:flex;flex-wrap:wrap;align-items:center;gap:var(--s1) var(--s4)}
+.setgroup h3{margin:0;font:600 var(--t-xs)/1.2 var(--sans);color:var(--faint);letter-spacing:.06em;text-transform:uppercase}
+.setgroup h3 .tocat{font:inherit;letter-spacing:inherit;text-transform:inherit}
+details.setgroup > summary{display:flex;align-items:center;gap:var(--s2);width:max-content;cursor:pointer;list-style:none}
+details.setgroup > summary::-webkit-details-marker{display:none}
+details.setgroup > summary::before{content:"";width:6px;height:6px;border:solid var(--faint);border-width:0 1.5px 1.5px 0;
+  transform:rotate(-45deg);transition:transform var(--dur-1) var(--ease)}
+details.setgroup[open] > summary::before{transform:rotate(45deg)}
+.setlist{display:grid;border:1px solid var(--line);border-radius:var(--r);background:var(--ground)}
+.setrow{display:grid;grid-template-columns:minmax(0,1fr) 232px 60px;align-items:center;column-gap:var(--s3);row-gap:var(--s1);
+  padding:var(--s2) var(--s3);border-top:1px solid var(--line);color:var(--text)}
+.setlist > .setrow:first-child{border-top:0}
+.setrow:hover,.setrow:focus-within{background:color-mix(in srgb,var(--panel-2) 60%,transparent)}
+.setrow.found{background:color-mix(in srgb,var(--signal) 12%,transparent)}
+.setrow.risky{box-shadow:inset 3px 0 0 var(--missing)}
+.setrow .what{display:grid;gap:1px;min-width:0}
+.setrow .name{display:flex;align-items:center;gap:var(--s2);min-width:0;font:500 var(--t-md)/1.35 var(--sans)}
+.setrow .name .label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.setrow .name button.label{padding:0;border:0;background:none;color:inherit;font:inherit;cursor:pointer;
+  text-decoration:underline dotted var(--faint);text-underline-offset:3px}
+.setrow .name code.id{font:500 var(--t-md)/1.3 var(--mono);color:var(--text);flex:none;min-width:9ch}
+.setrow .badge{flex:none}
+.setrow .helpline{display:flex;align-items:baseline;gap:var(--s2);min-width:0}
+.setrow .help{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:var(--t-sm)/1.4 var(--sans);color:var(--muted)}
+.setrow .name .help{flex:1}
+.setrow .tocat,.setgroup .tocat{flex:none;padding:0;border:0;background:none;color:var(--signal);font:500 var(--t-sm)/1.4 var(--sans);
+  cursor:pointer;white-space:nowrap}
+.setrow .morebtn{flex:none;margin-left:auto;padding:0 2px;border:0;background:none;color:var(--faint);font:var(--t-xs)/1.2 var(--sans);
+  cursor:pointer}
+.setrow .morebtn:hover,.setrow .morebtn[aria-expanded="true"]{color:var(--text)}
+.setrow .morebox{font:var(--t-sm)/1.45 var(--sans);color:var(--muted)}
+.setrow .morebox p{margin:var(--s1) 0 0}
+.setrow .morebox code{font:var(--t-xs)/1.3 var(--mono);color:var(--faint)}
+.setrow .morebox .glue{margin-left:var(--s2)}
+.setrow .control{grid-column:2 / 4;display:grid;grid-template-columns:232px 60px;align-items:center;column-gap:var(--s3)}
+.setrow .control > :not(.reset){grid-column:1;min-width:0}
+.setrow .control > .reset{grid-column:2;justify-self:start}
+.setrow .control :where(select,input[type=text],textarea){width:100%}
+.setrow .control input[type=number]{width:96px}
+.setrow .control textarea{resize:vertical;white-space:pre;overflow-x:auto}
+.setrow .pair{display:flex;align-items:center;gap:var(--s2);min-width:0}
+.setrow .pair select{flex:1;min-width:0}
+.setrow .unit{font:var(--t-sm)/1.2 var(--sans);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.setrow > .hint,.setrow .checks,.setrow .setfail{grid-column:1 / -1}
+.setrow > .hint{font:var(--t-sm)/1.45 var(--sans);color:var(--muted)}
+.setrow .checks{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s1) var(--s4)}
 .setrow .checks code{font:var(--t-sm)/1.3 var(--mono)}
-.setrow .setfail{grid-column:1 / -1;padding:var(--s2) var(--s3);font-size:var(--t-sm)}
+.setrow .setfail{padding:var(--s2) var(--s3);font-size:var(--t-sm)}
+.setrow.module{padding-block:6px}
 .setrow.module:has(input:not(:checked)) .id{color:var(--muted)}
 .setrow .badge.warn{padding:0 6px;border-radius:var(--r-pill);background:color-mix(in srgb,var(--missing) 10%,transparent)}  /* a badge, not a warning panel */
-@media (max-width:640px){
+.setlist.essentials .setrow{padding-block:6px}
+.setmain .empty{margin:0;color:var(--muted)}
+/* narrow, as a docked pane or a small window: the categories across the top and each control under what it is */
+@container (max-width:640px){
+  .setframe{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
+  .setside{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line)}
+  .setside button.under{padding-left:var(--s3)}
+  .setmain{padding:var(--s3)}
   .setrow{grid-template-columns:minmax(0,1fr)}
-  .setrow .control{justify-content:flex-start}
+  .setrow .control{grid-column:1;grid-template-columns:minmax(0,232px) auto}
+}
+@media (max-width:640px){
   .settingspanel > .bar .search{flex-basis:140px}
 }
 
@@ -2234,3 +2342,12 @@ body > *{transition:opacity .28s var(--ease-arrive, ease-out)}
 .agent-session time{color:var(--faint)}
 .agent-session > button{flex:none}
 
+/* The demo's card, `metaform demo`, CLI-042: small, in a lower corner, over the map and out of its way. */
+.demo-card{position:fixed;left:var(--s3,16px);bottom:var(--s3,16px);z-index:40;max-width:min(420px,calc(100vw - 32px));
+  padding:var(--s2,10px) var(--s3,14px);background:color-mix(in srgb,var(--panel) 88%,transparent);color:var(--text);
+  border:1px solid var(--line-2);border-radius:8px;font-size:var(--t-sm,13px);line-height:1.45;
+  box-shadow:0 6px 24px rgb(0 0 0 / 0.35)}
+.demo-card p{margin:0 1.6em var(--s1,6px) 0}
+.demo-card .demo-close{position:absolute;top:4px;right:4px}
+.demo-card .demo-next{display:grid;gap:var(--s1,6px);margin-top:var(--s1,6px)}
+.demo-card .demo-step>span{display:block;color:var(--muted);margin-bottom:2px}

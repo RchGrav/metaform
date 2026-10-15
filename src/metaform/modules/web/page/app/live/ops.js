@@ -270,7 +270,8 @@ export function listen() {
   const source = STREAM = new EventSource(`/api/events?project=${encodeURIComponent(S.project || '')}`);
   source.onmessage = heard;
   source.onopen = () => {
-    recordingNow().catch(error => toast(error.message));
+    // with no project there is nothing being recorded here to read; an intake elsewhere is heard as it starts
+    if (S.project) recordingNow().catch(error => toast(error.message));
     agentsChanged();
   };
 }

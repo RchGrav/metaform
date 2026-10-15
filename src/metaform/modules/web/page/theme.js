@@ -13,3 +13,21 @@ try {
  * whatever happens. */
 document.documentElement.classList.add('booting');
 setTimeout(() => document.documentElement.classList.remove('booting'), 4000);
+/* The page's console errors since it opened, kept for a tester's problem report (Report a problem, in the View
+ * menu): the last 200 errors logged, uncaught exceptions, refused promises and files that failed to load. They stay in
+ * this page; only a report the tester makes holds them. */
+window.METAFORM_CONSOLE = [];
+(() => {
+  const kept = window.METAFORM_CONSOLE;
+  const keep = text => { kept.push(`${new Date().toISOString()} ${text}`); if (kept.length > 200) kept.shift(); };
+  const said = part => part instanceof Error ? part.stack || String(part)
+    : typeof part === 'object' && part !== null ? (() => { try { return JSON.stringify(part); } catch { return String(part); } })()
+    : String(part);
+  const logged = console.error.bind(console);
+  console.error = (...parts) => { keep(parts.map(said).join(' ')); logged(...parts); };
+  addEventListener('error', event => {
+    if (event.target && event.target !== window) keep(`Failed to load ${event.target.src || event.target.href || event.target.tagName}`);
+    else keep(`${event.error?.stack || event.message} at ${event.filename}:${event.lineno}:${event.colno}`);
+  }, true);
+  addEventListener('unhandledrejection', event => keep(`Unhandled rejection: ${said(event.reason)}`));
+})();

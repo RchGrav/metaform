@@ -1,5 +1,5 @@
 /* The developer level, the workspace's toolbar, panes and their places, window.metaform's workspace reads, and main. */
-import '/page/app/loading/load.js';  // the part before runs first, so the parts run in the page's order
+import '/page/app/onboard/hints.js';  // the part before runs first, so the parts run in the page's order
 // The graph, glass and figures share the import map's one local Three.js runtime, VIEW-003 and VIEW-025.
 import * as THREE from 'three';
 // The toolbar, the panes and their places, and the views the page draws only as panes.
@@ -43,6 +43,7 @@ import {INTAKE, openIntakeChat, openIntake} from '/page/app/intake/intake.js';
 import {BUILD} from '/page/app/build/build.js';
 import {listen} from '/page/app/live/ops.js';
 import {loadProject} from '/page/app/loading/load.js';
+import {drawWelcome} from '/page/app/onboard/welcome.js';
 
 /* ---------- the developer level: browser-console detail and traces, only with metaform web start --web-debug
  * ---------- Off, the default, logs nothing and keeps no trace. info logs each read and write of the page and keeps
@@ -303,6 +304,7 @@ export async function main() {
   if (!S.projects.length) {
     fill($('#p-object'),
       h('p', {class: 'empty'}, 'No project is registered. Register one with: metaform add project <id> <path>'));
+    drawWelcome(!FRAMED);  // the first screen: what this is, and the demo or a project of one's own
     listen();  // still hears what modules publish: an intake started in a project registered later takes the page there
     revealed();
     return;

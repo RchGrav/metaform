@@ -134,20 +134,30 @@ async function resetAgents(event) {
 }
 $('#resetAgentsBtn').onclick = resetAgents;
 /* ---------- the settings screen ----------
- * Every setting of the project's folder, as metaform config shows them, and every module with whether it is on. The
- * modules come first, each switched on or off as metaform enable and disable do, with the modules setting under them
- * as the modules this folder shows; then the chassis's settings and each module's. A setting reads with its label, its
- * help, its state (default, set or glued), Glue and Reset, and takes the control its kind needs: a switch, a number, a
- * list of its choices, a checklist, or text, a list as its items one per line. A change is saved as it is made,
- * through metaform set and unset in the project's folder, so it is checked as the command line checks it, and a
- * refusal is said under the setting with its next step. Left and Right change a switch or a choice, as on the
- * terminal's settings screen. */
-const CONFIG = {data: null, filter: '', errors: new Map(), page: keptPage(), flyout: false};
+ * Every setting of the project's folder, as metaform config shows them, and every module with whether it is on, laid
+ * out as an app's settings are: the categories down the side and the one chosen on the right, the only part that
+ * scrolls. It opens on Essentials, one short page of what a person needs to set Metaform up and run it day to day, the
+ * settings declared `essential` in their order with the colour theme, the voice, the phone's check and the project
+ * folder among them; then each category a setting declares, or its module's, with its settings under small headings;
+ * Advanced, everything rarely changed, each module folded; and Modules last, under Advanced, each switched on or off
+ * as metaform enable and disable do. Find a setting searches every category, and Enter goes to the first found.
+ * A setting reads with its label in plain words, one line of help, whether it is set here, inherited and from where,
+ * or the default, and whether only the person sets it; its key and the rest of its help are under More. It takes the
+ * control its kind needs: a switch, a list of its choices, a number with its unit, a checklist, or text, a list as its
+ * items one per line. A change is saved as it is made, through metaform set and unset in the project's folder, so it
+ * is checked as the command line checks it, and a refusal is said under the setting with its next step; a risky choice
+ * is marked and asked once before it is stored. The screen reads again whenever a setting changes elsewhere, so it
+ * never shows a value that no longer holds. Left and Right change a switch or a choice, as on the terminal's settings
+ * screen. */
+const CONFIG = {data: null, filter: '', errors: new Map(), page: 'essentials', folded: new Map(), saving: 0,
+  again: false, reading: null, found: null, phone: null, voices: null, more: new Set()};
 const SHOWN_MODULES = 'modules';  // the chassis setting shown with the modules: which of them this folder shows
+const LONG_PAGE = 10;  // a page with more settings than this opens its first heading and folds the rest
 export async function openSettings() {
   showAgentMenu(false);
   $('#settingsbox').hidden = true;
   if (!S.project) return toast('Choose a project first: the settings shown are those of its folder.');
+  CONFIG.page = 'essentials';  // it always opens on Essentials, never on Modules
   if (WS.reveal('settings')) return;  // a pane in the workspace: it shows there and reads as it shows
   await showSettings();
 }
@@ -166,6 +176,15 @@ async function readSettings() {
   } catch (error) { fill($('#settings .body'), refusalBox(error.body || {error: error.message})); return; }
   renderSettings();
 }
+/* A setting changed elsewhere, from the command line, an agent or another page: the screen reads again once its own
+ * saves are in, so a control never acts on a value that no longer holds. */
+function settingsHeard() {
+  if ($('#settings').hidden || !CONFIG.data || !S.project) return;
+  if (CONFIG.saving) { CONFIG.again = true; return; }
+  clearTimeout(CONFIG.reading);
+  CONFIG.reading = setTimeout(readSettings, 150);
+}
+document.addEventListener('metaform:settings', settingsHeard);
 /* A refusal in place: what was refused and the next step, as the command line says them. */
 export function refusalBox(body) {
   return h('div', {class: 'failed setfail', role: 'alert'}, h('p', {}, body.error || 'It was not saved.'),
@@ -184,96 +203,279 @@ function renderSettings() {
   if (!data) return;
   const body = $('#settings .body');
   const focused = document.activeElement?.closest?.('#settings .body [data-focus]')?.dataset.focus;
-  const scroll = body.scrollTop;
-  const sections = settingsSections(data);
-  if (sections.length === 1) sections.push(h('p', {class: 'empty'}, `No setting matches ${CONFIG.filter.trim()}.`));
-  fill(body, sections);
-  body.scrollTop = scroll;
+  const scroll = body.querySelector('.setmain')?.scrollTop || 0;
+  const searching = Boolean(CONFIG.filter.trim());
+  const pages = settingsPages(data);
+  if (!pages.some(one => one.name === CONFIG.page)) CONFIG.page = 'essentials';
+  const main = h('div', {class: 'setmain', role: 'region', 'aria-label': 'Settings'},
+    searching ? searchPage(data, pages) : pageOf(data, pages.find(one => one.name === CONFIG.page)));
+  fill(body, h('div', {class: 'setframe'}, sidebar(pages, searching), main));
+  main.scrollTop = scroll;
   if (focused) body.querySelector(`[data-focus="${CSS.escape(focused)}"]`)?.focus({preventScroll: true});
+  if (CONFIG.found) reveal(CONFIG.found);
 }
-/* The screen is one page at a time, VIEW-023: the modules' on and off switches, the chassis's settings, or one module's,
- * chosen from a flyout list at its top, since every setting in one long list was hard to find a way through. The list
- * names each page with how many settings it holds, or, while Find a setting has words, how many of them match, and
- * leaves out pages with none; the page open is kept when it still has a match, else the first that does. The page
- * chosen is remembered in this browser. */
-function keptPage() {
-  try { return localStorage.getItem('metaform.settingsPage') || 'modules'; } catch { return 'modules'; }
-}
-function keepPage(page) {
-  CONFIG.page = page;
-  try { localStorage.setItem('metaform.settingsPage', page); } catch { /* storage can be blocked: not kept */ }
-}
-function settingsSections(data) {
-  const query = CONFIG.filter.trim().toLowerCase();
-  const matches = (...texts) => !query || texts.some(text => String(text || '').toLowerCase().includes(query));
+/* ---------- pages ----------
+ * Essentials, then each category in the order the declarations give, then Advanced, and Modules last under it. A
+ * category with no setting here is left out; Essentials, General and Modules always show. */
+function settingsPages(data) {
+  const shown = data.settings.filter(row => row.key !== SHOWN_MODULES || row.owner !== 'chassis');
+  const pages = [{name: 'essentials', title: 'Essentials', about: 'What Metaform needs to be set up and run day to '
+    + 'day. Each links to its whole page.', rows: shown.filter(row => row.essential > 0)}];
+  for (const category of data.categories || []) {
+    const rows = shown.filter(row => (row.category || 'advanced') === category.name);
+    if (rows.length || category.name === 'general') pages.push({...category, rows});
+  }
   const shownRow = data.settings.find(row => row.key === SHOWN_MODULES && row.owner === 'chassis');
-  const sections = [h('p', {class: 'hint'}, `The settings of ${S.project}, kept for ${data.folder}. A folder setting `
-    + 'applies to this folder and every folder below it; a global one applies everywhere. They are the settings '
-    + 'metaform config shows, and each change is saved as metaform set saves it.')];
-  const pages = settingsPages(data, matches, shownRow);
-  if (!pages.length) return sections;
-  const page = pages.find(one => one.id === CONFIG.page) || pages[0];
-  sections.splice(0, 0, pagePicker(pages, page));
-  sections.push(setGroup(page.title, page.about, page.parts));
-  return sections;
-}
-/* Every page the filter leaves: Modules first, then the chassis, then each module that has settings. */
-function settingsPages(data, matches, shownRow) {
-  const pages = [];
-  const modules = data.modules.filter(module => matches(module.id, module.summary, module.problem))
-    .sort((one, two) => one.id.localeCompare(two.id));
-  const shown = shownRow && matches(shownRow.key, shownRow.help, 'Modules shown in this folder');
-  const moduleParts = [data.modules_refused ? refusalBox(data.modules_refused) : null,
-    modules.length ? h('div', {class: 'setlist'}, modules.map(moduleRow)) : null,
-    shown ? h('div', {class: 'setlist'}, settingRow(shownRow, 'Modules shown in this folder')) : null].filter(Boolean);
-  if (moduleParts.length) {
-    pages.push({id: 'modules', title: 'Modules', count: modules.length + (shown ? 1 : 0), parts: moduleParts,
-      about: 'On or off for every project, as metaform enable and disable turn them. A module turned off keeps its '
-        + 'settings.'});
-  }
-  // the modules in alphabetical order after the chassis, and each page's settings by the name they show under
-  const named = row => String(row.label || row.key).toLowerCase();
-  const others = [...new Set([...data.modules.map(module => module.id), ...data.settings.map(row => row.owner)])]
-    .filter(owner => owner !== 'chassis').sort();
-  for (const owner of ['chassis', ...others]) {
-    const own = data.settings.filter(row => row.owner === owner && row !== shownRow
-      && matches(row.key, row.label, row.help, row.details)).sort((one, two) => named(one).localeCompare(named(two)));
-    if (!own.length) continue;
-    const about = owner === 'chassis' ? 'Settings of the chassis itself.'
-      : data.modules.find(module => module.id === owner)?.summary || '';
-    // a setting with a section sits under its heading, such as Agent options · Claude Code, after the others
-    const top = own.filter(row => !row.section);
-    const sections = [...new Set(own.map(row => row.section).filter(Boolean))].sort();
-    pages.push({id: owner, title: owner === 'chassis' ? 'Chassis' : owner, about, count: own.length,
-      parts: [top.length ? h('div', {class: 'setlist'}, top.map(row => settingRow(row))) : null,
-        ...sections.map(section => setGroup(section.split('/').join(' · '), '',
-          h('div', {class: 'setlist'}, own.filter(row => row.section === section).map(row => settingRow(row)))))]
-        .filter(Boolean)});
-  }
+  pages.push({name: 'modules', title: 'Modules', under: 'advanced', rows: shownRow ? [shownRow] : [],
+    about: 'On or off for every project, as metaform enable and disable turn them. A module turned off keeps its '
+      + 'settings.'});
   return pages;
 }
-/* The button naming the page open, and the flyout list of pages it opens; Escape or a choice closes the list. */
-function pagePicker(pages, page) {
-  const choose = one => { keepPage(one.id); CONFIG.flyout = false; renderSettings(); };
-  const list = CONFIG.flyout ? h('div', {class: 'setpages', role: 'listbox', 'aria-label': 'Settings pages'},
-    pages.map(one => h('button', {type: 'button', role: 'option', 'aria-selected': String(one.id === page.id),
-      'data-focus': `page:${one.id}`, onclick: () => choose(one)},
-    h('span', {}, one.title), h('span', {class: 'setcount'}, String(one.count))))) : null;
-  const toggle = () => { CONFIG.flyout = !CONFIG.flyout; renderSettings(); };
-  const shut = event => {
-    if (event.key !== 'Escape' || !CONFIG.flyout) return;
-    event.stopPropagation();
-    CONFIG.flyout = false;
-    renderSettings();
+function sidebar(pages, searching) {
+  const words = CONFIG.filter.trim().toLowerCase();
+  const go = page => { CONFIG.page = page.name; CONFIG.filter = ''; $('#settings .search').value = ''; renderSettings();
+    $('#settings .setmain')?.scrollTo({top: 0}); };
+  const keys = event => {  // Up and Down move between the categories
+    if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+    event.preventDefault();
+    const all = [...event.currentTarget.querySelectorAll('button')];
+    all[(all.indexOf(document.activeElement) + (event.key === 'ArrowDown' ? 1 : all.length - 1)) % all.length]
+      ?.focus();
   };
-  return h('div', {class: 'setpicker', 'data-own-escape': String(CONFIG.flyout), onkeydown: shut},
-    h('button', {type: 'button', class: 'btn sm', 'aria-haspopup': 'listbox', 'aria-expanded': String(CONFIG.flyout),
-      'data-focus': 'page-picker', onclick: toggle},
-    h('span', {}, page.title), h('span', {class: 'setcount'}, String(page.count)), h('i', {class: 'i i-chev',
-      'aria-hidden': 'true'})), list);
+  return h('nav', {class: 'setside', 'aria-label': 'Settings categories', onkeydown: keys},
+    pages.map(page => {
+      const count = searching ? matchesOf(page, words).length : null;
+      return h('button', {type: 'button', class: page.under ? 'under' : null, 'data-page': page.name,
+        'data-focus': `page:${page.name}`, 'aria-current': !searching && page.name === CONFIG.page ? 'page' : null,
+        disabled: searching && !count, onclick: () => go(page)},
+      h('span', {}, page.title), searching ? h('span', {class: 'setcount'}, String(count)) : null);
+    }));
 }
-const setGroup = (title, about, kids) => h('section', {class: 'setgroup'},
-  h('div', {class: 'head'}, h('h3', {}, title), about ? h('span', {class: 'hint'}, about) : null), kids);
+function pageHead(page) {
+  return h('header', {class: 'sethead'}, h('h2', {}, page.title), page.about ? h('p', {}, page.about) : null);
+}
+function pageOf(data, page) {
+  if (page.name === 'essentials') return essentialsPage(data, page);
+  if (page.name === 'modules') return modulesPage(data, page);
+  const parts = [pageHead(page)];
+  if (page.name === 'general') parts.push(generalPart(data));
+  parts.push(...headed(page, page.rows, {folded: page.name === 'advanced'}));
+  return parts;
+}
+/* A page's settings under their headings: a setting's section, less a first heading that is the page's own name, or
+ * else its module's name. Headings holding an essential setting come first, then the modules' in their order, then
+ * the chassis's. On Advanced each heading is folded until opened; on a long page the first is open and the rest
+ * folded; the person's own opening and folding is kept while the page is open. */
+function headed(page, rows, {folded = false} = {}) {
+  const groups = new Map();
+  rows.forEach((row, index) => {
+    const title = headingOf(row, page);
+    const group = groups.get(title) || {title, rows: [], first: index, essential: Infinity, chassis: true};
+    group.rows.push(row);
+    group.essential = Math.min(group.essential, row.essential > 0 ? row.essential : Infinity);
+    group.chassis = group.chassis && row.owner === 'chassis';
+    groups.set(title, group);
+  });
+  const ordered = [...groups.values()].sort((one, two) => one.essential - two.essential
+    || Number(one.chassis) - Number(two.chassis) || one.first - two.first);
+  const long = rows.length > LONG_PAGE;
+  return ordered.map((group, index) => {
+    const id = `${page.name}/${group.title}`;
+    const open = CONFIG.folded.has(id) ? CONFIG.folded.get(id) : !(folded || (long && index > 0));
+    const list = h('div', {class: 'setlist'}, group.rows.map(row => settingRow(row)));
+    if (!folded && !long) return setGroup(group.title, list);
+    const box = h('details', {class: 'setgroup fold', open, 'data-group': group.title},
+      h('summary', {}, h('h3', {}, group.title), h('span', {class: 'setcount'}, String(group.rows.length))), list);
+    box.addEventListener('toggle', () => CONFIG.folded.set(id, box.open));
+    return box;
+  });
+}
+const OWNER_WORDS = {chassis: 'Metaform', mcp: 'MCP', elevenlabs: 'ElevenLabs', source_placement: 'Source placement'};
+const ownerWords = owner => OWNER_WORDS[owner] || owner.charAt(0).toUpperCase() + owner.slice(1).replaceAll('_', ' ');
+function headingOf(row, page) {
+  const parts = String(row.section || '').split('/').filter(Boolean);
+  if (parts[0] === page.title) parts.shift();
+  if (page.name === 'advanced') parts.unshift(ownerWords(row.owner));
+  return parts.length ? parts.join(' · ') : ownerWords(row.owner);
+}
+const setGroup = (title, ...kids) => h('section', {class: 'setgroup', 'data-group': title}, h('h3', {}, title), kids);
+const titleOf = name => CONFIG.data.categories.find(one => one.name === name)?.title || name;
+/* A link from a row to the whole page of its category. */
+function toCategory(name, key) {
+  return h('button', {type: 'button', class: 'tocat', 'data-focus': `to:${key}`, title: `Every ${titleOf(name)} `
+    + 'setting', onclick: () => jump(name, key)}, `${titleOf(name)} ›`);
+}
+/* ---------- Essentials ----------
+ * The settings declared essential, in their order, with what the page itself holds put among them by place: the colour
+ * theme after the agents', the voice after who speaks, the phone's check after its number, and the project folder
+ * last. The page fits one screen. */
+const PAGE_ROWS = [
+  {at: 60, row: () => themeRow()},
+  {at: 75, row: data => voiceRow(data)},
+  {at: 105, row: data => phoneRow(data)},
+  {at: 1000, row: data => folderRow(data)},
+];
+function essentialsPage(data, page) {
+  const declared = page.rows.map(row => ({at: row.essential, row: () => settingRow(row, {link: true})}));
+  const all = [...declared, ...PAGE_ROWS].sort((one, two) => one.at - two.at);
+  return [pageHead(page), h('div', {class: 'setlist essentials'}, all.map(one => one.row(data)).filter(Boolean))];
+}
+/* A row the page itself holds, laid out as a setting's is. */
+function pageRow(name, label, help, control, {link = null, title = null} = {}) {
+  return h('div', {class: 'setrow', 'data-key': name},
+    h('div', {class: 'what'}, h('div', {class: 'name'}, h('span', {class: 'label', title}, label)),
+      h('div', {class: 'helpline'}, h('span', {class: 'help', title: help}, help), link)),
+    h('div', {class: 'control'}, control));
+}
+/* The colour theme: the View menu's Colors, the same choices and the same act. */
+function themeRow() {
+  const theme = $('#theme');
+  if (!theme) return null;
+  const pick = h('select', {'aria-label': 'Colour theme', 'data-focus': 'page:theme',
+    onchange: () => { theme.value = pick.value; setTheme(pick.value); }},
+  [...theme.options].map(option => h('option', {value: option.value, selected: option.value === theme.value},
+    option.textContent)));
+  return pageRow('page:theme', 'Colour theme', 'The colours of this page and its maps, as the View menu sets them.',
+    pick);
+}
+/* The voice the person's agent speaks with, for their mascot's character: one of this browser's voices, or, when
+ * ElevenLabs speaks, one of its voices, listed from the account only when asked, since that asks ElevenLabs. */
+function voiceRow(data) {
+  const row = key => data.settings.find(one => one.key === key);
+  const tts = row('voice_tts'), mascot = row('web_mascot');
+  if (!tts) return null;
+  const character = mascot && mascot.value && mascot.value !== 'none' ? String(mascot.value) : null;
+  const help = character ? `The voice of your ${character}.` : 'Choose your mascot under Map and display to give it '
+    + 'a voice of its own.';
+  if (!character || tts.value === 'off') {
+    return pageRow('page:voice', 'Voice', tts.value === 'off' ? 'Nothing is spoken: Speaks with is off.' : help, null,
+      {link: toCategory('voice', 'page:voice')});
+  }
+  const eleven = tts.value === 'elevenlabs', list = row(eleven ? 'elevenlabs_voices' : 'voice_voices');
+  if (!list || (!eleven && tts.value !== 'browser')) {  // an engine another module brings has its own voices
+    return pageRow('page:voice', 'Voice', `${tts.value} speaks with its own voices.`, null,
+      {link: toCategory('voice', 'page:voice')});
+  }
+  const chosen = (list.value || []).find(one => one.startsWith(`${character}=`))?.split('=').slice(1).join('=') || '';
+  const names = eleven ? (CONFIG.voices || []).map(one => one.name).filter(Boolean)
+    : 'speechSynthesis' in window ? speechSynthesis.getVoices().map(one => one.name) : [];
+  if (!eleven && !names.length && 'speechSynthesis' in window) {  // the browser lists its voices once it has them
+    speechSynthesis.addEventListener('voiceschanged', renderSettings, {once: true});
+  }
+  const listed = [...new Set([...(chosen ? [chosen] : []), ...names])];
+  const pick = h('select', {'aria-label': 'Voice', 'data-focus': 'page:voice', onchange: () => {
+    const kept = (list.value || []).filter(one => !one.startsWith(`${character}=`));
+    saveSetting(list, pick.value ? [...kept, `${character}=${pick.value}`] : kept);
+  }}, h('option', {value: '', selected: !chosen}, eleven ? 'Its own voice' : 'Chosen for it'),
+  listed.map(name => h('option', {value: name, selected: name === chosen}, name)));
+  const more = eleven && !CONFIG.voices ? h('button', {type: 'button', class: 'btn sm quiet', 'data-focus':
+    'page:voices', title: 'Ask ElevenLabs for the voices on your account', onclick: listVoices}, 'List voices') : null;
+  return pageRow('page:voice', 'Voice', help, h('span', {class: 'pair'}, pick, more),
+    {link: toCategory('voice', 'page:voice'), title: list.switch});
+}
+async function listVoices() {
+  try {
+    const found = await read('speech-voices');
+    CONFIG.voices = found.account || [];
+    if (!found.account) toast(found.next || 'ElevenLabs gave no voices.');
+  } catch (error) { toast(`The voices could not be listed: ${error.message}`); }
+  renderSettings();
+}
+/* Whether the phone can work, checked only when asked: metaform twilio status, which reads the settings and the
+ * environment the bridge runs in. */
+function phoneRow(data) {
+  const on = data.settings.find(one => one.key === 'twilio_enabled');
+  if (!on) return null;
+  const checked = CONFIG.phone;
+  const said = !on.value ? 'The phone is off.' : !checked ? 'Not checked yet.'
+    : checked.error ? checked.error
+      : checked.problems?.length ? `${checked.problems[0].problem} Next: ${checked.problems[0].next}`
+        : checked.running ? 'Ready: the bridge is running.' : 'Ready: set up, and the bridge starts with the page.';
+  const check = h('button', {type: 'button', class: 'btn sm', 'data-focus': 'page:phone-check', disabled: !on.value,
+    title: 'Check now whether the phone is set up', onclick: checkPhone}, 'Check');
+  return pageRow('page:phone', 'Phone status', said, check, {link: toCategory('phone', 'page:phone')});
+}
+async function checkPhone() {
+  try { CONFIG.phone = await read('phone-check'); } catch (error) { CONFIG.phone = {error: error.message}; }
+  renderSettings();
+}
+/* The project these settings are kept for: the page's own project, chosen as the header chooses it, and its folder. */
+function folderRow(data) {
+  const projects = S.projects?.length ? S.projects : [{id: S.project}];
+  const pick = h('select', {'aria-label': 'Project', 'data-focus': 'page:project', onchange: async () => {
+    $('#proj').value = pick.value;
+    $('#proj').dispatchEvent(new Event('change'));
+    await readSettings();
+  }}, projects.map(one => h('option', {value: one.id, selected: one.id === S.project}, one.id)));
+  return pageRow('page:project', 'Project folder', data.folder, pick, {link: toCategory('general', 'page:project'),
+    title: 'A folder setting applies to this folder and every folder below it; a global one applies everywhere.'});
+}
+/* General: the folder the settings are kept for, and what folder and global mean. */
+function generalPart(data) {
+  return h('p', {class: 'hint folder'}, `The settings of ${S.project}, kept for `, h('code', {}, data.folder),
+    '. A folder setting applies to this folder and every folder below it; one marked Global applies everywhere. '
+    + 'They are the settings metaform config shows, and each change is saved as metaform set saves it.');
+}
+/* ---------- Modules ---------- */
+function modulesPage(data, page) {
+  const modules = [...data.modules].sort((one, two) => one.id.localeCompare(two.id));
+  return [pageHead(page), data.modules_refused ? refusalBox(data.modules_refused) : null,
+    h('div', {class: 'setlist modules'}, modules.map(moduleRow)),
+    page.rows.length ? setGroup('This folder', h('div', {class: 'setlist'},
+      settingRow(page.rows[0], {label: 'Modules shown in this folder'}))) : null];
+}
+/* ---------- search ----------
+ * Every category's settings and the modules, matched on their label, key, help, details and heading; a page's count
+ * shows in the side. Enter goes to the first found, and a found setting's label goes to it in its category. */
+function matchesOf(page, words) {
+  if (!words) return page.rows;
+  const has = (...texts) => texts.some(text => String(text || '').toLowerCase().includes(words));
+  if (page.name === 'modules') {
+    return [...page.rows.filter(row => has(row.key, row.help, 'modules shown in this folder')),
+      ...CONFIG.data.modules.filter(module => has(module.id, module.summary, module.problem))];
+  }
+  return page.rows.filter(row => has(row.key, row.label, row.help, row.details, row.section, page.title));
+}
+function searchPage(data, pages) {
+  const words = CONFIG.filter.trim().toLowerCase();
+  const found = pages.filter(page => page.name !== 'essentials').map(page => ({page, rows: matchesOf(page, words)}))
+    .filter(one => one.rows.length);
+  if (!found.length) return h('p', {class: 'empty'}, `No setting matches ${CONFIG.filter.trim()}.`);
+  return found.map(({page, rows}) => h('section', {class: 'setgroup', 'data-group': page.title},
+    h('h3', {}, h('button', {type: 'button', class: 'tocat', onclick: () => jump(page.name)}, `${page.title} ›`)),
+    h('div', {class: 'setlist'}, rows.map(row => row.key ? settingRow(row, {go: page.name}) : moduleRow(row)))));
+}
+function firstFound() {
+  const words = CONFIG.filter.trim().toLowerCase();
+  for (const page of settingsPages(CONFIG.data).filter(one => one.name !== 'essentials')) {
+    const row = matchesOf(page, words)[0];
+    if (row) return [page.name, row.key ? `setting:${row.key}` : `module:${row.id}`];
+  }
+  return null;
+}
+/* To a category's page, and to one setting on it: shown, opened under its heading, and its control focused. */
+function jump(name, key = null) {
+  CONFIG.page = name;
+  CONFIG.filter = '';
+  $('#settings .search').value = '';
+  CONFIG.found = key && !key.startsWith('page:') ? key : null;
+  renderSettings();
+  if (!CONFIG.found) $('#settings .setmain')?.scrollTo({top: 0});
+}
+function reveal(key) {
+  CONFIG.found = null;
+  const [kind, name] = [key.slice(0, key.indexOf(':')), key.slice(key.indexOf(':') + 1)];
+  const row = $(`#settings .setmain .setrow[data-${kind === 'module' ? 'module' : 'key'}="${CSS.escape(name)}"]`);
+  if (!row) return;
+  const control = row.querySelector('[data-focus]:not(.morebtn):not(.tocat)');
+  const fold = row.closest('details');
+  if (fold) fold.open = true;
+  row.scrollIntoView({block: 'center'});
+  row.classList.add('found');
+  setTimeout(() => row.classList.remove('found'), 1600);
+  control?.focus({preventScroll: true});
+}
+/* ---------- rows and controls ---------- */
 /* Left and Right turn a switch off and on, and step a list of choices back and on, saving as a click does. */
 function arrowSwitch(event, input) {
   if (!['ArrowLeft', 'ArrowRight'].includes(event.key) || input.disabled) return;
@@ -306,8 +508,8 @@ function moduleRow(module) {
       h('div', {class: 'name'}, h('code', {class: 'id'}, module.id),
         module.place !== 'system'
           ? h('span', {class: 'badge', title: `Found in the ${module.place} place`}, module.place) : null,
-        module.problem ? h('span', {class: 'badge warn'}, 'not loaded') : null),
-      h('span', {class: 'help'}, module.problem || module.summary)),
+        module.problem ? h('span', {class: 'badge warn'}, 'not loaded') : null,
+        h('span', {class: 'help', title: module.problem || module.summary}, module.problem || module.summary))),
     h('div', {class: 'control'}, h('label', {class: 'switch'}, input, module.enabled ? 'On' : 'Off')),
     error ? refusalBox(error) : null);
 }
@@ -337,46 +539,80 @@ function keepWeb() {
     + 'start the page again until it is turned back on: metaform enable web.',
   kept: ['Its settings keep their saved values'], verb: 'Turn it off', cancel: 'Keep it on'});
 }
-function settingRow(row, label = row.label) {
+/* Whether the value is set here, inherited from a folder above (named), glued, or the default, at a glance. */
+const STATE_BADGES = {default: ['badge off', 'Default', 'The default: nothing is saved for it'],
+  set: ['badge ok', 'Set here', 'Saved for this folder'],
+  glued: ['badge warn', 'Glued', 'Set here, and kept through metaform unset all until it is unglued'],
+  inherited: ['badge', 'Inherited', 'Set by a folder above this one']};
+const folderName = path => String(path || '').split(/[\\/]/).filter(Boolean).pop() || String(path || '');
+function stateBadge(row) {
+  const [style, words, said] = STATE_BADGES[row.state] || ['badge', row.state, ''];
+  if (row.state === 'inherited' && row.from) {
+    return h('span', {class: `${style} state`, title: `Inherited from ${row.from}, which sets it for every folder `
+      + 'below it; change or reset it there'}, `From ${folderName(row.from)}`);
+  }
+  return h('span', {class: `${style} state`, title: said}, words);
+}
+/* One setting: `link` adds the way to its category's page, as on Essentials; `go`, in a search, makes its label go
+ * to it there. */
+function settingRow(row, {label = row.label, link = false, go = null} = {}) {
   const id = `setting:${row.key}`;
   const error = CONFIG.errors.get(id);
   const control = settingControl(row, id, label);
-  const glue = glueButton(row), reset = resetButton(row), state = STATE_BADGES[row.state] || ['badge', ''];
-  const stateTitle = row.state === 'inherited' && row.from ? `Inherited from ${row.from}, which sets it for every `
-    + 'folder below it; change or reset it there' : state[1];
-  return h('div', {class: 'setrow', 'data-key': row.key},
+  const risky = (row.risky || []).includes(row.value);
+  const named = go ? h('button', {type: 'button', class: 'label', title: `${row.switch}: show it in ${titleOf(go)}`,
+    onclick: () => jump(go, id)}, label) : h('span', {class: 'label', title: row.switch}, label);
+  const open = CONFIG.more.has(row.key);
+  const more = h('button', {type: 'button', class: 'morebtn', 'aria-expanded': String(open), 'data-focus':
+    `more:${row.key}`, title: 'Its switch, all its help, and Glue', onclick: () => {
+    if (!CONFIG.more.delete(row.key)) CONFIG.more.add(row.key);
+    renderSettings();
+  }}, 'More');
+  return h('div', {class: `setrow${risky ? ' risky' : ''}`, 'data-key': row.key},
     h('div', {class: 'what'},
-      h('div', {class: 'name'}, h('span', {class: 'label'}, label), h('code', {}, row.switch),
-        h('span', {class: `${state[0]} state`, title: stateTitle}, row.state),
-        row.scope === 'global' ? h('span', {class: 'badge', title: 'Applies in every folder'}, 'global') : null,
-        row.person_only ? h('span', {class: 'badge', title: 'Only you change it, here or on the command line; '
-          + 'an agent is refused it over MCP'}, 'yours') : null),
-      row.help ? h('span', {class: 'help'}, row.help) : null,
-      row.details ? h('details', {}, h('summary', {}, 'More'), h('p', {}, row.details)) : null),
-    h('div', {class: 'control'}, control.main, glue, reset),
+      h('div', {class: 'name'}, named, stateBadge(row),
+        row.scope === 'global' ? h('span', {class: 'badge', title: 'Applies in every folder'}, 'Global') : null,
+        row.person_only ? h('span', {class: 'badge mine', title: 'Only you change it, here or on the command line; '
+          + 'an agent is refused it over MCP'}, 'Yours') : null,
+        risky ? h('span', {class: 'badge warn', title: row.choice_help?.[row.value] || 'Agents act without asking'},
+          'Risky') : null, more),
+      h('div', {class: 'helpline'}, row.help ? h('span', {class: 'help', title: row.help}, row.help) : null,
+        link ? toCategory(row.category, id) : null),
+      open ? h('div', {class: 'morebox'},
+        h('p', {}, h('code', {}, row.switch), row.key !== row.switch.slice(2).replaceAll('-', '_')
+          ? [' ', h('code', {}, row.key)] : null, glueButton(row)),
+        String(row.help || '').length > 90 ? h('p', {}, row.help) : null,
+        row.details ? h('p', {}, row.details) : null) : null),
+    h('div', {class: 'control'}, control.main, resetButton(row)),
     control.wide || null,
     error ? refusalBox(error) : null);
 }
-const STATE_BADGES = {default: ['badge off', 'The default: nothing is saved for it'],
-  set: ['badge ok', 'Saved for this folder'],
-  glued: ['badge warn', 'Kept through metaform unset all until it is unglued'],
-  inherited: ['badge', 'Set by a folder above this one']};
 /* Glue, for a value set and not glued yet, as metaform set --glue keeps it. */
 function glueButton(row) {
   const empty = Array.isArray(row.value) && !row.value.length && CONFIG.data.all_when_empty.includes(row.key);
-  if (row.state === 'glued' || row.value === null || row.value === undefined || empty) return null;
+  if (row.state === 'glued' || row.state === 'inherited' || row.value === null || row.value === undefined || empty) {
+    return null;
+  }
   return h('button', {class: 'btn sm quiet glue', type: 'button', 'data-focus': `glue:${row.key}`,
     title: 'Keep this value through metaform unset all, as metaform set --glue does',
     onclick: () => saveSetting(row, row.value, {glue: true})}, 'Glue');
 }
-/* Reset, or Unglue for a glued value, back to its default as metaform unset does. */
+/* Reset, or Unglue for a glued value, back to its default as metaform unset does; shown only for a value set here. */
 function resetButton(row) {
-  const glued = row.state === 'glued', inherited = row.state === 'inherited';
-  return h('button', {class: 'btn sm quiet reset', type: 'button', disabled: row.state === 'default' || inherited,
-    'data-focus': `reset:${row.key}`, onclick: () => resetSetting(row),
-    title: inherited ? `Nothing is stored here to reset: it is inherited from ${row.from}, and reset there`
-      : glued ? `Unglue it and return it to its default, as metaform unset --unglue ${row.switch} does`
-        : `Return it to its default, as metaform unset ${row.switch} does`}, glued ? 'Unglue' : 'Reset');
+  if (row.state !== 'set' && row.state !== 'glued') return null;
+  const glued = row.state === 'glued';
+  return h('button', {class: 'btn sm quiet reset', type: 'button', 'data-focus': `reset:${row.key}`,
+    onclick: () => resetSetting(row),
+    title: glued ? `Unglue it and return it to its default, as metaform unset --unglue ${row.switch} does`
+      : `Return it to its default, as metaform unset ${row.switch} does`}, glued ? 'Unglue' : 'Reset');
+}
+/* A number's unit, beside it; cents are said in the currency too. */
+function unitOf(row, value) {
+  if (!row.unit) return null;
+  const amount = Number(value);
+  const said = row.unit === 'cents' && Number.isFinite(amount) && amount > 0 ? `cents ($${(amount / 100).toFixed(2)})`
+    : row.unit === 'cents' && amount === 0 ? 'cents (no limit)' : row.unit;
+  return h('span', {class: 'unit'}, said);
 }
 /* The control a setting's kind takes; `wide` goes under the row, as a checklist does. */
 function settingControl(row, id, label) {
@@ -389,7 +625,7 @@ function settingControl(row, id, label) {
   if (row.kind === 'int') {
     const input = h('input', {type: 'number', step: '1', min: row.min ?? null, max: row.max ?? null,
       value: row.value ?? '', 'aria-label': label, 'data-focus': id, onchange: () => save(input.value.trim())});
-    return {main: input};
+    return {main: h('span', {class: 'pair'}, input, unitOf(row, row.value))};
   }
   const choices = Array.isArray(row.choices) && row.choices.length ? row.choices : null;
   if (row.kind === 'select' && choices) {
@@ -405,7 +641,8 @@ function settingControl(row, id, label) {
     const select = h('select', {'aria-label': label, 'data-focus': id, onchange: chosen,
       onkeydown: event => arrowSelect(event, select, risky)},
       listed.map(choice => h('option', {value: choice, selected: choice === row.value, title: said[choice] || null,
-        disabled: !choices.includes(choice)}, choice === '' ? '(none)' : choice)));
+        disabled: !choices.includes(choice)}, (choice === '' ? '(none)' : choice)
+        + (risky.includes(choice) ? ' (risky: asks first)' : ''))));
     return {main: select, wide: said[row.value] ? h('p', {class: 'hint'}, said[row.value]) : null};
   }
   if (row.kind === 'list' && choices) return {main: null, wide: checklist(row, choices, id, label)};
@@ -452,12 +689,13 @@ function checklist(row, choices, id, label) {
     boxes.map((box, index) => h('label', {class: 'check'}, box, h('code', {}, listed[index]))),
     all ? h('span', {class: 'hint'}, 'Every one checked, the default, shows them all.') : null);
 }
+/* ---------- saving ---------- */
 /* Save one setting, or glue it, and say so with Undo; Undo puts back what it was. A refusal is said under it. */
 async function saveSetting(row, value, {glue = false, quiet = false, confirm = false} = {}) {
   const id = `setting:${row.key}`;
   const before = {state: row.state, value: row.value};
-  const done = await posted('/api/settings', {key: row.key, value, ...(glue ? {glue: true} : {}),
-    ...(confirm ? {confirm: true} : {})});
+  const done = await posting(() => posted('/api/settings', {key: row.key, value, ...(glue ? {glue: true} : {}),
+    ...(confirm ? {confirm: true} : {})}));
   if (!done.ok) { CONFIG.errors.set(id, done.body); renderSettings(); return false; }
   CONFIG.errors.delete(id);
   CONFIG.data = done.body;
@@ -472,6 +710,14 @@ async function saveSetting(row, value, {glue = false, quiet = false, confirm = f
     : restoreSetting(now || row, before.value));
   return true;
 }
+/* A save in flight holds back a read for a change heard meanwhile, its own among them, until it is in. */
+async function posting(write) {
+  CONFIG.saving++;
+  try { return await write(); } finally {
+    CONFIG.saving--;
+    if (!CONFIG.saving && CONFIG.again) { CONFIG.again = false; settingsHeard(); }
+  }
+}
 /* Undo puts back what it was; a risky choice put back is confirmed as choosing it is. */
 async function restoreSetting(row, value, {glue = false} = {}) {
   const risky = (row.risky || []).includes(value);
@@ -484,7 +730,7 @@ async function resetSetting(row, {quiet = false} = {}) {
     text: 'A glued setting keeps its value through metaform unset all. Unglued, it returns to its default.',
     verb: 'Unglue and reset', danger: false})) return false;
   const before = row.value;
-  const done = await posted('/api/settings/reset', {key: row.key, ...(glued ? {unglue: true} : {})});
+  const done = await posting(() => posted('/api/settings/reset', {key: row.key, ...(glued ? {unglue: true} : {})}));
   if (!done.ok) { CONFIG.errors.set(id, done.body); renderSettings(); return false; }
   CONFIG.errors.delete(id);
   CONFIG.data = done.body;
@@ -496,10 +742,11 @@ async function resetSetting(row, {quiet = false} = {}) {
     () => restoreSetting(now || row, before, {glue: glued}));
   return true;
 }
-/* What the rest of the page shows from a setting follows it: the Autostart switch, Agent prompts, and the folder's
- * layers. */
+/* What the rest of the page shows from a setting follows it: the Autostart switch, the agent pickers, Agent prompts,
+ * and the folder's layers. */
 function afterSetting(key) {
   if (key.startsWith('dispatch_')) readAutostart();
+  if (key === 'dispatch_agent') readHarnesses().then(paintPickers);  // every picker's default follows
   if (key === 'dispatch_prompts') readPrompts();
   if (key === 'layers' && S.view === null) {
     read('layers', {limit: 0}).then(found => { S.layers = found.results; renderChips(); })
@@ -519,5 +766,11 @@ function afterSetting(key) {
 $('#allSettingsBtn').onclick = openSettings;
 $('#settingsGearBtn').onclick = openSettings;
 $('#settings .search').addEventListener('input', event => { CONFIG.filter = event.target.value; renderSettings(); });
+$('#settings .search').addEventListener('keydown', event => {  // Enter goes to the first setting found
+  if (event.key !== 'Enter' || !CONFIG.filter.trim() || !CONFIG.data) return;
+  event.preventDefault();
+  const first = firstFound();
+  if (first) jump(...first);
+});
 $('#settings .close').onclick = () => { $('#settings').hidden = true; };
 overlay($('#settings'), {kind: 'dialog', close: () => { $('#settings').hidden = true; }});

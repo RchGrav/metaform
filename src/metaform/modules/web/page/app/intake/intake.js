@@ -7,7 +7,7 @@ import {toast, confirmAct} from '/page/app/core/controls.js';
 import {S, MEM, reach, read} from '/page/app/core/reads.js';
 import {showAdmin, noMetaform, emptyActs} from '/page/app/header/admin.js';
 import {plural} from '/page/app/memory/manage.js';
-import {DOCK, STANDBY} from '/page/app/dock/embody.js';
+import {DOCK, STANDBY, dockState} from '/page/app/dock/embody.js';
 import {openHelpdesk, rememberStop} from '/page/app/dock/threads.js';
 import {ago} from '/page/app/board/refs.js';
 import {wrote} from '/page/app/board/history.js';
@@ -270,17 +270,38 @@ for (const button of document.querySelectorAll('#intake .suggest button')) butto
 overlay($('#intake'), {kind: 'dialog', close: () => { $('#intake').hidden = true; },
   focus: () => $('#intake textarea.note')});
 $('#intakeBtn').onclick = () => openIntake();
-/* A project with no map yet says so over the map, with the intake as the one thing to do. */
+/* The first screen, onboard/welcome.js, set by that later part: given whether the project has no map and whether the
+ * page has finished reading it, it shows the welcome in place of the card below, or a map's first hints, and says
+ * whether the welcome shows. */
+export const FIRST = {drawn: null};
+/* A project with no map yet says so over the map, with the intake as the one thing to do; the welcome takes its place
+ * while the person has not chosen the workbench. */
 export function drawEmpty() {
   const panel = $('#p-object > .emptypanel');
   if (panel) emptyActs(panel);
-  const empty = !S.loading && !S.opening && S.project && !S.elements.size && LIVE.layer === null && !intakeRunning()
-    && !MEM.key;
-  $('#emptyStage').hidden = !empty;
-  if (!empty) return;
+  const settled = !S.loading && !S.opening;
+  const empty = settled && S.project && !S.elements.size && LIVE.layer === null && !intakeRunning() && !MEM.key;
+  const welcomed = Boolean(FIRST.drawn?.(Boolean(empty), settled));
+  $('#emptyStage').hidden = !empty || welcomed;
+  if (!empty || welcomed) return;
   fill($('#emptyStage .what'), noMetaform() ? `${S.project} has no map yet.` : `${S.project}'s map is empty.`);
 }
 $('#emptyStage .start').onclick = () => openIntake();
+/* When an intake the page followed finishes, one card over the map offers the next step, CLI-041: an agent on a
+ * ticket, from the board, or a chat with the system agent. Either choice, or its ×, puts it away. */
+export function offerNext() {
+  $('#nextStep')?.remove();
+  const card = h('div', {id: 'nextStep', class: 'nextcard', role: 'status'},
+    h('p', {class: 'text'}, `The map of ${S.project} is ready. What next?`),
+    h('div', {class: 'acts'},
+      h('button', {class: 'btn primary', type: 'button', onclick: () => { card.remove(); $('#boardBtn').click(); }},
+        'Start an agent on a ticket'),
+      h('button', {class: 'btn', type: 'button', onclick: () => { card.remove(); dockState('open'); }},
+        'Chat with your system agent'),
+      h('button', {class: 'x', type: 'button', title: 'Dismiss', 'aria-label': 'Dismiss',
+        onclick: () => card.remove()}, '×')));
+  document.body.append(card);
+}
 
 /* A write whose refusal the page shows in place, with its next step, rather than in a toast. */
 export async function posted(path, given) {

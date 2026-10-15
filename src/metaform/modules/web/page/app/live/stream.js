@@ -16,7 +16,7 @@ import {noneSelected} from '/page/app/map2d/wire.js';
 import {select} from '/page/app/selection/select.js';
 import {renderBrief} from '/page/app/panel/brief.js';
 import {getJson} from '/page/app/panel/prompts.js';
-import {drawIntake} from '/page/app/intake/intake.js';
+import {drawIntake, offerNext} from '/page/app/intake/intake.js';
 import {appliedOps, settled, briefTouched, ticketsOnly, opsOnly, ticketsChanged, boardFromTickets, linesOnly,
   agentsChanged, listen} from '/page/app/live/ops.js';
 import {loadGraph, loadProject, toProject} from '/page/app/loading/load.js';
@@ -67,6 +67,7 @@ async function follow(found) {
     drawIntake();
     toast(stands ? `The intake finished.` : `The intake stopped: ${S.project} was cleared.`);
     if (stands) attend(`intake:${base}`, 'The intake finished', null, null);  // the mascot says so too, `ATTN`
+    if (stands) offerNext();
     await loadProject();
     return;
   }
@@ -119,6 +120,10 @@ export async function changed(event) {
     for (const page of ['messages', 'runs']) if (WS.isShown(WS.paneOfPage(page)?.id)) PANE_VIEWS[page].show();
   } else if (WS.active) WS.refresh();
   const named = event.payload.tables;
+  // a setting changed, here or elsewhere: the settings screen reads again if it is open, F13
+  if (Array.isArray(named) && named.some(table => /(^|\.)settings$/.test(String(table)))) {
+    document.dispatchEvent(new CustomEvent('metaform:settings'));
+  }
   if (briefTouched(named)) LIVE.brief = true;
   if (allTables(named, table => table.startsWith('jev.'))) {
     if (!LIVE.busy) { if (!$('#p-brief').hidden) renderBrief(); LIVE.brief = false; }

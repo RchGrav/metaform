@@ -40,7 +40,7 @@ from . import home, module_metadata, prompt_files, settings
 from .module import Context, Module, call, resource_problems
 
 RESERVED = {'help', 'add', 'list', 'set', 'unset', 'config', 'enable', 'disable', 'activate', 'import', 'export',
-            'query', 'build', 'install', 'uninstall', 'feedback', 'read', 'extract', 'prompts', 'prompt', 'clear', 'restore', 'remove', 'chassis',
+            'query', 'build', 'install', 'uninstall', 'feedback', 'report', 'read', 'extract', 'prompts', 'prompt', 'clear', 'restore', 'remove', 'chassis',
             'alias', 'instructions', 'provision', 'return', 'metaform'}
 SYSTEM: Traversable = importlib.resources.files('metaform') / 'modules'
 TOOL_NAME = re.compile(r'^[a-zA-Z0-9_-]{1,64}$')

@@ -10005,3 +10005,37 @@ def test_the_brief_read_names_the_latest_item_and_the_range_the_last_session_num
     last = body['last_session']
     assert last['session'] == 'session-one' and last['count'] == 2 and last['last'] == body['latest']['number']
     assert last['first'] == last['last'] - 1
+
+
+@pytest.mark.req('BASE-045')
+def test_report_a_problem_saves_one_zip_with_the_browser_the_console_errors_and_no_secret(run, web, mapped, browser,
+                                                                                            home):
+    """Report a problem, in the View menu, saves the report `metaform report` makes, with this browser and the page's
+    console errors, every secret masked and none of the project's files; it says where to send it."""
+    import io
+    import zipfile
+    (home / 'run').mkdir(parents=True, exist_ok=True)
+    (home / 'run' / 'web.log').write_text(
+        'Traceback (most recent call last):\n  File "x.py", line 1, in y\nValueError: PLANTED-WEB-ERROR\n'
+        'asked with api_key=sk-or-v1-PLANTEDKEY0123456789abcdef\n', encoding='utf-8')
+    (mapped / 'own.py').write_text('PROJECT-OWN-TEXT\n', encoding='utf-8')
+    started(run)
+    page, problems, _ = opened(browser, web, plain=True)
+    page.evaluate("console.error('PLANTED-PAGE-ERROR Bearer ghp_PLANTEDTOKEN0123456789abcdefABCD')")
+    page.click('#settingsBtn')
+    page.click('#reportBtn')
+    page.fill('#reportWhat', 'The map went blank after I opened Agents.')
+    with page.expect_download() as caught:
+        page.click('#reportMake')
+    download = caught.value
+    assert re.fullmatch(r'metaform-report-\d{8}T\d{6}Z\.zip', download.suggested_filename)
+    page.wait_for_function("() => document.querySelector('#reportSaid').textContent.includes('rchgrav on Discord')")
+    with zipfile.ZipFile(io.BytesIO(Path(download.path()).read_bytes())) as made:
+        texts = {name: made.read(name).decode('utf-8') for name in made.namelist()}
+    assert 'The map went blank after I opened Agents.' in texts['report.txt']
+    assert 'HeadlessChrome' in texts['report.txt'] and 'Metaform: ' in texts['report.txt']
+    assert 'PLANTED-PAGE-ERROR' in texts['page/console.txt'] and 'PLANTED-WEB-ERROR' in texts['errors.txt']
+    every = ''.join(texts.values())
+    assert 'PLANTEDKEY' not in every and 'PLANTEDTOKEN' not in every and '****ef' in every
+    assert 'PROJECT-OWN-TEXT' not in every and not any(name.startswith('project/') for name in texts)
+    assert [problem for problem in problems if 'PLANTED-PAGE-ERROR' not in problem] == []

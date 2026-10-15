@@ -49,16 +49,19 @@ IN_USE = {errno.EADDRINUSE, errno.EACCES, 10048, 10013}  # 10048 and 10013 are W
 
 settings.number('web_port', 7433, min=1, max=65535, scope='global',
                 help='The port the web GUI listens on.',
-                details='One server per Metaform home listens here, so the address stays the same across restarts.')
+                details='One server per Metaform home listens here, so the address stays the same across restarts.',
+                label='Page port', category='advanced')
 settings.text('web_bind', '127.0.0.1', scope='global', person_only=True,  # who reaches the page that permits agents
               help='The address the web GUI binds to. Any address but loopback also needs the token.',
               details='At 127.0.0.1 only this machine can reach the web GUI. Another address opens it to that '
-                      'network, and then every request needs the token that metaform web prints.')
+                      'network, and then every request needs the token that metaform web prints.',
+              label='Page bind address', category='advanced')
 settings.text('agent_command', 'claude -p', person_only=True,  # the command an agent is started with
               help='The command the web GUI starts an agent with, the task given as its last argument.',
               details='It is run in the project\'s folder when a person asks for an agent from the web GUI, as when '
                       'an element added by hand is to be validated. Where it cannot be run the task waits on the '
-                      'map for an agent to take it.')
+                      'map for an agent to take it.',
+              label='Agent command', category='advanced')
 
 # The workspace the person arranges on the page, kept for the whole home so every project opens the same way. Each is
 # the JSON text of its shape, workspace.py; empty is the defaults the modules declare, so unset returns to them. The
@@ -68,31 +71,36 @@ settings.text('web_toolbar', '', scope='global', check=check_toolbar,
               details='{"toolbar": [[id, ...], ...], "extra": [id, ...]}: each inner list is one slot, its first tool '
                       'shown and the others behind it; extra holds the tools behind the toolbar\'s last slot. An id '
                       'is <module>.<id>, or chassis.<id>. A tool not named lands in its declared place. metaform '
-                      'unset --web-toolbar restores the defaults.')
+                      'unset --web-toolbar restores the defaults.',
+              label='Toolbar arrangement', category='advanced')
 settings.text('web_layout', '', scope='global', check=check_layout,
               help='The web GUI\'s panes as the person arranged them, as JSON; empty is the declared defaults.',
               details='{"areas": {"left"|"main"|"right"|"bottom": {"size": px, "groups": [{"id", "tabs": [id, ...], '
                       '"active", "size"}]}}, "floating": [{"pane", "x", "y", "w", "h"}], "off": [id, ...]}. A pane '
                       'in off keeps its place and is not shown. A pane not named lands in its declared group and '
-                      'area. metaform unset --web-layout restores the defaults.')
+                      'area. metaform unset --web-layout restores the defaults.',
+              label='Pane layout', category='advanced')
 settings.text('web_workspaces', '', scope='global', check=check_workspaces,
               help='The person\'s named workspaces, each a saved toolbar and layout, as JSON.',
               details='{"<name>": {"toolbar": ..., "layout": ...}}. Default is never stored: it is the declared '
-                      'defaults, so it cannot be deleted. The page saves, selects, resets and deletes them.')
+                      'defaults, so it cannot be deleted. The page saves, selects, resets and deletes them.',
+              label='Saved workspaces', category='advanced')
 # Whether the page is laid out by the workspace, its toolbar, panes and Window menu, or as it was written before them:
 # the side column with its tabs beside the large map. A fork in how the page is arranged, so it is the person's. Off
 # until the workspace's Default reproduces the page as written and every check of it passes with the workspace on.
 settings.boolean('web_panes', False, scope='global',
                  help='Lay the web GUI out by the workspace: the toolbar, docked and floating panes, the Window menu.',
                  details='Off, the page keeps the side column with its tabs beside the large map, and no toolbar; '
-                         'the workspace settings are kept for when it is on again.')
+                         'the workspace settings are kept for when it is on again.',
+                 label='Draw the page from panes', category='advanced')
 # How the 3D map is drawn. Shapes tell an element's artifact type before any text is read: code, document, media,
 # data, collection, upstream and downstream each have their own, in 2D and in 3D; off draws every element as before.
 settings.boolean('web_node_shapes', True, scope='global',
                  help='Draw each element in the shape of its artifact type, the first segment of its address.',
                  details='code is a box, document a page, media a screen, data a cylinder, collection a stack, '
                          'upstream an input and downstream an output, in the 2D and the 3D map. Off draws every '
-                         'element in one shape, as the maps did before.')
+                         'element in one shape, as the maps did before.',
+                 label='Node shapes', section='Look')
 # How much the 3D map draws. clean is the map as it has always been; ultra draws it in outer space, page/ultra.js:
 # a starfield and a faint nebula behind it, each element a celestial body of its artifact type, the joins as
 # filaments of light and a glow on what is bright. It steps its own quality down when the frame rate stays low, and
@@ -108,11 +116,14 @@ settings.choice('web_embody', ['offer', 'always', 'never'], 'offer', scope='glob
                 details='offer asks once per conversation, at a pause, after web_embody_turns turns or '
                         'web_embody_minutes minutes; always gives every conversation your last choice, or the mascot '
                         'to your system agent; never makes no offer. The avatar in the chat\'s head, its menu or B '
-                        'give or change a body at any time.')
+                        'give or change a body at any time.',
+                label='Agents take a figure', section='Mascot and agents')
 settings.number('web_embody_turns', 8, min=0, max=100, scope='global',
-                help='Turns of a chat before it offers to give its agent a body; 0 offers at once.')
+                help='Turns of a chat before it offers to give its agent a body; 0 offers at once.',
+                label='Figure kept for turns', category='advanced', unit='turns')
 settings.number('web_embody_minutes', 20, min=0, max=600, scope='global',
-                help='Minutes of a chat before it offers to give its agent a body, if its turns come later.')
+                help='Minutes of a chat before it offers to give its agent a body, if its turns come later.',
+                label='Figure kept for', category='advanced')
 # What a chat's thread shows of the agent's work. Off, it shows what the agent says to the person, its messages and the
 # lines it says on the map, so an agent that comes out in the chat speaks without its tool calls and thinking between
 # its words; those are debug detail, shown with this on, or for one page with W.
@@ -120,32 +131,37 @@ settings.boolean('web_chat_details', False, scope='global',
                  help="Show the agent's work in the chat: its tool calls, their details and its thinking.",
                  details='Off, a thread shows only what the agent says to you, its messages and the lines it says on '
                          'the map, with its permission requests and questions. W in the web GUI shows or hides the '
-                         'work on that page until it is reloaded, and saves nothing.')
+                         'work on that page until it is reloaded, and saves nothing.',
+                 label="Show the agent's work in the chat", section='Mascot and agents')
 # The 3D map's names: outward stands each as a sign facing away from the map's middle, turned round where the eye is
 # behind it so it never reads mirrored; facing turns each to the eye.
 settings.choice('web_signs', ['outward', 'facing'], 'outward', scope='global',
                 help="How the 3D map's names stand: outward from the map's middle, or facing you.",
                 details='outward keeps each name a sign in the scene, facing away from the map\'s middle, upright in '
                         'the map; seen from behind it turns round, so its letters always read as written. facing turns '
-                        'every name to the eye. S in the web GUI switches them.')
+                        'every name to the eye. S in the web GUI switches them.',
+                label='Signs on the 3D map', section='Look')
 settings.choice('web_lens', ['natural', 'wide', 'fisheye'], 'natural', scope='global',
                 help="The 3D map's lens: natural, wide, or fisheye, how far the view opens as its pane grows tall.",
                 details='The 3D map keeps a name the same size when its pane changes height, by opening or narrowing '
                         'its field of view. natural holds it between 30 and 55 degrees, wide up to 80, and fisheye up '
-                        'to 120, the view bending round the map as the 3D map takes the large area.')
+                        'to 120, the view bending round the map as the 3D map takes the large area.',
+                label='3D lens', section='Look')
 settings.choice('web_graphics', ['clean', 'ultra'], 'clean', scope='global',
                 help='How the 3D map is drawn: clean, or ultra, the map in outer space.',
                 details='ultra draws a starfield and a nebula behind the map, each element as a planet, star or '
                         'other body by its artifact type, the joins as filaments of light, and a soft glow on the '
                         'selection, the flow and the agents. It draws less when the frame rate stays under 40 a '
-                        'second. U in the web GUI switches between the two.')
+                        'second. U in the web GUI switches between the two.',
+                label='Graphics', section='Look')
 # The dots that flow along the joins are the 3D map's one motion that never ends by itself; drawing them costs the
 # machine every frame. They flow for this long after the map was last touched or changed, then the map draws nothing
 # until the next act, so a page left open costs nothing.
 settings.number('web_flow_seconds', 30, min=0, max=3600, scope='global',
                 help='Seconds the dots along the joins keep flowing after the map was last touched or changed.',
                 details='After this the 3D map draws no frame until something on it moves or the person acts. 0 '
-                        'stops the flow as soon as nothing else moves. With reduced motion nothing flows at all.')
+                        'stops the flow as soon as nothing else moves. With reduced motion nothing flows at all.',
+                label='Activity flow lasts', category='advanced', section='Flow')
 # How often each join pulses: after each request and reply a join waits (random + random) times this, so the waits
 # bunch around it with now and then a quick one or a slow one, each join drawing its own, and nothing pulses in step.
 # In milliseconds, since a setting's number is whole.
@@ -156,7 +172,8 @@ settings.choice('web_flow_mode', ['off', 'hover', 'selected', 'all', 'live'], 's
                 details="hover draws the flow on the joins of the node the pointer is on; selected on the selected "
                         "node's joins only, so a large map costs nothing; all on every join; live only what agents "
                         "really do; off draws nothing, agents' activity included. A change eases the dots in or out. "
-                        'D steps through hover, selected and all, with the edges drawn and then hidden.')
+                        'D steps through hover, selected and all, with the edges drawn and then hidden.',
+                label='Dots flow along', section='Flow')
 # How many levels of the map show, counted along the joins from the CQUs and the other tops, VIEW-051: a large map
 # read a few levels at a time, its deeper parts held inside the node they serve. The key 4 steps through them.
 settings.choice('web_map_depth', ['1', '2', '3', '4', 'all'], 'all', scope='global',
@@ -165,21 +182,26 @@ settings.choice('web_map_depth', ['1', '2', '3', '4', 'all'], 'all', scope='glob
                         'shortest way down, so a part serving two receivers shows when either does. A deeper part stays inside '
                         'its receiver, which counts what it holds; a click on that node breaks out its next level and '
                         'a click again folds it. Both maps show the same parts; the inside view shows every level. '
-                        '4 in the web GUI steps through them.')
+                        '4 in the web GUI steps through them.',
+                label='Levels shown', section='Map')
 settings.boolean('web_flow_edges', True, scope='global',
                  help="Draw the joins' lines on the maps; off hides them, and only what flows along them shows.",
-                 details='D steps it with the flow: hover, selected and all with the edges, then the three without.')
+                 details='D steps it with the flow: hover, selected and all with the edges, then the three without.',
+                 label='Show the joins', section='Flow')
 settings.number('web_pulse_ms', 3000, min=200, max=30000, scope='global',
                 help='The usual wait, in milliseconds, between one request and reply on a join and the next.',
                 details='Each join waits (random + random) times this after each cycle, a fresh wait every time, so '
-                        'the flow bunches about this pace and never pulses in step, in the 3D and the 2D map.')
-settings.number('web_bubble_seconds', 10, min=1, max=120, scope='global',
+                        'the flow bunches about this pace and never pulses in step, in the 3D and the 2D map.',
+                label='Pulse length', category='advanced', section='Flow')
+settings.number('web_bubble_seconds', 5, min=1, max=120, scope='global',
                 help="How long, in seconds, an agent's speech bubble stays up after each new line it says.",
-                details='The next line the agent says brings the bubble back; between lines it fades out.')
+                details='The next line the agent says brings the bubble back; between lines it fades out.',
+                label='Word bubble shown for', category='advanced')
 settings.boolean('web_idle_flow', True, scope='global',
                  help='Keep the dots flowing for as long as the page is open, past web_flow_seconds.',
                  details='On, an idle map is still drawn at the full frame rate so the flow never stops and stays '
-                         'smooth; off, it stops after web_flow_seconds and the machine rests.')
+                         'smooth; off, it stops after web_flow_seconds and the machine rests.',
+                 label='Flow while idle', section='Flow')
 # What agents really do is drawn in the flow's own looks, a little larger and brighter than the flow the map shows of
 # itself: a session starting, each part of the map a tool call reaches, and each note, item or work record written on
 # a node. It comes from the page's event stream as it happens and costs nothing while nothing happens.
@@ -187,7 +209,8 @@ settings.boolean('web_live_flow', True, scope='global',
                  help="Draw agents' real activity on the map: requests to the parts a tool call reaches, records "
                       'landing where something is written.',
                  details='Off, the map shows only the flow it draws of its own joins. With reduced motion nothing '
-                         'flows at all.')
+                         'flows at all.',
+                 label="Flow on agents' activity", section='Flow')
 # The characters the agents' figures are drawn as, page/agent-glyphs, read from the files so the choices are the
 # characters there are.
 CHARACTERS = sorted(path.stem for path in (Path(__file__).parent / 'page' / 'agent-glyphs').glob('*.svg'))
@@ -197,15 +220,18 @@ CHARACTERS = sorted(path.stem for path in (Path(__file__).parent / 'page' / 'age
 settings.choice('web_mascot', ['none', *CHARACTERS], 'none', scope='global',
                 help='The character that stands for you on the map, or none.',
                 details='It goes to what you select and waits beside it, greets the agent you chat with, brings you '
-                        'a note when something needs you, and sleeps while you are away. It never takes a click.')
+                        'a note when something needs you, and sleeps while you are away. It never takes a click.',
+                label='Your mascot', section='Mascot and agents')
 settings.choice('web_mascot_mischief', ['calm', 'playful', 'chaotic'], 'playful', scope='global',
                 help='How much the mascot does of its own accord: calm, playful or chaotic.',
                 details='calm only calls your attention and never wanders; playful wanders now and then and nudges a '
-                        'node it passes; chaotic does both more often. It never takes the pointer or blocks a click.')
+                        'node it passes; chaotic does both more often. It never takes the pointer or blocks a click.',
+                label='Mascot mischief', section='Mascot and agents')
 settings.items('web_agent_glyphs', [], scope='global',
                help='The character for each agent type, as type=character, such as claude=owl or codex=beetle.',
                details='Without one, characters are given as before, so no two agents at work look alike; a '
-                       'character already at work, or the mascot, is never given twice.')
+                       'character already at work, or the mascot, is never given twice.',
+               label='Agent glyphs', category='advanced')
 # Which way the 2D map runs. auto lays it out each way for its pane and keeps the one drawn largest with the whole map
 # in view; across and down hold it to one direction whatever the pane's shape.
 settings.choice('web_map_direction', ['auto', 'across', 'down'], 'auto', scope='global',
@@ -213,7 +239,8 @@ settings.choice('web_map_direction', ['auto', 'across', 'down'], 'auto', scope='
                 details='auto lays the map out left to right and top to bottom, and each folded into rows or '
                         'columns when it is long, and keeps the one its pane shows largest with the whole map in '
                         'view; it is laid out again when the pane changes shape. across and down hold it to that '
-                        'direction, unfolded.')
+                        'direction, unfolded.',
+                label='2D map direction', section='Map')
 # Node zoom: each node selected in the 3D map is flown to, framed close with its neighbours, in either pane and
 # whatever framing or physics is in force; it is what shows a part in its place. It is also the 2D map's auto zoom,
 # VIEW-041: each selection eases the 2D map to the node with its neighbours. Off, a selection never moves either
@@ -225,26 +252,30 @@ settings.choice('web_hover_info', ['name+summary', 'name', 'summary', 'off'], 'n
                 details='name is the hovered thing\'s name across the top of the map, shown only where the map has '
                         'no name of its own that can be read, an edge always; summary is the card at the lower right '
                         'with its kind, address and purpose or EF, an agent\'s work and status. I in the web GUI, the '
-                        'map bar and the View menu choose it.')
+                        'map bar and the View menu choose it.',
+                label='What the pointer shows', section='Look')
 settings.boolean('web_node_zoom', True, scope='global',
                  help='Move both maps to each node selected and frame it with its neighbours.',
                  details='On, every selection in 3D flies there, in the large and the small pane, whatever Whole, '
                          'Free or physics is chosen; those frame the map while nothing is being flown to; and the 2D '
                          'map eases to the node with its neighbours, its auto zoom. Off, a selection never moves '
-                         'either camera. Z or 3 in the web GUI, the map bars and the View menu toggle it.')
+                         'either camera. Z or 3 in the web GUI, the map bars and the View menu toggle it.',
+                 label='Fly to the node selected', section='Map')
 # The window of the agents at work: auto slides it out as an agent starts work and away a few seconds after the last
 # one stops; open keeps it out, hidden keeps it away.
 settings.choice('web_agents_window', ['auto', 'open', 'hidden'], 'auto', scope='global',
                 help='When the window of the agents at work shows: auto, open or hidden.',
                 details='auto shows it while any agent is at work and slides it away a few seconds after the last '
                         'one stops; open pins it out, hidden pins it away. A in the web GUI, or the View menu, '
-                        'changes it.')
+                        'changes it.',
+                label='Agents window', section='Mascot and agents')
 # The 3D map's layout: organic, as it has always been, or flat, everything on one plane with the names facing you.
 PHYSICS = ('organic', 'flat')
 settings.choice('web_physics', list(PHYSICS), 'organic', scope='global',
                 help="The 3D map's layout: organic, or flat.",
                 details='organic is the natural layout; flat lays the map on one plane with its names facing you. '
-                        'L switches between them in the web GUI.')
+                        'L switches between them in the web GUI.',
+                label='3D layout', section='Map')
 # The page's developer detail: off shows none of it. info adds the browser-console lines of what the page reads and
 # writes and the developer panes, among them the prompts Metaform and each enabled module would send; verbose adds
 # the events heard and the panes drawn; trace adds every raw response.
@@ -254,12 +285,14 @@ settings.choice('web_debug', list(DEBUG_LEVELS), 'off', scope='global',
                 details='info logs each read and write of the page to the browser console and adds the developer '
                         'panes: the prompts Metaform and each enabled module would send, read-only, what an agent '
                         'sees, and the traces; verbose adds the events heard and each pane drawn; trace adds every '
-                        'raw response. metaform web start --web-debug <level> starts the page with it for that run.')
+                        'raw response. metaform web start --web-debug <level> starts the page with it for that run.',
+                label='Developer level', category='advanced')
 settings.choice('web_workspace', workspace_choices, DEFAULT, scope='global',
                 help='The workspace the web GUI opens with; Reset returns the toolbar and panes to it as saved.',
                 details='Default is the declared defaults. Choosing a workspace on the page copies its toolbar and '
                         'layout into web_toolbar and web_layout, which then hold the person\'s changes until the '
-                        'next reset or save.')
+                        'next reset or save.',
+                label='Workspace in use', category='advanced')
 
 
 def run_dir() -> Path:
@@ -935,4 +968,5 @@ MODULE = Module(
         Pane('runs', 'Workflow runs', 'See the workflow runs at work, answer one waiting on you and resume it, or '
              'cancel one.', icon='play', page='runs', area='right', group='chat', order=130, min_width=320),
     ),
+    settings_category='map',
 )

@@ -16,7 +16,7 @@ import inspect
 import os
 import re
 import sys
-from collections.abc import Awaitable, Callable, Coroutine, Generator
+from collections.abc import Awaitable, Callable, Coroutine, Generator, Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -80,6 +80,7 @@ __all__ = [
     'node_reads',
     'on_surface',
     'on_this_system',
+    'problem_report',
     'project_for',
     'project_glossary',
     'read_report',
@@ -532,8 +533,14 @@ class Module:
     toolbar: tuple[ToolbarItem, ...] = ()  # the tools it adds to the web GUI's toolbar
     panes: tuple[Pane, ...] = ()  # the panes it adds to the web GUI's workspace
     provides: tuple[Provides, ...] = ()  # what it offers other modules by kind, found with provided(folder, kind)
+    # The settings screens' category its settings fall in when one names none, one of settings.CATEGORY_NAMES;
+    # None puts them in advanced.
+    settings_category: str | None = None
 
     def __post_init__(self) -> None:
+        from .settings import CATEGORY_NAMES
+        if self.settings_category is not None and self.settings_category not in CATEGORY_NAMES:
+            raise ValueError(f'Module {self.id}: settings_category must be one of {", ".join(CATEGORY_NAMES)}.')
         names = {verb.name for verb in self.verbs}
         for resource in self.resources:
             if resource.verb not in names:
@@ -1342,3 +1349,11 @@ def read_report(folder: Path, name: str, *, project: str | None = None) -> str:
     """One listed report file's text exactly, BASE-045."""
     from . import reports
     return reports.read_report(folder, name, project=project)
+
+
+def problem_report(folder: Path, description: str, *, files: bool = False, browser: str | None = None,
+                   console: Iterable[str] = ()) -> tuple[str, bytes, list[str]]:
+    """A tester's problem report as `metaform report` makes it: its file name, its bytes and what it holds, one
+    line each, every secret masked, BASE-045. Nothing is written or sent; the caller saves it."""
+    from . import problem_report as made
+    return made.build(folder, description, files=files, browser=browser, console=console)

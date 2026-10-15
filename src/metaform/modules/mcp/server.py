@@ -506,12 +506,6 @@ def connect_instructions(folder: Path, client: str | None = None) -> str:
     return '\n'.join(one for one in (started, skill_index(folder, client, HOST_KEEPS - len(started) - 1)) if one)
 
 
-def project_id_for(folder: Path) -> str:
-    """A project id made from a folder's name: lowercase, every run of other characters one -, MCP-009."""
-    made = re.sub(r'[^a-z0-9_-]+', '-', folder.name.lower()).strip('-_')[:64]
-    return made if made and home.PROJECT_ID.fullmatch(made) else 'project'
-
-
 def register(folder: Path, given: str | None = None) -> dict[str, Any]:
     """Register the server's folder as a project, the first step of onboarding, MCP-009, through the same path as
     metaform add project. A folder already in a project answers with it and changes nothing. The answer carries the
@@ -520,7 +514,7 @@ def register(folder: Path, given: str | None = None) -> dict[str, Any]:
     if held is not None:
         said = f'This folder is already in project {held}; nothing was changed.'
     else:
-        chosen = given or project_id_for(folder)
+        chosen = given or home.project_id_for(folder)
         try:
             said = home.add_project(chosen, folder)
         except StoreError as error:

@@ -209,6 +209,27 @@ def test_a_wheel_run_on_an_older_python_says_what_it_needs(tmp_path, map_only):
     assert 'Traceback' not in done.stderr
 
 
+@pytest.mark.req('BASE-060')
+def test_a_wheel_build_writes_a_zip_of_the_wheel_and_a_readme_naming_its_version_and_modules(map_only):
+    from metaform import __version__, build_readme
+    wheel, out = map_only
+    zipped = Path(next(line.split(':', 1)[1].strip() for line in out.splitlines() if line.startswith('Zip:')))
+    assert zipped.name == f'metaform-{__version__}-installer.zip' and zipped.parent == wheel.parent
+    folder = zipped.stem
+    with zipfile.ZipFile(zipped) as archive:
+        assert sorted(archive.namelist()) == [f'{folder}/README.md', f'{folder}/{wheel.name}']
+        assert archive.read(f'{folder}/{wheel.name}') == wheel.read_bytes()
+        readme = archive.read(f'{folder}/README.md').decode()
+    carried = next(line for line in out.splitlines() if line.startswith('Modules:')).split(':', 1)[1].split(',')
+    assert readme.splitlines()[2] == build_readme.WELCOME and build_readme.DISCORD in readme
+    assert f'Metaform {__version__}' in readme and f'uv tool install ./{wheel.name}' in readme
+    assert all(f'- `{module.strip()}`' in readme for module in carried)
+    assert f'Python {_build_info.REQUIRES_PYTHON.removeprefix(">=")} or newer' in readme
+    # A project build's README also takes the remote agent through its round trip.
+    project = build_readme.readme('project', wheel.name, [], 'notes', prompt=True)
+    assert f'python {wheel.name} return [note=<text>] [file=<path>]' in project and '`prompt.md`' in project
+
+
 @pytest.mark.req('BASE-041')
 def test_a_build_names_the_copy_it_packs(every_module):
     _, out = every_module

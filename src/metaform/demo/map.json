@@ -1,0 +1,1699 @@
+{
+ "metaform_export": 2,
+ "schema_version": "21",
+ "compatible_from": "21",
+ "projects": [
+  {
+   "project": {
+    "project_id": "pocket-ledger",
+    "path": "pocket-ledger",
+    "target_type": "path",
+    "target_value": "pocket-ledger"
+   },
+   "bases": [
+    {
+     "base": {
+      "id": "8b377bc2838446e29f31fd1b74b65300",
+      "name": "main",
+      "created": "2026-10-15T01:42:28Z"
+     },
+     "ops": [
+      {
+       "seq": 1,
+       "session_id": "1fb28dd577824a5d98e18604e11a9bf3",
+       "at": "2026-10-15T01:42:28Z",
+       "op": "add",
+       "kind": "layer",
+       "id": "432ee7c7db584f9bbe3e0191a47f58c4",
+       "layer_id": "432ee7c7db584f9bbe3e0191a47f58c4",
+       "data": {
+        "base_id": "8b377bc2838446e29f31fd1b74b65300",
+        "created": "2026-10-15T01:42:28Z",
+        "fields": [],
+        "hidden": false,
+        "hideable": false,
+        "kind": "base",
+        "module": "intake",
+        "mutable": false,
+        "name": "base",
+        "provenance": {
+         "blinded": null,
+         "model": "demo",
+         "module": "intake",
+         "prompt": null,
+         "role": "intake agent",
+         "workflow": "canonical-intake"
+        },
+        "ready": null,
+        "reexamine": [],
+        "result_id": null,
+        "sources": [],
+        "tags": [],
+        "variable": "The functional map of the artifact: its elements, and each receiver's purpose served by a provider's encounter function."
+       }
+      },
+      {
+       "seq": 2,
+       "session_id": "9661edbd4af14187ac741f918b8f5403",
+       "at": "2026-10-15T01:42:29Z",
+       "op": "add",
+       "kind": "element",
+       "id": "1692439f839d425cb51982dc327fad61",
+       "layer_id": "432ee7c7db584f9bbe3e0191a47f58c4",
+       "data": {
+        "address": "downstream.cqu.household",
+        "mode": "add",
+        "name": "Household",
+        "name_length": 1,
+        "role": "CQU"
+       }
+      },
+      {
+       "seq": 3,
+       "session_id": "2b0177b1fb214ad3b002583372c3c972",
+       "at": "2026-10-15T01:42:30Z",
+       "op": "add",
+       "kind": "element",
+       "id": "6f70b08b2dbc4d3db1d5ae98a8c4c89e",
+       "layer_id": "432ee7c7db584f9bbe3e0191a47f58c4",
+       "data": {
+        "address": "code.interface.command_line",
+        "mode": "add",
+        "name": "ledger command line",
+        "name_length": 2,
+        "role": "DE"
+       }
+      },
+      {
+       "seq": 4,
+       "session_id": "2b0177b1fb214ad3b002583372c3c972",
+       "at": "2026-10-15T01:42:30Z",
+       "op": "add",
+       "kind": "layer",
+       "id": "ff5e4a04326d4b859604a113eb0bcc39",
+       "layer_id": "ff5e4a04326d4b859604a113eb0bcc39",
+       "data": {
+        "base_id": "8b377bc2838446e29f31fd1b74b65300",
+        "created": "2026-10-15T01:42:30Z",
+        "fields": [],
+        "hidden": false,
+        "hideable": true,
+        "kind": "layer",
+        "module": "intake",
+        "mutable": true,
+        "name": "sources",
+        "provenance": {
+         "blinded": null,
+         "model": null,
+         "module": "intake",
+         "prompt": null,
+         "role": null,
+         "workflow": null
+        },
+        "ready": "2026-10-15T01:42:30Z",
+        "reexamine": [],
+        "result_id": null,
+        "sources": [],
+        "tags": [],
+        "variable": "refs"
+       }
+      },
+      {
+       "seq": 5,
+       "session_id": "2b0177b1fb214ad3b002583372c3c972",
+       "at": "2026-10-15T01:42:30Z",
+       "op": "add",
+       "kind": "item",
+       "id": "bc09d6f29cf24e328e0e353ac7c8b4ca",
+       "layer_id": "ff5e4a04326d4b859604a113eb0bcc39",
+       "data": {
+        "always_show": 0,
+        "extra": null,
+        "link_id": null,
+        "link_kind": null,
+        "mode": "add",
+        "read_first": 0,
+        "refs": [
+         [
+          "path",
+          "ledger/cli.py"
+         ],
+         [
+          "path",
+          "ledger/__main__.py"
+         ]
+        ],
+        "target_id": "6f70b08b2dbc4d3db1d5ae98a8c4c89e",
+        "target_kind": "element",
+        "value": "\"code.interface.command_line\""
+       }
+      },
+      {
+       "seq": 6,
+       "session_id": "98fe825a96754329acc02ac0497984ee",
+       "at": "2026-10-15T01:42:31Z",
+       "op": "add",
+       "kind": "element",
+       "id": "fa4bb9b1f9414ebba45dce19864d898d",
+       "layer_id": "432ee7c7db584f9bbe3e0191a47f58c4",
+       "data": {
+        "address": "code.parser.amount",
+        "mode": "add",
+        "name": "amount parser",
+        "name_length": 2,
+        "role": "SE"
+       }
+      },
+      {
+       "seq": 7,
+       "session_id": "98fe825a96754329acc02ac0497984ee",
+       "at": "2026-10-15T01:42:31Z",
+       "op": "add",
+       "kind": "item",
+       "id": "48b57a16fa884b6c9aea5ab1112afb6a",
+       "layer_id": "ff5e4a04326d4b859604a113eb0bcc39",
+       "data": {
+        "always_show": 0,
+        "extra": null,
+        "link_id": null,
+        "link_kind": null,
+        "mode": "add",
+        "read_first": 0,
+        "refs": [
+         [
+          "path",
+          "ledger/amounts.py"
+         ]
+        ],
+        "target_id": "fa4bb9b1f9414ebba45dce19864d898d",
+        "target_kind": "element",
+        "value": "\"code.parser.amount\""
+       }
+      },
+      {
+       "seq": 8,
+       "session_id": "0260ecd047744eee847c15d43feeaad8",
+       "at": "2026-10-15T01:42:31Z",
+       "op": "add",
+       "kind": "element",
+       "id": "9e113d62d3dc47e9acc9458373ddeb11",
+       "layer_id": "432ee7c7db584f9bbe3e0191a47f58c4",
+       "data": {
+        "address": "code.formatter.amount",
+        "mode": "add",
+        "name": "amount formatter",
+        "name_length": 2,
+        "role": "SE"
+       }
+      },
+      {
+       "seq": 9,
+       "session_id": "0260ecd047744eee847c15d43feeaad8",
+       "at": "2026-10-15T01:42:32Z",
+       "op": "add",
+       "kind": "item",
+       "id": "c8204c6724184cfb962930ccdff3f57e",
+       "layer_id": "ff5e4a04326d4b859604a113eb0bcc39",
+       "data": {
+        "always_show": 0,
+        "extra": null,
+        "link_id": null,
+        "link_kind": null,
+        "mode": "add",
+        "read_first": 0,
+        "refs": [
+         [
+          "path",
+          "ledger/amounts.py"
+         ]
+        ],
+        "target_id": "9e113d62d3dc47e9acc9458373ddeb11",
+        "target_kind": "element",
+        "value": "\"code.formatter.amount\""
+       }
+      },
+      {
+       "seq": 10,
+       "session_id": "48a355f6321c42dc84cc836043a5af23",
+       "at": "2026-10-15T01:42:32Z",
+       "op": "add",
+       "kind": "element",
+       "id": "c4fbfed0d337434393c83f7ddd08c877",
+       "layer_id": "432ee7c7db584f9bbe3e0191a47f58c4",
+       "data": {
+        "address": "code.report.monthly",
+        "mode": "add",
+        "name": "monthly report",
+        "name_length": 2,
+        "role": "SE"
+       }
+      },
+      {
+       "seq": 11,
+       "session_id": "48a355f6321c42dc84cc836043a5af23",
+       "at": "2026-10-15T01:42:32Z",
+       "op": "add",
+       "kind": "item",
+       "id": "c1a4bdb9a1504543acf96f68092207f3",
+       "layer_id": "ff5e4a04326d4b859604a113eb0bcc39",
+       "data": {
+        "always_show": 0,
+        "extra": null,
+        "link_id": null,
+        "link_kind": null,
+        "mode": "add",
+        "read_first": 0,
+        "refs": [
+         [
+          "path",
+          "ledger/report.py"
+         ]
+        ],
+        "target_id": "c4fbfed0d337434393c83f7ddd08c877",
+        "target_kind": "element",
+        "value": "\"code.report.monthly\""
+       }
+      },
+      {
+       "seq": 12,
+       "session_id": "85d905d77a534ff6b5858667791c8842",
+       "at": "2026-10-15T01:42:33Z",
+       "op": "add",
+       "kind": "element",
+       "id": "b07561da705e483ea8389f132e379e89",
+       "layer_id": "432ee7c7db584f9bbe3e0191a47f58c4",
+       "data": {
+        "address": "code.store.ledger",
+        "mode": "add",
+        "name": "ledger store",
+        "name_length": 2,
+        "role": "SE"
+       }
+      },
+      {
+       "seq": 13,
+       "session_id": "85d905d77a534ff6b5858667791c8842",
+       "at": "2026-10-15T01:42:33Z",
+       "op": "add",
+       "kind": "item",
+       "id": "11244a68e0964d01ba407a0a5ae51125",
+       "layer_id": "ff5e4a04326d4b859604a113eb0bcc39",
+       "data": {
+        "always_show": 0,
+        "extra": null,
+        "link_id": null,
+        "link_kind": null,
+        "mode": "add",
+        "read_first": 0,
+        "refs": [
+         [
+          "path",
+          "ledger/store.py"
+         ]
+        ],
+        "target_id": "b07561da705e483ea8389f132e379e89",
+        "target_kind": "element",
+        "value": "\"code.store.ledger\""
+       }
+      },
+      {
+       "seq": 14,
+       "session_id": "fab58c45fa84449a94d29b20507a10dc",
+       "at": "2026-10-15T01:42:34Z",
+       "op": "add",
+       "kind": "element",
+       "id": "05a499178dd24ecb894dee0306d8d3fb",
+       "layer_id": "432ee7c7db584f9bbe3e0191a47f58c4",
+       "data": {
+        "address": "data.file.ledger",
+        "mode": "add",
+        "name": "ledger.json",
+        "name_length": 2,
+        "role": "SE"
+       }
+      },
+      {
+       "seq": 15,
+       "session_id": "fab58c45fa84449a94d29b20507a10dc",
+       "at": "2026-10-15T01:42:34Z",
+       "op": "add",
+       "kind": "item",
+       "id": "5f267023581a44e8871300f2417871e4",
+       "layer_id": "ff5e4a04326d4b859604a113eb0bcc39",
+       "data": {
+        "always_show": 0,
+        "extra": null,
+        "link_id": null,
+        "link_kind": null,
+        "mode": "add",
+        "read_first": 0,
+        "refs": [
+         [
+          "path",
+          "ledger.json"
+         ]
+        ],
+        "target_id": "05a499178dd24ecb894dee0306d8d3fb",
+        "target_kind": "element",
+        "value": "\"data.file.ledger\""
+       }
+      },
+      {
+       "seq": 16,
+       "session_id": "7d82e8738db44323a99bd094e3e036c1",
+       "at": "2026-10-15T01:42:35Z",
+       "op": "add",
+       "kind": "element",
+       "id": "b819f664796440b4b560f3c43ad9d6db",
+       "layer_id": "432ee7c7db584f9bbe3e0191a47f58c4",
+       "data": {
+        "address": "document.guide.usage",
+        "mode": "add",
+        "name": "README",
+        "name_length": 2,
+        "role": "SE"
+       }
+      },
+      {
+       "seq": 17,
+       "session_id": "7d82e8738db44323a99bd094e3e036c1",
+       "at": "2026-10-15T01:42:35Z",
+       "op": "add",
+       "kind": "item",
+       "id": "28fbfe13584b4202a7ac49cd35cb0998",
+       "layer_id": "ff5e4a04326d4b859604a113eb0bcc39",
+       "data": {
+        "always_show": 0,
+        "extra": null,
+        "link_id": null,
+        "link_kind": null,
+        "mode": "add",
+        "read_first": 0,
+        "refs": [
+         [
+          "path",
+          "README.md"
+         ]
+        ],
+        "target_id": "b819f664796440b4b560f3c43ad9d6db",
+        "target_kind": "element",
+        "value": "\"document.guide.usage\""
+       }
+      },
+      {
+       "seq": 18,
+       "session_id": "ffddc9b6e6e54cf0b304994ff4862012",
+       "at": "2026-10-15T01:42:35Z",
+       "op": "add",
+       "kind": "join",
+       "id": "f0847b6794164992886adbfbd0823768",
+       "layer_id": "432ee7c7db584f9bbe3e0191a47f58c4",
+       "data": {
+        "ef": "takes each expense as it happens and prints the month's totals",
+        "element": null,
+        "held": [
+         "6f70b08b2dbc4d3db1d5ae98a8c4c89e"
+        ],
+        "ifd": "receives",
+        "mode": "add",
+        "purpose": "Know what we spend each month, by category, to the cent.",
+        "receiver": "1692439f839d425cb51982dc327fad61",
+        "type": "purpose"
+       }
+      },
+      {
+       "seq": 19,
+       "session_id": "52c7e207769042a3874233bc361bea4d",
+       "at": "2026-10-15T01:42:36Z",
+       "op": "add",
+       "kind": "join",
+       "id": "6a16d3c4baee4a8096c7d68e2915e6ad",
+       "layer_id": "432ee7c7db584f9bbe3e0191a47f58c4",
+       "data": {
+        "ef": "shows the two commands with an example",
+        "element": null,
+        "held": [
+         "b819f664796440b4b560f3c43ad9d6db"
+        ],
+        "ifd": "receives",
+        "mode": "add",
+        "purpose": "Learn how to record an expense and read a month.",
+        "receiver": "1692439f839d425cb51982dc327fad61",
+        "type": "purpose"
+       }
+      },
+      {
+       "seq": 20,
+       "session_id": "09e874218cfc49c091d2051ca95a0e7c",
+       "at": "2026-10-15T01:42:37Z",
+       "op": "add",
+       "kind": "join",
+       "id": "a0a1c32f560946858bcc83c3cb2f094f",
+       "layer_id": "432ee7c7db584f9bbe3e0191a47f58c4",
+       "data": {
+        "ef": "parses the typed decimal into cents",
+        "element": null,
+        "held": [
+         "fa4bb9b1f9414ebba45dce19864d898d"
+        ],
+        "ifd": "receives",
+        "mode": "add",
+        "purpose": "Turn the amount the person typed into exact whole cents.",
+        "receiver": "6f70b08b2dbc4d3db1d5ae98a8c4c89e",
+        "type": "purpose"
+       }
+      },
+      {
+       "seq": 21,
+       "session_id": "28293fe5f1c545e49e29f56f1d2f3691",
+       "at": "2026-10-15T01:42:38Z",
+       "op": "add",
+       "kind": "join",
+       "id": "d29c7926798844dfa5af1a6080a08e5d",
+       "layer_id": "432ee7c7db584f9bbe3e0191a47f58c4",
+       "data": {
+        "ef": "formats whole cents as units and two decimals",
+        "element": null,
+        "held": [
+         "9e113d62d3dc47e9acc9458373ddeb11"
+        ],
+        "ifd": "receives",
+        "mode": "add",
+        "purpose": "Show cents as the person reads money.",
+        "receiver": "6f70b08b2dbc4d3db1d5ae98a8c4c89e",
+        "type": "purpose"
+       }
+      },
+      {
+       "seq": 22,
+       "session_id": "5e1eca3b5e1548898866373b97160711",
+       "at": "2026-10-15T01:42:39Z",
+       "op": "add",
+       "kind": "join",
+       "id": "953c11e70d5f45408bc66a2aede9b98d",
+       "layer_id": "432ee7c7db584f9bbe3e0191a47f58c4",
+       "data": {
+        "ef": "appends the entry to the ledger file",
+        "element": null,
+        "held": [
+         "b07561da705e483ea8389f132e379e89"
+        ],
+        "ifd": "sends",
+        "mode": "add",
+        "purpose": "Keep every entry between runs.",
+        "receiver": "6f70b08b2dbc4d3db1d5ae98a8c4c89e",
+        "type": "purpose"
+       }
+      },
+      {
+       "seq": 23,
+       "session_id": "0a1d683386dc4d368850a9cdcc056b29",
+       "at": "2026-10-15T01:42:41Z",
+       "op": "add",
+       "kind": "join",
+       "id": "31af34ed90de4bac8aee7f5b8051ed89",
+       "layer_id": "432ee7c7db584f9bbe3e0191a47f58c4",
+       "data": {
+        "ef": "sums the month's entries per category",
+        "element": null,
+        "held": [
+         "c4fbfed0d337434393c83f7ddd08c877"
+        ],
+        "ifd": "receives",
+        "mode": "add",
+        "purpose": "Total a month's spending by category.",
+        "receiver": "6f70b08b2dbc4d3db1d5ae98a8c4c89e",
+        "type": "purpose"
+       }
+      },
+      {
+       "seq": 24,
+       "session_id": "af3501a740554ff680a4c4dd15743163",
+       "at": "2026-10-15T01:42:42Z",
+       "op": "add",
+       "kind": "join",
+       "id": "555d2c35734e4b729069db0bba39e384",
+       "layer_id": "432ee7c7db584f9bbe3e0191a47f58c4",
+       "data": {
+        "ef": "loads the entries from the ledger file",
+        "element": null,
+        "held": [
+         "b07561da705e483ea8389f132e379e89"
+        ],
+        "ifd": "receives",
+        "mode": "add",
+        "purpose": "Read every entry recorded.",
+        "receiver": "c4fbfed0d337434393c83f7ddd08c877",
+        "type": "purpose"
+       }
+      },
+      {
+       "seq": 25,
+       "session_id": "8e019d57c9be457a8c0b387aee43caa0",
+       "at": "2026-10-15T01:42:43Z",
+       "op": "add",
+       "kind": "join",
+       "id": "4e479c107a1840f9931612ce318db9fa",
+       "layer_id": "432ee7c7db584f9bbe3e0191a47f58c4",
+       "data": {
+        "ef": "stores the entry rows between runs",
+        "element": null,
+        "held": [
+         "05a499178dd24ecb894dee0306d8d3fb"
+        ],
+        "ifd": "both",
+        "mode": "add",
+        "purpose": "Hold the entries on disk as JSON.",
+        "receiver": "b07561da705e483ea8389f132e379e89",
+        "type": "purpose"
+       }
+      },
+      {
+       "seq": 26,
+       "session_id": "2980f01668564f06bb99427243b5283d",
+       "at": "2026-10-15T01:42:44Z",
+       "op": "change",
+       "kind": "layer",
+       "id": "432ee7c7db584f9bbe3e0191a47f58c4",
+       "layer_id": "432ee7c7db584f9bbe3e0191a47f58c4",
+       "data": {
+        "ready": "2026-10-15T01:42:44Z"
+       }
+      }
+     ],
+     "requires": [],
+     "extensions": [
+      {
+       "module": "map",
+       "version": 15,
+       "compatible_from": 9,
+       "tables": [
+        {
+         "name": "challenge_states",
+         "place": "metaform",
+         "key": [
+          "item_id"
+         ],
+         "columns": [
+          [
+           "item_id",
+           "text",
+           false,
+           null
+          ],
+          [
+           "state",
+           "text",
+           true,
+           null
+          ],
+          [
+           "link_kind",
+           "text",
+           false,
+           null
+          ],
+          [
+           "link_id",
+           "text",
+           false,
+           null
+          ],
+          [
+           "answered",
+           "text",
+           true,
+           null
+          ],
+          [
+           "approved",
+           "text",
+           false,
+           null
+          ]
+         ],
+         "indexes": [
+          [
+           [
+            "state"
+           ],
+           false
+          ]
+         ],
+         "schema": "\nCREATE TABLE IF NOT EXISTS challenge_states(\n  item_id   TEXT PRIMARY KEY,\n  state     TEXT NOT NULL CHECK(state IN ('A','B','C','plan')),\n  link_kind TEXT CHECK(link_kind IN ('element','join')),\n  link_id   TEXT,\n  answered  TEXT NOT NULL,\n  approved  TEXT\n);\nCREATE INDEX IF NOT EXISTS challenge_states_by_state ON challenge_states(state);\n",
+         "exchange": true,
+         "on_remove": [
+          [
+           "item",
+           "item_id",
+           "delete"
+          ]
+         ]
+        },
+        {
+         "name": "plans",
+         "place": "metaform",
+         "key": [
+          "element_id"
+         ],
+         "columns": [
+          [
+           "element_id",
+           "text",
+           false,
+           null
+          ],
+          [
+           "join_id",
+           "text",
+           false,
+           null
+          ],
+          [
+           "layer_id",
+           "text",
+           true,
+           null
+          ],
+          [
+           "source",
+           "text",
+           true,
+           null
+          ],
+          [
+           "item_id",
+           "text",
+           false,
+           null
+          ]
+         ],
+         "indexes": [
+          [
+           [
+            "layer_id"
+           ],
+           false
+          ]
+         ],
+         "schema": "\nCREATE TABLE IF NOT EXISTS plans(\n  element_id TEXT PRIMARY KEY,\n  join_id    TEXT,\n  layer_id   TEXT NOT NULL,\n  source     TEXT NOT NULL CHECK(source IN ('direct','approved')),\n  item_id    TEXT\n);\nCREATE INDEX IF NOT EXISTS plans_by_layer ON plans(layer_id);\n",
+         "exchange": true,
+         "on_remove": [
+          [
+           "layer",
+           "layer_id",
+           "delete"
+          ]
+         ]
+        },
+        {
+         "name": "work",
+         "place": "metaform",
+         "key": [
+          "row"
+         ],
+         "columns": [
+          [
+           "row",
+           "int",
+           false,
+           null
+          ],
+          [
+           "work_id",
+           "text",
+           true,
+           null
+          ],
+          [
+           "target_kind",
+           "text",
+           true,
+           null
+          ],
+          [
+           "target_id",
+           "text",
+           true,
+           null
+          ],
+          [
+           "condition",
+           "text",
+           true,
+           null
+          ],
+          [
+           "note",
+           "text",
+           false,
+           null
+          ],
+          [
+           "task",
+           "text",
+           false,
+           null
+          ],
+          [
+           "held",
+           "int",
+           true,
+           null
+          ],
+          [
+           "reviewed",
+           "int",
+           true,
+           null
+          ],
+          [
+           "created",
+           "text",
+           true,
+           null
+          ],
+          [
+           "done",
+           "text",
+           false,
+           null
+          ],
+          [
+           "resolution",
+           "text",
+           false,
+           null
+          ],
+          [
+           "steps",
+           "int",
+           false,
+           null
+          ],
+          [
+           "steps_done",
+           "int",
+           true,
+           null
+          ],
+          [
+           "taken",
+           "text",
+           false,
+           null
+          ],
+          [
+           "taken_by",
+           "text",
+           false,
+           null
+          ],
+          [
+           "position",
+           "int",
+           false,
+           null
+          ],
+          [
+           "kind",
+           "text",
+           true,
+           null
+          ],
+          [
+           "outcome",
+           "text",
+           false,
+           null
+          ]
+         ],
+         "indexes": [
+          [
+           [
+            "done",
+            "row"
+           ],
+           false
+          ],
+          [
+           [
+            "condition",
+            "row"
+           ],
+           false
+          ],
+          [
+           [
+            "target_kind",
+            "target_id",
+            "row"
+           ],
+           false
+          ],
+          [
+           [
+            "work_id"
+           ],
+           true
+          ]
+         ],
+         "schema": "\nCREATE TABLE IF NOT EXISTS work(\n  row         INTEGER PRIMARY KEY,\n  work_id     TEXT NOT NULL UNIQUE,\n  target_kind TEXT NOT NULL,\n  target_id   TEXT NOT NULL,\n  condition   TEXT NOT NULL,\n  note        TEXT,\n  task        TEXT,\n  held        INTEGER NOT NULL DEFAULT 0,\n  reviewed    INTEGER NOT NULL DEFAULT 0,\n  created     TEXT NOT NULL,\n  done        TEXT,\n  resolution  TEXT,\n  steps       INTEGER,\n  steps_done  INTEGER NOT NULL DEFAULT 0,\n  taken       TEXT,\n  taken_by    TEXT,\n  position    INTEGER,\n  kind        TEXT NOT NULL DEFAULT '',\n  outcome     TEXT\n);\nCREATE INDEX IF NOT EXISTS work_by_target ON work(target_kind, target_id, row);\nCREATE INDEX IF NOT EXISTS work_by_condition ON work(condition, row);\nCREATE INDEX IF NOT EXISTS work_by_done ON work(done, row);\n",
+         "exchange": true
+        },
+        {
+         "name": "work_links",
+         "place": "metaform",
+         "key": [
+          "work_id",
+          "number"
+         ],
+         "columns": [
+          [
+           "work_id",
+           "text",
+           true,
+           null
+          ],
+          [
+           "number",
+           "int",
+           true,
+           null
+          ],
+          [
+           "target_kind",
+           "text",
+           true,
+           null
+          ],
+          [
+           "target_id",
+           "text",
+           true,
+           null
+          ]
+         ],
+         "indexes": [],
+         "schema": "\nCREATE TABLE IF NOT EXISTS work_links(\n  work_id     TEXT NOT NULL REFERENCES work(work_id),\n  number      INTEGER NOT NULL,\n  target_kind TEXT NOT NULL,\n  target_id   TEXT NOT NULL,\n  PRIMARY KEY(work_id, number)\n);\n",
+         "exchange": true
+        },
+        {
+         "name": "work_steps",
+         "place": "metaform",
+         "key": [
+          "row"
+         ],
+         "columns": [
+          [
+           "row",
+           "int",
+           false,
+           null
+          ],
+          [
+           "work_id",
+           "text",
+           true,
+           null
+          ],
+          [
+           "number",
+           "int",
+           true,
+           null
+          ],
+          [
+           "said",
+           "text",
+           false,
+           null
+          ],
+          [
+           "at",
+           "text",
+           true,
+           null
+          ]
+         ],
+         "indexes": [
+          [
+           [
+            "work_id",
+            "number"
+           ],
+           false
+          ]
+         ],
+         "schema": "\nCREATE TABLE IF NOT EXISTS work_steps(\n  row     INTEGER PRIMARY KEY,\n  work_id TEXT NOT NULL REFERENCES work(work_id),\n  number  INTEGER NOT NULL,\n  said    TEXT,\n  at      TEXT NOT NULL\n);\nCREATE INDEX IF NOT EXISTS work_steps_by_work ON work_steps(work_id, number);\n",
+         "exchange": true
+        },
+        {
+         "name": "messages",
+         "place": "metaform",
+         "key": [
+          "row"
+         ],
+         "columns": [
+          [
+           "row",
+           "int",
+           false,
+           null
+          ],
+          [
+           "message_id",
+           "text",
+           true,
+           null
+          ],
+          [
+           "target_kind",
+           "text",
+           true,
+           null
+          ],
+          [
+           "target_id",
+           "text",
+           true,
+           null
+          ],
+          [
+           "kind",
+           "text",
+           true,
+           null
+          ],
+          [
+           "text",
+           "text",
+           false,
+           null
+          ],
+          [
+           "suggestions",
+           "text",
+           false,
+           null
+          ],
+          [
+           "by",
+           "text",
+           false,
+           null
+          ],
+          [
+           "created",
+           "text",
+           true,
+           null
+          ],
+          [
+           "closed",
+           "text",
+           false,
+           null
+          ],
+          [
+           "answer",
+           "text",
+           false,
+           null
+          ]
+         ],
+         "indexes": [
+          [
+           [
+            "closed",
+            "row"
+           ],
+           false
+          ],
+          [
+           [
+            "target_kind",
+            "target_id",
+            "row"
+           ],
+           false
+          ],
+          [
+           [
+            "message_id"
+           ],
+           true
+          ]
+         ],
+         "schema": "\nCREATE TABLE IF NOT EXISTS messages(\n  row         INTEGER PRIMARY KEY,\n  message_id  TEXT NOT NULL UNIQUE,\n  target_kind TEXT NOT NULL,\n  target_id   TEXT NOT NULL,\n  kind        TEXT NOT NULL,\n  text        TEXT,\n  suggestions TEXT,\n  by          TEXT,\n  created     TEXT NOT NULL,\n  closed      TEXT,\n  answer      TEXT\n);\nCREATE INDEX IF NOT EXISTS messages_by_target ON messages(target_kind, target_id, row);\nCREATE INDEX IF NOT EXISTS messages_by_closed ON messages(closed, row);\n",
+         "exchange": true
+        },
+        {
+         "name": "reports",
+         "place": "metaform",
+         "key": [
+          "report_id"
+         ],
+         "columns": [
+          [
+           "report_id",
+           "text",
+           false,
+           null
+          ],
+          [
+           "run_id",
+           "text",
+           true,
+           null
+          ],
+          [
+           "layer_id",
+           "text",
+           false,
+           null
+          ],
+          [
+           "kind",
+           "text",
+           true,
+           null
+          ],
+          [
+           "created",
+           "text",
+           true,
+           null
+          ],
+          [
+           "size",
+           "int",
+           true,
+           null
+          ]
+         ],
+         "indexes": [
+          [
+           [
+            "created",
+            "report_id"
+           ],
+           false
+          ],
+          [
+           [
+            "layer_id",
+            "kind"
+           ],
+           false
+          ]
+         ],
+         "schema": "\nCREATE TABLE IF NOT EXISTS reports(\n  report_id TEXT PRIMARY KEY,\n  run_id    TEXT NOT NULL,\n  layer_id  TEXT,\n  kind      TEXT NOT NULL CHECK(kind IN ('report','feedback','shape')),\n  created   TEXT NOT NULL,\n  size      INTEGER NOT NULL\n);\nCREATE INDEX IF NOT EXISTS reports_by_layer ON reports(layer_id, kind);\nCREATE INDEX IF NOT EXISTS reports_by_time ON reports(created, report_id);\n",
+         "exchange": false,
+         "on_remove": [
+          [
+           "layer",
+           "layer_id",
+           "null"
+          ]
+         ]
+        },
+        {
+         "name": "glyphs",
+         "place": "metaform",
+         "key": [
+          "work_id"
+         ],
+         "columns": [
+          [
+           "work_id",
+           "text",
+           true,
+           null
+          ],
+          [
+           "glyph",
+           "text",
+           true,
+           null
+          ]
+         ],
+         "indexes": []
+        },
+        {
+         "name": "ticket_settings",
+         "place": "metaform",
+         "key": [
+          "work_id"
+         ],
+         "columns": [
+          [
+           "work_id",
+           "text",
+           true,
+           null
+          ],
+          [
+           "agent",
+           "text",
+           false,
+           null
+          ],
+          [
+           "hold",
+           "int",
+           false,
+           0
+          ]
+         ],
+         "indexes": []
+        },
+        {
+         "name": "eligible",
+         "place": "metaform",
+         "key": [
+          "work_id"
+         ],
+         "columns": [
+          [
+           "work_id",
+           "text",
+           true,
+           null
+          ],
+          [
+           "agents",
+           "json",
+           true,
+           null
+          ]
+         ],
+         "indexes": []
+        },
+        {
+         "name": "question_work",
+         "place": "metaform",
+         "key": [
+          "message_id"
+         ],
+         "columns": [
+          [
+           "message_id",
+           "text",
+           true,
+           null
+          ],
+          [
+           "work_id",
+           "text",
+           true,
+           null
+          ]
+         ],
+         "indexes": [
+          [
+           [
+            "work_id"
+           ],
+           false
+          ]
+         ]
+        },
+        {
+         "name": "numbered",
+         "place": "metaform",
+         "key": [
+          "kind",
+          "item_id"
+         ],
+         "columns": [
+          [
+           "kind",
+           "text",
+           true,
+           null
+          ],
+          [
+           "item_id",
+           "text",
+           true,
+           null
+          ],
+          [
+           "address",
+           "text",
+           true,
+           null
+          ],
+          [
+           "number",
+           "int",
+           true,
+           null
+          ],
+          [
+           "title",
+           "text",
+           false,
+           null
+          ],
+          [
+           "why",
+           "text",
+           false,
+           null
+          ]
+         ],
+         "indexes": [
+          [
+           [
+            "address",
+            "number"
+           ],
+           false
+          ]
+         ]
+        },
+        {
+         "name": "numbering",
+         "place": "metaform",
+         "key": [
+          "name"
+         ],
+         "columns": [
+          [
+           "name",
+           "text",
+           true,
+           null
+          ],
+          [
+           "at",
+           "text",
+           true,
+           null
+          ]
+         ],
+         "indexes": []
+        },
+        {
+         "name": "code_files",
+         "place": "metaform",
+         "key": [
+          "layer_id",
+          "path"
+         ],
+         "columns": [
+          [
+           "layer_id",
+           "text",
+           true,
+           null
+          ],
+          [
+           "path",
+           "text",
+           true,
+           null
+          ],
+          [
+           "stamp",
+           "text",
+           false,
+           null
+          ],
+          [
+           "hash",
+           "text",
+           false,
+           null
+          ],
+          [
+           "provider",
+           "text",
+           false,
+           null
+          ],
+          [
+           "symbols",
+           "int",
+           false,
+           0
+          ],
+          [
+           "read",
+           "text",
+           true,
+           null
+          ],
+          [
+           "commit",
+           "text",
+           false,
+           null
+          ],
+          [
+           "unresolved",
+           "json",
+           false,
+           null
+          ]
+         ],
+         "indexes": [],
+         "on_remove": [
+          [
+           "layer",
+           "layer_id",
+           "delete"
+          ]
+         ]
+        },
+        {
+         "name": "code_symbols",
+         "place": "metaform",
+         "key": [
+          "layer_id",
+          "path",
+          "qn"
+         ],
+         "columns": [
+          [
+           "layer_id",
+           "text",
+           true,
+           null
+          ],
+          [
+           "qn",
+           "text",
+           true,
+           null
+          ],
+          [
+           "name",
+           "text",
+           true,
+           null
+          ],
+          [
+           "label",
+           "text",
+           true,
+           null
+          ],
+          [
+           "path",
+           "text",
+           true,
+           null
+          ],
+          [
+           "start_line",
+           "int",
+           false,
+           0
+          ],
+          [
+           "end_line",
+           "int",
+           false,
+           0
+          ],
+          [
+           "symbol",
+           "text",
+           false,
+           null
+          ]
+         ],
+         "indexes": [
+          [
+           [
+            "layer_id",
+            "qn"
+           ],
+           false
+          ]
+         ],
+         "on_remove": [
+          [
+           "layer",
+           "layer_id",
+           "delete"
+          ]
+         ]
+        },
+        {
+         "name": "code_edges",
+         "place": "metaform",
+         "key": [
+          "layer_id",
+          "path",
+          "source",
+          "target_path",
+          "target",
+          "kind"
+         ],
+         "columns": [
+          [
+           "layer_id",
+           "text",
+           true,
+           null
+          ],
+          [
+           "source",
+           "text",
+           true,
+           null
+          ],
+          [
+           "target",
+           "text",
+           true,
+           null
+          ],
+          [
+           "kind",
+           "text",
+           true,
+           null
+          ],
+          [
+           "path",
+           "text",
+           true,
+           null
+          ],
+          [
+           "line",
+           "int",
+           false,
+           0
+          ],
+          [
+           "target_path",
+           "text",
+           false,
+           null
+          ]
+         ],
+         "indexes": [
+          [
+           [
+            "layer_id",
+            "target",
+            "kind"
+           ],
+           false
+          ],
+          [
+           [
+            "layer_id",
+            "path"
+           ],
+           false
+          ],
+          [
+           [
+            "layer_id",
+            "target_path"
+           ],
+           false
+          ]
+         ],
+         "on_remove": [
+          [
+           "layer",
+           "layer_id",
+           "delete"
+          ]
+         ]
+        },
+        {
+         "name": "code_links",
+         "place": "metaform",
+         "key": [
+          "layer_id",
+          "node_kind",
+          "node_id",
+          "path",
+          "qn"
+         ],
+         "columns": [
+          [
+           "layer_id",
+           "text",
+           true,
+           null
+          ],
+          [
+           "node_kind",
+           "text",
+           true,
+           null
+          ],
+          [
+           "node_id",
+           "text",
+           true,
+           null
+          ],
+          [
+           "qn",
+           "text",
+           true,
+           null
+          ],
+          [
+           "link_id",
+           "text",
+           true,
+           null
+          ],
+          [
+           "name",
+           "text",
+           false,
+           null
+          ],
+          [
+           "label",
+           "text",
+           false,
+           null
+          ],
+          [
+           "path",
+           "text",
+           false,
+           null
+          ],
+          [
+           "state",
+           "text",
+           true,
+           null
+          ],
+          [
+           "by",
+           "text",
+           false,
+           null
+          ],
+          [
+           "why",
+           "text",
+           false,
+           null
+          ],
+          [
+           "item_id",
+           "text",
+           false,
+           null
+          ],
+          [
+           "proposal",
+           "json",
+           false,
+           null
+          ],
+          [
+           "provider",
+           "text",
+           false,
+           null
+          ]
+         ],
+         "indexes": [
+          [
+           [
+            "link_id"
+           ],
+           false
+          ],
+          [
+           [
+            "layer_id",
+            "qn"
+           ],
+           false
+          ],
+          [
+           [
+            "item_id"
+           ],
+           false
+          ]
+         ],
+         "on_remove": [
+          [
+           "layer",
+           "layer_id",
+           "delete"
+          ],
+          [
+           "item",
+           "item_id",
+           "delete"
+          ]
+         ]
+        }
+       ],
+       "rows": {
+        "challenge_states": [],
+        "plans": [],
+        "work": [],
+        "work_links": [],
+        "work_steps": [],
+        "messages": [],
+        "reports": [
+         {
+          "report_id": "432ee7c7db584f9bbe3e0191a47f58c4-report.md",
+          "run_id": "432ee7c7db584f9bbe3e0191a47f58c4",
+          "layer_id": "432ee7c7db584f9bbe3e0191a47f58c4",
+          "kind": "report",
+          "created": "2026-10-15T01:42:44Z",
+          "size": 98
+         }
+        ],
+        "glyphs": [],
+        "ticket_settings": [],
+        "eligible": [],
+        "question_work": [],
+        "numbered": [],
+        "numbering": [],
+        "code_files": [],
+        "code_symbols": [],
+        "code_edges": [],
+        "code_links": []
+       }
+      }
+     ]
+    }
+   ],
+   "active_base": "8b377bc2838446e29f31fd1b74b65300"
+  }
+ ]
+}

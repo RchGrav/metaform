@@ -660,6 +660,13 @@ def folder_project(folder: Path) -> str | None:
     return None
 
 
+def project_id_for(folder: Path) -> str:
+    """A project id made from a folder's name: lowercase, every run of other characters one -, MCP-009. The MCP
+    register tool and `metaform start` name a project with it, so neither asks."""
+    made = re.sub(r'[^a-z0-9_-]+', '-', Path(folder).name.lower()).strip('-_')[:64]
+    return made if made and PROJECT_ID.fullmatch(made) else 'project'
+
+
 # Settings ---------------------------------------------------------------------
 # A setting of a folder inside a project's source is the project's own, kept in its project.sqlite3; the global
 # scope and folders outside every project are the chassis's, PROJ-026.

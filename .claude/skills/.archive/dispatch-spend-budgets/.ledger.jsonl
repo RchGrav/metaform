@@ -1,1 +1,2 @@
 {"action": "create", "reason": "Spend budgets (tokens and cost per day, ticket and run) were erased when a base was removed, because spend rows sat in each metaform's store. The fix made spend a project-level table. Future edits to spend, budgets or the spend verb need these rules in one place; no existing skill covers dispatch budgets.", "evidence": "references/evidence-6fa149d2.md"}
+{"action": "delete", "reason": "Absorbed into metaform-dispatch as its spend-budget section.", "evidence": "references/evidence-1c37ea30.md", "absorbed_into": "metaform-dispatch"}

@@ -135,6 +135,7 @@
           </div>
           <div class="sep" role="separator"></div>
           <button id="shortcutsBtn" type="button" title="Every key the map and the page take">Keyboard shortcuts <kbd aria-hidden="true">?</kbd></button>
+          <button id="reportBtn" type="button" title="Make one file holding what is needed to see a problem, to send to rchgrav on Discord">Report a problem…</button>
         </div>
       </div>
     </div>
@@ -208,6 +209,32 @@
       </div>
     </div>
   </main>
+</div>
+<!-- The first screen, with no project or a project with no map yet: what Metaform is, and its two first choices, the
+     demo and mapping a project of one's own, with a folder picker; nothing else shows until one is chosen. The
+     workbench is a quiet link away once there is a project. onboard/welcome.js. -->
+<section id="welcome" class="welcome" hidden aria-labelledby="welcomeTitle">
+  <div class="inner">
+    <div class="brand"><span>meta<b>form</b></span></div>
+    <h1 id="welcomeTitle">Metaform draws your project as a living map of what each part is for, so you and your AI agents work from the same picture.</h1>
+    <div class="choices">
+      <button class="choice demo" type="button"><i class="i i-spark" aria-hidden="true"></i><b>Watch the demo</b><span>A small sample project, mapped, with agents at work on it. Nothing to set up.</span></button>
+      <button class="choice map" type="button"><i class="i i-search" aria-hidden="true"></i><b>Map my project</b><span class="sub">Choose your project's folder. An agent reads it and draws its map while you watch.</span></button>
+    </div>
+    <button class="other linkish" type="button" hidden>Choose another folder</button>
+    <div class="picker" hidden>
+      <div class="pickhead"><b>Choose your project's folder</b><span class="at"></span></div>
+      <div class="folders" role="listbox" aria-label="Folders"></div>
+      <div class="acts"><button class="back btn" type="button">Back</button><button class="up btn" type="button">Up one folder</button><span class="grow"></span><button class="pick btn primary lg" type="button">Map this folder</button></div>
+    </div>
+    <div class="failed" role="alert" hidden></div>
+    <button class="workbench linkish" type="button" hidden>Open the full workbench</button>
+  </div>
+</section>
+<!-- One first-run hint at a time on a map's first showing, onboard/hints.js: the map, the agents, the chat. -->
+<div id="hint" class="hintcard" hidden role="dialog" aria-label="A tip">
+  <p class="text"></p>
+  <div class="acts"><span class="tipno"></span><span class="grow"></span><button class="skiptips linkish" type="button">Skip tips</button><button class="ok btn sm primary" type="button">Got it</button></div>
 </div>
 <div id="wsworkspaces" class="menu wsfloatmenu" hidden role="menu" aria-label="Workspaces"></div>
 <div class="toast" id="toast" hidden role="status" aria-live="polite"></div>
@@ -398,6 +425,18 @@
     <input class="keyfind" type="search" placeholder="Find a key by what it does" aria-label="Find a key by what it does" autocomplete="off">
     <div class="keys"></div>
   </div>
+</div>
+<!-- A tester's problem report, as metaform report makes it, with this browser and its console errors. -->
+<div id="report" class="window dialog" hidden role="dialog" aria-modal="true" aria-labelledby="reportTitle">
+  <div class="bar"><span class="title" id="reportTitle">Report a problem</span><button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button></div>
+  <form class="body" id="reportForm">
+    <label for="reportWhat">What went wrong, in one line</label>
+    <input id="reportWhat" type="text" maxlength="500" autocomplete="off" spellcheck="true" required>
+    <label class="reportfiles"><input id="reportFiles" type="checkbox"> Include the project's own files</label>
+    <p class="hint">The file holds the versions, this browser, the recent logs and errors, this page's console errors and the settings, with every key, token, password and phone number masked. Nothing is sent: you send the file.</p>
+    <p class="said" id="reportSaid" role="status"></p>
+  </form>
+  <div class="foot"><button class="btn primary" type="submit" form="reportForm" id="reportMake">Make the report</button></div>
 </div>
 <div id="draw" aria-hidden="true"></div>
 <script src="/vendor/mermaid.min.js"></script>

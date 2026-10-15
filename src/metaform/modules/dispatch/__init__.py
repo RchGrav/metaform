@@ -178,10 +178,11 @@ AGENTS = {
 # A setting that decides which agents run, how they start, what they are permitted, how they are watched or when
 # their work lands is person_only: written by the person, never by an agent over MCP, CLI-011. How long one wait
 # blocks only paces the agent that calls it, so it is not.
-settings.boolean('dispatch_autostart', False, label='Autostart', person_only=True,
+settings.boolean('dispatch_autostart', False, label='Start agents on their own', person_only=True,
                  help='Start agents on tickets that have not been tried, and resume a worker\'s session that ended '
                       'without your stop, up to dispatch_retries; a ticket whose agent stopped with it open waits for '
-                      'you.')
+                      'you.',
+                 category='agents', section='Starting work', essential=20)
 settings.items('dispatch_registry_agents', [], scope='global', person_only=True, label='Agents from the ACP Registry',
                check=agent_registry.check_pins,
                help='Agents of the ACP Registry dispatch may start beside its own, each pinned as <id>@<version>, '
@@ -237,14 +238,17 @@ def start_environment(agent: str) -> dict[str, str]:
 settings.choice('dispatch_agent', agent_choices, 'codex', person_only=True,
                 help='The default agent: the one started when none is chosen, for a chat, an issue or an intake.',
                 details='Starting an agent of another kind on a ticket leaves it as it is; the person sets it here or '
-                        'from the page.')
+                        'from the page.',
+                label='Default agent', category='agents', section='Starting work', essential=10)
 settings.choice('dispatch_recovery', ['manual', 'automatic'], 'manual', label='Dead runner recovery', person_only=True,
                 help='manual leaves a dead runner ticket taken; automatic verifies death and cleans up before returning it.',
                 details='Applies before Autostart selection or with dispatch recover. Older sessions or uncertain cleanup '
-                        'still require manual recovery. Session reads never change ownership.')
+                        'still require manual recovery. Session reads never change ownership.',
+                category='agents', section='Starting work')
 settings.number('dispatch_agents', 5, min=1, person_only=True,
                 help='How many agents may work at once. The person can always summon one '
-                'more; agents the person summons beyond that use the slots the agents at work leave free.')
+                'more; agents the person summons beyond that use the slots the agents at work leave free.',
+                label='Agents at once', category='agents', section='Starting work', unit='agents', essential=30)
 settings.number('dispatch_spin_calls', 40, min=1, person_only=True,
                 help='Tool calls without a completed ticket step before raising a spinning signal.')
 settings.number('dispatch_spin_minutes', 10, min=1, person_only=True,
@@ -397,39 +401,45 @@ settings.items('dispatch_intake_withheld', ['memory', 'map:read'], person_only=T
 # cache writes, with cache reads at a tenth, since an agentic turn rereads its whole context on every model call and a
 # raw total would count it dozens of times; cost is what the agent itself reports, the only measure that knows the
 # price. Each is off at 0 until the person sets it: the numbers are the person's to choose.
-settings.number('dispatch_budget_ticket', 0, min=0, person_only=True, label='Token budget per ticket',
+settings.number('dispatch_budget_ticket', 0, min=0, person_only=True, label='Tokens per ticket',
                 help='Billable tokens the agents may spend on one ticket; 0 sets no limit.',
                 details='Billable tokens are an estimate from what each agent reports at the end of each turn: input, '
                         'output and cache writes, with cache reads counted at a tenth, summed over every session of '
                         'the ticket; no provider bills exactly so, and cost, where the agent reports it, is exact. Past '
                         'it, nothing starts or retries on the ticket and its agent gets no further turn of '
                         'Metaform\'s own; a budget signal says so, and your own message still reaches it. An agent '
-                        'that reports no usage is shown as unmetered by dispatch spend.')
-settings.number('dispatch_budget_run', 0, min=0, person_only=True, label='Token budget per run',
+                        'that reports no usage is shown as unmetered by dispatch spend.',
+                category='budgets', section='Tokens', unit='tokens')
+settings.number('dispatch_budget_run', 0, min=0, person_only=True, label='Tokens per run',
                 help='Billable tokens one run may spend over the tickets it works in turn; 0 sets no limit.',
                 details='A run is one `dispatch run`, the ticket it was started on and the tickets of the same agent '
                         'glyph it goes on to, with every retry the supervisor makes of its sessions. Past it, the '
-                        'runner takes no further ticket.')
-settings.number('dispatch_budget_day', 0, min=0, person_only=True, label='Token budget per day',
+                        'runner takes no further ticket.',
+                category='budgets', section='Tokens', unit='tokens')
+settings.number('dispatch_budget_day', 0, min=0, person_only=True, label='Tokens per day',
                 help='Billable tokens every agent of the project may spend in one UTC day; 0 sets no limit.',
                 details='Checked before autostart starts or retries anything and before a worker is started; past it, '
-                        'a budget signal waits for you, and nothing starts until the next day or a higher budget.')
-settings.number('dispatch_budget_cost_ticket', 0, min=0, person_only=True, label='Cost budget per ticket',
+                        'a budget signal waits for you, and nothing starts until the next day or a higher budget.',
+                category='budgets', section='Tokens', unit='tokens')
+settings.number('dispatch_budget_cost_ticket', 0, min=0, person_only=True, label='Spending limit per ticket',
                 help='Hundredths of the currency the agent reports (cents of USD) one ticket may cost; 0 sets no '
                      'limit.',
                 details='Cost is what the agent reports in its usage updates, ACP\'s session usage: Claude Code '
                         'reports it as each turn ends, Codex not at all, which dispatch spend says. A cost budget is '
-                        'held against each currency on its own, and acts when a turn ends.')
-settings.number('dispatch_budget_cost_day', 0, min=0, person_only=True, label='Cost budget per day',
+                        'held against each currency on its own, and acts when a turn ends.',
+                category='budgets', section='Spending', unit='cents')
+settings.number('dispatch_budget_cost_day', 0, min=0, person_only=True, label='Daily spending limit',
                 help='Hundredths of the currency the agent reports (cents of USD) the project\'s agents may cost in '
-                     'one UTC day; 0 sets no limit.')
+                     'one UTC day; 0 sets no limit.',
+                category='budgets', section='Spending', unit='cents', essential=40)
 settings.choice('dispatch_budget_action', ['signal', 'interrupt'], 'signal', person_only=True,
                 label='When a budget is reached',
                 help='signal raises the budget signal and lets the turn in flight finish; interrupt also cancels it.',
                 details='Either way nothing more starts or retries past the budget. Budgets are checked at each '
                         'turn\'s end, when the agents report what a turn used, and the token budgets also during a '
                         'turn, against an estimate from the context the agent reports in use after each model call; '
-                        'so interrupt can stop a runaway turn part way on tokens, and on cost only once it ends.')
+                        'so interrupt can stop a runaway turn part way on tokens, and on cost only once it ends.',
+                category='budgets', section='Spending')
 
 REPLY_LIMIT = 30.0  # the one wait for a running session to answer `message`, `stop` or a change
 CREATE_NEW_PROCESS_GROUP = 0x00000200
@@ -553,7 +563,8 @@ for _agent, (_name, _command) in AGENTS.items():
                                 f'has run once there is only default: start it, or run dispatch options agent={_agent} '
                                 'prime=true, which starts it, reads its options and closes it without a prompt. Applied '
                                 'to every session it starts, new, loaded or resumed. A ticket\'s own model and effort, '
-                                'set with dispatch tune, go over these.')
+                                'set with dispatch tune, go over these.',
+                        category='agent_options')
 
 
 def migrate_agent_options(ctx: Context | None = None) -> list[str]:
@@ -623,7 +634,8 @@ settings.choice('dispatch_prompts', PROMPTS, 'ask_all', person_only=True, risky=
                 details='approve-all answers every prompt with its allow option; approve-reads answers a read or a '
                         'search and asks for anything else; ask_all asks every prompt as a question at the ticket\'s '
                         'node. It is read at each prompt, so a change reaches agents already running. A question the '
-                        'agent asks you is not a prompt: dispatch_elicitation decides it.')
+                        'agent asks you is not a prompt: dispatch_elicitation decides it.',
+                label='Permission prompts', category='agents', section='Permissions', essential=50)
 # An agent's own question to the person, ACP's elicitation: Claude Code's AskUserQuestion, Codex's request for input,
 # or an MCP server's form or sign-in page. Asked at the ticket's node and on the page, as a permission prompt is, or
 # declined at once, the agent going on without the answer.
@@ -633,7 +645,8 @@ settings.choice('dispatch_elicitation', ['ask', 'decline'], 'ask', person_only=T
                 details='ACP\'s elicitation, advertised in both of its modes. A form\'s answer is checked against what '
                         'it asks for; a page to open, such as an MCP server\'s sign-in, is never opened by Metaform: '
                         'you open it, and answering accept is your consent. dispatch_prompts never answers a '
-                        'question. Read at each question, so a change reaches agents already running.')
+                        'question. Read at each question, so a change reaches agents already running.',
+                category='agents', section='Permissions')
 
 
 def prompt(name: str, **fills: str) -> str:
@@ -896,6 +909,51 @@ def foreign(row: dict[str, Any]) -> bool:
     """Whether a session row is not this home's: started on another machine or by another home, such as the home a
     copied store came from, or recorded before sessions kept their origin. Nothing resumes it by itself here."""
     return row.get('origin') != origin()
+
+
+def resuming_path(session_id: str) -> Path:
+    """The file naming the runner last started to resume a session, written before its row says so."""
+    return home.home() / 'run' / 'dispatch' / f'resuming-{hashlib.sha256(session_id.encode()).hexdigest()[:32]}'
+
+
+def holder(store: Store, work_id: str, session_id: str, *, besides: int | None = None) -> int | None:
+    """The pid of a live runner that holds a session or was started to resume it, whatever its parent is now: a runner
+    outlives the server, page or command that started it, so it is found by its stored row and the file its start
+    left, then its command line, never by who started it or a status reply. None when none does; `besides` is the
+    asking runner's own pid."""
+    try:
+        with own_store(store).tables(write=False) as tx:
+            stored = tx.rows('sessions', {'session_id': session_id}, limit=1).results
+    except StoreError:
+        stored = []
+    pids: list[Any] = [stored[0]['pid']] if stored and stored[0]['state'] == 'running' else []
+    try:
+        started = int(resuming_path(session_id).read_text(encoding='utf-8').strip())
+    except (OSError, ValueError):
+        started = None
+    for pid in pids:
+        if pid != besides and runner_of(pid) == work_id:
+            return int(pid)
+    if started is not None and started != besides and runner_of(started) == work_id \
+            and f'resume={session_id}' in command_line(started):
+        return started
+    return None
+
+
+def resume_spawn(store: Store, work_id: str, agent: str, extra: list[str], name: str) -> dict[str, Any]:
+    """A runner that resumes a session in place, started only while no live runner holds it or is starting to resume
+    it: the check and the start are one lock between processes, so two passes of the agent starter, two servers, or a
+    Call while a server restarts never resume one ACP session twice. A held session is reused, `state` running."""
+    session_id = next(word.partition('=')[2] for word in extra if word.startswith('resume='))
+    marker = resuming_path(session_id)
+    home.mkdir_private(marker.parent)
+    with home.file_lock(marker.parent / 'resume.lock'):
+        pid = holder(store, work_id, session_id)
+        if pid is not None:
+            return {'state': 'running', 'pid': pid}
+        started = spawn(store, work_id, agent, extra, name)
+        home.write_private(marker, str(started['pid']))
+    return started
 
 
 def sessions(store: Store, work_id: str | None = None, *, verify: bool = True,
@@ -1737,8 +1795,8 @@ def retry(ctx: Context, store: Store, opened: Sequence[WorkRecord] | None = None
             tx.update('attempts', {'work_id': record.id},
                       {'retries': retries, 'next_at': time.time() + wait * 2 ** retries, 'how': row.get('how')})
         run = run_of(store, session_id)  # the retry spends against the run it goes on, so the run budget holds, M01
-        started = spawn(store, record.id, agent, [f'resume={session_id}', 'retry=true', *([f'run={run}'] if run else [])],
-                        'retry')
+        started = resume_spawn(store, record.id, agent,
+                               [f'resume={session_id}', 'retry=true', *([f'run={run}'] if run else [])], 'retry')
         resumed.append({'work_id': record.id, 'agent': agent, 'session_id': session_id, 'retry': retries, **started})
     return {'retried': resumed, **({'retry_due': due} if due is not None else {})}
 
@@ -1791,17 +1849,27 @@ def stay_connected(ctx: Context, store: Store) -> dict[str, Any]:
     with own.tables(write=False) as tx:
         kept = tx.get('attempts', {'work_id': held.id})
     now = time.time()
-    if any(row['state'] == 'running' for row in mine):
+    last = mine[-1] if mine else None
+    # a runner that outlived the server that started it, or one started to resume it that has not written its row yet,
+    # is running whatever a status read says: it is never resumed again or replaced
+    if any(row['state'] == 'running' for row in mine) or last is not None and not (last.get('origin') and foreign(last)) \
+            and holder(store, held.id, str(last['session_id'])) is not None:
         if kept is not None and (kept['handed'] or now >= float(kept['next_at'])):
             with own.tables() as tx:  # it outlived its wait, or the person brought it back: the count starts again
                 tx.delete('attempts', {'work_id': held.id})
         return {}
-    last = mine[-1] if mine else None
+    from .signals import publish
+    if last is not None and not last.get('origin'):
+        # recorded before sessions kept their origin: it may be another home's in a copied store, so nothing resumes
+        # it by itself; the person is told once that their Call resumes it, which stamps it as this home's
+        publish(ctx, 'handed-over', work_id=held.id, session_id=str(last['session_id']), key=str(last['session_id']),
+                reason='Your system agent was not reconnected by itself: its conversation was recorded before Metaform '
+                       'kept which home started a session. Call resumes it.', next='metaform dispatch system')
+        return {'legacy': str(last['session_id']), 'next': 'metaform dispatch system'}
     if last is not None and foreign(last):  # another home's conversation, in a store copied here: neither resumed
         return {}                          # nor replaced by a new one; the person's Call starts one here
     session_id, how = (str(last['session_id']), str(last.get('how') or '')) if last is not None else ('', '')
     limit, wait = int(ctx.setting('dispatch_retries')), float(ctx.setting('dispatch_retry_seconds'))
-    from .signals import publish
     if last is None or how in SYSTEM_STOPS:
         # none yet, or the person stopped it and has since turned this on again: it starts as their Call starts it,
         # once for what it finds; a start that never ran waits for their Call
@@ -1854,7 +1922,7 @@ def stay_connected(ctx: Context, store: Store) -> dict[str, Any]:
         return {}
     try:
         if lost is None:  # resumed in place: it keeps its memory and waits for the person's next message
-            started = spawn(store, held.id, agent, [f'resume={session_id}', 'system=true'], 'resume')
+            started = resume_spawn(store, held.id, agent, [f'resume={session_id}', 'system=true'], 'resume')
             return {'connected': {'state': 'starting', 'work_id': held.id, 'agent': agent, 'session_id': session_id,
                                   'retry': retries, **started, 'conversation': True}}
         started = converse(ctx, store, held.id, agent_named(str(ctx.setting('dispatch_agent'))), [])
@@ -2123,11 +2191,17 @@ def system(ctx: Context) -> dict[str, Any]:
     store = ctx.require_store()
     held = anchor(ctx, store)
     forget_ends(store, held.id)
-    live = next((row for row in sessions(store, held.id) if row['state'] == 'running'), None)
+    found = sessions(store, held.id)
+    # running as read, or held by a live runner whatever a status read says, such as one that outlived the server
+    # that started it: reused, never resumed a second time
+    live = next((row for row in found if row['state'] == 'running'), None) or next(
+        (row for row in reversed(found) if not (row.get('origin') and foreign(row))
+         and holder(store, held.id, str(row['session_id'])) is not None), None)
     if live is not None:
         return {'state': 'running', 'work_id': held.id, 'agent': live['agent'], 'session_id': live['session_id']}
     agent = agent_named(str(ctx.nouns.get('agent') or ctx.setting('dispatch_agent')))
-    again = resumed_conversation(ctx, store, held.id, agent, 'system') if ctx.setting('dispatch_resume_chats') else None
+    again = resumed_conversation(ctx, store, held.id, agent, 'system', person=True) \
+        if ctx.setting('dispatch_resume_chats') else None
     return again or converse(ctx, store, held.id, agent, [])
 
 
@@ -2156,12 +2230,16 @@ def disconnect(ctx: Context, store: Store, row: dict[str, Any]) -> bool:
     return True
 
 
-def resumed_conversation(ctx: Context, store: Store, work_id: str, agent: str, about: str) -> dict[str, Any] | None:
+def resumed_conversation(ctx: Context, store: Store, work_id: str, agent: str, about: str, *,
+                         person: bool = False) -> dict[str, Any] | None:
     """The person's last conversation about this with this agent, resumed in place so the agent keeps its memory of it;
-    None when there is none, or its agent can neither load nor resume it, or its folder is gone, and a new one starts."""
+    None when there is none, or its agent can neither load nor resume it, or its folder is gone, and a new one starts.
+    `person` is the person's own Call or talk: it resumes a conversation recorded before sessions kept their origin,
+    which nothing automatic does; one stamped by another home is never resumed here."""
     for row in reversed(sessions(store, work_id)):
         kept = session_state(store, str(row['session_id'])) or {}
-        if row['state'] == 'running' or kept.get('about') != about or row['agent'] != agent or foreign(row):
+        if row['state'] == 'running' or kept.get('about') != about or row['agent'] != agent or (
+                foreign(row) and not (person and not row.get('origin'))):
             continue
         caps = cast(dict[str, Any], kept.get('capabilities') or {})
         cwd = kept.get('cwd')
@@ -2170,7 +2248,7 @@ def resumed_conversation(ctx: Context, store: Store, work_id: str, agent: str, a
         runnable(ctx, agent)
         session_id = str(row['session_id'])
         extra = [f'resume={session_id}', 'system=true', *([] if about == 'system' else [f'talk={about}'])]
-        started = spawn(store, work_id, agent, extra, 'resume')
+        started = resume_spawn(store, work_id, agent, extra, 'resume')
         return {'state': 'starting', 'work_id': work_id, 'agent': agent, 'session_id': session_id, **started,
                 'conversation': True}
     return None
@@ -2399,7 +2477,8 @@ def talk(ctx: Context) -> dict[str, Any]:
         raise Stop(f'Every agent slot is in use: {ctx.setting("dispatch_agents")} besides the one you can always '
                    'summon. A chat opens when an agent finishes or one is stopped.', 'metaform dispatch sessions')
     agent = agent_for(ctx, ticket(store, work_id), ctx.nouns.get('agent'))
-    again = resumed_conversation(ctx, store, work_id, agent, about) if ctx.setting('dispatch_resume_chats') else None
+    again = resumed_conversation(ctx, store, work_id, agent, about, person=True) \
+        if ctx.setting('dispatch_resume_chats') else None
     return again or converse(ctx, store, work_id, agent, [f'talk={about}'])
 
 
@@ -3088,7 +3167,7 @@ def resume(ctx: Context) -> dict[str, Any]:
     if not worker and summon_room(ctx, store) <= 0:
         raise Stop(f'Every agent slot is in use: {ctx.setting("dispatch_agents")} besides the one you can always '
                    'summon. A session resumes when an agent finishes or one is stopped.', 'metaform dispatch sessions')
-    started = spawn(store, work_id, agent, [f'resume={session_id}', *([] if worker else ['system=true'])], 'resume')
+    started = resume_spawn(held, work_id, agent, [f'resume={session_id}', *([] if worker else ['system=true'])], 'resume')
     return {**said, 'state': 'starting', **started, 'conversation': not worker}
 
 

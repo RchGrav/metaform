@@ -40,7 +40,7 @@ class Switch:
 
 COMMANDS: dict[str, Command] = {}
 SWITCHES: dict[str, Switch] = {}
-ALWAYS = ('help', 'set', 'unset', 'config', 'feedback', 'read', 'instructions', 'provision')
+ALWAYS = ('help', 'set', 'unset', 'config', 'feedback', 'report', 'read', 'instructions', 'provision')
 
 
 def command(record: Command) -> Command:
@@ -147,6 +147,7 @@ def overview() -> str:
         '',
         'Common commands',
         *rows([('metaform', 'Show status: home, folder, project.'),
+               ('metaform start', 'Map the project in this folder and open it.'),
                ('metaform add project <id> <path>', 'Register a project.'),
                ('metaform config', 'Open the settings screen.'),
                ('metaform set --<setting> <value>', 'Save a setting.')]),
@@ -168,6 +169,7 @@ def intro(home: str) -> str:
         f'All data lives in the Metaform home, {home}. Nothing is written into your projects.\n'
         '\n'
         'Start:\n'
+        '  metaform start                     Map the project in this folder and open it.\n'
         '  metaform add project <id> <path>   Register a project.\n'
         '  metaform install                   Set up your AI tools to use Metaform.\n'
         '  metaform                           See status and the next step.\n')

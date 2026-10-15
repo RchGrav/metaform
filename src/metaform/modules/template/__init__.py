@@ -136,6 +136,7 @@ MODULE = Module(
     item_read=None,
     items_at=None,
     item_kinds=(),
+    settings_category=None,  # where its settings sit on the settings screens when one names none; None: advanced
     toolbar=(
         ToolbarItem('about', 'About template', 'Read what this module is for before turning it on.', icon='file',
                     pane='about', placement='extra'),

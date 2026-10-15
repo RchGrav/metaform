@@ -1,5 +1,5 @@
 /* Administration: clearing or removing a project, asked on the page, backups restored, the map exported as Markdown,
- * Mermaid or XML, and the empty panel's acts. */
+ * Mermaid or XML, the empty panel's acts, and a tester's problem report. */
 import '/page/app/header/menus.js';  // the part before runs first, so the parts run in the page's order
 import {$, h, fill} from '/page/app/core/dom.js';
 import {overlay} from '/page/app/core/overlays.js';
@@ -244,3 +244,30 @@ async function applyLayers() {
   toast(['Applied to the folder.', ...(body.notices || []).map(notice => notice.message)].join(' '));
 }
 $('#apply').onclick = applyLayers;
+/* Report a problem, from the View menu: the report `metaform report` makes, BASE-045, with this browser and the page's
+ * console errors besides. The server builds it and this page saves it as a download; nothing is sent anywhere. */
+overlay($('#report'), {kind: 'dialog', close: () => { $('#report').hidden = true; }, focus: () => $('#reportWhat')});
+$('#report .close').onclick = () => { $('#report').hidden = true; };
+function openReport() {
+  $('#settingsbox').hidden = true;
+  $('#reportSaid').textContent = '';
+  $('#reportMake').disabled = false;
+  $('#report').hidden = false;
+}
+$('#reportBtn').onclick = openReport;
+async function makeReport(event) {
+  event.preventDefault();
+  const description = $('#reportWhat').value.trim();
+  if (!description) { $('#reportWhat').focus(); return; }
+  $('#reportMake').disabled = true;
+  $('#reportSaid').textContent = 'Making the report…';
+  const {response, body} = await postJson('/api/report', {project: S.project, description,
+    files: $('#reportFiles').checked, browser: navigator.userAgent, console: window.METAFORM_CONSOLE || []})
+    .catch(error => ({response: {ok: false}, body: {error: error.message}}));
+  $('#reportMake').disabled = false;
+  if (!response.ok) { $('#reportSaid').textContent = body.error || 'The report was not made.'; return; }
+  saveFile(Uint8Array.from(atob(body.data), letter => letter.charCodeAt(0)), body.name, 'application/zip');
+  $('#reportSaid').textContent = [`Saved ${body.name} to your downloads. ${body.send_to}`, 'It holds:',
+    ...body.held.map(line => `  ${line}`)].join('\n');
+}
+$('#reportForm').addEventListener('submit', makeReport);

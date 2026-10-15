@@ -160,4 +160,15 @@ Your task:
 </repeating>
 </session_drift>
 </jev>
+<!-- The intake agent's first words when `metaform start` starts the intake in a folder that holds code, CLI-041.
+     Sent to the intake agent dispatch starts, as what the person asked for, after the intake procedure. <project/> takes
+     the project id, <path/> its folder, and <found/> what start read from the files before the agent began: the name,
+     what the README or a manifest says the project is, the person's answers to start's questions, the languages, the top
+     folders and the manifests, one line each. Must be present: the code requires it. -->
+<start_intake>Map this project, <project/>, in the folder <path/>. Before you began, Metaform read this from its files; check it against the files, which win where they disagree:
+<found/></start_intake>
+<!-- The same, for a folder that holds no code yet, CLI-041: the map records intent only. Fills as start_intake.
+     Must be present: the code requires it. -->
+<start_intent>Map this project, <project/>, in the folder <path/>. It holds no code yet, so the map records intent only: what the person means to build, each part with condition unbuilt, from what they said and what the folder holds:
+<found/></start_intent>
 </prompts>

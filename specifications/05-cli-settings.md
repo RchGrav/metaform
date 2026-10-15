@@ -113,6 +113,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Acceptance: the overview includes each of the four tip commands and fits in 24 lines.
 - Relates to: CLI-007, CLI-008.
 - Status: confirmed.
+- Amendment, 2026-10-14, start onboarding, ticket code.installer.package#d: the overview's Common commands list `metaform start  Map the project in this folder and open it.` right after `metaform`, and `metaform help intro`'s Start list begins with `metaform start                     Map the project in this folder and open it.`, so a new person meets the one command that maps their own project first, CLI-041.
 
 ### CLI-007 `help <thing>` is the man page; `--help` and `-h` give syntax
 - Requirement: `metaform help <thing>` prints the full page for a command, module, verb or switch, and `<thing> --help` or `-h` prints only its syntax.
@@ -604,6 +605,25 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Acceptance: Open with the build.
 - Relates to: CLI-010, CLI-021, CLI-022, CLI-026, CLI-038, CLI-039.
 - Status: confirmed as design, 2026-09-27.
+
+### CLI-041 `metaform start` maps the project in this folder with one command
+
+- Requirement: `metaform start`, run in a person's own project folder, takes them to their project's map in the browser, asking only what the project's files cannot say, at most two short questions.
+- What this means: It chains what exists, each with the default that asks nothing: registration, the MCP connection, the intake agent dispatch starts, and the web GUI. Run again, it does nothing already done and opens the page again.
+- Why: A person who has just installed Metaform should see their own project as a living map in a couple of minutes, without a pile of questions.
+- How it shows, in order, one line each:
+  - `Project: <id>, registered for <folder>.` The id is the folder's name made into a project id, `home.project_id_for`, the rule the MCP register tool uses; a name another folder holds takes the next free number. A folder already inside a project says `Project: <id>, already registered.`
+  - `Modules: turned on <ids>.` when any of map, intake, mcp, web and dispatch is off; dispatch ships off.
+  - With Claude Code on PATH: `Claude Code: wrote the metaform MCP server into <folder>/.mcp.json; Claude Code asks once to use it.` The entry is `mcpServers.metaform` = `{"type": "stdio", "command": ..., "args": [...], "env": {}}`, Claude Code's documented project-scope form, merged into a file that already holds other servers, the old file backed up under the home's `backups/start/`. The command is `metaform mcp serve` when `metaform` is on PATH, `uvx --from <wheel> metaform mcp serve` when Metaform runs from a wheel, else this Python with `-m metaform mcp serve`. Nothing is written when `metaform install` already registered Claude Code for every folder, or the entry is already there. Another AI tool found is named with `metaform install <tool>`; none found gives two lines saying so and how to connect one later, and it carries on.
+  - `Read: <languages>, <n> code files; <file> says what it is.` from the files alone: the README's first paragraph or a manifest's description (pyproject.toml, Cargo.toml, package.json), the name a manifest gives, the languages by extension, the top folders and the manifests present. A folder with no code says `no code yet (<n> files), so the map records intent only.`
+  - The questions, only at a terminal and never in an agent's run: `What is this project for, in a sentence?` when nothing says what it is (`What will this project be, in a sentence?` with no code), and `Who is it for?` only for a folder with no code. An empty answer skips.
+  - `Intake: <agent> is mapping the project; the page shows each part as it is recorded.` The intake agent is started by `dispatch intake` with the chassis prompt `start_intake`, or `start_intent` for a folder with no code, filled with what was read and answered. The agent is the AI tool found among claude, codex and gemini unless the person chose `dispatch_agent`. A mapped project says `Intake: the map is recorded; opening it.`; one being recorded, or an intake agent already running, is left to finish. An agent that cannot start is said with its next step, and the page still opens.
+  - `Map: <address>#p=<project>`, after the browser is opened on it once. Nothing opens without a desktop, in an agent's run, or where the only browser found is a terminal one; the line then ends `(open it in your browser)`.
+- The page: the map follows the intake as each part is recorded, VIEW-018. When an intake the page followed finishes, one card at the top of the map offers the next step: `Start an agent on a ticket`, which opens the board, and `Chat with your system agent`, which opens the chat.
+- Build: `src/metaform/start.py`, the chassis verb `start` in `cli.py`; the card is `offerNext` in `page/app/intake/intake.js`, called from `follow` in `page/app/live/stream.js`.
+- Acceptance: In `tests/test_install.py`: a first run in a scratch home registers the folder by its name, turns dispatch on, writes the `.mcp.json` entry, starts the web GUI and the intake agent with the brief, and asks nothing without a terminal; a second run changes nothing and starts no second intake.
+- Relates to: CLI-006, MCP-009, MCP-010, VIEW-002, VIEW-018, VIEW-045, BASE-039.
+- Status: built 2026-10-14, start onboarding, ticket code.installer.package#d (b0ceca010322499289cd998bac0724d7).
 
 ## Open questions
 

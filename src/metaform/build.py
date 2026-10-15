@@ -14,6 +14,10 @@ with a project archive and the wrapped prompt inside it, `metaform/_project/`,
 for a remote agent; and `archive`, the project archive alone, BASE-060. A build
 chooses what it carries and never turns a module on or off at home. It reports
 each stage it starts through `progress`, so the web GUI shows real progress.
+
+The three wheel builds also write one zip, `metaform-<version>-<kind>.zip`, beside the wheel: the wheel, a project
+wheel's `prompt.md`, and a README for a tester, made from the code by `build_readme`, all in one folder of the zip's
+own name. That zip is what the web GUI downloads; the wheel stays beside it as what install registers, MCP-010.
 """
 from __future__ import annotations
 
@@ -33,7 +37,7 @@ from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from . import __version__, _build_info, archive, home, loader, prompt_files
+from . import __version__, _build_info, archive, build_readme, home, loader, prompt_files
 from .errors import Stop
 
 if TYPE_CHECKING:
@@ -362,14 +366,15 @@ def wrapped(task: str | None, wheel: str, project: str) -> str:
 
 @dataclass(frozen=True)
 class Built:
-    """What a build wrote: the file, what it carries, the notes to print and, for a project wheel, the wrapped
-    prompt, written beside it as `prompt.md`."""
+    """What a build wrote: the file, what it carries, the notes to print, for a project wheel the wrapped prompt,
+    written beside it as `prompt.md`, and for a wheel build the zip a tester is sent, `bundle`."""
     path: Path
     kind: str
     project: str | None
     modules: tuple[str, ...]
     notes: tuple[str, ...]
     prompt: str | None = None
+    bundle: Path | None = None
 
 
 def _project_archive(project: str, files: bool) -> bytes:
@@ -491,10 +496,22 @@ def make(request: Request, folder: Path | None = None,
     _written(wheel, zipped)
     if prompt is not None:
         home.write_private(target / 'prompt.md', prompt)
+    readme = build_readme.readme(chosen.kind, WHEEL, carried, chosen.project, prompt is not None)
+    bundle = target / f'{NAME}-{__version__}-{chosen.kind}.zip'
+    inside = bundle.stem
+
+    def bundled(part: Path) -> None:
+        with zipfile.ZipFile(part, 'w', compression=zipfile.ZIP_DEFLATED) as written:
+            written.write(wheel, f'{inside}/{WHEEL}')
+            if prompt is not None:
+                written.writestr(f'{inside}/prompt.md', prompt)
+            written.writestr(f'{inside}/README.md', readme)
+
+    _written(bundle, bundled)
     if chosen.kind in ('installer', 'full'):  # what install registers; a project wheel is for a remote agent, MCP-010
         home.set_meta('last_build', str(wheel))
     return Built(wheel, chosen.kind, chosen.project, tuple(item.id for item in carried), tuple(told + compiled),
-                 prompt)
+                 prompt, bundle)
 
 
 def build(folder: Path | None = None) -> tuple[Path, list[str]]:

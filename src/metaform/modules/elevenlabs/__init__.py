@@ -80,46 +80,58 @@ settings.choice('elevenlabs_model', _models, 'eleven_flash_v2_5', scope='global'
                      'models, else ElevenLabs\'s published ones.',
                 details='eleven_flash_v2_5 starts speaking soonest and costs least; eleven_turbo_v2_5 is a little '
                         'richer; eleven_multilingual_v2 is the most natural across languages and slower to start; '
-                        'eleven_v3 is the most expressive and the slowest.')
+                        'eleven_v3 is the most expressive and the slowest.',
+                label='ElevenLabs model', section='ElevenLabs')
 settings.number('elevenlabs_stability', 50, min=0, max=100, scope='global',
                 help='How steady the voice is, 0 to 100: low is livelier and less predictable.',
                 details='Low values let the voice vary its tone from line to line, more emotional and sometimes '
-                        'erratic; high values keep it even and calm, and can sound flat.')
+                        'erratic; high values keep it even and calm, and can sound flat.',
+                category='advanced', unit='%')
 settings.number('elevenlabs_similarity', 75, min=0, max=100, scope='global',
                 help='How closely the voice keeps to the original, 0 to 100.',
                 details='High values hold the voice to its source recording, its timbre and accent, and can carry '
-                        'that recording\'s noise too; low values let it drift for a cleaner sound.')
+                        'that recording\'s noise too; low values let it drift for a cleaner sound.',
+                category='advanced', unit='%')
 settings.number('elevenlabs_style', 0, min=0, max=100, scope='global',
                 help='How much of the voice\'s own style is exaggerated, 0 to 100; 0 is fastest.',
                 details='Above 0 the voice leans into the delivery of its source speaker, more dramatic and slower '
-                        'to make; 0 keeps it plain and adds no time.')
+                        'to make; 0 keeps it plain and adds no time.',
+                category='advanced', unit='%')
 settings.boolean('elevenlabs_speaker_boost', True, scope='global',
                  help='Boost the likeness to the original speaker.',
-                 details='On, the voice sounds more like its source speaker, at a little more time per reply.')
+                 details='On, the voice sounds more like its source speaker, at a little more time per reply.',
+                 category='advanced')
 settings.number('elevenlabs_speed', 100, min=70, max=120, scope='global',
-                help='How fast the voice speaks, as a percent of its normal pace, 70 to 120.')
+                help='How fast the voice speaks, as a percent of its normal pace, 70 to 120.',
+                category='advanced', unit='%')
 settings.number('elevenlabs_latency', 1, min=0, max=4, scope='global',
                 help='Streaming latency, 0 to 4: higher starts speaking sooner and can mispronounce numbers and names.',
                 details='ElevenLabs\'s optimize_streaming_latency. 0 is its best quality; 1 to 3 trade more of it for '
-                        'a sooner first sound; 4 also skips the reading of numbers and dates as words.')
+                        'a sooner first sound; 4 also skips the reading of numbers and dates as words.',
+                label='Latency optimization', category='advanced')
 settings.choice('elevenlabs_format', list(api.PAGE_FORMATS), 'pcm_22050', scope='global',
                 help='The audio streamed to the page: pcm plays as it arrives; mp3 is smaller and plays once it is in.',
                 details='pcm_16000, pcm_22050 and pcm_24000 are raw samples at that rate, higher sounding fuller; '
-                        'mp3_44100_128 is full quality and mp3_22050_32 the smallest.')
+                        'mp3_44100_128 is full quality and mp3_22050_32 the smallest.',
+                label='Audio format in the page', category='advanced')
 settings.choice('elevenlabs_phone_format', list(api.PHONE_FORMATS), 'ulaw_8000', scope='global',
                 help='The audio for a phone call: ulaw_8000 is the telephone\'s own encoding.',
                 details='ulaw_8000 goes to a call as it is; pcm_8000 and pcm_16000 are for a bridge that encodes '
-                        'the call itself.')
+                        'the call itself.',
+                label='Audio format on the phone', category='advanced')
 settings.items('elevenlabs_voices', [], scope='global', exclusive='=', check=_check_voices,
                help='A voice for a mascot character, as character=voice id or name, such as owl=Daniel.',
                details='The voice is an id or a name of a voice on your ElevenLabs account; metaform elevenlabs '
-                       'voices lists them. A character not named speaks with its own default voice.')
+                       'voices lists them. A character not named speaks with its own default voice.',
+               label='ElevenLabs voice for each character', section='ElevenLabs')
 settings.choice('elevenlabs_scribe_model', list(api.SCRIBE_MODELS), 'scribe_v1', scope='global',
                 help="Scribe's model, when voice_engine is elevenlabs.",
                 details='scribe_v1 is the released model; scribe_v1_experimental has ElevenLabs\'s latest changes, '
-                        'which may change without notice.')
+                        'which may change without notice.',
+                label='Scribe model', category='advanced')
 settings.text('elevenlabs_scribe_language', 'auto', scope='global', check=_check_language,
-              help='The language Scribe hears, as a code such as en, or auto to let it tell.')
+              help='The language Scribe hears, as a code such as en, or auto to let it tell.',
+              label='Scribe language', category='advanced')
 
 
 def ready(ctx: Context) -> str | None:
@@ -280,4 +292,5 @@ MODULE = Module(
     toolbar=(),
     panes=(),
     provides=(Provides('voice.engine', ENGINE),),
+    settings_category='voice',
 )

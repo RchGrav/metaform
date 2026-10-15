@@ -1,0 +1,89 @@
+{
+ "project": "pocket-ledger",
+ "card": {
+  "lines": [
+   "This is the map of Pocket Ledger, a tiny expense app: each sphere is one of its parts, each line what one part does for another.",
+   "Three scripted demo agents, with no AI and no network, are working tickets on it: they walk to their parts, say what they find, and one finds a bug."
+  ],
+  "next": [
+   ["Connect Claude Code", "metaform install claude"],
+   ["Map your own project", "cd <your project> && metaform start"]
+  ]
+ },
+ "mascot": [
+  "Hello! I'm your mascot. This is Metaform's demo map of Pocket Ledger, a tiny expense app.",
+  "Each figure is an agent working a ticket. The one at the amount parser is hunting a bug.",
+  "Click any sphere to read what that part does, and for whom.",
+  "The dots on the lines are the agents' reads reaching the parts they work on.",
+  "To map your own project, run metaform start in its folder."
+ ],
+ "tickets": [
+  {
+   "address": "code.parser.amount",
+   "agent": "claude",
+   "kind": "broken",
+   "title": "Monthly totals come out a cent short",
+   "task": "A 19.99 grocery bill shows as 19.98 in the October total. Find where the cent goes and say what fixes it.",
+   "script": [
+    {"plan": 3},
+    {"say": "A 19.99 bill shows as 19.98. A cent goes missing somewhere between typing it and totalling it."},
+    {"read": "ledger/cli.py", "line": 14},
+    {"say": "The command line hands the typed amount to parse_amount before anything is stored. Looking there."},
+    {"step": "Traced the amount from the command line into parse_amount in ledger/amounts.py."},
+    {"read": "ledger/amounts.py", "line": 6},
+    {"say": "Here: int(float(text) * 100). In floating point 19.99 * 100 is 1998.9999, and int() cuts it to 1998."},
+    {"run": ["python", "-c", "print(int(float('19.99') * 100))"]},
+    {"step": "Confirmed: parse_amount truncates, so 19.99 is stored as 1998 cents."},
+    {"read": "ledger/report.py", "line": 12},
+    {"say": "The report only adds the cents it is given, so every total inherits the lost cent. The fix belongs in parse_amount."},
+    {"step": "The report is correct; the cent is lost where the typed amount becomes cents."},
+    {"say": "Found it. Parse with Decimal and round to the cent instead of truncating. Closing the ticket."},
+    {"done": {"resolution": "parse_amount in ledger/amounts.py truncates float(text) * 100, so 19.99 becomes 1998 cents. Parse the text with decimal.Decimal and round to the cent instead.", "why": "The cent is lost where the typed amount becomes cents, and every total inherits it."}}
+   ]
+  },
+  {
+   "address": "code.report.monthly",
+   "agent": "codex",
+   "kind": "enhancement",
+   "title": "Show each category's share of the month",
+   "task": "Beside each category's total, show its share of the month as a percentage.",
+   "script": [
+    {"plan": 2},
+    {"say": "Each category's share of the month. First, what the report gives back."},
+    {"read": "ledger/report.py", "line": 7},
+    {"say": "month_totals returns whole cents per category, so the shares can be worked out from it without losing a cent."},
+    {"read": "ledger/cli.py", "line": 18},
+    {"say": "The command line prints each total with format_cents. The share fits in the same line, after the amount."},
+    {"read": "ledger/amounts.py", "line": 9},
+    {"step": "The report already returns cents per category; the share is each total over the month's total."},
+    {"say": "Noting for the next agent here that the report works in cents and leaves the formatting to the command line."},
+    {"remember": {"name": "monthly report works in whole cents", "observations": ["month_totals returns cents per category; ledger/cli.py formats them with format_cents and prints the lines."]}},
+    {"read": "ledger/store.py", "line": 20},
+    {"say": "Planned: the command line divides each total by the month's total and prints a whole percent beside it."},
+    {"step": "Planned the share column in ledger/cli.py; month_totals stays as it is."},
+    {"done": {"resolution": "Planned: ledger/cli.py prints each category's share, its total over the month's total as a whole percent; month_totals is unchanged.", "why": "The report already gives exact cents, so the share is a display change only."}}
+   ]
+  },
+  {
+   "address": "code.store.ledger",
+   "agent": "gemini",
+   "kind": "flawed",
+   "title": "A crash while saving can empty the ledger",
+   "task": "Ledger.append rewrites ledger.json in place. Check what a crash halfway through the write leaves behind.",
+   "script": [
+    {"plan": 2},
+    {"say": "Checking what a crash in the middle of a save does to ledger.json."},
+    {"read": "ledger/store.py", "line": 27},
+    {"say": "append rewrites the whole file with write_text. A crash halfway leaves it cut short, and every entry is lost."},
+    {"read": "ledger.json"},
+    {"step": "append writes ledger.json in place; an interrupted write truncates the only copy."},
+    {"say": "Safer: write the entries to ledger.json.tmp, then os.replace it over ledger.json in one step."},
+    {"read": "ledger/cli.py", "line": 15},
+    {"remember": {"name": "ledger.json has one copy", "observations": ["Ledger.append rewrites ledger.json in place with write_text; there is no backup or temporary file."]}},
+    {"say": "Recorded that here for whoever works on the store next. The command line needs no change."},
+    {"step": "The fix is in Ledger.append alone: write a temporary file and replace ledger.json with it."},
+    {"done": {"resolution": "Ledger.append should write ledger.json.tmp and os.replace it over ledger.json, so a crash leaves the old file whole.", "why": "Replacing a file is one step on every system; rewriting it in place is not."}}
+   ]
+  }
+ ]
+}

@@ -2420,6 +2420,73 @@ def test_a_home_copied_with_its_store_resumes_none_of_the_sessions_the_original_
     assert started == [['resume=s1', 'system=true'], ['resume=w1', 'retry=true']], 'its own home resumes both'
 
 
+@pytest.mark.req('VIEW-045')
+def test_a_legacy_row_is_resumed_by_the_persons_call_and_never_by_stay_connected(dispatch, run, monkeypatch):
+    """A system conversation recorded before sessions kept their origin: stay connected leaves it, telling the person
+    once that Call resumes it, and their Call does; one stamped by another home is never resumed by Call."""
+    from metaform.data import Store
+    module, ctx, _, started = stay_connected(dispatch, run, monkeypatch, {'load': True})
+    run('set', '--dispatch-agent=claude', cwd=dispatch.folder)
+    with Store('proj', module='dispatch').tables() as tx:
+        tx.update('sessions', {'session_id': 's1'}, {'origin': None})
+    for _ in range(2):
+        assert module.stay_connected(ctx, dispatch.store) == {'legacy': 's1', 'next': 'metaform dispatch system'}
+    assert started == [], 'nothing automatic resumes it'
+    [told] = [one for one in module.read_signals(ctx)['signals'] if one['signal'] == 'handed-over']
+    assert 'Call resumes it' in told['reason'] and told['next'] == 'metaform dispatch system'
+    assert module.system(ctx)['conversation'] is True and started == [['resume=s1', 'system=true']]
+    with Store('proj', module='dispatch').tables() as tx:
+        tx.update('sessions', {'session_id': 's1'}, {'origin': 'elsewhere:/home/other/.metaform'})
+    module.system(ctx)
+    assert started[1:] == [['new', 'claude']], "another home's conversation is never resumed by Call"
+
+
+@pytest.mark.req('VIEW-045')
+def test_a_runner_that_outlived_its_server_is_reused_by_a_summon_and_its_session_never_resumed_twice(
+        dispatch, run, monkeypatch):
+    """Rich, 2026-10-15: the system agent's runner outlived restarts of the server that started it, its parent now
+    pid 1, and a summon resumed its session a second time. A live runner holding the session, or started to resume
+    it and not yet in its row, is found whoever its parent is: the summon after a restart reuses it, stay connected
+    leaves it, and a second runner refuses before its agent starts."""
+    import socket
+
+    from metaform.data import Store
+    from metaform.module import context
+    module, ctx, held, started = stay_connected(dispatch, run, monkeypatch, {'load': True})
+    run('set', '--dispatch-agent=claude', cwd=dispatch.folder)
+    orphan = subprocess.run(  # a runner of s1 whose starter has exited, so it is no child of this process
+        [sys.executable, '-c', ('import subprocess, sys; print(subprocess.Popen(sys.argv[1:], stdin=subprocess.DEVNULL, '
+                                'stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True).pid)'),
+         sys.executable, '-c', 'import time; time.sleep(120)', 'dispatch', 'run', held.id, 'claude', 'resume=s1',
+         'system=true'], capture_output=True, text=True, check=True)
+    alive = int(orphan.stdout)
+    try:
+        monkeypatch.setattr(module, 'spawn', lambda store, work_id, agent, extra, name: started.append(extra)
+                            or {'pid': alive, 'log': ''})
+        assert module.system(ctx)['state'] == 'starting' and started == [['resume=s1', 'system=true']]
+        restarted = context('dispatch', dispatch.folder, project='proj')  # a new server: nothing kept in memory
+        again = module.system(restarted)
+        assert (again['state'], again['session_id']) == ('running', 's1') and len(started) == 1, 'reused while it starts'
+        assert module.stay_connected(restarted, dispatch.store) == {} and len(started) == 1
+        closed = socket.socket()
+        closed.bind(('127.0.0.1', 0))
+        port = closed.getsockname()[1]
+        closed.close()
+        with Store('proj', module='dispatch').tables() as tx:  # its row written, its control port not answering
+            tx.update('sessions', {'session_id': 's1'}, {'state': 'running', 'how': None, 'pid': alive, 'port': port,
+                                                         'token': 'x'})
+        module.resuming_path('s1').unlink()
+        restarted = context('dispatch', dispatch.folder, project='proj')
+        again = module.system(restarted)
+        assert (again['state'], again['session_id']) == ('running', 's1') and len(started) == 1, 'reused once running'
+        assert module.stay_connected(restarted, dispatch.store) == {} and len(started) == 1
+        refused = run('dispatch', 'run', held.id, 'claude', 'resume=s1', 'system=true', cwd=dispatch.folder, ok=False)
+        said = refused.stdout + refused.stderr
+        assert refused.returncode != 0 and f'held by its live runner, process {alive}' in said, said
+    finally:
+        os.kill(alive, signal.SIGTERM)
+
+
 @pytest.mark.req('VIEW-005')
 def test_the_system_agent_is_told_it_speaks_as_the_mascot_and_where_its_persona_and_tools_are(dispatch, run):
     """The mascot binding: one sentence naming the character, where its persona is written, read on demand, and the

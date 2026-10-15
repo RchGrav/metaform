@@ -5,8 +5,8 @@ found with whether a remote agent has use for it and whether it is on at home, a
 as the prompt store serves them. `POST /api/build` checks the request, then builds in a thread of its own and answers
 at once with the build's id; each stage it starts, and how it ends, is pushed to every open page as an event with the
 topic `build`. `GET /api/build/<id>` is one build's state, and `GET /api/build/<id>/download` its file, sent as an
-attachment so the browser saves it. A build is kept while the server runs; its file also stays under the home's
-builds folder. A build chooses what it carries and never turns a module on or off at home.
+attachment so the browser saves it: the zip of a wheel build, with its README, or a Project Archive. A build is kept
+while the server runs; its file also stays under the home's builds folder. A build chooses what it carries and never turns a module on or off at home.
 """
 from __future__ import annotations
 
@@ -28,10 +28,11 @@ if TYPE_CHECKING:
 build: Any = chassis.builder()  # reached through the chassis resources, BASE-004
 PREFIX = '/api/build'
 KINDS = {'archive': ('Project Archive', 'One zip of the project: its data and, when chosen, its files.'),
-         'project': ('Project + Metaform', 'A wheel carrying the project and the prompt for a remote agent.'),
+         'project': ('Project + Metaform',
+                     'A zip of the wheel carrying the project, the prompt for a remote agent, and a README.'),
          'installer': ('Metaform Installer',
-                       'The wheel that installs Metaform or runs directly, with the modules chosen.'),
-         'full': ('Metaform Full', 'The same wheel with every module found.')}
+                       'A zip of the wheel, with the modules chosen, and a README that takes a tester through it.'),
+         'full': ('Metaform Full', 'The same zip, its wheel carrying every module found.')}
 SHAPES = {'remote': 'Remote agent', 'map': 'Map only', 'home': 'Same as home', 'everything': 'Everything'}
 STATES = ('running', 'done', 'failed')
 
@@ -180,7 +181,7 @@ def _run(server: Server, job: Job, request: Any) -> None:
             job.state = 'failed'
     else:
         with _lock:
-            job.path, job.prompt, job.state = built.path, built.prompt, 'done'
+            job.path, job.prompt, job.state = built.bundle or built.path, built.prompt, 'done'
     _push(server, job)
 
 

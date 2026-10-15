@@ -121,7 +121,8 @@ settings.boolean('mcp_a2a', True, scope='global', person_only=True, label='Serve
                          'no project. Every other A2A request needs the bearer token in <home>/run/a2a-token, made on '
                          'the first start and separate from every other token. A message becomes a ticket at the '
                          'Address its contextId names, in To do; it starts only when dispatch_autostart is on. Off, '
-                         'the HTTP server serves MCP alone.')
+                         'the HTTP server serves MCP alone.',
+                 category='integrations', section='A2A')
 settings.items('mcp_a2a_webhooks', (), scope='global', person_only=True, label='A2A push webhooks',
                help='The webhook URLs A2A push notifications may be sent to, each a URL prefix such as '
                     'https://agent.example/hooks/; none turns push notifications off.',
@@ -129,7 +130,8 @@ settings.items('mcp_a2a_webhooks', (), scope='global', person_only=True, label='
                        'with the scheme, host and port of one of these and a path under its path, so a client cannot '
                        'make it call anywhere else on your network, the A2A specification\'s guard against '
                        'server-side request forgery. The Agent Card offers push notifications only while the list '
-                       'holds one.')
+                       'holds one.',
+               category='integrations', section='A2A')
 settings.number('mcp_a2a_wait', 30, min=0, max=3600, scope='global', label='A2A send wait',
                 help='How many seconds an A2A send that asks to wait is held for its ticket to finish, before it '
                      'answers with the task as it stands.',
@@ -137,7 +139,8 @@ settings.number('mcp_a2a_wait', 30, min=0, max=3600, scope='global', label='A2A 
                         'ticket can take hours, so the wait ends here and the caller follows the task with GetTask, '
                         'SubscribeToTask or a push notification; the Agent Card says so. 0 answers at once. A ticket '
                         'nothing will start, with dispatch_autostart off, is answered at once, as is a message that '
-                        'named no Address, which is asked for one.')
+                        'named no Address, which is asked for one.',
+                category='integrations', section='A2A')
 
 
 
@@ -156,7 +159,8 @@ settings.items('mcp_a2a_peers', (), scope='global', person_only=True, exclusive=
                        'another Metaform; the token variable names the environment variable that holds the bearer '
                        'token it takes, read when a message is sent and never stored. A peer\'s card is read when it '
                        'is first used and kept in the project, read again when a call fails with a version or '
-                       'interface error.')
+                       'interface error.',
+               category='integrations', section='A2A')
 
 
 def changed(payload: dict[str, Any], ctx: Context) -> None:

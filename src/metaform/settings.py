@@ -23,6 +23,25 @@ from .errors import Stop
 
 KINDS = ('str', 'int', 'bool', 'list', 'select')
 
+# The categories the settings screens group settings into, in the order a person comes to them: each a name, a title
+# and a line saying what it holds. A setting names its own `category`; one that names none takes its module's
+# `settings_category`, and the chassis's own take advanced.
+CATEGORIES: tuple[tuple[str, str, str], ...] = (
+    ('general', 'General', 'The project these settings are kept for, and where they apply.'),
+    ('agents', 'Agents', 'Which agent works, when agents start, how many at once, and what they may do unasked.'),
+    ('budgets', 'Budgets', 'How many tokens and how much money agents may spend, and what happens at the limit.'),
+    ('agent_options', 'Agent options', "Each agent's own mode, model and effort, used when it starts."),
+    ('map', 'Map and display', 'What the map shows and how the page draws it.'),
+    ('voice', 'Voice and speech', 'Talking to Metaform, and the voice its agent answers with.'),
+    ('phone', 'Phone', 'Talk with your system agent by phone, and be called or texted when something needs you.'),
+    ('integrations', 'Integrations', 'A2A, Paperclip, Cloud, Node and Jev: other services Metaform works with.'),
+    ('advanced', 'Advanced', 'Everything rarely changed, by module.'),
+)
+CATEGORY_NAMES = tuple(name for name, _, _ in CATEGORIES)
+# A number's unit, read from the end of its key when it declares none: dispatch_wait_seconds is in seconds.
+UNITS = {'seconds': 'seconds', 'minutes': 'minutes', 'hours': 'hours', 'days': 'days', 'ms': 'ms', 'kb': 'KB',
+         'bytes': 'bytes'}
+
 
 class SettingError(ValueError):
     """A value a setting cannot take. It carries the one next step."""
@@ -72,6 +91,13 @@ class Setting:
     # one before it is stored, and stepping through the choices never lands on one. A function of a Context reads
     # them as choices are, for choices an agent offers.
     risky: Callable[..., Iterable[str]] | tuple[str, ...] = field(default=(), compare=False)
+    # The settings screen's category, one of CATEGORY_NAMES; None takes the module's `settings_category`.
+    category: str | None = None
+    # A place on the settings screen's Essentials page, the one it opens on, lower first; 0 keeps it off that page.
+    # Only what a person needs to set Metaform up and run it day to day is marked.
+    essential: int = 0
+    # What a number counts, such as minutes or cents, shown beside its control; None reads it from the key's end.
+    unit: str | None = None
 
     @property
     def switch(self) -> str:
@@ -169,11 +195,17 @@ def declare(setting: Setting) -> Setting:
         raise ValueError('confirm is never a setting; it is a one-call switch of caution verbs, CLI-018.')
     if setting.kind not in KINDS:
         raise ValueError(f'Setting {setting.key}: kind must be one of {", ".join(KINDS)}.')
+    if setting.category is not None and setting.category not in CATEGORY_NAMES:
+        raise ValueError(f'Setting {setting.key}: category must be one of {", ".join(CATEGORY_NAMES)}.')
     owner = _owner.get() or _declaring_module() or setting.owner
     hyphens = setting.key.replace('_', '-')
     switches = setting.switches or ((f'--{hyphens}', f'--no-{hyphens}') if setting.kind == 'bool' else (f'--{hyphens}',))
+    # A label not declared is the key in words, less its module's name, which the screens show as its heading
+    named = setting.key[len(owner) + 1:] if setting.key.startswith(f'{owner}_') else setting.key
+    unit = setting.unit or (UNITS.get(setting.key.rsplit('_', 1)[-1]) if setting.kind == 'int' else None)
     setting = replace(setting, owner=owner, group=setting.group or owner,
-                      label=setting.label or setting.key.replace('_', ' ').capitalize(), switches=tuple(switches))
+                      label=setting.label or named.replace('_', ' ').capitalize(), switches=tuple(switches),
+                      unit=unit)
     existing = SCHEMA.get(setting.key)
     if existing is not None and existing.owner != setting.owner:
         raise ValueError(f'Setting {setting.switch} already belongs to {existing.owner}.')
@@ -508,6 +540,16 @@ def reset(key: str, folder: Path, *, unglue: bool = False) -> tuple[str, bool]:
     return 'reset', unglued
 
 
+def category_of(setting: Setting) -> str:
+    """A setting's category on the settings screens: its own, else its module's `settings_category`, else advanced."""
+    if setting.category is not None:
+        return setting.category
+    from . import loader
+    found = next((item for item in loader.discover() if item.id == setting.owner and item.module is not None), None)
+    declared = found.module.settings_category if found is not None and found.module is not None else None
+    return declared or 'advanced'
+
+
 def describe(folder: Path) -> list[dict[str, Any]]:
     """Every stored setting as the screens show it; a per-call switch is no setting to store, so it is left out. An
     inherited value names the folder it comes from, and a select names its risky choices."""
@@ -517,7 +559,8 @@ def describe(folder: Path) -> list[dict[str, Any]]:
             continue
         entry = {'key': key, 'switch': setting.switch, 'owner': setting.owner, 'kind': setting.kind,
                  'scope': setting.scope, 'value': value(key, folder), 'default': default(setting, folder),
-                 'state': state(key, folder), 'help': setting.help}
+                 'state': state(key, folder), 'help': setting.help, 'label': setting.label,
+                 'category': category_of(setting), 'essential': setting.essential, 'unit': setting.unit}
         if entry['state'] == 'inherited':
             entry['from'] = inherited_from(key, folder)
         if setting.kind in ('select', 'list') and setting.choices is not None:
@@ -582,7 +625,8 @@ def _project_choices(ctx: Any) -> list[str]:
 project = choice('project', choices=_project_choices,
                  default_from=home.folder_project, boundary=_project_root, help='The project this folder works on.',
                  details="Defaults to the registered project that contains this folder. Set it to work on another "
-                         "project from here. Unset it to return to the folder's own project.")
+                         "project from here. Unset it to return to the folder's own project.",
+                 label='Project', category='general')
 
 modules = items('modules', choices=_module_choices, check=_check_modules,
                 help='Narrows which modules\' commands this folder shows and runs. It does not enable or disable '
@@ -596,17 +640,20 @@ install_server = text('install_server', scope='global',
 
 layers = items('layers', check=_check_layers,
                help='The layers toggled on in this folder, by name or tag. Empty means every finished layer that '
-                    'is not hidden.')
+                    'is not hidden.',
+               label='Layers shown', category='map', section='Layers')
 
 write_layer = text('write_layer', '',
                    help='The layer a write that names no layer goes to. Empty means a new building layer '
                         'unnamed-<time> for each such write.',
                    details='A project wheel\'s first run sets it to the working layer it opens, so what a remote '
                            'agent writes travels back in one layer, BASE-060. A write that names its layer still goes '
-                           'to the layer it names.')
+                           'to the layer it names.',
+                   label='Layer for unnamed writes', category='map', section='Layers')
 
 debug = boolean('debug', False, help='Ask agents doing Metaform work for feedback and trouble reports on the Metaform '
-                                     'process.')
+                                     'process.',
+                label='Ask agents for feedback on Metaform')
 
 connect_instructions = choice('connect_instructions', ['compact', 'full'], 'compact',
                               help='What agents get as instructions: compact lists each module in one line, full '
@@ -614,9 +661,11 @@ connect_instructions = choice('connect_instructions', ['compact', 'full'], 'comp
                               details='Claude Code shows the first 2,048 characters of a server\'s instructions and '
                                       'drops the rest, so compact keeps them whole there, and each module\'s full '
                                       'instructions come from metaform_instructions with module set, at '
-                                      'metaform://instructions/<module>, or with metaform help agents <module>. full serves them all at once, for hosts that show more.')
+                                      'metaform://instructions/<module>, or with metaform help agents <module>. full serves them all at once, for hosts that show more.',
+                              label='Instructions at connect')
 
-report = boolean('report', True, help='Ask the intake agent for a report on the project it examined.')
+report = boolean('report', True, help='Ask the intake agent for a report on the project it examined.',
+                 label='Intake report')
 
 agents_may_set_control = boolean(
     'agents_may_set_control', False, person_only=True,
@@ -624,7 +673,8 @@ agents_may_set_control = boolean(
     details='Off, the default: over MCP an agent is refused the settings marked as the person\'s, and says what it '
             'needs in its ticket. On: an agent may set them, through the person\'s own permission policy like any '
             'other call. Only the person turns this on or off, on the command line or the page; it is a permission '
-            'the person holds and can change, never a rule the person cannot get past, CLI-011.')
+            'the person holds and can change, never a rule the person cannot get past, CLI-011.',
+                                 label='Agents may change agent control', category='agents', section='Permissions')
 
 # The roles a dispatch runner gives the agent it starts, BASE-052: the intake, the agents the person summons, a merge
 # preparation and a worker on its ticket. A session with no role is one the person runs outside dispatch.
@@ -650,7 +700,8 @@ roles_without_authority = items(
             'assign itself or others work; the person, the agents that serve them (intake, system, sentinel, talk) '
             'and a session the person runs outside dispatch keep it. The page is the person\'s and is never held. '
             'Set to none, no role is held back. Only the person changes this, on the command line or the page; it is a '
-            'permission the person holds, never a rule they cannot get past, MAP-050 and CLI-011.')
+            'permission the person holds, never a rule they cannot get past, MAP-050 and CLI-011.',
+                                label='Roles without authority', category='agents', section='Permissions')
 
 gemini_reminder = choice('gemini_reminder', ['after-tool', 'off'], 'after-tool', scope='global',
                          help='Gemini setup installs a passive reminder after delegation and questioning, or none.',
@@ -682,10 +733,12 @@ jev = boolean(
             'from the environment, OPENROUTER_API_KEY or TYPESAFE_API_KEY, and never stored; with no key nothing is '
             'sent. A decision that is acted on is kept at the Address it concerns, with its question, choices, answer, '
             'reason, model and cost. No decision hides anything from the person. Only the person turns this on, since '
-            'it sends project text to a third party.')
+            'it sends project text to a third party.',
+              label='Ask Jev for decisions', category='integrations', section='Jev')
 
 jev_endpoint = choice('jev_endpoint', ['openrouter', 'typesafe'], 'openrouter', person_only=True,
-                      help='Where Jev is asked: OpenRouter with OPENROUTER_API_KEY, or TypeSafe with TYPESAFE_API_KEY.')
+                      help='Where Jev is asked: OpenRouter with OPENROUTER_API_KEY, or TypeSafe with TYPESAFE_API_KEY.',
+                      label='Jev endpoint', category='integrations', section='Jev')
 
 # The model, the decision points and the confidence decide which agent runs a ticket, how agents are watched and what
 # reaches the person first, and what project text is sent, so only the person sets them, CLI-011.
@@ -694,21 +747,25 @@ jev_model = text('jev_model', '', person_only=True,
                       'jev-1.13.0 on TypeSafe.',
                  details='An answer is cached under the model asked and the model that answered; when a name such as '
                          'typesafe/jev-1.13 starts answering as a newer snapshot, the answers of the older one are '
-                         'asked again.')
+                         'asked again.',
+                 label='Jev model', category='integrations', section='Jev')
 
 jev_max_context = number('jev_max_context', 8000, min=1000, max=32000,
                          help='The tokens of state, plus its longest question, one Jev request may carry.',
                          details="Jev's accuracy falls as a state fills with detail the question does not need, so the "
                                  'default is well below its limit of 32,000 tokens of state plus the longest question, '
                                  '64,000 in a whole request. A pile of items larger than this is split across requests; '
-                                 'a state that cannot fit is not sent, and the caller keeps its fallback.')
+                                 'a state that cannot fit is not sent, and the caller keeps its fallback.',
+                         label='Jev request size', category='integrations', section='Jev', unit='tokens')
 
 jev_decisions = items('jev_decisions', choices=list(JEV_DECISIONS), check=_check_jev_decisions, person_only=True,
                       help='Narrows which decision points ask Jev. Empty means every one.',
-                      details="A module's own decision point is named <module>.<point>, as the module's README says.")
+                      details="A module's own decision point is named <module>.<point>, as the module's README says.",
+                      label='Decisions asked of Jev', category='integrations', section='Jev')
 
 jev_confidence = number('jev_confidence', 50, min=0, max=100, person_only=True,
                         help='The confidence, in percent, below which a Jev answer is not acted on.',
                         details="A choice's confidence is Jev's own; a yes or no is as confident as its probability "
                                 'is far from even, so 50 leaves out answers between 0.25 and 0.75. Below it the '
-                                'caller keeps its fallback; a kept decision is marked unsure.')
+                                'caller keeps its fallback; a kept decision is marked unsure.',
+                        label='Jev confidence needed', category='integrations', section='Jev', unit='%')

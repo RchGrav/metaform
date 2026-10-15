@@ -119,8 +119,8 @@ export function figureAt(x, y) {
   FIGURE_PICK.ray.setFromCamera(FIGURE_PICK.at, G.camera());
   const ray = FIGURE_PICK.ray.ray;
   // of the figures whose ball the ray passes through, the one whose middle it passes closest to, for its size: two
-  // figures side by side each take the clicks on themselves, not the one nearer the camera; and an agent's speech
-  // bubble takes the click for its agent where it is nearer the camera than that figure
+  // figures side by side each take the clicks on themselves, not the one nearer the camera; an agent's speech bubble,
+  // drawn over the map, takes the click for its agent wherever it shows
   let best = null;
   for (const [id, figure] of ROAM.figures) {
     if (figure.stage === 'leaving') continue;
@@ -130,8 +130,8 @@ export function figureAt(x, y) {
     const off = ray.distanceToPoint(middle) / size;
     if (!best || off < best.off) best = {id, off, distance: ray.origin.distanceTo(middle) - size};
   }
-  const said = bubbleAt(FIGURE_PICK.ray);
-  if (said && (!best || said.distance < best.distance)) return said.id;
+  const said = bubbleAt(FIGURE_PICK.ray);  // a bubble is drawn over everything, so it takes the click where it shows
+  if (said) return said.id;
   return best?.id || null;
 }
 export function openFigure(workId) {

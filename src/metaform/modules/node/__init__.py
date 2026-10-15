@@ -39,43 +39,52 @@ G = 'global'
 settings.text('node_domain', '', scope=G, person_only=True, label='Node domain',
               help='The public name the Node is reached at, such as metaform.example.com.',
               details='Set by metaform node init and read by the authorization server, whose issuer is https://<it>. '
-                      'Passkeys belong to this name: moving the Node to another name means enrolling them again.')
+                      'Passkeys belong to this name: moving the Node to another name means enrolling them again.',
+              section='Node')
 settings.choice('node_mode', list(config.MODES), 'acme', scope=G, person_only=True, label='Node TLS mode',
                 help='How the Node gets its certificate and is reached: acme, dns, relay or internal.',
                 details='acme: a public host, Let\'s Encrypt over HTTP-01 or TLS-ALPN-01. dns: DNS-01 through the DNS '
                         'provider\'s API (node_dns_provider), for a wildcard or a host port 80 cannot reach. relay: '
                         'no open port, through a relay that passes TLS through (metaform node relay). internal: '
-                        'Caddy\'s local CA, for a stand-in on a test machine only.')
+                        'Caddy\'s local CA, for a stand-in on a test machine only.',
+                section='Node')
 settings.text('node_email', '', scope=G, label='Certificate contact',
-              help='The email address the certificate authority warns before a certificate lapses.')
+              help='The email address the certificate authority warns before a certificate lapses.',
+              section='Node')
 settings.choice('node_capability', list(config.CAPABILITIES), 'write', scope=G, person_only=True,
                 label='Node capability',
                 help='What the Node lets an agent do: read, write (memories, tickets, terms), or dispatch (start '
                      'agents with shells and file writes).',
                 details='It caps what the authorization server grants: read grants mcp:read; write adds mcp:write and '
                         'a2a:tickets; dispatch adds mcp:dispatch. Below dispatch the dispatch module is off in the '
-                        'Node. A Node at dispatch runs agents on its host, so it belongs on a VM of its own.')
+                        'Node. A Node at dispatch runs agents on its host, so it belongs on a VM of its own.',
+                section='Node')
 settings.choice('node_relay_capability', list(config.CAPABILITIES), 'read', scope=G, person_only=True,
                 label='Capability through a relay',
                 help='The capability a Node reached through a relay has: read unless you raise it.',
                 details='Used instead of node_capability by metaform node relay, so dispatch is reachable through a '
-                        'relay only when you set this to dispatch yourself.')
+                        'relay only when you set this to dispatch yourself.',
+                category='advanced')
 # node_projects, node_host, node_ssh_identity and node_ssh_public_key are person_only like their neighbours: they say
 # which folders the Node exposes, which host deploy reaches and which key a created VM trusts for root.
 settings.items('node_projects', (), scope=G, person_only=True, label='Node project folders',
-               help='Folders on the host mounted into the Node, each at /srv/projects/<its name>.')
+               help='Folders on the host mounted into the Node, each at /srv/projects/<its name>.',
+               section='Node')
 settings.text('node_dns_provider', '', scope=G, label='DNS provider',
               help='The caddy-dns module for DNS-01, such as cloudflare, vultr or route53; its token goes in '
-                   'secrets.env on the host as DNS_API_TOKEN.')
+                   'secrets.env on the host as DNS_API_TOKEN.',
+              category='advanced')
 settings.text('node_wildcard', '', scope=G, label='Wildcard base',
-              help='A base domain to hold a wildcard certificate for, such as metaform.ing, with node_mode dns.')
+              help='A base domain to hold a wildcard certificate for, such as metaform.ing, with node_mode dns.',
+              category='advanced')
 settings.choice('node_role', list(config.ROLES), 'node', scope=G, person_only=True, label='Node role',
                 help='node serves a Metaform of its own; broker serves accounts and carries AI tools\' MCP to the '
                      'Metaform on each person\'s own machine, as metaform.ing does.',
                 details='A broker keeps nothing on disk but accounts and their passkeys\' public keys: its tokens are '
                         'signed with the Node\'s key, the people\'s machines dial in over a tunnel (metaform cloud '
                         'connect), and the record of who called what is kept on each person\'s machine. It mounts no '
-                        'project and runs no MCP server or page of its own.')
+                        'project and runs no MCP server or page of its own.',
+                section='Node')
 settings.choice('node_refresh_replay', ['memory', 'durable'], 'memory', scope=G, person_only=True,
                 label='Refresh reuse detection',
                 help='Where a broker keeps the newest refresh token number of each sign-in: memory, or durable on disk '
@@ -85,35 +94,49 @@ settings.choice('node_refresh_replay', ['memory', 'durable'], 'memory', scope=G,
                         'process runs: after a restart a refresh token retired before it can be used once more, by '
                         'whoever has it first, until it expires or the account signs out everywhere. durable keeps the '
                         'same marks, grant ids and counters with no secret, in the broker\'s store, which closes that '
-                        'gap.')
+                        'gap.',
+                category='advanced')
 settings.boolean('node_member_dispatch', False, scope=G, person_only=True, label='Members may dispatch',
                  help='On a broker, let an account that is not the owner approve an AI tool to start agents '
                       '(mcp:dispatch) on its own machine.',
-                 details='Each machine still caps what it allows with its own cloud_capability.')
+                 details='Each machine still caps what it allows with its own cloud_capability.',
+                 section='Node')
 settings.boolean('node_dcr', False, scope=G, person_only=True, label='Dynamic client registration',
                  help='Let older AI tools register themselves (RFC 7591), which the MCP specification of 2026-07-28 '
-                      'deprecates in favour of Client ID Metadata Documents.')
+                      'deprecates in favour of Client ID Metadata Documents.',
+                 category='advanced')
 settings.text('node_host', '', scope=G, person_only=True, label='Node host',
-              help='The host deploy reaches over SSH, a name or address.')
+              help='The host deploy reaches over SSH, a name or address.',
+              category='advanced')
 settings.text('node_ssh_identity', '', scope=G, person_only=True, label='SSH identity',
-              help='The private key file deploy uses; empty uses your SSH agent and configuration.')
+              help='The private key file deploy uses; empty uses your SSH agent and configuration.',
+              category='advanced')
 settings.text('node_dir', 'metaform-node', label='Node folder',
-              help='The folder, under this one, that holds the Node\'s compose project.')
+              help='The folder, under this one, that holds the Node\'s compose project.',
+              category='advanced')
 settings.choice('node_provider', ['none', 'vultr'], 'none', scope=G, label='Cloud provider',
-                help='none: you made the host; vultr: deploy creates it with Vultr\'s API, the key in VULTR_API_KEY.')
-settings.text('node_vultr_region', 'ewr', scope=G, label='Vultr region', help='The region id, ewr for New York (NJ).')
+                help='none: you made the host; vultr: deploy creates it with Vultr\'s API, the key in VULTR_API_KEY.',
+                category='advanced')
+settings.text('node_vultr_region', 'ewr', scope=G, label='Vultr region', help='The region id, ewr for New York (NJ).',
+              category='advanced')
 settings.text('node_vultr_plan', 'vhf-1c-1gb', scope=G, label='Vultr plan',
-              help='The plan id: GET https://api.vultr.com/v2/plans lists them.')
+              help='The plan id: GET https://api.vultr.com/v2/plans lists them.',
+              category='advanced')
 settings.number('node_vultr_os', 2284, min=1, scope=G, label='Vultr OS id',
-                help='The OS id, 2284 for Ubuntu 24.04 LTS x64: GET https://api.vultr.com/v2/os lists them.')
+                help='The OS id, 2284 for Ubuntu 24.04 LTS x64: GET https://api.vultr.com/v2/os lists them.',
+                category='advanced')
 settings.text('node_ssh_public_key', '~/.ssh/id_ed25519.pub', scope=G, person_only=True, label='SSH public key',
-              help='The public key a created VM lets in, for root and the working user.')
+              help='The public key a created VM lets in, for root and the working user.',
+              category='advanced')
 settings.text('node_relay_server', '', scope=G, label='Relay server',
-              help='The relay this Metaform dials, such as relay.metaform.ing.')
+              help='The relay this Metaform dials, such as relay.metaform.ing.',
+              category='advanced')
 settings.number('node_relay_port', 7000, min=1, max=65535, scope=G, label='Relay control port',
-                help='The port the relay\'s frps takes tunnel clients on; 7000 unless the operator says otherwise.')
+                help='The port the relay\'s frps takes tunnel clients on; 7000 unless the operator says otherwise.',
+                category='advanced')
 settings.text('node_relay_domain', '', scope=G, label='Relay domain',
-              help='On the relay\'s own host: the domain whose names it routes, such as metaform.ing.')
+              help='On the relay\'s own host: the domain whose names it routes, such as metaform.ing.',
+              category='advanced')
 settings.boolean('node_dry_run', False, switches=('--dry-run', '--no-dry-run'), label='Dry run', per_call=True,
                  help='Print every step, API calls and cloud-init included, and run none.',
                  details='Given on the command line for the one run; deploy and update with it change nothing.')
@@ -577,4 +600,5 @@ MODULE = Module(
         Verb('relay-gate', relay_gate, 'On the relay: answer frps on who may connect.',
              switches=('node_relay_domain',), surfaces=CLI, transport=True),
     ),
+    settings_category='integrations',
 )

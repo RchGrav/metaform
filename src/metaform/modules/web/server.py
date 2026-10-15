@@ -138,10 +138,11 @@ ADMIN_ROUTES = frozenset({
     '/api/save-prompt', '/api/clear-project', '/api/remove-project', '/api/restore', '/api/activate-base',
     '/api/remove-base', '/api/dispatch-prompts', '/api/dispatch-autostart', '/api/dispatch-agents',
     '/api/dispatch-reset', '/api/settings', '/api/settings/reset', '/api/modules', '/api/mcp-call',
-    '/api/voice/download', '/api/build', '/api/workspace/arrangement', '/api/workspace/reset',
+    '/api/voice/download', '/api/build', '/api/workspace/arrangement', '/api/workspace/reset', '/api/report',
     '/api/workspace/save', '/api/workspace/select', '/api/workspace/delete'})
-ADMIN_PREFIXES = ('/api/build/', '/api/debug/')
+ADMIN_PREFIXES = ('/api/build/', '/api/debug/', '/api/first-run/', '/api/phone-check', '/api/speech-voices')
 TOOL_RUN = '/api/workspace/run'
+HINTS = '/api/hints'  # a person's own dismissed first-run hints: any account keeps its own, firstrun.py
 
 
 def route_class(method: str, path: str) -> str:
@@ -149,7 +150,7 @@ def route_class(method: str, path: str) -> str:
     /api/settings, is read by GET and classed by its write for POST."""
     if path == '/api/build' or path.startswith(ADMIN_PREFIXES):
         return 'admin'
-    if method != 'POST' or path == TOOL_RUN:  # a tool's run is classed again by its verb, verb_class
+    if method != 'POST' or path in (TOOL_RUN, HINTS):  # a tool's run is classed again by its verb, verb_class
         return 'read'
     if path in WRITE_ROUTES:
         return 'write'
@@ -546,6 +547,9 @@ class Handler(BaseHTTPRequestHandler):
         if url.path.startswith('/api/debug/'):  # the developer panes, only while the developer level is on
             from . import debug
             return debug.answer(self, url.path, {key: values[-1] for key, values in query.items() if key != 't'})
+        if url.path.startswith('/api/first-run/') or url.path == HINTS:  # the first screen's choices and hints
+            from . import firstrun
+            return firstrun.answer(self, method, url.path, query)
         if url.path in ('/api/mcp-apps', '/api/mcp-app', '/api/mcp-call'):  # the chat as an MCP Apps host
             from . import apps
             return apps.answer(self, method, url.path, query)
@@ -555,6 +559,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.events(query.get('project', [''])[-1])
         if url.path == '/api/server':
             return self.send(200, {'pid': os.getpid(), 'home': str(home.home())})
+        if url.path == '/api/demo':  # the demo's card, in the home `metaform demo` runs, CLI-042
+            return self.send(200, demo_card())
         if url.path == '/api/projects':  # `opened`: the project of the folder `metaform web` ran in, VIEW-002
             return self.send(200, {'projects': [{'id': found.project_id, 'path': found.path}
                                                 for found in home.projects()], 'opened': opened_project()})
@@ -580,6 +586,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.dispatch_prompts(query.get('project', [''])[-1])
         if url.path == '/api/settings':
             return self.read_settings(query.get('project', [''])[-1])
+        if url.path in ('/api/phone-check', '/api/speech-voices'):  # asked for by a button, never on a page's read
+            return self.settings_check(url.path, query.get('project', [''])[-1])
         if url.path == '/api/dispatch-autostart':
             return self.dispatch_autostart({'project': query.get('project', [''])[-1]})
         if url.path == '/api/dispatch-agents':
@@ -837,7 +845,7 @@ class Handler(BaseHTTPRequestHandler):
         writes = {'/api/apply-layers': self.apply_layers,
                   '/api/save-prompt': self.save_prompt, '/api/clear-project': self.clear_project, '/api/remove-project': self.remove_project,
                   '/api/answer': self.answer_question, '/api/reopen': self.reopen_question, '/api/read': self.read_note, '/api/task': self.give_work, '/api/state': self.set_state,
-                  '/api/element': self.add_part, '/api/restore': self.restore,
+                  '/api/element': self.add_part, '/api/restore': self.restore, '/api/report': self.problem_report,
                   '/api/note': self.add_note, '/api/move': self.move_ticket, '/api/distribute': self.distribute_tickets,
                   '/api/ticket': self.set_ticket, '/api/eligible': self.set_eligible, '/api/merge-review': self.review_merge,
                   '/api/merge-assist': self.assist_merge, '/api/dispatch-reset': self.reset_agents,
@@ -1337,6 +1345,23 @@ class Handler(BaseHTTPRequestHandler):
             return self.refuse(error, 400)
         self.send(200, restored.to_dict())
 
+    def problem_report(self, given: dict[str, Any]) -> None:
+        """A tester's problem report, as `metaform report` makes it, with the page's browser and console errors,
+        BASE-045: built for the project's folder and handed back for the page to save; nothing is written or sent."""
+        description, console = given.get('description'), given.get('console')
+        if not isinstance(description, str) or not description.strip():
+            return self.send(400, {'error': 'Say in one line what went wrong.'})
+        project = home.project(str(given.get('project', '')))
+        folder = Path(project.path) if project is not None else home.home()
+        lines = [str(line)[:4000] for line in cast(list[Any], console)[-200:]] if isinstance(console, list) else []
+        try:
+            name, data, held = chassis.problem_report(folder, description, files=given.get('files') is True,
+                                                      browser=str(given.get('browser') or '')[:500], console=lines)
+        except (Stop, StoreError, OSError) as error:
+            return self.refuse(error, 500)
+        self.send(200, {'name': name, 'held': held, 'send_to': 'Send this file to rchgrav on Discord.',
+                        'data': base64.b64encode(data).decode('ascii')})
+
     def add_note(self, given: dict[str, Any]) -> None:
         """Write the node's one note in place of what it held, as the user's, through `memory note`, VIEW-034; empty
         text clears it, and one over 2048 characters is refused with its length."""
@@ -1716,6 +1741,16 @@ class Handler(BaseHTTPRequestHandler):
         except Stop as error:
             self.refuse(error, 400)
 
+    def settings_check(self, path: str, project_id: str) -> None:
+        """What the settings screen asks for only when the person presses its button, since it may take a while: the
+        phone's state as `metaform twilio status` gives it, or the ElevenLabs voices `metaform elevenlabs voices`
+        lists, which asks ElevenLabs."""
+        module_id, name = ('twilio', 'status') if path == '/api/phone-check' else ('elevenlabs', 'voices')
+        try:
+            self.send(200, plain(module_verb({'project': project_id}, module_id, name, {})))
+        except (Stop, StoreError) as error:
+            self.refuse(error, 400)
+
     def set_setting(self, given: dict[str, Any]) -> None:
         """Save one setting as `metaform set` saves it, run in the project's folder: the same switch, the same checks,
         and its refusal with the next step; with `glue` true, glued as `--glue` glues it. A boolean is true or false,
@@ -2003,6 +2038,16 @@ PROMPT_READS: dict[str, Callable[[dict[str, str]], Any]] = {
                                                    if given.get('number', '').isdigit() else None),
     'prompt-versions': _versions,
 }
+
+
+def demo_card() -> dict[str, Any]:
+    """What the page's demo card says, written by `metaform demo` into the home it runs in, CLI-042; in any other home
+    there is none, `{'demo': None}`."""
+    try:
+        found: Any = json.loads((home.home() / 'demo.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {'demo': None}
+    return {'demo': cast(dict[str, Any], found) if isinstance(found, dict) else None}
 
 
 DISPATCH_LIMIT = 120.0  # the one wait for a dispatch verb; its own waits for an agent are at most 30 s each
@@ -2351,6 +2396,7 @@ def configured(folder: Path) -> dict[str, Any]:
                         'place': place, 'summary': '' if state == 'error' else (text or ''),
                         'problem': (text or '') if state == 'error' else ''})
     return {'folder': str(folder), 'settings': rows, 'modules': modules, 'all_when_empty': list(settings.EMPTY_IS_ALL),
+            'categories': [{'name': name, 'title': title, 'about': about} for name, title, about in settings.CATEGORIES],
             **({'modules_refused': refusal(found)} if found.returncode != 0 else {})}
 
 
@@ -2360,8 +2406,8 @@ def declared(row: dict[str, Any]) -> dict[str, Any]:
     project's own place, is given its label from its key and no more; the command that saves it still checks it."""
     setting = settings.SCHEMA.get(str(row.get('key')))
     if setting is None or setting.owner != row.get('owner'):
-        return {'label': str(row.get('key', '')).replace('_', ' ').capitalize(), 'details': '', 'min': None,
-                'max': None, 'negative': None, 'person_only': None, 'exclusive': None, 'section': None}
+        return {'label': row.get('label') or str(row.get('key', '')).replace('_', ' ').capitalize(), 'details': '',
+                'min': None, 'max': None, 'negative': None, 'person_only': None, 'exclusive': None, 'section': None}
     return {'label': setting.label, 'details': setting.details, 'min': setting.min, 'max': setting.max,
             'negative': setting.negative, 'person_only': setting.person_only, 'exclusive': setting.exclusive,
             'section': setting.section}

@@ -1247,6 +1247,7 @@ def test_a_changed_field_on_a_finished_map_is_refined_in_place_and_the_map_stays
     recorded(run, project, 'purpose', 'code.timer.kitchen', '["code.alarm.audible"]', 'purpose=Ring when done.')
     finished = recorded(run, project, 'finish')
     assert not any(notice['where'] == 'undescribed' for notice in finished['notices'])
+    assert 'follow_on' not in finished  # a pass that only refines adds no code, so intake.finished is not sent
     assert [base['name'] for base in json.loads(run('map', 'bases', '--json', cwd=project).stdout)['results']] == ['main']
     run('map', 'where', 'code.alarm.audible', cwd=project)
     store = Store('timer')
@@ -1263,6 +1264,8 @@ def test_a_changed_field_on_a_finished_map_is_refined_in_place_and_the_map_stays
     recorded(run, project, 'element', 'code.alarm.audible', 'name=bell')
     finished = recorded(run, project, 'finish')
     assert (finished['base'], finished['elements']) == ('main', 4)
+    # the code element it added is new code on the map, so source placement is offered it as for a first intake
+    assert [each['module'] for each in finished.get('follow_on') or []] == ['source_placement']
     assert [base['name'] for base in json.loads(run('map', 'bases', '--json', cwd=project).stdout)['results']] == ['main']
     for address in ('stakeholder.cook.home', 'code.light.oven'):
         run('map', 'where', address, cwd=project)

@@ -412,7 +412,7 @@ def view() -> dict[str, Any]:
             'pulse_ms': int(settings.value('web_pulse_ms', where) or 1500),
             'flow_mode': settings.value('web_flow_mode', where),
             'idle_flow': bool(settings.value('web_idle_flow', where)),
-            'bubble_seconds': int(settings.value('web_bubble_seconds', where) or 10),
+            'bubble_seconds': int(settings.value('web_bubble_seconds', where) or 5),
             'live_flow': bool(settings.value('web_live_flow', where)),
             'mascot': settings.value('web_mascot', where),
             'mascot_mischief': settings.value('web_mascot_mischief', where),

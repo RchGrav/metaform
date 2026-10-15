@@ -1,0 +1,2 @@
+D=src/metaform/modules/dispatch && A=$(mktemp -d) && cp $D/__init__.py $D/runner.py $A/ && trap "cp $A/__init__.py $A/runner.py $D/" EXIT && git show HEAD:$D/__init__.py > $D/__init__.py && git show HEAD:$D/runner.py > $D/runner.py && (timeout 600 uv run pytest -n 0 $D/tests/test_dispatch.py -k "legacy_row or outlived_its_server" -q 2>&1 | grep -E "^E  |assert|passed|failed" | head -20); cp $A/__init__.py $A/runner.py $D/; git diff --stat -- $D
+Result: 2 failed ... 'reused while it starts' ... 'legacy': 's1' missing; after the fix, 2 passed.

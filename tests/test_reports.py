@@ -190,3 +190,39 @@ def test_writes_from_separate_processes_to_one_file_all_survive(home, tmp_path):
     content = (reports.folder(None) / 'run-2-feedback.md').read_text(encoding='utf-8')
     assert [text for text in texts if text not in content] == []
     assert content.count('\n## ') == len(texts) - 1
+
+
+@pytest.mark.req('BASE-045')
+def test_report_writes_one_zip_here_with_the_error_and_versions_and_masks_every_secret(run, project, home, tmp_path,
+                                                                                         monkeypatch):
+    """`metaform report` writes metaform-report-<time>.zip in the folder: the line, the versions, the log tails and
+    their errors, the settings; every planted key and token masked; the project's files only with files=true."""
+    import zipfile
+    runners = tmp_path / 'tmp'
+    runners.mkdir()
+    monkeypatch.setenv('TMPDIR', str(runners))
+    monkeypatch.setattr('tempfile.tempdir', None)
+    (runners / 'metaform-dispatch-abc.log').write_text('dispatch failed: PLANTED-RUNNER-ERROR token=tok_PLANTED99\n')
+    (home / 'run').mkdir(parents=True, exist_ok=True)
+    (home / 'run' / 'web.log').write_text(
+        '2026-10-14T01:00:05+00:00 Error answering:\nTraceback (most recent call last):\n  File "s.py", line 2\n'
+        'ValueError: PLANTED-WEB-ERROR\nAuthorization: Bearer ghp_PLANTEDTOKEN0123456789abcdefABCD\n')
+    (project / 'own.py').write_text('PROJECT-OWN-TEXT\n')
+    said = run('report', 'It broke; call +1 555 123 4567', cwd=project, env={
+        'OPENROUTER_API_KEY': 'sk-or-v1-PLANTEDKEY0123456789abcdef'}).stdout
+    assert said.endswith('Nothing was sent. Send this file to rchgrav on Discord.\n')
+    [made] = list(project.glob('metaform-report-*.zip'))
+    with zipfile.ZipFile(made) as held:
+        texts = {name: held.read(name).decode('utf-8') for name in held.namelist()}
+    assert 'Metaform: ' in texts['report.txt'] and 'Python: ' in texts['report.txt'] and '****67' in texts['report.txt']
+    assert 'PLANTED-WEB-ERROR' in texts['errors.txt'] and 'PLANTED-RUNNER-ERROR' in texts['errors.txt']
+    assert 'logs/dispatch/metaform-dispatch-abc.log' in texts and 'settings.txt' in texts
+    every = ''.join(texts.values())
+    for secret in ('PLANTEDKEY', 'PLANTEDTOKEN', 'tok_PLANTED', '555 123'):
+        assert secret not in every
+    assert 'PROJECT-OWN-TEXT' not in every
+    made.unlink()
+    run('report', 'Again, with files.', 'files=true', cwd=project)
+    [made] = list(project.glob('metaform-report-*.zip'))
+    with zipfile.ZipFile(made) as held:
+        assert held.read('project/own.py') == b'PROJECT-OWN-TEXT\n'

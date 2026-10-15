@@ -325,26 +325,54 @@ def _lock(store: Store) -> AbstractContextManager[BinaryIO]:
     return home.file_lock(_folder(store) / 'intake.lock')
 
 
-VERIFYING = 'intake.verifying'  # an open verification pass: the file holds the id of the finished base it writes onto
+VERIFYING = 'intake.verifying'  # an open verification pass: {"base": <id of the finished base it writes onto>,
+# "added": [<ids of the elements it added to that map>]}
+
+
+def _pass(store: Store) -> dict[str, Any] | None:
+    """The verification pass open on the active metaform, its base id and the elements it added: intake start with no
+    name on its finished map opened it, and its finish closes it. Kept in the home, so every process of the pass reads
+    it. A marker holding only the base id, as written before the pass kept what it added, is a pass that added none."""
+    active = store.active_base()
+    if active is None:
+        return None
+    try:
+        text = (_folder(store) / VERIFYING).read_text(encoding='utf-8')
+    except OSError:
+        return None
+    try:
+        parsed: Any = json.loads(text)
+    except ValueError:
+        parsed = None
+    held: dict[str, Any] = cast(dict[str, Any], parsed) if isinstance(parsed, dict) else {'base': text, 'added': []}
+    if held.get('base') != active.id:
+        return None
+    added: list[Any] = list(held.get('added') or [])
+    return {'base': active.id, 'added': [str(each) for each in added]}
 
 
 def _verifying(store: Store) -> bool:
-    """Whether a verification pass is open on the active metaform: intake start with no name on its finished map
-    opened it, and its finish closes it. Kept in the home, so every process of the pass reads it."""
-    active = store.active_base()
-    try:
-        return active is not None and (_folder(store) / VERIFYING).read_text(encoding='utf-8') == active.id
-    except OSError:
-        return False
+    """Whether a verification pass is open on the active metaform."""
+    return _pass(store) is not None
 
 
 def _verify(store: Store, base: str | None) -> None:
     """Open a verification pass on the base with this id, or close the one open."""
     path = _folder(store) / VERIFYING
     if base is not None:
-        home.write_private(path, base)
+        home.write_private(path, json.dumps({'base': base, 'added': []}))
     else:
         path.unlink(missing_ok=True)
+
+
+def _verified_add(store: Store, element_ids: Sequence[str]) -> None:
+    """Keep the elements a verification pass added to the finished map, so its finish knows the new shape it holds;
+    the caller holds the intake lock, so calls at once each keep theirs."""
+    held = _pass(store)
+    if held is None or not element_ids:
+        return
+    added = list(dict.fromkeys([*held['added'], *element_ids]))
+    home.write_private(_folder(store) / VERIFYING, json.dumps({'base': held['base'], 'added': added}))
 
 
 def _opened(ctx: Context, store: Store, notices: Notices, named: str = '') -> tuple[Recording, bool]:
@@ -471,7 +499,10 @@ def element(ctx: Context) -> Any:
             if shape[field] is None:
                 notices.append({'where': field, 'message': f'{field} is missing; stored empty.'})
         with _lock(mapped.store):
-            _note(notices, mapped.store.add_element(mapped.layer.name, address, **shape))
+            made = mapped.store.add_element(mapped.layer.name, address, **shape)
+            _note(notices, made)
+            if isinstance(made, Element):
+                _verified_add(mapped.store, [made.id])
         current_map = mapped.store.element(address, raw=True)
     if mapped is not None and current_map is not None:
         # a field changed on an element of the finished map is refined there, a new version, LAYER-025
@@ -636,6 +667,9 @@ def purpose(ctx: Context) -> Any:
         holding = [each.address for each in held_map[0].elements] if len(held_map) == 1 else []
         added = [address for address in elements if address not in holding]
         verifying = _verifying(mapped.store)
+        # the elements a verification pass adds to the map by naming them in a purpose record, kept for its finish
+        lacking = [address for address in dict.fromkeys(str(each) for each in [receiver, *elements])
+                   if mapped.store.element(address, raw=True) is None] if verifying else []
         if verifying and len(held_map) > 1:
             notices.append({'where': 'elements', 'message': f'{receiver} has {len(held_map)} purpose records holding '
                                                             'these elements, with the purposes '
@@ -670,6 +704,10 @@ def purpose(ctx: Context) -> Any:
             if (note := _noted(ctx)) is not None:
                 _beside(mapped, 'join', held_map[0].id, note, notices)
             _condition(ctx, mapped, 'join', held_map[0].id, notices, [receiver, *elements])
+            if lacking:
+                with _lock(mapped.store):
+                    _verified_add(mapped.store, [new.id for address in lacking
+                                                 if (new := mapped.store.element(address, raw=True)) is not None])
             return {'receiver': receiver, 'elements': elements, 'layer': mapped.layer.name, 'base': mapped.metaform,
                     'notices': notices}
     if not elements:  # checked before an intake is started or a base opened, since nothing is recorded
@@ -910,7 +948,9 @@ def finish(ctx: Context) -> Any:
     feedback = _given(ctx, 'feedback', notices)
     with _lock(store):  # the intake finished is the one being recorded when the lock is held, and none opens meanwhile
         found = _building(store)
-        verified = found is None and _verifying(store) and (found := _active_map(store)) is not None
+        held_pass = _pass(store) if found is None else None
+        verified = held_pass is not None and (found := _active_map(store)) is not None
+        added = set(held_pass['added']) if held_pass is not None and verified else set[str]()
         if found is None:
             return {'layer': None, 'project': store.project_id, 'base': None, 'elements': 0, 'purposes': 0, 'work': 0,
                     'notices': notices + [{'where': 'intake', 'message': 'No intake is being recorded; there is '
@@ -958,14 +998,18 @@ def finish(ctx: Context) -> Any:
     work = sum(1 for row in found.store.work(open=True, limit=0).results if row.node_id in recorded_ids)
     # A map with a code trunk is ready for its code: the map module reads it into its own layer, P167.
     code = any(element.address.split('.', 1)[0] == 'code' for element in elements)
+    # a verification pass finishes no layer; it sends intake.finished only when it added code elements to the map
+    new_code = [element.id for element in elements
+                if element.id in added and element.address.split('.', 1)[0] == 'code']
     follow_on: list[dict[str, Any]] = []
-    if code and not verified:  # a verification pass finishes no layer, so intake.finished is not sent for it
+    if code and (not verified or new_code):
         base = found.store.bound_base()
         if base is not None:
             # Optional enrichment receives the committed map, even when this call resolved its project implicitly.
             # The event bus reports subscriber failures without undoing the completed intake.
             follow_on = replace(ctx, project=store.project_id).publish('intake.finished', {
                 'project': store.project_id, 'base': base.id, 'layer': found.layer.id, 'code': True,
+                **({'elements': new_code} if verified else {}),
             })
     return {'layer': found.layer.name, 'project': store.project_id, 'base': found.metaform,
             'elements': len(elements), 'purposes': len(joins), 'work': work, 'notices': notices,
