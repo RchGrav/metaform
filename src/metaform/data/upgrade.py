@@ -59,9 +59,9 @@ No other removed join fields return.
 
 Layout 21 to 22, STORE-012 and code.graph.knowledge#c: each ref is a record of the sources layer with an id that
 lasts. Every current item of the sources layer, a list of refs at an element or a join, is written as ref records,
-`refs.migrate`: a path starts a ref and the pairs after it are its details, each ref is named from what it names, and
-one key and value named at several places is one ref at their nearest common node, every place kept as an earlier
-version. The item is then removed as a version, so its history keeps it. Ops are appended to the log; nothing is
+`refs.migrate`: a path starts a ref and the pairs after it are its details, each ref is named from what it names and
+stays at the place its item was, so one key and value named at several places is one ref at each, code.graph.knowledge#17.
+The item is then removed as a version, so its history keeps it. Ops are appended to the log; nothing is
 rewritten. The counts, the names and the moves are written beside the backup, for review.
 """
 from __future__ import annotations
@@ -240,8 +240,8 @@ def _to_log(old: sqlite3.Connection, fresh: Path, found: str, report: Path) -> N
 
 def refs_to_records(db: sqlite3.Connection, report: Path | None = None) -> dict[str, Any]:
     """Layout 22, inside the caller's transaction: every current item of the sources layer, a list of refs at an
-    element or a join, becomes ref records with ids that last, by the moving link, and is removed as a version its
-    history keeps, STORE-012. The counts before and after, each ref's name and every move are written beside the
+    element or a join, becomes ref records with ids that last, each at that place, and is removed as a version its
+    history keeps, STORE-012. The counts before and after and each ref's name and place are written beside the
     backup for review."""
     from . import log, refs
     from .session import Tx

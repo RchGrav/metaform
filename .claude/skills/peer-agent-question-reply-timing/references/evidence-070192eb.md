@@ -1,0 +1,1 @@
+"Your question 8e447967643f0bde reaches claude on code#1e after the turn in flight; it is kept on every ticket it touches. Replies: claude on code#1e: From code#1e. Rich's words, 2026-10-15: do not lock permissions on files until the rules and prompts are in place" / dispatch_note input "wait":90

@@ -1,0 +1,1 @@
+results: [{"id":"be313a447d18477bb8f96b7d52faea82","kind":"element","layer_id":"24cb43a4f5014efd96e908d331d71b39","layer":"sources","op":"remove","reason":"code.graph.knowledge#17: layout 22 made this element only to hold refs moved toward the trunk; refs never move, so nothing needs it"

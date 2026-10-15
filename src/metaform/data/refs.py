@@ -9,10 +9,9 @@ removal each add one, so its id lasts, a removed ref reads in its history, and t
 linked. A ref is named `{ref_id}@{address}`; what a `:{join}` part names is open (question 25 of CTX), so a ref on a
 join is named at its receiver's Address and its record says which join.
 
-The moving link, CTX-009: a ref has one link, which covers its place and everything toward the leaves from it. Linked
-again where it is covered, nothing moves. Linked anywhere else, it moves toward the trunk to the longest common prefix
-of the two places, so it covers both; it never moves toward the leaves. A ref on a join sits just below the join's
-receiver. Two places that share no segment leave it where it is, with a notice (open question 1 of CTX).
+A ref is not a property: it stays at the one element or join it was linked at, never moves toward the trunk, never
+inherits and applies nowhere else, code.graph.knowledge#17. The same key and value linked at another place is a second
+ref there, with a name of its own. Linked again where it is, nothing changes but details added.
 """
 from __future__ import annotations
 
@@ -43,13 +42,16 @@ RESERVED = ('name', 'address', 'role', 'parent', 'layer', 'note', 'work', 'messa
             'properties', 'purpose')
 
 
+Spot = tuple[str, str, str, str]  # a ref's key and value and the kind and id of the node it is linked at
+
+
 @dataclass
 class _Held:
     """The refs of the sources layer, read once per write: every name, current or removed, and each current ref and
-    each removed one by its key and value."""
+    each removed one by its key and value at its place."""
     by_name: dict[str, str] = field(default_factory=dict[str, str])
-    current: dict[tuple[str, str], str] = field(default_factory=dict[tuple[str, str], str])
-    removed: dict[tuple[str, str], str] = field(default_factory=dict[tuple[str, str], str])
+    current: dict[Spot, str] = field(default_factory=dict[Spot, str])
+    removed: dict[Spot, str] = field(default_factory=dict[Spot, str])
 
 
 # Reading a record ---------------------------------------------------------------------------------------------
@@ -90,8 +92,13 @@ def _held(base: Projection) -> _Held:
         made.by_name[name_of(held[0])] = ident
         newest = held[-1]
         if newest.refs:
-            (made.removed if newest.op == 'remove' else made.current)[newest.refs[0]] = ident
+            (made.removed if newest.op == 'remove' else made.current)[_spot_of(newest)] = ident
     return made
+
+
+def _spot_of(version: Version, pair: tuple[str, str] | None = None) -> Spot:
+    key, value = pair or version.refs[0]
+    return key, value, str(version.fields['target_kind']), str(version.fields['target_id'])
 
 
 def _place(tx: Tx, version: Version) -> tuple[str | None, str | None]:
@@ -136,8 +143,8 @@ def current(tx: Tx, node: Node | None = None) -> tuple[SourceRef, ...]:
 
 def read(tx: Tx, given: str) -> SourceRef | None:
     """A ref by its id, its ref_id, or its name `{ref_id}@{address}`, any `:` part after the Address read past, open
-    question 25 of CTX. The ref_id alone is its identity: a name whose Address is not where the ref is now answers with
-    where it is, and a notice saying so, CTX-066."""
+    question 25 of CTX. The ref_id alone is its identity: a name whose Address is not where the ref is linked answers
+    with where it is, and a notice saying so, CTX-066."""
     text = given.strip()
     if is_id(text):
         held = tx.base.versions.get(text)
@@ -153,7 +160,7 @@ def read(tx: Tx, given: str) -> SourceRef | None:
     notices: list[Notice] = []
     address = place.partition(':')[0]
     if address and address != found.address:
-        notices.append(Notice('ref', f'{name} is not linked at {address}; it is linked at {found.address} now: '
+        notices.append(Notice('ref', f'{name} is not linked at {address}; it is linked at {found.address}: '
                                      f'{found.ref}.'))
     if found.removed:
         notices.append(Notice('ref', f'{name} was removed; this is its last version. Its history: metaform map history '
@@ -217,7 +224,7 @@ def _name_problem(name: str) -> str | None:
     return None
 
 
-# Places and the moving link -------------------------------------------------------------------------------------
+# Places -------------------------------------------------------------------------------------------------------
 
 def _spot(address: str | None, join: str | None, kind: str, target: str) -> str:
     """A place as text: the address, then `:` and the join on a join; a place with no address, an orphan, by its
@@ -227,48 +234,12 @@ def _spot(address: str | None, join: str | None, kind: str, target: str) -> str:
     return address if join is None else f'{address}:{join}'
 
 
-def _path(address: str | None, join: str | None, kind: str, target: str) -> list[str]:
-    """A place as segments, trunk first; a join sits below its receiver, and a place with no address is its own."""
-    if address is None:
-        return [f'{kind}:{target}']
-    return address.split('.') + ([f':{join}'] if join else [])
-
-
-def destination(now: list[str], given: list[str]) -> tuple[str | None, str]:
-    """Where a ref at `now`, linked again at `given`, goes, CTX-009: the longest common prefix of the two, or None when
-    it stays, with why. Linked where its link already covers it, at it or toward the leaves from it, it stays; linked
-    toward the trunk from it, on its branch or another, it moves to where the two meet; it never moves toward the
-    leaves. Two places that share no segment leave it where it is, open question 1 of CTX."""
-    common: list[str] = []
-    for one, other in zip(now, given):
-        if one != other:
-            break
-        common.append(one)
-    if common == now:
-        return None, 'where its link already covers it'
-    if not common:
-        return None, 'no common node: the two places share no segment'
-    return '.'.join(common), 'the nearest common node'
-
-
 def _node(tx: Tx, node: Node, found: LayerRow, notices: list[Notice]) -> tuple[str, str]:
     """The kind and id of the node a ref is linked at: a node named by an id the base knows is that node, current or
     not, so a ref the migration carries from an orphan stays there; an address is resolved as an item's target is."""
     if node.kind in ('element', 'join') and tx.base.kinds.get(node.id) == node.kind:
         return node.kind, node.id
     return rows.node_at(tx, node, found, 'node', notices)
-
-
-def _element(tx: Tx, address: str, found: LayerRow, notices: list[Notice]) -> str:
-    """The element at an address a ref moves to. Where the map has none, one is made in the sources layer, the ref's
-    own layer, never in the base: the case CTX-009 proposes pending open question 20 of CTX, CTX-010."""
-    element_id = tx.base.element_at(address)
-    if element_id is not None:
-        return element_id
-    rows.types(tx, address)
-    made = rows.new_element(tx, found, address)
-    notices.append(Notice('node', f'{address} had no element; one was made in {found.name} for the ref to move to.'))
-    return made
 
 
 # Writing ------------------------------------------------------------------------------------------------------
@@ -305,9 +276,10 @@ def _text(value: Any) -> str:
 def link(tx: Tx, key: Any, value: Any, node: Node, *, name: str | None = None,
          details: Iterable[tuple[str, str]] = (), by: str | None = None, why: str | None = None,
          held: _Held | None = None) -> SourceRef | Outcome:
-    """Link a ref at a node: a new ref, or the ref already naming this key and value linked again, which moves it by
-    the moving link. A ref_id taken by a ref of another key and value is refused with that ref named; so is a ref_id
-    given for a key and value another ref already names. A removed ref linked again comes back under its own id."""
+    """Link a ref at a node: a new ref there, or the ref already naming this key and value at this node linked again,
+    which adds the details it lacks. The same key and value linked at another node is a ref of its own; no ref moves.
+    A ref_id taken by another ref is refused with that ref named; so is a ref_id given for a key and value another ref
+    at this node already names. A removed ref linked again at its node comes back under its own id."""
     key, value = _text(key).strip(), _text(value).strip()
     if not key or not value:
         return Outcome((Notice('ref', 'A ref is a key and a value, both given; nothing was linked.'),))
@@ -323,18 +295,19 @@ def link(tx: Tx, key: Any, value: Any, node: Node, *, name: str | None = None,
     join = target if kind == 'join' else None
     known = held if held is not None else _held(tx.base)
     pair = (key, value)
-    ident = known.current.get(pair) or known.removed.get(pair)
+    spot = (key, value, kind, target)
+    ident = known.current.get(spot) or known.removed.get(spot)
     if name is not None:
         holder = known.by_name.get(name)
-        if holder is not None and tx.base.versions[holder][-1].refs[:1] != [pair]:
+        if holder is not None and holder != ident:
             other = record(tx, holder, tx.base.versions[holder][-1])
             return Outcome((Notice('name', f'{name} is taken: it names {other.key}={other.value}, at {other.ref}'
                                            f'{" (removed)" if other.removed else ""}. Nothing was linked; give '
                                            'another name.'),))
         if ident is not None and holder != ident:
             other = record(tx, ident, tx.base.versions[ident][-1])
-            return Outcome((Notice('name', f'{key}={value} is already linked as {other.ref}; link it by that name, or '
-                                           'leave the name off. Nothing was linked.'),))
+            return Outcome((Notice('name', f'{key}={value} is already linked here as {other.ref}; link it by that '
+                                           'name, or leave the name off. Nothing was linked.'),))
     given = [(str(one[0]), str(one[1])) for one in details]
     place = _spot(address, join, kind, target)
     if ident is None:
@@ -343,37 +316,22 @@ def link(tx: Tx, key: Any, value: Any, node: Node, *, name: str | None = None,
         version = _write(tx, 'add', ident, found, name=name, kind=kind, target=target, pairs=[pair, *given],
                          linked=place, by=by, why=why, first=True)
         known.by_name[name] = ident
-        known.current[pair] = ident
+        known.current[spot] = ident
         return record(tx, ident, version, notices)
     newest = tx.base.versions[ident][-1]
     name = name_of(newest)
-    merged = list(newest.refs) + [one for one in given if one not in newest.refs]
     if newest.op == 'remove':
         version = _write(tx, 'change', ident, found, name=name, kind=kind, target=target, pairs=[pair, *given],
                          linked=place, by=by, why=why or 'linked again after it was removed')
-        known.removed.pop(pair, None)
-        known.current[pair] = ident
+        known.removed.pop(spot, None)
+        known.current[spot] = ident
         return record(tx, ident, version, notices)
-    held_kind, held_target = str(newest.fields['target_kind']), str(newest.fields['target_id'])
-    now_address, now_join = _place(tx, newest)
-    goes, reason = destination(_path(now_address, now_join, held_kind, held_target), _path(address, join, kind, target))
-    if goes is None:
-        elsewhere = (held_kind, held_target) != (kind, target)
-        if elsewhere:
-            notices.append(Notice('ref', f'{name} stays at {_spot(now_address, now_join, held_kind, held_target)}: '
-                                         f'{place} is {reason}.'))
-        elif merged == list(newest.refs):  # linked again where it is: nothing changes
-            return record(tx, ident, newest, [*notices, Notice('linked', f'{name} is linked at {place} already; '
-                                                                         'nothing changed.')])
-        version = _write(tx, 'change', ident, found, name=name, kind=held_kind, target=held_target, pairs=merged,
-                         linked=place, by=by, why=why or (f'linked at {place}, {reason}' if elsewhere else
-                                                          'details added'))
-        return record(tx, ident, version, notices)
-    to = _element(tx, goes, found, notices)
-    notices.append(Notice('ref', f'{name} moved from {_spot(now_address, now_join, held_kind, held_target)} to {goes}, '
-                                 f'the nearest common node of that and {place}.'))
-    version = _write(tx, 'change', ident, found, name=name, kind='element', target=to, pairs=merged, linked=place,
-                     by=by, why=why or f'moved to {goes}, the nearest common node of {now_address} and {address}')
+    merged = list(newest.refs) + [one for one in given if one not in newest.refs]
+    if merged == list(newest.refs):  # linked again where it is: nothing changes
+        return record(tx, ident, newest, [*notices, Notice('linked', f'{name} is linked at {place} already; '
+                                                                     'nothing changed.')])
+    version = _write(tx, 'change', ident, found, name=name, kind=kind, target=target, pairs=merged, linked=place,
+                     by=by, why=why or 'details added')
     return record(tx, ident, version, notices)
 
 
@@ -425,14 +383,13 @@ def link_all(tx: Tx, node: Node, given: Iterable[Any], *, by: str | None = None,
 
 def place(tx: Tx, node: Node, given: Iterable[Any], *, by: str | None = None, why: str | None = None) -> list[Notice]:
     """The refs given for a node, as the intake and an element's write give them, replacing what was linked there:
-    each linked, and each ref whose latest link named this node and that is not among them removed. A ref that moved
-    here from another place's link stays: it is that place's too."""
+    each linked, and each ref at this node that is not among them removed."""
     linked, notices = link_all(tx, node, given, by=by, why=why)
     keep = {one.id for one in linked}
     kind, target = _node(tx, node, sources(tx), notices)
-    here =_spot(rows.node_address(tx, kind, target), target if kind == 'join' else None, kind, target)
+    here = _spot(rows.node_address(tx, kind, target), target if kind == 'join' else None, kind, target)
     for one in current(tx, Node.of(kind, target)):
-        if one.id not in keep and one.linked == here:
+        if one.id not in keep:
             notices += list(unlink(tx, one.id, by=by, why=why or f'not among the refs given for {here}').notices)
     return notices
 
@@ -454,7 +411,7 @@ def unlink(tx: Tx, ident: str, *, by: str | None = None, why: str | None = None)
 
 def edit(tx: Tx, ident: str, changes: dict[str, Any], *, by: str | None = None) -> SourceRef | Outcome:
     """Change a ref's key, value or details as a new version, its id kept: `refs` gives them whole, its key and value
-    first. Its ref_id is its identity and is not changed; its place changes only by a link."""
+    first. Its ref_id is its identity and is not changed, and its place never changes."""
     held = tx.base.versions.get(ident)
     if not held or not is_record(held[0]):
         raise StoreError(f'No ref has the id {ident}.', 'metaform map node node=element:<address>')
@@ -464,12 +421,13 @@ def edit(tx: Tx, ident: str, changes: dict[str, Any], *, by: str | None = None) 
     notices: list[Notice] = []
     for key in changes:
         if key not in ('refs', 'reason'):
-            notices.append(Notice(key, f'{key} is not changed on a ref: its ref_id is its identity, and it moves only '
-                                       'by a link, metaform dispatch link. Give refs, its key and value first.'))
+            notices.append(Notice(key, f'{key} is not changed on a ref: its ref_id is its identity, and it stays where '
+                                       'it was linked; link it elsewhere with metaform dispatch link. Give refs, its '
+                                       'key and value first.'))
     pairs, _ = refs_fit(changes.get('refs') or ())
     if not pairs:
         return Outcome((*notices, Notice('refs', 'No refs were given; nothing was written.')))
-    other = _held(tx.base).current.get(pairs[0])
+    other = _held(tx.base).current.get(_spot_of(newest, pairs[0]))
     if other is not None and other != ident:
         found = record(tx, other, tx.base.versions[other][-1])
         return Outcome((*notices, Notice('refs', f'{pairs[0][0]}={pairs[0][1]} is linked already as {found.ref}; '
@@ -487,11 +445,10 @@ def edit(tx: Tx, ident: str, changes: dict[str, Any], *, by: str | None = None) 
 
 def migrate(tx: Tx, by: str = 'layout 22') -> dict[str, Any]:
     """Every current item the sources layer held before layout 22, a list of refs at an element or a join, written
-    as ref records by `groups` and the moving link, in the order they were written, and then removed, so its history
-    keeps it. Returns the counts before and after, and each ref's name and every move, for review."""
+    as ref records by `groups`, each at the place its item was, in the order they were written, and then removed, so
+    its history keeps it. Returns the counts before and after, and each ref's name and place, for review."""
     found = layer(tx.base)
-    report: dict[str, Any] = {'items': 0, 'pairs': 0, 'refs': 0, 'versions': 0, 'moved': [], 'stayed': [],
-                              'names': {}, 'unlinked': 0}
+    report: dict[str, Any] = {'items': 0, 'pairs': 0, 'refs': 0, 'versions': 0, 'names': {}, 'unlinked': 0}
     if found is None:
         return report
     old = [(ident, version) for ident, version in tx.base.currents('item')
@@ -508,12 +465,7 @@ def migrate(tx: Tx, by: str = 'layout 22') -> dict[str, Any]:
             if not isinstance(result, SourceRef):
                 report['unlinked'] += 1
                 continue
-            report['names'][result.name] = f'{result.key}={result.value}'
-            for notice in result.notices:
-                if notice.message.startswith(f'{result.name} moved'):
-                    report['moved'].append(notice.message)
-                elif notice.message.startswith(f'{result.name} stays') and 'no common node' in notice.message:
-                    report['stayed'].append(notice.message)
+            report['names'][result.ref] = f'{result.key}={result.value}'
         tx.emit('remove', 'item', ident, found.id, {
             'mode': 'version', 'reason': 'layout 22: its refs are records of the sources layer now', 'evidence': None,
             **version.fields, 'refs': [list(pair) for pair in version.refs]})

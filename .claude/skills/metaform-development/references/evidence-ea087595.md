@@ -1,0 +1,1 @@
+Ongoing risk: every running agent session has its own MCP server holding the code it started with, mine included (started 22:25 UTC). Until those servers restart, any dispatch_link from one of them can move a ref again and undo the restore.

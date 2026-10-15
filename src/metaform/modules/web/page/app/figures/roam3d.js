@@ -184,7 +184,7 @@ export function roam3d(data) {
   }
   cut3d(size, passed);
   mascot3d(data, size, passed);
-  eyes3d(passed);  // the person watching through the mascot's eyes, `EYE`
+  eyes3d();  // the person watching through the mascot's eyes, `EYE`
   placeBubble();
 }
 /* The size figures are drawn at follows the map's span gently, so a layout still spreading never makes a figure jump

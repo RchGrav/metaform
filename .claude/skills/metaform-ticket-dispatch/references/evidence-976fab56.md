@@ -1,0 +1,1 @@
+Processes started before the fix (the MCP server on 7434, any runners) still run the old link until they are restarted.

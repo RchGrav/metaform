@@ -1,0 +1,1 @@
+"That move is not the transitive rule. Rich, 2026-10-15: refs are not knowledge layers or properties; a common prefix such as 'code' is not where transitivity puts anything. A ref stays at the element or join it was linked at."

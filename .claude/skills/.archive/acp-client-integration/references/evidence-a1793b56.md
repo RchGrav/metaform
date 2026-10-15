@@ -1,0 +1,1 @@
+"Deny wins over a broad allow, so outside paths stay writable and the project stays read-only to commands." and "Codex sends MCP tool approvals as kind `execute` too, but their input carries no `command`; a sandbox escalation always does. Narrowing the rule to the request's own command input."

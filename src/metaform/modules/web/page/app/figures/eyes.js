@@ -27,6 +27,7 @@ import {tabNow} from '/page/app/panel/prompts.js';
 import {WS} from '/page/app/workspace/workspace.js';
 import {toast} from '/page/app/core/controls.js';
 import {figureAt} from '/page/app/figures/ask.js';
+import {WATCHED} from '/page/app/figures/bubble3d.js';
 import {nodeAt3d, linkAt3d, purposeOf} from '/page/app/map3d/pick3d.js';
 
 /* Who sees: the calling agent's own figure, by the work its runner gave it, or else the person's mascot, which is the
@@ -50,7 +51,7 @@ function seer(work, role) {
  * view is an agent's eyes now; `agentMode`, the agent view V turns on and off and A never changes. */
 export const EYE = {camera: new THREE.PerspectiveCamera(68, 1.5, 0.05, 1e6), at: new THREE.Vector3(),
   dir: new THREE.Vector3(), look: new THREE.Vector3(), width: 768, height: 512, target: null, debug: false, view: false,
-  saved: null, k: 0, mesh: null, agent: false, agentMode: false};
+  saved: null, k: 0, started: 0, mesh: null, agent: false, agentMode: false, hand: null};
 function eyeCamera(mesh, aspect = EYE.width / EYE.height) {
   eyeOf(mesh, EYE.at, EYE.dir);
   const camera = EYE.camera;
@@ -448,7 +449,10 @@ function selectedNow() {
  * is on takes the view over to it. A sign the camera met, and a flight still on its way, end as the view goes: the met
  * sign is drawn over the map at the rectangle its corners project to, which only matches the sign seen square on, so
  * from the eyes it was a stretched strip of its name, and the meeting's near plane hid everything before the eyes
- * (stretched label, code.interface.graphical#63, 2026-10-15). */
+ * (stretched label, code.interface.graphical#63, 2026-10-15). The ease takes EASE seconds by the clock from the press,
+ * at any frame rate; leaving the view gives the person their camera at once, and a hand on it during the way back
+ * puts the camera where it was at once, `handBack` (code.interface.graphical#81, 2026-10-15). */
+const EASE = 0.9;
 export function eyesOf(mesh, on = !EYE.view) {
   if (!G || (on && !mesh)) return false;
   const camera = G.camera(), controls = G.controls();
@@ -465,14 +469,37 @@ export function eyesOf(mesh, on = !EYE.view) {
   if (on) EYE.mesh = mesh;
   EYE.view = V3.eyes = Boolean(on);
   EYE.agent = EYE.view && mesh !== MASCOT.mesh;
+  WATCHED.mesh = EYE.agent ? EYE.mesh : null;  // its words at the bottom of the view, as it has no body there
   EYE.k = 0;
-  controls.enabled = !EYE.view && !EYE.saved;
+  EYE.started = performance.now();
+  controls.enabled = !EYE.view;
+  if (EYE.hand !== controls) { EYE.hand = controls; controls.addEventListener('start', handBack); }
   wake3d(1500);
   return EYE.view;
 }
 export const mascotEyes = (on = !EYE.view) => MASCOT.mesh ? eyesOf(MASCOT.mesh, on) : false;
+/* The way back from a figure's eyes is over: the camera where it was, with its near plane, and the body seen again. */
+function backHome(camera) {
+  camera.position.copy(EYE.saved.at);
+  camera.quaternion.copy(EYE.saved.turn);
+  camera.fov = EYE.saved.fov;
+  camera.near = EYE.saved.near;
+  EYE.saved = null;
+  if (EYE.mesh) EYE.mesh.visible = true;
+  EYE.mesh = null;
+}
+/* A hand on the camera while it eases back from a figure's eyes: the camera is where it was at once, and the hand
+ * moves it from there. */
+function handBack() {
+  if (EYE.view || !EYE.saved || !G) return;
+  const camera = G.camera();
+  backHome(camera);
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+  FRAMES.moved = true;
+}
 const EYEQ = new THREE.Quaternion();
-export function eyes3d(passed) {  // each frame: the large camera toward the figure's eyes, or back to where it was
+export function eyes3d() {  // each frame: the large camera toward the figure's eyes, or back to where it was
   followWatch();
   // the agent's view is the large 3D map's: put in the small area, the agent view ends and the map goes back to the
   // person's view
@@ -482,7 +509,7 @@ export function eyes3d(passed) {  // each frame: the large camera toward the fig
   }
   if (!G || (!EYE.view && !EYE.saved)) return;
   const camera = G.camera(), mesh = EYE.mesh;
-  EYE.k = reduced() ? 1 : Math.min(1, EYE.k + passed / 0.9);
+  EYE.k = reduced() ? 1 : Math.min(1, (performance.now() - EYE.started) / 1000 / EASE);
   const k = 1 - Math.pow(1 - EYE.k, 3);
   if (mesh) mesh.visible = !(EYE.view || (EYE.saved && EYE.k < 0.6));  // never seen from inside
   if (EYE.view && mesh) {
@@ -495,13 +522,7 @@ export function eyes3d(passed) {  // each frame: the large camera toward the fig
     camera.position.lerp(EYE.saved.at, k);
     camera.quaternion.slerp(EYE.saved.turn, k);
     camera.fov += (EYE.saved.fov - camera.fov) * k;
-    if (EYE.k >= 1) {
-      camera.near = EYE.saved.near;
-      EYE.saved = null;
-      G.controls().enabled = true;
-      if (mesh) mesh.visible = true;
-      EYE.mesh = null;
-    }
+    if (EYE.k >= 1) backHome(camera);
   }
   camera.updateProjectionMatrix();
   // the labels, bubbles and readout placed after this in the frame read the camera as it is drawn, not as it was

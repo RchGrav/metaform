@@ -1,0 +1,3 @@
+Error: result (81,213 characters) exceeds maximum allowed tokens. Output has been saved to /home/rich/.claude/projects/-home-rich-metaform/e1b34987-5d52-4bcd-9d01-fde67db8625a/tool-results/mcp-metaform-map_node-1792105227587.txt.
+Format: JSON with schema: {node: {kind: string, id: string}, address: string, layers: [{...}], orphaned: boolean, memory: {entities: [{...}], relations: []}}
+Use jq to make structured queries (find a value, filter by field).

@@ -32,7 +32,7 @@
      <instructions>, and listed in the compact command-line guide, metaform help agents. Empty sends nothing for
      memory. Off when the module is disabled or the folder's modules setting leaves it out. A draft, CTX-029, awaiting
      the owner's approval of its wording. -->
-<connect>– memory: read what happened in the work at a node and record there what happens, on its RE; what is true of the project goes to knowledge layers</connect>
+<connect>– memory: read and record what happened in the work at a node, on its RE</connect>
 <!-- The owner's memory prompt, CTX-026, word for word: how every agent reads what happened in the work before it
      begins, and records what happens as memory and what is true of the project as knowledge. Its address is
      prompt.memory:instructions. Its braced places are filled when it is sent, CTX-027: {project} with the project's

@@ -1,0 +1,1 @@
+'code' came back after code.graph.knowledge#17 removed it. The MCP server of code.dispatcher.agent#43's session (pid 1870216, started 22:14 UTC) still ran refs.py from before the fix, so its dispatch_link of runner.py moved the ref to 'code' and re-made the element in the base.

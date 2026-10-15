@@ -48,7 +48,7 @@ This section specifies the addressed-context design, the system's key innovation
 
 - Requirement: Every record the intake did not make is a property held in a knowledge layer. That covers knowledge items, memories, elements and joins that agents add, and refs.
 - What this means:
-  - "Property" is the general term for anything layered on the base. Each of these is a property: a knowledge item at an element, an element an agent adds (such as `code.python`), a join an agent adds, a ref in the sources layer, and a memory's link from a layer.
+  - "Property" is the general term for anything layered on the base. Each of these is a property: a knowledge item at an element, an element an agent adds (such as `code.python`), a join an agent adds, and a memory's link from a layer. A ref is NOT a property (owner, 2026-10-15): it stays at the one element or join it was linked to, never moves, never inherits and applies nowhere else (CTX-065).
   - Being a property means four things:
     - it is held in a knowledge layer, never in the base (CTX-001);
     - it has one link to one base Address (CTX-008);
@@ -884,8 +884,8 @@ This section specifies the addressed-context design, the system's key innovation
 - What this means:
   - For code, the ref_id is the code's own qualified name, periods allowed, such as `metaform.modules.voice.engine.transcribe@code.interface.speech`. For anything else it is a proper noun for what the thing is, such as `Whisper_Engine@code.interface.speech`.
   - The join is the one the ref realizes; any join can store a prompt (decision 23, CTX-081).
-  - The ref_id is the identity. The `@{address}:{join}` part says where the ref is linked now, so moving the ref changes only that part, and a read that gives a stale location answers with where the ref is now.
-  - A ref is a property (decision 2): recording the same ref at an address on another branch moves its one link toward the trunk to the common prefix (CTX-009). Uniqueness refuses only a different thing given a ref_id already taken.
+  - The ref_id is the identity. The `@{address}:{join}` part says where the ref is linked.
+  - A ref is not a property (owner, 2026-10-15, correcting an earlier draft of this record): it stays at the one element or join it was linked to; it never moves toward the trunk, never inherits and never merges with refs at other places. The same file linked at two places is two refs, one at each place. The moving link of CTX-009 is for properties only.
   - Naming a ref is the agent's or the intake's choice. Metaform enforces only uniqueness: a ref_id already taken by a different thing is refused, naming the ref that holds it (decision 25). The refusal writes nothing and returns, as BASE-044's operation that cannot apply, a notice naming the ref that holds the name and the next step, with `is_error` false and exit 0.
   - Layers stay named `<scope>@<content>` and are read backward with `@` as "for": `code.cpp@best_practices` is best practices for cpp code. A ref reads forward: transcribe, for speech interface code.
   - Open, for the owner: what `:` names, the same in a ref name and in a prompt's address (CTX-081). One reading is the join's provider's Address: the Address before it is then the receiver, which the join attaches to (the Join rule), and `<receiver>:<provider>` is how the built scope form already names a join (src/metaform/modules/map/scoped.py:1-12, `code.timer.kitchen:code.alarm.audible@best_practices`). The other is a name, as CTX-081's prompt names and CTX-082's `prompt.<module>:<tag>` use it; the 2026-10-08 notes also left open whether a short name for the purpose could stand there. Neither is confirmed (open question 25).

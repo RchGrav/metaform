@@ -3130,8 +3130,8 @@
   }
  },
  "memory": {
-  "version": 6,
-  "compatible_from": 2,
+  "version": 7,
+  "compatible_from": 7,
   "tables": {
    "carried": {
     "place": "project",
@@ -3261,6 +3261,18 @@
       "text",
       "TEXT",
       true,
+      null
+     ],
+     "locked_at": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "locked_by": [
+      "text",
+      "TEXT",
+      false,
       null
      ],
      "name": [

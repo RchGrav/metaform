@@ -608,12 +608,15 @@ def outliving(module: list[str], name: str, what: str, verb: str, limit: float) 
         subprocess.run([held, 'purge', name], capture_output=True, timeout=WAIT, check=False)  # a past call's name
         # hold runs every path in a call by its real path, which takes a virtual environment's python, a link, to the
         # base interpreter, outside the environment Metaform is installed in; so the shell is given it to run, in the
-        # environment, where hold leaves it as it is
+        # environment, where hold leaves it as it is. hold -d leaves the processes that keep the call in the session
+        # of whoever placed it, and hold counts a call as running while its group has any: placed from the restart's
+        # own call, the watchdog's would keep that call running as long as the server runs, and the next restart
+        # could neither purge it nor take its name. So it is placed from a session of its own.
         placed = subprocess.run([held, '--quiet', '--name', name, '-d', '/bin/sh', '-c', f'exec "${PYTHON}" "$@"',
                                  'sh', *command[1:], '--ready', str(pipe)],
                                 cwd=home.home(), env={**page_environment(), PYTHON: sys.executable},
-                                capture_output=True, text=True,
-                                encoding='utf-8', stdin=subprocess.DEVNULL, timeout=WAIT, check=False)
+                                capture_output=True, text=True, encoding='utf-8', stdin=subprocess.DEVNULL,
+                                start_new_session=True, timeout=WAIT, check=False)
         if placed.returncode != 0:
             raise Stop(f'hold could not place the {what}: {placed.stderr.strip() or placed.returncode}',
                        f'{HOLD}= metaform web {verb}, which runs it without hold')
@@ -639,6 +642,22 @@ def heard(pipe: Path, limit: float = WAIT) -> bytes | None:
             os.close(os.open(pipe, os.O_WRONLY | os.O_NONBLOCK))
         return None
     return said[0] if said else b''
+
+
+def purged(name: str) -> None:
+    """Remove the hold call `name` from the ledger once its process has ended, its exit the system's own event waited
+    for at most WAIT / 3, so a call whose work is done leaves no past call in `hold list`. Without hold, nothing."""
+    held = hold_tool()
+    if held is None:
+        return
+    shown = subprocess.run([held, 'inspect', name], capture_output=True, text=True, encoding='utf-8',
+                           errors='replace', timeout=WAIT, check=False)
+    try:
+        pid = int(json.loads(shown.stdout)[0]['pid'])
+    except (ValueError, LookupError, TypeError):
+        return
+    ended(pid, WAIT / 3)
+    subprocess.run([held, 'purge', name], capture_output=True, timeout=WAIT, check=False)
 
 
 def stop(ctx: Context) -> dict[str, Any]:
@@ -680,10 +699,12 @@ def restart(ctx: Context) -> dict[str, Any]:
     it is the hold call metaform-web-restart-<port>. This waits for its word at most RESTART_WAIT; past that the restart
     goes on without anyone waiting."""
     port = int((recorded() or {}).get('port') or ctx.setting('web_port'))
+    name = f'metaform-web-restart-{port}'
     line = outliving(['-m', 'metaform.modules.web.restart', '--folder', str(ctx.folder)],
-                     f'metaform-web-restart-{port}', "web GUI's restart", 'restart', RESTART_WAIT)
+                     name, "web GUI's restart", 'restart', RESTART_WAIT)
     if line is None:
         return {'state': 'restarting', 'next': 'metaform web start gives the address once the page answers'}
+    purged(name)
     said = restart_said(line.decode('utf-8', errors='replace'))
     if said is None:
         raise Stop(f"The web GUI's restart ended before it said how it went: {log_tail()}", 'metaform web start')

@@ -93,7 +93,7 @@ workflow agent to repair its execution instructions and restart it. Changes to t
 - `on_ticket_done`, `on_stopped_open`, `on_failure`: the owner's sentence on recording what was learned at the ticket's node, the turn a worker is given at each end of its ticket's life its setting asks for, P033.
 - `workflow_answered`: the turn a worker is given once the person answers a workflow run it paused, H03.
 - `intake_first_record`: the one line an intake agent is steered with when it has made no Metaform call in time, M04.
-- `work_link`: the one line on writing files after the `work` sentence: a file with no ref on the map is locked for writing until linked with `dispatch_link`, and the paths `.metaform/ignore.txt` holds are read-only to agents. A draft, awaiting the owner's approval of its wording.
+- `work_link`: the one line on writing files after the `work` sentence: a file with no ref on the map is locked for writing until linked with `dispatch_link`, and the paths `.metaform/ignore.txt` holds are read-only to agents. A draft, awaiting the owner's approval of its wording. Sent only while `LINK_LOCK` in `runner.py` is on; it is off, with the lock, until the rules and prompts for linking are in place (Rich, 2026-10-15, code#1e).
 - `write_unlinked` (the owner's sentence) and `link_call`: the refusal of a write to a file no element's ref names exactly, then the call that links it; `write_ignored`: the refusal of a write to a path the ignore list holds. code.dispatcher.agent#3d.
 - `peer_note`: the turn a peer note gives an agent it is sent to: whether it is a note, a question or a reply, the sender's agent, ticket number and title, the note, that it is a fellow agent's and not the person's, information only, and how to answer it with `reply=<id>`.
 

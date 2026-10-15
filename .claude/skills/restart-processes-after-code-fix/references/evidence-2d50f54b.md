@@ -1,0 +1,3 @@
+Assistant: "One issue remains: the processes that were already running are still on the old code. ... Refs can still move. The MCP server under `hold` on port 7434, and any runner started before about 18:46, still have the old link code. That's how `code` came back at 22:41 after I'd removed it. Until they restart, linking a file that's already linked somewhere else can move a ref or create an empty element again."
+User: "Guy s code is back why"
+Assistant: "I can't find `code` anywhere, so I need to know where you're seeing it. ... Where are you seeing it? It could be the 2D map, another project such as mgm, a list or panel, or a tab you haven't reloaded since before 22:47."

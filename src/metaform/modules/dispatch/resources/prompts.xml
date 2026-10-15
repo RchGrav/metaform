@@ -188,10 +188,12 @@
 <work_record>Record what happened in the work at <node/> as memory, and what is now known to be true of the project in the map's knowledge layers, as the memory prompt says.</work_record>
 
 <!-- The rule on writing files, in one line after the work sentence, code.dispatcher.agent#3d: a file no element's ref
-     names is locked for writing until it is linked, and the paths .metaform/ignore.txt holds are read-only. A draft,
-     awaiting the owner's approval of its wording. Sent in the first message to every agent dispatch starts on a
-     ticket. Empty leaves it out; the runner refuses such writes either way. -->
-<work_link>A file with no ref on the map is locked for writing until you link it to its functionality in the map with dispatch_link file=&lt;path&gt; node=&lt;Address&gt;; files under .metaform/ignore.txt are read-only to agents.</work_link>
+     names is locked for writing until it is linked, and the paths .metaform/ignore.txt holds are read-only; and,
+     code.dispatcher.agent#43, the commands an agent runs work in a sandbox where the project folder is read-only, so
+     files change only through its edit tools. A draft, awaiting the owner's approval of its wording. Sent in the
+     first message to every agent dispatch starts on a ticket. Empty leaves it out; the runner refuses such writes
+     either way. -->
+<work_link>A file with no ref on the map is locked for writing until you link it to its functionality in the map with dispatch_link file=&lt;path&gt; node=&lt;Address&gt;; files under .metaform/ignore.txt are read-only to agents. Commands you run cannot write the project's files; change them with your edit tools.</work_link>
 
 <!-- The owner's sentence, Rich 2026-10-15, code.dispatcher.agent#3d: the answer to an agent's write of a file no
      element's ref names exactly, by ACP's fs/write_text_file or a permission request for an edit, in any permission
@@ -208,6 +210,19 @@
      agents always, linked or not. <file/> is the path, from the project folder. A draft, awaiting the owner's approval
      of its wording. Empty, a plain sentence of the runner's own is sent; the write is refused either way. -->
 <write_ignored><file/> is read-only to agents: .metaform/ignore.txt holds it.</write_ignored>
+
+<!-- The answer to a request to widen the sandbox an agent's commands run in, code.dispatcher.agent#43: Codex asking
+     to run a command outside its read-only sandbox, or any agent asking write access for a folder of the project or a
+     file it has not linked. Commands never write the project, in every permission mode, so a shell write is
+     prevented before it lands (CTX-062). A draft, awaiting the owner's approval of its wording. Sent as the refusal's
+     reason, and to the agent as its next words. Empty, a plain sentence of the runner's own is sent; the request is
+     refused either way. -->
+<command_unsandboxed>Commands run in a sandbox where the project's files are read-only, and that is not lifted. Change files with your edit tool, linking each first; write access may be asked only for paths outside the project.</command_unsandboxed>
+
+<!-- The refusal of the runner's own terminal, ACP's terminal/create, on a machine with no sandbox that can keep the
+     project folder read-only to the command: bubblewrap on Linux, sandbox-exec on macOS, code.dispatcher.agent#43.
+     A draft, awaiting the owner's approval of its wording. Empty, a plain sentence of the runner's own is sent. -->
+<terminal_unconfined>no sandbox here can keep the project read-only to a command, so the runner runs none</terminal_unconfined>
 
 <!-- The message a worker's session is resumed with when the supervisor retries it, after it stopped without the
      person's stop and before its ticket was done: go on where it left off. <work_id/> is the ticket's id.

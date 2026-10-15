@@ -1,0 +1,3 @@
+User refused permission to run tool
+To unlock access to this file, please first link it to its functionality in the map. dispatch_link file=artifacts/specs-draft/ctx-029-recording-lines-2026-10-15.md node=<the Address of the element it realizes; an Address no element has yet is made>
+(dispatch_link result) "linked": true ... "said": "artifacts/specs-draft/ctx-029-recording-lines-2026-10-15.md is linked as ...; writes to it go through."

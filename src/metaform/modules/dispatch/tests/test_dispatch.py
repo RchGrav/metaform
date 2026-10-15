@@ -14,6 +14,7 @@ import time
 import tomllib
 from pathlib import Path
 
+import acp
 import pytest
 
 pytestmark = pytest.mark.kind('simulation')
@@ -27,6 +28,13 @@ PUBLIC = {'metaform.module', 'metaform.settings', 'metaform.data', 'metaform.eve
 NODE = 'code.engine'
 LINKED = 'code.store'
 UNRELATED = 'code.ledger'  # a node a ticket neither is nor links
+
+
+def skip_while_unlocked():
+    """A test of the lock on unlinked files is skipped while Rich has it off, code#1e."""
+    from metaform.modules.dispatch.runner import LINK_LOCK
+    if not LINK_LOCK:
+        pytest.skip('the lock on unlinked files is off until the rules and prompts for linking are in place, code#1e')
 LIMIT = 60
 
 
@@ -324,7 +332,10 @@ def test_the_ticket_is_taken_for_the_agent_with_one_prompt_and_its_handoff_read_
     [prompt] = eventually(lambda: dispatch.received('session/prompt'))
     blocks = prompt['params']['prompt']
     assert [block['type'] for block in blocks] == ['text', 'resource_link', 'resource_link'], 'one prompt, its links typed'
-    assert blocks[0]['text'].startswith(f'Work ticket {dispatch.id} with the map_work tool')
+    memory, _, handed = blocks[0]['text'].partition(f'\n\nWork ticket {dispatch.id} with the map_work tool')
+    assert memory.startswith('Follow these steps for each interaction:\n') and handed, \
+        "the owner's memory prompt first, then the work sentence, CTX-028"
+    assert f'   - This is {NODE} (' in memory and '{' not in memory, "filled with the ticket's element, CTX-027"
     assert prompt['params']['sessionId'] == 'fake-session-1'
     ticket = dispatch.ticket()
     assert ticket.taken and ticket.taken_by == 'claude fake-session-1'
@@ -338,7 +349,8 @@ def test_the_ticket_is_taken_for_the_agent_with_one_prompt_and_its_handoff_read_
     assert session['nonce'] is None, 'the session and its identity carry the work; no nonce is requested'
     assert (session['recovery']['work_id'], session['recovery']['session_id']) == (dispatch.id, 'fake-session-1')
     read = run('dispatch', 'handoff', f'id={dispatch.id}', cwd=dispatch.folder).stdout
-    assert read.partition('\n')[0] == blocks[0]['text'].partition('\n')[0], 'the same work line on every surface'
+    assert read.partition('\n')[0] == f'Work ticket {dispatch.id} with the map_work tool{handed}'.partition('\n')[0], \
+        'the same work line on every surface'
     assert NODE in read and LINKED in read, 'the handoff gives the agent the namespace nodes of its work'
     dispatch.stop()
 
@@ -1668,7 +1680,8 @@ def test_the_handoff_asks_to_record_at_the_node_only_while_memory_is_on(tmp_path
     from metaform.modules.dispatch import handoff_prompt
     with mock.patch('metaform.instructions.surfaced', return_value=[mock.Mock(id='memory')]):
         text = handoff_prompt('w1', tmp_path)
-    assert "Use Metaform's memory tool to store what you learn under the functional namespace" in text
+    assert 'Record what happened in the work as memory at the ticket\'s node' in text
+    assert 'as steps 5 and 6 of the memory prompt say' in text
     assert 'node=<the address under at in the ticket read>' in text and 'receiver=<its receiver>' in text
     with mock.patch('metaform.instructions.surfaced', return_value=[]):
         assert 'memory tool' not in handoff_prompt('w1', tmp_path)
@@ -1951,13 +1964,16 @@ def test_the_handoff_is_the_brief_the_ticket_its_node_and_counts_under_three_kil
     read them, and the metaform:// links of the node and the ticket, never the JSON of what is held. The full
     worker's brief is no longer sent; full=true reads it on demand."""
     from metaform.modules.dispatch import handoff_prompt, prompt
+    from metaform.modules.dispatch.runner import LINK_LOCK
     dispatch.start('hold')
     [sent] = eventually(lambda: dispatch.received('session/prompt'))
-    text = sent['params']['prompt'][0]['text']
+    memory, _, text = sent['params']['prompt'][0]['text'].partition('\n\n')
+    assert memory.startswith('Follow these steps for each interaction:'), 'the memory prompt ahead of it, CTX-028'
     first, _, rest = text.partition('\n\n')
-    assert first == (f'Work ticket {dispatch.id} with the map_work tool. Use Metaform\'s memory tool to store what you '
-                     f'learn under the functional namespace of your assignment, {NODE}, so future agents working there '
-                     f'can retrieve it. {prompt("work_link")}'), 'the rule on writing files is one line after it, #3d'
+    rule = f' {prompt("work_link")}' if LINK_LOCK else ''  # left out while the lock is off, code#1e
+    assert first == (f'Work ticket {dispatch.id} with the map_work tool. Record what happened in the work at {NODE} as '
+                     "memory, and what is now known to be true of the project in the map's knowledge layers, as the "
+                     f'memory prompt says.{rule}'), 'the rule on writing files is one line after it, #3d'
     assert f'ticket: {dispatch.id}' in rest and f'linked: {LINKED}' in rest
     assert f'▶ {NODE}' in rest and f'map_work node={NODE}' in rest and 'metaform map work' not in text, \
         'the reads are named as the MCP calls the agent makes'
@@ -3443,6 +3459,7 @@ def test_a_write_to_an_unlinked_file_is_refused_with_the_link_call_and_goes_thro
     """code.dispatcher.agent#3d: a file no element's ref names exactly is locked for writing, the refusal naming the
     call that links it; a read of it is not refused; once dispatch link adds its ref the same write goes through and
     the file is placed exactly. A path .metaform/ignore.txt holds stays read-only, linked or not."""
+    skip_while_unlocked()
     (dispatch.folder / 'src').mkdir(exist_ok=True)
     (dispatch.folder / 'src' / 'fresh.py').write_text('old\n', encoding='utf-8')
     (dispatch.folder / 'rich').mkdir(exist_ok=True)
@@ -3524,7 +3541,8 @@ def test_a_burst_of_reads_of_linked_files_reads_the_sources_layer_once(dispatch,
 
 @pytest.mark.req('BASE-052')
 def test_an_edit_permission_for_an_unlinked_file_is_refused_over_approve_all_and_the_agent_is_told(dispatch, run):
-    run('set', '--dispatch-prompts=approve-all', '--confirm', cwd=dispatch.folder)
+    skip_while_unlocked()
+    run('set','--dispatch-prompts=approve-all', '--confirm', cwd=dispatch.folder)
     dispatch.start('ask', FAKE_ACP_ASK_PATH=str(dispatch.folder / 'src' / 'fresh.py'))
     [outcome] = eventually(lambda: dispatch.logged('permission'))
     assert outcome == {'outcome': {'outcome': 'selected', 'optionId': 'reject'}}
@@ -3533,6 +3551,73 @@ def test_an_edit_permission_for_an_unlinked_file_is_refused_over_approve_all_and
     assert 'dispatch_link file=src/fresh.py' in json.dumps(told[0])
     assert not dispatch.questions(), 'the person is not asked'
     dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+def test_codex_is_kept_asking_and_cannot_write_an_unlinked_or_ignored_file_or_lift_its_sandbox(dispatch, run):
+    """code.dispatcher.agent#43, CTX-061 and CTX-062: Codex is set to read-only, the mode in which it asks before every
+    file change and its commands cannot write, while the mode it began in, agent, approves its edit of a linked file
+    without asking the person. A file change asked by its path alone, of an unlinked file or an ignore-listed one, a
+    command outside the sandbox, and write access for the project folder are each refused and the agent told why; an
+    MCP tool's approval, which Codex also asks as execute, is not a command and goes through.
+    Claude Code is sent a sandbox in which the project folder is read-only to every command."""
+    skip_while_unlocked()
+    (dispatch.folder / 'src').mkdir(exist_ok=True)
+    (dispatch.folder / 'rich').mkdir(exist_ok=True)
+    (dispatch.folder / '.metaform').mkdir(exist_ok=True)
+    (dispatch.folder / '.metaform' / 'ignore.txt').write_text('rich/\n', encoding='utf-8')
+    run('dispatch', 'link', 'file=src/kept.py', f'node={NODE}', cwd=dispatch.folder)
+    run('dispatch', 'link', 'file=rich/notes.md', f'node={NODE}', cwd=dispatch.folder)
+    dispatch.start('hold', FAKE_ACP_CODEX='1', FAKE_ACP_STEER='1',
+                   FAKE_ACP_CODEX_PATH=str(dispatch.folder / 'src' / 'fresh.py'),
+                   FAKE_ACP_CODEX_IGNORED=str(dispatch.folder / 'rich' / 'notes.md'),
+                   FAKE_ACP_CODEX_LINKED=str(dispatch.folder / 'src' / 'kept.py'))
+    [answers] = eventually(lambda: dispatch.logged('codex'))
+    assert dispatch.logged('mode') == ['read-only']
+    assert {name: one['outcome']['optionId'] for name, one in answers.items()} == {
+        'unlinked': 'cancel', 'escalation': 'cancel', 'grant': 'cancel', 'ignored': 'cancel', 'linked': 'approved',
+        'mcp': 'approved'}
+    parts = ('dispatch_link file=src/fresh.py', 'rich/notes.md is read-only to agents', 'Commands run in a sandbox')
+
+    def told() -> str | None:
+        said = ' '.join(dispatch.logged('steered'))
+        return said if all(part in said for part in parts) else None
+    eventually(told)
+    assert not dispatch.questions(), 'the person is not asked'
+    meta = dispatch.received('session/new')[0]['params']['_meta']['claudeCode']['options']['settings']['sandbox']
+    assert meta['filesystem']['denyWrite'] == [str(dispatch.folder.resolve())]
+    assert (meta['enabled'], meta['allowUnsandboxedCommands']) == (True, False)
+    dispatch.stop()
+
+
+def test_a_command_in_the_runners_terminal_cannot_write_the_project(dispatch):
+    """code.dispatcher.agent#43, CTX-062: the runner's own terminal runs a command with the project folder read-only,
+    so a shell write to a file of the project leaves it unchanged; where no sandbox can do that, it runs none."""
+    skip_while_unlocked()
+    from metaform.data import Store
+    from metaform.module import context
+    from metaform.modules.dispatch import runner
+    (dispatch.folder / 'src').mkdir(exist_ok=True)
+    target = dispatch.folder / 'src' / 'fresh.py'
+    target.write_text('old\n', encoding='utf-8')
+    session = runner.Session(context('dispatch', dispatch.folder, project='proj'), Store('proj', module='dispatch'),
+                             dispatch.ticket(), 'claude', [])
+    session.session_id = 'unit-session'
+
+    async def shell() -> int | None:
+        try:
+            made = await session.create_terminal('unit-session', sys.executable,
+                                                 ['-c', f'open({str(target)!r}, "w").write("new")'])
+        except acp.RequestError:
+            return None
+        held = session.terminals[made.terminal_id]
+        code = await held.process.wait()
+        if held.reader is not None:
+            await held.reader
+        return code
+    code = asyncio.run(shell())
+    assert target.read_text(encoding='utf-8') == 'old\n'
+    assert code != 0 if code is not None else runner.confined_command(str(dispatch.folder), 'x', []) is None
 
 
 @pytest.mark.req('BASE-052')

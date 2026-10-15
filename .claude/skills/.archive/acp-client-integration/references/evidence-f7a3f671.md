@@ -1,0 +1,1 @@
+Found that LINK_LOCK = False is already set ... disabling the unlinked-file refusal, the rule line, and Claude Code's sandbox. Now I'll check whether #43's newer parts ... respect this switch. ... I noticed file edit permissions (Edit, Write, MultiEdit, NotebookEdit) are still hardcoded to `ask`, forcing approval prompts even in acceptEdits or bypass mode.

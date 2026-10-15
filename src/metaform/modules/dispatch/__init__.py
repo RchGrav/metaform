@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from metaform import events, home, prompt_files, settings
-from metaform.data import Column, Index, Node, Store, StoreError, Table, Tables, WorkRecord, status
+from metaform.data import Column, Index, NewerStore, Node, Store, StoreError, Table, Tables, WorkRecord, status
 from metaform.module import (
     Context,
     Module,
@@ -726,7 +726,8 @@ def work_line(work_id: str, folder: Path, node: str) -> str:
     the node it is recorded at, so no agent is told to use a tool it does not have."""
     memory = any(module.id == 'memory' for module in surface(folder))
     line = prompt('work', work_id=work_id, record=prompt('work_record', node=node) if memory and node else '')
-    rule = prompt('work_link')  # the rule on writing files the runner holds every agent to, code.dispatcher.agent#3d
+    from .runner import LINK_LOCK
+    rule = prompt('work_link') if LINK_LOCK else ''  # the rule on writing files, code.dispatcher.agent#3d
     return f'{line} {rule}' if rule else line
 
 
@@ -889,6 +890,8 @@ def agent_named(name: str) -> str:
 def ticket(store: Store, work_id: str) -> WorkRecord:
     try:
         return store.ticket(work_id).work
+    except NewerStore:
+        raise  # a runner tells a store its code is older than from any other refusal, STORE-029
     except StoreError as error:
         raise Stop(str(error), 'metaform map work open=true') from None
 
@@ -1000,20 +1003,51 @@ def holder(store: Store, work_id: str, session_id: str, *, besides: int | None =
     return None
 
 
-def resume_spawn(store: Store, work_id: str, agent: str, extra: list[str], name: str) -> dict[str, Any]:
+def resume_spawn(store: Store, work_id: str, agent: str, extra: list[str], name: str, *,
+                 besides: int | None = None) -> dict[str, Any]:
     """A runner that resumes a session in place, started only while no live runner holds it or is starting to resume
     it: the check and the start are one lock between processes, so two passes of the agent starter, two servers, or a
-    Call while a server restarts never resume one ACP session twice. A held session is reused, `state` running."""
+    Call while a server restarts never resume one ACP session twice. A held session is reused, `state` running.
+    `besides` is a runner handing its own session over, `hand_over`, which still runs while it starts the next."""
     session_id = next(word.partition('=')[2] for word in extra if word.startswith('resume='))
     marker = resuming_path(session_id)
     home.mkdir_private(marker.parent)
     with home.file_lock(marker.parent / 'resume.lock'):
-        pid = holder(store, work_id, session_id)
+        pid = holder(store, work_id, session_id, besides=besides)
         if pid is not None:
             return {'state': 'running', 'pid': pid}
         started = spawn(store, work_id, agent, extra, name)
         home.write_private(marker, str(started['pid']))
     return started
+
+
+HANDED = 'restarted on updated code'  # how a runner the store's layout outgrew ends; its session goes on in a new one
+
+
+def handed_path(session_id: str) -> Path:
+    """The file a runner handing its session over leaves for the runner that takes it: what it was given and could
+    not record, `hand_over`."""
+    return home.home() / 'run' / 'dispatch' / f'handed-{hashlib.sha256(session_id.encode()).hexdigest()[:32]}.json'
+
+
+def hand_over(store: Store, work_id: str, agent: str, session_id: str, runner: str | None, pid: int,
+              extra: list[str], carried: list[dict[str, Any]]) -> dict[str, Any]:
+    """A runner whose code the store moved past, STORE-029, gives its session to a runner on the code on disk. Run
+    in a new process with that code, after the old runner's agent has ended: the session's row ends as handed over,
+    its ticket stays taken by the session, what the old runner was sent and could not record waits in
+    `handed_path` for the next, and a runner resuming that same session starts. A late hand-over, once the row
+    belongs to another runner, starts nothing."""
+    held = own_store((intake_store(store, work_id) or store) if intake_id(work_id) else store)
+    with held.tables() as tx:
+        previous = tx.get('sessions', {'session_id': session_id})
+        if previous is None or previous['work_id'] != work_id or runner and previous.get('runner') != runner:
+            return {'state': 'gone'}
+        if previous['state'] == 'running':
+            tx.update('sessions', {'session_id': session_id}, {'state': 'ended', 'how': HANDED})
+    path = handed_path(session_id)
+    home.mkdir_private(path.parent)
+    home.write_private(path, json.dumps({'carried': carried}))
+    return resume_spawn(held, work_id, agent, [f'resume={session_id}', *extra], 'resume', besides=pid)
 
 
 def sessions(store: Store, work_id: str | None = None, *, verify: bool = True,
@@ -1118,6 +1152,8 @@ def session_work_status(row: dict[str, Any], raised: Sequence[dict[str, Any]] = 
             return {'status': 'running', 'reason': None}
         return {'status': 'input_required', 'reason': 'stopped' if 'stopped-open' in own else 'person'}
     how = str(row.get('how') or '')
+    if how == HANDED:  # a runner on the code on disk is taking it up
+        return {'status': 'running', 'reason': HANDED}
     if how in DIED:
         return {'status': 'failed', 'reason': 'runner died'}
     if how.startswith(('it failed', 'it did not start')):
@@ -2739,7 +2775,7 @@ def link(ctx: Context) -> dict[str, Any]:
     layer naming its path, a record with an id that lasts, code.graph.knowledge#c, the refs the runner places files
     by, so the runner's lock on writing it is lifted at once and the file is placed exactly from then on. The ref is
     named `ref`, a proper noun for what the file is, or from its path, and records who linked it and why. A file
-    linked already at another place moves to the nearest common node of the two, the moving link. An Address no
+    linked already at another place is a second ref here, with a name of its own; no ref moves. An Address no
     element has yet is made first, in the active map's base; the sources layer is made when the project has none.
     Linking it again where it is changes nothing."""
     from metaform.data import Node, Outcome
@@ -2782,10 +2818,10 @@ def link(ctx: Context) -> dict[str, Any]:
     if any(notice.where == 'linked' for notice in written.notices):
         return {'file': named, 'node': address, 'ref': written.ref, 'id': written.id, 'linked': False, 'made': made,
                 'said': f'{named} was already linked as {written.ref}.'}
-    moved = [notice.message for notice in written.notices if notice.where == 'ref']
+    noted = [notice.message for notice in written.notices if notice.where == 'ref']
     return {'file': named, 'node': address, 'ref': written.ref, 'id': written.id, 'linked': True, 'made': made,
             'said': ' '.join([(f'{named} is linked as {written.ref}{", its element made" if made else ""}; writes '
-                               'to it go through.'), *moved])}
+                               'to it go through.'), *noted])}
 
 
 def attach(ctx: Context) -> dict[str, Any]:

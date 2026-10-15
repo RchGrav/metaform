@@ -260,14 +260,14 @@ class Store:
                  details: Iterable[tuple[str, str]] = (), by: str | None = None,
                  why: str | None = None) -> SourceRef | Outcome:
         """Link a ref at a node, a record of the sources layer with an id that lasts, STORE-012: a new one, named
-        `name` or from what it names, or the ref already naming this key and value linked again, which moves it to the
-        nearest common node of the two places, the moving link."""
+        `name` or from what it names, or the ref already naming this key and value at this node linked again. A ref
+        never moves: linked at another node, the same key and value is a second ref there."""
         with self._write() as tx:
             return ref_records.link(tx, key, value, node, name=name, details=details, by=by, why=why)
 
     def place_refs(self, node: Node, refs: Iterable[Any], *, by: str | None = None,
                    why: str | None = None) -> list[Notice]:
-        """The refs given for a node, linked there, replacing those whose latest link named it, MAP-021."""
+        """The refs given for a node, linked there, replacing the refs linked at it, MAP-021."""
         with self._write() as tx:
             return ref_records.place(tx, node, refs, by=by, why=why)
 

@@ -3,6 +3,7 @@ and tied to it by joins of type memory, BASE-040, LAYER-012, LAYER-013, STORE-02
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -294,7 +295,7 @@ def test_memory_is_kept_as_the_reference_keeps_it_in_the_order_it_was_made(run, 
     assert mj(run, 'read_graph', cwd=mapped)['relations'] == whole['relations']
     from metaform.modules.memory import TABLES
     columns = {table.name: [column.name for column in table.columns] for table in TABLES.tables}
-    assert columns['entities'] == ['name', 'entity_type', 'seq', 'title', 'why']
+    assert columns['entities'] == ['name', 'entity_type', 'seq', 'title', 'why', 'locked_by', 'locked_at']
     assert columns['observations'] == ['entity', 'content', 'seq', 'by', 'session', 'at']
     assert columns['relations'] == ['source', 'target', 'relation_type', 'seq']
     assert columns['joins'] == ['join_id', 'entity', 'receiver', 'provider', 'by', 'session', 'at', 'number']
@@ -982,3 +983,95 @@ def test_a_memory_cites_its_evidence_and_a_read_flags_it_stale_once_the_cited_li
     refused = m(run, 'create_entities', J([{**entity('ghost', 'behavior', 'Nothing.'), 'cite': 'nowhere.py:3'}]),
                 ROUTE, cwd=mapped, ok=False)
     assert refused.returncode != 0 and 'names no file' in refused.stderr + refused.stdout
+
+
+def owner_prompt():
+    """The owner's memory prompt as CTX-026 records it, its places unfilled."""
+    spec = (Path(__file__).parents[5] / 'specifications' / '11-context.md').read_text(encoding='utf-8')
+    record = spec[spec.index('### CTX-026'):]
+    block = record[record.index('    ```\n') + len('    ```\n'):]
+    block = block[:block.index('    ```\n')]
+    return '\n'.join(line[4:] for line in block.rstrip('\n').split('\n'))
+
+
+@pytest.mark.req('CTX-026')
+@pytest.mark.req('CTX-027')
+def test_the_memory_prompt_is_the_owners_word_for_word_and_filled_for_the_agents_element(run, mapped):
+    """The stored element is the owner's text byte for byte; sent, it names the project and the element, or swaps the
+    whole line-2 bullet when there is none; an edit saved in the prompt store is what is sent, and the Axiom text it
+    replaced is the prompt's earlier version."""
+    from metaform import prompt_files
+    from metaform.data import prompts
+    from metaform.modules.memory import PACKAGE, memory_prompt
+    assert prompt_files.text(PACKAGE, 'instructions') == owner_prompt()
+    found = Store('proj').element('code.manager.route', raw=True)
+    filled = memory_prompt('proj', 'code.manager.route')
+    assert '   - You should assume that you are working on proj\n' in filled
+    assert (f'   - This is code.manager.route ({found.name or found.reading}) or any other address you work on for '
+            'this session.\n') in filled
+    assert '{' not in filled and filled.count('\n') == owner_prompt().count('\n')
+    for unassigned in (memory_prompt('proj'), memory_prompt('proj', 'code.ghost')):
+        assert '2. Element Identification:\n   - This is the address of the element you are working on at any given '\
+               'time.\n3. Memory Retrieval:' in unassigned and '{' not in unassigned
+    edited = prompts.save_prompt('memory:instructions', 'Work on {project} at {this.address}.')
+    assert memory_prompt('proj', 'code.manager.route') == 'Work on proj at code.manager.route.'
+    versions = prompts.prompt_versions('memory:instructions')
+    assert [one.number for one in versions] == [edited.number, 2, 1]
+    assert versions[-1].text.startswith('@STATE_INIT:') and versions[1].text == owner_prompt()
+
+
+@pytest.mark.req('CTX-023')
+@pytest.mark.req('CTX-022')
+def test_a_locked_memory_is_read_by_every_agent_and_changed_by_none_until_the_person_unlocks_it(run, mapped):
+    m(run, 'create_entities', J([entity('route ejection', 'behavior', 'Routes are ejected.')]), ROUTE, cwd=mapped)
+    m(run, 'create_entities', J([entity('echo cost', 'fact', 'Echoes are cheap.')]), PROBE, cwd=mapped)
+    before = mj(run, 'open_nodes', J(['route ejection']), ROUTE, cwd=mapped)
+    assert mj(run, 'lock', 'route ejection', cwd=mapped)['locked']['by'] == 'person'
+    said = mj(run, 'add_observations', J([{'entityName': 'route ejection', 'contents': ['x']}]), cwd=mapped)
+    assert said['results'] == [{'entityName': 'route ejection', 'addedObservations': []}]
+    assert said['notices'][0]['message'].startswith('Locked: route ejection.')
+    said = mj(run, 'delete_observations', J([{'entityName': 'route ejection', 'observations': ['Routes are ejected.']}]),
+              ROUTE, cwd=mapped)
+    assert said['message'] == 'Deleted 0 of 1 observations. Locked: route ejection'
+    said = mj(run, 'delete_entities', J(['route ejection']), PROBE, cwd=mapped)
+    assert said['message'] == 'Deleted 0 of 1 entities. Locked: route ejection'
+    said = mj(run, 'create_entities', J([entity('route ejection', 'other', 'Again.')]), PROBE, cwd=mapped)
+    assert said['entities'] == [] and any(n['message'].startswith('Locked: route ejection.') for n in said['notices'])
+    [join] = mj(run, 'joins', 'entity=route ejection', cwd=mapped)['joins']
+    refused = m(run, 'unjoin', join['join_id'], cwd=mapped, ok=False)
+    assert 'Locked: route ejection' in refused.stderr
+    relation = {'from': 'echo cost', 'to': 'route ejection', 'relationType': 'repairs'}
+    mj(run, 'create_relations', J([relation]), cwd=mapped)  # another memory may be related to a locked one
+    said = mj(run, 'delete_relations', J([relation]), cwd=mapped)
+    assert said['message'] == 'Deleted 0 of 1 relations. Locked: route ejection'
+    assert mj(run, 'open_nodes', J(['route ejection']), ROUTE, cwd=mapped)['entities'] == before['entities']
+    shown = next(one for one in mj(run, 'graph', cwd=mapped)['entities'] if one['name'] == 'route ejection')
+    assert shown['locked']['by'] == 'person'
+    read = json.loads(run('map', 'item', 'code.manager.route#1', '--json', cwd=mapped).stdout)
+    assert read['locked']['by'] == 'person' and 'LOCKED' in read['body']
+    # only the person locks and unlocks: never an MCP tool, and refused under an agent's role
+    from metaform.modules.memory import MODULE
+    assert {verb.name: verb.surfaces for verb in MODULE.verbs if verb.name in ('lock', 'unlock')} == {
+        'lock': ('cli',), 'unlock': ('cli',)}
+    agent = run('memory', 'unlock', 'route ejection', cwd=mapped, env={'METAFORM_ROLE': 'worker'}, ok=False)
+    assert 'Only the person locks and unlocks a memory' in agent.stderr
+    mj(run, 'unlock', 'route ejection', cwd=mapped)
+    assert mj(run, 'delete_entities', J(['route ejection']), cwd=mapped)['message'] == 'Entities deleted successfully'
+
+
+@pytest.mark.req('CTX-029')
+def test_no_shipped_prompt_or_verb_text_tells_an_agent_to_store_everything_it_learns_in_memory():
+    """Neither the 2026-10-11 sentence nor the three Axiom rules the memory prompt supersedes is in any shipped
+    prompts.xml or any Module or Verb summary, purpose or details; memory's RE rule is still served."""
+    from metaform import loader
+    gone = ('store what you learn under the functional namespace', 'Never read or search the whole graph',
+            'Save findings at the narrowest applicable functionality', 'Do not save chronological activity logs')
+    modules = Path(__file__).parents[2]
+    texts = [path.read_text(encoding='utf-8') for path in [*modules.glob('*/resources/prompts.xml'),
+                                                           modules.parent / 'resources' / 'prompts.xml']]
+    for module in (found.module for found in loader.discover() if found.module is not None):
+        texts += [module.summary, module.purpose, module.details]
+        texts += [part for verb in module.verbs for part in (verb.summary, verb.details)]
+    assert not [(one, text[:80]) for text in texts for one in gone if one in (text or '')]
+    assert 'Record each memory at the RE whose goal it serves' in (modules / 'memory' / 'resources' / 'prompts.xml') \
+        .read_text(encoding='utf-8')

@@ -210,6 +210,110 @@ def test_the_agent_view_ends_a_met_sign_and_sees_from_the_eyes_near_plane(
 
 
 @pytest.mark.req('VIEW-005')
+def test_speech_bubbles_stay_in_view_apart_dimmed_by_distance_and_the_watched_agent_speaks_at_the_bottom(
+        run, web, mapped, browser):  # noqa: F811 -- imported fixtures keep their names for discovery
+    """code.interface.graphical#81: bubbles stacked only upward, off the top of the view, and were dimmed by how far
+    the stack pushed them; in the agent view the watched agent's words were hidden with its body; and leaving the
+    view held the person's controls until the way back ended. Agents near the top of the view now talk inside it,
+    apart, each as bright as its agent is near; the watched agent's words are at the bottom of its view; and V off
+    gives the controls back at once."""
+    import time
+
+    import metaform.modules.dispatch  # noqa: F401  declares its tables
+    from metaform.data import Node, Store
+
+    run('enable', 'dispatch')
+    run('set', '--web-bubble-seconds=120')
+    store = Store('proj')
+    places = ['code.alarm.audible', 'code.alarm.audible', 'code.loop.tick']
+    tickets = [store.add_work(Node('element', address), 'broken', task='Check it') for address in places]
+    for ticket, glyph in zip(tickets, ('owl', 'moth', 'beetle')):
+        run('map', 'work', 'op=edit', f'id={ticket.id}', f'glyph={glyph}', cwd=mapped)
+        store.take_work(ticket.id, by='claude')
+        live_session(ticket.id, 'claude')
+    with Store('proj', module='dispatch').tables() as tx:
+        for n, ticket in enumerate(tickets):
+            tx.insert('lines', {'session_id': f's-{ticket.id}', 'name': 'l1', 'work_id': ticket.id,
+                                'kind': 'agent_message_chunk', 'seq': 1,
+                                'text': f'Reading part {n} of the code to see where each speech bubble goes'})
+    started(run)
+    page, problems, _ = opened(browser, web, plain=True)
+    page.wait_for_function('() => window.metaform.figures().length === 3', timeout=30000)
+    bubbles = """async () => {
+        const THREE = await import('three');
+        const {G} = await import('/page/app/map3d/graph3d.js');
+        const {ROAM} = await import('/page/app/figures/agents.js');
+        const {bubbles3d} = await import('/page/app/figures/bubble3d.js');
+        const {eyeOf} = await import('/page/agents3d.js');
+        const {EYE} = await import('/page/app/figures/eyes.js');
+        const camera = G.camera(), at = new THREE.Vector3(), gaze = new THREE.Vector3();
+        bubbles3d();
+        const shown = [];
+        G.scene().traverse(o => { if (o.isMesh && o.renderOrder >= 1000 && o.material.map && o.visible) {
+            o.updateMatrixWorld();
+            const a = new THREE.Vector3(-0.5, -0.5, 0).applyMatrix4(o.matrixWorld).project(camera);
+            const b = new THREE.Vector3(0.5, 0.5, 0).applyMatrix4(o.matrixWorld).project(camera);
+            shown.push({box: [a.x, a.y, b.x, b.y], bright: o.material.color.r});
+        }});
+        const heads = [...ROAM.figures.values()].filter(f => f.mesh !== EYE.mesh).map(f => {
+            eyeOf(f.mesh, at, gaze); return at.distanceTo(camera.position); });
+        return {shown, heads, walking: [...ROAM.figures.values()].some(f => ['arriving', 'going'].includes(f.stage))};
+    }"""
+    end = time.monotonic() + 30
+    while (now := page.evaluate(bubbles))['walking'] or len(now['shown']) < 3:
+        assert time.monotonic() < end, now
+        time.sleep(0.2)
+    # the camera held, and moved down so the agents stand near the top of the view, where bubbles stacked up went off
+    page.evaluate("""async () => {
+        const THREE = await import('three');
+        const {G} = await import('/page/app/map3d/graph3d.js');
+        const {ROAM} = await import('/page/app/figures/agents.js');
+        window.metaform.pause3d(true);
+        const camera = G.camera(), mid = new THREE.Vector3(), figures = [...ROAM.figures.values()];
+        for (const f of figures) mid.add(f.mesh.position);
+        const seen = mid.divideScalar(figures.length).applyMatrix4(camera.matrixWorldInverse);
+        const down = 0.8 * -seen.z * Math.tan(camera.fov * Math.PI / 360) - seen.y;
+        camera.position.addScaledVector(new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion), -down);
+        camera.updateMatrixWorld();
+    }""")
+    placed = page.evaluate(bubbles)
+    boxes = [one['box'] for one in placed['shown']]
+    assert len(boxes) == 3, placed
+    assert all(-1 <= x0 and -1 <= y0 and x1 <= 1 and y1 <= 1 for x0, y0, x1, y1 in boxes), placed
+    assert not any(a[0] < b[2] and a[2] > b[0] and a[1] < b[3] and a[3] > b[1]
+                   for n, a in enumerate(boxes) for b in boxes[n + 1:]), placed
+    # each as bright as its agent is near, against the nearest one talking, however far it was moved apart
+    nearest = min(placed['heads'])
+    assert sorted(one['bright'] for one in placed['shown']) == pytest.approx(
+        sorted(max(1 / 3, (nearest / head) ** 1.5) for head in placed['heads']), abs=0.01), placed
+    page.evaluate("""async () => {
+        const {ROAM} = await import('/page/app/figures/agents.js');
+        const {followFigure, agentView} = await import('/page/app/figures/eyes.js');
+        window.metaform.pause3d(false);
+        followFigure([...ROAM.figures.values()][0]);
+        agentView();
+    }""")
+    page.wait_for_function("""async () => { const {EYE} = await import('/page/app/figures/eyes.js');
+        return EYE.view && EYE.k >= 1; }""", timeout=30000)
+    page.evaluate('window.metaform.pause3d(true)')
+    watched = page.evaluate(bubbles)
+    # its body hidden, its words at the bottom of the view, in its middle, over the others
+    bottom = min(watched['shown'], key=lambda one: one['box'][1])
+    assert -1 <= bottom['box'][1] < -0.9 and abs(bottom['box'][0] + bottom['box'][2]) < 0.05, watched
+    assert bottom['bright'] == 1, watched
+    off = page.evaluate("""async () => {
+        const {G} = await import('/page/app/map3d/graph3d.js');
+        const {agentView, EYE} = await import('/page/app/figures/eyes.js');
+        window.metaform.pause3d(false);
+        agentView();
+        return {controls: G.controls().enabled, saved: Boolean(EYE.saved)};
+    }""")
+    assert off == {'controls': True, 'saved': True}, off  # the person's camera at once, while the view eases back
+    page.wait_for_function("""async () => !(await import('/page/app/figures/eyes.js')).EYE.saved""", timeout=30000)
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-005')
 def test_the_work_camera_shows_a_node_with_its_agents_and_all_the_work_each_in_view_and_apart(
         run, web, mapped, browser):  # noqa: F811 -- imported fixtures keep their names for discovery
     """Work, the 3D map's default mode: a selected node is shown with the agents working on it, and with nothing

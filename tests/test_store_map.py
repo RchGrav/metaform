@@ -256,30 +256,35 @@ def test_a_refs_id_lasts_through_an_edit_a_rebuild_and_another_ref_and_a_removed
 
 
 @pytest.mark.req('CTX-066')
-@pytest.mark.req('CTX-009')
 @pytest.mark.req('CTX-087')
-def test_a_ref_linked_on_another_branch_moves_to_where_they_meet_and_its_name_is_its_identity(store):
+def test_a_ref_stays_where_it_was_linked_and_a_file_linked_at_two_places_is_two_refs(store):
     from metaform.data import Outcome
     _, _, inner = small_map(store)
     x = store.link_ref('path', 'src/x.c', Node('element', 'code.timer.kitchen'), name='x')
     assert x.ref == 'x@code.timer.kitchen'
-    moved = store.link_ref('path', 'src/x.c', Node('element', 'code.alarm.audible'))
-    assert (moved.id, moved.ref) == (x.id, 'x@code')
-    made = store.element('code', raw=True)
-    assert made is not None and made.layer == 'sources'  # made in the ref's layer, never the base, CTX-010
-    assert store.link_ref('path', 'src/x.c', Node('element', 'code.loop.tick')).ref == 'x@code'  # covered: stays
-    stale = store.ref('x@code.timer.kitchen')
-    assert stale is not None and stale.ref == 'x@code' and 'linked at code now' in stale.notices[0].message
+    other = store.link_ref('path', 'src/x.c', Node('element', 'code.alarm.audible'))
+    assert other.id != x.id and other.ref == 'x_c@code.alarm.audible'  # a second ref, code.graph.knowledge#17
+    assert store.element('code', raw=True) is None  # no element is made toward the trunk
+    assert store.ref('x').ref == 'x@code.timer.kitchen'  # the first ref did not move
+    again = store.link_ref('path', 'src/x.c', Node('element', 'code.timer.kitchen'))
+    assert again.id == x.id and any(notice.where == 'linked' for notice in again.notices)
+    stale = store.ref('x@code.alarm.audible')
+    assert stale is not None and stale.ref == 'x@code.timer.kitchen' and 'linked at code.timer.kitchen' in (
+        stale.notices[0].message)
     y = store.link_ref('path', 'src/y.c', Node('element', 'code.timer.kitchen'))
-    assert store.link_ref('path', 'src/y.c', Node('element', 'code.timer')).ref == 'y@code.timer'  # toward the trunk
+    assert store.link_ref('path', 'src/y.c', Node('element', 'code.timer')).ref == 'y_c@code.timer'
     z = store.link_ref('path', 'src/z.c', Node('join', inner.id))
     assert (z.ref, z.join) == ('z@code.timer.kitchen', inner.id)  # no ':' part: open question 25 of CTX
     taken = store.link_ref('path', 'src/w.c', Node('element', 'code.loop.tick'), name='x')
-    assert isinstance(taken, Outcome) and 'x@code' in taken.notices[0].message
+    assert isinstance(taken, Outcome) and 'x@code.timer.kitchen' in taken.notices[0].message
+    renamed = store.link_ref('path', 'src/x.c', Node('element', 'code.loop.tick'), name='x')
+    assert isinstance(renamed, Outcome) and 'is taken' in renamed.notices[0].message  # a ref_id is unique in the base
     reserved = store.link_ref('path', 'src/w.c', Node('element', 'code.loop.tick'), name='purpose')
     assert isinstance(reserved, Outcome) and 'this.purpose' in reserved.notices[0].message
-    assert [ref.value for ref in store.refs()] == ['src/x.c', 'src/y.c', 'src/z.c']  # the refusals wrote nothing
-    assert y.id == store.ref('y@code.timer').id
+    assert [(ref.value, ref.address) for ref in store.refs()] == [  # the refusals wrote nothing
+        ('src/x.c', 'code.timer.kitchen'), ('src/x.c', 'code.alarm.audible'), ('src/y.c', 'code.timer.kitchen'),
+        ('src/y.c', 'code.timer'), ('src/z.c', 'code.timer.kitchen')]
+    assert y.id == store.ref('y@code.timer.kitchen').id
 
 
 @pytest.mark.req('STORE-012')
@@ -310,11 +315,13 @@ def test_layout_22_makes_every_ref_of_the_sources_layer_a_record_and_keeps_the_o
         after = log.load(db)
     finally:
         db.close()
-    assert (report['items'], report['pairs'], report['refs']) == (2, 5, 3)
+    assert (report['items'], report['pairs'], report['refs']) == (2, 5, 4)
     records = {refs.name_of(held[0]): held for _, held in refs.records(after)}
-    assert {name: [list(pair) for pair in held[-1].refs] for name, held in records.items()} == {
-        'a': [['path', 'src/a.c'], ['lines', '1-9']], 'b': [['path', 'src/b.c']], 'c': [['path', 'src/c.c']]}
-    assert len(records['a']) == 2  # linked at the element, then at its join below it: a version records the link
+    assert {name: ([list(pair) for pair in held[-1].refs], held[-1].fields['target_id'])
+            for name, held in records.items()} == {
+        'a': ([['path', 'src/a.c'], ['lines', '1-9']], kitchen), 'b': ([['path', 'src/b.c']], kitchen),
+        'a_c': ([['path', 'src/a.c']], inner.id), 'c': ([['path', 'src/c.c']], inner.id)}
+    assert all(len(held) == 1 for held in records.values())  # each ref where its item was: none moved, #17
     assert not [version for _, version in after.currents('item')
                 if version.layer_id == sources.id and not refs.is_record(version)]
 

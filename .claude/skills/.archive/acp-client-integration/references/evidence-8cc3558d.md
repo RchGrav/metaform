@@ -1,0 +1,1 @@
+held_settings still sent Claude Code ask rules for Edit/Write/MultiEdit/NotebookEdit with the switch off, forcing a permission request on every edit; it now returns {} while LINK_LOCK is off. Rich just said: do not lock permissions on files until rules and prompts are in place, or disable the code until done.

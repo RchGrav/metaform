@@ -1,0 +1,1 @@
+"Do not lock permissions on files until rules and prompts are in place or disable this code until done"  —  agent: "I'm adding one switch, FILE_LOCK = False, in dispatch/runner.py. It gates: locked() and unsandboxed() return None; held_settings drops the ask rule and the sandbox; ... and __init__ sends no work_link."
