@@ -1,8 +1,10 @@
 """The phone bridge's server: a small ASGI app (Starlette, on uvicorn) on its own loopback port.
 
 The web GUI's standard-library server has no websockets, and Twilio's Media Streams need one, so the phone has its
-own. It binds 127.0.0.1 only and is reached from the internet only through twilio_public_url: the Metaform Node's
-Caddy, which routes /phone/* here, or the person's own tunnel.
+own. It binds 127.0.0.1 by default and is reached from the internet through twilio_public_url: the Metaform Node's
+Caddy, which routes /phone/* here, or the person's own tunnel. On a direct route, twilio_bind, it listens on an
+address the person's router or firewall forwards a port to, serving TLS itself from twilio_certificate or behind the
+person's own TLS terminator; every check below holds the same on every route.
 
   POST /phone/voice    Twilio's Voice webhook: a call the owner made, or one Metaform placed, answered with TwiML
                        that connects it to /phone/stream with a one-time token, or first asks for the PIN; anyone
@@ -98,6 +100,7 @@ class Config:
     call_gap: float = 900.0      # seconds between calls Metaform places on its own
     proof: str = 'attested-or-pin'  # twilio_caller_proof: what a call or text must show beyond its caller ID
     pin: str | None = None       # METAFORM_TWILIO_PIN, digits; None when it is not set
+    bind: str = '127.0.0.1'      # twilio_bind: the address it listens on, which this machine's own requests come from
 
 
 @dataclass
@@ -549,12 +552,14 @@ class Phone:
     # ------------------------------------------------------------------------------------------- control
 
     async def control(self, request: Request) -> Response:
-        """The person's own `twilio call` and `twilio text`, from this machine: never through a proxy, and only with
-        the control token from the run file, which only the person's account can read."""
+        """The person's own `twilio call` and `twilio text`, from this machine: from loopback, or from the address the
+        bridge listens on when that is one of this machine's own, never through a proxy, and only with the control
+        token from the run file, which only the person's account can read."""
         peer = request.client.host if request.client else ''
         proxied = any(name in request.headers for name in ('x-forwarded-for', 'forwarded', 'x-real-ip'))
         given = request.headers.get('authorization', '').removeprefix('Bearer ').strip()
-        if peer not in LOOPBACK or proxied or not given or \
+        own = peer in LOOPBACK or (peer == self.config.bind and self.config.bind not in ('0.0.0.0', '::'))
+        if not own or proxied or not given or \
                 not hmac.compare_digest(given, self.config.control_token):
             return PlainTextResponse('Not found.', status_code=404)
         try:

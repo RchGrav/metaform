@@ -1,0 +1,3 @@
+{"parentUuid":"626a9edc-4c0c-48d4-ad27-b183b2bdd843","type":"user","message":{"role":"user","content":[{"type":"text","text":"Every piece of data in this system that relates to the project should be in layers"}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"or linked to layers"}]}}
+Ticket note written by the agent: "Project data neither in nor linked to a layer breaks LAYER-001; find it and bring it in" — "every piece of project data is in a layer OR linked to one. A body too large or too raw to be a layer item, such as a transcript, a report or a recording, stays where it is kept and a layer item at its element points to it, so it is reached from the map like the rest."

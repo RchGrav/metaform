@@ -116,6 +116,8 @@ export function addBloom() {
   BLOOM = {isPass: true, enabled: false, needsSwap: true, clear: false, renderToScreen: false, levels: levels.length,
     setSize(width, height) { sizeLevels(levels, width, height); },
     render(renderer, writeBuffer, readBuffer) { frame(renderer, writeBuffer, readBuffer, this.renderToScreen); },
+    // the shaders it draws, linked ahead of its first frame, `warm3d`; `screen` the one drawn on the screen when last
+    quads: () => [{material: over}, {material: blur}, {material: mix, screen: true}],
     dispose() { for (const level of levels) { level.across.dispose(); level.down.dispose(); } }};
   composer.addPass(BLOOM);
 }

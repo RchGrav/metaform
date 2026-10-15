@@ -29,9 +29,22 @@ const LOOK = {
   scale: 3,  // texture pixels per SVG pixel, so the bubble stays sharp up close
   dimmest: 0.33,  // the brightness of the farthest bubbles
   lift: 0.6, aside: 0.4,  // where the tail's point sits: up and to the right of the head, in figure sizes
-  screen: 0.75,  // CSS pixels on the screen per SVG pixel: every bubble the same readable size, at any distance
   pop: 320,  // ms of the pop when new words arrive
 };
+/* The bubbles' size on the screen, CSS pixels per SVG pixel, the same for every bubble at any distance: key 5 steps
+ * through these, the first the smallest allowed; the choice is kept in this browser. */
+export const BUBBLE_SIZES = [0.75, 0.9, 1.05, 1.25, 1.5];
+const SIZE_KEY = 'metaform.bubbleSize';
+const SIZE = {at: (() => {
+  try { return Math.min(BUBBLE_SIZES.length - 1, Math.max(0, Number(localStorage.getItem(SIZE_KEY)) || 0)); }
+  catch { return 0; }
+})()};
+export function stepBubbleSize() {
+  SIZE.at = (SIZE.at + 1) % BUBBLE_SIZES.length;
+  try { localStorage.setItem(SIZE_KEY, String(SIZE.at)); } catch { /* storage can be blocked; the page keeps it */ }
+  wake3d();
+  return SIZE.at;
+}
 const BUBBLES = new Map();  // figure id -> {mesh, texture, text, drawn, born, shown}
 const HEAD = new THREE.Vector3(), GAZE = new THREE.Vector3(), SHIFT = new THREE.Vector3(), SIDE = new THREE.Vector3();
 const MEASURE = document.createElement('canvas').getContext('2d');
@@ -234,7 +247,7 @@ export function bubbles3d() {
     // the same size on the screen at any distance: a world unit per screen pixel at the head's distance
     const view = G.renderer().domElement.clientHeight || 1;
     const pixel = 2 * HEAD.distanceTo(camera.position) * Math.tan(camera.fov * Math.PI / 360) / view;
-    const unit = LOOK.screen * pixel * grow;
+    const unit = BUBBLE_SIZES[SIZE.at] * pixel * grow;
     mesh.scale.set(drawn.width * unit, drawn.height * unit, 1);
     SHIFT.set((drawn.width / 2 - drawn.tip[0]) * unit, (drawn.tip[1] - drawn.height / 2) * unit, 0)
       .applyQuaternion(camera.quaternion);

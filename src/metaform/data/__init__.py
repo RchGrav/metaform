@@ -69,6 +69,8 @@ from .records import (
     WorkLink,
     WorkRecord,
     plain,
+    is_work,
+    shown_open,
 )
 from .session import BASE_VARIABLE, on_base
 from .session import Tx as DataTx
@@ -135,6 +137,8 @@ __all__ = [
     'ROLES',
     'SCHEMA_VERSION',
     'STAGES',
+    'is_work',
+    'shown_open',
     'Answer',
     'ChallengeState',
     'Citation',

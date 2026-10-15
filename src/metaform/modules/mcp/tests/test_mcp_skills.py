@@ -86,8 +86,33 @@ def test_connect_message_and_index_fit_what_the_host_keeps(folder, run):
         sent = server.connect_instructions(folder, 'unknown-host')
         assert len(sent) <= 2048 and 'FIRST RUN' in sent, len(sent)
         assert sent.startswith(server.startup_instructions(folder))
-        listed = server.listing(folder, 'unknown-host')['metaform_skills'].description
+        skills = server.listing(folder, 'unknown-host')['metaform_skills']
+        listed = skills.description + skills.guide()  # the names come with the tool's first use, MCP-039
         assert 'write-workflow' in sent or 'write-workflow' in listed
+
+
+@pytest.mark.req('MCP-028')
+def test_a_stdio_connect_from_an_unrecorded_harness_carries_the_provisioning_notice(folder, run, monkeypatch):
+    """The AI tool that started a stdio server is told once to provision it: in the connect message when it fits what
+    the host keeps, else with the session's first tool result. An HTTP connect, whose client did not start the
+    server, and a recorded harness are not told."""
+    from pathlib import Path
+
+    from metaform import harness
+    monkeypatch.setattr(server, 'TOLD', set())
+    monkeypatch.setattr(harness, 'running', lambda: Path(os.path.abspath(os.sep)) / 'opt' / 'harness' / 'bin' / 'tool')
+    notice = f'Notice: {harness.NOTICE}'
+    assert notice not in server.connect_instructions(folder, 'unknown-host')  # HTTP: no session of the harness
+    sent = server.connect_instructions(folder, 'unknown-host', 'one')
+    assert notice in sent and len(sent) <= 2048 and sent.startswith(server.startup_instructions(folder))
+    assert server.provisioning('one') is None  # told once
+    for module in SHIPPED:  # no room left at connect: the first tool result carries it instead
+        run('enable', module)
+    sent = server.connect_instructions(folder, 'unknown-host', 'two')
+    assert notice not in sent and len(sent) <= 2048
+    assert server.provisioning('two') == notice
+    harness.done(harness.running())
+    assert server.provisioning('three') is None
 
 
 def test_client_identity_accepts_initialize_params_and_modern_request_metadata():

@@ -1,0 +1,1 @@
+"`metaform_skills` is listed with the first sentence of its description; the skill names its description gave a harness whose connect index had no room come with the tool's first result in a session, MCP-039, and `op=list` gives each with its description." and "listing() lists headed(description): whole within 160 chars, else first sentence plus caution"

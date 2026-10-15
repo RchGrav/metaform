@@ -2,6 +2,7 @@
  * cancel and interrupt. */
 import '/page/app/dock/embody.js';  // the part before runs first, so the parts run in the page's order
 import {$, h, fill, keyedFill} from '/page/app/core/dom.js';
+import {expandCut} from '/page/app/core/expand.js';
 import {toast, confirmAct} from '/page/app/core/controls.js';
 import {S, read} from '/page/app/core/reads.js';
 import {joinOf} from '/page/app/graph/data.js';
@@ -9,7 +10,7 @@ import {ROAM, ticketNode} from '/page/app/figures/agents.js';
 import {INUSE, idsAt, paintInUse} from '/page/app/map3d/light.js';
 import {wake3d} from '/page/app/map3d/graph3d.js';
 import {select, MERGE} from '/page/app/selection/select.js';
-import {DOCK, SOURCES, sourceOf, sourceChip, dockState, clockOf} from '/page/app/dock/embody.js';
+import {DOCK, SOURCES, STANDBY, sourceOf, sourceChip, dockState, clockOf} from '/page/app/dock/embody.js';
 import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
 import {stayedOff} from '/page/app/dock/send.js';
 import {talkAbout} from '/page/app/dock/commands.js';
@@ -93,13 +94,58 @@ function proposalRow(one, index, total) {
         on ? 'Hide from the map' : 'Show on the map'),
       h('button', {type: 'button', class: 'choose', onclick: choose}, 'Choose')));
 }
+/* The tabs: My agent first and pinned, the person's own system agent, then each other agent's thread with its close ×.
+ * The strip shows whenever another agent's thread is open, so there is always a way back to My agent. */
+export const isMine = chat => chat?.source === 'system';
+export const onOther = () => Boolean(DOCK.chat) && !isMine(DOCK.chat);
 export function drawTabs() {
-  const tabs = $('#helpdesk .tabs');
-  tabs.hidden = DOCK.chats.length < 2;
-  fill(tabs, DOCK.chats.map(chat => h('button', {class: chat === DOCK.chat ? 'tab on' : 'tab', role: 'tab',
-    'aria-selected': String(chat === DOCK.chat), 'data-source': chat.source, 'data-session': chat.session || '',
-    title: `${SOURCES[chat.source] || SOURCES.agent}: ${chat.label}`, onclick: () => showChat(chat, {focus: true})},
-    h('i', {class: 'srcdot', 'aria-hidden': 'true'}), chat.label.replace(/^the /, ''))));
+  const tabs = $('#helpdesk .tabs'), others = DOCK.chats.filter(chat => !isMine(chat));
+  tabs.hidden = !others.length;
+  fill(tabs, myTab(!onOther()), others.map(otherTab));
+}
+function myTab(on) {
+  const glyph = myGlyph();
+  return h('button', {class: on ? 'tab mine on' : 'tab mine', role: 'tab', 'aria-selected': String(on),
+    'data-source': 'system', title: 'My agent: your own system agent', onclick: () => showMine()},
+  glyph ? h('img', {class: 'glyph', src: glyph, alt: ''}) : h('i', {class: 'srcdot', 'aria-hidden': 'true'}),
+  'My agent');
+}
+function otherTab(chat) {
+  const on = chat === DOCK.chat, name = chat.label.replace(/^the /, '');
+  return h('span', {class: on ? 'tabpair on' : 'tabpair'},
+    h('button', {class: on ? 'tab on' : 'tab', role: 'tab', 'aria-selected': String(on), 'data-source': chat.source,
+      'data-session': chat.session || '', title: `${SOURCES[chat.source] || SOURCES.agent}: ${chat.label}`,
+      onclick: () => showChat(chat, {focus: true})}, h('i', {class: 'srcdot', 'aria-hidden': 'true'}), name),
+    h('button', {class: 'tabx', type: 'button', 'aria-label': `Close the thread with ${name}`,
+      title: 'Close this thread; its agent keeps working', onclick: () => closeChat(chat)}, '×'));
+}
+/* The glyph of the body the person's own agent has on the map, when it has one. */
+function myGlyph() {
+  let rows = [];
+  try { rows = window.metaform?.bodies?.() || []; } catch { /* the figures are not drawn yet */ }
+  const body = rows.find(one => one.system && one.character);
+  return body ? `/page/agent-glyphs/${body.character}.svg` : null;
+}
+/* My agent: the person's system agent's conversation, its running session however it was started; with none running,
+ * its last thread here, or the dock as it is with no agent there, ready to Call. No other agent is stopped. */
+export function showMine() {
+  const session = D.sessions.filter(one => one.state === 'running' && D.states?.[one.session_id]?.about === 'system')
+    .at(-1);
+  const chat = session ? DOCK.chats.find(one => one.session === session.session_id) : DOCK.chats.findLast(isMine);
+  if (chat) return showChat(chat);
+  if (session) {
+    DOCK.mine = session.work_id;
+    return openHelpdesk(session.work_id, 'your system agent', STANDBY, session.session_id, 'system');
+  }
+  Object.assign(DOCK, {chat: null, target: null, session: null, label: '', waiting: '', since: Date.now(),
+    pinned: true, child: null});
+  drawTabs();
+  drawHelpdesk();
+}
+/* Closing a tab closes the thread on this page only; its agent keeps working. The one on view gives way to My agent. */
+function closeChat(chat) {
+  DOCK.chats = DOCK.chats.filter(one => one !== chat);
+  if (DOCK.chat === chat) showMine(); else drawTabs();
 }
 /* Recovery is attached to the session, never to whichever ticket happens to run next. Dispatch retains the
  * session and its end signals across reloads. A stop made here also keeps its timestamp in this browser, and the
@@ -122,7 +168,7 @@ function endWord(session) {
   return stoppedByPerson(session) ? 'Stopped' : how.startsWith('it failed') ? 'Failed'
     : how === 'cancelled by the person' ? 'Cancelled' : 'Ended';
 }
-function sessionTask(session, state = D.states?.[session.session_id]) {
+export function sessionTask(session, state = D.states?.[session.session_id]) {
   const ticket = ticketOf(session.work_id);
   const conversation = state?.about === 'system' ? 'Conversation with your system agent'
     : state?.about ? `Conversation about ${state.about.replace(/^[^:]+:/, '')}`
@@ -203,8 +249,8 @@ export function drawThreadBar(session) {
   const task = ticket ? ticket.task || ticket.note || ''
     : isIntake(target) ? `The intake of ${S.project}: it records the map as it reads the project.` : '';
   const said = bar.querySelector('.task');
-  if (said.textContent !== task) { said.classList.remove('open'); said.textContent = task; }
-  said.title = task ? 'Click to show all of the task, and again to fold it' : '';
+  bar.dataset.key = target;  // the task opened stays open while this thread is shown, `expandCut`
+  if (said.textContent !== task) said.textContent = task;
   const key = ticket ? ticketNode(ticket) : null;
   bar.querySelector('.locate').hidden = !(key && (S.elements.has(key) || joinOf(key)));
   const running = session?.state === 'running', ended = Boolean(session) && !running;
@@ -267,7 +313,11 @@ function continueThread() {
   const chat = DOCK.chat;
   if (chat?.session) talkAbout({session: `${chat.target}:${chat.session}`}, chat.label);
 }
-$('#helpdesk .threadbar .task').onclick = event => event.currentTarget.classList.toggle('open');
+// the thread's task and each agent's line, cut short, open in place at a click, `expandCut`
+expandCut($('#helpdesk .threadbar'), {row: '.threadbar', text: '.task'});
+for (const list of ['#helpdesk .stopped-agents', '#agentbox .agent-sessions']) {
+  expandCut($(list), {row: '.agent-session', text: '.task', key: row => row.dataset.session});
+}
 $('#helpdesk .threadbar .locate').onclick = () => DOCK.chat && focusThread(DOCK.chat);
 $('#helpdesk .threadbar .stop').onclick = stopThread;
 $('#helpdesk .threadbar .again').onclick = continueThread;

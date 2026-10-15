@@ -17,12 +17,12 @@ import {AT, signsFor} from '/page/app/map3d/labels.js';
 import {flowModeNow} from '/page/app/flow/flow.js';
 import {tintOf, fxDot, fxLine} from '/page/app/flow/fx3d.js';
 import {MODE, V3, FLIGHT} from '/page/app/camera/flight.js';
-import {small3d, meetEnds} from '/page/app/camera/fly3d.js';
+import {small3d, meetEnds, MEET} from '/page/app/camera/fly3d.js';
 import {PHYS} from '/page/app/views/bar.js';
 import {labelOf} from '/page/app/map2d/inside.js';
-import {FOLLOW, autoZoom2d, fullFit2d} from '/page/app/map2d/camera.js';
+import {FOLLOW, autoZoom2d, fullFit2d, follow2d, followPassed, spring} from '/page/app/map2d/camera.js';
 import {note2d} from '/page/app/map2d/hover.js';
-import {ticketOf} from '/page/app/agents/dispatch.js';
+import {ticketOf, showFollowed} from '/page/app/agents/dispatch.js';
 import {tabNow} from '/page/app/panel/prompts.js';
 import {WS} from '/page/app/workspace/workspace.js';
 import {toast} from '/page/app/core/controls.js';
@@ -509,14 +509,28 @@ export function eyes3d(passed) {  // each frame: the large camera toward the fig
 const onScreen = () => [...ROAM.figures.values()].filter(figure => figure.mesh && !figure.done);
 const followSaid = figure => figure
   ? `Following: the ${figure.glyph} on ${partAddress(figure.target) || 'its ticket'}` : 'Following: none';
-/* Follow an agent's figure, or none: the 2D map frames its node, `autoZoom2d`, and goes back to full fit when none is
- * followed; with the agent view on, the view goes over to the new one's eyes, or back to the person's for none, and
- * the agent view stays on for the next. */
-export function followFigure(figure, say = true) {
-  Object.assign(FOLLOW, {work: figure?.id || null, node: figure?.target || null});
+/* Follow an agent's figure, or none: both maps keep its figure in their middle, `followWatch`, the 2D map at the zoom
+ * that frames its node, `autoZoom2d`, and goes back to full fit when none is followed, or stays where the hand left it
+ * when a drag ended the following, `fit` false; the followed agent is named at the 2D map's corner and marked in the
+ * agents key while it is followed, `showFollowed`. With the agent view on, the view goes over to the new one's eyes,
+ * or back to the person's for none, and the agent view stays on for the next. Following takes the 3D camera from the
+ * layout's own fits and from a flight under way, as a hand does. */
+export function followFigure(figure, say = true, fit = true) {
+  // each map's ease is timed from the press, so the first frame after it already goes toward the figure
+  const now = performance.now();
+  Object.assign(FOLLOW, {work: figure?.id || null, node: figure?.target || null, scale: null, around: null, at2d: now,
+    at3d: now, go2d: null, go3d: null});
   if (EYE.agentMode && figure) eyesOf(figure.mesh, true);
   else if (EYE.agent) eyesOf(null, false);
-  if (figure) autoZoom2d(figure.target); else fullFit2d();
+  if (figure) {
+    FLIGHT.on = false;
+    V3.auto = false;
+    V3.focus = V3.hold = null;
+    wake3d();  // a map left to rest draws again, so its camera goes with the figure
+    autoZoom2d(figure.target);
+  } else if (fit) fullFit2d();
+  FOLLOWED.glyph = figure?.glyph || null;
+  showFollowed(figure?.id || null, FOLLOWED.glyph);
   if (say) note2d(followSaid(figure));
 }
 /* A: none, then each agent on the map in turn, then none again. */
@@ -540,19 +554,73 @@ export function agentView() {
   eyesOf(figure.mesh, true);
   note2d(`View: the ${figure.glyph}'s`);
 }
-/* Each frame: a followed agent that has left is replaced by the newest still on the map, or none; one that moves on
- * to another node takes the 2D map with it; one drawn again in another character, `reglyph`, keeps the view at its
- * new body's eyes, and the old body, gone from the scene, is seen from no longer. */
+/* Each 3D frame: a followed agent that has left is replaced by the newest still on the map, or none; one that moves on
+ * to another node gives the 2D map the zoom that frames that node; one drawn again in another character, `reglyph`,
+ * keeps the view at its new body's eyes, and the old body, gone from the scene, is seen from no longer, and is named
+ * by its new glyph. Outside an eye view the 3D camera goes with the figure, `follow3d`. */
 function followWatch() {
   if (!FOLLOW.work) return;
   const figure = ROAM.figures.get(FOLLOW.work);
   if (!figure || figure.done) return followFigure(onScreen().at(-1) || null);
   if (EYE.agent && figure.mesh && figure.mesh !== EYE.mesh) eyesOf(figure.mesh, true);
   if (figure.target !== FOLLOW.node) { FOLLOW.node = figure.target; autoZoom2d(figure.target); }
+  if (figure.glyph !== FOLLOWED.glyph) showFollowed(figure.id, FOLLOWED.glyph = figure.glyph);
+  if (figure.mesh) followIn3d(figure.mesh.position);
 }
+const FOLLOWED = {glyph: null};
+/* The followed figure in the middle of the 3D map, large or small, each frame: the point the camera turns about and
+ * the camera itself go with the figure where it is drawn, its acts too, which can carry it toward the camera for
+ * seconds, eased as the 2D camera is, `spring`, so the camera keeps its distance and its angle and the hand can still
+ * turn about the figure and zoom. Not while the view is a figure's eyes, or easing back from them, nor while a flight
+ * runs, which then ends where it was going, after which the camera goes on with the figure. The spring keeps where it
+ * is itself, so a step too small to draw is not lost, and goes on from a point the hand moved, the wheel's. A camera
+ * already there is not moved, so a figure at rest costs the map nothing. A met sign ends as the camera leaves it,
+ * `meetEnds`; the camera's matrix is updated at once, so the labels and the speech bubble placed after this in the
+ * frame stand where they are drawn. */
+const FOLLOW3D = {by: new THREE.Vector3()};
+function followIn3d(figureAt) {
+  const passed = followPassed('at3d');
+  if (!G || EYE.view || EYE.saved || FLIGHT.on) { FOLLOW.go3d = null; return; }
+  const camera = G.camera(), target = G.controls().target, by = FOLLOW3D.by;
+  const go = FOLLOW.go3d ||= {at: target.clone(), speed: new THREE.Vector3(), drawn: target.clone()};
+  if (!go.drawn.equals(target)) go.at.copy(target);
+  for (const axis of ['x', 'y', 'z']) {
+    [go.at[axis], go.speed[axis]] = spring(go.at[axis], go.speed[axis], figureAt[axis], passed);
+  }
+  by.subVectors(go.at, target);
+  if (by.length() < camera.position.distanceTo(target) * 1e-5) return;
+  if (MEET.on) meetEnds();
+  V3.hold = null;
+  target.add(by);
+  camera.position.add(by);
+  go.drawn.copy(target);
+  camera.updateMatrixWorld();
+  FRAMES.moved = true;
+}
+/* Each 2D frame, `roam2d`: the followed agent's flat figure kept in the middle of the 2D map, `follow2d`; at its node,
+ * its own place there, so an act, a small hop in 2D, or a reach toward another part does not swing the map with it. */
+export function followed2d(figures) {
+  const flat = FOLLOW.work ? figures.get(FOLLOW.work) : null, at = flat?.stage === 'circling' && flat.place || flat;
+  if (flat?.size) follow2d(at.x, at.y, flat.stage === 'circling');
+}
+/* A drag on either map is the hand taking the camera: it ends the following there, and the view stays where the hand
+ * takes it; on the 3D map seen through a figure's eyes the hand turns nothing, so the following goes on. A click, on
+ * a figure or a node, and the wheel do not end it; the wheel's zoom is the one followed at. */
+const HAND = {at: null};
+for (const map of ['#map2d', '#stage']) {
+  $(map)?.addEventListener('pointerdown', event => { HAND.at = [event.clientX, event.clientY]; }, true);
+  $(map)?.addEventListener('pointermove', event => {
+    if (!HAND.at || !event.buttons || Math.hypot(event.clientX - HAND.at[0], event.clientY - HAND.at[1]) < 4) return;
+    HAND.at = null;
+    if (FOLLOW.work && (map === '#map2d' || !EYE.view)) followFigure(null, true, false);
+  }, true);
+}
+addEventListener('pointerup', () => { HAND.at = null; }, true);
 /* A project left: nothing followed, and the person's own view. */
 export function leaveFollow() {
-  Object.assign(FOLLOW, {work: null, node: null});
+  Object.assign(FOLLOW, {work: null, node: null, scale: null, around: null, at2d: null, at3d: null, go2d: null,
+    go3d: null});
+  showFollowed(null, FOLLOWED.glyph = null);
   if (EYE.agent) eyesOf(null, false);
 }
 export function eyeDebug3d() {  // the eye anchor and the gaze ray of every figure, drawn for a check of `look`

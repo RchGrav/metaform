@@ -128,6 +128,24 @@ def test_a_phone_stream_in_mu_law_yields_a_final_text_for_each_utterance_and_ski
     assert len(finals) == 1 and 1.0 <= finals[0][0] <= 2.0  # the speech and its pause, never the silence before
 
 
+@pytest.mark.req('CLI-011')
+def test_the_phone_and_scribe_languages_carry_once_into_voice_language(voice):
+    """Settings cleanup 2026-10-15: twilio_language and elevenlabs_scribe_language merge into voice_language, the one
+    language the person is heard in; a stored value carries there once, the phone's first, and the old rows go."""
+    from metaform import home, settings
+    home.save('global', 'twilio', 'twilio_language', ['de'])
+    home.save('global', 'elevenlabs', 'elevenlabs_scribe_language', ['fr'])
+    with home.chassis(write=True) as db:  # the test home's own start carried nothing and marked it; undo the mark
+        db.execute("DELETE FROM meta WHERE key='carried:speech-language'")
+    settings._carried.clear()
+    module = sys.modules[voice('engine').__package__]
+    said = module.carry_language()
+    assert said[0] == 'voice_language = de' and settings.value('voice_language', home.home()) == 'de'
+    assert home.stored('global', 'twilio', 'twilio_language') is None
+    assert home.stored('global', 'elevenlabs', 'elevenlabs_scribe_language') is None
+    assert module.carry_language() == [], 'once per home'
+
+
 def test_a_model_download_is_kept_only_whole(voice, monkeypatch, home):
     models = voice('models')
     caught(monkeypatch, b'x' * 10)

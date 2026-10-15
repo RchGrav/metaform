@@ -41,11 +41,15 @@ export const DOCKMOTION = {anim: null, dir: null};
 export const dockGoingAway = () => Boolean(DOCKMOTION.anim)
   && (DOCKMOTION.dir === 'away') === (DOCKMOTION.anim.playbackRate > 0);
 /* A body for the chat's agent on the map, web_embody: offered once per chat, inline at the top of its thread and never
- * as a window, at a pause after web_embody_turns turns or web_embody_minutes minutes, whichever comes first; always
+ * as a window, at a pause after EMBODY_TURNS turns or EMBODY_MINUTES minutes, whichever comes first; always
  * gives it the person's last choice, or the mascot to the system agent; never gives none. The choice folds into the
  * chat's head as a small avatar of the character, which, like B, opens the choice again. The figure is the flow's:
  * `window.metaform.characters()` lists the characters and `window.metaform.embody(workId, glyph)` gives one; until
  * those exist nothing is offered and nothing breaks. */
+/* When the offer is due: about eight turns or twenty minutes is a conversation the person is staying with, and asked
+ * sooner it interrupts one that has not shown it is worth keeping. Settings cleanup 2026-10-15 made these fixed (they
+ * were web_embody_turns and web_embody_minutes); always and never in web_embody are the person's choices. */
+export const EMBODY_TURNS = 8, EMBODY_MINUTES = 20;
 export const EMBODY = {offered: new Set(), given: new Set(), since: new Map(), open: null, last: null, stops: []};
 try { EMBODY.last = localStorage.getItem('metaform.embodied') || null; } catch { /* storage can be blocked */ }
 export const embodyHooks = () => ['embody', 'characters', 'bodies']
@@ -84,8 +88,8 @@ function embodyAs(work, glyph, quiet = false) {
     : `It walks the map as the ${glyph} now.`);
   return true;
 }
-/* web_embody: offer asks once per conversation, in its thread, after web_embody_turns turns or web_embody_minutes
- * minutes, whichever comes first, and only at a pause, as a turn ends or a ticket closes, never while it works;
+/* web_embody: offer asks once per conversation, in its thread, after EMBODY_TURNS turns or EMBODY_MINUTES minutes,
+ * whichever comes first, and only at a pause, as a turn ends or a ticket closes, never while it works;
  * always gives each conversation the person's last choice, or the mascot to the system agent; never offers nothing.
  * The person asks at any time with the avatar in the head, the head's menu or B. */
 export function embodyOffer(work, session, lines, busy) {
@@ -112,10 +116,10 @@ function embodyAlways(work) {
 function offerDue(work, session, lines, busy) {
   const turns = lines.filter(line => line.kind === 'turn').length;
   const minutes = (Date.now() - EMBODY.since.get(work)) / 60000;
-  const due = turns >= (VIEW.embodyTurns ?? 8) || minutes >= (VIEW.embodyMinutes ?? 20);
+  const due = turns >= EMBODY_TURNS || minutes >= EMBODY_MINUTES;
   const ticket = ticketOf(work);
   const pause = !busy && session.state === 'running' && session.activity === 'idle' || Boolean(ticket?.done);
-  return due && (pause || (VIEW.embodyTurns ?? 8) === 0);
+  return due && pause;
 }
 /* Open the choice now, as the person asked: in the thread, where the offer stands. */
 export function askEmbody() {

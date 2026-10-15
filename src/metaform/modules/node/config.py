@@ -39,7 +39,7 @@ FRPS_IMAGE = 'fatedier/frps:v0.71.0@sha256:cd8b947ba61678b200baa4f71ccc33f3c52e4
 IMAGE = 'metaform-node:local'  # built on the host from the wheel beside the Dockerfile; never pushed
 
 WEB_PORT, MCP_PORT, AUTH_PORT, GATE_PORT = 7433, 7434, 7435, 7440
-TWILIO_PORT = 7441  # the twilio module's phone bridge, `metaform twilio serve`, when the person runs it here
+TWILIO_PORT = 7441  # the twilio module's phone bridge, `metaform twilio serve`, when the person runs it here; its PORT
 UID = 10001
 HOME_IN_IMAGE = '/data/home'
 AUTH_IN_IMAGE = '/data/auth'  # the auth volume: accounts, passkeys and keys, mounted into the auth container only

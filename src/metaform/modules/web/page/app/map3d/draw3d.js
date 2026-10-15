@@ -1,7 +1,7 @@
 /* The 3D view draws the map or a node's memory network, places new nodes beside their neighbours, keeps the layout
  * calm on small changes, and follows the theme. */
 import '/page/app/flow/fx3d.js';  // the part before runs first, so the parts run in the page's order
-// Ultra graphics, web_graphics: the 3D map in outer space, drawn by its own module through the hooks marked ULTRA.
+// The Space theme, web_theme space: the 3D map in outer space, drawn by its own module through the hooks marked ULTRA.
 import * as ULTRA from '/page/ultra.js';
 import {$, css} from '/page/app/core/dom.js';
 import {S, MEM} from '/page/app/core/reads.js';
@@ -120,7 +120,7 @@ export function setTheme(name, keep = true) {
   if (name !== 'space') PLAIN.last = name;
   if ($('#theme') && $('#theme').value !== name) $('#theme').value = name;
   ULTRA.setting(name === 'space' ? 'ultra' : 'clean');
-  if (keep && S.project) posted('/api/settings', {key: 'web_graphics', value: name === 'space' ? 'ultra' : 'clean'});
+  if (keep && S.project) posted('/api/settings', {key: 'web_theme', value: name});  // the person's choice, never a read
   try { localStorage.setItem('metaform.theme', name); } catch (error) { /* storage can be blocked; it still shows */ }
   if (G) recolor3d();
   setMermaidReady(false);

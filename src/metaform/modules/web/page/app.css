@@ -322,6 +322,25 @@ select option{background:var(--panel);color:var(--text)}
   font:var(--t-md)/1.45 var(--sans);color:var(--text)}
 .toast .msg{flex:1;min-width:0}
 .toast .btn{flex:none}
+/* Banners: what the page must say until it is dealt with, core/banner.js, in one strip at the top centre under the
+ * header, over the maps and windows and never modal. Each is a window's panel with its tone down its left edge. */
+#banners{position:fixed;z-index:4500;top:calc(var(--head-bottom,60px) + var(--s2));left:50%;transform:translateX(-50%);
+  display:grid;gap:var(--s2);width:min(640px,calc(100vw - 2 * var(--s3)));max-height:calc(60vh - var(--head-bottom,60px));
+  overflow:auto;pointer-events:none}
+#banners:empty{display:none}
+.banner{pointer-events:auto;display:flex;align-items:flex-start;gap:var(--s3);padding:var(--s3) var(--s2) var(--s3) var(--s4);
+  background:var(--panel);border:1px solid var(--line-2);border-left:4px solid var(--danger);border-radius:var(--r-lg);
+  box-shadow:var(--lift-3);font:var(--t-md)/1.45 var(--sans);color:var(--text)}
+.banner.warn{border-left-color:var(--missing)}
+.banner.info{border-left-color:var(--intake)}
+.banner.ok{border-left-color:var(--signal)}
+.banner .words{flex:1;min-width:0;display:grid;gap:var(--s1)}
+.banner .words p{margin:0;overflow-wrap:anywhere}
+.banner .title{font-weight:600}
+.banner .next .lead{color:var(--muted)}
+.banner .detail{font-size:var(--t-sm);color:var(--faint)}
+.banner .acts{display:flex;flex-wrap:wrap;gap:var(--s2);align-self:center}
+.banner > .close{flex:none}
 /* A progress bar, with how far along in words beside it for those who do not see the bar. */
 .progressbar{display:grid;gap:var(--s1)}
 .progressbar .track{position:relative;height:6px;border-radius:var(--r-pill);background:var(--line);overflow:hidden}
@@ -365,6 +384,8 @@ header{grid-area:top;display:flex;align-items:center;gap:var(--s2);min-height:ca
 .hmore{display:contents}
 .brand{font:600 calc(18px * var(--ui))/1 var(--cond);letter-spacing:.02em;margin-right:var(--s2);white-space:nowrap;flex:none}
 .brand b{color:var(--signal);font-weight:600}
+/* The menu names in the header stand closer than a button's own padding sets them, so the full row holds 1920 px. */
+header .btn.quiet{padding:0 var(--s2)}
 .hfield{display:flex;align-items:center;gap:var(--s2);flex:0 1 auto;min-width:0}
 .hfield select{min-width:96px}
 .hfield label{font:500 var(--t-xs)/1 var(--sans);color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
@@ -471,6 +492,20 @@ dl.facts dd.addr{font:var(--t-sm)/1.6 var(--mono);color:var(--signal)}
 #notes .by{margin:0;font:var(--t-sm) var(--sans);color:var(--muted)}
 #notes .count{justify-self:end;font:var(--t-xs) var(--mono);color:var(--muted)}
 #notes textarea{min-height:120px}
+/* The window a broadcast is sent from: the message, whom it reached, and the broadcasts kept on the project. */
+#broadcast{width:440px}
+#broadcast .reach{margin:0;font:var(--t-sm) var(--sans);color:var(--muted)}
+#broadcast textarea{min-height:96px}
+#broadcast .mine{display:flex;align-items:center;gap:var(--s2);font:var(--t-sm) var(--sans);color:var(--muted)}
+#broadcast .mine[hidden]{display:none}
+#broadcast .label{margin:var(--s2) 0 0;font:600 var(--t-xs)/1.4 var(--sans);color:var(--muted)}
+#broadcast .agent-session{padding:var(--s1) 0}
+#broadcast .agent-session.delivered .meta{color:var(--signal)}
+#broadcast .agent-session.failed .meta{color:var(--broken);white-space:normal}
+#broadcast .kept{display:grid;grid-template-columns:max-content 1fr max-content;gap:var(--s2);font:var(--t-xs)/1.5 var(--sans)}
+#broadcast .kept time,#broadcast .kept .meta{color:var(--faint)}
+#broadcast .kept .text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#broadcast .foot .hint{flex:1;font:var(--t-xs) var(--sans);color:var(--faint)}
 /* The window an element is added in, VIEW-033. */
 #element{width:480px}
 #element .address{font-family:var(--mono)}
@@ -834,6 +869,14 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 #helpdesk .tab{flex:0 1 auto;max-width:160px;min-height:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:var(--s1) var(--s3);
   border:1px solid var(--line);border-bottom:0;border-radius:var(--r) var(--r) 0 0;background:transparent;color:inherit;cursor:pointer;font:inherit;font-size:var(--t-sm);letter-spacing:0;text-transform:none}
 #helpdesk .tab.on{background:var(--signal);color:var(--ground);border-color:var(--signal)}
+#helpdesk .tab.mine{flex:none;font-weight:600}
+#helpdesk .tab .glyph{width:14px;height:14px;margin-right:4px;vertical-align:-2px}
+#helpdesk .tabpair{display:flex;flex:0 1 auto;min-width:0}
+#helpdesk .tabpair .tab{border-right:0;border-top-right-radius:0}
+#helpdesk .tabx{flex:none;min-height:0;padding:0 var(--s2);border:1px solid var(--line);border-left:0;border-bottom:0;border-radius:0 var(--r) 0 0;
+  background:transparent;color:var(--muted);cursor:pointer;font:inherit;line-height:1}
+#helpdesk .tabx:hover{color:var(--text)}
+#helpdesk .tabpair.on .tabx{background:var(--signal);color:var(--ground);border-color:var(--signal)}
 #helpdesk .proposals{display:flex;flex-direction:column;gap:var(--s2);padding:var(--s2) var(--s3);max-height:45%;overflow-y:auto;border-bottom:1px solid var(--line)}
 #helpdesk .proposals[hidden]{display:none}
 #helpdesk .proposal{border:1px solid var(--line-2);border-radius:var(--r);padding:var(--s2) var(--s3);font-size:var(--t-md)}
@@ -1003,9 +1046,8 @@ span.ref-link{color:var(--signal);text-decoration:underline dotted;cursor:pointe
 #helpdesk .threadbar[hidden]{display:none}
 #helpdesk .threadbar .icon{width:22px;height:22px;flex:none}
 #helpdesk .threadbar .icon[hidden]{display:none}
-#helpdesk .threadbar .task{flex:1;min-width:0;margin:0;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
-#helpdesk .threadbar .task:empty{cursor:default}
-#helpdesk .threadbar .task.open{white-space:pre-wrap;max-height:8.5em;overflow:auto}
+#helpdesk .threadbar .task{flex:1;min-width:0;margin:0;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#helpdesk .threadbar.unfolded .task{white-space:pre-wrap;max-height:8.5em;overflow:auto}
 #helpdesk .threadbar .btn{flex:none}
 #helpdesk .threadbar .btn[hidden]{display:none}
 #helpdesk .src{--c:var(--signal);flex:none;display:inline-flex;align-items:center;height:20px;padding:0 var(--s2);border-radius:var(--r-pill);border:1px solid color-mix(in srgb,var(--c) 55%,transparent);
@@ -1135,6 +1177,20 @@ button.toolhead:hover{border-color:var(--control)}
 @media (prefers-reduced-motion:no-preference){.permission.waiting{animation:asks 2.4s ease-in-out infinite}}
 @keyframes asks{0%,100%{box-shadow:0 0 0 1px var(--question),0 0 10px color-mix(in srgb,var(--question) 20%,transparent)}50%{box-shadow:0 0 0 1px var(--question),0 0 22px color-mix(in srgb,var(--question) 40%,transparent)}}
 #helpdesk .log > .tool,#helpdesk .log > .permission{align-self:stretch;max-width:100%}
+/* how the session's permission requests are answered, on its waiting card */
+.permission .answering{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s1) var(--s2);font:var(--t-sm)/1.4 var(--sans);color:var(--muted)}
+.permission .answering select{font:inherit;color:var(--text)}
+.permission .answering small{color:var(--faint,var(--muted))}
+/* a permission request waiting while its thread is not on screen: a small window at the top right, the page usable under it */
+#asking{top:calc(56px + var(--s3));right:var(--s3);width:min(400px,calc(100vw - 2 * var(--s3)));max-height:calc(100vh - 56px - 2 * var(--s3))}
+#asking > .bar{padding-left:var(--s3)}
+#asking > .bar .glyph{width:24px;height:24px;flex:none}
+#asking > .bar .title small{font-weight:400;color:var(--muted)}
+#asking > .bar .stackcount{font:var(--t-sm)/1 var(--sans);color:var(--muted);white-space:nowrap}
+#asking > .bar .prev .i-chev{transform:rotate(90deg)}
+#asking > .bar .next .i-chev{transform:rotate(-90deg)}
+#asking > .body{padding:var(--s3)}
+#asking > .foot{padding:var(--s2) var(--s3)}
 #helpdesk .system.setting,#helpdesk .system.approved{font-size:var(--t-xs)}
 #helpdesk .system.failed{color:var(--broken)}
 /* an agent's question, ACP's elicitation, drawn as a permission card is; and the agent's own notices by severity */
@@ -1149,6 +1205,7 @@ button.toolhead:hover{border-color:var(--control)}
 .elicitation .hint{margin:0;color:var(--muted);font:var(--t-xs)/1.4 var(--sans)}
 .elicitation.withdrawn,.elicitation.declined,.elicitation.cancelled{border-style:dashed}
 .system.agent-notice b{color:var(--text)}
+#helpdesk .system.peer b{color:var(--text)}
 .system.agent-notice.warning b{color:var(--missing)}
 .system.agent-notice.error,.system.agent-notice.error b{color:var(--broken)}
 #board .card .outcome{padding:0 6px;border:1px solid var(--line-2);border-radius:var(--r);color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
@@ -1178,6 +1235,8 @@ button.toolhead:hover{border-color:var(--control)}
 .intakebar.asks{border-left-color:var(--question)}
 .intakebar.asks .pulse{background:var(--question);--c:var(--question)}
 .intakebar.asks .doing{color:var(--question)}
+.intakebar .x{all:unset;cursor:pointer;width:22px;height:22px;text-align:center;border-radius:6px;color:var(--muted)}
+.intakebar .x:hover{background:var(--control);color:var(--text)}
 #intake .lead{margin:0;color:var(--text);font:var(--t-base)/1.5 var(--sans)}
 #intake .warnline{margin:0;padding:var(--s2) var(--s3);border-left:3px solid var(--missing);border-radius:var(--r);background:var(--panel-2);color:var(--text)}
 #intake textarea.note{min-height:76px}
@@ -1197,53 +1256,16 @@ button.toolhead:hover{border-color:var(--control)}
 .emptystage small{color:var(--faint);font:var(--t-sm)/1.4 var(--sans)}
 .emptypanel{display:grid;gap:var(--s3);justify-items:start}
 
-/* The first screen, onboard/welcome.js: one sentence of what Metaform is and two large choices, over the whole page;
- * while it shows, the workbench behind it and the chat are out of the way. */
-.welcome{position:fixed;inset:0;z-index:25;display:grid;place-items:center;overflow:auto;padding:var(--s5);
-  background:radial-gradient(ellipse at 50% 35%,color-mix(in srgb,var(--intake) 9%,var(--ground)),var(--ground) 70%)}
-.welcome .inner{display:grid;justify-items:center;gap:var(--s5);width:min(720px,100%);text-align:center}
-.welcome .brand{font-size:calc(30px * var(--ui));margin:0}
-.welcome h1{margin:0;max-width:600px;font:500 var(--t-xl)/1.45 var(--sans);color:var(--text)}
-.welcome .choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s4);width:100%}
-.welcome .choice{display:grid;justify-items:start;align-content:start;gap:var(--s2);min-height:150px;padding:var(--s5);text-align:left;cursor:pointer;
-  background:var(--panel);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r-lg);box-shadow:var(--lift-2);
-  transition:border-color var(--quick),background var(--quick)}
-.welcome .choice:hover:not(:disabled),.welcome .choice:focus-visible{border-color:var(--signal);background:var(--panel-2)}
-.welcome .choice:disabled{cursor:progress;opacity:.7}
-.welcome .choice .i{width:24px;height:24px;color:var(--signal)}
-.welcome .choice b{font:600 var(--t-lg)/1.3 var(--sans)}
-.welcome .choice span{font:var(--t-base)/1.5 var(--sans);color:var(--muted)}
-.welcome .picker{display:grid;gap:var(--s3);width:100%;text-align:left;padding:var(--s4);background:var(--panel);border:1px solid var(--line-2);border-radius:var(--r-lg)}
-.welcome .pickhead{display:grid;gap:var(--s1)}
-.welcome .pickhead .at{font:var(--t-sm)/1.4 var(--mono);color:var(--muted);overflow-wrap:anywhere}
-.welcome .pickhead .typed{height:var(--ctl);padding:0 var(--s3);font:var(--t-sm) var(--mono);color:var(--text);background:var(--panel-2);border:1px solid var(--control);border-radius:var(--r)}
-.welcome .folders{display:grid;align-content:start;gap:1px;max-height:min(46vh,420px);overflow:auto;border:1px solid var(--line);border-radius:var(--r)}
-.welcome .folders button{display:flex;gap:var(--s2);align-items:baseline;padding:var(--s2) var(--s3);text-align:left;cursor:pointer;
-  background:transparent;color:var(--text);border:0;font:var(--t-base)/1.3 var(--sans)}
-.welcome .folders button:hover,.welcome .folders button:focus-visible{background:var(--panel-2)}
-.welcome .folders small{color:var(--faint)}
-.welcome .folders .none{margin:0;padding:var(--s3);color:var(--muted)}
-.welcome .acts{display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center}
-.welcome .grow,.hintcard .grow{flex:1}
-.welcome .failed{display:grid;gap:var(--s1);width:100%;padding:var(--s3) var(--s4);text-align:left;border-radius:var(--r);
-  border:1px solid color-mix(in srgb,var(--danger) 60%,transparent);background:color-mix(in srgb,var(--danger) 8%,var(--panel))}
-.welcome .failed code{font:var(--t-sm) var(--mono)}
 .linkish{background:none;border:0;padding:var(--s1);color:var(--muted);font:var(--t-sm) var(--sans);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 .linkish:hover{color:var(--text)}
-html.welcoming .app,html.welcoming #dock,html.welcoming #reviewNotice,html.welcoming .voice-wake,
-html.welcoming .mascot-bubble,html.welcoming .mascot-card,html.welcoming .toast{visibility:hidden}
-@media (max-width:640px){.welcome .choices{grid-template-columns:minmax(0,1fr)}}
 
-/* A first-run hint, onboard/hints.js: one small card at a time beside what it is about. */
-.hintcard{position:fixed;z-index:950;width:min(320px,calc(100vw - 2 * var(--s3)));display:grid;gap:var(--s2);padding:var(--s3) var(--s4);
-  background:var(--panel);color:var(--text);border:1px solid var(--signal);border-radius:var(--r-lg);box-shadow:var(--lift-3)}
-.hintcard .text{margin:0;font:var(--t-base)/1.5 var(--sans)}
-.hintcard .acts{display:flex;align-items:center;gap:var(--s2)}
-.hintcard .tipno{font:var(--t-xs) var(--sans);color:var(--faint)}
-/* The workbench's controls, quiet until the person first reaches for them: every one is there, at a lower voice, and
- * comes up at the pointer or the keyboard; once used, its region speaks as usual for good. */
-html.quiet-header :is(header > :not(.brand,.proj,.searchbtn,.hmore),header > .hmore > *),html.quiet-tabs aside .tabs{opacity:.42;transition:opacity var(--dur-1) var(--ease)}
-html.quiet-header :is(header > :not(.hmore),header > .hmore > *):is(:hover,:focus-within),html.quiet-tabs aside .tabs:is(:hover,:focus-within){opacity:1}
+/* A first-time person's welcome, onboard/hints.js: a small plain window, the page usable around it. */
+.window.dialog.welcomebox{width:min(400px,calc(100vw - 2 * var(--s3)))}
+.welcomebox .body p{margin:0;color:var(--text)}
+.welcomebox .helpkey{padding:0;border:0;background:none;cursor:pointer;vertical-align:baseline}
+.welcomebox .helpkey kbd{display:inline-grid;place-items:center;min-width:22px;height:22px;padding:0 6px;border:1px solid var(--line-2);
+  border-radius:var(--r);background:var(--panel-2);color:var(--text);font:600 var(--t-sm)/1 var(--mono)}
+.welcomebox .helpkey:hover kbd,.welcomebox .helpkey:focus-visible kbd{border-color:var(--signal);color:var(--signal)}
 
 /* The build panel: the four builds as large choices, then what the chosen one takes, one Build, and its run. */
 .buildpanel{width:min(860px,calc(100vw - 2 * var(--s3)))!important}
@@ -1318,36 +1340,30 @@ html.quiet-header :is(header > :not(.hmore),header > .hmore > *):is(:hover,:focu
 }
 
 /* ---------- narrower screens ---------- */
-/* A laptop: the header keeps one row by giving the search its icon alone and the base its select alone. */
-@media (max-width:1600px){
-  .searchbtn{width:var(--ctl);padding:0;justify-content:center}
-  .searchbtn .lbl,.searchbtn kbd{display:none}
-}
-@media (max-width:1440px){
-  .hfield label,.hfield.base .btn .lbl{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-  .hfield.base .btn{width:var(--ctl-sm);padding:0}
-  .hfield select{max-width:230px}
-  .hfield.proj select{max-width:150px}
-}
-@media (max-width:1440px){
-  header{gap:var(--s1);padding:var(--s2) var(--s3)}
-  header .btn.quiet{padding:0 var(--s2)}
-  .brand{font-size:calc(16px * var(--ui))}
-  .autostart{margin:0 var(--s1)}
-  .hfield select{max-width:200px}
-  .hfield.proj select{max-width:130px}
-  #messages{width:104px}
-  .textsize .btn.icon{width:var(--ctl-sm)}
-}
-@media (max-width:1366px){
-  header .btn.quiet{padding:0 6px}
-  header .btn .i-chev{margin-left:-4px}
-  header .viewbtn .lbl{display:none}  /* the View menu keeps its icon, its tooltip and V where the header is short of room */
-}
-/* The View menu's button: the "more" dots and its name, View, while the header has room. */
+/* A header short of room gives it back in steps before it folds: the page measures its row and sets each step only
+ * while the row still does not hold everything, `foldHeader`. First the search keeps its icon alone. */
+header.compact .searchbtn{width:var(--ctl);padding:0;justify-content:center}
+header.compact .searchbtn .lbl,header.compact .searchbtn kbd{display:none}
+/* Then the spacing tightens. */
+header.tight{gap:var(--s1);padding:var(--s2) var(--s3)}
+header.tight .brand{font-size:calc(16px * var(--ui))}
+header.tight .autostart{margin:0 var(--s1)}
+header.tight .hfield select{max-width:200px}
+header.tight .hfield.proj select{max-width:130px}
+header.tight #messages{width:104px}
+/* Last, the project and base give up their labels, Activate and Remove their words, and the buttons and the row
+ * their padding. */
+header.tighter .hfield label,header.tighter .hfield.base .btn .lbl{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+header.tighter .hfield.base .btn{width:var(--ctl-sm);padding:0}
+header.tighter .btn.quiet{padding:0 6px}
+header.tighter .btn .i-chev{margin-left:-4px}
+header.tighter{padding:var(--s2)}
+header.tighter .autostart{margin:0}
+header.tighter #layersBtn{padding:0 var(--s2)}
+/* The Settings button's "more" dots. */
+.i-kebab{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='3' r='1.5'/%3E%3Ccircle cx='8' cy='8' r='1.5'/%3E%3Ccircle cx='8' cy='13' r='1.5'/%3E%3C/svg%3E")}
 .i-more{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='3' cy='8' r='1.5'/%3E%3Ccircle cx='8' cy='8' r='1.5'/%3E%3Ccircle cx='13' cy='8' r='1.5'/%3E%3C/svg%3E")}
 header .viewbtn{gap:6px}
-header.fold .viewbtn .lbl{display:inline}
 /* A tablet or a phone: one column, the maps over the panel, the header's rest behind the menu button, windows as
  * sheets across the screen, and every control at least 40 px tall for a finger. */
 /* A narrow window: the header keeps the project, Messages and Search on its row, and folds the rest behind the menu
@@ -1355,7 +1371,7 @@ header.fold .viewbtn .lbl{display:inline}
 /* A wider window whose header does not fit on one row, as at a larger text size, folds it the same way; the page sets
  * `fold` on the header when its row overflows. */
 header.measure > *,header.measure .hmore > *{flex-shrink:0!important}
-header.measure .hfield select{width:96px!important;min-width:0!important;max-width:96px!important}  /* a name can shorten */
+header.measure.short .hfield select{width:96px!important;min-width:0!important;max-width:96px!important}  /* a name can shorten */
 header.fold{flex-wrap:wrap;padding:var(--s2) var(--s3);gap:var(--s2)}
 header.fold .brand{margin-right:0}
 header.fold .hfield.proj{flex:1 1 auto}
@@ -1379,7 +1395,13 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
   .hfield.proj select{max-width:320px;width:100%}
   #messages{order:2;width:auto;margin:0}
   #messages[hidden]{display:none!important}
-  .searchbtn{order:3}
+  .searchbtn{order:3;width:var(--ctl);padding:0;justify-content:center}
+  .searchbtn .lbl,.searchbtn kbd{display:none}
+  .hfield label{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  .brand{font-size:calc(16px * var(--ui))}
+  .autostart{margin:0 var(--s1)}
+  header .btn.quiet{padding:0 6px}
+  header .btn .i-chev{margin-left:-4px}
   #moreBtn{display:inline-flex;order:4}
   .textsize{display:none;order:11}
   header.expanded .textsize{display:flex}
@@ -1460,18 +1482,27 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
   opacity:0;pointer-events:none;transition:opacity var(--dur-2) var(--ease-leave)}
 .note2d.on{opacity:1;transition:opacity var(--dur-1) var(--ease-arrive)}
 @media (prefers-reduced-motion: reduce){.note2d,.note2d.on{transition:none}}
+/* The agent followed, A, named under that corner for as long as it is followed, `showFollowed`, and its entry in the
+ * agents key marked. */
+.followed{position:absolute;top:calc(var(--s2) + 2.2em);right:var(--s3);z-index:6;display:flex;align-items:center;
+  gap:var(--s1);padding:.2em .6em;border-radius:var(--r);background:color-mix(in srgb,var(--ground) 72%,transparent);
+  color:var(--text);font:600 var(--t-base)/1.3 var(--sans);pointer-events:none}
+.followed img{width:1.4em;height:1.4em}
+#agents .agent-row[aria-current="true"]>.agent{border-color:var(--signal);box-shadow:inset 3px 0 0 var(--signal)}
 /* What travels the map, VIEW-005, `FLOW` in app.js: a request is one tiny white dot, a reply a train of small dots in
  * the colour of the element it comes from, a record a card in --record that lands with a ring. One record colour on
  * every theme, each of them dark, warm against the links' blues and the signal's cyan. In the 2D map the selected
  * node's edges carry it. */
 :root{--record:#ffbe55}
 .map2d .flows2d *{pointer-events:none}
-/* a dot is the round end of a dash of no length on a copy of its edge's path: 2.1px across each side, 1.9 for a request */
+/* a dot is the round end of a stroke of no length, in a path of its dots only: 2.1px across, 1.9 for a request */
 .map2d .flows2d .bead{fill:none;stroke-width:4.2px;stroke-linecap:round}
 .map2d .flows2d .ask{fill:none;stroke:var(--spark);stroke-width:3.8px;stroke-linecap:round}
 /* each glow once over its group, drawn by the compositor, so a moving dot never makes the map's painter blur again */
 .map2d .flows2d .trains{filter:drop-shadow(0 0 1.5px currentColor);will-change:filter}
 .map2d .flows2d .asks{filter:drop-shadow(0 0 1.5px var(--spark));will-change:filter}
+/* the records and rings a layer of their own too, so a moving card paints its layer again, not the map's boxes */
+.map2d .flows2d .marks{will-change:filter}
 .map2d .flows2d .record{fill:var(--record);stroke:var(--spark);stroke-width:.6px}
 .map2d .flows2d .ring{fill:none;stroke:var(--record);stroke-width:1.4px}
 /* The mascot's word bubble, over the figure wherever it is drawn: eased in and out, one line or two, never in the way
@@ -1576,7 +1607,7 @@ details.setgroup > summary::before{content:"";width:6px;height:6px;border:solid 
   transform:rotate(-45deg);transition:transform var(--dur-1) var(--ease)}
 details.setgroup[open] > summary::before{transform:rotate(45deg)}
 .setlist{display:grid;border:1px solid var(--line);border-radius:var(--r);background:var(--ground)}
-.setrow{display:grid;grid-template-columns:minmax(0,1fr) 232px 60px;align-items:center;column-gap:var(--s3);row-gap:var(--s1);
+.setrow{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:var(--s3);row-gap:var(--s1);
   padding:var(--s2) var(--s3);border-top:1px solid var(--line);color:var(--text)}
 .setlist > .setrow:first-child{border-top:0}
 .setrow:hover,.setrow:focus-within{background:color-mix(in srgb,var(--panel-2) 60%,transparent)}
@@ -1605,10 +1636,10 @@ details.setgroup[open] > summary::before{transform:rotate(45deg)}
 .setrow .morebox p{margin:var(--s1) 0 0}
 .setrow .morebox code{font:var(--t-xs)/1.3 var(--mono);color:var(--faint)}
 .setrow .morebox .glue{margin-left:var(--s2)}
-.setrow .control{grid-column:2 / 4;display:grid;grid-template-columns:232px 60px;align-items:center;column-gap:var(--s3)}
-.setrow .control > :not(.reset){grid-column:1;min-width:0}
-.setrow .control > .reset{grid-column:2;justify-self:start}
-.setrow .control :where(select,input[type=text],textarea){width:100%}
+/* the control at the row's right edge, Reset just before it, and what it is takes the width between */
+.setrow .control{grid-column:2;display:flex;align-items:center;justify-content:flex-end;gap:var(--s3);min-width:0}
+.setrow .control > *{min-width:0}
+.setrow .control :where(select,input[type=text],textarea){width:232px;max-width:100%}
 .setrow .control input[type=number]{width:96px}
 .setrow .control textarea{resize:vertical;white-space:pre;overflow-x:auto}
 .setrow .pair{display:flex;align-items:center;gap:var(--s2);min-width:0}
@@ -1616,12 +1647,21 @@ details.setgroup[open] > summary::before{transform:rotate(45deg)}
 .setrow .unit{font:var(--t-sm)/1.2 var(--sans);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .setrow > .hint,.setrow .checks,.setrow .setfail{grid-column:1 / -1}
 .setrow > .hint{font:var(--t-sm)/1.45 var(--sans);color:var(--muted)}
+/* text cut short opens in place, wrapped, at a click or Enter, settings/screen.js markCut */
+.setrow.unfolded .name{align-items:baseline}
 .setrow .checks{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s1) var(--s4)}
 .setrow .checks code{font:var(--t-sm)/1.3 var(--mono)}
 .setrow .setfail{padding:var(--s2) var(--s3);font-size:var(--t-sm)}
 .setrow.module{padding-block:6px}
 .setrow.module:has(input:not(:checked)) .id{color:var(--muted)}
-.setlist.essentials .setrow{padding-block:4px}  /* Essentials fits one screen */
+.setlist.modules{grid-template-columns:repeat(2,minmax(0,1fr))}
+.setlist.modules .module:nth-child(2){border-top:0}
+.setlist.modules .module:nth-child(odd){border-right:1px solid var(--line)}
+.setlist.modules .name{gap:var(--s1)}
+.setlist.modules .name code.id{min-width:0;flex:0 1 auto}
+.setlist.modules .control{gap:var(--s1)}
+.setrow .readyhint{color:var(--signal)}
+.setlist.essentials .setrow{padding-block:2px}  /* Essentials fits a desktop screen at its usual text size */
 .setlist.essentials .setrow .name{line-height:1.25}
 .setmain .empty{margin:0;color:var(--muted)}
 /* narrow, as a docked pane or a small window: the categories across the top and each control under what it is */
@@ -1631,7 +1671,10 @@ details.setgroup[open] > summary::before{transform:rotate(45deg)}
   .setside button.under{padding-left:var(--s3)}
   .setmain{padding:var(--s3)}
   .setrow{grid-template-columns:minmax(0,1fr)}
-  .setrow .control{grid-column:1;grid-template-columns:minmax(0,232px) auto}
+  .setrow .control{grid-column:1;justify-content:flex-start}
+  .setlist.modules{grid-template-columns:minmax(0,1fr)}
+  .setlist.modules .module:nth-child(2){border-top:1px solid var(--line)}
+  .setlist.modules .module:nth-child(odd){border-right:0}
 }
 @media (max-width:640px){
   .settingspanel > .bar .search{flex-basis:140px}
@@ -1707,8 +1750,8 @@ details.sent .copy,#agentview .copy{justify-self:start}
 #agentview .warnline{margin:0;color:var(--danger);font:var(--t-sm)/1.4 var(--sans)}
 #agentview dl.paid{display:grid;grid-template-columns:max-content 1fr;gap:2px var(--s3);margin:0;font:var(--t-sm)/1.45 var(--sans)}
 #agentview dl.paid dt{color:var(--muted)}
-#agentview dl.paid dd{margin:0;font-family:var(--mono);color:var(--text);overflow-wrap:anywhere}
-#agentview dl.paid dd small{font-family:var(--sans);color:var(--muted)}
+#agentview dl.paid dd{margin:0;color:var(--muted);overflow-wrap:anywhere}
+#agentview dl.paid dd b{font-family:var(--mono);font-weight:500;color:var(--text)}
 ul.entries{list-style:none;margin:0;padding:0;display:grid;gap:2px}
 details.entry{border-bottom:1px solid var(--line)}
 details.entry > summary{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px var(--s2);align-items:baseline;padding:var(--s1) var(--s2);
@@ -1719,6 +1762,7 @@ details.entry > summary .n{font:var(--t-xs)/1.4 var(--mono);color:var(--muted);t
 details.entry > summary .pill{justify-self:start;height:18px;font-size:var(--t-xs)}
 details.entry > summary .said{grid-column:1 / -1;color:var(--muted)}
 details.entry.over > summary .n{color:var(--danger)}
+details.entry.tool > summary .said{white-space:pre-line;color:var(--text)}
 details.entry[open] > pre{margin:var(--s1) 0 var(--s2)}
 @media (forced-colors: active){
   .budget .track::after{background:Highlight}
@@ -1738,7 +1782,7 @@ details.entry[open] > pre{margin:var(--s1) 0 var(--s2)}
 html.frame .app{height:var(--view-height,600px)}
 html.frame[data-display="fullscreen"] .app{height:100vh}
 html.frame header,html.frame .skip,html.frame #dock,html.frame #agents,html.frame #board,html.frame #float,
-html.frame #intakeBar,html.frame #emptyStage{display:none!important}
+html.frame #intakeBar,html.frame #intakeLeft,html.frame #emptyStage{display:none!important}
 html.frame .workhead,html.frame button.chat{display:none!important}
 
 /* ---------- the workspace: the toolbar, the Window menu and the panes, workspace.js ----------
@@ -2214,6 +2258,7 @@ body:has(.window.mcpwin > .bar:active) .appframe{pointer-events:none}  /* a pane
 #helpdesk .msg.mine .bubble{max-width:min(85%,64ch);background:color-mix(in srgb,var(--signal) 16%,var(--panel));color:var(--text);
   border:1px solid color-mix(in srgb,var(--signal) 38%,transparent)}
 #helpdesk .msg .bubble.pending{border-style:dashed;opacity:.8}
+#helpdesk .msg .mark{font:600 var(--t-xs)/1.4 var(--sans);color:var(--signal);margin:0 var(--s1) 2px}
 #helpdesk .msg .tools{display:flex;align-items:center;gap:2px;flex:none;opacity:0;transition:opacity var(--dur-1,.18s) var(--ease-arrive);
   font:var(--t-xs)/1 var(--sans);color:var(--faint);white-space:nowrap;padding-bottom:4px}
 #helpdesk .msg:hover .tools,#helpdesk .msg:focus-within .tools,#helpdesk .msg .tools:has(.pendingnote){opacity:1}
@@ -2359,3 +2404,8 @@ body > *{transition:opacity .28s var(--ease-arrive, ease-out)}
 .demo-card .demo-next{display:grid;gap:var(--s1,6px);margin-top:var(--s1,6px)}
 .demo-card .demo-step>span{display:block;color:var(--muted);margin-bottom:2px}
 .demo-card .copyfield input{font-size:11px!important}
+/* Text cut short opens in place at a click, `expandCut` (core/expand.js); last, so it wraps whatever cut it. */
+.cut{cursor:pointer}
+.unfolded .cut{white-space:normal;overflow:visible;overflow-wrap:anywhere}
+/* A tool call's title, cut in a row that opens on a click, shows whole while the call is open. */
+.toolhead[aria-expanded="true"] .title{white-space:normal;overflow-wrap:anywhere}

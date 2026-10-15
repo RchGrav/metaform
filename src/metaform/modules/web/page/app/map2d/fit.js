@@ -129,6 +129,32 @@ function fitHash2d(text) {  // the map's text in a few characters, to know a dra
   for (let at = 0; at < text.length; at++) hash = Math.imul(hash ^ text.charCodeAt(at), 0x01000193);
   return `${text.length}.${(hash >>> 0).toString(36)}`;
 }
+/* The ways chosen for this base, kept in this browser so a reload draws the map once, F4: `chosen`, each map's text in
+ * its step and direction with the way the whole search chose for it, the last `FIT2D.most`; and `last`, the way last
+ * chosen in each pane, the large area or the small one, which a map whose text has changed since is drawn in first. */
+const KEPT2D = {key: null, kept: null};
+function kept2d() {
+  const key = `metaform.fit2d.${S.project}.${S.base}`;
+  if (KEPT2D.key === key) return KEPT2D.kept;
+  let kept = null;
+  try { kept = JSON.parse(localStorage.getItem(key) || 'null'); } catch { /* storage can be blocked: none kept */ }
+  const valid = kept && typeof kept.chosen === 'object' && typeof kept.last === 'object';
+  return Object.assign(KEPT2D, {key, kept: valid ? kept : {chosen: {}, last: {}}}).kept;
+}
+const pane2d = () => $('.app')?.classList.contains('swapped') ? 'large' : 'small';
+const isWay2d = way => typeof way?.vertical === 'boolean';
+function keepWay2d(mark, way) {
+  const kept = kept2d();
+  delete kept.chosen[mark];  // the latest last, and the oldest let go
+  kept.chosen[mark] = way;
+  for (const old of Object.keys(kept.chosen).slice(0, -FIT2D.most)) delete kept.chosen[old];
+  kept.last[pane2d()] = way;
+  try { localStorage.setItem(KEPT2D.key, JSON.stringify(kept)); } catch { /* storage can be blocked; kept for now */ }
+}
+/* The page waits for an idle moment before each layout of a choice made while a map is shown, so the frames and the
+ * person's input go first; at most `wait` ms, so the choice still ends on a page that never idles. */
+const idle2d = () => new Promise(go => window.requestIdleCallback
+  ? requestIdleCallback(() => go(), {timeout: FIT2D.wait}) : setTimeout(go));
 /* The map's text laid out for the pane, `FIT2D`: the drawing, its way, and whether it was `hurried`, or null once a
  * later drawing has begun. Every map whose text differs, and every step of the pane, is chosen for afresh; only the
  * same text in the same step and direction gets the way chosen for it before, once every way was drawn for it. The
@@ -140,18 +166,25 @@ function fitHash2d(text) {  // the map's text in a few characters, to know a dra
  * again once shown, going on with the ways not yet drawn, so a slow machine reaches the same choice later. The
  * project's settings are waited for while the page reads them, so a map held to one direction is drawn that way from
  * the first, and a direction changed while the map is laid out lays it out again. It fails only when ELK lays out
- * none of the ways. */
+ * none of the ways.
+ * A map drawn where none is shown yet, as at load, is drawn once and shown, F4: in the way this browser kept for the
+ * same text, `kept2d`, which is the whole search's choice and so the last drawing; else in the way last chosen in this
+ * pane, or the likelier direction, and the search goes on once it is shown, `hurried`. While a map is shown each
+ * layout waits for an idle moment, `idle2d`. */
 export async function fitPick2d(body, shape, generation) {
   if (S.project && VIEW.read === S.project) await VIEW.reading;
   if (generation !== M.generation) return null;
   const area = area2d(), step = M.bucket = fitStep2d(area, M.bucket ?? null), pane = Math.exp(step * FIT2D.step);
-  const pin = fitPin2d(), text = fitHash2d(body), mark = `${pin} ${step} ${text}`, held = FIT2D.chosen.get(mark);
-  const ways = held ? [held] : waysFor(shape, pin, Number(pane.toPrecision(3)));
+  const pin = fitPin2d(), text = fitHash2d(body), mark = `${pin} ${step} ${text}`, aim = Number(pane.toPrecision(3));
+  const kept = kept2d().chosen[mark], held = FIT2D.chosen.get(mark) || (isWay2d(kept) ? kept : null);
+  const ways = held ? [held] : waysFor(shape, pin, aim), shown = Boolean(M.base);
+  const last = kept2d().last[pane2d()], first = !held && !shown && ways.length > 1;
+  if (first && isWay2d(last) && pin === 'auto') ways.unshift({...last, aim});  // drawn first, then the rest searched
   const since = FIT2D.since ??= performance.now(), tried = new Set();
   let best = null, hurried = false;
   for (let at = 0; at < ways.length; at++) {
     const now = performance.now();
-    if (best && now - since > FIT2D.budget) { hurried = true; break; }  // the ways left are drawn when it is shown
+    if (best && (first || now - since > FIT2D.budget)) { hurried = true; break; }  // the ways left come once shown
     if (ways[at].narrow === true) {  // its layers' bound once the likelier direction is drawn, `narrowFor`
       const narrow = best && narrowFor(shape, best, pane);
       if (!narrow) continue;
@@ -163,7 +196,7 @@ export async function fitPick2d(body, shape, generation) {
     let drawing = FIT2D.drawn.get(key);
     FIT2D.drawn.delete(key);
     if (!drawing) {
-      await new Promise(go => setTimeout(go));  // the page takes its input, as one layout by ELK holds it
+      await (shown ? idle2d() : new Promise(go => setTimeout(go)));  // the page takes its input, as one layout holds it
       if (generation !== M.generation) return null;
       drawing = await drawWay(way, body, `map2d${generation}n${at}`);
       if (!drawing) { if (generation !== M.generation) return null; continue; }  // the other ways may still be drawn
@@ -176,7 +209,7 @@ export async function fitPick2d(body, shape, generation) {
   }
   if (!best) { FIT2D.since = null; throw new Error('ELK laid out none of the ways.'); }
   if (fitPin2d() !== pin) return fitPick2d(body, shape, generation);  // its direction was changed meanwhile
-  if (!hurried) FIT2D.chosen.set(mark, best.way);
+  if (!hurried) { FIT2D.chosen.set(mark, best.way); keepWay2d(mark, best.way); }
   while (FIT2D.chosen.size > FIT2D.most) FIT2D.chosen.delete(FIT2D.chosen.keys().next().value);
   FIT2D.since = null;
   return {result: best.result, way: best.way, hurried};

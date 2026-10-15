@@ -42,6 +42,39 @@ def add_line(tx: Any, session_id: str, work_id: str, key: str | None, kind: str,
     return name, seq
 
 
+# A peer note's delivery to one receiver, `dispatch note`, in the order it only ever moves forward: queued in the
+# receiver's runner, delivered when the turn carrying it is sent, read when that turn ends, replied when the receiver
+# answers it. A note no runner took is failed, which only a queued state becomes.
+PEER_STATES = ('queued', 'delivered', 'read', 'replied')
+
+
+def mark_peer(tx: Any, session_id: str, note_id: str, work_id: str, state: str) -> bool:
+    """Set one receiver's delivery state on the copy of a peer note a thread keeps, `peer:<id>`, read and written in
+    the caller's transaction so a sender's copy that several receivers mark keeps every mark; a state never goes back.
+    False when that thread keeps no such note or the state is not newer."""
+    row = tx.get('lines', {'session_id': session_id, 'name': f'peer:{note_id}'})
+    if row is None:
+        return False
+    try:
+        found: Any = json.loads(str(row['text']))
+    except ValueError:
+        return False
+    if not isinstance(found, dict):
+        return False
+    value = cast(dict[str, Any], found)
+    states = cast(dict[str, str], value.setdefault('states', {}))
+    before = states.get(work_id)
+    rank = {name: place for place, name in enumerate(PEER_STATES)}
+    if state == 'failed' and before not in (None, 'queued'):
+        return False
+    if state != 'failed' and before in rank and rank.get(state, -1) <= rank[before]:
+        return False
+    states[work_id] = state
+    tx.update('lines', {'session_id': session_id, 'name': f'peer:{note_id}'},
+              {'text': json.dumps(value, ensure_ascii=False)})
+    return True
+
+
 def record(store: Store, signal: str, *, work_id: str = '', session_id: str = '', key: str = '',
            active: bool = True, **details: Any) -> dict[str, Any] | None:
     """Keep one signal per source/key; repeated evidence does not raise duplicate events."""
@@ -147,18 +180,36 @@ def rework_limit(payload: dict[str, Any], ctx: Context) -> None:
 
 
 def collect(payload: dict[str, Any], ctx: Context) -> None:
-    """Persist existing producers' raw events once; stored events already carry active state."""
+    """Persist existing producers' raw events once; stored events already carry active state. A producer that names
+    its signal's `key` keeps it as `signal_key`, so a reader can clear it, and clears it itself with `clear` true."""
     if 'active' in payload:
         return
+    named = str(payload.get('key') or '')
     details = {key: value for key, value in payload.items()
-               if key not in ('signal', 'module', 'project', 'work_id', 'session_id')}
-    key = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+               if key not in ('signal', 'module', 'project', 'work_id', 'session_id', 'key', 'clear')}
+    key = named or hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
     value = record(ctx.require_store(), payload['signal'], work_id=payload.get('work_id', ''),
                    session_id=payload.get('session_id') or f"producer:{payload.get('module', '')}",
-                   key=key, producer=payload.get('module'), **details)
+                   key=key, active=not (named and payload.get('clear')), producer=payload.get('module'),
+                   **({'signal_key': named} if named else {}), **details)
     if value is not None:
         ctx.publish('map.changed', {'project': value['project'], 'tables': 'dispatch',
                                    'dispatch_tables': ['dispatch.lines'], 'signal': value})
+
+
+# A feature the person set up is not working, raised by the module that serves it with what the person set up,
+# `set_up`, the feature in words, `feature`, how to look at it, `look`, and its findings, `report`: the person's system
+# agent takes it as a turn and brings it up with them, `Runner.troubles`. Any module may raise it.
+SETUP_NOT_WORKING = 'setup-not-working'
+
+
+def taken(store: Store, value: dict[str, Any]) -> bool:
+    """Clear a producer's keyed signal once a reader has taken it; False when another reader took it first."""
+    return record(store, str(value['signal']), work_id=str(value.get('work_id') or ''),
+                  session_id=str(value.get('session_id') or ''), key=str(value.get('signal_key') or ''),
+                  active=False, **{name: one for name, one in value.items()
+                                   if name not in ('signal', 'module', 'project', 'work_id', 'session_id', 'active',
+                                                   'at')}) is not None
 
 
 def clear_permissions(ctx: Context, session_id: str) -> None:

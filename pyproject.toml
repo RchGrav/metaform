@@ -15,7 +15,8 @@ metaform = "metaform.cli:main"
 
 [project.optional-dependencies]
 # The checkers and the browser driver are pinned, so CI is repeatable.
-dev = ["pytest>=8", "pytest-xdist>=3.8", "pyright==1.1.414", "ruff==0.16.9", "playwright==1.63.0"]
+dev = ["pytest>=8", "pytest-xdist>=3.8", "pytest-timeout==2.4.0", "pyright==1.1.414", "ruff==0.16.9",
+       "playwright==1.63.0"]
 # The voice module's local server engine, faster-whisper (CTranslate2), CPU int8 everywhere; voice-gpu adds NVIDIA's
 # cuBLAS and cuDNN wheels for CUDA on Linux and Windows. Optional: the page's in-browser engine needs neither.
 voice = ["faster-whisper>=1.2,<2"]
@@ -47,6 +48,10 @@ cache-keys = [{ file = "pyproject.toml" }, { file = "hatch_build.py" }, { file =
 [tool.pytest.ini_options]
 testpaths = ["tests", "src/metaform/modules"]
 addopts = "-n auto --dist loadgroup -m \"not browser\""  # every core, browser tests grouped, conftest.py; half an hour on one core
+# A hung test fails in five minutes with its stack, instead of holding the run to CI's job limit; the browser tests and
+# the few that install for real carry a longer limit of their own. pytest-timeout picks the method: a signal where
+# there is one, so the test's teardown still runs, and on Windows a thread that prints every thread's stack.
+timeout = 300
 markers = [
     "req(id): the spec requirement a test protects, QUAL-009 and E4",
     "kind(kind): fixture, simulation or real, QUAL-014",

@@ -21,11 +21,12 @@ from pathlib import Path
 from typing import Any, cast
 
 from . import __version__, archive, home, loader, settings
+from .data import Store, StoreError
 
 SEND_TO = 'Send this file to rchgrav on Discord.'
 LOG_LINES = 400  # the last lines kept of each log
 LOG_BYTES = 256 * 1024  # read from the end of a log, so a large one is never read whole
-RUNNER_LOGS = 10  # the newest dispatch runner logs kept
+RUNNER_LOGS = 10  # the newest dispatch runner logs of this home's agents kept
 ERRORS = 60  # the most recent errors kept in errors.txt
 MASK = '****'
 
@@ -44,6 +45,7 @@ SECRET_VALUES = (
     re.compile(r'\bAKIA[0-9A-Z]{16}\b'),  # AWS access keys
     re.compile(r'\bAIza[0-9A-Za-z_-]{30,}'),  # Google API keys
     re.compile(r'\beyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]{8,}'),  # JSON web tokens
+    re.compile(r'(?<=://)[^/\s:@]+:[^/\s@]+(?=@)'),  # a user and password in an address, https://user:pw@host
 )
 # A secret named beside its value: `token=...`, `"api_key": "..."`, `Authorization: Bearer ...`.
 NAMED_SECRET = re.compile(r'(?P<name>[\w.-]*(?:api[_-]?key|access[_-]?key|private[_-]?key|secret|token|passw|pwd|'
@@ -118,10 +120,26 @@ def _tail(path: Path) -> str:
     return '\n'.join(lines[-LOG_LINES:]) + '\n'
 
 
+def agent_work() -> set[str]:
+    """The work ids of every agent session this home's projects recorded, in any of their metaforms: the tickets and
+    intakes its dispatch runners worked."""
+    found: set[str] = set()
+    for project in home.projects():
+        for base in home.bases(project.project_id):
+            try:
+                with Store(project.project_id, base=base.id, module='dispatch').tables(write=False) as tx:
+                    found |= {str(row['work_id']) for row in tx.rows('sessions', limit=0).results}
+            except StoreError:  # dispatch is off there, or never ran
+                continue
+    return found
+
+
 def logs() -> dict[str, Path]:
     """The logs worth reading, by their name in the report: every log the home's run folder and its other folders
     keep, such as the web server's `run/web.log`, and the newest dispatch runner logs in the system's temporary
-    folder. The projects folder is a project's own and is left out."""
+    folder of this home's own agents. That folder is shared by every Metaform home on the machine, and a runner's
+    log is named for its work id alone, `metaform-dispatch-[<kind>-]<work id>.log`, so only the ids this home's
+    sessions recorded are taken. The projects folder is a project's own and is left out."""
     root = home.home()
     found: dict[str, Path] = {}
     if (root / 'run').is_dir():
@@ -132,10 +150,18 @@ def logs() -> dict[str, Path]:
                                                                                                     'projects')):
             for path in sorted(folder.glob('*.log')):
                 found['logs/' + path.relative_to(root).as_posix()] = path
-    runners = sorted(Path(tempfile.gettempdir()).glob('metaform-*.log'), key=_modified, reverse=True)
+    own = agent_work()
+    runners = sorted((path for path in Path(tempfile.gettempdir()).glob('metaform-dispatch-*.log')
+                      if _work_of(path) & own), key=_modified, reverse=True)
     for path in runners[:RUNNER_LOGS]:
         found[f'logs/dispatch/{path.name}'] = path
     return found
+
+
+def _work_of(path: Path) -> set[str]:
+    """The work ids a runner log's name can hold: all after `metaform-dispatch-`, or that without its kind."""
+    named = path.name[len('metaform-dispatch-'):-len('.log')]
+    return {named, named.split('-', 1)[-1]}
 
 
 def _modified(path: Path) -> float:

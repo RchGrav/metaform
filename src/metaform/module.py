@@ -163,6 +163,15 @@ class Verb:
     advances by itself: a host gives the model a task's result only once it ends, so a verb whose result the calling
     agent must act on, such as workflow's `assign`, declares neither. A cancel stops an `async` verb at its next
     `await`; a verb run in a thread cannot be stopped, so it finishes and its task completes with its result.
+
+    `needs_project` is true for a verb that acts on a project's map or records, the default. Over MCP such a verb is
+    listed only once the folder has a project, and it alone takes the per-call `project` argument; a verb that works
+    in a folder no project holds, such as reading a skill, declares it false and is listed from the start, MCP-003.
+    `reads_layers` marks a verb whose result follows the map's layers turned on, such as `map where`: over MCP only
+    such a verb takes the per-call `layers` argument, CLI-033. `listed`, given the folder, says whether the state lets
+    the verb act, such as a web GUI running for `web say`: over MCP the verb is listed only while it says so, and the
+    call that changes the state announces the list's change, MCP-004. It is read on every listing, so it reads only
+    what is at hand, a file or a row, and never the network; a call to a verb not listed still runs and says why.
     """
     name: str
     run: VerbFunction
@@ -181,6 +190,9 @@ class Verb:
     # waiting on the call; every other surface and client waits as for any verb, BASE-030. 'run': the task is the
     # workflow run the verb returns, which the server advances by itself.
     task: bool | Literal['run'] = False
+    needs_project: bool = True
+    reads_layers: bool = False
+    listed: Callable[[Path], bool] | None = None
 
     def __post_init__(self) -> None:
         if self.effect not in EFFECTS:
@@ -750,6 +762,20 @@ def serve_session() -> None:
     MCP server over stdio: what its calls tell the agent is told once, MCP-039. METAFORM_SESSION, when set, names it."""
     from . import shown
     shown.serving()
+
+
+def served_session(client: str | None = None) -> str | None:
+    """The agent session of a server a host started for one conversation, with its client, MCP-039; None in any other
+    process, such as an HTTP server that many clients reach."""
+    from . import shown
+    return shown.session(client) if shown.is_serving() else None
+
+
+def provisioning_notice() -> str | None:
+    """The first-run provisioning notice for the AI tool that started this process, while the home has not recorded
+    it, MCP-028; None under a recorded tool or none found."""
+    from . import harness
+    return harness.notice()
 
 
 def chassis_version() -> str:

@@ -1,8 +1,9 @@
 """A2A outbound, MCP-040 to MCP-043: an agent sends a peer the person names a message about an Address, and what the
 peer's task does comes back to that Address, over the official `a2a-sdk` client.
 
-- Peers are the person's, `mcp_a2a_peers`: each `<name>=<card URL> <token variable>`. The token is read from that
-  variable when a message is sent and never stored. A peer's Agent Card is read when it is first used and kept in
+- Peers are the person's, records in the home that `mcp a2a_peer_add` and `a2a_peer_remove` keep, a2a_peers.py: each
+  a name, a card URL and a token variable. The token is read from that variable when a message is sent and never
+  stored. A peer's Agent Card is read when it is first used and kept in
   the project, `a2a_peers`; it is read again when a call fails with a version or interface error, MCP-040.
 - `mcp a2a_send` sends one message with the Address as its `contextId`, the Address extension Metaform reads inbound,
   P005, and the sending agent instance under the same extension's metadata, `sender`, as the User-Agent says it too,
@@ -24,7 +25,6 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
-import re
 import time
 import uuid
 import zlib
@@ -59,18 +59,17 @@ from a2a.utils.errors import A2AError
 from google.protobuf.json_format import MessageToDict
 from starlette.applications import Starlette
 
-from metaform import events, home, prompt_files, settings
+from metaform import events, home, prompt_files
 from metaform.data import Node, Store, StoreError
 from metaform.module import Context, Stop, chassis_version, first_line, request_scope
 
 from . import a2a_records as records
 from .a2a import EXTENSION, SLOW, Changes
+from .a2a_peers import Peer, peer
 
 log = logging.getLogger(__name__)
 _T = TypeVar('_T')
 
-NAME = re.compile(r'^[a-z0-9][a-z0-9_-]*$')
-VARIABLE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 TIMEOUT = 30.0  # seconds a call to a peer may take; a stream is read without one
 BINDINGS = [TransportProtocol.JSONRPC.value, TransportProtocol.HTTP_JSON.value]
 # A2A's task states in the status vocabulary of work: a peer's interrupted states ask this side to act.
@@ -85,54 +84,7 @@ TRANSPORT: httpx.AsyncBaseTransport | None = None  # what the calls go through; 
 
 
 # ---------------------------------------------------------------------------------------------------- peers
-
-@dataclass(frozen=True)
-class Peer:
-    """A peer the person names: its short name, its Agent Card's URL and the variable that holds its token."""
-    name: str
-    url: str
-    token_env: str | None
-
-    @property
-    def token(self) -> str | None:
-        return os.environ.get(self.token_env) or None if self.token_env else None
-
-
-def parse_peer(entry: str) -> Peer:
-    """One entry of `mcp_a2a_peers`, `<name>=<card URL> <token variable>`; the variable may be left out for a peer
-    that takes no token."""
-    name, _, rest = entry.partition('=')
-    url, _, variable = rest.strip().partition(' ')
-    name, url, variable = name.strip(), url.strip(), variable.strip()
-    if not NAME.fullmatch(name) or not url.startswith(('http://', 'https://')) or ' ' in variable \
-            or (variable and not VARIABLE.fullmatch(variable)):
-        raise settings.SettingError(
-            f'--mcp-a2a-peers takes <name>=<card URL> <token variable>, such as '
-            f'"other=http://127.0.0.1:7440/.well-known/agent-card.json OTHER_A2A_TOKEN"; not {entry!r}.',
-            'metaform help --mcp-a2a-peers')
-    return Peer(name, url, variable or None)
-
-
-def check_peers(value: Any, folder: Path) -> list[str] | None:
-    """Refuse an entry that cannot be read, and say which token variables are not set where this runs, MCP-040."""
-    peers = [parse_peer(str(one)) for one in cast(list[Any], value or [])]
-    unset = [f'{one.name}: {one.token_env} is not set here' for one in peers if one.token_env and not one.token]
-    return [f'{"; ".join(unset)}.'] if unset else None
-
-
-def peers(folder: Path) -> dict[str, Peer]:
-    return {one.name: one for one in (parse_peer(str(entry)) for entry in
-                                      cast(list[Any], settings.value('mcp_a2a_peers', folder) or []))}
-
-
-def peer(folder: Path, name: str) -> Peer:
-    """A peer on the person's list, or a refusal that lists them: Metaform sends to no other, MCP-040."""
-    known = peers(folder)
-    if name not in known:
-        listed = ', '.join(sorted(known)) or 'none yet'
-        raise Stop(f'{name} is not one of the A2A peers the person names ({listed}).',
-                   'ask the person to add it: metaform set --mcp-a2a-peers "<name>=<card URL> <token variable>"')
-    return known[name]
+# The person's peers are records of the home, a2a_peers.py; each send looks its peer up there.
 
 
 def prompt(name: str, **fills: str) -> str:

@@ -1,10 +1,10 @@
 """The web GUI's workspace: the toolbar, the panes and the named workspaces, served to the page under /api/workspace.
 
 Modules declare toolbar items and panes in their `Module` and the chassis declares its own, `module.contributions`;
-this file lays the person's saved arrangement over those defaults, and saves it back through the settings path, as
-`metaform set` does, never to the settings table directly.
+this file lays the person's saved arrangement over those defaults, and saves it back to the person's view, view.py,
+checked against its shape. Settings cleanup 2026-10-15 moved them there from global settings.
 
-Three shapes, each kept as the JSON text of a global setting of the web module:
+Three shapes, each kept as JSON text in the person's view:
 
 - the toolbar, `web_toolbar`: `{"toolbar": [[id, ...], ...], "extra": [id, ...]}`, each inner list one slot whose
   first tool shows and whose others are behind it, and `extra` the tools behind the toolbar's last slot;
@@ -16,7 +16,7 @@ Three shapes, each kept as the JSON text of a global setting of the web module:
 
 An id is `<owner>.<id>`, the owner a module's id or `chassis`. The merge: what the saved arrangement names and is
 contributed now stays where the person put it; what it names and is not contributed now, a disabled module's, is left
-out of what the page reads but kept in the setting, so it comes back where it was; a contribution it does not name
+out of what the page reads but kept in the view, so it comes back where it was; a contribution it does not name
 lands in its declared place, beside its group wherever the person moved that group.
 """
 from __future__ import annotations
@@ -30,6 +30,8 @@ from typing import TYPE_CHECKING, Any, cast
 from metaform import events, home, settings
 from metaform import module as chassis
 from metaform.module import Pane, Stop, ToolbarItem
+
+from . import view as views
 
 if TYPE_CHECKING:
     from .server import Handler
@@ -140,39 +142,10 @@ def workspaces_shape(value: Any) -> dict[str, dict[str, Any]]:
 
 
 def _parsed(text: Any, shape: Any) -> Any:
-    """A setting's JSON text in its shape; empty text is the defaults, None."""
+    """Kept JSON text in its shape; empty text is the defaults, None. Raises ValueError for text that is not JSON."""
     if not isinstance(text, str) or not text.strip():
         return None
-    try:
-        found = json.loads(text)
-    except ValueError:
-        raise settings.SettingError('The value is not JSON.', 'metaform unset it to return to the defaults') \
-            from None
-    return shape(found)
-
-
-def check_toolbar(value: Any, folder: Path) -> list[str] | None:
-    _parsed(value, toolbar_shape)
-    return None
-
-
-def check_layout(value: Any, folder: Path) -> list[str] | None:
-    _parsed(value, layout_shape)
-    return None
-
-
-def check_workspaces(value: Any, folder: Path) -> list[str] | None:
-    _parsed(value, workspaces_shape)
-    return None
-
-
-def workspace_choices(ctx: Any = None) -> list[str]:
-    """Default first, then the person's own workspaces, for `web_workspace`."""
-    try:
-        saved: dict[str, Any] = _parsed(settings.value('web_workspaces', home.home()), workspaces_shape) or {}
-    except (settings.SettingError, KeyError):
-        saved = {}
-    return [DEFAULT, *sorted(saved)]
+    return shape(json.loads(text))
 
 
 # What is contributed, and the defaults -----------------------------------------------------------------------------
@@ -374,50 +347,50 @@ def _module(owner: str, folder: Path) -> chassis.Module:
     return found
 
 
-def _stored(key: str, shape: Any) -> Any:
-    """A setting's value in its shape; a value that no longer fits, stored by an older Metaform, reads as the
-    defaults rather than breaking the page."""
+def _stored(key: str, shape: Any, who: str) -> Any:
+    """A kept arrangement in its shape; one that no longer fits, kept by an older Metaform, reads as the defaults
+    rather than breaking the page."""
     try:
-        return _parsed(settings.value(key, home.home()), shape)
-    except settings.SettingError:
+        return _parsed(views.value(key, who), shape)
+    except (ValueError, Stop):
         return None
 
 
-def state(folder: Path) -> dict[str, Any]:
-    """Everything the page needs to draw and edit the workspace."""
+def state(folder: Path, who: str = views.OWNER) -> dict[str, Any]:
+    """Everything the page needs to draw and edit the workspace, as this account keeps it."""
     items, panes = contributed(folder)
-    saved: dict[str, Any] = _stored('web_workspaces', workspaces_shape) or {}
-    active = settings.value('web_workspace', home.home()) or DEFAULT
+    saved: dict[str, Any] = _stored('web_workspaces', workspaces_shape, who) or {}
+    active = views.value('web_workspace', who) or DEFAULT
     return {
         'items': [item_record(ident, owner, item, folder) for ident, (owner, item) in items.items()],
         'panes': [pane_record(ident, owner, pane) for ident, (owner, pane) in panes.items()],
         'icons': list(chassis.ICONS), 'areas': [*AREAS, 'float'],
-        'toolbar': merge_toolbar(_stored('web_toolbar', toolbar_shape), items),
-        'layout': merge_layout(_stored('web_layout', layout_shape), panes),
+        'toolbar': merge_toolbar(_stored('web_toolbar', toolbar_shape, who), items),
+        'layout': merge_layout(_stored('web_layout', layout_shape, who), panes),
         'defaults': {'toolbar': merge_toolbar(None, items), 'layout': merge_layout(None, panes)},
         'workspace': active if active == DEFAULT or active in saved else DEFAULT,
         'workspaces': [DEFAULT, *sorted(saved)],
-        'view': view(),
+        'view': view(who),
     }
 
 
-def view() -> dict[str, Any]:
+def view(who: str = views.OWNER) -> dict[str, Any]:
     """How the page draws, from the web module's global settings: node shapes, how long the 3D map's flow lasts once
     nothing moves, whether it keeps flowing slowly, whether agents' real activity is drawn in the flow, and the
-    developer level, off unless asked for."""
+    developer level, off unless asked for; and from the person's view, the flow's mode and the 2D map's direction."""
     from . import debug_level
     where = home.home()
     return {'panes': bool(settings.value('web_panes', where)), 'shapes': bool(settings.value('web_node_shapes', where)),
             'flow_seconds': int(settings.value('web_flow_seconds', where) or 0),
             'pulse_ms': int(settings.value('web_pulse_ms', where) or 1500),
-            'flow_mode': settings.value('web_flow_mode', where),
+            'flow_mode': views.value('web_flow_mode', who),
             'idle_flow': bool(settings.value('web_idle_flow', where)),
             'bubble_seconds': int(settings.value('web_bubble_seconds', where) or 5),
             'live_flow': bool(settings.value('web_live_flow', where)),
             'mascot': settings.value('web_mascot', where),
             'mascot_mischief': settings.value('web_mascot_mischief', where),
             'agent_glyphs': list(settings.value('web_agent_glyphs', where) or []),
-            'map_direction': str(settings.value('web_map_direction', where) or 'auto'), 'debug': debug_level()}
+            'map_direction': str(views.value('web_map_direction', who) or 'auto'), 'debug': debug_level()}
 
 
 # The endpoints --------------------------------------------------------------------------------------------------
@@ -428,7 +401,7 @@ def answer(handler: Handler, method: str, path: str, query: dict[str, list[str]]
     if method == 'POST':
         return write(handler, path)
     if path == PREFIX:
-        return _read(handler, given, lambda folder: handler.send(200, state(folder)))
+        return _read(handler, given, lambda folder: handler.send(200, state(folder, views.account(handler))))
     if path == f'{PREFIX}/pane':
         return _read(handler, given, lambda folder: pane_content(handler, folder, given))
     if path.startswith(f'{PREFIX}/file/'):
@@ -507,45 +480,41 @@ def write(handler: Handler, path: str) -> None:
     except ValueError:
         return handler.send(400, {'error': 'The body is not JSON.'})
     given = cast(dict[str, Any], body) if isinstance(body, dict) else {}
+    who = views.account(handler)
     try:
         folder = _folder(given)
         if path == f'{PREFIX}/run':
             return run(handler, folder, given)
-        writes[path](folder, given)
-    except settings.SettingError as error:
-        return handler.send(400, {'error': str(error), 'next': error.next_step})
+        writes[path](folder, given, who)
+    except (views.ViewError, ValueError) as error:
+        return handler.send(400, {'error': str(error)})
     except Stop as error:
         return handler.refuse(error, 400)
-    handler.gui.push({'topic': 'workspace', 'payload': {'workspace': settings.value('web_workspace', home.home())}})
-    handler.send(200, state(folder))
+    handler.gui.push({'topic': 'workspace', 'payload': {'workspace': views.value('web_workspace', who)}})
+    handler.send(200, state(folder, who))
 
 
-def _put(key: str, value: Any) -> None:
-    """Save one setting as `metaform set` saves it: checked, then stored for its scope; None returns it to its
-    default as `metaform unset` does."""
-    where = home.home()
-    if value is None:
-        settings.reset(key, where)
-        return
-    text = value if isinstance(value, str) else json.dumps(value, separators=(',', ':'))
-    settings.checked(key, text, where)
-    settings.assign(key, text, where)
+def _put(key: str, value: Any, who: str) -> None:
+    """Keep one part of the person's arrangement as JSON text; None returns it to its default."""
+    views.keep(who, key, None if value is None else
+               value if isinstance(value, str) else json.dumps(value, separators=(',', ':')))
 
 
-def arrange(folder: Path, given: dict[str, Any]) -> None:
+def arrange(folder: Path, given: dict[str, Any], who: str) -> None:
     """Save the page's toolbar, layout or both, as the person left them."""
     if 'toolbar' not in given and 'layout' not in given:
         raise Stop('An arrangement sends toolbar, layout or both.', 'send toolbar or layout')
     items, panes = contributed(folder)
     if 'toolbar' in given:
-        _put('web_toolbar', kept_toolbar(toolbar_shape(given['toolbar']), _stored('web_toolbar', toolbar_shape),
-                                         items))
+        _put('web_toolbar', kept_toolbar(toolbar_shape(given['toolbar']), _stored('web_toolbar', toolbar_shape, who),
+                                         items), who)
     if 'layout' in given:
-        _put('web_layout', kept_layout(layout_shape(given['layout']), _stored('web_layout', layout_shape), panes))
+        _put('web_layout', kept_layout(layout_shape(given['layout']), _stored('web_layout', layout_shape, who), panes),
+             who)
 
 
-def _saved() -> dict[str, dict[str, Any]]:
-    return _stored('web_workspaces', workspaces_shape) or {}
+def _saved(who: str) -> dict[str, dict[str, Any]]:
+    return _stored('web_workspaces', workspaces_shape, who) or {}
 
 
 def _name(given: dict[str, Any]) -> str:
@@ -555,58 +524,57 @@ def _name(given: dict[str, Any]) -> str:
     return name.strip()
 
 
-def reset(folder: Path, given: dict[str, Any]) -> None:
+def reset(folder: Path, given: dict[str, Any], who: str) -> None:
     """Return the toolbar, the layout or both to the active workspace as it was saved; for Default, to the defaults."""
     part = given.get('part')
     if part not in (None, 'toolbar', 'layout'):
         raise Stop('part is toolbar or layout, or left out for both.', 'send part')
-    active = settings.value('web_workspace', home.home()) or DEFAULT
-    snapshot = _saved().get(active)
+    active = views.value('web_workspace', who) or DEFAULT
+    snapshot = _saved(who).get(active)
     for which in ('toolbar', 'layout') if part is None else (part,):
-        _put(KEYS[which], None if snapshot is None else snapshot[which])
+        _put(KEYS[which], None if snapshot is None else snapshot[which], who)
 
 
-def save(folder: Path, given: dict[str, Any]) -> None:
+def save(folder: Path, given: dict[str, Any], who: str) -> None:
     """Save the current toolbar and layout as a workspace of the person's, replacing one of that name, and make it the
     active one. Default is the defaults and is never saved over."""
     name = _name(given)
     if name.casefold() == DEFAULT.casefold():
         raise Stop(f'{DEFAULT} is the defaults and cannot be saved over.', 'save under another name')
     items, panes = contributed(folder)
-    saved = _saved()
-    saved[name] = {'toolbar': kept_toolbar(merge_toolbar(_stored('web_toolbar', toolbar_shape), items),
-                                           _stored('web_toolbar', toolbar_shape), items),
-                   'layout': kept_layout(merge_layout(_stored('web_layout', layout_shape), panes),
-                                         _stored('web_layout', layout_shape), panes)}
-    _put('web_workspaces', saved)
-    _put('web_workspace', name)
+    saved = _saved(who)
+    toolbar, layout = _stored('web_toolbar', toolbar_shape, who), _stored('web_layout', layout_shape, who)
+    saved[name] = {'toolbar': kept_toolbar(merge_toolbar(toolbar, items), toolbar, items),
+                   'layout': kept_layout(merge_layout(layout, panes), layout, panes)}
+    _put('web_workspaces', saved, who)
+    _put('web_workspace', name, who)
 
 
-def select(folder: Path, given: dict[str, Any]) -> None:
+def select(folder: Path, given: dict[str, Any], who: str) -> None:
     """Make a workspace the active one, its toolbar and layout the current ones."""
     name = _name(given)
-    saved = _saved()
+    saved = _saved(who)
     if name != DEFAULT and name not in saved:
         raise Stop(f'No workspace {name}.', f'GET {PREFIX} lists them')
     snapshot = saved.get(name)
-    _put('web_toolbar', None if snapshot is None else snapshot['toolbar'])
-    _put('web_layout', None if snapshot is None else snapshot['layout'])
-    _put('web_workspace', None if name == DEFAULT else name)
+    _put('web_toolbar', None if snapshot is None else snapshot['toolbar'], who)
+    _put('web_layout', None if snapshot is None else snapshot['layout'], who)
+    _put('web_workspace', None if name == DEFAULT else name, who)
 
 
-def delete(folder: Path, given: dict[str, Any]) -> None:
+def delete(folder: Path, given: dict[str, Any], who: str) -> None:
     """Delete a workspace of the person's. Default cannot be deleted; deleting the active one leaves the current
     arrangement as it is, now under Default."""
     name = _name(given)
     if name.casefold() == DEFAULT.casefold():
         raise Stop(f'{DEFAULT} is the defaults and cannot be deleted.', 'reset it instead')
-    saved = _saved()
+    saved = _saved(who)
     if name not in saved:
         raise Stop(f'No workspace {name}.', f'GET {PREFIX} lists them')
     del saved[name]
-    _put('web_workspaces', saved or None)
-    if settings.value('web_workspace', home.home()) == name:
-        _put('web_workspace', None)
+    _put('web_workspaces', saved or None, who)
+    if views.value('web_workspace', who) == name:
+        _put('web_workspace', None, who)
 
 
 def run(handler: Handler, folder: Path, given: dict[str, Any]) -> None:

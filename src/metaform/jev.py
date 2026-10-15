@@ -31,7 +31,7 @@ caller, which keeps its own behaviour; no answer gates an agent's inference or h
 Jev's documented weak points shape the code, https://docs.typesafe.ai/model-jaggedness/jev-1.13.md: it leans toward the
 option that comes first (#choice-option-order), so a single choice is asked in both orders and is sure only when they
 agree; it does not count (#math-and-numbers), so counting stays in code; accuracy falls as unrelated state grows
-(#large-state-full-of-irrelevant-detail), so jev_max_context defaults well below the 32,000-token limit; and state is
+(#large-state-full-of-irrelevant-detail), so MAX_CONTEXT stays well below the 32,000-token limit; and state is
 data that can argue for its own answer (#adversarial-content), so no decision ever hides anything from the person;
 nor does it count reliably (#counting), so where a judgement is a share of many things, each thing is its own question
 and code adds up the answers.
@@ -89,7 +89,11 @@ ENDPOINTS = {
                            'typesafe/jev-1.13-20260917'),
     'typesafe': Endpoint('typesafe', 'https://api.typesafe.ai/v1/systemone', 'TYPESAFE_API_KEY', 'jev-1.13.0'),
 }
-REQUEST_TOKENS = 64_000  # a whole request, https://docs.typesafe.ai/models.md; the state's own limit is jev_max_context
+REQUEST_TOKENS = 64_000  # a whole request, https://docs.typesafe.ai/models.md; the state's own limit is MAX_CONTEXT
+# The tokens of state, plus its longest question, one request carries. Jev's accuracy falls as a state fills with detail
+# the question does not need, so this is well below its limit of 32,000; a larger pile is split across requests, and a
+# state that cannot fit is not sent. Settings cleanup 2026-10-15 made it fixed: a larger value only lowers accuracy.
+MAX_CONTEXT = 8000
 CHARS_PER_TOKEN = 3  # an estimate kept on the safe side of the usual four characters of English to a token
 INPUT_PRICE = 0.042 / 1_000_000  # US dollars per input token; output is free, https://docs.typesafe.ai/models.md
 TIMEOUT = 10.0  # seconds for each HTTP operation, the TypeSafe SDK's default
@@ -194,7 +198,6 @@ def config(folder: Path, decision: str | None = None) -> Config | None:
             return None
         endpoint = ENDPOINTS[str(settings.value('jev_endpoint', folder))]
         model = str(settings.value('jev_model', folder) or '').strip() or endpoint.model
-        max_context = int(settings.value('jev_max_context', folder))
         floor = int(settings.value('jev_confidence', folder)) / 100
     except Exception as error:  # noqa: BLE001  a setting that cannot be read leaves Jev off, never the caller broken
         log.warning('Jev is off: its settings could not be read: %s', error)
@@ -202,7 +205,7 @@ def config(folder: Path, decision: str | None = None) -> Config | None:
     key = os.environ.get(endpoint.key, '').strip()
     if not key or not _schema_checker():
         return None
-    return Config(endpoint, model, key, max_context, floor)
+    return Config(endpoint, model, key, MAX_CONTEXT, floor)
 
 
 # ------------------------------------------------------------------------------------------------ questions, answers
@@ -316,7 +319,7 @@ def asked(cfg: Config, state: Any, questions: Mapping[str, Question], *,
         return None
     held = tokens(state)
     if held + max(tokens(question.payload()) for question in pending.values()) > cfg.max_context:
-        log.info('Jev was not asked: the state takes about %s tokens, past jev_max_context %s.', held, cfg.max_context)
+        log.info('Jev was not asked: the state takes about %s tokens, past MAX_CONTEXT %s.', held, cfg.max_context)
         return None
     for group in _groups(pending, REQUEST_TOKENS - held):
         got = _request(cfg, state, group)
@@ -624,7 +627,7 @@ def _per_item(cfg: Config, state: Mapping[str, Any], place: str, items: Mapping[
               question: Callable[[str], str], true: str, false: str,
               cached_only: bool = False) -> tuple[dict[str, Answer], str] | None:
     """One noul per item, every item in the state under its own name at `state[place]`, as many items to a request as
-    fit jev_max_context; the answers by the caller's keys and the identity of the whole decision."""
+    fit MAX_CONTEXT; the answers by the caller's keys and the identity of the whole decision."""
     safe = _safe_keys(list(items))
     criteria = {'true': true, 'false': false}
     asking = {key: Question('noul', question(f'{place}.{safe[key]}'), criteria) for key in items}
@@ -864,7 +867,7 @@ def choose_agents(folder: Path, tickets: Mapping[str, Mapping[str, Any]], agents
     Every ticket goes under its own name in `tickets` beside the agents and their options, and every question rides
     on that one state: per ticket, the agent in both orders, and each agent's model and thinking level in both orders,
     so the one asked after the agent needs no second request; with the decision point `start_order` on, a noul per
-    unplaced ticket. A pile past jev_max_context is split into as few requests as fit. Each choice is sure only when
+    unplaced ticket. A pile past MAX_CONTEXT is split into as few requests as fit. Each choice is sure only when
     both orders agree and both are confident enough; a model or level that is not sure is None.
 
     Each ticket's Decision answers {'agent', 'model', 'thought_level'} and is kept at its Address, where the person

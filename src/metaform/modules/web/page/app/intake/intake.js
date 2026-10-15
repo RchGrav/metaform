@@ -5,6 +5,7 @@ import {$, h, fill} from '/page/app/core/dom.js';
 import {overlay} from '/page/app/core/overlays.js';
 import {toast, confirmAct} from '/page/app/core/controls.js';
 import {S, MEM, reach, read} from '/page/app/core/reads.js';
+import {mapUnread} from '/page/app/core/errors.js';
 import {showAdmin, noMetaform, emptyActs} from '/page/app/header/admin.js';
 import {plural} from '/page/app/memory/manage.js';
 import {DOCK, STANDBY, dockState} from '/page/app/dock/embody.js';
@@ -15,14 +16,15 @@ import {D, WAITS_ON_PERSON, renderAgents} from '/page/app/agents/dispatch.js';
 import {HARNESS, readHarnesses, agentName, summonAgent, summonPicker} from '/page/app/agents/pickers.js';
 import {isIntake} from '/page/app/session/tools.js';
 import {drawIntakeSettings} from '/page/app/session/settings.js';
-import {LIVE} from '/page/app/live/stream.js';
+import {LIVE, recordingNow} from '/page/app/live/stream.js';
 
 /* ---------- the intake, started from the page, VIEW-045 and BASE-039 ----------
  * An agent the person chooses runs the project's intake and records the map as it goes; the page follows the intake
  * being recorded, so the map grows here. A project with no map offers it first; Administration offers it again, to map
  * the project anew or to check the map against it. While it runs, a bar over the map says so, with its chat and Stop.
  * Its work id, `intake-…`, is never a ticket. */
-export const INTAKE = {work: null, session: null, agent: null, waiting: 0, reading: false, started: null};
+export const INTAKE = {work: null, session: null, agent: null, waiting: 0, reading: false, started: null,
+  closed: new Set()};  // closed: the runs whose bar the person closed with its ×
 const STARTING = 180000;  // how long an intake's launch may take before its session is made, dispatch's STALE_START
 const INTAKE_KEY = project => `metaform.intake.${project}`;
 function keptIntake(project = S.project) {
@@ -44,15 +46,18 @@ export async function readIntake(signals = []) {
   const kept = keptIntake(project);
   // launched by this page and not yet made: its runner is starting, so it is shown as starting until its session is
   // made or its launch would have been given up
-  const launching = INTAKE.started && INTAKE.started.project === project && Date.now() - INTAKE.started.at < STARTING
+  let launching = INTAKE.started && INTAKE.started.project === project && Date.now() - INTAKE.started.at < STARTING
     ? INTAKE.started : null;
   if (!session && kept && !INTAKE.reading) {
     const found = await keptSession(kept, project, launching);
     if (!found) return;
     session = found.session;
     signals = [...signals, ...found.signals];
+    // its launch made a session that has ended, stopped or failed: it is starting no longer
+    if (found.ended && launching?.work === kept) launching = INTAKE.started = null;
   }
   if (S.project !== project) return;
+  const was = intakeRunning();
   if (session) INTAKE.started = null;
   else if (launching) {
     session = {work_id: launching.work, agent: launching.agent, state: 'running', session_id: null, activity: null};
@@ -66,21 +71,25 @@ export async function readIntake(signals = []) {
   INTAKE.signals = session ? signals.filter(one => one.active !== false && one.work_id === session.work_id
     && !WAITS_ON_PERSON.includes(one.signal)) : [];
   drawIntake();
+  // its agent stopped: what is building is read again, so the bar closes, or the intake shows as left unfinished
+  if (was && !intakeRunning()) recordingNow().catch(error => toast(error.message));
 }
 /* The intake session this page kept the id of, read wherever it is kept; none once it no longer runs, and then its id
- * is forgotten unless its launch is still under way. Nothing when the page has left the project meanwhile. */
+ * is forgotten unless its launch is still under way and has made no session yet; `ended` when it made one that has
+ * ended. Nothing when the page has left the project meanwhile. */
 async function keptSession(kept, project, launching) {
   INTAKE.reading = true;
-  let session = null, signals = [];
+  let session = null, signals = [], ended = false;
   try {
     const found = await read('dispatch-sessions', {id: kept, thread: 'false'});
     if (S.project !== project) return null;
     session = (found.sessions || []).at(-1) || null;
     signals = found.signals || [];
-    if (session && session.state !== 'running') session = null;
-    if (!session && !(launching && launching.work === kept)) keepIntake(null, project);
+    ended = Boolean(session) && session.state !== 'running';
+    if (ended) session = null;
+    if (!session && (ended || !(launching && launching.work === kept))) keepIntake(null, project);
   } catch { session = null; } finally { INTAKE.reading = false; }
-  return {session, signals};
+  return {session, signals, ended};
 }
 /* The signals an intake's session raises, said in words on its bar: [words, status class, why]. A signal not named here
  * is said by its own name. */
@@ -101,12 +110,17 @@ const INTAKE_SIGNALS = {
   'login-needed': ['Needs a login', 'login', 'Its agent needs a login, which only you can give.'],
   budget: ['Budget reached', 'failed', 'It reached a spend budget.'],
 };
-/* The bar over the map while an intake runs or is being recorded: what is happening, its agent, and its acts. */
+/* The run the bar is for: the intake agent's work, or the layer an agent outside the page records. */
+const runKey = () => intakeRunning() ? `work:${INTAKE.work}` : `layer:${S.project}/${LIVE.base}/${LIVE.layer}`;
+/* The bar over the map while an intake agent runs or one records the intake now, BASE-039: what is happening, its
+ * agent, its acts and its ×. It goes the moment its agent stops; closed with its ×, it stays closed for that run, unless
+ * the agent waits on the person. */
 export function drawIntake() {
   const bar = $('#intakeBar');
   const running = intakeRunning(), recording = LIVE.layer !== null;
-  bar.hidden = !(running || recording);
+  bar.hidden = !(running || recording) || INTAKE.closed.has(runKey()) && !INTAKE.waiting;
   drawEmpty();
+  drawLeft();
   if (bar.hidden) return;
   const parts = S.elements.size;
   // the intake guard's page side: no record yet is said with how long the agent has been at it, from its session's
@@ -133,20 +147,19 @@ export function drawIntake() {
     h('span', {class: 'what'}, h('b', {}, running ? `Intake · ${agentName(INTAKE.agent)}` : 'Intake'),
       h('span', {class: 'doing'}, running ? doing : outside),
       said.length ? h('span', {class: 'signals'}, said) : null),
-    ...intakeActs(running));
+    ...intakeActs(running),
+    h('button', {class: 'x', type: 'button', title: 'Close', 'aria-label': 'Close',
+      onclick: () => { INTAKE.closed.add(runKey()); drawIntake(); }}, '×'));
 }
 const intakeSignal = signal => Object.hasOwn(INTAKE_SIGNALS, signal) ? INTAKE_SIGNALS[signal] : undefined;
 /* A signal on the intake's bar: its words, its status, and why, as the signal itself says it or else as named here. */
 const signalChip = one => h('span', {class: `statechip ${intakeSignal(one.signal)?.[1] || 'waiting'}`,
   title: one.detail || one.message || one.reason || intakeSignal(one.signal)?.[2] || ''},
 intakeSignal(one.signal)?.[0] || String(one.signal || '').replace(/-/g, ' '));
-/* While it runs: its chat, or Answer while it waits on the person, and Stop; recorded from outside: Take over. */
+/* While it runs: its chat, or Answer while it waits on the person, and Stop. An agent outside the page that records it
+ * is the person's own, stopped where it runs. */
 function intakeActs(running) {
-  if (!running) {
-    return [null, h('button', {class: 'btn sm', type: 'button',
-      title: 'Start an agent that goes on with this intake, once no agent is still recording it',
-      onclick: () => openIntake({resume: true})}, 'Take over…')];
-  }
+  if (!running) return [];
   return [h('button', {class: `btn sm ${INTAKE.waiting ? 'primary' : ''}`, type: 'button',
     onclick: () => openIntakeChat()}, INTAKE.waiting ? 'Answer' : 'Chat'),
   h('button', {class: 'btn sm danger', type: 'button', onclick: stopIntake}, 'Stop')];
@@ -270,23 +283,81 @@ for (const button of document.querySelectorAll('#intake .suggest button')) butto
 overlay($('#intake'), {kind: 'dialog', close: () => { $('#intake').hidden = true; },
   focus: () => $('#intake textarea.note')});
 $('#intakeBtn').onclick = () => openIntake();
-/* The first screen, onboard/welcome.js, set by that later part: given whether the project has no map and whether the
- * page has finished reading it, it shows the welcome in place of the card below, or a map's first hints, and says
- * whether the welcome shows. */
+/* A first-time person's welcome, onboard/hints.js, set by that later part: told each time the page settles on a project
+ * or leaves one, so the welcome shows once it is theirs. It never changes what is shown here. */
 export const FIRST = {drawn: null};
-/* A project with no map yet says so over the map, with the intake as the one thing to do; the welcome takes its place
- * while the person has not chosen the workbench. */
+/* A project with no map yet says so over the map, with the intake as the one thing to do. */
 export function drawEmpty() {
   const panel = $('#p-object > .emptypanel');
   if (panel) emptyActs(panel);
   const settled = !S.loading && !S.opening;
-  const empty = settled && S.project && !S.elements.size && LIVE.layer === null && !intakeRunning() && !MEM.key;
-  const welcomed = Boolean(FIRST.drawn?.(Boolean(empty), settled));
-  $('#emptyStage').hidden = !empty || welcomed;
-  if (!empty || welcomed) return;
+  // a map that could not be read is not an empty one: the error surface says why it is not drawn
+  const empty = settled && S.project && !S.elements.size && LIVE.layer === null && !intakeRunning() && !MEM.key
+    && !mapUnread();
+  FIRST.drawn?.(Boolean(empty), settled);
+  $('#emptyStage').hidden = !empty;
+  if (!empty) return;
   fill($('#emptyStage .what'), noMetaform() ? `${S.project} has no map yet.` : `${S.project}'s map is empty.`);
 }
 $('#emptyStage .start').onclick = () => openIntake();
+/* An intake left unfinished, BASE-039: no agent records it, so it is never shown as being recorded nor followed. One
+ * notice in its own project says what it is and offers Resume, an agent that goes on with it, Finish, with what it
+ * recorded, and Discard, after one confirmation; its × puts it away for good in this browser. */
+const LEFT_KEY = left => `metaform.intake-left.${left.project}/${left.base_id}/${left.layer.id}`;
+function leftClosed(left) {
+  try { return localStorage.getItem(LEFT_KEY(left)) === 'closed'; } catch { return false; }
+}
+function closeLeft(left) {
+  try { localStorage.setItem(LEFT_KEY(left), 'closed'); } catch { /* storage can be blocked; closed for now */ }
+  LIVE.left = null;
+  drawLeft();
+}
+export function drawLeft() {
+  const left = LIVE.left, shown = $('#intakeLeft');
+  const show = left && left.project === S.project && !intakeRunning() && LIVE.layer === null && !leftClosed(left);
+  const said = show ? `An intake of ${S.project} was left unfinished: base ${left.base}, layer ${left.layer.name}, `
+    + `${plural(left.parts, 'part')}${left.last ? `, last recorded ${ago(left.last) === 'now' ? 'just now'
+      : `${ago(left.last)} ago`}` : ''}. No agent is recording it.` : '';
+  if (shown && shown.dataset.said === said) return;  // drawn already: left as it is, keeping the focus in it
+  shown?.remove();
+  if (!show) return;
+  const card = h('div', {id: 'intakeLeft', class: 'nextcard', role: 'status', 'data-said': said},
+    h('p', {class: 'text'}, said),
+    h('div', {class: 'acts'},
+      h('button', {class: 'btn primary', type: 'button', title: 'Start an agent that goes on with this intake',
+        onclick: () => openIntake({resume: true})}, 'Resume…'),
+      h('button', {class: 'btn', type: 'button', title: `Finish it with the ${plural(left.parts, 'part')} recorded`,
+        onclick: () => finishLeft(left)}, 'Finish'),
+      h('button', {class: 'btn danger', type: 'button', title: 'Drop it and the parts it recorded',
+        onclick: () => discardLeft(left)}, 'Discard…'),
+      h('button', {class: 'x', type: 'button', title: 'Dismiss', 'aria-label': 'Dismiss',
+        onclick: () => closeLeft(left)}, '×')));
+  document.body.append(card);
+}
+/* The intake left unfinished, finished with what it recorded, as `metaform intake finish` does. */
+async function finishLeft(left) {
+  const sent = await posted('/api/intake-finish', {});
+  if (!sent.ok) return toast(`${sent.body?.error || 'The intake was not finished.'}`
+    + (sent.body?.next ? ` Next: ${sent.body.next}` : ''));
+  toast(`The intake of ${left.project} was finished with ${plural(sent.body.elements ?? left.parts, 'part')}.`);
+  LIVE.left = null;
+  drawLeft();
+}
+/* The intake left unfinished, dropped after the person confirms, as `metaform intake discard --confirm` does. */
+async function discardLeft(left) {
+  if (!await confirmAct({title: 'Discard the unfinished intake?',
+    text: `The intake in layer ${left.layer.name} of base ${left.base} is removed.`,
+    lost: [`The ${plural(left.parts, 'part')} it recorded`,
+      ...(left.active ? [] : [`The base ${left.base}, opened for this intake alone; a copy is kept`])],
+    kept: ['Every other base and its map', 'The project, its settings and its tickets'],
+    verb: 'Discard it', cancel: 'Keep it'})) return;
+  const sent = await posted('/api/intake-discard', {confirm: true});
+  if (!sent.ok) return toast(`${sent.body?.error || 'The intake was not discarded.'}`
+    + (sent.body?.next ? ` Next: ${sent.body.next}` : ''));
+  toast(`The unfinished intake of ${left.project} was discarded.`);
+  LIVE.left = null;
+  drawLeft();
+}
 /* When an intake the page followed finishes, one card over the map offers the next step, CLI-041: an agent on a
  * ticket, from the board, or a chat with the system agent. Either choice, or its ×, puts it away. */
 export function offerNext() {

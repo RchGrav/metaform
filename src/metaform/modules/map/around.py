@@ -18,6 +18,7 @@ from metaform import prompt_files
 from metaform.data import Where, shown_number
 from metaform.module import Context, latest_item, node_counts
 
+from .code import CODE_LAYER
 from .glossary import at_node
 
 SIDE = 8  # the neighbours drawn on each side before the rest are counted, so a busy node stays a few lines
@@ -71,7 +72,7 @@ class Around:
         everyone = (self.address, *self.above, *self.below)
         self.counts = node_counts(ctx.folder, everyone, project=ctx.project, session=ctx.session,
                                   layers=cast(list[str] | None, ctx.switches.get('layers')))
-        self.own = _own(found, str(ctx.setting('code_layer') or 'code'))
+        self.own = _own(found, CODE_LAYER)
         self.latest = self._latest()
         named = at_node(ctx.store, self.address) if ctx.store is not None else []
         self.terms = ctx.calls(_prompt('around_terms', terms=', '.join(named),

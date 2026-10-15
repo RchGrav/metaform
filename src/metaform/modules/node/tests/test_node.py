@@ -292,8 +292,6 @@ def test_a_second_non_owner_account_is_refused_every_owner_route(tmp_path, home)
     import http.client
     import threading
 
-    from metaform import home as homes
-    from metaform import settings
     from metaform.modules.node.config import page_classes
     from metaform.modules.web import server as page_server
     assert page_classes('read', 'member') == ('read',)
@@ -324,9 +322,7 @@ def test_a_second_non_owner_account_is_refused_every_owner_route(tmp_path, home)
             connection.close()
     try:
         owner_routes = [('POST', path) for path in sorted(page_server.ADMIN_ROUTES)]
-        owner_routes += [('GET', '/api/build/options'), ('GET', '/api/debug/prompts'), ('POST', '/api/not-classed'),
-                         ('GET', '/api/first-run/folders'), ('POST', '/api/first-run/map'),
-                         ('POST', '/api/first-run/demo')]  # this machine's folders and processes: the owner's
+        owner_routes += [('GET', '/api/build/options'), ('GET', '/api/debug/prompts'), ('POST', '/api/not-classed')]
         for method, path in owner_routes:
             assert page_server.route_class(method, path) == 'admin', path
             status, body = call(path, 'bob', method)
@@ -334,14 +330,16 @@ def test_a_second_non_owner_account_is_refused_every_owner_route(tmp_path, home)
         assert 'may not use' not in call('/api/settings', 'rich')[1]  # the owner passes; the body is then judged
         assert 'may not use' not in call('/api/note', 'bob')[1]  # a write is a member's too
         assert 'may not use' not in call('/api/settings', 'bob', 'GET')[1]  # reading the settings is a read
-        assert 'may not use' not in call('/api/hints', 'bob')[1]  # each person dismisses their own hints
+        assert 'may not use' not in call('/api/hints', 'bob')[1]  # each person keeps the tips they have seen
+        assert 'may not use' not in call('/api/view', 'bob')[1]  # and the page's view, view.py
         for account in ('rich', 'bob'):  # dispatch is not this Node's at write, for anyone
             assert f'needs dispatch, which {account} may not use' in call('/api/dispatch-start', account)[1]
-        before = settings.value('web_workspaces', homes.home())
-        for path in ('arrangement', 'reset', 'save', 'select', 'delete'):  # the page's home-global settings
+        from metaform.modules.web import view
+        before = view.values('bob')
+        for path in ('arrangement', 'reset', 'save', 'select', 'delete'):  # the owner's: the workspace routes
             status, body = call(f'/api/workspace/{path}', 'bob', body=json.dumps({'name': 'bob-was-here'}).encode())
             assert status == 403 and 'needs admin, which bob may not use' in body, (path, status, body)
-        assert settings.value('web_workspaces', homes.home()) == before
+        assert view.values('bob') == before
         heard['reader'] = {'x-metaform-account': 'bob', 'x-metaform-classes': ' '.join(page_classes('read', 'member'))}
         for path in ('/api/note', '/api/ignore'):  # at read capability a member only reads
             status, body = call(path, 'reader')

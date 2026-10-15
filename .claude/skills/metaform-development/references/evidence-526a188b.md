@@ -1,0 +1,1 @@
+Recorded: code.manager.configuration#19 ... In mcp/__init__.py the verb wrappers are named list_peers/add_peer/remove_peer, because a function named a2a_peers shadowed the a2a_peers submodule on the package.

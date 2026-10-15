@@ -84,6 +84,7 @@ from metaform.module import WITHHELD, Context, Stop, child_environment, context,
 
 from . import (
     PERSON_ENDS,
+    PROMPTS,
     READS,
     REPLY_LIMIT,
     agent_label,
@@ -125,7 +126,7 @@ from . import (
     workflow_skill,
 )
 from .merge import checkpoint
-from .signals import add_line
+from .signals import add_line, mark_peer
 
 START_LIMIT = 300.0  # the one wait for the agent to start and make its session; npx may download it first
 END_LIMIT = 10.0  # the one wait for a cancelled turn to end, and for the agent to end once its input is closed
@@ -143,6 +144,7 @@ STATE_UPDATES = ('available_commands_update', 'current_mode_update', 'config_opt
 SOURCES = 'sources'  # the layer the intake keeps each part's refs in, MAP-021: where on the map a file is
 PATCH_LIMIT = 200_000  # the most characters of a file's two texts a diff is worked out from; past it, its size only
 PATCH_KEPT = 60_000  # the most characters of one diff kept in the thread; the rest is in the file itself
+AWAIT_SPARE = 10  # seconds past a question's wait its runner still holds replies for the call that waits
 TOUCHED_KEPT = 40  # the parts of the map a session's state lists as touched, the latest first
 # What a session reported of itself that a resume carries over until the agent reports it again, so the page is not
 # left blank after a resume; each is named in `before_resume` while it still holds what was known before the resume.
@@ -158,6 +160,12 @@ RUN = secrets.token_hex(8)
 INCOMING: contextvars.ContextVar[Any] = contextvars.ContextVar('incoming', default=None)
 STDERR_EVERY = 1.0  # seconds the agent's stderr lines are gathered before they are written as one line of the thread
 STDERR_TAIL = 12  # the last lines of the agent's stderr a failure note carries
+# Kilobytes of the agent's stderr one session's thread keeps, redacted; past it one line counts the rest, which the
+# runner's log keeps. Settings cleanup 2026-10-15 made it fixed (dispatch_stderr_kb): a buffer size has one right answer.
+STDERR_KB = 64
+# Kilobytes of one terminal's output kept when the agent names no outputByteLimit; the oldest is dropped first, as ACP
+# says. Fixed in the same cleanup (dispatch_terminal_kb).
+TERMINAL_KB = 1024
 LOGIN_LIMIT = 600.0  # the one wait for an agent's own login, which may wait on the person in a browser
 RETRY_WAIT_LIMIT = 3600.0  # the longest a runner whose session stopped waits to come back for a due retry
 AUTH_REQUIRED = -32000  # ACP's auth_required error: the agent needs a login before it makes a session
@@ -783,6 +791,15 @@ def choose(options: list[PermissionOption], answer: str | None) -> str | None:
     return None
 
 
+def allowed(options: list[PermissionOption], how: str, kind: Any) -> PermissionOption | None:
+    """The agent's allow-once option when the prompts choice `how` approves a request of this tool kind without asking
+    the person: approve-all approves any, approve-reads only reads and searches; None when it is asked."""
+    allow = next((option for option in options if str(option.kind) == 'allow_once'), None)
+    if allow is not None and (how == 'approve-all' or (how == 'approve-reads' and str(kind) in READS)):
+        return allow
+    return None
+
+
 def chunk_text(content: Any) -> str:
     if not isinstance(content, dict):
         return ''
@@ -1012,6 +1029,9 @@ class Session:
                                     # the files it read and wrote through the runner, P019, the latest first, and an
                                     # intake agent's first call and record, M04
                                     'files': [], 'intake': None,
+                                    # how the person chose this session's permission requests are answered, one of
+                                    # dispatch_prompts' choices over the launch's and the project's, `answering`
+                                    'prompts': None,
                                     # what a conversation is about, so the person's next Call or Chat on it resumes it
                                     'about': str(ctx.nouns.get('talk') or 'system') if system else None}
         self.modes: dict[str, Any] | None = None  # the agent's session modes: current and available
@@ -1045,6 +1065,8 @@ class Session:
         self.pending: deque[str] = deque()  # prompts wait in arrival order while one turn is in flight
         # beside each, the ACP blocks of the person's recording and the frame they sent, the ones its agent takes
         self.voiced: deque[list[Any]] = deque()
+        self.peered: deque[list[tuple[str, str]]] = deque()  # each waiting prompt's peer notes, beside `pending`
+        self.awaiting: dict[str, dict[str, Any]] = {}  # this session's questions waiting for replies, by note id
         self.timers: dict[str, dict[str, Any]] = {}  # the agent's own timers, `dispatch timer`, by id
         self.idle = asyncio.Event()
         self.idle.set()
@@ -1070,7 +1092,7 @@ class Session:
         self.stderr_lines: list[str] = []  # the agent's stderr not yet written to the thread, P014
         self.stderr_due: asyncio.TimerHandle | None = None
         self.stderr_kept = 0  # bytes of stderr written to the thread
-        self.stderr_dropped = 0  # bytes past dispatch_stderr_kb, said in one line at the end
+        self.stderr_dropped = 0  # bytes past STDERR_KB, said in one line at the end
         self.stderr_tail: deque[str] = deque(maxlen=STDERR_TAIL)
         self.echo = True  # the agent's stderr goes to this process's own, the runner's log; not for a verb's agent
         self.raw_init: dict[str, Any] = {}  # the agent's initialize answer as sent, its `_meta` extensions with it
@@ -1273,6 +1295,20 @@ class Session:
         if written is not None:
             self.named.add(written[0])
             self.lines = max(self.lines, written[1])
+
+    async def unstarted(self, text: str) -> None:
+        """An agent that never made its session still leaves its ticket a session row, ended with why, and the failure
+        as that row's one line, since a thread needs a session: the ticket, the page and whoever started it then read
+        that it did not start and why, and its launch gives back its slot at once."""
+        row = {key: value for key, value in self.extra('ended').items() if key != 'dispatch'}
+        row.update(session_id=f'start-{self.runner}', pid=None, port=None, token=None,
+                   started=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), seq=time.time_ns() // 1_000_000,
+                   origin=origin())
+
+        def write(tx: Any) -> None:
+            tx.insert('sessions', row)
+            add_line(tx, row['session_id'], self.work_id, None, 'failed', text)
+        await self.table(write, name='sessions', fatal=False)
 
     async def checked(self, text: str) -> str:
         """A prompt this module sends, checked before it is sent, BASE-057: a flagged one is still sent, with a notice
@@ -1672,13 +1708,11 @@ class Session:
 
     async def steer(self, text: str) -> bool | None:
         """Deliver a message into the turn in flight with the agent's `_session/steering` request, when it advertises
-        it and dispatch_steering is on: True when the agent took it into the turn, False when it is to go as the next
+        it: True when the agent took it into the turn, False when it is to go as the next
         prompt, the agent having answered promptRequired, refused it or offering no steering. None when the agent did
         not answer within SETTING_LIMIT: the request is withdrawn with ACP's `$/cancel_request`, and since the agent
         may have taken it already, it is not sent again; the thread says so."""
         if not (self.acp['capabilities'].get('steering') and self.session_id and self.conn is not None):
-            return False
-        if not await asyncio.to_thread(self.ctx.setting, 'dispatch_steering'):
             return False
         sent = len(self.steering)
         try:
@@ -1723,7 +1757,7 @@ class Session:
         await self.stderr_flush()
 
     async def stderr_flush(self) -> None:
-        """The stderr gathered so far, as one line of the thread, within dispatch_stderr_kb for the session; what is
+        """The stderr gathered so far, as one line of the thread, within STDERR_KB for the session; what is
         past it is counted and said in one line. Kept until the session exists, which is when its thread does."""
         if self.stderr_due is not None:
             self.stderr_due.cancel()
@@ -1731,7 +1765,7 @@ class Session:
         if self.session_id is None or self.probe or not self.stderr_lines:
             return
         text, self.stderr_lines = '\n'.join(self.stderr_lines), []
-        room = int(await asyncio.to_thread(self.ctx.setting, 'dispatch_stderr_kb')) * 1024 - self.stderr_kept
+        room = STDERR_KB * 1024 - self.stderr_kept
         size = len(text.encode('utf-8'))
         kept = text if size <= room else text.encode('utf-8')[:max(room, 0)].decode('utf-8', 'ignore')
         self.stderr_kept += len(kept.encode('utf-8'))
@@ -1740,7 +1774,7 @@ class Session:
             await self.note(None, 'stderr', kept)
         if self.stderr_dropped:
             await self.note('stderr:dropped', 'stderr', f'{self.stderr_dropped} more bytes of stderr were left out, '
-                                                        'past dispatch_stderr_kb; the runner\'s log has them.')
+                                                        f'past {STDERR_KB} KB; the runner\'s log has them.')
 
     def tail(self) -> str:
         """The last lines the agent wrote to stderr, for a failure note."""
@@ -2064,7 +2098,7 @@ class Session:
                               output_byte_limit: int | None = None, **kwargs: Any) -> CreateTerminalResponse:
         """ACP's terminal/create: the command started at once in a process group of its own, in the session's folder
         or a folder inside it, with the agent's environment and the variables it names; its output, stdout and stderr
-        together, kept up to its limit, or dispatch_terminal_kb when it names none."""
+        together, kept up to its limit, or TERMINAL_KB when it names none."""
         folder = await self.confined('run a terminal in', cwd) if cwd else Path(self.folder)
         given = windowless({**child_environment(), **{one.name: one.value for one in env or []}})
         try:
@@ -2075,7 +2109,7 @@ class Session:
             raise await self.refuse('run', command, str(error)) from None
         self.terminal_count += 1
         ident = f'term-{self.terminal_count}'
-        limit = output_byte_limit if output_byte_limit is not None else 1024 * int(self.ctx.setting('dispatch_terminal_kb'))
+        limit = output_byte_limit if output_byte_limit is not None else 1024 * TERMINAL_KB
         held = Terminal(' '.join([command, *(args or [])]), str(folder), process, max(int(limit), 0), bytearray())
         self.terminals[ident] = held
         held.reader = asyncio.create_task(self.terminal_read(ident, held))
@@ -2336,6 +2370,48 @@ class Session:
 
     # ------------------------------------------------------------------ permission requests
 
+    async def answering(self) -> tuple[str, str]:
+        """How this session's permission requests are answered now, and whose choice that is: the person's for this
+        session, `session`; the launch's own prompts, `launch`, for the agent a start launched; else dispatch_prompts,
+        `project`, read as set now, so a change there reaches this agent."""
+        own = self.acp.get('prompts')
+        if own in PROMPTS:
+            return str(own), 'session'
+        launched = (await asyncio.to_thread(launch_options, self.store, self.work_id)).get('prompts') \
+            if self.launched else None
+        if launched:
+            return launched, 'launch'
+        return str(await asyncio.to_thread(self.ctx.setting, 'dispatch_prompts')), 'project'
+
+    @staticmethod
+    def answered_by(how: str, source: str) -> str:
+        return {'session': f'this session\'s prompts={how}, chosen by the person',
+                'launch': f'this launch\'s prompts={how}'}.get(source, f'dispatch_prompts={how}')
+
+    async def set_prompts(self, how: str) -> dict[str, Any]:
+        """The person's choice of how this session's permission requests are answered from now on, one of
+        dispatch_prompts' choices: kept in its state line, so it holds when the session is resumed, and applied at once
+        to each request waiting now that it approves."""
+        if how not in PROMPTS:
+            return {'error': f'prompts is one of {", ".join(PROMPTS)}, not {how}.'}
+        async with self.lock:
+            self.acp['prompts'] = how
+            await self.flush()
+            await self.note(None, 'setting', f'Permission requests in this session: {how}, chosen by the person.')
+            await self.save_state()
+        approved: list[str] = []
+        said = self.answered_by(how, 'session')
+        for request, (_, options, title) in list(self.asked.items()):
+            allow = allowed(options, how, self.permissions.get(request, {}).get('kind'))
+            if allow is None or 'error' in await self.permit(request, allow.option_id):
+                continue
+            approved.append(request)
+            async with self.lock:
+                await self.flush()
+                await self.note(None, 'approved', f'{title}: approved by {said}')
+        await self.changed(tables='dispatch', dispatch_tables=['dispatch.lines', 'dispatch.permissions'])
+        return {'prompts': how, 'from': 'session', 'approved': approved}
+
     async def request_permission(self, session_id: str, tool_call: ToolCallUpdate, options: list[PermissionOption],
                                  **kwargs: Any) -> RequestPermissionResponse:
         """Asked at the ticket's node with the options as suggestions, and on the page as a choice among them; the
@@ -2344,12 +2420,10 @@ class Session:
         rpc = INCOMING.get()
         waiting: asyncio.Future[str | None] = asyncio.get_running_loop().create_future()
         title = str(tool_call.title or tool_call.kind or 'a tool call')
-        how = await asyncio.to_thread(self.ctx.setting, 'dispatch_prompts')  # as set now, so a change reaches this agent
-        own = (await asyncio.to_thread(launch_options, self.store, self.work_id)).get('prompts') \
-            if self.launched else None
-        how, said = (own, f'this launch\'s prompts={own}') if own else (how, f'dispatch_prompts={how}')
-        allow = next((option for option in options if str(option.kind) == 'allow_once'), None)
-        if allow is not None and (how == 'approve-all' or (how == 'approve-reads' and str(tool_call.kind) in READS)):
+        how, source = await self.answering()
+        said = self.answered_by(how, source)
+        allow = allowed(options, how, tool_call.kind)
+        if allow is not None:
             async with self.lock:
                 await self.flush()
                 await self.note(None, 'approved', f'{title}: approved by {said}')
@@ -2743,9 +2817,13 @@ class Session:
             sys.stderr.write(f'{self.name} {said} on work {self.work_id}: {error}\n')
             last = self.tail()
             self.how = f'it {said}: {error}' + (f'; its last stderr: {last}' if last else '')
+            text = f'{self.name} {said} on work {self.work_id}: {error}' + (
+                '\nIts last stderr:\n' + '\n'.join(self.stderr_tail) if last else '')
             try:
-                await self.note(None, 'failed', f'{self.name} {said} on work {self.work_id}: {error}'
-                                                + ('\nIts last stderr:\n' + '\n'.join(self.stderr_tail) if last else ''))
+                if self.session_id is None and not self.probe:
+                    await self.unstarted(text)
+                else:
+                    await self.note(None, 'failed', text)
             except Exception as note_error:  # noqa: BLE001  a failure note cannot prevent resource cleanup
                 sys.stderr.write(f'Could not record the session failure: {note_error}\n')
         finally:
@@ -2875,6 +2953,7 @@ class Session:
         if self.resume:  # a resumed session waits for the person's next message, or goes on when the supervisor retries
             if self.retrying and self.node is not None and not self.budget:
                 self.turn(prompt('retry', work_id=self.work_id))
+            await self.troubles()
             return
         if self.node is None and self.ctx.nouns.get('intake'):  # the intake, served as it is, VIEW-045 and BASE-039
             text = await asyncio.to_thread(intake_prompt, self.ctx, self.request)
@@ -2901,6 +2980,29 @@ class Session:
         if not self.ending:
             self.opening = self.system
             self.turn(text)
+            await self.troubles()
+
+    async def troubles(self) -> None:
+        """The person's system agent takes each feature the person set up that a module says is not working, the
+        signal SETUP_NOT_WORKING, as its next turn, after any turn in flight and never inside one: the setup_trouble
+        prompt, so it brings the matter up with the person. Each is taken once, by the one system agent that clears
+        it first; one raised while no system agent runs waits for the next to start."""
+        if self.role != 'system' or self.probe or self.ending:
+            return
+        from .signals import SETUP_NOT_WORKING, rows, taken
+        found = await asyncio.to_thread(rows, self.store)
+        for value in found:
+            if value.get('signal') != SETUP_NOT_WORKING or not value.get('signal_key'):
+                continue
+            if not await asyncio.to_thread(taken, self.store, value):
+                continue
+            report: Any = value.get('report')
+            text = prompt('setup_trouble', feature=str(value.get('feature') or 'a feature'),
+                          set_up=str(value.get('set_up') or ''), look=str(value.get('look') or ''),
+                          report=json.dumps(report, ensure_ascii=False, indent=1))
+            if text and not self.ending:
+                self.turn(text)
+        await self.changed(tables='dispatch')
 
     def handed(self) -> str:
         """The hand-off this worker is sent as its first turn, BASE-050, its links attached to that turn as ACP
@@ -3016,7 +3118,9 @@ class Session:
         if isinstance(before, dict):
             held = cast(dict[str, Any], before)
             self.acp['touched'] = list(held.get('touched') or [])
-            carried = [key for key in CARRIED if held.get(key) not in (None, [], '')]
+            if held.get('prompts') in PROMPTS:  # the person's choice for this session holds when it goes on
+                self.acp['prompts'] = held['prompts']
+            carried =[key for key in CARRIED if held.get(key) not in (None, [], '')]
             self.acp.update({key: held[key] for key in carried})
             self.acp['before_resume'] = carried
 
@@ -3085,12 +3189,74 @@ class Session:
             await self.note(None, 'timer', f'Timer {key}, set at {held["set"]}, is due: {held["text"]}')
         self.turn(prompt('timer', timer=key, set=held['set'], note=held['text']))
 
-    def turn(self, text: str, audio: Any = None, image: Any = None) -> None:
+    async def peer_note(self, asked: dict[str, Any]) -> dict[str, Any]:
+        """A peer note, `dispatch note`, `peering`: its line in this session's thread, after the words so far, on the
+        sender's and each receiver's alike. A receiver takes it as a turn after any in flight, never steered into one,
+        so it waits for the turn boundary as a person's message does, and the open pages draw it as a pulse of the
+        flow from the sender's figure to this one; a reply to a question this session is waiting on is held for that
+        wait instead, which returns it. The sender's own copy notes how long it waits, `awaiting`."""
+        line: Any = asked.get('line')
+        if self.ending or self.session_id is None or not isinstance(line, dict):
+            return {'noted': False, 'error': 'The session has not started or is ending.'}
+        held, busy = cast(dict[str, Any], line), bool(self.turns)
+        note_id = str(held.get('id'))
+        sender: dict[str, Any] = held.get('from') or {}
+        if asked.get('deliver') and sender.get('node') and self.node is not None and not self.probe:
+            # the pulse between the two figures, riding the event the note's line fires
+            self.flowing.append({'session_id': sender.get('session_id'), 'agent': sender.get('agent'),
+                                 'work_id': sender.get('work_id'), 'from': sender['node'],
+                                 'to': [{'kind': self.node.kind, 'id': self.node.id}], 'action': 'note'})
+        async with self.lock:
+            await self.flush()
+            await self.note(f'peer:{note_id}', 'peer', json.dumps(held, ensure_ascii=False))
+        if not asked.get('deliver'):
+            if asked.get('awaiting'):
+                self.awaiting[note_id] = {'until': time.monotonic() + float(asked['awaiting']) + AWAIT_SPARE,
+                                          'held': []}
+            return {'noted': True}
+        reply_to = str(held.get('reply_to') or '')
+        what = 'question' if held.get('ask') else f'reply to your note {reply_to}' if reply_to else 'note'
+        text = prompt('peer_note', what=what, agent=str(sender.get('agent') or ''), item=str(sender.get('item') or ''),
+                      title=str(sender.get('title') or ''), note=str(held.get('text') or ''), id=note_id)
+        marks = [(note_id, str(sender.get('session_id') or ''))]
+        waiting = self.awaiting.get(reply_to)
+        if waiting is not None and time.monotonic() < float(waiting['until']):
+            cast(list[Any], waiting['held']).append((note_id, text, marks))  # the waiting call returns it
+            return {'noted': True, 'queued': False, 'awaited': True}
+        self.turn(text, peers=marks)
+        return {'noted': True, 'queued': True, 'busy': busy}
+
+    def unawait(self, asked: dict[str, Any]) -> dict[str, Any]:
+        """A question's wait is over, `dispatch note wait=`: the replies held for it that the call did not return go
+        to the agent as turns after all, so none is lost between the call's last read and its end."""
+        waiting = self.awaiting.pop(str(asked.get('id') or ''), None)
+        taken = {str(one) for one in cast(list[Any], asked.get('taken') or [])}
+        given = 0
+        for note_id, text, marks in cast(list[Any], (waiting or {}).get('held') or []):
+            if note_id not in taken:
+                self.turn(text, peers=marks)
+                given += 1
+        return {'released': given}
+
+    async def peer_marked(self, marks: list[tuple[str, str]], state: str) -> None:
+        """The peer notes a turn carried, marked on this session's copy and on each sender's."""
+        if not marks or self.session_id is None:
+            return
+        own = self.session_id
+
+        def marked(tx: Any) -> None:
+            for note_id, sender in marks:
+                for session_id in {own, sender} - {''}:
+                    mark_peer(tx, session_id, note_id, self.work_id, state)
+        await self.table(marked, fatal=False)
+
+    def turn(self, text: str, audio: Any = None, image: Any = None, peers: list[tuple[str, str]] | None = None) -> None:
         if self.ending:
             return
         self.replaying = False  # what comes from here on is the session's own, never a replay
         self.pending.append(text)
         self.voiced.append([block for block in (audio, image) if block is not None])
+        self.peered.append(list(peers or []))  # the peer notes the turn carries, marked as it is sent and read
         if self.turns == 0:
             self.progress_at = time.monotonic()
         if self.turns:
@@ -3113,6 +3279,7 @@ class Session:
                     self.active_turn = current
                     text = self.pending.popleft()
                     beside = self.voiced.popleft() if self.voiced else []
+                    marks = self.peered.popleft() if self.peered else []
                 self.heard = stamp()  # a tool call of this turn began no earlier than its prompt
                 began_ns: int | None = None
                 try:
@@ -3123,6 +3290,7 @@ class Session:
                         reason = 'cancelled'
                     else:
                         current.sent = True
+                        await self.peer_marked(marks, 'delivered')
                         self.cost_open, self.provisional = False, 0
                         self.arm()  # the turn's silence clock, P040
                         self.intake_clock()  # an intake's first-record clock starts with its first turn, M04
@@ -3156,6 +3324,8 @@ class Session:
                     await self.note('turn', 'turn', f'The turn ended: {reason}.')
                     if self.acp['tokens'] is not None:
                         await self.save_state()
+                if current.sent and reason != 'cancelled' and not reason.startswith('error'):
+                    await self.peer_marked(marks, 'read')  # the turn that carried them ended: they were read
         finally:
             self.turns -= 1
             if self.turns == 0:
@@ -3228,10 +3398,8 @@ class Session:
         return True
 
     def trace(self, usage: Any, reason: str, began_ns: int, error: str | None = None) -> None:
-        """The turn as an OpenTelemetry invoke_agent span with its usage, while dispatch_usage_traces is on; a turn
-        that failed carries its error."""
-        if not self.option('dispatch_usage_traces', False):
-            return
+        """The turn as an OpenTelemetry invoke_agent span with its usage, recorded only where an OpenTelemetry SDK is
+        set up in this process; a turn that failed carries its error."""
         info = cast(dict[str, Any], self.acp.get('agent_info') or {})
         model = next((str(one.get('current')) for one in self.settings() if one.get('category') == 'model'
                       and one.get('current')), None)
@@ -3316,6 +3484,10 @@ class Session:
                 self.sources = None
                 self.spawn(self.workflow_answers())
             self.spawn(self.check())
+            raised: Any = payload.get('signal')
+            if isinstance(raised, dict) and cast(dict[str, Any], raised).get('signal') == 'setup-not-working' \
+                    and cast(dict[str, Any], raised).get('active') and self.session_id is not None:
+                self.spawn(self.troubles())  # a feature the person set up is not working: the system agent says so
 
     async def workflow_answers(self) -> None:
         """A workflow run this worker's ticket paused on the person, MAP-050, that the person has answered since: the
@@ -3369,7 +3541,10 @@ class Session:
                 alive = self.process is not None and self.process.returncode is None and not self.exited.is_set()
                 live = alive and not self.ending and self.failure is None
                 activity = ('waiting' if self.waiting else 'working' if self.turns else 'idle') if live else 'idle'
+                how, source = await self.answering() if live else (None, None)
                 await self.reply(writer, {**said, 'state': 'running' if live else 'ended', 'agent_alive': alive,
+                                          # how its permission requests are answered now, and whose choice that is
+                                          **({'prompts': how, 'prompts_from': source} if how else {}),
                                           'activity': activity,
                                           'waiting_on': 'question' if self.elicited else 'permission' if self.asked
                                           else None,
@@ -3387,10 +3562,13 @@ class Session:
                 text, by = str(asked.get('text', '')), str(asked.get('by') or '')
                 audio = self.recording(str(asked.get('audio') or '')) if not by else None
                 image = self.picture(str(asked.get('image') or '')) if not by else None
+                # one message of a broadcast, `dispatch broadcast`: its line is kept under the broadcast's id
+                sent = str(asked.get('broadcast') or '')
                 async with self.lock:  # the sender's words in the thread, where the agent's reply follows
                     await self.flush()
                     # an agent's message is never shown as the person's, BASE-052
-                    await self.note(None, 'message' if by else 'person', f'From the {by} agent: {text}' if by else text)
+                    await self.note(f'broadcast:{sent}' if sent else None, 'message' if by else 'person',
+                                    f'From the {by} agent: {text}' if by else text)
                 # Into the turn in flight when the agent offers steering and nothing waits before it, P016; otherwise
                 # it waits its turn, in order.
                 current = self.active_turn
@@ -3409,6 +3587,10 @@ class Session:
                                           'image': image is not None})
             elif op == 'timer':  # the agent's own timers, `dispatch timer`
                 await self.reply(writer, {**said, **self.timer(asked)})
+            elif op == 'note':  # a peer note, `dispatch note`: kept in the thread, and the receiver's next turn
+                await self.reply(writer, {**said, **await self.peer_note(asked)})
+            elif op == 'unawait':  # a question's wait is over: what was held for it and not returned is given
+                await self.reply(writer, {**said, **self.unawait(asked)})
             elif op == 'attach':  # a file the agent attached to its chat, `dispatch attach`, after its words so far
                 given_attachment: Any = asked.get('attachment')
                 if self.session_id is None or not isinstance(given_attachment, dict):
@@ -3432,6 +3614,8 @@ class Session:
             elif op == 'configure':
                 await self.reply(writer, {**said, **await self.configure(str(asked.get('setting', '')),
                                                                          str(asked.get('value', '')))})
+            elif op == 'prompts':  # how this session's permission requests are answered, the person's choice
+                await self.reply(writer, {**said, **await self.set_prompts(str(asked.get('prompts', '')))})
             elif op == 'fork':  # ACP's session/fork, a side conversation with the session's context, P030
                 try:
                     await self.reply(writer, {**said, **await self.fork(str(asked.get('text') or ''))})
@@ -3469,6 +3653,7 @@ class Session:
         self.ending, self.how = True, how
         self.pending.clear()
         self.voiced.clear()
+        self.peered.clear()
         for held in self.timers.values():  # a timer never outlives the session it wakes
             held['handle'].cancel()
         self.timers.clear()

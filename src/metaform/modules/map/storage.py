@@ -50,6 +50,7 @@ from metaform.data import (
     now,
     paged,
     reference,
+    shown_open,
     sliced,
     status,
 )
@@ -76,6 +77,17 @@ def _work_text(value: Any, field: str, notices: list[Notice]) -> str | None:
         return value
     notices.append(Notice(field, f"{field} is not text; it was stored as JSON text."))
     return json.dumps(value, ensure_ascii=False)
+
+
+def _shown(condition: str, task: str | None) -> None:
+    """Refuse an open record shown nowhere, MAP-046's amendment of 2026-10-15: one with neither a task nor a trouble,
+    broken or missing marker, and not a stage drawn on its node. Every writer of a work record comes through here."""
+    if not shown_open(condition, task):
+        raise StoreError(
+            "A record with neither a task nor a trouble, broken or missing marker is not work, and nothing would "
+            "show it." + (f" {condition} is a part's normal state." if condition in ("ok", "built") else ""),
+            "give a task; a note alone goes beside the map, and the page sets a part's stage",
+        )
 
 
 def _condition(value: Any, notices: list[Notice]) -> str:
@@ -142,6 +154,8 @@ def add_work(
     the first line of its task or note."""
     notices: list[Notice] = []
     stage, ticket_kind = _condition(condition, notices), _kind(kind)  # both checked before anything is written
+    stated = _work_text(task, "task", notices)
+    _shown(stage, stated)
     target_kind, thing = work_target(tx, node, notices)
     _backfill(tx)
     work_id = new_id()
@@ -154,7 +168,7 @@ def add_work(
             thing,
             stage,
             _work_text(note, "note", notices),
-            _work_text(task, "task", notices),
+            stated,
             int(bool(held)),
             int(bool(reviewed)),
             now(),
@@ -211,7 +225,10 @@ def edit_work(tx: Tx, work_id: str, changes: Any) -> WorkRecord:
         else:
             value = _work_text(value, key, notices)
         tx.execute(f"UPDATE work SET {key}=? WHERE work_id=?", (value, work_id))
-    return work_record(tx, _work_row(tx, work_id), tuple(notices))
+    after = _work_row(tx, work_id)
+    if after["done"] is None:  # an edit never leaves an open record shown nowhere; the transaction rolls back
+        _shown(str(after["condition"]), after["task"])
+    return work_record(tx, after, tuple(notices))
 
 
 def _message_row(tx: Tx, message_id: str) -> Any:

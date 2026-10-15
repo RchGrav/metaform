@@ -30,7 +30,7 @@ import sys
 import tempfile
 import tomllib
 import zipfile
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib import resources
@@ -274,11 +274,30 @@ def shape(name: str) -> tuple[str, ...]:
     raise Stop(f'{name} is not a shape; the shapes are {", ".join(SHAPES)}.', 'metaform help build')
 
 
+def onboarding() -> tuple[str, ...]:
+    """The modules `metaform start` and `metaform demo` run, which an installer's README sends a tester to first."""
+    from .start import NEEDED
+    return NEEDED
+
+
+def installer_default() -> tuple[str, ...]:
+    """An installer's modules when none are chosen: those on at home and those its README's first commands run, in
+    module id order. Each is packed as found, so one off at home ships off and `start` or `demo` turns it on."""
+    wanted = set(shape('home')) | set(onboarding())
+    return tuple(choice.id for choice in choices() if choice.id in wanted)
+
+
+def carries_onboarding(modules: Collection[str]) -> bool:
+    """Whether a build carries every module `metaform start` and `metaform demo` run, so its README may send a tester
+    to them."""
+    return set(onboarding()) <= set(modules)
+
+
 @dataclass(frozen=True)
 class Request:
     """What one build is asked for. `modules` or `shape` chooses the modules, each for the wheel builds only; with
-    neither, an installer carries the modules on at home, a project build the Remote agent shape. `task` is the
-    person's task for the remote agent, as written."""
+    neither, an installer carries the modules on at home and those `start` and `demo` run, a project build the Remote
+    agent shape. `task` is the person's task for the remote agent, as written."""
     kind: str = 'installer'
     project: str | None = None
     modules: tuple[str, ...] | None = None
@@ -336,8 +355,10 @@ def plan(request: Request, folder: Path | None = None) -> Plan:
             raise Stop(f'No module {unknown[0]} to carry; the modules are {", ".join(sorted(known))}.',
                        'metaform list modules')
         modules = tuple(dict.fromkeys(request.modules))
+    elif request.shape is None and kind == 'installer':
+        modules = installer_default()
     else:
-        modules = shape(request.shape or ('remote' if kind == 'project' else 'home'))
+        modules = shape(request.shape or 'remote')
     files = request.files if kind in ('archive', 'project') else False
     return Plan(kind, project, modules, files, request.task if kind == 'project' else None)
 

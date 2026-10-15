@@ -6,9 +6,11 @@ import * as THREE from 'three';
 import {createWorkspace} from '/page/workspace.js';
 import {createViews} from '/page/views.js';
 import {$, h, fill} from '/page/app/core/dom.js';
+import {expandCut} from '/page/app/core/expand.js';
 import {OVERLAY, overlay, overlayHolds, restack, place} from '/page/app/core/overlays.js';
 import {toast, undoable, confirmAct, segmented, progressBar, copyField, choice} from '/page/app/core/controls.js';
 import {FRAMED, S, reach, read, viewLayers} from '/page/app/core/reads.js';
+import {readFailed, pageFailed} from '/page/app/core/errors.js';
 import {sideAt} from '/page/app/header/layers.js';
 import {ROAM} from '/page/app/figures/agents.js';
 import {ROAM2D} from '/page/app/figures/roam2d.js';
@@ -43,7 +45,6 @@ import {INTAKE, openIntakeChat, openIntake} from '/page/app/intake/intake.js';
 import {BUILD} from '/page/app/build/build.js';
 import {listen} from '/page/app/live/ops.js';
 import {loadProject} from '/page/app/loading/load.js';
-import {drawWelcome} from '/page/app/onboard/welcome.js';
 
 /* ---------- the developer level: browser-console detail and traces, only with metaform web start --web-debug
  * ---------- Off, the default, logs nothing and keeps no trace. info logs each read and write of the page and keeps
@@ -223,7 +224,7 @@ function openAddress(uri) {
 }
 const WINDOWS = {board: () => $('#boardBtn').click(), settings: () => openSettings(),
   'agent-view': () => openAgentView()};
-export const WS = createWorkspace({h, fill, toast, confirmAct, overlay, movable, place, wrote, getJson: workspaceJson,
+export const WS = createWorkspace({h, fill, expandCut, toast, confirmAct, overlay, movable, place, wrote, getJson: workspaceJson,
   project: () => S.project, selection: () => briefAddress(), layers: () => viewLayers(),
   view: page => (page === 'dev-prompts' || page === 'dev-trace') && DEBUG.level === 'off' ? null : VIEWS[page] || null,
   hasCommand: page => page in COMMANDS, command: (page, address) => COMMANDS[page]?.(address),
@@ -254,6 +255,7 @@ export async function loadWorkspace() {
 /* The view settings the workspace read gives: the developer level, the shapes, the flow's pace and the 2D map's way. */
 function applyView(view) {
   DEBUG.level = view.debug || 'off';
+  if (G) G.renderer().debug.checkShaderErrors = DEBUG.level !== 'off';  // read only for a developer, F5
   const shapes = view.shapes !== false;
   if (shapes !== VIEW_SETTINGS.shapes) { VIEW_SETTINGS.shapes = shapes; shapes3d(); if (M.base) build2D(); }
   Object.assign(FRAMES, {idle: 1000 * Number(view.flow_seconds ?? 30), rest: view.idle_flow ? null : 0});
@@ -298,13 +300,19 @@ export function wsSelected() {
 }
 
 export async function main() {
-  const response = await reach('/api/projects');
-  const listed = await response.json();
+  let listed;
+  try { listed = await read('projects'); }
+  catch (error) {
+    // The project list did not come: the error surface says why, and the page stays usable around it.
+    readFailed(error);
+    listen();
+    revealed();
+    return;
+  }
   S.projects = listed.projects || [];
   if (!S.projects.length) {
     fill($('#p-object'),
       h('p', {class: 'empty'}, 'No project is registered. Register one with: metaform add project <id> <path>'));
-    drawWelcome(!FRAMED);  // the first screen: what this is, and the demo or a project of one's own
     listen();  // still hears what modules publish: an intake started in a project registered later takes the page there
     revealed();
     return;
@@ -321,7 +329,8 @@ export async function main() {
   fill($('#proj'),
     ...S.projects.map(item => h('option', {value: item.id, selected: item.id === S.project}, item.id)));
   start3D();
-  await loadProject();
+  // a project that cannot be read is said by the error surface; the page around it is shown and still listens
+  try { await loadProject(); } catch (error) { pageFailed(error); }
   revealed();
   listen();
   renderMerges();  // VIEW-044

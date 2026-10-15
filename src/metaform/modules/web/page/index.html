@@ -47,6 +47,7 @@
         <button class="btn quiet" id="agentsMenuBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="agentbox" title="The agents at work: how many at once, how their prompts are answered, and putting them back in order">Agents<i class="i i-chev" aria-hidden="true"></i></button>
         <div class="menu" id="agentbox" hidden role="menu" aria-label="Agents">
           <div class="agent-sessions" aria-label="Agent conversations" hidden></div>
+          <button id="broadcastBtn" type="button" role="menuitem" aria-controls="broadcast" title="Tell every agent working on this project something at once, as your own message">Broadcast…</button>
           <div class="label">Settings</div>
           <div class="menu-field agent-count" title="How many agents work at once, besides the one you summon to chat. Saved as the dispatch_agents setting"><label for="agentCount">Agents at once</label><input id="agentCount" type="number" min="1" max="17" step="1"></div>
           <div class="menu-field default-agent"><span class="name">Default agent</span><div id="defaultAgentPick"></div></div>
@@ -92,7 +93,7 @@
       </div>
       <div class="settingspick pick">
         <!-- The View menu: how this page draws the maps, its colors and its keys. -->
-        <button class="btn quiet viewbtn" id="settingsBtn" type="button" aria-label="View settings" aria-expanded="false" aria-controls="settingsbox" title="View settings"><i class="i i-more" aria-hidden="true"></i><span class="lbl">View</span></button>
+        <button class="btn quiet viewbtn" id="settingsBtn" type="button" aria-label="View settings" aria-expanded="false" aria-controls="settingsbox" title="View settings"><span class="lbl">View</span></button>
         <div class="menu right" id="settingsbox" hidden role="dialog" aria-label="View settings" tabindex="-1">
           <div class="label">Look</div>
           <div class="menu-field themepick"><label for="theme">Colors</label>
@@ -139,7 +140,9 @@
         </div>
       </div>
     </div>
-    <button class="btn icon quiet" id="settingsGearBtn" type="button" aria-label="Settings" aria-controls="settings" title="Settings: every setting of this project's folder and its modules, and which modules are on"><i class="i i-gear" aria-hidden="true"></i></button>
+    <!-- Help: the keyboard shortcuts and help window, the same the View menu's Keyboard shortcuts and the ? key open. -->
+    <button class="btn quiet helpbtn" id="helpBtn" type="button" aria-label="Help" aria-keyshortcuts="?" aria-controls="help" title="Help: every key the map and the page take (?)"><span class="lbl">Help</span></button>
+    <button class="btn icon quiet" id="settingsGearBtn" type="button" aria-label="Settings" aria-controls="settings" title="Settings: every setting of this project's folder and its modules, and which modules are on"><i class="i i-kebab" aria-hidden="true"></i></button>
     <button class="btn icon quiet" id="moreBtn" type="button" aria-label="More controls" aria-expanded="false" title="More controls"><i class="i i-menu" aria-hidden="true"></i></button>
   </header>
   <!-- The toolbar: one row of the tools modules declare, as the person arranged them; drawn from /api/workspace. -->
@@ -210,31 +213,14 @@
     </div>
   </main>
 </div>
-<!-- The first screen, with no project or a project with no map yet: what Metaform is, and its two first choices, the
-     demo and mapping a project of one's own, with a folder picker; nothing else shows until one is chosen. The
-     workbench is a quiet link away once there is a project. onboard/welcome.js. -->
-<section id="welcome" class="welcome" hidden aria-labelledby="welcomeTitle">
-  <div class="inner">
-    <div class="brand"><span>meta<b>form</b></span></div>
-    <h1 id="welcomeTitle">Metaform draws your project as a living map of what each part is for, so you and your AI agents work from the same picture.</h1>
-    <div class="choices">
-      <button class="choice demo" type="button"><i class="i i-spark" aria-hidden="true"></i><b>Watch the demo</b><span>A small sample project, mapped, with agents at work on it. Nothing to set up.</span></button>
-      <button class="choice map" type="button"><i class="i i-search" aria-hidden="true"></i><b>Map my project</b><span class="sub">Choose your project's folder. An agent reads it and draws its map while you watch.</span></button>
-    </div>
-    <button class="other linkish" type="button" hidden>Choose another folder</button>
-    <div class="picker" hidden>
-      <div class="pickhead"><b>Choose your project's folder</b><span class="at"></span><input class="typed" type="text" placeholder="Or paste a folder's path and press Enter" aria-label="A folder's path" autocomplete="off" spellcheck="false"></div>
-      <div class="folders" role="listbox" aria-label="Folders"></div>
-      <div class="acts"><button class="back btn" type="button">Back</button><button class="up btn" type="button">Up one folder</button><span class="grow"></span><button class="pick btn primary lg" type="button">Map this folder</button></div>
-    </div>
-    <div class="failed" role="alert" hidden></div>
-    <button class="workbench linkish" type="button" hidden>Open the full workbench</button>
+<!-- A first-time person's welcome, onboard/hints.js: once, over a page that stays usable; OK puts it away for good. -->
+<div id="welcome" class="window dialog welcomebox" hidden role="dialog" aria-labelledby="welcomeTitle">
+  <div class="bar"><span class="title" id="welcomeTitle">Welcome</span></div>
+  <div class="body">
+    <p>Metaform shows your project as a living map that your agents work on, and you can add any feature you want as a module, which loads while Metaform runs.</p>
+    <p>Help can be found by pressing <button class="helpkey" type="button" aria-label="Open the help" title="Open the help: every key the map and the page take"><kbd>?</kbd></button></p>
   </div>
-</section>
-<!-- One first-run hint at a time on a map's first showing, onboard/hints.js: the map, the agents, the chat. -->
-<div id="hint" class="hintcard" hidden role="dialog" aria-label="A tip">
-  <p class="text"></p>
-  <div class="acts"><span class="tipno"></span><span class="grow"></span><button class="skiptips linkish" type="button">Skip tips</button><button class="ok btn sm primary" type="button">Got it</button></div>
+  <div class="foot"><button class="ok btn primary" type="button">OK</button></div>
 </div>
 <div id="wsworkspaces" class="menu wsfloatmenu" hidden role="menu" aria-label="Workspaces"></div>
 <div class="toast" id="toast" hidden role="status" aria-live="polite"></div>
@@ -348,6 +334,19 @@
     <div class="count"></div>
   </div>
   <div class="foot"><button class="save btn primary" type="button">Save note</button></div>
+</div>
+<!-- Broadcast: one message from the person to every agent working on the project, opened by Broadcast… in the
+     Agents menu; it stays open beside the map while the agents answer, web/README.md "Broadcast". -->
+<div id="broadcast" class="window movable beside" hidden role="dialog" aria-label="Broadcast to every agent">
+  <div class="bar"><span class="title">Broadcast</span><button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button></div>
+  <div class="body">
+    <p class="reach" role="status"></p>
+    <textarea placeholder="What every agent working on this project hears from you" aria-label="The message to every agent"></textarea>
+    <label class="mine"><input type="checkbox" class="system"> include my chat agent</label>
+    <div class="told" aria-live="polite"></div>
+    <div class="earlier"></div>
+  </div>
+  <div class="foot"><span class="hint">Enter sends; Shift+Enter makes a new line.</span><button class="send btn primary" type="button" disabled>Send</button></div>
 </div>
 <div id="dispatch" class="window dialog" hidden role="dialog" aria-label="Start an agent" aria-modal="true">
   <div class="bar"><span class="title"></span><button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button></div>

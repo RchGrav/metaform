@@ -1,0 +1,1 @@
+"After closing its ticket, an agent replayed its whole script on dispatch's after-close "record what you learned" turn, so its session never ended and agents piled up."

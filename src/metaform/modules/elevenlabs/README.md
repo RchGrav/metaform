@@ -50,11 +50,9 @@ Every one is the module's own, `elevenlabs_*`, so they group together in the TUI
 | `elevenlabs_speaker_boost` | on | More like the source speaker, at a little more time. |
 | `elevenlabs_speed` | 100 | 70 to 120, percent of the voice's normal pace. |
 | `elevenlabs_latency` | 1 | 0 to 4, optimize_streaming_latency: higher starts sooner and can mispronounce numbers and names. |
-| `elevenlabs_format` | pcm_22050 | The audio for the page: pcm plays as it arrives, mp3 is smaller. |
-| `elevenlabs_phone_format` | ulaw_8000 | The audio for a phone call: the telephone's own mu-law, or pcm for a bridge that encodes it. |
 | `elevenlabs_voices` | none | `character=voice id or name` for any mascot character; each has its own default voice. |
-| `elevenlabs_scribe_model` | scribe_v1 | Scribe's model. |
-| `elevenlabs_scribe_language` | auto | The language Scribe hears, or auto. |
+
+Fixed, not settings (settings cleanup, 2026-10-15): the page's audio is `pcm_22050`, which plays as it arrives; a phone call's is `ulaw_8000`, the telephone's own encoding, which the phone bridge asks for itself; Scribe's model is `scribe_v1`, the released one. Scribe hears in the language voice passes it, the voice module's `voice_language`, or tells it itself when that is `auto`; `speak format=<format>` still writes any ElevenLabs format to a file.
 
 The key is never a setting: it is read from `ELEVENLABS_API_KEY` in the server's environment for each request, sent only to ElevenLabs as `xi-api-key`, and never stored, logged, returned or sent to the page.
 

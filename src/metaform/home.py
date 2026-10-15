@@ -22,7 +22,7 @@ import stat
 import sys
 import threading
 import uuid
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Iterable
 from contextlib import closing, contextmanager
 from contextvars import ContextVar
 from copy import deepcopy
@@ -692,6 +692,29 @@ def settings_db(scope: str, write: bool = False) -> Generator[sqlite3.Connection
             yield db
 
 
+def preload_settings(scopes: Iterable[str], pairs: Iterable[tuple[str, str]]) -> None:
+    """Read every value and glue stored at these scopes with one query each, into the registry's cache, as `stored`
+    and `glued` would read them one setting at a time; a pair with nothing stored is cached as nothing. A screen that
+    describes every setting then opens each scope's database once, not once for each setting and scope. Only inside a
+    registry scope, whose cache ends with it."""
+    active = _REGISTRY_SCOPE.get()
+    if active is None or not active.active:
+        return
+    pairs = list(pairs)
+    for scope in dict.fromkeys(scopes):
+        with settings_db(scope) as db:
+            rows = db.execute('SELECT owner, key, value FROM settings WHERE scope=? ORDER BY owner, key, position',
+                              (scope,)).fetchall()
+            glues = {(owner, key) for owner, key in db.execute('SELECT owner, key FROM glue WHERE scope=?', (scope,))}
+        found: dict[tuple[str, str], list[Any]] = {}
+        for owner, key, value in rows:
+            found.setdefault((owner, key), []).append(json.loads(value))
+        for pair in pairs:
+            stored_here, glued_here = found.get(pair), pair in glues
+            registry_cached(('stored', (scope, *pair), ()), lambda value=stored_here: value)
+            registry_cached(('glued', (scope, *pair), ()), lambda value=glued_here: value)
+
+
 @_cached
 def stored(scope: str, owner: str, key: str) -> list[Any] | None:
     """The stored member values of a setting at one scope, in order, or None when nothing is stored."""
@@ -744,6 +767,7 @@ def set_glue(scope: str, owner: str, key: str, on: bool, *, folder: Path | None 
             db.execute('INSERT OR IGNORE INTO glue(scope, owner, key) VALUES (?, ?, ?)', (scope, owner, key))
         else:
             db.execute('DELETE FROM glue WHERE scope=? AND owner=? AND key=?', (scope, owner, key))
+    _settings_changed(scope, owner)  # a glue changes what the screens show, so an open one reads again
 
 
 def aliases_at(scope: str) -> dict[str, list[str]]:

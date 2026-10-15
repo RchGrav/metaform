@@ -75,7 +75,8 @@ READS: dict[str, Read] = {
                                 'The layers that reach an address.'),
     'search': Read('search', (('text', str),), {'layer': str, 'selection': _list, **PAGING}, 'Items by their words.'),
     'has-intake': Read('has_intake', (), {}, 'Whether the active base has an intake.'),
-    'intake-recording': Read('intake_recording', (), {}, 'The intake being recorded, its base and its layer.'),
+    'intake-recording': Read('intake_recording', (), {}, 'The intake an agent records now, its base and its layer.'),
+    'intake-building': Read('intake_building', (), {}, 'Every intake building, recorded now or left unfinished.'),
     'layer-graph': Read('layer_graph', (('layer', str),), {}, "One layer's own elements and joins, building or "
                                                               'finished.'),
     'bases': Read('bases', (), dict(PAGING), "The project's bases."),

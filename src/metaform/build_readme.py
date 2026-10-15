@@ -2,10 +2,11 @@
 
 It is made at build time from the code, so it never drifts from what the wheel does: the version and the Python
 requirement from `_build_info`, which copies `pyproject.toml`; the modules the wheel carries, with their summaries; the
-chassis commands from their help records in `docs`; the MCP server command from the carried module that declares one;
-Claude Code's add and remove commands from the installer's own table; uv's install lines from the installer; the web
-GUI's port from its setting. A command the README relies on that is no longer declared stops the build, so a renamed
-command can never leave a README naming the old one.
+chassis commands from their help records in `docs`; the MCP server command from the carried module that declares one,
+in the `.mcp.json` entry `metaform start` writes; the Node.js the agents need from dispatch's `NODE`; uv's install
+lines from the installer; the web GUI's port from its setting. `metaform demo` and `metaform start` are named only when
+the wheel carries every module they run. A command the README relies on that is no longer declared stops the build,
+so a renamed command can never leave a README naming the old one.
 """
 from __future__ import annotations
 
@@ -75,6 +76,22 @@ def mcp_server(carried: Sequence[loader.Found]) -> list[str] | None:
     return None
 
 
+def _literal(carried: Sequence[loader.Found], identifier: str, name: str) -> str | None:
+    """A text constant a carried module assigns at its top level, read from its `__init__.py`, so a module off at home
+    is read without being loaded."""
+    item = next((found for found in carried if found.id == identifier), None)
+    if item is None:
+        return None
+    try:
+        tree = ast.parse((item.path / '__init__.py').read_text(encoding='utf-8'))
+    except (OSError, SyntaxError, UnicodeDecodeError):
+        return None
+    return next((node.value.value for node in tree.body
+                 if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == name
+                                                         for target in node.targets)
+                 and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)), None)
+
+
 def _web_port() -> tuple[str, int]:
     """The web GUI's port switch and default, from its setting when the web module has declared it."""
     setting = settings.SCHEMA.get('web_port')
@@ -86,12 +103,13 @@ def _web_port() -> tuple[str, int]:
 def readme(kind: str, wheel: str, carried: Sequence[loader.Found], project: str | None = None,
            prompt: bool = False) -> str:
     """The README.md of an installer, full or project build's zip."""
-    from . import install
+    from . import build, install, start
     needs = _build_info.REQUIRES_PYTHON.removeprefix('>=')
     folder = f'{wheel.removesuffix("-py3-none-any.whl")}-{kind}'
     ids = {item.id for item in carried}
+    onboarding = build.carries_onboarding(ids)  # demo and start run only with every module they need carried
+    node = _literal(carried, 'dispatch', 'NODE')
     server = mcp_server(carried)
-    claude = install.tools()['claude']
     uv_posix, uv_windows = install.UV_INSTALL_POSIX, install.UV_INSTALL['windows']
     register = _usage('add', 'metaform add project')
     example, _ = _command('add').examples[0]
@@ -142,6 +160,9 @@ def readme(kind: str, wheel: str, carried: Sequence[loader.Found], project: str 
     add(f'  - Linux and macOS: `{uv_posix}`')
     add(f'  - Windows, in PowerShell: `{uv_windows}`')
     add('  Then open a new terminal so `uv` is on your PATH.')
+    if node is not None:
+        add(f'- Node.js {node} or newer, with npm: the agents Metaform starts, the intake that `metaform start` runs '
+            'among them, run their AI tool\'s adapter with `npx`. The demo\'s agents are scripted and need no Node.js.')
     add('- An AI coding tool that speaks MCP, such as Claude Code (`claude`). The steps below give the exact setup '
         'for Claude Code.')
     add('')
@@ -177,28 +198,29 @@ def readme(kind: str, wheel: str, carried: Sequence[loader.Found], project: str 
     add('lists the modules this build carries, each `on` or `off`.')
     add('')
     provision = _usage('provision', 'metaform provision <').split('<')[0] + 'claude'
-    add('When `metaform` runs inside an AI tool Metaform has not set up yet, such as a terminal in Claude Code, each '
-        'command starts with a notice about provisioning. It is safe to leave for now. '
-        f'`{provision}` gives Claude Code Metaform\'s skill and reminders, showing each change and backing up each '
-        f'file first; `{_usage("provision", "metaform provision done")}` then stops the notice. '
-        '`metaform help provision` says what each part does.')
-    add('')
+    if server is not None:
+        add('When an AI tool Metaform has not set up yet connects to its MCP server, the agent there is told once that '
+            'this is Metaform\'s first run and how to provision it. It is safe to leave for now. '
+            f'`{provision}` gives Claude Code Metaform\'s skill and reminders, showing each change and backing up '
+            f'each file first; `{_usage("provision", "metaform provision done")}` then stops the notice. '
+            '`metaform help provision` says what each part does.')
+        add('')
     step = 4
-    if 'demo' in docs.COMMANDS:
+    if onboarding:
         add(f'### {step}. See it working')
         add('')
         block(_command('demo').usage[0])
         add(_command('demo').summary + ' Run it first: it needs no project of your own.')
         add('')
         step += 1
-    if 'start' in docs.COMMANDS:
         add(f'Run in your own project folder, `metaform start` does what the next steps do in one go. '
             f'{_command("start").summary} The steps below do the same by hand, so you can check each one.')
         add('')
     add(f'### {step}. Register a project folder')
     add('')
-    add('Pick a small project of your own, a folder of code or documents. Metaform keeps its data in its home folder '
-        'and never writes into the project. In a terminal, go to the project folder and register it with a short id '
+    add('Pick a small project of your own, a folder of code or documents. Metaform keeps its map in its home folder. '
+        'In the project it writes only `.mcp.json`, when it connects Claude Code there, and a report zip, when you '
+        'make one there. In a terminal, go to the project folder and register it with a short id '
         f'of your choosing. The command is `{register}`; for example `{example}` registers the folder `~/notes` as '
         'the project `notes`. From inside the folder:')
     add('')
@@ -208,21 +230,19 @@ def readme(kind: str, wheel: str, carried: Sequence[loader.Found], project: str 
     step += 1
     add(f'### {step}. Connect Claude Code to Metaform\'s MCP server')
     add('')
-    if server is None or claude.add is None:
+    if server is None:
         add('This build carries no module that serves MCP, so there is nothing to connect. Your AI tool can still '
             'run `metaform` commands in a terminal; `metaform help` lists them.')
         add('')
     else:
-        add('With Claude Code installed, register the server once for every folder:')
+        add('Claude Code connects to Metaform through `.mcp.json` in the project folder'
+            + (', which `metaform start` writes for you when it finds `claude`. By hand, save' if onboarding
+               else '. Save') + ' this as `.mcp.json` there:')
         add('')
-        block(' '.join(claude.add(server)))
-        add('Or, for this one project only, save this as `.mcp.json` in the project folder; Claude Code asks you to '
-            'approve it the first time it starts there:')
-        add('')
-        block(json.dumps({'mcpServers': {'metaform': {'type': 'stdio', 'command': server[0], 'args': server[1:]}}},
-                         indent=2), language='json')
-        add('Start `claude` in the project folder and type `/mcp`: `metaform` is listed as connected. Another MCP '
-            f'tool takes the same server command: `{" ".join(server)}`, run in the project folder.')
+        block(json.dumps({'mcpServers': {'metaform': start.mcp_entry(server)}}, indent=2), language='json')
+        add('Start `claude` in the project folder: it asks you once to approve the `metaform` server. Then type '
+            '`/mcp`: `metaform` is listed as connected. Another MCP tool takes the same server command: '
+            f'`{" ".join(server)}`, run in the project folder.')
         add('')
     step += 1
     if 'intake' in ids:
@@ -255,7 +275,7 @@ def readme(kind: str, wheel: str, carried: Sequence[loader.Found], project: str 
     add('## What to try')
     add('')
     checks: list[tuple[str, str]] = []
-    if 'demo' in docs.COMMANDS:
+    if onboarding:
         checks.append(('`metaform demo`', 'It runs with no questions and shows Metaform at work.'))
     checks.append(('`metaform list projects` after registering', 'Your project is listed with its folder.'))
     if server is not None:
@@ -312,10 +332,9 @@ def readme(kind: str, wheel: str, carried: Sequence[loader.Found], project: str 
     add('')
     if 'web' in ids:
         block('metaform web stop')
-    if server is not None and claude.remove:
-        add('Remove the server from Claude Code, and delete `.mcp.json` from the project folder if you made one:')
+    if server is not None:
+        add('Delete `.mcp.json` from the project folder, or only its `metaform` entry when it holds other servers.')
         add('')
-        block(' '.join(claude.remove))
     add('Remove Metaform itself:')
     add('')
     block('uv tool uninstall metaform')
@@ -327,5 +346,5 @@ def readme(kind: str, wheel: str, carried: Sequence[loader.Found], project: str 
     add('Windows, in PowerShell:')
     add('')
     block('Remove-Item -Recurse -Force "$HOME\\.metaform"', language='powershell')
-    add('Your project folder is left as it was: Metaform never writes into it.')
+    add('In your project folder Metaform wrote only `.mcp.json` and any report zip you made there.')
     return '\n'.join(lines).rstrip() + '\n'

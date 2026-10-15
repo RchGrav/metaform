@@ -21,7 +21,7 @@ ROOT = Path(__file__).parents[1]
 def build(run, *modules_off):
     for module in modules_off:
         run('disable', module)
-    out = run('build').stdout
+    out = run('build', *(['shape=home'] if modules_off else [])).stdout  # what is on at home, no more
     wheels = [Path(line.split(':', 1)[1].strip()) for line in out.splitlines() if line.startswith('Wheel:')]
     assert len(wheels) == 1, out
     return wheels[0], out
@@ -52,7 +52,9 @@ def shared(tmp_path_factory, name, *modules_off):
             for module in modules_off:
                 subprocess.run([sys.executable, '-m', 'metaform', 'disable', module], cwd=folder, env=env,
                                capture_output=True, check=True)
-            done = subprocess.run([sys.executable, '-m', 'metaform', 'build'], cwd=folder, env=env,
+            # With modules off, the wheel carries what is on at home; the default would add start's chain back.
+            shaped = ['shape=home'] if modules_off else []
+            done = subprocess.run([sys.executable, '-m', 'metaform', 'build', *shaped], cwd=folder, env=env,
                                   capture_output=True, text=True, encoding='utf-8', check=False)
             said = {'out': done.stdout, 'error': done.stderr if done.returncode else None}
         finally:
@@ -228,6 +230,21 @@ def test_a_wheel_build_writes_a_zip_of_the_wheel_and_a_readme_naming_its_version
     # A project build's README also takes the remote agent through its round trip.
     project = build_readme.readme('project', wheel.name, [], 'notes', prompt=True)
     assert f'python {wheel.name} return [note=<text>] [file=<path>]' in project and '`prompt.md`' in project
+
+
+@pytest.mark.req('BASE-060')
+def test_an_installer_carries_what_its_readme_sends_a_tester_to_and_says_it_honestly(run, home):
+    from metaform import build, build_readme, loader
+    run('list', 'modules')  # a fresh home, as a tester's builder has
+    planned = build.plan(build.Request()).modules
+    assert 'dispatch' in planned and build.carries_onboarding(planned)  # dispatch ships off, and is carried
+    found = {item.id: item for item in loader.discover()}
+    readme = build_readme.readme('installer', build.WHEEL, [found[name] for name in planned])
+    assert '`metaform demo`' in readme and '`metaform start`' in readme
+    assert 'Node.js 22 or newer' in readme and 'claude mcp add' not in readme and 'never writes' not in readme
+    assert '"command": "metaform",\n      "args": [\n        "mcp",\n        "serve"\n      ],\n      "env": {}' in readme
+    fewer = build_readme.readme('installer', build.WHEEL, [found['map'], found['web']])
+    assert 'metaform demo' not in fewer and 'metaform start' not in fewer and 'Node.js' not in fewer
 
 
 @pytest.mark.req('BASE-041')

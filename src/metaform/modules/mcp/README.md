@@ -91,7 +91,7 @@ internally, and retries only refused calls. Manual returns the ordinary schema e
 Unchanged code never starts a replacement. A host pinned to an old wheel must select a newer package source.
 The `set` tool stores any setting for the server's folder.
 
-`mcp_consent`, person only, `ask` by default or `confirm`, is how a call that needs the person's yes is confirmed; see Consent above. `mcp_apps`, on by default, offers the map, node, trace and glossary views to AI tools that show MCP Apps; `mcp_apps_offer`, `declared` by default, offers them only to AI tools that declare the extension, and `always` to every AI tool, for a host that shows them without declaring it, such as the specification's basic-host. `mcp_tasks`, on by default, answers a verb declared `task=True` or `task='run'` with a task to AI tools that declare the tasks extension.
+`mcp_consent`, person only, `ask` by default or `confirm`, is how a call that needs the person's yes is confirmed; see Consent above. `mcp_apps`, on by default, offers the map, node, trace and glossary views to AI tools that show MCP Apps; `mcp_apps_offer`, `declared` by default, offers them only to AI tools that declare the extension, and `always` to every AI tool, for a host that shows them without declaring it, such as the specification's basic-host. A verb declared `task=True` or `task='run'` is always answered with a task to AI tools that declare the tasks extension; others get the result as before (`mcp_tasks` was removed in the settings cleanup, 2026-10-15). An exposed server checks tokens at `oauth.DEFAULT_INTROSPECTION`, the Node's authorization server on loopback (`mcp_introspection` was removed then too).
 
 ## A2A
 
@@ -148,11 +148,15 @@ wording other agents read, the card, the status messages and the errors, is in `
 
 Agents here send work to other A2A agents, `a2a_out.py`, MCP-040 to MCP-043, through the official `a2a-sdk` client:
 
-- `mcp_a2a_peers` (global, person-only) lists the peers, each `<name>=<card URL> <token variable>`, such as
-  `other=http://127.0.0.1:7440/.well-known/agent-card.json OTHER_A2A_TOKEN`. The token is read from that variable
-  in the process that sends or follows, so set it where `metaform mcp serve` runs; it is never stored. Setting the
-  list says which variables are not set there. Metaform sends to no other agent; a send to another name is refused
-  with the list.
+- The peers are the person's records for the whole home, `a2a_peers.py`, kept in `<home>/mcp/a2a-peers.json`:
+  `metaform mcp a2a_peer_add <name> <card URL> [token=<token variable>]` adds one or replaces the one of that name, such as
+  `metaform mcp a2a_peer_add other http://127.0.0.1:7440/.well-known/agent-card.json token=OTHER_A2A_TOKEN`, leaving the
+  others as they are; `metaform mcp a2a_peer_remove <name>` removes one; `metaform mcp a2a_peers`, the tool
+  `mcp_a2a_peers`, lists them. Add and remove are the command line's and refused in an agent's session. The token is
+  read from its variable in the process that sends or follows, so set it where `metaform mcp serve` runs; it is
+  never stored, and add says when it is not set there. Metaform sends to no other agent; a send to another name is
+  refused with the list. Until the settings cleanup of 2026-10-15 (ticket 0d9e3882) they were the person-only list
+  setting `mcp_a2a_peers`; the mcp module's start carries a stored list over once per home and removes its rows.
 - `mcp a2a_send <peer> <address> <text> [title=] [work=]`, the tool `mcp_a2a_send`, sends one message whose
   `contextId` is the Address, which this project's map must hold, with the sending agent instance (its
   `METAFORM_SESSION`, a child its own) as `sender` in the Address extension's metadata and in the User-Agent, which a

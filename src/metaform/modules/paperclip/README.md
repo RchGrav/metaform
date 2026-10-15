@@ -51,7 +51,7 @@ All are `person_only`: where Metaform calls out to and which agents it hands wor
 - `paperclip_assignee`, empty: the agent `send` assigns to, by id or short name; empty lets Jev choose when it is on, else sends to Paperclip's backlog. A switch of `send`.
 - `paperclip_project`, empty: the project `send` files issues under. A switch of `send`.
 - `paperclip_check_minutes`, 10: how often Paperclip wakes the Metaform agent to check an issue a Metaform agent works, through the issue's monitor, and how often `watch` syncs.
-- `paperclip_jev_route`, on: let Jev choose the Address of an issue that names none, when `jev` is on. `jev_decisions` does not name this decision; this setting turns it off.
+- Jev chooses the Address of an issue that names none while `jev` is on and `jev_decisions` includes `paperclip.route`, which an empty list does. The setting `paperclip_jev_route` folded into that decision point in the settings cleanup of 2026-10-15; where it was off, paperclip's start carries it once into a `jev_decisions` that leaves `paperclip.route` out.
 - `paperclip_agents_may_send`, off: let an agent send a ticket to Paperclip over MCP.
 
 ## Events

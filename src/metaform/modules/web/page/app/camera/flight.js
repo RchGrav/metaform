@@ -11,22 +11,20 @@ import {shownNode} from '/page/app/map3d/light.js';
 import {G, wake3d} from '/page/app/map3d/graph3d.js';
 import {LABEL} from '/page/app/map3d/labels.js';
 import {small3d, fly3d, meetEnds} from '/page/app/camera/fly3d.js';
-import {VIEW, PEEK} from '/page/app/views/settings.js';
+import {VIEW, PEEK, saveView} from '/page/app/views/settings.js';
 import {flatNow, flatFacing} from '/page/app/views/bar.js';
 import {resize} from '/page/app/views/lens.js';
 import {build2D} from '/page/app/map2d/build.js';
 import {FOOT2D, restingCard} from '/page/app/map2d/camera.js';
 import {select} from '/page/app/selection/select.js';
-import {posted} from '/page/app/intake/intake.js';
 import {WS} from '/page/app/workspace/workspace.js';
 
-/* 7, 8 and 9 choose the 2D map's direction, Auto, left to right and top to bottom, kept in the web_map_direction
- * setting, which the 2D layout reads; the map is drawn again in it. */
+/* 7, 8 and 9 choose the 2D map's direction, Auto, left to right and top to bottom, kept as web_map_direction in the
+ * person's view, which the 2D layout reads; the map is drawn again in it. */
 export const DIRECTION_KEYS = {7: 'auto', 8: 'across', 9: 'down'};
 export async function chooseDirection(direction) {
   if (!S.project) return;
-  const done = await posted('/api/settings', {key: 'web_map_direction', value: direction});
-  if (!done.ok) return toast(done.body.error || 'The direction was not saved.');
+  if (!await saveView('web_map_direction', direction)) return;
   PEEK.direction = direction;
   toast(`The 2D map runs ${{auto: 'as suits its pane', across: 'left to right', down: 'top to bottom'}[direction]}.`);
   await build2D(false);

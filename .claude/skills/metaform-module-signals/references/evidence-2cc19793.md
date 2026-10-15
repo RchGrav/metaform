@@ -1,0 +1,1 @@
+Demo script pattern: /tmp/bd73-scripts/demo_ab.py — a scratch home, the fake ACP agent set at a parent folder for claude/codex/gemini, FAKE_ACP_MASCOT=1 so later turns are answered, prompts read from the fake log entries' message.method == session/prompt.

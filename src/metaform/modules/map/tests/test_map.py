@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from metaform.data import Node, Store
+from metaform.data import Node, Store, StoreError
 
 pytestmark = pytest.mark.kind('fixture')
 
@@ -726,6 +726,19 @@ def test_work_records_are_added_edited_listed_and_done_through_one_verb_and_neve
     assert open_work_in(before) == [] and open_work_in(after) == [['broken']]
     refused = run('map', 'work', 'op=add', 'title=A ticket', 'condition=unbuilt', '--json', cwd=mapped, ok=False)
     assert refused.returncode == 2 and 'node' in refused.stderr
+    # The store refuses an open record nothing shows, whoever writes it, MAP-046, ticket 97085c0e: an ok, a built, a
+    # note alone; a stage with no task is the part's state, drawn on its node, and is kept.
+    for given in ('condition=ok', 'condition=built', 'note=just a note'):
+        empty = run('map', 'work', 'op=add', 'title=Works', 'node=element:code.alarm.audible', given, '--json',
+                    cwd=mapped, ok=False)
+        assert empty.returncode != 0 and 'is not work' in empty.stderr, given
+    stage = j(run, 'work', 'op=add', 'title=Stage', 'node=element:code.alarm.audible', 'condition=unbuilt', cwd=mapped)
+    assert (stage['condition'], stage['is_work']) == ('unbuilt', False)
+    emptied = run('map', 'work', 'op=edit', f'id={on_join["id"]}', 'condition=none', 'task=', cwd=mapped, ok=False)
+    assert emptied.returncode != 0 and 'is not work' in emptied.stderr
+    assert j(run, 'work', f'id={on_join["id"]}', cwd=mapped)['task'] == 'fix the tone'  # the refused edit wrote nothing
+    with pytest.raises(StoreError, match='is not work'):
+        store.add_work(Node('element', store.element('code.alarm.audible').id), None, note='x')
     unknown = run('map', 'work', 'op=add', 'title=A ticket', 'node=element:code.alarm.audible', 'condition=broken', 'later=yes', '--json',
                   cwd=mapped, ok=False)
     assert unknown.returncode == 2 and "does not take 'later=yes'" in unknown.stderr  # the chassis grammar, BASE-043
@@ -1157,7 +1170,7 @@ def test_distributing_over_n_agents_gives_the_first_n_glyphs_in_turn_to_the_tick
     done = store.add_work(alarm, None, task='finished')
     j(run, 'work', 'op=edit', f'id={done.id}', 'glyph=snail', cwd=mapped)  # outside the first three dealt
     store.finish_work(done.id, 'fixed')
-    outside = store.add_work(kitchen, None, note='vendored')  # no task: never dealt, never started
+    outside = store.add_work(kitchen, 'unbuilt', note='vendored')  # a stage, no task: never dealt, never started
     given = j(run, 'work', 'op=distribute', 'agents=3', cwd=mapped)['results']
     order = [todo[4], todo[0], todo[1], todo[2], todo[3], backlog[1], backlog[0]]
     assert [record['id'] for record in given] == [record.id for record in order]
@@ -2005,7 +2018,7 @@ def test_tickets_and_messages_written_before_numbers_are_numbered_once_in_the_or
     store = Store('proj')
     first = store.add_work(Node('element', 'code.alarm.audible'), None, task='First task.\nIn detail.')
     said = store.ask(Node('element', 'code.alarm.audible'), 'A question?')
-    last = store.add_work(Node('element', 'code.alarm.audible'), None, note='Last note.')
+    last = store.add_work(Node('element', 'code.alarm.audible'), 'unbuilt', note='Last note.')  # a stage, no task
     with Store('proj', module='map').tables() as tx:  # as a store written before numbering holds them
         tx.delete('numbered', {'kind': 'work'})
         tx.delete('numbered', {'kind': 'message'})

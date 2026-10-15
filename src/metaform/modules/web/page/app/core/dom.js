@@ -2,8 +2,27 @@
  * markup, and lists filled in place so what is typed and focused survives a redraw. */
 
 export const $ = selector => document.querySelector(selector);
-export const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-export const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+/* A theme token, a CSS variable of the page's root, read from the browser once and kept until the root changes: the 3D
+ * map reads its colours for every node on every frame, and each read of the computed style cost the frame. A theme,
+ * a text size or a class set on <html> is a change to its attributes, seen at the next read even within the same
+ * task, `takeRecords`; a resize may cross a media query. An empty value, read before the page's styles apply, is not
+ * kept. */
+const TOKENS = new Map();
+const ROOT_SEEN = new MutationObserver(() => TOKENS.clear());
+ROOT_SEEN.observe(document.documentElement, {attributes: true});
+addEventListener('resize', () => TOKENS.clear());
+export const css = name => {
+  if (ROOT_SEEN.takeRecords().length) TOKENS.clear();
+  let value = TOKENS.get(name);
+  if (value === undefined) {
+    value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    if (value) TOKENS.set(name, value);
+  }
+  return value;
+};
+// asked once; the list answers for the person's setting as it is now, whenever it changes
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
+export const reduced = () => REDUCED.matches;
 export const SVG = 'http://www.w3.org/2000/svg';
 
 /* A DOM node from a tag, its properties and its children; strings become text nodes, never markup. */

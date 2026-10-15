@@ -184,8 +184,8 @@ def main() -> None:
                 GREETING.set()
                 threading.Thread(target=mascot, daemon=True).start()
             update({'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': (
-                "Hello. I'm the demo's mascot, scripted, with no AI behind me. Connect your own AI tool to talk for "
-                'real: metaform install claude.')}})
+                "Hello. I'm the demo's mascot, scripted, with no AI behind me. To talk for real, run metaform start in "
+                'your own project: it connects Claude Code there.')}})
             send({'jsonrpc': '2.0', 'id': ident, 'result': {'stopReason': 'end_turn'}})
         elif method == 'session/prompt' and PLAYED.is_set():  # dispatch's turn to record what it learned, once done
             update({'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': (

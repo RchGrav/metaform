@@ -218,6 +218,23 @@ def taken_in(folder, server: Paperclip, monkeypatch, address: str = 'code.alarm.
     return beat['taken'][0]
 
 
+@pytest.mark.req('CLI-011')
+def test_routing_off_carries_once_into_a_jev_decisions_without_paperclip_route(folder):
+    """Settings cleanup 2026-10-15: paperclip_jev_route folds into jev_decisions as paperclip.route. Where the person
+    turned it off, the carry names every other decision there, so Jev still does not route issues; it runs once."""
+    from metaform import home, settings
+    scope = home.path_key(folder)
+    home.save(scope, 'paperclip', 'paperclip_jev_route', [False], folder=folder)
+    with home.chassis(write=True) as db:  # the test home's own start carried nothing and marked it; undo the mark
+        db.execute("DELETE FROM meta WHERE key='carried:paperclip-jev-route'")
+    settings._carried.clear()
+    assert paperclip.carry_route() == [f'{scope}: jev_decisions leaves out paperclip.route']
+    chosen = settings.value('jev_decisions', folder)
+    assert paperclip.ROUTE_DECISION not in chosen and 'choose_agent' in chosen
+    assert home.stored(scope, 'paperclip', 'paperclip_jev_route') is None
+    assert paperclip.carry_route() == [], 'once per home'
+
+
 def test_send_creates_the_issue_and_links_it_and_a_refused_create_gives_the_ticket_back(folder, server):
     store = Store('proj')
     work_id = ticket('Wire the beeper')

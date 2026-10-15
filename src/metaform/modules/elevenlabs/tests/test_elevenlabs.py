@@ -94,7 +94,7 @@ def test_without_its_key_it_refuses_and_a_refusal_never_carries_the_key(run, ele
 def test_scribe_hears_a_file_when_elevenlabs_is_the_voice_engine(run, eleven, monkeypatch, tmp_path):
     monkeypatch.setenv('ELEVENLABS_API_KEY', FAKE_KEY)
     calls = caught(monkeypatch, b'{"text": "ask what you can do", "language_code": "en"}')
-    run('set', '--voice-engine', 'elevenlabs', '--elevenlabs-scribe-language', 'en')
+    run('set', '--voice-engine', 'elevenlabs', '--voice-language', 'en')
     clip = tmp_path / 'clip.wav'
     clip.write_bytes(b'RIFF')
     heard = json.loads(run('voice', 'transcribe', str(clip), '--json').stdout)

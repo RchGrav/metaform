@@ -48,6 +48,14 @@ def _speakers(ctx: Any = None) -> list[str]:
 SERVER_MODELS = ('auto', *models.SERVER)
 BROWSER_MODELS = ('auto', *models.BROWSER_NAMES)
 LANGUAGE = re.compile(r'^(auto|[a-z]{2,3})$')
+# The languages Whisper hears, by the codes its tokenizer names them with (openai/whisper, whisper/tokenizer.py), in
+# its order: the choices of voice_language, which every engine here is told.
+LANGUAGES = ('en', 'zh', 'de', 'es', 'ru', 'ko', 'fr', 'ja', 'pt', 'tr', 'pl', 'ca', 'nl', 'ar', 'sv', 'it', 'id', 'hi',
+             'fi', 'vi', 'he', 'uk', 'el', 'ms', 'cs', 'ro', 'da', 'hu', 'ta', 'no', 'th', 'ur', 'hr', 'bg', 'lt', 'la',
+             'mi', 'ml', 'cy', 'sk', 'te', 'fa', 'lv', 'bn', 'sr', 'az', 'sl', 'kn', 'et', 'mk', 'br', 'eu', 'is', 'hy',
+             'ne', 'mn', 'bs', 'kk', 'sq', 'sw', 'gl', 'mr', 'pa', 'si', 'km', 'sn', 'yo', 'so', 'af', 'oc', 'ka', 'be',
+             'tg', 'sd', 'gu', 'am', 'yi', 'lo', 'uz', 'fo', 'ht', 'ps', 'tk', 'nn', 'mt', 'sa', 'lb', 'my', 'bo', 'tl',
+             'mg', 'as', 'tt', 'haw', 'ln', 'ha', 'ba', 'jw', 'su', 'yue')
 
 
 def _check_language(value: Any, folder: Path) -> list[str] | None:
@@ -87,9 +95,12 @@ settings.choice('voice_browser_model', list(BROWSER_MODELS), 'auto', scope='glob
                 details='auto is base. It downloads once, after you agree to its size, into the Metaform home, and '
                         'the browser keeps a copy; the audio never leaves the device.',
                 label='Whisper model in the browser', heading='Listening')
-settings.text('voice_language', 'auto', scope='global', check=_check_language,
-              help='The language you speak, as a code such as en, or auto to let Whisper tell.',
-              label='Language you speak', heading='Listening')
+# The one language the person is heard in: the page, the phone (twilio) and Scribe (elevenlabs) all take it from here,
+# settings cleanup 2026-10-15, which merged twilio_language and elevenlabs_scribe_language into it.
+settings.choice('voice_language', ['auto', *LANGUAGES], 'auto', scope='global', check=_check_language,
+                help='The language you speak, as a code such as en, or auto to let the engine tell, on the page and '
+                     'on the phone.',
+                label='Language you speak', heading='Listening')
 settings.choice('voice_send', ['review', 'auto'], 'review', scope='global',
                 help='After you speak: review leaves the text in the box for Enter; auto sends it after a pause.',
                 label='Send what you said', heading='Listening')
@@ -101,9 +112,6 @@ settings.choice('voice_send_audio', ['never', 'accepted'], 'never', scope='globa
 settings.choice('voice_device', ['auto', 'cuda', 'cpu'], 'auto', scope='global',
                 help='Where the server engine runs Whisper: auto (an NVIDIA GPU when there is one), cuda or cpu.',
                 label='Whisper runs on', category='advanced')
-settings.number('voice_idle_minutes', 10, min=0, max=1440, scope='global',
-                help='Minutes the server keeps its Whisper model loaded after you last spoke; 0 keeps it loaded.',
-                label='Unload Whisper after idle', category='advanced')
 settings.number('voice_max_seconds', 120, min=5, max=600, scope='global',
                 help='The longest utterance heard at once, in seconds; anything longer is refused.',
                 label='Longest recording', category='advanced')
@@ -218,7 +226,7 @@ def status(ctx: Context) -> dict[str, Any]:
                    'install': None if found['installed'] else engine.INSTALL, 'device': where,
                    'compute_type': compute, 'gpu': found['gpu'], 'cores': found['cores'], 'model': model.name,
                    'size': model.size, 'downloaded': models.present(models.server_folder(model), model),
-                   'loaded': engine.loaded(), 'idle_minutes': ctx.setting('voice_idle_minutes'),
+                   'loaded': engine.loaded(), 'idle_minutes': IDLE_MINUTES,
                    'downloading': models.status_of(f'server:{model.name}') or None},
         'browser': {'model': browser, 'runtime': f'runtime/{models.RUNTIME_VERSION}/',
                     **{variant: {**models.browser_present(browser, variant),
@@ -306,7 +314,7 @@ def transcribe(ctx: Context) -> dict[str, Any]:
                    f'metaform voice download model={model.name} --confirm')
     try:
         heard = engine.transcribe(path, name=model.name, language=language(ctx), partial=bool(ctx.nouns.get('partial')),
-                                  idle_minutes=int(ctx.setting('voice_idle_minutes')),
+                                  idle_minutes=IDLE_MINUTES,
                                   prefer=str(ctx.setting('voice_device')))
     except engine.Busy:
         return {'text': None, 'busy': True, 'partial': True, 'engine': 'server'}
@@ -356,6 +364,36 @@ def speak(ctx: Context) -> dict[str, Any]:
     return {'file': str(target), 'bytes': target.stat().st_size, 'engine': name}
 
 
+# Minutes the server keeps its Whisper model loaded after the person last spoke: long enough that a conversation never
+# waits on a reload, short enough that an idle machine gets its memory back. Settings cleanup 2026-10-15 made it fixed.
+IDLE_MINUTES = 10
+# The language settings merged into voice_language, settings cleanup 2026-10-15, the phone's first: each was the
+# language the person speaks.
+MERGED_LANGUAGES = (('twilio', 'twilio_language'), ('elevenlabs', 'elevenlabs_scribe_language'))
+
+
+def carry_language(ctx: Context | None = None) -> list[str]:
+    """Once per home, as voice starts: a language stored in twilio_language or elevenlabs_scribe_language becomes
+    voice_language when the person has not set that, and the old rows are removed. All three were global."""
+    del ctx
+    return settings.carry_once('speech-language', _carry_language)
+
+
+def _carry_language() -> list[str]:
+    said: list[str] = []
+    found = [(owner, key, (home.stored('global', owner, key) or [None])[0]) for owner, key in MERGED_LANGUAGES]
+    chosen = next((str(value) for _, _, value in found if value not in (None, 'auto')), None)
+    if chosen is not None and home.stored('global', 'voice', 'voice_language') is None:
+        home.save('global', 'voice', 'voice_language', [chosen])
+        said.append(f'voice_language = {chosen}')
+    for owner, key, value in found:
+        if value is not None or home.glued('global', owner, key):
+            home.clear('global', owner, key)
+            home.set_glue('global', owner, key, False)
+            said.append(f'{key} ({value}) removed')
+    return said
+
+
 MODULE = Module(
     id='voice',
     summary='Speech to text: talk to Metaform instead of typing, with Whisper on your own machine.',
@@ -394,7 +432,7 @@ MODULE = Module(
              surfaces=('cli',), effect='write', open_world=True),  # not an agent's to spend the person's account on
     ),
     subscriptions=(),
-    start=None,
+    start=carry_language,
     stop=lambda ctx: engine.unload(),
     status=None,
     tables=None,

@@ -90,6 +90,7 @@ def options(handler: Handler) -> None:
         found = build.choices()
         wrapper, onboarding = build.remote_prompts()
         shapes = [{'id': name, 'name': SHAPES[name], 'modules': list(build.shape(name))} for name in build.SHAPES]
+        installer = list(build.installer_default())
     except Stop as error:
         return handler.refuse(error, 400)
     handler.send(200, {
@@ -102,7 +103,7 @@ def options(handler: Handler) -> None:
                      'place': choice.place} for choice in found],
         'prompts': {'wrapper': {'name': wrapper.name, 'number': wrapper.number, 'text': wrapper.text},
                     'onboarding': {'name': onboarding.name, 'number': onboarding.number, 'text': onboarding.text}},
-        'defaults': {'kind': 'project', 'shape': 'remote', 'files': True}})
+        'defaults': {'kind': 'project', 'shape': 'remote', 'files': True, 'installer': installer}})
 
 
 def _request(given: dict[str, Any]) -> Any:

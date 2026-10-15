@@ -92,6 +92,8 @@ Start an agent on a ticket through ACP, follow it, message it and stop it.
 |---|---|---|
 | `dispatch_agents` | List the agents dispatch can start, the default among them, and how many more may be summoned now. Each comes with its name, its start command, and whether that command is found on this system. | read |
 | `dispatch_autostart` | Start agents on the waiting tickets in board order, while the person has Autostart agents checked. Held tickets are left out, and at most dispatch_agents run at once. | write, open world |
+| `dispatch_broadcast` | Send a person's message to every agent running on the project at once, and keep it with whom it reached. | write, open world |
+| `dispatch_broadcasts` | List the broadcasts kept on the project, newest first, each with whom it reached. | read |
 | `dispatch_claim` | Reserve the part of the map a chosen proposal touches, so no other ticket there starts until its tickets land. | write |
 | `dispatch_claims` | List the work claims reserving parts of the map, with their state, and the proposals sentinels made. | read |
 | `dispatch_cancel` | Cancel a ticket, the person's own: its agent's turn is cancelled with session/cancel, its session ends, and the ticket is closed with the outcome cancelled, never completed. Refused to an agent while agents_may_set_control is off. | remove, open world |
@@ -102,6 +104,9 @@ Start an agent on a ticket through ACP, follow it, message it and stop it.
 | `dispatch_merges` | List the agents' merges waiting for the person's review, the soonest first. | read |
 | `dispatch_options` | List the settings each agent offers, its model, effort, mode and the rest, as it offered them at its last session in this project, and the ones dispatch_<agent>_<option> gives it. prime=true starts the agent once to read them, with no prompt. | write, open world |
 | `dispatch_message` | Send a person's message to the agent working a ticket. | write, open world |
+| `dispatch_note` | Send a short note to the agents working other open tickets, by ticket, part of the map, file or topic: information each reads at its next turn, kept on every ticket it touches; it never steers. With wait=<seconds> it is a question, and the call waits for the replies. | write, open world |
+| `dispatch_notes` | List your notes, sent and received, with where each stands for each receiver: queued, delivered, read or replied; note=<id> for one note and its replies. | read |
+| `dispatch_peers` | See who is at work where: each agent on an open ticket, its Address, the files it touched and what it said last. With at=, file= or topic=, who else is in that part or file, with a note ready to ask them before you edit. | read |
 | `dispatch_prep` | Start an agent in a merge's worktree to prepare its code for the person's review. | write, open world |
 | `dispatch_propose` | Record a sentinel's proposals for the issue it was raised on, for the person to choose one on the page. Each is presented beside the part of the map it reserves. | write |
 | `dispatch_recover` | Return the tickets of dead agent runners to the queue, while the dispatch_recovery setting is automatic. Cleanup it cannot be sure of leaves the work taken. | write, open world |

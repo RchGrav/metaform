@@ -200,8 +200,6 @@ The line is counted from the code tables by node and by file, never symbol by sy
 
 `--code-index`, default `index.scip`: the SCIP index file, relative to the project.
 
-`--code-layer`, default `code`: the layer the code symbols and their links are kept in.
-
 `--code-kinds`, default Function, Method, Class, Interface, Struct, Enum, Trait and Type: the kinds of declaration kept, as the code graph labels them.
 
 `--code-ignore`, default `*.md`, `*.markdown`, `*.rst`, `*.txt`, `*.xml`, `*.html`, `*.htm`, `*.json`, `*.toml`, `*.yaml`, `*.yml`, `*.ini`, `*.cfg`, `*.css`, `*.svg`, `*.csv` and `*.lock`: files `code-import` never reads, as gitignore patterns. These are documents and data a code graph also parses; their elements and keys are not code.
@@ -216,7 +214,7 @@ Every verb is a plain function.
 
 ## Layers
 
-It writes whatever layer a `knowledge` call names. `code-import` creates the code layer, the setting `code_layer`, owned by map, mutable and hideable, and writes the code decisions into it as items; the links themselves are rows of `code_links` under it.
+It writes whatever layer a `knowledge` call names. `code-import` creates the code layer, named `code` (the constant `CODE_LAYER`, a setting before the settings cleanup of 2026-10-15), owned by map, mutable and hideable, and writes the code decisions into it as items; the links themselves are rows of `code_links` under it.
 
 ## Lifecycle and cleanup
 

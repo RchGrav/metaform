@@ -235,8 +235,9 @@ function drawing2d() {
   else if (!MODE.base) MODE.free = Boolean(M.base.free);
   Object.assign(MODE, {svg: M.svg, base});
 }
-/* The view the person has taken by hand, the wheel or a drag, is held from now on. */
-export function hold2d() { drawing2d(); MODE.free = true; }
+/* The view the person has taken by hand, the wheel or a drag, is held from now on; while an agent is followed, at the
+ * zoom the hand chose. */
+export function hold2d() { drawing2d(); MODE.free = true; FOLLOW.scale = null; }
 /* The camera to full fit, or with the view held to the zoom it is at; with `center` in the middle as far as the limits
  * allow, or the middle of the view where it is going; eased, or with `now` put there at once, for a view that fades
  * in. */
@@ -248,18 +249,76 @@ export function aim2d(center = null, now = false) {
   const view = place2d(scale, center || (here ? focus2d(here, area) : mid2d(M.bounds)), area);
   if (now || !M.cam) setCam(view); else moveCam(view);
 }
-/* The agent the person follows, A, `followFigure` in figures/eyes.js: its ticket and the node its figure is on. */
-export const FOLLOW = {work: null, node: null};
-/* The 2D map is fit-all, except while the person follows an agent: then it eases to frame the agent's node with its
- * neighbours, and the view is held there. A selection, or an agent's start, never moves the 2D camera. */
+/* The agent the person follows, A, `followFigure` in figures/eyes.js: its ticket, the node its figure is on, the
+ * zoom the 2D map follows it at, null for the zoom the hand left, the place that zoom frames the node's parts about,
+ * when each map last went with it, and how fast each map's camera is going with it. */
+export const FOLLOW = {work: null, node: null, scale: null, around: null, at2d: null, at3d: null, go2d: null,
+  go3d: null};
+/* The seconds since a map last went with the followed figure, on the clock, not the frame's own step, which is held
+ * short: on a machine drawing a few frames a second the camera still reaches the figure in the same time. */
+export function followPassed(key) {
+  const now = performance.now(), passed = Math.min(1, Math.max(0, now - (FOLLOW[key] ?? now)) / 1000);
+  FOLLOW[key] = now;
+  return passed;
+}
+/* A camera going with a followed figure eases, VIEW-041: a critically damped spring, which sets off from rest, eases
+ * in, and comes to rest at the figure without passing it, eases out, and follows a figure that moves without a jolt.
+ * One part of it, `at` going at `speed` toward `goal`, after `passed` seconds, worked out exactly, so a slow frame
+ * never throws it: where it is then and how fast it goes. FOLLOW_PACE is the spring's own rate, a second's worth. */
+export const FOLLOW_PACE = 8;
+export function spring(at, speed, goal, passed) {
+  if (reduced()) return [goal, 0];  // with reduced motion it goes with the figure at once, VIEW-016
+  const off = at - goal, push = speed + FOLLOW_PACE * off, fade = Math.exp(-FOLLOW_PACE * passed);
+  return [goal + (off + push * passed) * fade, (speed - FOLLOW_PACE * push * passed) * fade];
+}
+/* The 2D map is fit-all, except while the person follows an agent: then its zoom is the one that frames the agent's
+ * node with its neighbours, and the view is held there, while `follow2d` keeps the agent's figure in its middle. A
+ * selection, or an agent's start, never moves the 2D camera. */
 export function autoZoom2d(id) {
   const area = area2d(), center = center2d(id);
   if (!M.svg || !M.bounds || !area.width || !area.height) return;
   if (!id || id !== FOLLOW.node || !center) return aim2d();  // full fit refits, a view held by hand stays
   drawing2d();
-  const scale = framing2d(id, center, area);
-  MODE.free = scale > scaleFor(area) * 1.001;  // a framing no closer than the fit is full fit, and refits as it does
-  moveCam(place2d(scale, center, area));
+  MODE.free = true;
+  Object.assign(FOLLOW, {scale: framing2d(id, center, area), around: null});
+  again2d();  // the 2D frames that keep the figure in the middle, `follow2d`, run again if they rested
+}
+/* Each frame while an agent is followed: the 2D camera's middle eased to its figure, at `x`, `y`, and its zoom to the
+ * follow zoom, `spring`, so the figure stays in the middle as it walks; the map's limits do not hold it, so a figure at
+ * the map's edge is in the middle too. Once the figure is `at` its node, the follow zoom frames the node and the parts
+ * one join away about the figure's place beside it, so they are all in view with the figure in the middle. Following
+ * holds the camera, so an eased move under way ends, except a dive into a node, whose map is then no longer the one
+ * the figure walks. A view already there is not written again, so a figure at rest costs the map nothing. */
+export function follow2d(x, y, at = false) {
+  const passed = followPassed('at2d');
+  if (!M.svg || !M.cam || M.svg !== M.base?.svg || (M.to && MOVE.dive)) return;
+  const area = area2d();
+  if (!area.width || !area.height) return;
+  if (M.to) stopCam();
+  // framed again only when the place has moved by more than a little of the view: the figure's least size on the
+  // screen moves its place as the zoom changes, so framing at each step of that would chase it
+  const around = FOLLOW.around, moved = !around || Math.hypot(x - around.x, y - around.y) > M.cam.w * 0.02;
+  if (at && FOLLOW.scale && FOLLOW.node && moved) {
+    Object.assign(FOLLOW, {scale: framing2d(FOLLOW.node, {x, y}, area), around: {x, y}});
+  }
+  // the spring keeps where it is itself, so a step too small to draw is not lost; a camera another hand moved since,
+  // the wheel's, is where it goes on from
+  const go = FOLLOW.go2d ||= {cam: null, x: 0, y: 0, zoom: 0, vx: 0, vy: 0, vzoom: 0};
+  if (go.cam !== M.cam) {
+    Object.assign(go, {x: M.cam.x + M.cam.w / 2, y: M.cam.y + M.cam.h / 2, zoom: Math.log(area.width / M.cam.w)});
+  }
+  [go.x, go.vx] = spring(go.x, go.vx, x, passed);
+  [go.y, go.vy] = spring(go.y, go.vy, y, passed);
+  // the zoom goes in only as far as keeps the figure within a fifth of the view of its middle, so a figure the middle
+  // has not reached yet is never zoomed out of sight
+  const keep = Math.min(area.width / Math.max(1e-6, Math.abs(x - go.x)),
+    area.height / Math.max(1e-6, Math.abs(y - go.y)));
+  const goal = FOLLOW.scale && Math.min(FOLLOW.scale, Math.max(keep * 0.2, Math.exp(go.zoom)));
+  [go.zoom, go.vzoom] = goal ? spring(go.zoom, go.vzoom, Math.log(goal), passed) : [go.zoom, 0];
+  const w = area.width / Math.exp(go.zoom), height = area.height / Math.exp(go.zoom);
+  const cam = {x: go.x - w / 2, y: go.y - height / 2, w, h: height};
+  if (!near(cam, M.cam)) setCam(cam);
+  go.cam = M.cam;
 }
 /* Where a selection is centered: a node at its middle, and a join of the whole map at the middle of its edge, where a
  * 2D figure stands at it, `spot2d`. */

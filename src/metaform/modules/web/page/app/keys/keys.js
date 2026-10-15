@@ -15,6 +15,7 @@ import {MAC, resetZoom} from '/page/app/map2d/camera.js';
 import {note2d} from '/page/app/map2d/hover.js';
 import {deselect, step} from '/page/app/map2d/wire.js';
 import {followNext, agentView} from '/page/app/figures/eyes.js';
+import {BUBBLE_SIZES, stepBubbleSize} from '/page/app/figures/bubble3d.js';
 import {across, below, besideDrawn, besideOnLevel, childrenOf, parentOf, roots, goInside, levelUp, mapKeys,
   zoomKey, stepDepth} from '/page/app/keys/walk.js';
 import {select} from '/page/app/selection/select.js';
@@ -55,6 +56,8 @@ const KEYS = [
     match: ['2'], run: () => stepFlow()},
   {group: 'Looks', keys: ['3'], what: 'Layout: Organic or Flat', match: ['3'], run: stepLayout},
   {group: 'Looks', keys: ['4'], what: 'Depth: 1, 2, 3, 4 or all levels', match: ['4'], run: () => stepDepth()},
+  {group: 'Looks', keys: ['5'], what: 'Speech bubble size: smallest, then larger in four steps',
+    match: ['5'], run: () => note2d(`Bubble size: ${stepBubbleSize() + 1} of ${BUBBLE_SIZES.length}`)},
   {group: 'Looks', keys: ['P'], what: 'Pause or resume the 3D layout', match: ['p', 'P'], run: () => pauseLayout()},
   {group: 'Looks', keys: ['R'], what: 'Re-run the 3D layout from new places', match: ['r', 'R'],
     run: () => relayout()},

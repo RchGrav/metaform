@@ -45,9 +45,11 @@ const ELK2D = {layout: 'elk', elk: {nodePlacementStrategy: 'NETWORK_SIMPLEX'}, m
  * while the map drawn before stays on the page, and replaces it once made, `fitPick2d`. The way chosen for the same
  * text in the same step is kept, and the last `most` drawings, so a pane swapped back and forth, or a map redrawn as
  * it was, gets its own picture again at once. Laying out stops after `budget` ms once one way is drawn, so a large map
- * costs about that and no more; `since` is when the first choice not yet shown began. */
+ * costs about that and no more; `since` is when the first choice not yet shown began. A map drawn where none is shown,
+ * as at load, is drawn in one way and shown, and the search goes on after, each layout in an idle moment or after
+ * `wait` ms; the ways chosen are kept in this browser for each base, so a reload draws the same map once, `kept2d`. */
 export const FIT2D = {config: null, step: Math.log(1.25), stay: 0.75, budget: 6000, correction: 0.5, small: 100,
-  narrow: 2, most: 24, chosen: new Map(), drawn: new Map(), since: null};
+  narrow: 2, most: 24, wait: 1000, chosen: new Map(), drawn: new Map(), since: null};
 /* A name as a 2D label: the characters Mermaid would read as its own taken out, and a name longer than `most` cut at
  * the last break between words that keeps most of it, with an ellipsis, so a label never ends in half a word and always
  * says it goes on. The whole name is in the panel and in the 3D map's tooltip. */
@@ -175,19 +177,40 @@ async function dagre2d(lines, shape, generation) {
 }
 /* Each element's drawn group, by its id, titled with its name and address. */
 function nodesIn(svg, keys) {
-  const nodes = new Map();
+  const nodes = new Map(), groups = groupsByKey(svg);
   for (const [id, key] of keys) {
-    const group = svg.querySelector(`[id*="-flowchart-${key}-"]`);
+    const group = groups.get(key);
     const {element} = S.elements.get(id);
     if (group) placeIn(nodes, id, group, element.address, element.open_work,
       labelOf(element) === element.address ? element.address : `${labelOf(element)}\n${element.address}`);
   }
   return nodes;
 }
+/* For each key, the first part of the drawing, in its order, whose id holds `-flowchart-<key>-`, found in one walk of
+ * it: a search of the whole drawing for each node made a build cost the nodes times the drawing. */
+function groupsByKey(svg) {
+  const found = new Map(), mark = '-flowchart-';
+  for (const part of svg.querySelectorAll(`[id*="${mark}"]`)) {
+    const id = part.id;
+    for (let at = id.indexOf(mark); at >= 0; at = id.indexOf(mark, at + 1)) {
+      const rest = id.slice(at + mark.length);
+      for (let end = rest.indexOf('-'); end >= 0; end = rest.indexOf('-', end + 1)) {
+        const key = rest.slice(0, end);
+        if (!found.has(key)) found.set(key, part);
+      }
+    }
+  }
+  return found;
+}
 /* Each edge drawn, its path marked with its join's open work and its arrowheads, `pointed`. */
 function edgesIn(svg, drawn) {
+  // the drawing's parts by their data-id, the first of each, and its edge paths in order, each read once
+  const byData = new Map(), paths = svg.querySelectorAll('.edgePaths path');
+  for (const part of svg.querySelectorAll('[data-id]')) {
+    if (!byData.has(part.dataset.id)) byData.set(part.dataset.id, part);
+  }
   const edges = drawn.map(({join, provider}, index) => ({join, provider,
-    path: svg.querySelector(`[data-id="e${index}"]`) || svg.querySelectorAll('.edgePaths path')[index]}));
+    path: byData.get(`e${index}`) || paths[index]}));
   for (const edge of edges) {
     for (const condition of edge.join.open_work || []) edge.path?.classList.add(`work-${condition}`);
   }

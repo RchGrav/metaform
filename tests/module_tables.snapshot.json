@@ -1,0 +1,4503 @@
+{
+ "autoticket": {
+  "version": 1,
+  "compatible_from": 1,
+  "tables": {
+   "groups": {
+    "place": "project",
+    "key": [
+     "group_id"
+    ],
+    "columns": {
+     "active": [
+      "text",
+      "TEXT",
+      true,
+      "'{}'"
+     ],
+     "address": [
+      "text",
+      "TEXT",
+      true,
+      "''"
+     ],
+     "count": [
+      "int",
+      "INTEGER",
+      true,
+      "0"
+     ],
+     "example": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "fingerprint": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "first_seen": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "group_id": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "known": [
+      "int",
+      "INTEGER",
+      true,
+      "0"
+     ],
+     "last_seen": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "listed": [
+      "int",
+      "INTEGER",
+      true,
+      "0"
+     ],
+     "number": [
+      "int",
+      "INTEGER",
+      true,
+      "0"
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      "''"
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "address",
+        0,
+        "BINARY"
+       ],
+       [
+        "number",
+        0,
+        "BINARY"
+       ],
+       [
+        "group_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "work_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "group_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "logs": {
+    "place": "project",
+    "key": [
+     "source"
+    ],
+    "columns": {
+     "added": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "beat": [
+      "real",
+      "REAL",
+      true,
+      "0.0"
+     ],
+     "drops": [
+      "int",
+      "INTEGER",
+      true,
+      "0"
+     ],
+     "holder": [
+      "text",
+      "TEXT",
+      true,
+      "''"
+     ],
+     "identity": [
+      "text",
+      "TEXT",
+      true,
+      "''"
+     ],
+     "last_drop": [
+      "text",
+      "TEXT",
+      true,
+      "''"
+     ],
+     "offset": [
+      "int",
+      "INTEGER",
+      true,
+      "-1"
+     ],
+     "reconnects": [
+      "int",
+      "INTEGER",
+      true,
+      "0"
+     ],
+     "source": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "rules": {
+    "place": "project",
+    "key": [
+     "pattern"
+    ],
+    "columns": {
+     "added": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "pattern": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "state": {
+    "place": "project",
+    "key": [
+     "name"
+    ],
+    "columns": {
+     "name": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "value": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   }
+  }
+ },
+ "cloud": null,
+ "dispatch": {
+  "version": 15,
+  "compatible_from": 5,
+  "tables": {
+   "attempts": {
+    "place": "metaform",
+    "key": [
+     "work_id"
+    ],
+    "columns": {
+     "handed": [
+      "bool",
+      "INTEGER",
+      false,
+      "0"
+     ],
+     "how": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "next_at": [
+      "real",
+      "REAL",
+      true,
+      null
+     ],
+     "retries": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "seq": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "session_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "catalog": {
+    "place": "project",
+    "key": [
+     "agent",
+     "version"
+    ],
+    "columns": {
+     "agent": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "auth": [
+      "json",
+      "TEXT",
+      false,
+      null
+     ],
+     "extensions": [
+      "json",
+      "TEXT",
+      false,
+      null
+     ],
+     "name": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "seen": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "seq": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "settings": [
+      "json",
+      "TEXT",
+      false,
+      null
+     ],
+     "version": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "agent",
+        0,
+        "BINARY"
+       ],
+       [
+        "seq",
+        0,
+        "BINARY"
+       ],
+       [
+        "version",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "claim_work": {
+    "place": "metaform",
+    "key": [
+     "work_id"
+    ],
+    "columns": {
+     "claim_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "claim_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "work_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "claims": {
+    "place": "metaform",
+    "key": [
+     "claim_id"
+    ],
+    "columns": {
+     "claim_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "issue": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "name": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "nodes": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "seq": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "seq",
+        0,
+        "BINARY"
+       ],
+       [
+        "claim_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "lines": {
+    "place": "metaform",
+    "key": [
+     "session_id",
+     "name"
+    ],
+    "columns": {
+     "kind": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "name": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "seq": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "session_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "text": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "session_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "seq",
+        0,
+        "BINARY"
+       ],
+       [
+        "name",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "work_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "seq",
+        0,
+        "BINARY"
+       ],
+       [
+        "session_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "name",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "merges": {
+    "place": "project",
+    "key": [
+     "work_id"
+    ],
+    "columns": {
+     "branch": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "deadline": [
+      "real",
+      "REAL",
+      true,
+      null
+     ],
+     "ready": [
+      "real",
+      "REAL",
+      true,
+      null
+     ],
+     "reason": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "seq": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "state": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "worktree": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "state",
+        0,
+        "BINARY"
+       ],
+       [
+        "work_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "proposals": {
+    "place": "metaform",
+    "key": [
+     "issue"
+    ],
+    "columns": {
+     "issue": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "seq": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "text": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "seq",
+        0,
+        "BINARY"
+       ],
+       [
+        "issue",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "raised": {
+    "place": "metaform",
+    "key": [
+     "work_id"
+    ],
+    "columns": {
+     "agent": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "asked": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "node": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "seq": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "started": [
+      "real",
+      "REAL",
+      false,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "seq",
+        0,
+        "BINARY"
+       ],
+       [
+        "work_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "sessions": {
+    "place": "metaform",
+    "key": [
+     "session_id"
+    ],
+    "columns": {
+     "agent": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "how": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "nonce": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "origin": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "pid": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "port": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "recovery": [
+      "json",
+      "TEXT",
+      false,
+      null
+     ],
+     "runner": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "seq": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "session_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "started": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "state": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "token": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "seq",
+        0,
+        "BINARY"
+       ],
+       [
+        "session_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "work_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "seq",
+        0,
+        "BINARY"
+       ],
+       [
+        "session_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "spend": {
+    "place": "metaform",
+    "key": [
+     "session_id",
+     "seq"
+    ],
+    "columns": {
+     "cache_read": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "cache_write": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "cost": [
+      "real",
+      "REAL",
+      false,
+      null
+     ],
+     "currency": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "day": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "input": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "metered": [
+      "bool",
+      "INTEGER",
+      false,
+      "1"
+     ],
+     "output": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "run": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "seq": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "session_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "thought": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "tokens": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "day",
+        0,
+        "BINARY"
+       ],
+       [
+        "session_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "seq",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "run",
+        0,
+        "BINARY"
+       ],
+       [
+        "session_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "seq",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "work_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "session_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "seq",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "spending": {
+    "place": "project",
+    "key": [
+     "session_id",
+     "seq"
+    ],
+    "columns": {
+     "cache_read": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "cache_write": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "cost": [
+      "real",
+      "REAL",
+      false,
+      null
+     ],
+     "currency": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "day": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "input": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "metered": [
+      "bool",
+      "INTEGER",
+      false,
+      "1"
+     ],
+     "output": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "run": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "seq": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "session_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "thought": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "tokens": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "day",
+        0,
+        "BINARY"
+       ],
+       [
+        "session_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "seq",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "run",
+        0,
+        "BINARY"
+       ],
+       [
+        "session_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "seq",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "work_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "session_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "seq",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "ticket_options": {
+    "place": "metaform",
+    "key": [
+     "work_id"
+    ],
+    "columns": {
+     "effort": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "mode": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "model": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "prompts": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "seq": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   }
+  }
+ },
+ "elevenlabs": null,
+ "fork": null,
+ "hello": {
+  "version": 2,
+  "compatible_from": 2,
+  "tables": {
+   "notes": {
+    "place": "project",
+    "key": [
+     "note_id"
+    ],
+    "columns": {
+     "at": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "note_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "text": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "at",
+        0,
+        "BINARY"
+       ],
+       [
+        "note_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "todos": {
+    "place": "metaform",
+    "key": [
+     "work_id"
+    ],
+    "columns": {
+     "greeted": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "visits": {
+    "place": "metaform",
+    "key": [
+     "name"
+    ],
+    "columns": {
+     "name": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "times": [
+      "int",
+      "INTEGER",
+      true,
+      "0"
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   }
+  }
+ },
+ "intake": null,
+ "map": {
+  "version": 15,
+  "compatible_from": 9,
+  "tables": {
+   "challenge_states": {
+    "place": "metaform",
+    "key": [
+     "item_id"
+    ],
+    "columns": {
+     "answered": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "approved": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "item_id": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "link_id": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "link_kind": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "state": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "state",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [
+     "link_kind in ( 'element' , 'join' )",
+     "state in ( 'A' , 'B' , 'C' , 'plan' )"
+    ],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "code_edges": {
+    "place": "metaform",
+    "key": [
+     "layer_id",
+     "path",
+     "source",
+     "target_path",
+     "target",
+     "kind"
+    ],
+    "columns": {
+     "kind": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "layer_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "line": [
+      "int",
+      "INTEGER",
+      false,
+      "0"
+     ],
+     "path": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "source": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "target": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "target_path": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "layer_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "path",
+        0,
+        "BINARY"
+       ],
+       [
+        "source",
+        0,
+        "BINARY"
+       ],
+       [
+        "target_path",
+        0,
+        "BINARY"
+       ],
+       [
+        "target",
+        0,
+        "BINARY"
+       ],
+       [
+        "kind",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "layer_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "target",
+        0,
+        "BINARY"
+       ],
+       [
+        "kind",
+        0,
+        "BINARY"
+       ],
+       [
+        "path",
+        0,
+        "BINARY"
+       ],
+       [
+        "source",
+        0,
+        "BINARY"
+       ],
+       [
+        "target_path",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "layer_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "target_path",
+        0,
+        "BINARY"
+       ],
+       [
+        "path",
+        0,
+        "BINARY"
+       ],
+       [
+        "source",
+        0,
+        "BINARY"
+       ],
+       [
+        "target",
+        0,
+        "BINARY"
+       ],
+       [
+        "kind",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "code_files": {
+    "place": "metaform",
+    "key": [
+     "layer_id",
+     "path"
+    ],
+    "columns": {
+     "commit": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "hash": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "layer_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "path": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "provider": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "read": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "stamp": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "symbols": [
+      "int",
+      "INTEGER",
+      false,
+      "0"
+     ],
+     "unresolved": [
+      "json",
+      "TEXT",
+      false,
+      null
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "code_links": {
+    "place": "metaform",
+    "key": [
+     "layer_id",
+     "node_kind",
+     "node_id",
+     "path",
+     "qn"
+    ],
+    "columns": {
+     "by": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "item_id": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "label": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "layer_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "link_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "name": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "node_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "node_kind": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "path": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "proposal": [
+      "json",
+      "TEXT",
+      false,
+      null
+     ],
+     "provider": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "qn": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "state": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "why": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "item_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "layer_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "node_kind",
+        0,
+        "BINARY"
+       ],
+       [
+        "node_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "path",
+        0,
+        "BINARY"
+       ],
+       [
+        "qn",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "layer_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "qn",
+        0,
+        "BINARY"
+       ],
+       [
+        "node_kind",
+        0,
+        "BINARY"
+       ],
+       [
+        "node_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "path",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "link_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "layer_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "node_kind",
+        0,
+        "BINARY"
+       ],
+       [
+        "node_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "path",
+        0,
+        "BINARY"
+       ],
+       [
+        "qn",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "code_symbols": {
+    "place": "metaform",
+    "key": [
+     "layer_id",
+     "path",
+     "qn"
+    ],
+    "columns": {
+     "end_line": [
+      "int",
+      "INTEGER",
+      false,
+      "0"
+     ],
+     "label": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "layer_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "name": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "path": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "qn": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "start_line": [
+      "int",
+      "INTEGER",
+      false,
+      "0"
+     ],
+     "symbol": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "layer_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "qn",
+        0,
+        "BINARY"
+       ],
+       [
+        "path",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "eligible": {
+    "place": "metaform",
+    "key": [
+     "work_id"
+    ],
+    "columns": {
+     "agents": [
+      "json",
+      "TEXT",
+      true,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "glyphs": {
+    "place": "metaform",
+    "key": [
+     "work_id"
+    ],
+    "columns": {
+     "glyph": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "messages": {
+    "place": "metaform",
+    "key": [
+     "row"
+    ],
+    "columns": {
+     "answer": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "by": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "closed": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "created": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "kind": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "message_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "row": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "suggestions": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "target_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "target_kind": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "text": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "closed",
+        0,
+        "BINARY"
+       ],
+       [
+        "row",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "target_kind",
+        0,
+        "BINARY"
+       ],
+       [
+        "target_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "row",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      true,
+      [
+       [
+        "message_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "numbered": {
+    "place": "metaform",
+    "key": [
+     "kind",
+     "item_id"
+    ],
+    "columns": {
+     "address": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "item_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "kind": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "number": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "title": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "why": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "address",
+        0,
+        "BINARY"
+       ],
+       [
+        "number",
+        0,
+        "BINARY"
+       ],
+       [
+        "kind",
+        0,
+        "BINARY"
+       ],
+       [
+        "item_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "numbering": {
+    "place": "metaform",
+    "key": [
+     "name"
+    ],
+    "columns": {
+     "at": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "name": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "plans": {
+    "place": "metaform",
+    "key": [
+     "element_id"
+    ],
+    "columns": {
+     "element_id": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "item_id": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "join_id": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "layer_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "source": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "layer_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [
+     "source in ( 'direct' , 'approved' )"
+    ],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "question_work": {
+    "place": "metaform",
+    "key": [
+     "message_id"
+    ],
+    "columns": {
+     "message_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "work_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "message_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "reports": {
+    "place": "metaform",
+    "key": [
+     "report_id"
+    ],
+    "columns": {
+     "created": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "kind": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "layer_id": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "report_id": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "run_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "size": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "created",
+        0,
+        "BINARY"
+       ],
+       [
+        "report_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "layer_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "kind",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [
+     "kind in ( 'report' , 'feedback' , 'shape' )"
+    ],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "terms": {
+    "place": "project",
+    "key": [
+     "key"
+    ],
+    "columns": {
+     "address": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "at": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "by": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "definition": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "key": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "number": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "session": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "source": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "state": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "term": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "why": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "address",
+        0,
+        "BINARY"
+       ],
+       [
+        "number",
+        0,
+        "BINARY"
+       ],
+       [
+        "key",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "ticket_settings": {
+    "place": "metaform",
+    "key": [
+     "work_id"
+    ],
+    "columns": {
+     "agent": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "hold": [
+      "int",
+      "INTEGER",
+      false,
+      "0"
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "work": {
+    "place": "metaform",
+    "key": [
+     "row"
+    ],
+    "columns": {
+     "condition": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "created": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "done": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "held": [
+      "int",
+      "INTEGER",
+      true,
+      "0"
+     ],
+     "kind": [
+      "text",
+      "TEXT",
+      true,
+      "''"
+     ],
+     "note": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "outcome": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "position": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "resolution": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "reviewed": [
+      "int",
+      "INTEGER",
+      true,
+      "0"
+     ],
+     "row": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "steps": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "steps_done": [
+      "int",
+      "INTEGER",
+      true,
+      "0"
+     ],
+     "taken": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "taken_by": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "target_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "target_kind": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "task": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "condition",
+        0,
+        "BINARY"
+       ],
+       [
+        "row",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "done",
+        0,
+        "BINARY"
+       ],
+       [
+        "row",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "target_kind",
+        0,
+        "BINARY"
+       ],
+       [
+        "target_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "row",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      true,
+      [
+       [
+        "work_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "work_links": {
+    "place": "metaform",
+    "key": [
+     "work_id",
+     "number"
+    ],
+    "columns": {
+     "number": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "target_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "target_kind": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [
+     [
+      [
+       "work_id"
+      ],
+      "work",
+      [
+       "work_id"
+      ],
+      "NO ACTION",
+      "NO ACTION",
+      "NONE",
+      false
+     ]
+    ],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "work_steps": {
+    "place": "metaform",
+    "key": [
+     "row"
+    ],
+    "columns": {
+     "at": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "number": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "row": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "said": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "work_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "number",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [
+     [
+      [
+       "work_id"
+      ],
+      "work",
+      [
+       "work_id"
+      ],
+      "NO ACTION",
+      "NO ACTION",
+      "NONE",
+      false
+     ]
+    ],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   }
+  }
+ },
+ "mcp": {
+  "version": 6,
+  "compatible_from": 1,
+  "tables": {
+   "a2a_asks": {
+    "place": "project",
+    "key": [
+     "task_id"
+    ],
+    "columns": {
+     "answer_id": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "caller": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "cancelled": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "candidates": [
+      "json",
+      "TEXT",
+      false,
+      null
+     ],
+     "context_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "created": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "kind": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "message_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "seq": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "task_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "text": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "title": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "answer_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "task_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "context_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "task_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "message_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "task_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "seq",
+        0,
+        "BINARY"
+       ],
+       [
+        "task_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "a2a_exchanges": {
+    "place": "project",
+    "key": [
+     "exchange_id"
+    ],
+    "columns": {
+     "address": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "asked": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "created": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "exchange_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "peer": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "peer_task_id": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "said": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "seen": [
+      "json",
+      "TEXT",
+      false,
+      null
+     ],
+     "sender": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "sending": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "seq": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "state": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "text": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "updated": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "address",
+        0,
+        "BINARY"
+       ],
+       [
+        "exchange_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "peer",
+        0,
+        "BINARY"
+       ],
+       [
+        "peer_task_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "exchange_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "seq",
+        0,
+        "BINARY"
+       ],
+       [
+        "exchange_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "state",
+        0,
+        "BINARY"
+       ],
+       [
+        "exchange_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "a2a_peers": {
+    "place": "project",
+    "key": [
+     "name"
+    ],
+    "columns": {
+     "card": [
+      "json",
+      "TEXT",
+      true,
+      null
+     ],
+     "name": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "read": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "url": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "a2a_push": {
+    "place": "project",
+    "key": [
+     "work_id",
+     "config_id"
+    ],
+    "columns": {
+     "config_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "created": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "credentials": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "owner": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "scheme": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "token": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "url": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "a2a_tasks": {
+    "place": "project",
+    "key": [
+     "work_id"
+    ],
+    "columns": {
+     "caller": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "context_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "created": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "message_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "seq": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "message_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "work_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "seq",
+        0,
+        "BINARY"
+       ],
+       [
+        "work_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "tool_tasks": {
+    "place": "project",
+    "key": [
+     "task_id"
+    ],
+    "columns": {
+     "beat": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "cancel": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "created": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "error": [
+      "json",
+      "TEXT",
+      false,
+      null
+     ],
+     "expires": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "message": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "owner": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "result": [
+      "json",
+      "TEXT",
+      false,
+      null
+     ],
+     "state": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "task_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "tool": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "updated": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "expires",
+        0,
+        "BINARY"
+       ],
+       [
+        "task_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   }
+  }
+ },
+ "memory": {
+  "version": 6,
+  "compatible_from": 2,
+  "tables": {
+   "carried": {
+    "place": "project",
+    "key": [
+     "item_id"
+    ],
+    "columns": {
+     "at": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "item_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "citations": {
+    "place": "project",
+    "key": [
+     "entity",
+     "cite"
+    ],
+    "columns": {
+     "at": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "cite": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "digest": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "end": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "entity": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "mtime": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "path": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "size": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "start": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "symbol": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "entity",
+        0,
+        "BINARY"
+       ],
+       [
+        "cite",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "entities": {
+    "place": "project",
+    "key": [
+     "name"
+    ],
+    "columns": {
+     "entity_type": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "name": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "seq": [
+      "int",
+      "INTEGER",
+      true,
+      "0"
+     ],
+     "title": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "why": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "seq",
+        0,
+        "BINARY"
+       ],
+       [
+        "name",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "joins": {
+    "place": "project",
+    "key": [
+     "join_id"
+    ],
+    "columns": {
+     "at": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "by": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "entity": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "join_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "number": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "provider": [
+      "text",
+      "TEXT",
+      true,
+      "''"
+     ],
+     "receiver": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "session": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "provider",
+        0,
+        "BINARY"
+       ],
+       [
+        "join_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "receiver",
+        0,
+        "BINARY"
+       ],
+       [
+        "number",
+        0,
+        "BINARY"
+       ],
+       [
+        "join_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "receiver",
+        0,
+        "BINARY"
+       ],
+       [
+        "provider",
+        0,
+        "BINARY"
+       ],
+       [
+        "join_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      true,
+      [
+       [
+        "entity",
+        0,
+        "BINARY"
+       ],
+       [
+        "receiver",
+        0,
+        "BINARY"
+       ],
+       [
+        "provider",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "notes": {
+    "place": "project",
+    "key": [
+     "receiver",
+     "provider"
+    ],
+    "columns": {
+     "at": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "by": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "provider": [
+      "text",
+      "TEXT",
+      true,
+      "''"
+     ],
+     "receiver": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "text": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "observations": {
+    "place": "project",
+    "key": [
+     "entity",
+     "content"
+    ],
+    "columns": {
+     "at": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "by": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "content": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "entity": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "seq": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "session": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "entity",
+        0,
+        "BINARY"
+       ],
+       [
+        "seq",
+        0,
+        "BINARY"
+       ],
+       [
+        "content",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "relations": {
+    "place": "project",
+    "key": [
+     "source",
+     "target",
+     "relation_type"
+    ],
+    "columns": {
+     "relation_type": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "seq": [
+      "int",
+      "INTEGER",
+      true,
+      "0"
+     ],
+     "source": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "target": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "seq",
+        0,
+        "BINARY"
+       ],
+       [
+        "source",
+        0,
+        "BINARY"
+       ],
+       [
+        "target",
+        0,
+        "BINARY"
+       ],
+       [
+        "relation_type",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "target",
+        0,
+        "BINARY"
+       ],
+       [
+        "source",
+        0,
+        "BINARY"
+       ],
+       [
+        "relation_type",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   }
+  }
+ },
+ "node": null,
+ "packet": null,
+ "paperclip": {
+  "version": 2,
+  "compatible_from": 1,
+  "tables": {
+   "bridged": {
+    "place": "metaform",
+    "key": [
+     "issue_id",
+     "comment_id"
+    ],
+    "columns": {
+     "at": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "comment_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "issue_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "message_id": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "way": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "message_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "issue_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "comment_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "links": {
+    "place": "metaform",
+    "key": [
+     "issue_id"
+    ],
+    "columns": {
+     "address": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "comments_seen": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "company_id": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "identifier": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "issue_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "linked": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "reported": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "state": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "synced": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "works": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "identifier",
+        0,
+        "BINARY"
+       ],
+       [
+        "issue_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "work_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "issue_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   }
+  }
+ },
+ "source_placement": null,
+ "template": null,
+ "twilio": null,
+ "voice": null,
+ "web": null,
+ "workflow": {
+  "version": 4,
+  "compatible_from": 1,
+  "tables": {
+   "logic_versions": {
+    "place": "metaform",
+    "key": [
+     "logic_id",
+     "number"
+    ],
+    "columns": {
+     "content": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "logic_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "name": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "number": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "runs": {
+    "place": "project",
+    "key": [
+     "run_id"
+    ],
+    "columns": {
+     "assignment": [
+      "json",
+      "TEXT",
+      false,
+      null
+     ],
+     "branches": [
+      "json",
+      "TEXT",
+      false,
+      null
+     ],
+     "caller": [
+      "json",
+      "TEXT",
+      false,
+      null
+     ],
+     "closed": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "context": [
+      "json",
+      "TEXT",
+      false,
+      null
+     ],
+     "created": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "frames": [
+      "json",
+      "TEXT",
+      false,
+      null
+     ],
+     "kind": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "message": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "parent": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "result": [
+      "json",
+      "TEXT",
+      false,
+      null
+     ],
+     "run_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "seq": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "session": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "state": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "ticket": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "updated": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "waiting": [
+      "json",
+      "TEXT",
+      false,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "parent",
+        0,
+        "BINARY"
+       ],
+       [
+        "run_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "state",
+        0,
+        "BINARY"
+       ],
+       [
+        "seq",
+        0,
+        "BINARY"
+       ],
+       [
+        "run_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   }
+  }
+ }
+}

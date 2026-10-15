@@ -1,0 +1,1 @@
+An exponential ease failed test_web.py's eased() VIEW-041 check as 'a jump'; pace 10 failed it at 0.076 > 0.0754 because zoom and centre move x together. A drag of 4 px or more on #map2d or #stage ends following (followFigure(null, true, false), no refit); a click and the wheel do not (hold2d clears FOLLOW.scale so the wheel's zoom is followed).

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import secrets
 import sys
 import urllib.parse
@@ -15,7 +16,8 @@ from pathlib import Path
 import httpx
 import pytest
 
-from metaform.modules.twilio import api, mulaw, notify, simulate
+from metaform.module import Stop
+from metaform.modules.twilio import api, mulaw, notify, selfcheck, simulate
 from metaform.modules.twilio.agent import ScriptedAgent, SystemAgent, verb_runner
 from metaform.modules.twilio.engines import ScriptedVoice
 from metaform.modules.twilio.server import ATTESTED, PIN_NAME, Config, Lines, Phone, Seen
@@ -336,8 +338,307 @@ def test_failures_from_every_source_together_are_quieted_and_a_busy_stream_is_no
     assert len(quiet.limiter.bad['testclient']) == 0
 
 
+DEAD = 'https://keen-answer-availability-marked.trycloudflare.com'  # the quick tunnel Rich's number pointed at
+UNREACHED = 'it could not be reached: [Errno -2] Name or service not known'
+
+
+class Twilio:
+    """Twilio's REST API for one number, stubbed: what it lists for the number, and each change it was asked for."""
+
+    def __init__(self, voice='', sms='', **more):
+        self.record = {'sid': 'PN' + '3' * 32, 'phone_number': NUMBER, 'voice_url': voice, 'sms_url': sms, **more}
+        self.posted = []
+        self.client = api.Client(post=self.post, get=self.get, creds=lambda: ('AC' + '1' * 32, ('SK' + '2' * 32, 's')))
+
+    def get(self, url, auth):
+        assert url == f'{api.API}/Accounts/AC{"1" * 32}/IncomingPhoneNumbers.json?PhoneNumber=%2B15550100002'
+        return {'incoming_phone_numbers': [dict(self.record)]}
+
+    def post(self, url, form, auth):
+        self.posted.append((url, dict(form)))
+        self.record.update(voice_url=form['VoiceUrl'], sms_url=form['SmsUrl'])
+        return dict(self.record)
+
+
+def reach(*answering):
+    """The addresses that answer; any other could not be reached, as a closed tunnel cannot."""
+    return lambda url, health: None if url.startswith(answering or ('-',)) else UNREACHED
+
+
+def setup(public='', running=False, enabled=True):
+    return selfcheck.Setup(number=NUMBER, shown='+1•••••0002', public=public, running=running, enabled=enabled)
+
+
+def said(report):
+    return [(problem['problem'], problem['next']) for problem in report['problems']]
+
+
+def test_the_check_says_each_thing_wrong_with_where_twilio_sends_calls_and_its_one_fix():
+    """The four reports: an address that does not answer, a mismatch, the bridge not running, no public URL; and a
+    temporary quick tunnel flagged. Twilio's API and every address are stubbed; the check only reads."""
+    dead = Twilio(voice=f'{DEAD}/voice', sms=f'{DEAD}/sms')
+    found = selfcheck.check(setup(enabled=False), dead.client, reach())  # Rich's number on 2026-10-15
+    set_public = 'metaform set --twilio-public-url https://<your node or tunnel>'
+    assert said(found) == [
+        ((f'Your Twilio number sends its calls to {DEAD}/voice, which does not answer ({UNREACHED}), so every call '
+          "hears Twilio's application error."), set_public),
+        ((f'Your Twilio number sends its texts to {DEAD}/sms, which does not answer ({UNREACHED}), so your texts get '
+          'no answer.'), set_public),
+        ('twilio_public_url is not set, so the bridge has no address Twilio can reach.', set_public),
+        ('The phone bridge is not running: the phone is off.', 'metaform set --twilio-enabled, then metaform web start')]
+    assert len(found['warnings']) == 2 and all('temporary quick tunnel' in one for one in found['warnings'])
+    assert not found['ok'] and not dead.posted
+    assert selfcheck.headline(found).endswith(f'Next: {set_public} (3 more: metaform twilio check)')
+
+    elsewhere = Twilio(voice='https://old.example.test/voice', sms=f'{PUBLIC}/phone/sms')
+    found = selfcheck.check(setup(PUBLIC, running=True), elsewhere.client, reach(PUBLIC, 'https://old.example.test'))
+    assert said(found) == [((f'Your Twilio number sends its calls to https://old.example.test/voice, not to the bridge '
+                             f'at {PUBLIC}/phone/voice.'), 'metaform twilio check fix=true')]
+
+    ours = Twilio(voice=f'{PUBLIC}/phone/voice', sms=f'{PUBLIC}/phone/sms')
+    stopped = said(selfcheck.check(setup(PUBLIC), ours.client, reach()))
+    assert stopped[-1] == (f'The phone bridge is not running, and {PUBLIC}/phone/health does not answer: {UNREACHED}.',
+                           'metaform twilio serve')
+    assert stopped[0][0].startswith(f'Your Twilio number sends its calls to {PUBLIC}/phone/voice, which does not answer')
+    unrouted = said(selfcheck.check(setup(PUBLIC, running=True), ours.client, reach()))
+    assert unrouted[-1][1] == 'route https://phone.example.test/phone/* to 127.0.0.1:7441, on your Node or your tunnel'
+
+    well = selfcheck.check(setup(PUBLIC, running=True), ours.client, reach(PUBLIC))
+    assert well['ok'] and well['problems'] == [] and well['warnings'] == [] and selfcheck.headline(well) is None
+    app = Twilio(voice=f'{PUBLIC}/phone/voice', sms=f'{PUBLIC}/phone/sms', voice_application_sid='AP' + '4' * 32)
+    assert said(selfcheck.check(setup(PUBLIC, running=True), app.client, reach(PUBLIC)))[0][0] == \
+        f'Your Twilio number sends its calls to the TwiML App AP{"4" * 32}, not to the bridge.'
+
+
+def test_fix_points_the_number_at_the_bridge_only_when_the_bridge_answers_there():
+    dead = Twilio(voice=f'{DEAD}/voice')
+    for where in (setup(), setup(PUBLIC, running=True)):  # no address; an address that does not answer
+        with pytest.raises(Stop) as refused:
+            selfcheck.fix(where, dead.client, reach())
+        assert refused.value.message.startswith('The number was not changed') and not dead.posted
+    fixed = selfcheck.fix(setup(PUBLIC, running=True), dead.client, reach(PUBLIC))
+    assert dead.posted == [(f'{api.API}/Accounts/AC{"1" * 32}/IncomingPhoneNumbers/PN{"3" * 32}.json',
+                            {'VoiceUrl': f'{PUBLIC}/phone/voice', 'VoiceMethod': 'POST',
+                             'SmsUrl': f'{PUBLIC}/phone/sms', 'SmsMethod': 'POST'})]
+    assert fixed['ok'] and fixed['fixed'] == {'changed': True, 'was': {'voice': f'{DEAD}/voice', 'sms': None},
+                                              'now': {'voice': f'{PUBLIC}/phone/voice', 'sms': f'{PUBLIC}/phone/sms'}}
+    assert selfcheck.fix(setup(PUBLIC, running=True), dead.client, reach(PUBLIC))['fixed']['changed'] is False
+    assert len(dead.posted) == 1  # already pointed there: nothing sent
+
+    tunnel = 'https://other-words-here.trycloudflare.com'  # a quick tunnel is set only with its warning said
+    quick = Twilio(voice=f'{DEAD}/voice')
+    assert any('temporary quick tunnel' in one
+               for one in selfcheck.check(setup(tunnel, running=True), quick.client, reach(tunnel))['warnings'])
+    fixed = selfcheck.fix(setup(tunnel, running=True), quick.client, reach(tunnel))
+    assert quick.posted and fixed['warnings'] == [
+        (f'twilio_public_url, {tunnel}, is a temporary quick tunnel: a number pointed there stops working when the '
+         'tunnel closes. A lasting address, such as your Node, keeps working.')]
+    app = Twilio(voice=f'{PUBLIC}/phone/voice', sms=f'{PUBLIC}/phone/sms', voice_application_sid='AP' + '4' * 32)
+    selfcheck.fix(setup(PUBLIC, running=True), app.client, reach(PUBLIC))
+    assert app.posted[0][1]['VoiceApplicationSid'] == '' and app.posted[0][1]['SmsApplicationSid'] == ''
+
+
+def test_the_check_is_kept_logged_and_raised_never_printed_and_fix_waits_to_be_asked(home, tmp_path, monkeypatch,
+                                                                                    capsys):
+    """The verb in this process, so the stubbed API can never be left behind for a real one. The stubs go on the
+    modules the verb itself uses, which the loader may have imported afresh, and nothing may open a connection. The
+    findings go to the log and check.json; the terminal and the page are told nothing."""
+    from metaform import module, settings
+    from metaform.modules import twilio
+
+    def no_network(*args, **kwargs):
+        raise AssertionError('the check reached the network')
+    monkeypatch.setattr('urllib.request.urlopen', no_network)
+    dead = Twilio(voice=f'{DEAD}/voice', sms=f'{DEAD}/sms')
+    monkeypatch.setattr(twilio.api, '_get', dead.get)
+    monkeypatch.setattr(twilio.api, '_post', dead.post)
+    monkeypatch.setattr(twilio.selfcheck, 'answers', reach())
+    published = []
+    monkeypatch.setattr(twilio, '_publish', lambda ctx, project, payload: published.append(payload))
+    monkeypatch.setenv(api.SID, 'AC' + '1' * 32)
+    monkeypatch.setenv(api.TOKEN, TOKEN)
+    settings.put('twilio_number', NUMBER, tmp_path)
+    ctx = module.context('twilio', tmp_path)
+    assert twilio.begun(ctx) and twilio.module_status(ctx) == module.Status()  # nothing checked yet
+    assert twilio.web_started({'folder': str(tmp_path)}, ctx) is None  # the phone is off: no check at all
+    found = twilio.check(ctx)
+    assert found['problems'][0]['problem'].startswith(f'Your Twilio number sends its calls to {DEAD}/voice')
+    assert not dead.posted and not published  # a check someone asked for is theirs to read, never raised
+    kept = json.loads(twilio.check_file().read_text(encoding='utf-8'))
+    assert kept['problems'] == found['problems']
+    logged = twilio.log_file().read_text(encoding='utf-8')
+    assert f'check: Your Twilio number sends its calls to {DEAD}/voice' in logged and 'check: warning: ' in logged
+    status = twilio.module_status(ctx)
+    assert status.notice is None and status.lines[0].startswith('Phone: checked ')
+    with pytest.raises(Stop):
+        twilio.check(module.context('twilio', tmp_path, nouns={'fix': True}))  # no address to point it at
+    with pytest.raises(Stop, match="the person's own step"):
+        twilio.check(module.context('twilio', tmp_path, nouns={'fix': True}, surface='mcp'))
+    assert not dead.posted
+    settings.put('twilio_enabled', True, tmp_path)
+    monkeypatch.setattr(twilio, 'project_of', lambda ctx: 'proj')
+    capsys.readouterr()
+    started = twilio.web_started({'folder': str(tmp_path)}, ctx)
+    assert started == {'twilio': 'checked', 'ok': False, 'problems': 4}  # not set up enough to serve: checked
+    printed = capsys.readouterr()
+    assert printed.out == '' and printed.err == ''
+    assert [one['signal'] for one in published] == ['setup-not-working']
+    assert published[0]['report']['problems'] == json.loads(twilio.check_file().read_text())['problems']
+
+
+def test_a_problem_goes_to_the_system_agent_once_until_its_findings_change_or_a_day_passes_untaken(
+        home, tmp_path, monkeypatch):
+    from metaform import module, settings
+    from metaform.modules import twilio
+    published = []
+    monkeypatch.setattr(twilio, '_publish', lambda ctx, project, payload: published.append(payload))
+    monkeypatch.setattr(twilio, 'project_of', lambda ctx: 'proj')
+    settings.put('twilio_enabled', True, tmp_path)
+    ctx = module.context('twilio', tmp_path)
+    broken = {'ok': False, 'problems': [{'problem': 'It does not answer.', 'next': 'metaform twilio serve'}],
+              'warnings': []}
+    twilio.troubled(ctx, broken, asked=False)
+    assert published == []  # nothing of the phone set up: not raised
+    settings.put('twilio_public_url', PUBLIC, tmp_path)
+    for _ in range(2):
+        twilio.troubled(ctx, broken, asked=False)
+    assert len(published) == 1 and published[0]['set_up'] == f'the public address {PUBLIC}'
+    first = published[0]['key']
+    other = {**broken, 'problems': [{'problem': 'Another thing.', 'next': 'metaform twilio check'}]}
+    twilio.troubled(ctx, other, asked=False)
+    assert [one.get('clear') for one in published[1:]] == [True, None]  # the old one cleared, the new one raised
+    assert published[1]['key'] == first and published[2]['key'] != first
+    kept = twilio.raised()
+    home_file = twilio.raised_file()
+    home_file.write_text(json.dumps({**kept, 'at': kept['at'] - twilio.AGAIN_SECONDS}))
+    twilio.troubled(ctx, other, asked=False)  # a day on, nobody took it up, and it still stands: raised again
+    assert len(published) == 4 and published[3]['key'] == published[2]['key']
+    twilio.troubled(ctx, other, asked=True)  # the person asked for the check: taken up
+    home_file.write_text(json.dumps({**twilio.raised(), 'at': kept['at'] - twilio.AGAIN_SECONDS}))
+    twilio.troubled(ctx, other, asked=False)
+    assert len(published) == 4
+    twilio.troubled(ctx, {'ok': True, 'problems': [], 'warnings': []}, asked=False)
+    assert published[-1] == {'signal': 'setup-not-working', 'module': 'twilio', 'key': published[2]['key'],
+                             'clear': True} and not home_file.exists()
+
+
+def self_signed(tmp_path, host='localhost'):
+    from datetime import UTC, datetime, timedelta
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, host)])
+    now = datetime.now(UTC)
+    made = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
+            .serial_number(x509.random_serial_number()).not_valid_before(now - timedelta(days=1))
+            .not_valid_after(now + timedelta(days=1))
+            .add_extension(x509.SubjectAlternativeName([x509.DNSName(host)]), critical=False).sign(key, hashes.SHA256()))
+    pem = tmp_path / 'bridge.pem'
+    pem.write_bytes(made.public_bytes(serialization.Encoding.PEM) + key.private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+    return pem
+
+
+def test_the_direct_route_names_a_closed_port_a_failed_handshake_and_a_wrong_certificate(tmp_path):
+    """A public address that resolves to this machine, on a non-loopback bind, is probed for what keeps Twilio out;
+    on loopback, or at an address that is not this machine, the route is not direct and nothing is said."""
+    import contextlib
+    import socket
+    import ssl
+    import threading
+
+    def here():
+        return {'127.0.0.1'}
+
+    def no_nat():
+        return False
+
+    def listening(wrap=None):
+        server = socket.create_server(('127.0.0.1', 0))
+        port = server.getsockname()[1]
+
+        def serve():
+            with contextlib.suppress(OSError):
+                client, _ = server.accept()
+                with contextlib.suppress(OSError, ssl.SSLError):
+                    client = wrap(client) if wrap else client
+                    client.recv(1)
+                client.close()
+        threading.Thread(target=serve, daemon=True).start()
+        return server, port
+
+    with socket.create_server(('127.0.0.1', 0)) as taken:
+        closed = taken.getsockname()[1]
+    problem, step = selfcheck.direct(f'https://localhost:{closed}', '0.0.0.0', mine=here, nat=no_nat)
+    assert problem.startswith(f'The port {closed} of localhost (127.0.0.1) is closed')
+    assert step == f'forward TCP port {closed} on your router or firewall to port 7441 of this machine'
+    assert selfcheck.direct(f'https://localhost:{closed}', '0.0.0.0', mine=here, nat=lambda: True)[1].endswith(
+        'connectaddress=<WSL address>')
+    assert selfcheck.direct(f'https://localhost:{closed}', '127.0.0.1', mine=here, nat=no_nat) is None
+    assert selfcheck.direct(f'https://localhost:{closed}', '0.0.0.0', mine=lambda: {'203.0.113.9'}, nat=no_nat) is None
+
+    plain, port = listening()
+    with plain:
+        said = selfcheck.direct(f'https://localhost:{port}', '0.0.0.0', mine=here, nat=no_nat)
+    assert said is not None and 'does not speak TLS' in said[0] and 'twilio-certificate' in said[1]
+
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(self_signed(tmp_path))
+    secured, port = listening(lambda client: context.wrap_socket(client, server_side=True))
+    with secured:
+        said = selfcheck.direct(f'https://localhost:{port}', '0.0.0.0', mine=here, nat=no_nat)
+    assert said is not None and 'a certificate Twilio would refuse' in said[0] and 'public CA' in said[1]
+
+
+def test_a_raised_problem_is_the_system_agents_turn_once_it_starts(run, home, project_folder, tmp_path, monkeypatch,
+                                                                    dispatch_runners):
+    """Raised while no system agent runs, it waits as an active signal; the system agent that starts takes it as its
+    turn after its first message, and it is no longer waiting."""
+    from metaform import module, settings
+    from metaform.data import Store
+    run('enable', 'dispatch')
+    for agent in ('claude', 'codex', 'gemini'):
+        run('set', f'--dispatch-{agent}', f'"{sys.executable}" "{FAKE}"', cwd=project_folder)
+    store = Store('proj')
+    store.layer('parts', 'test', 'The parts.', mutable=True, hideable=True, ready=True)
+    store.add_element('parts', 'code.engine')
+    from metaform.modules import dispatch
+    dispatch.anchor(module.context('dispatch', project_folder, project='proj'), store, 'code.engine')
+    from metaform.modules import twilio  # after the CLI ran, which may have loaded the module afresh
+    from metaform.modules.dispatch.signals import rows
+    settings.put('twilio_enabled', True, project_folder)
+    settings.put('twilio_public_url', DEAD, project_folder)
+    twilio.troubled(module.context('twilio', project_folder, project='proj'),
+                    {'ok': False, 'problems': [{'problem': 'The bridge does not answer.', 'next': 'metaform twilio serve'}],
+                     'warnings': []}, asked=False)
+    waiting = [one for one in rows(store) if one['signal'] == 'setup-not-working']
+    assert len(waiting) == 1 and waiting[0]['signal_key'] and waiting[0]['feature'] == 'the phone'
+    log = tmp_path / 'fake.jsonl'
+    monkeypatch.setenv('FAKE_ACP_LOG', str(log))
+    monkeypatch.setenv('FAKE_ACP_MODE', 'plain')
+    monkeypatch.setenv('FAKE_ACP_MASCOT', '1')  # every turn after the first is answered
+    agent = SystemAgent(verb_runner(project_folder, 'proj'), poll=0.1, start_limit=60, turn_limit=60)
+
+    async def answer():
+        return [so_far async for so_far in agent.reply('Hello.')]
+    try:
+        said = asyncio.run(answer())
+    finally:
+        if agent.started.get('pid'):
+            dispatch_runners.append((agent.started, project_folder, log))
+    assert said and said[-1].endswith('The fake answers: Hello.')  # after its answer to the raised problem
+    prompts = [json.dumps(entry['message']) for entry in map(json.loads, log.read_text().splitlines())
+               if entry.get('message', {}).get('method') == 'session/prompt']
+    turns = [one for one in prompts if 'may not be working' in one]
+    assert len(turns) == 1 and 'The bridge does not answer.' in turns[0] and DEAD in turns[0]
+    assert not [one for one in rows(store) if one['signal'] == 'setup-not-working']
+
+
 def test_calls_texts_and_the_bridge_refuse_an_agents_session(run, home, monkeypatch):
     monkeypatch.setenv('METAFORM_SESSION', 'an-agent-session')
-    for verb in (('call',), ('text', 'hello'), ('serve',)):
+    for verb in (('call',), ('text', 'hello'), ('serve',), ('check', 'fix=true')):
         refused = run('twilio', *verb, ok=False)
         assert refused.returncode != 0 and "never run from an agent's session" in refused.stdout + refused.stderr

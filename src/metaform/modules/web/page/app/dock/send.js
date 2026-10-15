@@ -11,7 +11,7 @@ import {joinOf} from '/page/app/graph/data.js';
 import {MAC} from '/page/app/map2d/camera.js';
 import {openHelp} from '/page/app/keys/keys.js';
 import {DOCK, embodyHooks, embodiable, askEmbody, dockState, dockNote} from '/page/app/dock/embody.js';
-import {showChat, drawTabs, interruptChat} from '/page/app/dock/threads.js';
+import {drawTabs, interruptChat, onOther, showMine} from '/page/app/dock/threads.js';
 import {drawHelpdesk, followLog, putChatAway} from '/page/app/dock/helpdesk.js';
 import {dockCommand, callSystem, talkAbout} from '/page/app/dock/commands.js';
 import {narrowPage, resetDock} from '/page/app/dock/place.js';
@@ -196,7 +196,7 @@ function chatKeys(event) {
   if (event.key === 'Escape') {
     event.preventDefault();
     event.stopPropagation();
-    putChatAway();
+    escapeChat();
     return;
   }
   const mod = MAC ? event.metaKey : event.ctrlKey;
@@ -207,14 +207,17 @@ function chatKeys(event) {
   }
   if (!event.altKey || event.ctrlKey || event.metaKey) return;
   if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-    if (DOCK.chats.length < 2) return;
+    const tabs = [...document.querySelectorAll('#helpdesk .tabs .tab')];  // in the order drawn, My agent first
+    if (tabs.length < 2) return;
     event.preventDefault();
-    const at = DOCK.chats.indexOf(DOCK.chat), by = event.key === 'ArrowUp' ? -1 : 1;
-    showChat(DOCK.chats[(at + by + DOCK.chats.length) % DOCK.chats.length], {focus: true});
+    const at = tabs.findIndex(tab => tab.classList.contains('on')), by = event.key === 'ArrowUp' ? -1 : 1;
+    tabs[(at + by + tabs.length) % tabs.length].click();
   } else if (event.key === 'End') { event.preventDefault(); followLog(true); }
   else if (event.key === ',') { event.preventDefault(); openSessionPop(); }
 }
 $('#helpdesk').addEventListener('keydown', chatKeys);
+/* Escape on another agent's thread goes back to My agent; on My agent it puts the chat away. */
+function escapeChat() { if (onOther()) showMine(); else putChatAway(); }
 function openSessionPop() {
   const line = $('#helpdesk .sessionline');
   if (!line) return toast("The agent's settings show once one is chosen.");
@@ -297,5 +300,5 @@ $('#dockTab').onkeydown = event => {
 $('#helpdesk .close').onclick = () => putChatAway();  // eased away; its threads are kept
 $('#helpdesk .close').title = 'Close chat without stopping the agent (Escape)';
 // On the overlay stack as the dock: Escape puts it away only from inside it, and it stays usable over the board.
-overlay($('#helpdesk'), {kind: 'dock', close: () => putChatAway(), focus: '.say'});
+overlay($('#helpdesk'), {kind: 'dock', close: escapeChat, focus: '.say'});
 $('#helpdesk .big').onclick = () => dockState($('#dock').className === 'open big' ? 'open' : 'open big');

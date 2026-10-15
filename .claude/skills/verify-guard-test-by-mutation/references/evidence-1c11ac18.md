@@ -1,0 +1,1 @@
+Test trap: a user_module rewritten with the same byte size within the same second reuses stale bytecode, so the test silently runs the old declaration. Make variants differ in size, for example with a comment line at the module's indent (column 0 breaks textwrap.dedent and the module fails to load).

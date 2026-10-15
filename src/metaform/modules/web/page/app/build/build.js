@@ -1,6 +1,6 @@
 /* The build panel, BASE-060: the modules and prompt of a build, its run and progress, and the remote agent's prompt
  * editor. */
-import '/page/app/intake/intake.js';  // the part before runs first, so the parts run in the page's order
+import '/page/app/agents/asking.js';  // the part before runs first, so the parts run in the page's order
 import {$, reduced, h, fill} from '/page/app/core/dom.js';
 import {overlay} from '/page/app/core/overlays.js';
 import {toast, segmented, progressBar, copyField} from '/page/app/core/controls.js';
@@ -38,13 +38,16 @@ function keepBuild() {
 const kindOfBuild = () => BUILD.options?.kinds.find(kind => kind.id === BUILD.kind) || null;
 const shapeOf = id => BUILD.options?.shapes.find(shape => shape.id === id) || null;
 /* The modules chosen for a build that takes them, kept for each build: a project wheel starts from the Remote agent
- * shape and an installer from the modules on at home, as the builds themselves do, BASE-060. */
+ * shape and an installer from the modules on at home with those `metaform start` and `demo` run, as the builds
+ * themselves do, BASE-060. */
 function pickOf(kind) {
   const known = new Set((BUILD.options?.modules || []).map(module => module.id));
   let pick = BUILD.picks[kind];
   if (!pick || !Array.isArray(pick.modules)) {
+    const installer = BUILD.options?.defaults?.installer;
     const shape = kind === 'installer' ? 'home' : BUILD.options?.defaults?.shape || 'remote';
-    pick = BUILD.picks[kind] = {shape, modules: [...(shapeOf(shape)?.modules || [])]};
+    pick = BUILD.picks[kind] = {shape, modules: [...(kind === 'installer' && Array.isArray(installer) ? installer
+      : shapeOf(shape)?.modules || [])]};
   }
   pick.modules = pick.modules.filter(id => known.has(id));  // a module gone since is not offered
   return pick;

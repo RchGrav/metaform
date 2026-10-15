@@ -13,7 +13,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, cast
 
-from metaform import home, prompt_files
+from metaform import home, prompt_files, settings
 from metaform.data import Store
 from metaform.module import Context, Module, Noun, Provides, Stop, Subscription, Verb, child_environment, provided
 
@@ -343,6 +343,11 @@ RUN_NOUNS =(Noun('run', 'The saved placement run ID.'),
              Noun('base', 'The intake base ID the run belongs to.', required=False))
 
 
+def jev_on(folder: Path) -> bool:
+    """Whether the person has turned Jev on for the folder, so the verb that asks it is listed over MCP, MCP-004."""
+    return bool(settings.value('jev', folder))
+
+
 MODULE = Module(
     id='source_placement',
     summary='Uses tree-sitter plus the existing functional map, and derives function placement into the map at a '
@@ -397,6 +402,6 @@ MODULE = Module(
              details='Sends nothing unless the person has turned on jev. Then sends only supplied evidence to the '
                      'endpoint jev_endpoint names, OpenRouter or TypeSafe, with its key from the environment. '
                      'Returns one category choice per item, probabilities, confidence, usage and timing. '
-                     'Writes no map records. Obtain authorization for private evidence before sending.'),
+                     'Writes no map records. Obtain authorization for private evidence before sending.', listed=jev_on),
     ),
 )

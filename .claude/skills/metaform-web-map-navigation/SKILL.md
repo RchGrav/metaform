@@ -14,3 +14,6 @@ Before any `web_move` or `web_turn`, read `web_embody`'s answer. `figure: true` 
 - `web_look` lists 60 to 90 entries, including `visible: false` ones up to about 960 units away. Read the nearest readable ones; do not paste the whole list into a reply.
 - Labels are mirrored when seen from behind. Check orientation before reading text.
 - A defect you hit is a ticket (`metaform map work op=add`), not a silent workaround.
+- The 2D map is SVG. A figure opens its thread from a `pointerdown` handler on `g.agent2d`, so a test dispatches `pointerdown` and then `click` on that element; a bare `click` does nothing.
+- Camera moves that follow a figure ease with a critically damped spring solved exactly per step, timed from the key press, each axis keeping its own position so a small step is not lost. An exponential ease jumped at the start and failed the VIEW-041 eased-move check (0.076 against a 0.0754 limit), because zoom and centre moved together.
+- A drag of 4 px or more on either map ends following and leaves the view where the hand put it; a click or the wheel does not.

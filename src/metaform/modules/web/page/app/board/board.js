@@ -228,10 +228,13 @@ async function dropCard(event, cards, column) {
     return Boolean(back);
   });
 }
-/* The tickets the board draws, one card per finding: a record the intake closed as replaced by a newer condition is
- * left out, and a finding written with the same condition and note on an element and on a purpose record it holds or
- * receives is drawn once, at the element. */
+/* The tickets the board draws, one card per finding: only work, a record the server marks is_work, one with a task or
+ * a trouble, broken or missing marker, never a record with neither, such as a condition the intake once wrote for a
+ * part that works, MAP-046; a record the intake closed as replaced by a newer condition is left out, and a finding
+ * written with the same condition and note on an element and on a purpose record it holds or receives is drawn once,
+ * at the element. */
 export function boardTickets(records) {
+  records = records.filter(ticket => ticket.is_work);
   const finding = ticket => !ticket.task && ticket.condition
     ? [ticket.condition, ticket.note || '', Boolean(ticket.done)].join('\n') : null;
   const atElements = new Set(records.filter(ticket => ticket.node_kind === 'element' && finding(ticket))

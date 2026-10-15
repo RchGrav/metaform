@@ -1,0 +1,1 @@
+Orchestrator change to ticket bd730760, replacing items 1 and 2: the person must never see the check's errors at all, not even as one line. The system agent notices and raises it with them.

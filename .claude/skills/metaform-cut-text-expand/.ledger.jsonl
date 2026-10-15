@@ -1,0 +1,1 @@
+{"action": "create", "reason": "Text cut short with an ellipsis was opened by a private toggle in one screen (Settings). Other surfaces had no click, no keyboard access, or a click on non-cut text. One shared helper now serves every surface; a new surface must call it instead of writing its own toggle.", "evidence": "references/evidence-dfcc7ad8.md"}

@@ -16,9 +16,9 @@ import {noneSelected} from '/page/app/map2d/wire.js';
 import {select} from '/page/app/selection/select.js';
 import {renderBrief} from '/page/app/panel/brief.js';
 import {getJson} from '/page/app/panel/prompts.js';
-import {drawIntake, offerNext} from '/page/app/intake/intake.js';
+import {drawIntake, drawLeft, offerNext, intakeRunning} from '/page/app/intake/intake.js';
 import {appliedOps, settled, briefTouched, ticketsOnly, opsOnly, ticketsChanged, boardFromTickets, linesOnly,
-  agentsChanged, listen} from '/page/app/live/ops.js';
+  agentsChanged, listen, NOTED, ticketsNamed} from '/page/app/live/ops.js';
 import {loadGraph, loadProject, toProject} from '/page/app/loading/load.js';
 import {PANE_VIEWS, WS} from '/page/app/workspace/workspace.js';
 
@@ -26,7 +26,7 @@ import {PANE_VIEWS, WS} from '/page/app/workspace/workspace.js';
  * An intake being recorded is drawn as each object arrives, BASE-039; any other write to the metaform shown is read
  * again. Events that come while the page reads are drawn once, when it is done. */
 export const LIVE = {layer: null, base: null, seen: '', busy: false, again: false, whole: false, named: null, done: 0,
-  drawn: -Infinity, brief: false};
+  drawn: -Infinity, brief: false, left: null};  // left: the intake left unfinished, with no agent recording it
 export const following = () => LIVE.layer !== null && S.base === LIVE.base;
 export async function loadLive() {
   const page = await read('layer-graph', {layer: LIVE.layer});
@@ -49,8 +49,8 @@ export async function loadLive() {
   else fill($('#p-object'), h('p', {class: 'empty'}, 'Nothing to show in these layers yet.'));
 }
 /* Follow the intake being recorded, found = {layer, base_id}, or return to the map when it is no longer being
- * recorded, saying what happened: it finished when its metaform still stands, or it stopped because the project was
- * cleared, the one thing that takes a metaform away, VIEW-019. */
+ * recorded, saying what happened: its agent stopped when it is left unfinished, it finished when its metaform still
+ * stands, or it stopped because the project was cleared, the one thing that takes a metaform away, VIEW-019. */
 async function follow(found) {
   if (found) ELSEWHERE.followed.add(`${S.project}/${found.base_id}/${found.layer}`);
   if (found && found.layer !== LIVE.layer) {
@@ -60,12 +60,14 @@ async function follow(found) {
     drawIntake();
     toast(`An intake is being recorded in ${found.layer}; the map follows it as each object is recorded.`);
   } else if (!found && LIVE.layer) {
-    const {base} = LIVE;
-    const stands = (await read('bases', {limit: 0})).results.some(item => item.id === base);
+    const {base, layer} = LIVE;
+    const left = LIVE.left && LIVE.left.base_id === base && LIVE.left.layer.name === layer;
+    const stands = !left && (await read('bases', {limit: 0})).results.some(item => item.id === base);
     Object.assign(LIVE, {layer: null, base: null, seen: ''});
     renderLegend();
     drawIntake();
-    toast(stands ? `The intake finished.` : `The intake stopped: ${S.project} was cleared.`);
+    toast(left ? `The intake agent stopped; the intake ${layer} was left unfinished.`
+      : stands ? `The intake finished.` : `The intake stopped: ${S.project} was cleared.`);
     if (stands) attend(`intake:${base}`, 'The intake finished', null, null);  // the mascot says so too, `ATTN`
     if (stands) offerNext();
     await loadProject();
@@ -73,10 +75,22 @@ async function follow(found) {
   }
   if (following()) await loadLive();
 }
-/* On connecting, and on the browser's own reconnect, what is being recorded now is read once. */
+/* The intakes building, BASE-039: the one an agent records now, to follow, its process alive or this project's intake
+ * agent running, which reads before its first record; any other is left unfinished, kept in `LIVE.left` for its
+ * notice and never followed. */
+async function building() {
+  const project = S.project;
+  const all = (await read('intake-building')).results || [];
+  if (S.project !== project) return null;
+  const now = all.find(one => one.recording) || (intakeRunning() ? all[0] : null) || null;
+  LIVE.left = !now && all[0] ? {...all[0], project} : null;
+  drawLeft();
+  return now ? {layer: now.layer.name, base_id: now.base_id} : null;
+}
+/* On connecting, on the browser's own reconnect, and when this project's intake agent stops, what is being recorded
+ * now is read once. */
 export async function recordingNow() {
-  const found = (await read('intake-recording')).results[0] || null;
-  await follow(found ? {layer: found.layer.name, base_id: found.base_id} : null);
+  await follow(await building());
 }
 /* One push: the chassis fired map.changed for a metaform of this project, or for its metaforms themselves, VIEW-018.
  * The page reads what is being recorded, then follows it, returns to the map when it has finished, shows the active
@@ -120,6 +134,8 @@ export async function changed(event) {
     for (const page of ['messages', 'runs']) if (WS.isShown(WS.paneOfPage(page)?.id)) PANE_VIEWS[page].show();
   } else if (WS.active) WS.refresh();
   const named = event.payload.tables;
+  // the agent recording an intake has gone: what is building is read at once, so its bar goes, and no map is read
+  if (allTables(named, table => table === 'intake.recorder')) return recordingNow().catch(error => toast(error.message));
   // a setting changed, here or elsewhere: the settings screen reads again if it is open, F13
   if (Array.isArray(named) && named.some(table => /(^|\.)settings$/.test(String(table)))) {
     document.dispatchEvent(new CustomEvent('metaform:settings'));
@@ -162,15 +178,20 @@ async function readAgain() {
   LIVE.whole = false;
   const named = LIVE.named; LIVE.named = null;
   LIVE.drawn = performance.now();  // a whole reload: the next waits SPACING, a ticket change does not
-  const found = (await read('intake-recording')).results[0] || null;
-  if (found || LIVE.layer) { await follow(found ? {layer: found.layer.name, base_id: found.base_id} : null); return; }
+  const found = await building();
+  if (found || LIVE.layer) { await follow(found); return; }
   const metaforms = (await read('bases', {limit: 0})).results;
   const same = metaforms.length === S.bases.length && metaforms.every(item =>
     S.bases.some(known => known.id === item.id && known.active === item.active));
   // the project's metaforms changed: show the active one, as on opening; else the ops since the drawn sequence,
   // applied, or the layers and the map read again
+  let applied = false;
   if (!same) await loadProject();
-  else if (opsOnly(named) && await appliedOps()) { await ticketsChanged(); return; }
+  else if (opsOnly(named) && (applied = await appliedOps())) {
+    // what is said of a layer alone changed: nothing drawn, and the tickets only if the change named theirs
+    if (applied !== NOTED || ticketsNamed(named)) await ticketsChanged();
+    return;
+  }
   else {
     S.layers = (await read('layers', {limit: 0})).results;
     renderChips();

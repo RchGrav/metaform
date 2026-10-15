@@ -1,4 +1,4 @@
-/* Ultra graphics, the web module's web_graphics setting: the 3D map drawn as outer space. U switches between it and
+/* Ultra graphics, the Space theme (the web module's web_theme setting at space): the 3D map drawn as outer space. U switches between it and
  * clean, the map as it is drawn without it; the 2D map is never changed.
  *
  * What it draws, and why each part looks as it does:
@@ -74,8 +74,8 @@ const U = {
  * long, `reduced()`, `css(name)`, the `selected()` and `hovered()` ids, `dimmed(node)` whether a node is away from
  * the selection, `idle()` whether the map is drawing only its slow idle frames, `chained()` whether the frame just
  * drawn asked for the next one straight after it, `toast(text)`, `save(mode)` to keep the setting, `settings()` the
- * folder's settings as the page reads them, and `shapes()` whether elements are drawn by their type,
- * web_node_shapes. */
+ * folder's settings as the page reads them, `shapes()` whether elements are drawn by their type,
+ * web_node_shapes, and `linked()` a promise of the shaders being linked. */
 export function attach(graph, context) {
   U.G = graph;
   U.ctx = context;
@@ -92,7 +92,10 @@ export function attach(graph, context) {
     if (document.visibilityState === 'visible') reread();
   });
   window.addEventListener('focus', reread);
-  if (U.wanted) setting(U.wanted);
+  // a map with nothing drawn yet starts in the look asked for: there is nothing to fade from, and drawing clean first
+  // linked every shader of both looks at load
+  if (U.wanted === 'ultra' && !graph.graphData().nodes.length) { U.mode = 'ultra'; apply('ultra'); }
+  else if (U.wanted) setting(U.wanted);
 }
 /* The setting as read with the project's view settings, or as changed on the Settings screen: the map is drawn in it,
  * fading over when it changes. */
@@ -111,7 +114,7 @@ async function reread() {
   const value = rows.find(row => row.key === 'web_graphics')?.value;
   if (value !== undefined && !U.saving) setting(value);
 }
-/* U: the other look, kept in the web_graphics setting so every page and reload opens in it. */
+/* The other look, kept as the theme, web_theme, so every page and reload opens in it. */
 export async function toggle() {
   const mode = U.mode === 'ultra' ? 'clean' : 'ultra';
   U.wanted = mode;
@@ -215,6 +218,7 @@ async function show(mode) {
   if (turn !== U.turn) return;
   apply(mode);
   await frames(2);  // drawn under the veil: the new shaders are compiled before anything is seen
+  await U.ctx.linked?.();  // and linked, as the page holds its frames until they are
   if (turn !== U.turn) return;
   U.measure = {...U.measure, time: 0, frames: 0, last: 0, chained: false};  // the compiling frames are not measured
   U.revealFrom = performance.now();
@@ -364,11 +368,15 @@ function makeSky(G) {
   // the nebula: a sphere around everything, carrying the picture of the whole sky painted once, `paintNebula`
   const nebula = new THREE.Mesh(new THREE.SphereGeometry(30000, 48, 24), new THREE.ShaderMaterial({
     side: THREE.BackSide, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-    uniforms: {picture: {value: paintNebula(G.renderer())}, fade},
+    uniforms: {picture: {value: null}, fade},
     vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `uniform sampler2D picture; uniform float fade; varying vec2 vUv;
       void main() { gl_FragColor = vec4(texture2D(picture, vUv).rgb * fade, 1.0); }`}));
   Object.assign(nebula, {frustumCulled: false, renderOrder: -21});
+  // painted once its painter's shader is linked, off the page's thread, `nebulaPainter`; the sky rises over the
+  // first second and a half after a switch, `reveal`, so it comes in with it
+  nebulaPainter(G.renderer());
+  NEBULA.ready.then(() => { nebula.material.uniforms.picture.value = paintNebula(G.renderer()); U.ctx.wake(); });
   group.add(nebula);
   group.visible = false;
   G.scene().add(group);
@@ -395,6 +403,20 @@ function sky(camera, reduce, reveal) {
  * seam and nothing pinches at the poles. Thin clouds of indigo, teal and a little rose, thicker along the galaxy's
  * band, with darker dust across the band; all of it faint, so the map in front is what is seen. */
 function paintNebula(renderer) {
+  const {target, material} = nebulaPainter(renderer);
+  const quad = new FullScreenQuad(material), was = renderer.getRenderTarget();
+  renderer.setRenderTarget(target);
+  quad.render(renderer);
+  renderer.setRenderTarget(was);
+  quad.dispose();
+  material.dispose();
+  return target.texture;
+}
+/* The nebula's painter, made once, its shader linked off the page's thread before it paints, `makeSky`: its noise
+ * took a second to link, and three.js waits for a link on the page's thread when it first draws. */
+const NEBULA = {painter: null, ready: null};
+function nebulaPainter(renderer) {
+  if (NEBULA.painter) return NEBULA.painter;
   const target = new THREE.WebGLRenderTarget(1024, 512, {type: THREE.HalfFloatType, depthBuffer: false});
   const material = new THREE.ShaderMaterial({uniforms: {band: {value: BAND}},
     vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
@@ -413,13 +435,12 @@ function paintNebula(renderer) {
         c += vec3(0.5, 0.56, 0.75) * inBand * inBand * 0.03 * (0.4 + n2);
         gl_FragColor = vec4(c * 0.16, 1.0);  // faint enough that a grey name before it keeps clean's contrast
       }`, depthTest: false, depthWrite: false});
-  const quad = new FullScreenQuad(material), was = renderer.getRenderTarget();
-  renderer.setRenderTarget(target);
-  quad.render(renderer);
-  renderer.setRenderTarget(was);
-  quad.dispose();
-  material.dispose();
-  return target.texture;
+  NEBULA.painter = {target, material};
+  const was = renderer.getRenderTarget();
+  renderer.setRenderTarget(target);  // linked for the picture it paints
+  try { NEBULA.ready = renderer.compileAsync(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material), U.G.camera()); }
+  finally { renderer.setRenderTarget(was); }
+  return NEBULA.painter;
 }
 
 /* ---------- the bodies ---------- */
@@ -1058,6 +1079,8 @@ function makePass(G) {
       mix.uniforms.strength.value = LOOK.bloom / Math.max(1, levels.length * 0.5);
       draw(renderer, mix, pass.renderToScreen ? null : writeBuffer);
     },
+    // the shaders it draws, which the page links ahead of its first frame; `screen` the one drawn on the screen when last
+    quads: () => [{material: over}, {material: down}, {material: up}, {material: mix, screen: true}],
     dispose() { for (const level of levels) { level.down.dispose(); level.up.dispose(); } quad.dispose(); }};
   G.postProcessingComposer().addPass(pass);
   return pass;

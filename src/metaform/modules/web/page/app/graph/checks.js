@@ -26,7 +26,7 @@ import {linkAt3d, purposeOf, reaches3d, clicked3d, hovered, setHovered} from '/p
 import {readout, readoutOf} from '/page/app/map3d/readout.js';
 import {tags, LABELS} from '/page/app/map3d/labels.js';
 import {FLOW, FLOW_MODE_LIST, flowMode, flowLive} from '/page/app/flow/flow.js';
-import {FX} from '/page/app/flow/fx3d.js';
+import {FX, carries} from '/page/app/flow/fx3d.js';
 import {FLIGHT, MODE, V3, cameraNow} from '/page/app/camera/flight.js';
 import {meetEnds} from '/page/app/camera/fly3d.js';
 import {VIEW, LENS, peek, agentsWindow} from '/page/app/views/settings.js';
@@ -39,7 +39,7 @@ import {area2d, foot2d, center2d, fullFit2d, hold2d, moveCam, place2d, focus2d,
 import {edgeAt2d, reaches2d} from '/page/app/map2d/hover.js';
 import {ends2d} from '/page/app/map2d/flow2d.js';
 import {select} from '/page/app/selection/select.js';
-import {DOCK, EMBODY, embodyHooks} from '/page/app/dock/embody.js';
+import {DOCK, EMBODY, EMBODY_TURNS, embodyHooks} from '/page/app/dock/embody.js';
 import {menu} from '/page/app/board/messages.js';
 import {giveWork} from '/page/app/task/task.js';
 import {notesAt, addElement} from '/page/app/task/notes.js';
@@ -72,7 +72,7 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   view2d: () => ({full: !MODE.free}),
   peek: () => peek(),
   embodyState: () => ({target: DOCK.target, session: DOCK.session, open: EMBODY.open, hooks: embodyHooks(),
-    setting: VIEW.embody, turns: VIEW.embodyTurns}),
+    setting: VIEW.embody, turns: EMBODY_TURNS}),
   fov3d: () => G ? Math.round(G.camera().fov * 10) / 10 : null, cameraAt: () => G ? cameraNow() : null,
   foot2d: () => Math.min(foot2d(), area2d().height / 3), lens: () => LENS.name,
   agentsWindow: count => agentsWindow(count), physics: () => PHYS.name,
@@ -245,9 +245,12 @@ function reaches(which) {
 function dots3d(along) {
   if (!G) return [];
   FLOW.held = along;
+  // the library's own dot, one to each link that carries a flow, is made for this check alone, `carries`
+  if (G.linkDirectionalParticles() !== carries) G.linkDirectionalParticles(carries);
   wake3d();
-  const box = stageBox();
-  return G.graphData().links.filter(link => link.__photonsObj?.children.length).map(link => {
+  const box = stageBox(), visible = G.linkVisibility();
+  const shown = typeof visible === 'function' ? visible : () => visible !== false;
+  return G.graphData().links.filter(link => carries(link) && shown(link)).map(link => {
     const from = link.source, to = link.target;
     const point = G.graph2ScreenCoords(from.x + (to.x - from.x) * along, from.y + (to.y - from.y) * along,
       from.z + (to.z - from.z) * along);

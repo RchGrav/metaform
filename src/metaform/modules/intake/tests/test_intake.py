@@ -175,18 +175,18 @@ def test_no_setting_adds_an_instruction_to_the_intake(run, project):
     """No instructions are side loaded into a workflow. What is added beside the intake competes
     with it, and the agent cannot tell which of the two is the procedure."""
     plain = run('intake', 'prompt', cwd=project).stdout
-    run('set', '--debug', '--no-report', cwd=project)
+    run('set', '--debug', cwd=project)
     assert run('intake', 'prompt', cwd=project).stdout == plain
-    run('set', '--no-debug', '--report', cwd=project)
+    run('set', '--no-debug', cwd=project)
     assert run('intake', 'prompt', cwd=project).stdout == plain
     assert plain == stored_with_pointer().replace('{prompt}', '', 1)
 
 
 @pytest.mark.req('CLI-034')
-def test_debug_and_report_are_chassis_booleans_that_follow_every_settings_rule(run, project):
+def test_debug_is_a_chassis_boolean_that_follows_every_settings_rule_and_report_is_gone(run, project):
     shown = {row['key']: row for row in json.loads(run('config', '--show', '--json', cwd=project).stdout)}
     assert (shown['debug']['value'], shown['debug']['owner']) == (False, 'chassis')
-    assert (shown['report']['value'], shown['report']['owner']) == (True, 'chassis')
+    assert 'report' not in shown  # nothing read it since 2026-09-29; removed in the settings cleanup, 2026-10-15
     run('set', '--debug', '--glue', cwd=project)
     run('unset', 'all', cwd=project)
     shown = {row['key']: row for row in json.loads(run('config', '--show', '--json', cwd=project).stdout)}
@@ -611,7 +611,7 @@ def test_a_building_intake_is_seen_only_through_intake_show_until_it_finishes(ru
     assert (len(shown['elements']), len(shown['purposes']), shown['purposes'][0]['elements']) == (
         2, 1, ['code.timer.kitchen'])
     assert shown['undescribed'] == ['code.timer.kitchen']
-    assert 'Intake: being recorded' in run(cwd=project).stdout
+    assert 'Intake: left unfinished' in run(cwd=project).stdout  # no agent's process records it, only commands
     run('intake', 'element', 'code.timer.kitchen', 'role=DE', 'name=kitchen timer', cwd=project)
     assert json.loads(run('intake', 'show', '--json', cwd=project).stdout)['undescribed'] == []
     finished = json.loads(run('intake', 'finish', '--json', cwd=project).stdout)
@@ -1162,12 +1162,15 @@ def test_a_finding_on_an_element_and_its_purpose_record_is_written_once(run, pro
         recorded(run, project, *markers[kind], 'condition=BKN', f'note={note}')
     assert [(w.id, w.note) for w in store.work(open=True, limit=0).results] == \
         [(ticket.id, 'never sounds\n\nother\n\nnever')]
+    recorded(run, project, *markers[first], 'condition=BKN', 'note=never sounds louder')  # replaces only its own
+    assert [(w.id, w.note) for w in store.work(open=True, limit=0).results] == \
+        [(ticket.id, 'never sounds louder\n\nother\n\nnever')]
     store.take_work(ticket.id, by='claude')
     repeated = [recorded(run, project, *markers[kind], 'condition=BKN', f'note={note}')
                 for kind, note in ((first, 'never sounds'), (second, 'other'))]
     assert len(store.work(open=True, limit=0).results) == 1
     assert [(w.id, w.condition, w.note) for w in store.work(open=True, limit=0).results] == \
-        [(ticket.id, 'trouble', 'never sounds\n\nother\n\nnever')]
+        [(ticket.id, 'trouble', 'never sounds louder\n\nother\n\nnever')]
     assert all('taken' in said['notices'][-1]['message'] for said in repeated)
     store.finish_work(ticket.id, 'Alarm repaired.')
     assert store.work(open=True, limit=0).results == ()
@@ -1196,7 +1199,7 @@ def test_trouble_and_missing_are_tickets_an_agent_starts_and_recording_them_agai
     store = Store('timer')
     first = {w.address: w for w in store.work(open=True, limit=0).results}
     assert first['code.alarm.audible'].task.startswith('never sounds\n\n') and first['code.display.digit'].task
-    assert first['code.timer.kitchen'].task is None
+    assert 'code.timer.kitchen' not in first  # a part that works is no work: no empty ticket for it
     recorded(run, project, 'element', 'code.alarm.audible', 'role=SE', 'condition=BKN', 'note=never sounds; wire it')
     recorded(run, project, 'purpose', 'code.timer.kitchen', '["code.alarm.audible"]', 'purpose=p', 'ef=f',
              'ifd=receives', 'condition=BKN', 'note=never sounds; wire it')
@@ -1223,8 +1226,16 @@ def test_a_verify_pass_writes_conditions_and_refs_onto_the_finished_map_without_
     shown = recorded(run, project, 'show')
     by = {entry['namespace_address']: entry for entry in shown['elements']}
     assert (by['code.timer.kitchen']['condition'], by['code.timer.kitchen']['refs']) == \
-        ('ok', [{'key': 'read', 'value': 't.c#L1'}])
+        ('ok', [{'key': 'read', 'value': 't.c#L1'}])  # read back from the checked layer, ticket 97085c0e
+    assert [(w.address, w.resolution) for w in Store('timer').work(open=False, limit=0).results] == \
+        [('code.timer.kitchen', 'Replaced by ok.')]  # ok closed the missing finding and opened no record
+    assert [w.condition for w in Store('timer').work(open=True, limit=0).results] == ['trouble']  # the BKN alone
     assert [(held['condition'], held['note']) for held in shown['purposes']] == [('trouble', 'never fires')]
+    # a newer condition replaces the ok; this one joins the open trouble ticket on the kitchen's purpose record
+    recorded(run, project, 'element', 'code.timer.kitchen', 'condition=MISS', 'note=no snooze')
+    by = {entry['namespace_address']: entry for entry in recorded(run, project, 'show')['elements']}
+    assert (by['code.timer.kitchen'].get('condition'), Store('timer').layer_items('checked', limit=0).results) == \
+        (None, ())
     assert [base['name'] for base in json.loads(run('map', 'bases', '--json', cwd=project).stdout)['results']] == ['main']
 
 
@@ -1309,12 +1320,61 @@ def test_processes_recording_new_shape_on_a_finished_map_at_once_open_one_base(r
     assert [worker.exitcode for worker in workers] == [0] * len(addresses)
     assert failures.empty(), failures.get()
     bases = [base['name'] for base in json.loads(run('map', 'bases', '--json', cwd=project).stdout)['results']]
-    building = Store('timer').intake_recording().results
+    building = Store('timer').intake_building().results
     assert len(bases) == 2 and len(building) == 1, (bases, [held.base for held in building])
     held = Store('timer', base=building[0].base_id)
     for address in addresses:
         element = held.element(address, raw=True)
         assert element is not None and element.layer_id == building[0].layer.id, address
+
+
+# An agent's own process, as a host's MCP server over stdio is: it records one element, says so, and lives until its
+# input closes, as that server does when its host goes.
+_AGENT = """
+import contextlib, io, sys
+from metaform import cli, shown
+shown.serving()
+with contextlib.redirect_stdout(io.StringIO()):
+    try:
+        cli.main(['intake', 'element', 'code.alarm.audible', 'role=DE'])
+    except SystemExit:
+        pass
+print('recording', flush=True)
+sys.stdin.read()
+"""
+
+
+@pytest.mark.req('BASE-039')
+def test_an_intake_is_recorded_only_while_its_agents_process_lives_and_is_left_unfinished_after(run, home, project):
+    """Recording means an agent records the intake now: commands alone leave it unfinished, an agent's own process
+    holds it while it lives, and once that process ends it is left unfinished, which the person may discard."""
+    import subprocess
+    import sys
+    recorded(run, project, 'start')
+    recorded(run, project, 'element', 'code.timer.kitchen', 'role=DE')
+    [left] = Store('timer').intake_building().results
+    assert (left.recording, left.parts, Store('timer').intake_recording().results) == (False, 1, ())
+    assert left.last is not None
+    assert 'Intake: left unfinished' in run(cwd=project).stdout
+    agent = subprocess.Popen([sys.executable, '-c', _AGENT], cwd=project, text=True, stdin=subprocess.PIPE,
+                             stdout=subprocess.PIPE, env={**os.environ, 'METAFORM_HOME': str(home)})
+    try:
+        assert agent.stdout is not None and agent.stdout.readline().strip() == 'recording'
+        [now] = Store('timer').intake_recording().results
+        assert (now.layer.id, now.parts) == (left.layer.id, 2)
+        assert 'Intake: being recorded' in run(cwd=project).stdout
+        refused = run('intake', 'discard', '--confirm', cwd=project, ok=False)
+        assert refused.returncode != 0 and 'recording the intake' in refused.stderr
+    finally:
+        assert agent.stdin is not None
+        agent.stdin.close()
+        agent.wait(30)
+    assert Store('timer').intake_recording().results == ()
+    assert run('intake', 'discard', cwd=project, ok=False).returncode != 0  # its caution asks for --confirm
+    gone = recorded(run, project, 'discard', '--confirm')
+    assert (gone['layer'], gone['parts']) == (left.layer.name, 2)
+    assert Store('timer').intake_building().results == () and not Store('timer').has_intake()
+    assert Store('timer').graph(raw=True, limit=0).elements == ()
 
 
 @pytest.mark.req('BASE-039')
@@ -1346,7 +1406,7 @@ def test_code_intake_follow_on_sees_committed_active_base(run, project, monkeypa
         recorded(run, project, 'finish')
     recorded(run, project, 'start', *(['name=code-follow-on'] if new_base else []))
     recorded(run, project, 'element', 'code.example', 'role=DE')
-    recording = Store('timer').intake_recording().results[0]
+    recording = Store('timer').intake_building().results[0]
     seen = []
 
     def follow_on(payload, ctx):

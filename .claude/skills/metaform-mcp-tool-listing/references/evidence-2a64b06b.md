@@ -1,0 +1,1 @@
+"after sample: 128 tools, connect 1816 chars; without tool search 92,509 B (~23,127 tok); with it 5,596 B (~1,399 tok)" and the command "env -u METAFORM_ROLE ... .venv/bin/python artifacts/agent-context-cost/checks.py after"

@@ -4,8 +4,8 @@ A harness is known by the parent folder of its binary, since its path may carry 
 from an install folder of their own; a binary inside an npm package is known by its package folder, so a launcher
 and the vendor binary it starts are one harness, and a harness run by node, bun or deno is known by its script, not
 the interpreter. A binary under the system's temporary folder is ignored. Once the agent says it is done provisioning
-a harness, the home records it, and it is never asked again. Under a harness not recorded, every command gives the
-notice on stderr, D96.
+a harness, the home records it, and it is never asked again. A harness not recorded is given the notice in the
+connect message of the stdio MCP server it starts, never on a command in a terminal, D96 as changed 2026-10-15.
 """
 from __future__ import annotations
 

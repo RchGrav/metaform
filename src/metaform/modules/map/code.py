@@ -85,13 +85,15 @@ settings.items('code_server_env', ['CBM_*'], person_only=True,
 settings.text('code_server_project', '',
               help="The project's name on the code-graph MCP server; empty finds it by the project's folder.")
 settings.text('code_index', 'index.scip', help='The SCIP index file map code-import reads, relative to the project.')
-settings.text('code_layer', 'code', help='The layer that holds the code symbols and their links to the map.')
-settings.items('code_kinds', KINDS, help='The kinds of declaration map code-import keeps, as the code graph labels '
+settings.items('code_kinds', KINDS, choices=[*KINDS, 'Variable', 'Module'], help='The kinds of declaration map code-import keeps, as the code graph labels '
                                          'them; Variable and Module add more, and noise.')
 settings.items('code_ignore', NOT_CODE,
                help='Files map code-import never reads, as gitignore patterns, beside .metaform/ignore.txt: the '
                     'documents and data a code graph also parses, whose elements and keys are not code.')
 
+# The layer that holds the code symbols and their links to the map: one name in every project, so code-import, where
+# and node reads all find it the same way. Settings cleanup 2026-10-15 made it fixed: no reader gained from another.
+CODE_LAYER = 'code'
 VARIABLE = 'Code symbols, each providing for the purpose of the element or join it is attached to.'
 LINKED, PROPOSED, UNLINKED = 'linked', 'proposed', 'unlinked'
 BY_SOURCES = 'sources'
@@ -109,7 +111,7 @@ def _prompt(name: str, **fills: str) -> str:
 
 
 def _layer(ctx: Context) -> str:
-    return str(ctx.setting('code_layer') or 'code')
+    return CODE_LAYER
 
 
 def _root(store: Store) -> Path:
@@ -1830,7 +1832,7 @@ VERBS = (
                       schema={'type': 'string', 'enum': PROVIDERS[1:]}),
                 _noun('index', 'The SCIP index file, relative to the project; the setting code_index when left out.'),
                 _noun('full', 'true reads every file again, changed or not.', 'bool')),
-         details='The code is a layer, the setting code_layer, code by default: a CEL over the map that is taken off '
+         details='The code is a layer, named code: a CEL over the map that is taken off '
                  'with map knowledge op=discard like any other, its index with it. The base never changes. Files under '
                  '.metaform/ignore.txt and the setting code_ignore are never read. A file is read again when its stamp '
                  'at the provider changes; one whose bytes changed while its stamp did not is said to be stale, and '

@@ -17,7 +17,7 @@ from typing import Any
 
 from metaform import settings
 from metaform.data import Tables
-from metaform.module import Context, Module, Noun, Provides, Subscription, Verb
+from metaform.module import Context, Module, Noun, Provides, Subscription, Verb, project_for
 
 from . import a2a_records, task_records
 
@@ -55,9 +55,6 @@ settings.text('mcp_public_url', '', scope='global', person_only=True, label='MCP
               details='Set, every request to <it>/mcp needs a token the Node\'s authorization server issued for '
                       'exactly that resource, and A2A one for <it>/a2a; the Agent Card names these URLs. Written by '
                       'metaform node init into the Node\'s compose file.')
-settings.text('mcp_introspection', 'http://127.0.0.1:7435/oauth/introspect', scope='global', person_only=True,
-              label='Token introspection endpoint',
-              help='Where an exposed server checks tokens (RFC 7662), the Node\'s authorization server on loopback.')
 settings.choice('mcp_transport', ['stdio', 'http'], 'stdio', scope='global', label='AI tool transport',
                 help='How metaform install registers the server: stdio, each AI tool starting its own, or http, the '
                      'one server you start with metaform mcp serve --http.',
@@ -89,14 +86,6 @@ settings.choice('mcp_apps_offer', ['declared', 'always'], 'declared', label='Off
                         'test host, basic-host. With always, each view-opening tool carries its view and the views\' '
                         'own tool metaform_view is listed to every AI tool; one that does not show MCP Apps may list '
                         'metaform_view to its agent, which only reads.')
-settings.boolean('mcp_tasks', True, label='Tasks for long tools',
-                 help='Answer a long tool, such as workflow_assign or hello_wait, with a task an AI tool polls, when '
-                      'it declares the MCP tasks extension.',
-                 details='hello_wait is answered at once and runs on in the server; workflow_assign is answered with '
-                         'the run it hands to a fresh agent, which the task follows until that agent closes it, and a '
-                         'run paused on you asks its question in your AI tool. tasks/get gives the result and '
-                         'tasks/cancel stops the work. A task is kept in the project for a day. AI tools that do not '
-                         'declare the extension get the result as before.')
 settings.choice('mcp_search_fetch', ['remote', 'always', 'never'], 'remote', label='search and fetch tools',
                 help='Offer the two tools ChatGPT calls by name, search and fetch: remote offers them over HTTP and the '
                      'cloud tunnel, always everywhere, never nowhere.',
@@ -144,25 +133,6 @@ settings.number('mcp_a2a_wait', 30, min=0, max=3600, scope='global', label='A2A 
 
 
 
-def _check_peers(value: Any, folder: Path) -> list[str] | None:
-    from .a2a_out import check_peers
-    return check_peers(value, folder)
-
-
-# A2A outbound, MCP-040: the peers Metaform sends to are the person's, as are those that may reach it, so person_only.
-settings.items('mcp_a2a_peers', (), scope='global', person_only=True, exclusive='=', check=_check_peers,
-               label='A2A peers',
-               help='The A2A agents agents here may send work to, each <name>=<card URL> <token variable>; none sends '
-                    'nowhere.',
-               details='An agent sends one with mcp a2a_send peer=<name>, and only to a peer on this list. The card '
-                       'URL is the peer\'s Agent Card, such as http://127.0.0.1:7440/.well-known/agent-card.json for '
-                       'another Metaform; the token variable names the environment variable that holds the bearer '
-                       'token it takes, read when a message is sent and never stored. A peer\'s card is read when it '
-                       'is first used and kept in the project, read again when a call fails with a version or '
-                       'interface error.',
-               category='integrations', heading='A2A')
-
-
 def changed(payload: dict[str, Any], ctx: Context) -> None:
     """A change made in this process, BASE-032: the A2A server here, when one runs, reads the tasks it follows in that
     project again; changes from other processes reach it through `events.listen`, BASE-053. An answer given to a
@@ -176,8 +146,7 @@ def changed(payload: dict[str, Any], ctx: Context) -> None:
 def serve(ctx: Context) -> None:
     from .server import serve as run_server
     run_server(Path(ctx.folder), http=bool(ctx.setting('mcp_http')), port=int(ctx.setting('mcp_port')),
-               bind=str(ctx.setting('mcp_bind') or '127.0.0.1'), public_url=str(ctx.setting('mcp_public_url') or ''),
-               introspection=str(ctx.setting('mcp_introspection') or ''))
+               bind=str(ctx.setting('mcp_bind') or '127.0.0.1'), public_url=str(ctx.setting('mcp_public_url') or ''))
 
 
 def a2a_send(ctx: Context) -> Any:
@@ -193,6 +162,27 @@ def a2a_exchanges(ctx: Context) -> Any:
 def a2a_cancel(ctx: Context) -> Any:
     from .a2a_out import cancel
     return cancel(ctx)
+
+
+def carry_peers(ctx: Context | None = None) -> list[str]:
+    """The mcp module's start: a stored mcp_a2a_peers list carried into the peer records once per home."""
+    from .a2a_peers import carry
+    return carry(ctx)
+
+
+def list_peers(ctx: Context) -> Any:
+    from .a2a_peers import show
+    return show(ctx)
+
+
+def add_peer(ctx: Context) -> Any:
+    from .a2a_peers import add
+    return add(ctx)
+
+
+def remove_peer(ctx: Context) -> Any:
+    from .a2a_peers import remove
+    return remove(ctx)
 
 
 class HttpService:
@@ -221,6 +211,12 @@ class HttpService:
         return tuple(scopes_up_to(capability))
 
 
+def exchange_open(folder: Path) -> bool:
+    """Whether an exchange this project sent is still open, so the verb that cancels one is listed over MCP, MCP-004."""
+    project = project_for(folder)
+    return project is not None and bool(a2a_records.exchanges(project, open_only=True))
+
+
 MODULE = Module(
     id='mcp',
     summary="Serve Metaform's tools to AI tools over MCP.",
@@ -230,11 +226,11 @@ MODULE = Module(
             "whatever that folder's command surface; the surface narrows the tools it serves. With --http it serves "
             'Streamable HTTP at http://127.0.0.1:<mcp_port>/mcp until stopped.',
     verbs=(Verb('serve', serve, 'Serve the MCP server over stdio, or with --http over Streamable HTTP.',
-                switches=('mcp_http', 'mcp_port', 'mcp_bind', 'mcp_public_url', 'mcp_introspection'),
+                switches=('mcp_http', 'mcp_port', 'mcp_bind', 'mcp_public_url'),
                 surfaces=('cli',), transport=True),
            Verb('a2a_send', a2a_send, 'Send an A2A peer the person names a message about an Address; what its task '
                                       'does comes back to that Address.',
-                nouns=(Noun('peer', 'The peer, by its name in mcp_a2a_peers.'),
+                nouns=(Noun('peer', 'The peer, by its name in mcp a2a_peers.'),
                        Noun('address', 'The Address the work concerns: the contextId the peer receives, and where '
                                        'its answers, artifacts and questions land here.'),
                        Noun('text', 'The work, in words the peer reads with none of your context.'),
@@ -254,9 +250,28 @@ MODULE = Module(
                        Noun('address', 'Only those about this Address.', required=False)),
                 open_world=True),
            Verb('a2a_cancel', a2a_cancel, "Cancel an A2A exchange's task at its peer.",
-                nouns=(Noun('id', 'The exchange, by its id.'),), open_world=True)),
+                nouns=(Noun('id', 'The exchange, by its id.'),), open_world=True, listed=exchange_open),
+           # A2A outbound's peers, MCP-040: records of the home that only the person adds and removes, so a2a_send
+           # reaches no other agent. Settings cleanup 2026-10-15 made them records; they were the list mcp_a2a_peers.
+           Verb('a2a_peers', list_peers, 'List the A2A peers the person names, the only agents work is sent to.',
+                effect='read', needs_project=False),
+           Verb('a2a_peer_add', add_peer, 'Add an A2A peer work may be sent to, or replace the one of that name.',
+                nouns=(Noun('name', 'Its short name: lowercase letters, digits, _ and -.'),
+                       Noun('url', "Its Agent Card's URL, such as http://127.0.0.1:7440/.well-known/agent-card.json."),
+                       Noun('token', 'The environment variable that holds the bearer token it takes; read when a '
+                                     'message is sent, never stored.', required=False)),
+                details='The person\'s own: run on the command line, never from an agent\'s session. The other peers '
+                        'stay as they are.',
+                examples=((('metaform mcp a2a_peer_add other http://127.0.0.1:7440/.well-known/agent-card.json '
+                            'token=OTHER_A2A_TOKEN'), 'Lets agents here send work to another Metaform.'),),
+                surfaces=('cli',), effect='write', needs_project=False),
+           Verb('a2a_peer_remove', remove_peer, 'Remove an A2A peer; no work is sent to it after.',
+                nouns=(Noun('name', 'The peer, by its name.'),),
+                details='The person\'s own: run on the command line, never from an agent\'s session.',
+                surfaces=('cli',), effect='remove', needs_project=False)),
     mcp_server='serve',
     tables=TABLES,
+    start=carry_peers,
     subscriptions=(Subscription('map.changed', changed),),
     provides=(Provides('mcp.http', HttpService()),),
 )

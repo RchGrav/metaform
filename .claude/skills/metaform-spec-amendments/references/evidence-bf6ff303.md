@@ -1,0 +1,1 @@
+"The ticket asked for this, although the amendment skill says a worker should only draft them." and "Specs amended to match what is built, each 'Amendment, 2026-10-15, agent context cost, ticket code.server.tool#11 (2f55c234)': MCP-003 ..., MCP-004 ..., MCP-025 ..., MCP-039 ..., BASE-059"

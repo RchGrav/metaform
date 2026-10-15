@@ -1044,7 +1044,7 @@ def test_jev_gives_up_within_its_deadline_and_rests_after_a_failure(home, projec
 def test_jev_within_bounds_a_decision_split_into_many_requests(home, project_folder, monkeypatch):
     import time
 
-    from metaform import jev, settings
+    from metaform import jev
     sent = _fake_jev(monkeypatch, project_folder)
     fake = jev.post
 
@@ -1052,7 +1052,7 @@ def test_jev_within_bounds_a_decision_split_into_many_requests(home, project_fol
         time.sleep(0.6)
         return fake(cfg, body)
     monkeypatch.setattr(jev, 'post', slow)
-    settings.put('jev_max_context', 1000, project_folder)
+    monkeypatch.setattr(jev, 'MAX_CONTEXT', 1000)
     items = {f'code.a#{n}': 'x' * 2000 for n in range(3)}  # one item to a request: three requests
     started = time.monotonic()
     with jev.within(1.0):

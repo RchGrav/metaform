@@ -203,6 +203,14 @@ def test_report_writes_one_zip_here_with_the_error_and_versions_and_masks_every_
     monkeypatch.setenv('TMPDIR', str(runners))
     monkeypatch.setattr('tempfile.tempdir', None)
     (runners / 'metaform-dispatch-abc.log').write_text('dispatch failed: PLANTED-RUNNER-ERROR token=tok_PLANTED99\n')
+    (runners / 'metaform-dispatch-intake-intake-def.log').write_text('the intake runner\n')
+    (runners / 'metaform-dispatch-other.log').write_text('ANOTHER-HOMES-RUNNER\n')
+    run('enable', 'dispatch', cwd=project)
+    with Store('proj', module='dispatch').tables() as tx:
+        for seq, work in enumerate(('abc', 'intake-def')):
+            tx.insert('sessions', {'session_id': f's-{work}', 'work_id': work, 'agent': 'claude', 'state': 'ended',
+                                   'started': '2026-10-15T00:00:00Z', 'seq': seq})
+    run('set', '--voice-endpoint-url', 'https://bob:hunter2PLANTEDpw@voice.example.com/v1', cwd=project)
     (home / 'run').mkdir(parents=True, exist_ok=True)
     (home / 'run' / 'web.log').write_text(
         '2026-10-14T01:00:05+00:00 Error answering:\nTraceback (most recent call last):\n  File "s.py", line 2\n'
@@ -217,8 +225,11 @@ def test_report_writes_one_zip_here_with_the_error_and_versions_and_masks_every_
     assert 'Metaform: ' in texts['report.txt'] and 'Python: ' in texts['report.txt'] and '****67' in texts['report.txt']
     assert 'PLANTED-WEB-ERROR' in texts['errors.txt'] and 'PLANTED-RUNNER-ERROR' in texts['errors.txt']
     assert 'logs/dispatch/metaform-dispatch-abc.log' in texts and 'settings.txt' in texts
+    assert 'logs/dispatch/metaform-dispatch-intake-intake-def.log' in texts
+    assert 'https://****pw@voice.example.com/v1' in texts['settings.txt']
     every = ''.join(texts.values())
-    for secret in ('PLANTEDKEY', 'PLANTEDTOKEN', 'tok_PLANTED', '555 123'):
+    assert 'ANOTHER-HOMES-RUNNER' not in every  # a runner log of no session of this home's
+    for secret in ('PLANTEDKEY', 'PLANTEDTOKEN', 'tok_PLANTED', '555 123', 'hunter2'):
         assert secret not in every
     assert 'PROJECT-OWN-TEXT' not in every
     made.unlink()

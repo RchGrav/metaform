@@ -1,0 +1,7 @@
+Verb gains needs_project (default true, module.py), listing() drops verbs that need one and the SURFACED chassis tools that act on a project's records (ON_PROJECT) until project_for(folder) is set; calls still route through tools(), so a cached name answers 'No project ... call metaform_register'. announce() already compares the listing, so registering sends one tools/list_changed. Declared needs_project=False after reading each verb body: intake schema; web start, stop; workflow lib, libs, skill, skills, scan, lexicalize, serve; dispatch agents, registry; fork init. Choice: the 2026-10-14 review's list was wrong for mcp a2a_* (they call require_store) and intake prompt/status (require_store), so those stay gated. Scratch measure: unregistered 124 -> 14 tools, 133,286 -> 25,490 bytes without tool search, 5,474 -> 2,418 with it. Test: test_a_folder_with_no_project_lists_only_what_runs_and_registering_announces_the_rest.
+
+verb_schema adds project only for needs_project verbs and layers only when the module declares the new Module.layered (map, memory, intake, source_placement, workflow); _prepare refuses either on a tool that lacks it. Registered project in scratch: 132,995 -> 128,763 bytes without tool search.
+
+A static AST walk over verb bodies misjudged nearly every map verb as free; read the bodies instead.
+
+E       AssertionError: assert {'intake_schema', 'metaform_register', 'metaform_skills', 'web_start', 'workflow_skills'} <= dict_keys(['fork_init', 'intake_schema', 'metaform_feedback', ...])

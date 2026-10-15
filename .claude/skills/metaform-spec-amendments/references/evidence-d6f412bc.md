@@ -1,0 +1,1 @@
+The ticket explicitly tells me to update the spec record, as #73 and #74 did today, so I'll write the amendment into the record itself rather than a draft.

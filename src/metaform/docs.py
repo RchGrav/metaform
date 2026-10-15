@@ -75,7 +75,7 @@ def _setting_rows(record: Command) -> list[tuple[str, str]]:
     if record.name in ('set', 'unset'):
         found = [(', '.join(setting.switches) + ('' if setting.kind == 'bool' or record.name == 'unset'
                                                   else ' <value>'), setting.help)
-                 for setting in settings.SCHEMA.values()] + found
+                 for setting in settings.ordered()] + found
     return found
 
 
@@ -147,6 +147,7 @@ def overview() -> str:
         '',
         'Common commands',
         *rows([('metaform', 'Show status: home, folder, project.'),
+               ('metaform demo', 'Watch Metaform at work on a sample project.'),
                ('metaform start', 'Map the project in this folder and open it.'),
                ('metaform add project <id> <path>', 'Register a project.'),
                ('metaform config', 'Open the settings screen.'),

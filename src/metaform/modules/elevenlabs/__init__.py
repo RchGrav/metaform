@@ -5,7 +5,7 @@ replies with ElevenLabs's voices when the person's voice_tts is elevenlabs, and 
 voice_engine is elevenlabs. Either sends ElevenLabs what is spoken or heard. ElevenLabs's key is read from
 ELEVENLABS_API_KEY in the environment of the process that serves the page, for each request; it is never stored in a
 setting or a file, never logged and never sent to the page. Its advanced settings, the model, the voice's stability,
-similarity, style, speaker boost and speed, the streaming latency and the output formats, are this module's own.
+similarity, style, speaker boost and speed, and the streaming latency, are this module's own.
 
   status    whether the key is present, and the settings in use
   models    the text-to-speech models the account can use
@@ -40,7 +40,12 @@ DEFAULT_VOICES = {
     'snail': 'nPczCjzI2devNBz1zQrb', 'wisp': 'SAz9YHcvj6GT2YYXdXww',
 }
 FALLBACK = 'JBFqnCBsd6RMkjVDRZzb'  # George, for a mascot that is none of these
-LANGUAGE = re.compile(r'^(auto|[a-z]{2,3})$')
+# The audio streamed to the page: raw samples play as they arrive, so the reply starts at once; 22,050 a second is the
+# middle of ElevenLabs's pcm rates. A call always takes the telephone's own encoding, ulaw_8000, which the phone bridge
+# asks for itself (twilio/engines.py FORMAT). Settings cleanup 2026-10-15: each had one right answer.
+PAGE_FORMAT, PHONE_FORMAT = 'pcm_22050', 'ulaw_8000'
+# Scribe's released model; scribe_v1_experimental changes without notice, so it is never what a person's speech goes to.
+SCRIBE_MODEL = 'scribe_v1'
 
 
 def _listed() -> Path:
@@ -68,11 +73,6 @@ def _check_voices(value: Any, folder: Path) -> list[str] | None:
              or not one.split('=', 1)[1].strip()]
     said = f'elevenlabs_voices takes character=voice for the characters {", ".join(DEFAULT_VOICES)}; not {", ".join(wrong)}.'
     return [said] if wrong else None
-
-
-def _check_language(value: Any, folder: Path) -> list[str] | None:
-    return None if isinstance(value, str) and LANGUAGE.match(value) else \
-        ['elevenlabs_scribe_language is auto or a language code, such as en or de.']
 
 
 settings.choice('elevenlabs_model', _models, 'eleven_flash_v2_5', scope='global',
@@ -109,29 +109,11 @@ settings.number('elevenlabs_latency', 1, min=0, max=4, scope='global',
                 details='ElevenLabs\'s optimize_streaming_latency. 0 is its best quality; 1 to 3 trade more of it for '
                         'a sooner first sound; 4 also skips the reading of numbers and dates as words.',
                 label='Latency optimization', category='advanced')
-settings.choice('elevenlabs_format', list(api.PAGE_FORMATS), 'pcm_22050', scope='global',
-                help='The audio streamed to the page: pcm plays as it arrives; mp3 is smaller and plays once it is in.',
-                details='pcm_16000, pcm_22050 and pcm_24000 are raw samples at that rate, higher sounding fuller; '
-                        'mp3_44100_128 is full quality and mp3_22050_32 the smallest.',
-                label='Audio format in the page', category='advanced')
-settings.choice('elevenlabs_phone_format', list(api.PHONE_FORMATS), 'ulaw_8000', scope='global',
-                help='The audio for a phone call: ulaw_8000 is the telephone\'s own encoding.',
-                details='ulaw_8000 goes to a call as it is; pcm_8000 and pcm_16000 are for a bridge that encodes '
-                        'the call itself.',
-                label='Audio format on the phone', category='advanced')
 settings.items('elevenlabs_voices', [], scope='global', exclusive='=', check=_check_voices,
                help='A voice for a mascot character, as character=voice id or name, such as owl=Daniel.',
                details='The voice is an id or a name of a voice on your ElevenLabs account; metaform elevenlabs '
                        'voices lists them. A character not named speaks with its own default voice.',
                label='ElevenLabs voice for each character', heading='ElevenLabs')
-settings.choice('elevenlabs_scribe_model', list(api.SCRIBE_MODELS), 'scribe_v1', scope='global',
-                help="Scribe's model, when voice_engine is elevenlabs.",
-                details='scribe_v1 is the released model; scribe_v1_experimental has ElevenLabs\'s latest changes, '
-                        'which may change without notice.',
-                label='Scribe model', category='advanced')
-settings.text('elevenlabs_scribe_language', 'auto', scope='global', check=_check_language,
-              help='The language Scribe hears, as a code such as en, or auto to let it tell.',
-              label='Scribe language', category='advanced')
 
 
 def ready(ctx: Context) -> str | None:
@@ -170,15 +152,14 @@ def voice_settings(ctx: Context) -> dict[str, Any]:
 
 
 def output_of(ctx: Context, format: str) -> str:
-    """The ElevenLabs format a speak in `format` streams: page and phone are this module's settings for each."""
-    return str(ctx.setting('elevenlabs_format') if format == 'page' else
-               ctx.setting('elevenlabs_phone_format') if format == 'phone' else format)
+    """The ElevenLabs format a speak in `format` streams: page and phone are PAGE_FORMAT and PHONE_FORMAT."""
+    return PAGE_FORMAT if format == 'page' else PHONE_FORMAT if format == 'phone' else format
 
 
 def speak_engine(ctx: Context, text: str, character: str | None = None, format: str = 'page', *,
                  voice: str | None = None) -> Any:
     """The voice engine's speak: `text` in the character's voice as audio chunks, or in `voice`, a voice id or a name
-    on the account, when the caller names one; `format` is 'page' or 'phone', this module's settings for each, or an
+    on the account, when the caller names one; `format` is 'page' or 'phone', PAGE_FORMAT and PHONE_FORMAT, or an
     ElevenLabs output format such as ulaw_8000."""
     _need(ctx)
     output = output_of(ctx, format)
@@ -190,12 +171,11 @@ def speak_engine(ctx: Context, text: str, character: str | None = None, format: 
 
 
 def transcribe_engine(ctx: Context, path: Path, language: str | None = None) -> dict[str, Any]:
-    """The voice engine's transcribe: an audio file's text from Scribe, which receives the audio."""
+    """The voice engine's transcribe: an audio file's text from Scribe, which receives the audio, in the language voice
+    passes, its voice_language, or Scribe's own guess with none."""
     _need(ctx)
-    chosen = str(ctx.setting('elevenlabs_scribe_language') or 'auto')
     try:
-        return api.scribe(path, model=str(ctx.setting('elevenlabs_scribe_model')),
-                          language=language or (None if chosen == 'auto' else chosen))
+        return api.scribe(path, model=SCRIBE_MODEL, language=language)
     except OSError as error:
         raise Stop(str(error), 'metaform elevenlabs status') from None
 
@@ -208,9 +188,9 @@ ENGINE = VoiceEngine(
 
 def status(ctx: Context) -> dict[str, Any]:
     return {'key': api.available(), 'ready': ready(ctx) is None, 'why': ready(ctx),
-            'model': ctx.setting('elevenlabs_model'), 'format': ctx.setting('elevenlabs_format'),
-            'phone_format': ctx.setting('elevenlabs_phone_format'), 'voice_settings': voice_settings(ctx),
-            'latency': ctx.setting('elevenlabs_latency'), 'scribe_model': ctx.setting('elevenlabs_scribe_model')}
+            'model': ctx.setting('elevenlabs_model'), 'format': PAGE_FORMAT, 'phone_format': PHONE_FORMAT,
+            'voice_settings': voice_settings(ctx), 'latency': ctx.setting('elevenlabs_latency'),
+            'scribe_model': SCRIBE_MODEL}
 
 
 def list_models(ctx: Context) -> dict[str, Any]:
@@ -243,7 +223,7 @@ def speak(ctx: Context) -> dict[str, Any]:
     """Text spoken into a file, from the command line; the page and a phone bridge reach the engine through voice."""
     given: Any = ctx.nouns['text']
     text = ' '.join(str(one) for one in cast(list[Any], given)) if isinstance(given, (list, tuple)) else str(given)
-    output = str(ctx.nouns.get('format') or ctx.setting('elevenlabs_format'))
+    output = str(ctx.nouns.get('format') or PAGE_FORMAT)
     audio = speak_engine(ctx, text, str(ctx.nouns.get('character') or '') or None, output)
     target = Path(str(ctx.nouns.get('file') or f'speech.{output.split("_", 1)[0]}')).expanduser()
     if home.is_home_path(target):

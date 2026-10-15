@@ -1,0 +1,1 @@
+{"action": "create", "reason": "The dock's My agent pin, close-× semantics and Escape routing were decided and tested in this episode, and the Escape trap (overlay capture before chatKeys) is non-obvious. No existing skill covers the chat dock, so it is created at the class level of dock thread and key behaviour.", "evidence": "references/evidence-bd9e60d0.md"}

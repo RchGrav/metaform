@@ -1,0 +1,1 @@
+A 2D figure is clicked by dispatching pointerdown then click on g.agent2d (its handler needs the pointerdown).

@@ -14,6 +14,7 @@ import {DOCK} from '/page/app/dock/embody.js';
 import {glyphFor} from '/page/app/agents/dispatch.js';
 import {holderOf} from '/page/app/keys/walk.js';
 import {openFigure} from '/page/app/figures/ask.js';
+import {followed2d} from '/page/app/figures/eyes.js';
 import {figureWords} from '/page/app/map3d/readout.js';
 
 /* A figure takes its own click while its press still reaches the map's pan handler. Keep the same four-pixel
@@ -234,6 +235,7 @@ function roam2d() {
   let moving = false;
   for (const [id, figure] of ROAM2D.figures) if (stepFigure2d(id, figure, base, layer, perPixel, passed)) moving = true;
   const awake = mascot2d(base, layer, perPixel, passed);
+  followed2d(ROAM2D.figures);  // the followed agent's figure kept in the middle of the map, A
   // With reduced motion a figure stands still, so the frames stop once each is drawn; a redraw or a change asks again.
   // The mascot alone keeps them going only while it is awake, so a page left alone rests.
   if ((ROAM2D.figures.size && (moving || !reduced())) || awake) ROAM2D.frame = requestAnimationFrame(roam2d);
@@ -372,6 +374,10 @@ function circling2d(figure, {id, base, target, size, passed, pose}) {
     Object.assign(want, {x: target.x + target.w / 2 + size * 0.7, y: target.y + target.h / 2});
     pose.lean = 8;
   }
+  // its own place, before a reach or an act takes it from there for a moment: what following keeps in the middle
+  const place = figure.place ||= {x: 0, y: 0};
+  place.x = target.x + figure.from.x + (want.x - target.x - figure.from.x) * settled;
+  place.y = target.y + figure.from.y + (want.y - target.y - figure.from.y) * settled;
   if (figure.reach) reach2d(figure, base, target, want);
   if (mood === 'working' && !figure.act && c > (figure.nextAct ?? 5) && ACTS[m.act]) {
     figure.act = {kind: m.act, at: c, long: ACTS[m.act]};

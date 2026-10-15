@@ -3,7 +3,7 @@
 import '/page/app/map3d/fibers3d.js';  // the part before runs first, so the parts run in the page's order
 // The graph, glass and figures share the import map's one local Three.js runtime, VIEW-003 and VIEW-025.
 import * as THREE from 'three';
-// Ultra graphics, web_graphics: the 3D map in outer space, drawn by its own module through the hooks marked ULTRA.
+// The Space theme, web_theme space: the 3D map in outer space, drawn by its own module through the hooks marked ULTRA.
 import * as ULTRA from '/page/ultra.js';
 import {G} from '/page/app/map3d/graph3d.js';
 

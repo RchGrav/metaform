@@ -1,0 +1,1 @@
+"A web test that writes `check.json` into the scratch home can still trigger a check at `web start` if Rich's shell exports Twilio credentials, so the test clears those variables first." Test code: `for name in ('TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_API_KEY', 'TWILIO_API_SECRET'): monkeypatch.delenv(name, raising=False)`.

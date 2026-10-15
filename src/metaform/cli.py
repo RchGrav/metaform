@@ -44,8 +44,6 @@ from .data import Store, export_document, history, import_document, prompts
 from .docs import Command, Switch
 from .errors import Stop, StoreError
 from .module import Verb, call, on_this_system
-from .shown import session as agent_session
-from .shown import swap as told_before
 from .wording import count, counted
 
 EMPTY_IS_ALL = settings.EMPTY_IS_ALL
@@ -93,6 +91,8 @@ def status(args: list[str], folder: Path) -> None:
     record = home.project(project_id) if project_id else None
     if record is None:
         out('Project: none')
+        out('  Watch it first: metaform demo')
+        out('  Map this folder: metaform start')
         out('  Register one: metaform add project <id> <path>')
         return
     where = settings.state('project', folder)
@@ -1410,8 +1410,8 @@ docs.command(Command('demo', 'Watch Metaform at work: a sample project\'s map wi
                      details='It runs in a home of its own, demo inside the Metaform home, so your projects and '
                              'settings are never read or changed. Its agents call no model and no network service and '
                              'spend nothing. Run again, it reuses that home; --reset removes it first and starts '
-                             'fresh. The card on the page names the next steps: metaform install claude, and metaform '
-                             'start in your own project.',
+                             'fresh. The card on the page names the next step: metaform start in your own project, '
+                             'which maps it and connects Claude Code there.',
                      examples=(('metaform demo', 'Open the demo map with its agents at work.'),
                                ('metaform demo --reset', 'Start the demo fresh.')),
                      see_also=('start', 'install', 'web')))
@@ -1480,9 +1480,6 @@ def _command(args: list[str], folder: Path) -> int:
                  if args[:1] == ['install'] and not any(word in ('-h', '--help') for word in args[1:])
                  else False)
         install.backstage(force)
-        # Under a harness the home has not recorded, D96: told on stderr, once in an agent session, MCP-039.
-        if (first_run := harness.notice()) and told_before(agent_session(), 'harness-notice', first_run) != first_run:
-            sys.stderr.write(f'Notice: {first_run}\n')
         loader.discover()
         if not args:
             from . import archive

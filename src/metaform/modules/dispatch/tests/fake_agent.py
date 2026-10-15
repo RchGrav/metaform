@@ -5,7 +5,8 @@ line ended in a carriage return.
 FAKE_ACP_MODE says what its first turn does after two message chunks and one tool call:
   ask   asks permission for a second tool call, logs the outcome, and ends the turn; with FAKE_ACP_ASK_GATE naming a
         file, it keeps working until that file exists before it asks, and with FAKE_ACP_ASK_HOLD=1 it keeps working
-        after the answer until the turn is cancelled
+        after the answer until the turn is cancelled; with FAKE_ACP_ASK_AGAIN naming a file, it asks again for a
+        third tool call, Write more.txt, once that file exists, and logs that outcome as `permission_again`
   done  closes the ticket its prompt names, or else FAKE_ACP_WORK, with the real metaform command line, logs the
         ticket, and ends the turn; with FAKE_ACP_RECORD naming a node, it first records a memory there
   hold  starts a grandchild that sleeps, logs its pid, and ends the turn only when the turn is cancelled
@@ -294,6 +295,17 @@ def first_turn(prompt_id, text):
                             'options': [{'optionId': 'allow', 'name': 'Allow once', 'kind': 'allow_once'},
                                         {'optionId': 'reject', 'name': 'Reject', 'kind': 'reject_once'}]})
         log({'permission': outcome})
+        again = os.environ.get('FAKE_ACP_ASK_AGAIN')
+        while again and not os.path.exists(again) and not CANCELLED.wait(0.05):
+            pass
+        if again and not CANCELLED.is_set():  # a later request of the same session, once its file exists
+            log({'permission_again': ask(901, {'sessionId': SESSION,
+                                               'toolCall': {'toolCallId': 't3', 'title': 'Write more.txt',
+                                                            'kind': 'edit', 'status': 'pending'},
+                                               'options': [{'optionId': 'allow', 'name': 'Allow once',
+                                                            'kind': 'allow_once'},
+                                                           {'optionId': 'reject', 'name': 'Reject',
+                                                            'kind': 'reject_once'}]})})
         if os.environ.get('FAKE_ACP_ASK_HOLD') == '1':
             end_gate = os.environ.get('FAKE_ACP_ASK_END')
             while not (end_gate and os.path.exists(end_gate)) and not CANCELLED.wait(0.05):

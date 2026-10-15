@@ -13,7 +13,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
-from metaform import home, prompt_files
+from metaform import home, prompt_files, settings
 from metaform.data import Node, WorkRecord
 from metaform.module import Context, Stop, call, context, surface
 
@@ -22,6 +22,16 @@ from . import checks, repository
 
 def prompt(name: str, **fills: str) -> str:
     return prompt_files.required(resources.files(__package__ or 'metaform.modules.fork'), name, **fills)
+
+
+# The agent CI muster and template upkeep dispatch: the dispatch module's default agent, so one choice names the
+# person's agent everywhere, settings cleanup 2026-10-15 (it was fork_agent). Before dispatch is enabled, init writes
+# dispatch's own default into the workflow.
+FALLBACK_AGENT = 'codex'
+
+
+def agent_of(ctx: Context) -> str:
+    return str(ctx.setting('dispatch_agent')) if 'dispatch_agent' in settings.SCHEMA else FALLBACK_AGENT
 
 
 async def dispatch(ctx: Context, work_id: str, agent: str) -> Any:
@@ -115,7 +125,7 @@ def wheel(ctx: Context) -> dict[str, Any]:
                                          checks=failures.get(item.name, 'All six matrix jobs passed.')),
                         f'CI muster of {item.name}, source {snapshots[item.name]}.')
         ctx.publish('map.changed', {'project': ctx.project})
-        call(dispatch, ctx, record.id, str(ctx.setting('fork_agent')))
+        call(dispatch, ctx, record.id, agent_of(ctx))
         passed, reason = verdict(ctx, record.id)
         reason = failures.get(item.name, reason)
         if passed and item.name not in failures:
@@ -174,7 +184,7 @@ def upkeep(ctx: Context) -> dict[str, Any]:
             ctx.require_store().edit_work(record.id, {'task': prompt(
                 'upkeep', module=str(worktree / item.name), current=current, latest=latest,
                 changelog='\n\n'.join(newer))})
-            call(dispatch, ctx, record.id, str(ctx.setting('fork_agent')))
+            call(dispatch, ctx, record.id, agent_of(ctx))
     return {'tickets': records, 'template_version': latest}
 
 

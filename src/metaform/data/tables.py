@@ -21,7 +21,7 @@ import re
 import sqlite3
 from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast, get_args
 
@@ -364,8 +364,15 @@ def extension_schema() -> str:
 
 
 def extensions_ready(db: sqlite3.Connection) -> bool:
-    """Whether every enabled declaration needed by native reads is ready."""
-    return all(state(db, module, declared, 'metaform') == 'ready' for module, declared in extensions(db))
+    """Whether every enabled declaration needed by native reads is ready. A module whose tables conflict counts as
+    ready here: nothing can be done for it, and its own calls answer with the conflict, never the map's."""
+    for module, declared in extensions(db):
+        try:
+            if state(db, module, declared, 'metaform') != 'ready':
+                return False
+        except StoreError:
+            continue
+    return True
 
 
 def exchange_tables(db: sqlite3.Connection | None = None,
@@ -409,9 +416,16 @@ def cleanup(db: sqlite3.Connection, kind: str, identity: str) -> None:
 
 
 def ensure_extensions(db: sqlite3.Connection, path: Path) -> None:
-    """Adopt existing-name tables and prepare recorded data declarations before the native transaction."""
+    """Adopt existing-name tables and prepare recorded data declarations before the native transaction. Each module
+    is prepared under a savepoint of its own: one that cannot be, its tables in conflict, is left as it was, and the
+    store opens for the map and every other module; that module's own calls answer with why, STORE-029."""
     for module, declared in extensions(db):
-        ensure(db, path, module, declared, 'metaform')
+        db.execute('SAVEPOINT module_tables')
+        try:
+            ensure(db, path, module, declared, 'metaform')
+        except StoreError:
+            db.execute('ROLLBACK TO module_tables')
+        db.execute('RELEASE module_tables')
 
 
 def legacy_fold(db: sqlite3.Connection, correction: str, intake: str) -> None:
@@ -455,11 +469,353 @@ def _record(db: sqlite3.Connection, module: str, recorded: dict[str, Any]) -> No
                (META_PREFIX + module, json.dumps(recorded)))
 
 
-def state(db: sqlite3.Connection, module: str, declared: Tables, place: Place) -> Literal['absent', 'ready', 'older']:
-    """Whether a store holds the module's tables of this place at the declared version, an earlier one, or none.
-    A later version whose `compatible_from` is at or below the declared one is read and written as it is, and
-    nothing of it is rewritten or dropped; any other later version, or other tables at the same version, cannot be
-    read and nothing is written, STORE-029."""
+# SQL's own tokens, for comparing the clauses SQLite keeps only as text: a comment, space, quoting or the case of a
+# keyword never makes two clauses differ; a string literal is kept exactly.
+_TOKEN = re.compile(r"""\s+|--[^\n]*|/\*.*?(?:\*/|\Z)|'(?:[^']|'')*'|"(?:[^"]|"")*"|`(?:[^`]|``)*`|\[[^\]]*\]"""
+                    r'|[A-Za-z_][A-Za-z0-9_$]*|0[xX][0-9A-Fa-f]+|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?'
+                    r'|\|\||<=|>=|==|!=|<>|<<|>>|.', re.DOTALL)
+_TABLE_CONSTRAINT = ('constraint', 'primary', 'unique', 'check', 'foreign')
+
+
+def _tokens(sql: str) -> list[str]:
+    found: list[str] = []
+    for match in _TOKEN.finditer(sql):
+        token = match[0]
+        if token[0].isspace() or token.startswith(('--', '/*')):
+            continue
+        if token[0] == "'":
+            found.append(token)
+        elif token[0] in '"`':
+            found.append(token[1:-1].replace(token[0] * 2, token[0]).lower())
+        elif token[0] == '[':
+            found.append(token[1:-1].lower())
+        else:
+            found.append({'==': '=', '<>': '!='}.get(token, token.lower()))
+    return found
+
+
+def _closing(tokens: Sequence[str], start: int) -> int:
+    """The place of the `)` that closes the `(` at `start`."""
+    depth = 0
+    for place in range(start, len(tokens)):
+        depth += {'(': 1, ')': -1}.get(tokens[place], 0)
+        if not depth:
+            return place
+    return len(tokens)
+
+
+@dataclass(frozen=True)
+class _Clauses:
+    """What a CREATE TABLE says that SQLite's pragmas do not: its CHECK clauses, each column's collation, each ON
+    CONFLICT resolution with the constraint it is on, and the foreign keys, by their columns, checked only at commit."""
+    checks: tuple[str, ...] = ()
+    collations: Mapping[str, str] = field(default_factory=lambda: dict[str, str]())
+    resolutions: tuple[tuple[str, str, str], ...] = ()
+    deferred: frozenset[tuple[str, ...]] = frozenset()
+
+
+def _clauses(sql: str | None) -> _Clauses:
+    tokens = _tokens(sql or '')
+    if '(' not in tokens:
+        return _Clauses()
+    start = tokens.index('(')
+    body = tokens[start + 1:_closing(tokens, start)]
+    segments: list[list[str]] = [[]]
+    place = 0
+    while place < len(body):
+        if body[place] == '(':
+            end = _closing(body, place)
+            segments[-1] += body[place:end + 1]
+            place = end + 1
+            continue
+        if body[place] == ',':
+            segments.append([])
+        else:
+            segments[-1].append(body[place])
+        place += 1
+    checks: list[str] = []
+    collations: dict[str, str] = {}
+    resolutions: list[tuple[str, str, str]] = []
+    deferred: set[tuple[str, ...]] = set()
+    for segment in segments:
+        column = segment[0] if segment and segment[0] not in _TABLE_CONSTRAINT else None
+        owner = column or ' '.join(segment[2:] if segment[:1] == ['constraint'] else segment)
+        constraint = ''
+        place = 0
+        while place < len(segment):
+            token = segment[place]
+            if token in ('primary', 'unique', 'null', 'check', 'foreign'):
+                constraint = token
+            if token == 'check' and segment[place + 1:place + 2] == ['(']:
+                end = _closing(segment, place + 1)
+                checks.append(' '.join(segment[place + 2:end]))
+                place = end + 1
+                continue
+            if token == '(':
+                place = _closing(segment, place) + 1
+                continue
+            if token == 'collate' and column is not None and place + 1 < len(segment):
+                collations[column] = segment[place + 1].upper()
+            elif token == 'on' and segment[place + 1:place + 2] == ['conflict'] and place + 2 < len(segment):
+                resolutions.append((owner, constraint, segment[place + 2]))
+            elif token == 'references':
+                if column is not None:
+                    columns = (column,)
+                else:
+                    opened = segment.index('(')
+                    columns = tuple(name for name in segment[opened + 1:_closing(segment, opened)] if name != ',')
+                rest = segment[place:]
+                if 'deferrable' in rest:
+                    at = rest.index('deferrable')
+                    if rest[at - 1] != 'not' and rest[at + 1:at + 3] == ['initially', 'deferred']:
+                        deferred.add(columns)
+            place += 1
+    return _Clauses(tuple(sorted(checks)), collations, tuple(sorted(resolutions)), frozenset(deferred))
+
+
+def _predicate(sql: str | None) -> str | None:
+    """A partial index's WHERE, as tokens, or None for an index on every row."""
+    tokens = _tokens(sql or '')
+    if '(' not in tokens:
+        return None
+    end = _closing(tokens, tokens.index('('))
+    return ' '.join(tokens[end + 2:]) if tokens[end + 1:end + 2] == ['where'] else None
+
+
+# An index as what it holds: unique or not, each key column with whether it descends and its collation, and the
+# condition of a partial index.
+_IndexKey = tuple[bool, tuple[tuple[str, int, str], ...], str | None]
+# A foreign key: its columns, the table and columns it refers to, ON UPDATE, ON DELETE, MATCH and whether it is
+# checked only at commit.
+_ForeignKey = tuple[tuple[str, ...], str, tuple[str, ...], str, str, str, bool]
+
+
+@dataclass(frozen=True)
+class _Shape:
+    """A table as SQLite itself describes it: each column's type, whether it is NOT NULL, its default and its place
+    in the key; each index by what it holds, with the statement that makes it; and every rule a write must meet that
+    SQLite keeps only in the table's statement: its CHECK clauses, foreign keys, collations, ON CONFLICT resolutions
+    and generated columns."""
+    columns: dict[str, tuple[str, bool, Any, int]]
+    indexes: dict[_IndexKey, tuple[str, str | None]]
+    checks: tuple[str, ...] = ()
+    foreign_keys: tuple[_ForeignKey, ...] = ()
+    collations: Mapping[str, str] = field(default_factory=lambda: dict[str, str]())
+    resolutions: tuple[tuple[str, str, str], ...] = ()
+    generated: frozenset[str] = frozenset()
+
+    @property
+    def key(self) -> tuple[str, ...]:
+        return tuple(name for name, column in sorted(self.columns.items(), key=lambda item: item[1][3])
+                     if column[3])
+
+
+def _shape(db: sqlite3.Connection, name: str) -> _Shape | None:
+    """The table `name` as the store really holds it, from `pragma table_info`, its index and foreign key lists and,
+    for what no pragma says, its statement in sqlite_master, or None."""
+    info = db.execute(f'PRAGMA table_info({_quoted(name)})').fetchall()
+    if not info:
+        return None
+    columns = {str(row[1]): (str(row[2]).upper(), bool(row[3]), row[4], int(row[5])) for row in info}
+    made = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone()
+    clauses = _clauses(None if made is None else made[0])
+    indexes: dict[_IndexKey, tuple[str, str | None]] = {}
+    for index in db.execute(f'PRAGMA index_list({_quoted(name)})').fetchall():
+        if index[3] == 'pk':
+            continue
+        statement = db.execute("SELECT sql FROM sqlite_master WHERE type='index' AND name=?", (index[1],)).fetchone()
+        sql = None if statement is None else cast(str | None, statement[0])
+        held = tuple((str(row[2]), int(row[3]), str(row[4]).upper()) for row in
+                     db.execute(f'PRAGMA index_xinfo({_quoted(index[1])})') if row[5])
+        indexes[(bool(index[2]), held, _predicate(sql))] = (str(index[1]), sql)
+    referring: dict[int, list[Any]] = {}
+    for row in db.execute(f'PRAGMA foreign_key_list({_quoted(name)})').fetchall():
+        referring.setdefault(int(row[0]), []).append(row)
+    foreign: list[_ForeignKey] = []
+    for rows in referring.values():
+        rows.sort(key=lambda row: row[1])
+        source = tuple(str(row[3]) for row in rows)
+        foreign.append((source, str(rows[0][2]).lower(), tuple(str(row[4]) for row in rows), str(rows[0][5]),
+                        str(rows[0][6]), str(rows[0][7]), source in clauses.deferred))
+    generated = frozenset(str(row[1]) for row in db.execute(f'PRAGMA table_xinfo({_quoted(name)})') if row[6] in (2, 3))
+    return _Shape(columns, indexes, clauses.checks, tuple(sorted(foreign)),
+                  {column: clauses.collations.get(column, 'BINARY') for column in columns}, clauses.resolutions,
+                  generated)
+
+
+# What a declaration needs, and how a store met it at a schema cookie, each kept with the declaration it is for, so a
+# transaction compares the real schema again only when the store's schema or the declaration has changed.
+_WANTED: dict[tuple[int, str, Place], tuple[Tables, dict[str, _Shape]]] = {}
+_FITS: dict[tuple[str, int, int, int, str, Place], tuple[Tables, _Fit]] = {}
+
+
+def _wanted(module: str, declared: Tables, place: Place) -> dict[str, _Shape]:
+    """What the declaration needs of each table of this place, as SQLite would hold the tables it creates."""
+    kept = _WANTED.get((id(declared), module, place))
+    if kept is not None and kept[0] is declared:
+        return kept[1]
+    tables = [table for table in declared.tables if table.place == place]
+    db = sqlite3.connect(':memory:')
+    try:
+        for table in tables:
+            _create(db, module, table)
+        found = {table.name: cast(_Shape, _shape(db, physical(module, table))) for table in tables}
+    finally:
+        db.close()
+    if len(_WANTED) > 256:
+        _WANTED.clear()
+    _WANTED[(id(declared), module, place)] = (declared, found)
+    return found
+
+
+@dataclass
+class _Fit:
+    """How the tables a store really holds meet what the code needs: the tables, columns and indexes it lacks and
+    can be given in place, and the conflicts, each a table and what differs, that no addition can settle."""
+    create: list[Table] = field(default_factory=lambda: list[Table]())
+    add: list[tuple[str, str]] = field(default_factory=lambda: list[tuple[str, str]]())
+    index: list[tuple[str, str]] = field(default_factory=lambda: list[tuple[str, str]]())
+    conflicts: list[tuple[str, str]] = field(default_factory=lambda: list[tuple[str, str]]())
+
+    @property
+    def missing(self) -> bool:
+        return bool(self.create or self.add or self.index)
+
+
+def _meet(module: str, table: Table, wanted: _Shape, held: _Shape, fit: _Fit) -> None:
+    """Compare one held table with what its declaration needs, adding what differs to `fit`."""
+    name = physical(module, table)
+    if held.key != wanted.key:
+        fit.conflicts.append((table.name, (f'{table.name} is keyed by {", ".join(held.key) or "nothing"} and '
+                                           f'{module} keys it by {", ".join(wanted.key)}')))
+    for column, (kind, required, default, key) in wanted.columns.items():
+        found = held.columns.get(column)
+        if found is None:
+            if key:
+                continue  # the key's difference is said above
+            if required and default is None:
+                fit.conflicts.append((table.name, (f'{table.name} lacks {column}, which {module} requires with no '
+                                                   'default, so the rows already held cannot take it')))
+            else:
+                fit.add.append((name, f'{_quoted(column)} {kind}' + (' NOT NULL' if required else '')
+                                + ('' if default is None else f' DEFAULT {default}')))
+        elif found[0] != kind:
+            fit.conflicts.append((table.name, (f'{table.name}.{column} is held as {found[0] or "untyped"} and '
+                                               f'{module} declares it {kind}')))
+        elif found[2] != default:
+            fit.conflicts.append((table.name, (f'{table.name}.{column} is held with the default {found[2]} and '
+                                               f'{module} declares {default}')))
+        elif found[1] and not required and found[2] is None and not found[3]:
+            fit.conflicts.append((table.name, (f'{table.name}.{column} is held as required with no default, and '
+                                               f'{module} may leave it empty')))
+    for column, found in held.columns.items():
+        if column not in wanted.columns and found[1] and found[2] is None and not found[3]:
+            fit.conflicts.append((table.name, (f'{table.name} holds {column}, required with no default, which '
+                                               f'{module} never writes')))
+    # The rules a write must meet, compared as SQLite applies them and never as written, STORE-029: any difference
+    # refuses or admits rows the code does not expect, so it conflicts, and a raised version rebuilds the table.
+    for column in wanted.columns.keys() & held.columns.keys():
+        if held.collations.get(column) != wanted.collations.get(column):
+            fit.conflicts.append((table.name, (f'{table.name}.{column} is held with the collation '
+                                               f'{held.collations.get(column)} and {module} declares '
+                                               f'{wanted.collations.get(column)}')))
+    for what, was, now in (('CHECK constraints', held.checks, wanted.checks),
+                           ('foreign keys', held.foreign_keys, wanted.foreign_keys),
+                           ('ON CONFLICT resolutions', held.resolutions, wanted.resolutions),
+                           ('generated columns', tuple(sorted(held.generated)), tuple(sorted(wanted.generated)))):
+        if was != now:
+            fit.conflicts.append((table.name, (f'{table.name}\'s {what} are held as {_said(was)} and {module} '
+                                               f'declares {_said(now)}')))
+    for index in held.indexes:
+        if index[0] and index not in wanted.indexes:
+            fit.conflicts.append((table.name, (f'{table.name} holds a unique index on '
+                                               f'{", ".join(column for column, _, _ in index[1])}'
+                                               + (f' where {index[2]}' if index[2] else '')
+                                               + f' that {module} does not declare, so it may refuse rows '
+                                               f'{module} writes')))
+    for index, (index_name, statement) in wanted.indexes.items():
+        if index not in held.indexes:
+            if statement is None:  # a UNIQUE constraint's own index, made under a name SQLite does not reserve
+                index_name = f'{name}:{"+".join(column for column, _, _ in index[1])}:unique'
+            fit.index.append((index_name, statement or f'CREATE UNIQUE INDEX {_quoted(index_name)} ON {_quoted(name)}('
+                              + ', '.join(f'{_quoted(column)} COLLATE {collation}' + (' DESC' if descends else '')
+                                          for column, descends, collation in index[1]) + ')'))
+
+
+def _said(value: Sequence[Any]) -> str:
+    """A shape's clauses in a refusal: none, or each as SQLite holds it."""
+    def one(clause: Any) -> str:
+        if isinstance(clause, str):
+            return re.sub(r'([(]) | ([),])', r'\1\2', clause)
+        if len(clause) == 7:  # a foreign key
+            source, table, target, on_update, on_delete, match, deferred = clause
+            return (f'{", ".join(source)} references {table}({", ".join(target)}) on update {on_update} on delete '
+                    f'{on_delete}' + ('' if match == 'NONE' else f' match {match}') + (' deferred' if deferred else ''))
+        return ' '.join(map(str, clause))
+    return '; '.join(map(one, value)) if value else 'none'
+
+
+def _fit(db: sqlite3.Connection, module: str, declared: Tables, place: Place) -> _Fit:
+    """How the store's real tables of this place meet the module's declaration, read from SQLite's own schema."""
+    file = str(db.execute('PRAGMA database_list').fetchone()[2] or '')
+    key: tuple[str, int, int, int, str, Place] | None = None
+    if file:  # SQLite's schema cookie changes with every change to the file's schema
+        key = (file, Path(file).stat().st_ino, int(db.execute('PRAGMA schema_version').fetchone()[0]),
+               id(declared), module, place)
+        kept = _FITS.get(key)
+        if kept is not None and kept[0] is declared:
+            return kept[1]
+    fit = _Fit()
+    wanted = _wanted(module, declared, place)
+    for table in declared.tables:
+        if table.place != place:
+            continue
+        held = _shape(db, physical(module, table))
+        if held is None:
+            fit.create.append(table)
+        else:
+            _meet(module, table, wanted[table.name], held, fit)
+    if key is not None:
+        if len(_FITS) > 512:
+            _FITS.clear()
+        _FITS[key] = (declared, fit)
+    return fit
+
+
+def _complete(db: sqlite3.Connection, module: str, fit: _Fit) -> None:
+    """Give the store, in place, the tables, columns and indexes the code needs that it lacks; every row is kept."""
+    try:
+        for table in fit.create:
+            _create(db, module, table)
+        for name, column in fit.add:
+            db.execute(f'ALTER TABLE {_quoted(name)} ADD COLUMN {column}')
+        for name, statement in fit.index:
+            db.execute(f'DROP INDEX IF EXISTS {_quoted(name)}')  # an index of that name on other columns
+            db.execute(statement)
+    except sqlite3.IntegrityError as error:
+        raise StoreError(f'The tables of {module} could not be given what they lack: {error}. Nothing was changed.',
+                         f'compare {module}\'s table declaration with the rows already held') from None
+
+
+def _conflict(module: str, found: int, declared: Tables, fit: _Fit) -> StoreError:
+    first = fit.conflicts[0]
+    more = len(fit.conflicts) - 1
+    step = (f'install the {module} release that wrote version {found}' if found > declared.version else
+            f'raise the version of {module}\'s Tables to {found + 1}, so its upgrade rebuilds {first[0]} keeping '
+            'every row')
+    return StoreError(f'The tables of {module} this store holds conflict with what this {module} needs: {first[1]}'
+                      + (f', and {more} more difference{"s" if more > 1 else ""}' if more else '')
+                      + f'. Nothing of {module} was changed, and the rest of Metaform works as before.', step)
+
+
+def state(db: sqlite3.Connection, module: str, declared: Tables,
+          place: Place) -> Literal['absent', 'ready', 'update', 'older']:
+    """Whether a store holds what the module's code needs of its tables of this place, judged by the tables SQLite
+    really holds, never by the text of the declaration recorded beside them, STORE-029: `ready` when it holds it all,
+    `update` when it lacks a table, a column that may be empty or has a default, or an index, which `ensure` adds in
+    place, `older` when the record is at an earlier version, whose upgrade carries the rows, and `absent` when nothing
+    is recorded. A real conflict, a column or key held with another type, default or meaning, or a later version that
+    names this one unable to read it, raises a StoreError for this module alone, and nothing is written."""
     recorded = _recorded(db, module)
     if recorded is None:
         return 'absent'
@@ -470,18 +826,21 @@ def state(db: sqlite3.Connection, module: str, declared: Tables, place: Place) -
             raise StoreError(f'The store holds the tables of {module} at version {found}, which {module} reads from '
                              f'version {needed}; this {module} declares version {declared.version}.',
                              f'install the {module} release that wrote version {found}')
-        missing = _not_held(recorded, [table for table in declared.tables if table.place == place])
-        if missing:
-            raise StoreError(f'The tables of {module} at version {found} are named readable from version {needed}, '
-                             f'but they do not hold {missing} as version {declared.version} declares it.',
-                             f'install the {module} release that wrote version {found}')
-        return 'ready'
-    if found < declared.version:
+    elif found < declared.version:
         return 'older'
-    if recorded['tables'] != declared.recorded(place)['tables']:
-        raise StoreError(f'The tables {module} declares differ from those its store holds at version {found}.',
-                         f'raise the version of {module}\'s Tables to {found + 1}')
-    return 'ready'
+    fit = _fit(db, module, declared, place)
+    if fit.conflicts:
+        raise _conflict(module, found, declared, fit)
+    return 'update' if fit.missing else 'ready'
+
+
+def _bring_record(db: sqlite3.Connection, module: str, declared: Tables, place: Place) -> None:
+    """At the declared version, the record says what the code declares; a later version's record is left as it is,
+    STORE-029."""
+    recorded = _recorded(db, module)
+    wanted = json.loads(json.dumps(declared.recorded(place)))
+    if recorded is not None and int(recorded['version']) == declared.version and recorded != wanted:
+        _record(db, module, wanted)
 
 
 def _not_held(recorded: Mapping[str, Any], tables: Sequence[Table]) -> str | None:
@@ -498,14 +857,18 @@ def _not_held(recorded: Mapping[str, Any], tables: Sequence[Table]) -> str | Non
 
 
 def ensure(db: sqlite3.Connection, path: Path, module: str, declared: Tables, place: Place) -> None:
-    """Inside a write transaction: create the module's tables of this place, or upgrade them to the declared
-    version after keeping a copy of the file, STORE-045."""
+    """Inside a write transaction: create the module's tables of this place; give a store that lacks a table, a
+    column or an index the code needs it in place, keeping every row, and bring the record to the declared version;
+    or upgrade an earlier version's tables after keeping a copy of the file, STORE-045 and STORE-029."""
     found = state(db, module, declared, place)
-    if found == 'ready':
-        return
     if found == 'absent':
         _adopt(db, path, module, declared, place)
         _record(db, module, declared.recorded(place))
+        return
+    if found == 'update':
+        _complete(db, module, _fit(db, module, declared, place))
+    if found != 'older':
+        _bring_record(db, module, declared, place)
         return
     try:
         _upgrade(db, path, module, declared, place)
@@ -517,22 +880,24 @@ def ensure(db: sqlite3.Connection, path: Path, module: str, declared: Tables, pl
 def _adopt(db: sqlite3.Connection, path: Path, module: str, declared: Tables, place: Place) -> None:
     """Bring pre-declaration tables, and tables held without their record, to their owner's layout while retaining
     every shared column."""
+    # Judged by the real schema, STORE-029: a held table that only lacks what can be added is given it in place, and
+    # only one that conflicts with its declaration is rebuilt to it.
     changed: list[Table] = []
-    target = sqlite3.connect(':memory:')
-    try:
-        for table in declared.tables:
-            if table.place != place:
-                continue
-            name = _quoted(physical(module, table))
-            actual = db.execute(f'PRAGMA table_info({name})').fetchall()
-            if not actual:
-                continue
-            target.execute(_create_sql(module, table))
-            wanted = target.execute(f'PRAGMA table_info({name})').fetchall()
-            if [tuple(row)[1:] for row in actual] != [tuple(row)[1:] for row in wanted]:
-                changed.append(table)
-    finally:
-        target.close()
+    wanted = _wanted(module, declared, place)
+    additions = _Fit()
+    for table in declared.tables:
+        if table.place != place:
+            continue
+        shape = _shape(db, physical(module, table))
+        if shape is None:
+            continue
+        fit = _Fit()
+        _meet(module, table, wanted[table.name], shape, fit)
+        if fit.conflicts:
+            changed.append(table)
+        else:
+            additions.add += fit.add
+    _complete(db, module, additions)
     deferred = db.execute('PRAGMA defer_foreign_keys').fetchone()[0]
     if changed:
         if path.is_file():
@@ -585,6 +950,22 @@ def _backup(path: Path, module: str, version: int) -> None:
         source.close()
 
 
+def _as_held(table: Table, recorded: Table | None, shape: _Shape) -> Table:
+    """The table as the store holds it, for `found_rows`: its real columns and key, each read as the record, else the
+    declaration, says it is kept, so a json or bool column reads back as one. The record alone when a held column's
+    name is not one a declaration can carry."""
+    def kind(name: str, sql: str) -> ColumnKind:
+        for source in (recorded, table):
+            if source is not None and name in [column.name for column in source.columns]:
+                return source.column(name).kind
+        return 'int' if 'INT' in sql else 'real' if sql in ('REAL', 'FLOAT', 'DOUBLE') else 'text'
+    try:
+        return Table(table.name, tuple(Column(name, kind(name, column[0]), column[1]) for name, column in
+                                       shape.columns.items()), shape.key, place=table.place)
+    except ValueError:
+        return recorded if recorded is not None else table
+
+
 def _upgrade(db: sqlite3.Connection, path: Path, module: str, declared: Tables, place: Place) -> None:
     """Bring the module's tables of this place to the declared version: new tables and indexes are made, a table
     whose columns changed is rebuilt keeping every row in the columns both have, the module's upgrade runs with the
@@ -595,8 +976,11 @@ def _upgrade(db: sqlite3.Connection, path: Path, module: str, declared: Tables, 
     found = int(recorded['version'])
     _backup(path, module, declared.version)
     old = {value['name']: Table.from_dict(value) for value in recorded['tables']}
-    held = {name: (table, physical(module, table)) for name, table in old.items()}  # each found table and where it is
+    # Each found table and where it is: a recorded table the store really holds, as it holds it.
+    held = {name: (table, physical(module, table)) for name, table in old.items()
+            if _shape(db, physical(module, table)) is not None}
     new = [table for table in declared.tables if table.place == place]
+    wanted = _wanted(module, declared, place)
     # A table declared at the other place in this version still has its rows here: dropping it would lose them, and
     # no transplant between stores exists, so the upgrade is refused with the way out named. Found by review, 2026-10-06.
     elsewhere = {table.name: table.place for table in declared.tables if table.place != place}
@@ -609,27 +993,45 @@ def _upgrade(db: sqlite3.Connection, path: Path, module: str, declared: Tables, 
     deferred = db.execute('PRAGMA defer_foreign_keys').fetchone()[0]
     db.execute('PRAGMA defer_foreign_keys=ON')
     for table in new:
-        before = old.get(table.name)
-        if before is None:
+        name = physical(module, table)
+        shape = _shape(db, name)
+        if shape is None:
             _create(db, module, table)
             continue
-        for index in db.execute(f'PRAGMA index_list({_quoted(physical(module, before))})').fetchall():
+        # What the store really holds decides, never the record alone: a column the record lacks is still read and
+        # kept, and only a column the version found declared and this one no longer does is dropped, STORE-029.
+        before = _as_held(table, old.get(table.name), shape)
+        held[table.name] = (before, name)
+        fit = _Fit()
+        _meet(module, table, wanted[table.name], shape, fit)
+        recorded_columns = {column.name for column in old[table.name].columns} if table.name in old else set[str]()
+        dropped = [column for column in shape.columns if column not in wanted[table.name].columns
+                   and column in recorded_columns]
+        kept = [column for column in shape.columns if column not in wanted[table.name].columns
+                and column not in recorded_columns]
+        for index in db.execute(f'PRAGMA index_list({_quoted(name)})').fetchall():
             if index[3] != 'pk' and index[3] != 'u':
                 db.execute(f'DROP INDEX IF EXISTS {_quoted(index[1])}')
-        if (before.columns, before.key, before.schema) != (table.columns, table.key, table.schema):
+        if fit.conflicts or dropped:
             # Rebuilt beside the old table and swapped into its name, as adoption does: a rename would repoint the
             # foreign keys of the tables that refer to it at a copy that is then dropped. The old rows stay readable
             # to the module's upgrade in a plain copy, `<name>.found`.
-            name = physical(module, table)
             db.execute(f'CREATE TABLE {_quoted(name + ".found")} AS SELECT * FROM {_quoted(name)}')
             held[table.name] = (before, name + '.found')
             replacement = name + '__upgrade'
             db.execute(_create_sql(module, table, replacement))
-            shared = [column.name for column in table.columns if column.name in [c.name for c in before.columns]]
+            for column in kept:  # a column no version of the module declared: kept with its rows
+                kind, _, default, _ = shape.columns[column]
+                db.execute(f'ALTER TABLE {_quoted(replacement)} ADD COLUMN {_quoted(column)} {kind}'
+                           + ('' if default is None else f' DEFAULT {default}'))
+            shared = [column.name for column in table.columns if column.name in shape.columns] + kept
             listed = ', '.join(_quoted(column) for column in shared)
             db.execute(f'INSERT INTO {_quoted(replacement)}({listed}) SELECT {listed} FROM {_quoted(name)}')
             db.execute(f'DROP TABLE {_quoted(name)}')
             db.execute(f'ALTER TABLE {_quoted(replacement)} RENAME TO {_quoted(name)}')
+        else:
+            for _, column in fit.add:
+                db.execute(f'ALTER TABLE {_quoted(name)} ADD COLUMN {column}')
         _create_indexes(db, module, table)
     if declared.upgrade is not None:
         declared.upgrade(TableTx(module, declared, write=True, opener=lambda _: (db, path, True), bound=place,

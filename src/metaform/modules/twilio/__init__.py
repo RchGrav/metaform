@@ -5,26 +5,31 @@ when an agent waits on you, looks stuck, or the intake finishes, as you choose. 
 ever called. Twilio's credentials stay in the environment of the process that runs the bridge; nothing here stores
 them or shows them to the page.
 
-  serve   run the bridge, on 127.0.0.1, reached by Twilio only through twilio_public_url
+  serve   run the bridge, on twilio_bind (127.0.0.1 by default), reached by Twilio through twilio_public_url
   status  configured or not and why, the webhook URLs to paste into Twilio, which credentials are present by name
   call    ring your phone now, through the running bridge
   text    text your phone now
   test    a whole call simulated on this machine: no Twilio, no voice engine, no agent
+  check   where Twilio sends the number's calls and texts, whether the bridge answers there, and with fix=true, asked
+          by the person, the number pointed at the bridge; a problem it finds on its own goes to the person's system
+          agent as dispatch's setup-not-working signal, never to the terminal or the page
 
 The bridge, `bridge.py`, carries the call's audio to the voice module's transcription and the system agent's answers
 back through the voice module's speech; `server.py` is its ASGI app and its security; `notify.py` decides what calls
-or texts you; `api.py` is Twilio's signature, TwiML and REST calls.
+or texts you; `api.py` is Twilio's signature, TwiML and REST calls; `selfcheck.py` is the check.
 """
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import ipaddress
 import json
 import os
 import re
 import secrets
 import signal
 import socket
+import ssl
 import subprocess
 import sys
 import threading
@@ -38,9 +43,10 @@ from urllib.parse import urlsplit
 
 from metaform import home, prompt_files, settings
 from metaform.data import Store
-from metaform.module import Context, Module, Noun, Stop, Subscription, Verb, child_environment
+from metaform.module import Context, Module, Noun, Status, Stop, Subscription, Verb, child_environment
+from metaform.module import context as module_context
 
-from . import api, engines, notify, simulate
+from . import api, engines, notify, selfcheck, simulate
 from .agent import SystemAgent, verb_runner
 from .server import PIN_NAME, PROOFS, Config, Lines, Phone, Seen
 
@@ -51,6 +57,9 @@ DEPENDENCIES = ('starlette>=0.40', 'uvicorn>=0.35', 'websockets>=13', 'httpx>=0.
 SHIPS_DISABLED = False
 REMOTE_AGENT = False  # a bridge for the person's own phone; nothing an agent on a hosted sandbox uses
 
+# The loopback port the bridge listens on. A Node's Caddy routes /phone/* to this port, node/config.py TWILIO_PORT, so
+# any other value breaks calls there; settings cleanup 2026-10-15 made it fixed. A port another program holds is said
+# as such when serve starts.
 PORT = 7441
 E164 = re.compile(r'^\+[1-9][0-9]{6,14}$')
 PIN = re.compile(r'^[0-9]{4,12}$')
@@ -84,9 +93,23 @@ def _check_public(value: Any, folder: Path) -> list[str] | None:
     return None
 
 
-def _check_language(value: Any, folder: Path) -> list[str] | None:
-    return None if isinstance(value, str) and re.match(r'^(auto|[a-z]{2,3})$', value) else \
-        ['twilio_language is auto or a language code, such as en.']
+def _check_bind(value: Any, folder: Path) -> list[str] | None:
+    try:
+        ipaddress.ip_address(str(value))
+    except ValueError:
+        return [f'twilio_bind is an IP address of this machine, such as 127.0.0.1, 0.0.0.0 or 192.168.1.20; not {value}.']
+    return None
+
+
+def _check_certificate(value: Any, folder: Path) -> list[str] | None:
+    if value in ('', None):
+        return None
+    try:
+        ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER).load_cert_chain(str(value))
+    except (OSError, ssl.SSLError) as error:
+        return [(f'twilio_certificate is a PEM file holding the certificate chain and its private key; {value} could '
+                 f'not be loaded: {error}.')]
+    return None
 
 
 # Who may call, who is called, and where Twilio reaches the bridge decide who talks with the person's agent and who
@@ -115,6 +138,22 @@ settings.text('twilio_public_url', '', scope='global', person_only=True, check=_
                       'the call audio at wss://<address>/phone/stream. The bridge itself listens on 127.0.0.1 only; '
                       'the Node\'s Caddy routes /phone/* to it. It must be https: the bridge refuses to start otherwise.',
               label='Public address', heading='Your phone')
+# A direct route: the person's router or firewall forwards a port straight to the bridge, with no Node or tunnel. Who
+# can reach the bridge and with what certificate is the person's alone, as the public address is.
+settings.text('twilio_bind', '127.0.0.1', scope='global', person_only=True, check=_check_bind,
+              help='The address the bridge listens on, port 7441: 127.0.0.1 behind a Node or tunnel; this machine\'s '
+                   'own address, or 0.0.0.0, for a port your router or firewall forwards to it.',
+              details='Off loopback, Twilio reaches the bridge directly, so it serves TLS itself from twilio_certificate, '
+                      'or you leave that empty behind your own TLS terminator. Every webhook must still carry Twilio\'s '
+                      'signature. metaform help twilio says what to forward.',
+              label='Listen on', heading='Your phone', category='advanced')
+settings.text('twilio_certificate', '', scope='global', person_only=True, check=_check_certificate,
+              help='A PEM file with the certificate chain and its private key, for the bridge to serve https itself on '
+                   'a direct route; empty serves plain http behind your own TLS terminator.',
+              details='One file, as Python\'s ssl.load_cert_chain reads it: the certificate, any intermediates, and the '
+                      'key, such as Let\'s Encrypt\'s fullchain.pem and privkey.pem joined. Twilio refuses a '
+                      'self-signed certificate.',
+              label='TLS certificate', heading='Your phone', category='advanced')
 settings.choice('twilio_caller_proof', list(PROOFS), 'attested-or-pin', scope='global', person_only=True,
                 label='Caller proof',
                 help='What a call or text from your number must show beyond its caller ID, which can be faked: '
@@ -126,15 +165,15 @@ settings.choice('twilio_caller_proof', list(PROOFS), 'attested-or-pin', scope='g
                         'has no attestation, so under any choice but caller-id it starts with the PIN, which is taken '
                         'off before your agent reads it; without a PIN, texts are ignored.',
                 heading='Your phone')
-settings.items('twilio_call_when', [], scope='global', person_only=True,
+settings.items('twilio_call_when', [], scope='global', person_only=True, choices=notify.CHOICES,
                check=lambda value, folder: notify.check(listed(value), 'twilio_call_when'),  # pyright: ignore[reportUnknownLambdaType]
-               help='What calls you: waiting-for-you, stuck, budget, intake-finished, or a dispatch signal name. None '
+               help='What calls you: waiting-for-you, stuck, budget, intake-finished, or one signal of those groups. None '
                     'by default.',
                details='waiting-for-you: an agent waits for your permission, an answer or a login, or stopped with its '
                        'ticket open. stuck: an agent spins, falls silent or fails the same way. Calls are at least '
                        'twilio_call_gap_minutes apart, and the same signal on the same ticket calls once an hour.',
                label='Call you when', heading='Calls and texts')
-settings.items('twilio_text_when', [], scope='global', person_only=True,
+settings.items('twilio_text_when', [], scope='global', person_only=True, choices=notify.CHOICES,
                check=lambda value, folder: notify.check(listed(value), 'twilio_text_when'),  # pyright: ignore[reportUnknownLambdaType]
                help='What texts you, from the same list as twilio_call_when. None by default.',
                label='Text you when', heading='Calls and texts')
@@ -150,20 +189,20 @@ settings.text('twilio_voice', '', scope='global',
                       'Empty, the phone speaks in the voice elevenlabs_voices gives your mascot character; metaform '
                       'elevenlabs voices lists your account\'s voices.',
               label='Voice on the phone', heading='On the line')
-settings.text('twilio_language', 'auto', scope='global', check=_check_language,
-              help='The language you speak on the phone, as a code such as en, or auto.',
-              label='Language on the phone', heading='On the line')
 settings.choice('twilio_hearing', ['server', 'elevenlabs'], 'server', scope='global', person_only=True,
                 help='Who hears you on the phone: server (Whisper on this machine) or elevenlabs (Scribe).',
                 details='server needs the voice extra and a downloaded Whisper model; elevenlabs SENDS THE CALL AUDIO to '
                         'ElevenLabs. Twilio carries the call either way.',
                 label='Hears you on the phone with', heading='On the line')
-settings.number('twilio_port', PORT, min=1024, max=65535, scope='global',
-                help='The loopback port the bridge listens on; the Node routes /phone/* to 7441.',
-                label='Bridge port', category='advanced')
-settings.text('twilio_project', '', scope='global', person_only=True,
-              help="The project whose system agent answers the phone; empty is the project of the folder it runs in.",
-              label='Project the phone works on', category='advanced')
+def _projects(ctx: Context) -> list[str]:
+    """Empty, the project of the folder the bridge runs in, then every registered project."""
+    return ['', *(record.project_id for record in home.projects())]
+
+
+settings.choice('twilio_project', _projects, '',
+                scope='global', person_only=True,
+                help="The project whose system agent answers the phone; empty is the project of the folder it runs in.",
+                label='Project the phone works on', category='advanced')
 
 
 # ---------------------------------------------------------------------------------------------------- reading
@@ -180,28 +219,58 @@ def log_file() -> Path:
     return run_dir() / 'twilio.log'
 
 
-def write_log(line: str) -> None:
-    """One line of what the bridge did, with its time: never what was said, never a credential."""
+def write_log(line: str, *, echo: bool = True) -> None:
+    """One line of what the bridge did, with its time: never what was said, never a credential. `echo` also writes it
+    to standard error, for whoever runs `twilio serve` in a terminal; the check's lines are the log's alone."""
     stamped = f'{time.strftime("%Y-%m-%dT%H:%M:%S")} {line}'
     with contextlib.suppress(OSError):
         home.mkdir_private(run_dir())
         descriptor = os.open(log_file(), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
         with os.fdopen(descriptor, 'a', encoding='utf-8') as out:
             out.write(stamped + '\n')
-    print(stamped, file=sys.stderr, flush=True)
+    if echo:
+        print(stamped, file=sys.stderr, flush=True)
 
 
-def recorded() -> dict[str, Any] | None:
+def check_file() -> Path:
+    return run_dir() / 'check.json'
+
+
+def raised_file() -> Path:
+    """What the check last raised to the system agent: its findings' fingerprint, when, and whether anyone has asked
+    for the check since, which says the person took it up."""
+    return run_dir() / 'raised.json'
+
+
+def recorded(path: Path | None = None) -> dict[str, Any] | None:
     try:
-        found: Any = json.loads(run_file().read_text(encoding='utf-8'))
+        found: Any = json.loads((path or run_file()).read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return None
     return cast(dict[str, Any], found) if isinstance(found, dict) else None
 
 
+def local_url(record: dict[str, Any], path: str) -> str:
+    """The running bridge's own address on this machine: loopback when it listens there or on every address, else the
+    address it listens on; https when it serves TLS itself."""
+    bind = str(record.get('bind') or '127.0.0.1')
+    host = '127.0.0.1' if bind in ('0.0.0.0', '::') or selfcheck.loopback(bind) else bind
+    host = f'[{host}]' if ':' in host else host
+    return f'{"https" if record.get("tls") else "http"}://{host}:{int(record["port"])}{path}'
+
+
+def _unverified() -> ssl.SSLContext:
+    """For the bridge's own address on this machine only: its certificate names the public host, not this address."""
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    return context
+
+
 def answering(record: dict[str, Any]) -> bool:
     try:
-        with urllib.request.urlopen(f'http://127.0.0.1:{int(record["port"])}/phone/health', timeout=1) as answer:
+        with urllib.request.urlopen(local_url(record, '/phone/health'), timeout=1,
+                                    context=_unverified() if record.get('tls') else None) as answer:
             return answer.status == 200
     except (OSError, ValueError, KeyError):
         return False
@@ -280,6 +349,112 @@ def problems(ctx: Context, project: str | None = None) -> list[tuple[str, str]]:
     return found
 
 
+def setup_of(ctx: Context) -> selfcheck.Setup:
+    """What the check compares Twilio's side with; the address is the one the running bridge serves, when it runs."""
+    live = running()
+    number = str(ctx.setting('twilio_number') or '')
+    return selfcheck.Setup(number=number, shown=masked(number),
+                           public=str((live or {}).get('public') or public(ctx)).rstrip('/'), running=live is not None,
+                           enabled=bool(ctx.setting('twilio_enabled')),
+                           bind=str((live or {}).get('bind') or ctx.setting('twilio_bind') or '127.0.0.1'))
+
+
+def begun(ctx: Context) -> list[str]:
+    """What the person has set up of the phone, in words: a number, Twilio's credentials, a public address. Empty, the
+    phone is not in use, and nothing is checked or raised."""
+    found: list[str] = []
+    if ctx.setting('twilio_number'):
+        found.append(f'the Twilio number {masked(str(ctx.setting("twilio_number")))}')
+    with contextlib.suppress(OSError):
+        api.credentials()
+        found.append("Twilio's credentials")
+    if public(ctx):
+        found.append(f'the public address {public(ctx)}')
+    return found
+
+
+# The signal a module raises when a feature the person set up is not working, dispatch's `setup-not-working`: the
+# person's system agent takes it as its next turn and brings it up with them. A raised one waits this long, untaken, before
+# it is raised again on the same findings, as a problem the person let be that still stands.
+TROUBLE = 'setup-not-working'
+AGAIN_SECONDS = 24 * 3600
+
+
+def raised() -> dict[str, Any]:
+    return recorded(raised_file()) or {}
+
+
+def troubled(ctx: Context, report: dict[str, Any], *, asked: bool) -> None:
+    """Tell the person's system agent, by the dispatch signal TROUBLE, when the phone the person set up is not working:
+    once for each set of findings, and again only when they change, or when nobody asked for the check within a day of
+    raising them and they still stand. A check someone asked for, `twilio check` or `twilio_check`, is that person
+    taking it up: it raises nothing and marks what was raised as taken. Findings that are gone clear the signal."""
+    kept = raised()
+    project = project_of(ctx)
+    if report['ok'] or not report['problems']:
+        if kept:
+            raised_file().unlink(missing_ok=True)
+            if kept.get('key') and project:
+                _publish(ctx, project, {'signal': TROUBLE, 'module': 'twilio', 'key': kept['key'], 'clear': True})
+        return
+    key = selfcheck.findings(report)
+    if asked:
+        if kept.get('key') == key and not kept.get('taken'):
+            home.write_private(raised_file(), json.dumps({**kept, 'taken': True}))
+        return
+    what = begun(ctx)
+    if not what or not ctx.setting('twilio_enabled') or project is None:
+        return
+    now = time.time()
+    if kept.get('key') == key and (kept.get('taken') or now - float(kept.get('at') or 0) < AGAIN_SECONDS):
+        return
+    if kept.get('key') and kept['key'] != key:
+        _publish(ctx, project, {'signal': TROUBLE, 'module': 'twilio', 'key': kept['key'], 'clear': True})
+    home.mkdir_private(run_dir())
+    home.write_private(raised_file(), json.dumps({'key': key, 'at': now, 'taken': False}))
+    write_log(f'check: raised {TROUBLE} to the system agent, findings {key}', echo=False)
+    _publish(ctx, project, {
+        'signal': TROUBLE, 'module': 'twilio', 'key': key, 'feature': 'the phone',
+        'set_up': ', '.join(what), 'look': 'twilio_status and twilio_check, or metaform twilio status and check',
+        'report': {name: report.get(name) for name in ('checked', 'number', 'number_urls', 'bridge', 'expected',
+                                                        'problems', 'warnings')}})
+
+
+def _publish(ctx: Context, project: str, payload: dict[str, Any]) -> None:
+    """Publish to dispatch for the project whose system agent answers the phone, which may not be the folder's."""
+    target = ctx if project == ctx.project else module_context('twilio', ctx.folder, project=project)
+    with contextlib.suppress(Exception):  # dispatch off, or its store unreadable: the log and check.json still say it
+        target.publish('signal.raised', payload)
+
+
+def checked(ctx: Context, *, fix: bool = False, client: api.Client | None = None,
+            probe: selfcheck.Probe | None = None, route: selfcheck.Direct | None = None,
+            asked: bool = False) -> dict[str, Any]:
+    """Run the check, or the fix the person asked for, and keep its report, `check.json`, for `twilio status`; each
+    problem, warning and change goes to the log and nowhere else. A problem found by a check nobody asked for is raised
+    to the person's system agent, `troubled`."""
+    setup = setup_of(ctx)
+    client = client or api.Client()
+    probe = probe or selfcheck.answers
+    route = route or selfcheck.direct
+    report = selfcheck.fix(setup, client, probe, route) if fix else selfcheck.check(setup, client, probe, route)
+    fixed = report.get('fixed')
+    if fixed:
+        write_log(f'check: number {setup.shown} pointed at {fixed["now"]}, was {fixed["was"]}, as the person asked'
+                  if fixed['changed'] else f'check: number {setup.shown} already pointed at the bridge', echo=False)
+    for problem in report['problems']:
+        write_log(f'check: {problem["problem"]} Next: {problem["next"]}', echo=False)
+    for warning in report['warnings']:
+        write_log(f'check: warning: {warning}', echo=False)
+    if report['ok']:
+        write_log(f'check: number {setup.shown} sends calls and texts to the bridge at {setup.public}, which answers',
+                  echo=False)
+    home.mkdir_private(run_dir())
+    home.write_private(check_file(), json.dumps(report))
+    troubled(ctx, report, asked=asked)
+    return report
+
+
 def lines(ctx: Context) -> Lines:
     """The phone's lines from prompts.xml, filled with the person's mascot."""
     who = mascot(ctx) or 'your system agent'
@@ -308,27 +483,44 @@ def status(ctx: Context) -> dict[str, Any]:
         'webhooks': {'voice': f'{url}/phone/voice' if url else None, 'messaging': f'{url}/phone/sms' if url else None,
                      'stream': f'wss://{urlsplit(url).netloc}/phone/stream' if url else None,
                      'method': 'HTTP POST'},
-        'bind': f'127.0.0.1:{int(ctx.setting("twilio_port"))}',
+        'bind': f'{ctx.setting("twilio_bind")}:{PORT}',
+        'tls': 'served by the bridge' if ctx.setting('twilio_certificate') else
+               'by your Node, tunnel or TLS terminator',
         'environment': {**api.present(), 'ELEVENLABS_API_KEY': bool(os.environ.get('ELEVENLABS_API_KEY', '').strip()),
                         PIN_NAME: pin() is not None},
         'caller_proof': ctx.setting('twilio_caller_proof'),
         'call_when': listed(ctx.setting('twilio_call_when')), 'text_when': listed(ctx.setting('twilio_text_when')),
         'hearing': ctx.setting('twilio_hearing'), 'voice': ctx.setting('twilio_voice') or f'{mascot(ctx) or "default"} (mascot)',
         'project': project_of(ctx), 'log': str(log_file()),
+        'check': recorded(check_file()),  # the last `twilio check`, kept; status itself asks Twilio nothing
     }
 
 
-def _free(port: int) -> None:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+def _free(bind: str, port: int) -> None:
+    with socket.socket(socket.AF_INET6 if ':' in bind else socket.AF_INET, socket.SOCK_STREAM) as probe:
         try:
-            probe.bind(('127.0.0.1', port))
-        except OSError:
-            raise Stop(f'Port {port} on 127.0.0.1 is in use.', 'metaform set --twilio-port <another port>') from None
+            probe.bind((bind, port))
+        except OSError as error:
+            raise Stop(f'The bridge cannot listen on {bind}:{port}: {error.strerror or error}. Its port is always '
+                       f'{port}, where a Node routes /phone/*.',
+                       f'stop the program that holds port {port}, or metaform set --twilio-bind <an address of this '
+                       'machine>, then metaform twilio serve') from None
+
+
+def _certificate(ctx: Context) -> str | None:
+    """The PEM the bridge serves TLS from, checked loadable before it starts, so a bad file is said as such."""
+    path = str(ctx.setting('twilio_certificate') or '')
+    if not path:
+        return None
+    said = _check_certificate(path, ctx.folder)
+    if said:
+        raise Stop(said[0], 'metaform set --twilio-certificate <PEM with the chain and key>')
+    return path
 
 
 def serve(ctx: Context) -> dict[str, Any]:
-    """Run the bridge until stopped: the ASGI app on 127.0.0.1, the signals it calls and texts about heard as they
-    are raised."""
+    """Run the bridge until stopped: the ASGI app on twilio_bind, 127.0.0.1 unless the person chose a direct route,
+    with TLS from twilio_certificate when it is set; the signals it calls and texts about heard as they are raised."""
     persons_own(ctx, 'serve')
     found = problems(ctx)
     if found:
@@ -336,31 +528,33 @@ def serve(ctx: Context) -> dict[str, Any]:
     live = running()
     if live is not None:
         raise Stop(f'The phone bridge already runs, process {live.get("pid")}.', 'metaform twilio status')
-    port = int(ctx.setting('twilio_port'))
-    _free(port)
+    port = PORT
+    bind = str(ctx.setting('twilio_bind') or '127.0.0.1')
+    certificate = _certificate(ctx)
+    _free(bind, port)
     project = project_of(ctx)
     token = api.auth_token()
     voice_found = engines.voice_module(ctx.folder)
     if token is None or voice_found is None:
         raise Stop('The phone bridge needs the auth token and the voice module.', 'metaform twilio status')
     owners = tuple(listed(ctx.setting('twilio_owner_numbers')))
-    language = str(ctx.setting('twilio_language'))
     agent = SystemAgent(verb_runner(ctx.folder, project))
     character = mascot(ctx) or None
     config = Config(public_url=public(ctx), twilio_number=str(ctx.setting('twilio_number')), owners=owners,
                     auth_token=token, control_token=secrets.token_urlsafe(32), lines=lines(ctx),
                     call_gap=float(ctx.setting('twilio_call_gap_minutes')) * 60,
-                    proof=str(ctx.setting('twilio_caller_proof')), pin=pin())
+                    proof=str(ctx.setting('twilio_caller_proof')), pin=pin(), bind=bind)
     phone = Phone(config, agent=lambda: agent,
                   voice=lambda: engines.VoicePhone(voice_found, ctx.folder, character=character,
-                                                   language=None if language == 'auto' else language,
+                                                   language=None,  # voice's own voice_language decides
                                                    hearing=str(ctx.setting('twilio_hearing')),
                                                    voice=str(ctx.setting('twilio_voice') or '') or None),
                   client=api.Client(), log=write_log, seen=Seen(run_dir() / 'seen.txt'))
     import uvicorn
-    server = uvicorn.Server(uvicorn.Config(phone.app(), host='127.0.0.1', port=port, ws='websockets-sansio',
+    server = uvicorn.Server(uvicorn.Config(phone.app(), host=bind, port=port, ws='websockets-sansio',
                                            ws_max_size=65_536, log_level='warning', lifespan='off',
-                                           proxy_headers=False, server_header=False, date_header=False))
+                                           proxy_headers=False, server_header=False, date_header=False,
+                                           ssl_certfile=certificate))
     loop_held: list[asyncio.AbstractEventLoop] = []
 
     def later(work: Any) -> bool:
@@ -408,24 +602,37 @@ def serve(ctx: Context) -> dict[str, Any]:
             if done:
                 write_log(', '.join(done) + ', held back until now')
 
+    async def checking() -> None:
+        """Once the bridge listens, check that Twilio sends the number's calls and texts to it and that it answers
+        there; the report goes to the log and to the page's notice. Its failure is the log's, never the bridge's."""
+        while not server.started:
+            await asyncio.sleep(0.1)
+        try:
+            await asyncio.to_thread(checked, ctx)
+        except Exception as error:  # noqa: BLE001
+            write_log(f'check: could not run: {type(error).__name__}: {error}')
+
     async def main() -> None:
         loop_held.append(asyncio.get_running_loop())
         again = asyncio.ensure_future(retrying())
+        first = asyncio.ensure_future(checking())
         try:
             await server.serve()
         finally:
             again.cancel()
+            first.cancel()
 
     def stopped(number: int, frame: Any) -> None:
         raise KeyboardInterrupt  # SIGTERM, from systemd, docker stop or a process manager, stops it as Ctrl-C does
 
     home.mkdir_private(run_dir())
-    record = {'pid': os.getpid(), 'port': port, 'project': project, 'folder': str(ctx.folder),
-              'control': config.control_token, 'started': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+    record = {'pid': os.getpid(), 'port': port, 'bind': bind, 'tls': certificate is not None, 'project': project,
+              'folder': str(ctx.folder), 'public': public(ctx), 'control': config.control_token,
+              'started': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
     descriptor = os.open(run_file(), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(descriptor, 'w', encoding='utf-8') as out:
         json.dump(record, out)
-    write_log(f'bridge on 127.0.0.1:{port} for {public(ctx)}, project {project}')
+    write_log(f'bridge on {"https" if certificate else "http"}://{bind}:{port} for {public(ctx)}, project {project}')
     listener = ctx.listen(heard)
     # uvicorn takes SIGTERM while it serves and raises it again once it stops; with the default handler that ends the
     # process before the cleanup below, so the run file and its control token would stay behind.
@@ -476,11 +683,11 @@ def _control(path: str, asked: dict[str, Any]) -> dict[str, Any]:
     live = running()
     if live is None:
         raise Stop('The phone bridge is not running, so a call could not be answered.', 'metaform twilio serve')
-    request = urllib.request.Request(f'http://127.0.0.1:{int(live["port"])}{path}', data=json.dumps(asked).encode(),
+    request = urllib.request.Request(local_url(live, path), data=json.dumps(asked).encode(),
                                      method='POST', headers={'Authorization': f'Bearer {live.get("control", "")}',
                                                              'Content-Type': 'application/json'})
     try:
-        with urllib.request.urlopen(request, timeout=30) as answer:
+        with urllib.request.urlopen(request, timeout=30, context=_unverified() if live.get('tls') else None) as answer:
             found: Any = json.loads(answer.read() or b'{}')
     except urllib.error.HTTPError as error:
         said: Any = json.loads(error.read() or b'{}') if error.code == 400 else {'error': f'answered {error.code}'}
@@ -532,6 +739,43 @@ async def test(ctx: Context) -> dict[str, Any]:
     return found
 
 
+def check(ctx: Context) -> dict[str, Any]:
+    """Where Twilio sends the number's calls and texts against where the bridge answers; with fix=true, the number
+    pointed at the bridge, the person's own step."""
+    fix = bool(ctx.nouns.get('fix'))
+    if fix:
+        if ctx.surface == 'mcp':  # changing where the number sends calls is the person's, as a person-only setting is
+            raise Stop("Pointing the number at the bridge changes where Twilio sends the person's calls, so it is the "
+                       "person's own step.", 'ask the person to run metaform twilio check fix=true')
+        persons_own(ctx, 'check fix=true')
+    return checked(ctx, fix=fix, asked=True)
+
+
+def helps(folder: Path) -> bool:
+    """Whether twilio_status and twilio_check are listed to an agent here: only once the person has begun setting up
+    the phone, and only to the person's own AI tool or their system agent, who troubleshoots it with them; every other
+    agent's context stays without them. Reads settings and the environment, never the network."""
+    if os.environ.get('METAFORM_ROLE') not in (None, '', 'none', 'system'):
+        return False
+    if settings.value('twilio_number', folder) or settings.value('twilio_public_url', folder):
+        return True
+    env = api.present()
+    return bool(env[api.SID] and env[api.TOKEN])
+
+
+def module_status(ctx: Context) -> Status:
+    """The last check's first problem, as `metaform status` says it to whoever asks; read from its report, so nothing
+    here reaches the network. It gives the page no notice: a problem goes to the person's system agent, `troubled`. A
+    report of another number than the one set now says nothing."""
+    report = recorded(check_file())
+    if report is None or report.get('number') != (masked(str(ctx.setting('twilio_number') or '')) or None):
+        return Status()
+    said = selfcheck.headline(report)
+    if said is None:
+        return Status(lines=(f'Phone: Twilio reaches the bridge, checked {report.get("checked")}.',))
+    return Status(lines=(f'Phone: checked {report.get("checked")}: {said}',))
+
+
 def _voice_pause(ctx: Context) -> float:
     found = engines.voice_module(ctx.folder)
     return float(getattr(found, 'pause', engines.PAUSE)) if found is not None else engines.PAUSE
@@ -539,10 +783,17 @@ def _voice_pause(ctx: Context) -> float:
 
 def web_started(payload: dict[str, Any], ctx: Context) -> dict[str, Any] | None:
     """Start the bridge beside the web GUI when the person has turned the phone on and it is set up; detached, so it
-    runs on as the web GUI does."""
-    project = str(ctx.setting('twilio_project') or '') or payload.get('project') or None
-    if not ctx.setting('twilio_enabled') or running() is not None or problems(ctx, project):
+    runs on as the web GUI does; the bridge checks the number once it listens. With the phone on but the bridge not
+    started here, the check runs now once the person has begun setting it up. With the phone off, nothing. Either way
+    nothing is printed: the findings go to the log and check.json, and a problem to the person's system agent."""
+    if not ctx.setting('twilio_enabled'):
         return None
+    project = str(ctx.setting('twilio_project') or '') or payload.get('project') or None
+    if running() is not None or problems(ctx, project):
+        if not begun(ctx):
+            return None
+        report = checked(ctx)
+        return {'twilio': 'checked', 'ok': report['ok'], 'problems': len(report['problems'])}
     folder = Path(str(payload.get('folder') or ctx.folder))
     home.mkdir_private(run_dir())
     options: dict[str, Any] = {'start_new_session': True} if os.name != 'nt' else \
@@ -567,10 +818,11 @@ MODULE = Module(
             'webhook URLs metaform twilio status shows into the number\'s settings in Twilio\'s console.',
     verbs=(
         Verb('status', status, "Show whether the phone is set up and why not, the webhook URLs to paste into Twilio, "
-                               'and which credentials are in the environment, by name only.', effect='read', surfaces=('cli',)),
-        Verb('serve', serve, 'Run the phone bridge on 127.0.0.1 until stopped, answering your Twilio number with your '
-                             'system agent.',
-             switches=('twilio_port', 'twilio_public_url'), surfaces=('cli',), effect='write', open_world=True),
+                               'and which credentials are in the environment, by name only.', effect='read',
+             needs_project=False, listed=helps),
+        Verb('serve', serve, 'Run the phone bridge on twilio_bind, 127.0.0.1 by default, until stopped, answering your '
+                             'Twilio number with your system agent.',
+             switches=('twilio_public_url',), surfaces=('cli',), effect='write', open_world=True),
         Verb('call', call, 'Ring your phone now through the running bridge; your system agent is on the line.',
              nouns=(Noun('to', 'One of twilio_owner_numbers; the first by default.', required=False),
                     Noun('reason', 'What the agent opens the call with.', required=False, many=True)),
@@ -582,11 +834,16 @@ MODULE = Module(
         Verb('test', test, 'Simulate a whole call on this machine, with no Twilio, voice engine or agent, and show the '
                            'time from the end of your speech to the first audio back.',
              surfaces=('cli',), effect='read', task=True),
+        Verb('check', check, "Check where Twilio sends your number's calls and texts, and that the bridge answers "
+                             'there; fix=true points the number at the bridge.',
+             nouns=(Noun('fix', 'true: set the number\'s voice and SMS addresses to the bridge\'s, only when it answers '
+                                'there; the person\'s own step, on the command line.', kind='bool', required=False),),
+             effect='write', open_world=True, needs_project=False, listed=helps),
     ),
     subscriptions=(Subscription('web.started', web_started),),
     start=None,
     stop=None,
-    status=None,
+    status=module_status,
     tables=None,
     data=None,
     node_read=None,

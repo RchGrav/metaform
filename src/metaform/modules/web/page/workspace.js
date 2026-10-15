@@ -1163,6 +1163,8 @@ export function createWorkspace(host) {
         WS.toolbar = draft; box.hidden = true; drawToolbar(); save('toolbar'); host.toast('The toolbar is saved.');
       }}, 'Done'));
     draw();
+    // a tool's description cut short opens in place at a click or Enter, the page's `expandCut`
+    host.expandCut(box.querySelector('.body'), {row: '.wsedititem', text: '.why', key: one => one.dataset.id});
     box.hidden = false;
   }
 

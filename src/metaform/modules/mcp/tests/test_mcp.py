@@ -11,6 +11,7 @@ import importlib.util
 import inspect
 import json
 import os
+import re
 import subprocess
 import sys
 import textwrap
@@ -35,6 +36,7 @@ pytestmark = pytest.mark.kind('fixture')
 OS = "SUPPORTED_OS = ('linux', 'macos', 'windows')"
 CHASSIS_TOOLS = {'metaform_set', 'metaform_feedback', 'metaform_list_reports', 'metaform_read_report',
                  'metaform_instructions', 'metaform_register', 'metaform_skills'}
+REGISTERED_TOOLS = CHASSIS_TOOLS - {'metaform_register'}  # registering is listed until the folder has a project
 
 
 def session(home, folder, fn, heard=None):
@@ -85,8 +87,14 @@ def test_workflow_skills_read_the_same_skill_by_tool_and_prompt(run, home, mappe
         assert skill == run('workflow', 'skill', name, cwd=mapped).stdout.strip()
 
 
+# A tool's guidance, given once per session with the first result, MCP-039: tested on its own, so the other tests read
+# the result without it.
+GUIDED = re.compile(r"^(How to use \S+|The \S+ module's rules), given once in this session")
+
+
 def text(result):
-    return [item.text for item in result.content if getattr(item, 'text', None) is not None]
+    return [item.text for item in result.content if getattr(item, 'text', None) is not None
+            and not GUIDED.match(item.text)]
 
 
 class Command:
@@ -414,7 +422,7 @@ def test_the_server_starts_on_any_surface_and_keeps_the_chassis_tools(run, home,
         refused = await called(client, 'map_where', {'address': 'code'})
         return names, said.is_error, json.loads(text(listed)[-1]), text(read), refused.is_error
     names, said_error, listed, read, refused = session(home, mapped, narrowed)
-    assert names == {'solo_hi'} | CHASSIS_TOOLS
+    assert names == {'solo_hi'} | REGISTERED_TOOLS
     assert not said_error and read == ['Narrowed to solo.'] and refused
     assert [row['kind'] for row in listed['results']] == ['feedback']
 
@@ -501,8 +509,10 @@ def test_an_intake_is_recorded_over_mcp_one_object_per_call_and_read_back_while_
     run('add', 'project', 'fresh', str(folder))
 
     async def call(client, init):
-        names = set(await tool_names(client))
+        before = set(await tool_names(client))
         started = await called(client, 'intake_start', {'model': 'claude', 'role': 'intake agent'})
+        names = set(await tool_names(client))  # the tools that record an intake, listed once one is being recorded
+        assert 'intake_element' not in before and 'intake_start' in before
         described = await called(client, 'intake_element', {'namespace_address': 'code.timer.kitchen', 'role': 'DE',
                                                               'name': 'kitchen timer', 'name_length': 2,
                                                               'refs': [{'key': 'path', 'value': 'src/main.c'}]})
@@ -758,7 +768,8 @@ def test_clear_project_is_a_caution_tool_while_the_chassis_is_on_the_surface(run
     declared = tools['metaform_clear_project']
     assert declared.input_schema['properties'].keys() == {'confirm', 'project'}
     assert declared.annotations.destructive_hint is True
-    assert 'backup is made first' in declared.description and 'metaform restore project' in declared.description
+    guided = refused.content[0].text  # the rest of its description comes with its first use, MCP-039
+    assert 'backup is made first' in guided and 'metaform restore project' in guided
     assert refused.is_error is True
     said = '\n'.join(text(refused))
     assert 'Clearing proj removes' in said and 'Next: If you are sure: call metaform_clear_project with confirm true' in said
@@ -857,8 +868,8 @@ def test_each_command_is_its_own_tool_described_once_with_typed_arguments_and_an
     from metaform import loader
     from metaform.module import on_this_system
     wanted = {f'{module.id}_{verb.name}' for module in loader.enabled() for verb in module.verbs
-              if 'mcp' in verb.surfaces and on_this_system(verb)}
-    assert set(tools) == wanted | CHASSIS_TOOLS | HISTORY_TOOLS | {
+              if 'mcp' in verb.surfaces and on_this_system(verb) and (verb.listed is None or verb.listed(mapped))}
+    assert set(tools) == wanted | REGISTERED_TOOLS | HISTORY_TOOLS | {
         'metaform_prompts', 'metaform_prompt', 'metaform_save_prompt', 'metaform_clear_project'}
     assert 'mcp_serve' not in tools and 'map' not in tools                   # no tool for a module, no wrapper
     assert list(tools) == sorted(tools) and list(again) == list(tools)
@@ -1174,6 +1185,7 @@ UNSEEN_OPEN_WORLD = {
     'dispatch_permit': 'answers the agent through the local runner, which resolves the ACP permission or question',
     'dispatch_configure': 'the local runner applies a setting through ACP session mode or config methods',
     'dispatch_message': 'the local runner sends a new ACP prompt to the agent',
+    'dispatch_broadcast': 'each running session\'s local runner sends a new ACP prompt to its agent',
     'dispatch_fork': 'the local runner forks or prompts an ACP agent session',
     'dispatch_timer': 'the local runner queues a new agent turn when the timer expires',
     'dispatch_interrupt': 'the local runner cancels the ACP agent turn',
@@ -1370,9 +1382,13 @@ def help_agents(run, folder):
 
 def over_mcp(folder):
     """The connect message the MCP server sends for the folder, MCP-029: mcp's instructions prompt as written, each
-    module's connect line, mcp's closing line, then what the folder's state calls for."""
+    module's connect line, mcp's closing line, then what the folder's state calls for; and, in a fresh session of a
+    stdio server, the provisioning notice when the AI tool these tests run under is one the home has not recorded,
+    MCP-028, since the server these tests start runs under it too."""
+    import uuid
+
     from metaform.modules.mcp.server import connect_instructions
-    return connect_instructions(folder)
+    return connect_instructions(folder, None, f'test:{uuid.uuid4().hex}')
 
 
 @pytest.mark.req('CLI-037')
@@ -1381,6 +1397,8 @@ def test_a_commands_tool_carries_its_schema_and_a_call_missing_an_argument_names
     """A command's arguments, descriptions and schema are in its tool as listed, from the same declaration as its
     command line; a call that leaves out a required argument is refused with that tool as the next step."""
     async def check(client, init):
+        opened = await client.call_tool('intake_start', {'model': 'claude', 'role': 'intake agent'})  # lists the rest
+        assert not opened.is_error, text(opened)
         tools = await listed(client)
         missing = await client.call_tool('map_joins', {})
         return tools, missing
@@ -1474,6 +1492,65 @@ def test_a_change_to_the_surface_reaches_a_running_session_as_a_list_change(run,
     assert 'web_start' in before and 'web_start' not in after
     assert heard.count('notifications/tools/list_changed') == 1
     assert heard.count('notifications/prompts/list_changed') == 1
+
+
+@pytest.mark.req('MCP-003')
+@pytest.mark.req('MCP-004')
+@pytest.mark.cli_process
+def test_a_folder_with_no_project_lists_only_what_runs_and_registering_announces_the_rest(run, home, tmp_path):
+    """Before registration, 62 of 123 listed tools could do nothing but say there was no project, and every tool
+    carried project and layers. Now only what runs without a project is listed, registering lists the rest as a
+    change, and project and layers are on the tools that use them."""
+    folder = tmp_path / 'loose'
+    folder.mkdir()
+    heard = []
+
+    async def check(client, init):
+        before = {one.name: one for one in (await client.list_tools()).tools}
+        await client.call_tool('metaform_register', {'id': 'loose'})
+        after = {one.name: one for one in (await client.list_tools()).tools}
+        refused = await client.call_tool('web_start', {'layers': ['base']})
+        return before, after, refused
+    before, after, refused = session(home, folder, check, heard)
+    assert not any(name.startswith(('map_', 'memory_')) for name in before)
+    assert {'metaform_register', 'metaform_skills', 'web_start', 'fork_init', 'intake_schema'} <= before.keys()
+    assert not {'intake_start', 'metaform_add_origin', 'mcp_a2a_send'} & before.keys()
+    assert heard.count('notifications/tools/list_changed') == 1        # registering, once
+    assert {'map_where', 'memory_read_graph', 'intake_start', 'metaform_add_origin'} <= after.keys()
+    where, web = after['map_where'].input_schema['properties'], after['web_start'].input_schema['properties']
+    assert {'project', 'layers'} <= where.keys() and not {'project', 'layers'} & web.keys()
+    assert 'web_emote' not in after                                      # listed only while the web GUI runs
+    assert 'layers' not in after['intake_start'].input_schema['properties']  # a project, but not the map's layers
+    assert 'layers' not in after['memory_note'].input_schema['properties'] and 'project' in after['memory_note'].input_schema['properties']
+    assert refused.is_error and 'takes no layers' in text(refused)[0]
+
+
+@pytest.mark.req('MCP-003')
+@pytest.mark.req('MCP-039')
+def test_what_the_list_cuts_comes_once_with_the_first_use_of_a_tool_and_its_module(run, home, mapped):
+    """Every tool's long description and argument help were paid by every agent before its first call. The list now
+    gives a sentence and a clause, and the first call of a tool in a session carries the rest, and the first call of
+    any tool of a module that module's rules, each once."""
+    from metaform import prompt_files
+    async def check(client, init):
+        tools = await listed(client)
+        first, second = (await client.call_tool('map_work', {}), await client.call_tool('map_work', {}))
+        memory = [await client.call_tool(name, {'node': 'element:code.timer.kitchen'})
+                  for name in ('memory_read_graph', 'memory_note')]
+        settings = await client.call_tool('metaform_set', {})
+        return tools, first, second, memory, settings
+    tools, first, second, memory, settings = session(home, mapped, check)
+    work = tools['map_work']
+    assert 'op=plan' not in work.description and len(work.description) <= 200
+    assert all(len(one.get('description', '').encode()) <= 80 for one in work.input_schema['properties'].values())
+    assert first.content[0].text.startswith('How to use map_work, given once in this session:')
+    assert 'op=plan' in first.content[0].text and json.loads(text(first)[-1]) == json.loads(text(second)[-1])
+    assert not any(GUIDED.match(block.text) for block in second.content)
+    rule = prompt_files.module_rules('memory')[0][0]
+    assert sum(rule in block.text for one in memory for block in one.content) == 1  # the module's rules, once
+    named = {one['name'] for one in settings.structured_content['settings']}
+    assert 'write_layer' in named and 'dispatch_prompts' not in named and len(json.dumps(
+        tools['metaform_set'].input_schema)) < 600  # listed when called, not in the schema
 
 
 @pytest.mark.req('MCP-004')
@@ -1593,7 +1670,7 @@ def test_gateway_identity_and_delivery_are_per_run(run, home, mapped, user_modul
             brief = (await request('tools/call', {'name': 'paperclip_brief', 'arguments': {}}, {
                 'X-Paperclip-Issue-Id': 'gateway-issue', 'X-Paperclip-Run-Id': 'r-5'}))['result']
             assert not brief.get('isError'), brief
-            assert 'code.alarm.audible' in brief['content'][0]['text']
+            assert 'code.alarm.audible' in '\n'.join(block['text'] for block in brief['content'])
 
     try:
         asyncio.run(go())
@@ -1781,8 +1858,8 @@ def test_an_agent_over_mcp_cannot_set_what_decides_its_own_permissions(run, home
 
     async def call(client, init):
         refused = await called(client, 'metaform_set', {'debug': True, 'dispatch_prompts': 'approve-all'})
-        offered = (await listed(client))['metaform_set'].input_schema
-        return refused.is_error, text(refused)[0], offered['properties']
+        offered = await called(client, 'metaform_set', {})  # the settings it takes, listed when called with none
+        return refused.is_error, text(refused)[0], {one['name'] for one in offered.structured_content['settings']}
     error, said, offered = session(home, mapped, call)
     assert error and 'dispatch_prompts is set only by the person' in said
     assert [line for line in said.splitlines() if line.startswith('Next: ')] == [
@@ -1891,11 +1968,11 @@ def test_the_glossary_is_one_text_by_tool_resource_and_command_line(run, home, m
     async def check(client, init):
         tool = await called(client, 'metaform_instructions', {'module': 'metaform'})
         assert not tool.is_error, text(tool)
-        described = (await listed(client))['metaform_instructions'].input_schema['properties']['module']['description']
+        described = tool.content[0].text  # the argument's whole help, with the tool's first use, MCP-039
         return ''.join(text(tool)), (await client.read_resource('metaform://metaform')).contents[0].text, described
     by_tool, by_resource, described = session(home, mapped, check)
     assert by_tool == by_resource == run('instructions', 'metaform', cwd=mapped).stdout
-    assert 'metaform://metaform' in described  # found in the tool's schema by a model that cannot read resources
+    assert 'metaform://metaform' in described  # found with the tool by a model that cannot read resources
 
 
 SHIPPED = ('dispatch', 'fork', 'hello', 'intake', 'map', 'mcp', 'memory', 'packet', 'template', 'web', 'workflow')
@@ -2762,7 +2839,8 @@ def test_each_view_is_linked_from_its_tools_and_reviewed_by_its_meta_and_the_age
     glossary read gives each quoted term exactly as written; the trace read answers `unchanged` to a view holding it."""
     from metaform.modules.mcp import views
     run('enable', 'dispatch')
-    ticket = run('map', 'work', 'op=add', 'node=code.alarm.audible', 'title=Make the alarm louder', cwd=mapped)
+    ticket = run('map', 'work', 'op=add', 'node=code.alarm.audible', 'title=Make the alarm louder',
+                 'task=Make the alarm louder', cwd=mapped)
     work_id = next(line.split(': ', 1)[1] for line in ticket.stdout.splitlines() if line.startswith('id: '))
     seed_thread(work_id, [('agent_message_chunk', 'I will raise the tone.')])
     wire = july_wire(home, mapped)
@@ -2895,7 +2973,8 @@ def test_the_trace_view_follows_a_tickets_thread_as_lines_are_added(run, home, m
     and draws a line the agent adds while it is open, read again through the views' tool."""
     from metaform.modules.mcp import views
     run('enable', 'dispatch')
-    ticket = run('map', 'work', 'op=add', 'node=code.alarm.audible', 'title=Make the alarm louder', cwd=mapped)
+    ticket = run('map', 'work', 'op=add', 'node=code.alarm.audible', 'title=Make the alarm louder',
+                 'task=Make the alarm louder', cwd=mapped)
     work_id = next(line.split(': ', 1)[1] for line in ticket.stdout.splitlines() if line.startswith('id: '))
     seed_thread(work_id, [('agent_message_chunk', 'I will raise the tone.')])
     wire = july_wire(home, mapped)
@@ -2979,6 +3058,32 @@ def test_a_write_over_mcp_answers_one_line_with_its_number_not_the_record(run, h
 
 
 
+@pytest.mark.req('MCP-040')
+def test_a2a_peers_are_records_the_person_adds_and_removes_one_at_a_time(run, home, mapped):
+    """Settings cleanup 2026-10-15: the peers are records, not the list setting mcp_a2a_peers, so adding one keeps
+    the others; a stored list carries over once as mcp starts; add and remove are refused in an agent's session."""
+    from metaform import home as homes
+    from metaform import settings
+    from metaform.modules.mcp import a2a_peers
+    homes.save('global', 'mcp', 'mcp_a2a_peers', ['old=http://127.0.0.1:7440/.well-known/agent-card.json OLD_TOKEN',
+                                                  'not a peer'])
+    with homes.chassis(write=True) as db:  # the test home's own start carried nothing and marked it; undo the mark
+        db.execute("DELETE FROM meta WHERE key='carried:mcp-a2a-peers'")
+    settings._carried.clear()
+    assert a2a_peers.carry() == ['peer old', "'not a peer' cannot be read as a peer and was left out"]
+    assert a2a_peers.carry() == [], 'once per home'
+    listed = lambda: {one['name']: one for one in json.loads(run('mcp', 'a2a_peers', '--json', cwd=mapped).stdout)['peers']}
+    assert listed()['old']['token_env'] == 'OLD_TOKEN' and len(listed()) == 1  # carried; the malformed one left out
+    assert homes.stored('global', 'mcp', 'mcp_a2a_peers') is None
+    run('mcp', 'a2a_peer_add', 'other', 'http://127.0.0.1:7441/.well-known/agent-card.json', cwd=mapped)
+    assert set(listed()) == {'old', 'other'}, 'adding one keeps the others'
+    run('mcp', 'a2a_peer_remove', 'old', cwd=mapped)
+    assert set(listed()) == {'other'}
+    refused = run('mcp', 'a2a_peer_add', 'mine', 'http://127.0.0.1:7442/', cwd=mapped, ok=False,
+                  env={'METAFORM_ROLE': 'worker'})
+    assert refused.returncode != 0 and "never run from an agent's session" in refused.stdout + refused.stderr
+
+
 @pytest.mark.req('MCP-041')
 @pytest.mark.req('MCP-042')
 @pytest.mark.req('MCP-043')
@@ -2991,7 +3096,7 @@ def test_an_a2a_send_carries_its_address_and_sender_and_what_the_peer_does_lands
     from metaform.module import Stop, context
     run('enable', 'dispatch')
     card_url = 'http://127.0.0.1:7491/.well-known/agent-card.json'  # never reached: the peer is in-process
-    run('set', '--mcp-a2a-peers', f'peer={card_url} PEER_TOKEN', cwd=mapped)
+    run('mcp', 'a2a_peer_add', 'peer', card_url, 'token=PEER_TOKEN', cwd=mapped)
     # imported after the last command, which may load the modules again, so the stub reaches the code that runs
     from metaform.modules.mcp import a2a as served
     from metaform.modules.mcp import a2a_out, a2a_records

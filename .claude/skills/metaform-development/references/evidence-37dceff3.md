@@ -1,0 +1,1 @@
+Verb gains needs_project (default true, module.py), listing() drops verbs that need one and the SURFACED chassis tools that act on a project's records (ON_PROJECT) until project_for(folder) is set. Update the module README's verb row with the declaration.

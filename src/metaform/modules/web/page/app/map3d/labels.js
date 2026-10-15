@@ -3,7 +3,7 @@
 import '/page/app/map3d/readout.js';  // the part before runs first, so the parts run in the page's order
 // The graph, glass and figures share the import map's one local Three.js runtime, VIEW-003 and VIEW-025.
 import * as THREE from 'three';
-// Ultra graphics, web_graphics: the 3D map in outer space, drawn by its own module through the hooks marked ULTRA.
+// The Space theme, web_theme space: the 3D map in outer space, drawn by its own module through the hooks marked ULTRA.
 import * as ULTRA from '/page/ultra.js';
 import {$, css, reduced, h} from '/page/app/core/dom.js';
 import {S} from '/page/app/core/reads.js';
@@ -192,7 +192,8 @@ export function layered() {
   // keep theirs.
   if (frame.how.declutter) declutter(shown);
   shown.sort((one, two) => one.far - two.far);
-  shown.forEach((label, index) => layerLabel(label, index, shown, spheres, frame));
+  const grid = screenGrid(frame.area, spheres);
+  shown.forEach((label, index) => layerLabel(label, index, shown.length, grid, frame));
   metSign(MEET.on ? tags.get(MEET.back?.id) : null);
 }
 /* What every label of this frame is measured by: the camera, the screen, the world units a pixel spans at a depth,
@@ -330,20 +331,62 @@ function declutter(shown) {
     kept.push(box);
   }
 }
+/* The screen cut into cells, each holding the spheres whose bounds reach into it and the labels already layered there,
+ * so a label is tested only against what shares a cell with it, not against every sphere and every nearer label. A
+ * place off the screen counts in the nearest edge cell, which keeps every overlap in some shared cell. Kept from frame
+ * to frame and emptied each time. */
+const GRID = {cell: 64, cols: 0, rows: 0, spheres: [], labels: [], stamp: 0};
+function screenGrid(area, spheres) {
+  const cols = Math.max(1, Math.ceil(area.width / GRID.cell)), rows = Math.max(1, Math.ceil(area.height / GRID.cell));
+  if (cols * rows !== GRID.spheres.length) {
+    GRID.spheres = Array.from({length: cols * rows}, () => []);
+    GRID.labels = Array.from({length: cols * rows}, () => []);
+  } else {
+    for (const cell of GRID.spheres) cell.length = 0;
+    for (const cell of GRID.labels) cell.length = 0;
+  }
+  Object.assign(GRID, {cols, rows});
+  for (const sphere of spheres) {
+    for (const cell of cellsOf(sphere.x - sphere.r, sphere.y - sphere.r, sphere.x + sphere.r, sphere.y + sphere.r)) {
+      GRID.spheres[cell].push(sphere);
+    }
+  }
+  return GRID;
+}
+function cellsOf(left, top, right, bottom) {
+  const col = x => Math.min(GRID.cols - 1, Math.max(0, Math.floor(x / GRID.cell)));
+  const row = y => Math.min(GRID.rows - 1, Math.max(0, Math.floor(y / GRID.cell)));
+  const cells = [];
+  for (let y = row(top), last = row(bottom); y <= last; y++) {
+    for (let x = col(left), end = col(right); x <= end; x++) cells.push(y * GRID.cols + x);
+  }
+  return cells;
+}
 /* A label in its place among the others, nearest first: its opacity by its depth, faded with its title and its ghost;
  * under where a nearer sphere or label covers it; painted again when what it shows changed. */
-function layerLabel(label, index, shown, spheres, {how, palette, ratio}) {
+function layerLabel(label, index, count, grid, {how, palette, ratio}) {
   // the nearest label solid, the farthest at the preset's `farthest` of it, the rest between by their depth
   // and a part not built's name as faint as its ghost, `ghostSign`
   label.tag.sprite.material.opacity = (1 - (1 - how.farthest) * label.back) * (label.tag.fade ?? 1) * label.tag.ghost;
-  const box = label.tag.rect;
-  const behind = spheres.some(sphere => sphere.id !== label.tag.id && sphere.far < label.far &&
-    Math.hypot(Math.max(box.left, Math.min(sphere.x, box.right)) - sphere.x,
-               Math.max(box.top, Math.min(sphere.y, box.bottom)) - sphere.y) < sphere.r);
-  const covered = shown.slice(0, index).some(({tag: other, out}) => !out && overlaps(box, other.rect));
+  const box = label.tag.rect, cells = cellsOf(box.left, box.top, box.right, box.bottom), stamp = ++grid.stamp;
+  let behind = false, covered = false;
+  for (const cell of cells) {
+    for (const sphere of grid.spheres[cell]) {
+      if (sphere.seen === stamp) continue;
+      sphere.seen = stamp;
+      if (sphere.id !== label.tag.id && sphere.far < label.far &&
+        Math.hypot(Math.max(box.left, Math.min(sphere.x, box.right)) - sphere.x,
+                   Math.max(box.top, Math.min(sphere.y, box.bottom)) - sphere.y) < sphere.r) { behind = true; break; }
+    }
+    if (behind) break;
+  }
+  for (const cell of cells) {
+    if (grid.labels[cell].some(other => overlaps(box, other))) { covered = true; break; }
+  }
+  if (!label.out) for (const cell of cells) grid.labels[cell].push(box);  // a nearer label for those after it
   const tag = label.tag;
   tag.under = (behind || covered) && !(MEET.on && tag === tags.get(MEET.back?.id));
-  tag.z = shown.length - index;
+  tag.z = count - index;
   if (tag.under) tag.classes.push('under');
   const look = lookOf(tag.classes, palette);
   // painted for the size it is drawn at, in steps, so a near label is as sharp as one at its own size
@@ -417,14 +460,24 @@ export function prepare3d() {
     || mascotAwake());
   FRAMES.flowing = !reduced() && FLOW.count > 0 && FLOW.held === null;
 }
-/* A glass node is colored by the page, since the graph colors only the nodes it draws itself. */
+/* A glass node is colored by the page, since the graph colors only the nodes it draws itself; it is written only when
+ * it differs from what the material holds, so a frame where no colour changed writes none. */
 function colorGlass(data) {
   for (const node of data.nodes) {
     const material = node.__threeObj?.material;
     if (isGlass(node) && material && !material.userData.pulsed) {
-      colored(material, dimmed(node) ? dim(colorOf(node)) : colorOf(node));
+      const color = dimmed(node) ? dim(colorOf(node)) : colorOf(node);
+      if (!holds(material, color)) colored(material, color);
     }
   }
+}
+// each colour the page names, parsed once
+const PARSED = new Map();
+function holds(material, color) {
+  let want = PARSED.get(color);
+  if (!want) PARSED.set(color, want = new THREE.Color(color));
+  return material.color.equals(want) && (!material.isMeshPhysicalMaterial
+    || (material.attenuationColor.equals(want) && material.emissive.equals(want)));
 }
 /* Each node picked by its whole sphere, its record's condition painted on it, and whether any node signals. */
 function paintSignals(data) {

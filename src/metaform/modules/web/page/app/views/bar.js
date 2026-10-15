@@ -3,7 +3,7 @@
 import '/page/app/views/settings.js';  // the part before runs first, so the parts run in the page's order
 // the forces the 3D map's physics presets add, from the same library the graph runs, `applyPhysics`
 import {forceX, forceY, forceZ, forceRadial} from 'd3-force-3d';
-// Ultra graphics, web_graphics: the 3D map in outer space, drawn by its own module through the hooks marked ULTRA.
+// The Space theme, web_theme space: the 3D map in outer space, drawn by its own module through the hooks marked ULTRA.
 import * as ULTRA from '/page/ultra.js';
 import {$, h, fill} from '/page/app/core/dom.js';
 import {overlay} from '/page/app/core/overlays.js';

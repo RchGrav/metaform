@@ -68,13 +68,14 @@ jobs:
           uv run metaform enable mcp
           uv run metaform add project fork .
           uv run metaform set --dispatch-prompts approve-all
+          uv run metaform set --dispatch-agent @AGENT@
       - name: Muster through dispatch and build
         id: build
         env:
           @SECRET@: ${{ secrets.@SECRET@ }}
           DEFAULT_AUTH_REQUEST: '{"methodId":"api-key"}'
           NO_BROWSER: '1'
-        run: uv run metaform fork wheel --fork-agent @AGENT@ --fork-secret @SECRET@ --json > wheel.json
+        run: uv run metaform fork wheel --fork-secret @SECRET@ --json > wheel.json
       - name: Select the wheel artifact
         id: artifact
         run: |

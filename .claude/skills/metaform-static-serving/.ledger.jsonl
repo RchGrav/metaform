@@ -1,0 +1,1 @@
+{"action": "create", "reason": "Static delivery of the Metaform web page (gzip, versioned vendor addresses, immutable caching, modulepreload) carries module-identity and caching rules that break quietly if an editor misses them. The 2026-10-15 ticket 2e9686a7 introduced them and an agent would otherwise re-derive or break them.", "evidence": "references/evidence-fcfbd3b0.md"}

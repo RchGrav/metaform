@@ -14,6 +14,8 @@ import pytest
 if 'PYTEST_METAFORM_HOME' not in os.environ:
     os.environ['PYTEST_METAFORM_HOME'] = tempfile.mkdtemp(prefix='metaform-tests-')
 os.environ['METAFORM_HOME'] = os.environ['PYTEST_METAFORM_HOME']
+# The web GUI's watchdog never runs under the person's hold tool in a test, which would place calls in their own ledger.
+os.environ['METAFORM_HOLD'] = ''
 # No browser a test starts can show a window: without a display to connect to, a headed launch fails instead of
 # opening on the person's screen. WSLg shows every headed window, even one placed off-screen. Headless Chromium still
 # reaches the GPU without one: found 2026-10-14, the RTX 3090 through ANGLE with --use-angle=gl-egl.
@@ -63,8 +65,13 @@ def run(home, tmp_path, request):
         # A call made while an event loop runs on this thread, as a browser test's driver keeps one, would publish
         # from inside that loop, which the chassis refuses, BASE-009; it runs as its own process instead.
         if isolated or os.environ.get('METAFORM_TEST_SUBPROCESS') == '1' or _loop_running():
-            result = subprocess.run([sys.executable, '-m', 'metaform', *args], cwd=folder, env=environment,
-                                    capture_output=True, text=True, encoding='utf-8', input=input, check=False)
+            # A hung call names itself, well inside the test's own time limit (pyproject.toml).
+            try:
+                result = subprocess.run([sys.executable, '-m', 'metaform', *args], cwd=folder, env=environment,
+                                        capture_output=True, text=True, encoding='utf-8', input=input,
+                                        timeout=CLI_LIMIT, check=False)
+            except subprocess.TimeoutExpired:
+                raise AssertionError(f'metaform {" ".join(args)} did not finish in {CLI_LIMIT} s') from None
         else:
             result = _in_process(list(args), folder, environment, input)
         # MCP-028's notice is checked in test_provision; these assertions concern the command's own output.
@@ -322,10 +329,14 @@ def pytest_collection_modifyitems(config, items):
     # they time out, so they run in BROWSERS groups, at most that many at a time, beside everything else.
     # They are also marked browser, and the default run leaves them out (addopts -m "not browser"): they take most of a
     # full run's time, so they run only when the page or the web server changed, with pytest -m browser.
+    # Under load the slowest of them took two minutes, against five for every other test, so each is given ten.
     browsers = [item for item in items if 'browser' in getattr(item, 'fixturenames', ())]
     for number, item in enumerate(browsers):
         item.add_marker(pytest.mark.browser)
         item.add_marker(pytest.mark.xdist_group(f'browser-{number % BROWSERS}'))
+        item.add_marker(pytest.mark.timeout(600))
 
 
-BROWSERS = 4
+# METAFORM_BROWSERS sets the number of groups for a machine with fewer cores, such as a CI runner.
+BROWSERS = int(os.environ.get('METAFORM_BROWSERS') or 4)
+CLI_LIMIT = 180  # seconds for one CLI call run as its own process

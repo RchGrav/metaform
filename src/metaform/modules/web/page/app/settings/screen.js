@@ -2,6 +2,7 @@
  * saved with Undo. */
 import '/page/app/memory/manage.js';  // the part before runs first, so the parts run in the page's order
 import {$, h, fill} from '/page/app/core/dom.js';
+import {expandCut} from '/page/app/core/expand.js';
 import {overlay} from '/page/app/core/overlays.js';
 import {toast, undoable, confirmAct} from '/page/app/core/controls.js';
 import {S, read} from '/page/app/core/reads.js';
@@ -142,15 +143,15 @@ $('#resetAgentsBtn').onclick = resetAgents;
  * Advanced, everything rarely changed, each module folded; and Modules last, under Advanced, each switched on or off
  * as metaform enable and disable do. Find a setting searches every category, and Enter goes to the first found.
  * A setting reads with its label in plain words, one line of help, whether it is set here, inherited and from where,
- * or the default, and whether only the person sets it; its key and the rest of its help are under More. It takes the
- * control its kind needs: a switch, a list of its choices, a number with its unit, a checklist, or text, a list as its
- * items one per line. A change is saved as it is made, through metaform set and unset in the project's folder, so it
- * is checked as the command line checks it, and a refusal is said under the setting with its next step; a risky choice
- * is marked and asked once before it is stored. The screen reads again whenever a setting changes elsewhere, so it
- * never shows a value that no longer holds. Left and Right change a switch or a choice, as on the terminal's settings
- * screen. */
+ * or the default, and whether only the person sets it; its key and the rest of its help are under More. A line cut
+ * short opens in place at a click. Its control stands at the row's right edge, the control its kind needs: a switch,
+ * a list of its choices, a number with its unit, a checklist, or text, a list as its items one per line. A change is
+ * saved as it is made, through metaform set and unset in the project's folder, so it is checked as the command line
+ * checks it, and a refusal is said under the setting with its next step; a risky choice is marked and asked once
+ * before it is stored. The screen reads again whenever a setting changes elsewhere, so it never shows a value that no
+ * longer holds. Left and Right change a switch or a choice, as on the terminal's settings screen. */
 const CONFIG = {data: null, filter: '', errors: new Map(), page: 'essentials', folded: new Map(), saving: 0,
-  again: false, reading: null, found: null, phone: null, voices: null, more: new Set()};
+  again: false, reading: null, found: null, phone: null, voices: null, speech: null, more: new Set(), unfolded: new Set()};
 const SHOWN_MODULES = 'modules';  // the chassis setting shown with the modules: which of them this folder shows
 const LONG_PAGE = 10;  // a page with more settings than this opens its first heading and folds the rest
 export async function openSettings() {
@@ -158,6 +159,8 @@ export async function openSettings() {
   $('#settingsbox').hidden = true;
   if (!S.project) return toast('Choose a project first: the settings shown are those of its folder.');
   CONFIG.page = 'essentials';  // it always opens on Essentials, never on Modules
+  CONFIG.filter = '';
+  $('#settings .search').value = '';
   if (WS.reveal('settings')) return;  // a pane in the workspace: it shows there and reads as it shows
   await showSettings();
 }
@@ -170,9 +173,10 @@ export async function showSettings() {
 async function readSettings() {
   const project = S.project;
   try {
-    const found = await read('settings');
+    const [found, speech] = await Promise.all([read('settings'), read('voice/status').catch(() => null)]);
     if (S.project !== project) return;
     CONFIG.data = found;
+    CONFIG.speech = speech;
   } catch (error) { fill($('#settings .body'), refusalBox(error.body || {error: error.message})); return; }
   renderSettings();
 }
@@ -210,6 +214,7 @@ function renderSettings() {
   const main = h('div', {class: 'setmain', role: 'region', 'aria-label': 'Settings'},
     searching ? searchPage(data, pages) : pageOf(data, pages.find(one => one.name === CONFIG.page)));
   fill(body, h('div', {class: 'setframe'}, sidebar(pages, searching), main));
+  markCut();
   main.scrollTop = scroll;
   if (focused) body.querySelector(`[data-focus="${CSS.escape(focused)}"]`)?.focus({preventScroll: true});
   if (CONFIG.found) reveal(CONFIG.found);
@@ -264,29 +269,22 @@ function pageOf(data, page) {
   return parts;
 }
 /* A page's settings under their headings: a setting's heading, else its section less a first heading that is the
- * page's own name, else its module's name. Headings holding an essential setting come first, then the modules' in
- * their order, then the chassis's. On Advanced each heading is folded until opened; on a long page the first is
+ * page's own name, else its module's name. The declaration's shared order decides the headings and rows, as on the
+ * command line. On Advanced each heading is folded until opened; on a long page the first is
  * open and the rest folded; the person's own opening and folding is kept while the page is open. */
 function headed(page, rows, {folded = false} = {}) {
   const groups = new Map();
-  rows.forEach((row, index) => {
+  rows.forEach(row => {
     const title = headingOf(row, page);
-    const group = groups.get(title) || {title, rows: [], first: index, essential: Infinity, chassis: true};
+    const group = groups.get(title) || {title, rows: []};
     group.rows.push(row);
-    group.essential = Math.min(group.essential, row.essential > 0 ? row.essential : Infinity);
-    group.chassis = group.chassis && row.owner === 'chassis';
     groups.set(title, group);
   });
-  const ordered = [...groups.values()].sort((one, two) => one.essential - two.essential
-    || Number(one.chassis) - Number(two.chassis) || one.first - two.first);
   const long = rows.length > LONG_PAGE;
-  return ordered.map((group, index) => {
+  return [...groups.values()].map((group, index) => {
     const id = `${page.name}/${group.title}`;
     const open = CONFIG.folded.has(id) ? CONFIG.folded.get(id) : !(folded || (long && index > 0));
-    // an essential setting first, in its place, then the modules' in their declared order, then the chassis's
-    const sorted = group.rows.map((row, at) => ({row, at})).sort((one, two) => rank(one.row) - rank(two.row)
-      || Number(one.row.owner === 'chassis') - Number(two.row.owner === 'chassis') || one.at - two.at);
-    const list = h('div', {class: 'setlist'}, sorted.map(one => settingRow(one.row)));
+    const list = h('div', {class: 'setlist'}, group.rows.map(row => settingRow(row)));
     if (!folded && !long) return setGroup(group.title, list);
     const box = h('details', {class: 'setgroup fold', open, 'data-group': group.title},
       h('summary', {}, h('h3', {}, group.title), h('span', {class: 'setcount'}, String(group.rows.length))), list);
@@ -294,7 +292,6 @@ function headed(page, rows, {folded = false} = {}) {
     return box;
   });
 }
-const rank = row => row.essential > 0 ? row.essential : Infinity;
 const OWNER_WORDS = {chassis: 'Metaform', mcp: 'MCP', elevenlabs: 'ElevenLabs', source_placement: 'Source placement'};
 const ownerWords = owner => OWNER_WORDS[owner] || owner.charAt(0).toUpperCase() + owner.slice(1).replaceAll('_', ' ');
 function headingOf(row, page) {
@@ -387,15 +384,17 @@ async function listVoices() {
   renderSettings();
 }
 /* Whether the phone can work, checked only when asked: metaform twilio status, which reads the settings and the
- * environment the bridge runs in. */
+ * environment the bridge runs in, and the last `metaform twilio check` of where Twilio sends the number's calls. */
 function phoneRow(data) {
   const on = data.settings.find(one => one.key === 'twilio_enabled');
   if (!on) return null;
   const checked = CONFIG.phone;
+  const twilio = checked?.check?.problems || [];  // the number's own addresses, as the last check found them
   const said = !on.value ? 'The phone is off.' : !checked ? 'Not checked yet.'
     : checked.error ? checked.error
       : checked.problems?.length ? `${checked.problems[0].problem} Next: ${checked.problems[0].next}`
-        : checked.running ? 'Ready: the bridge is running.' : 'Ready: set up, and the bridge starts with the page.';
+        : twilio.length ? `${twilio[0].problem} Next: ${twilio[0].next}`
+          : checked.running ? 'Ready: the bridge is running.' : 'Ready: set up, and the bridge starts with the page.';
   const check = h('button', {type: 'button', class: 'btn sm', 'data-focus': 'page:phone-check', disabled: !on.value,
     title: 'Check now whether the phone is set up', onclick: checkPhone}, 'Check');
   return pageRow('page:phone', 'Phone status', said, check, {link: toCategory('phone', 'page:phone')});
@@ -569,6 +568,10 @@ function settingRow(row, {label = row.label, link = false, go = null} = {}) {
   const named = go ? h('button', {type: 'button', class: 'label', title: `${row.switch}: show it in ${titleOf(go)}`,
     onclick: () => jump(go, id)}, label) : h('span', {class: 'label', title: row.switch}, label);
   const open = CONFIG.more.has(row.key);
+  const ready = row.key === 'voice_tts' ? Object.entries(CONFIG.speech?.tts?.engines || {})
+    .filter(([name, engine]) => engine.ready === true && name !== row.value)
+    .map(([name]) => `${ownerWords(name)} ready, unused: ${row.switch}=${name}.`).join(' ') : '';
+  const help = ready || row.help;
   const more = h('button', {type: 'button', class: 'morebtn', 'aria-expanded': String(open), 'data-focus':
     `more:${row.key}`, title: 'Its switch, all its help, and Glue', onclick: () => {
     if (!CONFIG.more.delete(row.key)) CONFIG.more.add(row.key);
@@ -582,14 +585,16 @@ function settingRow(row, {label = row.label, link = false, go = null} = {}) {
           + 'an agent is refused it over MCP'}, 'Yours') : null,
         risky ? h('span', {class: 'badge warn', title: row.choice_help?.[row.value] || 'Agents act without asking'},
           'Risky') : null, more),
-      h('div', {class: 'helpline'}, row.help ? h('span', {class: 'help', title: row.help}, row.help) : null,
+      h('div', {class: 'helpline'}, help ? h('span', {class: `help${ready ? ' readyhint' : ''}`, title: help}, help) : null,
         link ? toCategory(row.category, id) : null),
       open ? h('div', {class: 'morebox'},
         h('p', {}, h('code', {}, row.switch), row.key !== row.switch.slice(2).replaceAll('-', '_')
           ? [' ', h('code', {}, row.key)] : null, glueButton(row)),
+        h('p', {}, 'Default: ', h('code', {}, shownValue(row.key, row.default)),
+          row.state === 'inherited' && row.from ? [' · inherited from ', h('code', {}, row.from)] : null),
         String(row.help || '').length > 90 ? h('p', {}, row.help) : null,
         row.details ? h('p', {}, row.details) : null) : null),
-    h('div', {class: 'control'}, control.main, resetButton(row)),
+    h('div', {class: 'control'}, resetButton(row), control.main),  // the control itself at the row's right edge
     link && control.wide?.matches('.hint') ? null : control.wide || null,  // Essentials stays one line a setting
     error ? refusalBox(error) : null);
 }
@@ -657,7 +662,13 @@ function settingControl(row, id, label) {
       listed.map(choice => h('option', {value: choice, selected: choice === row.value, title: said[choice] || null,
         disabled: !choices.includes(choice)}, choiceWords(choice, worded)
         + (risky.includes(choice) ? ' (risky: asks first)' : ''))));
-    return {main: select, wide: said[row.value] ? h('p', {class: 'hint'}, said[row.value]) : null};
+    // while it offers no more than its default, the command that reads its choices from their source, such as an
+    // agent's models, is a button beside it
+    const reads = row.choices_from ? h('button', {type: 'button', class: 'btn sm quiet',
+      'data-focus': `choices:${row.key}`, title: `Runs ${row.choices_from}: it starts the agent once, with no prompt, and reads the choices it offers`,
+      onclick: () => readChoices(row)}, 'Read choices') : null;
+    return {main: reads ? h('span', {class: 'pair'}, select, reads) : select,
+      wide: said[row.value] ? h('p', {class: 'hint'}, said[row.value]) : null};
   }
   if (row.kind === 'list' && choices) return {main: null, wide: checklist(row, choices, id, label)};
   if (row.kind === 'list') return {main: itemsBox(row, id, label, save)};
@@ -702,6 +713,19 @@ function checklist(row, choices, id, label) {
   return h('div', {class: 'checks', role: 'group', 'aria-label': label},
     boxes.map((box, index) => h('label', {class: 'check'}, box, h('code', {}, listed[index]))),
     all ? h('span', {class: 'hint'}, 'Every one checked, the default, shows them all.') : null);
+}
+/* A select's choices read from their source by its declared command, then the screen drawn with them. */
+async function readChoices(row) {
+  const id = `setting:${row.key}`;
+  toast(`Reading the choices of ${row.label}…`);
+  const done = await posting(() => posted('/api/settings/choices', {key: row.key}));
+  if (!done.ok) { CONFIG.errors.set(id, done.body); renderSettings(); return; }
+  CONFIG.errors.delete(id);
+  CONFIG.data = done.body;
+  renderSettings();
+  const now = done.body.settings.find(one => one.key === row.key);
+  toast((now?.choices || []).length > 1 ? `${row.label}: ${now.choices.length} choices read.`
+    : `${row.label} still offers only ${now?.choices?.[0] ?? 'its default'}.`);
 }
 /* ---------- saving ---------- */
 /* Save one setting, or glue it, and say so with Undo; Undo puts back what it was. A refusal is said under it. */
@@ -772,11 +796,17 @@ function afterSetting(key) {
     CHATWORK.shown = null;
     drawHelpdesk();
   }
-  if (key === 'web_graphics') {  // set on the Settings screen: the theme follows, space for ultra
-    const ultra = CONFIG.data?.settings?.find(one => one.key === key)?.value === 'ultra';
-    if (ultra !== (document.documentElement.dataset.theme === 'space')) setTheme(ultra ? 'space' : PLAIN.last, false);
+  if (key === 'web_theme') {  // set on the Settings screen: the page takes the theme at once
+    const theme = CONFIG.data?.settings?.find(one => one.key === key)?.value;
+    if (theme && theme !== document.documentElement.dataset.theme) setTheme(String(theme), false);
   }
 }
+/* ---------- text cut short ----------
+ * A label, a line of help or a unit cut short by its row's width opens in place at a click or Enter on it, the
+ * page's `expandCut`; the rows opened stay open through the screen's redraws. */
+const rowKey = row => row.dataset.key || `module:${row.dataset.module}`;
+const markCut = expandCut($('#settings .body'), {row: '.setrow', text: ':is(.help, span.label, .unit)', key: rowKey,
+  kept: CONFIG.unfolded});
 $('#allSettingsBtn').onclick = openSettings;
 $('#settingsGearBtn').onclick = openSettings;
 $('#settings .search').addEventListener('input', event => { CONFIG.filter = event.target.value; renderSettings(); });

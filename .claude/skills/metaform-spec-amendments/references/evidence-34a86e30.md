@@ -1,0 +1,1 @@
+Ticket step 9: "spec record CLI-042 added to specifications/05-cli-settings.md after CLI-041, describing what is built ... with the status line 'built 2026-10-14, demo onboarding, ticket code.installer.package#c'. No other record covers the demo; the CLI-006 overview was left alone because of its 24-line acceptance."

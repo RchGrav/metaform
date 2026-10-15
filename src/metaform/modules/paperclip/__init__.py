@@ -117,12 +117,9 @@ settings.number('paperclip_check_minutes', 10, min=1, max=1440, person_only=True
                         'reads it as held by an outside service rather than as a stuck run, and wakes the agent this '
                         'many minutes on to sync it. Each heartbeat sets the next check while the ticket is open. '
                         'paperclip watch syncs this often too.')
-settings.boolean('paperclip_jev_route', True, person_only=True, label='Paperclip routing by Jev',
-                 help='Let Jev choose the Address of a Paperclip issue that names none, when the setting jev is on.',
-                 details='heartbeat offers Jev the Addresses whose purposes best match the issue\'s words; a sure '
-                         'answer is kept at that Address and the issue is taken there. Off, or Jev off or unsure, '
-                         'the issue is left for the person to link. jev_decisions does not name this decision; this '
-                         'setting turns it off.')
+# Jev's choice of an Address for an issue that names none is the decision point paperclip.route, named in the chassis's
+# jev_decisions like every other: settings cleanup 2026-10-15 folded the separate switch paperclip_jev_route into it.
+ROUTE_DECISION = 'paperclip.route'
 settings.boolean('paperclip_agents_may_send', False, person_only=True, label='Agents may send to Paperclip',
                  help='Let an agent send a ticket to Paperclip over MCP, as the person can from the command line.',
                  details='Off, the default: only the person hands work to Paperclip, whose agents spend from its '
@@ -1030,9 +1027,10 @@ def _candidates(store: Store, words: set[str]) -> dict[str, str]:
 
 
 def _routed(ctx: Context, store: Store, issue: Mapping[str, Any], name: str) -> tuple[str | None, str | None]:
-    """The Address Jev chooses for an issue that names none, and the decision kept there, or (None, None) when the
-    setting is off, Jev is off or unsure, no Address shares a word with the issue, or it answers none."""
-    if not ctx.setting('paperclip_jev_route'):
+    """The Address Jev chooses for an issue that names none, and the decision kept there, or (None, None) when
+    jev_decisions leaves out paperclip.route, Jev is off or unsure, no Address shares a word with the issue, or it
+    answers none."""
+    if jev.config(ctx.folder, ROUTE_DECISION) is None:
         return None, None
     title, description = str(issue.get('title') or ''), str(issue.get('description') or '')
     options = _candidates(store, set(WORD.findall(f'{title} {description}'.lower())))
@@ -1041,12 +1039,13 @@ def _routed(ctx: Context, store: Store, issue: Mapping[str, Any], name: str) -> 
     choices: dict[str, str | None] = {**options, 'none': _said('jev_route/none')}
     state = {'issue': {'title': title, 'description': description[:4000]}, 'addresses': options}
     question, title_of, why = _said('jev_route/ask'), _said('jev_route/title', issue=name), _said('jev_route/why')
-    found = jev.pick_one(ctx.folder, question, choices, state, title=title_of, why=why)
+    found = jev.pick_one(ctx.folder, question, choices, state, title=title_of, why=why, decision=ROUTE_DECISION)
     if found is None or not found.sure or found.answer not in options:
         return None, None
     # asked again with the Address to keep it there: the same question over the same state is answered from Jev's
     # cache, never paid twice, and kept as one numbered item, metaform://<address>#<n>
-    kept = jev.pick_one(ctx.folder, question, choices, state, title=title_of, why=why, address=str(found.answer))
+    kept = jev.pick_one(ctx.folder, question, choices, state, title=title_of, why=why, address=str(found.answer),
+                       decision=ROUTE_DECISION)
     return str(found.answer), (kept.item if kept is not None else None)
 
 
@@ -1189,6 +1188,30 @@ def module_status(ctx: Context) -> Status:
 
 ISSUE = Noun('issue', 'The Paperclip issue, by its id or its identifier, such as PAP-12.')
 
+def carry_route(ctx: Context | None = None) -> list[str]:
+    """Once per home, as paperclip starts: where the person turned paperclip_jev_route off, jev_decisions there names
+    every other decision, so Jev still does not route issues; the old setting is removed. Settings cleanup 2026-10-15."""
+    del ctx
+    return settings.carry_once('paperclip-jev-route', _carry_route)
+
+
+def _carry_route() -> list[str]:
+    said: list[str] = []
+    for scope in dict.fromkeys(['global', *(home.path_key(record.path) for record in home.projects())]):
+        with home.settings_db(scope) as db:
+            rows = db.execute("SELECT scope, value FROM settings WHERE owner='paperclip' AND "
+                              "key='paperclip_jev_route'").fetchall()
+        for found_scope, raw in rows:
+            where = str(found_scope)
+            if json.loads(raw) is False:
+                named = [str(one) for one in home.stored(where, 'chassis', 'jev_decisions') or settings.JEV_DECISIONS]
+                home.save(where, 'chassis', 'jev_decisions', [one for one in named if one != ROUTE_DECISION])
+                said.append(f'{where}: jev_decisions leaves out {ROUTE_DECISION}')
+            home.clear(where, 'paperclip', 'paperclip_jev_route')
+            home.set_glue(where, 'paperclip', 'paperclip_jev_route', False)
+    return said
+
+
 MODULE = Module(
     id='paperclip',
     summary='Work Paperclip issues as tickets at Addresses, and send tickets to Paperclip\'s agents.',
@@ -1240,6 +1263,7 @@ MODULE = Module(
     ),
     subscriptions=(Subscription('web.started', web_started),),
     status=module_status,
+    start=carry_route,
     tables=TABLES,
     work_read=work_read,
     settings_category='integrations',

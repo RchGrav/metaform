@@ -49,6 +49,12 @@ Do not write tests for reversible, low-impact changes that mirror the implementa
 
 Run tests appropriate to the change and complete required checks. Once those pass, broaden or repeat testing only when new changes, failures, or unresolved concerns justify it; otherwise, continue toward completing the task.
 
+## No schema change unless the task needs it
+
+- **Leave every module's tables, columns and keys as they are** unless your ticket's own task cannot be done without changing them. A fix that seems to need one stops, says so in its ticket note with the reason, and waits for the orchestrator's decision. Why: people's stores hold real data, and every change to them is one more thing that can break in a home nobody is watching.
+- **An approved change** raises the module's `Tables` version once, says why in the comment above `TABLES` and in the ticket, and updates `tests/module_tables.snapshot.json` in the same commit (`METAFORM_TABLES_SNAPSHOT=write uv run pytest -n 0 tests/test_module_tables.py -k snapshot`). Two open tickets never share one schema change or one version number. `test_no_module_changes_its_tables_without_the_snapshot_saying_so` fails on any change the snapshot does not hold, naming the module and whether its version was raised.
+- **Compatibility is judged from the database, not the declaration's text**, STORE-029: a store that holds what the code needs opens; a missing table, optional column or index is added in place; only a real conflict (a column or key held with another type, default or meaning, or data that would have to be dropped or rewritten) refuses, and only for that module. A rule a write must meet is part of the schema: a CHECK, foreign key, unique rule, collation, ON CONFLICT resolution or partial-index condition that changes is a schema change, needs the orchestrator's approval and raises the version, and the snapshot guard fails until it does. A version number marks a real data migration: a change that rewrites rows, run by the module's upgrade.
+
 ## rich/ is Rich's folder
 
 `rich/` is where Rich drops materials. Take what is there and use it. Never delete, move or rewrite anything in it. Never write tests, code or build steps that read from it; what the project uses gets its own copy in the project.

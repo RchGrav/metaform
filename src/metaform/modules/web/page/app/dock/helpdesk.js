@@ -2,6 +2,7 @@
  * from its tab, and the questions asked at a ticket's node. */
 import '/page/app/dock/threads.js';  // the part before runs first, so the parts run in the page's order
 import {$, reduced, h, keepFill, keyedFill} from '/page/app/core/dom.js';
+import {expandCut} from '/page/app/core/expand.js';
 import {toast} from '/page/app/core/controls.js';
 import {read} from '/page/app/core/reads.js';
 import {ticketNode} from '/page/app/figures/agents.js';
@@ -63,7 +64,7 @@ export async function drawHelpdesk(trouble) {
     ...begunRows(session),
     ...DOCK.notes.filter(note => note.at >= DOCK.since - 1)
       .map((note, index) => systemRow(`note:${note.at}:${index}`, note.text)),
-    ...threadRows(lines, {work: target, agent: session?.agent}),
+    ...threadRows(lines, {work: target, agent: session?.agent, session}),
     ...queuedRows(),
     ...embodyRows(target),
     ...galleryRows(),
@@ -73,6 +74,7 @@ export async function drawHelpdesk(trouble) {
   if (changed && $('#helpdesk').hidden && lines.some(line => line.kind === 'agent_message_chunk')) markUnread();
   deliverQueued(session);  // what was written while the agent was being reached, sent once it is there
   chatAway(session, changed);
+  D.onAsking?.();  // the thread on screen changed: the pop-up leaves its requests to it, agents/asking.js
 }
 /* The thread on view as dispatch reads it: its session, the running one or the one it is with, its state and its
  * lines, or a child session's lines when one is open. `moved` when the chat moved on while this was read; `other`
@@ -195,6 +197,8 @@ export function followLog(force = false) {
   latest.hidden = false;
 }
 $('#helpdesk .latest').onclick = () => { followLog(true); $('#helpdesk .say').focus({preventScroll: true}); };
+// a tool call's title cut short opens in place at a click, or shows whole while a call with more to show is open
+expandCut($('#helpdesk .log'), {row: '.tool', text: '.toolhead .title'});
 /* What came while the chat was put away: a dot on its tab, cleared as it opens. */
 function markUnread() { DOCK.unread = true; drawDockTab(); }
 /* The chat puts itself away 15 seconds after its agent is gone or its session has ended:

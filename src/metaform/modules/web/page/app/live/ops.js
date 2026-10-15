@@ -3,12 +3,14 @@
 import '/page/app/live/stream.js';  // the part before runs first, so the parts run in the page's order
 import {$, h} from '/page/app/core/dom.js';
 import {toast} from '/page/app/core/controls.js';
-import {S, MEM, read} from '/page/app/core/reads.js';
+import {S, MEM, FRAMED, read} from '/page/app/core/reads.js';
+import {moduleNotices, readFailed} from '/page/app/core/errors.js';
 import {withProviders, joinOf} from '/page/app/graph/data.js';
 import {figures} from '/page/app/figures/agents.js';
 import {mascotEvent} from '/page/app/figures/attention.js';
 import {flowEvent, flowWritten} from '/page/app/flow/flow.js';
 import {draw3D} from '/page/app/map3d/draw3d.js';
+import {renderChips} from '/page/app/header/layers.js';
 import {renderLegend} from '/page/app/views/lens.js';
 import {build2D} from '/page/app/map2d/build.js';
 import {select, workPill, MERGE, renderMerges} from '/page/app/selection/select.js';
@@ -64,11 +66,22 @@ function heldOf(ids) {
       name_length: element.name_length, name: element.name, role: element.role};
   });
 }
+/* What `appliedOps` gives back when the ops changed only what is said of a layer: nothing drawn, so the maps are not
+ * drawn again for it. */
+export const NOTED = 'noted';
 export async function appliedOps() {
   if (following() || !S.whole || typeof S.seq !== 'number') return false;
   const ops = await read('ops', {after: S.seq, limit: 0});
   if (!Array.isArray(ops) || !ops.length) return true;  // nothing of the map changed: the tickets are read beside
+  if (ops.every(noted)) {  // what is said of a layer changed, not what is drawn: its record and its chip, no map read
+    if (!ops.every(noteLayer)) return false;
+    S.seq = ops[ops.length - 1].seq;
+    renderChips();
+    if ($('#p-prov').hidden === false) import('/page/app/panel/agentview.js').then(part => part.renderProv());
+    return NOTED;
+  }
   for (const op of ops) {
+    if (noted(op) && noteLayer(op)) continue;
     if (op.kind === 'layer' || op.kind === 'selection') return false;  // what is in view may have changed
     if (op.kind === 'type') continue;
     const layer = layerInView(op.layer_id);
@@ -84,6 +97,18 @@ export async function appliedOps() {
   renderLegend();
   await build2D();
   await reselect();
+  return true;
+}
+/* A layer's tags and the pairs it holds for re-examination are what is said of the layer, shown on its chip and in its
+ * provenance, never what the map draws from it, so a change to them alone reads no map again. */
+const LAYER_NOTES = new Set(['tags', 'reexamine']);
+const noted = op => op.kind === 'layer' && op.op === 'change' && Object.keys(op.data || {}).length > 0
+  && Object.keys(op.data).every(key => LAYER_NOTES.has(key));
+// the page's record of the layer takes the change; false when the page has not read that layer
+function noteLayer(op) {
+  const layer = S.layers.find(item => item.id === (op.layer_id ?? op.id));
+  if (!layer) return false;
+  Object.assign(layer, op.data);
   return true;
 }
 /* One op applied to what is drawn; false when the page cannot place it, and the whole map is read again. */
@@ -185,6 +210,9 @@ export function briefTouched(named) {
   return named.some(table => BRIEF_TABLES.has(table) || /^(memory|jev)\./.test(table)
     || !TICKET_TABLES.has(table) && !/^(dispatch|web|workflow)\./.test(table));
 }
+// whether a change named a ticket's or an agent's table, or named none, so the tickets may have changed
+export const ticketsNamed = named => !Array.isArray(named)
+  || named.some(table => TICKET_TABLES.has(table) || String(table).startsWith('dispatch.'));
 export const ticketsOnly = payload => Array.isArray(payload.tables) && payload.tables.length > 0
   && payload.tables.every(table => TICKET_TABLES.has(table) || String(table).startsWith('dispatch.'));
 /* A change the page can apply from the ops alone, STORE-046: the log, the objects registry, the kinds of op, and the
@@ -268,11 +296,17 @@ export function listen() {
   // the stream names the project this page shows: agents are started only for a project some page has open
   if (STREAM) STREAM.close();
   const source = STREAM = new EventSource(`/api/events?project=${encodeURIComponent(S.project || '')}`);
+  let opens = 0;
   source.onmessage = heard;
   source.onopen = () => {
     // with no project there is nothing being recorded here to read; an intake elsewhere is heard as it starts
     if (S.project) recordingNow().catch(error => toast(error.message));
+    // what modules say needs the person, such as a phone number Twilio sends where nothing answers, core/errors.js
+    if (S.project && !FRAMED) read('notices').then(found => moduleNotices(found.notices)).catch(readFailed);
     agentsChanged();
+    // the browser's own reconnect, as after the server was restarted, VIEW-002: what changed while the stream was
+    // down was announced to no page, so the layers and the map are read again, keeping the view and the selection
+    if (opens++ && S.project) changed({topic: 'map.changed', payload: {project: S.project}});
   };
 }
 /* The topics the page takes apart from the map's changes. */

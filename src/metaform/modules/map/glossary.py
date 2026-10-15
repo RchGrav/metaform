@@ -351,7 +351,7 @@ GLOSSARY_NOUNS = (
 VERBS = (
     Verb('glossary', glossary, "Read the project's glossary: its terms, from the map's element names and those added, "
                                'each defined in the project\'s words.',
-         nouns=GLOSSARY_NOUNS, switches=('glossary_bytes', 'glossary_register'), effect='read',
+         nouns=GLOSSARY_NOUNS, switches=('glossary_bytes', 'glossary_register'), effect='read', reads_layers=True,
          details="An element's name is a term defined by its EF and OP, read from the map each time, so a refined name "
                  'or a removed element is in step at once. Terms the person and agents add carry a definition, a why '
                  'and a source. The block is sized by the setting glossary_bytes, most-used terms first, and led by '

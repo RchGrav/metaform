@@ -101,6 +101,17 @@
      <rules><rule why="...">One sentence.</rule></rules>; a rule without a why stops the module loading. Empty leaves
      the block out; a folder whose modules hold no rules gets no block either. -->
 <rules_heading>Rules the enabled modules ask you to keep, each with its reason.</rules_heading>
+<!-- The heading of what the result of a module's tool carries the first time in an agent's session that it calls
+     any of that module's tools, and again only once the rules change: the rules of that module's prompts.xml, one
+     line each with its reason. <module/> is the module's id. Empty leaves the module's rules out of results; they are
+     still in metaform://tools. DRAFT wording, artifacts/specs-draft/2026-10-15-agent-context-cost.md. -->
+<module_guide>The <module/> module's rules, given once in this session, each with its reason:</module_guide>
+<!-- The heading of what a tool's result carries the first time in an agent's session that it calls that tool, and
+     again only once it changes: what the tool list cut to keep it small, the rest of the tool's description and the
+     whole help of each argument the list shortened, then the verb's details and examples, from the verb's own
+     declaration. <tool/> is the tool's name. Empty leaves it out, and the cut text is then read only through
+     metaform_instructions. DRAFT wording, artifacts/specs-draft/2026-10-15-agent-context-cost.md. -->
+<tool_guide>How to use <tool/>, given once in this session:</tool_guide>
 <!-- The form an AI tool shows the person when an agent calls a tool that carries a caution, such as
      metaform_clear_project or map_remove-base, and the tool can ask the person directly (MCP elicitation, where the
      host supports it and mcp_consent is ask). <tool/> is the tool's name and <caution/> what the call would do, from the
@@ -233,7 +244,7 @@
 <!-- A2A outbound, MCP-041: what an agent here sends a peer comes back to the Address it was about. A question the
      peer's task asks, its input-required status, is asked at that Address as an open question, MAP-050, titled from
      its first line; this is the why the person and the next agent read beside it. <peer/> takes the peer's name in
-     mcp_a2a_peers. Empty asks the question with no why. -->
+     mcp a2a_peers. Empty asks the question with no why. -->
 <a2a_peer_question_why><peer/> asks this about the work sent to it over A2A; its task waits for the answer.</a2a_peer_question_why>
 <!-- A2A outbound, MCP-041: the answer given to that question is sent back on the peer's task. When the peer refuses
      it, this message is left at the Address, so the person and the next agent there know the answer did not reach

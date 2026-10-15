@@ -9,7 +9,7 @@ import {attend} from '/page/app/figures/attention.js';
 import {G, wake3d} from '/page/app/map3d/graph3d.js';
 import {hovered} from '/page/app/map3d/pick3d.js';
 import {HOVER2D} from '/page/app/map2d/hover.js';
-import {wake2d} from '/page/app/map2d/flow2d.js';
+import {wake2d, flows2d} from '/page/app/map2d/flow2d.js';
 import {select} from '/page/app/selection/select.js';
 import {ticketPart} from '/page/app/agents/dispatch.js';
 import {WS} from '/page/app/workspace/workspace.js';
@@ -47,8 +47,8 @@ import {WS} from '/page/app/workspace/workspace.js';
  * The 3D map draws all of it as two objects of its scene, points and line segments filled again each frame, so a
  * larger map adds no objects; a point is sized in map units but held between a few pixels, so nothing swells near the
  * camera. The selected node's edges in the 2D map carry the same, `flows2d`. The graph library's own particle, one to
- * a link, is never drawn while the page draws the flow: `held`, a share of the way, shows it held there instead,
- * `dots3d`, so a browser check can read a dot over a node. */
+ * a link, is made only for a browser check: `held`, a share of the way, shows it held there, `dots3d`, so the check
+ * can read a dot over a node. */
 export const FLOW = {clock: 0, last: 0, held: null, count: 0, ask: 0.45, reply: 0.9, send: 0.8, burst: 0.55, mean: 3,
   streak: 0.3, trail: 0.06, bright: 1.35, live: [], net: null, mode: null, fades: new Map(), liveFade: 1, ease: 6};
 const cycles = new Map();  // each join's current cycle: when it began on FLOW.clock, its wait, and whether it answered
@@ -113,6 +113,7 @@ export function flowMode(name) {
   if (FLOW_MODE_LIST.some(one => one.name === name) && name !== FLOW.mode) {
     FLOW.mode = name;
     wake3d(1500);
+    flows2d();  // the 2D map's flowing edges are the new mode's, not the old one's until the next selection
     wake2d();
   }
   return flowModeNow();

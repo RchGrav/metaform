@@ -60,6 +60,7 @@ def memory_values(view):
     return [text for entity in view.get('memory', {}).get('entities', []) for text in entity['observations']]
 
 
+@pytest.mark.timeout(900)  # a cold uv cache downloads for real; each call below names itself first, at 600 s
 def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
     from metaform.probe import open_session, probe
 

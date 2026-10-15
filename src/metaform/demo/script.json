@@ -6,8 +6,7 @@
    "Three scripted demo agents, no AI and no network, work tickets on it. One is hunting a bug."
   ],
   "next": [
-   ["Connect Claude Code", "metaform install claude"],
-   ["Map your own project", "cd <your project> && metaform start"]
+   ["Map your own project and connect Claude Code to it", "cd <your project> && metaform start"]
   ]
  },
  "mascot": [

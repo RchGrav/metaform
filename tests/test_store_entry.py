@@ -45,7 +45,11 @@ def test_map_roots_and_where_with_no_address_return_the_entry(run, tmp_path):
     small_map(Store('proj'))
     roots = json.loads(run('map', 'roots', '--json', cwd=folder).stdout)
     assert {item['element']['address'] for item in roots['entry']} == {'stakeholder.cook.home', 'code.timer.kitchen'}
-    assert json.loads(run('map', 'where', '', '--json', cwd=folder).stdout) == roots
+    assert json.loads(run('map', 'where', '', 'full=true', '--json', cwd=folder).stdout) == roots
+    lean = run('map', 'where', '', '--json', cwd=folder).stdout  # compacted as every read is, unless full, MCP-039
+    assert '"layer_id"' not in lean and '": null' not in lean
+    assert {item['element']['address'] for item in json.loads(lean)['entry']} == {'stakeholder.cook.home',
+                                                                                 'code.timer.kitchen'}
 
 
 @pytest.mark.req('STORE-042')

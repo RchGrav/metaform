@@ -424,7 +424,7 @@ function messagesByTurn(lines) {
   });
   return said;
 }
-export function threadRows(lines, {work, agent}) {
+export function threadRows(lines, {work, agent, session = null}) {
   const rows = [], shown = workShown(), said = messagesByTurn(lines);
   const growing = new Map();  // a message still being written toward a line said on the map: its place, that line
   let sender = null;  // who wrote the message before, so a run of one sender's messages is named once
@@ -449,10 +449,14 @@ export function threadRows(lines, {work, agent}) {
       rows.push({key: `said:${key}`, text: `said\n${spoken}\n${first}`, make: () => spokenRow(spoken, who, first, at)});
     }
     if (kind === 'tool_call' || kind === 'tool_call_update') toolRows(rows, line, key, text, work, shown);
-    else if (kind === 'permission') rows.push({key, text, make: () => permissionCard(line, work, 'div', agent)});
+    else if (kind === 'permission') {  // drawn again when how the session's requests are answered changes
+      rows.push({key, text: `${text}\n${session?.state}:${session?.prompts}:${session?.prompts_from}`,
+        make: () => permissionCard(line, work, 'div', agent, {session})});
+    }
     else if (kind === 'elicitation') rows.push({key, text, make: () => elicitationRow(line, work, agent)});
     else if (kind === 'agent_notice') rows.push({key, text, make: () => noticeRow(line)});
     else if (kind === 'attachment') rows.push({key, text, make: () => attachmentCard(line, agent)});
+    else if (kind === 'peer') rows.push({key, text, make: () => peerRow(line)});
     else if (kind === 'signal') {
       const words = signalWords(line.text);
       if (words) rows.push({key, text, make: () => h('div', {class: 'system signal'}, words)});
@@ -463,7 +467,8 @@ export function threadRows(lines, {work, agent}) {
       if (mine) DOCK.heard.add(String(line.text).trim());
       const toward = growing.get(index);
       if (toward) rows.push({key, text: `said\n${toward}\n${first}`, make: () => spokenRow(toward, who, first, at)});
-      else rows.push({key, text: `${text}\n${first}`, make: () => messageRow(line.text, {mine, who, first, at})});
+      else rows.push({key, text: `${text}\n${first}`, make: () => broadcastMark(line, messageRow(line.text,
+        {mine, who, first, at}))});
     } else if (kind === 'agent_thought_chunk') rows.push({key, text, make: () => thoughtRow(line)});
     else if (SYSTEM_LINES.includes(kind)) {
       rows.push({key, text, make: () => h('div', {class: `system ${kind}`}, line.text)});
@@ -477,6 +482,15 @@ function seenAt(key, line) {
   const at = SEEN.at.get(key) ?? (SEEN.sessions.has(line.session_id) ? Date.now() : 0);
   SEEN.at.set(key, at);
   return at;
+}
+/* The person's message as one of a broadcast, `dispatch broadcast`: its line is kept under `broadcast:<id>`, and its
+ * bubble is marked Broadcast, since every agent at work was told the same. */
+function broadcastMark(line, row) {
+  if (!String(line.name ?? '').startsWith('broadcast:')) return row;
+  row.classList.add('broadcast');
+  row.querySelector('.row').before(h('div', {class: 'mark', title: 'Sent to every agent working on this project'},
+    'Broadcast'));
+  return row;
 }
 /* A line the agent said on the map, web_say: its bubble, marked as said there. */
 function spokenRow(spoken, who, first, at) {
@@ -495,6 +509,21 @@ function toolRows(rows, line, key, text, work, shown) {
       make: () => appRow(`app:${key}`, app, {work, session: line.session_id})});
     appFed(`app:${key}`, app.call);
   }
+}
+/* A peer note, `dispatch note`: one agent's information to the agents on other open tickets, kept in the threads of
+ * every ticket it touches; drawn as sent or received by this thread's ticket, a question or a reply as such, with the
+ * other tickets' agents and numbers and where it stands for each, queued, delivered, read or replied, and never as the
+ * person's words. */
+function peerRow(line) {
+  const note = line.data || {}, sent = note.from?.work_id === line.work_id, states = note.states || {};
+  const to = Array.isArray(note.to) ? note.to : [note.to].filter(Boolean);
+  const named = end => `${agentName(end.agent)} on ${end.item || end.work_id || 'another ticket'}`;
+  const what = note.reply_to ? 'Reply' : note.ask ? 'Question' : 'Note';
+  const lead = sent ? `${what} to ${to.map(end => `${named(end)} (${states[end.work_id] || 'queued'})`).join(', ')}:`
+    : `${what} from ${named(note.from || {})}, a fellow agent (${states[line.work_id] || 'queued'}):`;
+  const titles = (sent ? to : [note.from || {}]).map(end => end.title).filter(Boolean).join('\n');
+  return h('div', {class: 'system peer', title: `${titles}${note.at ? `\n${note.at}` : ''}\n${note.id || ''}`.trim()},
+    h('b', {}, lead), ` ${note.text || ''}`);
 }
 /* A question still open as its card; one without a request said in a quiet line, with what became of it. */
 function elicitationRow(line, work, agent) {

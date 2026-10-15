@@ -30,4 +30,22 @@ window.METAFORM_CONSOLE = [];
     else keep(`${event.error?.stack || event.message} at ${event.filename}:${event.lineno}:${event.colno}`);
   }, true);
   addEventListener('unhandledrejection', event => keep(`Unhandled rejection: ${said(event.reason)}`));
+  /* The page's error surface is part of its code, core/errors.js; if that code never ran, as when a file of it failed
+   * to load or would not parse, the page says so here, in a banner of the same look, rather than staying blank. */
+  addEventListener('load', () => {
+    if (window.METAFORM_SURFACE) return;
+    const line = (tag, cls, text) => Object.assign(document.createElement(tag), {className: cls, textContent: text});
+    const words = document.createElement('div');
+    words.className = 'words';
+    words.append(line('strong', 'title', "The page's code did not run"),
+      line('p', 'text', kept.length ? kept[kept.length - 1].replace(/^\S+ /, '') : 'No error was given.'),
+      line('p', 'next', 'Next: reload the page; if this stays, run metaform report "the page did not load" in a terminal.'));
+    const box = Object.assign(document.createElement('div'), {className: 'banner error'});
+    box.setAttribute('role', 'alert');
+    box.append(words);
+    const strip = Object.assign(document.createElement('div'), {id: 'banners'});
+    strip.append(box);
+    document.body.append(strip);
+    document.documentElement.classList.remove('booting');
+  });
 })();

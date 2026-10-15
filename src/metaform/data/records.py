@@ -34,10 +34,23 @@ KINDS = ('broken', 'flawed', 'enhancement')
 FINDINGS = ('missing',)  # intended functionality that is absent, kept apart from the stage unbuilt
 CHECKS = ('ok',)  # what the intake found when it read a part's source and it does its job
 CONDITIONS = STAGES + FAULTS + FINDINGS + CHECKS
+WORK_MARKERS = FAULTS + FINDINGS  # a marker that is work with no task: what the agent starter starts an agent on
+DRAWN_STAGES = ('unbuilt', 'under-construction')  # a stage with no task is the part's state, drawn on its node
 MESSAGES = ('question', 'message')  # what waits for the person at a node, MAP-050; never a condition
 COLUMNS = ('backlog', 'todo', 'doing', 'done')  # the board's columns, MAP-048
 
 T = TypeVar('T')
+
+
+def is_work(condition: str | None, task: str | None) -> bool:
+    """A record is work, a card on the board, when it has a task or a trouble, broken or missing marker, MAP-046."""
+    return bool((task or '').strip()) or condition in WORK_MARKERS
+
+
+def shown_open(condition: str | None, task: str | None) -> bool:
+    """An open record is shown somewhere: as work on the board, or as a stage with no task, drawn on its node.
+    Any other, an ok, a built or a note alone, is shown nowhere, so the store refuses it."""
+    return is_work(condition, task) or condition in DRAWN_STAGES
 
 
 def plain(value: Any) -> Any:
@@ -400,11 +413,16 @@ class Where(Record):
 
 @dataclass(frozen=True)
 class Recording(Record):
-    """The intake being recorded for a project: the base it goes into and its building layer, BASE-039."""
+    """An intake building for a project: the base it goes into and its building layer, BASE-039. `recording` when an
+    agent records it now, its process alive; else it was left unfinished. `parts` counts its elements, and `last` is
+    when it last recorded anything."""
     base_id: str
     base: str
     active: bool
     layer: Layer
+    recording: bool = False
+    parts: int = 0
+    last: str | None = None
 
 
 @dataclass(frozen=True)
@@ -570,7 +588,7 @@ class WorkRecord(Record):
         return None if at is None else _age(at)
 
     def to_dict(self) -> dict[str, Any]:
-        return {**super().to_dict(), 'age_seconds': self.age_seconds}
+        return {**super().to_dict(), 'age_seconds': self.age_seconds, 'is_work': is_work(self.condition, self.task)}
 
 
 @dataclass(frozen=True)

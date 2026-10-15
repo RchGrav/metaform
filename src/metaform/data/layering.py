@@ -170,8 +170,9 @@ def discard(tx: Tx, layer: str) -> Outcome:
                 if base.kinds.get(ident) == kind and any(version.layer_id == layer_id for version in held)]
 
     # The base layer that made the map's elements and joins is the map itself; a layer of the base's kind that
-    # holds only items on the map's nodes, such as fields or refs, is discarded like any other.
-    if found.kind in BASE_KINDS and (of_layer('element') or of_layer('join')):
+    # holds only items on the map's nodes, such as fields or refs, is discarded like any other, and so is an intake
+    # still building, which no context read shows until it finishes, BASE-039.
+    if found.kind in BASE_KINDS and found.finished and (of_layer('element') or of_layer('join')):
         return Outcome((Notice('layer', f'{found.name} is the base layer and is never discarded; the base '
                                         f'changes by refining: {rows.refine_step()}. Nothing changed.'),))
     if found.kind == 'memory':

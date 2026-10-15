@@ -5,6 +5,7 @@ import {$, h, fill} from '/page/app/core/dom.js';
 import {overlay} from '/page/app/core/overlays.js';
 import {toast, undoable, confirmAct} from '/page/app/core/controls.js';
 import {S, reach, read, viewLayers} from '/page/app/core/reads.js';
+import {reportWith} from '/page/app/core/errors.js';
 import {rootsOff, renderChips} from '/page/app/header/layers.js';
 import {toggler} from '/page/app/header/menus.js';
 import {M} from '/page/app/map2d/build.js';
@@ -248,13 +249,15 @@ $('#apply').onclick = applyLayers;
  * console errors besides. The server builds it and this page saves it as a download; nothing is sent anywhere. */
 overlay($('#report'), {kind: 'dialog', close: () => { $('#report').hidden = true; }, focus: () => $('#reportWhat')});
 $('#report .close').onclick = () => { $('#report').hidden = true; };
-function openReport() {
+function openReport(description = '') {
   $('#settingsbox').hidden = true;
+  if (typeof description === 'string' && description) $('#reportWhat').value = description.slice(0, 500);
   $('#reportSaid').textContent = '';
   $('#reportMake').disabled = false;
   $('#report').hidden = false;
 }
-$('#reportBtn').onclick = openReport;
+$('#reportBtn').onclick = () => openReport();
+reportWith(openReport);  // the error surface's banners open it with the problem's words
 async function makeReport(event) {
   event.preventDefault();
   const description = $('#reportWhat').value.trim();

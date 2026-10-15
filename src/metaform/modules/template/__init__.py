@@ -16,6 +16,13 @@ replaces what cannot be had back; and `open_world=True` when it reaches past
 the home and the map, to agents or the network. The MCP server gives them
 to hosts as the tool's annotations, MCP-003. hello's verbs show each.
 
+A verb that works in a folder with no project, such as one that reads a packaged
+skill, declares `needs_project=False`: over MCP it is listed before the folder is
+registered and takes no `project` argument. Every other verb is listed once the
+folder has a project. A verb whose result follows the map's layers turned on, such
+as a read of the map, declares `reads_layers=True`, so its tool takes the per-call
+`layers` argument; no other tool has it.
+
 A module that keeps data of its own declares its tables with `metaform.data`'s
 `Tables`, `Table`, `Column` and `Index` and sets `tables=` below; a verb reads
 and writes them in `with ctx.require_store().tables() as tx:`, STORE-045.

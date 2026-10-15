@@ -5,6 +5,7 @@ import {releaseGlyph} from '/page/agents3d.js';
 import {$, h, fill} from '/page/app/core/dom.js';
 import {toast, confirmAct} from '/page/app/core/controls.js';
 import {S, MEM, read, viewLayers} from '/page/app/core/reads.js';
+import {readFailed} from '/page/app/core/errors.js';
 import {renderChips} from '/page/app/header/layers.js';
 import {foldHeader} from '/page/app/header/menus.js';
 import {emptyPanel} from '/page/app/header/admin.js';
@@ -31,6 +32,7 @@ import {B} from '/page/app/board/refs.js';
 import {drawBoard} from '/page/app/board/board.js';
 import {wrote} from '/page/app/board/history.js';
 import {D, readAutostart, renderAgents} from '/page/app/agents/dispatch.js';
+import {leaveAsking} from '/page/app/agents/asking.js';
 import {renderProv} from '/page/app/panel/agentview.js';
 import {readHarnesses, forgetHarnesses, PICKERS, drawDockTab} from '/page/app/agents/pickers.js';
 import {INTAKE, drawIntake, drawEmpty} from '/page/app/intake/intake.js';
@@ -69,7 +71,7 @@ function itemEntry(item, layer) {
 export async function progressOf() {
   const found = new Map(), project = S.project, metaform = S.base;
   let tickets = [];
-  try { tickets = (await read('work', {limit: 0})).results || []; } catch (error) { return found; }
+  try { tickets = (await read('work', {limit: 0})).results || []; } catch (error) { readFailed(error); return found; }
   if (S.project !== project || S.base !== metaform) return found;  // a late answer for a project the person left
   S.tickets = tickets;
   for (const ticket of tickets) {
@@ -102,7 +104,7 @@ async function readGraph(agents) {
     whole = true;
     if (!await readBeside(generation, stale)) return;
   } catch (error) {
-    toast(error.message);
+    readFailed(error);
     // The last whole map read is kept: a read that fails, as every read does while the server restarts, puts it back,
     // and the failure is said. Another metaform's is never put back, since its load begins with none.
     if (!stale() && !whole && S.whole) Object.assign(S, S.whole);
@@ -198,8 +200,6 @@ function baseButtons() {
   const chosen = S.bases.find(item => item.id === $('#mf').value);
   $('#activateBase').disabled = !chosen || chosen.active;
   $('#removeBase').disabled = !chosen || chosen.active;
-  // with one base or none there is no other to activate or remove, so neither shows until a second base is added
-  $('#activateBase').hidden = $('#removeBase').hidden = S.bases.length < 2;
 }
 async function activateBase() {
   const chosen = S.bases.find(item => item.id === $('#mf').value);
@@ -241,6 +241,7 @@ export function toProject(id) {
   leaveAgents();
   Object.assign(INTAKE, {work: null, session: null, agent: null, waiting: 0, started: null});
   D.asking = [];
+  leaveAsking();
   drawDockTab();
   for (const id of ['#intake', '#build', '#buildPrompt']) $(id).hidden = true;
   drawIntake();

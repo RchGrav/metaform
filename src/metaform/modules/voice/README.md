@@ -70,10 +70,9 @@ Voice provides `voice`, found with `metaform.module.provided(folder, 'voice')` a
 | `voice_model` | auto | The server model: large-v3-turbo on a GPU, small on a CPU; or tiny, base, small, medium, large-v3-turbo. |
 | `voice_browser_model` | auto | The browser model: base; or tiny, base, small. |
 | `voice_device` | auto | The server engine on cuda or cpu. |
-| `voice_language` | auto | A language code, or auto. |
+| `voice_language` | auto | A language code, or auto: the one language you are heard in, on the page, by Scribe and on the phone. |
 | `voice_send` | review | review leaves the text for Enter; auto sends after a pause. |
 | `voice_send_audio` | never | accepted sends the recording beside its transcript to a chat agent whose session declares audio. Person only. |
-| `voice_idle_minutes` | 10 | Minutes the server keeps its model loaded; 0 keeps it. |
 | `voice_max_seconds` | 120 | The longest utterance heard at once. |
 | `voice_endpoint_url`, `voice_endpoint_model`, `voice_endpoint_key_env` | empty, whisper-1, empty | The person's own transcription endpoint, and the environment variable that holds its key. Person only. |
 | `voice_tts` | browser | Who speaks replies: browser, an engine a module brings, or off. Person only. |
@@ -95,7 +94,7 @@ None, and no tables. Nothing a person says is stored: an utterance is written to
 
 ## Lifecycle and cleanup
 
-`stop` lets the loaded model go. A model is let go after `voice_idle_minutes` without an utterance.
+`stop` lets the loaded model go. A model is let go after 10 minutes without an utterance, the constant `IDLE_MINUTES`.
 
 ## Modules relied on
 

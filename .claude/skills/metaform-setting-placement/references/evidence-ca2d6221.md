@@ -1,0 +1,2 @@
+Rule (settings-decisions.md): a value is a setting only when a person would sensibly choose it differently and it changes what the system does. One right answer = named constant beside its code with the reason in a comment. Page look right now = view state. One call's mode = per_call. A set of records = module records with add/remove verbs. No effect = deleted.
+Counts in a scratch home with every module enabled: config --show 231 -> 190; the agents' set list (mcp server.settable) 71 -> 49.

@@ -16,7 +16,8 @@ import {WS} from '/page/app/workspace/workspace.js';
  * tool, resource, resource template and prompt the lists give, each entry as received and its size, and the selected
  * node's brief; the connect message against the characters Claude Code keeps of a server's instructions, the brief
  * against node_summary_bytes. What is paid before the first call is said both ways a host loads tools: deferred behind
- * tool search, Claude Code's default, where the names come first, or every tool up front. */
+ * tool search, Claude Code's default, where the names come first, or every tool up front, in bytes and in tokens at
+ * the server's BYTES_PER_TOKEN, four. */
 const AV = {generation: 0, tab: 'connect', data: null};
 const AV_TABS = [['connect', 'Connect'], ['glossary', 'Glossary'], ['tools', 'Tools'], ['resources', 'Resources'],
   ['prompts', 'Prompts'], ['brief', 'Brief']];
@@ -63,7 +64,8 @@ function drawAgentView() {
   panel.id = 'av-panel';
   tabs.addEventListener('keydown', event => walkTabs(event, tabs, show));
   fill(body, h('p', {class: 'lead'}, 'Read now from this project\'s MCP server, as an agent connecting to it reads '
-    + 'it. Only the connect message is pushed; the rest is read when the agent asks.'),
+    + 'it. The connect message and the tool names are sent when the agent connects, and without tool search every '
+    + 'tool is sent in full. The rest is read when the agent asks.'),
   paidFacts(data), tabs, panel);
   show(AV.tab);
 }
@@ -77,20 +79,23 @@ function walkTabs(event, tabs, show) {
   show(keys[next]);
   tabs.children[next].focus();
 }
-/* What an agent pays before its first call, each way a host loads tools, then the glossary. */
+/* What an agent pays before its first call, each way a host loads tools, then the glossary, each said as a sentence. */
+const tokens = count => `about ${counted(count, 'tokens')}`;
 function paidFacts(data) {
   const paid = data.paid;
-  const fact = (term, count, words) => [h('dt', {}, term), h('dd', {}, counted(count), h('small', {}, words))];
+  const fact = (term, count, said, words) => [h('dt', {}, term),
+    h('dd', {}, h('b', {}, `${counted(count)}, ${tokens(said)}. `), words)];
   return h('dl', {class: 'paid',
     'aria-label': 'What an agent pays before its first call, in bytes as Claude Code sends them to the model'},
-  ...fact('With tool search', paid.deferred, ` connect message, the tool names as mcp__${paid.server}__<tool>, `
-      + 'and any tool marked to load up front, as Claude Code loads tools by default'),
-  ...fact('Tools loaded as asked', paid.loaded,
-    ' the same with every tool loaded, as the connect message asks the agent to make sure of'),
-  ...fact('Without it', paid.upfront,
-    ' connect message and every tool in full: its name, description and input schema'),
-  ...fact('Then the glossary', paid.glossary, ' metaform://metaform, read once, as the connect message asks; '
-      + `metaform://tools, ${counted(data.glossary.index.bytes)}, read only where tools are listed by name`));
+  ...fact('With tool search', paid.deferred, paid.tokens.deferred, 'This is what Claude Code sends the model by '
+      + `default: the connect message, each tool's name as mcp__${paid.server}__<tool>, and in full any tool marked to `
+      + 'load up front. The agent loads the other tools when it needs them.'),
+  ...fact('Without tool search', paid.upfront, paid.tokens.upfront, 'This is what an AI tool that loads every tool '
+      + 'up front sends the model: the connect message and every tool in full, with its name, description and input '
+      + 'schema.'),
+  ...fact('The glossary', paid.glossary, paid.tokens.glossary, 'The agent reads metaform://metaform once, as the '
+      + `connect message asks. An AI tool that lists tools by name only also reads metaform://tools, `
+      + `${counted(data.glossary.index.bytes)}.`));
 }
 /* One entry of a list as the server gave it: its name, size and first line, opened to the entry as received. */
 function entryRow(name, bytes, said, entry, marks = []) {
@@ -129,18 +134,32 @@ function glossaryPart(data) {
     rawText('metaform://metaform', data.glossary.text), briefCopy('the glossary', data.glossary.text),
     rawText('metaform://tools', data.glossary.index.text)];
 }
+/* One tool as the model receives it: its name, what it costs, its description as far as Claude Code keeps it, and its
+ * input schema on expand. */
+function toolRow(tool, limit) {
+  const over = tool.description.length > limit;
+  return h('li', {}, h('details', {class: 'entry tool' + (over ? ' over' : '')},
+    h('summary', {}, h('code', {}, tool.name),
+      h('span', {class: 'n'}, `${counted(tool.model_bytes)}, ${tokens(tool.model_tokens)}`),
+      over ? h('span', {class: 'pill'}, 'over') : null, tool.always ? h('span', {class: 'pill'}, 'up front') : null,
+      h('span', {class: 'said'}, tool.description.slice(0, limit))),
+    h('pre', {class: 'brieftext raw', tabindex: '0', 'aria-label': `${tool.name}'s input schema`},
+      JSON.stringify(tool.entry.inputSchema || {}, null, 2))));
+}
 function toolsPart(data) {
   const long = data.tools.filter(tool => tool.description.length > data.host_limit);
-  const row = tool => entryRow(tool.name, tool.bytes, tool.description.split(/(?<=\.)\s/)[0], tool.entry,
-    [tool.description.length > data.host_limit ? 'over' : '', tool.always ? 'up front' : '']);
+  const sent = data.tools.reduce((sum, tool) => sum + tool.model_bytes, 0);
   return [
-    budgetMeter(`${data.tools.length} tools, with their schemas`, data.tool_bytes, 0),
-    h('p', {class: 'hint'}, 'Each tool as tools/list gives it, largest first. With tool search an agent is handed the '
-      + 'names and loads a tool\'s description and schema when it needs the tool; a tool marked to load up front is '
-      + 'handed whole.'),
-    long.length ? h('p', {class: 'warnline'},
-      `${long.length} description(s) run past the ${counted(data.host_limit, 'characters')} Claude Code keeps.`) : null,
-    h('ul', {class: 'entries', 'aria-label': 'Every tool, largest first'}, data.tools.map(row))];
+    budgetMeter(`${data.tools.length} tools, as the model receives them`, sent, 0),
+    h('p', {class: 'hint'}, 'Each tool is listed as the model receives it, the costliest first: its name, its size in '
+      + 'bytes and tokens, and its description. Open a tool to read its input schema. With tool search the agent is '
+      + 'handed only the names and loads a tool when it needs it. A tool marked up front is handed whole. The rest '
+      + 'of a long description and the whole help of each argument come with the tool\'s first result in a session. '
+      + 'Tools that cannot act in this folder\'s state are not listed until they can.'),
+    long.length ? h('p', {class: 'warnline'}, `${long.length} of the descriptions run past the `
+      + `${counted(data.host_limit, 'characters')} that Claude Code keeps, so the model reads only their start.`) : null,
+    h('ul', {class: 'entries', 'aria-label': 'Every tool, the costliest first'},
+      data.tools.map(tool => toolRow(tool, data.host_limit)))];
 }
 function resourcesPart(data) {
   const said = one => one.entry.description || one.entry.name || '';

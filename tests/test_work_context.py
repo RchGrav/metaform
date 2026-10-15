@@ -57,7 +57,7 @@ def test_past_work_lists_recent_completions_first_even_when_the_ticket_was_creat
     small_map(store)
     target = Node('element', 'code.timer.kitchen')
     old = store.add_work(target, 'broken')
-    new = store.add_work(target, None)
+    new = store.add_work(target, None, task='a second fix')  # a record with neither is refused, MAP-046
     monkeypatch.setattr(home, 'now', lambda: '2026-10-01T00:00:00Z')
     store.finish_work(new.id, 'done first')
     monkeypatch.setattr(home, 'now', lambda: '2026-10-02T00:00:00Z')

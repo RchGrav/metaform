@@ -96,11 +96,18 @@ class Setting:
     # The small heading it sits under on its category's page, such as Starting work; None: its section, else its
     # module's name. Unlike a section it opens no menu of its own.
     heading: str | None = None
-    # A place on the settings screen's Essentials page, the one it opens on, lower first; 0 keeps it off that page.
-    # Only what a person needs to set Metaform up and run it day to day is marked.
+    # A place among the essentials, lower first: the settings screen opens on them, and CLI settings lists show
+    # them first. 0 keeps it off Essentials. Only what a person needs for setup and day-to-day use is marked.
     essential: int = 0
     # What a number counts, such as minutes or cents, shown beside its control; None reads it from the key's end.
     unit: str | None = None
+    # A list with choices refuses a member outside them, as a select does, CLI-019; True offers its choices and passes
+    # any other member to its check, which says what it does, as layers keeps a name that is no layer yet, CLI-033.
+    beyond_choices: bool = False
+    # The command that reads a select's choices from their source while it offers no more than its default, such as an
+    # agent's models, which it says only when it is started: the settings screens offer to run it, and a refused value
+    # names it as the next step.
+    choices_from: str | None = None
 
     @property
     def switch(self) -> str:
@@ -361,7 +368,7 @@ def parse(setting: Setting, raw: str, folder: Path | None = None) -> Any:
     if setting.kind == 'bool':
         raise SettingError(f'{setting.switch} takes no value: use {setting.switch} or {setting.negative}.')
     if setting.kind == 'list':
-        return _members(setting, raw.split(','), text=True)
+        return _listed(setting, _members(setting, raw.split(','), text=True), folder)
     if setting.kind == 'select':
         options = setting.options(folder)
         if not options and setting.needs_project():
@@ -370,9 +377,30 @@ def parse(setting: Setting, raw: str, folder: Path | None = None) -> Any:
                 raise SettingError(f'{setting.switch} has no choices here: this folder is not in a registered '
                                    'project.', 'metaform add project <id> <path>')
         if raw not in options:
-            listed = ', '.join(options) if options else 'none yet'
-            raise SettingError(f'{setting.switch} has no choice {raw!r}. Choices: {listed}.')
+            raise _no_choice(setting, [raw], options)
     return raw
+
+
+def _no_choice(setting: Setting, wrong: list[str], options: list[str]) -> SettingError:
+    """A value outside a setting's choices, refused with the choices listed, CLI-019. While a select offers no more
+    than its default, the next step is the command that reads its choices from their source."""
+    listed = ', '.join(option or "''" for option in options) if options else 'none yet'
+    named = ', '.join(repr(one) for one in wrong)
+    return SettingError(f'{setting.switch} has no choice {named}. Choices: {listed}.',
+                        setting.choices_from if setting.choices_from and len(options) <= 1 else None)
+
+
+def _listed(setting: Setting, members: list[str], folder: Path | None) -> list[str]:
+    """A list with choices takes only its choices, as a select does; the word that clears a list shown as all when
+    empty, `all`, and a list's own word for none, such as `none`, are among its choices or cleared before it is kept."""
+    if setting.choices is None or setting.beyond_choices or not members or \
+            (setting.key in EMPTY_IS_ALL and members == ['all']):
+        return members
+    options = setting.options(folder)
+    wrong = [member for member in members if member not in options]
+    if wrong:
+        raise _no_choice(setting, wrong, options)
+    return members
 
 
 def _members(setting: Setting, given: Iterable[str], *, text: bool = False) -> list[str]:
@@ -403,7 +431,7 @@ def _typed(setting: Setting, typed: Any, folder: Path) -> Any:
     if setting.kind == 'bool':
         return bool(typed)
     if setting.kind == 'list' and isinstance(typed, list):
-        return _members(setting, (str(member) for member in cast(list[Any], typed)))
+        return _listed(setting, _members(setting, (str(member) for member in cast(list[Any], typed))), folder)
     return parse(setting, str(typed), folder)
 
 
@@ -543,6 +571,29 @@ def reset(key: str, folder: Path, *, unglue: bool = False) -> tuple[str, bool]:
     return 'reset', unglued
 
 
+_carried: set[tuple[str, str]] = set()  # (home, step) carries this process saw done: a start reads the meta once
+
+
+def carry_once(step: str, carry: Callable[[], list[str]]) -> list[str]:
+    """Run a one-time carry of stored values out of a setting that was removed, merged or moved, once per home: the
+    home's meta records `carried:<step>`, with what `carry` said it moved, once it returns. Two processes starting
+    together carry once, under the home's carry lock. A carry that raises records nothing and runs at the next start.
+    Settings cleanup, 2026-10-15: the marker is a meta row, never another file in the home."""
+    seen = (str(home.home()), step)
+    if seen in _carried:
+        return []
+    marker = f'carried:{step}'
+    if home.meta(marker) is None:
+        with home.file_lock(home.home() / 'carry.lock'):
+            if home.meta(marker) is None:
+                said = carry()
+                home.set_meta(marker, '\n'.join(said) or 'nothing to carry')
+                _carried.add(seen)
+                return said
+    _carried.add(seen)
+    return []
+
+
 def category_of(setting: Setting) -> str:
     """A setting's category on the settings screens: its own, else its module's `settings_category`, else advanced."""
     if setting.category is not None:
@@ -553,30 +604,56 @@ def category_of(setting: Setting) -> str:
     return declared or 'advanced'
 
 
-def describe(folder: Path) -> list[dict[str, Any]]:
+def ordered() -> list[Setting]:
+    """Stored settings in their shared display order: Essentials, categories, then the module filter.
+
+    Within a category, owners and headings sort by name, the chassis follows modules, and settings under one
+    heading keep their declaration order. A per-call switch has no stored setting to show.
+    """
+    categories = {name: index for index, name in enumerate(CATEGORY_NAMES)}
+
+    def place(setting: Setting) -> tuple[int, int, bool, str, str]:
+        if setting.owner == 'chassis' and setting.key == 'modules':
+            return (2, 0, False, '', '')
+        if setting.essential > 0:
+            return (0, setting.essential, False, '', '')
+        return (1, categories[category_of(setting)], setting.owner == 'chassis', setting.owner.casefold(),
+                (setting.heading or setting.section or '').casefold())
+
+    return sorted((setting for setting in SCHEMA.values() if not setting.per_call), key=place)
+
+
+def describe(folder: Path, *, choices: bool = True) -> list[dict[str, Any]]:
     """Every stored setting as the screens show it; a per-call switch is no setting to store, so it is left out. An
-    inherited value names the folder it comes from, and a select names its risky choices."""
+    inherited value names the folder it comes from, and a select names its risky choices. `choices` False leaves out
+    the choices, their words and the risky ones, which a module reads from its data, for a screen that reads them only
+    when a setting's choices are opened: the settings TUI. One read of the registry serves the whole description."""
     described: list[dict[str, Any]] = []
-    for key, setting in SCHEMA.items():
-        if setting.per_call:
-            continue
-        entry = {'key': key, 'switch': setting.switch, 'owner': setting.owner, 'kind': setting.kind,
-                 'scope': setting.scope, 'value': value(key, folder), 'default': default(setting, folder),
-                 'state': state(key, folder), 'help': setting.help, 'label': setting.label,
-                 'category': category_of(setting), 'heading': setting.heading, 'essential': setting.essential,
-                 'unit': setting.unit}
-        if entry['state'] == 'inherited':
-            entry['from'] = inherited_from(key, folder)
-        if setting.kind in ('select', 'list') and setting.choices is not None:
-            with suppress(Exception):  # a module's failing choices function leaves the entry without them
-                entry['choices'] = setting.options(folder)
-            with suppress(Exception):
-                if helps := setting.helps(folder):
-                    entry['choice_help'] = helps
-        if setting.kind == 'select' and setting.risky:
-            with suppress(Exception):
-                entry['risky'] = sorted(setting.risks(folder))
-        described.append(entry)
+    with home.registry_scope():
+        resolved = folder.resolve()  # every scope a value here can come from, read once each
+        home.preload_settings(['global', *(home.path_key(one) for one in (resolved, *resolved.parents))],
+                              [(setting.owner, setting.key) for setting in SCHEMA.values()])
+        for setting in ordered():
+            key = setting.key
+            entry = {'key': key, 'switch': setting.switch, 'owner': setting.owner, 'kind': setting.kind,
+                     'scope': setting.scope, 'value': value(key, folder), 'default': default(setting, folder),
+                     'state': state(key, folder), 'help': setting.help, 'label': setting.label,
+                     'category': category_of(setting), 'heading': setting.heading, 'essential': setting.essential,
+                     'unit': setting.unit, 'person_only': setting.person_only}
+            if entry['state'] == 'inherited':
+                entry['from'] = inherited_from(key, folder)
+            if choices and setting.kind in ('select', 'list') and setting.choices is not None:
+                with suppress(Exception):  # a module's failing choices function leaves the entry without them
+                    entry['choices'] = setting.options(folder)
+                    if setting.choices_from and len(entry['choices']) <= 1:
+                        entry['choices_from'] = setting.choices_from
+                with suppress(Exception):
+                    if helps := setting.helps(folder):
+                        entry['choice_help'] = helps
+            if choices and setting.kind == 'select' and setting.risky:
+                with suppress(Exception):
+                    entry['risky'] = sorted(setting.risks(folder))
+            described.append(entry)
     return described
 
 
@@ -632,22 +709,42 @@ project = choice('project', choices=_project_choices,
                          "project from here. Unset it to return to the folder's own project.",
                  label='Project', category='general')
 
-modules = items('modules', choices=_module_choices, check=_check_modules,
+modules = items('modules', choices=_module_choices, beyond_choices=True, check=_check_modules,  # its check refuses
                 help='Narrows which modules\' commands this folder shows and runs. It does not enable or disable '
                      'modules; use metaform enable and disable for that.')
 
-install_server = text('install_server', scope='global',
+def _server_choices(ctx: Any = None) -> list[str]:
+    """Empty, which takes the sole provider, then each enabled module that declares an MCP server."""
+    from . import loader
+    return ['', *sorted(module.id for module in loader.enabled() if module.mcp_server is not None)]
+
+
+install_server = choice('install_server', _server_choices, '', scope='global',
                       help='The enabled module whose MCP server install and provision use.',
                       details='Empty selects the sole enabled provider automatically. When several modules declare '
                               'a server, name one explicitly. With no provider, install sets up skills and '
                               'supported instructions and reminders without changing MCP registrations.')
 
-layers = items('layers', check=_check_layers,
+def _layer_names(ctx: Any) -> list[str]:
+    """The project's layers by name, then the tags they carry, read when the choices are needed."""
+    if ctx.store is None:
+        return []
+    found = ctx.store.layers(limit=0).results
+    names = [layer.name for layer in found]
+    return [*names, *sorted({tag for layer in found for tag in layer.tags} - set(names))]
+
+
+def _write_layers(ctx: Any) -> list[str]:
+    """Empty, a new building layer for each write, then the project's layers by name."""
+    return ['', *(layer.name for layer in ctx.store.layers(limit=0).results)] if ctx.store is not None else ['']
+
+
+layers = items('layers', choices=_layer_names, beyond_choices=True, check=_check_layers,
                help='The layers toggled on in this folder, by name or tag. Empty means every finished layer that '
                     'is not hidden.',
                label='Layers shown', category='map', heading='Layers')
 
-write_layer = text('write_layer', '',
+write_layer = choice('write_layer', _write_layers, '',
                    help='The layer a write that names no layer goes to. Empty means a new building layer '
                         'unnamed-<time> for each such write.',
                    details='A project wheel\'s first run sets it to the working layer it opens, so what a remote '
@@ -667,9 +764,6 @@ connect_instructions = choice('connect_instructions', ['compact', 'full'], 'comp
                                       'instructions come from metaform_instructions with module set, at '
                                       'metaform://instructions/<module>, or with metaform help agents <module>. full serves them all at once, for hosts that show more.',
                               label='Instructions at connect')
-
-report = boolean('report', True, help='Ask the intake agent for a report on the project it examined.',
-                 label='Intake report')
 
 agents_may_set_control = boolean(
     'agents_may_set_control', False, person_only=True,
@@ -699,6 +793,7 @@ def _check_roles(names: Any, folder: Path) -> list[str] | None:
 
 roles_without_authority = items(
     'roles_without_authority', ('worker', 'prep'), person_only=True, check=_check_roles,
+    choices=['none', *AGENT_ROLES], beyond_choices=True,  # _check_roles refuses another, in its own words
     help='The roles of the agents Metaform starts that may not write tickets or start, stop or message agents.',
     details='The default holds back a worker on its ticket and a merge preparation, so an agent at work does not '
             'assign itself or others work; the person, the agents that serve them (intake, system, sentinel, talk) '
@@ -754,15 +849,8 @@ jev_model = text('jev_model', '', person_only=True,
                          'asked again.',
                  label='Jev model', category='integrations', heading='Jev')
 
-jev_max_context = number('jev_max_context', 8000, min=1000, max=32000,
-                         help='The tokens of state, plus its longest question, one Jev request may carry.',
-                         details="Jev's accuracy falls as a state fills with detail the question does not need, so the "
-                                 'default is well below its limit of 32,000 tokens of state plus the longest question, '
-                                 '64,000 in a whole request. A pile of items larger than this is split across requests; '
-                                 'a state that cannot fit is not sent, and the caller keeps its fallback.',
-                         label='Jev request size', category='integrations', heading='Jev', unit='tokens')
-
-jev_decisions = items('jev_decisions', choices=list(JEV_DECISIONS), check=_check_jev_decisions, person_only=True,
+jev_decisions = items('jev_decisions', choices=list(JEV_DECISIONS), beyond_choices=True, check=_check_jev_decisions,
+                      person_only=True,
                       help='Narrows which decision points ask Jev. Empty means every one.',
                       details="A module's own decision point is named <module>.<point>, as the module's README says.",
                       label='Decisions asked of Jev', category='integrations', heading='Jev')

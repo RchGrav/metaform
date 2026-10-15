@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The autoticket module's prompts: the text Metaform sends to agents for the autoticket module.
+     Each element is one prompt, named by its tag. What is between the tags is sent exactly as written.
+     Comments are never sent.
+
+     Two prompts are read by the code and are not here yet: <intake_step>, sent at connect to an intake agent while
+     the module is on and no log is configured, and <connect_notice>, sent at connect to the person's own agent in the
+     same state. Their wording is the person's: drafts wait for approval in artifacts/specs-draft/autoticket-prompts.md.
+     While an element is absent or empty, nothing is sent. -->
+<prompts>
+<!-- autoticket's line in the connect message, after the module's name. Empty, as here, sends nothing. Off until the
+     module is enabled. -->
+<connect></connect>
+<!-- autoticket's instructions. Returned by metaform_instructions with module autoticket, at
+     metaform://instructions/autoticket, and printed by metaform help agents autoticket. Off until the module is
+     enabled. -->
+<instructions>autoticket is active.</instructions>
+<!-- The line under the counts an agent is told at its node. autoticket counts nothing at nodes, so it is empty. -->
+<counts></counts>
+<!-- autoticket's rules, MCP-031. Empty sends nothing. -->
+<rules></rules>
+</prompts>

@@ -1,6 +1,8 @@
 /* The page's state S, the memory store's state, and reads of the server's API that wait out a restart. */
-import '/page/app/core/controls.js';  // the part before runs first, so the parts run in the page's order
+import '/page/app/core/health.js';  // the part before runs first, so the parts run in the page's order
 import {$} from '/page/app/core/dom.js';
+import {readBack} from '/page/app/core/errors.js';
+import {askHealth} from '/page/app/core/health.js';
 
 /* ---------- reads ---------- */
 /* The page in an AI tool's frame, the MCP Apps map view, MCP-037: it shows the maps and the panel only, so the agents,
@@ -36,16 +38,24 @@ export async function reach(url, options, again = 10) {
   for (let tries = 0; ; tries++) {
     try { return await fetch(url, options); }
     catch (error) {
+      askHealth();  // the server's banner says at once whether it answers, and why not
       if (tries >= again) throw new Error(DOWN);
       await pause(1000);
     }
   }
 }
+/* A read's failure carries the read's name and the server's {error, next}, for the error surface, core/errors.js, to
+ * say; a read that answers takes away the problem a failure of it showed. */
 export async function read(name, params = {}) {
   const query = new URLSearchParams({project: S.project, ...(S.base ? {base: S.base} : {}), ...params});
-  const response = await reach(`/api/${name}?${query}`, {headers: {Accept: 'application/json'}});
-  const body = await response.json().catch(() => ({error: 'The server did not answer with JSON.'}));
-  if (!response.ok) throw Object.assign(new Error(body.error || `${name} failed`), {status: response.status, body});
+  const response = await reach(`/api/${name}?${query}`, {headers: {Accept: 'application/json'}})
+    .catch(error => { throw Object.assign(error, {read: name}); });
+  const body = await response.json().catch(() => ({error: `The server answered ${response.status} without JSON.`}));
+  if (!response.ok) {
+    if (response.status === 503) askHealth();  // the read ran out of time: the banner says what the server waits on
+    throw Object.assign(new Error(body.error || `${name} failed`), {status: response.status, body, read: name});
+  }
+  readBack(name);
   return body;
 }
 export const viewLayers = () => S.view === null ? {} : {layers: [...S.view].join(',')};

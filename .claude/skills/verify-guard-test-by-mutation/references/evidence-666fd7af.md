@@ -1,0 +1,1 @@
+`cut-before/`, `cut-mutant-output.txt`: the same probe with `expandCut` made a no-op, a mutant. All 23 cut texts fail.

@@ -13,7 +13,7 @@ from typing import Any, cast
 from metaform import axiom, home, prompt_files, settings
 from metaform import skills as skill_registry
 from metaform.data import Store, StoreError, prompts
-from metaform.module import Context, Module, Noun, Stop, Verb, held_role
+from metaform.module import Context, Module, Noun, Stop, Verb, held_role, project_for
 
 from . import catalog, executor, runs
 from . import preprocess as preprocessing
@@ -479,6 +479,13 @@ VARIABLES = Noun('variables', 'The interpreter\'s current variable values, an ob
 TEXT = {'type': 'string'}
 CALL = Noun('call','An Axiom call by address and name, with keyword arguments and optional return targets.')
 
+def run_open(folder: Path) -> bool:
+    """Whether the folder's project has an open workflow run, so the verbs that move one are listed over MCP,
+    MCP-004."""
+    project = project_for(folder)
+    return project is not None and bool(runs.listed(Store(project), None, limit=1)[0])
+
+
 MODULE = Module(
     id='workflow', summary='Write, import and run reusable Axiom subroutines.',
     purpose='Stores reusable Axiom logic in ordinary knowledge layers and transports calls, parameters and '
@@ -501,7 +508,7 @@ MODULE = Module(
     verbs=(
         Verb('lexicalize', lexicalize, 'Read the prompt-lexicalization script with a prompt as input, to tie its names '
                                        'to map addresses.',
-             nouns=(Noun('text', 'The imported prompt or workflow, verbatim.'),), effect='read'),
+             nouns=(Noun('text', 'The imported prompt or workflow, verbatim.'),), effect='read', needs_project=False),
         Verb('preprocess', preprocess, 'Prepare a lexicalized prompt by placing the knowledge visible at its addresses '
                                        'before its address footer.',
              nouns=(Noun('text', 'The lexicalized prompt body, verbatim, without its address footer.'),
@@ -530,53 +537,58 @@ MODULE = Module(
                          'follows.',
              nouns=(CALL, Noun('element', 'The element supplying this for the entry call.', required=False), VARIABLES)),
         Verb('resume', resume, 'Read a workflow run by its id: its current subroutine and values, or its assignment.',
-             nouns=(TOKEN,)),
+             nouns=(TOKEN,), listed=run_open),
         Verb('call', call, "Call an Axiom subroutine on the same agent, keeping the caller's scope.",
-             nouns=(CALL, TOKEN, VARIABLES)),
+             nouns=(CALL, TOKEN, VARIABLES), listed=run_open),
         Verb('handoff', handoff, 'Start a callee run for a fresh agent; its run id reaches that agent directly or '
                                  'through the orchestrator.',
-             nouns=(CALL, TOKEN, VARIABLES)),
+             nouns=(CALL, TOKEN, VARIABLES), listed=run_open),
         Verb('parallel', parallel, 'Run independent subroutine calls as branches; the run resumes when every branch '
                                    'returns.',
              nouns=(Noun('calls', 'The independent Axiom calls, each written as call is.', 'json',
-                         schema={'type': 'array', 'items': {'type': 'string'}, 'minItems': 1}), TOKEN, VARIABLES)),
+                         schema={'type': 'array', 'items': {'type': 'string'}, 'minItems': 1}), TOKEN, VARIABLES),
+                         listed=run_open),
         Verb('complete', complete, 'Finish a run: deliver its RETURN to the caller, or close an assignment. The '
                                    'interpreter supplies its final variables.',
              nouns=(TOKEN, VARIABLES, Noun('return', 'RETURN of a value or tuple; an assignment needs none.',
-                                           required=False, many=True, schema=TEXT))),
+                                           required=False, many=True, schema=TEXT)), listed=run_open),
         Verb('fail', fail, "Fail a run: deliver an error to its caller, for the caller's authored Retry or Catch.",
              nouns=(Noun('name', 'The authored error name.'), TOKEN,
-                    Noun('message', 'The error detail.', required=False))),
+                    Noun('message', 'The error detail.', required=False)), listed=run_open),
         Verb('pause', pause, 'Pause a run on the person when something its logic does not decide stops it, '
                              'saying what you found.',
              nouns=(TOKEN, Noun('found', 'What stopped the run that neither its ticket nor its logic decides, in plain '
                                          'words: what you found and what you need from the person. A choice you can '
                                          'undo is yours to make and record; it is not a pause.',
-                                many=True, schema=TEXT))),
+                                many=True, schema=TEXT)), listed=run_open),
         Verb('answer', answer, "The person's answer to a run paused on them, read by its agent when it resumes the "
                                "run.",
              nouns=(TOKEN, Noun('answer', "The person's answer.", many=True, schema=TEXT)), surfaces=('cli',)),
         Verb('cancel', cancel, 'Cancel a run and every run below it; its caller receives the error cancelled.',
-             nouns=(TOKEN, Noun('reason', 'Why it is cancelled.', required=False))),
+             nouns=(TOKEN, Noun('reason', 'Why it is cancelled.', required=False)), listed=run_open),
         Verb('runs', runs_, 'List the open workflow runs, or those in one state, with what stopped a paused one.',
              nouns=(Noun('state', 'running, waiting, input_required, completed, failed or cancelled.',
                          required=False),
                     Noun('limit', f'How many runs, {runs.LIMIT} by default, 0 for all.', kind='int', required=False),
                     Noun('after', 'The cursor the previous page returned.', required=False)), effect='read'),
         Verb('lib', lib, 'Read one Axiom lib: its shared sections at their newest stored versions.',
-             nouns=(Noun('name', 'lib_axiom, lib_metaform, lib_workflow or lib_quality.'),), effect='read'),
-        Verb('libs', libs, 'List the Axiom libs, each with its first line, its marker.', effect='read'),
-        Verb('skill', skill, "Read one workflow skill's Axiom, to follow it.", nouns=(Noun('name', 'The skill name.'),), effect='read'),
+             nouns=(Noun('name', 'lib_axiom, lib_metaform, lib_workflow or lib_quality.'),), effect='read',
+             needs_project=False),
+        Verb('libs', libs, 'List the Axiom libs, each with its first line, its marker.', effect='read',
+             needs_project=False),
+        Verb('skill', skill, "Read one workflow skill's Axiom, to follow it.", nouns=(Noun('name', 'The skill name.'),),
+             effect='read', needs_project=False),
         Verb('skills', skills, 'List discoverable workflow skills with their descriptions and required libs.',
-             effect='read'),
+             effect='read', needs_project=False),
         Verb('serve', serve, 'Read one skill whole, its libs first and an input bound as data, as dispatch sends it to '
                              'an agent it started.',
              nouns=(Noun('name', 'The skill name.'), Noun('input', 'The input, bound as data.', required=False)),
-             surfaces=('cli',)),
+             surfaces=('cli',), needs_project=False),
         Verb('scan', scan, 'Read the scan skill, which decides the libs a task needs, with a workflow and its task '
                            'bound as data.',
              nouns=(Noun('workflow', 'The workflow text or address.'),
-                    Noun('task', 'write, import, workflow_efficiency or prompt_efficiency.', required=False)), effect='read'),
+                    Noun('task', 'write, import, workflow_efficiency or prompt_efficiency.', required=False)), effect='read',
+             needs_project=False),
         Verb('assign', assign, 'Hand a workflow skill to a fresh agent: it gets a run id and reads its assignment with '
                                'resume.',
              nouns=(Noun('input', "The skill's input.", required=False),

@@ -122,9 +122,6 @@ settings.text('node_vultr_region', 'ewr', scope=G, label='Vultr region', help='T
 settings.text('node_vultr_plan', 'vhf-1c-1gb', scope=G, label='Vultr plan',
               help='The plan id: GET https://api.vultr.com/v2/plans lists them.',
               category='advanced')
-settings.number('node_vultr_os', 2284, min=1, scope=G, label='Vultr OS id',
-                help='The OS id, 2284 for Ubuntu 24.04 LTS x64: GET https://api.vultr.com/v2/os lists them.',
-                category='advanced')
 settings.text('node_ssh_public_key', '~/.ssh/id_ed25519.pub', scope=G, person_only=True, label='SSH public key',
               help='The public key a created VM lets in, for root and the working user.',
               category='advanced')
@@ -247,7 +244,7 @@ def deploy(ctx: Context) -> dict[str, Any]:
             raise Stop(f'No public key at {key_file}.', 'metaform set --node-ssh-public-key <file.pub>')
         provision = provider.provision_steps(spec, region=str(ctx.setting('node_vultr_region')),
                                              plan=str(ctx.setting('node_vultr_plan')),
-                                             os_id=int(ctx.setting('node_vultr_os')), public_key=public_key,
+                                             os_id=provider.UBUNTU_2404, public_key=public_key,
                                              relay_port=relay_port)
         target.host = '{main_ip}'
     elif not target.host:
@@ -556,7 +553,7 @@ MODULE = Module(
              examples=(('metaform node init metaform.example.com --node-email me@example.com',
                         'A public host with a Let\'s Encrypt certificate.'),)),
         Verb('deploy', deploy, 'Prepare the host, copy the Node, start it, and check it from outside.',
-             switches=('node_dry_run', 'node_provider', 'node_vultr_region', 'node_vultr_plan', 'node_vultr_os',
+             switches=('node_dry_run', 'node_provider', 'node_vultr_region', 'node_vultr_plan',
                        'node_ssh_public_key', 'node_relay_domain', 'node_relay_port', *REACH), surfaces=CLI, open_world=True, task=True,
              examples=(('metaform node deploy --dry-run', 'Print every step and run none.'),)),
         Verb('status', status, 'Show the Node\'s services and check it from outside.', switches=REACH, surfaces=CLI,

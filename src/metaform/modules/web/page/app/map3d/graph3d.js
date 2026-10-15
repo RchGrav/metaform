@@ -4,7 +4,7 @@ import '/page/app/map3d/ghosts.js';  // the part before runs first, so the parts
 // The graph, glass and figures share the import map's one local Three.js runtime, VIEW-003 and VIEW-025.
 import * as THREE from 'three';
 import ForceGraph3D from '3d-force-graph';
-// Ultra graphics, web_graphics: the 3D map in outer space, drawn by its own module through the hooks marked ULTRA.
+// The Space theme, web_theme space: the 3D map in outer space, drawn by its own module through the hooks marked ULTRA.
 import * as ULTRA from '/page/ultra.js';
 import {$, css, reduced, h, fill} from '/page/app/core/dom.js';
 import {toast} from '/page/app/core/controls.js';
@@ -118,7 +118,7 @@ function frame3d(now) {
   const controls = G.controls();  // the camera coasts for the same time at any frame rate
   if (controls.enableDamping) controls.dampingFactor = 1 - Math.pow(1 - DAMPING, passed * 60);
   try { G._animationCycle(); }  // the layout's tick, the dots, the controls, the picture and what the pointer is over
-  finally { G.pauseAnimation(); FRAMES.id = 0; }  // which asks for the library's next frame; the page asks for its own
+  finally { G.pauseAnimation(); FRAMES.id = 0; releaseChain(); keepPrograms(); }  // the page asks for its own frame
   FRAMES.drawn++;
   const still = now - FRAMES.active;
   if (moving3d(now, still)) FRAMES.id = requestAnimationFrame(frame3d);
@@ -159,23 +159,146 @@ function wakeful(graph) {
     };
   }
 }
+/* A node the page draws no object for, a purpose vertex in the clean themes, is the graph library's own sphere, whose
+ * shape and material the library makes for it at each digest. When the library takes such a node away, as it does for
+ * every node when the theme or the graphics change, it frees only what the object holds inside it and leaves the
+ * sphere's own shape and material on the graphics card, one more for each change. They are freed here once the digest
+ * is done, unless a node still drawn shares them. */
+const FREED = {gone: new Set(), queued: false, watched: new WeakSet()};
+const isLibrary = object => typeof object.tickFrame === 'function';
+function freeDefaults() {  // the library's group of nodes and links, now or once it is put in the scene
+  for (const child of G.scene().children) if (isLibrary(child)) freeing(child);
+  G.scene().addEventListener('childadded', ({child}) => { WARM.added++; if (isLibrary(child)) freeing(child); });
+}
+function freeing(library) {
+  if (FREED.watched.has(library)) return;
+  FREED.watched.add(library);
+  library.addEventListener('childadded', () => { WARM.added++; });  // a node made, whose shaders `warm3d` links
+  library.addEventListener('childremoved', ({child}) => {
+    if (!child.__graphDefaultObj) return;
+    FREED.gone.add(child);
+    if (FREED.queued) return;
+    FREED.queued = true;
+    queueMicrotask(() => {
+      const kept = new Set();
+      for (const one of library.children) if (one.__graphDefaultObj) kept.add(one.geometry).add(one.material);
+      for (const one of FREED.gone) {
+        if (!kept.has(one.geometry)) one.geometry.dispose();
+        if (!kept.has(one.material)) one.material.dispose();
+      }
+      FREED.gone.clear();
+      FREED.queued = false;
+    });
+  });
+}
+/* Shaders are linked before they are drawn, F5. three.js links a material's shader the first time it draws it and
+ * then waits for the link on the page's thread, one shader after another: 2.4 to 3.6 s at load. Whenever something is
+ * put in the scene (`added`), the links change (FIBERS.version) or a pass is turned on or off, the page's own pass
+ * hands three.js's compile every material in the scene, for the picture the scene is drawn into, with the far walls
+ * of the glass and each pass's own shaders, `quads`; that starts the links side by side, off the page's thread. The
+ * frame is drawn only once they are done (`waiting`), up to `most` ms; the frames before it are not drawn, so the map
+ * shows the picture it showed until then. Every shader linked is kept for as long as the page is open (`kept`), so a
+ * map read again or a theme switched back links nothing: three.js frees a shader once no material uses it, and every
+ * whole reload made each again. Shader errors are read only at a developer level, as reading them waits for the link
+ * too, `applyView`. Without parallel linking in the browser, a frame waits as before. */
+export const WARM = {added: 0, seen: '', waiting: null, done: null, since: 0, most: 5000, held: [], kept: new WeakSet(),
+  programs: 0, quad: new THREE.Mesh(new THREE.PlaneGeometry(2, 2))};
+function warm3d(renderer, read) {
+  if (WARM.waiting) return true;
+  const scene = G.scene(), composer = G.postProcessingComposer();
+  const mark = `${WARM.added} ${FIBERS.version} ${composer.passes.map(pass => pass.enabled ? 1 : 0).join('')}`;
+  if (mark === WARM.seen) return false;
+  WARM.seen = mark;
+  const at = composer.passes.findIndex(pass => pass.scene === scene);
+  const was = renderer.getRenderTarget();
+  // the picture the scene pass draws into, as a shader is linked for the screen or for a picture drawn on
+  renderer.setRenderTarget(at >= 0 && composer.renderToScreen && composer.isLastEnabledPass(at) ? null : read);
+  const camera = G.camera(), materials = new Set();
+  try {
+    for (const material of renderer.compile(scene, camera)) materials.add(material);
+    // the far wall of each glass node, which the picture behind the glass is drawn with, `drawBehind`
+    for (const material of renderer.compile(farWalls(scene), camera, scene)) materials.add(material);
+    // each pass's own shaders, drawn on a picture, or on the screen by the last pass
+    composer.passes.forEach((pass, index) => {
+      if (!pass.enabled || !pass.quads) return;
+      const last = composer.renderToScreen && composer.isLastEnabledPass(index);
+      for (const {material, screen} of pass.quads()) {
+        renderer.setRenderTarget(screen && last ? null : read);
+        WARM.quad.material = material;
+        for (const one of renderer.compile(WARM.quad, camera)) materials.add(one);
+      }
+    });
+  } finally { renderer.setRenderTarget(was); }
+  const linking = [...materials].map(material => renderer.properties.get(material).currentProgram)
+    .filter(program => program && !program.isReady());
+  if (!linking.length) return false;
+  WARM.waiting = new Set(linking);
+  WARM.since = performance.now();
+  WARM.done = new Promise(go => {
+    const check = () => {
+      for (const program of WARM.waiting) if (program.isReady()) WARM.waiting.delete(program);
+      if (WARM.waiting.size && performance.now() - WARM.since < WARM.most) return setTimeout(check, 10);
+      WARM.waiting = null;
+      go();
+      wake3d();
+    };
+    setTimeout(check, 10);
+  });
+  return true;
+}
+/* The glass nodes of the scene each with its far wall on, as `drawBehind` draws them, for three.js's compile, which
+ * reads only `traverse` of a scene it is given beside the scene drawn. */
+const farWalls = scene => ({traverse(visit) {
+  scene.traverse(object => {
+    const near = object.material, far = near?.userData?.back;
+    if (!far) return;
+    object.material = far;
+    try { visit(object); } finally { object.material = near; }
+  });
+}, traverseVisible() {}});
+/* The passes after the page's own are not drawn this frame, and are drawn again from the next. */
+function holdChain(own) {
+  for (const pass of G.postProcessingComposer().passes) {
+    if (pass !== own && pass.enabled) { pass.enabled = false; WARM.held.push(pass); }
+  }
+}
+function releaseChain() { for (const pass of WARM.held.splice(0)) pass.enabled = true; }
+/* Each shader linked is kept: three.js counts the materials using it and frees it at none. */
+function keepPrograms() {
+  const programs = G.renderer().info.programs;
+  if (!programs || programs.length === WARM.programs) return;
+  for (const program of programs) if (!WARM.kept.has(program)) { WARM.kept.add(program); program.usedTimes++; }
+  WARM.programs = programs.length;
+}
+/* Resolved once the shaders being linked are done, for a switch of looks that waits for them under its veil. */
+export const linked3d = () => WARM.waiting ? WARM.done : Promise.resolve();
 function create3D() {
   G = ForceGraph3D({controlType: 'orbit'})($('#stage'));
+  G.renderer().debug.checkShaderErrors = false;  // read at a developer level, `applyView`
   G.pauseAnimation();  // the page runs the frames, `frame3d`
   wakeful(G);
   configure3d();
   grounded();
   G.scene().onBeforeRender = solid;
+  freeDefaults();
   addBehind();
   addBloom();
+  ULTRA.setting(document.documentElement.dataset.theme === 'space' ? 'ultra' : 'clean');  // the theme decides the look
   ULTRA.attach(G, {wake: wake3d, reduced, css, selected: () => S.selected, hovered: () => hovered?.id ?? null,  // ULTRA
     dimmed: node => Boolean(dimmed(node)), idle:() => performance.now() - FRAMES.active > FRAMES.idle, toast,
     chained: () => FRAMES.id > 0, settings: async () => (await read('settings')).settings || [],
-    save: value => posted('/api/settings', {key: 'web_graphics', value}), shapes: () => VIEW_SETTINGS.shapes});
+    save: async value => {  // the theme the look names: space, or the last plain one; draw3d.js loads after this part
+      const {PLAIN} = await import('/page/app/map3d/draw3d.js');
+      return posted('/api/settings', {key: 'web_theme', value: value === 'ultra' ? 'space' : PLAIN.last});
+    },
+    shapes: () => VIEW_SETTINGS.shapes,
+    linked: linked3d});
   // The page's own work for each frame runs first in the render chain: after the layout's tick and the controls, before
   // anything is drawn, so the camera's flight, the labels, the dots and the tooltip are all of the same frame.
   G.postProcessingComposer().insertPass({isPass: true, enabled: true, needsSwap: false, clear: false,
-    renderToScreen: false, setSize() {}, render() { prepare3d(); fibers3d(); nodes3d(); }, dispose() {}}, 0);
+    renderToScreen: false, setSize() {}, dispose() {},
+    render(renderer, write, read) { prepare3d(); fibers3d(); nodes3d(); if (warm3d(renderer, read)) holdChain(this); }},
+  0);
   applyPhysics(PHYS.name, false);  // the forces of the physics chosen, `PHYSICS`
   steer3d(G.controls());
   listen3d($('#stage'));
@@ -203,8 +326,10 @@ function configure3d() {
     .linkThreeObject(() => Object.assign(new THREE.Object3D(), {matrixAutoUpdate: false}))
     .linkPositionUpdate(() => true)
     .linkCurvature(0)
-    .linkDirectionalParticles(link => !reduced() && (link.k === 'purpose' || link.k === 'encounter') ? 1 : 0)
-    .linkDirectionalParticleSpeed(0)  // the page draws the flow itself, `flow3d`; this dot shows only held, `dots3d`
+    // the page draws the flow itself, `flow3d`: the library's own dot, one to a link, is made only while a browser
+    // check holds the dots still, `dots3d`, so no frame moves or hides one that is never shown
+    .linkDirectionalParticles(0)
+    .linkDirectionalParticleSpeed(0)
     .linkDirectionalParticleWidth(1.6)
     .linkDirectionalParticleColor(linkColor)
     // The layout settles once its energy is spent rather than after a fixed time, and the map is then fitted to the

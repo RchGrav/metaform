@@ -1,5 +1,6 @@
-"""Twilio, as its documentation defines it: the webhook signature, the TwiML answers, and the two REST calls Metaform
-makes, a call and a text.
+"""Twilio, as its documentation defines it: the webhook signature, the TwiML answers, and the REST calls Metaform
+makes: a call, a text, reading where the number sends its calls and texts, and, when the person asks, pointing them
+at the bridge.
 
 Credentials come only from the environment of the process that runs the phone bridge, read for each use, never stored,
 logged, returned or shown to the page:
@@ -113,16 +114,26 @@ def empty() -> str:
 # ---------------------------------------------------------------------------------------------------- the REST calls
 
 Post = Callable[[str, dict[str, str], tuple[str, str]], dict[str, Any]]
+Get = Callable[[str, tuple[str, str]], dict[str, Any]]
 
 
 def _post(url: str, form: dict[str, str], auth: tuple[str, str]) -> dict[str, Any]:
     """One form POST to Twilio's REST API with HTTP Basic auth, its JSON answer back. Raises OSError with Twilio's own
     message, never a credential, when it refuses."""
+    return _ask(url, auth, urllib.parse.urlencode(form).encode('utf-8'))
+
+
+def _get(url: str, auth: tuple[str, str]) -> dict[str, Any]:
+    """One GET of Twilio's REST API, which reads and changes nothing, its JSON answer back; refusals as `_post`."""
+    return _ask(url, auth, None)
+
+
+def _ask(url: str, auth: tuple[str, str], data: bytes | None) -> dict[str, Any]:
     basic = base64.b64encode(f'{auth[0]}:{auth[1]}'.encode()).decode('ascii')
-    request = urllib.request.Request(url, data=urllib.parse.urlencode(form).encode('utf-8'), method='POST',
-                                     headers={'Authorization': f'Basic {basic}', 'User-Agent': 'metaform-twilio',
-                                              'Content-Type': 'application/x-www-form-urlencoded',
-                                              'Accept': 'application/json'})
+    headers = {'Authorization': f'Basic {basic}', 'User-Agent': 'metaform-twilio', 'Accept': 'application/json'}
+    if data is not None:
+        headers['Content-Type'] = 'application/x-www-form-urlencoded'
+    request = urllib.request.Request(url, data=data, method='GET' if data is None else 'POST', headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=TIMEOUT) as answer:
             found: Any = json.loads(answer.read() or b'{}')
@@ -155,12 +166,35 @@ def credentials() -> tuple[str, tuple[str, str]]:
 
 
 class Client:
-    """Twilio's REST API for the two things Metaform does: place a call and send a text. `post` is the transport,
-    replaced in tests so nothing reaches the network."""
+    """Twilio's REST API for what Metaform does: place a call, send a text, read where the number sends its calls and
+    texts, and point them at the bridge. `post` and `get` are the transport, replaced in tests so nothing reaches the
+    network."""
 
-    def __init__(self, post: Post | None = None, creds: Callable[[], tuple[str, tuple[str, str]]] = credentials) -> None:
+    def __init__(self, post: Post | None = None, creds: Callable[[], tuple[str, tuple[str, str]]] = credentials,
+                 get: Get | None = None) -> None:
         self.post = post or _post
+        self.get = get or _get
         self.creds = creds
+
+    def number(self, number: str) -> dict[str, Any] | None:
+        """The account's incoming phone number `number`, as Twilio lists it: its `sid`, `voice_url`, `sms_url`, their
+        methods, and `voice_application_sid` and `sms_application_sid`, which Twilio uses in place of the URLs when
+        set. None when the account has no such number. Reads only."""
+        sid, auth = self.creds()
+        query = urllib.parse.urlencode({'PhoneNumber': number})
+        found = self.get(f'{API}/Accounts/{urllib.parse.quote(sid)}/IncomingPhoneNumbers.json?{query}', auth)
+        listed: Any = found.get('incoming_phone_numbers') or []
+        return listed[0] if isinstance(listed, list) and listed and isinstance(listed[0], dict) else None  # pyright: ignore[reportUnknownVariableType]
+
+    def point(self, number_sid: str, *, voice: str, sms: str, apps: bool = False) -> dict[str, Any]:
+        """Set the number's voice and SMS webhooks to `voice` and `sms`, each by HTTP POST; with `apps`, also take off
+        the TwiML Apps that would be used in their place. Only ever run when the person asks, `twilio check fix=true`."""
+        sid, auth = self.creds()
+        form = {'VoiceUrl': voice, 'VoiceMethod': 'POST', 'SmsUrl': sms, 'SmsMethod': 'POST'}
+        if apps:
+            form.update({'VoiceApplicationSid': '', 'SmsApplicationSid': ''})
+        return self.post(f'{API}/Accounts/{urllib.parse.quote(sid)}/IncomingPhoneNumbers/{urllib.parse.quote(number_sid)}'
+                         '.json', form, auth)
 
     def call(self, *, to: str, from_: str, url: str, timeout: int = 30) -> dict[str, Any]:
         """Place a call: Twilio rings `to` from `from_` and, when it is answered, fetches its TwiML from `url` with a

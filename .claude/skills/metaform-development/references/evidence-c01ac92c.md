@@ -1,0 +1,1 @@
+git -C /home/rich/metaform show HEAD:src/metaform/data/tables.py > /tmp/claude-03f8/old/src/metaform/data/tables.py

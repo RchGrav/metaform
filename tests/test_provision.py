@@ -1,5 +1,6 @@
-"""First-run provisioning under an unfamiliar harness, MCP-028 and D96: a notice on stderr, metaform help provision,
-metaform provision done, and metaform install recording the harnesses it sets up."""
+"""First-run provisioning under an unfamiliar harness, MCP-028 and D96: a notice in the stdio MCP server's connect
+message and never on a terminal's command, metaform help provision, metaform provision done, and metaform install
+recording the harnesses it sets up."""
 from __future__ import annotations
 
 import json
@@ -42,29 +43,25 @@ def command(capsys, *args: str) -> tuple[int, str, str]:
     return code, captured.out, captured.err
 
 
+def told() -> str:
+    """The notice an agent connecting over MCP would be given now, or nothing."""
+    from metaform import harness
+    return harness.notice() or ''
+
+
 @pytest.mark.kind('fixture')
-# --version is the installer's probe and reads no home, so it gives no notice, BASE-047
 @pytest.mark.parametrize('args', [('help',), ('help', 'commands'), ('list', 'projects'), ('no-such-module',)])
-def test_any_command_under_an_unrecorded_harness_gives_the_notice_once_on_stderr(under, capsys, args):
-    under(HARNESS)
-    _, out, err = command(capsys, *args)
-    assert err.count(NOTICE) == 1
-    assert NOTICE not in out
-
-
-@pytest.mark.kind('fixture')
-def test_the_notice_changes_nothing_the_command_prints_or_returns(under, capsys):
+def test_no_command_in_a_terminal_gives_the_notice_whatever_the_harness(under, capsys, args):
     under(None)
-    quiet = command(capsys, 'help', 'commands')
+    quiet = command(capsys, *args)
     under(HARNESS)
-    code, out, err = command(capsys, 'help', 'commands')
-    assert (code, out) == quiet[:2]
-    assert err.replace(f'Notice: {NOTICE}\n', '') == quiet[2]
+    assert told() == NOTICE  # an agent connecting over MCP would be told
+    assert command(capsys, *args) == quiet
 
 
 @pytest.mark.kind('fixture')
 @pytest.mark.req('CLI-009')
-@pytest.mark.parametrize('args', [('help',), ('provision', 'done')])  # --version reads no home, BASE-047
+@pytest.mark.parametrize('args', [('provision', 'done')])  # --version reads no home, BASE-047
 def test_a_notice_record_read_error_uses_the_cli_error_handler(under, capsys, home, args):
     from metaform import home as metaform_home
     with metaform_home.chassis(write=True) as db:
@@ -83,9 +80,9 @@ def test_a_recorded_harness_sees_no_notice(under, capsys):
     from metaform import harness
     harness.done(HARNESS.with_name('1.9.0'))
     under(HARNESS)
-    assert NOTICE not in command(capsys, 'help')[2]
+    assert NOTICE != told()
     under(OTHER)
-    assert NOTICE in command(capsys, 'help')[2]
+    assert NOTICE == told()
 
 
 @pytest.mark.kind('fixture')
@@ -93,22 +90,22 @@ def test_a_recorded_harness_sees_no_notice(under, capsys):
 def test_never_says_first_run_when_an_intake_exists(under, capsys, store, tmp_path, monkeypatch, ready):
     from storekit import intake
     under(HARNESS)
-    assert NOTICE in command(capsys, 'help')[2]
+    assert NOTICE == told()
     intake(store, ready=ready)
     elsewhere = tmp_path / 'elsewhere'
     elsewhere.mkdir()
     monkeypatch.chdir(elsewhere)  # an intake in any project of the home, not only the folder's own
-    err = command(capsys, 'help')[2]
-    assert 'first run' not in err.lower()
-    assert err.count('Read metaform help provision for each feature') == 1
+    said = told()
+    assert 'first run' not in said.lower()
+    assert said.count('Read metaform help provision for each feature') == 1
 
 
 @pytest.mark.kind('fixture')
 def test_no_notice_when_no_harness_is_found_or_it_runs_from_the_temporary_folder(under, capsys):
     under(None)
-    assert NOTICE not in command(capsys, 'help')[2]
+    assert NOTICE != told()
     under(Path(tempfile.gettempdir()) / 'agent' / 'bin' / 'agent')
-    assert NOTICE not in command(capsys, 'help')[2]
+    assert NOTICE != told()
 
 
 @pytest.mark.kind('fixture')
@@ -118,9 +115,9 @@ def test_provision_done_records_the_running_harness_and_the_notice_stops(under, 
     code, out, _ = command(capsys, 'provision', 'done')
     assert code == 0 and out.strip()
     assert harness.known(HARNESS)
-    assert NOTICE not in command(capsys, 'help')[2]
+    assert NOTICE != told()
     under(OTHER)
-    assert NOTICE in command(capsys, 'help')[2]
+    assert NOTICE == told()
 
 
 @pytest.mark.kind('fixture')
@@ -131,14 +128,15 @@ def test_provision_through_timeout_records_only_the_actual_harness(monkeypatch, 
     monkeypatch.setattr(os, 'getppid', lambda: 20)
     monkeypatch.setattr(harness, '_process', lambda pid: processes.get(pid))
 
+    assert NOTICE == told()
     code, _, err = command(capsys, 'provision', 'done')
-    assert code == 0 and NOTICE in err
+    assert code == 0 and NOTICE not in err
     assert harness.known(HARNESS)
     assert recorded(home) == [harness.key(HARNESS)]
-    assert NOTICE not in command(capsys, 'help')[2]
+    assert NOTICE != told()
 
     processes[21] = (0, OTHER)
-    assert NOTICE in command(capsys, 'help')[2]
+    assert NOTICE == told()
     assert not harness.known(OTHER)
 
 
@@ -235,7 +233,7 @@ def test_the_notice_and_its_commands_run_whatever_the_folder_surface(under, caps
     assert command(capsys, 'set', '--modules', 'map', f'folder={tmp_path}')[0] == 0
     monkeypatch.chdir(tmp_path)
     code, _, err = command(capsys, 'list', 'projects')
-    assert code == 2 and err.count(NOTICE) == 1
+    assert code == 2 and NOTICE not in err
     assert command(capsys, 'help', 'provision')[0] == 0
     assert command(capsys, 'provision', 'done')[0] == 0
     assert harness.known(HARNESS)

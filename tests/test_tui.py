@@ -89,7 +89,7 @@ def test_screen_turns_a_module_off_and_on(home, tmp_path):
 def test_screen_rows_read_as_config_show_rows(home, tmp_path, capsys):
     from metaform import cli
     settings.assign('debug', True, tmp_path)
-    settings.assign('report', False, tmp_path, glue=True)
+    settings.assign('connect_instructions', 'full', tmp_path, glue=True)  # report, removed 2026-10-15, was here
     assert cli.main(['config', '--show', f'folder={tmp_path}']) == 0
     expected = {line.split(':')[0].lstrip('* '): line for line in capsys.readouterr().out.splitlines() if ': ' in line}
     pipe, screen = _screen(tmp_path)
@@ -99,7 +99,7 @@ def test_screen_rows_read_as_config_show_rows(home, tmp_path, capsys):
             screen.module_index = [row.id for row in screen.rows].index('chassis')
             return [text for _, text in screen._setting_lines()]
         rows = asyncio.run(drive())
-    for key in ('debug', 'report', 'layers', 'modules'):
+    for key in ('debug', 'connect_instructions', 'layers', 'modules'):
         assert any(row.rstrip('\n').endswith(expected[key]) for row in rows), (key, expected[key], rows)
 
 
@@ -237,15 +237,15 @@ def test_a_list_whose_items_hold_commas_is_saved_from_the_screen_as_it_reads(hom
     with pipe:
         async def drive():
             await screen.refresh()
-            setting = settings.SCHEMA['dispatch_agent_strengths']
-            edited = [*setting.default[:2], 'gemini=large reads, across many files']
-            screen._stage('dispatch', setting, edited)
+            setting = settings.SCHEMA['code_ignore']
+            edited = [*setting.default[:2], '*.{js,ts}']
+            screen._stage('map', setting, edited)
             screen._save_changes()
             await screen.last_task
             return edited, screen.error
         edited, failed = asyncio.run(drive())
     assert not failed
-    assert settings.value('dispatch_agent_strengths', tmp_path) == edited
+    assert settings.value('code_ignore', tmp_path) == edited
 
 
 @pytest.mark.req('VIEW-039')
@@ -283,3 +283,53 @@ def test_a_risky_choice_is_never_stepped_onto_and_is_stored_only_when_confirmed(
     assert settings.value('dispatch_prompts', tmp_path) == 'ask_all'
     assert cli.main(['set', '--dispatch-prompts', 'approve-all', '--confirm', f'folder={tmp_path}']) == 0
     assert settings.value('dispatch_prompts', tmp_path) == 'approve-all'
+
+
+def test_one_read_describes_every_group_and_a_filter_finds_settings_in_any_group(home, tmp_path, monkeypatch):
+    loader.set_enabled('dispatch', True)
+    described = []
+    real = settings.describe
+    monkeypatch.setattr(settings, 'describe', lambda *args, **kwargs: described.append(kwargs) or real(*args, **kwargs))
+    pipe, screen = _screen(tmp_path)
+    with pipe:
+        async def drive():
+            await screen.refresh()
+            screen.module_index = [row.id for row in screen.rows].index('chassis')
+            screen._filter_settings()
+            screen.editor.text = 'prompts'
+            screen._apply_edit()
+            found = [(one.owner, one.key) for one in screen.entries]
+            rows = [text for _, text in screen._setting_lines()]
+            screen._filter_settings()  # opened again, typing goes at the end of the filter
+            return found, rows, screen.editor.buffer.cursor_position
+        found, rows, cursor = asyncio.run(drive())
+    assert described == [{'choices': False}], 'one description of the folder serves every group, without choices'
+    assert ('dispatch', 'dispatch_prompts') in found and any('dispatch  dispatch_prompts: ' in row for row in rows)
+    assert cursor == len('prompts')
+
+
+@pytest.mark.req('CLI-019')
+def test_a_value_outside_its_choices_is_refused_with_them_and_a_staged_row_is_marked(home, tmp_path):
+    loader.set_enabled('dispatch', True)
+    pipe, screen = _screen(tmp_path)
+    with pipe:
+        async def drive():
+            await screen.refresh()
+            kinds = settings.SCHEMA['code_kinds']
+            screen._stage('map', kinds, ['Functon'])
+            refused = screen.message, dict(screen.pending_settings)
+            screen._stage('map', kinds, ['Function'])
+            screen.module_index = [row.id for row in screen.rows].index('map')
+            screen._focus('settings')
+            rows = [text for _, text in screen._setting_lines()]
+            model = settings.SCHEMA['dispatch_claude_model']
+            screen._open_pick('dispatch', model, 'default')  # no catalog yet: the picker offers to read it
+            return refused, rows, screen.pick_choices, screen.pick_reader
+        (message, pending), rows, choices, reader = asyncio.run(drive())
+    assert "--code-kinds has no choice 'Functon'. Choices: Function, Method" in message and not pending
+    staged = next(row for row in rows if 'code_kinds' in row)
+    assert '  ~ code_kinds: Function  (staged)' in staged, staged
+    assert choices == ['default'] and reader == 'metaform dispatch options agent=claude prime=true'
+    with pytest.raises(settings.SettingError) as refusal:
+        settings.checked('dispatch_claude_model', 'opus', tmp_path, typed=True)
+    assert refusal.value.next_step == reader

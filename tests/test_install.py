@@ -1203,7 +1203,8 @@ def chained(monkeypatch):
         if (identifier, name) == ('dispatch', 'sessions'):
             return {'sessions': list(running)}
         running.append({'work_id': 'intake-1', 'state': 'running'})
-        return {'state': 'starting', 'work_id': 'intake-1', 'agent': (nouns or {}).get('agent', 'codex')}
+        return {'state': 'running' if (nouns or {}).get('wait') else 'starting', 'work_id': 'intake-1',
+                'agent': (nouns or {}).get('agent', 'codex')}
     monkeypatch.setattr(start, 'run_verb', verb)
     monkeypatch.delenv('DISPLAY', raising=False)
     monkeypatch.delenv('WAYLAND_DISPLAY', raising=False)
@@ -1222,26 +1223,27 @@ def test_start_registers_the_folder_connects_claude_code_and_starts_the_intake_a
     (folder / 'README.md').write_text('# Notes\n\n![badge](b.svg)\n\nA small [note](x) keeper.\n', encoding='utf-8')
     (folder / '.mcp.json').write_text(json.dumps({'mcpServers': {'other': {'command': 'x'}}}), encoding='utf-8')
     out = run('start', cwd=folder, env=machine['env']).stdout.splitlines()
-    assert out == [f'Project: my-notes, registered for {folder}.', 'Modules: turned on dispatch.',
+    assert out == ['Modules: turned on dispatch.', f'Project: my-notes, registered for {folder}.',
                    (f'Claude Code: wrote the metaform MCP server into {folder / ".mcp.json"}; Claude Code asks once '
                     'to use it.'),
                    'Read: Python, one code file; README.md says what it is.',
-                   'Intake: claude is mapping the project; the page shows each part as it is recorded.',
-                   'Map: http://127.0.0.1:7491/#p=my-notes  (open it in your browser)']
+                   'Map: http://127.0.0.1:7491/#p=my-notes  (open it in your browser)',
+                   'Intake: starting claude; a first start may take a minute.',
+                   'Intake: claude is mapping the project; the page shows each part as it is recorded.']
     assert json.loads((folder / '.mcp.json').read_text(encoding='utf-8'))['mcpServers'] == {
         'other': {'command': 'x'},
         'metaform': {'type': 'stdio', 'command': 'uvx', 'args': entry(machine['wheel'])[1:], 'env': {}}}
     [given] = intakes(chained)
     assert given['agent'] == 'claude'  # the AI tool found, while the person has chosen no dispatch_agent
+    assert given['wait'] is True  # it says mapping only once the agent has made its session
     assert given['text'].startswith(f'Map this project, my-notes, in the folder {folder}.')
     assert '- What it is, from README.md: A small note keeper.\n- Languages: Python (one file)' in given['text']
     assert calls(machine['bin'], 'claude') == []  # Claude Code itself is never run
     again = run('start', cwd=folder, env=machine['env']).stdout.splitlines()
     assert again == ['Project: my-notes, already registered.',
                      f'Claude Code: already connected through {folder / ".mcp.json"}.',
-                     ('Intake: being recorded; the page follows it. If no agent is recording it any more: '
-                      'metaform dispatch intake resume=true'),
-                     'Map: http://127.0.0.1:7491/#p=my-notes  (open it in your browser)']
+                     'Map: http://127.0.0.1:7491/#p=my-notes  (open it in your browser)',
+                     'Intake: being recorded; the page follows it.']  # its agent is at work, so no way round it
     assert len(intakes(chained)) == 1
 
 
@@ -1264,3 +1266,44 @@ def test_start_in_a_folder_with_no_code_asks_two_questions_and_records_intent_on
     assert 'It holds no code yet, so the map records intent only' in given['text']
     assert "- What it is for, in the person's words: A recipe planner.\n" in given['text']
     assert "- Who it is for, in the person's words: Home cooks." in given['text']
+
+
+@pytest.mark.req('CLI-041')
+def test_start_with_no_ai_tool_starts_no_agent_says_how_to_connect_one_and_keeps_the_answers(run, machine, chained,
+                                                                                            monkeypatch):
+    from metaform import start
+    monkeypatch.setattr(start, '_interactive', lambda: True)
+    monkeypatch.setattr(start, 'found_tools', list)
+    folder = machine['folder'] / 'plan'
+    folder.mkdir()
+    (folder / 'notes.txt').write_text('maybe\n', encoding='utf-8')
+    out = run('start', cwd=folder, env=machine['env'], input='A recipe planner.\nHome cooks.\n').stdout
+    assert 'Intake: not started; no AI tool here can run it; your answers are kept for it.\n' in out
+    assert '  Install Claude Code, then run metaform start here again' in out
+    assert 'is mapping' not in out and intakes(chained) == []  # no agent, so nothing fetched for one
+    monkeypatch.setattr(start, 'found_tools', lambda: ['claude'])
+    again = run('start', cwd=folder, env=machine['env'], input='').stdout
+    assert 'Your answers: kept from the last metaform start here.' in again and '? ' not in again
+    [given] = intakes(chained)
+    assert "- What it is for, in the person's words: A recipe planner.\n" in given['text']
+    assert "- Who it is for, in the person's words: Home cooks." in given['text']
+
+
+@pytest.mark.req('CLI-041')
+def test_start_says_an_agent_that_did_not_start_with_why_and_its_next_step(run, machine, chained, monkeypatch):
+    from metaform import start
+    plain = start.run_verb
+
+    def verb(identifier, name, folder, project, nouns=None):
+        if (identifier, name) == ('dispatch', 'intake'):
+            return {'state': 'failed', 'work_id': 'intake-1', 'agent': 'claude', 'log': '/tmp/run.log',
+                    'reason': 'it did not start: Claude Code needs a login before it makes a session'}
+        return plain(identifier, name, folder, project, nouns)
+    monkeypatch.setattr(start, 'run_verb', verb)
+    folder = machine['folder'] / 'app'
+    (folder / 'src').mkdir(parents=True)
+    (folder / 'src' / 'main.py').write_text('print(1)\n', encoding='utf-8')
+    out = run('start', cwd=folder, env=machine['env']).stdout.splitlines()
+    assert 'is mapping' not in '\n'.join(out)
+    assert out[-2:] == ['Intake: claude did not start: Claude Code needs a login before it makes a session',
+                        '  Next: metaform dispatch login claude']

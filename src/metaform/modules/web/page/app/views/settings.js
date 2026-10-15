@@ -1,7 +1,7 @@
 /* The view settings the page follows, the agents window, the flow's modes and what the maps say of what the pointer
  * is on. */
 import '/page/app/camera/fly3d.js';  // the part before runs first, so the parts run in the page's order
-// Ultra graphics, web_graphics: the 3D map in outer space, drawn by its own module through the hooks marked ULTRA.
+// The Space theme, web_theme: the 3D map in outer space, drawn by its own module through the hooks marked ULTRA.
 import * as ULTRA from '/page/ultra.js';
 import {$, reduced} from '/page/app/core/dom.js';
 import {toast} from '/page/app/core/controls.js';
@@ -14,11 +14,14 @@ import {flows2d} from '/page/app/map2d/flow2d.js';
 import {posted} from '/page/app/intake/intake.js';
 import {DEPTH, setDepth} from '/page/app/keys/walk.js';
 import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
+import {setTheme} from '/page/app/map3d/draw3d.js';
 
-/* The view settings of the web module that the page follows, read once a project is shown: the agents window,
- * web_agents_window; the 3D map's physics, web_physics; the 2D map's direction,
- * web_map_direction. Whether the page is drawn from its workspace is web_panes, which the workspace reads itself. A
- * change made here is saved to the setting, so every project and every reload opens the same way. */
+/* The person's view the page follows, read once a project is shown from /api/view, view.py: the agents window,
+ * web_agents_window; the 3D map's physics, web_physics; the 2D map's direction, web_map_direction; and the rest of
+ * what the View menu and the keys change. A change made here is kept in the person's view, never as a setting, so
+ * every project and every reload opens the same way (settings cleanup, 2026-10-15). The web module's settings the page
+ * follows, web_embody, web_chat_details and web_theme, are read beside it. Reading writes nothing. Whether the page is
+ * drawn from its workspace is web_panes, which the workspace reads itself. */
 export const VIEW = {agents: 'auto', physics: 'organic', read: null, reading: null};
 // the bar's Info choice, web_hover_info, `showInfo`, drawn as the view is read
 export const INFOSET = {buttons: new Map()};
@@ -39,28 +42,33 @@ export function readView() {
   if (VIEW.read === project) return VIEW.reading;
   VIEW.read = project;
   VIEW.reading = (async () => {
-    let rows = [];
-    try { rows = (await read('settings')).settings || []; } catch { return; }
-    if (S.project === project) followView(rows);
+    let rows = [], view = {};
+    try { [rows, view] = await Promise.all([read('settings').then(found => found.settings || []),
+      read('view').then(found => found.view || {})]); } catch { return; }
+    if (S.project === project) followView(rows, view);
   })();
   return VIEW.reading;
 }
-/* The view settings read, each applied to the page and shown in the View menu. */
-function followView(rows) {
-  const value = (key, otherwise) => rows.find(row => row.key === key)?.value ?? otherwise;
+/* The view and the settings read, each applied to the page and shown in the View menu. */
+function followView(rows, view) {
+  const setting = (key, otherwise) => rows.find(row => row.key === key)?.value ?? otherwise;
+  const value = (key, otherwise) => view[key] ?? otherwise;
   VIEW.agents = value('web_agents_window', 'auto');
   PEEK.direction = value('web_map_direction', 'auto');
   VIEW.signs = String(value('web_signs', 'outward'));
-  VIEW.embody = String(value('web_embody', 'offer'));
-  VIEW.embodyTurns = Number(value('web_embody_turns', 8));
-  VIEW.embodyMinutes = Number(value('web_embody_minutes', 20));
-  const details = value('web_chat_details', false) === true;  // the agent's work in the chat, `workShown`
+  VIEW.embody = String(setting('web_embody', 'offer'));
+  const details = setting('web_chat_details', false) === true;  // the agent's work in the chat, `workShown`
   if (details !== Boolean(VIEW.chatDetails)) { VIEW.chatDetails = details; drawHelpdesk(); }
   showSigns();
   LENS.name = String(value('web_lens', 'natural'));
   lens3d(LENS.name);
   showLens();
-  // the theme decides the look; web_graphics is written only when the person changes the look, never on a read
+  // the theme decides the look: web_theme once the person has chosen one, applied and never written here; until then
+  // the theme this browser last showed
+  const theme = rows.find(row => row.key === 'web_theme');
+  if (theme && theme.state !== 'default' && theme.value !== document.documentElement.dataset.theme) {
+    setTheme(String(theme.value), false);
+  }
   ULTRA.setting(document.documentElement.dataset.theme === 'space' ? 'ultra' : 'clean');
   const physics = value('web_physics', 'organic');
   if (physics !== PHYS.name) applyPhysics(physics);
@@ -74,12 +82,12 @@ function followView(rows) {
   agentsWindow();
   peekParts();
 }
-/* A view choice kept in its setting; the saves of one setting go one after another, so quick presses of a key that
- * steps it are kept in the order they were made. */
+/* A view choice kept in the person's view, /api/view; the saves of one key go one after another, so quick presses of
+ * a key that steps it are kept in the order they were made. */
 const SAVING = new Map();
 export function saveView(key, value) {
   const save = (SAVING.get(key) || Promise.resolve()).then(async () => {
-    const done = await posted('/api/settings', {key, value});
+    const done = await posted('/api/view', {key, value});
     if (!done.ok) toast(done.body.error || 'That choice was not kept.');
     return done.ok;
   });
@@ -88,7 +96,7 @@ export function saveView(key, value) {
 }
 
 /* What the page keeps of the view as it last read it: the 2D map's direction, web_map_direction, `fitPin2d`, and the
- * Ultra graphics' choice, `showUltra`. The maps have no bar: their keys, which ? lists, do what its buttons did. */
+ * Space theme's choice, `showUltra`. The maps have no bar: their keys, which ? lists, do what its buttons did. */
 export const PEEK = {direction: null, ultra: null};
 export function peekParts() {
   if (PEEK.ultra) showUltra();  // U pressed elsewhere: the choice names the look the map has now

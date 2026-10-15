@@ -34,7 +34,7 @@ from typing import Any, BinaryIO, Literal, cast
 
 from metaform import home, prompt_files, settings
 from metaform.data import Element, GraphPage, Item, Join, Layer, Node, Notice, Store, StoreError, WorkRecord, as_object
-from metaform.module import Context, Module, Noun, Resource, Status, Stop, ToolbarItem, Verb, save_report
+from metaform.module import Context, Module, Noun, Resource, Status, Stop, ToolbarItem, Verb, project_for, save_report
 
 from .schema import ELEMENTS, IFD, NAME_LENGTH, REFS, ROLE
 
@@ -135,6 +135,10 @@ SOURCES = 'sources'  # the layer an element's refs go in
 # everything else said about a part is critic content, Rich's rule of 2026-10-12
 CRITIC = 'critic'
 NOTED = 'What the intake noted beside the map'  # the critic layer's variable; the map module declares it the same way
+# the layer an ok goes in: a part the intake checked and found doing its job, one item at its element or join, so the
+# read-back tells it from a part never checked, ticket 97085c0e; never a work record, since a part that works is no work
+CHECKED = 'checked'
+CHECKED_VARIABLE = 'What the intake checked and found doing its job'
 ID = re.compile(r'\b[0-9a-f]{32}\b')
 
 settings.boolean('intake_sources', True, label='Intake sources layer',
@@ -245,8 +249,9 @@ def _whole(value: Any) -> Any:
 
 
 def _building(store: Store) -> Recording | None:
-    """The intake being recorded for this project, in whichever of its metaforms it is building."""
-    page = store.intake_recording().results
+    """The intake building for this project, in whichever of its metaforms, recorded now or left unfinished: the one
+    the next record goes into, so an agent resumes an intake another left."""
+    page = store.intake_building().results
     if not page:
         return None
     found = page[0]
@@ -302,12 +307,19 @@ def _recording(ctx: Context, notices: Notices) -> Recording:
     store = ctx.require_store()
     found = _building(store)
     if found is not None:
-        return found
+        return _holding(found)
     made, opened = _opened(ctx, store, notices)
     if opened:
         notices.append({'where': 'intake', 'message': f'No intake was being recorded, so this call started one: '
                                                       f'layer {made.layer.name} in metaform {made.metaform}.'})
-    return made
+    return _holding(made)
+
+
+def _holding(rec: Recording) -> Recording:
+    """The intake this call records into, said to be recorded now by this agent for as long as its process lives,
+    so the page shows it as being recorded only while an agent is there, BASE-039."""
+    rec.store.hold_intake(rec.layer.id)
+    return rec
 
 
 def _folder(store: Store) -> Path:
@@ -410,6 +422,7 @@ def start(ctx: Context) -> Any:
         # What the layer lacks of its provenance is filled in; what it holds is kept, LAYER-010.
         _note(notices, found.store.complete(found.layer.name, {name: ctx.nouns.get(name) for name in ('model', 'role')},
                                             result_id=str(ctx.nouns['result']) if ctx.nouns.get('result') else None))
+    _holding(found)
     return {'layer': found.layer.name, 'project': store.project_id, 'base': found.metaform, 'notices': notices}
 
 
@@ -443,10 +456,10 @@ def _sources(ctx: Context, rec: Recording, kind: Literal['element', 'join'], ele
 
 
 def _noted(ctx: Context) -> str | None:
-    """The note given without a condition: free text about the part, kept beside the map. A note given with a
-    condition is the finding's, a work record, MAP-046."""
+    """The note given without a condition, or with ok: free text about the part, kept beside the map. A note given
+    with a marker is the finding's, a work record, MAP-046; ok makes no record, so its note is kept as a plain one."""
     note = ctx.nouns.get('note')
-    return str(note) if note and not ctx.nouns.get('condition') else None
+    return str(note) if note and ctx.nouns.get('condition') in (None, '', OK) else None
 
 
 def _beside(rec: Recording, kind: Literal['element', 'join'], thing_id: str, note: str, notices: Notices) -> None:
@@ -467,6 +480,7 @@ def _beside(rec: Recording, kind: Literal['element', 'join'], thing_id: str, not
 
 MARKS = {'MISS': 'missing', 'BKN': 'trouble', 'OK': 'ok', 'BROKEN': 'trouble'}  # the procedure's words, any case
 INTAKE_MARKS = ('missing', 'trouble', 'ok')
+OK = 'ok'  # a part that does its job: its normal state, kept in the checked layer at the part, never a work record
 
 
 def _checked_condition(ctx: Context) -> None:
@@ -583,6 +597,16 @@ def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], t
     if thing is None or not ctx.nouns.get('condition'):  # none or empty: no finding; a note is kept on the object
         return
     condition, note = str(ctx.nouns['condition']), ctx.nouns.get('note')
+    if condition == OK:
+        # A part that works is no work, MAP-046's amendment of 2026-10-15: its open findings no agent has taken close,
+        # replaced by ok, and nothing is opened, so the board never holds an empty card for it. The check is kept at
+        # the part in the checked layer, so the read-back shows ok, ticket 97085c0e.
+        for row in rec.store.work(Node(kind, thing), open=True, limit=0).results:
+            if _finding(row) and not row.taken:
+                rec.store.finish_work(row.id, f'Replaced by {condition}.')
+        _checked(rec, kind, thing, True, notices)
+        return
+    _checked(rec, kind, thing, False, notices)  # a newer condition replaces an ok, as it replaces a finding
     task = _task(condition, note)
     # A part has one condition: recorded again, as verification does once it has read the source, the new one
     # replaces the last, which closes, so the read-back shows what was found most recently. The same condition
@@ -602,10 +626,15 @@ def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], t
                                                          'nothing was added.'})
         return
     if same:
-        # a note this ticket already holds, as one a purpose record's marker joined, is kept with what joined it
-        if not (note and note.strip() and _holds(same[0].note, note)) and \
-                (same[0].note, same[0].task) != (note, task):
-            _note(notices, rec.store.edit_work(same[0].id, {'note': note, 'task': task}))
+        # a note this ticket already holds, as one a purpose record's marker joined, is kept with what joined it.
+        # A new note replaces only this part's own paragraph, the first, since the ticket lives here and a merge only
+        # appends; the paragraphs the other part's findings joined stay.
+        if not (note and note.strip() and _holds(same[0].note, note)):
+            blocks = [block.strip() for block in (same[0].note or '').split('\n\n') if block.strip()]
+            kept = '\n\n'.join([note.strip(), *blocks[1:]]) if note and note.strip() else \
+                '\n\n'.join(blocks[1:]) or None
+            if (same[0].note, same[0].task) != (kept, _task(condition, kept)):
+                _note(notices, rec.store.edit_work(same[0].id, {'note': kept, 'task': _task(condition, kept)}))
         return
     if kind == 'element':
         around = [row for row in rec.store.work(Node(kind, thing), open=True, limit=0, joins=True).results
@@ -641,6 +670,22 @@ def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], t
                                                          f'this one is kept in {joined.id}.'})
         return
     _note(notices, rec.store.add_work(Node(kind, thing), condition, note=note, task=task))
+
+
+def _checked(rec: Recording, kind: Literal['element', 'join'], thing: str, ok: bool, notices: Notices) -> None:
+    """Keep an ok as the part's one item of the checked layer, or take it away when another condition replaces it."""
+    store = rec.store
+    if ok:
+        store.layer(CHECKED, 'intake', CHECKED_VARIABLE, kind='layer', mutable=True, hideable=True, ready=True)
+    try:
+        held = [item for item in store.layer_items(CHECKED, Node(kind, thing), limit=0).results
+                if isinstance(item, Item)]
+    except StoreError:  # no checked layer yet, so nothing here was checked
+        return
+    for extra in held[1:] if ok else held:
+        _note(notices, store.remove(extra.id))
+    if ok and not held:
+        _note(notices, store.add_item(CHECKED, Node(kind, thing), OK))
 
 
 def _close_work(store: Store, things: set[str], resolution: str) -> None:
@@ -785,10 +830,19 @@ def _join_entry(held: Join, note: str | None = None) -> dict[str, Any]:
 
 
 def _findings(store: Store, elements: list[Element], joins: list[Join]) -> dict[str, dict[str, Any]]:
-    """The open condition and note on each recorded element and purpose record, by id, so an agent reads its marks back."""
+    """The open condition and note on each recorded element and purpose record, by id, so an agent reads its marks back;
+    a part with no open finding that the intake checked reads ok, from the checked layer, read in one pass."""
     ids = {element.id for element in elements} | {held.id for held in joins}
-    return {row.node_id: {'condition': row.condition, 'note': row.note}
-            for row in store.work(open=True, limit=0).results if row.node_id in ids}
+    found: dict[str, dict[str, Any]] = {row.node_id: {'condition': row.condition, 'note': row.note}
+                                        for row in store.work(open=True, limit=0).results if row.node_id in ids}
+    try:
+        checked = store.layer_items(CHECKED, limit=0).results
+    except StoreError:
+        return found
+    for item in checked:
+        if isinstance(item, Item) and item.target.id in ids and item.target.id not in found:
+            found[item.target.id] = {'condition': OK}  # its note, if any, is the critic layer's, read beside it
+    return found
 
 
 def _refs(store: Store) -> dict[tuple[str, str], list[dict[str, str]]]:
@@ -901,6 +955,7 @@ def remove(ctx: Context) -> Any:
     if found is None:
         said = FINISHED if store.has_intake() else NOTHING
         return {**named, 'layer': None, 'notices': [{'where': 'intake', 'message': said}]}
+    _holding(found)
     notices: Notices = []
     words = _words(found.store, found.layer)
     if 'receiver' in named and 'provider' in named:
@@ -938,6 +993,33 @@ def remove(ctx: Context) -> Any:
     else:
         notices.append({'where': ADDRESS, 'message': NAMED_BY})
     return {**named, 'layer': found.layer.name, 'notices': notices}
+
+
+def discard(ctx: Context) -> Any:
+    """Drop the intake left unfinished: its building layer and the parts it recorded go, and a base opened for it
+    alone goes with them, a copy kept, BASE-039. One an agent records now is refused, since that agent would go on
+    recording into nothing."""
+    store = ctx.require_store()
+    with _lock(store):  # no record goes into the layer while it is dropped
+        found = _building(store)
+        if found is None:
+            return {'layer': None, 'project': store.project_id, 'base': None, 'parts': 0,
+                    'notices': [{'where': 'intake', 'message': 'No intake is left unfinished; there is nothing to '
+                                                               'discard.'}]}
+        if any(one.layer.id == found.layer.id for one in store.intake_recording().results):
+            raise Stop(f'An agent is recording the intake in layer {found.layer.name} of metaform {found.metaform} '
+                       'now; stop that agent first, or let it finish.', 'metaform intake status')
+        notices: Notices = []
+        parts = len(found.store.layer_graph(found.layer.id).elements)
+        _note(notices, found.store.discard(found.layer.id))
+        removed = None
+        if not found.active and not found.store.graph(raw=True, limit=0).elements:
+            removed = home.remove_base(store.project_id, found.metaform)
+            notices.append({'where': 'base', 'message': f'The base {found.metaform} was opened for this intake alone, '
+                                                        'so it was removed too; a copy is kept under '
+                                                        'backups/remove-base.'})
+    return {'layer': found.layer.name, 'project': store.project_id, 'base': found.metaform, 'parts': parts,
+            'base_removed': removed is not None, 'notices': notices}
 
 
 def finish(ctx: Context) -> Any:
@@ -1020,7 +1102,7 @@ def finish(ctx: Context) -> Any:
 def _several(store: Store) -> str | None:
     """Every intake being recorded, when there is more than one, with how to keep the one calls record into: one each
     from calls made at once before the intake lock, QUAL-001."""
-    building = store.intake_recording().results
+    building = store.intake_building().results
     if len(building) < 2:
         return None
     named = ', '.join(f'layer {held.layer.name} of metaform {held.base}' for held in building)
@@ -1031,6 +1113,15 @@ def _several(store: Store) -> str | None:
             f'metaform {building[0].base}{removal}.')
 
 
+RECORDING, LEFT = 'being recorded', 'left unfinished'  # an intake building, with its agent there or gone
+
+
+def _state(store: Store) -> str:
+    """Whether the intake building is being recorded, its agent's process alive, or was left unfinished, BASE-039."""
+    building = store.intake_building().results
+    return RECORDING if building and building[0].recording else LEFT
+
+
 def status_verb(ctx: Context) -> str:
     store = ctx.require_store()
     found = _building(store)
@@ -1039,7 +1130,10 @@ def status_verb(ctx: Context) -> str:
         latest = store.layers(kind='intake', limit=0).results[-1]
         lines.append(f'This project has an intake. Latest intake layer: {latest.name}')
     if found is not None:
-        lines.append(f'An intake is being recorded in layer {found.layer.name} of metaform {found.metaform}.')
+        state = _state(store)
+        lines.append(f'An intake is {state} in layer {found.layer.name} of metaform {found.metaform}.'
+                     + ('' if state == RECORDING else ' Resume it with intake start, finish it with intake finish, '
+                                                       'or discard it with metaform intake discard --confirm.'))
     if (several := _several(store)) is not None:
         lines.append(several)
     if not lines:
@@ -1062,7 +1156,7 @@ def status(ctx: Context) -> Status:
         return Status(instruction=prompt_files.required(here, 'no_intake', register=step))
     found = _building(ctx.store)
     several = _several(ctx.store)
-    recording = (f'Intake: being recorded in layer {found.layer.name} of metaform {found.metaform}',
+    recording = (f'Intake: {_state(ctx.store)} in layer {found.layer.name} of metaform {found.metaform}',
                  *((several,) if several is not None else ())) if found is not None else ()
     # The instructions agents read name an intake started and not finished, or else a project with no intake, MCP-009.
     unfinished = prompt_files.required(here, 'unfinished') if found is not None else None
@@ -1079,6 +1173,16 @@ def _condition_nouns(words: Any) -> tuple[Noun, Noun]:
     return (Noun('condition', words('condition', ''), required=False,
                  schema={'type': 'string', 'enum': ['MISS', 'BKN', 'OK', 'broken', *INTAKE_MARKS]}),  # the procedure's word or its stored one
             Noun('note', words('note', ''), required=False))
+
+def recording(folder: Path) -> bool:
+    """Whether an intake is being recorded in the folder's project, or a verification pass is open on its map, so
+    the verbs that record, read or end it are listed over MCP, MCP-004."""
+    project = project_for(folder)
+    if project is None:
+        return False
+    store = Store(project)
+    return _building(store) is not None or _verifying(store)
+
 
 MODULE = Module(
     id='intake',
@@ -1100,7 +1204,7 @@ MODULE = Module(
              nouns=(Noun('text', 'path to the target for the intake process; leaving this blank means this project',
                          required=False),), effect='read'),
         Verb('schema', schema, 'Read the shape the intake records: namespace roots, Upstream and Downstream links, '
-                               'element and purpose forms.', effect='read'),
+                               'element and purpose forms.', effect='read', needs_project=False),
         Verb('start', start, "Start recording this project's intake, or resume the one being recorded. On a project "
                              'whose intake is finished it opens a verification pass on that map: changed fields are '
                              'refined, new elements and purpose records are added to it, conditions, notes and refs '
@@ -1122,7 +1226,7 @@ MODULE = Module(
                     Noun('name', E('name', ''), required=False),
                     Noun('role', E('role', ''), required=False, schema=ROLE),
                     Noun('refs', E('refs', ''), required=False, schema=REFS),
-                    *_condition_nouns(E))),
+                    *_condition_nouns(E)), listed=recording),
         Verb('purpose', purpose, "Record one purpose record: a receiver's OP and the elements that serve it, with its EF. "
                                  'Recorded again with an element it holds, the fields given replace its own and new '
                                  'elements are added.',
@@ -1132,14 +1236,14 @@ MODULE = Module(
                     Noun('ef', P('ef', ''), required=False),
                     Noun('ifd', P('ifd', ''), required=False, schema=IFD),
                     Noun('refs', P('refs', ''), required=False, schema=REFS),
-                    *_condition_nouns(P))),
+                    *_condition_nouns(P)), listed=recording),
         Verb('show', show, 'Read the intake being recorded, whole or one receiver at a time.',
-             nouns=(Noun('receiver', P('receiver', ''), required=False),), effect='read'),
+             nouns=(Noun('receiver', P('receiver', ''), required=False),), effect='read', listed=recording),
         Verb('remove', remove, 'Remove one element, one purpose record, or one element from a purpose record, from '
                                'the intake being recorded. Each is named by addresses.',
              nouns=(Noun('receiver', P('receiver', ''), required=False),
                     Noun('provider', P('provider', ''), required=False),
-                    Noun(ADDRESS, E(ADDRESS, ''), required=False)), effect='remove'),
+                    Noun(ADDRESS, E(ADDRESS, ''), required=False)), effect='remove', listed=recording),
         Verb('finish', finish, 'Finish the intake and make its base the active map, keeping the earlier one whole. '
                                'Switch back with metaform map activate <previous-name>. A verification pass is closed '
                                'on the map it wrote onto, activating nothing. After finish the metaform '
@@ -1149,9 +1253,15 @@ MODULE = Module(
                                    'and - is standard input.', required=False),
                     Noun('feedback', 'Feedback on the Metaform process: bad semantics, a tool that did not match its '
                                      'schema, where you got stuck.', required=False)),
-             open_world=True),  # its intake.finished subscriber, source_placement's, can start a run that sends to Jev
+             open_world=True, listed=recording),  # its intake.finished subscriber, source_placement's, can start a run that sends to Jev
         Verb('status', status_verb, 'Say whether this project has an intake, and whether one is being recorded.',
              effect='read'),
+        # The person's choice for an intake left unfinished, beside resuming and finishing it; never an agent's, so it
+        # is not a tool.
+        Verb('discard', discard, 'Discard the intake left unfinished: its layer and the parts it recorded are removed, '
+                                 'and a base opened for it alone goes too, a copy kept.',
+             caution='Discarding the unfinished intake removes every part it recorded; it is not undone.',
+             surfaces=('cli',), effect='remove', listed=recording),
     ),
     status=status,
     resources=(

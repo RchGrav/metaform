@@ -12,7 +12,7 @@ Started from template 0.2.0.
 
 ## Declaration
 
-`SUPPORTED_OS = ('linux', 'macos', 'windows')`, `DEPENDENCIES = ()`, `SHIPS_DISABLED = False`. `MODULE` declares `prompt`, `start`, `element`, `purpose`, `show`, `remove`, `finish` and `status`, and a status hook.
+`SUPPORTED_OS = ('linux', 'macos', 'windows')`, `DEPENDENCIES = ()`, `SHIPS_DISABLED = False`. `MODULE` declares `prompt`, `start`, `element`, `purpose`, `show`, `remove`, `finish`, `status` and `discard`, and a status hook.
 
 ## Common base used
 
@@ -31,7 +31,8 @@ Started from template 0.2.0.
 - `show`: the intake being recorded as `elements`, `purposes` and `undescribed`: whole, every element by `namespace_address`, every purpose record by `receiver` with the `elements` it holds, and the addresses named in a purpose record and never described; with `receiver=<namespace_address>`, only that receiver's purpose records and the elements they name. Tool `intake_show`.
 - `remove`: removes one recorded thing while the intake is building, named by its addresses: `namespace_address` for an element, `receiver` and `provider` for the purpose record of that receiver holding that element, and all three to take the element at `namespace_address` out of that purpose record. After the finish it writes nothing and names `metaform map refine`, which changes the metaform in the same layer and keeps every version, LAYER-025. Tool `intake_remove`.
 - `finish`: marks the layer ready, saves `report=` and `feedback=` as the intake layer's report and feedback files, reading a value that names a file from the file and `-` from standard input on the command line, while a tool is handed the text and opens no path, and returns the layer, the project, the metaform, the counts of `elements` and `purposes`, the count of open work records on them as `work`, and the notices, which name any address named in a purpose record and never described. Tool `intake_finish`, declared `open_world`: its `intake.finished` event starts the refactor module's follow-on, which sends code to Jev when the person has turned `jev` on, H17.
-- `status`: whether the project has an intake, with the latest intake layer, and the intake being recorded. Tool `intake_status`. The status hook adds `Intake: complete`, `Intake: being recorded` while one is, or `Intake: none yet` and the notice to delegate the intake.
+- `status`: whether the project has an intake, with the latest intake layer, and the intake being recorded or left unfinished. Tool `intake_status`. The status hook adds `Intake: complete`, `Intake: being recorded` while an agent records one, `Intake: left unfinished` for one no agent records any more, or `Intake: none yet` and the notice to delegate the intake. An intake is being recorded only while the process of the agent recording it lives: a host's MCP server over stdio, or a dispatched agent's, holds it from its first record until it ends, BASE-039; commands alone never do.
+- `discard`: drops the intake left unfinished, its layer and the parts it recorded, and a base opened for it alone, a copy kept under `backups/remove-base`. It is refused while an agent records the intake now. The person's choice, beside resuming and finishing it: on the command line only, with `--confirm`, never a tool; the web page's notice for an intake left unfinished offers it.
 
 `element` and `purpose` take `condition` and `note`. Given, they write an open work record at what was recorded, apart from the functional map, MAP-046, and the map shows it. A `note` given without a condition is the part's one item of the `critic` layer, beside the map: the base holds RE, PE, OP and EF only, and the store refuses a note written into it.
 

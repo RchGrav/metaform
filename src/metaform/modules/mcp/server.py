@@ -69,11 +69,13 @@ from metaform.module import (
     on_surface,
     on_this_system,
     project_for,
+    provisioning_notice,
     read_report,
     refresh_modules,
     request_scope,
     result_json,
     serve_session,
+    served_session,
     setting_value,
     startup_instructions,
     surface,
@@ -83,8 +85,9 @@ from metaform.settings import refuse_held_control
 
 from . import consent
 
-# On every tool, MCP-025 and CLI-033, so said in as few words as hold the meaning: each is paid once per tool listed.
-PROJECT = {'type': 'string', 'description': "A registered project id, in place of the folder's, for this call."}
+# On each tool that uses them, MCP-025 and CLI-033: `project` on a verb that needs a project, `layers` on a verb that
+# reads the map's layers; said in as few words as hold the meaning, since each is paid once per tool listed.
+PROJECT = {'type': 'string', 'description': "Another registered project's id."}
 LAYERS = {'type': 'array', 'items': {'type': 'string'}, 'description': 'Layers, by name or tag, on for this call.'}
 NOUN_TYPES: dict[str, dict[str, Any]] = {'str': {'type': 'string'}, 'int': {'type': 'integer'},
                                          'bool': {'type': 'boolean'}}
@@ -133,6 +136,8 @@ def _setting_type(setting: settings.Setting, folder: Path) -> dict[str, Any]:
 
 
 def verb_schema(verb: Verb, folder: Path) -> dict[str, Any]:
+    """A verb's input schema: its nouns and the switches it reads, `confirm` for a caution verb, `project` when it
+    needs a project, and `layers` when it reads the map's layers."""
     properties: dict[str, Any] = {}
     required: list[str] = []
     for noun in verb.nouns:
@@ -147,23 +152,43 @@ def verb_schema(verb: Verb, folder: Path) -> dict[str, Any]:
             properties[key] = setting_schema(setting, folder)
     if verb.caution:
         properties['confirm'] = {'type': 'boolean', 'description': 'Run it. Without it the tool only explains.'}
-    properties['project'] = PROJECT
-    properties.setdefault('layers', LAYERS)
+    if verb.needs_project:
+        properties['project'] = PROJECT
+    if verb.reads_layers:
+        properties.setdefault('layers', LAYERS)
     return {'type': 'object', 'properties': properties, 'required': required, 'additionalProperties': False}
 
 
 def tools(folder: Path) -> dict[str, tuple[Module, Verb]]:
+    """Every module verb on the folder's surface over MCP, by tool name, listed or not: a call is routed by these."""
     return {f'{module.id}_{verb.name}': (module, verb) for module in surface(folder) for verb in module.verbs
             if _here(verb)}
 
 
 def set_schema(folder: Path) -> dict[str, Any]:
-    properties = {key: setting_schema(setting, folder) for key, setting in settings.SCHEMA.items()
-                  if not setting.person_only and not setting.per_call}  # a per-call switch is given on its verb
-    properties['glue'] = {'type': 'boolean', 'description': 'Keep these settings through unset all.'}
-    properties['confirm'] = {'type': 'boolean', 'description': 'The person confirmed a choice that lets an agent act '
-                                                               'without asking; without it such a choice is refused.'}
-    return {'type': 'object', 'properties': properties, 'additionalProperties': False}
+    """metaform_set's input schema: `glue` and `confirm`, with each setting given by its key as a further argument.
+    The settings are listed by the call that gives none, `settable`, not here, where every agent paid for over a
+    hundred of them before its first call; each one given is checked as `metaform set` checks it."""
+    properties = {'glue': {'type': 'boolean', 'description': 'Keep these settings through unset all.'},
+                  'confirm': {'type': 'boolean', 'description': 'The person confirmed a choice that lets an agent act '
+                                                                'without asking; without it such a choice is refused.'}}
+    return {'type': 'object', 'properties': properties, 'additionalProperties': True}
+
+
+def settable(folder: Path) -> list[dict[str, Any]]:
+    """The settings an agent may change here, for metaform_set called with none: each the chassis's or a module's on
+    the folder's surface that serves tools here, never person-only or per-call, with its help, its JSON type, its
+    choices and its value."""
+    owners = {'chassis', *(module.id for module, _ in tools(folder).values())}
+    listed: list[dict[str, Any]] = []
+    for key, setting in settings.SCHEMA.items():
+        if setting.person_only or setting.per_call or setting.owner not in owners:
+            continue
+        kind = _setting_type(setting, folder)
+        choices = kind.get('enum') or cast(dict[str, Any], kind.get('items') or {}).get('enum')
+        listed.append({'name': key, 'help': setting.help, 'type': kind['type'],
+                       **({'choices': choices} if choices else {}), 'value': settings.value(key, folder)})
+    return listed
 
 
 CHASSIS: dict[str, tuple[str, dict[str, Any]]] = {
@@ -281,6 +306,8 @@ CHASSIS_EFFECTS: dict[str, Effect] = {
     'register': 'write', 'skills': 'read', 'add_origin': 'write', 'list_origins': 'read', 'add_variant': 'remove',
     'list_variants': 'read', 'prompts': 'read', 'prompt': 'read', 'save_prompt': 'write', 'clear_project': 'remove',
     'extract': 'write'}
+# The chassis's own tools of SURFACED that act on a project's records, so they are listed once the folder has one.
+ON_PROJECT = ('add_origin', 'list_origins', 'add_variant', 'list_variants', 'clear_project', 'extract')
 # The chassis tools whose result is text, not data, so it has no structured form.
 CHASSIS_TEXT = ('instructions', 'read_report')
 JSON_TYPES: dict[str, type] = {'string': str, 'integer': int, 'boolean': bool, 'array': list}
@@ -313,7 +340,7 @@ def mcp_next(text: str, folder: Path) -> str:
         if module == 'commands':
             return 'list the tools' + (f' {verb}' if verb else '')
         if module == 'switches':
-            return schema_step(f'{OWN}_set') + (f' {verb}' if verb else '')
+            return f'call {OWN}_set with no arguments for the settings it takes'
         if module not in verbs:
             return match.group(0)
         if verb in verbs[module]:
@@ -371,6 +398,8 @@ def run_set(folder: Path, arguments: dict[str, Any], consented: bool = False) ->
     try:
         if not isinstance(glue, bool):
             raise Stop('glue is true or false.', schema_step(f'{OWN}_set'))
+        if not arguments:  # none given: the settings it takes, as the list is not in its schema
+            return False, [result_json({'settings': settable(folder)})]
         if not consented:
             refuse_held_control(arguments, folder)
         read: list[tuple[str, str]] = []
@@ -499,10 +528,31 @@ def skill_index(folder: Path, client: str | None = None, room: int | None = None
     return ''
 
 
-def connect_instructions(folder: Path, client: str | None = None) -> str:
-    """The usual startup instructions followed by the connecting harness's fallback skill discovery, together within
-    the characters the host keeps."""
+TOLD: set[str] = set()  # the agent sessions this server has given the provisioning notice, or found no need to
+
+
+def provisioning(session: str | None) -> str | None:
+    """The first-run provisioning notice, MCP-028, for the agent session of a stdio server, whose AI tool is the one
+    that started it, while the home has not recorded that tool and the session has not been told; None with no
+    session, which is how an HTTP connect, whose client did not start the server, is asked."""
+    if session is None or session in TOLD:
+        return None
+    said = provisioning_notice()
+    if said is None:
+        TOLD.add(session)
+        return None
+    return f'Notice: {said}'
+
+
+def connect_instructions(folder: Path, client: str | None = None, session: str | None = None) -> str:
+    """The usual startup instructions, then the provisioning notice for `session` when it is due and fits within the
+    characters the host keeps, else it comes with the session's first tool result, then the connecting harness's
+    fallback skill discovery, together within those characters."""
     started = startup_instructions(folder)
+    notice = provisioning(session)
+    if notice is not None and session is not None and len(started) + 1 + len(notice) <= HOST_KEEPS:
+        started = f'{started}\n{notice}'
+        TOLD.add(session)
     return '\n'.join(one for one in (started, skill_index(folder, client, HOST_KEEPS - len(started) - 1)) if one)
 
 
@@ -597,6 +647,10 @@ def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dic
         raise Stop('layers is a list of layer names or tags.', 'call map_layers for their names')
     if not isinstance(confirmed, bool):
         raise Stop('confirm is true or false.', f'If you are sure: call {name} with confirm true')
+    if project is not None and not verb.needs_project:  # the argument is on the tools that use it, as listed
+        raise Stop(f'{name} takes no project: it works without one.', schema_step(name))
+    if layers is not None and not verb.reads_layers:
+        raise Stop(f"{name} takes no layers: it does not read the map's layers.", schema_step(name))
     if verb.caution and not (confirmed or consented):
         raise Stop(verb.caution, f'If you are sure: call {name} with confirm true')
     if not consented:
@@ -660,6 +714,8 @@ class Listed:
     effect: Effect
     open_world: bool = False
     task: bool | Literal['run'] = False  # the verb can take long, so a client declaring tasks gets a task; 'run': its run
+    guide: Callable[[], str] = lambda: ''  # what comes with its first use in a session, MCP-039: what the list cut
+    module: str = 'metaform'  # the module that serves it, whose rules come with the first use of any of its tools
 
     def annotations(self) -> dict[str, bool]:
         """The four hints, each set from the declared effect. None is left out, since an absent hint falls back on
@@ -688,6 +744,8 @@ def tool_index(folder: Path) -> list[tuple[str, str]]:
 
 CLAUSE = re.compile(r'(?<=[\w>)])[:;]\s')  # where a first sentence's head ends and its details begin
 AS_DOES = re.compile(r',? as metaform [\w -]+? (?:does|gives|lists|prints)(?: them| it)?(?=[,.:;]|$)')
+AS_DOES_ALONE = re.compile(r'\s*\bAs metaform [\w -]+? (?:does|gives|lists|prints)(?: them| it)?\.')  # a sentence of it
+BARE_VERB = re.compile(r'(?<![\w_-])(?P<module>[a-z0-9_]+) (?P<verb>[a-z0-9-]+)(?= <)')  # `map activate <its name>`
 LINE = 64  # the characters a tool's line is cut back toward, at a comma
 LINE_LEAST = 32  # and the fewest it is cut to
 
@@ -736,20 +794,160 @@ def listing(folder: Path, client: str | None = None) -> dict[str, Listed]:
     `metaform_<command>`, the history, prompt and clear commands only while the chassis is on the folder's surface,
     MCP-004. Each command is described once, here, with its arguments' schema built from its declaration, so an agent
     plans a call from the list alone and the list is the same on every connection to the folder, but for the skill
-    names metaform_skills' description gives the `client` harness, BASE-059."""
-    found = {name: Listed(name, verb.summary + (f' Caution: {verb.caution}' if verb.caution else ''),
-                          functools.partial(verb_schema, verb, folder), verb.effect, verb.open_world, verb.task)
-             for name, (_, verb) in tools(folder).items()}
+    names metaform_skills' description gives the `client` harness, BASE-059. Until the folder has a project, only
+    what runs without one is listed: the verbs that declare `needs_project` false and the chassis's own tools but
+    those of SURFACED that act on a project's records; registering lists the rest, announced as a change, MCP-004."""
+    registered = project_for(folder) is not None
+    states: dict[Callable[[Path], bool], bool] = {}
+
+    def can(verb: Verb) -> bool:
+        """Whether the verb is listed in the folder's state now, MCP-004: each state read once per listing."""
+        if not (registered or not verb.needs_project):
+            return False
+        if verb.listed is None:
+            return True
+        if verb.listed not in states:
+            try:
+                states[verb.listed] = bool(verb.listed(folder))
+            except Exception:  # noqa: BLE001  a state that cannot be read lists the verb, which says why if it cannot act
+                states[verb.listed] = True
+        return states[verb.listed]
+    found: dict[str, Listed] = {}
+    for name, (module, verb) in tools(folder).items():
+        if not can(verb):
+            continue
+        said, more = headed(verb.summary + (f' Caution: {verb.caution}' if verb.caution else ''))
+        built = functools.partial(verb_schema, verb, folder)
+        found[name] = Listed(name, tool_named(said, folder), functools.partial(briefed, built), verb.effect,
+                             verb.open_world, verb.task, functools.partial(verb_guide, verb, more, built, folder),
+                             module.id)
     own: dict[str, tuple[str, Callable[[], dict[str, Any]]]] = {
-        'set': ("Save Metaform settings for the server's folder, as metaform set does.",
+        'set': (('Save settings for this folder, each given as name=value. Called with none, it lists the settings '
+                 'an agent may change, each with its help, choices and current value.'),
                 functools.partial(set_schema, folder)),
-        **{name: (said, _fixed(schema)) for name, (said, schema) in CHASSIS.items()},
+        **{name: (said, _fixed(schema)) for name, (said, schema) in CHASSIS.items()
+           if name != 'register' or not registered},  # registering is the first step, listed until it is taken
         'skills': (skills_said(folder, client), _fixed(CHASSIS['skills'][1]))}
     if on_surface('chassis', folder):
-        own.update({name: (said, _fixed(schema)) for name, (said, schema) in SURFACED.items()})
-    found.update({f'{OWN}_{name}': Listed(f'{OWN}_{name}', said, build, CHASSIS_EFFECTS[name])
-                  for name, (said, build) in own.items()})
+        own.update({name: (said, _fixed(schema)) for name, (said, schema) in SURFACED.items()
+                    if registered or name not in ON_PROJECT})
+    for name, (said, build) in own.items():
+        head, more = headed(said)
+        found[f'{OWN}_{name}'] = Listed(f'{OWN}_{name}', tool_named(head, folder), functools.partial(briefed, build),
+                                        CHASSIS_EFFECTS[name], guide=functools.partial(own_guide, more, build, folder))
     return dict(sorted(found.items()))
+
+
+DESCRIPTION_MOST = 160  # the characters a tool's description is listed whole within; a longer one keeps its first sentence
+HELP_MOST = 80  # the bytes an argument's help is listed within; the whole help comes with the tool's first use
+SCOPE = 30  # the characters within which a help's head before its first colon is a scope, such as `list and add`
+SENTENCE_MOST = 200  # the characters a listed first sentence keeps; a longer one is listed to its first colon or semicolon
+
+
+def headed(description: str) -> tuple[str, str]:
+    """A tool's description as it is listed, and the rest, which comes with its first use in a session, MCP-039: a
+    description over DESCRIPTION_MOST characters is listed as its first sentence, what the tool does and when to use
+    it, and its caution, which is never cut; the rest is moved word for word."""
+    said, _, caution = description.partition(' Caution: ')
+    first, *rest = SENTENCE.split(said, maxsplit=1)
+    head, more = (said, '') if len(description) <= DESCRIPTION_MOST else (first, rest[0] if rest else '')
+    if len(head) > SENTENCE_MOST and len(parts := CLAUSE.split(head, maxsplit=1)) > 1:
+        head, more = parts[0], ' '.join(part for part in (parts[1], more) if part)
+    head = AS_DOES.sub('', head.rstrip('.')).rstrip(',') + '.'  # an agent with tools has no command line to compare
+    return head + (f' Caution: {caution}' if caution else ''), more
+
+
+def short_help(help: str) -> str:
+    """An argument's help as its schema lists it: whole within HELP_MOST bytes, else the head of its first sentence,
+    before the details a colon or semicolon opens, cut back at a comma; the whole help comes with the tool's first
+    use. Its words are the help's own."""
+    if len(help.encode('utf-8')) <= HELP_MOST:
+        return help
+    first = SENTENCE.split(help, maxsplit=1)[0]
+    cut = CLAUSE.search(first)
+    head = first if cut is None else first[:cut.start()]
+    if cut is not None and cut.group().startswith(':') and cut.start() < SCOPE:  # `list and add: an element`: the
+        head = f'{head}: {CLAUSE.split(first[cut.end():], maxsplit=1)[0]}'  # scope, then what it is
+    head = head.strip().rstrip('.,;:')
+    room = HELP_MOST - len('…'.encode())
+    while len(head.encode('utf-8')) > room and ', ' in head:
+        head = head.rsplit(', ', 1)[0]
+    while len(head.encode('utf-8')) > room and ' ' in head:  # one long clause keeps its first words
+        head = head.rsplit(' ', 1)[0]
+    return head + ('.' if head == help.rstrip('.') else '…')
+
+
+def briefed(build: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+    """A tool's input schema as it is listed: each argument's help in brief, MCP-039."""
+    schema = build()
+    properties = cast(dict[str, dict[str, Any]], schema.get('properties') or {})
+    return {**schema, 'properties': {key: {**one, 'description': short_help(str(one['description']))}
+                                     if isinstance(one.get('description'), str) else one
+                                     for key, one in properties.items()}}
+
+
+def _arguments_said(schema: dict[str, Any]) -> list[str]:
+    """Each argument whose help the list cut, with its whole help."""
+    properties = cast(dict[str, dict[str, Any]], schema.get('properties') or {})
+    return [f'{key}: {one["description"]}' for key, one in properties.items()
+            if isinstance(one.get('description'), str) and short_help(str(one['description'])) != one['description']]
+
+
+def verb_guide(verb: Verb, more: str, build: Callable[[], dict[str, Any]], folder: Path) -> str:
+    """What a module verb's tool gives with its first use, MCP-039: the rest of its description, each argument whose
+    help the list cut with its whole help, the verb's details and its examples, each a call; all from its declaration."""
+    examples = [f'{mcp_next(command, folder)}: {said}' for command, said in verb.examples]
+    parts = [more, '\n'.join(_arguments_said(build())), mcp_next(verb.details, folder), '\n'.join(examples)]
+    return '\n\n'.join(part.strip() for part in parts if part.strip())
+
+
+def own_guide(more: str, build: Callable[[], dict[str, Any]], folder: Path) -> str:
+    """What a chassis tool gives with its first use: the rest of its description and its arguments' whole help."""
+    parts = [mcp_next(more, folder), '\n'.join(_arguments_said(build()))]
+    return '\n\n'.join(part.strip() for part in parts if part.strip())
+
+
+def tool_named(text: str, folder: Path) -> str:
+    """A listed description with each module command it names as a command line written as its tool's name, since an
+    agent holding tools may have no shell, MCP-038."""
+    verbs = {module.id: {verb.name for verb in module.verbs} for module in surface(folder)}
+
+    def named(match: re.Match[str]) -> str:
+        module, verb = match.group('module'), match.group('verb')
+        return f'{module}_{verb}' if verb in verbs.get(module, ()) else match.group(0)
+    text = AS_DOES_ALONE.sub('', ADD_PROJECT.sub(f'{OWN}_register', text))
+    return BARE_VERB.sub(named, VERB.sub(named, text))
+
+
+def guidance(folder: Path, listed: Listed, ctx: Context) -> str:
+    """What a tool's result carries the first time in the session it is called, and again only once what it says has
+    changed, MCP-039, as the counts at a node are given: the rules of its module the first time any of the module's
+    tools is called, from the module's prompts.xml, and the tool's own guide, from its declaration. Each heading is the
+    mcp module's `module_guide` and `tool_guide` prompt; an empty one leaves that part out. First, once, the
+    provisioning notice a stdio connect had no room for, MCP-028."""
+    parts: list[str] = []
+    session = ctx.session if served_session() is not None else None
+    if session is not None and (notice := provisioning(session)) is not None:
+        parts.append(notice)
+        TOLD.add(session)
+    rules = [f'{said} Why: {why}' for said, why in prompt_files.module_rules(listed.module)] \
+        if listed.module != OWN else []
+    heading = prompt_files.module('mcp', 'module_guide', module=listed.module) if rules else None
+    if heading:
+        text = heading + '\n' + '\n'.join(rules)
+        if ctx.seen(f'guide:module:{listed.module}', _digest(text)) != _digest(text):
+            parts.append(text)
+    said = listed.guide()
+    heading = prompt_files.module('mcp', 'tool_guide', tool=listed.name) if said else None
+    if heading:
+        text = heading + '\n' + said
+        if ctx.seen(f'guide:tool:{listed.name}', _digest(text)) != _digest(text):
+            parts.append(text)
+    return '\n\n'.join(parts)
+
+
+def _digest(text: str) -> str:
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]
 
 
 def needs(folder: Path, name: str, arguments: dict[str, Any]) -> consent.Ask | None:
@@ -1394,7 +1592,6 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
     relay = Relay(folder, not http and settings.value('mcp_recovery', folder) == 'relay')
     apps_on = bool(settings.value('mcp_apps', folder))
     apps_always = settings.value('mcp_apps_offer', folder) == 'always'
-    tasks_on = bool(settings.value('mcp_tasks', folder))
     offered = settings.value('mcp_search_fetch', folder)
     searching = offered == 'always' or (offered == 'remote' and http)
     tokens = consent.Tokens()  # the forms asked and not yet answered, each answer taken once
@@ -1603,7 +1800,7 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
             return answered
         approved = answered is True
         listed = (await anyio.to_thread.run_sync(listing, folder)).get(name)
-        tasked_as = listed.task if tasks_on and listed is not None and tasked.declared(capabilities(ctx)) else False
+        tasked_as = listed.task if listed is not None and tasked.declared(capabilities(ctx)) else False
         headers = ctx.request.headers if ctx.request is not None else None
         identity, session = gateway_identity(headers), gateway_session(headers)
         if tasked_as is True and 'group' in held:
@@ -1616,6 +1813,9 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
         finally:  # what the tool changed, fired on the event bus from a worker thread, VIEW-018; a module enabled or
             # disabled since this server started is loaded or dropped first, BASE-037
             await anyio.to_thread.run_sync(events.announce, folder, 'mcp')
+        if listed is not None:  # what the list cut, before the result of its first use in the session, wrong calls too
+            guide = await anyio.to_thread.run_sync(guided, listed, client, session)
+            blocks = [guide, *blocks] if guide else blocks
         await announce(ctx)
         if not error:
             discussed(ctx, name, given)
@@ -1624,6 +1824,14 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
             if seeded is not None:
                 return seeded
         return outcome(error, blocks, structured)
+
+    def guided(listed: Listed, client: str | None, session: str | None) -> str:
+        """The guidance the call's result carries, `guidance`, in the agent session the call is made in."""
+        try:
+            ctx = context('mcp', folder, surface='mcp', client=client, session=session)
+        except (Stop, StoreError):
+            return ''
+        return guidance(folder, listed, ctx)
 
     def run_task(run_id: str) -> dict[str, Any] | None:
         """The task a verb declared `task='run'` answers with: the workflow run it just made, by its run id."""
@@ -1801,8 +2009,7 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
         each such task is marked failed, so none waits for ever."""
         async with anyio.create_task_group() as group:
             held['group'] = group
-            if tasks_on:
-                group.start_soon(tasked.beat, running, folder)
+            group.start_soon(tasked.beat, running, folder)
             try:
                 yield {}
             finally:
@@ -1831,9 +2038,10 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
     server.create_initialization_options = initialization_options
     if apps_on:
         server.extensions[views.EXTENSION] = {}
-    if tasks_on:
-        server.extensions[tasked.EXTENSION] = {}
-        add_tasks(server, folder, running, types, MCPError)
+    # Tasks for long tools are always offered: an AI tool that does not declare the extension gets the result as
+    # before, so turning them off only took them from those that do. Settings cleanup 2026-10-15 removed mcp_tasks.
+    server.extensions[tasked.EXTENSION] = {}
+    add_tasks(server, folder, running, types, MCPError)
 
     def prepare(ctx: Any) -> None:
         """Prove schema compatibility before dispatch: construction alone does not open a Store.
@@ -1882,7 +2090,10 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
             except NewerStore as error:
                 return refused(ctx, error)
             if ctx.method in ('initialize', 'server/discover') and isinstance(result, dict):
-                composed = await anyio.to_thread.run_sync(connect_instructions, folder, client_of(ctx))
+                # Over stdio the AI tool that connects is the one that started this process; over HTTP it is not.
+                client = client_of(ctx)
+                composed = await anyio.to_thread.run_sync(connect_instructions, folder, client,
+                                                          None if http else served_session(client))
                 result = {**cast(dict[str, Any], result), 'instructions': composed}
             return result
     server.middleware.append(live)
@@ -1934,7 +2145,7 @@ def serve(folder: Path, *, http: bool = False, port: int = 0, bind: str | None =
         # Beyond this machine only with the Node's authorization server checking every caller, oauth.py.
         exposed = oauth.exposure(
             public_url if public_url is not None else str(settings.value('mcp_public_url', folder) or ''), bind,
-            introspection or str(settings.value('mcp_introspection', folder) or oauth.DEFAULT_INTROSPECTION))
+            introspection or oauth.DEFAULT_INTROSPECTION)
         app = http_app(folder, bind=bind, exposed=exposed)
         where = exposed.mcp if exposed is not None else f'http://127.0.0.1:{port}/mcp'
         print(f'Metaform MCP server for {folder} at {where}', file=sys.stderr, flush=True)

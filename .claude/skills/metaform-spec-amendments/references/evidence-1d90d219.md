@@ -1,0 +1,1 @@
+STORE-029 and STORE-045 are amended. ... M specifications/03-storage.md

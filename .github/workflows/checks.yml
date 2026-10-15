@@ -15,7 +15,9 @@ jobs:
   checks:
     name: ${{ matrix.os }}, Python ${{ matrix.python }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 120  # a hung leg fails within two hours, not GitHub's six
+    # A hung leg fails within the time its slowest healthy run needs, the browser tests' hour and the tests' half
+    # hour, not GitHub's six; each long step has a limit of its own, and each test one in pyproject.toml.
+    timeout-minutes: 100
     permissions:
       contents: read
       pull-requests: read  # the browser tests' path filter reads a pull request's changed files from the API
@@ -27,31 +29,33 @@ jobs:
         python: ['3.11', '3.14']
     steps:
       - uses: actions/checkout@v4
-      # The browser tests take most of a full run's time, so they run when a change can reach the page they drive:
-      # the web module, the MCP Apps views and their build, the test setup and the pinned browser driver, VIEW-012.
+      # The browser tests take most of a full run's time, so they run when a change can reach the page they drive, and
+      # on every push to main, VIEW-012. The page's server calls into the chassis, the data and every module, and the
+      # tests take helpers from other modules' tests, so any code, test, build or setup file counts; documents do not.
+      # With 'every' a file counts only when it matches each pattern: one of the places, and not a document.
       - uses: dorny/paths-filter@v3
         id: changes
         with:
+          predicate-quantifier: 'every'
           filters: |
             page:
-              - 'src/metaform/modules/web/**'
-              - 'src/metaform/modules/mcp/**'
-              - 'scripts/**'
-              - 'conftest.py'
-              - 'pyproject.toml'
-              - 'uv.lock'
-              - '.github/workflows/checks.yml'
+              - '{src/metaform/**,tests/**,scripts/**,conftest.py,hatch_build.py,pyproject.toml,uv.lock,.github/workflows/checks.yml}'
+              - '!**/*.md'
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python }}
       - name: Install
+        timeout-minutes: 10
         run: uv sync --extra dev
       - name: Browser for the web GUI's checks, VIEW-012
+        if: ${{ steps.changes.outputs.page == 'true' || github.ref == 'refs/heads/main' }}  # only when its tests run
+        timeout-minutes: 10  # under four minutes on Windows
         run: uv run playwright install --with-deps chromium
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - name: MCP Apps map view, built from the web page as the wheel build builds it, MCP-037
+        timeout-minutes: 10
         run: |
           npm --prefix scripts ci
           node scripts/build_map_view.mjs
@@ -63,11 +67,12 @@ jobs:
         run: uv run ruff check src tests conftest.py
       - name: Tests
         if: ${{ !cancelled() }}  # each check reports on its own, whatever the one before it did
+        timeout-minutes: 30  # half an hour on one core; Windows starts processes slowest
         env:
           METAFORM_BUILD_VIEWS: '1'  # the map view was built above, so the views' test requires it current
         run: uv run pytest -q
       - name: Browser tests, VIEW-012
-        if: ${{ !cancelled() && steps.changes.outputs.page == 'true' }}  # reports on its own, as each check does
+        if: ${{ !cancelled() && (steps.changes.outputs.page == 'true' || github.ref == 'refs/heads/main') }}
         timeout-minutes: 60  # about 25 minutes on four Linux cores; a hang, as Windows had, fails here
         env:
           METAFORM_BUILD_VIEWS: '1'

@@ -7,7 +7,9 @@ outlives a clear. The module reads and writes them inside a transaction the data
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
+from pathlib import Path
 
 import pytest
 
@@ -149,7 +151,7 @@ def test_rows_read_in_the_order_of_the_index_named_by_its_leading_columns(ledger
         with pytest.raises(StoreError):
             tx.rows('notes', by=('text',))
     assert [row['text'] for row in first.results + second.results] == ['sooner', 'later', 'latest']
-    planned = [sql for sql in traced if '"ledger.notes"' in sql]
+    planned = [sql for sql in traced if '"ledger.notes"' in sql and not sql.startswith('PRAGMA')]  # reads of rows
     assert len(planned) >= 2
     db = sqlite3.connect(project_store())
     try:
@@ -402,13 +404,225 @@ LEDGER_V3_WITHOUT_ENTRIES = """
 """
 
 
-def test_tables_changed_at_the_same_version_are_refused_with_the_next_step_to_raise_it(ledger, user_module):
+@pytest.mark.req('STORE-029')
+def test_a_column_added_at_the_same_version_is_added_in_place_keeping_every_row(ledger, user_module):
+    """Ticket 03f869a0: compatibility follows the real schema. A declaration that only adds a column that may be
+    empty opens the store with no refusal, whatever the version says, adds the column in place and records it."""
     fill(ledger)
     user_module('ledger', LEDGER_CHANGED_AT_V1)
     loader.reset()
+    with Store('proj', module='ledger').tables(write=False) as tx:
+        assert [(row['entry_id'], row['extra']) for row in tx.rows('entries', limit=0).results] == [
+            ('e1', None), ('e2', None), ('e3', None)]
+    assert raw(store_file(), 'SELECT entry_id, amount FROM "ledger.entries" ORDER BY entry_id') == [
+        ('e1', 5), ('e2', 7), ('e3', 2)]
+    recorded = json.loads(raw(store_file(), "SELECT value FROM meta WHERE key='module:ledger'")[0][0])
+    assert recorded['version'] == 1 and ['extra', 'text', False, None] in recorded['tables'][0]['columns']
+    assert not (metaform_home.home() / 'backups').exists() or not list(
+        (metaform_home.home() / 'backups').glob('module-ledger-*'))  # an addition rewrites nothing, so no copy
+
+
+@pytest.mark.req('STORE-029')
+def test_a_declaration_reordered_with_the_same_schema_opens_with_no_change(ledger, user_module):
+    fill(ledger)
+    before = raw(store_file(), "SELECT sql FROM sqlite_master WHERE name LIKE 'ledger.%' ORDER BY name")
+    user_module('ledger', LEDGER_V1.replace(  # a comment too, so the file's size changes and its bytecode is not reused
+        "columns=(Column('entry_id', required=True), Column('who', required=True), Column('amount', 'int'),",
+        "columns=(Column('who', required=True), Column('entry_id', required=True), Column('amount', 'int'),") + '    # reordered\n')
+    loader.reset()
+    with Store('proj', module='ledger').tables() as tx:
+        assert tx.get('entries', {'entry_id': 'e1'})['who'] == 'ada'
+    assert raw(store_file(), "SELECT sql FROM sqlite_master WHERE name LIKE 'ledger.%' ORDER BY name") == before
+
+
+LEDGER_KEY_RETYPED_AT_V1 = LEDGER_V1.replace("Column('entry_id', required=True)", "Column('entry_id', 'int', required=True)")
+
+
+@pytest.mark.req('STORE-029')
+def test_a_real_conflict_is_refused_for_that_module_alone_and_changes_nothing(ledger, user_module, store):
+    fill(ledger)
+    user_module('ledger', LEDGER_KEY_RETYPED_AT_V1)
+    loader.reset()
+    recorded = raw(store_file(), "SELECT value FROM meta WHERE key='module:ledger'")
     with pytest.raises(StoreError) as refused, Store('proj', module='ledger').tables(write=False) as tx:
         tx.rows('entries', limit=0)
-    assert refused.value.next_step == "raise the version of ledger's Tables to 2"
+    assert str(refused.value) == ('The tables of ledger this store holds conflict with what this ledger needs: '
+                                  'entries.entry_id is held as TEXT and ledger declares it INTEGER. Nothing of ledger '
+                                  'was changed, and the rest of Metaform works as before.')
+    assert refused.value.next_step == "raise the version of ledger's Tables to 2, so its upgrade rebuilds entries " \
+                                      'keeping every row'
+    assert raw(store_file(), "SELECT value FROM meta WHERE key='module:ledger'") == recorded
+    from metaform.data import Node
+    store.add_work(Node('element', 'code.anything'), 'unbuilt', task='the map still writes')
+    assert [work.task for work in store.work(Node('element', 'code.anything')).results] == ['the map still writes']
+
+
+MARKS_V1 = '''
+    from metaform.data import Table, Tables
+    from metaform.module import Module
+    SUPPORTED_OS = ('linux', 'macos', 'windows')
+    MODULE = Module(id='marks', summary='Marks.', purpose='Keeps marks. Details: metaform help marks.',
+                    tables=Tables(version=1, tables=(Table.from_sql('marks', """
+        CREATE TABLE IF NOT EXISTS marks(mark_id TEXT PRIMARY KEY, n INTEGER);"""),)))
+'''
+
+
+@pytest.mark.req('STORE-029')
+def test_a_conflict_in_a_table_every_store_opening_prepares_leaves_the_map_working(home, project_folder, store,
+                                                                                    user_module):
+    """A table declared by its SQL is prepared whenever any store opens; its conflict must stop only its module."""
+    from metaform.data import Node
+    user_module('marks', MARKS_V1)
+    loader.reset()
+    with Store('proj', module='marks').tables() as tx:
+        tx.insert('marks', {'mark_id': 'm1', 'n': 1})
+    user_module('marks', MARKS_V1.replace('mark_id TEXT PRIMARY KEY', 'mark_id INTEGER PRIMARY KEY'))
+    loader.reset()
+    try:
+        store.add_work(Node('element', 'code.anything'), 'unbuilt', task='the map opens')
+        assert [work.task for work in store.work(Node('element', 'code.anything')).results] == ['the map opens']
+        with pytest.raises(StoreError) as refused, Store('proj', module='marks').tables(write=False) as tx:
+            tx.rows('marks', limit=0)
+        assert 'marks.mark_id is held as TEXT and marks declares it INTEGER' in str(refused.value)
+        assert raw(store_file(), 'SELECT mark_id, n FROM marks') == [('m1', 1)]
+    finally:
+        loader.reset()
+
+
+MARKS_RULES = '''
+    from metaform.data import Table, Tables
+    from metaform.module import Module
+    SUPPORTED_OS = ('linux', 'macos', 'windows')
+    MODULE = Module(id='marks', summary='Marks.', purpose='Keeps marks. Details: metaform help marks.',
+                    tables=Tables(version=VERSION, tables=(Table.from_sql('marks', """SCHEMA"""),)))
+'''
+MARKS_SCHEMA = ("CREATE TABLE IF NOT EXISTS marks(mark_id TEXT PRIMARY KEY, state TEXT CHECK(state IN ('A','B')), "
+                'parent TEXT REFERENCES marks(mark_id), done TEXT); '
+                'CREATE UNIQUE INDEX IF NOT EXISTS marks_one ON marks(parent) WHERE done IS NULL;')
+
+
+def marks(schema=MARKS_SCHEMA, version=1):
+    return MARKS_RULES.replace('VERSION', str(version)).replace('SCHEMA', schema)
+
+
+@pytest.mark.req('STORE-029')
+@pytest.mark.parametrize('held, declared, said', [
+    ("('A','B')", "('A','B','C')", ("marks's CHECK constraints are held as state in ('A', 'B') and marks declares "
+                                    "state in ('A', 'B', 'C')")),
+    ('REFERENCES marks(mark_id)', 'REFERENCES marks(mark_id) ON DELETE CASCADE',
+     ("marks's foreign keys are held as parent references marks(mark_id) on update NO ACTION on delete NO ACTION and "
+      'marks declares parent references marks(mark_id) on update NO ACTION on delete CASCADE')),
+    ('done TEXT);', 'done TEXT UNIQUE);', 'marks lacks'),  # the store lacks a unique rule: added in place, below
+    ('WHERE done IS NULL', 'WHERE done IS NOT NULL', ('marks holds a unique index on parent where done is null that '
+                                                      'marks does not declare')),
+], ids=['check', 'foreign-key', 'unique-added', 'partial-condition'])
+def test_a_rule_a_write_meets_changed_at_the_same_version_is_refused_for_that_module_alone(
+        home, project_folder, store, user_module, held, declared, said):
+    """Ticket 13b34894: a CHECK, a foreign key or a unique index's condition is part of what the code needs of its
+    table. A store that holds another is refused at open for that module alone, as before 03f869a0, never opened and
+    then failed at its first write; the map still writes. A unique rule the store only lacks is added in place."""
+    from metaform.data import Node
+    user_module('marks', marks())
+    loader.reset()
+    try:
+        with Store('proj', module='marks').tables() as tx:
+            tx.insert('marks', {'mark_id': 'm1', 'state': 'A'})
+        user_module('marks', marks(MARKS_SCHEMA.replace(held, declared)))
+        loader.reset()
+        before = raw(store_file(), "SELECT name, sql FROM sqlite_master WHERE tbl_name='marks' ORDER BY name")
+        store.add_work(Node('element', 'code.anything'), 'unbuilt', task='the map writes')
+        if said == 'marks lacks':
+            with Store('proj', module='marks').tables() as tx:
+                tx.insert('marks', {'mark_id': 'm2', 'state': 'B', 'done': 'x'})
+                with pytest.raises(StoreError, match='UNIQUE constraint failed'):
+                    tx.insert('marks', {'mark_id': 'm3', 'state': 'B', 'done': 'x'})
+            return
+        with pytest.raises(StoreError) as refused, Store('proj', module='marks').tables(write=False) as tx:
+            tx.rows('marks', limit=0)
+        assert said in str(refused.value)
+        assert raw(store_file(), "SELECT name, sql FROM sqlite_master WHERE tbl_name='marks' ORDER BY name") == before
+        assert raw(store_file(), 'SELECT mark_id, state FROM marks') == [('m1', 'A')]
+        assert [work.task for work in store.work(Node('element', 'code.anything')).results] == ['the map writes']
+    finally:
+        loader.reset()
+
+
+@pytest.mark.req('STORE-029')
+def test_a_check_widened_with_the_version_raised_rebuilds_the_table_keeping_every_row(home, project_folder,
+                                                                                       user_module):
+    """Ticket 13b34894: raising the version for a CHECK change rebuilds the table, as it did before 03f869a0, so the
+    record and the table agree and the new value is accepted."""
+    user_module('marks', marks())
+    loader.reset()
+    try:
+        with Store('proj', module='marks').tables() as tx:
+            tx.insert('marks', {'mark_id': 'm1', 'state': 'A'})
+            tx.insert('marks', {'mark_id': 'm2', 'state': 'B', 'parent': 'm1'})
+        user_module('marks', marks(MARKS_SCHEMA.replace("('A','B')", "('A','B','C')"), version=2))
+        loader.reset()
+        with Store('proj', module='marks').tables() as tx:
+            tx.insert('marks', {'mark_id': 'm3', 'state': 'C'})
+        assert raw(store_file(), 'SELECT mark_id, state, parent FROM marks ORDER BY mark_id') == [
+            ('m1', 'A', None), ('m2', 'B', 'm1'), ('m3', 'C', None)]
+        assert "'C'" in raw(store_file(), "SELECT sql FROM sqlite_master WHERE name='marks'")[0][0]
+        assert raw(store_file(), "SELECT name FROM sqlite_master WHERE name='marks_one'") == [('marks_one',)]
+        assert json.loads(raw(store_file(), "SELECT value FROM meta WHERE key='module:marks'")[0][0])['version'] == 2
+        assert list((metaform_home.home() / 'backups').glob('module-marks-2'))
+    finally:
+        loader.reset()
+
+
+@pytest.mark.req('STORE-029')
+def test_the_same_rules_written_differently_open_the_store_as_it_is(home, project_folder, user_module):
+    """Ticket 13b34894: the rules are compared as SQLite applies them, so a declaration re-cased, re-quoted,
+    re-spaced or commented opens the store with its tables untouched and no copy kept."""
+    user_module('marks', marks())
+    loader.reset()
+    try:
+        with Store('proj', module='marks').tables() as tx:
+            tx.insert('marks', {'mark_id': 'm1', 'state': 'A'})
+        before = raw(store_file(), "SELECT name, sql FROM sqlite_master WHERE tbl_name='marks' ORDER BY name")
+        user_module('marks', marks(
+            'create table if not exists "marks"( "mark_id" text primary key, /* the same rules */ '
+            'state TEXT check ( "state"  in ( \'A\' , \'B\' ) ), parent text references [marks] ( mark_id ), '
+            'done TEXT ) ; create unique index if not exists marks_one on marks ( parent ) where "done" is NULL ;'))
+        loader.reset()
+        with Store('proj', module='marks').tables() as tx:
+            assert tx.get('marks', {'mark_id': 'm1'})['state'] == 'A'
+        assert raw(store_file(), "SELECT name, sql FROM sqlite_master WHERE tbl_name='marks' ORDER BY name") == before
+        assert not list((metaform_home.home() / 'backups').glob('module-marks-*'))
+    finally:
+        loader.reset()
+
+
+@pytest.mark.req('STORE-029')
+def test_two_declarations_at_one_version_and_a_later_one_each_open_a_store_and_add_what_it_lacks(ledger,
+                                                                                                user_module):
+    """Two fixers each called their change version 1 of ledger; the store's record names one, its real tables hold
+    the other's column. A third declaration at version 2 holds both and a new table. Each opens the store; none
+    loses a row or the column the record never named."""
+    fill(ledger)
+    path = store_file()
+    db = sqlite3.connect(path)
+    db.execute('ALTER TABLE "ledger.entries" ADD COLUMN "theirs" TEXT')
+    db.execute('UPDATE "ledger.entries" SET theirs=\'kept\'')
+    db.commit()
+    db.close()
+    ours = LEDGER_V1.replace("Column('detail', 'json')),", "Column('detail', 'json'), Column('ours')),")
+    user_module('ledger', ours)
+    loader.reset()
+    with Store('proj', module='ledger').tables() as tx:
+        tx.update('entries', {'entry_id': 'e1'}, {'ours': 'mine'})
+    later = ours.replace('version=1', 'version=2').replace("Column('ours')),", "Column('ours'), Column('theirs')),") \
+        .replace("    ))\n    MODULE", "        Table('payments', place='metaform', key=('payment_id',), "
+                                      "columns=(Column('payment_id', required=True),)),\n    ))\n    MODULE")
+    user_module('ledger', later)
+    loader.reset()
+    with Store('proj', module='ledger').tables() as tx:
+        tx.insert('payments', {'payment_id': 'p1'})
+        assert [(row['entry_id'], row['ours'], row['theirs']) for row in tx.rows('entries', limit=0).results] == [
+            ('e1', 'mine', 'kept'), ('e2', None, 'kept'), ('e3', None, 'kept')]
+    assert json.loads(raw(path, "SELECT value FROM meta WHERE key='module:ledger'")[0][0])['version'] == 2
 
 
 def test_a_table_the_new_version_no_longer_declares_is_dropped_after_its_copy_is_kept(ledger, user_module):
@@ -497,3 +711,105 @@ def test_the_declaration_refuses_names_that_are_not_plain_and_a_key_it_does_not_
         Table('t', columns=(Column('a', 'decimal'),), key=('a',))  # type: ignore[arg-type]
     with pytest.raises(ValueError):
         Tables(version=0, tables=())
+
+
+# ------------------------------------------------------------------------------------------------ the schema guard
+
+SNAPSHOT = Path(__file__).with_name('module_tables.snapshot.json')
+
+
+def declared_schemas():
+    """Every shipped module's tables as SQLite would hold them, by module: the version, compatible_from and, for each
+    table, its place, key, columns (by name: kind, SQL type, NOT NULL, default), indexes (unique, each column with
+    its order and collation, partial condition) and every rule a write meets: CHECK clauses, foreign keys,
+    collations, ON CONFLICT resolutions and generated columns. A declaration reordered, reworded or moved into a
+    constant reads the same; a change to what the database holds does not."""
+    from metaform.data import tables as module_tables
+    for found in loader.discover():
+        loader.set_enabled(found.id, True)
+    schemas = {}
+    for found in loader.discover():
+        assert not found.problem and found.module is not None, (found.id, found.problem)
+        declared = found.module.tables
+        if declared is None and found.declared is not None and found.declared.data_source:
+            declared = getattr(loader.data_source(found.id), 'TABLES', None)
+        if declared is None:
+            schemas[found.id] = None
+            continue
+        held = {}
+        for table in declared.tables:
+            db = sqlite3.connect(':memory:')
+            try:
+                module_tables._create(db, found.id, table)
+                name = module_tables.physical(found.id, table)
+                columns = {str(row[1]): [table.column(str(row[1])).kind, str(row[2]).upper(), bool(row[3]), row[4]]
+                           for row in db.execute(f'PRAGMA table_info("{name}")')}
+                shape = module_tables._shape(db, name)
+            finally:
+                db.close()
+            assert shape is not None
+            held[table.name] = {
+                'place': table.place, 'key': list(table.key), 'columns': dict(sorted(columns.items())),
+                'indexes': sorted([unique, [list(column) for column in held_columns], where]
+                                  for unique, held_columns, where in shape.indexes),
+                'checks': list(shape.checks), 'foreign_keys': [json.loads(json.dumps(key)) for key in shape.foreign_keys],
+                'collations': {column: collation for column, collation in sorted(shape.collations.items())
+                               if collation != 'BINARY'},
+                'on_conflict': [list(resolution) for resolution in shape.resolutions],
+                'generated': sorted(shape.generated)}
+        schemas[found.id] = {'version': declared.version, 'compatible_from': declared.oldest,
+                             'tables': dict(sorted(held.items()))}
+    return dict(sorted(schemas.items()))
+
+
+def schema_changes(before, after):
+    """What changed between two snapshots, one line per module, saying whether its version was raised."""
+    lines = []
+    for module in sorted(set(before) | set(after)):
+        old, new = before.get(module), after.get(module)
+        if old == new:
+            continue
+        if old is None or new is None:
+            lines.append(f'{module}: {"declares tables now" if old is None else "no longer declares tables"}')
+            continue
+        said = []
+        for table in sorted(set(old['tables']) | set(new['tables'])):
+            was, now = old['tables'].get(table), new['tables'].get(table)
+            if was is None or now is None:
+                said.append(f'table {table} {"added" if was is None else "removed"}')
+                continue
+            for column in sorted(set(was['columns']) | set(now['columns'])):
+                a, b = was['columns'].get(column), now['columns'].get(column)
+                if a != b:
+                    said.append(f'{table}.{column} ' + ('added' if a is None else 'removed' if b is None else
+                                                        f'changed from {a} to {b}'))
+            for field in ('place', 'key', 'indexes', 'checks', 'foreign_keys', 'collations', 'on_conflict',
+                          'generated'):
+                if was.get(field) != now.get(field):
+                    said.append(f'{table} {field} changed from {was[field]} to {now[field]}')
+        bumped = (f'version raised from {old["version"]} to {new["version"]}' if new['version'] > old['version'] else
+                  f'version NOT raised, still {new["version"]}')
+        if old['compatible_from'] != new['compatible_from']:
+            said.append(f'compatible_from changed from {old["compatible_from"]} to {new["compatible_from"]}')
+        lines.append(f'{module}: {"; ".join(said) or "the declaration changed"}; {bumped}')
+    return lines
+
+
+@pytest.mark.req('STORE-029')
+def test_no_module_changes_its_tables_without_the_snapshot_saying_so(home):
+    """The guard against unneeded schema changes, ticket 03f869a0: every shipped module's tables are compared with
+    the committed snapshot. A change the ticket's own task requires raises the module's version once and updates the
+    snapshot in the same commit, METAFORM_TABLES_SNAPSHOT=write; any other change fails here, naming the module."""
+    try:
+        now = declared_schemas()
+    finally:
+        loader.reset()
+    if os.environ.get('METAFORM_TABLES_SNAPSHOT') == 'write':
+        SNAPSHOT.write_text(json.dumps(now, indent=1) + '\n', encoding='utf-8')
+    committed = json.loads(SNAPSHOT.read_text(encoding='utf-8'))
+    changes = schema_changes(committed, now)
+    assert not changes, (
+        'Module tables differ from tests/module_tables.snapshot.json:\n  ' + '\n  '.join(changes) + '\nNo module '
+        'changes its tables, columns or keys unless its ticket\'s task requires it (AGENTS.md). If it does: raise the '
+        'version once, say why in the Tables comment and the ticket, and update the snapshot in the same commit with '
+        'METAFORM_TABLES_SNAPSHOT=write uv run pytest -n 0 tests/test_module_tables.py -k snapshot')

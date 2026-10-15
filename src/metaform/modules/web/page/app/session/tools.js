@@ -9,7 +9,8 @@ import {plural} from '/page/app/memory/manage.js';
 import {select} from '/page/app/selection/select.js';
 import {dated, linked} from '/page/app/board/refs.js';
 import {wrote} from '/page/app/board/history.js';
-import {ticketOf, ticketPart} from '/page/app/agents/dispatch.js';
+import {confirmAct} from '/page/app/core/controls.js';
+import {ticketOf, ticketPart, PROMPT_WORDS} from '/page/app/agents/dispatch.js';
 import {agentName} from '/page/app/agents/pickers.js';
 
 /* ---------- an agent's session as ACP gives it, VIEW-039 and BASE-052 ----------
@@ -130,22 +131,52 @@ export function toolRow(line, tag, key) {
   h('span', {class: 'toolstate', 'data-status': status}, h('i', {'aria-hidden': 'true'}),
     STATUS_WORDS[status] || status),
   more ? h('i', {class: 'i i-chev', 'aria-hidden': 'true'}) : null);
-  return h(tag, {class: 'tool', 'data-status': status}, head, detail);
+  return h(tag, {class: 'tool', 'data-status': status, 'data-key': key}, head, detail);
 }
 const PERMIT_TITLES = {allow_once: 'Let it do this once',
   allow_always: 'Let it do this, and the same again without asking', reject_once: 'Do not let it do this',
   reject_always: 'Do not let it, and never ask again'};
-/* A permission request, as the agent put it: what it would do and the agent's own options, each a button; while it
- * waits it stands out, and once answered it says what was chosen. */
-export function permissionCard(line, work, tag, agent) {
+/* How a session's permission requests are answered, dispatch_prompts' choices in a card's few words, and whose choice
+ * the one in force is. */
+export const ANSWERING = {ask_all: 'Ask each time', 'approve-reads': 'Approve reads only',
+  'approve-all': 'Approve all'};
+const ANSWERING_FROM = {session: 'chosen for this session', launch: 'given at this launch', project: 'project setting'};
+/* Choose how a running session's permission requests are answered from now on: its later requests at once, and one
+ * waiting now that the choice approves. Approve all lets the agent act without asking, so it is confirmed once. The
+ * answer, or null when it was not chosen or not written. */
+export async function answerAs(work, session, how, agent) {
+  const name = agentName(agent);
+  if (how === 'approve-all' && !await confirmAct({title: `Let ${name} act without asking?`,
+    text: [`Every permission request of this session is approved from now on, this one too: ${name} runs any tool `
+      + 'without asking you, including ones that change or delete files.',
+    'You can choose another answer at any time.'],
+    verb: 'Approve all', cancel: 'Keep asking', danger: true})) return null;
+  return wrote('/api/dispatch-session-prompts', {work_id: work, session: session.session_id, prompts: how,
+    ...(how === 'approve-all' ? {confirm: true} : {})});
+}
+/* A permission request, as the agent put it: what it would do and the agent's own options, each a button, with Allow
+ * all, and how the session's requests are answered, a picker that changes it; while it waits it stands out, and once
+ * answered it says what was chosen. `session` is the running session's read, its `prompts` the answer in force;
+ * `answered` is told the request was answered from this card. */
+export function permissionCard(line, work, tag, agent, {session = null, answered = null} = {}) {
   const data = line.data || {}, state = data.state || 'waiting';
   const name = agentName(agent);
   const chosen = (data.options || []).find(option => option.option_id === data.chosen);
+  const live = state === 'waiting' && session?.state === 'running' && Boolean(session.session_id);
+  const allowAll = live ? h('button', {type: 'button', class: 'btn sm allowall',
+    title: `Allow this and every later request of this session, with no more asking`,
+    onclick: () => choose('approve-all')}, 'Allow all') : null;
   const answer = h('div', {class: 'answers', role: 'group', 'aria-label': 'Answer the request'},
     (data.options || []).map(option => h('button', {type: 'button', 'data-option': option.option_id,
       class: `btn sm ${/^allow/.test(option.kind) ? (option.kind === 'allow_once' ? 'primary' : '') : 'danger'}`,
       title: (Object.hasOwn(PERMIT_TITLES, option.kind) ? PERMIT_TITLES[option.kind] : '') || option.name,
-      onclick: event => permit(event, option)}, option.name)));
+      onclick: event => permit(event, option)}, option.name)), allowAll);
+  const settle = said => {
+    card.classList.replace('waiting', 'answered');
+    fill(answer, h('p', {class: 'said'}, h('i', {class: 'i i-check', 'aria-hidden': 'true'}), said));
+    mode?.remove();
+    answered?.(data.request);
+  };
   async function permit(event, option) {
     const buttons = [...answer.querySelectorAll('button')];
     const picked = event.currentTarget;  // read before the await, after which the event has no currentTarget
@@ -157,9 +188,33 @@ export function permissionCard(line, work, tag, agent) {
       picked.classList.remove('chosen');
       return;
     }
-    card.classList.replace('waiting', 'answered');
-    fill(answer, h('p', {class: 'said'}, h('i', {class: 'i i-check', 'aria-hidden': 'true'}),
-      `${done.answer || option.name}, answered by you.`));
+    settle(`${done.answer || option.name}, answered by you.`);
+  }
+  // how the session's requests are answered, in force now, and a change of it; one approving this request answers it
+  const held = Object.hasOwn(ANSWERING, session?.prompts || '') ? session.prompts : '';
+  const pick = live ? h('select', {'aria-label': `How ${name}'s permission requests are answered`,
+    onchange: () => choose(pick.value)},
+  held ? null : h('option', {value: '', disabled: true, selected: true}, 'Not known'),
+  Object.entries(ANSWERING).map(([value, words]) => h('option', {value, selected: value === held}, words))) : null;
+  const mode = pick ? h('label', {class: 'answering',
+    title: `${PROMPT_WORDS[held]?.[0] || 'How its requests are answered'}`
+      + `${session.prompts_from ? ` (${ANSWERING_FROM[session.prompts_from] || session.prompts_from})` : ''}`},
+  h('span', {}, 'Answers'), pick,
+  session.prompts_from ? h('small', {}, ANSWERING_FROM[session.prompts_from] || session.prompts_from) : null) : null;
+  async function choose(how) {
+    const controls = [...card.querySelectorAll('.answers button, .answering select')];
+    for (const control of controls) control.disabled = true;
+    const done = await answerAs(work, session, how, agent);
+    if (!done) {
+      for (const control of controls) control.disabled = false;
+      pick.value = held;
+      return;
+    }
+    pick.value = how;
+    for (const control of controls) control.disabled = false;
+    if ((done.approved || []).includes(data.request)) {
+      settle(`Allowed: ${ANSWERING[how].toLowerCase()}, chosen by you.`);
+    }
   }
   const said = state === 'answered' ? `${data.answer || chosen?.name || 'Answered'}: answered.`
     : state === 'cancelled' ? 'Not answered: its turn ended before an answer.'
@@ -173,7 +228,8 @@ export function permissionCard(line, work, tag, agent) {
     data.said ? h('p', {class: 'why'}, ...linked(data.said)) : null,
     data.detail ? h('div', {class: 'tooldetail'}, toolDetail(data.detail)) : null,
     state === 'waiting' ? answer
-      : h('p', {class: 'said'}, h('i', {class: `i ${allowed ? 'i-check' : 'i-close'}`, 'aria-hidden': 'true'}), said));
+      : h('p', {class: 'said'}, h('i', {class: `i ${allowed ? 'i-check' : 'i-close'}`, 'aria-hidden': 'true'}), said),
+    mode);
   return card;
 }
 const ELICITATION_SAID = {declined: 'Declined.', cancelled: 'Not answered: its turn ended first.',

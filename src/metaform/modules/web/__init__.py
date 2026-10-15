@@ -17,11 +17,13 @@ import json
 import os
 import secrets
 import selectors
+import shutil
 import signal
 import socket
 import subprocess
 import sys
 import threading
+import time
 from contextlib import ExitStack
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -32,8 +34,6 @@ from typing import Any, cast
 from metaform import home, settings
 from metaform.data import BASE_VARIABLE
 from metaform.module import Context, Module, Noun, Pane, Stop, ToolbarItem, Verb, child_environment
-
-from .workspace import DEFAULT, check_layout, check_toolbar, check_workspaces, workspace_choices
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -46,6 +46,13 @@ WILDCARDS = ('0.0.0.0', '::', '')
 # this variable once, at start (the node module's gate.env gives it to Caddy and the web container only).
 GATE_SECRET = 'METAFORM_GATE_SECRET'
 IN_USE = {errno.EADDRINUSE, errno.EACCES, 10048, 10013}  # 10048 and 10013 are Windows's in use and access denied
+# The watchdog, watchdog.py, that `start` runs the server under, VIEW-002: its process id, and the restart that started
+# a server, with when, why and how many so far, both in the server's environment; and the hold tool it runs under, a
+# path or empty for none, else `hold` on the PATH.
+SUPERVISOR = 'METAFORM_WEB_SUPERVISOR'
+RESTARTED = 'METAFORM_WEB_RESTARTED'
+HOLD = 'METAFORM_HOLD'
+PYTHON = 'METAFORM_WATCHDOG_PYTHON'  # the python a hold call runs the watchdog with, given by its own path
 
 settings.number('web_port', 7433, min=1, max=65535, scope='global',
                 help='The port the web GUI listens on.',
@@ -56,35 +63,6 @@ settings.text('web_bind', '127.0.0.1', scope='global', person_only=True,  # who 
               details='At 127.0.0.1 only this machine can reach the web GUI. Another address opens it to that '
                       'network, and then every request needs the token that metaform web prints.',
               label='Page bind address', category='advanced')
-settings.text('agent_command', 'claude -p', person_only=True,  # the command an agent is started with
-              help='The command the web GUI starts an agent with, the task given as its last argument.',
-              details='It is run in the project\'s folder when a person asks for an agent from the web GUI, as when '
-                      'an element added by hand is to be validated. Where it cannot be run the task waits on the '
-                      'map for an agent to take it.',
-              label='Agent command', category='advanced')
-
-# The workspace the person arranges on the page, kept for the whole home so every project opens the same way. Each is
-# the JSON text of its shape, workspace.py; empty is the defaults the modules declare, so unset returns to them. The
-# page is where they are arranged; config, set and the settings screen show and take the JSON text.
-settings.text('web_toolbar', '', scope='global', check=check_toolbar,
-              help='The web GUI\'s toolbar as the person arranged it, as JSON; empty is the declared defaults.',
-              details='{"toolbar": [[id, ...], ...], "extra": [id, ...]}: each inner list is one slot, its first tool '
-                      'shown and the others behind it; extra holds the tools behind the toolbar\'s last slot. An id '
-                      'is <module>.<id>, or chassis.<id>. A tool not named lands in its declared place. metaform '
-                      'unset --web-toolbar restores the defaults.',
-              label='Toolbar arrangement', category='advanced')
-settings.text('web_layout', '', scope='global', check=check_layout,
-              help='The web GUI\'s panes as the person arranged them, as JSON; empty is the declared defaults.',
-              details='{"areas": {"left"|"main"|"right"|"bottom": {"size": px, "groups": [{"id", "tabs": [id, ...], '
-                      '"active", "size"}]}}, "floating": [{"pane", "x", "y", "w", "h"}], "off": [id, ...]}. A pane '
-                      'in off keeps its place and is not shown. A pane not named lands in its declared group and '
-                      'area. metaform unset --web-layout restores the defaults.',
-              label='Pane layout', category='advanced')
-settings.text('web_workspaces', '', scope='global', check=check_workspaces,
-              help='The person\'s named workspaces, each a saved toolbar and layout, as JSON.',
-              details='{"<name>": {"toolbar": ..., "layout": ...}}. Default is never stored: it is the declared '
-                      'defaults, so it cannot be deleted. The page saves, selects, resets and deletes them.',
-              label='Saved workspaces', category='advanced')
 # Whether the page is laid out by the workspace, its toolbar, panes and Window menu, or as it was written before them:
 # the side column with its tabs beside the large map. A fork in how the page is arranged, so it is the person's. Off
 # until the workspace's Default reproduces the page as written and every check of it passes with the workspace on.
@@ -101,29 +79,29 @@ settings.boolean('web_node_shapes', True, scope='global',
                          'upstream an input and downstream an output, in the 2D and the 3D map. Off draws every '
                          'element in one shape, as the maps did before.',
                  label='Node shapes', heading='Look')
-# How much the 3D map draws. clean is the map as it has always been; ultra draws it in outer space, page/ultra.js:
-# a starfield and a faint nebula behind it, each element a celestial body of its artifact type, the joins as
-# filaments of light and a glow on what is bright. It steps its own quality down when the frame rate stays low, and
-# an idle map still rests. The 2D map is the same in both.
+# The page's theme, its colors, and with space the 3D map drawn in outer space, page/ultra.js: a starfield and a faint
+# nebula behind it, each element a celestial body of its artifact type, the joins as filaments of light and a glow on
+# what is bright. One choice of look, settings cleanup 2026-10-15, which removed web_graphics, its shadow that the page
+# rewrote from the theme. Written only when the person picks a theme; until then each browser keeps the theme it last
+# showed, so nobody's look changed when it became a setting. The names are page/index.html's #theme options.
+THEMES = ('space', 'black', 'midnight', 'graphite', 'plum', 'forest', 'ember', 'paper', 'mist')
+settings.choice('web_theme', list(THEMES), 'space', scope='global',
+                help="The page's theme: space draws the 3D map in outer space; every other theme draws it flat.",
+                details='Chosen in the View menu, with U for space and back, or here, and kept for every browser. '
+                        'Until a theme is chosen, each browser keeps the one it last showed, space in a new one.',
+                label='Theme', heading='Look')
 # Giving an agent in the chat a body on the map: the page offers it once per conversation, in its thread, at a pause
-# (a turn ended or a ticket closed, never while it works), after web_embody_turns turns or web_embody_minutes minutes,
-# whichever comes first. Asked too soon, the offer interrupts a conversation that has not shown it is worth keeping;
+# (a turn ended or a ticket closed, never while it works), after EMBODY_TURNS turns or EMBODY_MINUTES minutes in
+# page/app/dock/embody.js, whichever comes first. Asked too soon, the offer interrupts a conversation that has not shown it is worth keeping;
 # about eight turns or twenty minutes is a conversation the person is staying with. always gives each conversation the
 # person's last choice, or the mascot to the system agent; never makes no offer. The figure itself is the flow's,
 # `window.metaform.embody`.
 settings.choice('web_embody', ['offer', 'always', 'never'], 'offer', scope='global',
                 help='Whether the chat offers to give its agent a body on the map: offer, always or never.',
-                details='offer asks once per conversation, at a pause, after web_embody_turns turns or '
-                        'web_embody_minutes minutes; always gives every conversation your last choice, or the mascot '
+                details='offer asks once per conversation, at a pause, after eight turns or twenty minutes; always gives every conversation your last choice, or the mascot '
                         'to your system agent; never makes no offer. The avatar in the chat\'s head, its menu or B '
                         'give or change a body at any time.',
                 label='Agents take a figure', heading='Mascot and agents')
-settings.number('web_embody_turns', 8, min=0, max=100, scope='global',
-                help='Turns of a chat before it offers to give its agent a body; 0 offers at once.',
-                label='Figure kept for turns', category='advanced', unit='turns')
-settings.number('web_embody_minutes', 20, min=0, max=600, scope='global',
-                help='Minutes of a chat before it offers to give its agent a body, if its turns come later.',
-                label='Figure kept for', category='advanced')
 # What a chat's thread shows of the agent's work. Off, it shows what the agent says to the person, its messages and the
 # lines it says on the map, so an agent that comes out in the chat speaks without its tool calls and thinking between
 # its words; those are debug detail, shown with this on, or for one page with W.
@@ -133,27 +111,6 @@ settings.boolean('web_chat_details', False, scope='global',
                          'the map, with its permission requests and questions. W in the web GUI shows or hides the '
                          'work on that page until it is reloaded, and saves nothing.',
                  label="Show the agent's work in the chat", heading='Mascot and agents')
-# The 3D map's names: outward stands each as a sign facing away from the map's middle, turned round where the eye is
-# behind it so it never reads mirrored; facing turns each to the eye.
-settings.choice('web_signs', ['outward', 'facing'], 'outward', scope='global',
-                help="How the 3D map's names stand: outward from the map's middle, or facing you.",
-                details='outward keeps each name a sign in the scene, facing away from the map\'s middle, upright in '
-                        'the map; seen from behind it turns round, so its letters always read as written. facing turns '
-                        'every name to the eye. S in the web GUI switches them.',
-                label='Signs on the 3D map', heading='Look')
-settings.choice('web_lens', ['natural', 'wide', 'fisheye'], 'natural', scope='global',
-                help="The 3D map's lens: natural, wide, or fisheye, how far the view opens as its pane grows tall.",
-                details='The 3D map keeps a name the same size when its pane changes height, by opening or narrowing '
-                        'its field of view. natural holds it between 30 and 55 degrees, wide up to 80, and fisheye up '
-                        'to 120, the view bending round the map as the 3D map takes the large area.',
-                label='3D lens', heading='Look')
-settings.choice('web_graphics', ['clean', 'ultra'], 'clean', scope='global',
-                help='How the 3D map is drawn: clean, or ultra, the map in outer space.',
-                details='ultra draws a starfield and a nebula behind the map, each element as a planet, star or '
-                        'other body by its artifact type, the joins as filaments of light, and a soft glow on the '
-                        'selection, the flow and the agents. It draws less when the frame rate stays under 40 a '
-                        'second. U in the web GUI switches between the two.',
-                label='Graphics', heading='Look')
 # The dots that flow along the joins are the 3D map's one motion that never ends by itself; drawing them costs the
 # machine every frame. They flow for this long after the map was last touched or changed, then the map draws nothing
 # until the next act, so a page left open costs nothing.
@@ -164,30 +121,8 @@ settings.number('web_flow_seconds', 30, min=0, max=3600, scope='global',
                 label='Activity flow lasts', category='advanced', heading='Flow')
 # How often each join pulses: after each request and reply a join waits (random + random) times this, so the waits
 # bunch around it with now and then a quick one or a slow one, each join drawing its own, and nothing pulses in step.
-# In milliseconds, since a setting's number is whole.
-# Which joins the dots flow along: off draws none, and no agents' activity either; selected, the selected node's joins;
-# all, every join; live, only what agents really do. The map's bar, the View menu and the key D choose it on the page.
-settings.choice('web_flow_mode', ['off', 'hover', 'selected', 'all', 'live'], 'selected', scope='global',
-                help="Which joins the dots flow along: off, hover (the node under the pointer), selected, all, or live.",
-                details="hover draws the flow on the joins of the node the pointer is on; selected on the selected "
-                        "node's joins only, so a large map costs nothing; all on every join; live only what agents "
-                        "really do; off draws nothing, agents' activity included. A change eases the dots in or out. "
-                        'D steps through hover, selected and all, with the edges drawn and then hidden.',
-                label='Dots flow along', heading='Flow')
-# How many levels of the map show, counted along the joins from the CQUs and the other tops, VIEW-051: a large map
-# read a few levels at a time, its deeper parts held inside the node they serve. The key 4 steps through them.
-settings.choice('web_map_depth', ['1', '2', '3', '4', 'all'], 'all', scope='global',
-                help='How many levels of the map show, counted along the joins from the top: 1, 2, 3, 4 or all.',
-                details='The CQUs and the other tops are level 1, what serves them level 2, and so on, by the '
-                        'shortest way down, so a part serving two receivers shows when either does. A deeper part stays inside '
-                        'its receiver, which counts what it holds; a click on that node breaks out its next level and '
-                        'a click again folds it. Both maps show the same parts; the inside view shows every level. '
-                        '4 in the web GUI steps through them.',
-                label='Levels shown', heading='Map')
-settings.boolean('web_flow_edges', True, scope='global',
-                 help="Draw the joins' lines on the maps; off hides them, and only what flows along them shows.",
-                 details='D steps it with the flow: hover, selected and all with the edges, then the three without.',
-                 label='Show the joins', heading='Flow')
+# In milliseconds, since a setting's number is whole. Which joins the dots flow along, how deep the map shows and
+# whether the joins' lines are drawn are the person's view, view.py.
 settings.number('web_pulse_ms', 3000, min=200, max=30000, scope='global',
                 help='The usual wait, in milliseconds, between one request and reply on a join and the next.',
                 details='Each join waits (random + random) times this after each cycle, a fresh wait every time, so '
@@ -227,55 +162,18 @@ settings.choice('web_mascot_mischief', ['calm', 'playful', 'chaotic'], 'playful'
                 details='calm only calls your attention and never wanders; playful wanders now and then and nudges a '
                         'node it passes; chaotic does both more often. It never takes the pointer or blocks a click.',
                 label='Mascot mischief', heading='Mascot and agents')
-settings.items('web_agent_glyphs', [], scope='global',
+def _glyph_choices(ctx: Context) -> list[str]:
+    """Each agent type dispatch starts, by its dispatch_agent choices, with each character there is."""
+    agent = settings.SCHEMA.get('dispatch_agent')
+    agents = agent.options(ctx.folder) if agent is not None else ['claude', 'codex', 'gemini']
+    return [f'{one}={character}' for one in agents for character in CHARACTERS]
+
+
+settings.items('web_agent_glyphs', [], scope='global', exclusive='=', choices=_glyph_choices,
                help='The character for each agent type, as type=character, such as claude=owl or codex=beetle.',
                details='Without one, characters are given as before, so no two agents at work look alike; a '
                        'character already at work, or the mascot, is never given twice.',
                label='Agent glyphs', category='advanced')
-# Which way the 2D map runs. auto lays it out each way for its pane and keeps the one drawn largest with the whole map
-# in view; across and down hold it to one direction whatever the pane's shape.
-settings.choice('web_map_direction', ['auto', 'across', 'down'], 'auto', scope='global',
-                help='Which way the 2D map runs: auto, across (left to right) or down (top to bottom).',
-                details='auto lays the map out left to right and top to bottom, and each folded into rows or '
-                        'columns when it is long, and keeps the one its pane shows largest with the whole map in '
-                        'view; it is laid out again when the pane changes shape. across and down hold it to that '
-                        'direction, unfolded.',
-                label='2D map direction', heading='Map')
-# Node zoom: each node selected in the 3D map is flown to, framed close with its neighbours, in either pane and
-# whatever framing or physics is in force; it is what shows a part in its place. It is also the 2D map's auto zoom,
-# VIEW-041: each selection eases the 2D map to the node with its neighbours. Off, a selection never moves either
-# camera; Whole and Free then hold the 3D view, and the 2D map stays where the person left it.
-# What the maps say of what the pointer is on: its name across the top where the map shows none that can be read, and
-# a card of its details at the lower right, both by default.
-settings.choice('web_hover_info', ['name+summary', 'name', 'summary', 'off'], 'name+summary', scope='global',
-                help='What the maps say of what the pointer is on: name+summary, name, summary or off.',
-                details='name is the hovered thing\'s name across the top of the map, shown only where the map has '
-                        'no name of its own that can be read, an edge always; summary is the card at the lower right '
-                        'with its kind, address and purpose or EF, an agent\'s work and status. I in the web GUI, the '
-                        'map bar and the View menu choose it.',
-                label='What the pointer shows', heading='Look')
-settings.boolean('web_node_zoom', True, scope='global',
-                 help='Move both maps to each node selected and frame it with its neighbours.',
-                 details='On, every selection in 3D flies there, in the large and the small pane, whatever Whole, '
-                         'Free or physics is chosen; those frame the map while nothing is being flown to; and the 2D '
-                         'map eases to the node with its neighbours, its auto zoom. Off, a selection never moves '
-                         'either camera. Z or 3 in the web GUI, the map bars and the View menu toggle it.',
-                 label='Fly to the node selected', heading='Map')
-# The window of the agents at work: auto slides it out as an agent starts work and away a few seconds after the last
-# one stops; open keeps it out, hidden keeps it away.
-settings.choice('web_agents_window', ['auto', 'open', 'hidden'], 'auto', scope='global',
-                help='When the window of the agents at work shows: auto, open or hidden.',
-                details='auto shows it while any agent is at work and slides it away a few seconds after the last '
-                        'one stops; open pins it out, hidden pins it away. A in the web GUI, or the View menu, '
-                        'changes it.',
-                label='Agents window', heading='Mascot and agents')
-# The 3D map's layout: organic, as it has always been, or flat, everything on one plane with the names facing you.
-PHYSICS = ('organic', 'flat')
-settings.choice('web_physics', list(PHYSICS), 'organic', scope='global',
-                help="The 3D map's layout: organic, or flat.",
-                details='organic is the natural layout; flat lays the map on one plane with its names facing you. '
-                        'L switches between them in the web GUI.',
-                label='3D layout', heading='Map')
 # The page's developer detail: off shows none of it. info adds the browser-console lines of what the page reads and
 # writes and the developer panes, among them the prompts Metaform and each enabled module would send; verbose adds
 # the events heard and the panes drawn; trace adds every raw response.
@@ -287,12 +185,6 @@ settings.choice('web_debug', list(DEBUG_LEVELS), 'off', scope='global',
                         'sees, and the traces; verbose adds the events heard and each pane drawn; trace adds every '
                         'raw response. metaform web start --web-debug <level> starts the page with it for that run.',
                 label='Developer level', category='advanced')
-settings.choice('web_workspace', workspace_choices, DEFAULT, scope='global',
-                help='The workspace the web GUI opens with; Reset returns the toolbar and panes to it as saved.',
-                details='Default is the declared defaults. Choosing a workspace on the page copies its toolbar and '
-                        'layout into web_toolbar and web_layout, which then hold the person\'s changes until the '
-                        'next reset or save.',
-                label='Workspace in use', category='advanced')
 
 
 def run_dir() -> Path:
@@ -303,9 +195,64 @@ def run_file() -> Path:
     return run_dir() / 'web.json'
 
 
+def watchdog_file() -> Path:
+    return run_dir() / 'web-watchdog.json'
+
+
 def write_run(path: Path, text: str) -> None:
     """Write one of the server's run files, readable by its owner alone, as the token is."""
     home.write_private(path, text)
+
+
+def restart_said(text: str) -> dict[str, Any] | None:
+    """The restart that started a server, as the watchdog gives it in RESTARTED; None for a first start."""
+    try:
+        found: Any = json.loads(text) if text else None
+    except ValueError:
+        return None
+    return cast(dict[str, Any], found) if isinstance(found, dict) else None
+
+
+def hold_tool() -> str | None:
+    """The hold tool the watchdog runs under: HOLD when it is set, empty for none, else `hold` on the PATH."""
+    given = os.environ.get(HOLD)
+    if given is not None:
+        return given or None
+    return shutil.which('hold') if os.name != 'nt' else None
+
+
+def hold_name(port: int) -> str:
+    """The hold call the watchdog of the server on `port` is placed as, so `hold list` names it."""
+    return f'metaform-web-{port}'
+
+
+def alive(pid: int) -> bool:
+    """Whether a process with this id runs: on Windows by tasklist, since os.kill there would end it."""
+    if pid <= 0:
+        return False
+    if os.name == 'nt':
+        done = subprocess.run(['tasklist', '/FI', f'PID eq {pid}', '/NH', '/FO', 'CSV'], capture_output=True,
+                              text=True, timeout=WAIT, check=False)
+        return f'"{pid}"' in done.stdout
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def watchdog() -> dict[str, Any] | None:
+    """The record of this home's watchdog, while its process runs."""
+    try:
+        found: Any = json.loads(watchdog_file().read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(found, dict):
+        return None
+    record = cast(dict[str, Any], found)
+    return record if alive(int(record.get('pid') or 0)) else None
 
 
 def token_file() -> Path:
@@ -445,20 +392,37 @@ def check_free(bind: str, port: int) -> None:
         raise Stop(f'The web GUI cannot bind to {bind}: {reason}.', 'metaform set --web-bind <address>')
 
 
-def spawn(bind: str, port: int, nonce: str, origin: str = '', gate: str | None = None) -> subprocess.Popen[bytes]:
+def page_environment() -> dict[str, str]:
+    """The environment of the server and its watchdog. It is the person's page, so the role of an agent that ran
+    `start` never passes to it, BASE-052, nor the base its ticket is on: the page shows whichever base the person
+    chooses."""
+    return {name: value for name, value in child_environment().items() if name != BASE_VARIABLE}
+
+
+def spawn(bind: str, port: int, nonce: str, origin: str = '', gate: str | None = None, *,
+          supervisor: str | None = None, restarted: str | None = None) -> subprocess.Popen[bytes]:
     """The server as a process detached from the terminal, so it runs until stopped, VIEW-002. Its standard output
-    is a pipe back to `start`, on which it writes one line once it listens; its standard error is the log. It is the
-    person's page, so the role of an agent that ran `start` never passes to it, BASE-052, nor the base its ticket
-    is on: the page shows whichever base the person chooses. A server behind a Node's gate hands its public origin
-    and gate secret to its replacement, and to nothing else."""
-    env = {name: value for name, value in child_environment().items() if name != BASE_VARIABLE}
-    folder = run_dir()
-    home.mkdir_private(folder)
+    is a pipe back to `start`, on which it writes one line once it listens; its standard error is the log. A server
+    behind a Node's gate hands its public origin and gate secret to its replacement, and to nothing else; one under
+    the watchdog is told the watchdog's process, and the restart that started it."""
+    env = page_environment()
     command = [sys.executable, '-m', 'metaform.modules.web.server', '--bind', bind, '--port', str(port),
                '--nonce', nonce]
     if origin and gate:
         command += ['--origin', origin]
         env[GATE_SECRET] = gate
+    if supervisor:
+        env[SUPERVISOR] = supervisor
+    if restarted:
+        env[RESTARTED] = restarted
+    return detached(command, env)
+
+
+def detached(command: list[str], env: dict[str, str]) -> subprocess.Popen[bytes]:
+    """A process detached from the terminal, in a session of its own, with its standard output a pipe back to this
+    one and its standard error the log, run/web.log."""
+    folder = run_dir()
+    home.mkdir_private(folder)
     with os.fdopen(os.open(folder / 'web.log', os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), 'ab') as log:
         if os.name == 'nt':
             flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
@@ -509,18 +473,17 @@ def starting(ctx: Context) -> dict[str, Any]:
     except OSError:
         pass  # the page then follows the setting alone
     record = recorded()
-    if record is not None:
-        if answering(record):
-            return shown(record, 'running')
-        run_file().unlink(missing_ok=True)
+    if record is not None and answering(record):
+        return shown(record, 'running')
+    kept = watchdog()
+    if kept is not None:  # its server ended or hangs, and the watchdog is starting it again
+        return shown(kept, 'restarting')
+    run_file().unlink(missing_ok=True)
     check_free(bind, port)
     if not loopback(bind):
         token(create=True)
     nonce = secrets.token_hex(8)
-    process = spawn(bind, port, nonce)
-    line = ready_line(process)
-    if process.stdout is not None:
-        process.stdout.close()
+    line = watched(bind, port, nonce)
     if line:
         record = recorded()
         if record is not None and answering(record):
@@ -528,29 +491,106 @@ def starting(ctx: Context) -> dict[str, Any]:
         raise Stop(f'The web GUI said it was ready but does not answer: {log_tail()}', 'metaform web stop')
     if line is None:
         raise Stop(f'The web GUI did not answer within {WAIT:.0f} seconds: {log_tail()}', 'metaform web stop')
-    process.wait()
     record = recorded()
     if record is not None and answering(record):
         return shown(record, 'running')  # another `metaform web` started one first
     raise Stop(f'The web GUI did not start: {log_tail()}', 'metaform web')
 
 
+def watched(bind: str, port: int, nonce: str) -> bytes | None:
+    """Start the watchdog, which starts the server, VIEW-002, and its one line saying the server listens: empty when
+    the server ended first, None when nothing was said within `WAIT`. With the hold tool the watchdog is placed as a
+    hold call, so `hold list` shows it and `hold end` stops it and its server, and it says so through a named pipe,
+    since hold keeps a call's standard output; without it, it is a detached process saying so on a pipe, as the server
+    does."""
+    command = [sys.executable, '-m', 'metaform.modules.web.watchdog', '--bind', bind, '--port', str(port),
+               '--nonce', nonce]
+    held = hold_tool()
+    if held is None:
+        process = detached(command, page_environment())
+        line = ready_line(process)
+        if process.stdout is not None:
+            process.stdout.close()
+        return line
+    home.mkdir_private(run_dir())
+    pipe = run_dir() / f'web-ready-{nonce}'
+    os.mkfifo(pipe, 0o600)  # type: ignore[attr-defined]  hold runs on POSIX systems only
+    try:
+        name = hold_name(port)
+        subprocess.run([held, 'purge', name], capture_output=True, timeout=WAIT, check=False)  # a past call's name
+        # hold runs every path in a call by its real path, which takes a virtual environment's python, a link, to the
+        # base interpreter, outside the environment Metaform is installed in; so the shell is given it to run, in the
+        # environment, where hold leaves it as it is
+        placed = subprocess.run([held, '--quiet', '--name', name, '-d', '/bin/sh', '-c', f'exec "${PYTHON}" "$@"',
+                                 'sh', *command[1:], '--ready', str(pipe)],
+                                cwd=home.home(), env={**page_environment(), PYTHON: sys.executable},
+                                capture_output=True, text=True,
+                                encoding='utf-8', stdin=subprocess.DEVNULL, timeout=WAIT, check=False)
+        if placed.returncode != 0:
+            raise Stop(f"hold could not place the web GUI's watchdog: {placed.stderr.strip() or placed.returncode}",
+                       f'{HOLD}= metaform web start, which runs it without hold')
+        line = heard(pipe)
+        if line is None:  # the watchdog ended before it could say anything: hold kept what it wrote
+            told = subprocess.run([held, 'logs', name, '-p'], capture_output=True, text=True, encoding='utf-8',
+                                  errors='replace', timeout=WAIT, check=False).stdout.strip().splitlines()
+            raise Stop(f"The web GUI's watchdog, hold call {name}, did not start: "
+                       f'{told[-1] if told else "hold kept no log"}', f'hold logs {name}')
+        return line
+    finally:
+        pipe.unlink(missing_ok=True)
+
+
+def heard(pipe: Path) -> bytes | None:
+    """The one line written to the named pipe, as `ready_line` reads it from a process's pipe; None when no one opened
+    it within `WAIT`, whose other end is then opened here, so the waiting reader ends."""
+    said: list[bytes] = []
+
+    def listen() -> None:
+        with pipe.open('rb') as stream:
+            said.append(stream.readline())
+
+    reader = threading.Thread(target=listen, daemon=True)
+    reader.start()
+    reader.join(WAIT)
+    if reader.is_alive():
+        with contextlib.suppress(OSError):
+            os.close(os.open(pipe, os.O_WRONLY | os.O_NONBLOCK))
+        return None
+    return said[0] if said else b''
+
+
 def stop(ctx: Context) -> dict[str, Any]:
-    record = recorded()
-    if record is None:
-        return {'state': 'not running'}
-    if not answering(record):
+    """Stop the watchdog and its server. On POSIX systems the watchdog ends its server itself; on Windows the stop
+    signal ends a process at once, so the server is ended here too, as it is when no watchdog keeps it."""
+    kept, record = watchdog(), recorded()
+    live = record is not None and answering(record)
+    if kept is None and not live:
         run_file().unlink(missing_ok=True)
         return {'state': 'not running'}
     debug_file().unlink(missing_ok=True)
-    stream = held_open(record)
-    os.kill(int(record['pid']), signal.SIGTERM)
+    stream = held_open(record) if live and record is not None else None
+    if kept is not None:
+        with contextlib.suppress(OSError):
+            os.kill(int(kept['pid']), signal.SIGTERM)
+    if live and record is not None and (kept is None or os.name == 'nt'):
+        with contextlib.suppress(OSError):
+            os.kill(int(record['pid']), signal.SIGTERM)
     if stream is not None:
         try:
             stream.read()  # returns when the system closes the ended process's sockets, QUAL-015; WAIT is its limit
         except OSError:
             pass
+    if live and record is not None and answering(record):  # a watchdog that did not end its server
+        with contextlib.suppress(OSError):
+            os.kill(int(record['pid']), signal.SIGTERM)
+    held = hold_tool()
+    if kept is not None and held is not None:  # its hold call, once it has ended, leaves no past call in the ledger
+        deadline = time.monotonic() + WAIT / 3
+        while alive(int(kept['pid'])) and time.monotonic() < deadline:
+            time.sleep(0.1)
+        subprocess.run([held, 'purge', hold_name(int(kept['port']))], capture_output=True, timeout=WAIT, check=False)
     run_file().unlink(missing_ok=True)
+    watchdog_file().unlink(missing_ok=True)
     return {'state': 'stopped'}
 
 
@@ -847,6 +887,20 @@ def embody(ctx: Context) -> dict[str, Any]:
     return ask_page(ctx, 'embody', character=str(ctx.nouns['character']))
 
 
+def gui_running(folder: Path) -> bool:
+    """Whether this home's web GUI runs, so the verbs that act on its page or stop it are listed over MCP, MCP-004:
+    its record, read from the home, names a process that is alive."""
+    record = recorded()
+    return record is not None and alive(int(record.get('pid') or 0))
+
+
+def carry_view(ctx: Context | None = None) -> list[str]:
+    """The web module's start: the page's view, stored as global settings before the settings cleanup of 2026-10-15,
+    carried into the person's view once per home, view.py."""
+    from .view import carry
+    return carry(ctx)
+
+
 MODULE = Module(
     id='web',
     summary="Start and stop Metaform's web GUI, and serve web variants.",
@@ -855,89 +909,102 @@ MODULE = Module(
             '--web-bind, loopback by default, where no token is needed; any other address also needs the token '
             'that start prints. metaform web runs start.',
     default='start',
+    start=carry_view,
     verbs=(
         # Starting the GUI writes the server's record under the home and starts its process; it reaches no agent and
         # nothing past this machine on its own, and stop ends that process. Neither changes the map.
         Verb('start', start, 'Start the web GUI, or show the address it already runs at.', switches=('web_debug',),
-             effect='write', open_world=False),
-        Verb('stop', stop, 'Stop the web GUI.', effect='write', open_world=False),
+             effect='write', open_world=False, needs_project=False),
+        Verb('stop', stop, 'Stop the web GUI.', effect='write', open_world=False, needs_project=False,
+        listed=gui_running),
         # The mascot's and the figures' acts change no map and write nothing: each is told to the open pages, which
         # draw it, and what they see comes back from the page.
         Verb('say', say, "Say a short line in the person's mascot's word bubble on the map.",
              nouns=(Noun('text', 'What the mascot says, a line or two.'),
                     Noun('speak', 'true says it aloud too, where the person\'s voice settings speak; the answer says if it was.',
-                         required=False)), effect='read', open_world=False),
+                         required=False)), effect='read', open_world=False, listed=gui_running),
         Verb('go', go, "Walk your figure, or else the person's mascot, to a part of the map and face it; answers where it ended up.",
              nouns=(Noun('address', 'The address of the element it goes to.'),
                     Noun('distance', 'How far from its surface to stand, in the map\'s units, as see measures them.', required=False),
                     Noun('height', 'How far above it to stand, in the map\'s units.', required=False)),
-             effect='read', open_world=False),
+             effect='read', open_world=False, listed=gui_running),
         Verb('turn', turn, "Turn your figure, or else the person's mascot, to face a part of the map, or by some degrees, left negative.",
              nouns=(Noun('address', 'The address of the element to face.', required=False),
                     Noun('degrees', 'How far to turn instead, in degrees, left negative, right positive.', required=False)),
-             effect='read', open_world=False),
+             effect='read', open_world=False, listed=gui_running),
         Verb('point', point, "Turn your figure, or else the person's mascot, toward a part of the map and gesture at it.",
-             nouns=(Noun('address', 'The address of the element it points at.'),), effect='read', open_world=False),
+             nouns=(Noun('address', 'The address of the element it points at.'),), effect='read', open_world=False,
+             listed=gui_running),
         Verb('emote', emote, "Show a feeling with your figure, or else the person's mascot: wave, think, celebrate, shrug or sleep.",
-             nouns=(Noun('emote', 'One of wave, think, celebrate, shrug, sleep.'),), effect='read', open_world=False),
+             nouns=(Noun('emote', 'One of wave, think, celebrate, shrug, sleep.'),), effect='read', open_world=False,
+             listed=gui_running),
         # The mascot's body in the map's space: only the layout's positions move, as a node dragged by hand does.
         Verb('move', move, "Move your figure, or else the person's mascot, through the 3D map: to an element, a point, or a step from where it faces.",
              nouns=(Noun('address', 'The element it goes to.', required=False),
                     Noun('point', 'A point x,y,z in the units web_see measures.', required=False),
                     Noun('forward', 'A step ahead, negative back.', required=False),
                     Noun('right', 'A step to its right, negative left.', required=False),
-                    Noun('up', 'A step up, negative down.', required=False)), effect='read', open_world=False),
+                    Noun('up', 'A step up, negative down.', required=False)), effect='read', open_world=False,
+                    listed=gui_running),
         Verb('push', push, "Have the person's mascot shove an element on the 3D map; its joins pull its neighbours along.",
              nouns=(Noun('address', 'The element it shoves.'),
                     Noun('direction', 'away from the mascot, up, down, or the address of an element to shove it toward.',
                          required=False),
                     Noun('strength', 'From 0 to 1, capped so the map is never flung apart; 0.5 when not given.',
-                         required=False)), effect='read', open_world=False),
+                         required=False)), effect='read', open_world=False, listed=gui_running),
         Verb('drag', drag, "Have the person's mascot carry an element of the 3D map to a point or beside another; it holds it until web_drop.",
              nouns=(Noun('address', 'The element it carries, one at a time.'),
                     Noun('point', 'A point x,y,z to carry it to.', required=False),
-                    Noun('beside', 'An element to set it down beside.', required=False)), effect='read', open_world=False),
+                    Noun('beside', 'An element to set it down beside.', required=False)), effect='read', open_world=False,
+                    listed=gui_running),
         Verb('drop', drop, "Have the person's mascot let go of the element it carries; the map settles round it.",
-             effect='read', open_world=False),
+             effect='read', open_world=False, listed=gui_running),
         Verb('take', take, "Hold your figure still where it stands, or the person's mascot under your lead past your turn, until web_release.",
-             nouns=(Noun('reason', 'Why, in a few words, said in its bubble.'),), effect='read', open_world=False),
+             nouns=(Noun('reason', 'Why, in a few words, said in its bubble.'),), effect='read', open_world=False,
+             listed=gui_running),
         Verb('release', release, "Let your figure, or the person's mascot, go its own way again from where it stands.",
-             effect='read', open_world=False),
+             effect='read', open_world=False, listed=gui_running),
         Verb('see', see, 'List what your figure perceives on the 3D map now: the nearest parts in view and not hidden, how far, which way.',
-             nouns=(Noun('address', 'Turn to face this element first.', required=False),), effect='read', open_world=False),
+             nouns=(Noun('address', 'Turn to face this element first.', required=False),), effect='read', open_world=False,
+             listed=gui_running),
         Verb('look', look, "A picture of the 3D map from your figure's own eyes, with what it sees.",
-             nouns=(Noun('address', 'Turn to face this element first.', required=False),), effect='read', open_world=False),
+             nouns=(Noun('address', 'Turn to face this element first.', required=False),), effect='read', open_world=False,
+             listed=gui_running),
         Verb('select', select, "Select an element or a join on the person's page, the mascot walking to it.",
              nouns=(Noun('address', 'The element\'s address, or a join as receiver>provider.'),), effect='read',
-             open_world=False),
+             open_world=False, listed=gui_running),
         Verb('camera', camera, "Set the person's 3D view to whole, zoom or free, or fly it to an element.",
              nouns=(Noun('mode', 'whole, zoom or free.', required=False),
-                    Noun('address', 'An element to fly the camera to.', required=False)), effect='read', open_world=False),
+                    Noun('address', 'An element to fly the camera to.', required=False)), effect='read', open_world=False,
+                    listed=gui_running),
         Verb('tab', tab, "Open a tab of the person's side panel: object, brief, provenance or prompt.",
-             nouns=(Noun('tab', 'object, brief, provenance or prompt.'),), effect='read', open_world=False),
+             nouns=(Noun('tab', 'object, brief, provenance or prompt.'),), effect='read', open_world=False,
+             listed=gui_running),
         Verb('open', open_on_page, "Open the board, a ticket, the settings screen or a pane on the person's page.",
              nouns=(Noun('what', 'board, ticket, settings or pane.'),
-                    Noun('id', 'The ticket\'s id or the pane\'s id.', required=False)), effect='read', open_world=False),
+                    Noun('id', 'The ticket\'s id or the pane\'s id.', required=False)), effect='read', open_world=False,
+                    listed=gui_running),
         Verb('swap', swap, "Show the 2d or the 3d map in the large area of the person's page.",
-             nouns=(Noun('large', '2d or 3d.'),), effect='read', open_world=False),
+             nouns=(Noun('large', '2d or 3d.'),), effect='read', open_world=False, listed=gui_running),
         Verb('flow', flow, "Set which joins the dots flow along on the person's page: off, selected, all or live.",
-             nouns=(Noun('mode', 'off, selected, all or live.'),), effect='read', open_world=False),
+             nouns=(Noun('mode', 'off, selected, all or live.'),), effect='read', open_world=False, listed=gui_running),
         Verb('physics', physics, "Set how the person's 3D map lays itself out, a physics preset, for the page.",
              nouns=(Noun('preset', 'A physics preset, as the page names them, such as organic or clusters.'),),
-             effect='read', open_world=False),
+             effect='read', open_world=False, listed=gui_running),
         Verb('embody', embody, 'Take a body of your own on the map, one of the characters, unless the person chose yours.',
-             nouns=(Noun('character', 'The character, such as owl, beetle or puffer.'),), effect='read', open_world=False),
+             nouns=(Noun('character', 'The character, such as owl, beetle or puffer.'),), effect='read', open_world=False,
+             listed=gui_running),
         Verb('viewing', viewing, 'Read what the person is looking at now: the selection, each view, the open panes, the nodes in view and where their 3D view is.',
-             effect='read', open_world=False),
+             effect='read', open_world=False, listed=gui_running),
         Verb('come', come, "Bring your figure, or else the person's mascot, to the person to get their attention: their view, pointer or what it points at.",
              nouns=(Noun('to', 'view, in front of their 3D view, the default; pointer, under their mouse pointer; or hit, beside what the pointer points at.',
                          required=False),
                     Noun('seconds', 'How long it stays, 10 when not given, at most 3600; 0 ends the approach now.', required=False),
                     Noun('follow', 'true, the default, keeps up with the view or the pointer as it moves; false stays where it went.',
-                         required=False)), effect='read', open_world=False),
+                         required=False)), effect='read', open_world=False, listed=gui_running),
         Verb('capture', capture, "A picture of what the person sees: their 3D view with the mouse pointer's ray, or the screen they share.",
              nouns=(Noun('source', 'view, their own 3D view, the default; or screen, the screen, window or tab they share with agents.',
-                         required=False),), effect='read', open_world=False),
+                         required=False),), effect='read', open_world=False, listed=gui_running),
         Verb('serve', serve, 'Serve reconstructed web variants together, each on its own local port.',
              nouns=(Noun('origin', 'The origin id; the latest origin when omitted.', required=False),
                     Noun('variants', 'Variant ids, or all to serve every variant of the origin.', many=True)),

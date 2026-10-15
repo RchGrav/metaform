@@ -281,20 +281,27 @@ export function flow3d(now, data) {
   }
   fxDone();
 }
-/* Each join drawn, by its links that carry the library's dots: its receiver, its purpose vertex and the elements drawn
- * that it holds; and how many such links there are. While the flow is held, `dots3d`, the library's own dots are shown
- * held at that share of the way instead, and no way is gathered. */
+/* The links that carry a join's flow: from its receiver to its purpose vertex, and on to the elements it holds. */
+export const carries = link => !reduced() && (link.k === 'purpose' || link.k === 'encounter') ? 1 : 0;
+/* Each join drawn, by its links that carry the flow and are shown: its receiver, its purpose vertex and the elements
+ * drawn that it holds; and how many such links there are. While the flow is held, `dots3d`, the library's own dots,
+ * made for that check alone, are shown held at that share of the way instead, and no way is gathered. */
 function waysOf(data) {
   let count = 0;
-  const ways = new Map();
+  const ways = new Map(), visible = G.linkVisibility();
+  const shown = typeof visible === 'function' ? visible : () => visible !== false;
   for (const link of data.links) {
-    const dots = link.__photonsObj?.children, from = link.source, to = link.target;
-    if (!dots?.length || !link.__photonsObj.parent || from?.x === undefined || to?.x === undefined) continue;
+    const from = link.source, to = link.target;
+    if (from?.x === undefined || to?.x === undefined) continue;
+    if (FLOW.held !== null) {
+      const dots = link.__photonsObj?.children;
+      if (dots?.length && link.__photonsObj.parent) { count++; holdDots(dots, from, to); }
+      continue;
+    }
+    if (!carries(link) || !shown(link)) continue;
     count++;
-    if (FLOW.held !== null) { holdDots(dots, from, to); continue; }
-    for (const dot of dots) dot.visible = false;
     let way = ways.get(link.join);
-    if (!way) ways.set(link.join, way = {receiver: null, purpose: null, providers: [], color: dots[0].material.color});
+    if (!way) ways.set(link.join, way = {receiver: null, purpose: null, providers: []});
     if (link.k === 'purpose') Object.assign(way, {receiver: from, purpose: to}); else way.providers.push(to);
   }
   return {ways, count};

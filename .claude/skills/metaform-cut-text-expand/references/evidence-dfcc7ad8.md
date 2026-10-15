@@ -1,0 +1,1 @@
+expandCut(container, {row, text, key = row.dataset.key, kept = new Set()}) marks the rows matching row (the container itself included) and their texts matching text. Only cut texts (scrollWidth > clientWidth + 1, measured with .unfolded removed) get .cut, tabindex 0, role button and aria-expanded. A click or Enter/Space toggles the row's key in kept, and the row gets .unfolded.

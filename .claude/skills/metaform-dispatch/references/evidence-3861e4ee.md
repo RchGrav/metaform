@@ -1,0 +1,1 @@
+Test traps: fake agents with separate FAKE_ACP_LOG files all get session id fake-session-1, so a multi-agent test shares one log. FAKE_ACP_ASK_AGAIN=<file> makes the fake ask a second request (Write more.txt, logged as permission_again) once the file exists.

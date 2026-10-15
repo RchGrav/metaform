@@ -442,6 +442,33 @@ def test_a_person_message_reaches_the_agent_as_session_prompt(dispatch, run, tmp
 
 
 @pytest.mark.req('BASE-052')
+def test_a_broadcast_reaches_each_running_agent_as_the_persons_message_and_is_kept_once(dispatch, run, tmp_path):
+    from metaform.data import Store
+    gates = tmp_path / 'turns'
+    gates.mkdir()
+    dispatch.start('replace', FAKE_ACP_TURN_GATES=str(gates))
+    eventually(lambda: dispatch.received('session/prompt'))
+    kept = json.loads(run('dispatch', 'broadcast', '--json', '--', 'stop and commit', cwd=dispatch.folder).stdout)
+    session_id = dispatch.session().extra['session_id']
+    assert [(one['session_id'], one['delivered']) for one in kept['recipients']] == [(session_id, True)]
+    (gates / '1').touch()
+    prompts = eventually(lambda: dispatch.received('session/prompt')[1:])
+    assert prompts[0]['params']['prompt'] == [{'type': 'text', 'text': 'stop and commit'}]
+
+    def marked():
+        with Store('proj', module='dispatch').tables(write=False) as tx:
+            return [dict(row) for row in tx.rows('lines', {'session_id': session_id}, limit=0).results
+                    if row['name'] == f'broadcast:{kept["id"]}']
+    [line] = eventually(marked)
+    assert (line['kind'], line['text']) == ('person', 'stop and commit')
+    listed = json.loads(run('dispatch', 'broadcasts', '--json', cwd=dispatch.folder).stdout)['broadcasts']
+    assert [(one['id'], one['text'], len(one['recipients'])) for one in listed] == [(kept['id'], 'stop and commit', 1)]
+    dispatch.stop()
+    refused = run('dispatch', 'broadcast', '--', 'anyone?', cwd=dispatch.folder, ok=False)
+    assert 'No agent is working on this project.' in refused.stderr
+
+
+@pytest.mark.req('BASE-052')
 def test_a_second_writer_on_the_session_never_ends_the_runner_and_lines_keep_one_order(dispatch, run, tmp_path):
     """code.dispatcher.agent#12: another writer on the session, as a second runner resuming it, numbers lines from its
     own count; the runner's next lines take the numbers after them and it goes on."""
@@ -801,6 +828,46 @@ def test_a_launchs_own_prompts_answer_over_the_project_setting_and_only_the_pers
 
 
 @pytest.mark.req('BASE-052')
+def test_a_sessions_own_prompts_answer_its_waiting_request_and_its_later_ones(dispatch, run, tmp_path):
+    """The person chooses how one session's requests are answered from now on, code.interface.graphical#72: a choice
+    that does not approve the waiting request leaves it waiting, approve-all needs confirm=true and then answers it and
+    the session's later request without asking; the session's read says what is in force and whose choice it is, and an
+    agent over MCP is refused the choice."""
+    from metaform.module import Stop, context
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch import tell
+    again = tmp_path / 'again'
+    dispatch.start('ask', FAKE_ACP_ASK_AGAIN=str(again))
+    eventually(dispatch.questions)
+    assert tell(dispatch.session().extra, 'status')['prompts_from'] == 'project'
+    run('dispatch', 'prompts', dispatch.id, 'approve-reads', cwd=dispatch.folder)  # an edit is no read: still asked
+    status = tell(dispatch.session().extra, 'status')
+    assert (status['prompts'], status['prompts_from']) == ('approve-reads', 'session')
+    assert dispatch.questions() and not dispatch.logged('permission')
+    refused = run('dispatch', 'prompts', dispatch.id, 'approve-all', cwd=dispatch.folder, ok=False)
+    assert refused.returncode != 0 and 'confirm=true' in refused.stdout + refused.stderr
+    with pytest.raises(Stop, match='the person'):
+        module.session_prompts(context('dispatch', dispatch.folder, project='proj', surface='mcp',
+                                       nouns={'id': dispatch.id, 'prompts': 'approve-all', 'confirm': True}))
+    chosen = json.loads(run('dispatch', 'prompts', dispatch.id, 'approve-all', 'confirm=true', '--json',
+                            cwd=dispatch.folder).stdout)
+    assert chosen['prompts'] == 'approve-all' and len(chosen['approved']) == 1
+    [outcome] = eventually(lambda: dispatch.logged('permission'))
+    assert outcome == {'outcome': {'outcome': 'selected', 'optionId': 'allow'}} and not dispatch.questions()
+    again.touch()  # the session's later request is approved without asking
+    [later] = eventually(lambda: dispatch.logged('permission_again'))
+    assert later == {'outcome': {'outcome': 'selected', 'optionId': 'allow'}} and not dispatch.questions()
+    said = [str(item.value) for item in dispatch.items('note')]
+    assert 'Permission requests in this session: approve-all, chosen by the person.' in said
+    assert any('Write more.txt: approved by this session' in line for line in said)
+    found = json.loads(run('dispatch', 'sessions', f'id={dispatch.id}', 'thread=false', '--json',
+                           cwd=dispatch.folder).stdout)['sessions']
+    assert [(one['prompts'], one['prompts_from']) for one in found if one['state'] == 'running'] \
+        == [('approve-all', 'session')]
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
 def test_dispatch_prompts_approve_reads_answers_a_read_without_asking(dispatch, run):
     run('set', '--dispatch-prompts=approve-reads', cwd=dispatch.folder)
     dispatch.start('ask', FAKE_ACP_ASK_KIND='read', FAKE_ACP_ASK_TITLE='Read notes.txt')
@@ -823,7 +890,9 @@ def test_dispatch_prompts_is_read_at_each_request_so_a_change_reaches_a_running_
     from metaform.modules.dispatch import runner
     source = Path(runner.__file__).read_text(encoding='utf-8')
     request = source[source.index('async def request_permission'):source.index('async def ask(')]
-    assert "'dispatch_prompts'" in request, 'the setting is read when the request arrives, not at start'
+    answering = source[source.index('async def answering'):source.index('def answered_by')]
+    assert 'await self.answering()' in request and "'dispatch_prompts'" in answering, \
+        'the setting is read when the request arrives, not at start'
     from metaform import loader, settings
     loader.get('dispatch')  # a cached direct import cannot restore settings withdrawn by loader.reset()
     found = settings.SCHEMA['dispatch_prompts']
@@ -1548,8 +1617,7 @@ def test_dispatch_wait_with_no_id_names_the_second_of_two_tickets_that_woke_it(d
 
 @pytest.mark.req('BASE-052')
 def test_dispatch_wait_answers_pending_with_the_next_call_at_its_limit(dispatch, run):
-    run('set', '--dispatch-wait-seconds', '1', cwd=dispatch.folder)
-    answer = answered(waiter(dispatch, 'until=stopped', f'id={dispatch.id}'))
+    answer = answered(waiter(dispatch, 'until=stopped', f'id={dispatch.id}', '--dispatch-wait-seconds', '1'))
     assert answer['state'] == 'pending' and answer['next'] == f'metaform dispatch wait until=stopped id={dispatch.id}'
 
 
@@ -1580,6 +1648,133 @@ def test_dispatch_authority_refuses_a_worker_and_marks_an_agents_message_as_its_
     told = eventually(lambda: [line for line in dispatch.items('note') if line.extra['update'] in ('message', 'person')])
     assert [(line.extra['update'], line.value) for line in told] == [('message', 'From the system agent: Look again')]
     dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.req('MAP-050')
+def test_workers_send_each_other_peer_notes_kept_on_both_tickets_and_still_steer_no_one(dispatch, run, tmp_path):
+    """Peer notes, code.dispatcher.agent#32: A sees B at work and in the file it edited; A's note reaches B at B's next
+    turn, marked as a fellow agent's, a pulse of the flow between them, kept in both threads, its delivery queued,
+    delivered and read; A asks B by the file and waits, and B's threaded reply comes back in A's call, never again as
+    a turn; an ask nobody answers says so; A still cannot stop or message B; the pair cap refuses with its reason."""
+    import re
+
+    from metaform import events
+    from metaform.data import Node, Store
+    from metaform.modules.dispatch.peering import NOTE_MOST, PAIR_HOURLY
+    a_gates, b_gates = tmp_path / 'a-turns', tmp_path / 'b-turns'
+    a_gates.mkdir()
+    b_gates.mkdir()
+    for number in range(20):  # A's turns end as soon as they are sent; B's are held until the test lets each end
+        (a_gates / str(number)).touch()
+    other = Dispatch.__new__(Dispatch)
+    other.run, other.home, other.folder, other.store, other.process = run, dispatch.home, dispatch.folder, \
+        dispatch.store, None
+    # one log for both fake agents, so the second takes a session id of its own, fake-session-2
+    other.log, other.node = dispatch.log, Node('element', LINKED)
+    other.id = dispatch.store.add_work(other.node, 'unbuilt', task='Write the store.', title='Shared store').id
+    heard = []
+    dispatch.start('replace', FAKE_ACP_TURN_GATES=str(a_gates))
+    try:
+        eventually(lambda: dispatch.received('session/prompt'))
+        other.start('replace', FAKE_ACP_TURN_GATES=str(b_gates))
+        eventually(lambda: len(dispatch.received('session/prompt')) > 1)
+
+        def own(work_id):
+            row = json.loads(run('dispatch', 'sessions', f'id={work_id}', 'thread=false', '--json',
+                                 cwd=dispatch.folder).stdout)['sessions'][-1]
+            return {'METAFORM_WORK': work_id, 'METAFORM_SESSION': row['runner'], 'METAFORM_ROLE': 'worker'}, \
+                row['session_id']
+        (a, a_session), (b, b_session) = own(dispatch.id), own(other.id)
+
+        def prompts(session_id):
+            return [one['params']['prompt'][0]['text'] for one in dispatch.received('session/prompt')
+                    if one['params']['sessionId'] == session_id]
+
+        def states(env, note):
+            return json.loads(run('dispatch', 'notes', f'note={note}', '--json', cwd=dispatch.folder,
+                                  env=env).stdout)['notes'][-1]['states']
+
+        # B's tool call edited src/shared.js, as a runner records it
+        with Store('proj', module='dispatch').tables() as tx:
+            tx.insert('lines', {'session_id': b_session, 'name': 'detail:edit-1', 'work_id': other.id,
+                                'kind': 'tool_detail', 'seq': 10 ** 6, 'text': json.dumps(
+                                    {'kind': 'edit', 'diffs': [{'path': 'src/shared.js', 'added': 2, 'removed': 1}],
+                                     'locations': [{'path': 'src/shared.js', 'line': 42}]})})
+        present = json.loads(run('dispatch', 'peers', '--json', cwd=dispatch.folder, env=a).stdout)['peers']
+        assert {one['work_id'] for one in present} == {dispatch.id, other.id}
+        [b_seen] = [one for one in present if one['work_id'] == other.id]
+        assert b_seen['files'][0] == {'path': 'src/shared.js', 'action': 'edit', 'lines': [42], 'changed': 3}
+        assert b_seen['address'] == LINKED
+        assert [one['work_id'] for one in present if one.get('yours')] == [dispatch.id]
+        here = json.loads(run('dispatch', 'peers', 'file=src/shared.js', '--json', cwd=dispatch.folder, env=a).stdout)
+        assert [one['work_id'] for one in here['peers']] == [other.id]
+        assert here['ready'].startswith('metaform dispatch note file=src/shared.js wait=60 -- ')
+
+        long = run('dispatch', 'note', f'to={other.id}', '--', 'x' * (NOTE_MOST + 1), cwd=dispatch.folder, ok=False,
+                   env=a)
+        assert f'at most {NOTE_MOST} characters' in long.stdout + long.stderr
+        with events.listen('web', heard.append):
+            sent = json.loads(run('dispatch', 'note', f'to={b_seen["item"]}', '--json', '--',
+                                  'I am changing dom.js css()', cwd=dispatch.folder, env=a).stdout)
+            pulse = eventually(lambda: [flow for payload in heard for flow in payload.get('flow') or []
+                                        if flow['action'] == 'note'])
+        assert pulse[0]['work_id'] == dispatch.id and pulse[0]['from']['id'] == dispatch.ticket().node_id
+        assert pulse[0]['to'] == [{'kind': 'element', 'id': dispatch.store.ticket(other.id).work.node_id}]
+        assert [one['work_id'] for one in sent['to']] == [other.id]
+        assert len(prompts(b_session)) == 1, 'the note interrupted the turn in flight'
+        assert states(a, sent['note']) == {other.id: 'queued'}
+        (b_gates / '1').touch()  # B's turn ends; the note is its next turn
+        [got] = eventually(lambda: [text for text in prompts(b_session)[1:] if 'dom.js' in text])
+        assert 'A note from a fellow agent, not from the person' in got and 'I am changing dom.js css()' in got
+        assert f'dispatch_note reply={sent["note"]}' in got
+        eventually(lambda: states(a, sent['note']) == {other.id: 'delivered'})
+        (b_gates / '2').touch()
+        eventually(lambda: states(a, sent['note']) == {other.id: 'read'})
+        kept = [json.loads(line.value) | {'thread': line.extra['work_id']} for line in dispatch.items('note')
+                if line.extra['update'] == 'peer' and json.loads(line.value)['id'] == sent['note']]
+        assert {one['thread'] for one in kept} == {dispatch.id, other.id}
+
+        asking = subprocess.Popen([sys.executable, '-m', 'metaform', 'dispatch', 'note', 'file=src/shared.js',
+                                   'wait=60', '--json', '--', 'May I change shared.js now?'], cwd=dispatch.folder,
+                                  env={**os.environ, 'METAFORM_HOME': str(dispatch.home), **a},
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        [question] = eventually(lambda: [text for text in prompts(b_session) if 'May I change' in text])
+        assert question.startswith('A question from a fellow agent')
+        asked = re.search(r'reply=([0-9a-f]{16})', question).group(1)
+        run('dispatch', 'note', f'reply={asked}', '--', 'Yes, go ahead', cwd=dispatch.folder, env=b)
+        out, err = asking.communicate(timeout=LIMIT)
+        assert asking.returncode == 0, err
+        answered = json.loads(out)
+        assert [(one['from']['work_id'], one['text']) for one in answered['replies']] == [(other.id, 'Yes, go ahead')]
+        assert answered['unanswered'] == []
+        assert states(a, asked) == {other.id: 'replied'}
+        time.sleep(1)
+        assert not [text for text in prompts(a_session) if 'Yes, go ahead' in text], 'the reply came twice'
+
+        silent = json.loads(run('dispatch', 'note', f'to={other.id}', 'wait=2', '--json', '--', 'Still there?',
+                                cwd=dispatch.folder, env=a).stdout)
+        assert silent['replies'] == [] and 'No reply came from' in silent['said']
+
+        for refused in (run('dispatch', 'stop', other.id, cwd=dispatch.folder, ok=False, env=a),
+                        run('dispatch', 'message', other.id, 'stop', 'now', cwd=dispatch.folder, ok=False, env=a)):
+            assert refused.returncode != 0 and 'A worker agent starts, stops and messages no agent' in \
+                refused.stdout + refused.stderr
+        assert other.process.poll() is None
+
+        for number in range(PAIR_HOURLY - 4):  # four of the pair's notes are sent already
+            run('dispatch', 'note', f'to={other.id}', '--', f'more {number}', cwd=dispatch.folder, env=a)
+        capped = run('dispatch', 'note', f'to={other.id}', '--', 'one too many', cwd=dispatch.folder, ok=False, env=a)
+        said = capped.stdout + capped.stderr
+        assert capped.returncode != 0
+        assert f'have sent each other {PAIR_HOURLY} notes in the last hour, and the most is {PAIR_HOURLY}' in said
+        assert 'The next can go at' in said
+    finally:
+        run('dispatch', 'stop', other.id, cwd=dispatch.folder, ok=False)
+        dispatch.stop()
+        if other.process is not None and other.process.poll() is None:
+            other.process.kill()
+            other.process.wait()
 
 
 @pytest.mark.req('BASE-052')
@@ -1874,6 +2069,41 @@ def test_spend_sums_each_base_preserving_filters_currencies_and_unmetered_sessio
     assert module.spent(bound, run='run-a')['tokens'] == 200
     assert module.spent(bound, work_id=dispatch.id)['costs'] == {'USD': 0.16, 'EUR': 0.03}
     assert module.spent(bound, run='absent')['tokens'] == 0
+
+
+def test_carry_opens_only_a_metaform_written_since_its_last_carry(dispatch, monkeypatch):
+    """A spend read opens no metaform's store that its last carry left unchanged; a legacy row written there later is
+    still carried and counted, and only that metaform is opened for it."""
+    from metaform.data import Store
+    from metaform.modules import dispatch as module
+    first = Store('proj').bound_base().id
+    second = Store('proj').add_base('other').id
+    Store('proj').add_base('third')
+    module.spent(Store('proj'))
+    opened: list[str] = []
+
+    class Counted(Store):
+        def __init__(self, project, **given):
+            super().__init__(project, **given)
+            self.base_id = given.get('base')
+
+        def tables(self, **given):
+            if self.module == 'dispatch' and self.base_id:
+                opened.append(self.base_id)
+            return super().tables(**given)
+
+    monkeypatch.setattr(module, 'Store', Counted)
+    module.spent(Store('proj'))
+    module.spent(Store('proj'))
+    assert opened == [], 'no metaform unchanged since its carry is opened again'
+    with Store('proj', base=second, module='dispatch').tables() as tx:
+        tx.insert('spend', {'session_id': 'late', 'seq': 1, 'work_id': dispatch.id, 'run': 'run-a',
+                            'day': module.today(), 'tokens': 30, 'cost': None, 'currency': None})
+    assert module.spent(Store('proj'))['tokens'] == 30
+    assert set(opened) == {second} and first not in opened
+    opened.clear()
+    assert module.spent(Store('proj'))['tokens'] == 30
+    assert opened == [], 'the carry left it unchanged since'
 
 
 def test_budget_checks_read_spend_once_per_field(dispatch, run, monkeypatch):
@@ -2253,6 +2483,29 @@ def test_the_old_agent_options_move_once_into_each_options_own_setting(dispatch)
     assert home.stored(scope, 'dispatch', 'dispatch_agent_options') is None
     assert any('claude.unknown=x' in line and 'dropped' in line for line in said)
     assert module.migrate_agent_options() == [], 'once per home'
+
+
+@pytest.mark.req('BASE-052')
+def test_the_old_strengths_list_moves_once_into_each_agents_own_setting(dispatch, run):
+    """Settings cleanup 2026-10-15: each entry of a stored dispatch_agent_strengths list becomes that agent's
+    dispatch_<agent>_strengths at the same scope, words with commas whole; an agent the list left out keeps its own
+    default rather than being wiped; an entry for no agent is dropped and said; it runs once per home. Setting one
+    agent's strengths after leaves the others."""
+    from metaform import home, settings
+    from metaform.modules import dispatch as module
+    scope = home.path_key(dispatch.folder)
+    home.save(scope, 'dispatch', 'dispatch_agent_strengths', ['codex=exact code, and data', 'nobody=x'])
+    with home.chassis(write=True) as db:  # the test home's own start carried nothing and marked it; undo the mark
+        db.execute("DELETE FROM meta WHERE key='carried:dispatch-agent-strengths'")
+    settings._carried.clear()
+    said = module.carry_strengths()
+    assert settings.value('dispatch_codex_strengths', dispatch.folder) == 'exact code, and data'
+    assert settings.value('dispatch_claude_strengths', dispatch.folder) == module.STRENGTHS['claude'], 'left as it was'
+    assert home.stored(scope, 'dispatch', 'dispatch_agent_strengths') is None
+    assert any('nobody=x' in line and 'dropped' in line for line in said)
+    assert module.carry_strengths() == [], 'once per home'
+    run('set', '--dispatch-gemini-strengths', 'big reads, and logs', cwd=dispatch.folder)
+    assert settings.value('dispatch_codex_strengths', dispatch.folder) == 'exact code, and data'
 
 
 @pytest.mark.req('BASE-052')
@@ -2904,27 +3157,27 @@ def test_serve_as_a_proxy_of_a_conductors_chain_carries_metaforms_mcp_server_ove
 
 @pytest.mark.req('BASE-062')
 def test_serve_alone_names_slash_commands_only_while_it_offers_them(dispatch, run):
+    """Settings cleanup 2026-10-15: the commands are always offered where a module gives one; dispatch_serve_commands,
+    which could turn them off, is gone."""
     run('set', '--dispatch-serve-agent', 'gemini', '--dispatch-gemini', 'no-such-adapter-anywhere', cwd=dispatch.folder)
-    for offered in (False, True):
-        run('set', '--dispatch-serve-commands' if offered else '--no-dispatch-serve-commands', cwd=dispatch.folder)
-        editor = Lines(dispatch)
-        try:
-            editor.send({'id': 1, 'method': 'initialize', 'params': {'protocolVersion': 1, 'clientCapabilities': {
-                'session': {'notices': {}}}}})
-            editor.answer(1)
-            editor.send({'id': 2, 'method': 'session/new', 'params': {'cwd': str(dispatch.folder), 'mcpServers': []}})
-            session = editor.answer(2)['result']['sessionId']
-            notice = editor.until(lambda one: one.get('method') == 'session/update'
-                                  and one['params']['update'].get('sessionUpdate') == 'notice')['params']['update']
-            editor.send({'id': 3, 'method': 'session/prompt', 'params': {'sessionId': session, 'prompt': [
-                {'type': 'text', 'text': 'Hello'}]}})
-            editor.answer(3)
-            [said] = editor.updates('agent_message_chunk')
-            assert ('slash commands work' in notice['description']) is offered
-            assert ('type / to list them' in said['content']['text']) is offered
-            assert 'Free text needs an agent behind it.' in notice['description']
-        finally:
-            editor.close()
+    editor = Lines(dispatch)
+    try:
+        editor.send({'id': 1, 'method': 'initialize', 'params': {'protocolVersion': 1, 'clientCapabilities': {
+            'session': {'notices': {}}}}})
+        editor.answer(1)
+        editor.send({'id': 2, 'method': 'session/new', 'params': {'cwd': str(dispatch.folder), 'mcpServers': []}})
+        session = editor.answer(2)['result']['sessionId']
+        notice = editor.until(lambda one: one.get('method') == 'session/update'
+                              and one['params']['update'].get('sessionUpdate') == 'notice')['params']['update']
+        editor.send({'id': 3, 'method': 'session/prompt', 'params': {'sessionId': session, 'prompt': [
+            {'type': 'text', 'text': 'Hello'}]}})
+        editor.answer(3)
+        [said] = editor.updates('agent_message_chunk')
+        assert 'slash commands work' in notice['description']
+        assert 'type / to list them' in said['content']['text']
+        assert 'Free text needs an agent behind it.' in notice['description']
+    finally:
+        editor.close()
 
 
 @pytest.mark.req('BASE-062')
@@ -2991,14 +3244,19 @@ def test_serve_speaks_acp_v2_with_an_agent_that_negotiates_it(dispatch):
 
 
 @pytest.mark.req('BASE-052')
-def test_an_agent_that_answers_another_protocol_version_is_closed_before_any_session(dispatch):
+def test_an_agent_that_answers_another_protocol_version_is_closed_before_any_session(dispatch, run):
     """ACP's initialization: an agent that answers with a version the runner does not speak is not used; the runner
-    says which versions, and asks for no session and sends no prompt."""
+    says which versions, and asks for no session and sends no prompt. Its ticket still reads that it did not start
+    and why, from an ended session row the runner leaves."""
     dispatch.start('hold', FAKE_ACP_V2='1')
     said = dispatch.process.communicate(timeout=30)[1].decode('utf-8')
     assert 'did not start' in said and 'protocol version 2' in said and 'speaks version 1' in said
     assert dispatch.received('initialize') and not dispatch.received('session/new')
     assert not dispatch.received('session/prompt')
+    read = json.loads(run('dispatch', 'sessions', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)
+    [row] = read['sessions']
+    assert row['state'] == 'ended' and row['how'].startswith('it did not start') and 'protocol version 2' in row['how']
+    assert [line['kind'] for line in read['lines'] if line['session_id'] == row['session_id']] == ['failed']
 
 
 class Conducted(Lines):
@@ -3132,7 +3390,7 @@ def test_a_turns_usage_is_one_invoke_agent_span_with_cached_input_counted(monkey
 
 @pytest.mark.req('BASE-052')
 def test_a_turn_that_fails_is_traced_with_its_error(dispatch, monkeypatch):
-    """dispatch_usage_traces reports every turn: one whose prompt fails is a span too, its finish reason error and
+    """Every turn is traced: one whose prompt fails is a span too, its finish reason error and
     its error given, so error.type is set."""
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
@@ -3147,7 +3405,6 @@ def test_a_turn_that_fails_is_traced_with_its_error(dispatch, monkeypatch):
                               [])
         held.session_id = 'failing-turn'
         held.prep = True
-        held.option = lambda key, default: True if key == 'dispatch_usage_traces' else default
         held.conn = SimpleNamespace(prompt=AsyncMock(side_effect=RuntimeError('the agent fell over')))
         held.note = AsyncMock()
         held.changed = AsyncMock()

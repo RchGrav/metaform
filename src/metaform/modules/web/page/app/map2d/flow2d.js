@@ -39,36 +39,41 @@ export function pointed(edge) {
  * selected node's, so the map stays still to read and the flow says what the selection takes from where. Each edge
  * gets its shapes once, in a group just over the edges, so they run under the node boxes; each frame, `frame2d`, while
  * the page is in use, as the 3D map draws its flow, `FRAMES`, moves them with as few writes as it can: a train of dots
- * is a copy of its edge's path whose round dashes are the dots, moved along by one value, its head, and a shape is
- * shown or hidden only when its part of the cycle begins or ends; with reduced motion nothing moves and nothing is
- * shown. Each write inside the map's SVG makes the browser paint it again, so one per dot every frame held the page. */
-const FLOW2D = {id: 0, edges: [], opacity: ''};
+ * is a path holding only its dots, each a round cap on a stroke of no length, rewritten only when a dot moves, and a
+ * shape is shown or hidden only when its part of the cycle begins or ends; with reduced motion nothing moves and
+ * nothing is shown. The browser paints a changed path again over its whole box: a path the length of its edge, as a
+ * dashed copy of the edge was, made it paint every moving edge's whole length each frame, where a path of dots only
+ * paints the dots. */
+const FLOW2D = {id: 0, edges: [], opacity: '', group: null};
 const BEAD = 2.1;  // a dot's radius
 const TAIL = [0.75, 0.5, 0.25];  // the last three dots of a train fade
-// an element's own colour on the map, as the 3D map draws it, for what comes from it
-function color2d(id) {
-  const node = G?.graphData().nodes.find(one => one.id === id);
+// an element's own colour on the map, as the 3D map draws it, for what comes from it, from the 3D map's nodes by id,
+// `byId`, gathered once for each build of the flow and not searched again for each end of each edge
+function color2d(id, byId) {
+  const node = byId.get(id);
   return node ? colorOf(node) : css('--signal');
 }
 export function flows2d() {
   for (const old of M.svg?.querySelectorAll('g.flows2d') || []) old.remove();
   FLOW2D.edges = [];
   FLOW2D.opacity = '';
+  FLOW2D.group = null;
   const on = flowing2d();
   if (!on.length) return;
   // a group of their own just over the edges, so the edges stay what they are
   const flows = document.createElementNS(SVG, 'g'), edges = on[0].path.closest('.edgePaths') || on[0].path.parentNode;
   flows.setAttribute('class', 'flows2d');
   edges.after(flows);
-  // every train in one group and every request in another, so each glow is drawn once over its group, `.trains` and
-  // `.asks` in the page's CSS, and the browser's compositor draws it, not its painter for every dot each frame
+  // every train in one group, every request in another and the records and rings in a third, each a layer of its own
+  // in the page's CSS, `will-change`: each glow, `.trains` and `.asks`, is drawn once over its group by the browser's
+  // compositor, not its painter for every dot each frame, and a frame's moves paint their layer again, not the map's
   const glows = {};
-  for (const name of ['trains', 'asks']) {
+  for (const name of ['trains', 'asks', 'marks']) {
     glows[name] = document.createElementNS(SVG, 'g');
     glows[name].setAttribute('class', name);
     flows.append(glows[name]);
   }
-  const made = (tag, name, attributes = {}, parent = flows) => {
+  const made = (tag, name, attributes = {}, parent = glows.marks) => {
     const shape = document.createElementNS(SVG, tag);
     shape.setAttribute('class', name);
     for (const [key, value] of Object.entries(attributes)) shape.setAttribute(key, value);
@@ -76,8 +81,32 @@ export function flows2d() {
     parent.append(shape);
     return shape;
   };
-  for (const edge of on) FLOW2D.edges.push(edgeShapes(edge, made, glows));
+  const byId = new Map((G?.graphData().nodes || []).map(node => [node.id, node]));
+  for (const edge of on) FLOW2D.edges.push(edgeShapes(edge, made, glows, byId));
+  extent2d(Object.values(glows), FLOW2D.edges);
+  FLOW2D.group = flows;
   wake2d();
+}
+/* Each layer of the flow keeps one size, the box of all its edges, for as long as this flow lasts: a rect that draws
+ * nothing. A layer sized by its moving dots changed size every frame, and the browser then cut the map after it into
+ * new layers each frame and painted them whole. A ring grows to 18 around the end of its edge. */
+function extent2d(layers, edges) {
+  const box = {left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity}, pad = 20;
+  for (const {edge} of edges) {
+    for (const {x, y} of edge.samples) {
+      box.left = Math.min(box.left, x); box.top = Math.min(box.top, y);
+      box.right = Math.max(box.right, x); box.bottom = Math.max(box.bottom, y);
+    }
+  }
+  for (const layer of layers) {
+    const rect = document.createElementNS(SVG, 'rect');
+    const size = {x: box.left - pad, y: box.top - pad, width: box.right - box.left + 2 * pad,
+      height: box.bottom - box.top + 2 * pad};
+    for (const [key, value] of Object.entries(size)) rect.setAttribute(key, value.toFixed(1));
+    rect.setAttribute('fill', 'none');
+    rect.setAttribute('stroke', 'none');
+    layer.prepend(rect);
+  }
 }
 /* The edges that flow: in all, every edge; in hover, the edges of the node the pointer is on; else the selection's. */
 function flowing2d() {
@@ -87,22 +116,24 @@ function flowing2d() {
 }
 /* One edge's shapes: a reply's train each way, in the colour of the element it comes from, `fxTrain`, one path for its
  * dots at full strength and one for each fading dot; the request, one dot on a path of its own; the record card and
- * the ring it lands with. The dots' paths run through the edge's curve sampled, `sampled`, with the edge's length as
- * their own, so a dot sits where `pointOn` puts it: the browser measures a curve's dashes a pixel or two shorter than
- * `getTotalLength`, which would leave out a dot at an edge's end. A gap longer than the edge twice over keeps a dot
- * from coming round again. */
-function edgeShapes(edge, made, {trains, asks}) {
-  const length = edge.path.getTotalLength(), far = 3 * length + 100, one = {edge, length, far};
-  const d = sampled(one).map((point, i) => `${i ? 'L' : 'M'}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join('');
-  const along = (name, attributes = {}, parent) => made('path', name, {d, pathLength: length, ...attributes}, parent);
+ * the ring it lands with. The dots' paths are empty until a frame places their dots, `dots2d`; the train's group is
+ * what is shown or hidden. The edge is measured here, `sampled`, before any frame writes into the map: measured later,
+ * each measure after a frame's first write makes the browser lay out the page again. */
+function edgeShapes(edge, made, {trains, asks}, byId) {
+  const one = {edge, length: edge.length ??= edge.path.getTotalLength()};
+  sampled(one);
+  const dots = (attributes, parent) => {
+    const path = made('path', 'bead', attributes, parent);
+    show2d(path, true);
+    return path;
+  };
   return Object.assign(one, {
     trains: [0, 1].map(way => {
       const train = made('g', 'train', {}, trains);
-      train.style.stroke = color2d(way === 0 ? edge.provider : edge.join.receiver);
-      return {g: train, key: '', solid: along('bead', {}, train),
-        tail: TAIL.map(opacity => along('bead', {opacity, 'stroke-dasharray': `0 ${far}`}, train))};
+      train.style.stroke = color2d(way === 0 ? edge.provider : edge.join.receiver, byId);
+      return {g: train, solid: dots({}, train), tail: TAIL.map(opacity => dots({opacity}, train))};
     }),
-    ask: along('ask', {'stroke-dasharray': `0 ${far}`}, asks),
+    ask: made('path', 'ask', {}, asks),
     record: made('rect', 'record', {x: -4.5, y: -3.2, width: 9, height: 6.4, rx: 1.4}),
     ring: made('circle', 'ring', {r: 4})});
 }
@@ -130,13 +161,15 @@ function rest2d() {
   for (const one of ambients2d()) if (one.playState === 'running') one.pause();
 }
 /* A point at a distance along an edge, looked up in the edge's curve sampled once, `sampled`, never measured again each
- * frame: measuring a curve for every dot on every frame was the page's own heaviest work. */
+ * frame: measuring a curve for every dot on every frame was the page's own heaviest work. The samples and its length
+ * are kept on the edge, which lives as long as its drawn path, so a new selection measures nothing. */
 function sampled(one) {
-  if (!one.samples) {
+  const edge = one.edge;
+  if (!edge.samples) {
     const count = Math.max(16, Math.ceil(one.length / 3));
-    one.samples = Array.from({length: count + 1}, (_, i) => one.edge.path.getPointAtLength(one.length * i / count));
+    edge.samples = Array.from({length: count + 1}, (_, i) => edge.path.getPointAtLength(one.length * i / count));
   }
-  return one.samples;
+  return edge.samples;
 }
 function pointOn(one, distance) {
   const points = sampled(one), last = points.length - 1;
@@ -156,7 +189,7 @@ function frame2d(now) {
   const wanted = ['hover', 'selected', 'all'].includes(flowModeNow()) ? 1 : 0, was = FLOW2D.fade ?? wanted;
   FLOW2D.fade = was + (wanted - was) * (1 - Math.exp(-Math.max(0, FLOW.clock - (FLOW2D.at ?? FLOW.clock)) * FLOW.ease));
   FLOW2D.at = FLOW.clock;
-  const group = shown[0].record.parentNode, opacity = FLOW2D.fade.toFixed(3);
+  const group = FLOW2D.group, opacity = FLOW2D.fade.toFixed(3);
   if (group && opacity !== FLOW2D.opacity) group.style.opacity = FLOW2D.opacity = opacity;
   if (FLOW2D.fade < 0.01 && !wanted) {
     for (const one of shown) flowEdge2d(one, true);
@@ -170,6 +203,11 @@ const show2d = (shape, on) => {
   if (Boolean(shape.on2d) !== on) shape.style.display = (shape.on2d = on) ? '' : 'none';
 };
 const placed = point => `translate(${point.x} ${point.y})`;
+/* A path's dots, each a stroke of no length whose round caps make the dot, written only when one moves. */
+const dot = point => `M${point.x.toFixed(2)},${point.y.toFixed(2)}h0`;
+const dots2d = (shape, d) => {
+  if (shape.d2d !== d) shape.setAttribute('d', shape.d2d = d);
+};
 /* One edge's flow this frame, the way its information goes: its records, its ring as one lands, its request, and its
  * reply's trains. Resting, nothing is shown. */
 function flowEdge2d(one, resting) {
@@ -189,7 +227,7 @@ function flowEdge2d(one, resting) {
     ring.style.opacity = String(Math.pow(1 - u, 1.5));
   }
   show2d(ring, ringing);
-  if (asking) ask.style.strokeDashoffset = `${-along(Math.min(1, Math.max(0, since / FLOW.ask)))}px`;
+  if (asking) dots2d(ask, dot(at(since / FLOW.ask)));
   show2d(ask, asking);
   // the reply: a train of dots the way the data goes, both ways on a join whose information goes both ways
   const ways = replying ? (join.ifd === 'both' ? [true, false] : [true]) : [];
@@ -198,30 +236,21 @@ function flowEdge2d(one, resting) {
     show2d(train.g, index < ways.length);
   });
 }
-/* A reply's train of dots along the edge, spaced so they read as dots, the last few fading. The dots are the round
- * ends of dashes of no length on a copy of the edge's path, so the train moves by one value, `--head`, its head's
- * place along the path; how many dots it has, and which way it runs, set its dashes when they change. */
-function train2d(train, t, back, amount, {length, far}, receives) {
-  const spacing = Math.max(0.03, BEAD * 2 * 2.3 / Math.max(1, length));
+/* A reply's train of dots along the edge, spaced so they read as dots, the last few fading: dot i is i spaces behind
+ * the head, and a dot off either end of the edge is not drawn. The full-strength dots share one path and each fading
+ * dot has its own, so a frame writes at most four paths a train, each holding only its dots. */
+function train2d(train, t, back, amount, one, receives) {
+  const length = one.length, spacing = Math.max(0.03, BEAD * 2 * 2.3 / Math.max(1, length));
   const shown = Math.max(2, Math.min(12, amount, Math.floor(0.6 / spacing) + 1));
-  const head = t * (1 + spacing * (shown - 1)), forward = receives === back, gap = spacing * length;
-  const key = `${shown} ${forward}`;
-  if (train.key !== key) {
-    train.key = key;
-    // dot i is i gaps behind the head; a dash's place along the path is its place in the pattern less the offset
-    const behind = i => (forward ? i : -i) * gap, solid = shown - 3;
-    show2d(train.solid, solid > 0);
-    if (solid > 0) {
-      train.solid.setAttribute('stroke-dasharray', [...Array(solid - 1).fill(`0 ${gap}`), `0 ${far}`].join(' '));
-      train.solid.style.strokeDashoffset = `calc(var(--head) + ${forward ? (solid - 1) * gap : 0}px)`;
-    }
-    train.tail.forEach((dot, j) => {
-      const i = shown - 3 + j;
-      show2d(dot, i >= 0);
-      if (i >= 0) dot.style.strokeDashoffset = `calc(var(--head) + ${behind(i)}px)`;
-    });
-  }
-  train.g.style.setProperty('--head', `${-(forward ? head : 1 - head) * length}px`);
+  const head = t * (1 + spacing * (shown - 1)), forward = receives === back;
+  const put = i => {
+    const share = head - i * spacing;
+    return share < 0 || share > 1 ? '' : dot(pointOn(one, (forward ? share : 1 - share) * length));
+  };
+  let solid = '';
+  for (let i = 0; i < shown - 3; i++) solid += put(i);
+  dots2d(train.solid, solid);
+  train.tail.forEach((path, j) => dots2d(path, shown - 3 + j < 0 ? '' : put(shown - 3 + j)));
 }
 export function focus2D(id, frame = true) {
   const join = id.startsWith('p:') ? joinOf(id) : null;

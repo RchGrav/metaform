@@ -51,6 +51,7 @@ from metaform.module import (
     item_read,
     latest_item,
     node_reads,
+    project_for,
     titled,
     work_reads,
 )
@@ -59,6 +60,7 @@ from metaform.outline import mermaid as map_mermaid
 from metaform.outline import mermaid_limits
 
 from .around import told
+from .code import CODE_LAYER
 from .code import VERBS as CODE_VERBS
 from .code import brief as code_brief
 from .code import node_line as code_node_line
@@ -183,6 +185,21 @@ def _refs(groups: Any) -> list[str]:
     return list(dict.fromkeys(f"{ref['key']}={ref['value']}" for group in cast(list[dict[str, Any]], groups or [])
                               if group.get('layer') == SOURCES for item in group.get('items', [])
                               for ref in item.get('refs', [])))
+
+
+LEAN = ('id', 'layer_id', 'element_id', 'existing', 'differs')  # what an agent never acts on in a read, MCP-039
+
+
+def _lean(data: Any) -> Any:
+    """A read as `map where` gives it by default, MCP-039: the ids and the fields an agent never acts on left out, and
+    every empty field, at every depth."""
+    if isinstance(data, dict):
+        held = cast(dict[str, Any], data)
+        return {key: _lean(value) for key, value in held.items()
+                if key not in LEAN and value not in (None, '', [], {})}
+    if isinstance(data, list):
+        return [_lean(one) for one in cast(list[Any], data)]
+    return data
 
 
 def _compact(data: dict[str, Any]) -> dict[str, Any]:
@@ -317,7 +334,7 @@ def _oriented(ctx: Context, found: Any, node: Node, *, contents: bool = False) -
 def _missing(store: Store, address: str) -> Stop:
     """Recover orientation at the map surface without changing the store's context reads."""
     found = store.where(address, raw=True)
-    recording = next(iter(store.intake_recording().results), None)
+    recording = next(iter(store.intake_building().results), None)
     if recording is not None:
         building = Store(store.project_id, base=recording.base_id)
         held = building.where(address, raw=True)
@@ -349,8 +366,9 @@ def where(ctx: Context) -> Any:
     """One read of an address: what relies on it and what it relies on, with the counts at it and around it,
     STORE-025 and MCP-039; the entry with no address. `<scope>@<layer>` reads what that layer holds at the scope, P165,
     `scoped.py`."""
-    if not ctx.nouns['address']:
-        return roots(ctx)
+    if not ctx.nouns['address']:  # the entry, compacted as every read here is unless full keeps what it leaves out
+        entry = roots(ctx)
+        return entry if ctx.nouns.get('full') else _lean(plain(entry))
     address = ctx.nouns['address']
     if is_scoped(str(address)):
         return scoped_read(ctx, str(address))
@@ -374,7 +392,7 @@ def scoped_read(ctx: Context, text: str) -> Any:
             read['element'] = {key: value for key, value in (
                 ('address', element.address), ('name', element.name), ('short_name', element.short_name),
                 ('role', element.role), ('reading', element.reading)) if value}
-    if found.layer == str(ctx.setting('code_layer') or 'code'):
+    if found.layer == CODE_LAYER:
         if found.address is None:
             raise Stop(f'The code layer is read at an Address: {found.text} names the whole project.',
                        'metaform map code-gaps')
@@ -1275,7 +1293,7 @@ def work(ctx: Context) -> Any:
         return _written(ctx, store, added, 'add', notices)
     if op == 'distribute':
         return _with_notices(_glyphed(store, _distribute(store, nouns['agents'])), notices)
-    work_id = nouns['id']
+    work_id = _work_id(store, str(nouns['id']))
     if op == 'read':
         return _with_notices(_with_work_modules(ctx, store.ticket(work_id)), notices)
     if op == 'take':
@@ -1499,6 +1517,21 @@ def work_read(ctx: Context, record: WorkRecord) -> dict[str, Any] | None:
     return kept or None
 
 
+def _work_id(store: Store, given: str) -> str:
+    """A ticket's id as `map work` takes it: its own id, or its handle `<address>#<n>`, as `map where` and the board
+    show it, read as the ticket numbered there, MCP-037."""
+    from metaform.data import parse_reference
+    parsed = parse_reference(given) if '#' in given else None
+    if parsed is None:
+        return given
+    _numbering(store)
+    found = store.item_at(*parsed)
+    if found is None or found.get('kind') != 'work':
+        raise Stop(f'{given} is no ticket: ' + ('it holds no item.' if found is None else f'it is a {found["kind"]}.'),
+                   f'metaform map work node={parsed[0]}')
+    return str(found['id'])
+
+
 def map_item_read(ctx: Context, address: str, number: int) -> dict[str, Any] | None:
     """The work record, question, message, code link or glossary term numbered `number` at `address`, MCP-037: its
     kind, title, why, body and links; None when map holds none there."""
@@ -1615,6 +1648,21 @@ HELD = (_noun('provider', 'A purpose node holds as its receiver: the address of 
         _noun('address', 'With provider: the part at that address inside the purpose.'))
 
 
+def challenged(folder: Path) -> bool:
+    """Whether the folder's project holds a blind-spot layer, so the verbs that read and answer its challenges are
+    listed over MCP, MCP-004."""
+    project = project_for(folder)
+    return project is not None and any(layer.name.startswith('blind_spot_')
+                                       for layer in Store(project).layers(limit=0).results)
+
+
+def reexamining(folder: Path) -> bool:
+    """Whether a layer of the folder's project is marked for re-examination, so the verb that clears the mark is
+    listed over MCP, MCP-004."""
+    project = project_for(folder)
+    return project is not None and any(layer.reexamine for layer in Store(project).layers(limit=0).results)
+
+
 MODULE = Module(
     id='map',
     provides=(Provides('code.inventory', code_inventory),),
@@ -1642,7 +1690,7 @@ MODULE = Module(
     details='Every read that returns a join shows the layer it comes from. --raw reads every stored layer.',
     verbs=(
         Verb('roots', roots, "Read the map's entry: the CQU and the DE with their joins, and every root element.",
-             nouns=PAGING, switches=RAW, effect='read'),
+             nouns=PAGING, switches=RAW, effect='read', reads_layers=True),
         Verb('where', where, 'Read one address on the map: its element, what relies on it, and what it relies on, each '
                              'with its purpose. How much is held at it and around it is counted, with the calls that '
                              "read it; with an empty address, the map's entry.",
@@ -1652,7 +1700,7 @@ MODULE = Module(
                                       'by default each is counted, with the call that reads it.', 'bool'),
                     _noun('full', 'true keeps ids and empty fields, which are left out by default, with the '
                                   'contents.', 'bool')),
-             switches=RAW, effect='read'),
+             switches=RAW, effect='read', reads_layers=True),
         Verb('markdown', markdown, 'The map, or the part around one address, as a short Markdown document.',
              nouns=(_noun('address', 'A dotted namespace address; without one, the whole map.'),
                     _noun('file', 'A file to write the document to; without one, it is printed.')),
@@ -1671,15 +1719,16 @@ MODULE = Module(
                     _noun('file', 'A file to write the document to; without one, it is printed.')),
              switches=RAW, surfaces=('cli',)),
         Verb('element', element, 'Read one element: its address, name_length, name, role and short name.',
-             nouns=(Noun('element', 'An address or element id.'),), switches=RAW, effect='read'),
+             nouns=(Noun('element', 'An address or element id.'),), switches=RAW, effect='read', reads_layers=True),
         Verb('joins', joins, 'List the joins an element receives, or with as=provider the joins it provides for.',
              nouns=(Noun('element', 'An address or element id.'), _noun('as', 'receiver or provider.'), *PAGING),
-             switches=RAW, effect='read'),
+             switches=RAW, effect='read', reads_layers=True),
         Verb('identity', identity, 'List every join an element provides for: the receiver, its OP, and the EF that '
                                    'serves it.',
-             nouns=(Noun('element', 'An address or element id.'), *PAGING), switches=RAW, effect='read'),
+             nouns=(Noun('element', 'An address or element id.'), *PAGING), switches=RAW, effect='read',
+             reads_layers=True),
         Verb('children', children, 'List the artifact types one segment toward the leaves from an address.',
-             nouns=(Noun('address', 'A dotted namespace address.'), *PAGING), effect='read'),
+             nouns=(Noun('address', 'A dotted namespace address.'), *PAGING), effect='read', reads_layers=True),
         Verb('layers', layers, 'List the layers with their kind, tags and state, and whether each is on here.',
              nouns=(_noun('tag', 'Only layers with this tag.'), _noun('kind', 'Only layers of this kind.'),
                     _noun('module', 'Only layers of this module.'), *PAGING), effect='read'),
@@ -1687,17 +1736,20 @@ MODULE = Module(
              nouns=(Noun('layer', 'A layer.'), Noun('tag', 'The tag.'))),
         Verb('untag', untag, 'Remove a tag from a layer.', nouns=(Noun('layer', 'A layer.'), Noun('tag', 'The tag.'))),
         Verb('layer', layer, 'Read everything one layer holds, or what it holds at one node.',
-             nouns=(Noun('layer', 'A layer.'), _noun('node', 'A node, such as element:code.engine.'), *PAGING), effect='read'),
+             nouns=(Noun('layer', 'A layer.'), _noun('node', 'A node, such as element:code.engine.'), *PAGING),
+             effect='read', reads_layers=True),
         Verb('node', node, "Read every layer's items at one node, grouped by layer.",
              nouns=(Noun('node', 'element:<address or id> or join:<id>.'),),
-             switches=RAW, effect='read'),
+             switches=RAW, effect='read', reads_layers=True),
         Verb('context', context, 'Read the properties that apply at an address, and those attached toward the leaves '
                                  'that are visible there.',
-             nouns=(Noun('address', 'A dotted namespace address.'), *PAGING), effect='read'),
+             nouns=(Noun('address', 'A dotted namespace address.'), *PAGING), effect='read', reads_layers=True),
         Verb('links', links, 'List the layer items that link to a node.',
-             nouns=(Noun('node', 'A node.'), _noun('layer', 'Only this layer.'), *PAGING), switches=RAW, effect='read'),
+             nouns=(Noun('node', 'A node.'), _noun('layer', 'Only this layer.'), *PAGING), switches=RAW, effect='read',
+             reads_layers=True),
         Verb('citing', citing, 'Find everything on the map whose refs hold a key and value, such as a file path.',
-             nouns=(Noun('key', 'The ref key, such as path.'), Noun('value', 'The ref value.'), *PAGING), effect='read'),
+             nouns=(Noun('key', 'The ref key, such as path.'), Noun('value', 'The ref value.'), *PAGING), effect='read',
+             reads_layers=True),
         Verb('history', history, 'Read every version of a thing on the map by its id, from the row that added it '
                                  'through each refinement.',
              nouns=(Noun('id', 'An id.'), *PAGING), effect='read'),
@@ -1748,9 +1800,11 @@ MODULE = Module(
              examples=(('metaform map cypher MATCH \'(e) WHERE e.kind = "element" AND e.role = "DE" RETURN e.address, e.name\'',
                         'The defining elements.'),
                        (('metaform map cypher \'MATCH (r)-[j]->(e) WHERE r.address = "code.store" AND j.kind = "join" '
-                         'RETURN e.address, j.purpose\''), 'What the store relies on, with the purpose of each join.')), effect='read'),
+                         'RETURN e.address, j.purpose\''), 'What the store relies on, with the purpose of each join.')),
+             effect='read', reads_layers=True),
         Verb('search', search, 'Find the layer items whose value holds every word of the text.',
-             nouns=(Noun('text', 'The words to find.'), _noun('layer', 'Only this layer.'), *PAGING), effect='read'),
+             nouns=(Noun('text', 'The words to find.'), _noun('layer', 'Only this layer.'), *PAGING), effect='read',
+             reads_layers=True),
         Verb('work', work, 'Work with tickets, the work records on map elements and joins: list, read, add, edit, take '
                            'and finish them. To work a ticket handed to you: read it with id=; op=plan with the steps '
                            'you plan; op=step as each finishes, saying what you did and any choice you made with its '
@@ -1822,7 +1876,7 @@ MODULE = Module(
                                  'code.manager.route#1f; upper case is read as well. An address alone reads the '
                                  'latest item numbered there.'),),
              examples=(('metaform map item code.manager.route#1', 'Read the first item numbered at the route manager.'),),
-             effect='read'),
+             effect='read', reads_layers=True),
         Verb('knowledge', knowledge, 'Build a knowledge layer, a CEL on top of the map that agents use to index and '
                                      'understand the AUE. Create it, add, edit and remove its objects one at a time, '
                                      'and finish it.',
@@ -1851,10 +1905,10 @@ MODULE = Module(
         Verb('unhide', unhide, 'Show a hidden layer again.', nouns=(Noun('layer', 'A layer.'),)),
         Verb('reexamined', reexamined, "Clear a layer's re-examination mark once its knowledge has been checked "
                                        'against the changed base.',
-             nouns=(Noun('layer', 'A layer.'),)),
+             nouns=(Noun('layer', 'A layer.'),), listed=reexamining),
         Verb('answer', answer, 'Answer a blind-spot challenge the critic raised: A, B or C.',
              nouns=(Noun('challenge', 'The challenge item id.'), Noun('answer', 'A, B or C.'),
-                    _noun('link', 'For C: the element or join that already handles it.'))),
+                    _noun('link', 'For C: the element or join that already handles it.')), listed=challenged),
         Verb('approve', approve, 'Approve a challenge answered B, making it a plan.',
              nouns=(Noun('challenge', 'The challenge item id.'),), surfaces=('cli',)),
         Verb('critic', critic, 'Start a blind-spot critic run: a new blind-spot layer, and the critic prompt with the '
@@ -1865,7 +1919,7 @@ MODULE = Module(
                      'layer, with provenance role critic and blinded true unless --critic, LAYER-014.'),
         Verb('challenges', challenges, 'Read the answer prompt with each challenge of a blind-spot layer and its '
                                        'state.',
-             nouns=(Noun('layer', 'The blind-spot layer.'),), effect='read'),
+             nouns=(Noun('layer', 'The blind-spot layer.'),), effect='read', listed=challenged),
         *CODE_VERBS,
         *GLOSSARY_VERBS,
     ),

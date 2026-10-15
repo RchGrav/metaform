@@ -1,0 +1,1 @@
+"No record in `specifications/` describes the phone setup; it is described in `src/metaform/modules/twilio/README.md`, which this ticket updated. The ticket's page notice adds behaviour that VIEW-051 does not yet say, so this bullet is drafted for VIEW-051 (`specifications/09-viewer.md`), to go after its `Status:` line:"

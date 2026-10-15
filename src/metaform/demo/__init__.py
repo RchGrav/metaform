@@ -6,11 +6,12 @@ or written: `cli.main` points METAFORM_HOME there before the command starts, and
 inherits it. The first run copies the sample project, Pocket Ledger, into that home and imports its finished map
 from map.json, so no intake runs. It turns dispatch on there, with the demo agent, `agent.py`, as the start command
 of every agent, so nothing it starts calls a model, a network service or anything that costs money. It starts the
-web GUI on a free port, opens the person's browser once and prints the address. Then it keeps three demo agents at
-work: each lane is a node of the map with its ticket, and once an agent has closed its ticket the lane rests a few
-seconds and a fresh ticket is worked there again, so someone who arrives late still sees agents at work. The person's
-system agent is the demo agent too, the mascot that greets them. Ctrl+C stops the agents and the server; --reset
-removes the demo's home first, so it starts fresh."""
+web GUI on a free port, opens the person's desktop browser once (never a terminal one) and prints the address. Then
+it keeps three demo agents at work: each lane is a node of the map with its ticket, and once an agent has closed its
+ticket the lane rests a few seconds and a fresh ticket is worked there again; only one lane rests at a time, so
+someone who arrives late always sees agents at work. The person's system agent is the demo agent too, the mascot that
+greets them. Ctrl+C stops the agents and the server and puts their tickets back on the board, so the next run starts
+them again; --reset removes the demo's home first, so it starts fresh."""
 from __future__ import annotations
 
 import contextlib
@@ -22,13 +23,12 @@ import socket
 import subprocess
 import sys
 import time
-import webbrowser
 from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from .. import harness, home
+from .. import harness, home, loader
 from ..data import BASE_VARIABLE, Store, StoreError
 from ..errors import Stop
 from ..sqlite import Held, file_lock
@@ -36,11 +36,12 @@ from ..sqlite import Held, file_lock
 HERE = Path(__file__).parent
 FOLDER = 'demo'  # the demo's home, inside the Metaform home
 CARD = 'demo.json'  # what the page's demo card says, read by the web GUI from the home it serves
-REST = 10.0  # seconds a lane rests after its ticket is closed before a fresh one is worked there
+REST = 10.0  # seconds a lane rests after its ticket is closed before a fresh one is worked there; one lane at a time
 STALLED = 240.0  # a ticket worked this long without being closed is started again
 STAGGER = 1.0  # seconds between the agents' first starts, so they set off one after another
 IDENTITY = ('METAFORM_ROLE', 'METAFORM_SESSION', 'METAFORM_WORK', 'METAFORM_NODE', BASE_VARIABLE)
 AGENTS = ('claude', 'codex', 'gemini')
+NEEDED = ('map', 'dispatch', 'web')  # the modules the demo runs; a build without them cannot show it
 
 
 def script() -> dict[str, Any]:
@@ -97,6 +98,11 @@ def project_folder(root: Path) -> Path:
 def prepare(root: Path) -> Path:
     """The demo's project in its home, made on the first run and reused after: the sample project's files, its map
     imported finished, dispatch on with the demo agent as every agent's start command. Returns its folder."""
+    found = {item.id for item in loader.discover()}
+    missing = [name for name in NEEDED if name not in found]
+    if missing:
+        raise Stop(f'This Metaform build carries no {" or ".join(missing)} module, which the demo runs, so it cannot '
+                   'run the demo.', 'metaform list modules')
     folder = project_folder(root)
     ready = root / 'ready'
     if ready.exists() and folder.is_dir():
@@ -179,8 +185,10 @@ def start(lane: Lane, folder: Path) -> None:
     lane.started, lane.closed = time.monotonic(), None
 
 
-def tend(lane: Lane, folder: Path, store: Store) -> None:
-    """Keep the lane at work: a closed ticket rests, then a fresh one is started; a stalled one is started again."""
+def tend(lane: Lane, folder: Path, store: Store, working: list[Lane]) -> None:
+    """Keep the lane at work: a closed ticket rests, then a fresh one is started; a stalled one is started again.
+    While another lane rests, a closed ticket's lane starts its fresh one at once, so the lanes, whose scripts take
+    about as long as each other, never rest together and leave the map without an agent."""
     if lane.ticket is None:
         return start(lane, folder)
     try:
@@ -188,7 +196,10 @@ def tend(lane: Lane, folder: Path, store: Store) -> None:
     except StoreError:
         done = None
     now = time.monotonic()
-    if done and lane.closed is None:
+    if done and lane.closed is None and any(other.closed is not None for other in working if other is not lane):
+        lane.ticket = None
+        start(lane, folder)
+    elif done and lane.closed is None:
         lane.closed = now
     elif done and lane.closed is not None and now - lane.closed >= REST:
         lane.ticket = None
@@ -198,7 +209,8 @@ def tend(lane: Lane, folder: Path, store: Store) -> None:
 
 
 def stop(folder: Path, working: list[Lane]) -> None:
-    """Stop every demo agent and the demo's web GUI."""
+    """Stop every demo agent and the demo's web GUI, and put the tickets they held back on the board: a stopped
+    agent's ticket otherwise stays taken, and the next run could not start it."""
     for lane in working:
         if lane.ticket is not None:
             metaform('dispatch', 'stop', lane.ticket, folder=folder)
@@ -207,6 +219,7 @@ def stop(folder: Path, working: list[Lane]) -> None:
                        if record.held and record.task == 'Conversation with the system agent'), None)
         if system is not None:
             metaform('dispatch', 'stop', system, folder=folder)
+    metaform('dispatch', 'reset', folder=folder)
     metaform('web', 'stop', folder=folder)
 
 
@@ -260,13 +273,12 @@ def show(root: Path, out: Callable[[str], None]) -> None:
     working: list[Lane] = []
     try:
         prepare(root)
+        must('dispatch', 'reset', folder=folder)  # tickets a run ended without its Ctrl+C, a kill, still held
         address = serve(folder)
         write_card(root, address)
         out(f'The map of Pocket Ledger, with three demo agents at work: {address}')
-        try:
-            opened = webbrowser.open(address)
-        except webbrowser.Error:
-            opened = False
+        from ..start import open_browser
+        opened = open_browser(address)
         out(f'Ready in {time.monotonic() - began:.1f} s. ' + ('Opened in your browser. ' if opened else
                                                               'Open that address in your browser. ')
             + 'Ctrl+C stops it; metaform demo --reset starts it fresh.')
@@ -280,7 +292,7 @@ def show(root: Path, out: Callable[[str], None]) -> None:
         while True:
             time.sleep(1)
             for lane in working:
-                tend(lane, folder, store)
+                tend(lane, folder, store, working)
     except KeyboardInterrupt:
         pass
     finally:

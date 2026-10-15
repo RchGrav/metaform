@@ -68,20 +68,6 @@ settings.choice('dispatch_serve_agent', ['default', 'none', *AGENTS], 'default',
                 details='Zed, JetBrains IDEs and other ACP editors start metaform dispatch serve as their agent. With an '
                         'agent behind it, Metaform passes the conversation through, adds its MCP server and records '
                         'the session, so the page shows and steers it. With none, Metaform starts no model.')
-settings.boolean('dispatch_serve_commands', True, person_only=True, label='Editor slash commands',
-                 help="Offer Metaform's commands to editors as slash commands, each named as its MCP tool, and answer "
-                      'them without a turn of the agent.')
-settings.choice('dispatch_serve_mcp', ['auto', 'stdio'], 'auto', person_only=True,
-                label="Editor agent's MCP transport",
-                help="How an agent behind metaform dispatch serve reaches Metaform's MCP server: auto carries it over "
-                     'the ACP connection itself when the agent advertises MCP-over-ACP, and starts it as a stdio server '
-                     'otherwise; stdio always starts it as a stdio server.',
-                details='MCP-over-ACP (agentclientprotocol.com/rfds/mcp-over-acp) needs no second process on the '
-                        "agent's side, so it also reaches an agent that cannot start local programs. It is a draft "
-                        'of ACP, used only with an agent that says it takes it.')
-settings.boolean('dispatch_serve_record', True, person_only=True, label='Record editor sessions',
-                 help='Record the sessions an editor runs through metaform dispatch serve on the held ticket "'
-                      'Sessions from editors", so the page shows them and can message and interrupt them.')
 
 EDITOR_TASK = 'Sessions from editors'  # the held ticket editor sessions hang on, beside the person's conversations
 OWN = 'metaform:'  # the ids of the requests Metaform itself sends, apart from any the editor or the agent uses
@@ -696,8 +682,8 @@ class Served:
     def with_server(self, params: dict[str, Any], token: str, cwd: str) -> str | None:
         """Metaform's MCP server added to a session's servers, as dispatch's runner adds it, run by this interpreter
         with the session's identity, MCP-010 and BASE-052; why not, when it could not be. A server the editor already
-        names metaform is the person's own choice and is kept in its place. With an agent that takes MCP over ACP and
-        `dispatch_serve_mcp` at auto, it is declared `type: "acp"` and Metaform answers the agent's requests to it
+        names metaform is the person's own choice and is kept in its place. With an agent that takes MCP over ACP, it is
+        declared `type: "acp"` and Metaform answers the agent's requests to it
         itself (proxy.py), with one registration per session, as each carries its own identity."""
         servers = cast(list[Any], params.get('mcpServers') or [])
         if any(isinstance(one, dict) and cast(dict[str, Any], one).get('name') == 'metaform' for one in servers):
@@ -708,7 +694,7 @@ class Served:
             command = mcp_server(Path(cwd))
         except Stop as stop:
             command, why = None, f'{stop} Next: {stop.next_step}'
-        over_acp = self.mcp_acp and self.ctx.setting('dispatch_serve_mcp') == 'auto'
+        over_acp = self.mcp_acp
         stdio = self.version < 2 or layers.offered(
             cast(dict[str, Any], layers.session_group(self.capabilities, self.version).get('mcp') or {}), 'stdio')
         if command is not None and over_acp:
@@ -724,9 +710,7 @@ class Served:
             servers = [*servers, {**({'type': 'stdio'} if self.version >= 2 else {}), 'name': 'metaform',
                                   'command': sys.executable, 'args': ['-m', *command], 'env': env}]
         elif command is not None:
-            why = (f'{self.agent} takes neither a stdio MCP server nor MCP over ACP' if not self.mcp_acp else
-                   f'{self.agent} takes MCP over ACP only, and dispatch_serve_mcp is stdio') + \
-                '. Next: metaform set --dispatch-serve-mcp auto'
+            why = f'{self.agent} takes neither a stdio MCP server nor MCP over ACP.'
         elif why is None:
             why = 'No enabled module serves MCP here.'
         params['mcpServers'] = servers
@@ -1020,13 +1004,11 @@ class Served:
 
     async def steer(self, session: Session, text: str) -> bool | None:
         """A page message into the turn in flight, as the dispatch runner delivers one, P016: with the agent's
-        `_session/steering` request when it advertises it, dispatch_steering is on, a turn is in flight and nothing
+        `_session/steering` request when it advertises it, a turn is in flight and nothing
         waits before it. True when the agent took it into the turn; False when it is to go as the next prompt, the
         agent having answered promptRequired or refused it; None when the agent did not answer in time, so the request
         is withdrawn with `$/cancel_request` and, since the agent may have taken it, never sent again."""
         if not (self.steers and session.turns and not session.queued and self.behind):
-            return False
-        if not await asyncio.to_thread(self.ctx.setting, 'dispatch_steering'):
             return False
         ident = self.own_id()
         try:
@@ -1074,8 +1056,6 @@ class Served:
     # ------------------------------------------------------------------ Metaform's own commands
 
     def own_commands(self, cwd: str) -> dict[str, tuple[list[str], dict[str, Any]]]:
-        if not self.ctx.setting('dispatch_serve_commands'):
-            return {}
         if cwd not in self.commands:
             self.commands[cwd] = commands_of(Path(cwd))
         return self.commands[cwd]
@@ -1142,11 +1122,9 @@ class Served:
 
     async def recorded(self, session: Session, row: dict[str, Any] | None) -> None:
         """Record a session of the agent's, so the page shows it: a new row on the held ticket editor sessions hang
-        on, or a dispatch session's own row taken up again. Nothing is recorded where there is no project or map, or
-        while the person has dispatch_serve_record off; the session works the same."""
+        on, or a dispatch session's own row taken up again. Nothing is recorded where there is no project or map; the
+        session works the same."""
         early, session.early = session.early or [], None
-        if not self.ctx.setting('dispatch_serve_record'):
-            return
         try:
             record = await asyncio.to_thread(Record.made, self, session, row)
         except (Stop, StoreError) as error:
@@ -1360,9 +1338,9 @@ class Record:
         if kind is not None and text:
             await self.note(key, kind, text)
 
-    async def said(self, kind: str, text: str) -> None:
+    async def said(self, kind: str, text: str, key: str | None = None) -> None:
         await self.flush()
-        await self.note(None, kind, text)
+        await self.note(key, kind, text)
 
     async def heard(self, update: dict[str, Any]) -> None:
         """What the agent sent the editor, kept as the runner keeps it: text as it grows, and each tool call. A message
@@ -1487,8 +1465,10 @@ class Record:
                                       'how': None if live else self.how})
             elif op == 'message':
                 text, by = str(asked.get('text', '')), str(asked.get('by') or '')
+                sent = str(asked.get('broadcast') or '')  # one message of a broadcast, kept under its id
                 self.later(lambda: self.said('message' if by else 'person',
-                                             f'From the {by} agent: {text}' if by else text))
+                                             f'From the {by} agent: {text}' if by else text,
+                                             f'broadcast:{sent}' if sent else None))
                 steered = await self.served.steer(session, text)  # into the turn in flight, as the runner does
                 if steered is False:
                     self.served.spawn(self.served.steered(session, text, by))

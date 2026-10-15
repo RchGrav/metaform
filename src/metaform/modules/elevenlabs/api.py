@@ -29,7 +29,6 @@ FORMATS = tuple(dict.fromkeys((*PAGE_FORMATS, *PHONE_FORMATS)))
 TYPES = {'mp3': 'audio/mpeg', 'pcm': 'audio/L16', 'ulaw': 'audio/basic'}
 MODELS = ('eleven_flash_v2_5', 'eleven_turbo_v2_5', 'eleven_multilingual_v2', 'eleven_v3', 'eleven_flash_v2',
           'eleven_turbo_v2', 'eleven_monolingual_v1')
-SCRIBE_MODELS = ('scribe_v1', 'scribe_v1_experimental')
 _cache: dict[str, tuple[float, Any]] = {}
 _cache_lock = threading.Lock()
 LISTED_FOR = 600.0  # seconds the account's voices and models are kept before they are asked for again

@@ -24,6 +24,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
     'budget': ('budget',),
     'intake-finished': ('intake-finished',),
 }
+# What the call and text lists offer: each group, then each signal the groups hold, for one signal alone.
+CHOICES = [*GROUPS, *dict.fromkeys(signal for signals in GROUPS.values() for signal in signals if signal not in GROUPS)]
 SIGNAL = re.compile(r'^[a-z][a-z0-9-]{1,40}$')
 TEXT_GAP = 60.0      # seconds between texts the bridge sends on its own
 SAME_GAP = 3600.0    # seconds before the same signal on the same ticket is told again

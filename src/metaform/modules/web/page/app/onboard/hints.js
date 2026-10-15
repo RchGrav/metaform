@@ -1,123 +1,76 @@
-/* A person's first time at a map: one short hint at a time, beside what it is about, the map, the agents and the chat;
- * and the workbench's controls quiet until the person first reaches for them. What a person has dismissed is kept for
- * them in the Metaform home, /api/hints, and in this browser, and never shown again. */
-import '/page/app/onboard/welcome.js';  // the part before runs first, so the parts run in the page's order
+/* A first-time person's welcome: one small plain window over a page that stays usable, saying what Metaform is and
+ * where help is, with OK, which puts it away for good. It is a first-time person's alone: someone who has used the page
+ * before never gets it, nor does the page in an AI tool's frame. Who the person is, and that they have closed it, are
+ * kept for them in the Metaform home, /api/hints, and in this browser, so it never comes back in any browser. */
+import '/page/app/loading/load.js';  // the part before runs first, so the parts run in the page's order
 import {$} from '/page/app/core/dom.js';
 import {FRAMED, S, reach} from '/page/app/core/reads.js';
 import {FIRST} from '/page/app/intake/intake.js';
-import {WELCOME} from '/page/app/onboard/welcome.js';
+import {openHelp} from '/page/app/keys/keys.js';
 
-/* The hints, in the order they are shown, each with where its card stands: [left, top] for a card of this size. */
-const TIPS = [
-  {name: 'map', text: "This is your project's map. Drag to turn it, scroll to zoom, and click a part to read what it "
-    + 'is for.', at: card => {
-    const box = $('main').getBoundingClientRect();
-    return [box.left + (box.width - card.width) / 2, box.bottom - card.height - 24];
-  }},
-  {name: 'agents', text: 'Agents work on the map as figures you can watch. Click one to talk to it; the agents at work '
-    + 'are listed at the top right.', at: card => {
-    const box = $('main').getBoundingClientRect(), list = $('#agents');
-    const below = list.hidden ? 0 : list.getBoundingClientRect().height + 12;
-    return [box.right - card.width - 24, box.top + 16 + below];
-  }},
-  {name: 'chat', text: 'Chat with your own agent here: ask it about the project, or ask it to do something.',
-    at: card => {
-      const tab = ($('#dock').classList.contains('resting') ? $('#dockTab') : $('#dock')).getBoundingClientRect();
-      return [tab.right - card.width, tab.top - card.height - 12];
-    }},
-];
-/* The workbench's regions kept quiet until used, each the class it sets on the page and what counts as using it. */
-const QUIET = [{name: 'header', region: 'header'}, {name: 'tabs', region: 'aside .tabs'}];
+/* seen: what this person has closed; who: 'newcomer', 'returning', or null until decided; ready: the home read. */
 const KEPT = 'metaform.hints';
-export const HINT = {dismissed: new Set(), read: null, ready: false, at: null};
+const PERSON = ['newcomer', 'returning'];
+const WELCOME = 'welcome';
+export const HINT = {seen: new Set(), who: null, ready: false, read: null};
+/* Whether this browser showed a project before this load: read before the page remembers the one it opens. */
+const usedHere = (() => {
+  try { return localStorage.getItem('metaform.project') !== null; } catch { return false; }
+})();
 
 function keptHere() {
   try { return JSON.parse(localStorage.getItem(KEPT) || '[]'); } catch { return []; }
 }
 function keepHere() {
-  try { localStorage.setItem(KEPT, JSON.stringify([...HINT.dismissed])); } catch { /* the home keeps them */ }
+  // a newcomer is never kept here: every home served at this address shares the browser's storage
+  const kept = [...HINT.seen, ...(HINT.who === 'returning' ? ['returning'] : [])];
+  try { localStorage.setItem(KEPT, JSON.stringify(kept)); } catch { /* the home keeps them */ }
 }
-/* What this person dismissed: in this browser at once, and from the home once read. */
-function readDismissed() {
-  for (const name of keptHere()) HINT.dismissed.add(name);
+function send(given) {
+  return reach('/api/hints', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(given)}, 2).catch(() => { /* this browser keeps it */ });
+}
+/* What this person has closed, and who they are: from this browser at once, then from the home, which wins. */
+function readKept() {
+  for (const name of keptHere()) {
+    if (name === 'returning') HINT.who = 'returning';
+    else if (!PERSON.includes(name)) HINT.seen.add(name);
+  }
   HINT.read ||= reach('/api/hints', {headers: {Accept: 'application/json'}}, 2)
     .then(response => response.ok ? response.json() : {dismissed: []})
-    .then(body => { for (const name of body.dismissed || []) HINT.dismissed.add(name); keepHere(); })
+    .then(body => {
+      const names = body.dismissed || [];
+      for (const name of names) if (!PERSON.includes(name)) HINT.seen.add(name);
+      HINT.who = PERSON.find(one => names.includes(one)) || HINT.who;
+      keepHere();
+    })
     .catch(() => { /* unread, the browser's own list stands */ })
     .finally(() => { HINT.ready = true; });
   return HINT.read;
 }
-/* One hint gone for good, for this person: kept here at once, then in the home. */
-function dismiss(name) {
-  HINT.dismissed.add(name);
+/* Who this person is, decided once, on the first project the page shows them: a first-time person has this one
+ * project and a browser that never showed one; anyone else has used Metaform before. */
+function decide() {
+  if (HINT.who || !S.project) return;
+  HINT.who = S.projects.length === 1 && !usedHere ? 'newcomer' : 'returning';
   keepHere();
-  reach('/api/hints', {method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({hint: name})}, 2).catch(() => { /* this browser keeps it */ });
+  send({hint: HINT.who});
 }
-
-/* The quiet regions: quiet while not yet used; the first press or key in one makes it speak for good. */
-function drawQuiet() {
-  for (const {name} of QUIET) {
-    document.documentElement.classList.toggle(`quiet-${name}`, !FRAMED && !HINT.dismissed.has(name));
-  }
+/* The welcome, for a first-time person who has not closed it. */
+function welcome() {
+  $('#welcome').hidden = FRAMED || !HINT.ready || HINT.who !== 'newcomer' || HINT.seen.has(WELCOME);
 }
-for (const {name, region} of QUIET) {
-  const used = event => {
-    if (!event.target.closest?.(region) || HINT.dismissed.has(name)) return;
-    dismiss(name);
-    drawQuiet();
-  };
-  document.addEventListener('pointerdown', used, true);
-  document.addEventListener('keydown', used, true);
-}
-
-/* The cards that speak to the person first: the next step after an intake, and the demo's card; no hint shows while
- * one is up, and the hint follows once it goes. */
-const HOLDS = '#nextStep, #demo-card';
-/* The next hint not yet dismissed, on a map shown with the welcome gone; one at a time, never two. */
-function nextHint() {
-  const card = $('#hint');
-  const tip = TIPS.find(one => !HINT.dismissed.has(one.name));
-  if (!HINT.ready || FRAMED || WELCOME.shown || !S.elements.size || !tip || $(HOLDS)) {
-    card.hidden = true;
-    HINT.at = null;
-    return;
-  }
-  HINT.at = tip;
-  $('#hint .text').textContent = tip.text;
-  $('#hint .tipno').textContent = `${TIPS.indexOf(tip) + 1} of ${TIPS.length}`;
-  card.hidden = false;
-  placeHint();
-}
-function placeHint() {
-  if (!HINT.at || $('#hint').hidden) return;
-  const card = $('#hint'), size = card.getBoundingClientRect();
-  const [left, top] = HINT.at.at(size);
-  const edge = 8;
-  card.style.left = `${Math.round(Math.min(Math.max(left, edge), innerWidth - size.width - edge))}px`;
-  card.style.top = `${Math.round(Math.min(Math.max(top, edge), innerHeight - size.height - edge))}px`;
-}
-addEventListener('resize', placeHint);
-$('#hint .ok').onclick = () => {
-  if (HINT.at) dismiss(HINT.at.name);
-  $('#hint').hidden = true;
-  HINT.at = null;
-  setTimeout(nextHint, 500);  // a breath between one hint and the next, so they are never read as one
+$('#welcome .ok').onclick = () => {
+  $('#welcome').hidden = true;
+  HINT.seen.add(WELCOME);
+  keepHere();
+  send({hint: WELCOME});
 };
-$('#hint .skiptips').onclick = () => {
-  for (const tip of TIPS) if (!HINT.dismissed.has(tip.name)) dismiss(tip.name);
-  nextHint();
-};
+$('#welcome .helpkey').onclick = () => openHelp();
 
-/* Each time the page settles on a map, or leaves one: the first hint not yet dismissed, or none. */
-const welcomed = FIRST.drawn;
+/* Each time the page settles on a project: who this person is, once, and the welcome if it is theirs. */
 FIRST.drawn = (empty, settled) => {
-  const shown = welcomed(empty, settled);
-  if (settled && !FRAMED) readDismissed().then(() => { drawQuiet(); if (!HINT.at || shown || !S.elements.size) nextHint(); });
-  return shown;
+  if (!settled || FRAMED) return;
+  readKept().then(() => { decide(); welcome(); });
 };
-new MutationObserver(() => {
-  if ($(HOLDS)) { if (HINT.at) nextHint(); } else if (!HINT.at && S.elements.size) nextHint();
-}).observe(document.body, {childList: true});
-if (!FRAMED) readDismissed();  // the map in an AI tool's frame shows no hints, and asks nothing for them
-drawQuiet();
+if (!FRAMED) readKept();  // the map in an AI tool's frame shows no welcome, and asks nothing for it

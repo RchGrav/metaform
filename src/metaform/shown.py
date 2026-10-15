@@ -42,6 +42,11 @@ def serving() -> None:
     _serving = True
 
 
+def is_serving() -> bool:
+    """Whether this process serves one agent's conversation, so it lives as long as that agent does."""
+    return _serving
+
+
 def session(client: str | None = None) -> str | None:
     """The agent session a call is made in: METAFORM_SESSION, else this serving process with its client, else None."""
     named = os.environ.get('METAFORM_SESSION')

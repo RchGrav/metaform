@@ -29,6 +29,7 @@ new ResizeObserver(headBottom).observe($('header'));
 addEventListener('resize', headBottom);
 headBottom();
 $('#shortcutsBtn').onclick = () => openHelp();
+$('#helpBtn').onclick = () => openHelp();  // the header's Help, beside Settings: the same window
 overlay($('#help'), {kind: 'dialog', close: () => { $('#help').hidden = true; }});
 $('#help .close').onclick = () => { $('#help').hidden = true; };
 /* The page's text size, VIEW-023: chosen from the View menu's list or stepped with Alt and =, Alt and -, and Alt and 0
@@ -65,17 +66,31 @@ for (const [index, step] of TEXTSIZE.steps.entries()) {
 $('#textsize').onchange = event => textSize(Number(event.target.value));
 // The text size is chosen in the View menu; no Alt shortcut, which the system takes on some machines.
 textSize(textStep());
-/* The header folds its rest behind the menu button below 1100 px, by the styles, and on a wider window whenever its
- * one row does not hold everything, as at a larger text size: it is measured unfolded, in the same frame, so nothing
- * flashes. */
+/* The header folds its rest behind the menu button below 1100 px, by the styles. On a wider window its one row gives
+ * back room in steps while it does not hold everything, as at a larger text size or a long project name: the search
+ * keeps its icon alone, then the spacing tightens, then the labels go, then the names shorten; only a row that still
+ * does not fit folds. Each step is measured unfolded, in the same frame, so nothing flashes. */
+const STEPS = ['compact', 'tight', 'tighter'];
 export function foldHeader() {
   const header = $('header');
-  header.classList.remove('fold');
+  header.classList.remove('fold', ...STEPS);
   if (innerWidth <= 1100) return;  // the styles fold it there
   header.classList.add('measure');  // each part at its own width, so a row too full shows as overflow
-  const over = header.scrollWidth > header.clientWidth + 1;
+  // past the row's end, by the parts' own edges: scrollWidth rounds, and a row a few pixels over squeezes the names
+  const parts = header.querySelectorAll(':scope > *, :scope > .hmore > *');
+  const over = () => {
+    const end = header.getBoundingClientRect().right - parseFloat(getComputedStyle(header).paddingRight);
+    return Math.max(...[...parts].map(part => part.getBoundingClientRect().right)) > end + 0.5;
+  };
+  for (let step = 0; step < STEPS.length && over(); step++) header.classList.add(STEPS[step]);
+  let fold = false;
+  if (over()) {
+    header.classList.add('short');  // the project and base names cut to their shortest
+    fold = over();
+    header.classList.remove('short');
+  }
   header.classList.remove('measure');
-  header.classList.toggle('fold', over);
+  header.classList.toggle('fold', fold);
 }
 addEventListener('resize', foldHeader);
 document.fonts?.ready.then(foldHeader);

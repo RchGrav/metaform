@@ -1,0 +1,1 @@
+metaform-dispatch gotchas observation: "The mcp effect guard (test_every_verb_that_reaches_the_network_or_writes...) treats store.numbers_of's tx.tables() as a write, so a read verb that needs a ticket's item and title reads them through work_reads(ctx.folder, record)['map'] instead."

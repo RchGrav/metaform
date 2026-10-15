@@ -182,6 +182,10 @@ export function bead(node) {
   // keeps a material's program when only its side changes; it shares every setting of the near wall but the picture
   // it reads, which is the scene with no glass in it.
   const material = made(THREE.FrontSide), back = made(THREE.BackSide);
+  // drei's compile writes USE_TRANSMISSION into the material's own defines, after three.js has keyed the shader by
+  // them, so the next key named another shader and the glass was linked twice; given here, its shader is linked once,
+  // ahead of the frame, `warm3d`
+  for (const one of [material, back]) one.defines.USE_TRANSMISSION = '';
   material.uniforms.time = DRIFT;
   material.uniforms.buffer.value = BEHIND.main?.texture ?? null;
   back.uniforms = {...material.uniforms, buffer: {value: BEHIND.back?.texture ?? null}};

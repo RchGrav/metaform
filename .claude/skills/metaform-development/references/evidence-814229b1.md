@@ -1,0 +1,2 @@
+682:.count{position:absolute;right:var(--s4);bottom:44px;font:var(--t-sm) var(--sans);color:var(--muted);pointer-events:none;text-align:right}
+...The global `.count` rule (the map's node count) is absolutely positioned, so I'll rename my class.

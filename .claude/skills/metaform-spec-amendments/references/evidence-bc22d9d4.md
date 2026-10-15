@@ -1,0 +1,1 @@
+Spec differences, reported and not edited: VIEW-003 Build still says every page and vendor file is sent no-cache, and that vendor files are revalidated because their addresses carry no version. Now vendor files at the current version are immutable at /vendor/v-<version>/, everything static is gzipped, and the page carries modulepreload links.

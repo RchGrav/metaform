@@ -26,7 +26,7 @@ from typing import Any, TypeVar, cast
 
 from .. import changes, home, loader
 from ..errors import StoreError
-from . import history, layering, log, numbers, operations, promotion, reads, rows, tables, views, writes
+from . import history, layering, log, numbers, operations, promotion, reads, recorder, rows, tables, views, writes
 from .paging import LIMIT, sliced
 from .records import (
     Citation,
@@ -167,12 +167,20 @@ class Store:
     def finish(self, layer: str) -> Layer | Outcome:
         """Mark a layer ready, STORE-024."""
         with self._write() as tx:
-            return layering.finish(tx, layer)
+            done = layering.finish(tx, layer)
+        if isinstance(done, Layer):
+            recorder.let_go(self.project_id, done.id)  # a finished intake is no longer being recorded
+        return done
 
     def discard(self, layer: str) -> Outcome:
-        """Delete a knowledge layer's content and the layer; identity and type rows stay, STORE-032."""
+        """Delete a knowledge layer's content and the layer, or an intake layer still building, which is not the map
+        yet; identity and type rows stay, STORE-032."""
         with self._write() as tx:
-            return layering.discard(tx, layer)
+            gone = rows.layer(tx, layer).id
+            done = layering.discard(tx, layer)
+        if not any(one.id == gone for one in self.layers(limit=0).results):
+            recorder.let_go(self.project_id, gone)
+        return done
 
     def hide(self, layer: str) -> Outcome:
         with self._write() as tx:
@@ -338,7 +346,7 @@ class Store:
         try:
             tx = reading.enter_context(self._read())
             found = tables.state(tx.db, module, declared, 'metaform')
-            if found == 'older':  # an upgrade is a write, made before the read begins
+            if found in ('older', 'update'):  # an upgrade or an addition is a write, made before the read begins
                 reading.close()
                 with self._write() as upgrading:
                     tables.ensure(upgrading.db, upgrading.path, module, declared, 'metaform')
@@ -375,7 +383,7 @@ class Store:
         try:
             db = reading.enter_context(tables.project_transaction(path, write=False))
             found = tables.state(db, module, declared, 'project')
-            if found == 'older':
+            if found in ('older', 'update'):
                 reading.close()
                 with tables.project_transaction(path, write=True) as upgrading:
                     tables.ensure(upgrading, path, module, declared, 'project')
@@ -579,15 +587,34 @@ class Store:
     def bases(self, *, limit: int = LIMIT, after: str | None = None) -> Page[home.Base]:
         return sliced(home.bases(self.project_id), limit, after)
 
-    def intake_recording(self) -> Page[Recording]:
-        """The intake being recorded for this project, in whichever of its metaforms it is building, BASE-039: a page
-        of none or one, and of every one when more than one was opened, so none is hidden."""
+    def intake_building(self) -> Page[Recording]:
+        """Every intake building for this project, in whichever of its metaforms, BASE-039: a page of none or one,
+        and of every one when more than one was opened, so none is hidden. Each says whether an agent records it now,
+        how many parts it holds and when it last recorded anything; one no agent records was left unfinished."""
         found: list[Recording] = []
+        now = recorder.held(self.project_id)
         for metaform in home.bases(self.project_id):
-            for layer in Store(self.project_id, base=metaform.id).layers(kind='base', limit=0).results:
+            building = Store(self.project_id, base=metaform.id)
+            for layer in building.layers(kind='base', limit=0).results:
                 if layer.ready is None:
-                    found.append(Recording(metaform.id, metaform.name, metaform.active, layer))
+                    with building._read() as tx:
+                        parts = len(reads.layer_graph(tx, layer.id).elements)
+                        last = tx.db.execute('SELECT max(at) FROM ops WHERE layer_id=?', (layer.id,)).fetchone()[0]
+                    found.append(Recording(metaform.id, metaform.name, metaform.active, layer, layer.id == now, parts,
+                                           last))
         return Page(tuple(found), None)
+
+    def intake_recording(self) -> Page[Recording]:
+        """The intake an agent records now for this project, BASE-039: building, with the process of the agent
+        recording it alive. An intake building that no agent records was left unfinished; `intake_building` has it."""
+        return Page(tuple(one for one in self.intake_building().results if one.recording), None)
+
+    def hold_intake(self, layer: str) -> None:
+        """Say that this process's agent records the intake into this building layer of the bound base now, for as
+        long as the process lives; only a process serving one agent's conversation says so, BASE-039."""
+        bound = self.bound_base()
+        if bound is not None:
+            recorder.hold(self.project_id, bound.id, self.layer_ref(layer).id)
 
     def active_base(self) -> home.Base | None:
         return home.active_base(self.project_id)

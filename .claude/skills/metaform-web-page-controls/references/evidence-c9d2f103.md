@@ -1,0 +1,1 @@
+Measure by the parts' right edges against header right minus padding-right (+0.5), never scrollWidth: scrollWidth under-read by about 3 px and let the selects be squeezed.

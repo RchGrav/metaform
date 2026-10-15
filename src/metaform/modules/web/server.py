@@ -17,13 +17,17 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextvars
+import gzip
 import hashlib
 import hmac
 import json
 import os
+import posixpath
 import queue
 import re
 import secrets
+import shlex
 import signal
 import socket
 import socketserver
@@ -32,8 +36,11 @@ import sys
 import threading
 import time
 import traceback
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -69,6 +76,8 @@ from metaform.outline import mermaid_limits
 
 from . import (
     GATE_SECRET,
+    RESTARTED,
+    SUPERVISOR,
     WAIT,
     WILDCARDS,
     host_port,
@@ -76,6 +85,7 @@ from . import (
     opened_project,
     reach,
     ready_line,
+    restart_said,
     run_file,
     spawn,
     token,
@@ -83,7 +93,7 @@ from . import (
 )
 
 HERE = Path(__file__).parent
-STATIC = {'page': HERE / 'page', 'vendor': HERE / 'vendor'}
+STATIC = {'page': (HERE / 'page').resolve(), 'vendor': (HERE / 'vendor').resolve()}
 COOKIE = 'metaform_token'
 RESERVED = ('project', 'metaform', 'layers')  # what picks the store and its layers; never a read's own argument
 TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -94,10 +104,38 @@ PAGE_POLICY = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 
 # Scripts come only from the server; WebAssembly may be compiled, for the voice module's in-browser Whisper, whose
 # runtime is WebAssembly. 'wasm-unsafe-eval' allows compiling WebAssembly and nothing else: no eval of script text.
 SCRIPTS = "script-src 'self' 'wasm-unsafe-eval'"
-# Each static file's validator, VIEW-003: a hash of its bytes, kept for as long as the file's size and modification
-# time are unchanged, so a page load re-sends nothing unchanged and an edited file is sent again at once.
-_TAGS: dict[str, tuple[int, int, str]] = {}
 IMPORT_MAP = re.compile(rb'<script type="importmap">(.*?)</script>', re.DOTALL)
+# The libraries are named at /vendor/v-<version>/, the version a digest of the vendor files' stamps, so a browser keeps
+# each one without asking again until an upgrade changes a file, and with it every address. The page's own files name
+# /vendor/ on disk; the server writes the version into each as it sends it.
+VERSIONED = re.compile(r'v-[0-9a-f]{16}')
+VENDOR_NAMED = re.compile(rb'''(?<=["'(])/vendor/''')
+REWRITTEN = ('.html', '.js', '.mjs', '.css')  # the page's files that name the libraries
+LASTING = 'public, max-age=31536000, immutable'
+# A static import or re-export, `import x from '…'`, `import '…'`, `export {x} from '…'`; never `import(…)`, which runs
+# only when the code reaches it.
+STATIC_IMPORT = re.compile(rb'''(?<![\w$.])(?:import|export)\s*(?:[\w$*{}\s,]*?\bfrom\s*)?(["'])([^"'\n]+)\1''')
+MODULE_SCRIPT = re.compile(rb'<script type="module" src="([^"]+)"></script>')
+PACKED_LEAST = 1024  # bytes; a smaller file gains less from gzip than its header costs
+
+
+@dataclass
+class Served:
+    """A static file as it is sent: the stamp it was read at, the vendor version written into it, its ETag, a hash of
+    the bytes sent, and its gzip form once a browser has asked for it."""
+    stamp: tuple[int, int, str]
+    tag: str
+    packed: bytes | None = None
+
+
+# Each static file as it is sent, VIEW-003, kept for as long as the file's size and modification time, and the vendor
+# version written into it, are unchanged, so a page load re-sends nothing unchanged and an edited file is sent again
+# at once.
+_SERVED: dict[str, Served] = {}
+_VENDOR: list[str] = []  # the vendor version, worked out again on each load of the page
+# The page's modulepreload links, with what they were worked out from: the import map and module scripts, and the
+# stamp of every module file read.
+_PRELOADS: list[tuple[tuple[str, tuple[str, ...]], tuple[tuple[str, tuple[int, int]], ...], bytes]] = []
 DISPATCH_CHANGES = frozenset({'work', 'messages', 'map.glyphs', 'map.ticket_settings', 'map.eligible',
                               'map.question_work', 'dispatch.sessions', 'dispatch.questions', 'dispatch.settings',
                               'dispatch.claims', 'dispatch.claim_work', 'dispatch.raised'})
@@ -121,7 +159,7 @@ def dispatch_change(payload: dict[str, Any]) -> bool:
 GATE_HEADER, CLASSES_HEADER, ACCOUNT_HEADER = 'X-Metaform-Gate', 'X-Metaform-Classes', 'X-Metaform-Account'
 # Every page write by class. Reads are `read`, but for the build panel and the developer panes, which are admin. write
 # changes the map, its tickets and memories; dispatch starts or steers agents, and needs the Node's dispatch
-# capability; admin is the owner's: settings, the page's toolbar, layout and workspaces, which are home-global settings,
+# capability; admin is the owner's: settings, the page's toolbar, layout and workspaces (view.py keeps them per account),
 # modules, prompts, bases, backups, removing or clearing a project, builds, and any tool call through the MCP Apps host,
 # which can run any verb. A toolbar tool's run passes the route as a read and is classed by its verb, verb_class, in
 # workspace.run. A write not listed is admin, so a new one is refused to members until it is classed here.
@@ -131,18 +169,21 @@ WRITE_ROUTES = frozenset({
     '/api/attach', '/api/mascot', '/api/mascot-result', '/api/voice/transcribe', '/api/voice/clip', '/api/voice/speak'})
 DISPATCH_ROUTES = frozenset({
     '/api/raise', '/api/talk', '/api/system-chat', '/api/merge-review', '/api/merge-assist', '/api/dispatch-start',
-    '/api/dispatch-message', '/api/dispatch-fork', '/api/dispatch-stop', '/api/dispatch-interrupt',
+    '/api/dispatch-message', '/api/dispatch-broadcast', '/api/dispatch-fork', '/api/dispatch-stop',
+    '/api/dispatch-interrupt',
     '/api/dispatch-cancel', '/api/dispatch-intake', '/api/dispatch-resume', '/api/dispatch-permit',
-    '/api/dispatch-configure', '/api/workflow-answer', '/api/workflow-cancel'})
+    '/api/dispatch-configure', '/api/dispatch-session-prompts', '/api/workflow-answer', '/api/workflow-cancel'})
 ADMIN_ROUTES = frozenset({
     '/api/save-prompt', '/api/clear-project', '/api/remove-project', '/api/restore', '/api/activate-base',
-    '/api/remove-base', '/api/dispatch-prompts', '/api/dispatch-autostart', '/api/dispatch-agents',
-    '/api/dispatch-reset', '/api/settings', '/api/settings/reset', '/api/modules', '/api/mcp-call',
+    '/api/remove-base', '/api/intake-finish', '/api/intake-discard','/api/dispatch-prompts', '/api/dispatch-autostart', '/api/dispatch-agents',
+    '/api/dispatch-reset', '/api/settings', '/api/settings/reset', '/api/settings/choices', '/api/modules',
+    '/api/mcp-call',
     '/api/voice/download', '/api/build', '/api/workspace/arrangement', '/api/workspace/reset', '/api/report',
     '/api/workspace/save', '/api/workspace/select', '/api/workspace/delete'})
-ADMIN_PREFIXES = ('/api/build/', '/api/debug/', '/api/first-run/', '/api/phone-check', '/api/speech-voices')
+ADMIN_PREFIXES = ('/api/build/', '/api/debug/', '/api/phone-check', '/api/speech-voices')
 TOOL_RUN = '/api/workspace/run'
-HINTS = '/api/hints'  # a person's own dismissed first-run hints: any account keeps its own, firstrun.py
+HINTS = '/api/hints'  # the first-time tips a person has seen: any account keeps its own, hints.py
+VIEW = '/api/view'  # how a person's page looks right now: any account keeps its own, view.py
 
 
 def route_class(method: str, path: str) -> str:
@@ -150,7 +191,7 @@ def route_class(method: str, path: str) -> str:
     /api/settings, is read by GET and classed by its write for POST."""
     if path == '/api/build' or path.startswith(ADMIN_PREFIXES):
         return 'admin'
-    if method != 'POST' or path in (TOOL_RUN, HINTS):  # a tool's run is classed again by its verb, verb_class
+    if method != 'POST' or path in (TOOL_RUN, HINTS, VIEW):  # a tool's run is classed again by its verb, verb_class
         return 'read'
     if path in WRITE_ROUTES:
         return 'write'
@@ -228,9 +269,59 @@ def log(text: str) -> None:
     print(f'{datetime.now(UTC).isoformat(timespec="seconds")} {text}', file=sys.stderr, flush=True)
 
 
+# A hung server says why, and the watchdog restarts it, VIEW-002. Each request, and each page read's work, is kept in
+# the server's busy table with what it waits on and since when; /api/health, answered before any module refresh or
+# store, names the slowest. A page read runs in a worker thread and is answered within READ_LIMIT whatever its work
+# does, since a browser opens only a few connections to one server and a read that never answers soon stops every
+# other. Its work still running at STUCK is wedged: /api/health then answers 503, and the watchdog restarts the server.
+HEALTH = '/api/health'
+NOTICED: dict[str, str] = {}  # each module's notice last written to the log, so a notice is logged once, not per read
+READ_LIMIT = 15.0  # seconds a page read may run before it is answered 503 with what it waits on
+SLOW = 3.0  # a read running this long is what /api/health says the server is slow on, logged once
+STUCK = 20.0  # a read's work running this long has /api/health answer 503
+BACKLOG = 128  # connections the listener holds before it refuses one; the standard library's 5 fills at a page load
+STREAMS = ('/api/events', '/api/voice/', '/api/build')  # GET routes that write their answer as it comes, never bounded
+
+
+@dataclass(eq=False)
+class Busy:
+    """One request, or one page read's work, in the busy table: its route, what it waits on now, and since when."""
+    route: str
+    what: str
+    since: float
+    read: bool = False
+
+    def shown(self, now: float) -> dict[str, Any]:
+        seconds = round(now - self.since)
+        return {'route': self.route, 'what': self.what, 'seconds': seconds, 'read': self.read,
+                'said': f'waiting {seconds} s on {self.what}'}
+
+
+_busy: ContextVar[Busy | None] = ContextVar('metaform_web_busy', default=None)
+# A read's worker: the answer it gives, which the request thread writes, `Handler.bounded`
+_held: ContextVar[list[tuple[int, bytes, str, dict[str, str]]] | None] = ContextVar('metaform_web_held', default=None)
+
+
+def doing(what: str) -> None:
+    """Say what the request or read on this thread waits on now, as /api/health and the log name it."""
+    entry = _busy.get()
+    if entry is not None:
+        entry.what = what
+
+
+def waits_on(path: str) -> str:
+    """What a request waits on, named from its route until its handler says more: `/api/dispatch-sessions` is
+    `dispatch sessions`."""
+    return path.removeprefix('/api/').strip('/').replace('-', ' ').replace('/', ' ') or path
+
+
+SAID_KEPT = 512  # the refusals and faults remembered as already logged
+
+
 class Server(ThreadingHTTPServer):
-    daemon_threads = True
+    daemon_threads = True  # one thread per request, no pool to fill: a slow request holds only its own
     allow_reuse_address = os.name != 'nt'  # on Windows it would let a second server share the port
+    request_queue_size = BACKLOG
 
     def __init__(self, bind: str, port: int, nonce: str, origin: str = '', gate: str | None = None) -> None:
         self.address_family = socket.AF_INET6 if ':' in bind else socket.AF_INET
@@ -246,6 +337,15 @@ class Server(ThreadingHTTPServer):
         self.dispatch_pending: set[tuple[str, str | None]] = set()  # each project, with the page's base or None
         self.dispatch_busy = False
         self.dispatch_errors: dict[str, str] = {}  # each project's last automatic-dispatch error, logged once
+        self.said: dict[str, None] = {}  # the refusals and faults already logged, oldest first, `first_time`
+        self.said_lock = threading.Lock()
+        self.busy: set[Busy] = set()  # each request and page read's work running now, `tracked`
+        self.busy_lock = threading.Lock()
+        self.started = datetime.now(UTC).isoformat(timespec='seconds')
+        # Under the watchdog: its process, and the restart that started this server with its cause, taken out of the
+        # environment so no agent this server starts inherits them.
+        self.supervisor = os.environ.pop(SUPERVISOR, '') or None
+        self.restarted = restart_said(os.environ.pop(RESTARTED, ''))
         self.merge_timers: dict[tuple[str, str], threading.Timer] = {}  # VIEW-044: one per merge waiting for review
         self.retry_timers: dict[str, tuple[float, threading.Timer]] = {}  # P012: each project's next retry, when due
         # the mascot's questions to the open pages waiting for their answer, by id: what it sees, VIEW-005
@@ -274,6 +374,50 @@ class Server(ThreadingHTTPServer):
         if isinstance(sys.exc_info()[1], (ConnectionResetError, ConnectionAbortedError, BrokenPipeError)):
             return
         log(f'Error answering {client_address}:\n{traceback.format_exc().rstrip()}')
+
+    def first_time(self, said: str) -> bool:
+        """Whether the log has not yet had this line: each refusal and fault is logged once, not on every read that
+        meets it. The most recent `SAID_KEPT` are remembered."""
+        with self.said_lock:
+            if said in self.said:
+                return False
+            self.said[said] = None
+            while len(self.said) > SAID_KEPT:
+                del self.said[next(iter(self.said))]
+            return True
+
+    @contextmanager
+    def tracked(self, entry: Busy) -> Generator[Busy, None, None]:
+        """Keep `entry` in the busy table while the request or read's work it stands for runs on this thread."""
+        with self.busy_lock:
+            self.busy.add(entry)
+        held = _busy.set(entry)
+        try:
+            yield entry
+        finally:
+            _busy.reset(held)
+            with self.busy_lock:
+                self.busy.discard(entry)
+
+    def health(self) -> tuple[int, dict[str, Any]]:
+        """What /api/health answers, from the busy table alone: how many requests run, the slowest of them with what
+        it waits on, whether a page read is slow (SLOW) or wedged (STUCK, answered 503 for the watchdog), whether a
+        watchdog keeps this server, and the restart that started it. A slow read and a wedged one are logged once."""
+        now = time.monotonic()
+        with self.busy_lock:
+            running = sorted(self.busy, key=lambda one: one.since)
+        reads = [one for one in running if one.read]
+        for one in reads:
+            if now - one.since >= SLOW and self.first_time(f'slow {one.route} {one.since}'):
+                log(f'Slow: {one.route} has run {now - one.since:.0f} s, waiting on {one.what}')
+        stuck = bool(reads) and now - reads[0].since >= STUCK
+        if stuck and self.first_time(f'stuck {reads[0].route} {reads[0].since}'):
+            log(f'Stuck: {reads[0].route} has run {now - reads[0].since:.0f} s, waiting on {reads[0].what}')
+        slow = reads[0].shown(now) if reads and now - reads[0].since >= SLOW else None
+        return 503 if stuck else 200, {
+            'ok': not stuck, 'pid': os.getpid(), 'started': self.started, 'running': len(running),
+            'slowest': running[0].shown(now) if running else None, 'slow': slow, 'stuck': stuck, 'stuck_after': STUCK,
+            'supervised': self.supervisor is not None, 'restarted': self.restarted}
 
     def own_host(self, host: str | None) -> bool:
         """The Host header names this server. On a wildcard bind every name of the machine is its own, so only the
@@ -404,7 +548,8 @@ class Server(ThreadingHTTPServer):
         if not self.replacing:
             return
         try:
-            process = spawn(self.bind, self.port, secrets.token_hex(8), self.origin, self.gate)
+            process = spawn(self.bind, self.port, secrets.token_hex(8), self.origin, self.gate,
+                            supervisor=self.supervisor)
             self.successor = bool(ready_line(process))
             log(f'Handed over to process {process.pid}' if self.successor else
                 f'Hand-over failed: process {process.pid} did not say it listens')
@@ -449,6 +594,9 @@ class Server(ThreadingHTTPServer):
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
+    # TCP_NODELAY: an answer's headers and body are two writes, and with Nagle's algorithm a small body waits for the
+    # browser to acknowledge the headers, which it delays by 40 ms; a page load is hundreds of small files.
+    disable_nagle_algorithm = True
 
     @property
     def gui(self) -> Server:
@@ -464,14 +612,97 @@ class Handler(BaseHTTPRequestHandler):
         self.answer('POST')
 
     def answer(self, method: str) -> None:
+        self.begun = False  # one connection carries many requests; each starts unanswered
         if method == 'GET' and self.static():
             return
+        path = urlsplit(self.path).path
+        if path == HEALTH:
+            return self.health()
+        if method == 'GET':  # a stream is open for as long as the page listens, so it is no work to wait on
+            return self.answered(method) if path.startswith(STREAMS) else self.bounded(path)
+        with self.gui.tracked(Busy(f'{method} {path}', waits_on(path), time.monotonic())):
+            self.answered(method)
+
+    def health(self) -> None:
+        """/api/health, VIEW-002: answered from the busy table alone, with no module refresh, setting or store, so it
+        answers on its own thread while every other request waits on something."""
+        if self.refused(parse_qs(urlsplit(self.path).query, keep_blank_values=True)) or \
+                not self.permitted('GET', HEALTH):
+            return
+        status, found = self.gui.health()
+        self.send(status, found)
+
+    def bounded(self, path: str) -> None:
+        """A GET read answered from a worker thread, so no read holds the page's connection past READ_LIMIT, whatever
+        it waits on: a dispatch call, a store's upgrade or another process's lock. Past it the page is answered 503
+        with what the read waits on, and the work is left to finish, named by /api/health until it does."""
+        entry = Busy(f'GET {path}', waits_on(path), time.monotonic(), read=True)
+        held: list[tuple[int, bytes, str, dict[str, str]]] = []
+        done = threading.Event()
+
+        def work() -> None:
+            _held.set(held)
+            try:
+                with self.gui.tracked(entry):
+                    self.answered('GET')
+            except Exception:  # noqa: BLE001  answered has said all it can; what is left goes to the log
+                log(f'Error answering GET {path}:\n{traceback.format_exc().rstrip()}')
+            finally:
+                done.set()
+
+        threading.Thread(target=contextvars.copy_context().run, args=(work,), daemon=True,
+                         name=f'read {path}').start()
+        if not done.wait(READ_LIMIT):
+            self.close_connection = True  # the worker still holds this handler; the page asks again on a new one
+            restarts = (' The watchdog restarts a server whose read is stuck for '
+                        f'{STUCK:.0f} s.') if self.gui.supervisor else ''
+            return self.send(503, {
+                'error': f'The server did not answer {path} within {READ_LIMIT:.0f} s: it is waiting on {entry.what}.',
+                'next': f'Ask again shortly.{restarts} run/web.log in the Metaform home names what it waited on.'})
+        if not held:
+            return self.send(500, {'error': f'The server gave no answer to {path}.',
+                                   'next': 'run/web.log in the Metaform home says why'})
+        for status, body, kind, headers in held:
+            self.reply(status, body, kind, headers)
+
+    def answered(self, method: str) -> None:
+        """Route one request with the modules enabled now, and answer whatever its handler did not answer itself."""
         try:
             with chassis.request_scope(fresh=True):
                 chassis.refresh_modules()
                 self.route(method)
-        except NewerStore as error:  # the base database, read before any handler's own error answer
-            self.refuse(error, 404)
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+            raise  # the page went away; there is no one to answer
+        except Exception as error:
+            # Whatever a handler did not answer itself, the base database read before any handler among it, is still
+            # answered as {error, next}: a page never gets a dropped connection, an empty reply or HTML.
+            if self.begun:  # the answer had begun, as a stream does, so nothing more can be said on it
+                raise
+            if isinstance(error, Stop):
+                return self.refuse(error, 400 if type(error) is Stop else 404)
+            self.fault(error)
+
+    def fault(self, error: Exception) -> None:
+        """An error no handler expected: logged once with its traceback, and answered as a 500 the page can show."""
+        path = urlsplit(self.path).path
+        said = f'{type(error).__name__}: {error}'
+        if self.gui.first_time(f'fault {self.command} {path} {said}'):
+            log(f'Fault answering {self.command} {path}:\n{traceback.format_exc().rstrip()}')
+        self.send(500, {'error': f'The server failed answering {path}: {said}',
+                        'next': 'metaform report "what you were doing"; the traceback is in run/web.log in the '
+                                'Metaform home'})
+
+    def send_response(self, code: int, message: str | None = None) -> None:
+        self.begun = True
+        super().send_response(code, message)
+
+    def send_error(self, code: int, message: str | None = None, explain: str | None = None) -> None:
+        """The standard library's own refusals, a malformed request or a method the server has no answer for, as
+        {error, next} JSON like every other answer, never its HTML page."""
+        self.close_connection = True
+        said = message or self.responses.get(code, ('Error',))[0]
+        self.reply(code, json.dumps({'error': said, 'next': None}).encode('utf-8'), 'application/json',
+                   {'Connection': 'close', 'Cache-Control': 'no-store'})
 
     def static(self) -> bool:
         """Answer a file of the page or a bundled library, and say whether this request was one. A file reads no
@@ -484,8 +715,12 @@ class Handler(BaseHTTPRequestHandler):
         query = parse_qs(url.query, keep_blank_values=True)
         if self.refused(query):
             return True
+        version, _, inside = rest.partition('/')
         if url.path == '/':
             self.file(STATIC['page'], 'index.html', set_cookie='t' in query)
+        elif top == 'vendor' and VERSIONED.fullmatch(version):
+            # an address from a page of an earlier version is answered with the file as it is now, asked again each time
+            self.file(STATIC['vendor'], inside, lasting=version == vendor_version(again=False))
         else:
             self.file(STATIC[top], rest)
         return True
@@ -547,9 +782,12 @@ class Handler(BaseHTTPRequestHandler):
         if url.path.startswith('/api/debug/'):  # the developer panes, only while the developer level is on
             from . import debug
             return debug.answer(self, url.path, {key: values[-1] for key, values in query.items() if key != 't'})
-        if url.path.startswith('/api/first-run/') or url.path == HINTS:  # the first screen's choices and hints
-            from . import firstrun
-            return firstrun.answer(self, method, url.path, query)
+        if url.path == HINTS:  # the first-time tips each person has seen
+            from . import hints
+            return hints.answer(self, method)
+        if url.path == VIEW:  # how each person's page looks right now
+            from . import view
+            return view.answer(self, method)
         if url.path in ('/api/mcp-apps', '/api/mcp-app', '/api/mcp-call'):  # the chat as an MCP Apps host
             from . import apps
             return apps.answer(self, method, url.path, query)
@@ -578,6 +816,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.dispatch_options({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/dispatch-spend':
             return self.dispatch_spend({key: values[-1] for key, values in query.items() if key != 't'})
+        if url.path == '/api/dispatch-broadcasts':
+            return self.dispatch_broadcasts({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/workflow-runs':
             return self.workflow_runs({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/dispatch-claims':
@@ -586,6 +826,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.dispatch_prompts(query.get('project', [''])[-1])
         if url.path == '/api/settings':
             return self.read_settings(query.get('project', [''])[-1])
+        if url.path == '/api/notices':  # what modules say needs the person, for the error surface's banners
+            return self.module_notices(query.get('project', [''])[-1])
         if url.path in ('/api/phone-check', '/api/speech-voices'):  # asked for by a button, never on a page's read
             return self.settings_check(url.path, query.get('project', [''])[-1])
         if url.path == '/api/dispatch-autostart':
@@ -636,6 +878,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {'enabled': True, 'workflows': plain(found)})
         if name not in query_reads():
             return self.send(404, {'error': f'No read {name}.'})
+        doing(f'the {name} read of {given.get("project", "")}')
         try:
             store = opened(given)
             found = query_read(store, name, {key: value for key, value in given.items() if key not in RESERVED})
@@ -725,10 +968,7 @@ class Handler(BaseHTTPRequestHandler):
         reads a server: the server/discover result, its capabilities and the instructions sent at connect; every tool,
         resource, resource template and prompt the lists give, each entry as received with its size, the tools largest
         first; metaform://metaform, and metaform://tools measured apart; and with an address, that node's brief
-        as the agent reads it. What it costs is said as Claude Code sends it to the model, each tool by its
-        `mcp__<server>__<tool>` name with its description and input schema only, annotations and _meta left out: with
-        tool search, its default, the connect message, the tool names and the tools marked `anthropic/alwaysLoad` in
-        full; then, as the connect message asks, every tool loaded; and without tool search, every tool in full. The
+        as the agent reads it. What it costs is `agent_cost`, said as Claude Code sends it to the model. The
         instructions are counted in characters too, since Claude Code keeps only the first
         `HOST_LIMIT` of a server's instructions and of each tool's description."""
         try:
@@ -740,44 +980,20 @@ class Handler(BaseHTTPRequestHandler):
             return self.refuse(error, 404 if isinstance(error, StoreError) else 400)
         found = cast(dict[str, Any], read['discover'])
         connect = str(found.get('instructions') or '')
-
-        def weighed(entries: list[Any]) -> list[dict[str, Any]]:
-            return [{'entry': entry, 'bytes': len(json.dumps(entry, ensure_ascii=False).encode('utf-8'))}
-                    for entry in entries]
-
-        tools: list[dict[str, Any]] = []
-        for one in weighed(cast(list[Any], read['tools'])):
-            entry = cast(dict[str, Any], one['entry'])
-            name = str(entry.get('name') or '')
-            meta = cast(dict[str, Any], entry.get('_meta') or {})
-            called = f'mcp__{HOST_SERVER}__{name}'
-            sent: dict[str, Any] = {'name': called, 'description': str(entry.get('description') or ''),
-                                    'input_schema': entry.get('inputSchema') or {}}
-            tools.append({'name': name, 'description': str(entry.get('description') or ''), **one,
-                          'name_bytes': len(called.encode('utf-8')),
-                          'model_bytes': len(json.dumps(sent, ensure_ascii=False).encode('utf-8')),
-                          'always': bool(meta.get('anthropic/alwaysLoad'))})
-        tools.sort(key=lambda tool: -int(tool['bytes']))
         texts = cast(dict[str, str], read['texts'])
         glossary = texts.get('metaform://metaform', '')
         index = texts.get('metaform://tools', '')  # each tool in one line, read apart from the glossary
-        tool_bytes = sum(int(one['bytes']) for one in tools)
-        connect_bytes = len(connect.encode('utf-8'))
-        deferred = connect_bytes + sum(int(one['name_bytes']) for one in tools) + sum(
-            int(one['model_bytes']) for one in tools if one['always'])
+        cost = agent_cost(read)
         self.send(200, {'connect': sized(connect), 'glossary': {**sized(glossary), 'index': sized(index)},
                         'brief': sized(texts[f'metaform://{address}']) if address else None,
-                        'tools': tools, 'tool_bytes': tool_bytes,
+                        'tools': cost['tools'], 'tool_bytes': sum(int(one['bytes']) for one in cost['tools']),
                         'resources': weighed(cast(list[Any], read['resources'])),
                         'templates': weighed(cast(list[Any], read['templates'])),
                         'prompts': weighed(cast(list[Any], read['prompts'])),
                         'capabilities': found.get('capabilities') or {},
                         'server': cast(dict[str, Any], found.get('_meta') or {}).get(
                             'io.modelcontextprotocol/serverInfo'),
-                        'paid': {'deferred': deferred, 'loaded': deferred + sum(int(one['model_bytes'])
-                                                                                for one in tools if not one['always']),
-                                 'upfront': connect_bytes + sum(int(one['model_bytes']) for one in tools),
-                                 'glossary': len(glossary.encode('utf-8')), 'server': HOST_SERVER},
+                        'paid': cost['paid'],
                         'host_limit': HOST_LIMIT, 'budget': settings.value('node_summary_bytes', folder),
                         'protocol': found.get('supportedVersions') or []})
 
@@ -855,17 +1071,19 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/memory': self.write_memory,
                   '/api/mascot': self.mascot_request, '/api/mascot-result': self.mascot_result,
                   '/api/dispatch-start': self.dispatch_start, '/api/dispatch-message': self.dispatch_message,
-                  '/api/dispatch-fork': self.dispatch_fork,
+                  '/api/dispatch-fork': self.dispatch_fork, '/api/dispatch-broadcast': self.dispatch_broadcast,
                   '/api/dispatch-stop': self.dispatch_stop, '/api/dispatch-interrupt': self.dispatch_interrupt,
                   '/api/dispatch-cancel': self.dispatch_cancel,
                   '/api/dispatch-prompts': self.set_dispatch_prompts,
                   '/api/dispatch-autostart': self.set_dispatch_autostart,
                   '/api/dispatch-agents': self.set_dispatch_agent, '/api/dispatch-intake': self.dispatch_intake,
+                  '/api/intake-finish': self.intake_finish, '/api/intake-discard': self.intake_discard,
                   '/api/dispatch-resume': self.dispatch_resume, '/api/dispatch-permit': self.dispatch_permit,
                   '/api/dispatch-configure': self.dispatch_configure,
+                  '/api/dispatch-session-prompts': self.dispatch_session_prompts,
                   '/api/workflow-answer': self.workflow_answer, '/api/workflow-cancel': self.workflow_cancel,
                   '/api/settings': self.set_setting, '/api/settings/reset': self.reset_setting,
-                  '/api/modules': self.set_module}
+                  '/api/settings/choices': self.read_choices, '/api/modules': self.set_module}
         if path not in writes:
             return self.send(404, {'error': f'No such write: {path}.'})
         try:
@@ -1490,6 +1708,18 @@ class Handler(BaseHTTPRequestHandler):
         nouns = [*([f'agent={agent}'] if agent else []), *(['resume=true'] if resume else [])]
         self.dispatched(given, 'intake', nouns, text.strip() if text and text.strip() else None)
 
+    def intake_finish(self, given: dict[str, Any]) -> None:
+        """Finish the intake left unfinished with what it recorded, as `metaform intake finish` does, BASE-039."""
+        self.dispatched(given, 'finish', [], module_id='intake')
+
+    def intake_discard(self, given: dict[str, Any]) -> None:
+        """Drop the intake left unfinished, as `metaform intake discard --confirm` does, only with `confirm` true,
+        BASE-039."""
+        if given.get('confirm') is not True:
+            return self.send(400, {'error': 'Discarding the unfinished intake removes every part it recorded; it is '
+                                            'not undone.', 'next': 'If you are sure: send confirm true'})
+        self.dispatched(given, 'discard', ['--confirm'], module_id='intake')
+
     def dispatch_resume(self, given: dict[str, Any]) -> None:
         """Resume an ended agent session in place with the dispatch module's resume, where its agent can."""
         work_id, session = given.get('work_id'), given.get('session')
@@ -1521,6 +1751,17 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {'error': 'A setting is set to one of its choices, or on or off.'})
         self.dispatched(given, 'configure', [work_id, setting], value.strip())
 
+    def dispatch_session_prompts(self, given: dict[str, Any]) -> None:
+        """Choose how one running session's permission requests are answered from now on, with the dispatch module's
+        prompts: ask_all, approve-reads or approve-all, which the page sends with confirm once the person confirmed it."""
+        work_id, prompts, session = given.get('work_id'), given.get('prompts'), given.get('session')
+        if not isinstance(work_id, str) or not work_id or not isinstance(prompts, str) or not prompts:
+            return self.send(400, {'error': "A session's permission prompts are chosen by its work id and the choice."})
+        if session is not None and (not isinstance(session, str) or not session):
+            return self.send(400, {'error': 'The session id must be a nonempty string.'})
+        self.dispatched(given, 'prompts', [work_id, prompts, *([f'session={session}'] if session else []),
+                                           *(['confirm=true'] if given.get('confirm') is True else [])])
+
     def dispatch_message(self, given: dict[str, Any]) -> None:
         """Send a person's message to the agent working a ticket with the dispatch module's message, VIEW-039; to the
         chat session it names, when it names one, as several editor sessions share one ticket, BASE-062. A message to a
@@ -1548,6 +1789,32 @@ class Handler(BaseHTTPRequestHandler):
         self.dispatched(given, 'message', [work_id, *([f'session={session}'] if session else []),
                                            *([f'audio={clip}'] if clip else []),
                                            *([f'image={frame}'] if frame else [])], text.strip())
+
+    def dispatch_broadcast(self, given: dict[str, Any]) -> None:
+        """Send the person's one message to every agent running on the project with the dispatch module's broadcast,
+        in one request that tells the sessions at once, so one slow agent holds neither the others nor the page; the
+        person's system agent too only when `system` is true. The steering rules are `message`'s; the page is the
+        person's. It answers with each session told, delivered or failed and why."""
+        text, system = given.get('text'), given.get('system')
+        if not isinstance(text, str) or not text.strip():
+            return self.send(400, {'error': 'A broadcast says something.'})
+        if system is not None and not isinstance(system, bool):
+            return self.send(400, {'error': 'system is true or false: whether your chat agent is told too.'})
+        self.dispatched(given, 'broadcast', ['system=true'] if system else [], text.strip())
+
+    def dispatch_broadcasts(self, given: dict[str, str]) -> None:
+        """The broadcasts kept on the project, newest first, as `metaform dispatch broadcasts` lists them. With
+        dispatch not enabled there are none."""
+        nouns: dict[str, Any] = {'limit': int(given['limit'])} if given.get('limit', '').isdigit() else {}
+        try:
+            found = module_verb(given, 'dispatch', 'broadcasts', nouns, chosen=True)
+        except StoreError as error:
+            return self.refuse(error, 404)
+        except Stop as error:
+            if 'not on this project' in str(error):
+                return self.send(200, {'broadcasts': []})
+            return self.refuse(error, 400)
+        self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
     def dispatch_fork(self, given: dict[str, Any]) -> None:
         """Fork a running session into a side conversation with the dispatch module's fork, P030; the text, when there
@@ -1698,6 +1965,7 @@ class Handler(BaseHTTPRequestHandler):
         project = home.project(project_id)
         if project is None:
             return self.send(404, {'error': f'No project {project_id} is registered.', 'next': 'metaform list projects'})
+        doing('metaform config')
         done = subprocess.run([sys.executable, '-m', 'metaform', 'config', '--json'], cwd=project.path,
                               capture_output=True, text=True, encoding='utf-8', stdin=subprocess.DEVNULL,
                               timeout=DISPATCH_LIMIT, check=False)
@@ -1750,6 +2018,38 @@ class Handler(BaseHTTPRequestHandler):
             self.send(200, plain(module_verb({'project': project_id}, module_id, name, {})))
         except (Stop, StoreError) as error:
             self.refuse(error, 400)
+
+    def module_notices(self, project_id: str) -> None:
+        """What each module on the project's surface says needs the person: its status hook's notice, BASE-035, such
+        as twilio's when its number sends calls where nothing answers. The page says each in a banner, core/errors.js.
+        A notice is the owner's, so behind a Node's gate another account is answered none. Each is written to the log
+        the first time it is said, and a hook that fails is logged once and says nothing on the page."""
+        project = home.project(project_id)
+        if project is None or (self.gui.gate is not None
+                               and 'admin' not in (self.headers.get(CLASSES_HEADER) or '').split()):
+            return self.send(200, {'notices': []})
+        folder = Path(project.path)
+        doing('module notices')
+        chassis.refresh_modules()
+        found: list[dict[str, str]] = []
+        for module in chassis.surface(folder):
+            if module.status is None:
+                continue
+            try:
+                got = chassis.call(module.status, chassis.context(module.id, folder, project=project.project_id,
+                                                                  sink=lambda text: None, surface='web'))
+            except Exception as error:  # noqa: BLE001  one module's failing hook never hides the others' notices
+                said = f'Notice from {module.id} could not be read: {type(error).__name__}: {error}'
+            else:
+                if not isinstance(got, chassis.Status) or not got.notice:
+                    NOTICED.pop(module.id, None)
+                    continue
+                found.append({'module': module.id, 'notice': got.notice})
+                said = f'Notice from {module.id}: {got.notice}'
+            if NOTICED.get(module.id) != said:
+                NOTICED[module.id] = said
+                log(said)
+        self.send(200, {'notices': found})
 
     def set_setting(self, given: dict[str, Any]) -> None:
         """Save one setting as `metaform set` saves it, run in the project's folder: the same switch, the same checks,
@@ -1845,6 +2145,32 @@ class Handler(BaseHTTPRequestHandler):
         except Stop as error:
             self.refuse(error, 400)
 
+    def read_choices(self, given: dict[str, Any]) -> None:
+        """Read a select's choices from their source as its declaration's `choices_from` command reads them, such as
+        an agent's models, which `dispatch options prime=true` reads by starting it once with no prompt; run in the
+        project's folder, as the command line runs it. Only the declared command runs, never one the page sends.
+        Answers with every setting as it is now, the choices read among them."""
+        project, key = home.project(str(given.get('project', ''))), given.get('key')
+        if project is None:
+            return self.send(404, {'error': f'No project {given.get("project", "")} is registered.',
+                                   'next': 'metaform list projects'})
+        chassis.surface(Path(project.path))  # this server's declarations for the folder, as configured reads them
+        setting = settings.SCHEMA.get(key) if isinstance(key, str) else None
+        if setting is None or not setting.choices_from:
+            return self.send(404, {'error': f'{key} has no command that reads its choices.',
+                                   'next': 'metaform config --show', 'key': key})
+        folder = Path(project.path)
+        try:
+            done = metaform_cli(folder, *shlex.split(setting.choices_from)[1:])
+        except Stop as error:
+            return self.refuse(error, 500)
+        if done.returncode != 0:
+            return self.send(400, {**refusal(done), 'key': key})
+        try:
+            self.send(200, {**configured(folder), 'key': key})
+        except Stop as error:
+            self.refuse(error, 400)
+
     def set_module(self, given: dict[str, Any]) -> None:
         """Turn a module on or off as `metaform enable` and `disable` do, run in the project's folder. It answers with
         the module and its state; the settings it brings or takes away are read again by the next read, in which this
@@ -1934,33 +2260,51 @@ class Handler(BaseHTTPRequestHandler):
         cookie = SimpleCookie(self.headers.get('Cookie') or '')
         return cookie[COOKIE].value if COOKIE in cookie else None
 
-    def file(self, base: Path, relative: str, *, set_cookie: bool = False) -> None:
-        """A file of the page or a bundled library, VIEW-003. The browser asks again before it uses its copy, so an
-        updated page is the page a person sees; the file's ETag lets the answer be a 304 with no body when the copy is
-        current. The vendor files are revalidated too: their addresses carry no version, so a copy kept without asking
-        could outlive an upgrade that changed them."""
-        resolved = (base / relative).resolve()
-        if not resolved.is_relative_to(base.resolve()) or not resolved.is_file():
+    def file(self, base: Path, relative: str, *, set_cookie: bool = False, lasting: bool = False) -> None:
+        """A file of the page or a bundled library, VIEW-003, gzipped when the browser takes gzip. A library at the
+        current vendor version, `lasting`, is kept by the browser without asking again: its address changes when the
+        file does. Every other file is asked for again before the browser uses its copy, so an updated page is the
+        page a person sees; its ETag lets the answer be a 304 with no body when the copy is current. The page itself
+        names every module it imports to the browser at once, `page_index`, so they load side by side."""
+        resolved = (base / relative).resolve()  # base is one of STATIC's folders, resolved once
+        if not resolved.is_relative_to(base) or not resolved.is_file():
             return self.send(404, {'error': 'Nothing here.'})
         kind = TYPES.get(resolved.suffix.lower(), 'application/octet-stream')
         held = resolved.stat()
-        known = _TAGS.get(str(resolved))
-        body = None if known is not None and known[:2] == (held.st_mtime_ns, held.st_size) else resolved.read_bytes()
-        if body is not None:
-            known = (held.st_mtime_ns, held.st_size, '"' + hashlib.sha256(body).hexdigest()[:32] + '"')
-            _TAGS[str(resolved)] = known
-        assert known is not None
-        tag = known[2]
+        page = base == STATIC['page']
+        body = None
+        if page and resolved == base / 'index.html':
+            body = page_index(resolved)  # its preloads and vendor version are worked out again on each load
+            served = Served((held.st_mtime_ns, held.st_size, ''), quoted_digest(body))
+        else:
+            version = vendor_version(again=False) if page and resolved.suffix.lower() in REWRITTEN else ''
+            stamp = (held.st_mtime_ns, held.st_size, version)
+            served = _SERVED.get(str(resolved))
+            if served is None or served.stamp != stamp:
+                body = sent_bytes(resolved, version)
+                served = _SERVED[str(resolved)] = Served(stamp, quoted_digest(body))
+        packing = packable(kind) and held.st_size >= PACKED_LEAST and \
+            accepts_gzip(self.headers.get('Accept-Encoding'))
+        tag = served.tag[:-1] + '-gzip"' if packing else served.tag  # each encoding is its own representation
         current = current_copy(self.headers.get('If-None-Match'), tag)
-        if body is None and (not current or kind.startswith('text/html')):  # the page's policy is read from its body
-            body = resolved.read_bytes()
-        headers = {'Content-Security-Policy': policy(body or b'', kind), 'Cache-Control': 'no-cache', 'ETag': tag}
+        sending = not current and not (packing and served.packed is not None)
+        if body is None and (sending or kind.startswith('text/html')):  # the page's policy is read from its body
+            body = sent_bytes(resolved, served.stamp[2])
+        headers = {'Content-Security-Policy': policy(body or b'', kind),
+                   'Cache-Control': LASTING if lasting else 'no-cache', 'ETag': tag}
+        if packable(kind):
+            headers['Vary'] = 'Accept-Encoding'
         if set_cookie and self.gui.token is not None:
             headers['Set-Cookie'] = f'{COOKIE}={self.gui.token}; Path=/; HttpOnly; SameSite=Strict'
         if current:
             return self.unchanged(headers)
-        assert body is not None
-        self.reply(200, body, kind, headers)
+        if not packing:
+            assert body is not None
+            return self.reply(200, body, kind, headers)
+        if served.packed is None:
+            assert body is not None
+            served.packed = gzip.compress(body, compresslevel=6, mtime=0)
+        self.reply(200, served.packed, kind, {**headers, 'Content-Encoding': 'gzip'})
 
     def unchanged(self, headers: dict[str, str]) -> None:
         """A 304: the browser's copy is current. It carries the headers the file is sent with and no body."""
@@ -1977,12 +2321,20 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True  # the browser asks again on a new connection, so it reaches the replacement
             return self.reply(307, b'', 'text/plain', {'Location': self.path, 'Connection': 'close',
                                                        'Cache-Control': 'no-store'})
-        self.send(status, {'error': str(error), 'next': getattr(error, 'next_step', None)})
+        step = getattr(error, 'next_step', None)
+        path = urlsplit(self.path).path  # never the query, which can carry the token
+        if self.gui.first_time(f'refused {self.command} {path} {error} {step}'):
+            log(f'Refused {self.command} {path} ({status}): {error}' + (f' Next: {step}' if step else ''))
+        self.send(status, {'error': str(error), 'next': step})
 
     def send(self, status: int, data: Any) -> None:
         self.reply(status, json.dumps(data).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
     def reply(self, status: int, body: bytes, kind: str, headers: dict[str, str]) -> None:
+        held = _held.get()
+        if held is not None:  # a read's worker: the request thread writes its answer, `bounded`
+            held.append((status, body, kind, headers))
+            return
         self.send_response(status)
         self.send_header('Content-Type', kind)
         self.send_header('Content-Length', str(len(body)))
@@ -2023,6 +2375,129 @@ def current_copy(given: str | None, tag: str) -> bool:
     if not given:
         return False
     return any(part.strip() in ('*', tag, 'W/' + tag) for part in given.split(','))
+
+
+def accepts_gzip(given: str | None) -> bool:
+    """Whether an `Accept-Encoding` header takes gzip, RFC 9110: named, or `*`, with no `q=0`."""
+    for part in (given or '').split(','):
+        name, _, weight = part.partition(';')
+        if name.strip().lower() not in ('gzip', 'x-gzip', '*'):
+            continue
+        weight = weight.strip().lower()
+        try:
+            return not weight.startswith('q=') or float(weight[2:]) > 0
+        except ValueError:
+            return False
+    return False
+
+
+def packable(kind: str) -> bool:
+    """Whether a file of this type is worth gzipping: text, JSON and SVG are; fonts and pictures come compressed."""
+    return kind.startswith(('text/', 'application/json', 'image/svg+xml'))
+
+
+def quoted_digest(body: bytes) -> str:
+    return '"' + hashlib.sha256(body).hexdigest()[:32] + '"'
+
+
+def vendor_version(*, again: bool = True) -> str:
+    """The vendor files' version: a digest of each one's path, size and modification time. Worked out again on each
+    load of the page, `again`; a file's own request takes the version that load named."""
+    if _VENDOR and not again:
+        return _VENDOR[0]
+    root = STATIC['vendor']
+    digest = hashlib.sha256()
+    for path in sorted(root.rglob('*')):
+        if path.is_file():
+            held = path.stat()
+            digest.update(f'{path.relative_to(root).as_posix()}\0{held.st_size}\0{held.st_mtime_ns}\n'.encode())
+    _VENDOR[:] = ['v-' + digest.hexdigest()[:16]]
+    return _VENDOR[0]
+
+
+def sent_bytes(path: Path, version: str) -> bytes:
+    """A static file's bytes as they are sent: a page file with the vendor version in each library's address."""
+    body = path.read_bytes()
+    return VENDOR_NAMED.sub(b'/vendor/' + version.encode('ascii') + b'/', body) if version else body
+
+
+def page_index(path: Path) -> bytes:
+    """The page, index.html, as it is sent: a modulepreload link after its import map for every module it loads, and
+    the current vendor version in each library's address."""
+    page = path.read_bytes()
+    found = IMPORT_MAP.search(page)
+    if found is not None:  # a preload is only resolved through the import map when it comes after it
+        page = page[:found.end()] + preloads(page) + page[found.end():]
+    return VENDOR_NAMED.sub(b'/vendor/' + vendor_version().encode('ascii') + b'/', page)
+
+
+def stamp(path: Path) -> tuple[int, int]:
+    try:
+        held = path.stat()
+    except OSError:
+        return (-1, -1)
+    return (held.st_mtime_ns, held.st_size)
+
+
+def static_path(url: str) -> Path | None:
+    """The file a static address names, or None for an address outside the page's and the libraries' folders."""
+    top, _, rest = url.lstrip('/').partition('/')
+    if not url.startswith('/') or top not in STATIC or not rest:
+        return None
+    base = STATIC[top].resolve()
+    path = (base / rest).resolve()
+    return path if path.is_relative_to(base) else None
+
+
+def resolved_import(specifier: str, at: str, imports: dict[str, str]) -> str | None:
+    """The address a browser loads for a static import in the module at `at`, by URL resolution and the page's import
+    map, or None for one the browser would refuse."""
+    if specifier.startswith(('./', '../')):
+        return posixpath.normpath(posixpath.join(posixpath.dirname(at), specifier))
+    if specifier.startswith('/') and not specifier.startswith('//'):
+        return posixpath.normpath(specifier)
+    if specifier in imports:
+        return imports[specifier]
+    prefixes = [key for key in imports if key.endswith('/') and specifier.startswith(key)]
+    if not prefixes:
+        return None
+    longest = max(prefixes, key=len)
+    return imports[longest] + specifier[len(longest):]
+
+
+def preloads(page: bytes) -> bytes:
+    """A `<link rel="modulepreload">` for every module the page's module scripts reach by static import, in the order
+    they are found. Each part of the page imports the part before it, so without them the browser finds the modules
+    one round trip at a time, a level deep each; with them it asks for all of them at once. Worked out again only when
+    the import map, the module scripts or a module file read has changed."""
+    found = IMPORT_MAP.search(page)
+    imports = cast(dict[str, str], json.loads(found.group(1)).get('imports', {})) if found else {}
+    entries = tuple(entry.decode('utf-8') for entry in MODULE_SCRIPT.findall(page))
+    key = (json.dumps(imports, sort_keys=True), entries)
+    if _PRELOADS:
+        known, stamps, links = _PRELOADS[0]
+        if known == key and all(stamp(Path(name)) == held for name, held in stamps):
+            return links
+    order: list[str] = []
+    read: list[tuple[str, tuple[int, int]]] = []
+    waiting, seen = list(entries), set(entries)
+    while waiting:
+        url = waiting.pop(0)
+        path = static_path(url)
+        if path is None or path.suffix.lower() not in ('.js', '.mjs'):
+            continue
+        read.append((str(path), stamp(path)))  # a module missing now is read again once it is there
+        if not path.is_file():
+            continue
+        order.append(url)
+        for _, specifier in STATIC_IMPORT.findall(path.read_bytes()):
+            target = resolved_import(specifier.decode('utf-8', 'replace'), url, imports)
+            if target is not None and target not in seen:
+                seen.add(target)
+                waiting.append(target)
+    links = b''.join(b'\n<link rel="modulepreload" href="' + url.encode('utf-8') + b'">' for url in order)
+    _PRELOADS[:] = [(key, tuple(read), links)]
+    return links
 
 
 def _versions(given: dict[str, str]) -> dict[str, Any]:
@@ -2089,6 +2564,8 @@ HOST_LIMIT = 2048
 # The name metaform install registers the MCP server under, so Claude Code names its tools mcp__metaform__<tool>, the
 # names it lists to the model with tool search on: https://code.claude.com/docs/en/mcp, Scale with MCP tool search.
 HOST_SERVER = 'metaform'
+# Tokens are estimated from bytes: about four bytes of English text and JSON to a token. An estimate, said as one.
+BYTES_PER_TOKEN = 4
 MEMORY_READS = ('graph', 'orphaned', 'note')  # the memory module's reads the page makes, VIEW-031 and VIEW-034
 MEMORY_WRITES = ('create_entities', 'create_relations', 'add_observations', 'delete_entities', 'delete_observations',
                  'delete_relations', 'unjoin')  # the memory commands a person manages the graph with, VIEW-031
@@ -2240,6 +2717,7 @@ def cli_result(given: dict[str, Any], module_id: str, verb: str, nouns: list[str
     project = home.project(str(given.get('project', '')))
     if project is None:
         return 404, {'error': f'No project {given.get("project", "")} is registered.', 'next': 'metaform list projects'}
+    doing(f'metaform {module_id} {verb}')
     command = [sys.executable, '-m', 'metaform', module_id, verb, *nouns, '--json', '--project',
                project.project_id, *(['--', text] if text is not None else [])]
     # dispatch acts on the base the page shows; an intake follows the active base, whichever its finish makes active
@@ -2264,6 +2742,7 @@ def run_dispatch(project_id: str, verb: str, nouns: list[str], base: str | None 
     project = home.project(project_id)
     if project is None:
         return False, {}
+    doing(f'metaform dispatch {verb}')
     command = [sys.executable, '-m', 'metaform', 'dispatch', verb, *nouns, '--json', '--project', project.project_id]
     try:
         done = subprocess.run(command, cwd=project.path, capture_output=True, text=True, encoding='utf-8',
@@ -2300,6 +2779,7 @@ def metaform_cli(folder: Path, *args: str) -> subprocess.CompletedProcess[str]:
     """One chassis command run as the command line runs it, in `folder`, so what it reads is that folder's: its
     settings, and the modules enabled now, a module enabled since this server started and the project's own among
     them. Raises Stop when it cannot be run or does not finish."""
+    doing(f'metaform {args[0]}')
     try:
         return subprocess.run([sys.executable, '-m', 'metaform', *args], cwd=folder, capture_output=True, text=True,
                               encoding='utf-8', stdin=subprocess.DEVNULL, timeout=DISPATCH_LIMIT, check=False)
@@ -2442,6 +2922,7 @@ def module_verb(given: dict[str, Any], module_id: str, name: str, arguments: dic
     if project is None:
         raise StoreError(f'No project {given.get("project", "")} is registered.', 'metaform list projects')
     folder = Path(project.path)
+    doing(f'{module_id} {name}')
     chassis.refresh_modules()
     found = next((one for one in chassis.surface(folder) if one.id == module_id), None)
     verb = next((one for one in found.verbs if one.name == name), None) if found is not None else None
@@ -2475,6 +2956,45 @@ def _stage(store: Store, target: Node, condition: str) -> Any:
 def sized(text: str) -> dict[str, Any]:
     """A text the page shows as an agent receives it, with its size in bytes and in characters."""
     return {'text': text, 'bytes': len(text.encode('utf-8')), 'chars': len(text)}
+
+
+def weighed(entries: list[Any]) -> list[dict[str, Any]]:
+    """Each entry of a list as the server gave it, with its size in bytes."""
+    return [{'entry': entry, 'bytes': len(json.dumps(entry, ensure_ascii=False).encode('utf-8'))} for entry in entries]
+
+
+def agent_cost(read: dict[str, Any]) -> dict[str, Any]:
+    """What an agent pays before its first call, from what `chassis.mcp_reads` read: `tools`, each tool as tools/list
+    gave it with `model_bytes`, what Claude Code sends the model for it (its `mcp__<server>__<tool>` name, description
+    and input schema, annotations and _meta left out), largest first; and `paid`, with tool search, Claude Code's
+    default, the connect message, the tool names and the tools marked `anthropic/alwaysLoad` in full (`deferred`), and
+    without it, the connect message and every tool in full (`upfront`), each in bytes and in tokens at
+    `BYTES_PER_TOKEN`; and the glossary, read once."""
+    connect = str(cast(dict[str, Any], read['discover']).get('instructions') or '')
+    tools: list[dict[str, Any]] = []
+    for one in weighed(cast(list[Any], read['tools'])):
+        entry = cast(dict[str, Any], one['entry'])
+        name = str(entry.get('name') or '')
+        meta = cast(dict[str, Any], entry.get('_meta') or {})
+        called = f'mcp__{HOST_SERVER}__{name}'
+        sent: dict[str, Any] = {'name': called, 'description': str(entry.get('description') or ''),
+                                'input_schema': entry.get('inputSchema') or {}}
+        tools.append({'name': name, 'description': str(entry.get('description') or ''), **one,
+                      'name_bytes': len(called.encode('utf-8')),
+                      'model_bytes': len(json.dumps(sent, ensure_ascii=False).encode('utf-8')),
+                      'always': bool(meta.get('anthropic/alwaysLoad'))})
+    for one in tools:
+        one['model_tokens'] = round(int(one['model_bytes']) / BYTES_PER_TOKEN)
+    tools.sort(key=lambda tool: -int(tool['model_bytes']))
+    connect_bytes = len(connect.encode('utf-8'))
+    deferred = connect_bytes + sum(int(one['name_bytes']) for one in tools) + sum(
+        int(one['model_bytes']) for one in tools if one['always'])
+    upfront = connect_bytes + sum(int(one['model_bytes']) for one in tools)
+    glossary = len(cast(dict[str, str], read['texts']).get('metaform://metaform', '').encode('utf-8'))
+    return {'tools': tools, 'paid': {
+        'deferred': deferred, 'upfront': upfront, 'glossary': glossary, 'server': HOST_SERVER,
+        'tokens': {key: round(value / BYTES_PER_TOKEN)
+                   for key, value in (('deferred', deferred), ('upfront', upfront), ('glossary', glossary))}}}
 
 
 def project_folder(given: dict[str, str]) -> tuple[str, Path]:

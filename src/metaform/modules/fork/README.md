@@ -29,7 +29,7 @@ Maintain a user's own modules over the released chassis, BASE-027. The harness s
 
 ## Settings
 
-`fork_agent` defaults to `codex`, with `claude` and `gemini` available. `fork_secret` defaults to `OPENAI_API_KEY`. Change the secret name to the selected adapter's API-key environment variable when choosing another agent. These choices let repositories use their own provider without changing the harness. The workflow inherits the named repository secret only for muster. A missing value fails naming the secret. Dispatch reads no credentials. The generated CI sets `dispatch_prompts=approve-all` for its isolated unattended run. It supplies Codex ACP's `DEFAULT_AUTH_REQUEST={"methodId":"api-key"}` and `NO_BROWSER=1` so that a fresh CI runner authenticates using its environment key without an interactive login.
+The agent CI muster and template upkeep dispatch is the dispatch default agent, `dispatch_agent` (`codex` until dispatch is enabled); `fork_agent` merged into it in the settings cleanup of 2026-10-15, and the generated workflow sets `--dispatch-agent` in its setup step. `fork_secret` defaults to `OPENAI_API_KEY`. Change the secret name to the selected adapter's API-key environment variable when choosing another agent. These choices let repositories use their own provider without changing the harness. The workflow inherits the named repository secret only for muster. A missing value fails naming the secret. Dispatch reads no credentials. The generated CI sets `dispatch_prompts=approve-all` for its isolated unattended run. It supplies Codex ACP's `DEFAULT_AUTH_REQUEST={"methodId":"api-key"}` and `NO_BROWSER=1` so that a fresh CI runner authenticates using its environment key without an interactive login.
 
 ## Events
 

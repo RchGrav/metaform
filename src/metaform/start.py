@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from . import context, home, loader, prompt_files, settings
-from .data import Store
+from .data import Recording, Store
 from .errors import Stop, StoreError
 from .module import call
 from .wording import counted
@@ -71,20 +71,21 @@ def start(args: list[str], folder: Path, say: Say) -> None:
     if args:
         raise Stop('start takes no words: run it in your project folder.', 'metaform start')
     folder = folder.resolve()
+    enable(say)  # first, so a Metaform that cannot run the chain registers nothing
     project = register(folder, say)
-    enable(say)
     connect(folder, say)
     store = Store(project)
     mapped = store.has_intake()
     recording = bool(store.intake_recording().results) or agent_at_work(folder, project)
-    found = read_folder(folder) if not (mapped or recording) else None
+    left = None if recording else next(iter(store.intake_building().results), None)  # no agent records it any more
+    found = read_folder(folder) if not (mapped or recording or left) else None
     if found is not None:
         say(f'Read: {summary(found)}')
-        ask(found, say)
+        ask(found, project, say)
     address = web(folder, project)
-    intake(folder, project, found, mapped, recording, say)
     opened = open_browser(address)
     say(f'Map: {address}' + ('' if opened else '  (open it in your browser)'))
+    intake(folder, project, found, mapped, recording, say, left)
 
 
 # Registration and modules ------------------------------------------------------------------
@@ -157,6 +158,12 @@ def server_entry(folder: Path) -> dict[str, Any] | None:
         words = install.entry(Path(os.environ['METAFORM_WHEEL']), command)
     else:
         words = [sys.executable, '-m', *command]
+    return mcp_entry(words)
+
+
+def mcp_entry(words: list[str]) -> dict[str, Any]:
+    """The `.mcp.json` entry that runs these words as Metaform's MCP server, as start writes it and a build's README
+    shows it, so both connect Claude Code the one same way."""
     return {'type': 'stdio', 'command': words[0], 'args': words[1:], 'env': {}}
 
 
@@ -189,7 +196,8 @@ def connect(folder: Path, say: Say) -> None:
         say(f'AI tool: {tools[0]} found; connect it with metaform install {tools[0]}.')
         return
     say('AI tool: none found to connect, such as Claude Code, Codex or Gemini CLI.')
-    say('  Install one, then run metaform install here; the map works in the browser meanwhile.')
+    say('  Install Claude Code, then run metaform start here again: it connects it to this project and starts the '
+        'intake. The map works in the browser meanwhile.')
 
 
 def _current(path: Path) -> Any:
@@ -297,9 +305,28 @@ def summary(found: Read) -> str:
     return f'{languages}, {counted(found.code_files, "code file", "code files")}{said}.'
 
 
-def ask(found: Read, say: Say) -> None:
+def answers_path(project: str) -> Path:
+    """Where the person's answers to start's questions are kept for the project until an intake uses them."""
+    return home.home() / 'start' / f'{project}.json'
+
+
+def kept_answers(project: str) -> list[tuple[str, str]]:
+    try:
+        given: Any = json.loads(answers_path(project).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return []
+    pairs = [cast(list[Any], pair) for pair in cast(list[Any], given) if isinstance(pair, list)] \
+        if isinstance(given, list) else []
+    return [(str(pair[0]), str(pair[1])) for pair in pairs if len(pair) == 2]
+
+
+def ask(found: Read, project: str, say: Say) -> None:
     """What the files cannot say, at most two short questions, asked only of a person at a terminal: what the
-    project is for when nothing says it, and, for a folder with no code, who it is for. An empty answer skips."""
+    project is for when nothing says it, and, for a folder with no code, who it is for. An empty answer skips. An
+    answer is kept for the project, so a start whose intake did not run never asks it again."""
+    found.answers = kept_answers(project)
+    if found.answers:
+        say('Your answers: kept from the last metaform start here.')
     if not _interactive():
         return
     questions: list[tuple[str, str]] = []
@@ -308,13 +335,16 @@ def ask(found: Read, say: Say) -> None:
                           if found.greenfield else 'What is this project for, in a sentence? '))
     if found.greenfield:
         questions.append(('Who it is for, in the person\'s words', 'Who is it for? '))
-    for label, question in questions[:2]:
+    answered = {label for label, _ in found.answers}
+    for label, question in [one for one in questions[:2] if one[0] not in answered]:
         try:
             answer = input(question).strip()
         except EOFError:
-            return
+            break
         if answer:
             found.answers.append((label, answer))
+            home.mkdir_private(answers_path(project).parent)
+            home.write_private(answers_path(project), json.dumps(found.answers, ensure_ascii=False))
 
 
 def _interactive() -> bool:
@@ -369,28 +399,48 @@ def agent_at_work(folder: Path, project: str) -> bool:
                for row in cast(list[dict[str, Any]], listed.get('sessions') or []))
 
 
-def intake(folder: Path, project: str, found: Read | None, mapped: bool, recording: bool, say: Say) -> None:
-    """Start the intake agent with what the files said, unless the project is mapped or an intake is being recorded.
-    An agent that cannot start is said with its next step, and the page still opens."""
+def intake(folder: Path, project: str, found: Read | None, mapped: bool, recording: bool, say: Say,
+           left: Recording | None = None) -> None:
+    """Start the intake agent with what the files said, unless the project is mapped, an intake is being recorded,
+    or one was left unfinished, which is the person's to resume, finish or discard. With no AI tool here and no agent
+    chosen, none is started, so nothing is fetched for one. It says the agent is mapping only once the agent has made
+    its session; an agent that does not start is said with why and its next step. The page is open already."""
     if mapped:
         say('Intake: the map is recorded; opening it.')
         return
     if recording:
-        say('Intake: being recorded; the page follows it. If no agent is recording it any more: '
+        say('Intake: being recorded; the page follows it.')
+        return
+    if left is not None:
+        say(f'Intake: left unfinished in layer {left.layer.name} of base {left.base}, with {left.parts} parts, and no '
+            'agent is recording it. The page offers Resume, Finish and Discard; or: '
             'metaform dispatch intake resume=true')
         return
     assert found is not None
     agent = intake_agent(folder)
-    nouns: dict[str, Any] = {'text': brief(folder, project, found), **({'agent': agent} if agent else {})}
+    kept = '; your answers are kept for it' if found.answers else ''
+    if agent is None and settings.state('dispatch_agent', folder) == 'default':
+        say(f'Intake: not started; no AI tool here can run it{kept}.')
+        say('  Install Claude Code, then run metaform start here again; the page shows the project meanwhile.')
+        return
+    nouns: dict[str, Any] = {'text': brief(folder, project, found), 'wait': True, **({'agent': agent} if agent else {})}
+    say(f'Intake: starting {agent or settings.value("dispatch_agent", folder)}; a first start may take a minute.')
     try:
         started = cast(dict[str, Any], run_verb('dispatch', 'intake', folder, project, nouns))
     except Stop as stop:
         if 'already at work' in str(stop) or 'is starting' in str(stop):
             say('Intake: an agent is already mapping the project; the page follows it.')
             return
-        say(f'Intake: not started. {stop} Next: {stop.next_step}')
+        say(f'Intake: not started{kept}. {stop} Next: {stop.next_step}')
         return
-    say(f'Intake: {started["agent"]} is mapping the project; the page shows each part as it is recorded.')
+    if started.get('state') == 'running':
+        say(f'Intake: {started["agent"]} is mapping the project; the page shows each part as it is recorded.')
+        return
+    reason = str(started.get('reason') or 'its runner ended').removeprefix('it did not start: ')
+    login = f'metaform dispatch login {started["agent"]}'
+    step = login if 'login' in reason else f'read {started.get("log")}, then run metaform start here again'
+    say(f'Intake: {started["agent"]} did not start{kept}: {reason}')
+    say(f'  Next: {step}')
 
 
 def open_browser(address: str) -> bool:

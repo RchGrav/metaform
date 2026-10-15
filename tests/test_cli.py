@@ -454,6 +454,7 @@ def test_the_context_settings_accept_only_real_names(run, toggles):
 def test_status_in_a_folder_with_no_project(run, home, tmp_path):
     out = lines(run(cwd=tmp_path))
     assert out == [f'Metaform {__version__}', f'Home: {home}', f'Folder: {tmp_path}', 'Project: none',
+                   '  Watch it first: metaform demo', '  Map this folder: metaform start',
                    '  Register one: metaform add project <id> <path>']
 
 
@@ -616,6 +617,38 @@ def test_a_setting_is_on_the_settings_page_it_names_or_its_modules_with_its_unit
         MODULE = Module(id='astray', summary='Astray.', purpose='Astray. Details: metaform help astray.')
     ''')
     assert 'category must be one of general, agents' in run('list', 'modules', isolated=True).stdout
+
+
+@pytest.mark.req('CLI-010')
+def test_settings_surfaces_put_essentials_first_then_categories_and_modules_last(run, user_module):
+    user_module('ranked', f'''
+        from metaform import settings
+        from metaform.module import Module
+        {OS}
+        settings.boolean('ranked_later', category='voice', essential=9002)
+        settings.boolean('ranked_advanced')
+        settings.boolean('ranked_z_heading', category='voice', heading='Zebra')
+        settings.boolean('ranked_first', category='advanced', essential=9001)
+        settings.boolean('ranked_a_heading', category='voice', heading='Apple')
+        settings.boolean('ranked_agents', category='agents')
+        settings.boolean('ranked_once', category='general', essential=9000, per_call=True)
+        MODULE = Module(id='ranked', summary='Ranked.', purpose='Ranked. Details: metaform help ranked.')
+    ''')
+    rows = json.loads(run('config', '--show', '--json').stdout)
+    expected = ['ranked_first', 'ranked_later', 'ranked_agents', 'ranked_a_heading', 'ranked_z_heading',
+                'ranked_advanced']
+    assert [row['key'] for row in rows if row['owner'] == 'ranked'] == expected
+    assert rows[-1]['key'] == 'modules'
+    essential = [row for row in rows if row['essential'] > 0]
+    assert rows[:len(essential)] == sorted(essential, key=lambda row: row['essential'])
+    text = run('config', '--show').stdout
+    assert sorted(expected, key=lambda key: text.index(f'  {key}:')) == expected
+    for command in ('set', 'unset'):
+        help_text = run(command, '--help').stdout
+        assert '--ranked-once' not in help_text
+        positions = {match.group(1): match.start() for match in re.finditer(r'^  (--[\w-]+)(?=[, \n])',
+                                                                           help_text, re.MULTILINE)}
+        assert sorted(rows, key=lambda row: positions[row['switch']]) == rows
 
 
 @pytest.mark.req('CLI-025')
@@ -1251,3 +1284,38 @@ def test_a_second_demo_names_the_running_one_and_the_demo_takes_reset_alone(home
         (root / 'demo.json').write_text(json.dumps({'address': 'http://127.0.0.1:5/'}), encoding='utf-8')
         with file_lock(root / 'demo.lock', wait=False), pytest.raises(Stop, match='running at http://127.0.0.1:5/'):
             demo.run([], root, print)
+
+
+@pytest.mark.req('CLI-042')
+def test_a_demo_lane_whose_ticket_closes_while_another_rests_starts_at_once(monkeypatch):
+    from pathlib import Path
+    from types import SimpleNamespace
+    from typing import Any, cast
+
+    from metaform import demo
+    started: list[str] = []
+    monkeypatch.setattr(demo, 'start', lambda lane, folder: started.append(lane.address))
+    store = cast(Any, SimpleNamespace(ticket=lambda ticket: SimpleNamespace(work=SimpleNamespace(done='2026-10-15'))))
+    resting, closing, working = (demo.Lane(address, 'claude', 't', 't', 'broken', ticket=address)
+                                 for address in ('code.a', 'code.b', 'code.c'))
+    lanes = [resting, closing, working]
+    demo.tend(resting, Path('.'), store, lanes)
+    assert resting.closed is not None and started == []  # the first lane to close rests
+    demo.tend(closing, Path('.'), store, lanes)
+    assert closing.closed is None and started == ['code.b']  # another lane rests, so this one starts again at once
+
+
+@pytest.mark.req('CLI-042')
+def test_a_demo_stopped_or_killed_leaves_no_ticket_taken_for_the_next_run(home, monkeypatch):
+    from metaform import demo
+    with demo.own_home() as root:
+        folder = demo.prepare(root)
+        added = json.loads(demo.must('map', 'work', 'op=add', 'node=code.parser.amount', 'title=Left taken',
+                                     'task=A ticket a killed demo left taken', 'agent=claude', '--json', folder=folder))
+        demo.must('map', 'work', 'op=take', f'id={added["id"]}', 'by=claude demo-1', folder=folder)
+
+        def interrupted(folder):
+            raise KeyboardInterrupt
+        monkeypatch.setattr(demo, 'serve', interrupted)
+        demo.show(root, lambda text: None)
+        assert not json.loads(demo.must('map', 'work', f'id={added["id"]}', '--json', folder=folder))['taken_by']

@@ -3,9 +3,12 @@
 import '/page/app/board/history.js';  // the part before runs first, so the parts run in the page's order
 import {drawGlyph} from '/page/agents3d.js';
 import {$, h, fill, keyedFill} from '/page/app/core/dom.js';
+import {expandCut} from '/page/app/core/expand.js';
 import {overlay} from '/page/app/core/overlays.js';
 import {toast} from '/page/app/core/controls.js';
 import {FRAMED, S, read} from '/page/app/core/reads.js';
+import {readFailed} from '/page/app/core/errors.js';
+import {banner, bannered, unbanner} from '/page/app/core/banner.js';
 import {noMetaform} from '/page/app/header/admin.js';
 import {ticketNode, figures, bodyOf, isSystemTalk} from '/page/app/figures/agents.js';
 import {typeGlyph} from '/page/app/figures/walk.js';
@@ -14,10 +17,11 @@ import {INUSE, paintInUse} from '/page/app/map3d/light.js';
 import {G, TOUCHED} from '/page/app/map3d/graph3d.js';
 import {agentsWindow, VIEW} from '/page/app/views/settings.js';
 import {follow3d} from '/page/app/views/lens.js';
-import {autoZoom2d} from '/page/app/map2d/camera.js';
+import {autoZoom2d, FOLLOW} from '/page/app/map2d/camera.js';
 import {DOCK} from '/page/app/dock/embody.js';
 import {openHelpdesk, drawAgentSessions} from '/page/app/dock/threads.js';
 import {chatButton} from '/page/app/dock/send.js';
+import {callSystem} from '/page/app/dock/commands.js';
 import {calledOf} from '/page/app/board/messages.js';
 import {conditionLabel, partAt, taskWords} from '/page/app/board/refs.js';
 import {eligibleAgents, allowsAgent, drawBoard, renderBoard} from '/page/app/board/board.js';
@@ -31,6 +35,7 @@ import {readIntake, openIntakeChat} from '/page/app/intake/intake.js';
  * The dispatch module starts, messages and stops an agent on a ticket, BASE-052; the page asks it to through three
  * writes, VIEW-011. What an agent does is read from the dispatch layer at its ticket's node with each map change. */
 export const D = {sessions: [], starting: false};
+export const SESSIONS_DRAWN = [];  // what a later part draws again with the sessions, such as the broadcast window
 /* The signals of an agent waiting on the person: a permission request, or a question of its own, ACP's elicitation. */
 export const WAITS_ON_PERSON = ['permission-waiting', 'question-waiting'];
 export const AUTO = {value: false, agents: null};
@@ -44,7 +49,7 @@ export async function readAutostart() {
     Object.assign(AUTO, found);
     control.checked = found.value;
     control.disabled = found.available === false;
-  } catch (error) { if (S.project === project) toast(error.message); }
+  } catch (error) { if (S.project === project) readFailed(error); }
 }
 async function saveAutostart() {
   const project = S.project, control = $('#autostartAgents');
@@ -241,7 +246,9 @@ export async function renderAgents() {
   // restlessly, `moodOf`
   D.signals = found.signals || [];
   D.states = found.states || {};  // each session's state, the intake guard's phase among it, `drawIntake`
+  setupNotice();
   drawAgentSessions();
+  for (const draw of SESSIONS_DRAWN) draw();
   D.subagents = found.subagents || [];  // the running sessions' own subagents, each a figure, `childFigures`
   D.claims = claimed.claims || [];
   D.proposals = claimed.proposals || {};
@@ -251,6 +258,7 @@ export async function renderAgents() {
   D.asking = asking.map(one => ({...one, agent: D.sessions.find(row => row.session_id === one.session_id)?.agent}))
     .filter(one => D.sessions.some(row => row.session_id === one.session_id && row.state === 'running'));
   drawDockTab();
+  D.onAsking?.();  // and the pop-up for a request whose thread is not on screen, agents/asking.js
   readIntake(found.signals || []);
   if (!$('#board').hidden) drawBoard();
   // at work: a session whose runner says a turn is executing, the same ones the map's figures follow
@@ -259,9 +267,27 @@ export async function renderAgents() {
   keyedFill($('#agents .list'), working.map(one => ({key: one.session_id,
     text: [one.work_id, one.agent, glyphOf(one.work_id), workPart(one.work_id), agentName(one.agent)].join('\n'),
     make: () => agentRow(one)})));
+  markFollowed();
   agentsWindow(working.length);  // slides out while any is at work, away a few seconds after
   paintInUse();
   figures(S.tickets || []);  // the map's figures follow the same sessions
+}
+/* A feature the person set up that a module says is not working, dispatch's setup-not-working signal, is the person's
+ * system agent's to bring up with them; it takes the signal as its turn. While no system agent runs, one small notice
+ * says so in plain words, with the one action that starts it. Closed, it stays away until other findings are raised. */
+const SETUP = {closed: null};
+function setupNotice() {
+  const waiting = D.signals.filter(one => one.signal === 'setup-not-working' && one.active !== false);
+  const talking = D.sessions.some(one => one.state === 'running' && D.states[one.session_id]?.about === 'system');
+  const raised = waiting.map(one => one.signal_key).sort().join(' ');
+  if (!waiting.length || talking || raised === SETUP.closed) {
+    if (bannered('setup')) unbanner('setup');
+    return;
+  }
+  const what = waiting.length === 1 && waiting[0].feature ? waiting[0].feature : 'something you set up';
+  banner('setup', {tone: 'info', text: `It looks like ${what} may not be working. Your system agent can look at it `
+    + 'with you.', actions: [{label: 'Talk it over', primary: true, run: () => { unbanner('setup'); callSystem(); }}],
+  onClose: by => { if (by === 'person') SETUP.closed = raised; }});
 }
 /* Auto zoom follows the newest agent start, VIEW-041 and VIEW-005: with web_node_zoom on, a session that begins
  * running on a ticket that had none running takes both cameras to the ticket's node, the 2D map framing it as a
@@ -275,7 +301,8 @@ function followStart(sessions) {
   const shown = `${S.project}/${S.base}`, before = STARTS.shown === shown ? STARTS.running : null;
   const running = sessions.filter(one => one.state === 'running' && ticketOf(one.work_id));
   Object.assign(STARTS, {shown, running: new Set(running.map(one => one.work_id))});
-  if (!before || VIEW.nodeZoom === false || performance.now() - TOUCHED.at < 8000) return;
+  // while the person follows an agent, A, the cameras go with its figure
+  if (!before || FOLLOW.work || VIEW.nodeZoom === false || performance.now() - TOUCHED.at < 8000) return;
   const begun = running.filter(one => !before.has(one.work_id) && !isSystemTalk(ticketOf(one.work_id)));
   const newest = begun.sort((a, b) => (Date.parse(a.started) || 0) - (Date.parse(b.started) || 0)).at(-1);
   if (!newest) return;
@@ -290,8 +317,8 @@ async function readDispatch() {
   let claimed = {claims: D.claims || [], proposals: D.proposals || {}};
   if (noMetaform()) return {found, claimed};
   try { found = await read('dispatch-sessions', {thread: 'false'}); }
-  catch (error) { toast(error.message); found = {sessions: D.sessions}; }
-  try { claimed = await read('dispatch-claims'); } catch (error) { /* drawn as last read */ }
+  catch (error) { readFailed(error); found = {sessions: D.sessions}; }
+  try { claimed = await read('dispatch-claims'); } catch (error) { readFailed(error); }
   return {found, claimed};
 }
 /* One agent at work in the key: whether the part of the map it uses shows in white, its glyph, its name and what it
@@ -308,6 +335,28 @@ function agentRow(one) {
     h('img', {src: glyphOf(one.work_id), alt: glyphFor(one.work_id)}), h('b', {}, name),
     h('small', {}, `on ${workPart(one.work_id)} · working`)),
     chatButton({id: one.work_id}, `${name} on ${workPart(one.work_id)}`));
+}
+// what an agent works on, cut short, is its button's tooltip, `expandCut`: the button's click is its own
+expandCut($('#agents .list'), {row: '.agent-row', text: '.agent small'});
+/* The agent the person follows, A, `followFigure` in figures/eyes.js, named at the 2D map's top right for as long as
+ * it is followed: its glyph's image, its agent's name and its glyph, gone when none is followed; and its entry in the
+ * key marked as the one followed. */
+export function showFollowed(workId, glyph) {
+  const chip = $('#followed');
+  if (!workId) chip?.remove();
+  else {
+    const agent = D.sessions.find(one => one.work_id === workId && one.state === 'running')?.agent
+      || ticketOf(workId)?.map?.agent;
+    fill(chip || $('#map2d').appendChild(h('div', {id: 'followed', class: 'followed', role: 'status'})),
+      h('img', {src: `/page/agent-glyphs/${glyph}.svg`, alt: ''}), `Following ${agentName(agent)} · ${glyph}`);
+  }
+  markFollowed();
+}
+function markFollowed() {
+  for (const row of document.querySelectorAll('#agents .agent-row')) {
+    if (row.querySelector('.agent')?.dataset.id === FOLLOW.work) row.setAttribute('aria-current', 'true');
+    else row.removeAttribute('aria-current');
+  }
 }
 /* An agent's session opened in the chat dock, as the agents key, a figure in 3D, the node's work history and a
  * request waiting for the person open it: the thread of that session, or of the ticket's newest session, chosen by the

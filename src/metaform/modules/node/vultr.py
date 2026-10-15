@@ -20,7 +20,9 @@ from .plans import Step, b64, cloud_init, environment_key
 
 BASE = 'https://api.vultr.com'
 KEY = 'VULTR_API_KEY'
-UBUNTU_2404 = 2284  # "Ubuntu 24.04 LTS x64" in GET /v2/os; the setting can name another
+# "Ubuntu 24.04 LTS x64" in GET /v2/os: the OS the Node's cloud-init and setup are written for (apt, systemd), so any
+# other image only fails the deploy; settings cleanup 2026-10-15 made it fixed (it was node_vultr_os).
+UBUNTU_2404 = 2284
 RULES = (('tcp', '22', 'ssh'), ('tcp', '80', 'acme http-01'), ('tcp', '443', 'https'), ('udp', '443', 'http/3'))
 
 

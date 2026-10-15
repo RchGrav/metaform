@@ -70,11 +70,12 @@ setup and consent pages under `resources/` are the person's, not prompts.
 `node_domain`, `node_mode` (acme, dns, relay, internal), `node_email`, `node_capability` (read, write, dispatch;
 write by default), `node_relay_capability` (read by default), `node_projects`, `node_dns_provider`, `node_wildcard`,
 `node_dcr` (off), `node_host`, `node_ssh_identity`, `node_dir`, `node_provider`, `node_vultr_region` (ewr),
-`node_vultr_plan`, `node_vultr_os` (2284, Ubuntu 24.04), `node_ssh_public_key`, `node_relay_server`,
+`node_vultr_plan`, `node_ssh_public_key`, `node_relay_server`,
 `node_relay_port`, `node_relay_domain`, `node_dry_run`, and for a broker `node_role` (node, broker),
 `node_refresh_replay` (memory, durable; memory) and `node_member_dispatch` (off). The ones that decide who reaches
 what are person-only, and so are `node_projects`, `node_host`, `node_ssh_identity` and `node_ssh_public_key`, which
 say what the Node exposes, which host deploy reaches and which key a created VM trusts for root.
+A created VM always runs Ubuntu 24.04 LTS (Vultr OS id 2284, `vultr.UBUNTU_2404`), the system the Node's setup is written for; `node_vultr_os` was removed in the settings cleanup of 2026-10-15.
 No secret is a setting: API keys come from the environment, DNS and relay tokens from `secrets.env` on the host.
 
 ## Events
