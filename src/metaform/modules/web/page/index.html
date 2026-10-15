@@ -11,6 +11,8 @@
 <script type="importmap">{"imports": {"three": "/vendor/three.module.min.js", "three/addons/": "/vendor/three-addons/", "three/examples/jsm/": "/vendor/three-addons/", "3d-force-graph": "/vendor/3d-force-graph/dist/3d-force-graph.mjs", "three-forcegraph": "/vendor/three-forcegraph/dist/three-forcegraph.mjs", "d3-force-3d": "/vendor/d3-force-3d/src/index.js", "d3-binarytree": "/vendor/d3-binarytree/src/index.js", "d3-quadtree": "/vendor/d3-quadtree/src/index.js", "d3-octree": "/vendor/d3-octree/src/index.js", "d3-dispatch": "/vendor/d3-dispatch/src/index.js", "d3-timer": "/vendor/d3-timer/src/index.js", "ngraph.graph": "/page/ngraph.graph.js", "ngraph.forcelayout": "/page/ngraph.forcelayout.js", "kapsule": "/vendor/kapsule/dist/kapsule.mjs", "lodash-es/debounce.js": "/vendor/lodash-es/debounce.js", "accessor-fn": "/vendor/accessor-fn/dist/accessor-fn.mjs", "d3-array": "/vendor/d3-array/src/index.js", "internmap": "/vendor/internmap/src/index.js", "data-joint": "/vendor/data-joint/dist/data-joint.mjs", "index-array-by": "/vendor/index-array-by/dist/index-array-by.mjs", "d3-scale": "/vendor/d3-scale/src/index.js", "d3-interpolate": "/vendor/d3-interpolate/src/index.js", "d3-color": "/vendor/d3-color/src/index.js", "d3-format": "/vendor/d3-format/src/index.js", "d3-time": "/vendor/d3-time/src/index.js", "d3-time-format": "/vendor/d3-time-format/src/index.js", "d3-scale-chromatic": "/vendor/d3-scale-chromatic/src/index.js", "tinycolor2": "/vendor/tinycolor2/esm/tinycolor.js", "three-render-objects": "/vendor/three-render-objects/dist/three-render-objects.mjs", "polished": "/vendor/polished/dist/polished.esm.js", "@babel/runtime/helpers/esm/extends": "/vendor/@babel/runtime/helpers/esm/extends.js", "@babel/runtime/helpers/esm/assertThisInitialized": "/vendor/@babel/runtime/helpers/esm/assertThisInitialized.js", "@babel/runtime/helpers/esm/inheritsLoose": "/vendor/@babel/runtime/helpers/esm/inheritsLoose.js", "@babel/runtime/helpers/esm/wrapNativeSuper": "/vendor/@babel/runtime/helpers/esm/wrapNativeSuper.js", "@babel/runtime/helpers/esm/taggedTemplateLiteralLoose": "/vendor/@babel/runtime/helpers/esm/taggedTemplateLiteralLoose.js", "@tweenjs/tween.js": "/vendor/@tweenjs/tween.js/dist/tween.esm.js"}}</script>
 </head>
 <body>
+<!-- Shown at once while the page loads and lays itself out, `booting` in theme.js; gone when the page is shown. -->
+<div id="boot" role="status">Loading the map…</div>
 <button class="skip btn primary" type="button" data-skip="map">Skip to the map</button>
 <button class="skip btn primary" type="button" data-skip="panel">Skip to the panel</button>
 <div class="app">
@@ -419,6 +421,8 @@
 <div id="help" class="window dialog wide" hidden role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
   <div class="bar"><span class="title">Keyboard shortcuts</span><button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button></div>
   <div class="body">
+    <!-- Help › Getting started: the first-time welcome again, onboard/hints.js. -->
+    <button class="btn quiet getstarted" type="button" title="Show the welcome again: what Metaform is and where help is">Getting started</button>
     <!-- Drawn from the page's one key table, KEYS in app.js, which the keys run from too. -->
     <div class="tabs helptabs" role="tablist" aria-label="Kinds of keys"></div>
     <input class="keyfind" type="search" placeholder="Find a key by what it does" aria-label="Find a key by what it does" autocomplete="off">

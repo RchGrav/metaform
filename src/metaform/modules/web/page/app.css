@@ -2378,8 +2378,12 @@ body:has(.window.mcpwin > .bar:active) .appframe{pointer-events:none}  /* a pane
   #helpdesk .avatar{transition:none}
 }
 
-/* Out of sight until laid out, then in once: `booting`, theme.js. */
-html.booting body > *{opacity:0}
+/* Out of sight until laid out, then in once: `booting`, theme.js. Meanwhile #boot says the map is loading, from the
+ * first paint, so the page is never a blank screen. */
+html.booting body > *:not(#boot){opacity:0}
+#boot{position:fixed;inset:0;z-index:100;display:grid;place-items:center;margin:0;color:var(--muted);
+  font:var(--t-md)/1.5 var(--sans);pointer-events:none}
+html:not(.booting) #boot{display:none}
 body > *{transition:opacity .28s var(--ease-arrive, ease-out)}
 
 /* A stopped session stays recoverable in the chat and the Agents menu. */

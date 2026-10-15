@@ -44,9 +44,54 @@ export function pointed(edge) {
  * nothing is shown. The browser paints a changed path again over its whole box: a path the length of its edge, as a
  * dashed copy of the edge was, made it paint every moving edge's whole length each frame, where a path of dots only
  * paints the dots. */
-const FLOW2D = {id: 0, edges: [], opacity: '', group: null};
+const FLOW2D = {id: 0, edges: [], opacity: -1, group: null, fade: -1, at: -1};
 const BEAD = 2.1;  // a dot's radius
 const TAIL = [0.75, 0.5, 0.25];  // the last three dots of a train fade
+/* A shape of the flow and what it last showed, kept here and not on the element, so a frame compares its own fields
+ * and writes the element only when they change: whether it is shown, and the dots of a dot path. */
+class Shape2d {
+  constructor(element, on) {
+    this.element = element;
+    this.on = on;
+    this.d = '';
+  }
+}
+/* A reply's train: its group, shown or hidden, its path of full-strength dots and one path for each fading dot. */
+class Train2d {
+  constructor(g, solid, tail) {
+    this.g = g;
+    this.solid = solid;
+    this.tail = tail;
+  }
+}
+/* An edge's curve sampled once, one array of x and one of y, and its length: kept for as long as its drawn edge lives,
+ * by the edge, `SAMPLED`, so a new selection or mode measures nothing again. */
+class Samples2d {
+  constructor(length, xs, ys) {
+    this.length = length;
+    this.xs = xs;
+    this.ys = ys;
+  }
+}
+const SAMPLED = new WeakMap();
+/* What the flow keeps of one edge for as long as this flow lasts: the edge, its join and path, its samples, and its
+ * shapes: a train each way, the request, the record card and the ring. */
+class Edge2d {
+  constructor(edge, samples, trains, ask, record, ring) {
+    this.edge = edge;
+    this.join = edge.join;
+    this.path = edge.path;
+    this.length = samples.length;
+    this.xs = samples.xs;
+    this.ys = samples.ys;
+    this.trains = trains;
+    this.ask = ask;
+    this.record = record;
+    this.ring = ring;
+  }
+}
+// where a frame puts the point it looks up, `place`: one object, read before the next look-up
+const POINT = {x: 0, y: 0};
 // an element's own colour on the map, as the 3D map draws it, for what comes from it, from the 3D map's nodes by id,
 // `byId`, gathered once for each build of the flow and not searched again for each end of each edge
 function color2d(id, byId) {
@@ -56,7 +101,7 @@ function color2d(id, byId) {
 export function flows2d() {
   for (const old of M.svg?.querySelectorAll('g.flows2d') || []) old.remove();
   FLOW2D.edges = [];
-  FLOW2D.opacity = '';
+  FLOW2D.opacity = -1;
   FLOW2D.group = null;
   const on = flowing2d();
   if (!on.length) return;
@@ -79,7 +124,7 @@ export function flows2d() {
     for (const [key, value] of Object.entries(attributes)) shape.setAttribute(key, value);
     shape.style.display = 'none';
     parent.append(shape);
-    return shape;
+    return new Shape2d(shape, false);
   };
   const byId = new Map((G?.graphData().nodes || []).map(node => [node.id, node]));
   for (const edge of on) FLOW2D.edges.push(edgeShapes(edge, made, glows, byId));
@@ -91,17 +136,17 @@ export function flows2d() {
  * nothing. A layer sized by its moving dots changed size every frame, and the browser then cut the map after it into
  * new layers each frame and painted them whole. A ring grows to 18 around the end of its edge. */
 function extent2d(layers, edges) {
-  const box = {left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity}, pad = 20;
-  for (const {edge} of edges) {
-    for (const {x, y} of edge.samples) {
-      box.left = Math.min(box.left, x); box.top = Math.min(box.top, y);
-      box.right = Math.max(box.right, x); box.bottom = Math.max(box.bottom, y);
+  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+  const pad = 20;
+  for (const {xs, ys} of edges) {
+    for (let i = 0; i < xs.length; i++) {
+      left = Math.min(left, xs[i]); top = Math.min(top, ys[i]);
+      right = Math.max(right, xs[i]); bottom = Math.max(bottom, ys[i]);
     }
   }
   for (const layer of layers) {
     const rect = document.createElementNS(SVG, 'rect');
-    const size = {x: box.left - pad, y: box.top - pad, width: box.right - box.left + 2 * pad,
-      height: box.bottom - box.top + 2 * pad};
+    const size = {x: left - pad, y: top - pad, width: right - left + 2 * pad, height: bottom - top + 2 * pad};
     for (const [key, value] of Object.entries(size)) rect.setAttribute(key, value.toFixed(1));
     rect.setAttribute('fill', 'none');
     rect.setAttribute('stroke', 'none');
@@ -120,22 +165,18 @@ function flowing2d() {
  * what is shown or hidden. The edge is measured here, `sampled`, before any frame writes into the map: measured later,
  * each measure after a frame's first write makes the browser lay out the page again. */
 function edgeShapes(edge, made, {trains, asks}, byId) {
-  const one = {edge, length: edge.length ??= edge.path.getTotalLength()};
-  sampled(one);
   const dots = (attributes, parent) => {
-    const path = made('path', 'bead', attributes, parent);
+    const path = made('path', 'bead', attributes, parent.element);
     show2d(path, true);
     return path;
   };
-  return Object.assign(one, {
-    trains: [0, 1].map(way => {
-      const train = made('g', 'train', {}, trains);
-      train.style.stroke = color2d(way === 0 ? edge.provider : edge.join.receiver, byId);
-      return {g: train, solid: dots({}, train), tail: TAIL.map(opacity => dots({opacity}, train))};
-    }),
-    ask: made('path', 'ask', {}, asks),
-    record: made('rect', 'record', {x: -4.5, y: -3.2, width: 9, height: 6.4, rx: 1.4}),
-    ring: made('circle', 'ring', {r: 4})});
+  const train = way => {
+    const g = made('g', 'train', {}, trains);
+    g.element.style.stroke = color2d(way === 0 ? edge.provider : edge.join.receiver, byId);
+    return new Train2d(g, dots({}, g), TAIL.map(opacity => dots({opacity}, g)));
+  };
+  return new Edge2d(edge, sampled(edge), [train(0), train(1)], made('path', 'ask', {}, asks),
+    made('rect', 'record', {x: -4.5, y: -3.2, width: 9, height: 6.4, rx: 1.4}), made('circle', 'ring', {r: 4}));
 }
 export function wake2d() {
   if (!FLOW2D.id && FLOW2D.edges.length && !reduced()) FLOW2D.id = requestAnimationFrame(frame2d);
@@ -161,80 +202,121 @@ function rest2d() {
   for (const one of ambients2d()) if (one.playState === 'running') one.pause();
 }
 /* A point at a distance along an edge, looked up in the edge's curve sampled once, `sampled`, never measured again each
- * frame: measuring a curve for every dot on every frame was the page's own heaviest work. The samples and its length
- * are kept on the edge, which lives as long as its drawn path, so a new selection measures nothing. */
-function sampled(one) {
-  const edge = one.edge;
-  if (!edge.samples) {
-    const count = Math.max(16, Math.ceil(one.length / 3));
-    edge.samples = Array.from({length: count + 1}, (_, i) => edge.path.getPointAtLength(one.length * i / count));
+ * frame: measuring a curve for every dot on every frame was the page's own heaviest work. */
+function sampled(edge) {
+  let samples = SAMPLED.get(edge);
+  if (!samples) {
+    const length = edge.path.getTotalLength(), count = Math.max(16, Math.ceil(length / 3));
+    const xs = new Float32Array(count + 1), ys = new Float32Array(count + 1);
+    for (let i = 0; i <= count; i++) {
+      const point = edge.path.getPointAtLength(length * i / count);
+      xs[i] = point.x; ys[i] = point.y;
+    }
+    SAMPLED.set(edge, samples = new Samples2d(length, xs, ys));
   }
-  return edge.samples;
+  return samples;
 }
-function pointOn(one, distance) {
-  const points = sampled(one), last = points.length - 1;
+// the point at a distance along the edge, into `POINT`
+function place(one, distance) {
+  const xs = one.xs, ys = one.ys, last = xs.length - 1;
   const f = Math.min(last, Math.max(0, distance / Math.max(1e-6, one.length) * last));
-  const i = Math.min(last - 1, Math.floor(f));
-  const u = f - i, a = points[i], b = points[i + 1];
-  return {x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u};
+  const i = Math.min(last - 1, Math.floor(f)), u = f - i;
+  POINT.x = xs[i] + (xs[i + 1] - xs[i]) * u;
+  POINT.y = ys[i] + (ys[i + 1] - ys[i]) * u;
 }
+/* A frame of the flow: every read first, whether the map is drawn and which edges are still in it, then the writes.
+ * It allocates nothing but the text of what it writes. */
 function frame2d(now) {
   FLOW2D.id = 0;
-  const shown = FLOW2D.edges.filter(one => one.edge.path.isConnected);
-  if (!shown.length || !M.svg?.getClientRects().length) return;
+  const edges = FLOW2D.edges;
+  let shown = 0;
+  for (let i = 0; i < edges.length; i++) if (edges[i].path.isConnected) shown++;
+  if (!shown || !M.svg?.checkVisibility()) return;
   // it rests as the 3D map's flow rests, once nothing was done for web_flow_seconds, until the next act
   const resting = reduced() || (FRAMES.rest !== null && performance.now() - FRAMES.active > FRAMES.idle);
   flowTick(now);
   // the flow mode, web_flow_mode: off and live draw none of it here; a change eases it in or out
-  const wanted = ['hover', 'selected', 'all'].includes(flowModeNow()) ? 1 : 0, was = FLOW2D.fade ?? wanted;
-  FLOW2D.fade = was + (wanted - was) * (1 - Math.exp(-Math.max(0, FLOW.clock - (FLOW2D.at ?? FLOW.clock)) * FLOW.ease));
+  const mode = flowModeNow(), wanted = mode === 'hover' || mode === 'selected' || mode === 'all' ? 1 : 0;
+  const was = FLOW2D.fade < 0 ? wanted : FLOW2D.fade, since = FLOW2D.at < 0 ? 0 : FLOW.clock - FLOW2D.at;
+  FLOW2D.fade = was + (wanted - was) * (1 - Math.exp(-Math.max(0, since) * FLOW.ease));
   FLOW2D.at = FLOW.clock;
-  const group = FLOW2D.group, opacity = FLOW2D.fade.toFixed(3);
-  if (group && opacity !== FLOW2D.opacity) group.style.opacity = FLOW2D.opacity = opacity;
-  if (FLOW2D.fade < 0.01 && !wanted) {
-    for (const one of shown) flowEdge2d(one, true);
-    return;
+  const opacity = Math.round(FLOW2D.fade * 1000);  // in thousandths, written only when that changes
+  if (FLOW2D.group && opacity !== FLOW2D.opacity) {
+    FLOW2D.opacity = opacity;
+    FLOW2D.group.style.opacity = String(opacity / 1000);
   }
-  for (const one of shown) flowEdge2d(one, resting);
-  if (!resting) FLOW2D.id = requestAnimationFrame(frame2d);
+  const hidden = FLOW2D.fade < 0.01 && !wanted;
+  for (let i = 0; i < edges.length; i++) if (edges[i].path.isConnected) flowEdge2d(edges[i], hidden || resting);
+  if (!hidden && !resting) FLOW2D.id = requestAnimationFrame(frame2d);
 }
 // a shape is shown or hidden only when that changes, so a frame writes only what moves
-const show2d = (shape, on) => {
-  if (Boolean(shape.on2d) !== on) shape.style.display = (shape.on2d = on) ? '' : 'none';
-};
-const placed = point => `translate(${point.x} ${point.y})`;
-/* A path's dots, each a stroke of no length whose round caps make the dot, written only when one moves. */
-const dot = point => `M${point.x.toFixed(2)},${point.y.toFixed(2)}h0`;
-const dots2d = (shape, d) => {
-  if (shape.d2d !== d) shape.setAttribute('d', shape.d2d = d);
-};
+function show2d(shape, on) {
+  if (shape.on !== on) {
+    shape.on = on;
+    shape.element.style.display = on ? '' : 'none';
+  }
+}
+// a dot path's dots, written only when they change
+function dots2d(shape, d) {
+  if (shape.d !== d) {
+    shape.d = d;
+    shape.element.setAttribute('d', d);
+  }
+}
+/* A dot at a share of the way along the edge, forward or back, as a stroke of no length whose round caps make the dot;
+ * none off either end. */
+function dot(one, share, forward) {
+  if (share < 0 || share > 1) return '';
+  place(one, (forward ? share : 1 - share) * one.length);
+  return `M${POINT.x.toFixed(2)},${POINT.y.toFixed(2)}h0`;
+}
+// the point at a share of the way the edge's information goes, into `POINT`
+function at(one, share, receives) {
+  const clamped = Math.min(1, Math.max(0, share));
+  place(one, (receives ? 1 - clamped : clamped) * one.length);
+}
 /* One edge's flow this frame, the way its information goes: its records, its ring as one lands, its request, and its
  * reply's trains. Resting, nothing is shown. */
 function flowEdge2d(one, resting) {
-  const {edge, length, trains, ask, record, ring} = one, join = edge.join, receives = join.ifd === 'receives';
-  const along = share => (receives ? 1 - share : share) * length;  // the edge runs the way its information goes
-  const at = share => pointOn(one, along(Math.min(1, Math.max(0, share))));
-  const {asks, since = 0, amount = 7, reply = FLOW.reply} = resting ? {} : flowAt(join);
+  const join = one.join, receives = join.ifd === 'receives', record = one.record, ring = one.ring;
+  let asks = false, since = 0, amount = 7, reply = FLOW.reply;
+  if (!resting) {
+    const now = flowAt(join);
+    asks = now.asks; since = now.since;
+    if (asks) { amount = now.amount; reply = now.reply; }
+  }
   const live = !resting, sends = live && !asks;
   const recording = sends && since < FLOW.send, ringing = sends && !recording && since < FLOW.send + FLOW.burst;
   const asking = live && asks && since < FLOW.ask, replying = live && asks && !asking && since < FLOW.ask + reply;
-  if (recording) { const t = since / FLOW.send; record.setAttribute('transform', placed(at(t * t * (3 - 2 * t)))); }
+  if (recording) {
+    const t = since / FLOW.send;
+    at(one, t * t * (3 - 2 * t), receives);
+    record.element.setAttribute('transform', `translate(${POINT.x} ${POINT.y})`);
+  }
   show2d(record, recording);
   if (ringing) {
     const u = (since - FLOW.send) / FLOW.burst;
-    if (!ring.on2d) ring.setAttribute('transform', placed(at(1)));
-    ring.setAttribute('r', String(4 + 14 * u));
-    ring.style.opacity = String(Math.pow(1 - u, 1.5));
+    if (!ring.on) {
+      at(one, 1, receives);
+      ring.element.setAttribute('transform', `translate(${POINT.x} ${POINT.y})`);
+    }
+    ring.element.setAttribute('r', String(4 + 14 * u));
+    ring.element.style.opacity = String(Math.pow(1 - u, 1.5));
   }
   show2d(ring, ringing);
-  if (asking) dots2d(ask, dot(at(since / FLOW.ask)));
-  show2d(ask, asking);
-  // the reply: a train of dots the way the data goes, both ways on a join whose information goes both ways
-  const ways = replying ? (join.ifd === 'both' ? [true, false] : [true]) : [];
-  trains.forEach((train, index) => {
-    if (index < ways.length) train2d(train, (since - FLOW.ask) / reply, ways[index], amount, one, receives);
-    show2d(train.g, index < ways.length);
-  });
+  if (asking) {
+    at(one, since / FLOW.ask, receives);
+    dots2d(one.ask, `M${POINT.x.toFixed(2)},${POINT.y.toFixed(2)}h0`);
+  }
+  show2d(one.ask, asking);
+  // the reply: a train of dots the way the data goes, both ways on a join whose information goes both ways; the
+  // first train runs back to the receiver, the second forth
+  const ways = replying ? (join.ifd === 'both' ? 2 : 1) : 0;
+  for (let index = 0; index < 2; index++) {
+    const train = one.trains[index];
+    if (index < ways) train2d(train, (since - FLOW.ask) / reply, index === 0, amount, one, receives);
+    show2d(train.g, index < ways);
+  }
 }
 /* A reply's train of dots along the edge, spaced so they read as dots, the last few fading: dot i is i spaces behind
  * the head, and a dot off either end of the edge is not drawn. The full-strength dots share one path and each fading
@@ -243,14 +325,13 @@ function train2d(train, t, back, amount, one, receives) {
   const length = one.length, spacing = Math.max(0.03, BEAD * 2 * 2.3 / Math.max(1, length));
   const shown = Math.max(2, Math.min(12, amount, Math.floor(0.6 / spacing) + 1));
   const head = t * (1 + spacing * (shown - 1)), forward = receives === back;
-  const put = i => {
-    const share = head - i * spacing;
-    return share < 0 || share > 1 ? '' : dot(pointOn(one, (forward ? share : 1 - share) * length));
-  };
   let solid = '';
-  for (let i = 0; i < shown - 3; i++) solid += put(i);
+  for (let i = 0; i < shown - 3; i++) solid += dot(one, head - i * spacing, forward);
   dots2d(train.solid, solid);
-  train.tail.forEach((path, j) => dots2d(path, shown - 3 + j < 0 ? '' : put(shown - 3 + j)));
+  for (let j = 0; j < TAIL.length; j++) {
+    const i = shown - 3 + j;
+    dots2d(train.tail[j], i < 0 ? '' : dot(one, head - i * spacing, forward));
+  }
 }
 export function focus2D(id, frame = true) {
   const join = id.startsWith('p:') ? joinOf(id) : null;

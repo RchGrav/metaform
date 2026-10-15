@@ -130,17 +130,22 @@ export function flowNet() {
   }
   return FLOW.net = {joins: S.joins, size: S.joins.length, byId, answering, sends};
 }
-/* One join's flow at this moment: whether it asks, and how long since its cycle began. The moment its request reaches
- * the elements it holds they answer, and each sends its records then. */
+/* One join's flow at this moment: whether it asks, and how long since its cycle began; for a request, how much its
+ * reply carries and how long it runs, else 0. The moment its request reaches the elements it holds they answer, and
+ * each sends its records then. Both maps call it for every flowing join every frame, so every call fills the one
+ * object, `AT`, which the caller reads before its next call. */
+const AT = {asks: false, since: 0, amount: 0, reply: 0};
 export function flowAt(join) {
   const net = flowNet();
   if (asksOf(join)) {
     const cycle = cycleOf(join.id, FLOW.ask), since = FLOW.clock - cycle.at;
     if (since >= FLOW.ask && !cycle.answered) answered(join, cycle, since, net);
-    return {asks: true, since, amount: cycle.amount, reply: cycle.reply};
+    AT.asks = true; AT.since = since; AT.amount = cycle.amount; AT.reply = cycle.reply;
+    return AT;
   }
   const cycle = cycleOf(join.id, FLOW.send + FLOW.burst, net.answering.has(join.receiver));
-  return {asks: false, since: FLOW.clock - cycle.at};
+  AT.asks = false; AT.since = FLOW.clock - cycle.at; AT.amount = 0; AT.reply = 0;
+  return AT;
 }
 /* The request has reached the elements the join holds: they answer, and each sends its records now, unless the reply
  * is already over. */

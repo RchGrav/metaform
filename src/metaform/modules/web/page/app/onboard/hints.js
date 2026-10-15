@@ -8,11 +8,12 @@ import {FRAMED, S, reach} from '/page/app/core/reads.js';
 import {FIRST} from '/page/app/intake/intake.js';
 import {openHelp} from '/page/app/keys/keys.js';
 
-/* seen: what this person has closed; who: 'newcomer', 'returning', or null until decided; ready: the home read. */
+/* seen: what this person has closed; who: 'newcomer', 'returning', or null until decided; ready: the home read;
+ * asked: the person opened the welcome again from Help › Getting started, so it stays until they close it. */
 const KEPT = 'metaform.hints';
 const PERSON = ['newcomer', 'returning'];
 const WELCOME = 'welcome';
-export const HINT = {seen: new Set(), who: null, ready: false, read: null};
+export const HINT = {seen: new Set(), who: null, ready: false, read: null, asked: false};
 /* Whether this browser showed a project before this load: read before the page remembers the one it opens. */
 const usedHere = (() => {
   try { return localStorage.getItem('metaform.project') !== null; } catch { return false; }
@@ -58,15 +59,23 @@ function decide() {
 }
 /* The welcome, for a first-time person who has not closed it. */
 function welcome() {
+  if (HINT.asked) return;
   $('#welcome').hidden = FRAMED || !HINT.ready || HINT.who !== 'newcomer' || HINT.seen.has(WELCOME);
 }
 $('#welcome .ok').onclick = () => {
   $('#welcome').hidden = true;
+  HINT.asked = false;
   HINT.seen.add(WELCOME);
   keepHere();
   send({hint: WELCOME});
 };
 $('#welcome .helpkey').onclick = () => openHelp();
+/* Help › Getting started: the welcome again, for anyone, whenever they ask. */
+$('#help .getstarted').onclick = () => {
+  $('#help').hidden = true;
+  HINT.asked = true;
+  $('#welcome').hidden = false;
+};
 
 /* Each time the page settles on a project: who this person is, once, and the welcome if it is theirs. */
 FIRST.drawn = (empty, settled) => {
