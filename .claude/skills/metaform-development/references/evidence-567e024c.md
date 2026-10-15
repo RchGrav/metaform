@@ -1,0 +1,1 @@
+"My lines are present, but another session's commit (520c8d9) swept them into its own commit. Checking what it took." Commit log: "520c8d9 work: Today the Build menu (build.py, BASE-060; the web build pane". Agent note: "520c8d9 alone fails 5 TUI tests."

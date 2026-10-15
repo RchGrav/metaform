@@ -1,0 +1,1 @@
+"I first put the headings in the existing `section` field. That also nested them as submenus in the terminal settings screen and broke 5 TUI tests." And: "wording every choice turned the project id 'proj' into 'Proj'."

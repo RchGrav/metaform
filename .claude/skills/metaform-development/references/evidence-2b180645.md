@@ -1,0 +1,1 @@
+"Settings must open on an Essentials page that fits one screen" (orchestrator note, ticket 31ee6b74). Agent final report: "the metaform-development skill still says the screen opens on Modules and describes the old page picker. I left it alone because the harness manages that file." Screen summary: "always opens on Essentials ... Modules is last, under Advanced."

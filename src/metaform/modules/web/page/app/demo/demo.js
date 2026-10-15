@@ -9,7 +9,7 @@ import {copyField} from '/page/app/core/controls.js';
 import {S, reach} from '/page/app/core/reads.js';
 import {ROAM, bodyOf, embody, isSystemTalk} from '/page/app/figures/agents.js';
 import {mascotGlyph, preferredGlyph} from '/page/app/figures/mascot.js';
-import {D} from '/page/app/agents/dispatch.js';
+import {D, glyphFor} from '/page/app/agents/dispatch.js';
 
 const HIDDEN = 'metaform.demo-card-hidden';  // the person closed the card: kept for this tab
 export const DEMO = {card: null, given: false};
@@ -34,13 +34,15 @@ function showCard(demo) {
   document.body.append(DEMO.card);
 }
 /* The person's mascot: the demo's system agent, given a body once its conversation runs, the person's own character
- * when they chose one, else the first no figure at work has. */
+ * when they chose one and it is free, else the first no agent at work has. */
 function giveMascot() {
   const ticket = (S.tickets || []).find(isSystemTalk);
   if (!ticket || mascotGlyph() || bodyOf(ticket.id)) return;
   if (!D.sessions.some(one => one.work_id === ticket.id && one.state === 'running')) return;
+  // no character a figure has, or one already given to an agent at work whose figure is not drawn yet
   const busy = new Set([...ROAM.figures.values()].map(figure => figure.glyph));
-  const glyph = preferredGlyph() || GLYPHS.find(name => !busy.has(name));
+  for (const one of D.sessions) if (one.state === 'running' && one.work_id !== ticket.id) busy.add(glyphFor(one.work_id));
+  const glyph = [preferredGlyph(), ...GLYPHS].find(name => name && !busy.has(name));
   if (glyph && !embody(ticket.id, glyph, 'person').error) DEMO.given = true;
 }
 demoCard().then(demo => {
