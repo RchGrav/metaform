@@ -283,6 +283,14 @@ def coalesce(held: dict[str, Any], event: dict[str, Any]) -> dict[str, Any] | No
         payload['dispatch_tables'] = sorted(set(a['dispatch_tables']) | set(b['dispatch_tables']))
     else:
         payload.pop('dispatch_tables', None)
+    # what each said it concerns, map.changed's fields, BASE-053: the union, or unknown when either left one out, so a
+    # page reads for every ticket and kind the merged events named, never only the first's
+    for key in ('work_ids', 'session_ids', 'kinds'):
+        first, second = a.get(key), b.get(key)
+        if isinstance(first, list) and isinstance(second, list):
+            payload[key] = sorted({*cast(list[str], first), *cast(list[str], second)})
+        else:
+            payload.pop(key, None)
     return {**held, 'payload': payload}
 
 

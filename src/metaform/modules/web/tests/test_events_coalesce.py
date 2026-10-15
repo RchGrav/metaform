@@ -35,3 +35,21 @@ def test_a_burst_of_agent_lines_wakes_the_page_a_few_times_and_a_map_event_arriv
     assert payloads[-2:] == [signal, work]  # a signal is never merged away; the map event is unchanged
     merged = set().union(*(set(payload['dispatch_tables']) for payload in payloads[:-2]))
     assert merged == {'dispatch.lines', 'dispatch.sessions'}
+
+
+@pytest.mark.req('BASE-053')
+def test_merged_agent_events_name_every_ticket_and_kind_each_named():
+    """A page's stream merges a burst of dispatch-only events; the merged one names the tickets, sessions and kinds
+    every one of them named, so the page reads for each, and none when one of them left a field out."""
+    from metaform.modules.web.server import coalesce
+    def event(work, kind, **more):
+        return {'topic': 'map.changed', 'payload': {'project': 'p', 'base_id': 'b', 'tables': 'dispatch',
+                                                   'dispatch_tables': ['dispatch.lines'], 'work_ids': [work],
+                                                   'session_ids': [], 'kinds': [kind], **more}}
+    merged = coalesce(event('w1', 'line'), event('w2', 'session'))
+    assert merged is not None
+    assert merged['payload']['work_ids'] == ['w1', 'w2'] and merged['payload']['kinds'] == ['line', 'session']
+    unknown = event('w3', 'line')
+    del unknown['payload']['work_ids']
+    merged = coalesce(event('w1', 'line'), unknown)
+    assert merged is not None and 'work_ids' not in merged['payload']
