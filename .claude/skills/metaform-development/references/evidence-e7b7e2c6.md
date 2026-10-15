@@ -1,0 +1,1 @@
+Memory code.registry.skill#7: "tests/test_base.py test_every_shipped_module_imports_only_the_public_base already fails because mcp/server.py and workflow import metaform.skills, which is not in its PUBLIC set; dispatch.workflow_skill now imports it too (lazily). Whether metaform.skills joins the public base is Rich's call."

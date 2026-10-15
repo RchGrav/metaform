@@ -1,0 +1,1 @@
+At every start: a run in a registered project's home folder whose base the project no longer has can never resume, so it is removed with the launch receipts naming that base. A clear deletes every base and a remove deletes them with the registration; registering the source again takes the same home folder back, and this is what keeps those runs from coming back with it.

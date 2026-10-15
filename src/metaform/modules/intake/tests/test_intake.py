@@ -89,7 +89,7 @@ def submit(run, cwd, document, tmp_path, extra=(), as_json=True):
                      for notice in out.get('notices', []))
         return out
 
-    start = [arg for arg in extra if arg.split('=', 1)[0] in ('model', 'role')]
+    start = [arg for arg in extra if arg.split('=', 1)[0] in ('model', 'role', 'name')]
     call('start', 'start', *start)
     elements = document['elements']
     for index, element in enumerate(elements):
@@ -377,8 +377,8 @@ def test_a_second_intake_is_stored_as_a_new_active_metaform_and_the_first_is_kep
     changed = copy.deepcopy(FIXTURE)
     changed['elements'][2]['namespace_address'] = 'code.alarm.visual'
     changed['elements'][1]['joins'][0]['provider'] = 'code.alarm.visual'
-    second = submit(run, project, changed, tmp_path)
-    assert re.fullmatch(r'intake-\d{8}T\d{6}Z(-\d+)?', second['base'])
+    second = submit(run, project, changed, tmp_path, extra=('name=alarm-visual',))  # a separate intake is named
+    assert second['base'] == 'alarm-visual'
     active = metaform_home.active_base('timer')
     assert active.name == second['base'] and active.id != main.id
     assert any('metaform map activate main' in notice['message'] for notice in second['notices'])
@@ -500,7 +500,10 @@ def test_an_intake_started_and_not_finished_is_named_in_the_instructions(run, pr
     assert line not in shown and notice not in shown
     run('intake', 'start', cwd=project)  # on a finished map start opens nothing: a verify pass writes onto it
     assert line not in agents()
-    run('intake', 'element', 'code.display.digit', 'role=SE', 'name=digit', cwd=project)  # new shape: a new intake
+    run('intake', 'element', 'code.display.digit', 'role=SE', 'name=digit', cwd=project)  # added to the map itself
+    assert line not in agents()
+    run('intake', 'finish', cwd=project)
+    run('intake', 'element', 'code.display.dot', 'role=SE', 'name=dot', cwd=project)  # no pass open: a new intake
     assert line in agents()
 
 
@@ -1152,17 +1155,19 @@ def test_a_finding_on_an_element_and_its_purpose_record_is_written_once(run, pro
     store = Store('timer')
     assert [(w.node_kind, w.note) for w in store.work(open=True, limit=0).results] == \
         [(first, 'never sounds\n\nother')]
+    recorded(run, project, *markers[second], 'condition=BKN', 'note=never')  # inside a paragraph, still a new finding
     [ticket] = store.work(open=True, limit=0).results
-    for kind, note in ((first, 'never sounds'), (second, 'other')):
+    assert ticket.note.endswith('\n\nnever')
+    for kind, note in ((first, 'never sounds'), (second, 'other'), (second, 'never')):
         recorded(run, project, *markers[kind], 'condition=BKN', f'note={note}')
     assert [(w.id, w.note) for w in store.work(open=True, limit=0).results] == \
-        [(ticket.id, 'never sounds\n\nother')]
+        [(ticket.id, 'never sounds\n\nother\n\nnever')]
     store.take_work(ticket.id, by='claude')
     repeated = [recorded(run, project, *markers[kind], 'condition=BKN', f'note={note}')
                 for kind, note in ((first, 'never sounds'), (second, 'other'))]
     assert len(store.work(open=True, limit=0).results) == 1
     assert [(w.id, w.condition, w.note) for w in store.work(open=True, limit=0).results] == \
-        [(ticket.id, 'trouble', 'never sounds\n\nother')]
+        [(ticket.id, 'trouble', 'never sounds\n\nother\n\nnever')]
     assert all('taken' in said['notices'][-1]['message'] for said in repeated)
     store.finish_work(ticket.id, 'Alarm repaired.')
     assert store.work(open=True, limit=0).results == ()
@@ -1249,6 +1254,22 @@ def test_a_changed_field_on_a_finished_map_is_refined_in_place_and_the_map_stays
     assert kitchen is not None and kitchen.name == 'kitchen timer'
     assert len(store.history(kitchen.id).results) == 2
     assert [join.purpose for join in store.joins('code.timer.kitchen').results] == ['Ring when done.']
+    # a pass that adds an element first adds it to the map too, and the corrections after it still refine the map
+    recorded(run, project, 'start')
+    added = recorded(run, project, 'element', 'code.light.oven', 'role=SE', 'name_length=1')
+    assert added['base'] == 'main' and not any(notice['where'] == 'base' for notice in added['notices'])
+    recorded(run, project, 'purpose', 'code.timer.kitchen', '["code.light.oven"]', 'purpose=Glow when done.',
+             'ef=e', 'ifd=receives')
+    recorded(run, project, 'element', 'code.alarm.audible', 'name=bell')
+    finished = recorded(run, project, 'finish')
+    assert (finished['base'], finished['elements']) == ('main', 4)
+    assert [base['name'] for base in json.loads(run('map', 'bases', '--json', cwd=project).stdout)['results']] == ['main']
+    for address in ('stakeholder.cook.home', 'code.light.oven'):
+        run('map', 'where', address, cwd=project)
+    alarm = Store('timer').element('code.alarm.audible')
+    assert alarm is not None and alarm.name == 'bell' and len(Store('timer').history(alarm.id).results) == 2
+    assert sorted(join.purpose for join in Store('timer').joins('code.timer.kitchen').results) == \
+        ['Glow when done.', 'Ring when done.']
 
 
 def _element_at_once(home: str, folder: str, address: str, ready: Any, failures: Any) -> None:

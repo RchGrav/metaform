@@ -1,0 +1,1 @@
+tx.insert('sessions', {'session_id': 's1', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'ended', 'how': 'the agent ended with exit code 1', 'started': '2026-10-11T00:00:00Z', 'seq': 1})  →  replaced with  ...'seq': 1, 'origin': module.origin()})

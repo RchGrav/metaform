@@ -139,7 +139,8 @@ def test_automatic_queue_glyph_and_supervisor_wait_but_explicit_start_can_finish
     dispatch.store.take_work(dispatch.id, by='claude same-session')
     with store.tables() as tx:
         tx.insert('sessions', {'session_id': 'same-session', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'ended',
-                               'how': 'the agent ended with exit code 1', 'started': '2026-10-14T00:00:00Z', 'seq': 1})
+                               'how': 'the agent ended with exit code 1', 'started': '2026-10-14T00:00:00Z', 'seq': 1,
+                               'origin': module.origin()})
     assert module.retry(ctx, dispatch.store) == {'retried': []}
     assert blocked(ctx, store, dispatch.ticket())
     run('map', 'work', 'op=move', f'id={dispatch.id}', 'column=todo', cwd=dispatch.folder)

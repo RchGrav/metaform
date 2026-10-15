@@ -89,12 +89,23 @@ REMOTE_AGENT = False  # it launches agents on this machine, which a hosted sandb
 # reads and writes the tables.
 # Version 12 adds `prompts` and `mode` to ticket_options, a launch's own permissions; both may be empty, so version 5's
 # code still reads and writes the tables.
-TABLES = Tables(version=12, compatible_from=5, tables=(  # 5: agents do not ask; 6, 7, 10, 11 and 12 only add
+# Version 13 adds `origin` to sessions, the machine and Metaform home whose runner started the session, `origin()`: a
+# store copied into another home holds sessions that home never started, and nothing resumes them there. It may be
+# empty, so version 5's code still reads and writes the tables; a row written before it has none and is no home's.
+# Version 14 keeps spend in the project's store, `spending`, so removing a metaform never takes its spend out of the
+# budgets. The chassis refuses to move a table between stores under one name, so the per-metaform `spend` stays
+# declared, for version 5's code, which still reads and writes the tables, and for carry_spend() to move its rows.
+SPEND = (Column('session_id', required=True), Column('seq', 'int', required=True),
+         Column('work_id', required=True), Column('run', required=True), Column('day', required=True),
+         Column('tokens', 'int', required=True), Column('cost', 'real'), Column('currency'),
+         Column('input', 'int'), Column('output', 'int'), Column('cache_read', 'int'),
+         Column('cache_write', 'int'), Column('thought', 'int'), Column('metered', 'bool', default=True))
+TABLES = Tables(version=14, compatible_from=5, tables=(  # 5: agents do not ask; 6, 7, 10 to 14 only add
     Table('sessions', key=('session_id',),
           columns=(Column('session_id', required=True), Column('work_id', required=True), Column('agent', required=True),
                    Column('state', required=True), Column('nonce'), Column('pid', 'int'), Column('port', 'int'),
                    Column('token'), Column('how'), Column('started', required=True), Column('seq', 'int', required=True),
-                   Column('runner'), Column('recovery', 'json')),
+                   Column('runner'), Column('recovery', 'json'), Column('origin')),
           indexes=(Index(('work_id', 'seq')), Index(('seq',)))),
     Table('lines', key=('session_id', 'name'),
           columns=(Column('session_id', required=True), Column('name', required=True), Column('work_id', required=True),
@@ -143,13 +154,11 @@ TABLES = Tables(version=12, compatible_from=5, tables=(  # 5: agents do not ask;
     # apart, `tokens` their billable sum (billable() says how), or the cost a usage update added since the one before,
     # in its currency. `metered` is false for a turn that ended with no usage at all, so a session whose agent
     # reports none reads as unmetered rather than as free. Summed per ticket, per run (a runner and the retries of
-    # its sessions) and per UTC day against the budgets, M01.
-    Table('spend', key=('session_id', 'seq'),
-          columns=(Column('session_id', required=True), Column('seq', 'int', required=True),
-                   Column('work_id', required=True), Column('run', required=True), Column('day', required=True),
-                   Column('tokens', 'int', required=True), Column('cost', 'real'), Column('currency'),
-                   Column('input', 'int'), Column('output', 'int'), Column('cache_read', 'int'),
-                   Column('cache_write', 'int'), Column('thought', 'int'), Column('metered', 'bool', default=True)),
+    # its sessions) and per UTC day against the budgets, M01. It is the project's, since a budget is the project's.
+    Table('spending', place='project', key=('session_id', 'seq'), columns=SPEND,
+          indexes=(Index(('work_id',)), Index(('run',)), Index(('day',)))),
+    # Spend as versions before 14 kept it, beside each metaform's map; carry_spend() moves its rows into `spending`.
+    Table('spend', key=('session_id', 'seq'), columns=SPEND,
           indexes=(Index(('work_id',)), Index(('run',)), Index(('day',)))),
     # The supervisor's retries of a ticket's session that stopped without the person's stop, and when the next may run.
     Table('attempts', key=('work_id',),
@@ -157,7 +166,7 @@ TABLES = Tables(version=12, compatible_from=5, tables=(  # 5: agents do not ask;
                    Column('retries', 'int', required=True), Column('next_at', 'real', required=True),
                    Column('how'), Column('handed', 'bool', default=False), Column('seq', 'int', required=True))),
 ))
-PRIVATE = ('port', 'token', 'pid', 'nonce', 'recovery')  # what only this module uses to reach a running session
+PRIVATE = ('port', 'token', 'pid', 'nonce', 'recovery', 'origin')  # what only this module uses to reach a session
 # Dispatch's own agents, each started by default at the version the ACP Registry lists for it, claude-acp, codex-acp
 # and gemini, read 2026-10-12, so every start runs the same adapter until the person pins another, P013; `dispatch
 # registry` names a newer one. Any other agent of the registry is added by the person and pinned, registry.py.
@@ -878,6 +887,17 @@ def runnable(ctx: Context, agent: str) -> None:
                    f'metaform dispatch registry add={agent}')
 
 
+def origin() -> str:
+    """The machine and Metaform home a runner started here records on its session, as `sessions.origin`."""
+    return f'{socket.gethostname()}:{home.home().resolve()}'
+
+
+def foreign(row: dict[str, Any]) -> bool:
+    """Whether a session row is not this home's: started on another machine or by another home, such as the home a
+    copied store came from, or recorded before sessions kept their origin. Nothing resumes it by itself here."""
+    return row.get('origin') != origin()
+
+
 def sessions(store: Store, work_id: str | None = None, *, verify: bool = True,
              open_work: Sequence[WorkRecord] | None = None) -> list[dict[str, Any]]:
     """The sessions, oldest first, of one ticket or of every ticket, read through this module's own tables whatever
@@ -926,6 +946,8 @@ def session_status(store: Store, row: dict[str, Any], *, done: bool | None = Non
         return {**row, 'activity': 'idle'}
     if (done if done is not None else ticket(store, row['work_id']).done) and not summoned(row):
         return {**row, 'state': 'ended', 'how': 'the ticket is done', 'activity': 'idle'}
+    if row.get('origin') and foreign(row):  # its pid and port are another home's, even when they answer
+        return {**row, 'state': 'ended', 'how': FOREIGN, 'activity': 'idle'}
     runner = runner_of(row.get('pid'))
     if runner is None:
         return {**row, 'state': 'ended', 'how': 'the runner is no longer running', 'activity': 'idle'}
@@ -959,6 +981,7 @@ def session_status(store: Store, row: dict[str, Any], *, done: bool | None = Non
 WAITS = {'login-needed': 'login', 'permission-waiting': 'permission', 'question-waiting': 'question'}
 DIED = ('the runner is no longer running', 'the runner is no longer listening', 'its port answers for another session',
         'its pid runs the runner of another ticket')
+FOREIGN = 'another Metaform home started it'
 
 
 def session_work_status(row: dict[str, Any], raised: Sequence[dict[str, Any]] = ()) -> dict[str, str | None]:
@@ -1143,10 +1166,12 @@ def map_work(ctx: Context, *, session: str | None = None, on: Surface | None = N
 
 
 def workflow_skill(ctx: Context, name: str, given: str) -> str:
-    """A skill of the workflow module served whole with an input, for a purpose agent's first turn, VIEW-045."""
+    """A skill served whole with an input, for a purpose agent's first turn, VIEW-045: by workflow serve while the
+    workflow module is on the folder's surface, else from the skill registry by its address, BASE-059."""
     found = next((module for module in surface(ctx.folder) if module.id == 'workflow'), None)
     if found is None:
-        raise Stop('The workflow module is not active; the sentinel is one of its skills.', 'metaform enable workflow')
+        from metaform import skills
+        return skills.served(f'logic.skill.{name}', given)
     verb = next(verb for verb in found.verbs if verb.name == 'serve')
     return str(verb.run(context('workflow', ctx.folder, project=ctx.project, nouns={'name': name, 'input': given})))
 
@@ -1293,16 +1318,31 @@ def billable(counts: dict[str, int | None]) -> int:
     return count('input') + count('output') + count('cache_write') + -(-count('cache_read') // 10)
 
 
-def spend_rows(store: Store, where: dict[str, str]) -> list[dict[str, Any]]:
-    """Spend matching the filters across every base of this project, including bases not active or bound now."""
-    rows: list[dict[str, Any]] = []
+def carry_spend(store: Store) -> None:
+    """Move the spend a metaform of the project still holds beside its map, written there before version 14 or by a
+    runner started before it, into the project's `spending`, then delete it there. A row held already is skipped, so
+    a carry cut short is finished by the next one. A metaform that cannot be read raises: its spend is not left out of
+    the budgets without a word."""
     for base in Store(store.project_id).bases(limit=0).results:
-        try:
-            with Store(store.project_id, base=base.id, module='dispatch').tables(write=False) as tx:
-                rows.extend(dict(row) for row in tx.rows('spend', where, limit=0).results)
-        except StoreError:
+        held = Store(store.project_id, base=base.id, module='dispatch')
+        with held.tables(write=False) as tx:
+            rows = [dict(row) for row in tx.rows('spend', limit=0).results]
+        if not rows:
             continue
-    return rows
+        with own_store(store).tables() as tx:
+            for row in rows:
+                if tx.get('spending', {'session_id': row['session_id'], 'seq': row['seq']}) is None:
+                    tx.insert('spending', row)
+        with held.tables() as tx:
+            for row in rows:
+                tx.delete('spend', {'session_id': row['session_id'], 'seq': row['seq']})
+
+
+def spend_rows(store: Store, where: dict[str, str]) -> list[dict[str, Any]]:
+    """The project's spend matching the filters, whichever metaform it was spent on, that one removed since included."""
+    carry_spend(store)
+    with own_store(store).tables(write=False) as tx:
+        return [dict(row) for row in tx.rows('spending', where, limit=0).results]
 
 
 def spent(store: Store, *, work_id: str | None = None, run: str | None = None,
@@ -1330,10 +1370,9 @@ def spent(store: Store, *, work_id: str | None = None, run: str | None = None,
 
 
 def session_cost(store: Store, session_id: str) -> float:
-    """The cost a session's rows of `spend` hold already, from which a runner counts what its next reading adds."""
+    """The cost a session's rows of `spending` hold already, from which a runner counts what its next reading adds."""
     try:
-        with own_store(store).tables(write=False) as tx:
-            return sum(float(row['cost'] or 0) for row in tx.rows('spend', {'session_id': session_id}, limit=0).results)
+        return sum(float(row['cost'] or 0) for row in spend_rows(store, {'session_id': session_id}))
     except StoreError:
         return 0.0
 
@@ -1661,6 +1700,8 @@ def retry(ctx: Context, store: Store, opened: Sequence[WorkRecord] | None = None
         row = latest.get((record.id, session_id))
         if agent not in agent_choices() or row is None or row['state'] != 'ended' or str(row.get('how') or '') in PERSON_ENDS:
             continue
+        if foreign(row):  # another home's session, in a store copied here: that home's to resume, never this one's
+            continue
         if rework_blocked(ctx, store, record):
             continue
         with own_store(store).tables() as tx:
@@ -1756,6 +1797,8 @@ def stay_connected(ctx: Context, store: Store) -> dict[str, Any]:
                 tx.delete('attempts', {'work_id': held.id})
         return {}
     last = mine[-1] if mine else None
+    if last is not None and foreign(last):  # another home's conversation, in a store copied here: neither resumed
+        return {}                          # nor replaced by a new one; the person's Call starts one here
     session_id, how = (str(last['session_id']), str(last.get('how') or '')) if last is not None else ('', '')
     limit, wait = int(ctx.setting('dispatch_retries')), float(ctx.setting('dispatch_retry_seconds'))
     from .signals import publish
@@ -1825,10 +1868,9 @@ def stay_connected(ctx: Context, store: Store) -> dict[str, Any]:
 
 
 def run_of(store: Store, session_id: str) -> str | None:
-    """The run a session spent against, from its latest row of `spend`; None when it spent nothing yet."""
+    """The run a session spent against, from its latest row of `spending`; None when it spent nothing yet."""
     try:
-        with own_store(store).tables(write=False) as tx:
-            found = tx.rows('spend', {'session_id': session_id}, limit=0).results
+        found = spend_rows(store, {'session_id': session_id})
     except StoreError:
         return None
     return str(max(found, key=lambda one: int(one['seq']))['run']) if found else None
@@ -2119,7 +2161,7 @@ def resumed_conversation(ctx: Context, store: Store, work_id: str, agent: str, a
     None when there is none, or its agent can neither load nor resume it, or its folder is gone, and a new one starts."""
     for row in reversed(sessions(store, work_id)):
         kept = session_state(store, str(row['session_id'])) or {}
-        if row['state'] == 'running' or kept.get('about') != about or row['agent'] != agent:
+        if row['state'] == 'running' or kept.get('about') != about or row['agent'] != agent or foreign(row):
             continue
         caps = cast(dict[str, Any], kept.get('capabilities') or {})
         cwd = kept.get('cwd')
@@ -2310,8 +2352,6 @@ def raise_issue(ctx: Context) -> dict[str, Any]:
     agent = str(ctx.nouns.get('agent') or ctx.setting('dispatch_agent'))
     if found_command(ctx, agent) is None:  # checked before anything is written
         raise Stop(f'The start command of {agent} is not found on this system.', f'metaform set --dispatch-{agent} "<command>"')
-    if not any(module.id == 'workflow' for module in surface(ctx.folder)):  # the sentinel is its skill, checked first
-        raise Stop('The workflow module is not active; the sentinel is one of its skills.', 'metaform enable workflow')
     first = text.splitlines()[0][:120]
     made = map_work(ctx, op='add', node=node, task=f'Issue raised by the person: {first}', title=f'Issue: {first}',
                     note=text, held=True, hold=True)

@@ -582,6 +582,61 @@ function halo(host, radius, scale = 1.24, strength = 1) {
   });
   return shell;
 }
+/* ---------- the bodies drawn together ---------- */
+
+/* Many bodies of one kind and size, or many halos of one shape, drawn in one draw by the page, `nodes3d`: the same
+ * shaders, with what each body's material holds as its own uniforms given instead to each instance, `look`. */
+const BATCH_VERTEX = `attribute vec4 lookA; attribute vec4 lookB; attribute vec4 lookC;
+  varying vec3 vNormal; varying vec3 vView; varying vec3 vAt; varying vec3 vLocal;
+  varying vec3 color; varying float opacity; varying vec3 emissive; varying float emissiveIntensity;
+  varying float seed; varying float select; varying float dim;
+  void main() {
+    vec4 at = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+    vAt = at.xyz; vView = normalize(-at.xyz); vLocal = position;
+    vNormal = normalize(normalMatrix * mat3(instanceMatrix) * normal);
+    color = lookA.rgb; opacity = lookA.a; emissive = lookB.rgb; emissiveIntensity = lookB.a;
+    seed = lookC.x; select = lookC.y; dim = lookC.z;
+    gl_Position = projectionMatrix * at;
+  }`;
+const OWN = `uniform vec3 color; uniform vec3 emissive; uniform float emissiveIntensity; uniform float opacity;`;
+const GIVEN = `varying vec3 color; varying vec3 emissive; varying float emissiveIntensity; varying float opacity;`;
+const BATCH_BODY = BODY_FRAGMENT.replace(OWN, GIVEN)
+  .replace('uniform float seed; uniform float select; uniform float dim;', 'varying float seed; varying float select; varying float dim;');
+const BATCH_HALO = HALO_FRAGMENT.replace(OWN, GIVEN)
+  .replace('uniform float select; uniform float dim;', 'varying float seed; varying float select; varying float dim;');
+/* How a node's part is drawn in a batch, or null when it is drawn alone: a body that is solid and not a part of
+ * another, by its kind and size, and the halo of any body, by its shape. `look` is the material whose values each
+ * instance takes. A body lit alone, a ghost or one fading is see-through and stays drawn alone. */
+export function batch(object) {
+  if (U.drawn !== 'ultra') return null;
+  const material = object.material;
+  if (material instanceof BodyMaterial && !material.transparent && material.visible && !object.userData.host) {
+    return {key: `body:${material.kind}:${material.uniforms.radius.value}`, look: material, make: () =>
+      new THREE.ShaderMaterial({vertexShader: BATCH_VERTEX, fragmentShader: BATCH_BODY,
+        defines: {KIND: KIND[material.kind]}, uniforms: {radius: {value: material.uniforms.radius.value}, ...U.shared}})};
+  }
+  const host = object.userData.host?.material;
+  if (material?.fragmentShader === HALO_FRAGMENT && host instanceof BodyMaterial) {
+    const {edge, strength} = material.uniforms;
+    return {key: `halo:${edge.value}:${strength.value}`, look: host, make: () =>
+      new THREE.ShaderMaterial({vertexShader: BATCH_VERTEX, fragmentShader: BATCH_HALO, side: THREE.BackSide,
+        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+        uniforms: {edge: {value: edge.value}, strength: {value: strength.value}, ...U.shared}})};
+  }
+  return null;
+}
+/* What one instance takes from a body's material: its color and opacity, its signal light, its seed, selection and
+ * dimming, as the body's own material and its halo's `follows` read them. The selection and the dimming ease toward
+ * where they go and never quite arrive, so they are taken to a thousandth, and a body at rest sends nothing. */
+export function lookOf(material, out, at) {
+  const {color, emissive, uniforms} = material;
+  out[at] = color.r; out[at + 1] = color.g; out[at + 2] = color.b; out[at + 3] = material.opacity;
+  out[at + 4] = emissive.r; out[at + 5] = emissive.g; out[at + 6] = emissive.b;
+  out[at + 7] = material.emissiveIntensity;
+  out[at + 8] = uniforms.seed.value;
+  out[at + 9] = Math.round(uniforms.select.value * 1000) / 1000; out[at + 10] = Math.round(uniforms.dim.value * 1000) / 1000;
+  out[at + 11] = 0;
+}
 /* A part of a body that is not the body itself: it never takes a click, which the body's own outline takes, and it
  * takes the body's look each time it is drawn, `sync`. */
 function follows(part, host, sync) {

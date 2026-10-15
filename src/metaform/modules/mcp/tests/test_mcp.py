@@ -3016,13 +3016,18 @@ def test_an_a2a_send_carries_its_address_and_sender_and_what_the_peer_does_lands
     assert verb('exchanges', id=sent['exchange'])['state'] == 'completed'  # read again: no server follows it here
     held = Store('proj').messages(Node('element', 'code.alarm.audible'), limit=0).results
     assert [one.text for one in held if one.by == 'a2a peer'] == ['Louder now']  # the artifact, an item there
-    other = verb('send', peer='peer', address='code.alarm.audible', text='Make it flash')
+    flash = json.loads(run('map', 'work', 'op=add', 'node=code.alarm.audible', 'task=Make it flash', 'title=Flash',
+                           '--json', cwd=mapped).stdout)['id']
+    other = verb('send', peer='peer', address='code.alarm.audible', text='Make it flash', work=flash)
     question = TaskStatus(state=TaskState.TASK_STATE_INPUT_REQUIRED, message=Message(
         message_id='q-1', role=Role.ROLE_AGENT, parts=[Part(text='Which fan is it?')]))
     for _ in range(2):  # heard twice, by two followers: asked once
         a2a_out.heard('proj', other['exchange'], question)
     held = Store('proj').messages(Node('element', 'code.alarm.audible'), limit=0).results
     assert [one.kind for one in held if one.text == 'Which fan is it?'] == ['question']
+    # the exchange keeps the ticket; the question is no permission request, so an agent may answer it too
+    assert a2a_records.exchange('proj', other['exchange']).work_id == flash
+    assert [one.work_id for one in held if one.text == 'Which fan is it?'] == [None]
     posts = []  # what reaches the peer from here on
 
     class Recording(httpx.ASGITransport):
@@ -3032,11 +3037,20 @@ def test_an_a2a_send_carries_its_address_and_sender_and_what_the_peer_does_lands
             return await super().handle_async_request(request)
     monkeypatch.setattr(a2a_out, 'TRANSPORT', Recording(app=app))
     asked = next(one.id for one in held if one.text == 'Which fan is it?')
-    run('map', 'reply', asked, 'answer=Red', cwd=mapped)
+    def answers():
+        return [post['params']['message'] for post in posts if isinstance(post, dict)
+                and post.get('method') == 'SendMessage']
+    reached = []  # a call from the copy of a2a_out the command line loads again, which the stub never sees
+
+    async def unreached(self, request):
+        reached.append(str(request.url))
+        raise httpx.ConnectError('no peer here', request=request)
+    with monkeypatch.context() as patched:
+        patched.setattr(httpx.AsyncHTTPTransport, 'handle_async_request', unreached)
+        run('map', 'reply', asked, 'answer=Red', cwd=mapped)
+    assert answers() == [] and reached == []  # the reply is a local write; it never waits on the peer
     verb('exchanges', id=other['exchange'])
-    answers = [post['params']['message'] for post in posts if isinstance(post, dict)
-               and post.get('method') == 'SendMessage']
-    assert [(one.get('taskId'), [part.get('text') for part in one['parts']]) for one in answers] \
+    assert [(one.get('taskId'), [part.get('text') for part in one['parts']]) for one in answers()] \
         == [(other['peer_task'], ['Red'])]  # the answer, once, on the peer's task, MCP-041
     assert a2a_records.exchange('proj', other['exchange']).asked is None
     cancelled = verb('cancel', id=other['exchange'])

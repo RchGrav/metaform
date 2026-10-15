@@ -34,6 +34,11 @@
      one name and usage description per line. Internal skills remain available through explicit address loading. -->
 <skill_index>Skills: load one with metaform_skills op=load name=&lt;name&gt; or name=logic.skill.&lt;name&gt;.
 <skills/></skill_index>
+<!-- BASE-059: closes the metaform_skills tool description with the discoverable skill names, under the same
+     skill_index auto/on/off rule as the index above. Hosts list tool descriptions without the 2,048-character cut,
+     so this is where the names arrive when the connect message has no room for the index. <skills/> is the names,
+     comma-separated. Empty adds nothing. -->
+<skills_discoverable>Discoverable: <skills/>.</skills_discoverable>
 <!-- metaform://<project> while the map module, which generates the project's glossary, is off for the folder or
      cannot read it: sent after the register standard the map module ships, so the agent knows why no terms follow. -->
 <project_glossary_absent>// No project terms here: the map module, which generates them from the project's map, is off for this folder or the folder has no map yet.</project_glossary_absent>

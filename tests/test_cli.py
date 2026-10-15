@@ -187,6 +187,17 @@ def test_a_dispatched_agent_cannot_set_its_own_controls_from_the_cli(run, switch
 
 
 @pytest.mark.req('CLI-011')
+def test_a_dispatched_agent_cannot_give_itself_person_only_switches_on_a_verb(run, project):
+    run('enable', 'dispatch')
+    call = ('dispatch', 'autostart', '--dispatch-autostart', '--dispatch-agents', '50')
+    refused = run(*call, cwd=project, env={'METAFORM_ROLE': 'system'}, ok=False)
+    assert refused.returncode == 2, refused.stdout + refused.stderr
+    assert 'dispatch_agents, dispatch_autostart are set only by the person' in refused.stderr
+    assert 'Next: metaform map work op=edit' in refused.stderr
+    assert 'retried' in run(*call, cwd=project, env={'METAFORM_ROLE': 'none'}).stdout
+
+
+@pytest.mark.req('CLI-011')
 @pytest.mark.parametrize('switches', [('--jev', '--unglue'), ('all', '--unglue')])
 def test_a_dispatched_agent_cannot_reset_controls_or_partially_apply_a_call(run, switches):
     run('set', '--jev', '--glue', '--modules', 'chassis,map,dispatch,mcp,web')
@@ -200,6 +211,7 @@ def test_a_dispatched_agent_cannot_reset_controls_or_partially_apply_a_call(run,
 
 @pytest.mark.req('CLI-011')
 def test_the_person_can_allow_cli_control_changes_and_ordinary_settings_stay_available(run):
+    run('enable', 'dispatch')
     run('set', '--modules', 'chassis,map,dispatch,mcp,web', env={'METAFORM_ROLE': 'worker'})
     run('set', '--jev', env={'METAFORM_ROLE': 'none'})
     run('unset', '--jev')

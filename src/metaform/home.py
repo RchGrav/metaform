@@ -1092,7 +1092,7 @@ def to_clear(project_id: str) -> Cleared:
 
 
 def clear_project(project_id: str) -> Cleared:
-    """Remove every base of the project with its store, its report files and its source placement runs, PROJ-025.
+    """Remove every base of the project with its store and its report files, PROJ-025.
 
     The registration, the settings, the history and everything else in the project's folder stay, PROJ-026. The
     rows go whatever happens to the files; a file or folder that cannot be removed is named in the result.
@@ -1115,8 +1115,6 @@ def clear_project(project_id: str) -> Cleared:
     for store in stores:
         _remove_files(store, failed)
     _remove_tree(folder / 'reports', failed)
-    # Every base is gone. Its placement runs and launch receipts cannot be resumed, and stay removed on restore.
-    _remove_tree(folder / 'source_placement', failed)
     changes.note(project_id)
     return Cleared(found.project_id, found.bases, found.reports, _innermost(failed),
                    saved.name if saved is not None else None)

@@ -173,6 +173,9 @@ settings.number('web_pulse_ms', 3000, min=200, max=30000, scope='global',
                 help='The usual wait, in milliseconds, between one request and reply on a join and the next.',
                 details='Each join waits (random + random) times this after each cycle, a fresh wait every time, so '
                         'the flow bunches about this pace and never pulses in step, in the 3D and the 2D map.')
+settings.number('web_bubble_seconds', 10, min=1, max=120, scope='global',
+                help="How long, in seconds, an agent's speech bubble stays up after each new line it says.",
+                details='The next line the agent says brings the bubble back; between lines it fades out.')
 settings.boolean('web_idle_flow', True, scope='global',
                  help='Keep the dots flowing for as long as the page is open, past web_flow_seconds.',
                  details='On, an idle map is still drawn at the full frame rate so the flow never stops and stays '

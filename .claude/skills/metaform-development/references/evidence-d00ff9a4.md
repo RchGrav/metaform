@@ -1,0 +1,1 @@
+test_the_person_can_allow_cli_control_changes_and_ordinary_settings_stay_available: 1 failed, 6 passed; Error: --dispatch-prompts is not a setting. Fix: run('enable', 'dispatch') added as its first line, and the group passed.

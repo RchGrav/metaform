@@ -14,8 +14,13 @@ import {FLOW, flowShown, flowModeNow, flowNet, flowAt, flowTick} from '/page/app
 
 /* The 3D flow's two objects: points, each a dot, a card or a ring by its shape, and line segments for the streaks'
  * tails, both added to what is behind them so they read as light. Their buffers grow as needed and are filled again
- * each frame. A point's size is in map units, held between a few pixels and its own most, `look`. */
-export const FX = {scene: null, points: null, lines: null, n: 0, m: 0, cap: 0, capL: 0, tints: new Map(), fade: 1};
+ * each frame. A point's size is in map units, held between a few pixels and its own most, `look`. Each frame fills
+ * the next of RING pairs and shows it alone: a buffer the GPU may still be reading for a frame before is never
+ * written, since that write waits for the frame to be drawn, `fibers3d`. `points`, `lines` and the arrays are the
+ * pair being filled. */
+export const FX = {scene: null, points: null, lines: null, n: 0, m: 0, cap: 0, capL: 0, tints: new Map(), fade: 1,
+  ring: [], at: 0};
+const RING = 3;
 const WHITE = new THREE.Color(1, 1, 1), LIT = new THREE.Color();
 export function tintOf(color) {
   if (!FX.tints.has(color)) FX.tints.set(color, color ? new THREE.Color(color) : WHITE.clone());
@@ -64,17 +69,37 @@ function fxMake() {
   if (FX.scene === scene) return;
   FX.scene = scene;
   const light = {transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false};
-  FX.points = new THREE.Points(new THREE.BufferGeometry(), new THREE.ShaderMaterial({...light,
-    uniforms: {scale: {value: 1}, ratio: {value: 1}}, vertexShader: POINTS_VERTEX, fragmentShader: POINTS_FRAGMENT}));
-  FX.lines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.ShaderMaterial({...light,
-    vertexShader: LINES_VERTEX, fragmentShader: LINES_FRAGMENT}));
-  for (const object of [FX.points, FX.lines]) {
-    object.frustumCulled = false;
-    object.renderOrder = 10;
-    scene.add(object);
+  const points = new THREE.ShaderMaterial({...light, uniforms: {scale: {value: 1}, ratio: {value: 1}},
+    vertexShader: POINTS_VERTEX, fragmentShader: POINTS_FRAGMENT});
+  const lines = new THREE.ShaderMaterial({...light, vertexShader: LINES_VERTEX, fragmentShader: LINES_FRAGMENT});
+  FX.ring = Array.from({length: RING}, () => {
+    const pair = {points: new THREE.Points(new THREE.BufferGeometry(), points),
+      lines: new THREE.LineSegments(new THREE.BufferGeometry(), lines), cap: 0, capL: 0};
+    for (const object of [pair.points, pair.lines]) {
+      object.frustumCulled = false;
+      object.renderOrder = 10;
+      object.visible = false;
+      scene.add(object);
+    }
+    return pair;
+  });
+  FX.points = null;
+  for (FX.at = 0; FX.at < RING; FX.at++) {
+    Object.assign(FX, {...FX.ring[FX.at], pos: null, tint: null, look: null, lpos: null, lcol: null});
+    fxGrow(true); fxGrow(false);
+    Object.assign(FX.ring[FX.at], {cap: FX.cap, capL: FX.capL, pos: FX.pos, tint: FX.tint, look: FX.look,
+      lpos: FX.lpos, lcol: FX.lcol});
   }
-  FX.cap = FX.capL = 0;
-  fxGrow(true); fxGrow(false);
+  FX.at = RING - 1;
+}
+/* The next pair of the ring, the one to fill this frame, its buffers as the last frame it was filled grew them. */
+function fxNext() {
+  Object.assign(FX.ring[FX.at], {cap: FX.cap, capL: FX.capL, pos: FX.pos, tint: FX.tint, look: FX.look,
+    lpos: FX.lpos, lcol: FX.lcol});
+  FX.at = (FX.at + 1) % RING;
+  const pair = FX.ring[FX.at];
+  Object.assign(FX, {points: pair.points, lines: pair.lines, cap: pair.cap, capL: pair.capL, pos: pair.pos,
+    tint: pair.tint, look: pair.look, lpos: pair.lpos, lcol: pair.lcol});
 }
 /* A buffer `size` long holding what the old one held. */
 function grown(old, size) {
@@ -120,6 +145,7 @@ export function fxLine(a, b, color, glowA, glowB) {
 }
 function fxDone() {
   if (!FX.points) return;
+  for (const pair of FX.ring) if (pair.points !== FX.points) pair.points.visible = pair.lines.visible = false;
   const renderer = G.renderer(), camera = G.camera();
   const scale = renderer.domElement.height / (2 * Math.tan((camera.fov || 50) * Math.PI / 360));
   FX.scale = FX.points.material.uniforms.scale.value = scale;
@@ -233,7 +259,7 @@ export function flow3d(now, data) {
   // the clock moves by the frame's own time, as the 2D map's does: a time read partway through the frame differs from
   // frame to frame by the work done before it, and the dots would jump by that much
   flowTick(FRAMES.last || now);
-  if (FLOW.held === null) fxMake();
+  if (FLOW.held === null) { fxMake(); fxNext(); }
   FX.n = FX.m = 0;
   const {ways, count} = waysOf(data);
   FLOW.count = FLOW.held !== null ? count : 0;

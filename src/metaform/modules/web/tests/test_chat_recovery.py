@@ -97,6 +97,46 @@ def test_close_and_escape_preserve_a_working_system_session_and_stop_can_resume_
 
 
 @pytest.mark.kind('fixture')
+def test_the_boards_recall_puts_the_stopped_session_in_the_docks_recovery_list(
+        run, home, web, mapped, browser, tmp_path):  # noqa: F811
+    from metaform.modules.dispatch.tests.test_dispatch import Dispatch, end_agent, eventually, gone
+
+    agent = Dispatch(run, home, mapped, tmp_path)
+    agent.start('hold')
+    session = agent.session().extra['session_id']
+
+    def sessions():
+        return json.loads(run('dispatch', 'sessions', f'id={agent.id}', '--json', cwd=mapped).stdout)['sessions']
+    try:
+        eventually(lambda: agent.received('session/prompt'))
+        started(run)
+        page, problems, _ = opened(browser, web, plain=True)
+        stops = []
+        page.on('request', lambda req: stops.append(req.post_data_json)
+                if '/api/dispatch-stop' in req.url else None)
+        page.click('#boardBtn')
+        page.wait_for_function('() => window.metaform?.loaded()')
+        card = page.locator(f'#board .card[data-id="{agent.id}"]')
+        card.locator('.ticket-settings > summary').click()
+        card.locator('.recall').click()
+        eventually(lambda: sessions()[0]['state'] == 'ended')
+        page.keyboard.press('Escape')
+        page.click('#dockTab')
+        page.wait_for_function('() => !document.querySelector("#helpdesk .stopped-agents").hidden'
+                               ' || document.querySelector("#agentbox .stopped-agent")')
+        assert page.locator('#agentbox .stopped-agent button.resume').count() == 1
+        assert page.locator('#helpdesk .stopped-agents .agent-session').count() == 1
+        row = page.locator(f'#helpdesk .stopped-agents .agent-session[data-session="{session}"]')
+        assert row.locator('button.resume').count() == 1
+        assert [(one['work_id'], one.get('session')) for one in stops] == [(agent.id, session)]
+        assert problems == []
+    finally:
+        agent.stop()
+        agent.close()
+        assert gone(end_agent(agent.log, True))
+
+
+@pytest.mark.kind('fixture')
 def test_a_close_while_call_is_pending_keeps_the_returned_session_and_chat_hidden(
         run, web, mapped, browser):  # noqa: F811
     run('enable', 'dispatch')

@@ -57,7 +57,7 @@ from metaform.module import (
     surface,
 )
 
-from . import AGENTS, REPLY_LIMIT, SERVED, anchor, argv, end_group, group_options, prompt, runner_of, sessions
+from . import AGENTS, REPLY_LIMIT, SERVED, anchor, argv, end_group, group_options, origin, prompt, runner_of, sessions
 from . import proxy as layers
 from .signals import add_line
 
@@ -1290,7 +1290,7 @@ class Record:
         self.server = await asyncio.start_server(self.control, '127.0.0.1', 0)
         self.port = int(self.server.sockets[0].getsockname()[1])
         mine = {'state': 'running', 'pid': os.getpid(), 'port': self.port, 'token': self.token, 'how': None,
-                'runner': self.session.token}
+                'runner': self.session.token, 'origin': origin()}
         session_id = self.session.session_id
 
         def write(tx: Any) -> None:

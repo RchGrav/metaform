@@ -465,15 +465,30 @@ def client_name(ctx: Any) -> str | None:
 HOST_KEEPS = 2048  # the characters of the connect message Claude Code keeps, MCP-029
 
 
-def skill_index(folder: Path, client: str | None = None, room: int | None = None) -> str:
-    """Fallback discovery only where a completed native deployment does not provide it, BASE-059. Within `room`
-    characters: each skill with its description, else the names alone, for metaform_skills op=list to describe, else
-    nothing, since what passes the host's cut never arrives."""
+def fallback_skills(folder: Path, client: str | None = None) -> list[dict[str, Any]]:
+    """The discoverable skills a connecting harness is told of, BASE-059: none with skill_index off, or auto where a
+    completed native deployment already provides them."""
     from metaform import install, skills
     mode = settings.value('skill_index', folder)
     if mode == 'off' or (mode == 'auto' and client and install.skills_deployed(client)):
-        return ''
-    entries = skills.listing(discoverable=True)
+        return []
+    return skills.listing(discoverable=True)
+
+
+def skills_said(folder: Path, client: str | None = None) -> str:
+    """metaform_skills' description, closed by the names of `fallback_skills`: tool descriptions are listed by every
+    host and no host cuts them, so the names reach the agent when the connect message has no room for the index."""
+    said = CHASSIS['skills'][0]
+    names = ', '.join(one['name'] for one in fallback_skills(folder, client))
+    named = prompt_files.module('mcp', 'skills_discoverable', skills=names) if names else None
+    return f'{said} {named}' if named else said
+
+
+def skill_index(folder: Path, client: str | None = None, room: int | None = None) -> str:
+    """Fallback discovery only where a completed native deployment does not provide it, BASE-059. Within `room`
+    characters: each skill with its description, else the names alone, for metaform_skills op=list to describe, else
+    nothing here, since what passes the host's cut never arrives; metaform_skills' description names them still."""
+    entries = fallback_skills(folder, client)
     if not entries:
         return ''
     lines = '\n'.join(f'{one["name"]}: {one["description"]}' for one in entries)
@@ -721,19 +736,21 @@ def rules(folder: Path) -> str:
     return heading + '\n' + '\n'.join(lines) if heading and lines else ''
 
 
-def listing(folder: Path) -> dict[str, Listed]:
+def listing(folder: Path, client: str | None = None) -> dict[str, Listed]:
     """Every tool the server lists, by name in order, CLI-037 and MCP-003: each surfaced module verb as
     `<module>_<verb>`, described by its summary and its caution, and the chassis's own commands as
     `metaform_<command>`, the history, prompt and clear commands only while the chassis is on the folder's surface,
     MCP-004. Each command is described once, here, with its arguments' schema built from its declaration, so an agent
-    plans a call from the list alone and the list is the same on every connection to the folder."""
+    plans a call from the list alone and the list is the same on every connection to the folder, but for the skill
+    names metaform_skills' description gives the `client` harness, BASE-059."""
     found = {name: Listed(name, verb.summary + (f' Caution: {verb.caution}' if verb.caution else ''),
                           functools.partial(verb_schema, verb, folder), verb.effect, verb.open_world, verb.task)
              for name, (_, verb) in tools(folder).items()}
     own: dict[str, tuple[str, Callable[[], dict[str, Any]]]] = {
         'set': ("Save Metaform settings for the server's folder, as metaform set does.",
                 functools.partial(set_schema, folder)),
-        **{name: (said, _fixed(schema)) for name, (said, schema) in CHASSIS.items()}}
+        **{name: (said, _fixed(schema)) for name, (said, schema) in CHASSIS.items()},
+        'skills': (skills_said(folder, client), _fixed(CHASSIS['skills'][1]))}
     if on_surface('chassis', folder):
         own.update({name: (said, _fixed(schema)) for name, (said, schema) in SURFACED.items()})
     found.update({f'{OWN}_{name}': Listed(f'{OWN}_{name}', said, build, CHASSIS_EFFECTS[name])
@@ -1445,8 +1462,8 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
                                                                    idempotent_hint=True, open_world_hint=False))
                       for name, (description, schema) in SEARCH_FETCH.items()]
 
-    def build(shown: bool) -> list[Any]:
-        listed = [tool(one, shown) for one in listing(folder).values()]
+    def build(shown: bool, client: str | None = None) -> list[Any]:
+        listed = [tool(one, shown) for one in listing(folder, client).values()]
         if searching:
             listed = sorted([*listed, *searched_tools], key=lambda one: one.name)
         return sorted([*listed, view_tool], key=lambda one: one.name) if shown else listed
@@ -1522,7 +1539,7 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
             own[kind] = now
 
     async def list_tools(ctx: Any, params: Any) -> Any:
-        tools = await anyio.to_thread.run_sync(build, apps(ctx))
+        tools = await anyio.to_thread.run_sync(build, apps(ctx), client_of(ctx))
         await listed_now(ctx, 'tools')
         return types.ListToolsResult(tools=tools)
 

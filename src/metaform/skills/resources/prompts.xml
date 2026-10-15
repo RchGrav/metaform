@@ -606,4 +606,18 @@ and every run starts from them instead of reasoning them again: inference amorti
 
   ?IF ({Valid} == TRUE) -&gt; YIELD
   :ELSE -&gt; EXECUTE_PIPELINE(Apply_Register)</lib_quality>
+<!-- The frame for a skill sent to an agent that is already connected: <libs/>, <skill/> and <input/>, with no run to resume.
+     Sent by workflow serve, and by dispatch as the sentinel agent's first message, with or without the workflow module.
+     Must not be removed: the code requires it. -->
+<served><libs/>
+
+<skill/>
+
+<input/></served>
+<!-- Wraps the input given to a skill as data, so it is not read as instructions; <input/> is that input.
+     Placed at <input/> in served and in workflow's assignment, only when an input was given. The sentinel always has one.
+     Must not be removed: the code requires it. -->
+<assignment_input>&lt;&lt;DATA: Input&gt;&gt;
+<input/>
+&lt;&lt;END DATA&gt;&gt;</assignment_input>
 </prompts>

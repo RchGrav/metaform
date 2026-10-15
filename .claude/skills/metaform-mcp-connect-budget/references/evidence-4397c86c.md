@@ -1,0 +1,1 @@
+Ticket resolution on code.registry.skill#6: "with every module on and first-run showing, connect_instructions(folder,'unknown-host') was the 2041-char startup text with no skill names"; the critic's report noted "with every module on and first-run showing, startup is ~2041 of 2048".

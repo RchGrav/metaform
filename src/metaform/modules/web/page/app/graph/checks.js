@@ -232,8 +232,8 @@ function box2d(id) {
  * What the flow draws this frame, `FLOW`: the 3D map's points and line ends, the agents' trips under way, and the
  * shapes shown on the 2D map's selected edges; `live` draws one trip as the event stream would, `flowLive`. */
 function flowDrawn() {
-  const shapes2d = M.svg ? [...M.svg.querySelectorAll('g.flows2d > *')].filter(shape => shape.style.display !== 'none')
-    .map(shape => shape.getAttribute('class')) : [];
+  const shapes2d = M.svg ? [...M.svg.querySelectorAll('g.flows2d :is(.train, .ask, .record, .ring)')]
+    .filter(shape => shape.style.display !== 'none').map(shape => shape.getAttribute('class')) : [];
   return {points: FX.n, lines: FX.m, live: FLOW.live.length, clock: FLOW.clock, shapes2d};
 }
 /* Each node's reach on the screen, `REACH`, in the 3D map or the 2D one: its centre, its box in 2D, and its reach. */

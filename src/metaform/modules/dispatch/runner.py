@@ -105,6 +105,7 @@ from . import (
     module_read,
     next_ticket,
     option_key,
+    origin,
     over_budget,
     prompt,
     release,
@@ -1774,9 +1775,9 @@ class Session:
     # ------------------------------------------------------------------ spend, M01
 
     async def spend(self, usage: Any) -> None:
-        """What a turn used, as the agent reported it at the turn's end, kept as a row of `spend` for the ticket, the run
-        and the day: each kind of token apart and their billable sum, `billable`. A turn that ended with no usage at
-        all, as an agent that reports none ends every turn, is kept as unmetered, so dispatch spend can say a budget
+        """What a turn used, as the agent reported it at the turn's end, kept as a row of `spending` for the ticket, the
+        run and the day: each kind of token apart and their billable sum, `billable`. A turn that ended with no usage
+        at all, as an agent that reports none ends every turn, is kept as unmetered, so dispatch spend can say a budget
         cannot see it. Then the budgets are checked."""
         counts: dict[str, int | None] = {'input': None, 'output': None, 'cache_read': None, 'cache_write': None,
                                          'thought': None}
@@ -1791,7 +1792,7 @@ class Session:
         self.reported('spent')
         row = {'session_id': cast(str, self.session_id), 'seq': time.time_ns(), 'work_id': self.work_id,
                'run': self.run_id, 'day': today(), 'tokens': tokens, 'metered': usage is not None, **counts}
-        await self.table(lambda tx: tx.insert('spend', row), name='spend')
+        await self.table(lambda tx: tx.insert('spending', row), name='spending')
         self.provisional = 0  # the turn's estimate gives way to what the agent reported
         await self.budget_check()
 
@@ -1810,7 +1811,7 @@ class Session:
 
     async def cost_spent(self, cost: dict[str, Any]) -> None:
         """A usage update's cost, ACP's session usage, which is the session's cumulative cost: what it added since the
-        last reading is kept as a row of `spend`, never the running total. A reading before this runner's first
+        last reading is kept as a row of `spending`, never the running total. A reading before this runner's first
         prompt, which ACP's session usage has an agent send after session/load or resume, is the session's standing
         total: it is the baseline, and adds nothing. Without one, the first reading counts from what the session's rows
         hold already, so a resumed session's history is not counted twice; a reading below the last is an agent that
@@ -1838,7 +1839,7 @@ class Session:
         self.reported('spent')
         row = {'session_id': self.session_id, 'seq': time.time_ns(), 'work_id': self.work_id, 'run': self.run_id,
                'day': today(), 'tokens': 0, 'cost': added, 'currency': currency or None, 'metered': True}
-        await self.table(lambda tx: tx.insert('spend', row), name='spend')
+        await self.table(lambda tx: tx.insert('spending', row), name='spending')
         await self.budget_check()
 
     async def budget_check(self, pending: int = 0) -> None:
@@ -2815,7 +2816,8 @@ class Session:
         if self.ending:
             return
         row = {key: value for key, value in self.extra('running').items() if key != 'dispatch'}
-        row.update(started=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), seq=time.time_ns() // 1_000_000)
+        row.update(started=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), seq=time.time_ns() // 1_000_000,
+                   origin=origin())
         def take() -> None:
             with self.store.atomic():
                 if not self.prep:
@@ -2842,7 +2844,7 @@ class Session:
                                        f'metaform dispatch sessions id={self.work_id}')
                         tx.update('sessions', {'session_id': self.session_id},
                                   {key: row[key] for key in ('state', 'recovery', 'pid', 'port', 'token', 'how',
-                                                             'runner')})
+                                                             'runner', 'origin')})
                     else:
                         tx.insert('sessions', row)
                 if not self.prep:

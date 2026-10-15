@@ -126,20 +126,6 @@ Task := <task/></scan_input>
 
 When your YIELD is complete, run `metaform workflow complete run=<run/> --project <project/>`, or over MCP call `workflow_complete` with run <run/>.</assignment>
 
-<!-- The frame for a skill sent to an agent that is already connected: <libs/>, <skill/> and <input/>, with no run to resume.
-     Sent by workflow serve, and by dispatch as the sentinel agent's first message.
-     Must not be removed: the code requires it. -->
-<served><libs/>
-
-<skill/>
-
-<input/></served>
-<!-- Wraps the input given to a skill as data, so it is not read as instructions; <input/> is that input.
-     Placed at <input/> in assignment and served, only when an input was given. The sentinel always has one.
-     Must not be removed: the code requires it. -->
-<assignment_input>&lt;&lt;DATA: Input&gt;&gt;
-<input/>
-&lt;&lt;END DATA&gt;&gt;</assignment_input>
 <!-- The person's answer to what stopped an assignment, bound as data so it is not read as instructions. <found/> is what the agent said stopped it, <answer/> the person's answer.
      Placed after the input in assignment once the person has answered with workflow answer. Must not be removed: the code requires it. -->
 <assignment_answer>&lt;&lt;DATA: The person's answer&gt;&gt;

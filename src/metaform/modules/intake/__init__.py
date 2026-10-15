@@ -310,14 +310,41 @@ def _recording(ctx: Context, notices: Notices) -> Recording:
     return made
 
 
-def _lock(store: Store) -> AbstractContextManager[BinaryIO]:
-    """The project's intake lock, between processes: a check that no intake is being recorded and the opening of one
-    are one step, and a finish is another, so two calls at once never open two, QUAL-001 and BASE-039."""
+def _folder(store: Store) -> Path:
+    """The project's folder in the Metaform home, where its intake lock and its verification pass are kept."""
     folder = home.project_folder(store.project_id)
     if folder is None:
         raise Stop(f'No project {store.project_id} is registered.', 'metaform list projects')
     home.mkdir_private(folder)
-    return home.file_lock(folder / 'intake.lock')
+    return folder
+
+
+def _lock(store: Store) -> AbstractContextManager[BinaryIO]:
+    """The project's intake lock, between processes: a check that no intake is being recorded and the opening of one
+    are one step, and a finish is another, so two calls at once never open two, QUAL-001 and BASE-039."""
+    return home.file_lock(_folder(store) / 'intake.lock')
+
+
+VERIFYING = 'intake.verifying'  # an open verification pass: the file holds the id of the finished base it writes onto
+
+
+def _verifying(store: Store) -> bool:
+    """Whether a verification pass is open on the active metaform: intake start with no name on its finished map
+    opened it, and its finish closes it. Kept in the home, so every process of the pass reads it."""
+    active = store.active_base()
+    try:
+        return active is not None and (_folder(store) / VERIFYING).read_text(encoding='utf-8') == active.id
+    except OSError:
+        return False
+
+
+def _verify(store: Store, base: str | None) -> None:
+    """Open a verification pass on the base with this id, or close the one open."""
+    path = _folder(store) / VERIFYING
+    if base is not None:
+        home.write_private(path, base)
+    else:
+        path.unlink(missing_ok=True)
 
 
 def _opened(ctx: Context, store: Store, notices: Notices, named: str = '') -> tuple[Recording, bool]:
@@ -335,14 +362,19 @@ def start(ctx: Context) -> Any:
     found = _building(store)
     # a name asks for a new intake
     if found is None and (mapped := _active_map(store)) is not None and not ctx.nouns.get('name'):
+        active = store.active_base()
+        assert active is not None  # _active_map found it
+        _verify(store, active.id)
         notices.append({'where': 'intake', 'message': f'The active metaform {mapped.metaform} has a finished intake. '
-                        'Conditions, their notes and refs recorded on its elements and purpose records are written onto it, '
-                        'and a changed field of one is refined there, keeping every version. Only a new element or '
-                        'purpose record starts a new intake in a new base, kept apart until it finishes.'})
+                        'What you record now is written onto it: a changed field is refined, a new element or purpose '
+                        'record is added to it, keeping every version, and conditions, notes and refs are kept with '
+                        'it. intake start name=<x> begins a separate intake in a new base.'})
         return {'layer': mapped.layer.name, 'project': store.project_id, 'base': mapped.metaform, 'notices': notices}
     opened = False
     if found is None:
         found, opened = _opened(ctx, store, notices, str(ctx.nouns.get('name') or '').strip())
+        if opened:  # a separate intake ends a verification pass
+            _verify(store, None)
     if not opened:
         notices.append({'where': 'intake', 'message': f'An intake is already being recorded in layer '
                                                       f'{found.layer.name} of metaform {found.metaform}; this call '
@@ -432,6 +464,15 @@ def element(ctx: Context) -> Any:
     address = ctx.nouns[ADDRESS]
     mapped = _active_map(ctx.require_store())
     current_map = mapped.store.element(address, raw=True) if mapped is not None else None
+    if mapped is not None and current_map is None and _verifying(mapped.store):
+        # a new element of a verification pass is added to the finished map, in its own layer, LAYER-025
+        shape = {key: _whole(ctx.nouns.get(key)) for key in SHAPE_FIELDS}
+        for field in ('role', 'name'):
+            if shape[field] is None:
+                notices.append({'where': field, 'message': f'{field} is missing; stored empty.'})
+        with _lock(mapped.store):
+            _note(notices, mapped.store.add_element(mapped.layer.name, address, **shape))
+        current_map = mapped.store.element(address, raw=True)
     if mapped is not None and current_map is not None:
         # a field changed on an element of the finished map is refined there, a new version, LAYER-025
         shape = {key: _whole(ctx.nouns.get(key)) for key in SHAPE_FIELDS}
@@ -484,6 +525,14 @@ def _task(condition: str | None, note: str | None) -> str | None:
     return f'{note.strip()}\n\n{FIX[condition]}' if note and note.strip() else FIX[condition]
 
 
+def _holds(merged: str | None, note: str) -> bool:
+    """A merged note holds this note when it is the whole note or one of its paragraphs, the blank-line-separated
+    findings a merge joins; a note that is only a part of a paragraph is a new finding."""
+    note, merged = note.strip(), (merged or '').strip()
+    return note == merged or f'\n\n{note}\n\n' in f'\n\n{merged}\n\n' \
+        or note in (block.strip() for block in merged.split('\n\n'))
+
+
 def _finding(row: WorkRecord) -> bool:
     """A work record the intake wrote: no task, or the task built from its own condition and note. Once someone
     rewrites the task it is their ticket, and a condition recorded again leaves it alone."""
@@ -523,7 +572,7 @@ def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], t
         return
     if same:
         # a note this ticket already holds, as one a purpose record's marker joined, is kept with what joined it
-        if not (note and note.strip() and note.strip() in (same[0].note or '')) and \
+        if not (note and note.strip() and _holds(same[0].note, note)) and \
                 (same[0].note, same[0].task) != (note, task):
             _note(notices, rec.store.edit_work(same[0].id, {'note': note, 'task': task}))
         return
@@ -537,7 +586,7 @@ def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], t
     # A merged note still holds each original finding, even after an agent takes its ticket.
     for row in around:
         exact = row.condition == condition and row.note == note
-        held = task is not None and note and note.strip() and row.condition in FIX and note.strip() in (row.note or '')
+        held = task is not None and note and note.strip() and row.condition in FIX and _holds(row.note, note)
         if _finding(row) and (exact or held):
             if row.taken:
                 notices.append({'where': 'condition', 'message': f'{condition} is open here and an agent has taken it; '
@@ -554,7 +603,7 @@ def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], t
     joined = next((row for row in around if task is not None and _finding(row) and row.condition in FIX
                    and not row.taken), None)
     if joined is not None:
-        if note and note.strip() and note.strip() not in (joined.note or ''):
+        if note and note.strip() and not _holds(joined.note, note):
             merged = f'{joined.note.strip()}\n\n{note.strip()}' if joined.note and joined.note.strip() else note
             _note(notices, rec.store.edit_work(joined.id, {'note': merged, 'task': _task(joined.condition, merged)}))
         notices.append({'where': 'condition', 'message': f'A marker is open on the element and its purpose record; '
@@ -586,9 +635,29 @@ def purpose(ctx: Context) -> Any:
         held_map = _joins_holding(mapped.store, mapped.layer, receiver, elements)
         holding = [each.address for each in held_map[0].elements] if len(held_map) == 1 else []
         added = [address for address in elements if address not in holding]
+        verifying = _verifying(mapped.store)
+        if verifying and len(held_map) > 1:
+            notices.append({'where': 'elements', 'message': f'{receiver} has {len(held_map)} purpose records holding '
+                                                            'these elements, with the purposes '
+                                                            f'{"; ".join(repr(held.purpose) for held in held_map)}; '
+                                                            'name elements that only one of them holds. Nothing was '
+                                                            'changed.'})
+            return {'receiver': receiver, 'elements': elements, 'layer': mapped.layer.name, 'base': mapped.metaform,
+                    'notices': notices}
+        if verifying and not held_map:
+            # a new purpose record of a verification pass is added to the finished map, in its own layer, LAYER-025
+            for field in JOIN_FIELDS:
+                if ctx.nouns.get(field) is None:
+                    notices.append({'where': field, 'message': f'{field} is missing; stored empty.'})
+            with _lock(mapped.store):
+                made = mapped.store.add_join(mapped.layer.name, receiver, elements,
+                                             **{field: ctx.nouns.get(field) for field in JOIN_FIELDS})
+            _note(notices, made, _words(mapped.store, mapped.layer))
+            held_map, holding, added = [made] if isinstance(made, Join) else [], list(elements), []
         # a purpose record of the finished map is refined there, LAYER-025; an element it would hold that the map
-        # lacks is new shape, recorded in a new intake
-        if len(held_map) == 1 and all(mapped.store.element(str(address), raw=True) is not None for address in added):
+        # lacks is new shape, added to the map in a verification pass and recorded in a new intake otherwise
+        if len(held_map) == 1 and (verifying or all(mapped.store.element(str(address), raw=True) is not None
+                                                    for address in added)):
             refined: dict[str, Any] = {key: ctx.nouns[key] for key in JOIN_FIELDS
                                        if ctx.nouns.get(key) is not None
                                        and ctx.nouns.get(key) != getattr(held_map[0], key)}
@@ -841,6 +910,7 @@ def finish(ctx: Context) -> Any:
     feedback = _given(ctx, 'feedback', notices)
     with _lock(store):  # the intake finished is the one being recorded when the lock is held, and none opens meanwhile
         found = _building(store)
+        verified = found is None and _verifying(store) and (found := _active_map(store)) is not None
         if found is None:
             return {'layer': None, 'project': store.project_id, 'base': None, 'elements': 0, 'purposes': 0, 'work': 0,
                     'notices': notices + [{'where': 'intake', 'message': 'No intake is being recorded; there is '
@@ -852,8 +922,14 @@ def finish(ctx: Context) -> Any:
                                                                f'{"was" if len(undescribed) == 1 else "were"} named in '
                                                                'a purpose record but never described with intake '
                                                                'element; stored without a role or a name_length.'})
-        _note(notices, found.store.finish(found.layer.name))
         previous = None
+        if verified:  # the map it wrote onto is finished and active already; nothing is finished or activated
+            _verify(store, None)
+            notices.append({'where': 'intake', 'message': f'The verification pass on {found.metaform} is finished; '
+                                                          'what it recorded is on that map, and no base was opened '
+                                                          'or activated.'})
+        else:
+            _note(notices, found.store.finish(found.layer.name))
         if not found.active:
             previous = store.active_base()
             store.activate_base(found.metaform)
@@ -883,7 +959,7 @@ def finish(ctx: Context) -> Any:
     # A map with a code trunk is ready for its code: the map module reads it into its own layer, P167.
     code = any(element.address.split('.', 1)[0] == 'code' for element in elements)
     follow_on: list[dict[str, Any]] = []
-    if code:
+    if code and not verified:  # a verification pass finishes no layer, so intake.finished is not sent for it
         base = found.store.bound_base()
         if base is not None:
             # Optional enrichment receives the committed map, even when this call resolved its project implicitly.
@@ -982,14 +1058,16 @@ MODULE = Module(
         Verb('schema', schema, 'Read the shape the intake records: namespace roots, Upstream and Downstream links, '
                                'element and purpose forms.', effect='read'),
         Verb('start', start, "Start recording this project's intake, or resume the one being recorded. On a project "
-                             'whose intake is finished it stays on that map: conditions, notes and refs are written '
-                             'onto it, and recording a new element or purpose record opens a separate intake-<UTC timestamp> '
-                             'metaform, keeping the earlier one untouched. Returns its name; the existing web GUI '
-                             'follows it live.',
+                             'whose intake is finished it opens a verification pass on that map: changed fields are '
+                             'refined, new elements and purpose records are added to it, conditions, notes and refs '
+                             'are written onto it, and intake finish closes the pass. With name it opens a separate '
+                             'intake in a new metaform instead, keeping the earlier one untouched. Returns its name; '
+                             'the existing web GUI follows it live.',
              nouns=(Noun('result', 'The result id the intake procedure generates and gives at start, kept with the intake.', required=False),
                     Noun('name', "On a project that has an intake already, the new intake's metaform is named for what it is "
                                  "for, from the person's request, such as web-interface-refactor: 1 to 64 letters, digits, "
-                                 "., _ and -. Given, it opens that new intake at once; with none, intake-<UTC timestamp>.",
+                                 "., _ and -. Given, it opens that new intake at once; with none, start opens a "
+                                 'verification pass on the finished map.',
                          required=False),
                     Noun('model', 'The model that performs the intake.', required=False),
                     Noun('role', 'The role of the agent that performs it.', required=False))),
@@ -1019,7 +1097,8 @@ MODULE = Module(
                     Noun('provider', P('provider', ''), required=False),
                     Noun(ADDRESS, E(ADDRESS, ''), required=False)), effect='remove'),
         Verb('finish', finish, 'Finish the intake and make its base the active map, keeping the earlier one whole. '
-                               'Switch back with metaform map activate <previous-name>. After finish the metaform '
+                               'Switch back with metaform map activate <previous-name>. A verification pass is closed '
+                               'on the map it wrote onto, activating nothing. After finish the metaform '
                                'changes by refining, metaform map refine, or by another intake.',
              nouns=(Noun('report', 'Your report on the project you examined: broken code, things that need fixing, '
                                    'anything not working or partially working. On the command line a file is read '

@@ -1,0 +1,1 @@
+{"action": "create", "reason": "Stop controls on the web page repeatedly need the same steps (post session id, rememberStop, renderAgents) and the dock depends on them; no existing skill covers this class. Class-level rule for any future stop control.", "evidence": "references/evidence-b4681976.md"}

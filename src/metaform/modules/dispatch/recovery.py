@@ -167,7 +167,7 @@ def stop_adapter(held: dict[str, Any]) -> None:
 
 def recover(ctx: Context) -> dict[str, Any]:
     """Apply the configured recovery policy on demand or before Autostart selection, without rewriting reads."""
-    from . import intake_id, sessions, ticket
+    from . import foreign, intake_id, sessions, ticket
 
     policy = str(ctx.setting('dispatch_recovery'))
     result: dict[str, Any] = {'policy': policy, 'released': [], 'deferred': []}
@@ -196,6 +196,8 @@ def recover(ctx: Context) -> dict[str, Any]:
         if record.done or not record.taken or record.taken_by != owner:
             continue
         try:
+            if foreign(row):  # its processes are another home's, in a store copied here: never stopped or released
+                raise ValueError('another Metaform home started this session')
             raw: Any = row.get('recovery')  # none on a session recorded before the evidence was kept
             held = cast(dict[str, Any], raw) if isinstance(raw, dict) else {}
             if (held.get('project') != store.project_id or held.get('work_id') != work_id

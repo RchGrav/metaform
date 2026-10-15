@@ -141,8 +141,9 @@ def test_existing_intake_extension_skips_without_dependencies(monkeypatch, proje
     assert source_placement.extend(Context('source_placement', project_folder, store=store))['status'] == 'skipped'
 
 
-@pytest.mark.parametrize('actions', [('clear',), ('remove',), ('clear', 'remove')])
-def test_deleted_project_bases_do_not_resurface_placement_runs(run, tmp_path, actions):
+@pytest.mark.parametrize('actions, again', [(('clear',), 'b'), (('remove',), 'b'), (('clear', 'remove'), 'b'),
+                                            (('remove',), 'a')])
+def test_deleted_project_bases_do_not_resurface_placement_runs(run, tmp_path, actions, again):
     folder_a, folder_b = tmp_path / 'a', tmp_path / 'b'
     folder_a.mkdir()
     folder_b.mkdir()
@@ -157,13 +158,18 @@ def test_deleted_project_bases_do_not_resurface_placement_runs(run, tmp_path, ac
     for action in actions:
         run(action, 'project', 'p', '--confirm', cwd=folder_a)
         if action == 'clear':
+            # Each CLI call is its own process, so the next one starts the module, which removes the orphaned run.
+            assert run('source_placement', 'status', f'run={run_id}', cwd=folder_a, ok=False,
+                       isolated=True).returncode != 0
             assert not directory.exists()
-            assert run('source_placement', 'status', f'run={run_id}', cwd=folder_a, ok=False).returncode != 0
     if 'remove' not in actions:
         run('remove', 'project', 'p', '--confirm', cwd=folder_a)
-    run('add', 'project', 'p', str(folder_b), cwd=folder_b)
+    folder = tmp_path / again
+    run('add', 'project', 'p', str(folder), cwd=folder)
+    missing = run('source_placement', 'status', f'run={run_id}', cwd=folder, ok=False, isolated=True)
+    assert missing.returncode != 0
+    assert f'No source placement run {run_id} in this project.' in missing.stdout + missing.stderr
     assert not (source_placement.runs_root('p') / run_id).exists()
-    assert run('source_placement', 'status', f'run={run_id}', cwd=folder_b, ok=False).returncode != 0
 
 
 def test_run_on_a_missing_base_is_refused(project_folder, store):

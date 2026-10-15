@@ -450,7 +450,7 @@ def send(ctx: Context) -> dict[str, Any]:
     held = _link_of_work(store, work_id)
     if held is not None:
         _write_document(_client(ctx), held['issue_id'], held['address'], work_id)
-        return {**_shown(held), 'next': _follows(ctx)}
+        return {**_shown(held), 'next': _follows(ctx, _ensure_watcher(store, ctx.folder))}
     record = store.ticket(work_id).work
     if record.done or record.taken:
         raise Stop(f"Ticket {work_id} is {'done' if record.done else 'taken by ' + str(record.taken_by)}; only an "
@@ -492,18 +492,19 @@ def send(ctx: Context) -> dict[str, Any]:
     shown = _shown(row)
     if chose:
         shown['assignee_chosen'] = chose
-    shown['next'] = _follows(ctx)
+    shown['next'] = _follows(ctx, _ensure_watcher(store, ctx.folder))
     return shown
 
 
-def _follows(ctx: Context) -> str:
-    """How a ticket sent to Paperclip follows its issue: each sync, which the watcher runs while it runs."""
-    found = _watcher(str(ctx.project)) if ctx.project else None
+def _follows(ctx: Context, started: int | None = None) -> str:
+    """How a ticket sent to Paperclip follows its issue: each sync, which the watcher runs while it runs, the one just
+    `started` before it has written its record."""
+    found = {'pid': started} if started is not None else _watcher(str(ctx.project)) if ctx.project else None
     if found is not None:
         return (f"the ticket follows the issue: the Paperclip watcher, process {found.get('pid')}, runs metaform "
                 'paperclip sync every paperclip_check_minutes')
     return ('the ticket follows the issue each time metaform paperclip sync runs; metaform paperclip watch runs it '
-            'every paperclip_check_minutes, and web start starts the watcher while issues are open')
+            'every paperclip_check_minutes, and send and web start start the watcher while issues are open')
 
 
 def _record(store: Store, work_id: str) -> WorkRecord | None:
@@ -887,8 +888,26 @@ def _followed(store: Store, row: dict[str, Any]) -> bool:
                                and STATES.get(str(row.get('state') or '')) not in vocabulary.TERMINAL)
 
 
+def _left(ctx: Context, store: Store) -> bool:
+    """Whether the watcher has work left: paperclip on this folder's surface and a link sync still follows."""
+    return _on_surface(ctx, 'paperclip') and any(_followed(store, row) for row in _links(store))
+
+
+def _idle(ctx: Context, store: Store, project: str) -> bool:
+    """Whether the watcher ends: nothing is left to follow. Its record goes before the links are read again, so a
+    ticket sent in between, whose send saw this watcher live and started none, keeps this one going; another watcher
+    started meanwhile follows it instead."""
+    if _left(ctx, store):
+        return False
+    with contextlib.suppress(OSError, ValueError):
+        if json.loads(run_file(project).read_text(encoding='utf-8')).get('pid') == os.getpid():
+            run_file(project).unlink(missing_ok=True)
+    return not _left(ctx, store) or _watcher(project) is not None
+
+
 def watch(ctx: Context) -> dict[str, Any]:
-    """Run sync every paperclip_check_minutes until stopped, so each ticket follows its issue with no one running it."""
+    """Run sync every paperclip_check_minutes, so each ticket follows its issue with no one running it, until stopped
+    or nothing is left to follow."""
     store = ctx.require_store()
     project = str(store.project_id)
     live = _watcher(project)
@@ -907,6 +926,9 @@ def watch(ctx: Context) -> dict[str, Any]:
     previous: Any = None
     with contextlib.suppress(ValueError):  # only the main thread can take signals
         previous = signal.signal(signal.SIGTERM, stopped)
+    reconfigure = getattr(sys.stdout, 'reconfigure', None)
+    if callable(reconfigure):  # its log is a file, so each line is written as it is said, not at exit
+        reconfigure(line_buffering=True)
     syncs = 0
     try:
         while True:
@@ -918,6 +940,8 @@ def watch(ctx: Context) -> dict[str, Any]:
                     f'{key} {value}' for key, value in one.items() if key not in ('issue', 'ticket')))
             for one in done['failed']:
                 ctx.say(f'{now()} failed {one}')
+            if _idle(ctx, store, project):
+                return {'state': 'idle', 'syncs': syncs}
             due = time.monotonic() + 60 * int(ctx.setting('paperclip_check_minutes') or 10)
             while (left := due - time.monotonic()) > 0:
                 beat()
@@ -935,14 +959,29 @@ def watch(ctx: Context) -> dict[str, Any]:
 
 
 def web_started(payload: dict[str, Any], ctx: Context) -> dict[str, Any] | None:
-    """Start the watcher beside the web GUI when issues a Paperclip agent works are open here and none runs; detached,
-    so it runs on as the web GUI does."""
-    store = ctx.store
-    if store is None or _watcher(str(store.project_id)) is not None:
+    """Start the watcher of each registered project with paperclip on whose issues a Paperclip agent works are open
+    and none runs, wherever the web GUI was started, since it serves every project."""
+    started: dict[str, int] = {}
+    for project in home.projects():
+        try:
+            there = context('paperclip', Path(project.path), project=project.project_id)
+            if there.store is None or not _on_surface(there, 'paperclip'):
+                continue
+            pid = _ensure_watcher(there.store, there.folder)
+        except (OSError, Stop, StoreError):  # one project's fault leaves the others watched
+            continue
+        if pid is not None:
+            started[project.project_id] = pid
+    return {'paperclip': 'watching', 'started': started} if started else None
+
+
+def _ensure_watcher(store: Store, folder: Path) -> int | None:
+    """Start a project's watcher when a link a Paperclip agent works is followed and none runs, detached, so it runs
+    on after the call that started it: the process id, or None when there was nothing to start."""
+    if _watcher(str(store.project_id)) is not None:
         return None
     if not any(_followed(store, row) for row in _links(store)):
         return None
-    folder = Path(str(payload.get('folder') or ctx.folder))
     log = run_file(str(store.project_id)).with_suffix('.log')
     home.mkdir_private(log.parent)
     options: dict[str, Any] = {'start_new_session': True} if os.name != 'nt' else \
@@ -952,7 +991,7 @@ def web_started(payload: dict[str, Any], ctx: Context) -> dict[str, Any] | None:
         process = subprocess.Popen([sys.executable, '-m', 'metaform', 'paperclip', 'watch'], cwd=folder,
                                    stdin=subprocess.DEVNULL, stdout=written, stderr=written, env=child_environment(),
                                    **options)
-    return {'paperclip': 'watching', 'pid': process.pid}
+    return process.pid
 
 
 def _candidates(store: Store, words: set[str]) -> dict[str, str]:

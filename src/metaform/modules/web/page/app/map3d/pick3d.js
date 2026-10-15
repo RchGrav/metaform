@@ -1,6 +1,6 @@
 /* Picking on the 3D map: the edge and node the pointer takes, clicks, the picked fiber, and the tooltip over the
  * hovered node. */
-import '/page/app/map3d/fibers3d.js';  // the part before runs first, so the parts run in the page's order
+import '/page/app/map3d/nodes3d.js';  // the part before runs first, so the parts run in the page's order
 // The graph, glass and figures share the import map's one local Three.js runtime, VIEW-003 and VIEW-025.
 import * as THREE from 'three';
 import {$, css, h} from '/page/app/core/dom.js';

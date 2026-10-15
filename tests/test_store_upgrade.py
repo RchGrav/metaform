@@ -290,6 +290,46 @@ def test_three_processes_opening_a_layout_10_store_at_once_all_read_it_upgraded_
     assert len(list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))) == 1
 
 
+def _locker(home: str, path: str, holder: bool, held, answers) -> None:
+    """One process taking the file lock: the holder keeps it 12 s, the waiter records what it met and when."""
+    import os
+    import time
+    os.environ['METAFORM_HOME'] = home
+    from metaform import sqlite
+    if holder:
+        with sqlite.file_lock(Path(path)):
+            held.set()
+            time.sleep(12)
+        return
+    held.wait()
+    start = time.monotonic()
+    try:
+        with sqlite.file_lock(Path(path)):
+            answers.put(('acquired', time.monotonic() - start))
+    except BaseException as error:  # noqa: BLE001 - the parent asserts on what the waiter met
+        answers.put((repr(error), time.monotonic() - start))
+
+
+@pytest.mark.req('STORE-006')
+@pytest.mark.req('QUAL-001')
+def test_a_process_waiting_on_a_file_lock_held_past_ten_seconds_gets_it_when_the_holder_lets_go(home: Path,
+                                                                                               tmp_path: Path):
+    """A waiter outlasts a holder that keeps the lock longer than msvcrt's ten one-second tries, as an opener must
+    while a real-size store upgrades."""
+    import multiprocessing
+    spawn = multiprocessing.get_context('spawn')
+    held, answers = spawn.Event(), spawn.Queue()
+    lockers = [spawn.Process(target=_locker, args=(str(home), str(tmp_path / 'store.upgrade.lock'), holder, held,
+                                                   answers)) for holder in (True, False)]
+    for locker in lockers:
+        locker.start()
+    met, waited = answers.get(timeout=60)
+    for locker in lockers:
+        locker.join(timeout=30)
+    assert met == 'acquired'
+    assert waited >= 11
+
+
 LAYOUT_11 =(Path(__file__).parent / 'fixtures' / 'store-v11.sql').read_text(encoding='utf-8')
 
 

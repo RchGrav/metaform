@@ -5,9 +5,13 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
+import sys
+import time
 import urllib.error
 import urllib.parse
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -35,6 +39,7 @@ class Paperclip:
         self.refuse: dict[tuple[str, str], int] = {}
         self.me = AGENT
         self.made = 0
+        self.watchers: list[tuple[list[str], Any]] = []  # each watcher started: its argv and folder
 
     def __call__(self, request: urllib.request.Request, timeout: float | None = None) -> io.BytesIO:
         url = urllib.parse.urlsplit(request.full_url)
@@ -158,6 +163,15 @@ def server(monkeypatch) -> Paperclip:
         monkeypatch.delenv(name, raising=False)
     found = Paperclip()
     monkeypatch.setattr(paperclip, 'OPENER', found)
+    started = subprocess.Popen
+
+    def spawn(argv: list[str], *args: Any, **options: Any) -> Any:
+        """The watcher a send or web start starts is recorded, never run; any other process runs."""
+        if list(argv[-2:]) != ['paperclip', 'watch']:
+            return started(argv, *args, **options)
+        found.watchers.append((list(argv), options.get('cwd')))
+        return SimpleNamespace(pid=4242)
+    monkeypatch.setattr(paperclip.subprocess, 'Popen', spawn)
     return found
 
 
@@ -370,3 +384,72 @@ def test_what_the_paperclip_agent_said_reaches_the_address_and_its_last_word_res
     assert 'Looking at the cadence timer.' in said and finding in said and 'Picked up.' not in said
     closed = store.ticket(shown['ticket']).work
     assert closed.outcome == 'completed' and closed.resolution == finding
+
+
+def test_web_started_starts_one_watcher_while_issues_are_followed(folder, server):
+    def web_started() -> dict[str, Any] | None:
+        return paperclip.web_started({'folder': str(folder)}, context('paperclip', folder))
+    assert web_started() is None and server.watchers == []  # no link, nothing to follow
+
+    sent_out(folder, 'Wire the beeper')
+    server.watchers.clear()  # what web.started itself starts is checked here
+    started = web_started()
+    assert started is not None and started['paperclip'] == 'watching'
+    assert [(argv[-2:], cwd) for argv, cwd in server.watchers] == [(['paperclip', 'watch'], folder)]
+
+    server.watchers.clear()
+    paperclip.run_file('proj').write_text(json.dumps({'pid': 4242, 'beat': time.time()}), encoding='utf-8')
+    assert web_started() is None and server.watchers == []  # one watcher beats already
+
+
+def test_watch_syncs_closes_and_removes_its_record(folder, server, monkeypatch):
+    store = Store('proj')
+    shown = sent_out(folder, 'Wire the beeper')
+    sent_out(folder, 'Paint the case')  # still open, so the watcher has work left and runs until stopped
+    finding = 'Root cause fixed in src/beep.c.'
+    server.comment(shown['issue_id'], finding, authorAgentId=WORKER)
+    server.issues[shown['issue_id']]['status'] = 'done'
+    record = paperclip.run_file('proj')
+    running: list[tuple[bool, bool]] = []
+
+    def sleep(seconds: float) -> None:  # the first wait after the first sync stops it, as Ctrl-C or SIGTERM does
+        running.append((record.exists(), sys.stdout.line_buffering))  # each line reaches its log as said
+        raise KeyboardInterrupt
+    monkeypatch.setattr(paperclip.time, 'sleep', sleep)
+    said: list[str] = []
+    assert paperclip.watch(context('paperclip', folder, sink=said.append)) == {'state': 'stopped', 'syncs': 1}
+    closed = store.ticket(shown['ticket']).work
+    assert closed.outcome == 'completed' and closed.resolution == finding
+    assert running == [(True, True)] and not record.exists()
+    assert [line for line in said if 'ticket_now completed' in line] == \
+        [line for line in said if f"{shown['issue']}, ticket {shown['ticket']}:" in line] and len(said) == 1
+
+
+def test_send_starts_one_watcher_and_web_start_anywhere_starts_one_for_each_project_left_unwatched(
+        folder, server, tmp_path):
+    """Round 5, ce3791fd: until send starts the watcher, and web start starts it for every project, this fails."""
+    shown = sent_out(folder, 'Wire the beeper')
+    assert server.watchers == [(server.watchers[0][0], folder)] and server.watchers[0][0][-2:] == ['paperclip', 'watch']
+    assert 'process 4242' in shown['next']  # the watcher just started, before it has written its record
+    paperclip.run_file('proj').write_text(json.dumps({'pid': 4242, 'beat': time.time()}), encoding='utf-8')
+    verb(folder, 'send', id=shown['ticket'])
+    sent_out(folder, 'Wire the bell')
+    assert len(server.watchers) == 1  # one runs, so neither a repeat nor another send starts a second
+
+    paperclip.run_file('proj').unlink()
+    assert paperclip.web_started({}, context('paperclip', tmp_path)) == {'paperclip': 'watching',
+                                                                          'started': {'proj': 4242}}
+    assert [cwd for _, cwd in server.watchers] == [folder, folder]
+
+
+def test_the_watcher_ends_once_nothing_is_left_to_follow_with_its_lines_written_as_said(folder, server, monkeypatch):
+    shown = sent_out(folder, 'Wire the beeper')
+    server.comment(shown['issue_id'], 'Fixed in src/beep.c.', authorAgentId=WORKER)
+    server.issues[shown['issue_id']]['status'] = 'done'
+
+    def sleep(seconds: float) -> None:
+        raise AssertionError('the watcher waited with nothing left to follow')
+    monkeypatch.setattr(paperclip.time, 'sleep', sleep)
+    assert verb(folder, 'watch') == {'state': 'idle', 'syncs': 1}
+    assert Store('proj').ticket(shown['ticket']).work.resolution == 'Fixed in src/beep.c.'
+    assert not paperclip.run_file('proj').exists() and getattr(sys.stdout, 'line_buffering', True)

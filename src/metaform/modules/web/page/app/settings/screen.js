@@ -517,7 +517,7 @@ function afterSetting(key) {
   }
 }
 $('#allSettingsBtn').onclick = openSettings;
-$('#viewAllSettingsBtn').onclick = openSettings;
+$('#settingsGearBtn').onclick = openSettings;
 $('#settings .search').addEventListener('input', event => { CONFIG.filter = event.target.value; renderSettings(); });
 $('#settings .close').onclick = () => { $('#settings').hidden = true; };
 overlay($('#settings'), {kind: 'dialog', close: () => { $('#settings').hidden = true; }});

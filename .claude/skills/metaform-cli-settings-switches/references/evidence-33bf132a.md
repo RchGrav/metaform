@@ -1,0 +1,1 @@
+Error: --dispatch-stay-connected takes no value: use --dispatch-stay-connected or --no-dispatch-stay-connected. / Error: dispatch_stay_connected is set only by the person, on the command line or the page, never by an agent. Say what you need in your ticket's note.

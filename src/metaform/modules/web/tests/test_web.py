@@ -2370,6 +2370,24 @@ def test_web_open_of_a_ticket_not_on_the_map_fails_with_the_pages_words(run, web
     assert problems == []
 
 
+def test_web_open_with_two_pages_succeeds_when_one_refuses_and_fails_when_both_do(run, web, mapped, browser):
+    """With two pages open, one opened before the workspace was turned on, `web open` of a pane succeeds when the
+    other page opens it, whichever answers first; a pane neither page has is refused in a page's words."""
+    started(run)
+    opened(browser, web, plain=True)
+    run('web', 'stop')
+    run('set', '--web-panes')
+    started(run)
+    page, problems, _ = opened(browser, web, plain=True)
+    page.wait_for_function('() => window.metaform.workspace.layout() !== null', timeout=10000)
+    pane = run('web', 'open', 'pane', 'id=map.messages', '--json', cwd=mapped)
+    assert json.loads(pane.stdout)['done'] is True
+    assert page.evaluate("window.metaform.workspace.shown('map.messages')")
+    unknown = run('web', 'open', 'pane', 'id=nope', cwd=mapped, ok=False)
+    assert unknown.returncode != 0 and 'No pane nope' in unknown.stdout + unknown.stderr
+    assert problems == []
+
+
 def test_a_refused_permission_answer_or_resume_gives_the_person_its_buttons_back(run, web, mapped, browser):
     """When the server refuses the person's answer to a permission prompt, or a Resume, the buttons are enabled again
     and none stays marked chosen, so the person can try again."""
@@ -3951,10 +3969,14 @@ def pixels(page, points):
 def staged(page, places, camera):
     """Stop the layout, put the named nodes where given, point the camera, and hide the names drawn over the nodes,
     so a picture of the 3D map can be read at known points. It waits first for the page's own fit of the whole map,
-    which starts 2.2 seconds after the page selects its first node, once the 2D map is drawn, and takes 0.8 seconds;
-    on a loaded machine it ends later, so the wait is for the fit itself, `fits3d`, and the camera at rest."""
+    which starts 2.2 seconds after the page selects its first node, once the 2D map is drawn (`selectLoaded` in
+    loading/load.js), and takes 0.8 seconds. On a loaded machine that timer comes late, so the wait is on the page's own
+    clock, 2.2 seconds past the selection, and then for the camera at rest; `fits3d` is no sign of it, since with reduced
+    motion a fit for the pane's size ends at once and is counted before it."""
     page.wait_for_function('() => window.metaform.selected()')
-    still3d(page, 1)
+    due = page.evaluate('performance.now()') + 2200
+    page.wait_for_function('due => performance.now() > due', arg=due)
+    still(page, '() => window.metaform.away3d()')
     map_key(page, 'p')
     for node, (x, y, z) in places.items():
         page.evaluate(f'window.metaform.pin3d("{node}", {x}, {y}, {z})')
@@ -5825,6 +5847,11 @@ def test_the_system_agent_takes_its_own_figure_whose_acts_arrive_and_say_where_i
     drawn = f'window.metaform.figures().find(one => one.work_id === "{system.id}")'
     page.wait_for_function(f'() => ["going", "circling"].includes({drawn}?.stage)', timeout=20000)
     assert page.evaluate('window.metaform.mascot().shown') is False   # the person's mascot is not its body
+    # a body sent beside a node follows it while the layout moves it, and is at rest only once the node is: the move
+    # waits for the layout to have stopped moving the kitchen timer, which a loaded machine makes slow
+    kitchen = store.element('code.timer.kitchen').id
+    still(page, f'() => {{ const node = window.metaform.at3d("{kitchen}");'
+                ' return node && [node.x, node.y, node.z].map(Math.round).join(); }')
     went = json.loads(run('web', 'move', 'address=code.timer.kitchen', '--json', cwd=mapped, env=own).stdout)
     assert (went['who'], went['stopped_by'], went['at_rest']) == ('your figure', 'arrived', True), went
     assert went['target']['address'] == 'code.timer.kitchen' and went['off'] < 1, went
@@ -6082,15 +6109,20 @@ def test_a_node_between_the_camera_and_a_label_hides_the_label(run, web, mapped,
         if other not in (cook, alarm):                                                  # alarm, so its sign faces the eye
             page.evaluate(f'window.metaform.pin3d("{other}", 2000, 0, -4000)')
 
+    drawn = f'window.metaform.labels3d().find(one => one.id === "{alarm}")'
+
     def label_change():
         page.evaluate('id => window.metaform.showLabels3d(true, [id])', alarm)  # the alarm's alone: the cook's own
-        page.wait_for_timeout(600)                                              # label stands over the cook's ball
-        label = next(label for label in page.evaluate('window.metaform.labels3d()') if label['id'] == alarm)
+        # label stands over the cook's ball; the picture is taken once the label is drawn and steady over three frames,
+        # which a loaded machine makes slow
+        page.wait_for_function(f'() => {{ const label = {drawn}; return label && !label.hidden && label.right > label.left; }}')
+        still(page, f'() => JSON.stringify({drawn})')
+        label = page.evaluate(drawn)
         inner = {'left': label['left'] + 3, 'right': label['right'] - 3, 'top': label['top'] + 2,
                  'bottom': label['bottom'] - 2}
         shown = page.screenshot()
         labels_shown(page, False)
-        page.wait_for_timeout(600)
+        still(page, '() => window.metaform.labels3d().length')  # three frames drawn without the labels
         return label, inner, changed(page, shown, page.screenshot(), inner)
 
     label, inner, open_change = label_change()
@@ -8777,8 +8809,8 @@ def test_the_text_size_buttons_scale_the_page_and_reset_puts_every_size_back(run
     assert float(ui()) > 1.08 and size('#boardBtn') > before[1] and size('#p-object h2') > before[2]
     assert page.evaluate('localStorage.getItem("metaform.textSize")') == ui()
     assert page.evaluate('document.querySelector("#textsize").value') == '5'  # the View menu's list says so
-    page.reload()
-    page.wait_for_function('() => window.metaform && window.metaform.loaded()')
+    page.reload(wait_until='commit')  # a reload draws as slowly as the first draw, so its wait is the same, `opened`
+    page.wait_for_function('() => window.metaform && window.metaform.loaded()', timeout=90000)
     assert float(ui()) > 1.08                                           # kept in this browser
     page.locator('#textsize').select_option('3', force=True)  # the default
     assert ui() == '1.08' and size('#boardBtn') == before[1]

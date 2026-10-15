@@ -51,6 +51,8 @@ def _directory(ctx: Context, run_id: str) -> Path:
 
 def _load(ctx: Context, run_id: str, base_id: str | None = None) -> tuple[Path, dict[str, Any], Store]:
     directory = _directory(ctx, run_id)
+    if not (directory / 'run.json').is_file():
+        raise ValueError(f'No source placement run {run_id} in this project.')
     run = _read(directory / 'run.json')
     if run['project'] != ctx.require_store().project_id or (base_id and run['base_id'] != base_id):
         raise ValueError('The source placement run belongs to a different project or base.')

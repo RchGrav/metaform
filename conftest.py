@@ -14,6 +14,11 @@ import pytest
 if 'PYTEST_METAFORM_HOME' not in os.environ:
     os.environ['PYTEST_METAFORM_HOME'] = tempfile.mkdtemp(prefix='metaform-tests-')
 os.environ['METAFORM_HOME'] = os.environ['PYTEST_METAFORM_HOME']
+# No browser a test starts can show a window: without a display to connect to, a headed launch fails instead of
+# opening on the person's screen. WSLg shows every headed window, even one placed off-screen. Headless Chromium still
+# reaches the GPU without one: found 2026-10-14, the RTX 3090 through ANGLE with --use-angle=gl-egl.
+for _display in ('DISPLAY', 'WAYLAND_DISPLAY'):
+    os.environ.pop(_display, None)
 
 @pytest.fixture
 def home(tmp_path, monkeypatch):

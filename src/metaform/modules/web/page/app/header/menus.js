@@ -18,7 +18,7 @@ export function toggler(button, box, open = () => {}) {
 function showLayers(open) { $('#layerlist').hidden = !open; }
 overlay($('#layerlist'), {kind: 'popover', focus: () => $('#layerlist input:not(:disabled)')});
 toggler($('#layersBtn'), $('#layerlist'));
-overlay($('#settingsbox'), {kind: 'popover', focus: '#theme'});
+overlay($('#settingsbox'), {kind: 'popover', focus: () => $('#settingsbox')});  // the menu itself, so no control shows a ring on opening
 toggler($('#settingsBtn'), $('#settingsbox'));
 /* Where the header ends, `--head-bottom`, kept as the header changes height, as when it folds: the configuration
  * surfaces, the View panel and the settings screen, open at the window's right edge just below it, wherever the side

@@ -7,11 +7,11 @@ import {S, read} from '/page/app/core/reads.js';
 import {ROAM} from '/page/app/figures/agents.js';
 import {plural} from '/page/app/memory/manage.js';
 import {select} from '/page/app/selection/select.js';
-import {ticketStatus, statusChip, cancelTicket} from '/page/app/dock/threads.js';
+import {ticketStatus, statusChip, cancelTicket, rememberStop} from '/page/app/dock/threads.js';
 import {chatButton} from '/page/app/dock/send.js';
 import {B, KINDS, BOARD, conditionLabel, partAt, nodeChip, linked, taskWords} from '/page/app/board/refs.js';
 import {COLUMN_NAMES, columnOf, history, ageOf, wrote} from '/page/app/board/history.js';
-import {D, waiting, ticketPart, ownGlyph, startWindow} from '/page/app/agents/dispatch.js';
+import {D, waiting, ticketPart, ownGlyph, startWindow, renderAgents} from '/page/app/agents/dispatch.js';
 import {giveWork} from '/page/app/task/task.js';
 import {HARNESS, agentName, agentSelect} from '/page/app/agents/pickers.js';
 import {WS} from '/page/app/workspace/workspace.js';
@@ -82,12 +82,17 @@ function glyphPick(kept, change) {
     title: "Which agent works this ticket: the tickets with one glyph are one agent's, done one at a time"},
   'Glyph ', pick);
 }
-/* Recall the agent working the ticket; the ticket goes back on the board. */
+/* Recall the agent working the ticket; the ticket goes back on the board, and its session goes in the dock's stops so
+ * the person can resume it if the recall was a mistake. */
 function recallButton(ticket) {
   const recall = async event => {
     event.target.disabled = true;
-    if (await wrote('/api/dispatch-stop', {work_id: ticket.id})) await renderBoard();
-    else event.target.disabled = false;
+    const session = D.sessions.filter(one => one.work_id === ticket.id && one.state === 'running').at(-1);
+    if (await wrote('/api/dispatch-stop', {work_id: ticket.id, ...(session ? {session: session.session_id} : {})})) {
+      if (session) rememberStop(session.session_id, new Date().toISOString());
+      await renderAgents();
+      await renderBoard();
+    } else event.target.disabled = false;
   };
   return h('button', {class: 'btn sm recall', type: 'button',
     title: 'Recall the agent working this ticket; the ticket goes back on the board', onclick: recall}, 'Recall agent');

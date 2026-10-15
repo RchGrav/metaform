@@ -880,7 +880,9 @@ class Handler(BaseHTTPRequestHandler):
         """An act of the person's mascot, from the web module's verbs, VIEW-005: handed to every open page of the
         project as a `mascot` event with an id of its own. An act that asks something, what the mascot sees or a
         picture from its eyes, or what the person is looking at, or that opens a box on the page, waits up to
-        MASCOT_WAIT seconds for the first page's answer, `mascot_result`; the rest answer at once. With no page open on the project it is refused plainly."""
+        MASCOT_WAIT seconds for the first page's answer that is not a refusal, `mascot_result`, or for every page to
+        refuse; a page that cannot do it does not speak for one that can. The rest answer at once. With no page open on
+        the project it is refused plainly."""
         project, act = str(given.get('project') or ''), str(given.get('act') or '')
         if act not in MASCOT_ACTS:
             return self.send(400, {'error': f'{act or "Nothing"} is not an act of the mascot.'})
@@ -893,7 +895,8 @@ class Handler(BaseHTTPRequestHandler):
         # a line asked to be said aloud waits to hear whether it was
         asks = act in MASCOT_ASKS or act == 'say' and bool(given.get('speak'))
         if asks:
-            self.gui.mascot_waiting[ident] = {'event': threading.Event(), 'result': None}
+            self.gui.mascot_waiting[ident] = {'event': threading.Event(), 'result': None, 'pages': len(pages),
+                                              'refusals': []}
         for waiting in pages:
             waiting.put({'topic': 'mascot', 'payload': {**given, 'id': ident}})
         if not asks:
@@ -901,17 +904,27 @@ class Handler(BaseHTTPRequestHandler):
         held = self.gui.mascot_waiting[ident]
         answered = held['event'].wait(MASCOT_WAIT)
         self.gui.mascot_waiting.pop(ident, None)
-        if not answered:
+        # a page that refused said why in its own words, which beat silence once no page did it
+        result = held['result'] if held['result'] is not None else next(iter(held['refusals']), None)
+        if not answered and result is None:
             return self.send(504, {'error': f'The page did not answer within {MASCOT_WAIT:g} seconds.',
                                    'next': 'bring the page to the front, then ask again'})
-        return self.send(200, held['result'])
+        return self.send(200, result)
 
     def mascot_result(self, given: dict[str, Any]) -> None:
-        """A page's answer to one of the mascot's questions, by its id; the first answer is the one kept."""
+        """A page's answer to one of the mascot's questions, by its id: the first answer that is not a refusal is the
+        one kept; a refusal is kept only once every page asked has refused."""
         held = self.gui.mascot_waiting.get(str(given.get('id') or ''))
         if held is not None and not held['event'].is_set():
-            held['result'] = given.get('result') if isinstance(given.get('result'), dict) else {'answer': given.get('result')}
-            held['event'].set()
+            result = given.get('result')
+            answer = cast(dict[str, Any], result) if isinstance(result, dict) else {'answer': result}
+            if 'error' in answer:
+                held['refusals'].append(answer)
+                if len(held['refusals']) >= held['pages']:
+                    held['event'].set()
+            else:
+                held['result'] = answer
+                held['event'].set()
         self.send(200, {'kept': held is not None})
 
     def save_prompt(self, given: dict[str, Any]) -> None:
@@ -2002,6 +2015,9 @@ SAID: dict[str, tuple[int, str]] = {}
 def said(given: dict[str, str], sessions: list[dict[str, Any]]) -> None:
     """Give each running session the newest line its agent said, `said`, for the speech bubble over its figure on the
     map. A line still streaming keeps its seq and grows in place, so the read starts at the newest line seen."""
+    for session in sessions:  # an ended session's line is never asked for again
+        if session.get('state') != 'running':
+            SAID.pop(str(session.get('session_id')), None)
     running = [session for session in sessions if session.get('state') == 'running' and session.get('session_id')]
     project = home.project(given.get('project', ''))
     if not running or project is None:

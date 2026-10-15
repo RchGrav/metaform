@@ -15,6 +15,7 @@ import os
 import sqlite3
 import sys
 import threading
+import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
@@ -71,20 +72,23 @@ def file_lock(path: Path, *, wait: bool = True) -> Generator[BinaryIO, None, Non
     so a writer that locks the file it writes holds the lock with the handle it writes through. A file that does not
     exist is created, in the home readable and writable by its owner alone. The file is never replaced or removed,
     which would let another opener lock a different file under the same name. A process that ends, by a crash too,
-    lets go of its lock. With wait=False a lock another holds raises Held at once; on Windows a wait gives up with
-    OSError after about ten seconds."""
+    lets go of its lock. With wait=False a lock another holds raises Held at once; with wait=True the caller waits
+    until the holder lets go, however long that takes, on Windows too, where msvcrt's own LK_LOCK would give up with
+    OSError after ten tries a second apart."""
     from . import home
     flags = os.O_RDWR | os.O_CREAT | os.O_APPEND | getattr(os, 'O_BINARY', 0)
     with os.fdopen(os.open(path, flags, 0o600 if home.is_home_path(path) else 0o666), 'a+b') as stream:
         if sys.platform == 'win32':
             import msvcrt
             stream.seek(0)
-            try:
-                msvcrt.locking(stream.fileno(), msvcrt.LK_LOCK if wait else msvcrt.LK_NBLCK, 1)
-            except OSError:
-                if wait:
-                    raise
-                raise Held(str(path)) from None
+            while True:
+                try:
+                    msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError:
+                    if not wait:
+                        raise Held(str(path)) from None
+                    time.sleep(0.05)
             try:
                 yield stream
             finally:

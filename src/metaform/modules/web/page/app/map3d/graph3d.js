@@ -18,6 +18,7 @@ import {linkAt3d, nodeAt3d, clickedAt3d, pick3d, hovered, TIP, hover3d} from '/p
 import {readout, rehover3d, figureWords} from '/page/app/map3d/readout.js';
 import {prepare3d} from '/page/app/map3d/labels.js';
 import {fibers3d} from '/page/app/map3d/fibers3d.js';
+import {nodes3d} from '/page/app/map3d/nodes3d.js';
 import {swap, V3, FLIGHT} from '/page/app/camera/flight.js';
 import {MEET, meetEnds, settled3d} from '/page/app/camera/fly3d.js';
 import {VIEW} from '/page/app/views/settings.js';
@@ -174,7 +175,7 @@ function create3D() {
   // The page's own work for each frame runs first in the render chain: after the layout's tick and the controls, before
   // anything is drawn, so the camera's flight, the labels, the dots and the tooltip are all of the same frame.
   G.postProcessingComposer().insertPass({isPass: true, enabled: true, needsSwap: false, clear: false,
-    renderToScreen: false, setSize() {}, render() { prepare3d(); fibers3d(); }, dispose() {}}, 0);
+    renderToScreen: false, setSize() {}, render() { prepare3d(); fibers3d(); nodes3d(); }, dispose() {}}, 0);
   applyPhysics(PHYS.name, false);  // the forces of the physics chosen, `PHYSICS`
   steer3d(G.controls());
   listen3d($('#stage'));

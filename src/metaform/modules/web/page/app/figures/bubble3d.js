@@ -13,6 +13,7 @@ import {reduced} from '/page/app/core/dom.js';
 import {ROAM} from '/page/app/figures/agents.js';
 import {D} from '/page/app/agents/dispatch.js';
 import {G, wake3d} from '/page/app/map3d/graph3d.js';
+import {WS} from '/page/app/workspace/workspace.js';
 
 const LOOK = {
   most: 140,  // the most characters shown; a longer line is cut at a word with an ellipsis
@@ -24,11 +25,12 @@ const LOOK = {
   outline: 6, radius: 22, shadow: [7, 8],
   tail: {at: 0.16, base: 34, length: 40, lean: -18},  // along the bottom edge, its width, how far down and left
   scale: 3,  // texture pixels per SVG pixel, so the bubble stays sharp up close
-  world: 0.016,  // world units per SVG pixel, per unit of the figure's size
+  world: 0.019,  // world units per SVG pixel, per unit of the figure's size
+  lift: 1.0, aside: 0.7,  // where the tail's point sits: up and to the right of the head, in figure sizes
   pop: 320,  // ms of the pop when new words arrive
 };
 const BUBBLES = new Map();  // figure id -> {mesh, texture, text, drawn, born, shown}
-const HEAD = new THREE.Vector3(), GAZE = new THREE.Vector3(), SHIFT = new THREE.Vector3();
+const HEAD = new THREE.Vector3(), GAZE = new THREE.Vector3(), SHIFT = new THREE.Vector3(), SIDE = new THREE.Vector3();
 const MEASURE = document.createElement('canvas').getContext('2d');
 
 /* The line a bubble shows: the last non-empty line of what the agent said, cut at a word. */
@@ -146,7 +148,9 @@ export function bubbles3d() {
     bubble ||= made(id);
     live.add(id);
     if (text && text !== bubble.text) draw(bubble, text);
-    const want = text && bubble.drawn ? 1 : 0;
+    // each line stays up web_bubble_seconds; the next line brings the bubble back
+    const shows = 1000 * (Number(WS.view()?.bubble_seconds) || 10);
+    const want = text && bubble.drawn && now - bubble.born < shows ? 1 : 0;
     bubble.shown += (want - bubble.shown) * (reduced() ? 1 : 0.18);
     const {mesh, drawn} = bubble;
     if (mesh.parent !== G.scene()) G.scene().add(mesh);  // a whole reload of the map makes a new scene
@@ -160,11 +164,12 @@ export function bubbles3d() {
     mesh.quaternion.copy(camera.quaternion);
     // the tail's point sits just above the figure's head: the plane's middle is moved from it by the point's offset
     eyeOf(figure.mesh, HEAD, GAZE);
-    HEAD.y += 0.35 * figure.mesh.scale.x;
+    HEAD.y += LOOK.lift * figure.mesh.scale.x;
+    HEAD.addScaledVector(SIDE.set(1, 0, 0).applyQuaternion(camera.quaternion), LOOK.aside * figure.mesh.scale.x);
     SHIFT.set((drawn.width / 2 - drawn.tip[0]) * unit, (drawn.tip[1] - drawn.height / 2) * unit, 0)
       .applyQuaternion(camera.quaternion);
     mesh.position.copy(HEAD).add(SHIFT);
-    if (k < 1 || bubble.shown < 0.98) wake3d(50);
+    if (k < 1 || Math.abs(bubble.shown - want) > 0.02) wake3d(50);
   }
   for (const [id, bubble] of BUBBLES) {
     if (live.has(id)) continue;

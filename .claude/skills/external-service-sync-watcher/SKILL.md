@@ -12,7 +12,10 @@ A ticket follows its external issue only through the module's `sync` verb; a wat
 - Do not bridge the module's own cancel or status comment back in, or it returns as a message.
 - When the issue is done, resolve the ticket with the assignee's last comment, cut to 2,000 characters; if there is none, keep the placeholder text.
 - A CLI-only `watch` verb runs `sync`, then waits the check-minutes setting, read fresh each round. It writes a beat every 20 seconds to a record for its own project in the Metaform home, treats a beat older than three intervals as gone, and on SIGTERM ends like Ctrl-C and removes the record only if the pid is its own.
-- Subscribe to `web.started` and start `watch` detached (Popen, as twilio and cloud do) when a linked ticket is open and no watcher beats.
+- Start `watch` detached (Popen, as twilio and cloud do) from every entry point that sends a ticket, and from `web.started` for every registered project with the module on, not only the folder the web start ran in. Route both paths through one `_ensure_watcher` and pass the pid it returns to the reply's `next` line: the child has not written its record when the caller returns.
+- `watch` ends by itself, state idle, when nothing is left to follow (module off for the folder, or no open link). Unlink its own record before re-reading the links, so a ticket sent in that window is not orphaned; if another watcher has appeared meanwhile, end.
+- The detached child gets no `PAPERCLIP_*` environment variables. A live check points it at the stub with `metaform set --paperclip-url <origin>`, not the env var. Line-buffer its stdout so the detached log shows each line as it is written.
+- A test that calls `send` or `web_started` stubs Popen only for argv ending `['paperclip', 'watch']`, so no test spawns a real watcher.
 - Use one record per project, not one shared file: two projects' web starts would overwrite each other.
 - A verb that reaches the network declares open_world, and a new one needs a reasoned entry in the registry (see verify-guard-test-by-mutation).
 - Verify the periodic path end to end with a stub service (see scripted-check-spawned-servers). Update the module README and CHANGELOG Unreleased in the same change.

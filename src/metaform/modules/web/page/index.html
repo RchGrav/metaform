@@ -93,29 +93,31 @@
       <div class="settingspick pick">
         <!-- The View menu: how this page draws the maps, its colors and its keys. -->
         <button class="btn quiet viewbtn" id="settingsBtn" type="button" aria-label="View settings" aria-expanded="false" aria-controls="settingsbox" title="View settings"><i class="i i-more" aria-hidden="true"></i><span class="lbl">View</span></button>
-        <div class="menu right" id="settingsbox" hidden role="dialog" aria-label="View settings">
-          <div class="label">View</div>
+        <div class="menu right" id="settingsbox" hidden role="dialog" aria-label="View settings" tabindex="-1">
+          <div class="label">Look</div>
           <div class="menu-field themepick"><label for="theme">Colors</label>
             <select id="theme">
-              <option value="space">space</option>
-              <option value="black">black</option><option value="midnight">midnight</option>
-              <option value="graphite">graphite</option>
-              <option value="plum">plum</option>
-              <option value="forest">forest</option>
-              <option value="ember">ember</option>
-              <option value="paper">paper</option>
-              <option value="mist">mist</option>
+              <option value="space">Space</option>
+              <option value="black">Black</option><option value="midnight">Midnight</option>
+              <option value="graphite">Graphite</option>
+              <option value="plum">Plum</option>
+              <option value="forest">Forest</option>
+              <option value="ember">Ember</option>
+              <option value="paper">Paper</option>
+              <option value="mist">Mist</option>
             </select>
           </div>
           <div class="menu-field themepick" title="Also Alt and +, Alt and −, Alt and 0 for the default"><label for="textsize">Text size</label>
             <select id="textsize"></select>
           </div>
+          <div class="label">Layout</div>
           <div class="menu-field themepick" title="Which side of the page the side column stands on"><label for="sideat">Side column</label>
             <select id="sideat"><option value="right">Right</option><option value="left">Left</option></select>
           </div>
           <div class="menu-field themepick" title="Out while agents work, pinned out, or pinned away (A)"><label for="agentsat">Agents window</label>
             <select id="agentsat" aria-keyshortcuts="A"><option value="auto">While at work</option><option value="open">Pinned out</option><option value="hidden">Pinned away</option></select>
           </div>
+          <div class="label">Map</div>
           <div class="menu-field themepick" title="The 3D map's names: outward from its middle, or facing you"><label for="signsat">Signs</label>
             <select id="signsat"><option value="outward">Outward</option><option value="facing">Facing</option></select>
           </div>
@@ -132,11 +134,11 @@
             <select id="flowat" aria-keyshortcuts="D"><option value="off">Off</option><option value="hover">Under the pointer</option><option value="selected">The selection's</option><option value="all">All joins</option><option value="live">Agents' activity</option></select>
           </div>
           <div class="sep" role="separator"></div>
-          <button id="viewAllSettingsBtn" type="button" aria-controls="settings" title="Every setting of this project's folder and its modules, and which modules are on, as metaform config shows them">All settings…</button>
           <button id="shortcutsBtn" type="button" title="Every key the map and the page take">Keyboard shortcuts <kbd aria-hidden="true">?</kbd></button>
         </div>
       </div>
     </div>
+    <button class="btn icon quiet" id="settingsGearBtn" type="button" aria-label="Settings" aria-controls="settings" title="Settings: every setting of this project's folder and its modules, and which modules are on"><i class="i i-gear" aria-hidden="true"></i></button>
     <button class="btn icon quiet" id="moreBtn" type="button" aria-label="More controls" aria-expanded="false" title="More controls"><i class="i i-menu" aria-hidden="true"></i></button>
   </header>
   <!-- The toolbar: one row of the tools modules declare, as the person arranged them; drawn from /api/workspace. -->

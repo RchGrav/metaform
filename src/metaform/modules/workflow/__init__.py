@@ -433,7 +433,7 @@ def _assignment(held: Store, word: str) -> str:
     value = executor.held(held, word).value['assignment']
     served = '\n\n'.join(skill_registry.libraries(skill_registry.get(value['skill'])).values())
     given, answered = value.get('input'), value.get('answer')
-    bound = [prompt_files.required(PACKAGE, 'assignment_input', input=given) if given else '',
+    bound = [skill_registry.bound(given) if given else '',
              prompt_files.required(PACKAGE, 'assignment_answer', found=answered['question'],
                                    answer=answered['answer']) if answered else '']
     return prompt_files.required(
@@ -444,11 +444,7 @@ def _assignment(held: Store, word: str) -> str:
 def served(name: str, given: str | None = None) -> str:
     """A skill whole, for an agent already connected over ACP: its libs, the skill and the input bound as data, with
     no run record. Dispatch sends it as a purpose agent's first turn; nothing is resumed."""
-    skill_name = skill_registry.get(name).name
-    libs = '\n\n'.join(skill_registry.libraries(skill_registry.get(skill_name)).values())
-    return prompt_files.required(
-        PACKAGE, 'served', libs=libs, skill=skill_registry.procedure(skill_name),
-        input=prompt_files.required(PACKAGE, 'assignment_input', input=given) if given else '')
+    return skill_registry.served(name, given)
 
 
 def serve(ctx: Context) -> str:

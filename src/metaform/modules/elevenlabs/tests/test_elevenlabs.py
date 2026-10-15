@@ -114,9 +114,26 @@ def test_the_models_come_from_the_account_and_a_voice_is_named_by_its_name(run, 
     run('elevenlabs', 'models', cwd=project_folder)
     assert run('set', '--elevenlabs-model', 'eleven_v4', cwd=project_folder).returncode == 0
     assert run('set', '--elevenlabs-model', 'eleven_v3', cwd=project_folder, ok=False).returncode != 0
+    assert run('set', '--elevenlabs-model', 'eleven_v4', cwd=tmp_path).returncode == 0  # a global setting's choices
     run('set', '--elevenlabs-voices', 'owl=Daniel', cwd=project_folder)
     run('elevenlabs', 'speak', 'character=owl', f'file={tmp_path / "x.pcm"}', '--', 'hi', cwd=project_folder)
     assert (tmp_path / 'x.pcm').read_bytes() == b'audio'
+
+
+def test_voice_named_asks_again_after_elevenlabs_failed_once(eleven, monkeypatch):
+    """A failed listing is not kept: the next speak with a named voice asks ElevenLabs again."""
+    monkeypatch.setenv('ELEVENLABS_API_KEY', FAKE_KEY)
+    calls = []
+
+    def urlopen(request, timeout=None):
+        calls.append(request.full_url)
+        if len(calls) == 1:
+            raise urllib.error.URLError('blip')
+        return Answer(json.dumps({'voices': [{'voice_id': 'abcdefghijklmnopqrst', 'name': 'Daniel'}]}).encode())
+    monkeypatch.setattr(urllib.request, 'urlopen', urlopen)
+    with pytest.raises(OSError):
+        eleven('api').voice_named('Daniel')
+    assert eleven('api').voice_named('Daniel') == 'abcdefghijklmnopqrst' and len(calls) == 2
 
 
 def test_showing_the_settings_and_an_agents_tool_list_never_ask_elevenlabs(run, eleven, monkeypatch, tmp_path):

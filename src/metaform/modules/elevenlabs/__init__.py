@@ -14,12 +14,12 @@ similarity, style, speaker boost and speed, the streaming latency and the output
 """
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any, cast
 
 from metaform import home, settings
-from metaform.data import Column, Table, Tables
 from metaform.module import Context, Module, Noun, Provides, Stop, Verb, VoiceEngine
 
 from . import api
@@ -43,23 +43,22 @@ FALLBACK = 'JBFqnCBsd6RMkjVDRZzb'  # George, for a mascot that is none of these
 LANGUAGE = re.compile(r'^(auto|[a-z]{2,3})$')
 
 
-# The account's models as `metaform elevenlabs models` last listed them, in the account's order, kept with the project:
-# elevenlabs_model's choices read them, and never ElevenLabs, because config --show, help and every agent's tool list
-# compute those choices.
-TABLES = Tables(version=1, tables=(
-    Table('listed_models', place='project', key=('position',),
-          columns=(Column('position', 'int', required=True), Column('model_id', required=True))),
-))
+def _listed() -> Path:
+    """The account's model ids as `metaform elevenlabs models` last listed them, in the account's order, kept in the
+    home: elevenlabs_model's choices read them, and never ElevenLabs, because config --show, help and every agent's
+    tool list compute those choices. One file for the home, as the setting is global."""
+    return home.home() / 'elevenlabs' / 'models.json'
 
 
 def _models(ctx: Context | None = None) -> list[str]:
     """The models to choose from: the account's as last listed with metaform elevenlabs models, else the ones
     ElevenLabs publishes. Never a request to ElevenLabs."""
-    if ctx is not None and ctx.store is not None:
-        with ctx.store.tables(write=False) as tx:
-            listed = [str(row['model_id']) for row in tx.rows('listed_models', limit=0).results]
-        if listed:
-            return listed
+    try:
+        listed: Any = json.loads(_listed().read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        listed = None
+    if isinstance(listed, list) and listed:
+        return [str(one) for one in cast(list[Any], listed)]
     return list(api.MODELS)
 
 
@@ -203,18 +202,15 @@ def status(ctx: Context) -> dict[str, Any]:
 
 
 def list_models(ctx: Context) -> dict[str, Any]:
-    """The account's models from ElevenLabs, kept for the project as elevenlabs_model's choices."""
+    """The account's models from ElevenLabs, kept in the home as elevenlabs_model's choices."""
     _need(ctx)
     try:
         found = api.models()
     except OSError as error:
         raise Stop(str(error), 'metaform elevenlabs status') from None
-    if ctx.store is not None and found:
-        with ctx.store.tables() as tx:
-            for row in tx.rows('listed_models', limit=0).results:
-                tx.delete('listed_models', {'position': row['position']})
-            for position, one in enumerate(found):
-                tx.insert('listed_models', {'position': position, 'model_id': one['model_id']})
+    if found:
+        home.mkdir_private(_listed().parent)
+        home.write_private(_listed(), json.dumps([one['model_id'] for one in found]))
     return {'models': found}
 
 
@@ -273,7 +269,7 @@ MODULE = Module(
     start=None,
     stop=None,
     status=None,
-    tables=TABLES,
+    tables=None,
     data=None,
     node_read=None,
     node_count=None,

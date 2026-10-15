@@ -86,6 +86,8 @@ def test_connect_message_and_index_fit_what_the_host_keeps(folder, run):
         sent = server.connect_instructions(folder, 'unknown-host')
         assert len(sent) <= 2048 and 'FIRST RUN' in sent, len(sent)
         assert sent.startswith(server.startup_instructions(folder))
+        listed = server.listing(folder, 'unknown-host')['metaform_skills'].description
+        assert 'write-workflow' in sent or 'write-workflow' in listed
 
 
 def test_client_identity_accepts_initialize_params_and_modern_request_metadata():

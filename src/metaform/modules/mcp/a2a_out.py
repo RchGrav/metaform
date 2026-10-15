@@ -198,8 +198,10 @@ def _said(parts: Any) -> str:
 def heard(project: str, exchange_id: str, status: TaskStatus | None = None, artifacts: tuple[Artifact, ...] = (),
           peer_task_id: str | None = None) -> records.Exchange | None:
     """What a peer told of an exchange's task, recorded where the work lives: the state on the exchange; each new
-    artifact as a message at its Address; a question it asks as an open question there, on the exchange's ticket,
-    MCP-041. A key per artifact and per question, claimed with the state in one transaction, writes each once."""
+    artifact as a message at its Address; a question it asks as an open question there, which the agent or the person
+    answers, MCP-041. The exchange keeps its ticket; the question is not linked to it, as that link marks an agent's
+    permission request, which only the person answers. A key per artifact and per question, claimed with the state in
+    one transaction, writes each once."""
     state = STATES.get(status.state) if status is not None else None
     said = _said(status.message.parts) if status is not None and status.HasField('message') else None
     claims = [f'artifact:{one.artifact_id}' for one in artifacts if _said(one.parts)]
@@ -216,9 +218,7 @@ def heard(project: str, exchange_id: str, status: TaskStatus | None = None, arti
             text = _said(one.parts)
             store.tell(node, text, by=by, title=one.name or _title(text))
     if any(key.startswith('question:') for key in taken) and said:
-        work = now.work_id if now.work_id and _ticket(store, now.work_id) else None
-        question = store.ask(node, said, by=by, work=work, title=_title(said),
-                             why=prompt('a2a_peer_question_why', peer=now.peer))
+        question = store.ask(node, said, by=by, title=_title(said), why=prompt('a2a_peer_question_why', peer=now.peer))
         if records.asking(project, exchange_id, now.asked, question.id):  # its answer goes back, `answered`
             now = records.exchange(project, exchange_id)
     return now
@@ -237,20 +237,25 @@ def _answer(project: str, found: records.Exchange) -> tuple[bool, str | None]:
 
 def answered(project: str, exchange_id: str, folder: Path) -> records.Exchange | None:
     """The answer to the question a peer's task asked, sent back on that task once it is given at the Address,
-    MCP-041: called by the follower, by a listing before it reads the task again, and on a change to the map's
-    questions. The open question is cleared before the answer leaves, so of two that read it only one sends it; when
-    the peer is not reached it is set again, to be sent later. A peer that refuses the answer is said at the Address.
-    A question closed with no answer clears it and sends nothing."""
+    MCP-041: called by the follower, which a change to the map wakes, and by a listing before it reads the task again.
+    The answer is claimed before it leaves, `records.sending`, so of two that read it only one sends it, and the open
+    question is cleared only once the peer took it; a claim whose sender died mid-send is free again after twice
+    `TIMEOUT`. When the peer is not reached the claim is let go, to be sent later. A peer that refuses the answer is
+    said at the Address. A question closed with no answer clears it and sends nothing."""
     found = records.exchange(project, exchange_id)
     if found is None or not found.asked or found.state in ENDED or not found.peer_task_id:
         return found
+    asked = found.asked
     closed, answer = _answer(project, found)
     if not closed:
         return found
-    to = peer(folder, found.peer) if answer else None
-    if not records.asking(project, exchange_id, found.asked, None) or to is None or answer is None:
+    if answer is None:
+        records.asking(project, exchange_id, asked, None)
         return records.exchange(project, exchange_id)
-    message = Message(message_id=f'{exchange_id}:{found.asked}', role=Role.ROLE_USER, parts=[Part(text=answer)],
+    to = peer(folder, found.peer)
+    if not records.sending(project, exchange_id, asked, 2 * TIMEOUT):
+        return records.exchange(project, exchange_id)
+    message = Message(message_id=f'{exchange_id}:{asked}', role=Role.ROLE_USER, parts=[Part(text=answer)],
                       task_id=found.peer_task_id, context_id=found.address, extensions=[EXTENSION])
     request = SendMessageRequest(message=message, configuration=SendMessageConfiguration(return_immediately=True))
 
@@ -260,14 +265,16 @@ def answered(project: str, exchange_id: str, folder: Path) -> records.Exchange |
     try:
         told = cast(list[StreamResponse], anyio.run(calling, project, to, found.sender, go))
     except Stop:  # not reached: the answer waits to be sent again
-        records.asking(project, exchange_id, None, found.asked)
+        records.unsent(project, exchange_id, asked)
         raise
     except Exception as error:  # noqa: BLE001  the peer's refusal, such as a task that takes no answer
+        records.asking(project, exchange_id, asked, None)
         refused = prompt('a2a_answer_refused', peer=found.peer, error=str(error))
         if refused:
             Store(project).tell(node, refused, by=by, title=_title(refused))
         now, _, _ = records.moved(project, exchange_id, said=str(error))
         return now
+    records.asking(project, exchange_id, asked, None)
     now = records.exchange(project, exchange_id)
     for event in told:
         if event.WhichOneof('payload') == 'message':  # the peer answered at once; its task goes on
@@ -279,26 +286,9 @@ def answered(project: str, exchange_id: str, folder: Path) -> records.Exchange |
     return now
 
 
-def answer_all(project: str, folder: Path, waiting: list[records.Exchange]) -> None:
-    """Send back each answer given at an Address to the exchanges whose question waits on one, on a change to the
-    map's questions; one that cannot be sent now is sent by the next caller."""
-    for one in waiting:
-        try:
-            answered(project, one.exchange_id, folder)
-        except Exception as error:  # noqa: BLE001  a change to the map never fails for a peer
-            log.info('The answer on A2A exchange %s was not sent: %s', one.exchange_id, error)
-
-
 def _title(text: str) -> str:
     """An item's title from what the peer said: its first line, cut short when it is long."""
     return first_line(text) or (first_line(text, 0) or '')[:120].rstrip()
-
-
-def _ticket(store: Store, work_id: str) -> bool:
-    try:
-        return store.ticket(work_id) is not None
-    except (Stop, StoreError, AttributeError):
-        return False
 
 
 def heard_task(project: str, exchange_id: str, task: Task) -> records.Exchange | None:

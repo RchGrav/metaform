@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import uuid
@@ -186,9 +187,10 @@ def migrate_names(ctx: Context | None = None) -> list[str]:
     jev_decisions settings, and of aliases, that name it; the refactor layer of every base, renamed in place with its
     items. A marker in the home lists what moved; a scope or base that cannot be read is said, and the migration runs
     again at the next start. A project folder's old run folder is renamed in place at every start (`_rename_runs`),
-    since that folder is shared by every home that registers it."""
+    since that folder is shared by every home that registers it. A run whose base is gone is removed at every start
+    (`_drop_orphaned_runs`)."""
     del ctx
-    moved = _rename_runs()
+    moved = _rename_runs() + _drop_orphaned_runs()
     marker = home.home() / 'migrated-source-placement'
     if marker.exists():
         return moved
@@ -277,6 +279,44 @@ def _rename_runs() -> list[str]:
                 old.rmdir()
         except (OSError, ValueError) as error:  # a folder that cannot be read or renamed is said; the next start retries
             said.append(f'{old}: not renamed, {error}')
+    return said
+
+
+def _drop_orphaned_runs() -> list[str]:
+    """At every start: a run in a registered project's home folder whose base the project no longer has can never
+    resume, so it is removed with the launch receipts naming that base. A clear deletes every base and a remove deletes
+    them with the registration; registering the source again takes the same home folder back, and this is what keeps
+    those runs from coming back with it. Only the home's own folder is touched, never the project folder another home
+    may share. An entry that cannot be read or removed is said and left for the next start."""
+    said: list[str] = []
+    for record in home.projects():
+        folder = home.project_folder(record.project_id)
+        root = folder / 'source_placement' if folder is not None else None
+        if root is None or not root.is_dir():
+            continue
+        bases = {base.id for base in home.bases(record.project_id)}
+        for entry in sorted(root.iterdir()):
+            if not (entry.is_dir() and re.fullmatch(r'[a-f0-9]{24}', entry.name)):
+                continue
+            try:
+                base = json.loads((entry / 'run.json').read_text())['base_id']
+                if base in bases:
+                    continue
+                shutil.rmtree(entry)
+                said.append(f'{entry}: removed, its base {base} is gone')
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                said.append(f'{entry}: left, {error}')
+        launches = root / 'launches'
+        for receipt in sorted(launches.glob('*.json')) if launches.is_dir() else []:
+            try:
+                written: Any = json.loads(receipt.read_text())
+                base = cast(dict[str, Any], written).get('base_id') if isinstance(written, dict) else None
+                if base is None or base in bases:
+                    continue
+                receipt.unlink()
+                said.append(f'{receipt}: removed, its base {base} is gone')
+            except (OSError, ValueError) as error:
+                said.append(f'{receipt}: left, {error}')
     return said
 
 

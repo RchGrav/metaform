@@ -852,10 +852,6 @@ def test_raising_an_issue_holds_it_on_a_ticket_at_the_node_and_starts_the_sentin
     """The person says what is wrong on a node; a sentinel starts with their words and nothing else
     is written. The issue's ticket is held, so no worker takes it."""
     report = 'The alarm plays twice when the timer ends.'
-    refused = run('dispatch', 'raise', NODE, '--', report, cwd=dispatch.folder, ok=False)
-    assert refused.returncode != 0 and 'workflow' in refused.stderr  # the sentinel is a workflow skill, which ships off
-    assert dispatch.store.work(open=True, limit=0).results == (dispatch.ticket(),)  # and nothing was written
-    run('enable', 'workflow', cwd=dispatch.folder)
     started = json.loads(run('dispatch', 'raise', NODE, '--json', '--', report, cwd=dispatch.folder,
                              env=dispatch.env('hold')).stdout)
     assert started['conversation'] and started['work_id'] != dispatch.id
@@ -871,6 +867,18 @@ def test_raising_an_issue_holds_it_on_a_ticket_at_the_node_and_starts_the_sentin
     eventually(lambda: [p for p in dispatch.received('session/prompt') if 'A second one.' in str(p)] or None)
     run('dispatch', 'stop', started['work_id'], cwd=dispatch.folder)
     run('dispatch', 'stop', again['work_id'], cwd=dispatch.folder)
+
+
+@pytest.mark.req('VIEW-045')
+@pytest.mark.req('BASE-059')
+def test_the_sentinel_is_served_from_the_skill_registry_with_or_without_the_workflow_module(dispatch, run):
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    run('disable', 'workflow', cwd=dispatch.folder)
+    alone = module.workflow_skill(context('dispatch', dispatch.folder, project='proj'), 'sentinel', 'x')
+    assert 'SENTINEL' in alone and '<<DATA: Input>>\nx\n<<END DATA>>' in alone
+    run('enable', 'workflow', cwd=dispatch.folder)
+    assert module.workflow_skill(context('dispatch', dispatch.folder, project='proj'), 'sentinel', 'x') == alone
 
 
 @pytest.mark.req('LAYER-029')
@@ -1831,6 +1839,13 @@ def test_a_day_cost_budget_still_counts_spend_after_switching_base(dispatch, run
     assert (shown['today']['cost'], shown['today']['tokens']) == (0.07, 80)
     assert [(one['run'], one['cost']) for one in shown['runs']] == [('run-a', 0.07)]
     assert module.spent(Store('proj'), work_id=dispatch.id)['cost'] == 0.07
+    # Removing the base the spend was made on does not reset the cap either: spend is the project's.
+    run('map', 'remove-base', 'main', '--confirm', cwd=dispatch.folder)
+    assert [base.name for base in Store('proj').bases(limit=0).results] == ['other']
+    reached = module.over_budget(ctx, Store('proj', module='dispatch'))
+    assert reached is not None and reached['budget'] == 'day'
+    shown = json.loads(run('dispatch', 'spend', '--json', cwd=dispatch.folder).stdout)
+    assert shown['today']['cost'] == 0.07
 
 
 def test_spend_sums_each_base_preserving_filters_currencies_and_unmetered_sessions(dispatch):
@@ -1912,7 +1927,8 @@ def test_the_supervisor_resumes_a_stopped_session_with_backoff_then_hands_it_ove
     dispatch.store.take_work(dispatch.id, None, 'claude s1')
     with Store('proj', module='dispatch').tables() as tx:
         tx.insert('sessions', {'session_id': 's1', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'ended',
-                               'how': 'the agent ended with exit code 1', 'started': '2026-10-11T00:00:00Z', 'seq': 1})
+                               'how': 'the agent ended with exit code 1', 'started': '2026-10-11T00:00:00Z', 'seq': 1,
+                               'origin': module.origin()})
         tx.insert('lines', {'session_id': 's1', 'name': 'state', 'work_id': dispatch.id, 'kind': 'state', 'seq': 1,
                             'text': json.dumps({'capabilities': {'load': True}, 'cwd': str(dispatch.folder)})})
     spawned = []
@@ -2254,7 +2270,7 @@ def test_the_supervisor_hands_a_logged_out_session_over_at_once_and_keeps_its_ru
         for session, work, how in (('s1', dispatch.id, 'it failed: Claude Code needs a login before it makes a session'),
                                    ('s2', other, 'the agent ended with exit code 1')):
             tx.insert('sessions', {'session_id': session, 'work_id': work, 'agent': 'claude', 'state': 'ended',
-                                   'how': how, 'started': '2026-10-11T00:00:00Z', 'seq': 1})
+                                   'how': how, 'started': '2026-10-11T00:00:00Z', 'seq': 1, 'origin': module.origin()})
             tx.insert('lines', {'session_id': session, 'name': 'state', 'work_id': work, 'kind': 'state', 'seq': 1,
                                 'text': state})
         tx.insert('spend', {'session_id': 's2', 'seq': 1, 'work_id': other, 'run': 'run-a', 'day': '2026-10-11',
@@ -2284,7 +2300,8 @@ def stay_connected(dispatch, run, monkeypatch, caps):
     held = module.anchor(ctx, dispatch.store, NODE)  # this map has no roots, so the held ticket is at the node
     with Store('proj', module='dispatch').tables() as tx:
         tx.insert('sessions', {'session_id': 's1', 'work_id': held.id, 'agent': 'claude', 'state': 'ended',
-                               'how': 'the agent ended with exit code 1', 'started': '2026-10-11T00:00:00Z', 'seq': 1})
+                               'how': 'the agent ended with exit code 1', 'started': '2026-10-11T00:00:00Z', 'seq': 1,
+                               'origin': module.origin()})
         tx.insert('lines', {'session_id': 's1', 'name': 'state', 'work_id': held.id, 'kind': 'state', 'seq': 1,
                             'text': json.dumps({'capabilities': caps, 'cwd': str(dispatch.folder), 'about': 'system'})})
     started = []
@@ -2360,6 +2377,47 @@ def test_the_persons_stop_of_their_system_agent_turns_stay_connected_off_and_an_
     module.stay_connected(ctx, dispatch.store)
     assert started == [['resume=s1', 'system=true']], 'turned on again, it connects at once, resumed in place'
     assert module.stay_connected(ctx, dispatch.store) == {} and len(started) == 1, 'once, while that start runs'
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.req('VIEW-045')
+def test_a_home_copied_with_its_store_resumes_none_of_the_sessions_the_original_home_started(
+        dispatch, run, monkeypatch, tmp_path):
+    """A store copied into another home holds sessions that home never started. Its agent starter, run as its web GUI
+    starts, resumes none of them, neither the person's system agent whose runner is gone nor a worker that ended on
+    its own, and reads them as ended; the home that started them still resumes both, as before."""
+    import shutil
+
+    from metaform.data import Store
+    from metaform.module import context
+    module, _, held, started = stay_connected(dispatch, run, monkeypatch, {'load': True})
+    dispatch.store.take_work(dispatch.id, None, 'claude w1')
+    with Store('proj', module='dispatch').tables() as tx:  # as on 2026-10-14: a running row whose runner is gone
+        tx.update('sessions', {'session_id': 's1'}, {'state': 'running', 'how': None, 'pid': 2 ** 22 + 7, 'port': 9,
+                                                     'token': 'x'})
+        tx.insert('sessions', {'session_id': 'w1', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'ended',
+                               'how': 'the agent ended with exit code 1', 'started': '2026-10-11T00:00:00Z', 'seq': 2,
+                               'origin': module.origin()})
+        tx.insert('lines', {'session_id': 'w1', 'name': 'state', 'work_id': dispatch.id, 'kind': 'state', 'seq': 1,
+                            'text': json.dumps({'capabilities': {'load': True}, 'cwd': str(dispatch.folder)})})
+    run('set', '--dispatch-autostart', cwd=dispatch.folder)
+    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation: started.append(['start', ctx.nouns['id']]))
+    copy = tmp_path / 'copied-home'
+    shutil.copytree(dispatch.home, copy)
+
+    def starts(home):
+        monkeypatch.setenv('METAFORM_HOME', str(home))
+        for _ in range(2):  # the first pass of each waits dispatch_retry_seconds; the second is due
+            module.autostart(context('dispatch', dispatch.folder, project='proj'))
+            due(held.id)
+            due(dispatch.id)
+        return {row['session_id']: (row['state'], row['how']) for row in module.sessions(Store('proj'))}
+
+    shown = starts(copy)
+    assert started == [], 'no runner, no new conversation and no ticket start in the copied home'
+    assert shown == {'s1': ('ended', module.FOREIGN), 'w1': ('ended', 'the agent ended with exit code 1')}
+    starts(dispatch.home)
+    assert started == [['resume=s1', 'system=true'], ['resume=w1', 'retry=true']], 'its own home resumes both'
 
 
 @pytest.mark.req('VIEW-005')

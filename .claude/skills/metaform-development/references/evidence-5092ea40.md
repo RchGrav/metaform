@@ -1,0 +1,1 @@
++        settings.refuse_held_control((key for key in parsed.switches if key in verb.switches), folder)  (src/metaform/cli.py, run_module, after the help return and before the caution check)

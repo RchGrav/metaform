@@ -31,7 +31,7 @@ None. Its settings show in `metaform config`, the TUI, and the web GUI's setting
 | Verb | Tool | What it returns | Effect |
 |---|---|---|---|
 | `metaform elevenlabs status` | `elevenlabs_status` | Whether the key is present, and the model, formats, voice settings and latency in use. Never the key. | read |
-| `metaform elevenlabs models` | `elevenlabs_models` | The text-to-speech models the account can use, kept for the project as `elevenlabs_model`'s choices. | write, open world |
+| `metaform elevenlabs models` | `elevenlabs_models` | The text-to-speech models the account can use, kept in the home as `elevenlabs_model`'s choices. | write, open world |
 | `metaform elevenlabs voices` | `elevenlabs_voices` | Each mascot character's voice, and the voices on the account. | read, open world |
 | `metaform elevenlabs speak -- <text>` | command line only | Text spoken into a file; never an agent's tool, since it spends the person's account. | write, open world |
 
@@ -68,11 +68,11 @@ Every verb and engine function is synchronous; `speak` returns an iterator that 
 
 ## Layers
 
-None. One table, `listed_models`, kept with the project: the model ids `metaform elevenlabs models` last listed, in the account's order.
+None. One file, `elevenlabs/models.json` in the Metaform home: the model ids `metaform elevenlabs models` last listed, in the account's order, the same in every folder as `elevenlabs_model` is global.
 
 ## Lifecycle and cleanup
 
-No start or stop. The account's models and voices are kept in memory for ten minutes; a failed listing is kept for a minute, so a slow or unreachable ElevenLabs is asked at most once a minute.
+No start or stop. The account's models and voices are kept in memory for ten minutes.
 
 ## Modules relied on
 

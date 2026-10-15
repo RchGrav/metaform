@@ -1414,9 +1414,11 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
 :root{--record:#ffbe55}
 .map2d .flows2d *{pointer-events:none}
 /* a dot is the round end of a dash of no length on a copy of its edge's path: 2.1px across each side, 1.9 for a request */
-.map2d .flows2d .bead{fill:none;stroke-width:4.2px;stroke-linecap:round;filter:drop-shadow(0 0 1.5px currentColor)}
-.map2d .flows2d .ask{fill:none;stroke:var(--spark);stroke-width:3.8px;stroke-linecap:round;
-  filter:drop-shadow(0 0 1.5px var(--spark))}
+.map2d .flows2d .bead{fill:none;stroke-width:4.2px;stroke-linecap:round}
+.map2d .flows2d .ask{fill:none;stroke:var(--spark);stroke-width:3.8px;stroke-linecap:round}
+/* each glow once over its group, drawn by the compositor, so a moving dot never makes the map's painter blur again */
+.map2d .flows2d .trains{filter:drop-shadow(0 0 1.5px currentColor);will-change:filter}
+.map2d .flows2d .asks{filter:drop-shadow(0 0 1.5px var(--spark));will-change:filter}
 .map2d .flows2d .record{fill:var(--record);stroke:var(--spark);stroke-width:.6px}
 .map2d .flows2d .ring{fill:none;stroke:var(--record);stroke-width:1.4px}
 /* The mascot's word bubble, over the figure wherever it is drawn: eased in and out, one line or two, never in the way
@@ -1461,6 +1463,12 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
 @media (prefers-reduced-motion:reduce){#stage canvas:not(.metsign){transition:none}}
 /* the View menu's field labels stay on one line, VIEW-023 */
 .menu-field.themepick label{white-space:nowrap}
+/* The View menu: labels on the left, every control the same width on the right, in three groups */
+#settingsbox{width:320px;max-width:calc(100vw - 16px)}
+#settingsbox:focus{outline:none}
+#settingsbox .menu-field select{flex:none;width:158px}
+#settingsbox .menu-field input[type=checkbox]{flex:none;margin-right:calc(158px - 18px)}
+#settingsbox .label:not(:first-child){margin-top:var(--s1);border-top:1px solid var(--line);padding-top:var(--s3)}
 
 /* The settings screen: the modules, then each group's settings, one row each: what it is and its state, its control,
  * Glue and Reset, a checklist under it when it takes one, and a refusal under that. */

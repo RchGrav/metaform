@@ -11,6 +11,7 @@ import {css} from '/page/app/core/dom.js';
 import {S} from '/page/app/core/reads.js';
 import {layerColor} from '/page/app/header/layers.js';
 import {ticketNode} from '/page/app/figures/agents.js';
+import {LABELS} from '/page/app/map3d/labels.js';
 import {G, nodeSize, wake3d} from '/page/app/map3d/graph3d.js';
 import {M} from '/page/app/map2d/build.js';
 import {D, ticketOf} from '/page/app/agents/dispatch.js';
@@ -190,11 +191,16 @@ export function bead(node) {
   colored(material, colorOf(node));
   return new THREE.Mesh(nodeShape(node, radius), material);
 }
-/* What is behind the glass, drawn each frame as drei's component draws it, once for every node, VIEW-025: the scene
- * with the glass hidden, into `back`; then with the far wall of every node, which reads `back`, into `main`; and the
- * near walls read `main` in the frame itself. Both are drawn at `scale` of the view's size, drei's `resolution` and
- * `backsideResolution`. It runs before the frame in the graph's own render chain. */
-export const BEHIND = {back: null, main: null, scale: 0.5};
+/* What is behind the glass, drawn as drei's component draws it, once for every node, VIEW-025: the scene with the
+ * glass hidden, into `back`; then with the far wall of every node, which reads `back`, into `main`; and the near walls
+ * read `main` in the frame itself. Both are drawn at `scale` of the view's size, drei's `resolution` and
+ * `backsideResolution`. It runs before the frame in the graph's own render chain. The two pictures are drawn again
+ * only on a frame where something of the map seen through the glass changed, `behindChanged`: drawn every frame they
+ * took two of the frame's three drawings of the whole scene. What moves over the map without end is left out of
+ * them, so it never makes them be drawn again: the flow's dots, light added over the map, and what walks or floats
+ * about it, the agents' figures, the mascot, their speech bubbles and a wave's dots. Seen through a node's frosted
+ * and tinted glass these hardly showed; a figure behind a node is now hidden by it. `drawn` counts the pictures. */
+export const BEHIND = {back: null, main: null, scale: 0.5, kept: null, stale: true, drawn: 0};
 export function addBehind() {
   const composer = G.postProcessingComposer();
   if (!composer?.insertPass) return;
@@ -208,12 +214,16 @@ function sizeBehind(width, height) {
   const size = [Math.max(1, Math.round(width * BEHIND.scale)), Math.max(1, Math.round(height * BEHIND.scale))];
   BEHIND.back.setSize(...size);
   BEHIND.main.setSize(...size);
+  BEHIND.stale = true;
 }
 function drawBehind(renderer) {
   const scene = G.scene(), camera = G.camera(), glass = [], was = renderer.getRenderTarget();
   scene.traverseVisible(object => { if (object.material?.userData.back) glass.push(object); });
   if (!glass.length) return;
-  for (const object of glass) object.visible = false;
+  const moving = scene.children.filter(child => child.visible && !mapPart(child));
+  if (!behindChanged(scene, camera)) return;
+  BEHIND.drawn++;
+  for (const object of [...glass, ...moving]) object.visible = false;
   renderer.setRenderTarget(BEHIND.back);
   renderer.render(scene, camera);
   // The far wall takes the node's tint and gives off no light toward the eye: a node's light leaves its glass
@@ -227,7 +237,54 @@ function drawBehind(renderer) {
   renderer.setRenderTarget(BEHIND.main);
   renderer.render(scene, camera);
   for (const object of glass) object.material = object.material.userData.front;
+  for (const object of moving) object.visible = true;
   renderer.setRenderTarget(was);
+}
+/* A part of the map, seen through the glass: the graph's nodes and links, the labels, the page's batches of fibers
+ * and nodes, and the lights. */
+const mapPart = child => child.isLight || child.isInstancedMesh || child === LABELS.group
+  || child.children.some(part => part.__graphObjType);
+/* Whether anything of the map seen through the glass changed since the pictures were drawn: the camera, and every
+ * part of the map, where it is, how it is turned and sized, whether it is shown, its color, light and opacity, a
+ * label's picture, a batch's instances. Each value is kept in a row and the row compared with the last one drawn. */
+const KEEP = {values: new Float64Array(4096), n: 0};
+const keep = value => {
+  if (KEEP.n === KEEP.values.length) {
+    const grown = new Float64Array(KEEP.values.length * 2);
+    grown.set(KEEP.values);
+    KEEP.values = grown;
+  }
+  KEEP.values[KEEP.n++] = value;
+};
+function keepObject(object) {
+  const {position: p, quaternion: q, scale: s} = object;
+  keep(p.x); keep(p.y); keep(p.z); keep(q.x); keep(q.y); keep(q.z); keep(q.w); keep(s.x); keep(s.y); keep(s.z);
+  keep(object.boundingSphere ? 1 : 0);  // drawn by a batch, `nodes3d`
+  const material = object.material;
+  if (material && !Array.isArray(material)) {
+    if (material.color) { keep(material.color.r); keep(material.color.g); keep(material.color.b); }
+    if (material.emissive) { keep(material.emissive.r); keep(material.emissive.g); keep(material.emissive.b); }
+    keep(material.emissiveIntensity ?? 0); keep(material.opacity); keep(material.map?.version ?? 0);
+  }
+  if (object.isInstancedMesh) {
+    keep(object.count); keep(object.instanceMatrix.version); keep(object.instanceColor?.version ?? 0);
+    for (const attribute of Object.values(object.geometry.attributes)) keep(attribute.version);
+  }
+  if (object.isLight) { keep(object.intensity); keep(object.color.r); keep(object.color.g); keep(object.color.b); }
+}
+function behindChanged(scene, camera) {
+  KEEP.n = 0;
+  for (const value of camera.matrixWorld.elements) keep(value);
+  for (const value of camera.projectionMatrix.elements) keep(value);
+  if (scene.background?.isColor) { keep(scene.background.r); keep(scene.background.g); keep(scene.background.b); }
+  for (const child of scene.children) if (child.visible && mapPart(child)) child.traverseVisible(keepObject);
+  const kept = BEHIND.kept, n = KEEP.n;
+  let same = !BEHIND.stale && kept && kept.length === n;
+  for (let i = 0; same && i < n; i++) same = kept[i] === KEEP.values[i];
+  if (same) return false;
+  BEHIND.kept = KEEP.values.slice(0, n);
+  BEHIND.stale = false;
+  return true;
 }
 /* The light a node gives off, VIEW-029: the glass's own little light, VIEW-025, raised toward LIGHT in the given
  * color by `lit`, from 0 to 1. Above full brightness it is spread by the bloom pass past the node's outline, behind

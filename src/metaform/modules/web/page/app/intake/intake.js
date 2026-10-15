@@ -8,7 +8,7 @@ import {S, MEM, reach, read} from '/page/app/core/reads.js';
 import {showAdmin, noMetaform, emptyActs} from '/page/app/header/admin.js';
 import {plural} from '/page/app/memory/manage.js';
 import {DOCK, STANDBY} from '/page/app/dock/embody.js';
-import {openHelpdesk} from '/page/app/dock/threads.js';
+import {openHelpdesk, rememberStop} from '/page/app/dock/threads.js';
 import {ago} from '/page/app/board/refs.js';
 import {wrote} from '/page/app/board/history.js';
 import {D, WAITS_ON_PERSON, renderAgents} from '/page/app/agents/dispatch.js';
@@ -166,7 +166,9 @@ export async function stopIntake() {
     lost: ['The agent and its session; what it was about to record next'],
     kept: ['Everything it recorded so far, in its layer', 'A new intake can take this one over and go on with it'],
     verb: 'Stop the intake', cancel: 'Keep it running'})) return;
-  if (await wrote('/api/dispatch-stop', {work_id: work})) {
+  const session = INTAKE.session?.session_id;
+  if (await wrote('/api/dispatch-stop', {work_id: work, ...(session ? {session} : {})})) {
+    if (session) rememberStop(session, new Date().toISOString());
     toast('The intake agent was stopped.');
     keepIntake(null);
     INTAKE.started = null;

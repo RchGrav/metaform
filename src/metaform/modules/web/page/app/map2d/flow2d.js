@@ -60,6 +60,14 @@ export function flows2d() {
   const flows = document.createElementNS(SVG, 'g'), edges = on[0].path.closest('.edgePaths') || on[0].path.parentNode;
   flows.setAttribute('class', 'flows2d');
   edges.after(flows);
+  // every train in one group and every request in another, so each glow is drawn once over its group, `.trains` and
+  // `.asks` in the page's CSS, and the browser's compositor draws it, not its painter for every dot each frame
+  const glows = {};
+  for (const name of ['trains', 'asks']) {
+    glows[name] = document.createElementNS(SVG, 'g');
+    glows[name].setAttribute('class', name);
+    flows.append(glows[name]);
+  }
   const made = (tag, name, attributes = {}, parent = flows) => {
     const shape = document.createElementNS(SVG, tag);
     shape.setAttribute('class', name);
@@ -68,7 +76,7 @@ export function flows2d() {
     parent.append(shape);
     return shape;
   };
-  for (const edge of on) FLOW2D.edges.push(edgeShapes(edge, made));
+  for (const edge of on) FLOW2D.edges.push(edgeShapes(edge, made, glows));
   wake2d();
 }
 /* The edges that flow: in all, every edge; in hover, the edges of the node the pointer is on; else the selection's. */
@@ -83,18 +91,18 @@ function flowing2d() {
  * their own, so a dot sits where `pointOn` puts it: the browser measures a curve's dashes a pixel or two shorter than
  * `getTotalLength`, which would leave out a dot at an edge's end. A gap longer than the edge twice over keeps a dot
  * from coming round again. */
-function edgeShapes(edge, made) {
+function edgeShapes(edge, made, {trains, asks}) {
   const length = edge.path.getTotalLength(), far = 3 * length + 100, one = {edge, length, far};
   const d = sampled(one).map((point, i) => `${i ? 'L' : 'M'}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join('');
   const along = (name, attributes = {}, parent) => made('path', name, {d, pathLength: length, ...attributes}, parent);
   return Object.assign(one, {
     trains: [0, 1].map(way => {
-      const train = made('g', 'train');
+      const train = made('g', 'train', {}, trains);
       train.style.stroke = color2d(way === 0 ? edge.provider : edge.join.receiver);
       return {g: train, key: '', solid: along('bead', {}, train),
         tail: TAIL.map(opacity => along('bead', {opacity, 'stroke-dasharray': `0 ${far}`}, train))};
     }),
-    ask: along('ask', {'stroke-dasharray': `0 ${far}`}),
+    ask: along('ask', {'stroke-dasharray': `0 ${far}`}, asks),
     record: made('rect', 'record', {x: -4.5, y: -3.2, width: 9, height: 6.4, rx: 1.4}),
     ring: made('circle', 'ring', {r: 4})});
 }
@@ -148,7 +156,7 @@ function frame2d(now) {
   const wanted = ['hover', 'selected', 'all'].includes(flowModeNow()) ? 1 : 0, was = FLOW2D.fade ?? wanted;
   FLOW2D.fade = was + (wanted - was) * (1 - Math.exp(-Math.max(0, FLOW.clock - (FLOW2D.at ?? FLOW.clock)) * FLOW.ease));
   FLOW2D.at = FLOW.clock;
-  const group = shown[0].ask.parentNode, opacity = FLOW2D.fade.toFixed(3);
+  const group = shown[0].record.parentNode, opacity = FLOW2D.fade.toFixed(3);
   if (group && opacity !== FLOW2D.opacity) group.style.opacity = FLOW2D.opacity = opacity;
   if (FLOW2D.fade < 0.01 && !wanted) {
     for (const one of shown) flowEdge2d(one, true);

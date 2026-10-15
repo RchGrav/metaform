@@ -1,0 +1,1 @@
+Each CLI call is its own process, so the next one starts the module, which removes the orphaned run.  (test_follow_on.py comment) / step note: "using isolated=True since in-process calls share loader discovery and would not rerun the start hook."

@@ -110,7 +110,7 @@ function stopTimes() { try { return JSON.parse(localStorage.getItem(stopKey()) |
 function keepStops(times) {
   try { localStorage.setItem(stopKey(), JSON.stringify(times)); } catch { /* signals remain */ }
 }
-function rememberStop(session, at) { keepStops({...stopTimes(), [session]: at}); }
+export function rememberStop(session, at) { keepStops({...stopTimes(), [session]: at}); }
 function forgetStops(...sessions) {
   const times = stopTimes();
   sessions.forEach(session => delete times[session]);

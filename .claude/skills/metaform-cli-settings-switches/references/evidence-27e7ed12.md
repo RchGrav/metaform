@@ -1,0 +1,1 @@
+Test: tests/test_cli.py::test_a_dispatched_agent_cannot_give_itself_person_only_switches_on_a_verb (refused under role system, runs under role none). Before the fix: METAFORM_ROLE=system metaform dispatch autostart --dispatch-autostart --dispatch-agents 50 exited 0 and printed retried: [].
