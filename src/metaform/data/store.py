@@ -27,6 +27,7 @@ from typing import Any, TypeVar, cast
 from .. import changes, home, loader
 from ..errors import StoreError
 from . import history, layering, log, numbers, operations, promotion, reads, recorder, rows, tables, views, writes
+from . import refs as ref_records
 from .paging import LIMIT, sliced
 from .records import (
     Citation,
@@ -48,6 +49,7 @@ from .records import (
     Ref,
     Roots,
     Selection,
+    SourceRef,
     Version,
     Where,
 )
@@ -253,6 +255,39 @@ class Store:
         """Add one ref to a thing's current version in a knowledge or mutable layer, STORE-012."""
         with self._write() as tx:
             return writes.add_ref(tx, owner, key, value)
+
+    def link_ref(self, key: Any, value: Any, node: Node, *, name: str | None = None,
+                 details: Iterable[tuple[str, str]] = (), by: str | None = None,
+                 why: str | None = None) -> SourceRef | Outcome:
+        """Link a ref at a node, a record of the sources layer with an id that lasts, STORE-012: a new one, named
+        `name` or from what it names, or the ref already naming this key and value linked again, which moves it to the
+        nearest common node of the two places, the moving link."""
+        with self._write() as tx:
+            return ref_records.link(tx, key, value, node, name=name, details=details, by=by, why=why)
+
+    def place_refs(self, node: Node, refs: Iterable[Any], *, by: str | None = None,
+                   why: str | None = None) -> list[Notice]:
+        """The refs given for a node, linked there, replacing those whose latest link named it, MAP-021."""
+        with self._write() as tx:
+            return ref_records.place(tx, node, refs, by=by, why=why)
+
+    def unlink_ref(self, ref: str, *, by: str | None = None, why: str | None = None) -> Outcome:
+        """Remove a ref, by its id or its name, as a version its history keeps."""
+        with self._write() as tx:
+            found = ref_records.read(tx, ref)
+            if found is None:
+                raise StoreError(f'No ref is named {ref}.', 'metaform map node node=element:<address>')
+            return ref_records.unlink(tx, found.id, by=by, why=why)
+
+    def ref(self, name: str) -> SourceRef | None:
+        """A ref by its id, its ref_id or its name `{ref_id}@{address}:{join}`, with where it is linked now."""
+        with self._read() as tx:
+            return ref_records.read(tx, name)
+
+    def refs(self, node: Node | None = None) -> tuple[SourceRef, ...]:
+        """Every current ref of the sources layer, or those linked at one node, MAP-021."""
+        with self._read() as tx:
+            return ref_records.current(tx, node)
 
     def add_item(self, layer: str | None, target: Node, value: Any, *, link: Node | None = None,
                  refs: Iterable[Any] = (), extra: Any = None, read_first: Any = False, always_show: Any = False,

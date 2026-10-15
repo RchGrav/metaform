@@ -56,9 +56,17 @@ holds every field and every earlier version.
 Layout 19 to 20, MAP-054: the join gains its nullable element address again.
 Every existing row and version is kept, and a backup supports restoring layout 19.
 No other removed join fields return.
+
+Layout 21 to 22, STORE-012 and code.graph.knowledge#c: each ref is a record of the sources layer with an id that
+lasts. Every current item of the sources layer, a list of refs at an element or a join, is written as ref records,
+`refs.migrate`: a path starts a ref and the pairs after it are its details, each ref is named from what it names, and
+one key and value named at several places is one ref at their nearest common node, every place kept as an earlier
+version. The item is then removed as a version, so its history keeps it. Ops are appended to the log; nothing is
+rewritten. The counts, the names and the moves are written beside the backup, for review.
 """
 from __future__ import annotations
 
+import dataclasses
 import glob
 import json
 import os
@@ -87,6 +95,8 @@ LEFT_OUT = {'layers': "kind <> 'correction'"}  # rows the new layout cannot hold
 
 LEGACY = ('7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19')
 UPGRADE_SESSION = 'upgrade-21'
+REFS_SESSION = 'upgrade-22'  # the session the ops of layout 22's ref records are written under
+REFS_REPORT = 'refs-layout-22.json'  # the migration's counts and names, beside the backup it was made after
 
 
 def upgrade(db: sqlite3.Connection, path: Path, found: str) -> bool:
@@ -94,8 +104,8 @@ def upgrade(db: sqlite3.Connection, path: Path, found: str) -> bool:
     file at `path` was replaced, and the caller's connection reads the old one, so it reconnects. Processes that open
     the file at once take turns under a lock beside it, STORE-006: one upgrades it, and each that waited finds it at
     the current layout and reconnects."""
-    if found not in (*LEGACY, '20'):
-        raise StoreError(f'{path} has schema version {found}; this Metaform updates only versions 7 to 20.',
+    if found not in (*LEGACY, '20', '21'):
+        raise StoreError(f'{path} has schema version {found}; this Metaform updates only versions 7 to 21.',
                          'install the Metaform release that wrote it')
     with file_lock(path.with_name(path.name + '.upgrade.lock')):
         if _layout(path) == SCHEMA_VERSION:  # another process upgraded it while this one waited for the lock
@@ -129,6 +139,8 @@ def _upgraded(db: sqlite3.Connection, path: Path, found: str) -> bool:
         try:
             tables.create_missing(db)
             tables.legacy_upgrade(db, found)
+            if int(found) < 22:
+                refs_to_records(db, kept / REFS_REPORT)
             db.execute("INSERT OR IGNORE INTO meta(key,value) VALUES ('prior_schema_version',?)", (found,))
             stamp(db, SCHEMA_VERSION, COMPATIBLE_FROM)
             db.execute('COMMIT')
@@ -164,7 +176,7 @@ def _upgraded(db: sqlite3.Connection, path: Path, found: str) -> bool:
         try:
             if found in LEGACY:
                 _legacy(old, work, found)
-            _to_log(old, fresh, found)
+            _to_log(old, fresh, found, kept.parent / REFS_REPORT)
         finally:
             old.close()
     except BaseException:
@@ -192,9 +204,9 @@ def _kept_folder(path: Path) -> Path:
 NATIVE_20 = set(re.findall(r'CREATE(?: VIRTUAL)? TABLE IF NOT EXISTS ([a-z_]+)', LAYOUT_20))
 
 
-def _to_log(old: sqlite3.Connection, fresh: Path, found: str) -> None:
+def _to_log(old: sqlite3.Connection, fresh: Path, found: str, report: Path) -> None:
     """Read a layout 20 store into the ops of a new file, in the order its rows were written, with the modules'
-    own tables copied as they are."""
+    own tables copied as they are, and its refs made records, layout 22."""
     old.row_factory = sqlite3.Row
     private(fresh)
     new = sqlite3.connect(fresh, isolation_level=None)
@@ -216,6 +228,7 @@ def _to_log(old: sqlite3.Connection, fresh: Path, found: str) -> None:
                         (seq, UPGRADE_SESSION, written, op, kind, ident, layer_id,
                          json.dumps(data, ensure_ascii=False, sort_keys=True)))
         _copy_module_tables(old, new)
+        refs_to_records(new, report)
         new.execute('COMMIT')
     except BaseException:
         new.execute('ROLLBACK')
@@ -223,6 +236,28 @@ def _to_log(old: sqlite3.Connection, fresh: Path, found: str) -> None:
         fresh.unlink(missing_ok=True)
         raise
     new.close()
+
+
+def refs_to_records(db: sqlite3.Connection, report: Path | None = None) -> dict[str, Any]:
+    """Layout 22, inside the caller's transaction: every current item of the sources layer, a list of refs at an
+    element or a join, becomes ref records with ids that last, by the moving link, and is removed as a version its
+    history keeps, STORE-012. The counts before and after, each ref's name and every move are written beside the
+    backup for review."""
+    from . import log, refs
+    from .session import Tx
+    factory = db.row_factory
+    db.row_factory = sqlite3.Row
+    try:
+        tx = Tx(db, None, '', True, base=log.load(db))
+        counts = refs.migrate(tx)
+        log.append(db, [dataclasses.replace(op, session_id=REFS_SESSION) for op in tx.pending], home.now())
+    finally:
+        db.row_factory = factory
+    if report is not None:
+        home.mkdir_private(report.parent)
+        private(report)
+        report.write_text(json.dumps(counts, ensure_ascii=False, indent=1, sort_keys=True), encoding='utf-8')
+    return counts
 
 
 def _copy_module_tables(old: sqlite3.Connection, new: sqlite3.Connection) -> None:

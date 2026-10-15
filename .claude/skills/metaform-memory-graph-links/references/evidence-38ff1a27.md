@@ -1,0 +1,1 @@
+User: "How can acp not reportt compaction". Assistant's grep of dispatch runner and the acp package found no compaction handling, and the spec page says agents MUST NOT send compaction updates without the client capability.

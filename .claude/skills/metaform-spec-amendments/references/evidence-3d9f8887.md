@@ -1,0 +1,1 @@
+User: "I just gave you the spec.. its in the paper but not in the context of this system, which I just aligned for you". Assistant had proposed "Specification first, written with you ... nothing gets built until you've approved the wording."

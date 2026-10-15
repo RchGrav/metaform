@@ -1,0 +1,1 @@
+Deleted, uncommitted: src/metaform/modules/source_placement/ (all), map/code.py, code_index.py, code_preparation.py, tests/test_code_preparation.py, tests/fixtures/kitchen/, src/metaform/skills/code-links/.

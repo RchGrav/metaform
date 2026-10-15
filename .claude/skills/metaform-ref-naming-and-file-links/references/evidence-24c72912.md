@@ -1,0 +1,1 @@
+The link is dispatch link file= node=: a path ref added to the element's sources item (add_ref, never replacing), the sources layer and a base element made when missing. map knowledge op=add-element with refs REPLACES an element's sources refs, so never point agents at it for linking. map code-link writes the code layer, which placed() never reads.

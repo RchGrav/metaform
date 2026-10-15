@@ -142,3 +142,43 @@ def test_prompt_save_invalid_parent_uses_the_regular_validation_error(run):
     assert invalid.returncode == 2
     assert invalid.stderr.splitlines() == [
         'Error: parent= takes a positive version number.', 'Next: metaform help prompt']
+
+
+@pytest.mark.req('STORE-044')
+def test_a_shipped_change_behind_an_edit_is_kept_beside_it_until_the_shipped_text_comes_back(home):
+    from metaform.data import prompts
+    prompts.shipped('practices', 'xml', 'A')
+    edited = prompts.save_prompt('practices', 'A, edited')
+    assert prompts.shipped('practices', 'xml', 'A').version_id == edited.version_id
+    assert prompts.behind('practices') is None  # the shipped text the edit was made over
+    assert prompts.shipped('practices', 'xml', 'B').version_id == edited.version_id  # the edit is still served
+    behind = prompts.behind('practices')
+    assert behind is not None and (behind.number, behind.text) == (2, 'B') and behind.seen
+    prompts.shipped('practices', 'xml', 'B')
+    assert prompts.behind('practices') == behind  # nothing written again
+    prompts.shipped('practices', 'xml', 'A')
+    assert prompts.behind('practices') is None
+    prompts.shipped('practices', 'xml', 'C')
+    merged = prompts.save_prompt('practices', 'C, edited')
+    assert prompts.behind('practices') is None and prompts.prompt_version('practices') == merged
+    assert prompts.behind('nothing') is None
+
+
+@pytest.mark.req('STORE-029')
+def test_a_prompt_store_at_layout_2_is_upgraded_in_place_and_keeps_its_versions(home):
+    from metaform.data import prompts
+    prompts.add_prompt('practices', 'markdown', 'one')
+    db = sqlite3.connect(home / 'prompts.sqlite3')
+    db.execute('DROP TABLE prompt_shipped')
+    db.execute("UPDATE meta SET value='2' WHERE key='schema_version'")
+    db.commit()
+    db.close()
+    assert prompts.prompt_version('practices').text == 'one'
+    prompts.shipped('practices', 'markdown', 'shipped')
+    db = sqlite3.connect(home / 'prompts.sqlite3')
+    try:
+        assert db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone() == ('3',)
+        assert db.execute("SELECT value FROM meta WHERE key='compatible_from'").fetchone() == ('2',)
+        assert db.execute('SELECT COUNT(*) FROM prompt_shipped').fetchone() == (1,)
+    finally:
+        db.close()

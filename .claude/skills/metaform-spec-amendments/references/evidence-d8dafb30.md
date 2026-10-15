@@ -1,0 +1,1 @@
+Rich: "I just gave you the spec.. its in the paper but not in the context of this system, which I just aligned for you" — the assistant then ran `ls docs/preprint/; grep -n "^#" docs/preprint/inference-metaform.md` and read §5.2 and §5.3 to find the rule it had asked for.

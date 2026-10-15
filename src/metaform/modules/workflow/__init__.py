@@ -46,7 +46,7 @@ settings.choice('preprocess_knowledge', ['context', 'whole'], 'context',
 
 LIBS = skill_registry.LIBS
 SKILLS = ('scan', 'write_workflow', 'import_workflow', 'workflow_efficiency', 'prompt_efficiency',
-          'workflow_builder', 'workflow_evaluator', 'sentinel', 'code_links')
+          'workflow_builder', 'workflow_evaluator', 'sentinel')
 
 
 def _prompts() -> None:
@@ -200,13 +200,13 @@ def _shown(runs_store: Store, word: str) -> dict[str, Any]:
     result = executor.view(runs_store, word)
     if result['logic']['type'] == 'skill':
         result['libs'] = skill_registry.libraries(skill_registry.get(result['address']))
-    result['instructions'] = prompt_files.required(PACKAGE, 'execution', run=word)
+    result['instructions'] = prompt_files.served(PACKAGE, 'execution', run=word)
     return result
 
 
 def _handed(runs_store: Store, word: str) -> dict[str, Any]:
-    return {'run': word, 'handoff': prompt_files.required(PACKAGE, 'handoff', run=word,
-                                                          project=runs_store.project_id)}
+    return {'run': word, 'handoff': prompt_files.served(PACKAGE, 'handoff', run=word,
+                                                        project=runs_store.project_id)}
 
 
 def run(ctx: Context) -> Any:
@@ -323,14 +323,14 @@ def pause(ctx: Context) -> Any:
     work, session = _identity('METAFORM_WORK'), _identity('METAFORM_SESSION')
     if work:
         try:
-            _noted(held, work, prompt_files.required(PACKAGE, 'paused_note', run=word, found=found))
+            _noted(held, work, prompt_files.served(PACKAGE, 'paused_note', run=word, found=found))
         except StoreError as error:
             raise Stop(f'Run {word} is not paused: what stopped it could not be added to ticket {work}: {error} '
                        'Write it in your ticket\'s note yourself and end your turn.',
                        f'metaform map work op=edit id={work} note="<what and where>"') from None
     result = executor.pause(held, word, found, ticket=work, session=session)
     return {**result, **({'ticket': work} if work else {}),
-            'next': prompt_files.required(PACKAGE, 'paused', run=word)}
+            'next': prompt_files.served(PACKAGE, 'paused', run=word)}
 
 
 def answer(ctx: Context) -> Any:
@@ -350,15 +350,15 @@ def answer(ctx: Context) -> Any:
     if answered.ticket:
         when = time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime())
         try:
-            _noted(held, answered.ticket, prompt_files.required(PACKAGE, 'answered_note', time=when, answer=given))
+            _noted(held, answered.ticket, prompt_files.served(PACKAGE, 'answered_note', time=when, answer=given))
             result['ticket'] = answered.ticket
         except StoreError as error:
             result['ticket'] = f'not noted on {answered.ticket}: {error}'
         session = f' session={answered.session}' if answered.session else ''
-        result['next'] = prompt_files.required(PACKAGE, 'answered', run=word, ticket=answered.ticket,
-                                               session=session)
+        result['next'] = prompt_files.served(PACKAGE, 'answered', run=word, ticket=answered.ticket,
+                                             session=session)
     else:
-        result['next'] = prompt_files.required(PACKAGE, 'answered_alone', run=word)
+        result['next'] = prompt_files.served(PACKAGE, 'answered_alone', run=word)
     return result
 
 
@@ -423,8 +423,8 @@ def skills(ctx: Context) -> list[dict[str, Any]]:
 
 
 def scan(ctx: Context) -> str:
-    bound = prompt_files.required(PACKAGE, 'scan_input', workflow=ctx.nouns['workflow'],
-                                  task=ctx.nouns.get('task') or 'other')
+    bound = prompt_files.served(PACKAGE, 'scan_input', workflow=ctx.nouns['workflow'],
+                                task=ctx.nouns.get('task') or 'other')
     return skill_registry.procedure('scan') + '\n\n' + bound
 
 
@@ -434,10 +434,12 @@ def _assignment(held: Store, word: str) -> str:
     served = '\n\n'.join(skill_registry.libraries(skill_registry.get(value['skill'])).values())
     given, answered = value.get('input'), value.get('answer')
     bound = [skill_registry.bound(given) if given else '',
-             prompt_files.required(PACKAGE, 'assignment_answer', found=answered['question'],
-                                   answer=answered['answer']) if answered else '']
-    return prompt_files.required(
-        PACKAGE, 'assignment', libs=served, skill=skill_registry.procedure(value['skill']),
+             prompt_files.served(PACKAGE, 'assignment_answer', found=answered['question'],
+                                 answer=answered['answer']) if answered else '']
+    skill = skill_registry.get(str(value['skill'])).name
+    return prompt_files.served(
+        PACKAGE, 'assignment', libs=served,
+        skill=prompt_files.served_text(f'skill:{skill}', skill_registry.procedure(skill)),
         input='\n\n'.join(one for one in bound if one), run=word, project=held.project_id)
 
 

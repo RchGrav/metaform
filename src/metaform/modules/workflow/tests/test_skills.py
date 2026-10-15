@@ -47,7 +47,6 @@ def test_skills_list_the_libs_their_requires_line_names(run, project_folder):
         'workflow_efficiency': ['lib_axiom', 'lib_metaform', 'lib_workflow', 'lib_quality'],
         'prompt_efficiency': ['lib_axiom', 'lib_quality'],
         'workflow_builder': ['lib_axiom', 'lib_metaform', 'lib_workflow'],
-        'code_links': ['lib_metaform'],
     }
 
 

@@ -1,0 +1,1 @@
+{"type":"text","text":"To unlock access to this file, please first link it to its functionality in the map. dispatch_link file=artifacts/specs-draft/layer-028-root-names-refused-2026-10-15.md node=<the Address of the element it realizes; an Address no element has yet is made>"}

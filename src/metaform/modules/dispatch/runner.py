@@ -26,6 +26,7 @@ import base64
 import contextlib
 import contextvars
 import difflib
+import fnmatch
 import hashlib
 import json
 import os
@@ -78,8 +79,8 @@ from acp.schema import (
     WriteTextFileResponse,
 )
 
-from metaform import axiom, home, jev
-from metaform.data import Item, Node, Store, StoreError, WorkRecord
+from metaform import axiom, home, jev, prompt_files
+from metaform.data import Node, Store, StoreError, WorkRecord
 from metaform.module import WITHHELD, Context, Stop, child_environment, context, mcp_server, surface
 
 from . import (
@@ -104,6 +105,7 @@ from . import (
     launch_options,
     mascot_line,
     memory_read,
+    memory_text,
     module_read,
     next_ticket,
     option_key,
@@ -132,6 +134,13 @@ START_LIMIT = 300.0  # the one wait for the agent to start and make its session;
 END_LIMIT = 10.0  # the one wait for a cancelled turn to end, and for the agent to end once its input is closed
 LINE_LIMIT = 64 * 1024 * 1024  # the longest line read from the agent
 CHUNKS = ('agent_message_chunk', 'agent_thought_chunk', 'user_message_chunk')
+WRITES = ('edit', 'delete', 'move')  # the tool kinds of ACP that change files, each file under `locked`
+# Sent in every session's `_meta`: claude-agent-acp hands `claudeCode.options.settings` to Claude Code as its settings,
+# and an explicit ask rule reaches the permission request, session/request_permission, in every permission mode,
+# bypassPermissions and acceptEdits included, so each edit of its own tools, which write to disk themselves, is
+# decided by the runner first, code.dispatcher.agent#3d. Other agents ignore the key.
+EDITS_ASK = {'claudeCode': {'options': {'settings': {'permissions': {
+    'ask': ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']}}}}}
 STREAM_EVERY = 0.4  # seconds between writes of text still being written, so the page shows it as it grows
 LINES_EVERY = 0.25  # at most one `dispatch.lines` event per this many seconds; the rows are written at once
 TERMINATED = 'the runner was terminated'  # how a session ends on SIGTERM; its runner takes no next ticket
@@ -141,7 +150,6 @@ RELEASE = ('import json, sys; from metaform.data import Store; from metaform.mod
 # The updates that change what the session is rather than add to its thread: kept in its one `state` line.
 STATE_UPDATES = ('available_commands_update', 'current_mode_update', 'config_option_update', 'session_info_update',
                  'usage_update')
-SOURCES = 'sources'  # the layer the intake keeps each part's refs in, MAP-021: where on the map a file is
 PATCH_LIMIT = 200_000  # the most characters of a file's two texts a diff is worked out from; past it, its size only
 PATCH_KEPT = 60_000  # the most characters of one diff kept in the thread; the rest is in the file itself
 AWAIT_SPARE = 10  # seconds past a question's wait its runner still holds replies for the call that waits
@@ -278,38 +286,61 @@ def folded(path: str) -> str:
 
 
 def sources_index(store: Store, root: str) -> dict[str, list[dict[str, str]]]:
-    """Each path the sources layer's refs name, as the project names it, with the parts of the map it belongs to: an
-    element, or a join under its receiver's address. A ref's line mark is left off, so file.py:12 is file.py. With no
-    sources layer the map places no file."""
-    try:
-        items = store.layer_items(SOURCES, limit=0).results
-    except StoreError:
-        return {}
+    """Each path the sources layer's refs name, as the project names it, with the part of the map its ref is linked at:
+    an element, or a join under its receiver's address, code.graph.knowledge#c. A ref's line mark is left off, so
+    file.py:12 is file.py. With no sources layer the map places no file."""
     index: dict[str, list[dict[str, str]]] = {}
-    for item in items:
-        if not isinstance(item, Item):
-            continue
-        place = {'kind': item.target.kind, 'id': item.target.id, 'address': str(item.value)}
-        for ref in item.refs:
-            path = relative(LINE_MARK.sub('', ref.value.strip()), [root])
-            if path:
-                held = index.setdefault(folded(path), [])
-                if place not in held:
-                    held.append(place)
+    for ref in store.refs():
+        if ref.address is None:
+            continue  # linked at a part no longer on the map
+        path = relative(LINE_MARK.sub('', ref.value.strip()), [root])
+        if path:
+            place = {'kind': ref.node.kind, 'id': ref.node.id, 'address': ref.address}
+            held = index.setdefault(folded(path), [])
+            if place not in held:
+                held.append(place)
     return index
 
 
-def placed(index: dict[str, list[dict[str, str]]], path: str | None) -> list[dict[str, str]]:
+def placed(index: dict[str, list[dict[str, str]]], path: str | None) -> tuple[list[dict[str, str]], bool]:
     """The parts of the map a file belongs to: those whose refs name it, or else those whose refs name the nearest
-    folder holding it."""
+    folder holding it; and whether the match was exact, the file itself named, rather than that folder fallback."""
     if not path or not index:
-        return []
+        return [], False
     parts = folded(path).split('/')
     for end in range(len(parts), 0, -1):
         found = index.get('/'.join(parts[:end]))
         if found:
-            return found
-    return []
+            return found, end == len(parts)
+    return [], False
+
+
+def ignored(patterns: Sequence[str]) -> Callable[[str], bool]:
+    """Whether a project-relative path falls under the project's `.metaform/ignore.txt`, BASE-058, read with
+    gitignore's common forms: `dir/` a folder anywhere, `/dir` from the root, a pattern without a slash a name
+    anywhere, `*` and `**` wildcards. Negations are not read; they would only let more be written."""
+    compiled: list[Callable[[str], bool]] = []
+    for raw in patterns:
+        pattern = raw.strip().strip('"').strip("'")
+        if not pattern or pattern.startswith('!'):
+            continue
+        folder = pattern.endswith('/')
+        pattern = pattern.strip('/')
+        if not pattern:
+            continue
+        rooted = raw.strip().startswith('/') or '/' in pattern
+
+        def match(path: str, pattern: str = pattern, folder: bool = folder, rooted: bool = rooted) -> bool:
+            parts = path.split('/')
+            if rooted:
+                depth = pattern.count('/') + 1
+                heads = ['/'.join(parts[:index]) for index in range(depth, len(parts) + 1)]
+                return any(fnmatch.fnmatchcase(head, pattern) and (not folder or head != path)
+                           for head in heads) or fnmatch.fnmatchcase(path, pattern + '/**')
+            names = parts[:-1] if folder else parts
+            return any(fnmatch.fnmatchcase(name, pattern) for name in names)
+        compiled.append(match)
+    return lambda path: any(match(path) for match in compiled)
 
 
 def unified(path: str, old: str | None, new: str) -> dict[str, Any]:
@@ -1144,6 +1175,7 @@ class Session:
         self.attached: list[dict[str, str]] = []  # resource links the next prompt carries beside its text
         self.closed = False  # session/close was sent
         self.probe = False  # started only to be asked something, P199 and P031: it keeps no thread
+        self.sent: list[prompt_files.Sent] = []  # the prompt versions served since the last turn went out
         self.left_out = ''  # what initialize could not offer, said in the thread once it exists
         self.terminals: dict[str, Terminal] = {}  # the agent's terminals, ACP's terminal/*, by their id, P019
         self.terminal_count = 0
@@ -1774,10 +1806,14 @@ class Session:
             if len(self.steering) > sent and (raw := self.raw()) is not None:
                 with contextlib.suppress(Exception):
                     await raw.send_notification('$/cancel_request', {'requestId': self.steering[sent]})
+            self.carried()  # the agent may have taken it, so it is not sent again: counted as sent
             return None
         except Exception:  # noqa: BLE001  an error answer: the agent did not take it, so it goes as the next prompt
             return False
-        return isinstance(answer, dict) and cast(dict[str, Any], answer).get('outcome') == 'injected'
+        injected = isinstance(answer, dict) and cast(dict[str, Any], answer).get('outcome') == 'injected'
+        if injected:
+            self.carried()
+        return injected
 
     def raw(self) -> Any:
         """The SDK's JSON-RPC connection under the client one, for what its schema does not carry yet: initialize with
@@ -1973,15 +2009,15 @@ class Session:
         roots = [self.folder, self.root]
         nodes: list[dict[str, str]] = []
 
-        def where(path: str) -> tuple[str, list[dict[str, str]]]:
+        def where(path: str) -> tuple[str, list[dict[str, str]], bool]:
             named = relative(path, roots)
-            found = placed(index, named)
+            found, exact = placed(index, named)
             nodes.extend(place for place in found if place not in nodes)
-            return named or path, found
+            return named or path, found, exact
 
         diffs: list[dict[str, Any]] = []
         for at, edit in enumerate(edits):
-            path, found = where(str(edit.get('path', '')))
+            path, found, exact = where(str(edit.get('path', '')))
             old, new = edit.get('oldText'), str(edit.get('newText', ''))
             key, sign = f'{call.get("toolCallId")}:{at}', (path, hash(old), hash(new))
             held = self.patches.get(key)  # a status update carries the same diff again
@@ -1991,11 +2027,11 @@ class Session:
                 self.patches.pop(key, None)  # the call is over: its diff is in its line
             else:
                 self.patches[key] = (sign, worked)
-            diffs.append({'path': path, **worked, 'nodes': found})
+            diffs.append({'path': path, **worked, 'nodes': found, 'exact': exact})
         places: list[dict[str, Any]] = []
         for location in locations:
-            path, found = where(str(location.get('path', '')))
-            places.append({'path': path, 'line': location.get('line'), 'nodes': found})
+            path, found, exact = where(str(location.get('path', '')))
+            places.append({'path': path, 'line': location.get('line'), 'nodes': found, 'exact': exact})
         return {'tool_call_id': call.get('toolCallId'), 'title': call.get('title'), 'kind': call.get('kind'),
                 'status': call.get('status', 'pending'), 'diffs': diffs, 'locations': places,
                 'terminals': terminals, 'nodes': nodes}
@@ -2098,7 +2134,7 @@ class Session:
         """A file the agent read or wrote through the runner: placed on the map, kept among the parts it touched, and
         kept in the session's state, the latest first."""
         named = relative(str(path), [self.folder, self.root]) or str(path)
-        nodes = placed(await self.places(), named)
+        nodes, _ = placed(await self.places(), named)
         files = [{'path': named, 'action': action}] + [one for one in cast(list[dict[str, str]], self.acp['files'])
                                                         if one != {'path': named, 'action': action}]
         self.acp['files'] = files[:TOUCHED_KEPT]
@@ -2106,6 +2142,46 @@ class Session:
             await self.touch(nodes, action)
             await self.save_state()
         return nodes
+
+    async def locked(self, named: str | None) -> str | None:
+        """Why the agent may not write a file of the project, or None when it may, code.dispatcher.agent#3d: a path
+        under the project's `.metaform/ignore.txt` is read-only to agents, linked or not; a file no element's ref
+        names exactly is locked until the agent links it to its element, with the call that does it. A path outside the
+        project is not the map's. Reads never come here: reading is how the agent finds where a file belongs."""
+        if not named or self.probe:
+            return None
+        patterns = await asyncio.to_thread(home.ignore_patterns, self.root)
+        if patterns and ignored(patterns)(named):
+            return prompt('write_ignored', file=named) or f'{named} is read-only to agents.'
+        if placed(await self.places(), named)[1]:
+            return None
+        return ' '.join(part for part in (prompt('write_unlinked'), prompt('link_call', file=named)) if part)
+
+    async def edit_locked(self, call: dict[str, Any]) -> str | None:
+        """Why a permission request to change files is refused, or None: every file it names, by its diffs, its
+        locations or its input's path, under `locked`. A request of any other kind is not a write."""
+        if str(call.get('kind')) not in WRITES:
+            return None
+        raw = call.get('rawInput')
+        given = cast(dict[str, Any], raw) if isinstance(raw, dict) else {}
+        paths = [*(str(one.get('path')) for one in cast(list[dict[str, Any]], call.get('content') or [])
+                   if one.get('type') == 'diff' and one.get('path')),
+                 *(str(one.get('path')) for one in cast(list[dict[str, Any]], call.get('locations') or [])
+                   if one.get('path')),
+                 *(str(given[key]) for key in ('file_path', 'notebook_path', 'path') if isinstance(given.get(key), str))]
+        for path in dict.fromkeys(paths):
+            why = await self.locked(relative(path, [self.folder, self.root]))
+            if why is not None:
+                return why
+        return None
+
+    async def told(self, text: str) -> None:
+        """A refusal's reason given to the agent: into the turn in flight when it steers, otherwise as its next turn,
+        since a permission answer carries no text."""
+        steered = await self.steer(text) if self.turns and self.active_turn is not None and self.active_turn.sent \
+            else False
+        if steered is False:  # None: the agent may have taken it, so it is not sent again
+            self.turn(text)
 
     async def read_text_file(self, session_id: str, path: str, line: int | None = None, limit: int | None = None,
                              **kwargs: Any) -> ReadTextFileResponse:
@@ -2129,7 +2205,10 @@ class Session:
         inside a part of the map another ticket's claim reserves, LAYER-029."""
         found = await self.confined('write', path)
         named = relative(str(found), [self.folder, self.root])
-        for place in placed(await self.places(), named):
+        why = await self.locked(named)
+        if why is not None:
+            raise await self.refuse('write', path, why)
+        for place in placed(await self.places(), named)[0]:
             lock = await asyncio.to_thread(claimed, self.store, place.get('address'), self.work_id)
             if lock is not None:
                 raise await self.refuse('write', path, f'{place.get("address")} is claimed by "{lock["name"]}"')
@@ -2471,6 +2550,17 @@ class Session:
         rpc = INCOMING.get()
         waiting: asyncio.Future[str | None] = asyncio.get_running_loop().create_future()
         title = str(tool_call.title or tool_call.kind or 'a tool call')
+        # A change to a locked file is refused before any answer the prompts choice or the agent's mode would give,
+        # code.dispatcher.agent#3d; the agent's reject-once option where it offers one, never one it would remember.
+        why = await self.edit_locked(tool_call.model_dump(mode='json', by_alias=True, exclude_none=True))
+        if why is not None:
+            async with self.lock:
+                await self.flush()
+                await self.note(None, 'notice', f'{title}: refused, {why}')
+            self.spawn(self.told(why))
+            reject = next((option for option in options if str(option.kind) == 'reject_once'), None)
+            return RequestPermissionResponse(outcome=AllowedOutcome(option_id=reject.option_id, outcome='selected')
+                                             if reject is not None else DeniedOutcome(outcome='cancelled'))
         how, source = await self.answering()
         said = self.answered_by(how, source)
         allow = allowed(options, how, tool_call.kind)
@@ -2878,6 +2968,7 @@ class Session:
     # ------------------------------------------------------------------ the session
 
     async def run(self) -> dict[str, Any]:
+        self.sent = prompt_files.collect()  # every prompt this runner serves from here on, its tasks' and threads' too
         server = await asyncio.start_server(self.control, '127.0.0.1', 0)
         self.port = int(server.sockets[0].getsockname()[1])
         loop = asyncio.get_running_loop()
@@ -2917,6 +3008,7 @@ class Session:
                 try:
                     await asyncio.to_thread(listener.close)
                 finally:
+                    prompt_files.release(self.sent)
                     server.close()
                     await server.wait_closed()
         return {'work_id': self.work_id, 'agent': self.agent, 'session_id': self.session_id, 'ended': self.how}
@@ -2954,7 +3046,7 @@ class Session:
             if self.resume:
                 made = await asyncio.wait_for(self.reopen(servers), START_LIMIT)
             else:
-                made = await asyncio.wait_for(self.conn.new_session(cwd=self.folder, mcp_servers=servers),
+                made = await asyncio.wait_for(self.conn.new_session(cwd=self.folder, mcp_servers=servers, **EDITS_ASK),
                                               START_LIMIT)
                 async with self.lock:  # what the agent asked while the session was made moves to it
                     await self.waits_moved(str(made.session_id))
@@ -3084,12 +3176,18 @@ class Session:
 
     def handed(self) -> str:
         """The hand-off this worker is sent as its first turn, BASE-050, its links attached to that turn as ACP
-        resource links; with no map to read it from, its one sentence alone."""
+        resource links; with no map to read it from, its one sentence alone. Ahead of it, the owner's memory prompt,
+        filled with the ticket's element, a join's receiver under the Join rule, CTX-028."""
         try:
             text, self.attached = handoff_parts(self.ctx, self.work_id, session=self.runner)
         except Stop:
-            return work_line(self.work_id, Path(self.folder), self.at)
-        return text
+            text = work_line(self.work_id, Path(self.folder), self.at)
+        try:
+            memory = memory_text(Path(self.root), self.store.project_id, self.at.partition('|')[0] or None)
+        except Exception as error:  # noqa: BLE001  a prompt that cannot be read never keeps the work from starting
+            sys.stderr.write(f'Could not read the memory prompt for work {self.work_id}: {error}\n')
+            memory = ''
+        return f'{memory}\n\n{text}' if memory else text
 
     async def open_agent(self, identity: dict[str, str], *, terminal_login: bool = False) -> InitializeResponse:
         """Start the agent's adapter in its own process group, its stderr read into the thread, and initialize it.
@@ -3169,11 +3267,13 @@ class Session:
         session_id = cast(str, self.resume)
         if caps.get('resume'):
             self.acp['resumed'] = 'resume'
-            return await self.conn.resume_session(session_id=session_id, cwd=self.folder, mcp_servers=servers)
+            return await self.conn.resume_session(session_id=session_id, cwd=self.folder, mcp_servers=servers,
+                                                   **EDITS_ASK)
         if caps.get('load'):
             self.acp['resumed'] = 'load'
             self.replaying = True
-            return await self.conn.load_session(cwd=self.folder, session_id=session_id, mcp_servers=servers)
+            return await self.conn.load_session(cwd=self.folder, session_id=session_id, mcp_servers=servers,
+                                                 **EDITS_ASK)
         raise RuntimeError(f'{self.name} offers neither session/resume nor session/load, so session {session_id} '
                            'cannot be resumed')
 
@@ -3328,9 +3428,24 @@ class Session:
                     mark_peer(tx, session_id, note_id, self.work_id, state)
         await self.table(marked, fatal=False)
 
+    def carried(self) -> None:
+        """The prompt versions served since the last turn went out, told on `prompt.sent` with this session's ids and
+        role as that turn goes, so a module that keeps what each session was sent records it, ticket 3a1306bd. Nothing
+        is told for a turn that carried no prompt, such as the person's own message, or for an agent started only to
+        be asked something."""
+        taken = [self.sent.pop(0) for _ in range(len(self.sent))]
+        if not taken or self.session_id is None or self.probe:
+            return
+        payload = {'project': self.store.project_id, 'work_id': self.work_id, 'session_id': self.session_id,
+                   'runner': self.runner, 'role': self.role, 'agent': self.agent, 'at': stamp(),
+                   'prompts': [{'name': one.name, 'number': one.number, 'origin': one.origin,
+                                'version_id': one.version_id} for one in taken]}
+        self.spawn(self.ctx.publish_async('prompt.sent', payload))
+
     def turn(self, text: str, audio: Any = None, image: Any = None, peers: list[tuple[str, str]] | None = None) -> None:
         if self.ending:
             return
+        self.carried()
         self.replaying = False  # what comes from here on is the session's own, never a replay
         self.pending.append(text)
         self.voiced.append([block for block in (audio, image) if block is not None])

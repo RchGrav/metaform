@@ -223,13 +223,100 @@ def test_two_elements_may_each_receive_from_the_other(store):
 def test_refs_keep_their_order_and_are_found_by_key_and_value(store):
     small_map(store)
     sources = knowledge(store, 'sources')
-    grouped = store.add_item(sources.name, Node('element', 'code.loop.tick'), 'code.loop.tick',
-                             refs=[('path', 'c.c'), ('path', 'a.c'), ('path', 'b.c')])
-    held = store.layer_items(sources.name, Node('element', 'code.loop.tick')).results
-    assert [ref.value for ref in held[0].refs] == ['c.c', 'a.c', 'b.c']
+    store.add_item(sources.name, Node('element', 'code.loop.tick'), 'code.loop.tick',
+                   refs=[('path', 'c.c'), ('path', 'a.c'), ('path', 'b.c')])
+    held = store.refs(Node('element', 'code.loop.tick'))
+    assert [ref.value for ref in held] == ['c.c', 'a.c', 'b.c']  # each a record of its own, code.graph.knowledge#c
     cited = store.citing('path', 'a.c').results
     assert [(hit.kind, hit.object_id, hit.address, hit.layer) for hit in cited] == [
-        ('item', grouped.id, 'code.loop.tick', 'sources')]
+        ('item', held[1].id, 'code.loop.tick', 'sources')]
+
+
+@pytest.mark.req('STORE-012')
+@pytest.mark.req('CTX-065')
+def test_a_refs_id_lasts_through_an_edit_a_rebuild_and_another_ref_and_a_removed_ref_reads_in_history(home, store):
+    from metaform.data import log
+    small_map(store)
+    tick = Node('element', 'code.loop.tick')
+    first = store.link_ref('path', 'src/tick.c', tick, by='test', why='the tick loop runs here')
+    assert (first.name, first.ref, first.by, first.reason) == ('tick', 'tick@code.loop.tick', 'test',
+                                                               'the tick loop runs here')
+    store.link_ref('path', 'src/clock.c', tick)
+    assert [ref.id for ref in store.refs(tick)][:1] == [first.id]  # adding a ref leaves the others' ids alone
+    store.edit(first.id, {'refs': [['path', 'src/tick2.c']]})
+    log.forget(store_file(home, store))  # the projection is read again from the log
+    edited = store.ref('tick')
+    assert edited is not None and (edited.id, edited.value) == (first.id, 'src/tick2.c')
+    store.remove(first.id)
+    assert [ref.value for ref in store.refs(tick)] == ['src/clock.c']
+    removed = store.ref('tick')
+    assert removed is not None and removed.removed and removed.id == first.id
+    assert [(version.op, version.refs[0].value) for version in store.history(first.id).results] == [
+        ('add', 'src/tick.c'), ('change', 'src/tick2.c'), ('remove', 'src/tick2.c')]
+
+
+@pytest.mark.req('CTX-066')
+@pytest.mark.req('CTX-009')
+@pytest.mark.req('CTX-087')
+def test_a_ref_linked_on_another_branch_moves_to_where_they_meet_and_its_name_is_its_identity(store):
+    from metaform.data import Outcome
+    _, _, inner = small_map(store)
+    x = store.link_ref('path', 'src/x.c', Node('element', 'code.timer.kitchen'), name='x')
+    assert x.ref == 'x@code.timer.kitchen'
+    moved = store.link_ref('path', 'src/x.c', Node('element', 'code.alarm.audible'))
+    assert (moved.id, moved.ref) == (x.id, 'x@code')
+    made = store.element('code', raw=True)
+    assert made is not None and made.layer == 'sources'  # made in the ref's layer, never the base, CTX-010
+    assert store.link_ref('path', 'src/x.c', Node('element', 'code.loop.tick')).ref == 'x@code'  # covered: stays
+    stale = store.ref('x@code.timer.kitchen')
+    assert stale is not None and stale.ref == 'x@code' and 'linked at code now' in stale.notices[0].message
+    y = store.link_ref('path', 'src/y.c', Node('element', 'code.timer.kitchen'))
+    assert store.link_ref('path', 'src/y.c', Node('element', 'code.timer')).ref == 'y@code.timer'  # toward the trunk
+    z = store.link_ref('path', 'src/z.c', Node('join', inner.id))
+    assert (z.ref, z.join) == ('z@code.timer.kitchen', inner.id)  # no ':' part: open question 25 of CTX
+    taken = store.link_ref('path', 'src/w.c', Node('element', 'code.loop.tick'), name='x')
+    assert isinstance(taken, Outcome) and 'x@code' in taken.notices[0].message
+    reserved = store.link_ref('path', 'src/w.c', Node('element', 'code.loop.tick'), name='purpose')
+    assert isinstance(reserved, Outcome) and 'this.purpose' in reserved.notices[0].message
+    assert [ref.value for ref in store.refs()] == ['src/x.c', 'src/y.c', 'src/z.c']  # the refusals wrote nothing
+    assert y.id == store.ref('y@code.timer').id
+
+
+@pytest.mark.req('STORE-012')
+@pytest.mark.req('CTX-065')
+def test_layout_22_makes_every_ref_of_the_sources_layer_a_record_and_keeps_the_old_items_in_history(home, store):
+    from metaform.data import log, refs
+    from metaform.data.session import Tx
+    from metaform.data.upgrade import refs_to_records
+    _, _, inner = small_map(store)
+    sources = knowledge(store, 'sources')
+    path = store_file(home, store)
+    db = sqlite3.connect(path, isolation_level=None)
+    db.row_factory = sqlite3.Row
+    try:
+        db.execute('BEGIN IMMEDIATE')  # two items as the sources layer held them before layout 22
+        tx = Tx(db, None, '', True, base=log.load(db))
+        kitchen = tx.base.element_at('code.timer.kitchen')
+        for kind, target, pairs in (('element', kitchen, [['path', 'src/a.c'], ['lines', '1-9'], ['path', 'src/b.c']]),
+                                    ('join', inner.id, [['path', 'src/a.c'], ['path', 'src/c.c']])):
+            tx.emit('add', 'item', f'{len(tx.pending):032x}', sources.id, {
+                'mode': 'add', 'target_kind': kind, 'target_id': target, 'value': '"code.timer.kitchen"',
+                'link_kind': None, 'link_id': None, 'extra': None, 'read_first': 0, 'always_show': 0, 'refs': pairs})
+        log.append(db, tx.pending, '2026-10-15T00:00:00Z')
+        db.execute('COMMIT')
+        db.execute('BEGIN IMMEDIATE')
+        report = refs_to_records(db)
+        db.execute('COMMIT')
+        after = log.load(db)
+    finally:
+        db.close()
+    assert (report['items'], report['pairs'], report['refs']) == (2, 5, 3)
+    records = {refs.name_of(held[0]): held for _, held in refs.records(after)}
+    assert {name: [list(pair) for pair in held[-1].refs] for name, held in records.items()} == {
+        'a': [['path', 'src/a.c'], ['lines', '1-9']], 'b': [['path', 'src/b.c']], 'c': [['path', 'src/c.c']]}
+    assert len(records['a']) == 2  # linked at the element, then at its join below it: a version records the link
+    assert not [version for _, version in after.currents('item')
+                if version.layer_id == sources.id and not refs.is_record(version)]
 
 
 @pytest.mark.req('MAP-020')
@@ -325,7 +412,7 @@ def test_a_join_holds_its_elements_in_rows_of_their_own_and_a_joins_identity_hol
     assert {op['data']['type'] for op in joins} == {'purpose'}  # MAP-054 adds the optional promotion address.
     assert sum(len(op['data']['held']) for op in joins) == 3  # a join holds its elements in order, STORE-046
     assert all(set(op['data']) >= {'type', 'receiver', 'purpose', 'ef', 'ifd', 'element', 'held'} for op in joins)
-    assert version == '21'
+    assert version == '22'
     assert 'correction_stack' not in tables
 
 

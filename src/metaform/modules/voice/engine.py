@@ -21,7 +21,10 @@ from . import models
 
 INSTALL = ("pip install 'metaform[voice]', or 'metaform[voice-gpu]' with an NVIDIA GPU; "
            'from a source checkout, uv sync --extra voice (or --extra voice-gpu)')
+GPU_INSTALL = "pip install 'metaform[voice-gpu]'; from a source checkout, uv sync --extra voice-gpu"
 STRONG_CPU = 8  # cores from which the server's CPU engine beats the page's WebAssembly one at a usable model size
+# The cuBLAS CTranslate2 opens by this name at its first transcription on CUDA, and fails that transcription without.
+CUBLAS = 'cublas64_12.dll' if sys.platform == 'win32' else 'libcublas.so.12'
 
 _lock = threading.Lock()  # one transcription at a time: a GPU serves one well, two badly
 _state: dict[str, Any] = {'model': None, 'key': None, 'used': 0.0, 'timer': None, 'loads': 0}
@@ -59,13 +62,27 @@ def _cuda_libraries() -> None:
                     pass
 
 
+def _cuda_loads() -> str | None:
+    """Whether the CUDA libraries CTranslate2 needs load in this process: None when they do, else why not. A GPU
+    counted is not a GPU that transcribes; without cuBLAS 12 every utterance on CUDA fails. Loads them for good, as
+    the first model on CUDA would."""
+    _cuda_libraries()
+    try:
+        ctypes.CDLL(CUBLAS, mode=getattr(ctypes, 'RTLD_GLOBAL', 0))
+    except OSError as error:
+        return str(error) or f'{CUBLAS} does not load'
+    return None
+
+
 def machine() -> dict[str, Any]:
-    """What this machine offers the server engine, found once per process: the extra, a CUDA device, the CPU cores,
-    and whether it serves speech well enough to be chosen over the page's own engine, with the reason in words."""
+    """What this machine offers the server engine, found once per process: the extra, a CUDA device whose libraries
+    load, the CPU cores, and whether it serves speech well enough to be chosen over the page's own engine, with the
+    reason in words. `cuda` counts the devices that can run; `cuda_error` says why a GPU found cannot."""
     if _probe:
         return dict(_probe)
     cores = os.cpu_count() or 1
-    found: dict[str, Any] = {'installed': installed(), 'install': INSTALL, 'cores': cores, 'cuda': 0, 'gpu': None}
+    found: dict[str, Any] = {'installed': installed(), 'install': INSTALL, 'cores': cores, 'cuda': 0, 'gpu': None,
+                             'cuda_error': None}
     if found['installed']:
         try:
             import ctranslate2  # type: ignore[import-not-found]
@@ -74,11 +91,25 @@ def machine() -> dict[str, Any]:
             found['cuda'] = 0
         if found['cuda']:
             found['gpu'] = _gpu_name()
-    if not found['installed']:
+            found['cuda_error'] = _cuda_loads()
+            if found['cuda_error']:
+                found['cuda'] = 0
+    else:
+        found['gpu'] = _gpu_name()  # a GPU the missing extra leaves idle, so the page can tell the person
+    named = f' ({found["gpu"]})' if found['gpu'] else ''
+    if not found['installed'] and found['gpu']:
+        found.update(capable=False, reason=f'the voice extra is not installed here, though an NVIDIA GPU{named} could '
+                                           f'run Whisper: {GPU_INSTALL}')
+    elif not found['installed']:
         found.update(capable=False, reason='the voice extra is not installed here')
     elif found['cuda']:
-        named = f' ({found["gpu"]})' if found['gpu'] else ''
         found.update(capable=True, reason=f'an NVIDIA GPU{named} runs Whisper here')
+    elif found['cuda_error']:
+        found['install'] = GPU_INSTALL
+        instead = f'{cores} CPU cores run it instead' if cores >= STRONG_CPU else 'the browser runs it instead'
+        found.update(capable=cores >= STRONG_CPU,
+                     reason=f'an NVIDIA GPU{named} is here but cannot run Whisper ({found["cuda_error"]}); install '
+                            f'its libraries with {GPU_INSTALL}; {instead}')
     elif cores >= STRONG_CPU:
         found.update(capable=True, reason=f'{cores} CPU cores run Whisper here')
     else:
@@ -97,8 +128,8 @@ def _gpu_name() -> str | None:
 
 
 def device(prefer: str = 'auto') -> tuple[str, str]:
-    """The device and the compute type: CUDA in float16 where there is one, else the CPU in int8; `prefer`, the
-    person's voice_device, holds it to cpu, or to cuda where CUDA is found."""
+    """The device and the compute type: CUDA in float16 where there is one whose libraries load, else the CPU in int8;
+    `prefer`, the person's voice_device, holds it to cpu, or to cuda where CUDA can run."""
     cuda = bool(machine()['cuda']) and prefer != 'cpu'
     return ('cuda', 'float16') if cuda else ('cpu', 'int8')
 
@@ -120,9 +151,7 @@ def _load(name: str, prefer: str) -> Any:
     folder = models.server_folder(model)
     if not models.present(folder, model):
         raise FileNotFoundError(name)
-    where, compute = device(prefer)
-    if where == 'cuda':
-        _cuda_libraries()  # loaded only when a model is, so a page that never speaks costs the server nothing
+    where, compute = device(prefer)  # on cuda, machine() has loaded the CUDA libraries already
     key = (name, where, compute)
     if _state['key'] != key or _state['model'] is None:
         unload()

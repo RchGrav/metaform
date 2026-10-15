@@ -121,8 +121,8 @@
             <select id="agentsat" aria-keyshortcuts="A"><option value="auto">While at work</option><option value="open">Pinned out</option><option value="hidden">Pinned away</option></select>
           </div>
           <div class="label">Map</div>
-          <div class="menu-field themepick" title="The 3D map's names: outward from its middle, or facing you"><label for="signsat">Signs</label>
-            <select id="signsat"><option value="outward">Outward</option><option value="facing">Facing</option></select>
+          <div class="menu-field themepick" title="The 3D map's names: facing you, or outward from its middle"><label for="signsat">Signs</label>
+            <select id="signsat"><option value="facing">Facing</option><option value="outward">Outward</option></select>
           </div>
           <div class="menu-field themepick" title="How far the 3D map's view opens as its pane grows tall (L)"><label for="lensat">Lens</label>
             <select id="lensat" aria-keyshortcuts="L"><option value="natural">Natural</option><option value="wide">Wide</option><option value="fisheye">Fisheye</option></select>
@@ -284,6 +284,9 @@
          its corner at its first size. The menu holds what is used now and then: the agent's body, the size, the keys. -->
     <div class="head" title="Drag to move; double-click to put it back in its corner"><span class="avatar" aria-hidden="true">M</span><div class="who"><b class="title">Metaform Support</b><small class="line"><span class="dot" aria-hidden="true"></span><span class="with">Online</span><span class="status" role="status" hidden></span></small></div><button class="more" type="button" title="More: the agent's body, size and place, keys" aria-label="More chat options" aria-haspopup="menu" aria-expanded="false" aria-controls="dockMenu"><i class="i i-menu" aria-hidden="true"></i></button><button class="place" type="button" title="Dock the chat at the side of the page" aria-label="Dock the chat at the side of the page"><i class="i i-dock" aria-hidden="true"></i></button><button class="big" type="button" title="Make the chat large, and back" aria-label="Make the chat large"><i class="i i-expand" aria-hidden="true"></i></button><button class="close min" type="button" title="Close chat without stopping the agent (Escape)" aria-label="Close chat">×</button></div>
     <div id="dockMenu" class="dockmenu" role="menu" aria-label="Chat options" hidden></div>
+    <!-- At full size the agents are listed down the left, My agent first, each with its task; the conversation on view
+         is the pane to their right. Smaller, the list hides and the tabs above the thread do its job. -->
+    <div class="chatbody"><nav class="agentlist" aria-label="Agents" hidden></nav><div class="chatpane">
     <div class="tabs" role="tablist" aria-label="Open chats" hidden></div>
     <!-- The thread on view: where it comes from, its agent's glyph and task, and what can be done with it. -->
     <div class="threadbar" hidden><img class="icon" alt="" hidden><span class="source"></span><p class="task"></p><button class="locate btn sm quiet" type="button" hidden title="Select its part on the map, with its agent">Show on map</button><button class="again btn sm" type="button" hidden title="An agent that reads this thread first goes on with it">Continue</button><button class="stop btn sm danger" type="button" hidden title="Stop this agent; its session and memory can be resumed later">Stop agent</button></div>
@@ -306,6 +309,7 @@
     <!-- One quiet line under the box: Resume and Stay connected, then Interrupt while a turn runs, and Call. Stop agent is a separate control in the thread bar.
          The agent a call starts is chosen in the settings line at the top. -->
     <div class="calls"><label class="resume" title="Call and Chat go on with your last conversation about the same thing, so the agent keeps its memory of it; unchecked starts a new one"><input type="checkbox" checked> Resume</label><label class="resume stay" title="Keep your system agent running for this project: it starts when the web GUI starts or this page opens, and comes back with its memory when it ends without your stop; Stop agent turns this off; closing the chat leaves it running"><input type="checkbox"> Stay connected</label><span class="grow"></span><button class="interrupt" type="button" disabled hidden title="Interrupt the current turn and keep the conversation available (Ctrl+.)" aria-keyshortcuts="Control+.">Interrupt</button><button class="call" type="button" title="Start a chat with your system agent; close × hides the chat, Stop agent stops it">Call</button></div>
+    </div></div>
   </div>
 </div>
 <div id="qa" class="window dialog wide" hidden role="dialog" aria-label="A question, read in full" aria-modal="true">

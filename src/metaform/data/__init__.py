@@ -62,6 +62,7 @@ from .records import (
     RootEntry,
     Roots,
     Selection,
+    SourceRef,
     Step,
     Ticket,
     Version,
@@ -72,6 +73,7 @@ from .records import (
     plain,
     shown_open,
 )
+from .refs import RESERVED as RESERVED_REF_NAMES
 from .session import BASE_VARIABLE, on_base
 from .session import Tx as DataTx
 from .store import Store
@@ -134,6 +136,7 @@ __all__ = [
     'LIMIT',
     'MESSAGES',
     'PLACE_KINDS',
+    'RESERVED_REF_NAMES',
     'ROLES',
     'SCHEMA_VERSION',
     'STAGES',
@@ -179,6 +182,7 @@ __all__ = [
     'RootEntry',
     'Roots',
     'Selection',
+    'SourceRef',
     'Step',
     'Store',
     'StoreError',

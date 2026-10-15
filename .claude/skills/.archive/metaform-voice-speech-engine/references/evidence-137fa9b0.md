@@ -1,0 +1,1 @@
+Assistant reply in the episode: "Even on the GPU, two things cause exactly what you're getting: 1. **Language is set to `auto`.** ... 2. **Silence turns into \"you\".** When the mic's speech detector lets through a stretch of noise, Whisper invents a stock word, usually \"you\" or \"Thank you.\"" and the transcribe call: "vad_filter=not partial)".

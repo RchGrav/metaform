@@ -951,6 +951,10 @@ class Reach:
         self.operations = {name: declared for module in modules if module.data is not None
                            for name, declared in module.data.operations.items()}
         self.writes |= {declared.run for declared in self.operations.values() if declared.write}
+        # an edit of a prompt in the home's prompt store changes what agents are sent; `shipped`, the version of what a
+        # module serves, is bookkeeping of what was served, as a table made on first use is
+        from metaform.data import prompts
+        self.writes |= {prompts.add_prompt, prompts.add_prompt_version, prompts.save_prompt}
         self.send = jev.post
         self.processes = {subprocess.run, subprocess.call, subprocess.check_call, subprocess.check_output}
         self.files = {os.replace, os.rename, os.remove, os.unlink, shutil.copy, shutil.copy2, shutil.copyfile,
@@ -1197,7 +1201,6 @@ UNSEEN_OPEN_WORLD = {
     'dispatch_serve': 'forwards editor requests to agents through stateful ACP frontend and adapter objects',
     'fork_wheel': 'selects dispatch.run dynamically from the loaded module to start a review agent',
     'fork_upkeep': 'selects dispatch.run dynamically from the loaded module to start upkeep agents',
-    'map_code-import': 'the MCP SDK client and provider callbacks can reach the configured HTTP code server',
     'mcp_a2a_send': 'sends to the remote agent through a factory-built A2A Client object',
     'mcp_a2a_exchanges': 'polls remote agents through factory-built A2A Client objects',
     'mcp_a2a_cancel': 'cancels remote work through a factory-built A2A Client object',

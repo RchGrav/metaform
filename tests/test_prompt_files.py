@@ -150,3 +150,33 @@ def test_the_trouble_report_and_debug_prompts_are_served_only_while_debug_is_on(
     assert not any(line in served for line in lines)
     run('set', '--debug', cwd=folder)
     assert run('help', 'agents', cwd=folder).stdout.rstrip().endswith('\n\n'.join(lines))
+
+
+def test_a_served_prompt_comes_from_the_prompt_store_and_an_edit_there_is_sent_in_its_place(home, tmp_path,
+                                                                                           monkeypatch):
+    from metaform import prompt_files
+    from metaform.data import prompts
+    folder = tmp_path / 'mine'
+    (folder / 'resources').mkdir(parents=True)
+    (folder / 'resources' / 'prompts.xml').write_text(
+        '<prompts><greet>Hello <who/> &amp; welcome.</greet></prompts>', encoding='utf-8')
+    sent = prompt_files.collect()
+    try:
+        assert prompt_files.served(folder, 'greet', who='Ada') == 'Hello Ada & welcome.'
+        assert prompts.prompt_version('mine:greet').text == 'Hello <who /> &amp; welcome.'
+        prompts.save_prompt('mine:greet', 'Hi <who/>.')
+        assert prompt_files.served(folder, 'greet', who='Ada') == 'Hi Ada.'
+        prompts.save_prompt('mine:greet', 'Hi <who>.')  # not well formed: the shipped text is sent
+        assert prompt_files.served(folder, 'greet', who='Ada') == 'Hello Ada & welcome.'
+        trial = tmp_path / 'trial.xml'
+        trial.write_text('<prompts><greet>Trial <who/>.</greet></prompts>', encoding='utf-8')
+        monkeypatch.setenv(prompt_files.TRIAL, str(trial))
+        assert prompt_files.served(folder, 'greet', who='Ada') == 'Trial Ada.'
+    finally:
+        prompt_files.release(sent)
+    assert [(one.name, one.number, one.origin) for one in sent] == [
+        ('mine:greet', 1, 'shipped'), ('mine:greet', 2, 'edited'), ('mine:greet', 3, 'edited'),
+        ('mine:greet', None, 'trial')]
+    assert prompts.prompt_version('mine:greet').number == 3
+    with pytest.raises(LookupError):
+        prompt_files.served(folder, 'nothing')

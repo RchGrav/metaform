@@ -848,6 +848,12 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 #helpdesk .files{display:flex;flex-wrap:wrap;gap:var(--s1);padding:0 var(--s3)}
 #helpdesk .files:empty{display:none}
 #helpdesk .chip{background:var(--panel-2);border:1px solid var(--line-2);border-radius:var(--r-pill);padding:2px var(--s2);font-size:var(--t-xs)}
+/* Files dragged over the chat: a dashed chip marks where they land, beside those already attached, and the box is
+   ringed. */
+#helpdesk.dropping .files{display:flex}
+#helpdesk.dropping .files::after{content:'Drop to attach to your message';border:1px dashed var(--signal);border-radius:var(--r-pill);
+  padding:2px var(--s2);font-size:var(--t-xs);color:var(--signal)}
+#helpdesk.dropping .compose{outline:2px dashed var(--signal);outline-offset:2px}
 #helpdesk .clip{display:grid;place-items:center;width:32px;cursor:pointer;font-size:16px;border-radius:var(--r)}
 #helpdesk .clip:hover{background:var(--panel-2)}
 #helpdesk .calls{display:flex;gap:var(--s2);padding:0 var(--s3) var(--s3);background:var(--panel)}
@@ -866,6 +872,25 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 #helpdesk .head button:focus-visible{outline-color:var(--ground)}
 #helpdesk .tabs{display:flex;gap:var(--s1);padding:6px var(--s2) 0;overflow-x:auto;border-bottom:1px solid var(--line)}
 #helpdesk .tabs[hidden]{display:none}
+/* the body under the head: at full size the agents down the left, the conversation on view in the pane beside them */
+#helpdesk .chatbody{flex:1;min-height:0;display:flex}
+#helpdesk .chatpane{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
+#helpdesk .agentlist{flex:none;width:clamp(240px,17%,320px);display:flex;flex-direction:column;gap:2px;padding:var(--s2);overflow-y:auto;border-right:1px solid var(--line);background:var(--panel)}
+#helpdesk .agentlist[hidden]{display:none}
+#helpdesk .agentrow{display:grid;grid-template-columns:28px minmax(0,1fr) auto;column-gap:var(--s2);row-gap:2px;align-items:center;width:100%;min-height:0;padding:var(--s2);border:0;border-radius:var(--r);background:transparent;color:inherit;font:var(--t-sm)/1.35 var(--sans);letter-spacing:0;text-transform:none;text-align:left;cursor:pointer}
+#helpdesk .agentrow:hover{background:var(--panel-2)}
+#helpdesk .agentrow.on{background:color-mix(in srgb,var(--signal) 14%,transparent);box-shadow:inset 3px 0 0 var(--signal)}
+#helpdesk .agentrow .glyph,#helpdesk .agentrow .srcdot{grid-row:1 / span 3;align-self:start;width:28px;height:28px}
+#helpdesk .agentrow .srcdot{--c:var(--signal);display:grid;place-items:center}
+#helpdesk .agentrow .srcdot::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--c)}
+#helpdesk .agentrow[data-source="intake"] .srcdot{--c:var(--add)}
+#helpdesk .agentrow[data-source="system"] .srcdot,#helpdesk .agentrow[data-source="conversation"] .srcdot{--c:var(--muted)}
+#helpdesk .agentrow[data-source="sentinel"] .srcdot{--c:var(--question)}
+#helpdesk .agentrow .agentname{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+#helpdesk .agentrow .statechip{justify-self:end}
+#helpdesk .agentrow .agenttask,#helpdesk .agentrow .agentsteps{grid-column:2 / span 2;min-width:0;color:var(--muted);font-size:var(--t-xs)}
+#helpdesk .agentrow .agenttask{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+#helpdesk .agentrow .agenttask b{color:var(--text);font-weight:600}
 #helpdesk .tab{flex:0 1 auto;max-width:160px;min-height:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:var(--s1) var(--s3);
   border:1px solid var(--line);border-bottom:0;border-radius:var(--r) var(--r) 0 0;background:transparent;color:inherit;cursor:pointer;font:inherit;font-size:var(--t-sm);letter-spacing:0;text-transform:none}
 #helpdesk .tab.on{background:var(--signal);color:var(--ground);border-color:var(--signal)}
@@ -1497,8 +1522,8 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
  * node's edges carry it. */
 :root{--record:#ffbe55}
 .map2d .flows2d *{pointer-events:none}
-/* a dot is the round end of a stroke of no length, in a path of its dots only: 2.1px across, 1.9 for a request */
-.map2d .flows2d .bead{fill:none;stroke-width:4.2px;stroke-linecap:round}
+/* a reply is a solid line with round ends, 4.2px thick; a request a dot, the round ends of a stroke of no length */
+.map2d .flows2d .line{fill:none;stroke-width:4.2px;stroke-linecap:round;stroke-linejoin:round}
 .map2d .flows2d .ask{fill:none;stroke:var(--spark);stroke-width:3.8px;stroke-linecap:round}
 /* each glow once over its group, drawn by the compositor, so a moving dot never makes the map's painter blur again */
 .map2d .flows2d .trains{filter:drop-shadow(0 0 1.5px currentColor);will-change:filter}
@@ -2030,7 +2055,10 @@ html.frame .viewslot #viewbar{position:static}
 .voice-ask .voice-acts{display:flex;justify-content:flex-end;gap:var(--s2)}
 .voice-ask .voice-bar{height:4px;border-radius:var(--r-pill);background:var(--panel-2);overflow:hidden;margin:0 0 var(--s2)}
 .voice-ask .voice-bar span{display:block;height:100%;width:0;background:var(--signal);transition:width .5s var(--ease)}
-.voice-note{max-width:min(320px,calc(100vw - 16px));padding:var(--s2) var(--s3);pointer-events:none}
+.voice-note{display:flex;align-items:flex-start;gap:var(--s2);max-width:min(320px,calc(100vw - 16px));padding:var(--s2) var(--s3);pointer-events:none;user-select:text}
+.voice-note.shown{pointer-events:auto}
+.voice-note .voice-note-close{flex:none;border:0;background:none;color:var(--muted);font:inherit;line-height:1;padding:0 2px;cursor:pointer}
+.voice-note .voice-note-close:hover{color:var(--text)}
 .voice-ask.shown,.voice-note.shown{opacity:1;translate:0 0}
 .voice-ask.leaving{opacity:0;translate:0 6px;transition:opacity .2s var(--ease-leave),translate .2s var(--ease-leave)}
 @media (prefers-reduced-motion:reduce){.voice-mic,.voice-mic .voice-ring,.voice-mic .voice-halo,.voice-ask,.voice-note,.voice-ask .voice-bar span{transition:none;transform:none;translate:none}}
@@ -2222,7 +2250,6 @@ body:has(.window.mcpwin > .bar:active) .appframe{pointer-events:none}  /* a pane
   background:color-mix(in srgb,var(--signal) 6%,transparent)}
 .appnote[hidden]{display:none}
 /* A file the agent attached: a card with its name, size and type, and Download. */
-#helpdesk .msg.attached .row{max-width:min(92%,72ch)}
 #helpdesk .attachment{display:flex;align-items:center;gap:var(--s3);min-width:0;padding:var(--s2) var(--s2) var(--s2) var(--s3);
   border:1px solid var(--line-2);border-radius:14px;border-bottom-left-radius:var(--r-sm);background:var(--panel)}
 #helpdesk .attachment > .i-file{flex:none;width:22px;height:22px;color:var(--signal)}
@@ -2256,7 +2283,9 @@ body:has(.window.mcpwin > .bar:active) .appframe{pointer-events:none}  /* a pane
 #helpdesk .msg .who{font:600 var(--t-xs)/1.4 var(--sans);color:var(--muted);margin:0 var(--s1) 2px}
 #helpdesk .msg .row{display:flex;align-items:flex-end;gap:var(--s1);max-width:100%;min-width:0}
 #helpdesk .msg.mine .row{flex-direction:row-reverse}
-#helpdesk .msg .bubble{max-width:min(92%,72ch);min-width:0;white-space:normal;overflow-wrap:anywhere;font:var(--t-md)/1.5 var(--sans)}
+/* A reply is as wide as its widest part, up to the dock's width less the log's var(--s3) margin on each side; only
+ * what is wider than that scrolls. */
+#helpdesk .msg .bubble{max-width:100%;min-width:0;white-space:normal;overflow-wrap:anywhere;font:var(--t-md)/1.5 var(--sans)}
 #helpdesk .msg.mine .bubble{max-width:min(85%,64ch);background:color-mix(in srgb,var(--signal) 16%,var(--panel));color:var(--text);
   border:1px solid color-mix(in srgb,var(--signal) 38%,transparent)}
 #helpdesk .msg .bubble.pending{border-style:dashed;opacity:.8}

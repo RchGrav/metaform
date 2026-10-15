@@ -1,0 +1,1 @@
+acp-agent-file-write-gate: "Use when gating ACP agent file writes or Claude Code Edit."

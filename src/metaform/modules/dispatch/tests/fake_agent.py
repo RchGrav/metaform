@@ -49,7 +49,10 @@ FAKE_ACP_NOTICE=1 sends a session notice when the client advertises them; FAKE_A
 and session/delete and takes them; FAKE_ACP_FORK=1 advertises session/fork and answers it with fake-fork-<n>;
 FAKE_ACP_CLIENT=1 makes its first turn use the client's own files and terminals, ACP's fs/* and terminal/*: it writes and
 reads fake-client/note.txt in its folder, reads a file outside it, runs one command in a terminal, waits for it, reads
-its output and releases it, and logs every answer as `client`.
+its output and releases it, and logs every answer as `client`. FAKE_ACP_WRITES=<a,b,...> makes its first turn read and
+then write each of those files, from its folder, through fs/*, logging the answers as `writes`, and with
+FAKE_ACP_WRITE_GATE naming a file, write each again once that file exists, logged as `writes_again`.
+FAKE_ACP_ASK_PATH names a file its permission request's tool call locates.
 FAKE_ACP_INTAKE=1 makes its first turn read a review file and call a memory tool, wait up to 30 s for a steer, then
 call intake_element and log `intake_recorded`.
 FAKE_ACP_INFO=1 writes, in one write with its session/new answer and after it, a session_info_update giving the
@@ -186,6 +189,21 @@ def first_turn(prompt_id, text):
                     output=request(805, 'terminal/output', own), release=request(806, 'terminal/release', own),
                     gone=request(807, 'terminal/output', own))
         log({'client': done})
+    writes = [one for one in os.environ.get('FAKE_ACP_WRITES', '').split(',') if one]
+    if writes:  # each file read then written through the client; once FAKE_ACP_WRITE_GATE exists, written again
+        paths = [os.path.join(os.getcwd(), one) for one in writes]
+        log({'writes': {'read': [request(810 + at, 'fs/read_text_file', {'sessionId': SESSION, 'path': path})
+                                 for at, path in enumerate(paths)],
+                        'write': [request(820 + at, 'fs/write_text_file', {'sessionId': SESSION, 'path': path,
+                                                                            'content': 'written\n'})
+                                  for at, path in enumerate(paths)]}})
+        gate = os.environ.get('FAKE_ACP_WRITE_GATE')
+        while gate and not os.path.exists(gate) and not CANCELLED.wait(0.05):
+            pass
+        if gate and not CANCELLED.is_set():
+            log({'writes_again': [request(830 + at, 'fs/write_text_file', {'sessionId': SESSION, 'path': path,
+                                                                            'content': 'written\n'})
+                                  for at, path in enumerate(paths)]})
     if os.environ.get('FAKE_ACP_INTAKE') == '1':  # an intake that reaches for earlier conclusions, then is steered
         for ident, title, raw in (('i1', 'Read artifacts/review-notes.md', {'path': 'artifacts/review-notes.md'}),
                                   ('i2', 'mcp__metaform__memory_read_graph', {})):
@@ -291,7 +309,9 @@ def first_turn(prompt_id, text):
         outcome = ask(900, {'sessionId': SESSION,
                             'toolCall': {'toolCallId': 't2', 'title': os.environ.get('FAKE_ACP_ASK_TITLE', 'Write notes.txt'),
                                          'kind': os.environ.get('FAKE_ACP_ASK_KIND', 'edit'),
-                                         'status': 'pending'},
+                                         'status': 'pending',
+                                         **({'locations': [{'path': os.environ['FAKE_ACP_ASK_PATH']}]}
+                                            if os.environ.get('FAKE_ACP_ASK_PATH') else {})},
                             'options': [{'optionId': 'allow', 'name': 'Allow once', 'kind': 'allow_once'},
                                         {'optionId': 'reject', 'name': 'Reject', 'kind': 'reject_once'}]})
         log({'permission': outcome})

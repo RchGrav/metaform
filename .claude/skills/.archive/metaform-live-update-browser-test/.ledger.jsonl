@@ -1,0 +1,2 @@
+{"action": "create", "reason": "The test technique that made the live step-update check work, and the fixture trap that blanked ticket titles, has no skill. It is a class of work (browser tests of live updates) distinct from the existing mutation and sleep-sync skills.", "evidence": "references/evidence-1ff89508.md"}
+{"action": "delete", "reason": "Live-update browser test rules are the metaform-web-ui Browser tests section.", "evidence": "references/evidence-5a7f20e0.md", "absorbed_into": "metaform-web-ui"}

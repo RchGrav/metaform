@@ -233,19 +233,20 @@ def test_a_section_opens_as_a_menu_of_its_settings_and_lists_are_alphabetical(ho
 @pytest.mark.req('CLI-027')
 def test_a_list_whose_items_hold_commas_is_saved_from_the_screen_as_it_reads(home, tmp_path):
     loader.set_enabled('dispatch', True)  # off in a new home
+    loader.set_enabled('hello', True)  # its friends setting is a list with no choices
     pipe, screen = _screen(tmp_path)
     with pipe:
         async def drive():
             await screen.refresh()
-            setting = settings.SCHEMA['code_ignore']
-            edited = [*setting.default[:2], '*.{js,ts}']
-            screen._stage('map', setting, edited)
+            setting = settings.SCHEMA['friends']
+            edited = ['Ada', 'Hopper, Grace']
+            screen._stage('hello', setting, edited)
             screen._save_changes()
             await screen.last_task
             return edited, screen.error
         edited, failed = asyncio.run(drive())
     assert not failed
-    assert settings.value('code_ignore', tmp_path) == edited
+    assert settings.value('friends', tmp_path) == edited
 
 
 @pytest.mark.req('VIEW-039')

@@ -1,0 +1,1 @@
+user: "There isnt a layer called code..." then later "Yo, there isn't a layer called code. Hello". Assistant: "That treats `code.python` as a *layer*. It isn't one: `code.python` is a node... A layer's name is never `code` or anything under it (LAYER-028)."

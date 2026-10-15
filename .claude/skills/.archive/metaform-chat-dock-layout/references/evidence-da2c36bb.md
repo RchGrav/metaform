@@ -1,0 +1,1 @@
+metaform-chat-dock-layout: "Use when editing the chat dock layout, agent list or tabs."

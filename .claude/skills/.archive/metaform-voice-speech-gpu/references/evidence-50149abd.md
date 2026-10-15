@@ -1,0 +1,1 @@
+metaform-voice-speech-engine [project]: Use when Whisper fails on CUDA or voice-gpu is missing. / metaform-voice-speech-gpu [project]: Use when Whisper CUDA 400s or voice GPU goes unused.

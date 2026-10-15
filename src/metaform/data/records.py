@@ -449,6 +449,28 @@ class Citation(Record):
 
 
 @dataclass(frozen=True)
+class SourceRef(Record):
+    """One ref of the sources layer, a record of its own, STORE-012 and MAP-021: `id` lasts across its versions, `name`
+    is its ref_id, and `ref` is how it is named, `{ref_id}@{address}:{join}`, the join left off on the element itself.
+    `linked` is the place the latest link named, `by` and `at` who linked it and when, `reason` why."""
+    id: str
+    name: str
+    ref: str
+    key: str
+    value: str
+    details: tuple[Ref, ...]
+    node: Node
+    address: str | None
+    join: str | None
+    linked: str | None = None
+    by: str | None = None
+    at: str | None = None
+    reason: str | None = None
+    removed: bool = False
+    notices: tuple[Notice, ...] = ()
+
+
+@dataclass(frozen=True)
 class ChallengeState(Record):
     item_id: str
     state: Answer

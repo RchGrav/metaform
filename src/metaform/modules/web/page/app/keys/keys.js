@@ -48,7 +48,7 @@ const KEYS = [
     run: () => agentView()},
   // each digit cycles one setting, and each press says its new value at the 2D map's corner; the 2D map is fit-all,
   // zooming by the wheel at any time, VIEW-041, and onto a followed agent's node
-  {group: 'Zoom', keys: ['1'], what: '3D zoom: 1/4, 1/2, 3/4', match: ['1'], run: zoomKey},
+  {group: 'Zoom', keys: ['1'], what: '3D camera: work in view, zoom 1/4, 1/2, 3/4', match: ['1'], run: zoomKey},
   {group: 'Zoom', keys: ['0'], what: 'Full fit, both maps', match: ['0', 'Home'], run: () => resetZoom()},
   {group: 'Zoom', keys: ['F'], what: 'Fit once (3D)', match: ['f', 'F'],
     run: () => { if (G && !small3d()) { fit3d(); peek('key'); } }},

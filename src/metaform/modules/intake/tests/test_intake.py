@@ -323,36 +323,28 @@ def test_what_does_not_fit_is_stored_as_given_and_named_in_a_notice(run, project
 @pytest.mark.req('BASE-044')
 def test_an_odd_ref_sent_to_an_intake_tool_is_placed_by_the_stores_one_rule(run, project):
     """The store owns what happens to a ref that is not a key and a value, STORE-012, for every writer; an intake tool
-    hands its refs on as given, to the element's item of the sources layer. A ref that is a record is split into an
-    item of its own, as the store does with any list of records in an extra, STORE-004."""
+    hands its refs on as given, and each is linked at the element as a record of the sources layer. A ref given as an
+    object of one entry is that key and value, linked as text and never refused, STORE-026."""
     recorded(run, project, 'start')
     made = recorded(run, project, 'element', 'code.probe.echo', 'role=SE', 'name_length=1', 'name=echo probe',
                     'refs=[["path", "src/echo.c"], {"path": "src/pins.h"}]')
     messages = [(notice['where'], notice['message']) for notice in made['notices']]
-    assert messages == [
-        ('refs', 'A ref is a key and a value, both text; one was not, and kept in the extra under refs.'),
-        ('extra', 'extra.refs on the item held a list of records; each was stored as its own item.')]
-    store = Store('timer')
-    found = store.layer_items('sources', Node('element', 'code.probe.echo'), limit=0).results
-    kept = [item for item in found if item.refs]
-    assert [[(ref.key, ref.value) for ref in item.refs] for item in kept] == [[('path', 'src/echo.c')]]
-    assert kept[0].extra is None
-    assert [item.value for item in found if not item.refs] == [{'refs': {'path': 'src/pins.h'}}]
+    assert messages == [('refs', 'A ref is a key and a value, both text; one was not, and linked as text.')]
+    held = Store('timer').refs(Node('element', 'code.probe.echo'))
+    assert [(ref.key, ref.value, ref.details) for ref in held] == [('path', 'src/echo.c', ()), ('path', 'src/pins.h', ())]
 
 
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('BASE-044')
-def test_refs_that_are_not_text_are_kept_in_the_extra_and_counted_in_words(run, project, tmp_path):
+def test_refs_that_are_not_text_are_linked_as_text_and_counted_in_words(run, project, tmp_path):
     given = copy.deepcopy(FIXTURE)
     given['elements'][1]['refs'] = [['path', 'src/timer.c'], ['line', 12], ['col', 3]]
     report = submit(run, project, given, tmp_path)
     found = notices(report)
-    assert found['elements[1].refs'] == ('A ref is a key and a value, both text; two were not, and kept in the extra '
-                                         'under refs.')
-    store = Store('timer')
-    [kept] = store.layer_items('sources', Node('element', given['elements'][1]['namespace_address']), limit=0).results
-    assert [(ref.key, ref.value) for ref in kept.refs] == [('path', 'src/timer.c')]
-    assert kept.extra is not None and kept.extra['refs'] == [['line', 12], ['col', 3]]
+    assert found['elements[1].refs'] == 'A ref is a key and a value, both text; two were not, and linked as text.'
+    [kept] = Store('timer').refs(Node('element', given['elements'][1]['namespace_address']))
+    assert (kept.key, kept.value) == ('path', 'src/timer.c')  # the pairs after a path are its details
+    assert [(ref.key, ref.value) for ref in kept.details] == [('line', '12'), ('col', '3')]
 
 
 @pytest.mark.req('STORE-041')
@@ -1275,8 +1267,7 @@ def test_a_changed_field_on_a_finished_map_is_refined_in_place_and_the_map_stays
     recorded(run, project, 'element', 'code.alarm.audible', 'name=bell')
     finished = recorded(run, project, 'finish')
     assert (finished['base'], finished['elements']) == ('main', 4)
-    # the code element it added is new code on the map, so source placement is offered it as for a first intake
-    assert [each['module'] for each in finished.get('follow_on') or []] == ['source_placement']
+    assert 'follow_on' not in finished  # no shipped module subscribes to intake.finished
     assert [base['name'] for base in json.loads(run('map', 'bases', '--json', cwd=project).stdout)['results']] == ['main']
     for address in ('stakeholder.cook.home', 'code.light.oven'):
         run('map', 'where', address, cwd=project)
@@ -1468,11 +1459,9 @@ def test_follow_on_is_not_published_without_a_finished_code_intake(run, project,
 
 
 def test_finished_code_intake_without_subscribers_keeps_regular_result(run, project):
-    run('disable', 'source_placement', cwd=project)
     recorded(run, project, 'start')
     recorded(run, project, 'element', 'code.example', 'role=DE')
     result = recorded(run, project, 'finish')
-    assert 'follow_on' not in result
-    assert result['next'] == ['metaform map code-import']
+    assert 'follow_on' not in result and 'next' not in result
     assert result['elements'] == 1
     assert Store('timer').has_intake()

@@ -35,4 +35,6 @@ A test that walks code to enforce a rule is only evidence once it has been seen 
 
 - A helper shared by many surfaces (the cut-text opener, the header fold) is proven by a no-op mutant of that one helper: a probe that lists every surface's items must fail on each listed item. Count the failures against the probe's list, not "some failed"; 23 of 23 cut texts failed on 2026-10-15.
 
+- A behaviour test that waits for an async record (`eventually(...)` with a 60 s bound) is proven by a mutant that stops the record being written. The kill is the test's own timeout line (`AssertionError: not within 60 s`), and it takes the full bound, so run it with `-n 0 -k NAME` on the copy and read the `N selected` count first. Worked case 2026-10-15: a dispatch runner test failed with `not within 60 s` once the publishing of prompt versions was disabled in a `/tmp` copy.
+
 Worked example: `references/guard-mutation-example.md`.

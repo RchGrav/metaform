@@ -54,8 +54,12 @@ export function renderEntity(name, pane = $('#p-object')) {
   keepDrafts(pane, () => fill(pane,
     h('div', {class: 'eyebrow'}, 'Memory'),
     h('h2', {}, name),
-    h('div', {class: 'pills'}, h('span', {class: 'pill'}, entity.entityType), layerPill(memoryLayer())),
+    h('div', {class: 'pills'}, h('span', {class: 'pill'}, entity.entityType), layerPill(memoryLayer()),
+      entity.locked ? h('span', {class: 'pill locked', title: 'Every agent reads it; none can change or delete it.'},
+        'Locked') : null),
     h('div', {class: 'acts'},
+      h('button', {class: 'btn sm lock', type: 'button', onclick: () => setLock(name, !entity.locked)},
+        entity.locked ? 'Unlock' : 'Lock'),
       h('button', {class: 'btn sm rename', type: 'button', onclick: rename}, 'Rename or retype'),
       h('button', {class: 'btn sm danger forget', type: 'button', onclick: () => forget(name)}, 'Delete memory')),
     naming,
@@ -158,6 +162,11 @@ async function addRelation(name, relating, target) {
   relating.value = '';
   const relations = [{from: name, to: target.value, relationType: type}];
   if (!await memoryWrite(['create_relations', {relations}])) relating.value = type;
+}
+/* Lock or unlock a memory, CTX-023: the person's alone. Locked, every agent reads it and none can change or delete
+ * it; the page reads the memories again on map.changed. */
+async function setLock(name, locked) {
+  if (await memoryWrite([locked ? 'lock' : 'unlock', {name}])) toast(locked ? `Locked ${name}.` : `Unlocked ${name}.`);
 }
 /* A memory renamed or retyped: the reference server has no command for it, so it is made again under its new name and
  * type with its observations, joined again to each node of the map it was joined to, its relations made again, and the

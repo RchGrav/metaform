@@ -11,7 +11,7 @@ import {joinOf} from '/page/app/graph/data.js';
 import {MAC} from '/page/app/map2d/camera.js';
 import {openHelp} from '/page/app/keys/keys.js';
 import {DOCK, embodyHooks, embodiable, askEmbody, dockState, dockNote} from '/page/app/dock/embody.js';
-import {drawTabs, interruptChat, onOther, showMine} from '/page/app/dock/threads.js';
+import {drawTabs, interruptChat, onOther, showMine, listShown} from '/page/app/dock/threads.js';
 import {drawHelpdesk, followLog, putChatAway} from '/page/app/dock/helpdesk.js';
 import {dockCommand, callSystem, talkAbout} from '/page/app/dock/commands.js';
 import {narrowPage, resetDock} from '/page/app/dock/place.js';
@@ -136,6 +136,7 @@ export function stayedOff(stopped) {
  * agent's; with no agent there yet it waits in the thread, and one is reached. */
 async function sendMessage(event) {
   event.preventDefault();
+  if (DOCK.attaching) await DOCK.attaching;  // files still being saved go with the message
   const box = $('#helpdesk .say'), text = box.value.trim();
   if (!text && !DOCK.files.length) return;
   if (text.startsWith('/')) { box.value = ''; return dockCommand(text); }
@@ -207,7 +208,9 @@ function chatKeys(event) {
   }
   if (!event.altKey || event.ctrlKey || event.metaKey) return;
   if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-    const tabs = [...document.querySelectorAll('#helpdesk .tabs .tab')];  // in the order drawn, My agent first
+    // in the order drawn, My agent first: the agent list's rows at full size, else the tabs
+    const tabs = [...document.querySelectorAll(listShown() ? '#helpdesk .agentlist .agentrow'
+      : '#helpdesk .tabs .tab')];
     if (tabs.length < 2) return;
     event.preventDefault();
     const at = tabs.findIndex(tab => tab.classList.contains('on')), by = event.key === 'ArrowUp' ? -1 : 1;
@@ -256,24 +259,71 @@ function growSay() {
 }
 $('#helpdesk .say').addEventListener('input', growSay);
 $('#helpdesk .compose').addEventListener('submit', () => requestAnimationFrame(growSay));
-/* A file's contents as base64, read in the browser. */
+/* A file's contents as base64, read in the browser; null when it cannot be read, as a dropped folder cannot. */
 function readBase64(file) {
   return new Promise(done => {
     const reader = new FileReader();
     reader.onload = () => done(String(reader.result).split(',')[1] || '');
+    reader.onerror = () => done(null);
     reader.readAsDataURL(file);
   });
 }
-/* Files attached with the paperclip: each saved in the project, and shown as a chip until the message goes. */
-async function attachFiles(event) {
-  for (const file of event.target.files) {
-    const saved = await wrote('/api/attach', {name: file.name, data: await readBase64(file)});
-    if (saved) DOCK.files.push(saved.path);
-  }
-  event.target.value = '';
-  drawAttached();
+/* Files attached with the paperclip, pasted into the box or dropped on the chat, by one path: each saved in the
+ * project by /api/attach, and shown as a chip until the message goes. One the server refuses, or the browser cannot
+ * read, is named in the chat with why. Files given while others are being saved wait their turn, in order. */
+function attachFiles(files) {
+  const given = [...files];
+  if (!given.length) return;
+  const saving = (DOCK.attaching || Promise.resolve()).then(() => saveFiles(given));
+  DOCK.attaching = saving;
+  saving.then(() => { if (DOCK.attaching === saving) DOCK.attaching = null; });
 }
-$('#helpdesk .clip input').onchange = attachFiles;
+async function saveFiles(files) {
+  for (const file of files) {
+    const name = file.name || 'pasted';
+    const data = await readBase64(file);
+    if (data === null) {
+      dockNote(`${name} was not attached: the browser could not read it. A folder cannot be attached; its files can.`);
+      continue;
+    }
+    const saved = await posted('/api/attach', {name, data});
+    if (saved.ok) DOCK.files.push(saved.body.path);
+    else dockNote(`${name} was not attached: ${saved.body.error || 'the server did not save it.'}`);
+    drawAttached();
+  }
+}
+$('#helpdesk .clip input').onchange = event => { attachFiles(event.target.files); event.target.value = ''; };
+/* A picture pasted into the box, a screenshot say, is attached as the paperclip attaches it. Whatever comes with
+ * text pastes as its text: a copy from a document or a sheet carries a picture of itself beside its words. */
+function pasteFiles(event) {
+  const given = event.clipboardData;
+  if (!given || !given.files.length || given.types.includes('text/plain')) return;
+  event.preventDefault();
+  attachFiles(given.files);
+}
+$('#helpdesk .say').addEventListener('paste', pasteFiles);
+/* Files dragged from the desktop over the chat: where their chips will land is marked, above the box, and a drop on
+ * the box or the conversation attaches them. A drag of anything but files is left to the page. */
+const HELPDESK = $('#helpdesk');
+const carriesFiles = event => Boolean(event.dataTransfer?.types.includes('Files'));
+function dragFiles(event) {
+  if (!carriesFiles(event)) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'copy';
+  HELPDESK.classList.add('dropping');
+}
+HELPDESK.addEventListener('dragenter', dragFiles);
+HELPDESK.addEventListener('dragover', dragFiles);
+HELPDESK.addEventListener('dragleave', event => {
+  if (!HELPDESK.contains(event.relatedTarget)) HELPDESK.classList.remove('dropping');
+});
+HELPDESK.addEventListener('drop', event => {
+  HELPDESK.classList.remove('dropping');
+  if (!carriesFiles(event)) return;
+  event.preventDefault();
+  attachFiles(event.dataTransfer.files);
+  $('#helpdesk .say').focus();
+});
 /* A frame of what the person shares with agents, from the screen button: sent with the next message as a picture.
  * With nothing shared the button starts the share first, the browser's picker opened by this click. */
 async function attachFrame() {

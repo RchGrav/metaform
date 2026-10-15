@@ -1,0 +1,3 @@
+Error: /home/rich/.metaform/projects/-home-rich-metaform-001/feature-code-alignment-20261013.metaform.sqlite3 has schema version 22, which a Metaform reads from version 22; this Metaform supports version 21.
+A line of session d36f3500-6999-413c-8282-2907bdc48e0f on work 8864913087554a00a549c390a06f414d was not written: /home/rich/.metaform/projects/-home-rich-metaform-001/feature-code-alignment-20261013.metaform.sqlite3 has schema version 22, which a Metaform reads from version 22; this Metaform supports version 21.
+src/metaform/data/prompts.py:24:PROMPT_SCHEMA_VERSION = '3'

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The agents module's prompts: the text Metaform sends to agents for the agents module.
+     Each element is one prompt, named by its tag. What is between the tags is sent exactly as written.
+     The prompts a role is sent are not here: each stays in the prompts.xml of the module that sends it, and this
+     module names them. Comments are never sent. -->
+<prompts>
+<!-- agents's line in the connect message: one short phrase saying what an agent uses the module for, written after
+     the module's name, '– agents: <what it is for>'. Sent to every agent when it connects over MCP, one line per
+     enabled module under mcp's <instructions>, and listed in metaform help agents. Empty, as here, sends nothing: the
+     wording waits for the owner's approval (artifacts/specs-draft/2026-10-15-agents-module.md). Off when the module is
+     disabled, and when the folder's modules setting leaves it out. -->
+<connect></connect>
+<!-- agents's instructions. Returned by metaform_instructions with module agents, at metaform://instructions/agents,
+     and printed by metaform help agents agents. Off when the module is disabled. -->
+<instructions>agents is active.</instructions>
+<!-- The line under the counts an agent is told at its node, MCP-039; agents counts nothing at a node, so it is empty. -->
+<counts></counts>
+<!-- agents's rules, MCP-031: one sentence each with its reason in why="...". Empty, as here, sends nothing. -->
+<rules></rules>
+</prompts>

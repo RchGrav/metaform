@@ -1,0 +1,1 @@
+Assistant proposed step 6 for prompts.xml: "b) Record what is known at the address where you found it to hold, with map knowledge add-property or add-item, including its genre, style, medium and encoding" replacing the earlier "b) Place everything at the most general address it holds for". Rich: "Listen, its not the end of the world.. a knowledge layer has a namespace address".

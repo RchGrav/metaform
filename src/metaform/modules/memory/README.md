@@ -12,7 +12,7 @@ Started from template 0.2.0.
 
 ## Declaration
 
-`SUPPORTED_OS = ('linux', 'macos', 'windows')`, `DEPENDENCIES = ()`, `SHIPS_DISABLED = False`. `MODULE` declares the nine commands of the reference memory server, `note`, `joins`, `orphaned`, `unjoin`, `rekey` and `graph`, its `node_read` and its `tables`.
+`SUPPORTED_OS = ('linux', 'macos', 'windows')`, `DEPENDENCIES = ()`, `SHIPS_DISABLED = False`. `MODULE` declares the nine commands of the reference memory server, `note`, `joins`, `orphaned`, `unjoin`, `rekey` and `graph`, its `node_read`, its `tables`, and `provides` `memory.note`: `person_note(project, node)`, the person's note at a node whole or None, which dispatch's hand-off carries.
 
 ## Common base used
 
@@ -24,7 +24,7 @@ Started from template 0.2.0.
 
 ## Verbs
 
-`create_entities`, `create_relations`, `add_observations`, `delete_entities`, `delete_observations`, `delete_relations`, `read_graph`, `search_nodes`, `open_nodes`: the reference's names, arguments and results. Each takes `node`, `element:<address>`, or `receiver` and `provider`, a purpose's two addresses, with `address` for a part inside it, to act on that node's memories, the entities joined to it and the relations between them; without it, the whole graph. `note` reads or writes a node's one note; it takes `node` first, and `provider` beside it names the purpose `node` holds as receiver, with `address` for a part inside it. `joins`, `orphaned`, `unjoin` and `graph` read and manage the joins and the whole graph; `graph` also says of each join whether its memory shows at its node, as a read of the node shows it, which the web GUI draws from, VIEW-031. Over MCP these are the commands of the tool `memory`.
+`create_entities`, `create_relations`, `add_observations`, `delete_entities`, `delete_observations`, `delete_relations`, `read_graph`, `search_nodes`, `open_nodes`: the reference's names, arguments and results. Each takes `node`, `element:<address>`, or `receiver` and `provider`, a purpose's two addresses, with `address` for a part inside it, to act on that node's memories, the entities joined to it and the relations between them; without it, the whole graph. `note` reads a node's one note, the person's, which only the web page writes; it takes `node` first, and `provider` beside it names the purpose `node` holds as receiver, with `address` for a part inside it. `joins`, `orphaned`, `unjoin` and `graph` read and manage the joins and the whole graph; `graph` also says of each join whether its memory shows at its node, as a read of the node shows it, which the web GUI draws from, VIEW-031. Over MCP these are the commands of the tool `memory`.
 
 When a correction replaces an address, `metaform memory rekey <old-address> <new-address>` transfers memory attachments and notes by replacing that exact address in their receiver and provider fields. The old address may already be absent from the map. Descendant addresses stay as they are. The command keeps memory join ids, the graph's entities, observations and relations, and each note's text, author and time. It returns the number of joins and notes changed. Existing destination key collisions roll back the whole transfer, leaving both addresses' memory intact.
 
@@ -78,5 +78,5 @@ The same in both.
 metaform memory create_entities '[{"name":"route ejection","entityType":"behavior","observations":["Routes are ejected, never packed on delete."]}]' node=element:code.manager.route
 metaform memory open_nodes '["route ejection"]' node=element:code.manager.route
 metaform map where code.manager.route
-metaform memory note element:code.manager.route text="Ask before changing the ejection."
+metaform memory note element:code.manager.route
 ```

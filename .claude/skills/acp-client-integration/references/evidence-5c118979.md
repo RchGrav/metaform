@@ -1,0 +1,1 @@
+acp-agent-file-write-gate: "Use when gating ACP agent file writes or Claude Code Edit." | acp-client-capabilities-compaction: "Use when ACP compaction or \"Compact conversation\" appears."

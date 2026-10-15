@@ -6,8 +6,10 @@
 <prompts>
 <!-- memory's step in the order of work: read the memories at the node and record findings there. Printed under the
      opening line of the compact command-line guide, after the map module's step, once the project has a finished intake.
-     Empty sends nothing. Off when the module is disabled or the folder's setting modules leaves it out. -->
-<orient>2. Read the memories on that element, which map where lists. Use Metaform's memory tool to store what you learn under the functional namespace of your assignment, so future agents working there can retrieve it: memory create_entities with node set to that address, each new entity with a short title and why.</orient>
+     Empty sends nothing. Off when the module is disabled or the folder's setting modules leaves it out.
+     A draft, CTX-029, awaiting the owner's approval of its wording; it replaced the 2026-10-11 sentence on storing
+     what is learned. -->
+<orient>2. Read the memories on that element, which map where lists. Record what happened in the work there as memory, and what is now known to be true of the project in the map's knowledge layers, as steps 5 and 6 of the memory prompt say: metaform instructions memory.</orient>
 <!-- The line under the counts an agent is told at its node, MCP-039: what a new memory is, and the call that reads the
      memories at one address. Shown once per agent session under the counts in map where, the ticket read and the
      handoff, wherever any memory is counted; over MCP the command is named as its tool. <address> is written
@@ -28,83 +30,49 @@
 <!-- memory's line in the connect message: what an agent uses memory for, one short phrase after its name, in the
      project's terms. Sent to every agent when it connects over MCP, one line per enabled module under mcp's
      <instructions>, and listed in the compact command-line guide, metaform help agents. Empty sends nothing for
-     memory. Off when the module is disabled or the folder's modules setting leaves it out. -->
-<connect>– memory: read what agents learned at a node and record what you learn there, on its RE</connect>
-<!-- memory's instructions: how to read, record and relate findings. Returned by metaform_instructions with module memory, at metaform://instructions/memory, and printed by metaform help agents memory and by the full form of the command-line guide.
-     Empty sends nothing. Off when the module is disabled. -->
-<instructions>
-@STATE_INIT:
-{Task}:=[current user task]; {Memory}:=NULL; {Findings}:=[]; {State}:=RETRIEVE; {Valid}:=FALSE
-
-@CONSTRAINT:
-+&gt; Before working, read the node you are working in with map where &lt;address&gt;: it holds that node's memories, open work and layers, and nothing else. Never read or search the whole graph.
-+&gt; Treat memory as prior findings; specification, standing instructions, and current evidence take precedence.
-+&gt; Verify implementation references before relying on them.
-+&gt; While working, understand relevant implementation/execution paths and preserve durable findings another agent would otherwise need to rediscover: non-obvious behavior, constraints, edge cases, decision rationale, demonstrated failures, reproducible diagnoses, verified changes, and cross-function dependencies.
-+&gt; Observe work and user interactions for durable project facts, preferences, technology choices, and useful context.
-+&gt; Proactively use create_entities/add_observations/create_relations when discovered information or entities warrant durable graph storage; do not require an explicit user memory request.
-+&gt; Connect each new entity to the existing entities it concerns using create_relations, stored in active voice.
-+&gt; Save findings at the narrowest applicable functionality; place genuinely shared knowledge at the applicable namespace prefix.
-+&gt; Each finding states the fact, future consequence, evidence/source, validity conditions, and whether it is observed behavior, intended behavior, or hypothesis; store each as its own observation, one fact per observation.
-+&gt; Before saving, read existing memory and integrate rather than duplicate; correct or supersede stale findings with evidence without silently erasing unresolved disagreement.
-+&gt; At useful milestones or before handoff, preserve findings the next agent would otherwise have to rediscover.
-!&gt; Do not treat memory as authority over specification, standing instructions, or current evidence.
-!&gt; Do not repeat the functional map or copy large source sections into memory.
-!&gt; Do not save chronological activity logs, filler, task status, unanswered questions belonging in dedicated records, or untested explanations as established facts.
-!&gt; Do not convert implementation observations into new design requirements.
-
-@CONDITION:
-?IF ({State}==RETRIEVE) -&gt; {State}:=WORK
-?IF (durable finding discovered) -&gt; {State}:=RECORD
-?IF (new durable entity/relation discovered) -&gt; {State}:=GRAPH_UPDATE
-?IF (useful milestone OR handoff) -&gt; {State}:=PRESERVE
-:ELSE -&gt; {State}:=WORK
-
-@ROUTER:
-@MATCH({State}):
-| [RETRIEVE] -&gt; EXECUTE_PIPELINE(Retrieve)
-| [WORK] -&gt; EXECUTE_PIPELINE(Work)
-| [RECORD] -&gt; EXECUTE_PIPELINE(Record)
-| [GRAPH_UPDATE] -&gt; EXECUTE_PIPELINE(Graph_Update)
-| [PRESERVE] -&gt; EXECUTE_PIPELINE(Preserve)
-
-@EXECUTE_PIPELINE(Retrieve):
-∇({Task}) =&gt; identify target functionality, past decisions, relevant inherited context, selected layers, user context/preferences
-=&gt; call map where at the address of the node you are working in
-Δ(results) =&gt; {Memory}; {State}:=WORK
-
-@EXECUTE_PIPELINE(Work):
-∇({Task},{Memory},current evidence) =&gt; inspect implementation references and execution path; identify durable facts, constraints, edge cases, rationale, failures, diagnoses, verified changes, dependencies
-=&gt; continue task; route qualifying discoveries to RECORD or GRAPH_UPDATE
-
-@EXECUTE_PIPELINE(Record):
-∇(existing memory, finding) =&gt; detect duplicates, stale/conflicting entries, narrowest storage location
-Δ(finding) =&gt; store fact + consequence + evidence/source + validity conditions + classification[observed|intended|hypothesis]
-=&gt; {State}:=WORK
-
-@EXECUTE_PIPELINE(Graph_Update):
-∇(existing graph,new entity/relation) =&gt; determine create/update/relation action without duplication
-Δ(result) =&gt; call create_entities/add_observations/create_relations as applicable; relate each new entity to existing entities
-=&gt; {State}:=WORK
-
-@EXECUTE_PIPELINE(Preserve):
-∇({Findings},existing memory) =&gt; select only durable findings otherwise requiring rediscovery
-Δ(selected findings) =&gt; integrate at narrowest applicable functionality/shared namespace
-=&gt; {State}:=WORK
-
-@VERIFY:
-{Valid}:=
-(the working node's memory is read with map where before work)
-AND (memory remains subordinate to specification/instructions/evidence)
-AND (implementation references are checked before reliance)
-AND (durable findings are integrated without duplication)
-AND (saved findings include consequence,evidence,conditions,class)
-AND (new durable graph entities/relations are proactively persisted)
-AND (each new entity is related to existing entities)
-AND (prohibited memory content is excluded)
-AND (observations are not promoted into unsupported requirements)
-AND (unresolved disagreement is not silently erased)
-</instructions>
+     memory. Off when the module is disabled or the folder's modules setting leaves it out. A draft, CTX-029, awaiting
+     the owner's approval of its wording. -->
+<connect>– memory: read what happened in the work at a node and record there what happens, on its RE; what is true of the project goes to knowledge layers</connect>
+<!-- The owner's memory prompt, CTX-026, word for word: how every agent reads what happened in the work before it
+     begins, and records what happens as memory and what is true of the project as knowledge. Its address is
+     prompt.memory:instructions. Its braced places are filled when it is sent, CTX-027: {project} with the project's
+     id, {this.address} and {this.name} with the element the agent is assigned (a join's receiver; an element with no
+     name gives its reading). An agent with no assigned element gets the whole line-2 bullet swapped for
+     instructions_unassigned below.
+     Who receives it and when, CTX-028: an agent dispatch starts on a ticket gets it once, in its first turn, ahead of
+     the work sentence, filled with its ticket's node. metaform_instructions with module memory,
+     metaform://instructions/memory and metaform help agents memory still return this element as written, its places
+     unfilled: the chassis reads module instructions without the prompt store, a follow-up for code.store.memory#3.
+     To change it, save an edit through the prompt store (metaform prompt memory:instructions); the edit is what
+     agents receive. The Axiom text it replaced is that prompt's earlier version. Empty sends nothing; off when the
+     memory module is disabled or the folder's modules setting leaves it out. -->
+<instructions>Follow these steps for each interaction:
+1. Project Identification:
+   - You should assume that you are working on {project}
+2. Element Identification:
+   - This is {this.address} ({this.name}) or any other address you work on for this session.
+3. Memory Retrieval:
+   - Always begin your work by saying only "Remembering..." and retrieve all relevant information from your knowledge graph: everything at the element's address and everything it inherits from the addresses below it toward the trunk, then search_nodes and open_nodes for what that leads to
+   - Always refer to your knowledge graph as your "memory"
+4. Memory and Knowledge
+   - While working on the project, be attentive to any new information, and tell which it is:
+     a) Memory: what happened in the work: what was done, tried, decided, found broken or fixed, and the lessons it taught
+     b) Knowledge: what is now known to be true of the project: what an element is and the files that realize it, how it behaves and fails, the constraints and choices that hold for it, the purpose it serves, the elements it receives from and provides to, and its genre, style, medium and encoding, which the base map leaves out
+5. Memory Update:
+   - If any memory was gathered during the work, update your memory as follows:
+     a) Create entities with create_entities for significant events, decisions, defects and lessons: each with a unique name, an entityType and its observations, at the address it concerns
+     b) Connect them to the current entities using create_relations: from, to, and a relationType in active voice
+     c) Store facts about them as observations with add_observations, one fact per observation
+6. Knowledge Update:
+   - If any knowledge was gathered during the work, add it to the map's knowledge layers as follows:
+     a) Any address that does not exist yet can be created: add the element or join the work shows the map lacks with map knowledge add-element and add-join; naming a new element makes a new layer for it
+     b) Record what is known at the address where you found it to hold, with map knowledge add-property or add-item, including its genre, style, medium and encoding
+     c) Correct any element or join that is wrong with map refine</instructions>
+<!-- Line 2's other bullet, as the owner wrote it, CTX-027: sent in place of the whole "This is {this.address} ..."
+     bullet when the agent has no assigned element: one connected over MCP outside dispatch, the system agent, or a
+     ticket with no node. Held as its own element so both forms stay word for word and the code swaps whole bullets,
+     never words. Empty leaves line 2 with no bullet. -->
+<instructions_unassigned>This is the address of the element you are working on at any given time.</instructions_unassigned>
 <!-- What a memory write answers an agent over MCP, one line, MCP-037: the memories are a read away, so what the agent
      just sent is not handed back. <items/> is each memory joined at the node, "<address>#<n>  <title>", separated by
      semicolons; <names/> the memories written to the whole graph at no node; <added/> each entity with the count of
@@ -132,6 +100,10 @@ AND (unresolved disagreement is not silently erased)
 <stale_one>stale memory</stale_one>
 <!-- The word for several stale memories in the counts an agent is told at a node. -->
 <stale_many>stale memories</stale_many>
+<!-- The line a memory read at metaform://<address>#<n> shows under a locked memory, CTX-023, so an agent learns of the
+     lock before it tries a write. A draft, awaiting the owner's approval of its wording. Empty leaves the line out;
+     the read still carries locked. -->
+<locked_read>LOCKED: every agent reads this memory and none can change or delete it; only the person unlocks it.</locked_read>
 <!-- The line under the counts saying what a stale memory is and where to read it. -->
 <stale_counts>Stale = a memory whose cited file or lines changed since it was written; read it before relying on it: metaform memory read_graph node=&lt;address&gt;</stale_counts>
 </prompts>

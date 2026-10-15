@@ -4,7 +4,9 @@ One prompt store serves the whole home, `prompts.sqlite3`, Q50. A saved edit
 is a new version with its parent, and no version is ever changed, so the
 version a layer is linked to always shows the exact text it was made from. A
 module's shipped prompt becomes version 1 when first served and keeps flowing
-in as later versions until someone saves an edit of their own.
+in as later versions until someone saves an edit of their own. From then on the
+edit is served, and a shipped text that changes behind it is kept beside the
+edit, so the person sees their edit is behind and can merge or drop it.
 """
 from __future__ import annotations
 
@@ -19,8 +21,17 @@ from .. import home, sqlite
 from ..errors import StoreError
 from .records import Notice, Record
 
-PROMPT_SCHEMA_VERSION = '2'  # the prompt database's own layout, apart from the store's, STORE-029
-PROMPT_COMPATIBLE_FROM = '2'  # 2 renamed the column code at 1 reads, STORE-029
+PROMPT_SCHEMA_VERSION = '3'  # the prompt database's own layout, apart from the store's, STORE-029
+# 2 renamed the column code at 1 reads, STORE-029; 3 adds prompt_shipped, which code at 2 never reads, so 2 still
+# reads and writes a file at 3
+PROMPT_COMPATIBLE_FROM = '2'
+# prompt_shipped: the text a module ships now, kept beside the edit it is behind while that edit is the newest version,
+# one row for each edit; never served from here, only shown, ticket 3a1306bd (2026-10-15)
+SHIPPED_TABLE = """CREATE TABLE IF NOT EXISTS prompt_shipped(
+  version_id TEXT PRIMARY KEY REFERENCES prompt_versions(version_id),
+  text       TEXT NOT NULL,
+  seen       TEXT NOT NULL
+);"""
 PROMPT_SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS prompts(
@@ -48,19 +59,22 @@ CREATE TABLE IF NOT EXISTS prompt_uses(
   PRIMARY KEY(project_id, base_id, layer_id)
 );
 CREATE INDEX IF NOT EXISTS prompt_uses_by_version ON prompt_uses(version_id);
-"""
+""" + SHIPPED_TABLE + '\n'
 FORMATS = ('xml', 'markdown', 'text')
 
 
 def _upgrade(db: sqlite3.Connection, path: Path, found: str) -> None:
-    """Version 2 names a use's base `base_id`, the change order of 2026-10-07 item 1."""
-    if found != '1':
-        raise StoreError(f'{path} has schema version {found}; this Metaform updates only prompt version 1.',
+    """Version 2 names a use's base `base_id`, the change order of 2026-10-07 item 1; version 3 adds prompt_shipped."""
+    if found not in ('1', '2'):
+        raise StoreError(f'{path} has schema version {found}; this Metaform updates only prompt versions 1 and 2.',
                          'install the Metaform release that wrote it')
     db.execute('BEGIN IMMEDIATE')
     try:
-        if db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone() == ('1',):
-            db.execute('ALTER TABLE prompt_uses RENAME COLUMN metaform_id TO base_id')
+        at = db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+        if at in (('1',), ('2',)):  # read again inside the lock: another process may have upgraded it first
+            if at == ('1',):
+                db.execute('ALTER TABLE prompt_uses RENAME COLUMN metaform_id TO base_id')
+            db.execute(SHIPPED_TABLE)
             sqlite.stamp(db, PROMPT_SCHEMA_VERSION, PROMPT_COMPATIBLE_FROM)
         db.execute('COMMIT')
     except BaseException:
@@ -89,6 +103,15 @@ class PromptVersion(Record):
     origin: str
     created: str
     notices: tuple[Notice, ...] = ()
+
+
+@dataclass(frozen=True)
+class Behind(Record):
+    """An edit that is served while its module now ships another text: the edit's number, and the shipped text."""
+    name: str
+    number: int
+    text: str
+    seen: str
 
 
 @dataclass(frozen=True)
@@ -216,7 +239,10 @@ def shipped(name: str, format: str, text: str) -> PromptVersion:
                 return _create(db, name, format, text, 'shipped')
         return shipped(name, format, text)  # another writer made it first, as two agents starting at once do
     assert newest is not None
-    if newest['text'] == text or newest['origin'] == 'edited':
+    if newest['origin'] == 'edited':
+        _note_behind(newest, text)
+        return _version(newest)
+    if newest['text'] == text:
         return _version(newest)
     with _db(write=True) as db:
         again = _newest(db, found['prompt_id'])
@@ -225,6 +251,38 @@ def shipped(name: str, format: str, text: str) -> PromptVersion:
             return _version(again)
         version_id = _insert(db, found['prompt_id'], int(again['number']) + 1, again['version_id'], text, 'shipped')
         return _version(db.execute(_VERSION + 'AND v.version_id=?', (found['prompt_id'], version_id)).fetchone())
+
+
+def _note_behind(edit: sqlite3.Row, text: str) -> None:
+    """Keep the shipped text beside the edit served in its place when the module ships a text the edit was not made
+    over: neither the edit's own text nor the last shipped version's. Nothing is written when that is already kept,
+    and the row goes when the shipped text comes back to one of those, ticket 3a1306bd."""
+    with _db() as db:
+        kept = db.execute('SELECT text FROM prompt_shipped WHERE version_id=?', (edit['version_id'],)).fetchone()
+        last = db.execute("SELECT text FROM prompt_versions WHERE prompt_id=? AND origin='shipped' "
+                          'ORDER BY number DESC LIMIT 1', (edit['prompt_id'],)).fetchone()
+    behind = text != edit['text'] and (last is None or text != last['text'])
+    if (kept is not None and kept['text'] == text) or (kept is None and not behind):
+        return
+    with _db(write=True) as db:
+        if behind:
+            db.execute('INSERT INTO prompt_shipped(version_id, text, seen) VALUES (?, ?, ?) ON CONFLICT(version_id) '
+                       'DO UPDATE SET text=excluded.text, seen=excluded.seen', (edit['version_id'], text, home.now()))
+        else:
+            db.execute('DELETE FROM prompt_shipped WHERE version_id=?', (edit['version_id'],))
+
+
+def behind(prompt: str) -> Behind | None:
+    """The shipped text the served edit of a prompt is behind, when its newest version is an edit and its module now
+    ships a text the edit was not made over; None otherwise, and for a prompt the store does not hold."""
+    with _db() as db:
+        record = db.execute('SELECT * FROM prompts WHERE name=?', (prompt,)).fetchone()
+        newest = _newest(db, record['prompt_id']) if record is not None else None
+        if newest is None or newest['origin'] != 'edited':
+            return None
+        found = db.execute('SELECT text, seen FROM prompt_shipped WHERE version_id=?',
+                           (newest['version_id'],)).fetchone()
+    return None if found is None else Behind(prompt, int(newest['number']), found['text'], found['seen'])
 
 
 def prompts() -> tuple[Prompt, ...]:

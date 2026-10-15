@@ -1,0 +1,1 @@
+Assistant: "It raised the store's schema to version 22, and the live store was upgraded straight away. The ticket said to run on a copy first. Processes started before the change can only read version 21, so they failed to write: that agent's own runner couldn't record its progress."

@@ -491,6 +491,69 @@ def test_the_watchdog_starts_a_killed_server_again_and_stop_ends_both(run, home,
 
 
 @pytest.mark.req('VIEW-002')
+def test_a_restart_brings_the_page_back_when_the_process_that_asked_is_killed_right_after_the_stop(
+        run, home, web, tmp_path):
+    """`web restart` hands the stop and the start to a process of its own, so killing the asker and its process group
+    the moment the old server has ended still leaves a new server answering."""
+    import signal
+
+    from metaform.modules import web as module
+    started(run)
+    record = json.loads((home / 'run' / 'web.json').read_text(encoding='utf-8'))
+    stream = module.held_open(record)
+    assert stream is not None
+    asker = subprocess.Popen([sys.executable, '-m', 'metaform', 'web', 'restart'], cwd=tmp_path,
+                             env={**os.environ, 'METAFORM_HOME': str(home)}, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    stream.read()  # returns as the old server's process ends: the stop has happened
+    if os.name == 'nt':
+        asker.kill()
+    else:
+        os.killpg(asker.pid, signal.SIGKILL)
+    assert asker.wait(10) != 0, 'the restart finished before its asker was killed'
+    health = health_after(web, record['pid'], limit=60)
+    assert health['supervised']
+    assert started(run)['state'] == 'running'
+
+
+@pytest.mark.req('VIEW-002')
+def test_a_restart_starts_a_server_when_none_runs_and_keeps_the_port_it_was_started_on(run, home, web):
+    """With none running a restart is a start; with one running the new server listens where the old one was started,
+    whatever the port setting says now, and the answer says an open page reconnects by itself."""
+    first = json.loads(run('web', 'restart', '--json').stdout)
+    assert first['state'] == 'started' and first['address'] == f'http://127.0.0.1:{web}/'
+    old = json.loads((home / 'run' / 'web.json').read_text(encoding='utf-8'))['pid']
+    run('set', f'--web-port={free_port()}')
+    again = json.loads(run('web', 'restart', '--json').stdout)
+    assert again['state'] == 'restarted' and again['address'] == f'http://127.0.0.1:{web}/'
+    assert 'reconnects on its own' in again['pages']
+    assert api(web, '/api/health')[1]['pid'] not in (None, old)
+    run('set', f'--web-port={web}')  # the web fixture stops the server it set up
+
+
+@pytest.mark.req('VIEW-002')
+def test_a_page_open_through_a_restart_reconnects_to_the_new_server_and_is_told_its_code_changed(
+        run, web, mapped, browser):
+    """The page's stream reconnects to the restarted server on the same port by itself, and the new process runs the
+    code on disk now: a Python file changed since the last start shows the page's 'Metaform was updated'."""
+    import importlib
+
+    restarter = importlib.import_module('metaform.modules.web.restart')  # the package's restart() hides the module
+    started(run)
+    page = opened(browser, web)[0]
+    page.wait_for_function('() => window.metaform.loaded()')
+    source = Path(restarter.__file__)
+    kept = source.stat()
+    os.utime(source, ns=(kept.st_atime_ns, kept.st_mtime_ns + 1_000_000_000))  # a code change, by its stamp
+    try:
+        assert json.loads(run('web', 'restart', '--json').stdout)['state'] == 'restarted'
+    finally:
+        os.utime(source, ns=(kept.st_atime_ns, kept.st_mtime_ns))
+    page.wait_for_function("() => document.querySelector('#banners').textContent.includes('Metaform was updated')",
+                           timeout=20000)
+
+
+@pytest.mark.req('VIEW-002')
 @pytest.mark.skipif(sys.platform == 'win32', reason='the hold tool runs on POSIX systems only')
 def test_with_the_hold_tool_the_watchdog_is_placed_as_a_hold_call_and_says_it_listens_through_a_pipe(
         run, home, web, tmp_path, monkeypatch):
@@ -782,7 +845,7 @@ def test_the_wheel_carries_the_page_and_every_vendor_file_with_its_license(run, 
     assert all(f'metaform/modules/web/vendor/{license}' in names for license in licenses)
 
 
-def test_voice_status_always_answers_and_the_voice_endpoints_take_only_the_pages_own_audio(run, web):
+def test_voice_status_always_answers_and_the_voice_endpoints_take_only_the_pages_own_audio(run, web, home):
     started(run)
     own = {'Origin': f'http://127.0.0.1:{web}'}
     status, body, _ = request(web, '/api/voice/status')
@@ -790,6 +853,11 @@ def test_voice_status_always_answers_and_the_voice_endpoints_take_only_the_pages
     assert request(web, '/api/voice/transcribe', method='POST', body='hi', headers={**own, 'Content-Type': 'text/plain'})[0] == 415
     assert request(web, '/api/voice/transcribe', method='POST', body='RIFF', headers={'Content-Type': 'audio/wav'})[0] == 403
     assert request(web, '/api/voice/files/..%2f..%2frun/web.json')[0] == 404
+    said = json.dumps({'text': 'Whisper could not hear that audio:\nlibcublas.so.12 is not found'})
+    assert request(web, '/api/voice/note', method='POST', body=said, headers={'Content-Type': 'application/json'})[0] == 403
+    assert request(web, '/api/voice/note', method='POST', body=said, headers={**own, 'Content-Type': 'application/json'})[0] == 200
+    log = (home / 'run' / 'web.log').read_text(encoding='utf-8')
+    assert 'voice note: Whisper could not hear that audio: libcublas.so.12 is not found' in log
     run('disable', 'voice')
     status, body, _ = request(web, '/api/voice/status')  # off is a state the page shows, never a failed request
     assert status == 200 and json.loads(body)['available'] is False and 'metaform enable voice' in body
@@ -2898,7 +2966,9 @@ def test_3d_selection_frames_different_names_and_join_titles_at_the_chosen_width
     for key in [*names, join]:
         page.evaluate('key => window.metaform.select(key)', key)
         assert_met_sign_share(page, 0.5)
-    for share in (0.75, 0.25, 0.5):  # 1 steps the zoom from the half it opens at, round again, `zoomKey` in keys/walk.js
+    # Work, the mode it opens in, meets a node nobody works on at the half; 1 steps to the zoom's quarter, half and three
+    # quarters, then back to Work, `zoomKey` in keys/walk.js
+    for share in (0.25, 0.5, 0.75):
         page.keyboard.press('1')
         assert_met_sign_share(page, share)
         page.evaluate('key => window.metaform.select(key)', names[0])
@@ -2914,6 +2984,8 @@ def test_3d_selection_frames_different_names_and_join_titles_at_the_chosen_width
             page.evaluate('window.metaform.mode3d("zoom")')
             assert_met_sign_share(page, share)
             assert mode3d(page) == 'zoom'
+    page.keyboard.press('1')
+    assert mode3d(page) == 'work' and page.inner_text('#note2d') == '3D camera: the work in view'
     assert problems == []
 
 
@@ -2930,20 +3002,20 @@ def test_3d_zoom_keys_belong_to_the_large_map_and_yield_to_fields_and_windows(ru
     map_key(page, 'p')
     observe_met_sign(page)
     page.evaluate('key => window.metaform.select(key)', at['exterior.cook'])
-    page.keyboard.press('1')  # from a half, the zoom it opens at, to three quarters
-    assert_met_sign_share(page, 0.75)
-    assert page.inner_text('#note2d') == '3D zoom: 3/4'
+    page.keyboard.press('1')  # from Work, the mode it opens in, to the zoom's quarter
+    assert_met_sign_share(page, 0.25)
+    assert page.inner_text('#note2d') == '3D zoom: 1/4'
     page.keyboard.press('?')
     page.wait_for_selector('#help:not([hidden])')
     page.keyboard.press('1')
     page.keyboard.press('Escape')
-    assert_met_sign_share(page, 0.75)
+    assert_met_sign_share(page, 0.25)
     page.click('#searchBtn')
     page.locator('#search .query').fill('')
     page.keyboard.press('1')
     assert page.locator('#search .query').input_value() == '1'
     page.keyboard.press('Escape')
-    assert_met_sign_share(page, 0.75)
+    assert_met_sign_share(page, 0.25)
     map_key(page, 's')
     assert_met_sign_fits(page)
     for _ in range(3):  # the small area takes no zoom key
@@ -2957,12 +3029,12 @@ def test_3d_zoom_keys_belong_to_the_large_map_and_yield_to_fields_and_windows(ru
     page.evaluate('key => window.metaform.select(key)', at['exterior.cook'])
     assert_met_sign_fits(page)
     map_key(page, 's')
-    assert_met_sign_share(page, 0.75)
-    page.evaluate('key => window.metaform.select(key)', at['code.loop.tick'])
-    assert_met_sign_share(page, 0.75)  # ignored keys must not change the large view's next selection
-    page.keyboard.press('1')  # round again: a quarter of the width
     assert_met_sign_share(page, 0.25)
-    assert page.inner_text('#note2d') == '3D zoom: 1/4'
+    page.evaluate('key => window.metaform.select(key)', at['code.loop.tick'])
+    assert_met_sign_share(page, 0.25)  # ignored keys must not change the large view's next selection
+    page.keyboard.press('1')  # on to half the width
+    assert_met_sign_share(page, 0.5)
+    assert page.inner_text('#note2d') == '3D zoom: 1/2'
     assert problems == []
 
 
@@ -7826,6 +7898,53 @@ def test_each_open_chat_is_a_tab_in_the_dock_and_closing_keeps_the_threads(run, 
 
 
 @pytest.mark.req('VIEW-045')
+def test_the_full_size_dock_lists_its_agents_with_their_tasks_and_a_step_updates_its_row(run, web, mapped, browser):
+    """At full size the dock lists My agent and each running agent down its left, each row with its ticket's item, title
+    and steps done of planned; a click opens that agent's thread, a step it reports updates its row from the live
+    stream, and back at its size the list goes and the tabs do its job."""
+    from metaform import relay
+    from metaform.data import Store
+    store = Store('proj')
+    run('enable', 'dispatch')
+    for title, words in (('A quieter tone', 'About the quieter tone'), ('A longer tone', 'About the longer tone')):
+        run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'condition=broken', f'task={title.lower()}',
+            f'title={title}', cwd=mapped)
+        worked = next(one for one in store.work(open=True, limit=0).results if one.task == title.lower())
+        store.take_work(worked.id, steps=3, by='claude')
+        live_session(worked.id)
+        thread_line(worked.id, 1, words)
+    second = worked
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.set_viewport_size({'width': 1600, 'height': 900})
+    page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
+    relay.deliver('map.changed', {'project': 'proj', 'base_id': store.active_base().id, 'tables': 'dispatch'})
+    page.wait_for_function('() => document.querySelectorAll("#agents .agent-row button.chat").length === 2',
+                           timeout=10000)
+    page.locator('#agents .agent-row button.chat').first.click()
+    page.wait_for_selector('#helpdesk .tabs .tabpair', timeout=10000)
+    assert page.locator('#helpdesk .agentlist').is_hidden()
+    page.click('#helpdesk .big')
+    page.wait_for_selector('#helpdesk .agentlist .agentrow', timeout=10000)
+    assert page.locator('#helpdesk .tabs').is_hidden()
+    rows = page.locator('#helpdesk .agentlist .agentrow')
+    assert rows.count() == 3 and rows.first.inner_text().startswith('My agent')
+    row = f'#helpdesk .agentlist .agentrow[data-session="s-{second.id}"]'
+    said = page.locator(row).inner_text()
+    assert 'code.alarm.audible#' in said and 'A longer tone' in said and '0 of 3 steps' in said, said
+    page.click(row)
+    page.wait_for_function('() => document.querySelector("#helpdesk .log").textContent.includes("longer tone")')
+    page.wait_for_selector(f'{row}.on', timeout=5000)
+    run('map', 'work', 'op=step', f'id={second.id}', 'said=Found the tone.', cwd=mapped)
+    page.wait_for_function(f'() => document.querySelector(\'{row}\')?.innerText.includes("1 of 3 steps")',
+                           timeout=15000)
+    page.click('#helpdesk .big')
+    page.wait_for_selector('#helpdesk .agentlist', state='hidden')
+    assert page.locator('#helpdesk .tabs').is_visible()
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-045')
 def test_the_system_agent_started_elsewhere_opens_as_the_system_agent_and_closing_preserves_its_thread(
         run, web, mapped, browser):
     """A system agent the page did not start, by the phone, `dispatch system` or before a reload, opened as an agent at
@@ -8806,6 +8925,84 @@ def test_a_message_sent_with_no_agent_starts_one_waits_in_the_thread_and_reaches
     page.click('#confirm button.confirm')
     page.wait_for_selector('#helpdesk .stopped-agent')
     assert problems == []
+
+
+@pytest.mark.req('VIEW-042')
+@pytest.mark.kind('fixture')
+def test_a_pasted_picture_and_dropped_files_attach_as_the_paperclip_does_and_reach_the_agent(
+        run, web, mapped, home, browser, monkeypatch, tmp_path):
+    """A screenshot pasted into the box and files dropped on the conversation are saved by /api/attach, shown as
+    chips, and named to the agent with the message; pasted text stays text; a file the server refuses is named in the
+    chat with why. Ticket code.interface.graphical#92."""
+    run('enable', 'dispatch')
+    for agent in ('claude', 'codex', 'gemini'):  # the fake agent, so no real agent ever starts
+        run('set', f'--dispatch-{agent}', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
+    log = tmp_path / 'acp.log'
+    monkeypatch.setenv('FAKE_ACP_LOG', str(log))
+    monkeypatch.setenv('FAKE_ACP_MODE', 'plain')
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    page.click('#dockTab', force=True)
+    page.wait_for_selector('#helpdesk:not([hidden])')
+    # files given to the page as a browser gives them: a paste on the box, a drag and a drop on the conversation
+    page.evaluate("""() => {
+        const png = atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==');
+        window.given = (...files) => { const list = new DataTransfer(); for (const file of files) list.items.add(file); return list; };
+        window.png = new File([Uint8Array.from(png, c => c.charCodeAt(0))], 'image.png', {type: 'image/png'});
+        window.fire = (selector, type, init) => {
+          const event = type === 'paste' ? new ClipboardEvent(type, {bubbles: true, cancelable: true, ...init})
+            : new DragEvent(type, {bubbles: true, cancelable: true, ...init});
+          document.querySelector(selector).dispatchEvent(event);
+          return event.defaultPrevented;
+        };
+    }""")
+    assert page.evaluate("fire('#helpdesk .say', 'paste', {clipboardData: given(png)})")
+    page.wait_for_function('() => document.querySelector("#helpdesk .files").textContent.includes("image.png")')
+    # text pasted is left to the browser to paste as text, even with a picture of itself beside it, and attaches none
+    words = page.evaluate("""() => { const list = given(png); list.setData('text/plain', 'cells A1:B2');
+        return fire('#helpdesk .say', 'paste', {clipboardData: list}); }""")
+    assert words is False
+    page.context.grant_permissions(['clipboard-read', 'clipboard-write'])
+    page.evaluate("navigator.clipboard.writeText('Look at these')")
+    page.focus('#helpdesk .say')
+    page.keyboard.press('Control+V')
+    page.wait_for_function('() => document.querySelector("#helpdesk .say").value === "Look at these"')
+    # a drag of files marks where they land; a drag of text does not
+    assert page.evaluate("""() => { const list = new DataTransfer(); list.setData('text/plain', 'x');
+        fire('#helpdesk .log', 'dragover', {dataTransfer: list});
+        return document.querySelector('#helpdesk').classList.contains('dropping'); }""") is False
+    assert page.evaluate("fire('#helpdesk .log', 'dragover', {dataTransfer: given(png)})")
+    assert page.evaluate("getComputedStyle(document.querySelector('#helpdesk .files'), '::after').content") \
+        == '"Drop to attach to your message"'
+    # one too large for the attach path is refused with the server's reason, in the chat; the two beside it attach
+    page.evaluate("""() => fire('#helpdesk .log', 'drop', {dataTransfer: given(
+        new File(['the plan'], 'plan.txt', {type: 'text/plain'}),
+        new File([new Uint8Array(25 * 1024 * 1024 + 1)], 'huge.bin'),
+        new File(['a,b'], 'rows.csv', {type: 'text/csv'}))})""")
+    assert page.evaluate("document.querySelector('#helpdesk').classList.contains('dropping')") is False
+    page.wait_for_function('() => document.querySelector("#helpdesk .files").textContent.includes("rows.csv")',
+                           timeout=30000)
+    page.wait_for_function('() => document.querySelector("#helpdesk .log").textContent'
+                           '.includes("huge.bin was not attached: An attachment is at most 25 MB.")')
+    page.set_input_files('#helpdesk .clip input', files=[{'name': 'notes.md', 'mimeType': 'text/markdown',
+                                                          'buffer': b'# notes'}])  # the paperclip, by the same path
+    page.wait_for_function('() => document.querySelector("#helpdesk .files").textContent.includes("notes.md")')
+    chips = page.locator('#helpdesk .files .chip').all_text_contents()
+    assert [chip.split('-', 3)[-1] for chip in chips] == ['image.png', 'plan.txt', 'rows.csv', 'notes.md'], chips
+    page.press('#helpdesk .say', 'Enter')
+    prompt = logged_by(log, lambda entry: entry.get('message', {}).get('method') == 'session/prompt'
+                       and 'Look at these' in entry['message']['params']['prompt'][0].get('text', ''))
+    text = prompt['message']['params']['prompt'][0]['text']
+    paths = [Path(line[2:]) for line in text.splitlines() if line.startswith('- ') and 'attachments' in line]
+    assert [path.name.split('-', 3)[-1] for path in paths] == ['image.png', 'plan.txt', 'rows.csv', 'notes.md'], text
+    assert all(str(path).startswith(str(home)) and path.parent.name == 'attachments' for path in paths)
+    assert paths[0].read_bytes().startswith(b'\x89PNG') and paths[1].read_text() == 'the plan'
+    assert page.locator('#helpdesk .files .chip').count() == 0
+    page.click('#helpdesk .threadbar .stop')
+    page.click('#confirm button.confirm')
+    page.wait_for_selector('#helpdesk .stopped-agent')
+    assert [one for one in problems if '413' not in one] == []  # the refused file's answer, which the chat names
 
 
 @pytest.mark.req('VIEW-042')
@@ -10335,7 +10532,7 @@ def test_a_stored_view_survives_its_move_out_of_the_settings_and_each_account_ke
     homes.save('global', 'web', 'web_signs', ['facing'])
     homes.save('global', 'web', 'web_map_depth', ['2'])
     homes.save('global', 'web', 'web_lens', ['not-a-lens'])
-    assert view.value('web_signs') == 'outward', 'a read carries nothing'
+    assert view.value('web_map_depth') == 'all', 'a read carries nothing'
     with homes.chassis(write=True) as db:  # the test home's own start carried nothing and marked it; undo the mark
         db.execute("DELETE FROM meta WHERE key='carried:web-view-state'")
     settings._carried.clear()
@@ -10351,6 +10548,27 @@ def test_a_stored_view_survives_its_move_out_of_the_settings_and_each_account_ke
         refused = _Handler(given)
         view.answer(refused, 'POST')
         assert refused.answers[-1][0] == 400
+
+
+@pytest.mark.req('VIEW-011')
+def test_the_maps_names_face_every_viewer_by_default_and_kept_outward_signs_move_to_facing_once(home):
+    """2026-10-15: facing is the signs' default, and the web module's start moves each account's kept outward back to
+    it once; a choice of outward made after that is kept."""
+    from metaform import home as homes
+    from metaform import settings
+    from metaform.modules.web import view
+    assert view.value('web_signs') == 'facing'
+    view.keep('', 'web_signs', 'outward')
+    view.keep('bob', 'web_signs', 'outward')
+    view.keep('ann', 'web_lens', 'wide')
+    with homes.chassis(write=True) as db:  # the test home's own start found nothing to move and marked it; undo that
+        db.execute("DELETE FROM meta WHERE key='carried:web-signs-facing'")
+    settings._carried.clear()
+    assert sorted(view.carry()) == ['web_signs of bob: outward to facing', 'web_signs of the owner: outward to facing']
+    assert view.value('web_signs') == 'facing' and view.values('bob')['web_signs'] == 'facing'
+    assert view.values('ann')['web_lens'] == 'wide'
+    view.keep('', 'web_signs', 'outward')
+    assert view.carry() == [] and view.value('web_signs') == 'outward'
 
 
 @pytest.mark.req('VIEW-011')

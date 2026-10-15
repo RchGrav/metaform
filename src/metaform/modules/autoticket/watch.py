@@ -33,8 +33,7 @@ from typing import Any, cast
 
 from metaform import home, settings
 from metaform.data import Store, TableTx
-from metaform.module import Context, call, surface
-from metaform.module import context as call_context
+from metaform.module import Context
 
 from . import entries, grouping, sources
 
@@ -152,13 +151,9 @@ def top_node(store: Store) -> str | None:
     return None if found is None else found.address
 
 
-def code_address(ctx: Context, store: Store, file: str, function: str | None) -> str | None:
-    """The Address the code index maps a file and function to, through map's code-context; None when the map module
-    is off, has no code index, or maps neither."""
-    verb = next((one for module in surface(ctx.folder) if module.id == 'map' for one in module.verbs
-                 if one.name == 'code-context'), None)
-    if verb is None:
-        return None
+def file_address(store: Store, file: str) -> str | None:
+    """The Address whose file ref, `path=` in the sources layer, names the file, as dispatch link writes it; None
+    when the file is outside the project or no element holds it."""
     root = os.path.realpath(store.project().path)
     path = file.replace('\\', '/')
     if os.path.isabs(file):
@@ -166,24 +161,19 @@ def code_address(ctx: Context, store: Store, file: str, function: str | None) ->
         if not real.startswith(root + os.sep):
             return None
         path = os.path.relpath(real, root).replace(os.sep, '/')
-    for nouns in ([{'file': path, 'symbol': function}] if function else []) + [{'file': path}]:
-        try:
-            got: Any = call(verb.run, call_context('map', ctx.folder, project=store.project_id,
-                                                  nouns={**nouns, 'limit': 5}))
-        except Exception:  # noqa: BLE001, S112  no code index, or nothing there: the next try, then the top node
-            continue
-        found: Any = cast(dict[str, Any], got).get('address') if isinstance(got, dict) else None
-        if isinstance(found, list) and found:
-            return str(cast(list[Any], found)[0])
-        if isinstance(found, str) and found:
-            return found
-    return None
+    try:
+        cited = store.citing('path', path, limit=0).results
+    except Exception:  # noqa: BLE001  a project with no map yet holds no refs
+        return None
+    found = next((one for one in cited if one.layer == 'sources' and one.address), None) \
+        or next((one for one in cited if one.address), None)
+    return None if found is None else found.address
 
 
 def place(ctx: Context, store: Store, example: str) -> str | None:
-    """Where a group sits: the Address of the file and function its trace names, else the project's top node."""
+    """Where a group sits: the Address whose file ref names the file its trace names, else the project's top node."""
     found = entries.location(example)
-    address = code_address(ctx, store, *found) if found is not None else None
+    address = file_address(store, found[0]) if found is not None else None
     return address or top_node(store)
 
 

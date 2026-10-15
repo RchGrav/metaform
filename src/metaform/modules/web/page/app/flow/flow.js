@@ -22,10 +22,11 @@ import {WS} from '/page/app/workspace/workspace.js';
  *  - a request: one tiny white dot that glimmers, from the receiver through the join's purpose vertex to each element
  *    the join holds. A join asks when its information flow direction, its ifd, has the receiver take something:
  *    receives, or both.
- *  - the reply: a train of small separate dots, evenly spaced, in the colour of the element the data comes from, the
- *    last few fading, `fxTrain`, leaving the moment the request arrives and running the way the data goes: back to the
- *    receiver when it receives, one train each way when both. So a request reads as one dot going out and a reply as a
- *    stream coming back; the number of dots can carry how much data later.
+ *  - the reply: one solid line, as thick as the request is across, in the colour of the element the data comes from,
+ *    `fxReply`, leaving the moment the request arrives and running the way the data goes: back to the receiver when it
+ *    receives, one line each way when both. Its length says how much data it carries: (random + random) times `data`
+ *    times the request's size, a fresh length each cycle, so a request reads as a small ball going out and a reply as
+ *    data coming back, short or long.
  *  - a record: a small card in the record colour, --record, on a join whose receiver sends (ifd sends, or none
  *    recorded, which the 2D arrows also draw as sending): what an element pushes on to the store or the log it feeds.
  *    It lands with a ring that opens on the element that takes it.
@@ -49,8 +50,8 @@ import {WS} from '/page/app/workspace/workspace.js';
  * camera. The selected node's edges in the 2D map carry the same, `flows2d`. The graph library's own particle, one to
  * a link, is made only for a browser check: `held`, a share of the way, shows it held there, `dots3d`, so the check
  * can read a dot over a node. */
-export const FLOW = {clock: 0, last: 0, held: null, count: 0, ask: 0.45, reply: 0.9, send: 0.8, burst: 0.55, mean: 3,
-  streak: 0.3, trail: 0.06, bright: 1.35, live: [], net: null, mode: null, fades: new Map(), liveFade: 1, ease: 6};
+export const FLOW = {clock: 0, last: 0, held: null, count: 0, ask: 0.45, reply: 0.9, data: 5, send: 0.8, burst: 0.55,
+  mean: 3, streak: 0.3, trail: 0.06, bright: 1.35, live: [], net: null, mode: null, fades: new Map(), liveFade: 1, ease: 6};
 const cycles = new Map();  // each join's current cycle: when it began on FLOW.clock, its wait, and whether it answered
 /* A join's cycle at this moment; `active` is how long a cycle shows. A `driven` join sends its records only when its
  * receiver answers a request, `recorded`, so it has no clock of its own. */
@@ -73,12 +74,13 @@ function freshCycle(driven) {
   return {at: FLOW.clock - Math.random() * 2 * pulseMean(), wait: 0, driven, answered: false, ...replyData()};
 }
 // how much data a reply carries, a fresh amount each cycle: it runs (random + random) times `reply` seconds, bunched
-// about it like the waits, slow enough to read, and carries as many dots as that time holds, so a long reply is
-// plainly more data than the one spark of its request and the way the data goes can be read
+// about it like the waits, slow enough to read, and its line is `replySize` times the request's size long
 function replyData() {
-  const reply = Math.max(0.3, (Math.random() + Math.random()) * FLOW.reply);
-  return {reply, amount: Math.max(2, Math.round(reply * 8))};
+  return {reply: Math.max(0.3, (Math.random() + Math.random()) * FLOW.reply), size: replySize()};
 }
+// how many times the request's size a reply's line runs: (random + random) times `data`, bunched about it, now and
+// then a short one or a long one; its round ends add the request's size, so no reply is smaller than its request
+export const replySize = () => (Math.random() + Math.random()) * FLOW.data;
 const asksOf = join => join?.ifd === 'receives' || join?.ifd === 'both';
 // the usual wait between a join's cycles, web_pulse_ms, `mean` until the page has read it
 const pulseMean = () => (Number(WS.view().pulse_ms) || FLOW.mean * 1000) / 1000;
@@ -130,21 +132,21 @@ export function flowNet() {
   }
   return FLOW.net = {joins: S.joins, size: S.joins.length, byId, answering, sends};
 }
-/* One join's flow at this moment: whether it asks, and how long since its cycle began; for a request, how much its
- * reply carries and how long it runs, else 0. The moment its request reaches the elements it holds they answer, and
- * each sends its records then. Both maps call it for every flowing join every frame, so every call fills the one
+/* One join's flow at this moment: whether it asks, and how long since its cycle began; for a request, how long its
+ * reply's line is, in the request's sizes, and how long it runs, else 0. The moment its request reaches the elements
+ * it holds they answer, and each sends its records then. Both maps call it for every flowing join every frame, so every call fills the one
  * object, `AT`, which the caller reads before its next call. */
-const AT = {asks: false, since: 0, amount: 0, reply: 0};
+const AT = {asks: false, since: 0, size: 0, reply: 0};
 export function flowAt(join) {
   const net = flowNet();
   if (asksOf(join)) {
     const cycle = cycleOf(join.id, FLOW.ask), since = FLOW.clock - cycle.at;
     if (since >= FLOW.ask && !cycle.answered) answered(join, cycle, since, net);
-    AT.asks = true; AT.since = since; AT.amount = cycle.amount; AT.reply = cycle.reply;
+    AT.asks = true; AT.since = since; AT.size = cycle.size; AT.reply = cycle.reply;
     return AT;
   }
   const cycle = cycleOf(join.id, FLOW.send + FLOW.burst, net.answering.has(join.receiver));
-  AT.asks = false; AT.since = FLOW.clock - cycle.at; AT.amount = 0; AT.reply = 0;
+  AT.asks = false; AT.since = FLOW.clock - cycle.at; AT.size = 0; AT.reply = 0;
   return AT;
 }
 /* The request has reached the elements the join holds: they answer, and each sends its records now, unless the reply
@@ -172,7 +174,7 @@ export function flowLive(kind, from, to, edit = false) {
   const targets = (Array.isArray(to) ? to : [to]).filter(Boolean);
   if (!targets.length) return;
   const long = liveLength(kind, edit);
-  FLOW.live.push({kind, from, to: targets, edit, at: FLOW.clock, long});
+  FLOW.live.push({kind, from, to: targets, edit, at: FLOW.clock, long, size: replySize()});
   if (FLOW.live.length > 120) FLOW.live.splice(0, FLOW.live.length - 120);
   wake3d(1000 * long + 200);
   wake2d();

@@ -1,9 +1,9 @@
 """What a layer holds at a scope, addressed `<scope>@<layer>`, P165: read backward with `@` as "for".
 
-`code.timer.kitchen@code` is the code for the kitchen timer: what the code layer holds at that Address. The scope is an
-Address, or a join named by its receiver and provider, `<receiver>:<provider>`, as every read names a join, MAP-005:
-`code.timer.kitchen:code.alarm.audible@code` is the code realizing the timer's join with the alarm, the EF the alarm
-serves the timer with. `base` as the scope, or no scope, is the whole project: `base@best_practices` is the best
+`code.timer.kitchen@best_practices` is the best practices for the kitchen timer: what that layer holds at that Address.
+The scope is an Address, or a join named by its receiver and provider, `<receiver>:<provider>`, as every read names a
+join, MAP-005: `code.timer.kitchen:code.alarm.audible@best_practices` is what the layer holds at the timer's join with
+the alarm, the EF the alarm serves the timer with. `base` as the scope, or no scope, is the whole project: `base@best_practices` is the best
 practices for the whole project.
 
 A layer may be named with its scope, `code.cpp@best_practices`, as map knowledge's layer noun asks a new layer to be

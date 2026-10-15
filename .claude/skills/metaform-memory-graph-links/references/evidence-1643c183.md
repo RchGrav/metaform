@@ -1,0 +1,5 @@
+Listen, its not the end of the world.. a knowledge layer has a namespace address and a linked to {base_map_address}..   Base map address can move downward automatically.. we can handle this programmatically, if someone specifies it on a branch that is below where it is linked just more it down to where the branch is along its path to the trunk..  iit just doesnt need to go up because it already exists there.
+
+Spec excerpt read in the same episode (specifications/02-layers.md:62-64): "Orientation: the trunk is down and the leaves are up. From the address where an item is linked, it goes down to the trunk as visibility and up to the leaves as inheritance. Inheritance runs one way. A practice for `code` holds for every engine, every game engine and every FPS engine."
+
+Rich: so for javascript you link it on web service for instance..  those memories flow forward to all things under web server and down to the trunk

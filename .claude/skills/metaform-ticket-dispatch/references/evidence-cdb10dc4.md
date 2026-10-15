@@ -1,0 +1,1 @@
+Resolution text: "For the person: cancel code.analyzer.refactoring#19 (refused to a worker; see note)." and "map work op=done records outcome completed, never cancelled." Tool error: "Error: No agent is at work on 0e978fb98b5b426086a5e496f1c32c7c now: it is done, not taken, or its agent is not running, so the note would reach no one. Next: call dispatch_peers"

@@ -178,21 +178,27 @@ def test_at_a_node_the_commands_act_on_that_nodes_memories_tied_by_a_join_of_typ
     assert mj(run, 'open_nodes', J(['route ejection']), ROUTE, cwd=mapped)['entities'] == [
         entity('route ejection', 'behavior', 'Routes are ejected.')]
     assert mj(run, 'read_graph', PROBE, cwd=mapped) == {'entities': [], 'relations': []}
-    elsewhere = m(run, 'add_observations', J([{'entityName': 'route ejection', 'contents': ['x']}]), PROBE,
-                  cwd=mapped, ok=False)
-    assert 'Entity with name route ejection not found' in elsewhere.stderr
+    # a write at a node names an entity anywhere in the graph; only a name the graph lacks stops it, CTX-022
+    elsewhere = mj(run, 'add_observations', J([{'entityName': 'route ejection', 'contents': ['Seen from the probe.']}]),
+                   PROBE, cwd=mapped)
+    assert elsewhere['results'] == [{'entityName': 'route ejection', 'addedObservations': ['Seen from the probe.']}]
+    mj(run, 'delete_observations', J([{'entityName': 'route ejection', 'observations': ['Seen from the probe.']}]),
+       PROBE, cwd=mapped)
+    ghost = m(run, 'add_observations', J([{'entityName': 'ghost', 'contents': ['x']}]), PROBE, cwd=mapped, ok=False)
+    assert 'Entity with name ghost not found' in ghost.stderr and 'search_nodes' in ghost.stderr
     joined = mj(run, 'joins', ROUTE, cwd=mapped)['joins']
     assert [(one['entity'], one['address'], one['orphaned']) for one in joined] == [
         ('route ejection', 'code.manager.route', False)]
     mj(run, 'create_entities', J([entity('echo cost', 'fact', 'Echoes are ejected cheaply.')]), PROBE, cwd=mapped)
     assert [one['name'] for one in mj(run, 'search_nodes', 'ejected', ROUTE, cwd=mapped)['entities']] == [
         'route ejection']
-    crossing = m(run, 'create_relations', J([{'from': 'route ejection', 'to': 'echo cost', 'relationType': 'uses'}]),
-                 ROUTE, cwd=mapped, ok=False)
-    assert 'Entity with name echo cost not found' in crossing.stderr
-    said = mj(run, 'delete_observations', J([{'entityName': 'echo cost', 'observations': ['Echoes are ejected cheaply.']}]),
-              ROUTE, cwd=mapped)
-    assert said['message'] == 'Deleted 0 of 1 observations. Entities not found: echo cost'
+    # a relation across Addresses is made and shows from both of its ends, CTX-025
+    crossing = {'from': 'route ejection', 'to': 'echo cost', 'relationType': 'uses'}
+    assert mj(run, 'create_relations', J([crossing]), ROUTE, cwd=mapped)['relations'] == [crossing]
+    assert mj(run, 'read_graph', ROUTE, cwd=mapped)['relations'] == [crossing]
+    assert mj(run, 'read_graph', PROBE, cwd=mapped)['relations'] == [crossing]
+    said = mj(run, 'delete_observations', J([{'entityName': 'ghost', 'observations': ['x']}]), ROUTE, cwd=mapped)
+    assert said['message'] == 'Deleted 0 of 1 observations. Entities not found: ghost'
     # an existing name keeps its type and gains the new observation, BASE-040 as amended 2026-10-11
     mj(run, 'create_entities', J([entity('echo cost', 'other type', 'Echoes cost one packet.')]), ROUTE, cwd=mapped)
     assert mj(run, 'read_graph', ROUTE, cwd=mapped)['entities'][1] == entity('echo cost', 'fact',
@@ -358,8 +364,8 @@ def test_memory_kept_with_times_is_upgraded_keeping_every_memory_relation_join_a
         recorded = json.loads(db.execute("SELECT value FROM meta WHERE key='module:memory'").fetchone()[0])
         held = {table: [row[1] for row in db.execute(f'PRAGMA table_info("memory.{table}")')]
                 for table in ('entities', 'observations', 'relations', 'joins')}
-    assert recorded['version'] == 6
-    assert held == {'entities': ['name', 'entity_type', 'seq', 'title', 'why'],
+    assert recorded['version'] == 7
+    assert held == {'entities': ['name', 'entity_type', 'seq', 'title', 'why', 'locked_by', 'locked_at'],
                     'observations': ['entity', 'content', 'seq', 'by', 'session', 'at'],
                     'relations': ['source', 'target', 'relation_type', 'seq'],
                     'joins': ['join_id', 'entity', 'receiver', 'provider', 'by', 'session', 'at', 'number']}
@@ -804,12 +810,17 @@ def test_a_bare_address_names_the_element_at_it(run, mapped):
 
 
 @pytest.mark.req('BASE-040')
-def test_an_unscoped_write_lands_and_says_no_node_will_show_it(run, mapped):
-    """Without a node the entity is still written, BASE-044, and the notice names it and says how to place it."""
+@pytest.mark.req('CTX-025')
+def test_an_unscoped_write_lands_with_no_notice(run, mapped):
+    """Without a node the entity is still written, BASE-044, and a relation between memories at two nodes is made with
+    no notice, since it shows from both ends, CTX-025."""
     said = mj(run, 'create_entities', J([entity('probe timeout', 'behavior', 'Echo waits 2 s.')]), cwd=mapped)
-    assert said['entities'][0]['name'] == 'probe timeout'
-    assert any(n['message'] == 'Written to the whole memory graph; no node will show probe timeout. '
-               'To tie it to a node, pass node or address.' for n in said['notices'])
+    assert said['entities'][0]['name'] == 'probe timeout' and 'notices' not in said
+    m(run, 'create_entities', J([entity('route ejection', 'behavior', 'Routes are ejected.')]), ROUTE, cwd=mapped)
+    m(run, 'create_entities', J([entity('echo cost', 'fact', 'Echoes are cheap.')]), PROBE, cwd=mapped)
+    related = mj(run, 'create_relations', J([{'from': 'echo cost', 'to': 'route ejection', 'relationType': 'repairs'}]),
+                 cwd=mapped)
+    assert related['relations'] and 'notices' not in related
     assert mj(run, 'open_nodes', '["probe timeout"]', cwd=mapped)['entities'][0]['observations'] == ['Echo waits 2 s.']
 
 
@@ -843,8 +854,8 @@ def test_a_memory_write_records_by_the_session_the_server_runs_for(run, mapped):
 @pytest.mark.req('STORE-029')
 @pytest.mark.req('STORE-020')
 def test_memory_kept_at_version_2_is_upgraded_keeping_every_row_with_no_by(run, mapped):
-    """by may be empty, so the tables of version 2 are upgraded in place, every row kept with no by, and the store
-    records that version 2's code still reads them."""
+    """by may be empty, so the tables of version 2 are upgraded in place, every row kept with no by; since version 7's
+    lock, the store records that only code that knows the lock opens them, CTX-023."""
     from dataclasses import replace
 
     from metaform.data import Tables
@@ -866,7 +877,7 @@ def test_memory_kept_at_version_2_is_upgraded_keeping_every_row_with_no_by(run, 
     assert [(one['join_id'], one['by']) for one in whole['joins']] == [('j1', None)]
     with project_transaction(path, write=False) as db:
         recorded = json.loads(db.execute("SELECT value FROM meta WHERE key='module:memory'").fetchone()[0])
-    assert (recorded['version'], recorded['compatible_from']) == (6, 2)
+    assert (recorded['version'], recorded['compatible_from']) == (7, 7)
 
 
 def item(run, reference, cwd, ok=True):
@@ -916,8 +927,8 @@ def test_a_new_memory_without_its_title_or_why_is_refused_naming_which_and_nothi
 def test_memories_kept_before_numbers_are_numbered_in_the_order_they_were_made_with_titles_from_their_first_line(
         run, mapped):
     """Memory tables version 5 numbers the joins already held, those kept before joins had times first, then by when
-    each was made, and titles each memory from the first line of its first observation; version 4 code still reads
-    the tables."""
+    each was made, and titles each memory from the first line of its first observation; since version 7's lock only
+    code that knows the lock opens the tables, CTX-023."""
     from dataclasses import replace
 
     from metaform.data import Tables
@@ -948,7 +959,7 @@ def test_memories_kept_before_numbers_are_numbered_in_the_order_they_were_made_w
     assert after['items'] == ['code.manager.route#4  Next.']
     with project_transaction(path, write=False) as db:
         recorded = json.loads(db.execute("SELECT value FROM meta WHERE key='module:memory'").fetchone()[0])
-    assert (recorded['version'], recorded['compatible_from']) == (6, 2)
+    assert (recorded['version'], recorded['compatible_from']) == (7, 7)
 
 
 @pytest.mark.req('MCP-039')

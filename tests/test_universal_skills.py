@@ -14,7 +14,7 @@ pytestmark = [pytest.mark.req('BASE-059'), pytest.mark.kind('fixture')]
 
 def test_skill_folders_declare_identity_and_separate_discovery_from_access():
     listed = skills.catalog()
-    assert len(listed) == 9
+    assert len(listed) == 8
     assert {one.name for one in listed if not one.discover} == {'sentinel', 'workflow-evaluator'}
     for one in listed:
         frontmatter = yaml.safe_load(skills.read(one.name, 'SKILL.md').split('---', 2)[1])
@@ -44,7 +44,7 @@ def test_load_and_deployment_use_current_prompt_store_libraries():
     prompts.add_prompt_version('metaform-tools', changed, held.number)
     assert changed in skills.load('logic.skill.sentinel')['libs']['lib_metaform']
     assert first['procedure'] == skills.load('sentinel')['procedure']
-    one = next(one for one in skills.catalog() if one.name == 'code-links')
+    one = next(one for one in skills.catalog() if one.name == 'write-workflow')
     deployed = skills.deployment_files(one)
     assert changed.encode() in deployed['references/lib_metaform.md']
     assert deployed['references/procedure.axiom'].decode().strip() == skills.load(one.name)['procedure']
@@ -67,11 +67,11 @@ def test_read_returns_authored_frontmatter_and_procedure():
 def test_axiom_calls_skill_addresses_with_kebab_names_and_keeps_arguments(run, project_folder):
     run('enable', 'workflow')
     result = run('workflow', 'run',
-                 '{verdict} := logic.skill.workflow-evaluator(Result="logic.skill.code-links()", Criteria="works")',
+                 '{verdict} := logic.skill.workflow-evaluator(Result="logic.skill.write-workflow()", Criteria="works")',
                  '--json', cwd=project_folder)
     called = json.loads(result.stdout)
     assert called['address'] == 'logic.skill.workflow-evaluator'
-    assert called['arguments']['Result'] == 'logic.skill.code-links()'
+    assert called['arguments']['Result'] == 'logic.skill.write-workflow()'
     assert called['logic']['content'] == skills.load(called['address'])['procedure']
     assert set(called['libs']) == {'lib_axiom', 'lib_metaform', 'lib_workflow'}
     assert called['this']['address'] == called['address']

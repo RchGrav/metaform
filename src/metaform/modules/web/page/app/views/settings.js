@@ -22,7 +22,7 @@ import {setTheme} from '/page/app/map3d/draw3d.js';
  * every project and every reload opens the same way (settings cleanup, 2026-10-15). The web module's settings the page
  * follows, web_embody, web_chat_details and web_theme, are read beside it. Reading writes nothing. Whether the page is
  * drawn from its workspace is web_panes, which the workspace reads itself. */
-export const VIEW = {agents: 'auto', physics: 'organic', read: null, reading: null};
+export const VIEW = {agents: 'auto', physics: 'organic', read: null, reading: null, signs: 'facing'};
 // the bar's Info choice, web_hover_info, `showInfo`, drawn as the view is read
 export const INFOSET = {buttons: new Map()};
 // declared before the view settings are read, which shows them: the flow modes and the node zoom switch
@@ -30,8 +30,8 @@ export const FLOWSET = {name: null};
 export const NODEZOOM = {button: null};
 export const LENS = {name: 'natural', button: null, frame: 0};
 const LENS_NEXT = {natural: 'wide', wide: 'fisheye', fisheye: 'natural'};
-/* The signs, web_signs: outward, the map's names standing out from its middle as signs in the scene, or facing, each
- * turned to the eye. The View menu switches them. */
+/* The signs, web_signs: facing, the default, each of the map's names turned to the eye that sees it, the person's and
+ * every agent's; or outward, standing out from the map's middle as signs in the scene. The View menu switches them. */
 export const SIGNS = {button: null, words: {outward: 'Outward', facing: 'Facing'}};
 export const FOV3D = {least: 30, most: 55};  // the 3D map's field of view in degrees, top to bottom, `resize`
 export const LENSES = {natural: 55, wide: 80, fisheye: 120};  // web_lens: the widest the view opens
@@ -55,7 +55,7 @@ function followView(rows, view) {
   const value = (key, otherwise) => view[key] ?? otherwise;
   VIEW.agents = value('web_agents_window', 'auto');
   PEEK.direction = value('web_map_direction', 'auto');
-  VIEW.signs = String(value('web_signs', 'outward'));
+  VIEW.signs = String(value('web_signs', 'facing'));
   VIEW.embody = String(setting('web_embody', 'offer'));
   const details = setting('web_chat_details', false) === true;  // the agent's work in the chat, `workShown`
   if (details !== Boolean(VIEW.chatDetails)) { VIEW.chatDetails = details; drawHelpdesk(); }

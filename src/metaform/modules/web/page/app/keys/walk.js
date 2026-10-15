@@ -126,12 +126,16 @@ export function mapKeys(event) {
   if (event.key.startsWith('Arrow') && target.closest(ARROWS_OWN)) return false;
   return true;
 }
-/* 1, VIEW-005: the large 3D map's zoom on the selection, its name a quarter, a half or three quarters of the view's
- * width, and round again. The small area takes no 3D zoom: it always meets a node at four fifths. */
+/* 1, VIEW-005: the large 3D map's camera, round from Work, the shot that shows the work going on, to the zoom on the
+ * selection with its name a quarter, a half or three quarters of the view's width, and back to Work. The small area
+ * takes no 3D zoom: it always meets a node at four fifths. */
 export function zoomKey() {
   if (small3d()) return note2d("3D zoom is the large 3D map's: S swaps the maps");
-  const level = NAME.level % 3 + 1;
-  NAME.level = level;
+  if (V3.mode === 'zoom' && NAME.level === 3) {
+    setMode3d('work');
+    return note2d('3D camera: the work in view');
+  }
+  const level = V3.mode === 'zoom' ? NAME.level + 1 : 1;
   setMode3d('zoom', level);
   note2d(`3D zoom: ${['1/4', '1/2', '3/4'][level - 1]}`);
 }

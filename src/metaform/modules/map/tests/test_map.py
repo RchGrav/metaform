@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
 from pathlib import Path
 
 import pytest
@@ -501,6 +500,19 @@ def test_knowledge_creates_no_correction_layer_and_offers_no_correct_or_peel(run
     assert 'refine' not in run('help', 'map', 'knowledge', cwd=mapped).stdout.split('Switches')[1].split('\n')[1]
     assert 'refine' in run('help', 'map', 'refine', cwd=mapped).stdout
     assert 'stack' not in run('help', 'map', cwd=mapped).stdout.split()
+
+
+@pytest.mark.req('LAYER-028')
+def test_a_layer_named_a_project_root_is_refused_naming_the_rule(run, mapped):
+    """A layer's name is a namespace root; one named code would collide with the map's code root."""
+    refused = k(run, mapped, 'op=create', 'layer=code', 'variable=What is it?', 'mutable=true', 'hideable=true',
+                *PROVENANCE, ok=False)
+    assert refused.returncode != 0 and 'project root' in refused.stdout + refused.stderr
+    assert 'LAYER-028' in refused.stdout + refused.stderr
+    assert 'code' not in [layer['name'] for layer in j(run, 'layers', cwd=mapped)['results']]
+    k(run, mapped, 'op=create', 'layer=port', 'variable=What is it?', 'mutable=true', 'hideable=true', *PROVENANCE)
+    with pytest.raises(StoreError, match='LAYER-028'):
+        Store('proj').rename_layer('port', 'data', 'test')
 
 
 @pytest.mark.req('STORE-039')
@@ -1080,11 +1092,11 @@ def test_reopening_a_question_is_a_command_and_never_a_tool(run, described, home
 def test_where_shows_the_properties_that_apply_at_the_address_and_those_visible_there(run, mapped):
     """An agent is told to read a part with where before it changes it. A property linked toward the trunk applies at
     the part, so where shows it; an agent that read only where would otherwise never learn of it."""
-    k(run, mapped, 'op=create', 'layer=media', 'variable=Which language is each part written in?', 'mutable=true',
+    k(run, mapped, 'op=create', 'layer=language', 'variable=Which language is each part written in?', 'mutable=true',
       'hideable=true', *PROVENANCE)
-    k(run, mapped, 'op=add-property', 'layer=media', 'element=type:code', 'value="C"')
-    k(run, mapped, 'op=add-property', 'layer=media', 'element=code.timer.kitchen', 'value="assembly"')
-    k(run, mapped, 'op=finish', 'layer=media')
+    k(run, mapped, 'op=add-property', 'layer=language', 'element=type:code', 'value="C"')
+    k(run, mapped, 'op=add-property', 'layer=language', 'element=code.timer.kitchen', 'value="assembly"')
+    k(run, mapped, 'op=finish', 'layer=language')
     kitchen = j(run, 'where', 'code.timer.kitchen', 'contents=true', cwd=mapped)['properties']
     assert [(one['value'], one['address']) for one in kitchen['applying']] == [('C', 'code'), ('assembly', 'code.timer.kitchen')]
     assert 'visible' not in kitchen                                  # nothing is linked toward the leaves from it
@@ -1260,7 +1272,6 @@ def test_a_tickets_glyph_is_kept_in_the_map_modules_own_table_keyed_by_the_work_
 @pytest.mark.req('VIEW-040')
 def test_the_map_modules_glyphs_are_the_seventeen_the_page_draws_in_its_order():
     """The glyph a ticket holds is drawn by the page, so the names and their order are the page's, VIEW-035."""
-    from pathlib import Path
 
     import metaform
     from metaform.modules.map import AGENT_GLYPHS
@@ -1806,31 +1817,25 @@ def test_missing_address_in_the_first_building_intake_names_intake_show(run, pro
     assert stopped.stderr.splitlines()[-1] == 'Next: metaform intake show receiver=code.calculator.sum'
 
 
-def test_missing_address_recovery_is_shared_by_code_and_glossary(run, kitchen):
-    code(run, kitchen, 'code-import', 'from=scip')
-    for args in (('code-context', 'address=code.timer.kitchn'),
-                 ('code-link', 'op=add', 'node=code.timer.kitchn', 'symbol=Timer', 'why=Realize the timer.'),
-                 ('term', 'term=dish timer', 'node=code.timer.kitchn', 'definition=A timer.', 'why=Name the timer.')):
+def test_missing_address_recovery_is_shared_by_the_glossary(run, kitchen):
+    for args in (('term', 'term=dish timer', 'node=code.timer.kitchn', 'definition=A timer.', 'why=Name the timer.'),):
         stopped = run('map', *args, cwd=kitchen, ok=False)
         assert stopped.returncode == 2
         assert 'Nearest: code.timer.kitchen' in stopped.stderr
         assert stopped.stderr.splitlines()[-1] == 'Next: metaform map where code.timer.kitchen'
 
 
-def test_citing_a_path_outside_the_project_stops_and_an_uncited_path_names_code_search(run, mapped):
+def test_citing_a_path_outside_the_project_stops_and_an_uncited_path_finds_nothing(run, mapped):
     outside = str(mapped.parent / 'outside.py')
     stopped = run('map', 'citing', 'key=path', f'value={outside}', cwd=mapped, ok=False)
     assert stopped.returncode == 2
     assert f'{outside} is outside the project folder {mapped}' in stopped.stderr
     uncited = j(run, 'citing', 'key=path', 'value=./src/uncited.py', cwd=mapped)
-    assert uncited['results'] == []
-    assert uncited['next'] == 'metaform map code-search file_pattern=src/uncited.py'
+    assert uncited == {'results': [], 'next': None}
 
 
 def test_orientation_recovery_reaches_working_next_steps_over_mcp(run, home, kitchen):
     from metaform.modules.mcp.tests.test_mcp import called, session, text
-
-    code(run, kitchen, 'code-import', 'from=scip')
 
     async def check(client, init):
         typo = await called(client, 'map_where', {'address': 'code.timer.kitchn'})
@@ -1841,12 +1846,7 @@ def test_orientation_recovery_reaches_working_next_steps_over_mcp(run, home, kit
         assert not recovered.is_error
         uncited = await called(client, 'map_citing', {'key': 'path', 'value': './src/uncited.py'})
         assert not uncited.is_error
-        next_step = json.loads(text(uncited)[-1])['next']
-        assert next_step == 'map_code-search file_pattern=src/uncited.py'
-        assert next_step.split()[0] in {one.name for one in (await client.list_tools()).tools}
-        searched = await called(client, 'map_code-search', {'file_pattern': 'src/uncited.py'})
-        assert not searched.is_error
-        assert json.loads(text(searched)[-1])['results'] == []
+        assert json.loads(text(uncited)[-1])['results'] == []
 
     session(home, kitchen, check)
 
@@ -2036,17 +2036,11 @@ def test_tickets_and_messages_written_before_numbers_are_numbered_once_in_the_or
     assert Store('proj').latest_number('code.alarm.audible') == 6
 
 
-# The code layer, P165 and P167: a fixture repository, a timer that rings an alarm, with the SCIP index scip-python
-# 0.6.6 wrote for it, so the reader meets a real indexer's output.
-KITCHEN = Path(__file__).parent / 'fixtures' / 'kitchen'
-
-
 @pytest.fixture
 def kitchen(run, tmp_path):
-    """The fixture repository registered as a project, with a small map whose sources cite its files: the alarm's
-    whole file, and the timer's class by its lines, so the timer's unused helper is cited by no one."""
+    """A project with a small map whose sources cite its files: the alarm's whole file, and the timer's lines."""
     folder = tmp_path / 'kitchen'
-    shutil.copytree(KITCHEN, folder)
+    folder.mkdir()
     run('add', 'project', 'kitchen', str(folder))
     store = Store('kitchen')
     with store.atomic():
@@ -2070,476 +2064,6 @@ def kitchen(run, tmp_path):
 def code(run, folder, *args, ok=True):
     done = run('map', *args, '--json', cwd=folder, ok=ok)
     return json.loads(done.stdout) if ok else done
-
-
-@pytest.mark.req('MAP-021')
-def test_code_import_reads_a_scip_index_into_a_layer_and_links_what_the_sources_cite(run, kitchen):
-    """The importer reads the index's symbols and calls into the code layer, ties each cited file's symbols to the
-    node citing it, narrowed by a cited line range, reads again only a file that changed, and goes with its layer."""
-    assert 'map code-import' in code(run, kitchen, 'roots')['code']  # the entry names the import until it is run
-    done = code(run, kitchen, 'code-import', 'from=scip')
-    assert 'code' not in code(run, kitchen, 'roots')
-    assert done['provider'] == 'scip-python 0.6.6' and done['symbols'] == 6  # Function, Method and Class; no fields
-    assert done['edges'] == {'CALLS': 2} and done['linked']['added'] == 5 and done['linked']['nodes'] == 2
-    at = code(run, kitchen, 'code-context', 'address=code.timer.kitchen')
-    assert sorted(one['name'] for one in at['symbols']) == ['Timer', '__init__', 'tick']  # not unused_helper
-    assert [(one['to'], one['address']) for one in at['calls_out']] == [('ring', ['code.alarm.audible'])]
-    brief = code(run, kitchen, 'where', 'code.timer.kitchen')['code']
-    assert brief.startswith('Code here: symbols 3, files 1, calls in 0, calls out 1:') and 'code-context' in brief
-    assert code(run, kitchen, 'code-import', 'from=scip')['files'] == {'read': 0, 'unchanged': 3, 'gone': 0,
-                                                                      'ignored': 0}
-    (kitchen / 'kitchen' / 'alarm.py').write_text('"""The audible alarm."""\n', encoding='utf-8')
-    stale = code(run, kitchen, 'code-import', 'from=scip')  # its bytes changed and the index did not: kept, and said
-    assert stale['files']['read'] == 0 and stale['files']['stale'] == 1
-    assert any('run scip-python index again' in notice for notice in stale['notices'])
-    assert 'files changed since read: 1' in code(run, kitchen, 'where', 'code.alarm.audible')['code']
-    code(run, kitchen, 'knowledge', 'op=discard', 'layer=code')
-    with Store('kitchen', module='map').tables(write=False) as tables:  # the index went with its layer
-        assert not tables.rows('code_symbols', limit=0).results and not tables.rows('code_edges', limit=0).results
-    gone = run('map', 'code-gaps', cwd=kitchen, ok=False)
-    assert gone.returncode and 'code-import' in gone.stdout + gone.stderr
-
-
-@pytest.mark.req('MCP-037')
-def test_an_agents_link_is_numbered_with_its_why_and_a_proposal_waits_to_be_accepted(run, kitchen):
-    """A link records a decision, so it needs a why; added or accepted it takes the next number at the address. An
-    unlinked sources link stays unlinked when the import runs again."""
-    code(run, kitchen, 'code-import', 'from=scip')
-    refused = code(run, kitchen, 'code-link', 'op=add', 'node=code.display.digit', 'symbol=unused_helper', ok=False)
-    assert 'why' in refused.stdout + refused.stderr
-    added = code(run, kitchen, 'code-link', 'op=add', 'node=code.display.digit', 'symbol=unused_helper',
-                 'why=It will format the digits.')
-    assert added['item'] == 'code.display.digit#1' and added['title'] == 'unused_helper provides for code.display.digit'
-    read = code(run, kitchen, 'item', 'code.display.digit#1')
-    assert read['kind'] == 'code' and read['why'] == 'It will format the digits.' and 'unused_helper' in read['body']
-    proposal = code(run, kitchen, 'code-link', 'op=propose', 'node=code.display.digit', 'symbol=tone',
-                    'why=It sounds while the digits show.')['links'][0]
-    assert [one['id'] for one in code(run, kitchen, 'code-link')['proposed']] == [proposal['id']]
-    accepted = code(run, kitchen, 'code-link', 'op=accept', f"id={proposal['id']}")['decided'][0]
-    assert accepted['item'] == 'code.display.digit#2' and accepted['why'] == 'It sounds while the digits show.'
-    assert code(run, kitchen, 'code-link')['proposed'] == []
-    code(run, kitchen, 'code-link', 'op=remove', 'node=code.alarm.audible', 'symbol=tone',
-         'why=It belongs to the display now.')
-    code(run, kitchen, 'code-import', 'from=scip', 'full=true')
-    names = [one['name'] for one in code(run, kitchen, 'code-context', 'address=code.alarm.audible')['symbols']]
-    assert names == ['ring']  # the unlinked one is not linked again by the sources pass
-
-
-@pytest.mark.req('MAP-021')
-def test_the_code_reads_answer_in_addresses(run, kitchen):
-    """search_graph's, trace_path's and context's questions, answered with the Addresses the code serves; and the two
-    gaps, code no Address claims and Addresses no code serves."""
-    code(run, kitchen, 'code-import', 'from=scip')
-    found = code(run, kitchen, 'code-search', 'query=ring')['results']
-    assert [(one['name'], one['in'], one['out'], one['address']) for one in found] == [
-        ('ring', 1, 1, ['code.alarm.audible'])]
-    traced = code(run, kitchen, 'code-trace', 'from=code.timer.kitchen', 'to=code.alarm.audible')
-    assert traced['found'] and traced['addresses'] == ['code.timer.kitchen', 'code.alarm.audible']
-    assert [one['name'] for one in traced['path']] == ['tick', 'ring']
-    of_file = code(run, kitchen, 'code-context', 'file=kitchen/alarm.py')
-    assert of_file['address'] == ['code.alarm.audible'] and of_file['cited_by'] == ['code.alarm.audible']
-    gaps = code(run, kitchen, 'code-gaps')
-    assert gaps['code_without_purpose']['by_file'] == [{'file': 'kitchen/timer.py', 'count': 1,
-                                                        'symbols': ['unused_helper']}]
-    assert gaps['purpose_without_code']['ghosts'] == [{'address': 'code.display.digit'}]
-
-
-@pytest.mark.req('BASE-058')
-def test_code_import_reads_a_code_graph_mcp_server_as_its_client(run, kitchen, monkeypatch):
-    """An MCP server speaking codebase-memory's tools is read as its client: the project found by its folder, the
-    project prefix taken off each name, files under the ignore list never read."""
-    import mcp
-    from mcp.server.mcpserver import MCPServer
-    server = MCPServer('codebase-memory-mcp', version='0.11.0')
-    prefix = 'tmp-kitchen.'
-    rows = {
-        'MATCH (f:File)': [['kitchen/alarm.py', '1'], ['kitchen/timer.py', '1'], ['rich/notes.py', '1']],
-        'MATCH (n)': [[prefix + 'kitchen.alarm.ring', 'ring', '["Function"]', 'kitchen/alarm.py', '4', '5'],
-                      [prefix + 'kitchen.alarm.tone', 'tone', '["Function"]', 'kitchen/alarm.py', '8', '9'],
-                      [prefix + 'kitchen.timer.Timer.tick', 'tick', '["Method"]', 'kitchen/timer.py', '9', '13']],
-        'CALLS': [[prefix + 'kitchen.timer.Timer.tick', prefix + 'kitchen.alarm.ring', 'CALLS', 'kitchen/timer.py',
-                   '12', 'kitchen/alarm.py'],
-                  [prefix + 'kitchen.alarm.ring', 'builtins.len', 'CALLS', 'kitchen/alarm.py', '5', '']],
-        'IMPORTS': [['kitchen/timer.py', prefix + 'kitchen.alarm.ring', 'kitchen/alarm.py']]}
-    asked: list[str] = []
-
-    @server.tool()
-    def list_projects(format: str = 'tree', limit: int = 50, offset: int = 0) -> dict:
-        return {'projects': [{'name': 'tmp-kitchen', 'root_path': str(kitchen)}], 'has_more': False}
-
-    @server.tool()
-    def query_graph(project: str, query: str, format: str = 'tree', max_rows: int = 200,
-                    max_output_tokens: int = 3200, cursor: str = '') -> dict:
-        asked.append(query)
-        key = next(key for key in ('CALLS', 'IMPORTS', 'MATCH (f:File)', 'MATCH (n)') if key in query)
-        return {'columns': [], 'rows': rows[key], 'has_more': False}
-
-    client = mcp.Client  # the server named by URL is reached in this process instead of over HTTP
-    monkeypatch.setattr(mcp, 'Client', lambda target, **options: client(server, **options))
-    run('set', '--code-server', 'http://127.0.0.1:9/mcp', cwd=kitchen)
-    (kitchen / '.metaform').mkdir()
-    (kitchen / '.metaform' / 'ignore.txt').write_text('rich/\n', encoding='utf-8')
-    done = code(run, kitchen, 'code-import', 'from=mcp')
-    assert done['provider'] == 'codebase-memory-mcp 0.11.0' and done['files']['ignored'] == 1
-    assert done['symbols'] == 3 and done['edges'] == {'CALLS': 1, 'IMPORTS': 1}  # the library call is left out
-    assert not any('rich/' in query for query in asked)
-    found = code(run, kitchen, 'code-context', 'symbol=tick')
-    assert found['qn'] == 'kitchen.timer.Timer.tick' and found['address'] == ['code.timer.kitchen']
-
-
-@pytest.mark.req('MAP-021')
-def test_code_on_a_join_is_its_providers_and_serves_its_receiver(run, kitchen):
-    """Sources held at a join name the code realizing its EF: the providers' own code, shown at the receiver as the
-    code serving it, in the reads and the brief alike; a cited folder links nothing."""
-    store = Store('kitchen')
-    alarm = next(item for item in store.layer_items('sources', limit=0).results
-                 if item.target == Node('element', store.element('code.alarm.audible').id))
-    with store.atomic():
-        store.remove(alarm.id)
-        store.add_item('sources', store.purpose('code.timer.kitchen', 'code.alarm.audible'), 'alarm',
-                       refs=[('path', 'kitchen/alarm.py')])
-        store.add_item('sources', Node('element', 'code.display.digit'), 'all', refs=[('path', 'kitchen')])
-    done = code(run, kitchen, 'code-import', 'from=scip')
-    assert done['linked'] == {'added': 5, 'removed': 0, 'nodes': 2, 'folders': 1}  # the folder cite links nothing
-    assert code(run, kitchen, 'code-context', 'file=kitchen/alarm.py')['address'] == ['code.alarm.audible']
-    assert code(run, kitchen, 'code-context', 'file=kitchen/alarm.py')['serves'] == ['code.timer.kitchen']
-    assert code(run, kitchen, 'where', 'code.alarm.audible')['code'].startswith('Code here: symbols 2, files 1')
-    timer = code(run, kitchen, 'where', 'code.timer.kitchen')['code']
-    assert timer.startswith('Code here: symbols 3, files 1, calls in 0, calls out 1; serving it: symbols 2:')
-    at = code(run, kitchen, 'code-context', 'address=code.timer.kitchen')
-    assert at['serving'] == [{'provider': 'code.alarm.audible', 'symbols': ['ring', 'tone'], 'count': 2}]
-    assert 'code.alarm.audible' not in [one['address'] for one in code(run, kitchen, 'code-gaps')
-                                        ['purpose_without_code']['ghosts']]
-    hops = code(run, kitchen, 'code-trace', 'from=tick', 'depth=3')['hops']  # each Address at the first hop only
-    assert [[one['address'] for one in hop['addresses']] for hop in hops] == [['code.alarm.audible'], []]
-    assert hops[1]['within'] == 1
-    assert 'code' not in code(run, kitchen, 'where', 'stakeholder.cook.home')  # no link line where no code belongs
-    linked = code(run, kitchen, 'code-context', 'address=code.alarm.audible')['symbols']
-    assert linked[0]['at'] == {'receiver': 'code.timer.kitchen', 'provider': 'code.alarm.audible'}
-    removed = code(run, kitchen, 'code-link', 'op=remove', 'node=code.alarm.audible', 'symbol=tone',
-                   'why=It is not linked here.', ok=False)
-    assert removed.returncode and 'receiver' in removed.stdout + removed.stderr  # names where it is linked
-    code(run, kitchen, 'code-link', 'op=remove', 'node=code.timer.kitchen', 'provider=code.alarm.audible',
-         'symbol=tone', 'why=The display sounds it now.')
-    assert code(run, kitchen, 'code-context', 'file=kitchen/alarm.py')['symbols'][1]['address'] == []
-    node = code(run, kitchen, 'node', 'element:code.alarm.audible')
-    assert node['code'].startswith('Code here: symbols 1,')
-
-
-@pytest.mark.req('MCP-037')
-def test_a_decided_link_outlives_a_change_of_provider_and_a_version_bump(run, kitchen, monkeypatch):
-    """A link names its symbol the same way whichever provider read it; where a provider names it otherwise, the
-    import carries the link to the one symbol with its file, name and kind, and says what it could not carry."""
-    import mcp
-    from mcp.server.mcpserver import MCPServer
-    server = MCPServer('codebase-memory-mcp', version='0.11.0')
-    prefix = 'tmp-kitchen.src.'  # this server names modules from a folder above the package
-    nodes = [[prefix + 'kitchen.alarm.ring', 'ring', '["Function"]', 'kitchen/alarm.py', '4', '5'],
-             [prefix + 'kitchen.alarm.tone', 'tone', '["Function"]', 'kitchen/alarm.py', '8', '9']]
-
-    @server.tool()
-    def list_projects(format: str = 'tree', limit: int = 50, offset: int = 0) -> dict:
-        return {'projects': [{'name': 'tmp-kitchen', 'root_path': str(kitchen)}], 'has_more': False}
-
-    @server.tool()
-    def query_graph(project: str, query: str, format: str = 'tree', max_rows: int = 200,
-                    max_output_tokens: int = 3200, cursor: str = '') -> dict:
-        rows = ([['kitchen/alarm.py', '1']] if 'MATCH (f:File)' in query else nodes if 'MATCH (n)' in query else [])
-        return {'columns': [], 'rows': rows, 'has_more': False}
-
-    client = mcp.Client
-    monkeypatch.setattr(mcp, 'Client', lambda target, **options: client(server, **options))
-    run('set', '--code-server', 'http://127.0.0.1:9/mcp', cwd=kitchen)
-    code(run, kitchen, 'code-import', 'from=scip')
-    added = code(run, kitchen, 'code-link', 'op=add', 'node=code.display.digit', 'symbol=tone',
-                 'why=It sounds while the digits show.')
-    assert added['item'] == 'code.display.digit#1'
-    switched = code(run, kitchen, 'code-import', 'from=mcp')
-    assert switched['carried'] == [{'node': 'code.display.digit', 'from': 'kitchen.alarm.tone',
-                                    'to': 'src.kitchen.alarm.tone', 'file': 'kitchen/alarm.py'}]
-    assert 'orphaned' not in switched
-    assert code(run, kitchen, 'code-context', 'address=code.display.digit')['symbols'][0]['qn'] == 'src.kitchen.alarm.tone'
-    index = kitchen / 'index.scip'
-    index.write_bytes(index.read_bytes().replace(b'kitchen 0.1.0', b'kitchen 0.2.0'))
-    back = code(run, kitchen, 'code-import', 'from=scip')
-    assert len(back['carried']) == 1 and 'orphaned' not in back
-    shown = code(run, kitchen, 'code-context', 'address=code.display.digit')['symbols']
-    assert [(one['qn'], one['item']) for one in shown] == [('kitchen.alarm.tone', 'code.display.digit#1')]
-    nodes.pop()  # the symbol is gone from the code: the link stays, said to be orphaned, and is counted nowhere
-    lost = code(run, kitchen, 'code-import', 'from=mcp')
-    assert lost['orphaned'] == 1
-    assert code(run, kitchen, 'code-gaps')['orphaned']['links'] == 1
-    assert 'orphaned links: 1' in code(run, kitchen, 'where', 'code.display.digit')['code']
-
-
-@pytest.mark.req('MAP-021')
-def test_code_changes_names_the_addresses_a_diff_touches(run, kitchen):
-    """detect_changes's question in the map's terms: git's changed lines, the symbols they fall in, their Addresses,
-    and their callers' Addresses."""
-    import subprocess
-    git = ['git', '-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false']
-    subprocess.run([*git, 'init', '-q'], cwd=kitchen, check=True)
-    subprocess.run([*git, 'add', '-A'], cwd=kitchen, check=True)
-    subprocess.run([*git, 'commit', '-q', '-m', 'kitchen'], cwd=kitchen, check=True)
-    code(run, kitchen, 'code-import', 'from=scip')
-    alarm = kitchen / 'kitchen' / 'alarm.py'
-    alarm.write_text(alarm.read_text(encoding='utf-8').replace('tone() * times', 'tone() * (times + 1)'),
-                     encoding='utf-8')
-    changes = code(run, kitchen, 'code-changes')
-    assert changes['changed_files'] == [{'file': 'kitchen/alarm.py', 'symbols': ['ring']}]
-    assert [(one['address'], one['how'], one['hop']) for one in changes['addresses']] == [
-        ('code.alarm.audible', 'changed', 0), ('code.timer.kitchen', 'caller', 1)]
-    assert [one['address'] for one in code(run, kitchen, 'code-changes', 'depth=0')['addresses']] == [
-        'code.alarm.audible']
-
-
-GIT = ['git', '-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false']
-
-
-def _git(folder, *args):
-    import subprocess
-    subprocess.run([*GIT, *args], cwd=folder, check=True, capture_output=True)
-
-
-@pytest.fixture
-def written(run, tmp_path):
-    """A project written by the test, read with tree-sitter, its files in git, with a map of three elements."""
-    pytest.importorskip('tree_sitter')
-    pytest.importorskip('tree_sitter_python')
-    folder = tmp_path / 'written'
-
-    def make(files: dict[str, str]):
-        for path, text in files.items():
-            (folder / path).parent.mkdir(parents=True, exist_ok=True)
-            (folder / path).write_text(text, encoding='utf-8')
-        _git(folder, 'init', '-q', '-b', 'main')
-        _git(folder, 'add', '-A')
-        _git(folder, 'commit', '-q', '-m', 'start')
-        run('add', 'project', 'written', str(folder))
-        store = Store('written')
-        with store.atomic():
-            layer = store.layer('intake-1', 'intake', 'The functional map.', kind='intake', mutable=False,
-                                hideable=False, provenance={'module': 'intake'}, ready=True)
-            store.add_element(layer.name, 'stakeholder.cook.home', name_length=2, role='CQU')
-            store.add_element(layer.name, 'code.helper.first', name_length=2, role='DE')
-            store.add_element(layer.name, 'code.helper.second', name_length=2, role='SE')
-            store.add_join(layer.name, 'stakeholder.cook.home', 'code.helper.first', purpose='Get a value.')
-        return folder
-    return make
-
-
-@pytest.mark.req('MCP-037')
-def test_a_decided_link_is_never_carried_to_another_files_symbol_and_an_orphan_is_moved_or_removed(run, written):
-    """A link whose symbol is deleted is orphaned, not handed to a symbol of the same name in another file; the
-    brief counts it, and its id moves it, keeping its number, or takes it off."""
-    folder = written({'pkg/__init__.py': '', 'pkg/a.py': 'def helper():\n    return 1\n',
-                      'pkg/b.py': 'def helper():\n    return 2\n'})
-    code(run, folder, 'code-import', 'from=tree-sitter')
-    first = code(run, folder, 'code-gaps', 'side=code', 'limit=1')  # a page as every page: next, passed as after
-    last = code(run, folder, 'code-gaps', 'side=code', 'limit=1', f"after={first['next']}")
-    assert [one['file'] for one in (*first['code_without_purpose']['by_file'],
-                                    *last['code_without_purpose']['by_file'])] == ['pkg/a.py', 'pkg/b.py']
-    assert 'next' not in last and last['then']
-    linked = code(run, folder, 'code-link', 'op=add', 'node=code.helper.first', 'symbol=pkg.a.helper',
-                  'why=returns one for main')
-    assert linked['item'] == 'code.helper.first#1'
-    (folder / 'pkg' / 'a.py').write_text('def other():\n    return 3\n', encoding='utf-8')
-    done = code(run, folder, 'code-import', 'from=tree-sitter')
-    assert 'carried' not in done and done['orphaned'] == 1
-    at = code(run, folder, 'code-context', 'address=code.helper.first')
-    assert at['symbols'] == [] and [one['qn'] for one in at['orphaned']] == ['pkg.a.helper']
-    assert 'orphaned links: 1' in code(run, folder, 'where', 'code.helper.first')['code']
-    orphan = at['orphaned'][0]['id']
-    moved = code(run, folder, 'code-link', 'op=move', f'id={orphan}', 'symbol=pkg.b.helper',
-                 'why=b returns the value now')
-    assert moved['item'] == 'code.helper.first#1' and moved['to'] == 'pkg.b.helper'
-    shown = code(run, folder, 'code-context', 'address=code.helper.first')
-    assert [(one['qn'], one['item']) for one in shown['symbols']] == [('pkg.b.helper', 'code.helper.first#1')]
-    assert 'orphaned' not in shown
-    removed = code(run, folder, 'code-link', 'op=remove', f'id={orphan}', 'why=no longer what main needs')
-    assert removed['item'] == 'code.helper.first#2' and removed['state'] == 'unlinked'
-
-
-@pytest.mark.req('MCP-037')
-def test_a_link_follows_a_file_git_renamed_and_two_files_of_one_module_are_both_read(run, written):
-    """A method whose name repeats in its file is carried by the name below its module, into the file git reports
-    the old one renamed to, keeping its number; two files that name one module are both held, import after import."""
-    folder = written({'pkg/__init__.py': '',
-                      'pkg/c.py': ('class Alpha:\n    def __init__(self):\n        self.v = 1\n\n\n'
-                                   'class Beta:\n    def __init__(self):\n        self.v = 2\n'),
-                      'tools/gen.py': 'def build():\n    return 1\n',
-                      'tools/gen/__init__.py': 'def build():\n    return 2\n'})
-    code(run, folder, 'code-import', 'from=tree-sitter')
-    code(run, folder, 'code-link', 'op=add', 'node=code.helper.second', 'symbol=pkg.c.Alpha.__init__',
-         'why=sets the value')
-    _git(folder, 'mv', 'pkg/c.py', 'pkg/d.py')
-    done = code(run, folder, 'code-import', 'from=tree-sitter')
-    assert done['carried'] == [{'node': 'code.helper.second', 'from': 'pkg.c.Alpha.__init__',
-                                'to': 'pkg.d.Alpha.__init__', 'file': 'pkg/d.py', 'renamed_from': 'pkg/c.py'}]
-    shown = code(run, folder, 'code-context', 'address=code.helper.second')['symbols']
-    assert [(one['qn'], one['item']) for one in shown] == [('pkg.d.Alpha.__init__', 'code.helper.second#1')]
-    for value in (3, 4):
-        (folder / 'tools' / 'gen.py').write_text(f'def build():\n    return {value}\n', encoding='utf-8')
-        code(run, folder, 'code-import', 'from=tree-sitter')
-    builds = code(run, folder, 'code-search', 'name_pattern=^build$')['results']
-    assert sorted((one['qn'], one['file']) for one in builds) == [('tools.gen.build', 'tools/gen.py'),
-                                                                  ('tools.gen.build', 'tools/gen/__init__.py')]
-
-
-@pytest.mark.req('MAP-021')
-def test_tree_sitter_resolves_a_call_only_through_its_scope(run, written):
-    """A call reaches a symbol only where its file shows it: its own declarations, what it imports, self and the
-    bases it names; a call on any other receiver is left out. A file whose call named nothing is read again once a
-    changed file declares the name."""
-    folder = written({'pkg/__init__.py': '', 'pkg/log.py': 'def append(x):\n    return x\n',
-                      'pkg/alarm.py': ('def ring():\n    return 1\n\n\nclass Bell:\n    def ding(self):\n'
-                                       '        return self.twice()\n\n    def twice(self):\n'
-                                       '        return ring() + ring()\n'),
-                      'pkg/use.py': ('from pkg import alarm\nfrom pkg.alarm import Bell, later\n\n\n'
-                                     'class Loud(Bell):\n    def go(self, items):\n        items.append(1)\n'
-                                     '        alarm.ring()\n        later()\n        return self.ding()\n')})
-    done = code(run, folder, 'code-import', 'from=tree-sitter')
-    assert done['edges'] == {'CALLS': 4, 'IMPORTS': 1, 'INHERITS': 1}
-    go = code(run, folder, 'code-context', 'symbol=pkg.use.Loud.go')
-    assert sorted(one['qn'] for one in go['calls_out']) == ['pkg.alarm.Bell.ding', 'pkg.alarm.ring']
-    assert code(run, folder, 'code-context', 'symbol=pkg.log.append')['in'] == 0  # items.append is a list's
-    with (folder / 'pkg' / 'alarm.py').open('a', encoding='utf-8') as file:
-        file.write('\n\ndef later():\n    return 2\n')
-    code(run, folder, 'code-import', 'from=tree-sitter')  # use.py is unchanged, and read again for its call
-    go = code(run, folder, 'code-context', 'symbol=pkg.use.Loud.go')
-    assert 'pkg.alarm.later' in [one['qn'] for one in go['calls_out']]
-
-
-@pytest.mark.req('MAP-021')
-def test_a_servers_failure_while_reading_is_said_as_its_own(run, kitchen, monkeypatch):
-    """A code-graph server that lists its files and then fails a query stops the import with what it said, never
-    sending it to another provider halfway or showing an error of Metaform's own."""
-    import mcp
-    from mcp.server.mcpserver import MCPServer
-    server = MCPServer('codebase-memory-mcp', version='0.11.0')
-
-    @server.tool()
-    def list_projects(format: str = 'tree', limit: int = 50, offset: int = 0) -> dict:
-        return {'projects': [{'name': 'tmp-kitchen', 'root_path': str(kitchen)}], 'has_more': False}
-
-    @server.tool()
-    def query_graph(project: str, query: str, format: str = 'tree', max_rows: int = 200,
-                    max_output_tokens: int = 3200, cursor: str = '') -> dict:
-        if 'MATCH (f:File)' in query:
-            return {'columns': [], 'rows': [['kitchen/alarm.py', '1']], 'has_more': False}
-        return {'error': 'graph locked'}
-
-    client = mcp.Client
-    monkeypatch.setattr(mcp, 'Client', lambda target, **options: client(server, **options))
-    run('set', '--code-server', 'http://127.0.0.1:9/mcp', cwd=kitchen)
-    (kitchen / 'index.scip').unlink()
-    failed = code(run, kitchen, 'code-import', ok=False)
-    said = failed.stdout + failed.stderr
-    assert failed.returncode and 'codebase-memory-mcp query_graph: graph locked' in said
-    assert 'RuntimeError' not in said and 'index_repository' in said
-
-
-@pytest.mark.req('MCP-037')
-def test_one_code_link_call_is_one_numbered_decision(run, kitchen):
-    """A file's symbols linked in one call are one decision at one number; the proposals at a node are accepted
-    together as one more."""
-    code(run, kitchen, 'code-import', 'from=scip')
-    added = code(run, kitchen, 'code-link', 'op=add', 'node=code.display.digit', 'file=kitchen/timer.py',
-                 'why=The timer draws the digits.')
-    assert added['item'] == 'code.display.digit#1' and added['count'] == 4
-    assert added['title'] == '4 symbols of kitchen/timer.py provide for code.display.digit'
-    shown = code(run, kitchen, 'code-context', 'address=code.display.digit')['symbols']
-    assert len(shown) == 4 and {one['item'] for one in shown} == {'code.display.digit#1'}
-    proposed = code(run, kitchen, 'code-link', 'op=propose', 'node=code.display.digit', 'file=kitchen/alarm.py',
-                    'why=The display sounds the alarm.')
-    assert proposed['count'] == 2 and 'op=accept node=code.display.digit' in proposed['next'][0]
-    decided = code(run, kitchen, 'code-link', 'op=accept', 'node=code.display.digit')['decided']
-    assert [(one['item'], one['count']) for one in decided] == [('code.display.digit#2', 2)]
-    assert code(run, kitchen, 'code-link')['proposed'] == []
-
-
-@pytest.mark.req('MAP-021')
-def test_a_code_graph_servers_uses_bases_and_tests_reach_the_reads(run, kitchen, monkeypatch):
-    """USAGE, INHERITS and TESTS read from the server are followed: a trace by the edge types asked, a change to a
-    base class's method reaching its subclass's Address and naming the tests that reach it, against the merge base
-    with a branch; the gaps count test code apart and page with next."""
-    import mcp
-    from mcp.server.mcpserver import MCPServer
-    (kitchen / 'kitchen' / 'clock.py').write_text(
-        '"""Clocks."""\n\n\nclass Clock:\n    def show(self) -> str:\n        return \'now\'\n\n\n'
-        'class Wall(Clock):\n    pass\n', encoding='utf-8')
-    (kitchen / 'tests').mkdir()
-    (kitchen / 'tests' / 'test_clock.py').write_text(
-        'from kitchen.clock import Wall\n\n\ndef test_wall():\n    assert Wall().show() == \'now\'\n', encoding='utf-8')
-    store = Store('kitchen')
-    with store.atomic():
-        store.add_item('sources', Node('element', 'code.display.digit'), 'wall', refs=[('path', 'kitchen/clock.py:9')])
-        store.add_item('sources', Node('element', 'code.timer.kitchen'), 'clock', refs=[('path', 'kitchen/clock.py:4-6')])
-    server = MCPServer('codebase-memory-mcp', version='0.11.0')
-    p = 'tmp-kitchen.'
-    rows = {
-        'MATCH (f:File)': [['kitchen/alarm.py', '1'], ['kitchen/clock.py', '1'], ['tests/test_clock.py', '1']],
-        'MATCH (n)': [[p + 'kitchen.alarm.ring', 'ring', '["Function"]', 'kitchen/alarm.py', '4', '5'],
-                      [p + 'kitchen.alarm.tone', 'tone', '["Function"]', 'kitchen/alarm.py', '8', '9'],
-                      [p + 'kitchen.clock.Clock', 'Clock', '["Class"]', 'kitchen/clock.py', '4', '6'],
-                      [p + 'kitchen.clock.Clock.show', 'show', '["Method"]', 'kitchen/clock.py', '5', '6'],
-                      [p + 'kitchen.clock.Wall', 'Wall', '["Class"]', 'kitchen/clock.py', '9', '10'],
-                      [p + 'tests.test_clock.test_wall', 'test_wall', '["Function"]', 'tests/test_clock.py', '4', '5']],
-        'CALLS|': [[p + 'kitchen.alarm.ring', p + 'kitchen.alarm.tone', 'CALLS', 'kitchen/alarm.py', '5',
-                    'kitchen/alarm.py'],
-                   [p + 'kitchen.alarm.ring', p + 'kitchen.alarm.tone', 'USAGE', 'kitchen/alarm.py', '5',
-                    'kitchen/alarm.py'],
-                   [p + 'kitchen.clock.Wall', p + 'kitchen.clock.Clock', 'INHERITS', 'kitchen/clock.py', '',
-                    'kitchen/clock.py'],
-                   [p + 'tests.test_clock.test_wall', p + 'kitchen.clock.Wall', 'TESTS', 'tests/test_clock.py', '',
-                    'kitchen/clock.py'],
-                   [p + 'tests.test_clock.test_wall', p + 'kitchen.clock.Clock.show', 'CALLS',
-                    'tests/test_clock.py', '5', 'kitchen/clock.py']],
-        'IMPORTS': []}
-
-    @server.tool()
-    def list_projects(format: str = 'tree', limit: int = 50, offset: int = 0) -> dict:
-        return {'projects': [{'name': 'tmp-kitchen', 'root_path': str(kitchen)}], 'has_more': False}
-
-    @server.tool()
-    def query_graph(project: str, query: str, format: str = 'tree', max_rows: int = 200,
-                    max_output_tokens: int = 3200, cursor: str = '') -> dict:
-        key = next(key for key in ('CALLS|', 'IMPORTS', 'MATCH (f:File)', 'MATCH (n)') if key in query)
-        return {'columns': [], 'rows': rows[key], 'has_more': False}
-
-    client = mcp.Client
-    monkeypatch.setattr(mcp, 'Client', lambda target, **options: client(server, **options))
-    run('set', '--code-server', 'http://127.0.0.1:9/mcp', cwd=kitchen)
-    _git(kitchen, 'init', '-q', '-b', 'main')
-    _git(kitchen, 'add', '-A')
-    _git(kitchen, 'commit', '-q', '-m', 'start')
-    done = code(run, kitchen, 'code-import', 'from=mcp')
-    assert done['edges'] == {'CALLS': 2, 'USAGE': 1, 'INHERITS': 1, 'TESTS': 1}
-    used = code(run, kitchen, 'code-trace', 'from=ring', 'edge_types=["USAGE"]', 'direction=outbound')
-    assert used['hops'][0]['within'] == 1
-    absent = code(run, kitchen, 'code-trace', 'from=ring', 'edge_types=["OVERRIDE"]')
-    assert any('no OVERRIDE edges' in notice for notice in absent['notices'])
-    _git(kitchen, 'checkout', '-q', '-b', 'feature')
-    clock = kitchen / 'kitchen' / 'clock.py'
-    clock.write_text(clock.read_text(encoding='utf-8').replace("'now'", "'later'"), encoding='utf-8')
-    _git(kitchen, 'commit', '-q', '-am', 'later')
-    _git(kitchen, 'checkout', '-q', 'main')
-    alarm = kitchen / 'kitchen' / 'alarm.py'
-    alarm.write_text(alarm.read_text(encoding='utf-8').replace("'beep'", "'boop'"), encoding='utf-8')
-    _git(kitchen, 'commit', '-q', '-am', 'boop')
-    _git(kitchen, 'checkout', '-q', 'feature')
-    changes = code(run, kitchen, 'code-changes', 'base=main')
-    assert changes['changed_files'] == [{'file': 'kitchen/clock.py', 'symbols': ['show']}] and changes['merge_base']
-    assert [(one['address'], one['how']) for one in changes['addresses']] == [
-        ('code.timer.kitchen', 'changed'), ('code.display.digit', 'inherits')]
-    assert changes['tests'] == [{'symbol': 'show', 'files': ['tests/test_clock.py']}]
-    assert {one['file'] for one in code(run, kitchen, 'code-changes', 'since=main')['changed_files']} == {
-        'kitchen/alarm.py', 'kitchen/clock.py'}
-    gaps = code(run, kitchen, 'code-gaps', 'side=code')
-    assert gaps['code_without_purpose']['tests'] == 1 and gaps['code_without_purpose']['by_file'] == []
-    assert 'tests/test_clock.py' in [one['file'] for one in code(run, kitchen, 'code-gaps', 'side=code',
-                                                                  'include_tests=true')['code_without_purpose']
-                                                                  ['by_file']]
 
 
 @pytest.mark.req('MCP-037')
@@ -2591,36 +2115,12 @@ def test_the_glossary_follows_the_map_and_keeps_the_terms_added_with_their_why_a
 
 @pytest.mark.req('MAP-021')
 def test_a_scoped_address_reads_what_one_layer_holds_there(run, kitchen):
-    """`<scope>@<layer>` reads the layer at an Address, or at a join `<receiver>:<provider>`; the code layer as
-    code-context reads it, each call with the Address at its other end; a hidden layer resolves to nothing."""
-    assert 'map code-import' in code(run, kitchen, 'where', 'code.timer.kitchen')['code']  # found where it is cited
-    code(run, kitchen, 'code-import', 'from=scip')
-    at = code(run, kitchen, 'where', 'code.timer.kitchen@code')
-    assert at['scope'] == 'code.timer.kitchen@code' and at['element']['role'] == 'DE'
-    assert [(one['to'], one['address']) for one in at['calls_out']] == [('ring', ['code.alarm.audible'])]
-    assert code(run, kitchen, 'code-context', 'address=code.timer.kitchen@code')['symbols'] == at['symbols']
-    join = code(run, kitchen, 'where', 'code.timer.kitchen:code.alarm.audible@code')
-    assert join['provider'] == 'code.alarm.audible' and join['symbols'] == []
+    """`<scope>@<layer>` reads the layer at an Address, or at a join `<receiver>:<provider>`; a hidden layer resolves
+    to nothing."""
     held = code(run, kitchen, 'where', 'code.alarm.audible@sources')
-    assert held['items'][0]['refs'] == ['path=kitchen/alarm.py']
+    assert held['element']['role'] == 'SE' and held['items'][0]['refs'] == ['path=kitchen/alarm.py']
+    join = code(run, kitchen, 'where', 'code.timer.kitchen:code.alarm.audible@sources')
+    assert join['scope'] == 'code.timer.kitchen:code.alarm.audible@sources' and join['items'] == []
     run('map', 'hide', 'sources', '--confirm', cwd=kitchen)
     hidden = code(run, kitchen, 'where', 'code.alarm.audible@sources', ok=False)
     assert 'resolves to nothing' in hidden.stdout + hidden.stderr
-
-
-@pytest.mark.req('MAP-021')
-def test_a_tree_sitter_reimport_keeps_the_calls_other_files_make_and_says_when_a_file_is_fresh(run, written):
-    """Reading one changed file again keeps the calls unchanged files make into it, and the brief says a file changed
-    since it was read only until it is read again."""
-    folder = written({'pkg/__init__.py': '', 'pkg/a.py': 'def helper():\n    return 1\n',
-                      'pkg/b.py': 'from pkg.a import helper\n\n\ndef main():\n    return helper()\n'})
-    code(run, folder, 'code-import', 'from=tree-sitter')
-    code(run, folder, 'code-link', 'op=add', 'node=code.helper.first', 'symbol=pkg.a.helper', 'why=gives the value')
-    (folder / 'pkg' / 'a.py').write_text('def helper():\n    return 2\n\n\ndef spare():\n    return 3\n',
-                                         encoding='utf-8')
-    assert 'files changed since read: 1' in code(run, folder, 'where', 'code.helper.first')['code']
-    done = code(run, folder, 'code-import', 'from=tree-sitter')
-    assert done['files']['read'] >= 1  # the changed file, and those whose calls reach it
-    assert 'files changed since read' not in code(run, folder, 'where', 'code.helper.first')['code']
-    into = code(run, folder, 'code-context', 'address=code.helper.first')['calls_in']
-    assert [(one['from'], one['qn']) for one in into] == [('main', 'pkg.b.main')]

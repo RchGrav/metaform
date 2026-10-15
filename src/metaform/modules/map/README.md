@@ -46,127 +46,13 @@ Who writes a ticket goes by the role the dispatch runner gives an agent, MAP-050
 
 Set a ticket's Eligible agents with `work op=add ... eligible='["claude"]'` or `work op=edit id=<work id> eligible='["claude", "codex"]'`. An empty list restores Any agent, which is the default for existing and new tickets. The map module keeps the list in `"map.eligible"`, keyed by `work_id`, and shows it under `map` on ticket reads. Dispatch and direct `op=take` claims honor it. A direct MCP claim uses the initialized client name, while a CLI claim uses the first word of `by`. Unidentified agents cannot claim restricted tickets. Moving a card to Doing remains a person's action.
 
-## The code layer
+## A layer at a scope: `<scope>@<layer>`
 
-The functional map is the base. The project's code is a layer on it, the code layer: a CEL you take off with `knowledge op=discard layer=code` and put back with `code-import`, like any other layer. Functional Addresses in the base and code symbols in the layer meet in the middle, at links.
+What one layer holds at one place has an address of its own, P165: `<scope>@<layer>`, read backward with `@` as "for". `code.timer.kitchen@best_practices` is the best practices for the kitchen timer. The scope is an Address, or a join written `<receiver>:<provider>`, as every read names a join: `code.timer.kitchen:code.alarm.audible@best_practices` is what the layer holds at the timer's join with the alarm. `base@<layer>` is the whole project. A layer named with its scope, as `knowledge` asks a new layer to be named, `code.cpp@best_practices`, resolves by that full name first.
 
-A link is held at its node, the RE, and names the symbol, which is the PE. What a link means depends on where it is held:
-
-- At an element, the symbol serves that element's own purpose.
-- At a join, the symbol realizes the join's EF. It is the code of the provider named with it (`provider=` on `code-link`), or of every provider of the join when none is named, and it serves the receiver.
-
-So every read credits a join's links to those providers. At the receiver, they show apart, as the code serving it.
-
-A symbol is known by its file and its qualified name, so two files that name one module, `tools/gen.py` and `tools/gen/__init__.py`, are both held.
-
-Metaform does not index code itself. It reads an established tool's index, read-only, through that tool's own interface (`code_index.py`):
-
-- `scip`: a SCIP index file (`index.scip`), from any SCIP indexer: scip-python, scip-typescript, rust-analyzer, scip-java and the rest.
-  - It is read as `scip.Index` from sourcegraph/scip's `scip.proto`, by field number, with no generated code.
-  - A symbol is named by its descriptors joined with dots, for example `kitchen.timer.Timer.tick`. The SCIP symbol string is kept beside it, so a package version bump changes nothing.
-  - A reference to a function or method inside a definition's `enclosing_range` is a CALLS edge; any other reference there is USAGE. An occurrence with the Import role is IMPORTS. A `Relationship` with `is_implementation` is INHERITS or IMPLEMENTS from a type, and OVERRIDE from a method.
-- `mcp`: a code-graph MCP server, reached as an MCP client with the official SDK, over stdio (a command) or Streamable HTTP (a URL).
-  - codebase-memory-mcp is read through `list_projects` and `query_graph`: its declaration labels, and its CALLS, USAGE, INHERITS, IMPLEMENTS, OVERRIDE, TESTS and IMPORTS edges, each with the file its target is in.
-  - The project is found by its folder. The project prefix, which names the folder the project was indexed from, is taken off every qualified name.
-  - If the server reindexes while it is being read, the read starts again.
-- `tree-sitter`: the py-tree-sitter bindings with the installed grammar packages (`tree_sitter_python` and the like).
-  - Each grammar's tags query is read: the `@definition.*`, `@reference.call` and `@name` convention that GitHub's code navigation and Aider's repository map use.
-  - A call is resolved only where its scope shows what it reaches, never by a name alone. A bare call reaches the file's own declarations or a name the file imports. A call on `self`, `cls` or `this` reaches the enclosing class and the bases it names. A call on an imported module or class reaches that module's or class's declaration. A call on any other receiver, such as a list's `append`, is left out.
-  - For Python, imports and base classes are read from the grammar's nodes, giving IMPORTS and INHERITS. Other languages resolve calls within the file and on `self` or `this`.
-  - When a file changes, the files that called into it are read again, and so are the files whose calls named something a changed file now declares.
-
-### Importing
-
-`code-import [from=scip|mcp|tree-sitter] [index=<file>] [full=true]` reads only the files whose stamp at the provider changed since the layer last read them.
-
-- The provider is chosen by opening it and listing its files. With `auto`, a provider that does not answer is passed over with a notice. Once one answers, everything is read from it: an error while reading stops the import with that provider's own words and the step that fixes it.
-- It never reads a file under `.metaform/ignore.txt` (BASE-058) or a file matched by the `code_ignore` setting.
-- A file whose bytes changed while its stamp did not is one the provider has not indexed again. The import keeps what the index says, counts the file as `stale` and names the call that refreshes the index. The brief and `code-context` count stale files.
-- The index is kept in the tables `code_files`, `code_symbols` and `code_edges`, under the layer, and goes with it. Edges to code the index does not hold, such as a library's, are left out.
-- A decided or proposed link whose symbol is gone is carried only where the symbol's identity is shown to survive: to a symbol this import brought, with the same name below its module (`Timer.tick`, `Alpha.__init__`) and the same kind, in the same file, as when the provider changed and names modules otherwise, or in the file `git diff -M` reports the old file renamed to since the commit it was read at. A link is never carried to a symbol the layer held before, or to another file by its name alone. Each carry is listed under `carried`, with the node, `from`, `to`, `file` and, across a rename, `renamed_from`.
-- Any other such link is orphaned: counted as `orphaned`, listed by `code-gaps` and `code-context` with its id, and counted in the brief, until `code-link op=move` or `op=remove` settles it.
-
-The import then ties each file the sources layer cites at a node to the symbols that file declares, at that node.
-
-- A cited line range, `path:12-40` or `path#L12-L40`, narrows the link to the symbols that overlap it.
-- A cited folder links nothing. Which code in a folder serves which purpose is for an agent to say, and the result counts such cites as `folders`.
-- A link this pass made is taken off when its citation no longer gives it. The pass never touches a link an agent decided.
-
-### Linking as work proceeds
-
-`code-link` is how agents tie code to the map as they work. Every link is a row of `code_links`. Each call that decides is one decision, however many symbols it names: one item of the code layer at its node, with one number at the address, a title and a why, readable as `map item <address>#<n>`. The answer gives the item, the count and the first symbols.
-
-- `op=add node=<address> symbol=<qn or name> why="<how it serves the purpose>"`: links the symbol. Give `file=<path>` instead of `symbol=` for every symbol a file declares, or beside it to name the file of a symbol two files declare. Give `provider=` beside `node` to name the join the element receives; the code is that provider's.
-- `op=remove`: unlinks, with a why, by node and symbol or by `id=`. The decision is kept, so the sources pass does not link it again. `id=` works whatever the symbol's state, so an orphaned link can be taken off.
-- `op=move id=<id> symbol=<qn> why=`: points a decided or proposed link at the symbol that serves now, keeping its number; the why is added to the decision's.
-- `op=propose`: writes a proposal that waits on the link without changing it. It may be a new link, a link the sources pass made to keep, or, with `unlink=true`, a link to take off. `file=` proposes a whole file in one call.
-- `op=accept node=<address> [provider=]` decides every proposal waiting there as one decision; `id=<id>` decides one. `op=reject` leaves the links as they were.
-- With no op, the proposals waiting are listed.
-
-The workflow skill `code_links` spends the inference up front, before the work. It walks the Addresses no code serves, the code no Address claims, the links the sources pass made that no one has reviewed, file by file, and the orphaned links. It reads both sides and proposes links, keeps, removals and moves, each with its why, for the person or another agent to accept. It writes proposals only.
-
-### Reads
-
-The reads ask the questions that codebase-memory's `search_graph`, `trace_path` and `detect_changes` and GitNexus's `context` and `impact` ask, and answer them in the map's terms.
-
-- Where those tools share an argument, the same name and default are used: `query`, `name_pattern`, `qn_pattern`, `file_pattern`, `label`, `direction` (both for a trace, inbound for changes), `depth` (3 for a trace, 2 for changes), `edge_types`, `include_tests` (false), `since`, and `base` for detect_changes's `base_branch`.
-- Paging follows Metaform's page: `limit`, the cursor under `next`, passed back as `after`, rather than search_graph's `offset`.
-- Each symbol row carries search_graph's `name`, `qn`, `label`, `file` and `lines`. It adds `address`, the Addresses whose own code the symbol is, and `serves`, the receivers it serves through a join.
-
-The reads:
-
-- `code-context address=<address>`:
-  - the Address's own symbols, linked at the element and at the joins it provides for, each with its id and, when decided, its item. A join link shows `at: {receiver, provider}`, which `code-link` takes as `node=` and `provider=`.
-  - their files, with stale ones marked
-  - the calls in and out, with the Address at the other end
-  - `serving`: the code serving the Address, linked at the joins it receives, grouped by provider
-  - proposals waiting, and orphaned links with their id and the move and remove calls
-  - With `symbol=` or `file=` instead, it gives the Addresses of that symbol or file, linked and citing.
-- `code-search [query=] [name_pattern=] [qn_pattern=] [file_pattern=] [label=]`: symbols, paged.
-- `code-trace from=<address or symbol> [to=] [direction=both|outbound|inbound] [depth=3] [edge_types=["CALLS"]] [include_tests=true]`:
-  - With `to`, it gives the shortest path and the Addresses it passes through.
-  - Without `to`, it gives every Address reached within `depth` hops, each at the first hop that reaches it. Calls that stay inside one Address are counted as `within`, and reached code no Address claims as `unclaimed`.
-  - `edge_types` takes CALLS, USAGE, INHERITS, IMPLEMENTS, OVERRIDE and TESTS; a type the layer holds none of is said in a notice naming the provider.
-  - Test code is left out unless `include_tests=true`, as trace_path does.
-- `code-changes [since=HEAD | base=<branch>] [depth=2] [direction=inbound|outbound|both] [include_tests=true]`: the Addresses a change touches.
-  - It reads git's changed lines since the ref, or since the merge base with `base`, named as `merge_base`, and the innermost symbols those lines fall in.
-  - It gives the Addresses those symbols are the code of (`changed`), the receivers they serve (`served`), and within `depth` the Addresses of their callers (`caller`) and of the types and methods that inherit or override them (`inherits`).
-  - `tests` lists the tests that reach a changed symbol, by TESTS edges or calls from test code.
-  - The layer's lines are compared with the lines after the change for a file read since the change, and with the lines before it otherwise. Files the layer has not read are listed as `unread`.
-  - It uses `git diff` rather than detect_changes, so it works with every provider: detect_changes seeds every symbol of a changed file, not just the changed lines.
-- `code-gaps [side=code|purpose|both] [include_tests=true] [after=]`:
-  - code without a purpose: the symbols no link or proposal claims, by file, with test code counted as `tests` unless `include_tests=true`
-  - purpose without code: the ghosts, the Addresses under the `code` root, or whose sources cite a path, that are no symbol's own Address
-  - `unreviewed`: the links the sources pass made that have no why yet, by Address and file
-  - `orphaned` links, each with its id and the calls that settle it
-  - the cursor under `next`, and the calls that act on the gaps under `then`
-
-### A layer at a scope: `<scope>@<layer>`
-
-What one layer holds at one place has an address of its own, P165: `<scope>@<layer>`, read backward with `@` as "for". `code.timer.kitchen@code` is the code for the kitchen timer. The scope is an Address, or a join written `<receiver>:<provider>`, as every read names a join: `code.timer.kitchen:code.alarm.audible@code` is the code realizing the timer's join with the alarm. `base@<layer>` is the whole project. A layer named with its scope, as `knowledge` asks a new layer to be named, `code.cpp@best_practices`, resolves by that full name first.
-
-- `where address=<scope>@<layer>` gives the scope's element as the map has it, name and role, and what the layer holds there. For the code layer that is the code-context read, each call with the Address at its other end, so the code is walked in both directions, symbol to owning Address and Address to symbols. For any other layer it is the layer's items there, read in context, each with its id, value, refs and link.
-- `code-context address=` takes the same form.
+- `where address=<scope>@<layer>` gives the scope's element as the map has it, name and role, and the layer's items there, read in context, each with its id, value, refs and link.
 - The MCP resource `metaform://<scope>@<layer>` and the web GUI's brief serve the same read, since both are `where`.
 - A hidden layer resolves to nothing, with the call that shows it again; the map is unchanged.
-- The web GUI's workspace gets the `Code` pane, `map.code`, which runs `code-context` on the selected node through `/api/workspace/pane`.
-
-### Where agents meet it
-
-An element's brief gains one line, `code`, from the `brief_code` prompt. The line gives:
-
-- its own symbols and files
-- the calls in and out
-- the code serving it, if any
-- the stale files, if any
-- the orphaned links, if any
-- the call that reads them
-
-The line is counted from the code tables by node and by file, never symbol by symbol, and it stays within `node_summary_bytes`.
-
-- `brief_code_none` names the call that links code, but only at nodes the code should serve: those under the `code` root, or citing a file the code layer holds.
-- `map node` and `where contents=true` carry the same line, so the code layer's links are counted there, not listed.
-- The map's entry, `map roots` (or `map where` with no address), names `code-import` in `code_start` until the layer exists. The intake's `finish` names it in `next` when the map has a code trunk.
 
 ## The project's glossary
 
@@ -186,23 +72,9 @@ The line is counted from the code tables by node and by file, never symbol by sy
 
 `--node-summary-bytes`, default 2048, at least 512: the most bytes the compact read of the node an agent works on may take, in `where`, the ticket read `work id=` and so dispatch's hand-off. What does not fit goes in this order: the code paths, the joins it receives' first and the node's own last, then the joins it receives, then the joins it provides for after the first, and then the tree draws fewer neighbours a side, down to one. Code paths that fit again in the room a join left come back. Each kind left out is said under `more` as a count with the call that reads it, in the `summary_*` prompts. `contents=true` and `full=true` are never cut.
 
-`--code-provider`, default `auto`: where `code-import` reads the code, `scip`, `mcp` or `tree-sitter`; `auto` takes the first the project has, in that order. `from=` on the call names one for that call.
-
-`--code-server`, default `codebase-memory-mcp`, person only: the code-graph MCP server `code-import` reads, a command started over stdio or an http(s) URL. Person only because it names a program Metaform starts.
-
-`--code-server-env`, default `CBM_*`, person only: the environment variables a code-graph server started over stdio is given, beside HOME, PATH and the MCP SDK's other safe defaults; a name ending in `*` passes every variable it starts. codebase-memory-mcp reads its cache folder from `CBM_CACHE_DIR`, and refuses to start against a different cache than its running daemon's, so the variable has to reach it.
-
 `--glossary-bytes`, default 5120, at least 1024: the most bytes the project's glossary is given in, register standard included; the most-used terms go in and the rest are counted with the call that lists them.
 
 `--glossary-register`, default `peer`: `peer` sends the peer register standard ahead of the terms, as written, and sets `{Register} := PEER_UNSLOP`; `none` sends the terms alone.
-
-`--code-server-project`, default empty: the project's name on that server; empty finds it by the project's folder.
-
-`--code-index`, default `index.scip`: the SCIP index file, relative to the project.
-
-`--code-kinds`, default Function, Method, Class, Interface, Struct, Enum, Trait and Type: the kinds of declaration kept, as the code graph labels them.
-
-`--code-ignore`, default `*.md`, `*.markdown`, `*.rst`, `*.txt`, `*.xml`, `*.html`, `*.htm`, `*.json`, `*.toml`, `*.yaml`, `*.yml`, `*.ini`, `*.cfg`, `*.css`, `*.svg`, `*.csv` and `*.lock`: files `code-import` never reads, as gitignore patterns. These are documents and data a code graph also parses; their elements and keys are not code.
 
 ## Events
 
@@ -214,7 +86,7 @@ Every verb is a plain function.
 
 ## Layers
 
-It writes whatever layer a `knowledge` call names. `code-import` creates the code layer, named `code` (the constant `CODE_LAYER`, a setting before the settings cleanup of 2026-10-15), owned by map, mutable and hideable, and writes the code decisions into it as items; the links themselves are rows of `code_links` under it.
+It writes whatever layer a `knowledge` call names.
 
 ## Lifecycle and cleanup
 
@@ -232,7 +104,7 @@ Linux, macOS and Windows.
 
 `storage.py` declares the module's tables through public `Tables(version=3)`: `work`, `work_links`, `work_steps`, `messages`, `challenge_states`, `plans`, `reports` and `"map.glyphs"`. The seven existing feature tables retain their names and data in the metaform's store; their definitions and operations belong to this module. Public `Data` and `Operation` declarations run its reads, writes and record contributions through the DAO's transaction. The chassis supplies the transaction and table services, with no feature SQL, BASE-046. Persisted table declarations preserve exports and layer cleanup when the module is disabled.
 
-`code_files`, `code_symbols`, `code_edges` and `code_links` hold the code layer's index and links. They are keyed by the layer's id and removed with the layer; a symbol is keyed by its file and qualified name, and a file row keeps the commit it was read at and the names its calls did not find. A link that is a decision is also removed with its item. These tables are version 14, read and written by version 9 and later. A store whose code tables are version 11 to 13 reads every file again at its next import. `numbered` holds a code decision's number, title and why under kind `code`, beside those of work records and messages.
+Version 16 dropped the code layer's tables, `code_files`, `code_symbols`, `code_edges` and `code_links`, with `code-import` and the other code-* verbs (ticket code.analyzer.refactoring#1a, 2026-10-15); a file is placed on the map by its ref in the sources layer, `dispatch link`. Code-layer items already in a store stay as plain items of that layer.
 
 `DATA_SOURCE = 'storage.py'` keeps the declared `Operation(..., retained=True)` reads available for existing work, messages and report records while map is disabled. Loading that source does not activate map's commands, settings or glyph contribution; writes follow map's enabled state.
 

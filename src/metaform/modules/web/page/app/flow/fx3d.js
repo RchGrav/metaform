@@ -172,22 +172,21 @@ function fxRequest(way, t, live) {  // tiny, white, glimmering, with a short fai
   if (t > FLOW.trail) fxLine(tail, head, WHITE, 0, 0.5 * k);
   fxDot(head, 0.6 * k, WHITE, glimmer, 0, 6 * k, 8 * k);
 }
-/* A reply: a train of small separate dots, evenly spaced, one after another along the join the way the data goes, in
- * the colour of the element it comes from, the last few fading. `count` is how much data it carries. The dots are
- * spaced on the screen at least a little more than twice their size apart, so the train reads as dots at any zoom; a
- * join too short for all of them shows fewer. */
-function fxTrain(way, t, back, color, live, count = 8) {
+/* A reply: one solid line along the join the way the data goes, in the colour of the element it comes from, as thick
+ * as a reply's dot, and `size` times the request's least size long on the screen, `replySize`; it leaves as the
+ * request arrives, and its end arrives as the reply ends. A join too short for it shows it the join's length. It is
+ * drawn as dots close enough to run together, each faint, since the flow's light adds up where dots overlap: about
+ * four overlap anywhere along it, which adds up to the light of one dot. */
+function fxReply(way, t, back, color, live, size) {
   const k = live ? FLOW.bright : 1, dot = 5.5 * k;
   color = LIT.copy(color).lerp(WHITE, 0.35);  // a little lighter than the element, so it reads over the fibers
-  const across = pixelsAlong(way);
-  const spacing = Math.max(0.03, dot * 2.3 / Math.max(1, across));
-  const shown = Math.max(2, Math.min(count, Math.floor(0.6 / spacing) + 1));
-  const head = t * (1 + spacing * (shown - 1));  // the last dot arrives as the reply ends
-  for (let i = 0; i < shown; i++) {
-    const s = head - spacing * i;
-    if (s < 0 || s > 1) continue;
-    const fade = i < shown - 3 ? 1 : 1 - (i - (shown - 4)) / 4;  // the last few fade
-    fxDot(wayAt(way, back ? 1 - s : s, TAIL[0]), 0.7 * k, color, fade, 0, dot, dot * 1.4);
+  const across = Math.max(1, pixelsAlong(way)), long = Math.min(1, size * 6 * k / across);
+  const head = t * (1 + long), from = Math.max(0, head - long), to = Math.min(1, head);
+  if (from > to) return;
+  const step = dot * 0.25 / across, count = Math.floor((to - from) / step);
+  for (let i = 0; i <= count; i++) {
+    const s = to - i * step;
+    fxDot(wayAt(way, back ? 1 - s : s, TAIL[0]), 0.7 * k, color, 0.3, 0, dot, dot * 1.4);
   }
 }
 /* How long a way is in pixels on the screen, seen at the depth of its middle. */
@@ -242,7 +241,7 @@ function liveTrip(trip, from, to, since, colors) {
   if (since < going) { if (way) fxRequest(way, since / going, true); return; }
   const after = since - going;
   if (trip.kind === 'start') { if (after < FLOW.burst) fxBurst(to, after / FLOW.burst, colors.signal, true); return; }
-  if (way && after < FLOW.reply) fxTrain(way, after / FLOW.reply, true, tintOf(colorOf(to)), true);
+  if (way && after < FLOW.reply) fxReply(way, after / FLOW.reply, true, tintOf(colorOf(to)), true, trip.size);
   if (trip.edit) fxRecord(way || [to, to], after, colors.record, true);
   else if (!way && after < FLOW.burst) fxBurst(to, after / FLOW.burst, colors.signal, true);
 }
@@ -315,20 +314,20 @@ function holdDots(dots, from, to) {
   }
 }
 /* One join's flow this frame, eased in or out as the mode shows it or not, `flowShown`: its records, or its request
- * and then its reply, one train each way for a join that goes both ways. */
+ * and then its reply, one line each way for a join that goes both ways. */
 function flowJoin(id, join, way, ease, colors) {
   const fade = (FLOW.fades.get(id) ?? 0) + ((flowShown(join) ? 1 : 0) - (FLOW.fades.get(id) ?? 0)) * ease;
   if (fade < 0.01) { FLOW.fades.delete(id); return; }
   FLOW.fades.set(id, fade);
   FX.fade = fade;
   FLOW.count++;
-  const {asks, since, amount, reply} = flowAt(join);
+  const {asks, since, size, reply} = flowAt(join);
   for (const to of way.providers) {
     const path = [way.receiver, way.purpose, to];
     if (!asks) fxRecord(path, since, colors.record, false);
     else if (since < FLOW.ask) fxRequest(path, since / FLOW.ask, false);
     else if (since < FLOW.ask + reply) for (const back of join.ifd === 'both' ? [true, false] : [true]) {
-      fxTrain(path, (since - FLOW.ask) / reply, back, tintOf(colorOf(back ? to : way.receiver)), false, amount);
+      fxReply(path, (since - FLOW.ask) / reply, back, tintOf(colorOf(back ? to : way.receiver)), false, size);
     }
   }
 }

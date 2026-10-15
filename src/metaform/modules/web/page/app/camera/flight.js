@@ -10,7 +10,7 @@ import {ballOf} from '/page/app/figures/agents.js';
 import {shownNode} from '/page/app/map3d/light.js';
 import {G, wake3d} from '/page/app/map3d/graph3d.js';
 import {LABEL} from '/page/app/map3d/labels.js';
-import {small3d, fly3d, meetEnds} from '/page/app/camera/fly3d.js';
+import {small3d, fly3d, meetEnds, workShot} from '/page/app/camera/fly3d.js';
 import {VIEW, PEEK, saveView} from '/page/app/views/settings.js';
 import {flatNow, flatFacing} from '/page/app/views/bar.js';
 import {resize} from '/page/app/views/lens.js';
@@ -55,6 +55,7 @@ export async function swap(on, remember = true) {
 }
 /* The 3D map in its new area: a met name kept at the new area's share; an unfocused map still opens whole. */
 function refit3d(large2d) {
+  if (!large2d && V3.mode === 'work' && workShot(S.selected)) return;
   if (S.selected && (large2d || V3.mode === 'zoom') && fly3d(S.selected)) return;
   if (large2d || V3.mode !== 'free') fit3d(600, large2d ? 24 : 60);
 }
@@ -64,10 +65,10 @@ export const swapMaps = () => WS.swapMaps() || swap(!$('.app').classList.contain
 /* The 3D map's own Fit goes between two views: the whole map, and close on the selected node. It moves the 3D map
  * only, as the 2D map's Fit moves the 2D map only. `auto` says the camera still shows the whole map as the page last
  * fitted it, with no hand and no selection having moved it since, so the layout may fit it again once it settles. */
-// `mode`, the large area's Whole, Zoom or Free, `setMode3d`; `hold`, the small area's met node the camera follows,
+// `mode`, the large area's Work, Whole, Zoom or Free, `setMode3d`, Work by default, `workShot`; `hold`, the small area's met node the camera follows,
 // `holdMet`; `eyes`, the large area seen through a followed agent's eyes, `eyesOf`
 export const V3 = {whole: 0, fits: 0, layouts: 0, ticks: 0, auto: true, followed: 0, asked: false, focus: null,
-  lens: null, mode: 'zoom', hold: null, eyes: false};
+  lens: null, mode: 'work', hold: null, eyes: false};
 export const away3d = () => G.camera().position.distanceTo(G.controls().target);
 /* The 3D camera's flights, VIEW-008 and VIEW-028. A flight moves the point looked at and the camera's place around it
  * together: the point in a straight line, the camera around it by its turn, its tilt and the log of its distance, so it

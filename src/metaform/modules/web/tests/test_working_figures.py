@@ -182,6 +182,7 @@ def test_the_agent_view_ends_a_met_sign_and_sees_from_the_eyes_near_plane(
         pytest.fail(f'never came: {page.evaluate(state)}')
 
     until(lambda now: not now['walking'])
+    page.evaluate('window.metaform.mode3d("zoom")')  # a met sign is Zoom's; Work frames the node with its agent
     page.evaluate("""async () => {
         const {S} = await import('/page/app/core/reads.js');
         const {select} = await import('/page/app/selection/select.js');
@@ -205,4 +206,99 @@ def test_the_agent_view_ends_a_met_sign_and_sees_from_the_eyes_near_plane(
     page.evaluate("async () => (await import('/page/app/figures/eyes.js')).agentView()")
     back = until(lambda now: not now['view'] and not now['saved'])
     assert back['near'] == pytest.approx(back['own']) and back['body'] and not back['shown'], back
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-005')
+def test_the_work_camera_shows_a_node_with_its_agents_and_all_the_work_each_in_view_and_apart(
+        run, web, mapped, browser):  # noqa: F811 -- imported fixtures keep their names for discovery
+    """Work, the 3D map's default mode: a selected node is shown with the agents working on it, and with nothing
+    selected every node at work with its agents, from the angle where each of them, the node and its name are on the
+    screen, nothing of the map stands in front of them, and none hides behind another."""
+    from metaform.data import Node, Store
+
+    run('enable', 'dispatch')
+    store = Store('proj')
+    places = ['code.alarm.audible', 'code.alarm.audible', 'code.loop.tick']
+    tickets = [store.add_work(Node('element', address), 'broken', task='Check it') for address in places]
+    for ticket, glyph in zip(tickets, ('owl', 'moth', 'beetle')):
+        run('map', 'work', 'op=edit', f'id={ticket.id}', f'glyph={glyph}', cwd=mapped)
+        store.take_work(ticket.id, by='codex')
+        live_session(ticket.id, 'codex')
+    started(run)
+    page, problems, _ = opened(browser, web, plain=True)
+    page.wait_for_function('() => window.metaform.figures().length === 3', timeout=30000)
+    shot = """async focus => {
+        const {ROAM, ballOf} = await import('/page/app/figures/agents.js');
+        const {roam3d} = await import('/page/app/figures/roam3d.js');
+        const {G} = await import('/page/app/map3d/graph3d.js');
+        const {tags, layered} = await import('/page/app/map3d/labels.js');
+        const {V3, flight} = await import('/page/app/camera/flight.js');
+        const {S} = await import('/page/app/core/reads.js');
+        const {select} = await import('/page/app/selection/select.js');
+        const {shownNode} = await import('/page/app/map3d/light.js');
+        window.metaform.pause3d(true);
+        const data = G.graphData(), figures = [...ROAM.figures.values()], camera = G.camera();
+        for (const node of data.nodes) { node.fx = node.x; node.fy = node.y; node.fz = node.z; }
+        if (!figures[0].settled) {
+            for (const f of figures) {
+                const node = data.nodes.find(n => n.id === f.target);
+                Object.assign(f, {stage: 'circling', clock: 0, nextAct: 1e9, nextGlance: 1e9, act: null, glance: null,
+                    settled: true});
+                f.pos.set(node.x + 10, node.y, node.z + 10); f.mesh.position.copy(f.pos); f.vel.set(0, 0, 0);
+            }
+            for (let n = 0; n < 200; n++) {
+                for (const f of figures) f.nextAct = 1e9;
+                layered(); ROAM.last = performance.now() / 1000 - .05; roam3d(data);
+            }
+        }
+        const id = focus && [...S.elements.values()].find(one => one.element.address === focus).element.id;
+        // the camera starts on the line through two of the agents, so from where it stands one hides the other
+        const [near, far] = figures.filter(f => !id || f.target === id), there = near.mesh.position;
+        const along = there.clone().sub(far.mesh.position).normalize();
+        G.controls().target.copy(there);
+        camera.position.copy(there).addScaledVector(along, 300);
+        camera.lookAt(there); camera.updateMatrixWorld();
+        if (id) select(id, true); else { (await import('/page/app/camera/fly3d.js')).workShot(null); }
+        flight(performance.now() + 1e7);  // the flight's end, where the shot is taken
+        layered();
+        const box = G.renderer().domElement.getBoundingClientRect();
+        const work = figures.filter(f => !id || f.target === id), nodes = new Set(work.map(f => f.target));
+        const points = work.map(f => ({what: f.id, at: f.mesh.position, r: 0}));
+        for (const node of data.nodes.filter(n => nodes.has(n.id))) {
+            points.push({what: node.id, at: {x: node.x, y: node.y, z: node.z}, r: 0});
+            const sign = tags.get(node.id)?.sprite;
+            if (sign?.visible) points.push({what: 'sign ' + node.id, at: sign.position, r: 0});
+        }
+        const eye = camera.position, out = [], hidden = [];
+        for (const p of points) {
+            const seen = G.graph2ScreenCoords(p.at.x, p.at.y, p.at.z);
+            if (seen.x < 0 || seen.y < 0 || seen.x > box.width || seen.y > box.height) out.push(p.what);
+            const vx = p.at.x - eye.x, vy = p.at.y - eye.y, vz = p.at.z - eye.z, long = vx * vx + vy * vy + vz * vz;
+            for (const node of data.nodes) {
+                if (node.x === undefined || nodes.has(node.id) || !shownNode(node)) continue;
+                const s = ((node.x - eye.x) * vx + (node.y - eye.y) * vy + (node.z - eye.z) * vz) / long;
+                if (s <= 0 || s >= 0.97) continue;
+                const gap = Math.hypot(eye.x + vx * s - node.x, eye.y + vy * s - node.y, eye.z + vz * s - node.z);
+                if (gap < ballOf(node) * 0.85) { hidden.push(p.what + ' behind ' + node.id); break; }
+            }
+            p.screen = seen;
+        }
+        // each two agents seen side by side: the angle between the line through them and the eye's line to them
+        let apart = 90;
+        for (const one of work) for (const two of work) if (one !== two) {
+            const a = one.mesh.position, b = two.mesh.position, pair = a.clone().sub(b);
+            const ray = a.clone().add(b).multiplyScalar(0.5).sub(eye);
+            const angle = pair.angleTo(ray) * 180 / Math.PI;
+            apart = Math.min(apart, Math.min(angle, 180 - angle));
+        }
+        return {mode: V3.mode, out, hidden, apart, agents: work.length};
+    }"""
+    one = page.evaluate(shot, 'code.alarm.audible')
+    assert one['mode'] == 'work' and one['agents'] == 2, one
+    assert one['out'] == [] and one['hidden'] == [], one
+    assert one['apart'] > 30, one  # the two agents side by side, not one behind the other
+    every = page.evaluate(shot, None)
+    assert every['agents'] == 3 and every['out'] == [] and every['hidden'] == [], every
+    assert every['apart'] > 30, every
     assert problems == []

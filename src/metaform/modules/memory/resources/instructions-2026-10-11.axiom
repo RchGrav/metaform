@@ -1,0 +1,71 @@
+@STATE_INIT:
+{Task}:=[current user task]; {Memory}:=NULL; {Findings}:=[]; {State}:=RETRIEVE; {Valid}:=FALSE
+
+@CONSTRAINT:
++&gt; Before working, read the node you are working in with map where &lt;address&gt;: it holds that node's memories, open work and layers, and nothing else. Never read or search the whole graph.
++&gt; Treat memory as prior findings; specification, standing instructions, and current evidence take precedence.
++&gt; Verify implementation references before relying on them.
++&gt; While working, understand relevant implementation/execution paths and preserve durable findings another agent would otherwise need to rediscover: non-obvious behavior, constraints, edge cases, decision rationale, demonstrated failures, reproducible diagnoses, verified changes, and cross-function dependencies.
++&gt; Observe work and user interactions for durable project facts, preferences, technology choices, and useful context.
++&gt; Proactively use create_entities/add_observations/create_relations when discovered information or entities warrant durable graph storage; do not require an explicit user memory request.
++&gt; Connect each new entity to the existing entities it concerns using create_relations, stored in active voice.
++&gt; Save findings at the narrowest applicable functionality; place genuinely shared knowledge at the applicable namespace prefix.
++&gt; Each finding states the fact, future consequence, evidence/source, validity conditions, and whether it is observed behavior, intended behavior, or hypothesis; store each as its own observation, one fact per observation.
++&gt; Before saving, read existing memory and integrate rather than duplicate; correct or supersede stale findings with evidence without silently erasing unresolved disagreement.
++&gt; At useful milestones or before handoff, preserve findings the next agent would otherwise have to rediscover.
+!&gt; Do not treat memory as authority over specification, standing instructions, or current evidence.
+!&gt; Do not repeat the functional map or copy large source sections into memory.
+!&gt; Do not save chronological activity logs, filler, task status, unanswered questions belonging in dedicated records, or untested explanations as established facts.
+!&gt; Do not convert implementation observations into new design requirements.
+
+@CONDITION:
+?IF ({State}==RETRIEVE) -&gt; {State}:=WORK
+?IF (durable finding discovered) -&gt; {State}:=RECORD
+?IF (new durable entity/relation discovered) -&gt; {State}:=GRAPH_UPDATE
+?IF (useful milestone OR handoff) -&gt; {State}:=PRESERVE
+:ELSE -&gt; {State}:=WORK
+
+@ROUTER:
+@MATCH({State}):
+| [RETRIEVE] -&gt; EXECUTE_PIPELINE(Retrieve)
+| [WORK] -&gt; EXECUTE_PIPELINE(Work)
+| [RECORD] -&gt; EXECUTE_PIPELINE(Record)
+| [GRAPH_UPDATE] -&gt; EXECUTE_PIPELINE(Graph_Update)
+| [PRESERVE] -&gt; EXECUTE_PIPELINE(Preserve)
+
+@EXECUTE_PIPELINE(Retrieve):
+∇({Task}) =&gt; identify target functionality, past decisions, relevant inherited context, selected layers, user context/preferences
+=&gt; call map where at the address of the node you are working in
+Δ(results) =&gt; {Memory}; {State}:=WORK
+
+@EXECUTE_PIPELINE(Work):
+∇({Task},{Memory},current evidence) =&gt; inspect implementation references and execution path; identify durable facts, constraints, edge cases, rationale, failures, diagnoses, verified changes, dependencies
+=&gt; continue task; route qualifying discoveries to RECORD or GRAPH_UPDATE
+
+@EXECUTE_PIPELINE(Record):
+∇(existing memory, finding) =&gt; detect duplicates, stale/conflicting entries, narrowest storage location
+Δ(finding) =&gt; store fact + consequence + evidence/source + validity conditions + classification[observed|intended|hypothesis]
+=&gt; {State}:=WORK
+
+@EXECUTE_PIPELINE(Graph_Update):
+∇(existing graph,new entity/relation) =&gt; determine create/update/relation action without duplication
+Δ(result) =&gt; call create_entities/add_observations/create_relations as applicable; relate each new entity to existing entities
+=&gt; {State}:=WORK
+
+@EXECUTE_PIPELINE(Preserve):
+∇({Findings},existing memory) =&gt; select only durable findings otherwise requiring rediscovery
+Δ(selected findings) =&gt; integrate at narrowest applicable functionality/shared namespace
+=&gt; {State}:=WORK
+
+@VERIFY:
+{Valid}:=
+(the working node's memory is read with map where before work)
+AND (memory remains subordinate to specification/instructions/evidence)
+AND (implementation references are checked before reliance)
+AND (durable findings are integrated without duplication)
+AND (saved findings include consequence,evidence,conditions,class)
+AND (new durable graph entities/relations are proactively persisted)
+AND (each new entity is related to existing entities)
+AND (prohibited memory content is excluded)
+AND (observations are not promoted into unsupported requirements)
+AND (unresolved disagreement is not silently erased)

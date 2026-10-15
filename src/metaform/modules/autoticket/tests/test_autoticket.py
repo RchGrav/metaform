@@ -366,3 +366,26 @@ def test_the_watch_reads_nothing_while_nothing_happens_nor_for_changes_that_do_n
     asyncio.run(watch_logs(context('autoticket', project, nouns={'seconds': 5})))
     assert len(window) == 2
     assert [at for at in touched if window[0] <= at <= window[1]] == []
+
+
+def test_a_group_sits_at_the_address_whose_file_ref_names_its_traces_file_else_at_the_top_node(project):
+    """A group is placed by the file ref in the sources layer, as dispatch link writes it, ticket
+    code.analyzer.refactoring#1a; a file no ref names leaves it at the project's DE."""
+    from metaform.data import Node, Store
+    from metaform.module import context
+    from metaform.modules.autoticket.watch import place
+    store = Store('proj')
+    with store.atomic():
+        layer = store.layer('intake-1', 'intake', 'The functional map.', kind='intake', mutable=False,
+                            hideable=False, provenance={'module': 'intake'}, ready=True)
+        store.add_element(layer.name, 'code.shop.online', name_length=2, role='DE')
+        store.add_element(layer.name, 'code.gateway.payment', name_length=2, role='SE')
+        store.add_join(layer.name, 'code.shop.online', 'code.gateway.payment', purpose='Take payment.')
+        sources = store.layer('sources', 'intake', 'refs', mutable=True, hideable=True, ready=True)
+        store.add_item(sources.name, Node('element', 'code.gateway.payment'), 'gateway',
+                       refs=[('path', 'app/pay.py')])
+    ctx = context('autoticket', project)
+    trace = 'Traceback (most recent call last):\n  File "{}", line 9, in charge\nValueError: declined'
+    assert place(ctx, store, trace.format(project / 'app' / 'pay.py')) == 'code.gateway.payment'
+    assert place(ctx, store, trace.format(project / 'app' / 'cart.py')) == 'code.shop.online'
+    assert place(ctx, store, trace.format('/elsewhere/app/pay.py')) == 'code.shop.online'

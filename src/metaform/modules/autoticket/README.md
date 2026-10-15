@@ -20,7 +20,7 @@ None.
 
 ## Common base used
 
-`metaform.settings` declares the three settings. `metaform.data` gives the module's own tables, `Store.number` for each group's item number at its Address, `Store.work` for the tickets at work when a group is first seen, and `Store.add_work` for `promote`. `metaform.module` gives `Context`, `Stop`, `Status`, `titled` and `held_role`, and `surface` with `context` and `call` to run map's `code-context` verb, which maps a file and function to an Address. `metaform.prompt_files` reads `resources/prompts.xml`. Nothing else of Metaform is imported.
+`metaform.settings` declares the three settings. `metaform.data` gives the module's own tables, `Store.number` for each group's item number at its Address, `Store.work` for the tickets at work when a group is first seen, and `Store.add_work` for `promote`. `metaform.module` gives `Context`, `Stop`, `Status`, `titled` and `held_role`, and `Store.citing` to find the Address whose file ref, `path=` in the sources layer, names a file. `metaform.prompt_files` reads `resources/prompts.xml`. Nothing else of Metaform is imported.
 
 ### Provides
 
@@ -78,7 +78,7 @@ No `start` or `stop`. A log's lease is a lock on a file of its own under the hom
 
 ## Modules relied on
 
-map, through its `code-context` verb, to place a group at the Address of the file and function its trace names; with map off or no code index, a group sits at the project's top node. dispatch, through the `signal.raised` event, keeps the reports for the orchestrator; with dispatch off, `autoticket list` still gives the ranked list.
+None to place a group: it sits at the Address whose file ref names the file its trace names, read from the map's sources layer, and with no such ref at the project's top node. dispatch, through the `signal.raised` event, keeps the reports for the orchestrator; with dispatch off, `autoticket list` still gives the ranked list.
 
 ## Systems supported
 

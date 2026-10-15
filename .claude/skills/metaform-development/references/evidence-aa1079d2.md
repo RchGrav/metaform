@@ -1,0 +1,1 @@
+uv run metaform dispatch message 3a1306bdd8804fee80ca539f4093ed15 "From the system agent: your session stopped with the ticket open at step 7 of 9. Go on with steps 8 and 9 where you left off, then close the ticket with its resolution." → "sent: True steered: True"; later "steps: 9 steps_done: 9 outcome: completed".

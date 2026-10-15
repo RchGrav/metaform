@@ -13,7 +13,7 @@ import {endOf} from '/page/app/map3d/waves.js';
 import {G, wake3d} from '/page/app/map3d/graph3d.js';
 import {PLAIN, setTheme} from '/page/app/map3d/draw3d.js';
 import {V3, cameraNow, flyTo, framed, fitTrim, fitBalls, fit3d} from '/page/app/camera/flight.js';
-import {NAME, small3d, fly3d} from '/page/app/camera/fly3d.js';
+import {NAME, small3d, fly3d, workShot} from '/page/app/camera/fly3d.js';
 import {VIEW, INFOSET, FLOWSET, NODEZOOM, LENS, SIGNS, saveView, PEEK, peekParts, peek, FLOW_MODES, flowNow,
   chooseFlow, HOVER_INFO, chooseInfo} from '/page/app/views/settings.js';
 import {toggleNodeZoom, chooseLens, showLens} from '/page/app/views/lens.js';
@@ -237,8 +237,9 @@ $('#lensat').onchange = event => chooseLens(event.target.value);
 showLens();
 SIGNS.pick = barPick({id: 'signsmenu', label: 'Signs', key: 'S', title: "How the 3D map's names stand",
   list: [
-    ['outward', 'Outward', "Each name a sign standing out from the map's middle, turned round when seen from behind"],
-    ['facing', 'Facing', 'Each name turned to face you']], choose: name => chooseSigns(name)});
+    ['facing', 'Facing', 'Each name turned to face you'],
+    ['outward', 'Outward', "Each name a sign standing out from the map's middle, turned round when seen from behind"]],
+  choose: name => chooseSigns(name)});
 SIGNS.button = SIGNS.pick.button;
 $('#signsat').onchange = event => chooseSigns(event.target.value);
 // Ultra graphics, U, page/ultra.js: the 3D map in outer space or clean; the button names the look the map has
@@ -257,8 +258,8 @@ function chooseSigns(name) {
   saveView('web_signs', VIEW.signs);
 }
 export function showSigns() {
-  SIGNS.pick?.show(VIEW.signs === 'facing' ? 'facing' : 'outward');
-  if ($('#signsat')) $('#signsat').value = VIEW.signs || 'outward';
+  SIGNS.pick?.show(VIEW.signs === 'outward' ? 'outward' : 'facing');
+  if ($('#signsat')) $('#signsat').value = VIEW.signs || 'facing';
 }
 showSigns();
 // No Alt shortcuts: Alt with a digit is taken by the system on some machines; L switches the layout.
@@ -267,6 +268,7 @@ export function setMode3d(mode, level = null) {
   V3.mode = mode;
   if (level) NAME.level = level;
   if (mode === 'whole') fit3d();
+  else if (mode === 'work') workShot(S.selected);
   else if (mode === 'zoom' && S.selected) fly3d(S.selected, true);
   else if (mode === 'free') V3.auto = false;  // the layout no longer refits it either
 }

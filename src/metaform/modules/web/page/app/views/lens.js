@@ -9,7 +9,7 @@ import {noMetaform} from '/page/app/header/admin.js';
 import {CONDITIONS} from '/page/app/figures/agents.js';
 import {G, wake3d} from '/page/app/map3d/graph3d.js';
 import {swap, V3, fitBalls, fit3d} from '/page/app/camera/flight.js';
-import {small3d, fly3d, EASE, easeCurve} from '/page/app/camera/fly3d.js';
+import {small3d, fly3d, EASE, easeCurve, workShot, shotSoon} from '/page/app/camera/fly3d.js';
 import {VIEW, NODEZOOM, LENS, FOV3D, LENSES, LENS_WORDS, saveView, peek} from '/page/app/views/settings.js';
 import {following} from '/page/app/live/stream.js';
 import {autoZoom2d} from '/page/app/map2d/camera.js';
@@ -26,8 +26,9 @@ export function follow3d(id) {
   if (!small3d() && (VIEW.nodeZoom === false || V3.eyes)) return true;
   if (!small3d() && V3.mode === 'free') return true;  // Free leaves the camera to the hand
   // Whole turns the map round the node so it faces the eye near the middle, labelled, at the whole map's distance,
-  // so the map shows around it; Zoom, and the small pane, fly close
+  // so the map shows around it; Work shows the node with the agents at work on it; Zoom, and the small pane, fly close
   if (!small3d() && V3.mode === 'whole') return fly3d(id, 'whole');
+  if (!small3d() && V3.mode === 'work') return workShot(id);
   return fly3d(id);
 }
 export function toggleNodeZoom(on = VIEW.nodeZoom === false) {
@@ -115,6 +116,7 @@ export function resize() {
     // reframes the name
     if (width !== box.width || held !== fov || small3d()) fly3d(S.selected);
   } else if ((V3.auto || (V3.mode === 'whole' && !small3d())) && fitBalls(G.graphData()).length) fit3d();
+  else if (V3.mode === 'work' && !small3d() && width !== box.width) shotSoon();  // a new width, the shot taken again
   wake3d();
 }
 addEventListener('resize', resize);

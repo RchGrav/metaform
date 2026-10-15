@@ -1,0 +1,3 @@
+make sure your tickets are explicit about properties they relink closer to trunk if they get linked someplace   an agent very well might link on a leaf an dthen an agent links a different leaf it move…
+
+cancel code.analyzer.refactoring#19 (refused to a worker; see note)

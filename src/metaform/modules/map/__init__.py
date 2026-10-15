@@ -42,7 +42,6 @@ from metaform.module import (
     Noun,
     NounKind,
     Pane,
-    Provides,
     Status,
     Stop,
     ToolbarItem,
@@ -60,13 +59,6 @@ from metaform.outline import mermaid as map_mermaid
 from metaform.outline import mermaid_limits
 
 from .around import told
-from .code import CODE_LAYER
-from .code import VERBS as CODE_VERBS
-from .code import brief as code_brief
-from .code import node_line as code_node_line
-from .code import scoped as code_scoped
-from .code import start_line as code_start_line
-from .code_preparation import inventory as code_inventory
 from .glossary import PANES as GLOSSARY_PANES
 from .glossary import VERBS as GLOSSARY_VERBS
 from .glossary import item_read as term_read
@@ -146,11 +138,8 @@ PAGING = (Noun('limit', 'How many results, 0 for all.', kind='int', required=Fal
 
 
 def roots(ctx: Context) -> Any:
-    """The map's entry: the CQU and the DE with their joins, and every root element, STORE-025; while the code is not
-    read into its layer, the call that reads it."""
-    found = _store(ctx).roots(**_reading(ctx), **_paging(ctx))
-    line = None if ctx.nouns.get('after') else code_start_line(ctx)
-    return found if line is None else {**found.to_dict(), 'code': line}
+    """The map's entry: the CQU and the DE with their joins, and every root element, STORE-025."""
+    return _store(ctx).roots(**_reading(ctx), **_paging(ctx))
 
 
 def _with_modules(ctx: Context, found: Any, node: Node) -> Any:
@@ -320,12 +309,8 @@ def _oriented(ctx: Context, found: Any, node: Node, *, contents: bool = False) -
         return None
     if contents or found.full:
         data = cast(dict[str, Any], plain(_with_modules(ctx, found, node)))
-        code_line = code_brief(ctx, found)  # the code layer counted, its links read with the call it names
-        return {**data, **({'code': code_line} if code_line else {}), **told(ctx, found)}
+        return {**data, **told(ctx, found)}
     data = _compact(cast(dict[str, Any], found.to_dict()))
-    code_line = code_brief(ctx, found)  # the code layer's one line: its counts here and the call that reads them
-    if code_line:
-        data['code'] = code_line
     budget = int(ctx.setting('node_summary_bytes'))
     said = told(ctx, found, lambda part: _size(_fitted(ctx, found, data, part, budget)) <= budget)
     return _fitted(ctx, found, data, said, budget, calls=True)
@@ -380,9 +365,7 @@ def where(ctx: Context) -> Any:
 
 def scoped_read(ctx: Context, text: str) -> Any:
     """What a layer holds at a scope, `<scope>@<layer>`, P165: the scope's element as the map gives it, its name and
-    role, and what the layer holds there; for the code layer, the code at the Address, or at the join named
-    `<receiver>:<provider>`, as code-context reads it, each symbol with the Address it is the code of. A layer's items
-    are read in context, so a mask at the address leaves them out as every read does."""
+    role, and what the layer holds there. A layer's items are read in context, so a mask at the address leaves them out as every read does."""
     store = _store(ctx)
     found = resolve_scoped(store, text)
     read: dict[str, Any] = {'scope': found.text, 'layer': found.layer}
@@ -392,11 +375,6 @@ def scoped_read(ctx: Context, text: str) -> Any:
             read['element'] = {key: value for key, value in (
                 ('address', element.address), ('name', element.name), ('short_name', element.short_name),
                 ('role', element.role), ('reading', element.reading)) if value}
-    if found.layer == CODE_LAYER:
-        if found.address is None:
-            raise Stop(f'The code layer is read at an Address: {found.text} names the whole project.',
-                       'metaform map code-gaps')
-        return {**read, **code_scoped(ctx, found.address, found.provider)}
     node: Node | None = None
     if found.address is not None and found.provider:
         try:
@@ -506,12 +484,7 @@ def node(ctx: Context) -> Any:
     found = _store(ctx).node(target, **_reading(ctx))
     if found is None:
         raise Stop(f'No node {ctx.nouns["node"]} in context here.', 'metaform map node <node> --raw')
-    read = _with_modules(ctx, found, target)
-    code_line = code_node_line(ctx, target)  # the code layer's links are counted, not listed: read with the call named
-    if not code_line:
-        return read
-    data = cast(dict[str, Any], read if isinstance(read, dict) else read.to_dict())
-    return {**data, 'code': code_line}
+    return _with_modules(ctx, found, target)
 
 
 def context(ctx: Context) -> Any:
@@ -536,10 +509,7 @@ def citing(ctx: Context) -> Any:
             except ValueError:
                 raise Stop(f'{value} is outside the project folder {root}.',
                            'metaform map citing key=path value=<project-relative path>') from None
-    found = store.citing(key, value, **_paging(ctx))
-    if key == 'path' and not found.results:
-        return {**found.to_dict(), 'next': ctx.calls(f'metaform map code-search file_pattern={shlex.quote(value)}')}
-    return found
+    return store.citing(key, value, **_paging(ctx))
 
 
 def history(ctx: Context) -> Any:
@@ -972,15 +942,11 @@ def _knowledge(ctx: Context, op: str, notices: list[Notice]) -> Any:
 
 
 def _sources(store: Store, element_id: str, address: str, refs: Any, notices: list[Notice]) -> None:
-    """The refs given with an element, as its one item of the sources layer, replacing what that item held: the
-    metaform holds no refs, so they live in a sources layer."""
-    store.layer(SOURCES, 'intake', 'refs', kind='layer', mutable=True, hideable=True, ready=True)
-    held = [item for item in store.layer_items(SOURCES, Node('element', element_id), limit=0).results
-            if isinstance(item, Item)]
-    if held:
-        notices.extend(getattr(store.edit(held[0].id, {'refs': refs}), 'notices', ()))
-    else:
-        notices.extend(getattr(store.add_item(SOURCES, Node('element', element_id), address, refs=refs), 'notices', ()))
+    """The refs given with an element, each linked there as a record of the sources layer, code.graph.knowledge#c,
+    replacing those last linked there: the metaform holds no refs, so they live in a sources layer."""
+    notices.extend(notice for notice in store.place_refs(Node('element', element_id), refs, by='map',
+                                                         why=f'given with {address}')
+                   if notice.where != 'linked')
     notices.append(Notice('refs', f'The refs were written to the {SOURCES} layer at {address}; the base holds none.'))
 
 
@@ -1665,7 +1631,6 @@ def reexamining(folder: Path) -> bool:
 
 MODULE = Module(
     id='map',
-    provides=(Provides('code.inventory', code_inventory),),
     # The kanban lines speak to nodes, which exist once an intake is finished, MAP-048 and MCP-029.
     # The tasks instruction is read on demand with map's full instructions, not handed to every agent at connect.
     status=lambda ctx: Status(instruction=prompt_files.module('map', 'tasks') if ctx.setting('tasks') and ctx.store
@@ -1675,7 +1640,7 @@ MODULE = Module(
     work_read=work_read,
     item_read=map_item_read,
     items_at=map_items_at,
-    item_kinds=('work', 'question', 'message', 'code', 'term'),
+    item_kinds=('work', 'question', 'message', 'term'),
     summary="Read and write this project's functional map and its layers.",
     purpose="Reads and writes this project's functional map. Handed an address, start with where: one read of "
             'the address returns the element, what relies on it, every join it provides with its receiver and '
@@ -1684,9 +1649,10 @@ MODULE = Module(
             'call that reads each; contents=true returns what is held there in full, full=true keeps ids too. With '
             "no address, start with roots: the map's entry, the CQU and the DE with their joins, and the root "
             'elements. The receiver holds the purpose, the provider delivers the function. '
-            'Record what you learn at a node with the memory tools; to build or improve a knowledge layer, use '
-            'knowledge, naming the layer on every call: create it, add, edit and remove its objects one at a '
-            'time, and finish it when the task is done. Details: metaform help map.',
+            # A draft, CTX-029, awaiting the owner's approval: memory for what happened, knowledge for what is true.
+            'Record what happened in the work at a node with the memory tools, and what is now known to be true '
+            'of the project with knowledge, naming the layer on every call: create it, add, edit and remove its '
+            'objects one at a time, and finish it when the task is done. Details: metaform help map.',
     details='Every read that returns a join shows the layer it comes from. --raw reads every stored layer.',
     verbs=(
         Verb('roots', roots, "Read the map's entry: the CQU and the DE with their joins, and every root element.",
@@ -1920,7 +1886,6 @@ MODULE = Module(
         Verb('challenges', challenges, 'Read the answer prompt with each challenge of a blind-spot layer and its '
                                        'state.',
              nouns=(Noun('layer', 'The blind-spot layer.'),), effect='read', listed=challenged),
-        *CODE_VERBS,
         *GLOSSARY_VERBS,
     ),
     # The map's tools on the web GUI's toolbar. The brief and what the agent sees are what an agent reads, drawn by
@@ -1964,11 +1929,6 @@ MODULE = Module(
              page='messages', area='right', group='chat', order=110, min_width=320),
         Pane('board', 'Board', "Prioritize the project's tickets and see which agent holds each.", icon='board',
              page='board', area='float', order=20, min_width=640, min_height=320),
-        # The code layer at the selected node, `<address>@code`, P165: its symbols, the calls in and out with the
-        # Address at the other end, and the code serving it, as code-context reads it.
-        Pane('code', 'Code', 'Read the code that serves the selected node, and the Addresses its calls reach.',
-             icon='code', verb='code-context', selection='address', area='right', group='node', order=25,
-             min_width=320),
         *GLOSSARY_PANES,
     ),
 )

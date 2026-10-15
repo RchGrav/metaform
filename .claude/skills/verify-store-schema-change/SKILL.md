@@ -1,6 +1,6 @@
 ---
 name: verify-store-schema-change
-description: Use when changing a store schema or upgrade.
+description: Use when changing a store schema, store version or upgrade, or when a store refuses writes with "schema version".
 category: development
 ---
 
@@ -11,6 +11,7 @@ A change to a module's tables, store version or upgrade path is proven only by o
 - Old code comes from `git archive HEAD src`, new code from the working tree. Each case runs on its own copy of the planted home, with `PYTHONPATH` naming the source it means.
 - Compare before and after: row counts per table, `sqlite_master` SQL in name order, and the backup count. A change that should be a no-op (a reorder, a moved constant) must leave all three identical.
 - A planted edit that fails midway leaves a half-changed store: restore the seed before the next case.
+- A version bump is live the moment any process opens the store. Before raising it, list the Metaform processes still running old code (web GUI, MCP server, runners, `hold list`). Each one refuses writes at the new version until restarted, so restart them and confirm each answers before reporting the change done. Migrate a copy of the live store first, and report what a live migration did and whether it can be reversed before running it. A ticket that bumps a version repeats this rule in its own text. A worker that migrates the live store anyway stops and reports before anything else changes: on 2026-10-15 a ref ticket raised the live store to schema 22 against its own copy-first instruction, and processes still on 21 could not record progress until restarted.
 
 - Compare the whole rule set a write must meet, not just the column and index lists: CHECK clauses, foreign keys (with ON DELETE/UPDATE), collations, ON CONFLICT resolutions, generated columns, unique and partial indexes. Clauses compare as SQL tokens, so spacing, quoting, keyword case and comments never count as a difference; a changed meaning does.
 - Changing any of those rules is a schema change: it needs the orchestrator's approval and a raised version, or an open store that already holds the old rule fails at its first write instead of being refused at open.

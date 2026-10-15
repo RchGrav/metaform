@@ -40,6 +40,7 @@ SHIPS_DISABLED = False
 REMOTE_AGENT = False  # the web GUI needs a screen and a browser
 
 WAIT = 15.0  # the limit on `start`'s one wait for the server's ready line, and on `stop`'s for its stream to end
+RESTART_WAIT = 4 * WAIT  # the limit on `restart`'s wait for its stop and start, each with waits of its own
 WILDCARDS = ('0.0.0.0', '::', '')
 # Behind a Metaform Node's gate: the per-deploy secret Caddy adds to every page request, which the server reads from
 # this variable once, at start (the node module's gate.env gives it to Caddy and the web container only).
@@ -497,8 +498,8 @@ def detached(command: list[str], env: dict[str, str]) -> subprocess.Popen[bytes]
                                 cwd=home.home(), env=env, start_new_session=True)
 
 
-def ready_line(process: subprocess.Popen[bytes]) -> bytes | None:
-    """The server's one line saying it listens, empty when it ended first, None when it said nothing within `WAIT`.
+def ready_line(process: subprocess.Popen[bytes], limit: float = WAIT) -> bytes | None:
+    """The server's one line saying it listens, empty when it ended first, None when it said nothing within `limit`.
 
     One wait for a message, QUAL-015: a thread blocks on the pipe and is woken by the line or by the pipe closing
     with the process; the join's limit only keeps `metaform web` from hanging forever on a server that does neither.
@@ -508,7 +509,7 @@ def ready_line(process: subprocess.Popen[bytes]) -> bytes | None:
     heard: list[bytes] = []
     reader = threading.Thread(target=lambda: heard.append(pipe.readline()), daemon=True)
     reader.start()
-    reader.join(WAIT)
+    reader.join(limit)
     return heard[0] if heard else None
 
 
@@ -521,9 +522,12 @@ def log_tail() -> str:
 
 
 def start(ctx: Context) -> dict[str, Any]:
-    started = starting(ctx)
-    # `web.started`, so a module that serves beside the page starts with it, such as twilio's phone bridge when the
-    # person has turned it on; a subscriber's failure is its own and never the page's.
+    return announced(ctx, starting(ctx))
+
+
+def announced(ctx: Context, started: dict[str, Any]) -> dict[str, Any]:
+    """`web.started`, so a module that serves beside the page starts with it, such as twilio's phone bridge when the
+    person has turned it on; a subscriber's failure is its own and never the page's."""
     with contextlib.suppress(Exception):
         ctx.publish('web.started', {'project': ctx.project, 'folder': str(ctx.folder), 'state': started['state']})
     return started
@@ -537,6 +541,11 @@ def starting(ctx: Context) -> dict[str, Any]:
         write_run(debug_file(), str(ctx.setting('web_debug') or 'off'))
     except OSError:
         pass  # the page then follows the setting alone
+    return launched(bind, port)
+
+
+def launched(bind: str, port: int) -> dict[str, Any]:
+    """The server answering at `bind` and `port`: the one that runs, or one started under a new watchdog."""
     record = recorded()
     if record is not None and answering(record):
         return shown(record, 'running')
@@ -568,20 +577,34 @@ def watched(bind: str, port: int, nonce: str) -> bytes | None:
     hold call, so `hold list` shows it and `hold end` stops it and its server, and it says so through a named pipe,
     since hold keeps a call's standard output; without it, it is a detached process saying so on a pipe, as the server
     does."""
-    command = [sys.executable, '-m', 'metaform.modules.web.watchdog', '--bind', bind, '--port', str(port),
-               '--nonce', nonce]
+    name = hold_name(port)
+    line = outliving(['-m', 'metaform.modules.web.watchdog', '--bind', bind, '--port', str(port), '--nonce', nonce],
+                     name, "web GUI's watchdog", 'start', WAIT)
+    held = hold_tool()
+    if line is None and held is not None:  # the watchdog ended before it could say anything: hold kept what it wrote
+        told = subprocess.run([held, 'logs', name, '-p'], capture_output=True, text=True, encoding='utf-8',
+                              errors='replace', timeout=WAIT, check=False).stdout.strip().splitlines()
+        raise Stop(f"The web GUI's watchdog, hold call {name}, did not start: "
+                   f'{told[-1] if told else "hold kept no log"}', f'hold logs {name}')
+    return line
+
+
+def outliving(module: list[str], name: str, what: str, verb: str, limit: float) -> bytes | None:
+    """Run `module` with this python as a process that outlives this one, and wait for the one line it says: empty
+    when it ended first, None when it said nothing within `limit`. With the hold tool it is the hold call `name` and
+    says it through a named pipe; without, a detached process saying it on a pipe."""
+    command = [sys.executable, *module]
     held = hold_tool()
     if held is None:
         process = detached(command, page_environment())
-        line = ready_line(process)
+        line = ready_line(process, limit)
         if process.stdout is not None:
             process.stdout.close()
         return line
     home.mkdir_private(run_dir())
-    pipe = run_dir() / f'web-ready-{nonce}'
+    pipe = run_dir() / f'web-ready-{secrets.token_hex(8)}'
     os.mkfifo(pipe, 0o600)  # type: ignore[attr-defined]  hold runs on POSIX systems only
     try:
-        name = hold_name(port)
         subprocess.run([held, 'purge', name], capture_output=True, timeout=WAIT, check=False)  # a past call's name
         # hold runs every path in a call by its real path, which takes a virtual environment's python, a link, to the
         # base interpreter, outside the environment Metaform is installed in; so the shell is given it to run, in the
@@ -592,22 +615,16 @@ def watched(bind: str, port: int, nonce: str) -> bytes | None:
                                 capture_output=True, text=True,
                                 encoding='utf-8', stdin=subprocess.DEVNULL, timeout=WAIT, check=False)
         if placed.returncode != 0:
-            raise Stop(f"hold could not place the web GUI's watchdog: {placed.stderr.strip() or placed.returncode}",
-                       f'{HOLD}= metaform web start, which runs it without hold')
-        line = heard(pipe)
-        if line is None:  # the watchdog ended before it could say anything: hold kept what it wrote
-            told = subprocess.run([held, 'logs', name, '-p'], capture_output=True, text=True, encoding='utf-8',
-                                  errors='replace', timeout=WAIT, check=False).stdout.strip().splitlines()
-            raise Stop(f"The web GUI's watchdog, hold call {name}, did not start: "
-                       f'{told[-1] if told else "hold kept no log"}', f'hold logs {name}')
-        return line
+            raise Stop(f'hold could not place the {what}: {placed.stderr.strip() or placed.returncode}',
+                       f'{HOLD}= metaform web {verb}, which runs it without hold')
+        return heard(pipe, limit)
     finally:
         pipe.unlink(missing_ok=True)
 
 
-def heard(pipe: Path) -> bytes | None:
+def heard(pipe: Path, limit: float = WAIT) -> bytes | None:
     """The one line written to the named pipe, as `ready_line` reads it from a process's pipe; None when no one opened
-    it within `WAIT`, whose other end is then opened here, so the waiting reader ends."""
+    it within `limit`, whose other end is then opened here, so the waiting reader ends."""
     said: list[bytes] = []
 
     def listen() -> None:
@@ -616,7 +633,7 @@ def heard(pipe: Path) -> bytes | None:
 
     reader = threading.Thread(target=listen, daemon=True)
     reader.start()
-    reader.join(WAIT)
+    reader.join(limit)
     if reader.is_alive():
         with contextlib.suppress(OSError):
             os.close(os.open(pipe, os.O_WRONLY | os.O_NONBLOCK))
@@ -655,6 +672,52 @@ def stop(ctx: Context) -> dict[str, Any]:
     run_file().unlink(missing_ok=True)
     watchdog_file().unlink(missing_ok=True)
     return {'state': 'stopped'}
+
+
+def restart(ctx: Context) -> dict[str, Any]:
+    """Stop the web GUI and start it again, VIEW-002, in a process of its own, restart.py, that outlives this one: an
+    agent whose session ends between the stop and the start leaves the page coming back, not gone. With the hold tool
+    it is the hold call metaform-web-restart-<port>. This waits for its word at most RESTART_WAIT; past that the restart
+    goes on without anyone waiting."""
+    port = int((recorded() or {}).get('port') or ctx.setting('web_port'))
+    line = outliving(['-m', 'metaform.modules.web.restart', '--folder', str(ctx.folder)],
+                     f'metaform-web-restart-{port}', "web GUI's restart", 'restart', RESTART_WAIT)
+    if line is None:
+        return {'state': 'restarting', 'next': 'metaform web start gives the address once the page answers'}
+    said = restart_said(line.decode('utf-8', errors='replace'))
+    if said is None:
+        raise Stop(f"The web GUI's restart ended before it said how it went: {log_tail()}", 'metaform web start')
+    if said.get('error'):
+        raise Stop(str(said['error']), str(said.get('next') or 'metaform web start'))
+    return said
+
+
+RECONNECTS = 'An open page reconnects on its own through its live stream, and offers a reload if the code changed.'
+
+
+def restarting(ctx: Context) -> dict[str, Any]:
+    """The restart itself, which restart.py runs in its own process: the server that runs is stopped, the exits of it
+    and its watchdog waited for as the system's own events, and a new one started on the bind address and port it was
+    started with, keeping the developer level it was started at and the project its page opens on. With none running
+    it is a start, from the folder's settings."""
+    kept, record = watchdog(), recorded()
+    live = record if record is not None and answering(record) else None
+    was = live or kept
+    if was is None:
+        return {**announced(ctx, starting(ctx)), 'pages': RECONNECTS}
+    try:
+        debug: str | None = debug_file().read_text(encoding='utf-8').strip() or None
+    except OSError:
+        debug = None
+    stop(ctx)
+    for gone in (live, kept):
+        if gone is not None and gone.get('pid'):
+            ended(int(gone['pid']), WAIT)
+    if debug:
+        write_run(debug_file(), debug)
+    started = announced(ctx, launched(str(was['bind']), int(was['port'])))
+    return {**started, 'state': 'restarted' if started['state'] == 'started' else started['state'],
+            'pages': RECONNECTS}
 
 
 def held_open(record: dict[str, Any]) -> http.client.HTTPResponse | None:
@@ -717,7 +780,7 @@ EMOTES = ('wave', 'think', 'celebrate', 'shrug', 'sleep')
 PUSH_WAYS = ('away', 'up', 'down')  # a push's direction, else the address of an element it is pushed toward
 TABS = ('object', 'brief', 'provenance', 'prompt')
 OPENS = ('board', 'ticket', 'settings', 'pane')
-CAMERAS = ('whole', 'zoom', 'free')
+CAMERAS = ('work', 'whole', 'zoom', 'free')
 
 
 def ask_page(ctx: Context, act: str, **given: Any) -> dict[str, Any]:
@@ -998,6 +1061,9 @@ MODULE = Module(
              effect='write', open_world=False, needs_project=False),
         Verb('stop', stop, 'Stop the web GUI.', effect='write', open_world=False, needs_project=False,
         listed=gui_running),
+        # A restart is handed to a process of its own, so the page comes back even when the caller ends midway.
+        Verb('restart', restart, 'Stop the web GUI and start it again; it comes back even if your session ends meanwhile.',
+             effect='write', open_world=False, needs_project=False),
         # The mascot's and the figures' acts change no map and write nothing: each is told to the open pages, which
         # draw it, and what they see comes back from the page.
         Verb('say', say, "Say a short line in the person's mascot's word bubble on the map.",
@@ -1054,8 +1120,8 @@ MODULE = Module(
         Verb('select', select, "Select an element or a join on the person's page, the mascot walking to it.",
              nouns=(Noun('address', 'The element\'s address, or a join as receiver>provider.'),), effect='read',
              open_world=False, listed=gui_running),
-        Verb('camera', camera, "Set the person's 3D view to whole, zoom or free, or fly it to an element.",
-             nouns=(Noun('mode', 'whole, zoom or free.', required=False),
+        Verb('camera', camera, "Set the person's 3D view to work, whole, zoom or free, or fly it to an element.",
+             nouns=(Noun('mode', 'work, the agents at work in view; whole, zoom or free.', required=False),
                     Noun('address', 'An element to fly the camera to.', required=False)), effect='read', open_world=False,
                     listed=gui_running),
         Verb('tab', tab, "Open a tab of the person's side panel: object, brief, provenance or prompt.",

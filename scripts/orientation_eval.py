@@ -29,10 +29,8 @@ tree that differs from HEAD is refused unless --allow-dirty is given, and one wi
 suite's collection errors and the failures of the test modules that import the files the tasks fix; a run whose shell
 output showed one of them is marked.
 
-The Metaform arms run on the map the task set names with the code layer the shipped flow adds after an intake (P167),
-read by map code-import from tree-sitter, which is installed with uv into the cache, never into the project's
-environment (--no-code-layer leaves it out). The results say which map the arms ran on and whether the code layer
-holds each task's graded file at its oracle Address. A request that names an Address on the map is refused. On a task of this repository the server, the CLI and
+The Metaform arms run on the map the task set names. The results say which map the arms ran on and whether the
+map's file refs (the sources layer) hold each task's graded file at its oracle Address. A request that names an Address on the map is refused. On a task of this repository the server, the CLI and
 the agent's `metaform` all run from the run's own workspace (PYTHONPATH=<workspace>/src), so the code served is the
 code being edited, as the editable install serves it to the person; on another repository they run from the copy.
 
@@ -126,11 +124,6 @@ METAFORM_TOOLS = ('mcp__metaform', 'ReadMcpResourceTool', 'ListMcpResourcesTool'
 # The placement pass reads the map only.
 PLACEMENT_TOOLS = 'ToolSearch,ReadMcpResourceTool,ListMcpResourcesTool'
 ADDRESS = re.compile(r'\b[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+\b')
-# The code layer's provider, installed apart from the project's environment into the evaluation's cache and put on the
-# Metaform processes' path only (P167: map code-import reads tree-sitter's tags queries).
-TREE_SITTER = ('tree-sitter==0.26.0', 'tree-sitter-python==0.25.0')
-# Paths every Metaform process of a run imports besides the source under test: the code layer's provider.
-EXTRA_PATH: list[Path] = []
 # A test module an untracked file would add to every agent's test run.
 TEST_MODULE = re.compile(r'(^|/)(test_[^/]*|[^/]*_test|conftest)\.py$')
 # Bookkeeping the hand-off asks of an agent once its work is done: its ticket's steps and its memories.
@@ -221,7 +214,6 @@ class Options:
     placement_budget: float
     allow_dirty: bool
     allow_dirty_tests: bool
-    code_layer: bool
     grep_rank: int
     dry_run: bool
     keep: bool
@@ -693,47 +685,12 @@ def start_failures(base: Path, repo: dict[str, Any], tasks: list[dict[str, Any]]
 
 
 def served_path(src: Path) -> str:
-    """The import path of every Metaform process of a run: the source under test, then the code layer's provider."""
-    return os.pathsep.join(str(path) for path in (src, *EXTRA_PATH))
+    """The import path of every Metaform process of a run: the source under test."""
+    return str(src)
 
 
 def metaform_env(home: Path, src: Path) -> dict[str, str]:
     return {**os.environ, 'METAFORM_HOME': str(home), 'PYTHONPATH': served_path(src)}
-
-
-def code_provider(cache: Path) -> tuple[Path | None, str]:
-    """tree-sitter and its Python grammar, installed once with uv into the evaluation's cache, never into the
-    project's environment; None with the reason when it cannot be."""
-    tag = sha(*TREE_SITTER, sys.version)[:12]
-    folder = cache / 'code-provider' / f'tree-sitter-{tag}'
-    if (folder / 'tree_sitter').is_dir():
-        return folder, ' '.join(TREE_SITTER)
-    uv = shutil.which('uv')
-    if uv is None:
-        return None, 'uv is not on PATH to install tree-sitter with'
-    held = folder.with_name(folder.name + '.partial')
-    shutil.rmtree(held, ignore_errors=True)
-    done = subprocess.run([uv, 'pip', 'install', '--quiet', '--python', sys.executable, '--target', str(held),
-                           *TREE_SITTER], capture_output=True, text=True, check=False)
-    if done.returncode != 0:
-        return None, f'uv pip install {" ".join(TREE_SITTER)}: {done.stderr.strip()[-200:]}'
-    held.rename(folder)
-    return folder, ' '.join(TREE_SITTER)
-
-
-def code_layer(folder: Path, home: Path, src: Path) -> dict[str, Any]:
-    """The code layer as the shipped flow builds it after an intake (P167): map code-import, here from tree-sitter."""
-    started = time.monotonic()
-    said = metaform(['map', 'code-import', 'from=tree-sitter'], home=home, src=src, cwd=folder)
-    found: dict[str, Any] = {'seconds': round(time.monotonic() - started, 1)}
-    for line in said.splitlines():
-        key, _, value = line.partition(': ')
-        if key in ('provider', 'symbols', 'files', 'edges', 'linked'):
-            try:
-                found[key] = json.loads(value)
-            except ValueError:
-                found[key] = value
-    return found
 
 
 def metaform(args: list[str], *, home: Path, src: Path, cwd: Path, check: bool = True) -> str:
@@ -745,10 +702,9 @@ def metaform(args: list[str], *, home: Path, src: Path, cwd: Path, check: bool =
 
 
 def metaform_home(folder: Path, home: Path, project: str, exported: Path | None, node_bytes: int | None, src: Path,
-                  *, dispatch: bool, code: bool = False) -> dict[str, Any] | None:
-    """A fresh Metaform home with the folder registered, its map imported, its code layer read when asked, dispatch
-    on when asked, and Claude Code recorded as provisioned, as metaform install leaves it, so no first-run notice
-    reaches the agent. Returns what the code import said."""
+                  *, dispatch: bool) -> None:
+    """A fresh Metaform home with the folder registered, its map imported, dispatch on when asked, and Claude Code
+    recorded as provisioned, as metaform install leaves it, so no first-run notice reaches the agent."""
     home.mkdir(parents=True)
     metaform(['add', 'project', project, str(folder)], home=home, src=src, cwd=folder)
     if exported is not None:
@@ -761,7 +717,6 @@ def metaform_home(folder: Path, home: Path, project: str, exported: Path | None,
     if claude:
         provisioned = 'import sys\nfrom metaform import harness\nharness.done(sys.argv[1])\n'
         subprocess.run([sys.executable, '-c', provisioned, claude], env=metaform_env(home, src), check=True)
-    return code_layer(folder, home, src) if code and exported is not None else None
 
 
 def brief(folder: Path, home: Path, src: Path, address: str | None) -> str:
@@ -1343,8 +1298,8 @@ def failures_seen(events: list[dict[str, Any]], after_turn: int | None) -> int |
 
 def first_search_and_target(calls: list[Call], target: str) -> dict[str, Any]:
     """Whether the agent opened the target file before it searched: the turn of its first search (Grep, Glob, a shell
-    grep or find, Metaform's code search) and of its first read of the target."""
-    searched = next((call.turn for call in calls if call.name in ('Grep', 'Glob', 'mcp__metaform__map_code-search')
+    grep or find) and of its first read of the target."""
+    searched = next((call.turn for call in calls if call.name in ('Grep', 'Glob')
                      or (call.name == 'Bash' and SEARCH_COMMAND.search(str(call.input.get('command', ''))))), None)
     opened = next((call.turn for call in calls if target and (
         (call.name == 'Read' and str(call.input.get('file_path', '')).endswith(target))
@@ -1603,18 +1558,14 @@ class Prepared:
     surface_error: str | None = None
     surface_home: Path | None = None
     surface_folder: Path | None = None
-    code: dict[str, Any] | None = None  # what map code-import said on the surface home; None when it was not run
-    code_error: str | None = None
     oracle: dict[str, dict[str, Any]] = field(default_factory=dict[str, dict[str, Any]])
     start: dict[str, Any] | None = None  # the start state's test failures
 
     @property
     def map_label(self) -> str:
         """How the Metaform arms' map stands, said beside every number they give."""
-        if self.code is None:
-            return 'map without code layer'
-        linked = cast(dict[str, Any], self.code.get('linked') or {})
-        return 'map with code layer' if linked.get('nodes') else 'map with code layer, no code linked to its nodes'
+        held = any(oracle.get('addresses_holding_file') for oracle in self.oracle.values())
+        return 'map with file refs' if held else 'map without file refs at the graded files'
 
 
 def served_src(prepared: Prepared, folder: Path, source: Source) -> Path:
@@ -1736,8 +1687,7 @@ def prepare_map(name: str, prepared: Prepared, options: Options, spend: Spend, c
     src = served_src(prepared, folder, source)
     prepared.surface_home, prepared.surface_folder = home, folder
     try:
-        prepared.code = metaform_home(folder, home, name, prepared.map_export, options.node_bytes, src, dispatch=True,
-                                      code=options.code_layer and bool(EXTRA_PATH))
+        metaform_home(folder, home, name, prepared.map_export, options.node_bytes, src, dispatch=True)
         prepared.surface = server_surface(folder, home, src)
     except Skip as skip:
         prepared.surface_error = str(skip)
@@ -1746,8 +1696,8 @@ def prepare_map(name: str, prepared: Prepared, options: Options, spend: Spend, c
 
 def check_on_map(prepared: Prepared, tasks: list[dict[str, Any]], source: Source) -> dict[str, str]:
     """What the map says of each task: a request that names an Address on the map is no blind placement and is
-    refused (a control is only told); and whether the code layer holds the graded file at the oracle Address, so the
-    oracle is the map's answer and not only its author's guess."""
+    refused (a control is only told); and whether the map's file refs, the sources layer, hold the graded file at the
+    oracle Address, so the oracle is the map's answer and not only its author's guess."""
     home, folder = prepared.surface_home, prepared.surface_folder
     if home is None or folder is None or prepared.surface is None:
         return {}
@@ -1760,18 +1710,17 @@ def check_on_map(prepared: Prepared, tasks: list[dict[str, Any]], source: Source
         if named and not task.get('control'):
             refused[task['id']] = f'the request names map Address {named[0]}'
         held: list[str] = []
-        if prepared.code is not None and task['grade'].get('file'):
-            said = metaform(['map', 'code-context', f'file={task["grade"]["file"]}', 'limit=1'], home=home, src=src,
-                            cwd=folder, check=False)
-            line = next((one for one in said.splitlines() if one.startswith('address: ')), 'address: []')
+        if task['grade'].get('file'):
+            said = metaform(['map', 'citing', 'key=path', f'value={task["grade"]["file"]}', 'limit=0', '--json'],
+                            home=home, src=src, cwd=folder, check=False)
             try:
-                held = [str(one) for one in cast(list[Any], json.loads(line.partition(': ')[2]))]
+                cited = cast(list[dict[str, Any]], json.loads(said).get('results') or [])
             except ValueError:
-                held = []
+                cited = []
+            held = sorted({str(one['address']) for one in cited if one.get('layer') == 'sources' and one.get('address')})
         prepared.oracle[task['id']] = {
             'address': task.get('address'), 'addresses_holding_file': held,
-            'confirmed': (task.get('address') in held) if task.get('address') and prepared.code is not None and
-                         cast(dict[str, Any], prepared.code.get('linked') or {}).get('nodes') else None,
+            'confirmed': (task.get('address') in held) if task.get('address') and held else None,
             'request_names': named}
     return refused
 
@@ -1821,7 +1770,6 @@ def one_run(task: dict[str, Any], arm: str, trial: int, prepared: Prepared, plan
     folder, home = here / 'repo', here / 'metaform-home'
     request = request_of(task, plan)
     prompt, mcp, allowed = request, None, [*CHECKS]
-    code = options.code_layer and bool(EXTRA_PATH)
     if arm in METAFORM_ARMS:
         if prepared.map_export is None or prepared.surface is None:
             raise Skip(f'no map or no server for {task["repo"]}: {prepared.surface_error or "see preparation"}')
@@ -1838,8 +1786,7 @@ def one_run(task: dict[str, Any], arm: str, trial: int, prepared: Prepared, plan
         # then the folder is set back to the task's start and the task is handed over at its own node.
         workspace(prepared.base, folder, seed.get('setup', []))
         src = served_src(prepared, folder, source)
-        record['code_layer'] = metaform_home(folder, home, task['repo'], prepared.map_export, options.node_bytes, src,
-                                             dispatch=True, code=code)
+        metaform_home(folder, home, task['repo'], prepared.map_export, options.node_bytes, src, dispatch=True)
         _, told = ticket(folder, home, src, seed['address'], request_of(seed, plan))
         seeded, events = agent_run(seed, 'metaform', told, folder, home, src, here / 'seed', prepared, options, spend,
                                    log, f'{tag}.seed', mcp, allowed)
@@ -1866,8 +1813,8 @@ def one_run(task: dict[str, Any], arm: str, trial: int, prepared: Prepared, plan
         shutil.copyfile(prepared.agents_md, folder / 'AGENTS.md')
         record['prompt_context_bytes'] = (folder / 'AGENTS.md').stat().st_size
     if arm in METAFORM_ARMS:
-        record['code_layer'] = metaform_home(folder, home, task['repo'], prepared.map_export, options.node_bytes, src,
-                                             dispatch=arm != 'metaform_brief', code=code)
+        metaform_home(folder, home, task['repo'], prepared.map_export, options.node_bytes, src,
+                      dispatch=arm != 'metaform_brief')
         if arm == 'metaform_brief':
             told = brief(folder, home, src, task.get('address'))
             prompt = f'{told}\n\n{request}'
@@ -2098,17 +2045,13 @@ def markdown(report: dict[str, Any]) -> str:
         prep = held['prepared']
         overview = cast(dict[str, Any], prep.get('agents_md') or {})
         made = cast(dict[str, Any], prep.get('map') or {})
-        code = cast(dict[str, Any] | None, held.get('code'))
         rows.append([name, f'`{held["commit"][:20]}`',
                      (f'{overview.get("bytes", "?")} bytes by {overview.get("model_resolved") or overview.get("model")}'
                       f', ${overview["cost_usd"]:.3f}' if overview.get('cost_usd') is not None else '–'),
                      f'{made.get("how", "–")}' + (f', ${made["cost_usd"]:.3f}' if made.get('cost_usd') is not None
                                                  else (', cost not known' if made else '')),
-                     (f'{code.get("provider")}: {code.get("symbols")} symbols, '
-                      f'{cast(dict[str, Any], code.get("linked") or {}).get("nodes", 0)} nodes linked, '
-                      f'{code.get("seconds")} s' if code else (held.get('code_error') or 'none')),
                      str(held.get('map_label') or '–')])
-    lines += table(['Repository', 'Commit', 'AGENTS.md (arm agents_md)', 'Map (Metaform arms)', 'Code layer',
+    lines += table(['Repository', 'Commit', 'AGENTS.md (arm agents_md)', 'Map (Metaform arms)',
                     'The Metaform arms ran on'], rows)
     starts = [(name, held['start']) for name, held in report['repos'].items() if held.get('start')]
     if starts:
@@ -2120,8 +2063,8 @@ def markdown(report: dict[str, Any]) -> str:
     oracles = [(task, held) for repo in report['repos'].values()
                for task, held in cast(dict[str, dict[str, Any]], repo.get('oracle') or {}).items()]
     if oracles:
-        lines += ['', 'Each task\'s oracle Address against the code layer: the Addresses whose code holds the graded file.',
-                  '']
+        lines += ['', ('Each task\'s oracle Address against the map\'s file refs: the Addresses whose sources ref holds '
+                       'the graded file.'), '']
         lines += table(['Task', 'Oracle', 'Addresses holding the file', 'Confirmed'],
                        [[task, str(held.get('address') or '–'), ', '.join(held['addresses_holding_file']) or 'none',
                          {True: 'yes', False: 'no', None: '–'}[held.get('confirmed')]] for task, held in oracles])
@@ -2272,9 +2215,9 @@ NOTES = (
     ('- Arm metaform_warm works a seed ticket at the same node in the same folder and home first, then the task: its '
      'memories and its ticket stay, as they would for the next agent there. The seed\'s cost is listed apart, as '
      'AGENTS.md\'s is.'),
-    ('- The Metaform arms run on the map the preparation names, with the code layer map code-import reads from '
-     'tree-sitter. A map with no sources layer links no code to its nodes, so code search finds symbols and files '
-     'but names no Address for them, and an oracle Address is then its task author\'s choice, not the map\'s.'),
+    ('- The Metaform arms run on the map the preparation names. A task\'s oracle Address is confirmed when the map\'s '
+     'sources layer cites the graded file there; a map with no such ref confirms none, and an oracle Address is then '
+     'its task author\'s choice, not the map\'s.'),
     ('- Differences against arm none pair runs of the same task and trial. With k=1 there is one pair per task, and '
      'the range across tasks shows how tasks differ, not run noise.'),
     ('- Fresh tokens are uncached input plus cache written, read tokens the cache read, from each request\'s usage in '
@@ -2338,8 +2281,6 @@ def parse(argv: list[str] | None) -> tuple[argparse.Namespace, Options]:
                         'from HEAD; it is recorded as <commit>-dirty with a sha256 of src/metaform')
     parser.add_argument('--allow-dirty-tests', action='store_true', help='evaluate a tree that holds untracked test '
                         'modules (test_*.py, *_test.py, conftest.py)')
-    parser.add_argument('--no-code-layer', action='store_true', help='run the Metaform arms on the map alone, without '
-                        'the code layer map code-import reads from tree-sitter')
     parser.add_argument('--remeasure', type=Path, help='measure a finished run\'s kept transcripts again (a results '
                         'folder holding results.json) and rewrite its results; spends nothing')
     parser.add_argument('--grep-rank', type=int, default=5, help='a task fails its check when a grep of its request '
@@ -2362,7 +2303,7 @@ def parse(argv: list[str] | None) -> tuple[argparse.Namespace, Options]:
                       intake_budget=args.intake_budget_usd, intake_max_turns=args.intake_max_turns,
                       intake_timeout=args.intake_timeout, placement_budget=args.placement_budget_usd,
                       allow_dirty=args.allow_dirty, allow_dirty_tests=args.allow_dirty_tests,
-                      code_layer=not args.no_code_layer, grep_rank=args.grep_rank, dry_run=args.dry_run, keep=args.keep)
+                      grep_rank=args.grep_rank, dry_run=args.dry_run, keep=args.keep)
     return args, options
 
 
@@ -2410,13 +2351,13 @@ def remeasure(folder: Path) -> int:
                     left['expected' if leftover(Path.home(), parent, name, session) else 'unexpected'].append(shown)
             run['home_changes'] = left
             run['isolation_breach'] = bool(left['unexpected'])
-        run.setdefault('map', 'map without code layer' if run['arm'] in METAFORM_ARMS else None)
+        run.setdefault('map', 'map' if run['arm'] in METAFORM_ARMS else None)
         if run['map'] is None:
             del run['map']
     for held in cast(dict[str, dict[str, Any]], report['repos']).values():
-        held.setdefault('map_label', 'map without code layer')
-        code = cast(dict[str, Any], held.get('code') or {})
-        if not cast(dict[str, Any], code.get('linked') or {}).get('nodes'):
+        held.setdefault('map_label', 'map')
+        code = cast(dict[str, Any], held.get('code') or {})  # a result from before 2026-10-15 read a code layer
+        if 'code' in held and not cast(dict[str, Any], code.get('linked') or {}).get('nodes'):
             for oracle in cast(dict[str, dict[str, Any]], held.get('oracle') or {}).values():
                 oracle['confirmed'] = None  # no code is linked to any node, so the layer cannot confirm an Address
     report['summary'] = summarise(report['runs'])
@@ -2472,20 +2413,10 @@ def main(argv: list[str] | None = None) -> int:
             archive = log / 'source.tar.gz'
             subprocess.run(['git', '-C', str(ROOT), 'archive', '--format=tar.gz', f'--output={archive}',
                             source.frozen], check=True)
-        code_error = None
-        if options.code_layer and METAFORM_ARMS & set(options.arms):
-            provider, said = code_provider(cache)
-            if provider is None:
-                code_error = said
-                print(f'code layer: none, {said}; the Metaform arms run on a map without one')
-            else:
-                EXTRA_PATH[:] = [provider]
-                print(f'code layer provider: {said}')
         for name in sorted({str(task['repo']) for task in tasks}):
             repo = declared[name]
             base, commit = snapshot(name, repo, scratch, source)
             prepared = repos[name] = Prepared(repo, base, commit)
-            prepared.code_error = code_error
             print(f'{name} at {commit}')
             for task in (task for task in tasks if task['repo'] == name and task['kind'] != 'probe'):
                 problem = check_task(task, repo, base, scratch, options.grep_rank)
@@ -2508,16 +2439,12 @@ def main(argv: list[str] | None = None) -> int:
                         print(f'  server: {surface["instructions_chars"]} characters of instructions, '
                               f'{surface["tools"]} tools in {surface["tools_list_bytes"]:,} bytes '
                               f'({surface["dispatch_tools"]} dispatch), {surface["resources"]} resources')
-                        code = prepared.code or {}
-                        print(f'  code layer: {code.get("provider") or "none"}, {code.get("symbols", 0)} symbols, '
-                              f'{cast(dict[str, Any], code.get("linked") or {}).get("nodes", 0)} nodes linked, '
-                              f'{code.get("seconds", 0)} s: {prepared.map_label}')
                         for task_id, problem in check_on_map(prepared, mine, source).items():
                             print(f'  task {task_id}: {problem}')
                             broken.append(task_id)
                         for task_id, held in prepared.oracle.items():
                             if held.get('address'):
-                                print(f'  task {task_id}: oracle {held["address"]}, code layer holds the file at '
+                                print(f'  task {task_id}: oracle {held["address"]}, file refs hold the file at '
                                       f'{", ".join(held["addresses_holding_file"]) or "no Address"}')
             except Skip as skip:
                 print(f'  preparation: {skip}')
@@ -2558,8 +2485,8 @@ def main(argv: list[str] | None = None) -> int:
                   'scratch': str(scratch)},
         'repos': {name: {'commit': held.commit, 'source': held.repo.get('url') or 'this repository',
                          'prepared': held.prep, 'surface': held.surface, 'surface_error': held.surface_error,
-                         'agents_md': str(held.agents_md) if held.agents_md else None, 'code': held.code,
-                         'code_error': held.code_error, 'map_label': held.map_label, 'oracle': held.oracle,
+                         'agents_md': str(held.agents_md) if held.agents_md else None,
+                         'map_label': held.map_label, 'oracle': held.oracle,
                          'start': held.start}
                   for name, held in repos.items()},
         'source_archive': 'source.tar.gz',

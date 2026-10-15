@@ -12,7 +12,7 @@
 
 <!-- web's instructions. Returned by metaform_instructions with module web, at metaform://instructions/web, and by
      metaform instructions web; printed by metaform help agents web and by the full form of the command-line guide.
-     Each of web's commands is its own tool, web_start and web_stop, described where the tool is listed. Empty sends
+     Each of web's commands is its own tool, web_start, web_stop and web_restart, described where the tool is listed. Empty sends
      nothing. Off when the module is disabled. -->
 <instructions>
 @STATE_INIT:

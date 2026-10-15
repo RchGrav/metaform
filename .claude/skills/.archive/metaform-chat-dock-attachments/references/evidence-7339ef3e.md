@@ -1,0 +1,1 @@
+metaform-chat-dock-attachments: "Use when editing chat attachments: paste, drop, paperclip."

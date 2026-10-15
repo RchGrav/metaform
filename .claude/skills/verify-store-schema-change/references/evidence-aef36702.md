@@ -1,0 +1,2 @@
+Error: /home/rich/.metaform/projects/-home-rich-metaform-001/feature-code-alignment-20261013.metaform.sqlite3 has schema version 22, which a Metaform reads from version 22; this Metaform supports version 21.
+Next: metaform map work open=true

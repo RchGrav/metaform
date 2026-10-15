@@ -19,7 +19,7 @@ import {agentsWindow, VIEW} from '/page/app/views/settings.js';
 import {follow3d} from '/page/app/views/lens.js';
 import {autoZoom2d, FOLLOW} from '/page/app/map2d/camera.js';
 import {DOCK} from '/page/app/dock/embody.js';
-import {openHelpdesk, drawAgentSessions} from '/page/app/dock/threads.js';
+import {openHelpdesk, drawAgentSessions, drawAgentList} from '/page/app/dock/threads.js';
 import {chatButton} from '/page/app/dock/send.js';
 import {callSystem} from '/page/app/dock/commands.js';
 import {calledOf} from '/page/app/board/messages.js';
@@ -254,6 +254,7 @@ export async function renderAgents(only = null) {
   followStart(D.sessions);
   setupNotice();
   drawAgentSessions();
+  drawAgentList();  // the full-size dock's agents, each with its state
   for (const draw of SESSIONS_DRAWN) draw();
   if (!some) D.subagents = found.subagents || [];  // the running sessions' own subagents, each a figure, `childFigures`
   if (claimed) {

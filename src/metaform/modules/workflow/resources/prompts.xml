@@ -148,7 +148,5 @@ Their answer: <answer/>
 <result/></prompt_efficiency>
   <workflow_builder verb="skill" name="workflow_builder" summary="prepare one request as a workflow and rules at its nodes">Follow this skill now. Its `# requires:` line names the libs it needs; call `workflow lib &lt;name&gt;` (the `workflow_lib` tool, or `metaform workflow lib &lt;name&gt;`) only for a lib whose marker is not already in your context.
 <result/></workflow_builder>
-  <code_links verb="skill" name="code_links" summary="walk the Addresses no code serves, the code no Address claims, the links no one has reviewed and the orphaned ones, and propose which symbols provide for which purpose, each with its why, for the person or another agent to accept">Follow this skill now. Its `# requires:` line names the libs it needs; call `workflow lib &lt;name&gt;` (the `workflow_lib` tool, or `metaform workflow lib &lt;name&gt;`) only for a lib whose marker is not already in your context.
-<result/></code_links>
 </commands>
 </prompts>

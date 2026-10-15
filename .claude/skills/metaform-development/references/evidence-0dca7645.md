@@ -1,0 +1,4 @@
+{"type":"queue-operation","operation":"enqueue","timestamp":"2026-10-15T18:26:34.924Z","sessionId":"a527df63-bd31-49dc-b7c4-ec271b42c078"}
+From the system agent: your session stopped with the ticket open at step 7 of 9. Go on with steps 8 and 9 where you left off, then close the ticket with its resolution. If something blocks you, say what in a step.
+Continuing with steps 8 and 9. The voice and web changes in the tree belong to another session; I didn't touch them.
+Nothing is committed: every change is in the working tree, waiting for Rich's yes. Running MCP servers, web servers and runners keep the old code until restarted.

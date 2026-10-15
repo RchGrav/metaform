@@ -1,0 +1,1 @@
+acp-client-capabilities-compaction: "Use when ACP compaction or \"Compact conversation\" appears."

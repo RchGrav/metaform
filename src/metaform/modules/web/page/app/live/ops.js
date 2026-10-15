@@ -16,6 +16,7 @@ import {renderLegend} from '/page/app/views/lens.js';
 import {build2D} from '/page/app/map2d/build.js';
 import {select, workPill, MERGE, renderMerges} from '/page/app/selection/select.js';
 import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
+import {drawAgentList} from '/page/app/dock/threads.js';
 import {Q, renderMessages} from '/page/app/board/messages.js';
 import {B} from '/page/app/board/refs.js';
 import {drawBoard, boardTickets} from '/page/app/board/board.js';
@@ -234,6 +235,7 @@ export async function ticketsChanged() {
   renderLegend();
   figures(S.tickets || []);
   boardFromTickets();
+  drawAgentList();  // the full-size dock's rows say each ticket's steps
   workInPanel();
   await build2D();
 }
@@ -337,6 +339,8 @@ export function listen() {
     // the browser's own reconnect, as after the server was restarted, VIEW-002: what changed while the stream was
     // down was announced to no page, so the layers and the map are read again, keeping the view and the selection
     if (opens++ && S.project) changed({topic: 'map.changed', payload: {project: S.project}});
+    // and the parts outside the map that read the server once, such as voice.js's engine, read it again
+    if (opens > 1) document.dispatchEvent(new CustomEvent('metaform:reconnected'));
   };
 }
 /* The topics the page takes apart from the map's changes. */

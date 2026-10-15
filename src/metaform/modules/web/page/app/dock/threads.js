@@ -16,7 +16,8 @@ import {stayedOff} from '/page/app/dock/send.js';
 import {talkAbout} from '/page/app/dock/commands.js';
 import {renderBoard} from '/page/app/board/board.js';
 import {wrote} from '/page/app/board/history.js';
-import {D, ticketOf, glyphFor, glyphOf, renderAgents} from '/page/app/agents/dispatch.js';
+import {narrowPage} from '/page/app/dock/place.js';
+import {D, ticketOf, glyphFor, glyphOf, renderAgents, agentAt} from '/page/app/agents/dispatch.js';
 import {agentName} from '/page/app/agents/pickers.js';
 import {isIntake, countOf} from '/page/app/session/tools.js';
 
@@ -100,8 +101,9 @@ export const isMine = chat => chat?.source === 'system';
 export const onOther = () => Boolean(DOCK.chat) && !isMine(DOCK.chat);
 export function drawTabs() {
   const tabs = $('#helpdesk .tabs'), others = DOCK.chats.filter(chat => !isMine(chat));
-  tabs.hidden = !others.length;
+  tabs.hidden = !others.length || listShown();  // at full size the agent list does their job
   fill(tabs, myTab(!onOther()), others.map(otherTab));
+  drawAgentList();
 }
 function myTab(on) {
   const glyph = myGlyph();
@@ -147,6 +149,84 @@ function closeChat(chat) {
   DOCK.chats = DOCK.chats.filter(one => one !== chat);
   if (DOCK.chat === chat) showMine(); else drawTabs();
 }
+/* At full size the dock lists its agents down its left side, messenger style: My agent first and pinned, then every
+ * running agent, then the other threads open here. In place of a last message each row says its task: the ticket's
+ * item and title, its steps done of planned and its state. A click opens its thread, as a tab does, and the one on view
+ * is marked. It is drawn from the sessions and tickets the live stream has the page read, `renderAgents` and
+ * `ticketsChanged`, and from the thread chosen; smaller, the list is not drawn and the tabs do its job. */
+export const listShown = () => $('#dock').className === 'open big' && !narrowPage();
+const LIST = {shown: false};
+export function drawAgentList() {
+  const box = $('#helpdesk .agentlist');
+  LIST.shown = listShown();
+  box.hidden = !LIST.shown;
+  if (!LIST.shown) return;
+  const running = D.sessions.filter(one => one.state === 'running');
+  const system = one => D.states?.[one.session_id]?.about === 'system';
+  const others = running.filter(one => !system(one)), listed = new Set(others.map(one => one.session_id));
+  const working = new Set(others.map(one => one.work_id));
+  // a thread waiting for its ticket's session is that session's row
+  const threads = DOCK.chats.filter(chat => !isMine(chat)
+    && !(chat.session ? listed.has(chat.session) : working.has(chat.target)));
+  keyedFill(box, [myRow(running.filter(system).at(-1)), ...others.map(runningRow), ...threads.map(threadRow)]);
+}
+/* One row of the list, kept while what it says is the same: `text` is everything it shows. */
+function listRow(key, {on, source, glyph, name, status, item, title, steps, session, open}) {
+  const text = JSON.stringify([on, source, glyph, name, status?.words, status?.why, item, title, steps]);
+  const kind = `agentrow${key === 'mine' ? ' mine' : ''}${on ? ' on' : ''}`;
+  return {key, text, make: () => h('button', {type: 'button', class: kind, 'data-source': source,
+    'data-session': session || '', 'aria-current': on ? 'true' : 'false',
+    title: [name, item, title].filter(Boolean).join(' · '), onclick: open},
+  glyph ? h('img', {class: 'glyph', src: glyph, alt: ''}) : h('i', {class: 'srcdot', 'aria-hidden': 'true'}),
+  h('span', {class: 'agentname'}, name), statusChip(status) || h('span'),
+  h('span', {class: 'agenttask'}, item ? h('b', {}, item) : null, item && title ? ' ' : '', title),
+  steps ? h('span', {class: 'agentsteps'}, steps) : null)};
+}
+/* What a session is doing, in the list's words: working, idle, or waiting on the person, with why. */
+function listState(session) {
+  const status = sessionStatus(session);
+  if (!status) return null;
+  const words = status.state === 'input_required' ? status.reason === 'login' ? status.words : 'Waiting on you'
+    : {working: 'Working', idle: 'Idle'}[status.reason] || status.words;
+  return {...status, words};
+}
+/* A thread's task: its ticket's item and title and its steps; a conversation or the intake says what it is. */
+function taskOf(work, session = null) {
+  const ticket = isIntake(work) ? null : ticketOf(work), about = session && D.states?.[session.session_id]?.about;
+  if (isIntake(work)) return {item: '', title: `The intake of ${S.project}`, steps: ''};
+  if (about || !ticket || ticket.held) {
+    return {item: '', title: session ? sessionTask(session) : ticket?.map?.title || ticket?.task || '', steps: ''};
+  }
+  const done = ticket.steps_done || 0;
+  return {item: ticket.map?.item || '', title: ticket.map?.title || ticket.task || ticket.note || '',
+    steps: ticket.steps ? `${done} of ${ticket.steps} steps` : done ? `${done} steps done` : 'No steps planned yet'};
+}
+function myRow(session) {
+  return listRow('mine', {on: !onOther(), source: 'system', glyph: myGlyph(), name: 'My agent',
+    status: session ? listState(session) : null, item: '', steps: '', session: session?.session_id,
+    title: session ? 'Your own system agent' : 'Not running: a message starts it', open: () => showMine()});
+}
+function runningRow(session) {
+  const chat = DOCK.chats.find(one => one.session === session.session_id), work = session.work_id;
+  return listRow(`s:${session.session_id}`, {on: Boolean(DOCK.chat) && DOCK.chat === chat,
+    source: chat?.source || sourceOf(work), glyph: ticketOf(work) && !isIntake(work) ? glyphOf(work) : null,
+    name: agentName(session.agent), status: listState(session), ...taskOf(work, session), session: session.session_id,
+    open: () => {  // the thread open at the click, which a row kept since it was drawn may not know of
+      const open = DOCK.chats.find(one => one.session === session.session_id);
+      if (open) showChat(open, {focus: true}); else agentAt(work, session.session_id);
+    }});
+}
+function threadRow(chat) {
+  const session = chat.session ? D.sessions.find(one => one.session_id === chat.session) : null;
+  return listRow(`t:${chat.target}:${chat.session || ''}:${chat.since}`, {on: chat === DOCK.chat, source: chat.source,
+    glyph: chat.source === 'agent' && ticketOf(chat.target) ? glyphOf(chat.target) : null,
+    name: chat.label.replace(/^the /, ''), status: session ? listState(session) : null, ...taskOf(chat.target, session),
+    session: chat.session, open: () => showChat(chat, {focus: true})});
+}
+// the list comes and goes with the dock's full size and the page's width, drawn only when that changes
+const sizeChanged = () => { if (LIST.shown !== listShown()) drawTabs(); };
+new MutationObserver(sizeChanged).observe($('#dock'), {attributes: true, attributeFilter: ['class']});
+matchMedia('(max-width: 820px)').addEventListener('change', sizeChanged);
 /* Recovery is attached to the session, never to whichever ticket happens to run next. Dispatch retains the
  * session and its end signals across reloads. A stop made here also keeps its timestamp in this browser, and the
  * dock lists only those stops, until the person forgets the line or the session runs again. */

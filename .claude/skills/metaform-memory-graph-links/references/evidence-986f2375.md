@@ -1,0 +1,1 @@
+"make sure your tickets are explicit about properties they relink closer to trunk if they get linked someplace   an agent very well might link on a leaf an dthen an agent links a different leaf it moves up to the common node toward trunk according to the transitive rule"

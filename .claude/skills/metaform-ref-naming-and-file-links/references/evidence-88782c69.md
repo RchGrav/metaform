@@ -1,0 +1,1 @@
+code.graph.knowledge#c makes each ref a stable record in the sources layer ({ref_id}@{address}:{join}, a store migration of the refs table). Both may change the store layout version and src/metaform/modules/map/

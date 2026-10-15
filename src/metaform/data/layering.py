@@ -3,7 +3,8 @@
 Every function works inside one open write transaction. Nothing an agent sends
 is refused for its content, BASE-044: an empty variable, a missing provenance,
 a taken name, a tag or source that does not fit, are stored as given or
-numbered, with a notice. An operation aimed at something that cannot change,
+numbered, with a notice; a name that would be read as an id or is a project root
+cannot name a layer and is refused, LAYER-028. An operation aimed at something that cannot change,
 such as hiding a layer that is not hideable,
 writes nothing and returns a notice saying why. A reference to no layer cannot
 be read and raises `StoreError`, STORE-026. Every change is an op on the base's
@@ -17,7 +18,7 @@ from typing import Any
 
 from .. import home
 from ..errors import StoreError
-from . import operations, rows, versions, views, writes
+from . import names, operations, rows, versions, views, writes
 from .ids import LAYER_NAME, TAG, is_id, new_id
 from .records import Layer, Notice, Outcome, Version
 from .selection import LayerRow, all_layers
@@ -25,6 +26,14 @@ from .session import Tx
 from .versions import BASE_KINDS
 
 KINDS = ('layer', 'base', 'memory')
+
+
+def _root(name: str, next_step: str) -> None:
+    """Refuse a layer name that is a project root: a layer's name is a namespace root, LAYER-028, and one named a
+    project root would collide with the map's addresses."""
+    if name in {root['name'] for root in names.roots()}:
+        raise StoreError(f'{name!r} cannot be a layer name: it is a project root, and a layer\'s name is a namespace '
+                         'root that would collide with the map, LAYER-028.', next_step)
 
 
 def _free_name(tx: Tx, name: str) -> str:
@@ -105,6 +114,7 @@ def create(tx: Tx, name: object, module: str, variable: Any, *, kind: str = 'lay
     if not isinstance(name, str) or not name or is_id(name):
         raise StoreError(f'{name!r} cannot be a layer name: it would be read as an id.',
                          'metaform map knowledge op=create layer=<name> variable=<question>')
+    _root(name, 'metaform map knowledge op=create layer=<name> variable=<question>')
     if kind == 'intake':  # the layer the intake writes is the base, the change order of 2026-10-07
         kind = 'base'
     if kind not in KINDS:
@@ -274,6 +284,7 @@ def rename(tx: Tx, layer: str, name: str, module: str) -> Outcome:
     found = rows.layer(tx, layer)
     if not LAYER_NAME.fullmatch(name) or is_id(name):
         raise StoreError(f'{name!r} cannot be a layer name.', 'metaform map layers')
+    _root(name, 'metaform map layers')
     if found.name == name and found.module == module:
         return Outcome()
     if found.name != name and tx.base.layer_by_name(name) is not None:

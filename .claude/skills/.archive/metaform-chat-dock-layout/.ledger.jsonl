@@ -1,0 +1,2 @@
+{"action": "create", "reason": "Dock layout knowledge from ticket #91 (wrapper structure, redraw paths, the step-update trap, the class-collision trap) has no home. The existing dock skills cover attachments and reply width only, so this takes the layout class of work.", "evidence": "references/evidence-a0ec2ac6.md"}
+{"action": "delete", "reason": "Dock layout rules are the metaform-web-ui Chat dock section.", "evidence": "references/evidence-da2c36bb.md", "absorbed_into": "metaform-web-ui"}

@@ -57,12 +57,6 @@ metaform workflow skill write_workflow
 metaform workflow skill import_workflow
 ```
 
-Tie the project's code to the map up front with `code_links`: it walks the
-Addresses no code serves and the code no Address claims, after `map
-code-import`, and proposes which symbols provide for which purpose, each with
-its why, for the person or another agent to accept with `map code-link
-op=accept`. It writes proposals only.
-
 Prepare incoming work with `workflow_builder`, which follows `write_workflow`
 and seeds its detailed rules at the affected map nodes. Judge results that
 need judgement with `workflow_evaluator` on a separate fresh agent. The

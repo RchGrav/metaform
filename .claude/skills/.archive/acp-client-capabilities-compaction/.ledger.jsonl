@@ -1,0 +1,2 @@
+{"action": "create", "reason": "New class of knowledge: dispatch is an ACP client, and an ACP agent only sends features the client advertises at initialize. No existing skill covers ACP capabilities or compaction. Born as an umbrella for ACP client capabilities, with compaction as the first case.", "evidence": "references/evidence-93cb5b40.md"}
+{"action": "delete", "reason": "Compaction capability and lifecycle are the acp-client-integration Compaction events section.", "evidence": "references/evidence-6c3afd25.md", "absorbed_into": "acp-client-integration"}

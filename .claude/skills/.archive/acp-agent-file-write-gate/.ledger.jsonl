@@ -1,0 +1,2 @@
+{"action": "create", "reason": "New class: an ACP runner must refuse an agent's file write before automatic approval. No existing skill covers adapter write paths or permission gating; the lesson is durable across adapters and future file-permission work.", "evidence": "references/evidence-ef637f0a.md"}
+{"action": "delete", "reason": "The write gate and its adapter table are the acp-client-integration File-write gate section and its reference.", "evidence": "references/evidence-ed59dc34.md", "absorbed_into": "acp-client-integration"}

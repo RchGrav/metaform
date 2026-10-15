@@ -44,7 +44,9 @@ export const ROAM = {figures: new Map(), seen: new Set(), last: 0, speed: 70, si
   // the work whose thread the person chose in the chat dock: its figure is drawn this much larger, moving as if busy
   focus: null, focused: 1.4,
   // the most pixels a figure stands on the screen, however near the camera is
-  most: 110};
+  most: 110,
+  // told the node when a figure starts or ends its time at work there, the work camera's `workChanged`
+  onWork: null};
 export const nodeById = (data, id) => data.nodes.find(node => node.id === id);
 export const primaryOf = data => data.nodes.find(node => node.t === 'el' && node.role === 'DE')
   || data.nodes.find(node => node.t === 'el');

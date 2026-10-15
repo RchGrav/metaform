@@ -1,0 +1,1 @@
+{"type":"text","text":"The guard stays an exact match on the six roots, because the settled <scope>@<content> layer form allows names like code.cpp@best_practices. Test test_a_layer_named_a_project_root_is_refused_naming_the_rule fails without the guard and passes with it."}

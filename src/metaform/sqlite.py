@@ -22,8 +22,8 @@ from typing import Any, BinaryIO
 
 from .errors import NewerStore, StoreError
 
-SCHEMA_VERSION = '21'  # the base store's layout, an op log from 21, STORE-046; the chassis, history and prompt databases keep their own, STORE-029
-COMPATIBLE_FROM = '21'  # the oldest layout whose code reads the store; 21 replaced its tables with the op log
+SCHEMA_VERSION = '22'  # the base store's layout, an op log from 21, STORE-046; the chassis, history and prompt databases keep their own, STORE-029
+COMPATIBLE_FROM = '22'  # the oldest layout whose code reads the store; 22 made each ref a record of the sources layer, STORE-012
 BUSY_SECONDS = 30  # how long a write waits for another process's write to finish, STORE-006
 
 Upgrade = Callable[[sqlite3.Connection, Path, str], Any]  # brings a file at an earlier version up to date; True when

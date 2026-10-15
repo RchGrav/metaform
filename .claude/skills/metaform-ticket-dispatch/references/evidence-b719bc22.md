@@ -1,0 +1,3 @@
+said: Your note 96f4f7f7123e97e5 reaches claude on code.analyzer.refactoring#1a after the turn in flight; it i
+
+uv run metaform dispatch note to=8864913087554a00a549c390a06f414d "From the system agent: running beside you now: code.analyzer.refactoring#1a (work id 9798b73d7422440c9d224f77a7b58e98), which deletes source_placement, the map code-* verbs and code_index.py and may drop the map module's code tables. You both may change the store layout version and src/metaform/modules/map/: agree by dispatch_note who bumps the layout first and which files each edits, before either does. Keep the map module importable at every step."

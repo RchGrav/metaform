@@ -18,7 +18,6 @@ from metaform import prompt_files
 from metaform.data import Where, shown_number
 from metaform.module import Context, latest_item, node_counts
 
-from .code import CODE_LAYER
 from .glossary import at_node
 
 SIDE = 8  # the neighbours drawn on each side before the rest are counted, so a busy node stays a few lines
@@ -44,12 +43,11 @@ def _plural(count: int, one: str, many: str) -> str:
     return f'{count} {one if count == 1 else many}'
 
 
-def _own(found: Where, code: str = 'code') -> list[tuple[str, str, str]]:
+def _own(found: Where) -> list[tuple[str, str, str]]:
     """What the map holds at the node itself: each kind as said with its count, its name, and the command line that
-    reads it; a kind with none is left out. The sources and the code layer are left out of the layer items: the read
-    shows the one and gives the other its own line."""
+    reads it; a kind with none is left out. The sources are left out of the layer items: the read shows them."""
     address = found.element.address if found.element is not None else ''
-    items = sum(len(group.items) for group in found.layers if group.layer not in ('sources', code))
+    items = sum(len(group.items) for group in found.layers if group.layer != 'sources')
     return [(_plural(count, one, many), many, read) for count, one, many, read in (
         (len(found.work), 'open work', 'open work', f'metaform map work node={address}'),
         (len(found.messages), 'message', 'messages', f'metaform map messages node={address}'),
@@ -72,7 +70,7 @@ class Around:
         everyone = (self.address, *self.above, *self.below)
         self.counts = node_counts(ctx.folder, everyone, project=ctx.project, session=ctx.session,
                                   layers=cast(list[str] | None, ctx.switches.get('layers')))
-        self.own = _own(found, CODE_LAYER)
+        self.own = _own(found)
         self.latest = self._latest()
         named = at_node(ctx.store, self.address) if ctx.store is not None else []
         self.terms = ctx.calls(_prompt('around_terms', terms=', '.join(named),

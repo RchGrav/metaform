@@ -20,6 +20,7 @@ from typing import Any, TypeVar, cast
 from ..errors import StoreError
 from ..wording import count
 from . import operations, rows, versions, views
+from . import refs as ref_records
 from .ids import as_object, encode_extra, encode_value, is_id, new_id, refs_fit
 from .records import ROLES, Element, Item, Join, Node, Notice, Outcome, Property, Ref, Version
 from .rows import Row
@@ -168,7 +169,7 @@ def _ifd(value: Any, notices: list[Notice]) -> str | None:
 
 def add_ref(tx: Tx, owner: str, key: Any, value: Any) -> Ref | Outcome:
     """Add one ref to an item's or a property's current version, STORE-012. The base holds no refs; an element's
-    refs are items of the sources layer."""
+    refs are records of the sources layer, so a ref added to one of them is linked at its node as a ref of its own."""
     key = key if isinstance(key, str) else json.dumps(key, ensure_ascii=False, sort_keys=True)
     value = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, sort_keys=True)
     kind = rows.kind_of(tx, owner)
@@ -179,6 +180,9 @@ def add_ref(tx: Tx, owner: str, key: Any, value: Any) -> Ref | Outcome:
     if current is None:
         return Outcome((Notice('owner', f'{owner} has no current version; nothing was written. See metaform map '
                                         f'history {owner}'),))
+    if kind == 'item' and rows.layer_name(tx, current.layer_id) == ref_records.SOURCES:
+        linked = ref_records.link(tx, key, value, Node.of(str(current['target_kind']), str(current['target_id'])))
+        return linked if isinstance(linked, Outcome) else Ref(key, value)
     stop = unchangeable(tx, rows.layer(tx, current.layer_id), owner)  # a ref is written in place, as an edit is
     if stop is not None:
         return Outcome((stop,))
@@ -197,6 +201,12 @@ def add_item(tx: Tx, layer: str, target: Node, value: Any, *, link: Node | None 
     record at its node whose task is the item's value, and the flag is not stored on the item, LAYER-021."""
     pairs, odd = refs_fit(refs)
     found = rows.layer(tx, layer)
+    if found.name == ref_records.SOURCES:  # each ref is a record of its own there, linked at the target
+        made, linked = ref_records.link_all(tx, target, refs)
+        if not made:
+            return Outcome((*linked, Notice('refs', 'The sources layer holds refs, each a record of its own, and no '
+                                                    'ref was given; nothing was written.')))
+        return _with(views.item_by_id(tx, made[0].id), linked)
     notices: list[Notice] = []
     answers = _as_answers(value, notices)
     if not answers:
@@ -408,6 +418,11 @@ def edit(tx: Tx, thing: str, changes: Any) -> Version | Outcome:
     """
     kind = rows.kind_of(tx, thing)
     row, found = rows.own_row(tx, kind, thing)
+    if found.name == ref_records.SOURCES and ref_records.is_record(row):  # a ref changes by a version, its id kept
+        edited = ref_records.edit(tx, thing, {str(key): value for key, value in (as_object(changes) or {}).items()})
+        if isinstance(edited, Outcome):
+            return edited
+        return _with(views.version(tx, kind, thing, tx.base.versions[thing][-1]), list(edited.notices))
     stop = unchangeable(tx, found, thing)
     if stop is not None:
         return Outcome((stop,))
@@ -452,6 +467,8 @@ def remove(tx: Tx, thing: str | int) -> Outcome:
         return _remove_ref(tx, thing)
     kind = rows.kind_of(tx, thing)
     row, found = rows.own_row(tx, kind, thing)
+    if found.name == ref_records.SOURCES and ref_records.is_record(row):  # removed by a version, kept in its history
+        return ref_records.unlink(tx, thing)
     stop = unchangeable(tx, found, thing)
     if stop is not None:
         return Outcome((stop,))

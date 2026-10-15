@@ -84,6 +84,18 @@ Each is served only to a client that declares it on the request, and every tool 
 
 ## Tools
 
+### agents
+
+The roles of the agents Metaform starts, the prompts each is sent, and what each session was sent.
+
+| Tool | What it does | Effect |
+|---|---|---|
+| `agents_drop` | Go back to a prompt's shipped text, so its edit is no longer sent. Caution: Every agent of the roles that name this prompt is sent the shipped text from its next turn. | write |
+| `agents_override` | Save an edit of a role's prompt, sent in place of the shipped text from the next turn. Caution: Every agent of the roles that name this prompt is sent the edit from its next turn. | write |
+| `agents_role` | Read one role: what it is for, each prompt it is sent with its text and version, its tools and authority, and the agents running as it. | read |
+| `agents_roles` | List the roles of the agents Metaform starts, with the prompts each is sent. | read |
+| `agents_sent` | Read which role a session ran as and which prompt versions each of its turns carried. | read |
+
 ### dispatch
 
 Start an agent on a ticket through ACP, follow it, message it and stop it.
@@ -101,6 +113,7 @@ Start an agent on a ticket through ACP, follow it, message it and stop it.
 | `dispatch_handoff` | Read a ticket handed to you by its id: the ticket, the node it is at and the counts there with the calls that read them, and one line saying to work it with map_work. Its reads are named as tool calls, with metaform:// links to the node and the ticket. | read |
 | `dispatch_intake` | Start an agent on this project's intake, recording the map as it follows the intake prompt. An open page follows it. It counts as a summoned agent; one intake runs at a time. | write, open world |
 | `dispatch_interrupt` | Interrupt the turn of the agent working a ticket, keeping its conversation open. | write, open world |
+| `dispatch_link` | Link a file to the element whose functionality it realizes: its path added to the element's refs in the sources layer, which unlocks writing it and places it on the map. Optional `ref`, the ref's name, and `why`. | write |
 | `dispatch_merges` | List the agents' merges waiting for the person's review, the soonest first. | read |
 | `dispatch_options` | List the settings each agent offers, its model, effort, mode and the rest, as it offered them at its last session in this project, and the ones dispatch_<agent>_<option> gives it. prime=true starts the agent once to read them, with no prompt. | write, open world |
 | `dispatch_message` | Send a person's message to the agent working a ticket. | write, open world |
@@ -140,7 +153,7 @@ Serve the intake and record its result as it is reasoned.
 | Tool | What it does | Effect |
 |---|---|---|
 | `intake_element` | Record one element of the intake at its address; recording it again replaces the fields given. | write |
-| `intake_finish` | Finish the intake and make its base the active map, keeping the earlier one whole. Switch back with metaform map activate <previous-name>. After finish the metaform changes by refining, metaform map refine, or by another intake. | write, open world |
+| `intake_finish` | Finish the intake and make its base the active map, keeping the earlier one whole. Switch back with metaform map activate <previous-name>. After finish the metaform changes by refining, metaform map refine, or by another intake. | write |
 | `intake_prompt` | Read the intake instructions an agent follows to record this project's map. | read |
 | `intake_purpose` | Record one purpose record: a receiver's OP and the elements that serve it, with its EF. Recorded again with an element it holds, the fields given replace its own and new elements are added. | write |
 | `intake_remove` | Remove one element, one purpose record, or one element from a purpose record, from the intake being recorded. Each is named by addresses. | remove |
@@ -163,13 +176,6 @@ Read and write this project's functional map and its layers.
 | `map_children` | List the artifact types one segment toward the leaves from an address. | read |
 | `map_citing` | Find everything on the map whose refs hold a key and value, such as a file path. | read |
 | `map_clear` | Remove a select or mask set at an address. | write |
-| `map_code-changes` | Find the Addresses a change touches: the symbols git's changed lines fall in, their Addresses, and the Addresses of their callers and subclasses. | read |
-| `map_code-context` | Read the code at an Address: its symbols and files, the calls in and out with the Address at the other end, and the code serving it; or the Addresses of a symbol or a file. | read |
-| `map_code-gaps` | Find code without a purpose, the symbols no Address claims, and purpose without code, the Addresses no symbol serves. | read |
-| `map_code-import` | Read the project's code into the code layer, symbols with their calls, uses, bases and imports, from SCIP, a code-graph MCP server or tree-sitter, and link each file the sources cite to its node. | write |
-| `map_code-link` | Link code symbols to the Address whose purpose they provide for, with a why, as your work shows it; or unlink, move, propose, accept or reject. | write |
-| `map_code-search` | Find code symbols by words, a name or qn pattern, a file pattern or a label, each with the Addresses it is the code of. | read |
-| `map_code-trace` | Trace calls between Addresses: the shortest call path from one Address or symbol to another, or every Address reached within depth calls. | read |
 | `map_collapse` | Rewrite the current map as a new base of one base layer and make it active; the old one is kept whole. Each element and join is written once, with the same ids. Caution: This changes the active map for every agent and the page of the project. The previous base is kept; map activate <its name> switches back. | write |
 | `map_context` | Read the properties that apply at an address, and those attached toward the leaves that are visible there. | read |
 | `map_critic` | Start a blind-spot critic run: a new blind-spot layer, and the critic prompt with the whole base. | write |
@@ -210,7 +216,7 @@ A memory graph, presented at each node of the map as the MCP reference memory se
 | Tool | What it does | Effect |
 |---|---|---|
 | `memory_add_observations` | Add observations to memory entities that already exist, at a node or in the whole memory graph. | write |
-| `memory_create_entities` | Record what you learned at a node of the map: new memory entities with their observations. Without node, they go in the memory graph joined to no node. | write |
+| `memory_create_entities` | Record what happened in the work at a node of the map: new memory entities with their observations. What is true of the project goes to the knowledge layers. Without node, they go in the memory graph joined to no node. | write |
 | `memory_create_relations` | Relate memory entities to one another, at a node or in the whole memory graph. Relations should be in active voice. | write |
 | `memory_delete_entities` | Delete memory entities and their relations, at a node or in the whole memory graph. | remove |
 | `memory_delete_observations` | Delete observations from memory entities, at a node or in the whole memory graph. | remove |
@@ -263,6 +269,7 @@ Start and stop Metaform's web GUI, and serve web variants.
 |---|---|---|
 | `web_start` | Start the web GUI, or show the address it already runs at. | write |
 | `web_stop` | Stop the web GUI. | write |
+| `web_restart` | Stop the web GUI and start it again; it comes back even if your session ends meanwhile. | write |
 
 ### workflow
 

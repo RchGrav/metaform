@@ -1,0 +1,2 @@
+{"action": "create", "reason": "The attachment design rules (single path, paste rule, refusals as notes, drop marking) are durable facts future chat-dock edits must respect, and no existing skill covers them.", "evidence": "references/evidence-db8e6790.md"}
+{"action": "delete", "reason": "Attachment rules are the metaform-web-ui Chat dock section.", "evidence": "references/evidence-7339ef3e.md", "absorbed_into": "metaform-web-ui"}

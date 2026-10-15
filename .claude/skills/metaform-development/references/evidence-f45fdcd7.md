@@ -1,0 +1,1 @@
+note=$(uv run metaform map work id=$id 2>&1 | sed -n 's/^note: //p'); uv run metaform map work op=edit id=$id note=\"$note Final verb set, Rich 2026-10-15: make a channel, join a channel, invite an agent to a channel ...\"

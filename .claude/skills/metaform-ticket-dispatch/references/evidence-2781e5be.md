@@ -1,0 +1,1 @@
+Error: The agent that sent note 96f4f7f7123e97e5 is no longer at work on an open ticket, so the reply would reach no one. Next: call dispatch_peers. | Error: A note is at most 1000 characters, and this one is 1004. Say the point and where the rest is, such as a file or your ticket.

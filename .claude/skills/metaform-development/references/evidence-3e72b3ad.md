@@ -1,0 +1,1 @@
+Tickets made with store.add_work in tests are not numbered; use run('map','work','op=add',...,'title=...') to get an item and title.

@@ -77,7 +77,11 @@ of a node; a module without it is read number by number. memory's shows it.
 Every prompt an agent reads is in `resources/prompts.xml`, an element named
 for the prompt, never in Python, MCP-031. A module reads one with
 `prompt_files.text(resources.files(__name__), name)`, or `prompt_files.required`
-when a missing prompt is a defect. `instructions` is listed in the
+when a missing prompt is a defect. A prompt sent to an agent is read with
+`prompt_files.served(resources.files(__name__), name, **fills)`: the home's
+prompt store keeps it as `<module>:<name>`, a version for each shipped text,
+and an edit saved there, `agents override`, is sent in its place, STORE-044.
+`instructions` is listed in the
 instructions agents read; a copy writes its own name in place of `template`.
 Its `rules` hold the module's rules, `<rule why="the reason">One sentence.</rule>`
 each; the MCP server lists every enabled module's at the end of

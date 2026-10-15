@@ -1,0 +1,3 @@
+uv run metaform map work op=edit id=$c hold=false 2>&1 | grep -E "Error" ; uv run metaform dispatch start $c claude 2>&1 | grep -E "pid|state|Error"
+
+uv run metaform map work op=done id=b6a6685e6d4b45b89ab17e60bf74f431 resolution="Cancelled: the source_placement module was deleted by code.analyzer.refactoring#1a on 2026-10-15; files are now placed by the refs agents must link before writing (code.dispatcher.agent#3d)." why="Rich, 2026-10-15: the refactor module is not native to Metaform and its placement was inaccurate; call its work done."

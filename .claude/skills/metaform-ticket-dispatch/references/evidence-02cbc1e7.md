@@ -1,0 +1,1 @@
+said: Your note 8f2dc61feda1f5a9 reaches claude on code.graph.knowledge#d now; it is kept on every ticket it touches.

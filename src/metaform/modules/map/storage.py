@@ -1161,20 +1161,6 @@ def item_at(tx: Tx, address: str, number: int) -> dict[str, Any] | None:
     if not rows:
         return None
     held = rows[0]
-    if held["kind"] == "code":  # a link of the code layer, `code.py`: the symbol and the node whose purpose it serves
-        try:
-            found = tx.views.item_by_id(held["item_id"])
-        except KeyError:
-            return None
-        if found.orphaned:
-            return None
-        value: dict[str, Any] = as_object(found.value) or {}
-        parts = [f"{key}: {value[key]}" for key in ("symbol", "label", "file", "count", "state", "by") if value.get(key)]
-        if value.get("files"):  # one decision naming several symbols, `code.py`: its files, then its first symbols
-            parts.append("files: " + ", ".join(str(one) for one in value["files"]))
-        parts += [f"{ref.key}: {ref.value}" for ref in found.refs if ref.key == "qn"]
-        return {"kind": "code", "title": held["title"], "why": held["why"], "body": "\n".join(parts), "links": [],
-                "id": found.id}
     if held["kind"] == "work":
         row = tx.execute("SELECT * FROM work WHERE work_id=?", (held["item_id"],)).fetchone()
         if row is None:
@@ -1198,7 +1184,7 @@ def item_at(tx: Tx, address: str, number: int) -> dict[str, Any] | None:
 
 
 def listed_items(tx: Tx, address: str, before: int | None = None, limit: int = 40) -> list[dict[str, Any]]:
-    """The work records, messages and code links numbered at `address` below `before`, newest first, at most `limit`,
+    """The work records and messages numbered at `address` below `before`, newest first, at most `limit`,
     as items are listed, MCP-037: each one's number, kind, title and why, from one read of the address's numbers. One
     whose record is gone is left out, as `item_at` leaves it out."""
     rows = sorted((row for row in tx.tables().rows("numbered", {"address": address}, limit=0).results
@@ -1208,12 +1194,7 @@ def listed_items(tx: Tx, address: str, before: int | None = None, limit: int = 4
         if len(found) >= limit:
             break
         kind: str | None = None
-        if held["kind"] == "code":
-            try:
-                kind = None if tx.views.item_by_id(held["item_id"]).orphaned else "code"
-            except KeyError:
-                kind = None
-        elif held["kind"] == "work":
+        if held["kind"] == "work":
             row = tx.execute("SELECT 1 FROM work WHERE work_id=?", (held["item_id"],)).fetchone()
             kind = "work" if row is not None else None
         else:
@@ -1321,50 +1302,6 @@ def upgrade(tx: Any, found: int) -> None:
         for row in tx.rows('work', limit=0).results:
             if row['condition'] in renamed:
                 tx.update('work', {'row': row['row']}, {'condition': renamed[row['condition']]})
-    if 11 <= found < 14:
-        # Version 13 names a SCIP symbol by its descriptors, as the other providers name theirs, and version 14 keys a
-        # symbol by its file and qualified name and records the names a file's calls did not find: every file is read
-        # again at the next map code-import, and the links the layer holds as items are taken into code_links then.
-        for row in tx.rows('code_files', limit=0).results:
-            tx.delete('code_files', {'layer_id': row['layer_id'], 'path': row['path']})
-
-
-# The code layer's index, `code.py`: each file a provider was read for with its stamp, the hash of its bytes, the git
-# commit it was read at and the names its calls did not find, the symbols it declares, each by its file and qualified
-# name, the calls, imports, uses, bases and tests that start in it with the file each reaches, and the links that tie
-# a symbol to the node whose purpose it provides for, at a join with the provider it is the code of when one is named.
-# Kept under the code layer, so taking the layer off takes its index with it. A link an agent decided is also held by
-# an item of the layer at its node, numbered, MCP-037, one item for each decision however many symbols it names;
-# taking that item off takes its links.
-CODE_TABLES = (Table(
-    'code_files', place='metaform', key=('layer_id', 'path'),
-    columns=(Column('layer_id', required=True), Column('path', required=True), Column('stamp'), Column('hash'),
-             Column('provider'), Column('symbols', 'int', default=0), Column('read', required=True), Column('commit'),
-             Column('unresolved', 'json')),
-    on_remove=(('layer', 'layer_id', 'delete'),),
-), Table(
-    'code_symbols', place='metaform', key=('layer_id', 'path', 'qn'),
-    columns=(Column('layer_id', required=True), Column('qn', required=True), Column('name', required=True),
-             Column('label', required=True), Column('path', required=True), Column('start_line', 'int', default=0),
-             Column('end_line', 'int', default=0), Column('symbol')),
-    indexes=(Index(('layer_id', 'qn')),),
-    on_remove=(('layer', 'layer_id', 'delete'),),
-), Table(
-    'code_edges', place='metaform', key=('layer_id', 'path', 'source', 'target_path', 'target', 'kind'),
-    columns=(Column('layer_id', required=True), Column('source', required=True), Column('target', required=True),
-             Column('kind', required=True), Column('path', required=True), Column('line', 'int', default=0),
-             Column('target_path')),
-    indexes=(Index(('layer_id', 'target', 'kind')), Index(('layer_id', 'path')), Index(('layer_id', 'target_path'))),
-    on_remove=(('layer', 'layer_id', 'delete'),),
-), Table(
-    'code_links', place='metaform', key=('layer_id', 'node_kind', 'node_id', 'path', 'qn'),
-    columns=(Column('layer_id', required=True), Column('node_kind', required=True), Column('node_id', required=True),
-             Column('qn', required=True), Column('link_id', required=True), Column('name'), Column('label'),
-             Column('path'), Column('state', required=True), Column('by'), Column('why'), Column('item_id'),
-             Column('proposal', 'json'), Column('provider')),
-    indexes=(Index(('link_id',)), Index(('layer_id', 'qn')), Index(('item_id',))),
-    on_remove=(('layer', 'layer_id', 'delete'), ('item', 'item_id', 'delete')),
-))
 
 
 TABLES = Tables(
@@ -1376,8 +1313,10 @@ TABLES = Tables(
     # 13: the code layer's links in a table of their own, a symbol's provider form beside its qualified name, and the
     # file each edge reaches, P167, which version 9 never names; 14: a code symbol keyed by its file and qualified name,
     # a file's commit and unresolved names, and the provider a join's link is the code of, P167; 15: the project's
-    # glossary terms, in a table of its own, so version 9 still reads and writes the store
-    version=15,
+    # glossary terms, in a table of its own, so version 9 still reads and writes the store; 16: the code layer's four
+    # tables dropped with map code-import and the other code-* verbs, code.analyzer.refactoring#1a (2026-10-15), and
+    # an earlier version that still declares them makes them again, empty, so version 9 still reads the store
+    version=16,
     compatible_from=9,
     upgrade=upgrade,
     legacy_upgrade=legacy_upgrade,
@@ -1406,7 +1345,7 @@ TABLES = Tables(
         # `items` once the records written before numbering are numbered
         'numbering', place='metaform', key=('name',),
         columns=(Column('name', required=True), Column('at', required=True)),
-    ), *CODE_TABLES, Table(
+    ), Table(
         # the project's glossary terms the person and agents add, edit or remove, `glossary.py`, in the project's own
         # database so a new intake keeps them; an element's own name is read from the map and kept here only when
         # edited or removed. A term added at a node holds its number there.

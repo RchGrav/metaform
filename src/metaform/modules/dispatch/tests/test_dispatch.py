@@ -261,6 +261,22 @@ def test_the_agent_starts_in_its_own_process_group_and_stopping_ends_the_group(m
 
 # ------------------------------------------------------------------ a dispatched session
 
+def test_a_worker_s_first_turn_tells_the_prompt_versions_it_carried_and_agents_keeps_them(dispatch):
+    """Ticket 3a1306bd: dispatch serves its prompts through the prompt store and its runner tells each turn's versions
+    on prompt.sent, which the agents module keeps for its sent verb."""
+    dispatch.start('hold')
+    eventually(lambda: dispatch.received('session/prompt'))
+    session = dispatch.session().extra['session_id']
+
+    def kept():
+        found = dispatch.run('agents', 'sent', f'session={session}', '--json', cwd=dispatch.folder, ok=False)
+        return json.loads(found.stdout) if found.returncode == 0 else None
+    sent = eventually(kept)
+    assert (sent['role'], sent['agent'], sent['work_id']) == ('worker', 'claude', dispatch.id)
+    assert {'name': 'dispatch:work', 'versions': [1]} in sent['prompts']
+    dispatch.stop()
+
+
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('QUAL-002')
 def test_session_new_is_in_the_project_folder_with_metaform_mcp_and_the_person_environment(dispatch):
@@ -1934,14 +1950,14 @@ def test_the_handoff_is_the_brief_the_ticket_its_node_and_counts_under_three_kil
     ticket's fields, the nodes it links by address, the node's brief with the counts there and the MCP calls that
     read them, and the metaform:// links of the node and the ticket, never the JSON of what is held. The full
     worker's brief is no longer sent; full=true reads it on demand."""
-    from metaform.modules.dispatch import handoff_prompt
+    from metaform.modules.dispatch import handoff_prompt, prompt
     dispatch.start('hold')
     [sent] = eventually(lambda: dispatch.received('session/prompt'))
     text = sent['params']['prompt'][0]['text']
     first, _, rest = text.partition('\n\n')
     assert first == (f'Work ticket {dispatch.id} with the map_work tool. Use Metaform\'s memory tool to store what you '
                      f'learn under the functional namespace of your assignment, {NODE}, so future agents working there '
-                     'can retrieve it.')
+                     f'can retrieve it. {prompt("work_link")}'), 'the rule on writing files is one line after it, #3d'
     assert f'ticket: {dispatch.id}' in rest and f'linked: {LINKED}' in rest
     assert f'▶ {NODE}' in rest and f'map_work node={NODE}' in rest and 'metaform map work' not in text, \
         'the reads are named as the MCP calls the agent makes'
@@ -1959,6 +1975,18 @@ def test_the_handoff_is_the_brief_the_ticket_its_node_and_counts_under_three_kil
         'read on the command line, the same hand-off with its reads named as commands'
     full = run('dispatch', 'handoff', f'id={dispatch.id}', 'full=true', cwd=dispatch.folder).stdout
     assert full.startswith(brief) and full.endswith(read)
+
+
+@pytest.mark.req('VIEW-034')
+def test_the_handoff_carries_the_persons_note_at_the_node_whole_and_nothing_when_none_is_set(dispatch, run):
+    """code.graph.knowledge#d: the person's note is where they write something for agents at a node, so until pushed
+    delivery is built, the ticket's first message carries it whole whenever it is set."""
+    from tests.storekit import page_note
+    assert "the person's note here" not in run('dispatch', 'handoff', f'id={dispatch.id}', cwd=dispatch.folder).stdout
+    whole = 'Ask before changing the engine. ' + 'x' * 2000
+    page_note('proj', f'element:{NODE}', whole)
+    read = run('dispatch', 'handoff', f'id={dispatch.id}', cwd=dispatch.folder).stdout
+    assert f"the person's note here: {whole}\n" in read
 
 
 # ------------------------------------------------------------------ the ACP harness in full, Phase 2
@@ -3389,6 +3417,7 @@ def test_the_runner_serves_files_and_terminals_confined_to_the_session_folder(di
     """P019: the runner offers ACP's fs and terminal methods; a file inside the session's folder is written and read
     by line, one outside it is refused and said in the thread, and a terminal runs, exits, gives its output and is
     released, its line kept in the thread."""
+    run('dispatch', 'link', 'file=fake-client/note.txt', f'node={NODE}', cwd=dispatch.folder)  # unlocked, #3d
     dispatch.start('ask', FAKE_ACP_CLIENT='1')
     [client] = eventually(lambda: dispatch.logged('client'))
     offered = dispatch.received('initialize')[0]['params']['clientCapabilities']
@@ -3406,6 +3435,103 @@ def test_the_runner_serves_files_and_terminals_confined_to_the_session_folder(di
     state = eventually(lambda: next((json.loads(one.value) for one in dispatch.items('note')
                                      if one.extra['name'] == 'state' and json.loads(one.value)['files']), None))
     assert {'path': 'fake-client/note.txt', 'action': 'read'} in state['files']
+    dispatch.stop()
+
+
+def test_a_write_to_an_unlinked_file_is_refused_with_the_link_call_and_goes_through_once_linked(dispatch, run,
+                                                                                               tmp_path):
+    """code.dispatcher.agent#3d: a file no element's ref names exactly is locked for writing, the refusal naming the
+    call that links it; a read of it is not refused; once dispatch link adds its ref the same write goes through and
+    the file is placed exactly. A path .metaform/ignore.txt holds stays read-only, linked or not."""
+    (dispatch.folder / 'src').mkdir(exist_ok=True)
+    (dispatch.folder / 'src' / 'fresh.py').write_text('old\n', encoding='utf-8')
+    (dispatch.folder / 'rich').mkdir(exist_ok=True)
+    (dispatch.folder / 'rich' / 'notes.md').write_text('mine\n', encoding='utf-8')
+    (dispatch.folder / '.metaform').mkdir(exist_ok=True)
+    (dispatch.folder / '.metaform' / 'ignore.txt').write_text('rich/\n', encoding='utf-8')
+    run('dispatch', 'link', 'file=rich/notes.md', f'node={NODE}', cwd=dispatch.folder)
+    gate = tmp_path / 'linked'
+    dispatch.start('hold', FAKE_ACP_WRITES='src/fresh.py,rich/notes.md', FAKE_ACP_WRITE_GATE=str(gate))
+    [first] = eventually(lambda: dispatch.logged('writes'))
+    assert [one.get('content') for one in first['read']] == ['old\n', 'mine\n'], 'reads are never refused'
+    unlinked, ignored = (json.dumps(one) for one in first['write'])
+    assert 'To unlock access to this file, please first link it to its functionality in the map.' in unlinked
+    assert 'dispatch_link file=src/fresh.py node=' in unlinked
+    assert 'error' in json.loads(ignored) and 'read-only to agents' in ignored
+    assert (dispatch.folder / 'src' / 'fresh.py').read_text(encoding='utf-8') == 'old\n'
+    linked = json.loads(run('dispatch', 'link', 'file=src/fresh.py', f'node={NODE}', '--json',
+                            cwd=dispatch.folder).stdout)
+    assert (linked['file'], linked['linked'], linked['made']) == ('src/fresh.py', True, False)
+    gate.write_text('', encoding='utf-8')
+    [again] = eventually(lambda: dispatch.logged('writes_again'))
+    assert 'error' not in again[0], again[0]
+    assert 'read-only to agents' in json.dumps(again[1]), 'the ignore list holds it whatever its link'
+    assert (dispatch.folder / 'src' / 'fresh.py').read_text(encoding='utf-8') == 'written\n'
+    assert (dispatch.folder / 'rich' / 'notes.md').read_text(encoding='utf-8') == 'mine\n'
+    state = eventually(lambda: next((json.loads(one.value) for one in dispatch.items('note')
+                                     if one.extra['name'] == 'state'
+                                     and {'path': 'src/fresh.py', 'action': 'edit'} in json.loads(one.value)['files']),
+                                    None))
+    assert (NODE, 'edit') in [(one['address'], one['action']) for one in state['touched']]
+    dispatch.stop()
+
+
+def test_dispatch_link_adds_the_ref_beside_the_elements_own_and_makes_an_address_that_has_no_element(dispatch, run):
+    from metaform.data import Node
+    from metaform.modules.dispatch.runner import placed, sources_index
+    run('dispatch', 'link', 'file=src/a.py', f'node={NODE}', cwd=dispatch.folder)
+    run('dispatch', 'link', 'file=src/b.py', f'node={NODE}', cwd=dispatch.folder)
+    again = json.loads(run('dispatch', 'link', 'file=src/b.py', f'node={NODE}', '--json', cwd=dispatch.folder).stdout)
+    assert again['linked'] is False
+    dispatch.store.layer('base', 'intake', 'The map.', kind='intake', mutable=False, hideable=False)
+    made = json.loads(run('dispatch', 'link', 'file=docs/new.md', 'node=document.guide.new', '--json',
+                          cwd=dispatch.folder).stdout)
+    assert made['made'] is True and dispatch.store.element('document.guide.new', raw=True) is not None
+    node = dispatch.store.element(NODE)
+    held = dispatch.store.refs(Node('element', node.id))  # each a record of its own, code.graph.knowledge#c
+    assert [(ref.key, ref.value, ref.ref) for ref in held] == [('path', 'src/a.py', f'a@{NODE}'),
+                                                               ('path', 'src/b.py', f'b@{NODE}')]
+    index = sources_index(dispatch.store, str(dispatch.folder))
+    assert placed(index, 'src/a.py') == ([{'kind': 'element', 'id': node.id, 'address': NODE}], True)
+    assert placed(index, 'src/a.py/inner')[1] is False, 'a folder fallback is not exact'
+    assert placed(index, 'docs/new.md')[1] is True
+
+
+@pytest.mark.cli_process
+def test_a_burst_of_reads_of_linked_files_reads_the_sources_layer_once(dispatch, run, monkeypatch):
+    from metaform.data import Store
+    from metaform.module import context
+    from metaform.modules.dispatch import runner
+    (dispatch.folder / 'src').mkdir(exist_ok=True)
+    for name in ('a', 'b', 'c'):
+        (dispatch.folder / 'src' / f'{name}.py').write_text(name, encoding='utf-8')
+        run('dispatch', 'link', f'file=src/{name}.py', f'node={NODE}', cwd=dispatch.folder)
+    reads = []
+    real = runner.sources_index
+    monkeypatch.setattr(runner, 'sources_index', lambda *given: reads.append(1) or real(*given))
+    session = runner.Session(context('dispatch', dispatch.folder, project='proj'), Store('proj', module='dispatch'),
+                             dispatch.ticket(), 'claude', [])
+    session.session_id = 'unit-session'
+
+    async def burst():
+        for _ in range(10):
+            for name in ('a', 'b', 'c'):
+                await session.read_text_file('unit-session', str(dispatch.folder / 'src' / f'{name}.py'))
+        assert await session.locked('src/a.py') is None
+    asyncio.run(burst())
+    assert len(reads) == 1, 'thirty reads, one read of the sources layer'
+
+
+@pytest.mark.req('BASE-052')
+def test_an_edit_permission_for_an_unlinked_file_is_refused_over_approve_all_and_the_agent_is_told(dispatch, run):
+    run('set', '--dispatch-prompts=approve-all', '--confirm', cwd=dispatch.folder)
+    dispatch.start('ask', FAKE_ACP_ASK_PATH=str(dispatch.folder / 'src' / 'fresh.py'))
+    [outcome] = eventually(lambda: dispatch.logged('permission'))
+    assert outcome == {'outcome': {'outcome': 'selected', 'optionId': 'reject'}}
+    told = eventually(lambda: [one for one in dispatch.received('session/prompt')
+                               if 'To unlock access to this file' in json.dumps(one)])
+    assert 'dispatch_link file=src/fresh.py' in json.dumps(told[0])
+    assert not dispatch.questions(), 'the person is not asked'
     dispatch.stop()
 
 

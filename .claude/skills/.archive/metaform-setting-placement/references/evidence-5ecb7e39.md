@@ -1,0 +1,1 @@
+metaform-setting-placement: "Use when adding, removing or placing a Metaform setting."

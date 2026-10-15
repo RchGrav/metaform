@@ -292,7 +292,7 @@ function headed(page, rows, {folded = false} = {}) {
     return box;
   });
 }
-const OWNER_WORDS = {chassis: 'Metaform', mcp: 'MCP', elevenlabs: 'ElevenLabs', source_placement: 'Source placement'};
+const OWNER_WORDS = {chassis: 'Metaform', mcp: 'MCP', elevenlabs: 'ElevenLabs'};
 const ownerWords = owner => OWNER_WORDS[owner] || owner.charAt(0).toUpperCase() + owner.slice(1).replaceAll('_', ' ');
 function headingOf(row, page) {
   const parts = String(row.heading || row.section || '').split('/').filter(Boolean);

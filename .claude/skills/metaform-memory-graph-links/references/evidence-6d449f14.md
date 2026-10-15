@@ -1,0 +1,1 @@
+It's pushed again only after a compaction *and* a return to that node.

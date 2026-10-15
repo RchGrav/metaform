@@ -1,0 +1,3 @@
+Edit input: "old_string":"/* A reply is as wide as its widest part, up to the dock's width; only what is wider than the dock scrolls. */","new_string":"/* A reply is as wide as its widest part, up to the dock's width less the log's var(--s3) margin on each side; only\n * what is wider than that scrolls. */"
+Probe result: "after-1960": {"bubble": 1932, "leftGap": 14, "rightGap": 14, "preScroll": 1902, "preClient": 1902, "sideways": false}, "before-1960": {"bubble": 643, "rightGap": 1303, "preScroll": 962, "preClient": 613, "sideways": true}
+Assistant note: "One side effect: a page-wide .row rule (app.css:237) lets rows wrap. When a reply fills the dock, its time and Copy button ... drop to a line under the reply"

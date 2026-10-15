@@ -17,8 +17,7 @@
  * The control is quiet until used. While listening, a soft ring follows the voice's level, eased like a spring; under
  * reduced motion it holds still. */
 
-const SR = 16000;                 // Whisper's sample rate
-const FRAME = 4096;               // samples per capture block at the device's rate, about 85 ms at 48 kHz
+const SR = 16000;                 // Whisper's sample rate, and the rate voice-capture.js sends blocks at
 const LEAD = 0.35;                // seconds kept before speech starts, so the first syllable is not cut
 const HANG = 1.2;                 // seconds of silence that end an utterance while listening hands-free
 const AUTO_PAUSE = 1.4;           // seconds of quiet after the last words before auto sends
@@ -38,10 +37,15 @@ const V = {
   field: null, button: null, mode: null,         // the box being spoken into, its mic, and 'hold' or 'free'
   stream: null, audio: null, node: null, source: null,
   floor: 0.003, level: 0, shown: 0, velocity: 0, frame: 0,
-  lead: [], segment: null, speaking: false, quiet: 0, lastVoice: 0,
+  // the lead-in, a ring of the last LEAD seconds, and the utterance, `said` samples of `segment`; both made when the
+  // microphone first opens and kept, the utterance's grown when one outlasts it
+  lead: null, leadAt: 0, leadHeld: 0, segment: null, said: 0, speaking: false, quiet: 0, lastVoice: 0,
+  clock: 0,                                       // seconds of audio heard, ever: the time hear() goes by
   base: '', live: '', writing: false, busy: false, lastPartial: 0, finals: Promise.resolve(),
   worker: null, loaded: null, asks: new Map(), next: 0,
   recognition: null, pressed: 0, clip: null, sendTimer: 0, timings: [],
+  told: '',                                       // the engine's why last said in a note, so it is said once
+  stale: false,                                   // the live stream reopened while listening: status read at stop
 };
 // The wake phrase: on, the microphone stays open and each stretch of speech has only its first seconds heard, here,
 // for the phrase; what follows the phrase goes to the person's system agent. The indicator shows while it is on.
@@ -173,11 +177,18 @@ function place(box, button) {
   box.style.bottom = `${Math.max(8, innerHeight - at.top + 8)}px`;
   requestAnimationFrame(() => box.classList.add('shown'));
 }
-let noteTimer = 0;
+/* What went wrong, or what the person should know, beside the mic: it stays, selectable, until dismissed or replaced
+ * by the next, and each is written to the console and, once per distinct text, to the server's log, run/web.log. */
+let noteLogged = '';
 function note(text) {
   let box = document.querySelector('.voice-note');
-  if (!box) { box = el('div', {className: 'voice-note', role: 'status'}); document.body.append(box); }
-  box.textContent = text;
+  if (!box) {
+    box = el('div', {className: 'voice-note', role: 'status'},
+      '<span class="voice-note-text"></span><button type="button" class="voice-note-close" aria-label="Dismiss">×</button>');
+    box.lastElementChild.addEventListener('click', () => box.classList.remove('shown'));
+    document.body.append(box);
+  }
+  box.firstElementChild.textContent = text;
   const button = V.button || document.querySelector('.voice-mic');
   if (button) {
     const at = button.getBoundingClientRect();
@@ -185,8 +196,11 @@ function note(text) {
     box.style.bottom = `${Math.max(8, innerHeight - at.top + 8)}px`;
   }
   box.classList.add('shown');
-  clearTimeout(noteTimer);
-  noteTimer = setTimeout(() => box.classList.remove('shown'), 4500);
+  console.warn(`Voice: ${text}`);
+  if (text === noteLogged) return;
+  noteLogged = text;
+  fetch('/api/voice/note', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({text})}).catch(() => {});
 }
 
 /* ---------- listening ---------- */
@@ -196,12 +210,15 @@ async function toggle(field, button) {
 }
 async function start(field, button, mode) {
   if (V.engine === 'off' || V.field) return;
+  // a GPU here that the server cannot use, its extra or its libraries missing: said once, with the install step
+  const st = V.status;
+  if (st?.server?.gpu && st.server.install && st.why !== V.told) { V.told = st.why; note(st.why); }
   const missing = need();
   if (missing && !(await ask(button, missing))) return;
   if (mode === 'space' && !V.space) return;  // Space was let go while the model was asked for
   if (W.on && !W.suspended) { W.suspended = true; closeMic(); }  // one microphone: the box has it while spoken into
-  Object.assign(V, {field, button, mode, base: field.value, live: '', clip: null, segment: null, speaking: false,
-    lead: [], quiet: 0, busy: false, lastPartial: 0, before: field.value});
+  Object.assign(V, {field, button, mode, base: field.value, live: '', clip: null, said: 0, speaking: false,
+    leadAt: 0, leadHeld: 0, quiet: 0, busy: false, lastPartial: 0, before: field.value});
   if (V.base && !/\s$/.test(V.base)) V.base += ' ';
   button.classList.add('listening');
   button.setAttribute('aria-pressed', 'true');
@@ -222,8 +239,8 @@ async function stop(cancel) {
   const field = V.field, button = V.button, mode = V.mode;
   if (!field) return;
   if (V.recognition) { const it = V.recognition; V.recognition = null; try { it.stop(); } catch { /* ended */ } }
-  if (V.segment && !cancel && V.speaking) finishSegment();
-  else V.segment = null;
+  if (V.said && !cancel && V.speaking) finishSegment();
+  else V.said = 0;
   closeMic();
   V.field = null;
   V.speaking = false;
@@ -241,87 +258,129 @@ async function stop(cancel) {
     field.focus();
   }
   if (W.on && W.suspended) { W.suspended = false; openMic().catch(() => wakeOff('The microphone could not open again.')); }
+  if (V.stale) { V.stale = false; boot(); }  // the server came back while this box listened: its engine, read again
 }
+/* The microphone is read on the audio thread, voice-capture.js, which sends 16 kHz blocks to captured(). The context
+ * runs at 16 kHz where the browser takes the microphone into it; otherwise at its own rate, and the worklet averages
+ * down. Nothing is kept in V until all of it is open, so a press let go meanwhile finds nothing half made. */
 async function openMic() {
-  V.stream = await navigator.mediaDevices.getUserMedia({audio: {channelCount: 1, echoCancellation: true,
+  const stream = await navigator.mediaDevices.getUserMedia({audio: {channelCount: 1, echoCancellation: true,
     noiseSuppression: true, autoGainControl: true}});
-  const Context = window.AudioContext || window.webkitAudioContext;
-  V.audio = new Context();
-  V.source = V.audio.createMediaStreamSource(V.stream);
-  V.node = V.audio.createScriptProcessor(FRAME, 1, 1);
-  V.node.onaudioprocess = event => hear(event.inputBuffer.getChannelData(0), V.audio.sampleRate);
-  V.source.connect(V.node);
-  V.node.connect(V.audio.destination);  // a processor runs only while connected; it writes silence
+  let audio = null;
+  try {
+    let source = null;
+    try {
+      audio = new AudioContext({sampleRate: SR});
+      source = audio.createMediaStreamSource(stream);
+    } catch {  // a browser that will not take the microphone into a 16 kHz context
+      audio?.close().catch(() => {});
+      audio = new AudioContext();
+      source = audio.createMediaStreamSource(stream);
+    }
+    await audio.audioWorklet.addModule('/page/voice-capture.js');
+    const node = new AudioWorkletNode(audio, 'voice-capture',
+      {numberOfInputs: 1, numberOfOutputs: 0, channelCount: 1, channelCountMode: 'explicit'});
+    node.port.onmessage = captured;
+    source.connect(node);  // a node with no outputs is run by the context while its input is connected
+    V.lead ||= new Float32Array(Math.ceil(LEAD * SR));
+    V.segment ||= new Float32Array(8 * SR);
+    Object.assign(V, {stream, audio, node, source});
+  } catch (error) {
+    stream.getTracks().forEach(track => track.stop());
+    audio?.close().catch(() => {});
+    throw error;
+  }
   if (!reduced()) V.frame = requestAnimationFrame(meter);
+}
+/* A block from voice-capture.js: heard, then sent back to the worklet to be filled again. */
+const RETURN = [null];  // the transfer list each block goes back with, reused
+function captured(event) {
+  const block = event.data;
+  hear(block);
+  RETURN[0] = block.buffer;
+  event.target.postMessage(block, RETURN);
+  RETURN[0] = null;
 }
 function closeMic() {
   cancelAnimationFrame(V.frame);
+  if (V.node) V.node.port.onmessage = null;
   try { V.node?.disconnect(); V.source?.disconnect(); } catch { /* already */ }
   V.stream?.getTracks().forEach(track => track.stop());
   V.audio?.close().catch(() => {});
   Object.assign(V, {stream: null, audio: null, node: null, source: null, level: 0, shown: 0, velocity: 0});
 }
 
-/* The block of audio just captured: resampled to 16 kHz, weighed for speech, kept only while speaking. */
-function resample(input, rate) {
-  if (rate === SR) return Float32Array.from(input);
-  const ratio = rate / SR, out = new Float32Array(Math.floor(input.length / ratio));
-  for (let i = 0; i < out.length; i++) {  // the mean of each span: a low-pass and a decimation in one
-    const from = Math.floor(i * ratio), to = Math.min(input.length, Math.floor((i + 1) * ratio));
-    let sum = 0;
-    for (let j = from; j < to; j++) sum += input[j];
-    out[i] = sum / Math.max(1, to - from);
-  }
-  return out;
-}
-function hear(input, rate) {
+/* The block of audio just captured, at 16 kHz: weighed for speech, copied into the lead-in, and into the utterance
+ * while speaking. It allocates nothing; the block itself goes back to the worklet once this returns. */
+function hear(input) {
   if (!V.field && !(W.on && !W.suspended)) return;
   if (!V.field && W.talking) { V.level = 0; return; }  // the mascot's own voice is not heard as the person's
   let energy = 0;
   for (let i = 0; i < input.length; i++) energy += input[i] * input[i];
-  const rms = Math.sqrt(energy / input.length), now = performance.now() / 1000;
+  V.clock += input.length / SR;  // the audio's own time, which costs nothing to read, unlike performance.now()
+  const rms = Math.sqrt(energy / input.length), now = V.clock;
   // The noise floor follows quiet quickly and loud slowly, so speech never becomes the floor.
   V.floor = rms < V.floor ? V.floor * 0.7 + rms * 0.3 : V.floor * 0.995 + rms * 0.005;
   const voiced = rms > Math.max(V.floor * 3, 0.006);
   V.level = Math.min(1, Math.max(0, (20 * Math.log10(rms + 1e-9) + 60) / 50));
-  const block = resample(input, rate);
   if (voiced) V.lastVoice = now;
   if (!V.speaking) {
-    V.lead.push(block);
-    while (V.lead.reduce((n, one) => n + one.length, 0) > LEAD * SR) V.lead.shift();
+    keepLead(input);
     if (voiced) {
       V.speaking = true;
-      V.segment = [...V.lead];
-      V.lead = [];
+      leadIn();
       (V.button || W.indicator)?.classList.add('speaking');
       clearTimeout(V.sendTimer);
     }
     return;
   }
-  V.segment.push(block);
-  const length = V.segment.reduce((n, one) => n + one.length, 0) / SR;
+  room(V.said + input.length);
+  V.segment.set(input, V.said);
+  V.said += input.length;
+  const length = V.said / SR;
   if (length >= (V.status?.max_seconds || 120) - 1) return finishSegment();
   if ((V.mode === 'free' || !V.field) && now - V.lastVoice > HANG) return finishSegment();
-  if (!V.field && length > WAKE_LONGEST && Date.now() > W.armed) { V.segment = null; V.speaking = false; return; }
+  if (!V.field && length > WAKE_LONGEST && Date.now() > W.armed) { V.said = 0; V.speaking = false; return; }
   if (V.field && now * 1000 - V.lastPartial > PARTIAL_EVERY && !V.busy && length > 0.6 && partials()) {
     V.lastPartial = now * 1000;
-    partial(join(V.segment));
+    partial(V.segment.slice(0, V.said));
   }
 }
 const partials = () => V.engine === 'server' || V.engine === 'browser';
-const join = blocks => {
-  const out = new Float32Array(blocks.reduce((n, one) => n + one.length, 0));
-  let at = 0;
-  for (const one of blocks) { out.set(one, at); at += one.length; }
-  return out;
-};
+function keepLead(input) {  // the block, written over the oldest samples of the lead-in ring
+  const ring = V.lead, size = ring.length, count = input.length;
+  let at = V.leadAt;
+  for (let i = 0; i < count; i++) {
+    ring[at] = input[i];
+    at = at + 1 === size ? 0 : at + 1;
+  }
+  V.leadAt = at;
+  V.leadHeld = Math.min(size, V.leadHeld + count);
+}
+function leadIn() {  // speech began: the utterance starts with the lead-in, oldest first, the block just heard last
+  const ring = V.lead, size = ring.length, held = V.leadHeld, segment = V.segment;
+  let from = (V.leadAt - held + size) % size;
+  for (let i = 0; i < held; i++) {
+    segment[i] = ring[from];
+    from = from + 1 === size ? 0 : from + 1;
+  }
+  V.said = held;
+  V.leadAt = 0;
+  V.leadHeld = 0;
+}
+function room(samples) {  // an utterance longer than any before: the buffer doubles, once, and stays that size
+  if (samples <= V.segment.length) return;
+  const grown = new Float32Array(Math.max(samples, V.segment.length * 2));
+  grown.set(V.segment);
+  V.segment = grown;
+}
 function finishSegment() {
-  const blocks = V.segment;
-  V.segment = null;
+  const said = V.said;
+  V.said = 0;
   V.speaking = false;
   (V.button || W.indicator)?.classList.remove('speaking');
-  if (!blocks) return;
-  const field = V.field, samples = join(blocks);
+  if (!said) return;
+  const field = V.field, samples = V.segment.slice(0, said);
   // Trailing silence past the hang is not sent: only speech, its lead-in and a short tail.
   const keep = Math.min(samples.length, Math.ceil((samples.length / SR - Math.max(0, HANG - 0.3)) * SR));
   const audio = V.mode === 'free' || !field ? samples.subarray(0, Math.max(keep, Math.floor(0.5 * SR))) : samples;
@@ -843,4 +902,7 @@ async function boot() {
 export const voice = {state: () => ({engine: V.engine, why: V.why, variant: V.variant, listening: Boolean(V.field),
   mode: V.mode, status: V.status, timings: V.timings.slice(-20), wake: {on: W.on, phrase: W.phrase, armed: W.armed > Date.now()},
   talking: W.talking}), refresh: async () => { await boot(); }, wakeOn, wakeOff, speak: speakReply, afterPhrase};
+// the live stream reopened, as after the server restarted, page/app/live/ops.js: the engine it serves may have changed,
+// so the status is read again, once the box being spoken into lets go
+document.addEventListener('metaform:reconnected', () => { if (V.field) V.stale = true; else boot(); });
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, {once: true}); else boot();

@@ -1,0 +1,1 @@
+metaform-static-serving: "VIEW-003 still says vendor files are revalidated on every load; that no longer matches the code. Amend it through the spec-amendments skill rather than editing the code to match."

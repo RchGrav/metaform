@@ -1,0 +1,1 @@
+We don't gate inference. We don't judge inference. That's the way the model wants to think about it. That's the way the model wants to think about it. The important thing is, is that we're binding the memories on the process of what they're doing specifically better than other systems do. And we should take advantage of that.

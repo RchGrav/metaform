@@ -51,11 +51,11 @@
   :ELSE -> CORRECT
 </instructions>
 
-<!-- One line of the full worker's brief below: store what you learn with the memory tools, at the ticket's node, or
-     at the receiver and provider of a ticket on a join.
+<!-- One line of the full worker's brief below: record what happened in the work as memory, at the ticket's node, or
+     at the receiver and provider of a ticket on a join, and what is true of the project as knowledge. A draft, CTX-029, awaiting the owner's approval of its wording; it replaced the 2026-10-11 sentence on storing what is learned.
      Placed in the brief's <record/> only while the memory module is on in the folder, and read only with the brief,
      on demand. Must not be deleted: the code requires it. Empty leaves a blank line in the brief. -->
-<record>+&gt; Use Metaform's memory tool to store what you learn under the functional namespace of your assignment, so future agents working there can retrieve it: `metaform memory create_entities '&lt;entities&gt;' node=&lt;the address under at in the ticket read&gt;`, or for a ticket on a join, receiver=&lt;its receiver&gt; provider=&lt;its provider&gt; in place of node.
+<record>+&gt; Record what happened in the work as memory at the ticket's node, `metaform memory create_entities '&lt;entities&gt;' node=&lt;the address under at in the ticket read&gt;`, or for a ticket on a join, receiver=&lt;its receiver&gt; provider=&lt;its provider&gt; in place of node; and what is now known to be true of the project in the map's knowledge layers, as steps 5 and 6 of the memory prompt say.
 </record>
 <!-- The full worker's brief: read the ticket, report the plan and each step, decide what can be undone, close with a
      resolution. No longer sent to agents: how to work a ticket is on the map_work tool's description and its op
@@ -130,24 +130,26 @@
   :ELSE -&gt; CORRECT
 </handoff>
 
-<!-- One more message to a worker after it closes its ticket, asking it to record what it learned at <node/>.
+<!-- One more message to a worker after it closes its ticket, asking it to record what happened in the work at <node/>
+     as memory and what is true of the project as knowledge. A draft, CTX-029, awaiting the owner's approval of its wording; it replaced the 2026-10-11 sentence on storing what is learned.
      Sent when the setting dispatch_record_on_finish asks for it and the memory module is on; <node/> is the element's
      address, or join:<id> for a ticket on a join.
      Empty sends nothing, whatever the setting. Turned off with dispatch_record_on_finish set to off. -->
-<on_ticket_done>Use Metaform's memory tool to store what you learn under the functional namespace of your assignment, <node/>, so future agents working there can retrieve it.</on_ticket_done>
+<on_ticket_done>Record what happened in the work at <node/> as memory, and what is now known to be true of the project in the map's knowledge layers, as steps 5 and 6 of the memory prompt say.</on_ticket_done>
 
 <!-- One more message to a worker whose turn ended with its ticket still open, asking it to record what it learned at
      <node/> before it waits for the person; once per session. <node/> is as in on_ticket_done.
-     Sent when the setting dispatch_record_on_stop asks for it and the memory module is on. The wording is the owner's
-     sentence on recording, as on_ticket_done has it. Empty sends nothing, whatever the setting. Turned off with
+     Sent when the setting dispatch_record_on_stop asks for it and the memory module is on. The wording is
+     on_ticket_done's, a draft (CTX-029) awaiting the owner's approval. Empty sends nothing, whatever the setting. Turned off with
      dispatch_record_on_stop set to off. -->
-<on_stopped_open>Use Metaform's memory tool to store what you learn under the functional namespace of your assignment, <node/>, so future agents working there can retrieve it.</on_stopped_open>
+<on_stopped_open>Record what happened in the work at <node/> as memory, and what is now known to be true of the project in the map's knowledge layers, as steps 5 and 6 of the memory prompt say.</on_stopped_open>
 
 <!-- One more message to a worker whose turn ended in an error while its agent still runs, asking it to record what it
      learned at <node/> before the session is left for the person; once per session. <node/> is as in on_ticket_done.
+     The wording is on_ticket_done's, a draft (CTX-029) awaiting the owner's approval.
      Sent when the setting dispatch_record_on_failure asks for it and the memory module is on. Empty sends nothing,
      whatever the setting. Turned off with dispatch_record_on_failure set to off. -->
-<on_failure>Use Metaform's memory tool to store what you learn under the functional namespace of your assignment, <node/>, so future agents working there can retrieve it.</on_failure>
+<on_failure>Record what happened in the work at <node/> as memory, and what is now known to be true of the project in the map's knowledge layers, as steps 5 and 6 of the memory prompt say.</on_failure>
 
 <!-- The turn a worker is given once the person has answered a workflow run its ticket paused on them, so their
      answer reaches it without a message of their own. <run/> is the run. The wording is workflow's own line for this,
@@ -177,13 +179,35 @@
      ticket's id. Must not be deleted: the code requires it. -->
 <work>Work ticket <work_id/> with the map_work tool. <record/></work>
 
-<!-- The owner's sentence on recording what is learned, 2026-10-11, MCP-029 and BASE-052, as the <record> line of the
-     full brief has it, with the node filled in and the command left out, since the agent calls the memory tool over
-     MCP. Draft placement, awaiting the owner's approval of this form: he may keep it, change it or replace it.
+<!-- What to record and where, after the work sentence, with the node filled in and the command left out, since the
+     agent calls the memory tool over MCP: memory and knowledge as the memory prompt splits them, CTX-029. A draft
+     awaiting the owner's approval of its wording; it replaced his 2026-10-11 sentence on storing what is learned.
      <node/> is the element's address, or the join's receiver and provider for a ticket on a join.
      Follows the work sentence only while the memory module is on in the folder. Empty leaves the work sentence
      alone. -->
-<work_record>Use Metaform's memory tool to store what you learn under the functional namespace of your assignment, <node/>, so future agents working there can retrieve it.</work_record>
+<work_record>Record what happened in the work at <node/> as memory, and what is now known to be true of the project in the map's knowledge layers, as the memory prompt says.</work_record>
+
+<!-- The rule on writing files, in one line after the work sentence, code.dispatcher.agent#3d: a file no element's ref
+     names is locked for writing until it is linked, and the paths .metaform/ignore.txt holds are read-only. A draft,
+     awaiting the owner's approval of its wording. Sent in the first message to every agent dispatch starts on a
+     ticket. Empty leaves it out; the runner refuses such writes either way. -->
+<work_link>A file with no ref on the map is locked for writing until you link it to its functionality in the map with dispatch_link file=&lt;path&gt; node=&lt;Address&gt;; files under .metaform/ignore.txt are read-only to agents.</work_link>
+
+<!-- The owner's sentence, Rich 2026-10-15, code.dispatcher.agent#3d: the answer to an agent's write of a file no
+     element's ref names exactly, by ACP's fs/write_text_file or a permission request for an edit, in any permission
+     mode, full access included. It is followed by <link_call>, the call that links the file. Sent as the refusal's
+     reason, and to the agent as its next words where a permission answer carries no text. Empty, the refusal carries
+     the call alone; the write is refused either way. -->
+<write_unlinked>To unlock access to this file, please first link it to its functionality in the map.</write_unlinked>
+
+<!-- The call that links a file to its element, after <write_unlinked>. <file/> is the file, from the project folder.
+     A draft of the call's wording, awaiting the owner's approval. -->
+<link_call>dispatch_link file=<file/> node=&lt;the Address of the element it realizes; an Address no element has yet is made&gt;</link_call>
+
+<!-- The answer to an agent's write of a path .metaform/ignore.txt holds, code.dispatcher.agent#3d: read-only to
+     agents always, linked or not. <file/> is the path, from the project folder. A draft, awaiting the owner's approval
+     of its wording. Empty, a plain sentence of the runner's own is sent; the write is refused either way. -->
+<write_ignored><file/> is read-only to agents: .metaform/ignore.txt holds it.</write_ignored>
 
 <!-- The message a worker's session is resumed with when the supervisor retries it, after it stopped without the
      person's stop and before its ticket was done: go on where it left off. <work_id/> is the ticket's id.

@@ -1,4 +1,95 @@
 {
+ "agents": {
+  "version": 1,
+  "compatible_from": 1,
+  "tables": {
+   "sent": {
+    "place": "project",
+    "key": [
+     "session_id",
+     "seq"
+    ],
+    "columns": {
+     "agent": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "at": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "prompts": [
+      "json",
+      "TEXT",
+      true,
+      null
+     ],
+     "role": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "runner": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "seq": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "session_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "runner",
+        0,
+        "BINARY"
+       ],
+       [
+        "session_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "seq",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   }
+  }
+ },
  "autoticket": {
   "version": 1,
   "compatible_from": 1,
@@ -1418,7 +1509,7 @@
  },
  "intake": null,
  "map": {
-  "version": 15,
+  "version": 16,
   "compatible_from": 9,
   "tables": {
    "challenge_states": {
@@ -1481,537 +1572,6 @@
      "link_kind in ( 'element' , 'join' )",
      "state in ( 'A' , 'B' , 'C' , 'plan' )"
     ],
-    "foreign_keys": [],
-    "collations": {},
-    "on_conflict": [],
-    "generated": []
-   },
-   "code_edges": {
-    "place": "metaform",
-    "key": [
-     "layer_id",
-     "path",
-     "source",
-     "target_path",
-     "target",
-     "kind"
-    ],
-    "columns": {
-     "kind": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "layer_id": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "line": [
-      "int",
-      "INTEGER",
-      false,
-      "0"
-     ],
-     "path": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "source": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "target": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "target_path": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ]
-    },
-    "indexes": [
-     [
-      false,
-      [
-       [
-        "layer_id",
-        0,
-        "BINARY"
-       ],
-       [
-        "path",
-        0,
-        "BINARY"
-       ],
-       [
-        "source",
-        0,
-        "BINARY"
-       ],
-       [
-        "target_path",
-        0,
-        "BINARY"
-       ],
-       [
-        "target",
-        0,
-        "BINARY"
-       ],
-       [
-        "kind",
-        0,
-        "BINARY"
-       ]
-      ],
-      null
-     ],
-     [
-      false,
-      [
-       [
-        "layer_id",
-        0,
-        "BINARY"
-       ],
-       [
-        "target",
-        0,
-        "BINARY"
-       ],
-       [
-        "kind",
-        0,
-        "BINARY"
-       ],
-       [
-        "path",
-        0,
-        "BINARY"
-       ],
-       [
-        "source",
-        0,
-        "BINARY"
-       ],
-       [
-        "target_path",
-        0,
-        "BINARY"
-       ]
-      ],
-      null
-     ],
-     [
-      false,
-      [
-       [
-        "layer_id",
-        0,
-        "BINARY"
-       ],
-       [
-        "target_path",
-        0,
-        "BINARY"
-       ],
-       [
-        "path",
-        0,
-        "BINARY"
-       ],
-       [
-        "source",
-        0,
-        "BINARY"
-       ],
-       [
-        "target",
-        0,
-        "BINARY"
-       ],
-       [
-        "kind",
-        0,
-        "BINARY"
-       ]
-      ],
-      null
-     ]
-    ],
-    "checks": [],
-    "foreign_keys": [],
-    "collations": {},
-    "on_conflict": [],
-    "generated": []
-   },
-   "code_files": {
-    "place": "metaform",
-    "key": [
-     "layer_id",
-     "path"
-    ],
-    "columns": {
-     "commit": [
-      "text",
-      "TEXT",
-      false,
-      null
-     ],
-     "hash": [
-      "text",
-      "TEXT",
-      false,
-      null
-     ],
-     "layer_id": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "path": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "provider": [
-      "text",
-      "TEXT",
-      false,
-      null
-     ],
-     "read": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "stamp": [
-      "text",
-      "TEXT",
-      false,
-      null
-     ],
-     "symbols": [
-      "int",
-      "INTEGER",
-      false,
-      "0"
-     ],
-     "unresolved": [
-      "json",
-      "TEXT",
-      false,
-      null
-     ]
-    },
-    "indexes": [],
-    "checks": [],
-    "foreign_keys": [],
-    "collations": {},
-    "on_conflict": [],
-    "generated": []
-   },
-   "code_links": {
-    "place": "metaform",
-    "key": [
-     "layer_id",
-     "node_kind",
-     "node_id",
-     "path",
-     "qn"
-    ],
-    "columns": {
-     "by": [
-      "text",
-      "TEXT",
-      false,
-      null
-     ],
-     "item_id": [
-      "text",
-      "TEXT",
-      false,
-      null
-     ],
-     "label": [
-      "text",
-      "TEXT",
-      false,
-      null
-     ],
-     "layer_id": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "link_id": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "name": [
-      "text",
-      "TEXT",
-      false,
-      null
-     ],
-     "node_id": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "node_kind": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "path": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "proposal": [
-      "json",
-      "TEXT",
-      false,
-      null
-     ],
-     "provider": [
-      "text",
-      "TEXT",
-      false,
-      null
-     ],
-     "qn": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "state": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "why": [
-      "text",
-      "TEXT",
-      false,
-      null
-     ]
-    },
-    "indexes": [
-     [
-      false,
-      [
-       [
-        "item_id",
-        0,
-        "BINARY"
-       ],
-       [
-        "layer_id",
-        0,
-        "BINARY"
-       ],
-       [
-        "node_kind",
-        0,
-        "BINARY"
-       ],
-       [
-        "node_id",
-        0,
-        "BINARY"
-       ],
-       [
-        "path",
-        0,
-        "BINARY"
-       ],
-       [
-        "qn",
-        0,
-        "BINARY"
-       ]
-      ],
-      null
-     ],
-     [
-      false,
-      [
-       [
-        "layer_id",
-        0,
-        "BINARY"
-       ],
-       [
-        "qn",
-        0,
-        "BINARY"
-       ],
-       [
-        "node_kind",
-        0,
-        "BINARY"
-       ],
-       [
-        "node_id",
-        0,
-        "BINARY"
-       ],
-       [
-        "path",
-        0,
-        "BINARY"
-       ]
-      ],
-      null
-     ],
-     [
-      false,
-      [
-       [
-        "link_id",
-        0,
-        "BINARY"
-       ],
-       [
-        "layer_id",
-        0,
-        "BINARY"
-       ],
-       [
-        "node_kind",
-        0,
-        "BINARY"
-       ],
-       [
-        "node_id",
-        0,
-        "BINARY"
-       ],
-       [
-        "path",
-        0,
-        "BINARY"
-       ],
-       [
-        "qn",
-        0,
-        "BINARY"
-       ]
-      ],
-      null
-     ]
-    ],
-    "checks": [],
-    "foreign_keys": [],
-    "collations": {},
-    "on_conflict": [],
-    "generated": []
-   },
-   "code_symbols": {
-    "place": "metaform",
-    "key": [
-     "layer_id",
-     "path",
-     "qn"
-    ],
-    "columns": {
-     "end_line": [
-      "int",
-      "INTEGER",
-      false,
-      "0"
-     ],
-     "label": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "layer_id": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "name": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "path": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "qn": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "start_line": [
-      "int",
-      "INTEGER",
-      false,
-      "0"
-     ],
-     "symbol": [
-      "text",
-      "TEXT",
-      false,
-      null
-     ]
-    },
-    "indexes": [
-     [
-      false,
-      [
-       [
-        "layer_id",
-        0,
-        "BINARY"
-       ],
-       [
-        "qn",
-        0,
-        "BINARY"
-       ],
-       [
-        "path",
-        0,
-        "BINARY"
-       ]
-      ],
-      null
-     ]
-    ],
-    "checks": [],
     "foreign_keys": [],
     "collations": {},
     "on_conflict": [],
@@ -4290,7 +3850,6 @@
    }
   }
  },
- "source_placement": null,
  "template": null,
  "twilio": null,
  "voice": null,

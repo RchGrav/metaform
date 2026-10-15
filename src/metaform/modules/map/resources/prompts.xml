@@ -63,35 +63,6 @@
 <!-- Last, after the tree is drawn smaller, the joins the node provides for after the first, whose purposes are what
      the node serves: <count/> of them not shown. Empty says nothing. -->
 <summary_provides><count/> more joins it provides for: <read/></summary_provides>
-<!-- The code layer's line in a node's brief, `code`, once the project's code has been read with map code-import:
-     <symbols/> the node's own code symbols, those linked at it and at the joins it provides for, whose EF they
-     realize, in <files/> files; <into/> calls into them from code elsewhere and <out/> calls out of them;
-     <serving/> the brief_code_serving words when code serving the node is linked at the joins it receives;
-     <stale/> the brief_code_stale words when files changed since the layer read them; <orphaned/> the
-     brief_code_orphaned words when decided links here name a symbol the code no longer declares; and <read/> the call
-     that reads it all with the Address at the other end of each call. Sent wherever the brief is, in map where, the ticket read
-     and the hand-off, and in map node in place of the layer's items, kept within node_summary_bytes. Over MCP the
-     call is named as its tool. Empty leaves the line out. -->
-<brief_code>Code here: symbols <symbols/>, files <files/>, calls in <into/>, calls out <out/><serving/><stale/><orphaned/>: <read/></brief_code>
-<!-- Placed at <serving/> in brief_code: <symbols/> symbols of other Addresses linked at the joins the node receives,
-     the code serving it. Empty says nothing of it. -->
-<brief_code_serving>; serving it: symbols <symbols/></brief_code_serving>
-<!-- Placed at <stale/> in brief_code: <files/> of the node's files changed since map code-import read them, so their
-     lines may have moved. Empty says nothing of it. -->
-<brief_code_stale>; files changed since read: <files/></brief_code_stale>
-<!-- Placed at <orphaned/> in brief_code: <links/> decided links at the node whose symbol is gone, renamed or deleted
-     where the import could not show which symbol it became. The read call lists each with its id and the calls that
-     move or remove it. Empty says nothing of it. -->
-<brief_code_orphaned>; orphaned links: <links/></brief_code_orphaned>
-<!-- The same line at a node the code should serve, under the code trunk or citing a file the code layer holds,
-     where no code is linked yet: <read/> is the call that links a symbol to the node, so an agent that finds or writes
-     the code serving it ties it to the map as the work goes. Not sent at other nodes. Empty leaves the line out. -->
-<brief_code_none>Code: none linked here; link what serves it with <read/> symbol=&lt;qn&gt; why="&lt;why&gt;"</brief_code_none>
-<!-- The map's entry, map where with no address, while the map has a code trunk, the code is not read into its layer
-     yet, and a provider is there to read it: <read/> is the call that reads it. The brief of a node whose sources cite
-     files gives the same line in place of its code line, so an agent at the code finds the import. Gone once the
-     layer exists. Empty leaves the line out. -->
-<code_start>The code is not read into the map yet: <read/> reads it into its layer and links what the sources cite.</code_start>
 
 <!-- The project's glossary, map glossary and the MCP resource metaform://<project>: the project's own terms in the form of
      Metaform's own glossary block, which this prompt is. It is canonical: it ships with Metaform and is not edited at

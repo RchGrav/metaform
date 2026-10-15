@@ -1,0 +1,1 @@
+Still open by design: an element or join in a non-base layer can take a note through map knowledge op=edit; none holds one as of 2026-10-15. ... Decision for you: an element or join in a non-base layer can still be given a note through `map knowledge op=edit`. None holds one today. If you want that note gone everywhere, the same guard could cover every layer, not just the base.

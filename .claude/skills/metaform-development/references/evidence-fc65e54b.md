@@ -1,0 +1,1 @@
+CSS trap: global .pane (app.css ~466, padding) and .item (~653, border-left) rules hit any element with those classes; the dock uses .chatpane, .agentname, .agenttask, .agentsteps for that reason.

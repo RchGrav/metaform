@@ -1,0 +1,1 @@
+git diff src/metaform/modules/web/page/app/live/ops.js: "+import {drawAgentList} from '/page/app/dock/threads.js';" and "+  drawAgentList();  // the full-size dock's rows say each ticket's steps". Run result: "FAILED src/metaform/modules/web/tests/test_web.py::test_the_full_size_dock_lists_its_agents_with_their_tasks_and_a_step_updates_its_row  1 failed, 274 deselected in 33.55s"

@@ -8,11 +8,13 @@ import {S, MEM} from '/page/app/core/reads.js';
 import {ROAM, ballOf, sizeOf} from '/page/app/figures/agents.js';
 import {shownNode} from '/page/app/map3d/light.js';
 import {endOf} from '/page/app/map3d/waves.js';
-import {G, FRAMES, wake3d, LAYOUT} from '/page/app/map3d/graph3d.js';
+import {G, FRAMES, wake3d, LAYOUT, TOUCHED} from '/page/app/map3d/graph3d.js';
 import {LABEL, tags, layered, MET, middle, signsOut} from '/page/app/map3d/labels.js';
 import {V3, FLIGHT, cameraNow, flyTo, framed, ball, fitTrim, fitBalls, fit3d,
   facingOf} from '/page/app/camera/flight.js';
 import {flatNow, flatFacing} from '/page/app/views/bar.js';
+import {VIEW} from '/page/app/views/settings.js';
+import {FOLLOW} from '/page/app/map2d/camera.js';
 
 /* A selection meets its name at a fixed share of the panel's width, VIEW-005. The large area's levels are a quarter,
  * a half and three quarters, opening at 2; the small area always uses four fifths. Unnamed nodes use their neighbors
@@ -215,11 +217,140 @@ export function settled3d() {
   const off = Math.hypot(view.x - here.x, view.y - here.y, view.z - here.z) / Math.exp(here.far);
   if (Math.abs(view.far - here.far) > 0.06 || off > 0.04) fit3d(1100);
 }
-/* The 3D map's modes in the large area, VIEW-005, `V3.mode`, `setMode3d`: Whole keeps the whole map framed through
- * selections, layout changes and new sizes; Zoom follows the selection close up, at the name level 4, 5 or 6 chose;
- * Free moves the camera only by hand. A hand on the camera always takes over: the mode moves it again at the next
- * selection or change. F fits the whole map once and leaves the mode as it is. The small area is not configured: it
- * takes none of these keys and meets each selection on its own, while the hand still moves it. */
+/* The 3D map's modes in the large area, VIEW-005, `V3.mode`, `setMode3d`: Work, the default, shows the work going on,
+ * `workShot`; Whole keeps the whole map framed through selections, layout changes and new sizes; Zoom follows the
+ * selection close up, at the name level 1 chose; Free moves the camera only by hand. A hand on the camera always takes
+ * over: the mode moves it again at the next selection or change. F fits the whole map once and leaves the mode as it
+ * is. The small area is not configured: it takes none of these keys and meets each selection on its own, while the
+ * hand still moves it. */
+
+/* Work: rather than closing on a node, the camera takes the shot in which the work is seen. A selected node is shown
+ * with the agents working on it, and with no selection every node agents work at, with them; of the angles round it,
+ * the one where most of that is in view, nothing of the map standing in front of it, and the node, its name and each
+ * agent apart from one another rather than one behind the other, so several agents are all seen in perspective. It
+ * prefers a slightly raised view and the way the camera already looks, so it does not swing round for little. A node
+ * with nobody at work on it is met close, as Zoom meets it; with no work anywhere the whole map is shown. It is taken
+ * at a selection, at an agent's start, when the mode is chosen, and again as an agent arrives at its node or finishes
+ * there, `workChanged`; a burst of those is one shot. */
+const SHOT = {pending: false, count: 0, obstacles: 0, exempt: new Set(), size: 0,
+  xs: new Float64Array(64), ys: new Float64Array(64), zs: new Float64Array(64), rs: new Float64Array(64),
+  ox: new Float64Array(256), oy: new Float64Array(256), oz: new Float64Array(256), or: new Float64Array(256)};
+const SHOT_TURNS = 12, SHOT_TILTS = [0.8, 1.05, 1.3, 1.6], SHOT_LEVEL = 1.15;
+export function workShot(focus = null) {
+  if (!G) return false;
+  const data = G.graphData();
+  if (!gatherWork(focus, data)) {
+    if (focus !== null) return fly3d(focus);
+    fit3d();
+    return true;
+  }
+  const facing = bestFacing(data), balls = [];
+  for (let i = 0; i < SHOT.count; i++) balls.push({x: SHOT.xs[i], y: SHOT.ys[i], z: SHOT.zs[i], r: SHOT.rs[i]});
+  V3.auto = false;
+  flyTo(framed(balls, {room: 70, facing}));
+  return true;
+}
+/* An agent arrived at its node or finished its work there: the work shot is taken again, once for a burst, unless the
+ * person used a map in the last 8 seconds, `TOUCHED`, follows an agent, looks through an agent's eyes, turned node
+ * zoom off, or has a node selected that this agent is not at. */
+export function workChanged(target) {
+  if (V3.mode !== 'work' || !G || small3d() || V3.eyes || FOLLOW.work || VIEW.nodeZoom === false) return;
+  if (performance.now() - TOUCHED.at < 8000 || (S.selected && target !== S.selected)) return;
+  shotSoon();
+}
+ROAM.onWork = workChanged;
+export function shotSoon() {
+  if (SHOT.pending) return;
+  SHOT.pending = true;
+  requestAnimationFrame(() => { SHOT.pending = false; if (V3.mode === 'work' && !small3d()) workShot(S.selected); });
+}
+function addPoint(x, y, z, r) {
+  if (SHOT.count === SHOT.xs.length) for (const name of ['xs', 'ys', 'zs', 'rs']) SHOT[name] = grown(SHOT[name]);
+  const at = SHOT.count++;
+  SHOT.xs[at] = x; SHOT.ys[at] = y; SHOT.zs[at] = z; SHOT.rs[at] = r;
+}
+const grown = values => { const more = new Float64Array(values.length * 2); more.set(values); return more; };
+/* The points the shot keeps in view: each agent at work, at `focus` or anywhere, with its node and the node's name.
+ * Says how many agents. */
+function gatherWork(focus, data) {
+  SHOT.count = 0;
+  SHOT.exempt.clear();
+  SHOT.size = ROAM.drawn || sizeOf(data);
+  let workers = 0;
+  for (const figure of ROAM.figures.values()) {
+    if (figure.stage !== 'circling' || figure.done || (focus !== null && figure.target !== focus)) continue;
+    const node = data.nodes.find(item => item.id === figure.target);
+    if (!node || node.x === undefined) continue;
+    const at = figure.mesh.position;
+    addPoint(at.x, at.y, at.z, SHOT.size * 0.8);
+    workers++;
+    if (SHOT.exempt.has(node.id)) continue;
+    SHOT.exempt.add(node.id);
+    addPoint(node.x, node.y, node.z, ballOf(node));
+    const sign = tags.get(node.id)?.sprite;
+    if (sign?.visible && sign.scale.x) addPoint(sign.position.x, sign.position.y, sign.position.z, sign.scale.x / 2);
+  }
+  return workers;
+}
+/* The turn and tilt the shot is seen from: of SHOT_TURNS turns at each of SHOT_TILTS, and the way the camera looks
+ * now, the one where the fewest of the points are hidden behind the map, the points stand farthest apart across the
+ * view, the view is nearest a little raised, and the camera turns least. */
+function bestFacing(data) {
+  const n = SHOT.count, {xs, ys, zs, rs} = SHOT;
+  let cx = 0, cy = 0, cz = 0, spread = 0;
+  for (let i = 0; i < n; i++) { cx += xs[i]; cy += ys[i]; cz += zs[i]; }
+  cx /= n; cy /= n; cz /= n;
+  for (let i = 0; i < n; i++) spread = Math.max(spread, Math.hypot(xs[i] - cx, ys[i] - cy, zs[i] - cz) + rs[i]);
+  const reach = spread / Math.tan(G.camera().fov * Math.PI / 360) * 1.3 + spread;
+  obstaclesNear(data, cx, cy, cz, reach + spread);
+  const here = cameraNow();
+  let best = -Infinity, turn = here.turn, tilt = here.tilt;
+  for (let t = 0; t <= SHOT_TURNS * SHOT_TILTS.length; t++) {
+    const last = t === SHOT_TURNS * SHOT_TILTS.length;
+    const oneTurn = last ? here.turn : (t % SHOT_TURNS) * 2 * Math.PI / SHOT_TURNS;
+    const oneTilt = last ? here.tilt : SHOT_TILTS[Math.floor(t / SHOT_TURNS)];
+    const score = shotScore(oneTurn, oneTilt, cx, cy, cz, reach, here);
+    if (score > best) { best = score; turn = oneTurn; tilt = oneTilt; }
+  }
+  return {turn, tilt};
+}
+/* The drawn nodes near the shot that could stand in front of it, every one but the nodes at work. */
+function obstaclesNear(data, cx, cy, cz, within) {
+  SHOT.obstacles = 0;
+  for (const node of data.nodes) {
+    if (node.x === undefined || SHOT.exempt.has(node.id) || !shownNode(node)) continue;
+    if (Math.hypot(node.x - cx, node.y - cy, node.z - cz) > within) continue;
+    if (SHOT.obstacles === SHOT.ox.length) for (const name of ['ox', 'oy', 'oz', 'or']) SHOT[name] = grown(SHOT[name]);
+    const at = SHOT.obstacles++;
+    SHOT.ox[at] = node.x; SHOT.oy[at] = node.y; SHOT.oz[at] = node.z; SHOT.or[at] = ballOf(node);
+  }
+}
+function shotScore(turn, tilt, cx, cy, cz, reach, here) {
+  const n = SHOT.count, {xs, ys, zs, rs, ox, oy, oz, or} = SHOT;
+  const dx = Math.sin(tilt) * Math.sin(turn), dy = Math.cos(tilt), dz = Math.sin(tilt) * Math.cos(turn);
+  const ex = cx + dx * reach, ey = cy + dy * reach, ez = cz + dz * reach;  // the eye
+  let hidden = 0;
+  for (let i = 0; i < n; i++) {
+    const vx = xs[i] - ex, vy = ys[i] - ey, vz = zs[i] - ez, long = vx * vx + vy * vy + vz * vz;
+    for (let o = 0; o < SHOT.obstacles; o++) {
+      const s = ((ox[o] - ex) * vx + (oy[o] - ey) * vy + (oz[o] - ez) * vz) / long;
+      if (s <= 0 || s >= 0.97) continue;  // behind the eye, or at the point itself
+      const gx = ex + vx * s - ox[o], gy = ey + vy * s - oy[o], gz = ez + vz * s - oz[o];
+      if (gx * gx + gy * gy + gz * gz < or[o] * or[o] * 0.8) { hidden++; break; }
+    }
+  }
+  // how far apart the two points least apart stand across the view, as a share of their distance in the map: 1 side by
+  // side, 0 one straight behind the other, whatever the shot's size
+  let apart = 1;
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+    const vx = xs[j] - xs[i], vy = ys[j] - ys[i], vz = zs[j] - zs[i], along = vx * dx + vy * dy + vz * dz;
+    const long = vx * vx + vy * vy + vz * vz;
+    if (long > 1e-9) apart = Math.min(apart, Math.sqrt(Math.max(0, 1 - along * along / long)));
+  }
+  const swing = Math.acos(Math.max(-1, Math.min(1, Math.sin(here.tilt) * Math.sin(here.turn) * dx
+    + Math.cos(here.tilt) * dy + Math.sin(here.tilt) * Math.cos(here.turn) * dz)));
+  return -2 * hidden + apart - 0.3 * Math.abs(tilt - SHOT_LEVEL) - 0.2 * swing;
+}
 /* The page's easing tokens: one set for every motion, defined once here and as CSS custom properties in app.css's
  * :root (--ease-arrive, --ease-leave, --ease-move, --dur-1 to --dur-3), the same curves. What arrives settles with a
  * spring's ease-out and no overshoot; what leaves goes with a gentle ease-in; a move from one place to another eases

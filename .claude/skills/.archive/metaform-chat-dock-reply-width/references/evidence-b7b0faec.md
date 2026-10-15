@@ -1,0 +1,1 @@
+metaform-chat-dock-reply-width: "Use when editing #helpdesk reply bubble width or 72ch caps."

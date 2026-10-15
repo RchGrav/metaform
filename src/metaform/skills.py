@@ -124,15 +124,16 @@ def load(name: str) -> dict[str, Any]:
 
 def bound(given: str) -> str:
     """An input given to a skill, wrapped as data so it is not read as instructions."""
-    return prompt_files.required(PACKAGE, 'assignment_input', input=given)
+    return prompt_files.served(PACKAGE, 'assignment_input', input=given)
 
 
 def served(name: str, given: str | None = None) -> str:
     """A skill whole, for an agent already connected: its current libs, the procedure and the input bound as data,
     with no run record. Workflow serve gives it, and dispatch sends it as the sentinel's first turn without workflow."""
     one = get(name)
-    return prompt_files.required(PACKAGE, 'served', libs='\n\n'.join(libraries(one).values()),
-                                 skill=procedure(one.name), input=bound(given) if given else '')
+    skill = prompt_files.served_text(f'skill:{one.name}', procedure(one.name))  # the store's version, STORE-044
+    return prompt_files.served(PACKAGE, 'served', libs='\n\n'.join(libraries(one).values()),
+                               skill=skill, input=bound(given) if given else '')
 
 
 def read(name: str, path: str) -> str:

@@ -10,6 +10,7 @@ the module is reached only through its declaration, never by import.
                                  transcription runs, so partials never queue behind each other
   POST /api/voice/download       {engine, model, variant}: a model, once, into the home; the page asked the person
   POST /api/voice/clip           an utterance's wav kept for a moment, for an agent that takes audio, its id back
+  POST /api/voice/note           {text}: a note the page showed beside the mic, written to run/web.log
   GET  /api/voice/files/<path>   the browser engine's model and runtime files, from the home's models folder
   POST /api/voice/speak          {text, character}: the reply spoken by voice_tts's engine a module brings, such as
                                  elevenlabs, streamed back as it is made, its format, such as pcm_22050, named in
@@ -69,6 +70,8 @@ def answer(handler: Handler, method: str, path: str, query: dict[str, list[str]]
                                           'download', arguments))
         if name in ('transcribe', 'clip'):
             return audio(handler, name, given)
+        if name == 'note':
+            return noted(handler)
         if name == 'speak':
             return speak(handler, given)
         return handler.send(404, {'error': f'No voice endpoint {name}.'})
@@ -76,6 +79,20 @@ def answer(handler: Handler, method: str, path: str, query: dict[str, list[str]]
         handler.send(400, {'error': str(error), 'next': error.next_step})
     except ValueError:
         handler.send(400, {'error': 'The body is not what this endpoint takes.'})
+
+
+NOTE_MOST = 1000  # characters of a note kept in the log; a note is a sentence or two
+
+
+def noted(handler: Handler) -> None:
+    """A note the page showed beside the mic, as one line of run/web.log, so what the person saw can be read again."""
+    from .server import log
+    body: Any = handler.json_body()
+    asked = cast(dict[str, Any], body) if isinstance(body, dict) else {}
+    text = str(asked.get('text') or '')
+    if text:
+        log(f'voice note: {" ".join(text.split())[:NOTE_MOST]}')
+    handler.send(200, {'logged': bool(text)})
 
 
 def folder_of(given: dict[str, str]) -> tuple[str | None, Path]:

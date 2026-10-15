@@ -1,0 +1,1 @@
+What does it matter with this voice recognition horn? I put it on — assistant reply: "Language is set to `auto`. Whisper guesses the language from each clip, and on short clips it guesses badly" and "Silence turns into \"you\"."

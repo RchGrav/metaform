@@ -250,7 +250,9 @@ function stepFigure(id, figure, data, size, lift, passed) {
     return;
   }
   const pose = {state: 'travel', scale: 1, tall: 1, turn: 0, bow: 0, face: null};
+  const was = figure.stage;
   const on = STAGES[figure.stage]?.(figure, {id, data, target, home, size, lift, passed, pose});
+  if ((was === 'circling') !== (figure.stage === 'circling')) ROAM.onWork?.(figure.target);  // arrived, or finished
   if (on === false) return;
   drawFigure(figure, size, grown, passed, pose);
 }

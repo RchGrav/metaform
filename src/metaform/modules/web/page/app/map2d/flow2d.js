@@ -38,17 +38,15 @@ export function pointed(edge) {
  * way the information goes, and on a join whose receiver sends, a record card that lands with a ring. Only the
  * selected node's, so the map stays still to read and the flow says what the selection takes from where. Each edge
  * gets its shapes once, in a group just over the edges, so they run under the node boxes; each frame, `frame2d`, while
- * the page is in use, as the 3D map draws its flow, `FRAMES`, moves them with as few writes as it can: a train of dots
- * is a path holding only its dots, each a round cap on a stroke of no length, rewritten only when a dot moves, and a
- * shape is shown or hidden only when its part of the cycle begins or ends; with reduced motion nothing moves and
- * nothing is shown. The browser paints a changed path again over its whole box: a path the length of its edge, as a
- * dashed copy of the edge was, made it paint every moving edge's whole length each frame, where a path of dots only
- * paints the dots. */
+ * the page is in use, as the 3D map draws its flow, `FRAMES`, moves them with as few writes as it can: a reply is one
+ * path, its line, the stretch of the edge it covers, rewritten only when it moves, and a shape is shown or hidden only
+ * when its part of the cycle begins or ends; with reduced motion nothing moves and nothing is shown. The browser paints
+ * a changed path again over its whole box: a path the length of its edge, as a dashed copy of the edge was, made it
+ * paint every moving edge's whole length each frame, where a path of the line alone paints the line. */
 const FLOW2D = {id: 0, edges: [], opacity: -1, group: null, fade: -1, at: -1};
-const BEAD = 2.1;  // a dot's radius
-const TAIL = [0.75, 0.5, 0.25];  // the last three dots of a train fade
+const ASK = 3.8;  // the request's size across, its stroke in the page's CSS, `.ask`: a reply's line is in these
 /* A shape of the flow and what it last showed, kept here and not on the element, so a frame compares its own fields
- * and writes the element only when they change: whether it is shown, and the dots of a dot path. */
+ * and writes the element only when they change: whether it is shown, and a path's `d`. */
 class Shape2d {
   constructor(element, on) {
     this.element = element;
@@ -56,12 +54,11 @@ class Shape2d {
     this.d = '';
   }
 }
-/* A reply's train: its group, shown or hidden, its path of full-strength dots and one path for each fading dot. */
+/* A reply's train: its group, shown or hidden, in the colour the data comes from, and its line. */
 class Train2d {
-  constructor(g, solid, tail) {
+  constructor(g, line) {
     this.g = g;
-    this.solid = solid;
-    this.tail = tail;
+    this.line = line;
   }
 }
 /* An edge's curve sampled once, one array of x and one of y, and its length: kept for as long as its drawn edge lives,
@@ -159,21 +156,17 @@ function flowing2d() {
   return M.edges.filter(edge => edge.join && (mode === 'all' || (hover ? edge.join.receiver === hover
     || edge.provider === hover : edge.path?.classList.contains('on'))));
 }
-/* One edge's shapes: a reply's train each way, in the colour of the element it comes from, `fxTrain`, one path for its
- * dots at full strength and one for each fading dot; the request, one dot on a path of its own; the record card and
- * the ring it lands with. The dots' paths are empty until a frame places their dots, `dots2d`; the train's group is
- * what is shown or hidden. The edge is measured here, `sampled`, before any frame writes into the map: measured later,
- * each measure after a frame's first write makes the browser lay out the page again. */
+/* One edge's shapes: a reply's train each way, in the colour of the element it comes from, `fxReply`, its line one
+ * path; the request, one dot on a path of its own; the record card and the ring it lands with. The paths are empty
+ * until a frame places them, `drawn2d`; the train's group is what is shown or hidden. The edge is measured here,
+ * `sampled`, before any frame writes into the map: measured later, each measure after a frame's first write makes the
+ * browser lay out the page again. */
 function edgeShapes(edge, made, {trains, asks}, byId) {
-  const dots = (attributes, parent) => {
-    const path = made('path', 'bead', attributes, parent.element);
-    show2d(path, true);
-    return path;
-  };
   const train = way => {
-    const g = made('g', 'train', {}, trains);
+    const g = made('g', 'train', {}, trains), line = made('path', 'line', {}, g.element);
     g.element.style.stroke = color2d(way === 0 ? edge.provider : edge.join.receiver, byId);
-    return new Train2d(g, dots({}, g), TAIL.map(opacity => dots({opacity}, g)));
+    show2d(line, true);
+    return new Train2d(g, line);
   };
   return new Edge2d(edge, sampled(edge), [train(0), train(1)], made('path', 'ask', {}, asks),
     made('rect', 'record', {x: -4.5, y: -3.2, width: 9, height: 6.4, rx: 1.4}), made('circle', 'ring', {r: 4}));
@@ -256,19 +249,12 @@ function show2d(shape, on) {
     shape.element.style.display = on ? '' : 'none';
   }
 }
-// a dot path's dots, written only when they change
-function dots2d(shape, d) {
+// a path's `d`, written only when it changes
+function drawn2d(shape, d) {
   if (shape.d !== d) {
     shape.d = d;
     shape.element.setAttribute('d', d);
   }
-}
-/* A dot at a share of the way along the edge, forward or back, as a stroke of no length whose round caps make the dot;
- * none off either end. */
-function dot(one, share, forward) {
-  if (share < 0 || share > 1) return '';
-  place(one, (forward ? share : 1 - share) * one.length);
-  return `M${POINT.x.toFixed(2)},${POINT.y.toFixed(2)}h0`;
 }
 // the point at a share of the way the edge's information goes, into `POINT`
 function at(one, share, receives) {
@@ -279,11 +265,11 @@ function at(one, share, receives) {
  * reply's trains. Resting, nothing is shown. */
 function flowEdge2d(one, resting) {
   const join = one.join, receives = join.ifd === 'receives', record = one.record, ring = one.ring;
-  let asks = false, since = 0, amount = 7, reply = FLOW.reply;
+  let asks = false, since = 0, size = 0, reply = FLOW.reply;
   if (!resting) {
     const now = flowAt(join);
     asks = now.asks; since = now.since;
-    if (asks) { amount = now.amount; reply = now.reply; }
+    if (asks) { size = now.size; reply = now.reply; }
   }
   const live = !resting, sends = live && !asks;
   const recording = sends && since < FLOW.send, ringing = sends && !recording && since < FLOW.send + FLOW.burst;
@@ -306,32 +292,41 @@ function flowEdge2d(one, resting) {
   show2d(ring, ringing);
   if (asking) {
     at(one, since / FLOW.ask, receives);
-    dots2d(one.ask, `M${POINT.x.toFixed(2)},${POINT.y.toFixed(2)}h0`);
+    drawn2d(one.ask, `M${POINT.x.toFixed(2)},${POINT.y.toFixed(2)}h0`);
   }
   show2d(one.ask, asking);
-  // the reply: a train of dots the way the data goes, both ways on a join whose information goes both ways; the
-  // first train runs back to the receiver, the second forth
+  // the reply: a line the way the data goes, both ways on a join whose information goes both ways; the first runs
+  // back to the receiver, the second forth
   const ways = replying ? (join.ifd === 'both' ? 2 : 1) : 0;
   for (let index = 0; index < 2; index++) {
     const train = one.trains[index];
-    if (index < ways) train2d(train, (since - FLOW.ask) / reply, index === 0, amount, one, receives);
+    if (index < ways) reply2d(train, (since - FLOW.ask) / reply, index === 0, size, one, receives);
     show2d(train.g, index < ways);
   }
 }
-/* A reply's train of dots along the edge, spaced so they read as dots, the last few fading: dot i is i spaces behind
- * the head, and a dot off either end of the edge is not drawn. The full-strength dots share one path and each fading
- * dot has its own, so a frame writes at most four paths a train, each holding only its dots. */
-function train2d(train, t, back, amount, one, receives) {
-  const length = one.length, spacing = Math.max(0.03, BEAD * 2 * 2.3 / Math.max(1, length));
-  const shown = Math.max(2, Math.min(12, amount, Math.floor(0.6 / spacing) + 1));
-  const head = t * (1 + spacing * (shown - 1)), forward = receives === back;
-  let solid = '';
-  for (let i = 0; i < shown - 3; i++) solid += dot(one, head - i * spacing, forward);
-  dots2d(train.solid, solid);
-  for (let j = 0; j < TAIL.length; j++) {
-    const i = shown - 3 + j;
-    dots2d(train.tail[j], i < 0 ? '' : dot(one, head - i * spacing, forward));
+/* A reply's line along the edge, `size` times the request's size long, `replySize`: it leaves as the request arrives
+ * and its end arrives as the reply ends; an edge too short for it shows it the edge's length. It is the stretch of the
+ * edge's own curve between its two ends, its samples between them, so it bends as the edge does; its round caps add
+ * the request's size, so a reply is never smaller than its request. One path, written once a frame while it moves. */
+function reply2d(train, t, back, size, one, receives) {
+  const length = one.length, long = Math.min(1, size * ASK / Math.max(1, length));
+  const head = t * (1 + long), from = Math.max(0, head - long), to = Math.min(1, head);
+  if (from > to) { drawn2d(train.line, ''); return; }
+  // its ends as distances along the path, which runs against the data when the line runs back
+  const forward = receives === back;
+  const start = (forward ? from : 1 - to) * length, end = (forward ? to : 1 - from) * length;
+  place(one, start);
+  let d = `M${POINT.x.toFixed(2)},${POINT.y.toFixed(2)}`;
+  if (end - start < 0.01) d += 'h0';
+  else {
+    const xs = one.xs, ys = one.ys, last = xs.length - 1, per = length / last;
+    for (let i = Math.floor(start / per) + 1; i < last && i * per < end; i++) {
+      d += `L${xs[i].toFixed(2)},${ys[i].toFixed(2)}`;
+    }
+    place(one, end);
+    d += `L${POINT.x.toFixed(2)},${POINT.y.toFixed(2)}`;
   }
+  drawn2d(train.line, d);
 }
 export function focus2D(id, frame = true) {
   const join = id.startsWith('p:') ? joinOf(id) : null;

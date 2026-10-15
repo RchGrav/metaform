@@ -67,6 +67,7 @@ from metaform.data import (
     prompts,
     query_read,
     query_reads,
+    reference,
 )
 from metaform.finish_xml import xml as map_xml
 from metaform.module import Stop
@@ -202,7 +203,8 @@ GATE_HEADER, CLASSES_HEADER, ACCOUNT_HEADER = 'X-Metaform-Gate', 'X-Metaform-Cla
 WRITE_ROUTES = frozenset({
     '/api/apply-layers', '/api/answer', '/api/reopen', '/api/read', '/api/task', '/api/state', '/api/element',
     '/api/note', '/api/move', '/api/distribute', '/api/ticket', '/api/eligible', '/api/memory', '/api/ignore',
-    '/api/attach', '/api/mascot', '/api/mascot-result', '/api/voice/transcribe', '/api/voice/clip', '/api/voice/speak'})
+    '/api/attach', '/api/mascot', '/api/mascot-result', '/api/voice/transcribe', '/api/voice/clip', '/api/voice/speak',
+    '/api/voice/note'})
 DISPATCH_ROUTES = frozenset({
     '/api/raise', '/api/talk', '/api/system-chat', '/api/merge-review', '/api/merge-assist', '/api/dispatch-start',
     '/api/dispatch-message', '/api/dispatch-broadcast', '/api/dispatch-fork', '/api/dispatch-stop',
@@ -2686,7 +2688,7 @@ HOST_SERVER = 'metaform'
 BYTES_PER_TOKEN = 4
 MEMORY_READS = ('graph', 'orphaned', 'note')  # the memory module's reads the page makes, VIEW-031 and VIEW-034
 MEMORY_WRITES = ('create_entities', 'create_relations', 'add_observations', 'delete_entities', 'delete_observations',
-                 'delete_relations', 'unjoin')  # the memory commands a person manages the graph with, VIEW-031
+                 'delete_relations', 'unjoin', 'lock', 'unlock')  # the person's memory commands, VIEW-031, CTX-023
 ADDITIONS = 'additions'  # the knowledge layer that holds what people add to the map by hand, VIEW-033
 ADDED = {'module': 'web', 'workflow': 'add element', 'prompt': 'Written by a person in the web GUI.', 'model': 'none',
          'role': 'user', 'blinded': False}
@@ -2756,6 +2758,10 @@ def with_glyphs(given: dict[str, str], found: Any) -> Any:
                 held.setdefault(str(row['work_id']), {}).update(agent=row['agent'], hold=bool(row['hold']))
             for row in tx.rows('eligible', limit=0).results:
                 held.setdefault(str(row['work_id']), {})['eligible'] = row['agents']
+            # its item at its address, `<address>#<n>`, and its title, MCP-037, as the full-size dock's agent list says
+            for row in tx.rows('numbered', {'kind': 'work'}, limit=0).results:
+                held.setdefault(str(row['item_id']), {}).update(
+                    item=reference(row['address'], row['number']), title=row['title'])
     except (Stop, StoreError):
         return page
     if not held:

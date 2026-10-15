@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, BinaryIO, Literal, cast
 
 from metaform import home, prompt_files, settings
-from metaform.data import Element, GraphPage, Item, Join, Layer, Node, Notice, Store, StoreError, WorkRecord, as_object
+from metaform.data import Element, GraphPage, Item, Join, Layer, Node, Notice, Store, StoreError, WorkRecord
 from metaform.module import Context, Module, Noun, Resource, Status, Stop, ToolbarItem, Verb, project_for, save_report
 
 from .schema import ELEMENTS, IFD, NAME_LENGTH, REFS, ROLE
@@ -433,26 +433,16 @@ def _described(element: Element) -> bool:
 
 def _sources(ctx: Context, rec: Recording, kind: Literal['element', 'join'], element_id: str, address: str,
              refs: list[Any], notices: Notices) -> None:
-    """The refs given with an element or a purpose record, written as its one item of the sources layer,
-    replacing what that item held:
-    refs live in a sources layer, never in the metaform. Off with intake_sources, nothing is written."""
+    """The refs given with an element or a purpose record, each linked there as a record of the sources layer,
+    code.graph.knowledge#c, replacing those last linked there: refs live in a sources layer, never in the metaform.
+    Given again, as a verification pass gives them, nothing changes. Off with intake_sources, nothing is written."""
     if not ctx.setting('intake_sources'):
         notices.append({'where': 'refs', 'message': 'intake_sources is off, so the refs were not recorded.'})
         return
-    store = rec.store
-    store.layer(SOURCES, 'intake', 'refs', kind='layer', mutable=True, hideable=True, ready=True)  # read at once
-    held = [item for item in store.layer_items(SOURCES, Node(kind, element_id), limit=0).results
-            if isinstance(item, Item)]
-    given = [as_object(ref) for ref in refs]
-    if len(held) == 1 and not held[0].extra and [(ref.key, ref.value) for ref in held[0].refs] == [
-            (each.get('key'), each.get('value')) if each is not None else None for each in given]:
-        return  # the refs it holds already, as a verification pass gives them again: nothing to write
-    if held:
-        _note(notices, store.edit(held[0].id, {'refs': refs}))
-        for extra in held[1:]:
-            _note(notices, store.remove(extra.id))
-    else:
-        _note(notices, store.add_item(SOURCES, Node(kind, element_id), address, refs=refs))
+    for notice in rec.store.place_refs(Node(kind, element_id), refs, by='intake',
+                                       why=f'given with {address} in the intake'):
+        if notice.where != 'linked':
+            notices.append({'where': notice.where, 'message': notice.message})
 
 
 def _noted(ctx: Context) -> str | None:
@@ -1078,7 +1068,7 @@ def finish(ctx: Context) -> Any:
     # The open work records on what this intake recorded, MAP-046: the condition of an object is apart from the map.
     recorded_ids = {element.id for element in elements} | {held.id for held in joins}
     work = sum(1 for row in found.store.work(open=True, limit=0).results if row.node_id in recorded_ids)
-    # A map with a code trunk is ready for its code: the map module reads it into its own layer, P167.
+    # A map with a code trunk is ready for the modules that work on its code, told by intake.finished.
     code = any(element.address.split('.', 1)[0] == 'code' for element in elements)
     # a verification pass finishes no layer; it sends intake.finished only when it added code elements to the map
     new_code = [element.id for element in elements
@@ -1095,8 +1085,7 @@ def finish(ctx: Context) -> Any:
             })
     return {'layer': found.layer.name, 'project': store.project_id, 'base': found.metaform,
             'elements': len(elements), 'purposes': len(joins), 'work': work, 'notices': notices,
-            **({'follow_on': follow_on} if follow_on else {}),
-            **({'next': [ctx.calls('metaform map code-import')]} if code else {})}
+            **({'follow_on': follow_on} if follow_on else {})}
 
 
 def _several(store: Store) -> str | None:
@@ -1253,7 +1242,7 @@ MODULE = Module(
                                    'and - is standard input.', required=False),
                     Noun('feedback', 'Feedback on the Metaform process: bad semantics, a tool that did not match its '
                                      'schema, where you got stuck.', required=False)),
-             open_world=True, listed=recording),  # its intake.finished subscriber, source_placement's, can start a run that sends to Jev
+             listed=recording),
         Verb('status', status_verb, 'Say whether this project has an intake, and whether one is being recorded.',
              effect='read'),
         # The person's choice for an intake left unfinished, beside resuming and finishing it; never an agent's, so it

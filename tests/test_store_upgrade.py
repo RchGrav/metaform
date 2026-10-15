@@ -286,7 +286,7 @@ def test_three_processes_opening_a_layout_10_store_at_once_all_read_it_upgraded_
     met = [answers.get(timeout=120) for _ in openers]
     for opener in openers:
         opener.join(timeout=30)
-    assert met == [(SCHEMA_VERSION, 9)] * 3
+    assert met == [(SCHEMA_VERSION, 11)] * 3  # layout 22 adds its one ref as a record and removes the old item
     assert len(list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))) == 1
 
 
@@ -615,7 +615,7 @@ def test_a_layout_12_store_opens_with_every_purpose_join_still_typed_purpose_and
         layers = layer_names(opened)
         names = element_names(opened)
         held = loaded(opened).current('J1').fields['held']
-    assert version == SCHEMA_VERSION == '21'
+    assert version == SCHEMA_VERSION == '22'
     assert held == ['E2', 'E3']
     # each element keeps its own name; the joins' verb, non_goal and the subtype join's own fields are not kept
     assert names == {'E1': 'code', 'E2': 'engine', 'E3': 'tick'} and 'intake details' not in layers
@@ -692,7 +692,7 @@ def test_a_layout_13_store_opens_with_every_ticket_kept_and_no_glyph_column(home
         after = [dict(row) for row in opened.execute('SELECT * FROM work ORDER BY row')]
         steps = opened.execute('SELECT work_id, number, said FROM work_steps').fetchall()
         broken = opened.execute('PRAGMA foreign_key_check').fetchall()
-    assert version == SCHEMA_VERSION == '21'
+    assert version == SCHEMA_VERSION == '22'
     # the stage names of 2026-10-08: a missing ticket of an old layout opens as unbuilt, MAP-046
     assert after == [{**row, 'condition': 'unbuilt' if row['condition'] == 'missing' else row['condition'], 'kind': '', 'outcome': None}
                      for row in before]  # the ticket's kind, added at the map module's version 9, starts empty
@@ -748,7 +748,7 @@ def test_a_layout_14_store_opens_with_every_ticket_kept_and_the_glyph_column_dro
         links = opened.execute('SELECT work_id, number, target_id FROM work_links').fetchall()
         steps = opened.execute('SELECT work_id, number, said FROM work_steps').fetchall()
         broken = opened.execute('PRAGMA foreign_key_check').fetchall()
-    assert version == SCHEMA_VERSION == '21'
+    assert version == SCHEMA_VERSION == '22'
     assert 'glyph' not in columns
     assert after == [{**{key: value for key, value in row.items() if key != 'glyph'},
                       'condition': 'unbuilt' if row['condition'] == 'missing' else row['condition'], 'kind': '', 'outcome': None}
@@ -804,7 +804,7 @@ def test_a_layout_15_store_opens_with_every_item_kept_and_both_flags_false(home:
         after = [{'item_id': 'I1', 'layer_id': v.layer_id, 'op': v.op, 'reason': v.reason, 'evidence': v.evidence,
                   **{key: v.fields.get(key) for key in ('target_kind', 'target_id', 'value', 'link_kind', 'link_id',
                                                         'extra', 'read_first', 'always_show')}} for v in versions]
-    assert version == SCHEMA_VERSION == '21'
+    assert version == SCHEMA_VERSION == '22'
     assert after == [{**without_row(row), 'read_first': 0, 'always_show': 0} for row in before]
     assert base.current('I1').seq == versions[-1].seq and [ident for ident, _ in base.currents('item')] == ['I1']
     backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))
@@ -849,7 +849,7 @@ def test_a_layout_16_store_opens_with_every_join_kept_and_naming_no_element(home
         version = opened.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
         base = loaded(opened)
         after = join_rows(opened, 'J1')
-    assert version == SCHEMA_VERSION == '21'
+    assert version == SCHEMA_VERSION == '22'
     assert after == [without_row(renamed(row)) for row in before]
     assert [row['type'] for row in after] == ['purpose', 'purpose']  # require is purpose again
     assert base.current('J1').seq == max(v.seq for v in base.versions['J1'])
@@ -930,7 +930,7 @@ def test_a_layout_16_store_opens_in_the_metaforms_shape_with_nothing_it_held_los
                                                       'SELECT target_kind, target_id FROM messages')]
         refs = [ident for ident, held_versions in base.versions.items() if base.kinds[ident] in ('element', 'join')
                 for v in held_versions if v.refs]
-    assert version == SCHEMA_VERSION == '21'
+    assert version == SCHEMA_VERSION == '22'
     # J1's name is not E2's, which has its own; J3's is E4's, which had none; the rest of every element is kept
     assert elements_after == [tuple(row) if row[0] != 'E4' else (*row[:3], 'cee', row[4]) for row in elements_before]
     assert held == {'J1': ['E2', 'E3'], 'J3': ['E4']}
@@ -939,12 +939,13 @@ def test_a_layout_16_store_opens_in_the_metaforms_shape_with_nothing_it_held_los
     assert 'J2' not in [ident for ident, _ in base.currents('join')]  # the subtype join is gone, its element held by J1
     sources = layer['sources']
     assert 'intake details' not in layers  # nothing of the old shape is kept beside the metaform
-    # The current version is what moves: J1's refs from its change row, at E2, the element J1 holds.
+    # The current version is what moves: J1's refs from its change row, at E2, the element J1 holds. Each ref is a
+    # record of the sources layer from layout 22, its value its name, code.graph.knowledge#c.
     assert items == [
         (MEMORY, 'element', 'E3', '"ticks drift"', None, None),
         (sources, 'element', 'E1', '"code"', 'path', 'src/code'),
-        (sources, 'element', 'E2', '"code.b"', 'path', 'src/b.c'),
-        (sources, 'element', 'E3', '"code.loop.tick"', 'path', 'src/tick.c'),
+        (sources, 'element', 'E2', '"b"', 'path', 'src/b.c'),
+        (sources, 'element', 'E3', '"tick"', 'path', 'src/tick.c'),
     ]
     assert moved == [('element', 'E3'), ('element', 'E3')]
     assert refs == []  # the base holds no refs: an element's refs are items of the sources layer

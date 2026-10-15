@@ -126,11 +126,9 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
     host, _ = connect()
     try:
         listed = commands(host)
-        modules = {'source_placement' if name.startswith('source_placement_') else name.split('_', 1)[0]
-                   for name in listed}
-        # fork ships enabled, BASE-017; mcp carries the A2A outbound tools, MCP-040; source_placement ships enabled,
-        # BASE-065.
-        assert modules == {'intake', 'map', 'mcp', 'memory', 'source_placement', 'web', 'fork', 'metaform'}
+        modules = {name.split('_', 1)[0] for name in listed}
+        # fork ships enabled, BASE-017; mcp carries the A2A outbound tools, MCP-040.
+        assert modules == {'intake', 'map', 'mcp', 'memory', 'web', 'fork', 'metaform'}
         assert TOOLS <= listed and not any(name.startswith(('hello_', 'template_')) for name in listed)
 
         # 5 and 6: the subagent reads its instructions by name, unaltered.

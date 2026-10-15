@@ -1,0 +1,1 @@
+metaform-mcp-tool-listing: "Use when MCP tool listing, needs_project, reads_layers, listed or tool description cuts change."

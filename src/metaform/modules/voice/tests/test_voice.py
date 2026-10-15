@@ -81,6 +81,22 @@ def test_auto_chooses_the_server_on_a_gpu_and_the_transcript_comes_from_the_load
     assert heard['text'] == 'ask not' and seen['partial'] is True and seen['name'] == 'large-v3-turbo'
 
 
+def test_a_gpu_whose_cublas_does_not_load_runs_on_the_cpu_and_status_says_why_with_the_install(run, voice, monkeypatch):
+    engine = voice('engine')
+    monkeypatch.setattr(engine, 'installed', lambda: True)
+    monkeypatch.setitem(sys.modules, 'ctranslate2', type(sys)('ctranslate2'))
+    sys.modules['ctranslate2'].get_cuda_device_count = lambda: 1
+    monkeypatch.setattr(engine, '_gpu_name', lambda: 'Test GPU')
+    monkeypatch.setattr(engine, '_cuda_libraries', lambda: None)
+    monkeypatch.setattr(engine, 'CUBLAS', 'libcublas-not-here.so.12')
+    monkeypatch.setattr(engine.os, 'cpu_count', lambda: 16)
+    found = json.loads(run('voice', 'status', '--json').stdout)
+    assert found['engine'] == 'server' and found['server']['device'] == 'cpu' and found['server']['model'] == 'small'
+    assert 'libcublas-not-here.so.12' in found['server']['reason']
+    assert 'voice-gpu' in found['server']['install'] and found['server']['cuda_error']
+    assert engine.device('cuda') == ('cpu', 'int8')
+
+
 def test_a_partial_asked_while_another_runs_is_answered_busy_and_never_queued(voice, tmp_path):
     engine = voice('engine')
     engine._lock.acquire()

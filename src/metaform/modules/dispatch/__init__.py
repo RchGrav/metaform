@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from metaform import events, home, prompt_files, settings
-from metaform.data import Column, Index, Store, StoreError, Table, Tables, WorkRecord, status
+from metaform.data import Column, Index, Node, Store, StoreError, Table, Tables, WorkRecord, status
 from metaform.module import (
     Context,
     Module,
@@ -58,6 +58,7 @@ from metaform.module import (
     held_role,
     mcp_server,
     project_for,
+    provided,
     surface,
     work_reads,
 )
@@ -698,8 +699,9 @@ settings.choice('dispatch_elicitation', ['ask', 'decline'], 'ask', person_only=T
 
 
 def prompt(name: str, **fills: str) -> str:
-    """The prompt `name` of this module's resources/prompts.xml, MCP-031."""
-    return prompt_files.required(resources.files(__name__), name, **fills)
+    """The prompt `name` of this module's resources/prompts.xml, MCP-031, as the prompt store serves it as
+    `dispatch:<name>`: the shipped text, or an edit saved in its place, STORE-044."""
+    return prompt_files.served(resources.files(__name__), name, **fills)
 
 
 def handoff_prompt(work_id: str, folder: Path) -> str:
@@ -709,13 +711,23 @@ def handoff_prompt(work_id: str, folder: Path) -> str:
     return prompt('handoff', work_id=work_id, record=f"  {prompt('record')}\n" if memory else '')
 
 
+def memory_text(folder: Path, project: str | None, address: str | None) -> str:
+    """The owner's memory prompt, CTX-026, filled with the project and the element at `address`, or in its unassigned
+    form without one, CTX-027, as the memory module offers it while it is on the folder's surface; empty otherwise,
+    so a folder with memory off is sent none, CTX-028."""
+    if not project:
+        return ''
+    return '\n\n'.join(text for _, made in provided(folder, 'memory.prompt') if (text := made(project, address)))
+
+
 def work_line(work_id: str, folder: Path, node: str) -> str:
     """What a hand-off adds to the node brief: work the ticket with the map_work tool, whose description says how,
     and, while the memory module is on the folder's surface, the owner's sentence on recording what is learned, with
     the node it is recorded at, so no agent is told to use a tool it does not have."""
     memory = any(module.id == 'memory' for module in surface(folder))
-    return prompt('work', work_id=work_id,
-                  record=prompt('work_record', node=node) if memory and node else '')
+    line = prompt('work', work_id=work_id, record=prompt('work_record', node=node) if memory and node else '')
+    rule = prompt('work_link')  # the rule on writing files the runner holds every agent to, code.dispatcher.agent#3d
+    return f'{line} {rule}' if rule else line
 
 
 # The mascot's body: the web module's verbs that move it and let it see, each the MCP tool web_<verb>.
@@ -2722,6 +2734,60 @@ ATTACH_MOST = 25 * 1024 * 1024  # the largest file an agent attaches to its chat
 PUBLISHED = 'published'  # under the project's folder in the Metaform home: <session>/<id>/<name> and meta.json
 
 
+def link(ctx: Context) -> dict[str, Any]:
+    """A file linked to the element whose functionality it realizes, code.dispatcher.agent#3d: a ref of the sources
+    layer naming its path, a record with an id that lasts, code.graph.knowledge#c, the refs the runner places files
+    by, so the runner's lock on writing it is lifted at once and the file is placed exactly from then on. The ref is
+    named `ref`, a proper noun for what the file is, or from its path, and records who linked it and why. A file
+    linked already at another place moves to the nearest common node of the two, the moving link. An Address no
+    element has yet is made first, in the active map's base; the sources layer is made when the project has none.
+    Linking it again where it is changes nothing."""
+    from metaform.data import Node, Outcome
+    store = ctx.require_store()
+    root = Path(store.project().path).resolve()
+    given = str(ctx.nouns['file']).strip().replace('\\', '/')
+    address = str(ctx.nouns['node']).strip()
+    named = given
+    if Path(given).expanduser().is_absolute():
+        found = Path(given).expanduser().resolve()
+        here = Path.cwd().resolve()  # a worktree's file is named from the worktree, as the runner names it
+        base = here if found.is_relative_to(here) and here.is_relative_to(root) else root
+        if not found.is_relative_to(base):
+            raise Stop(f'{given} is outside the project, {root}; only a file of the project is linked.',
+                       'metaform dispatch link file=<a path from the project folder> node=<Address>')
+        named = found.relative_to(base).as_posix()
+    while named.startswith('./'):
+        named = named[2:]
+    named = named.rstrip('/')
+    if not named or named == '.' or named.startswith('../'):
+        raise Stop(f'{given} names no file of the project.', 'metaform dispatch link file=<path> node=<Address>')
+    element = store.element(address)
+    made = element is None
+    if element is None:
+        layer = next((one for one in store.layers(limit=0).results if one.kind in ('base', 'intake')), None)
+        if layer is None:
+            raise Stop('The project has no map yet, so no element can be made for the file.', 'metaform intake start')
+        added = store.add_element(layer.name, address)
+        if isinstance(added, Outcome):
+            raise Stop(' '.join(notice.message for notice in added.notices) or
+                       f'No element was made at {address}.', f'metaform map where {address}')
+        element = added
+    work, session = os.environ.get('METAFORM_WORK'), os.environ.get('METAFORM_SESSION')
+    by = ' '.join(part for part in (f'work {work}' if work else '', f'session {session}' if session else '') if part)
+    written = store.link_ref('path', named, Node('element', element.id), name=ctx.nouns.get('ref') or None,
+                             by=by or ctx.surface, why=ctx.nouns.get('why') or None)
+    if isinstance(written, Outcome):  # a name taken or reserved: nothing written, said as a result, BASE-044, CTX-066
+        return {'file': named, 'node': address, 'ref': None, 'id': None, 'linked': False, 'made': made,
+                'said': ' '.join(notice.message for notice in written.notices) or f'{named} was not linked.'}
+    if any(notice.where == 'linked' for notice in written.notices):
+        return {'file': named, 'node': address, 'ref': written.ref, 'id': written.id, 'linked': False, 'made': made,
+                'said': f'{named} was already linked as {written.ref}.'}
+    moved = [notice.message for notice in written.notices if notice.where == 'ref']
+    return {'file': named, 'node': address, 'ref': written.ref, 'id': written.id, 'linked': True, 'made': made,
+            'said': ' '.join([(f'{named} is linked as {written.ref}{", its element made" if made else ""}; writes '
+                               'to it go through.'), *moved])}
+
+
 def attach(ctx: Context) -> dict[str, Any]:
     """A file an agent made, attached to its own chat for the person to download, VIEW-039. It is the agent's own,
     found as its timer is, so it reaches only the thread of the session that published it. The file is read from the
@@ -2960,6 +3026,10 @@ def handoff_parts(ctx: Context, work_id: str, *, session: str | None = None,
     fields: list[tuple[str, Any]] = [('ticket', work_id), ('kind', read.get('kind')),
                                      ('condition', read.get('condition')), ('task', read.get('task')),
                                      ('note', read.get('note'))]
+    if ctx.project and read.get('node_kind') and read.get('node_id'):  # what the person wrote at the node, whole
+        node = Node.of(str(read['node_kind']), str(read['node_id']))
+        fields += [("the person's note here", text) for _, person_note in provided(ctx.folder, 'memory.note')
+                   if (text := person_note(ctx.project, node))]
     if read.get('steps'):
         fields.append(('steps', f"{read.get('steps_done') or 0} of {read['steps']} done"))
     linked = [one if isinstance(one, str) else '' for one in cast(list[Any], read.get('linked') or [])]
@@ -3925,6 +3995,16 @@ MODULE = Module(
              examples=(('metaform dispatch attach artifacts/brief.txt',
                         'Shows brief.txt in your chat as an attachment with Download.'),), open_world=False,
                         listed=in_session),
+        Verb('link', link, 'Link a file to the element whose functionality it realizes: its path added to the '
+                           "element's refs in the sources layer, which unlocks writing it and places it on the map.",
+             nouns=(Noun('file', 'The file, a path from the project folder or your working folder.'),
+                    Noun('node', 'The Address of the element it realizes; an Address no element has yet is made.'),
+                    Noun('ref', "The ref's name, a proper noun for what the file is, unique in the project: for code its "
+                                'qualified name, such as engine.run. Made from the path when left out.', required=False),
+                    Noun('why', 'Why the file realizes that element, kept with the link.', required=False)),
+             examples=(('metaform dispatch link file=src/engine/run.py node=code.engine.runner',
+                        ('Links run.py to code.engine.runner as engine.run@code.engine.runner; writes to it go '
+                         'through from then on.')),)),
         Verb('interrupt', interrupt, 'Interrupt the turn of the agent working a ticket, keeping its conversation open.',
              nouns=(Noun('id', 'The work id of the ticket.'),
                     Noun('session', 'The chat session id, to avoid interrupting a replacement session.', required=False)),
