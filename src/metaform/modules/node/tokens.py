@@ -12,8 +12,10 @@ What a signed token cannot do by itself is be taken back. Two small things held 
 - `Generations`: each account carries a generation number, the only token state on disk. Every token names the
   generation it was issued under, and a token whose generation is not the account's current one is refused, so
   bumping it ("sign out everywhere") ends every token, session and tunnel of the account at once and after a restart.
-  The number is read once per account and kept for `GENERATION_SECONDS`, so the check costs no read per request and a
-  bump made by another process (`metaform node signout` on the host) reaches the server within that time. It ends
+  The number is read once per account and kept until a change to that account is announced, so the check costs no
+  read per request; a bump made by another process (`metaform node signout` on the host) announces itself in
+  `map.changed` naming `node.accounts` and the account, which the server hears through the base's listener at once,
+  BASE-053; nothing re-reads it on a timer, QUAL-015. It ends
   what this server issued, not what a copy of its key can forge, since a forger writes any generation it likes: a key
   that may have been copied is ended by revoking the key itself (`Keys.rotate(revoke_old=True)`).
 - `Families`: a refresh token belongs to a family, the grant it came from, and carries a sequence number. The highest
@@ -58,11 +60,9 @@ REFRESH_SECONDS = 30 * 86400  # sliding
 REFRESH_CAP_SECONDS = 90 * 86400  # from the passkey sign-in that started the grant, however often it was refreshed
 CODE_SECONDS = 300
 ASSERTION_SECONDS = 60
-GENERATION_SECONDS = 30.0
 DPOP_SKEW = 60  # a DPoP proof older or newer than this is refused
 DPOP_ALGORITHMS = ('ES256', 'EdDSA')
 CLOCK_LEEWAY = 5
-RELOAD_SECONDS = 5.0  # how often a running server looks for keys rotated or revoked by `metaform node rotate-key`
 
 
 def b64(data: bytes) -> str:
@@ -92,8 +92,9 @@ class Keys:
     expired, so a rotation ends no one's session. A key that may have been stolen is revoked instead: its file is
     deleted and it leaves the key set at once, so every token it signed, and every token forged with it, is refused.
 
-    `metaform node rotate-key` runs in its own process: a running server sees the change on disk within
-    `RELOAD_SECONDS`, so neither a rotation nor a revocation waits for a restart."""
+    `metaform node rotate-key` runs in its own process and announces the change in `map.changed` naming `node.keys`:
+    a running server reads its keys again when it hears that, so neither a rotation nor a revocation waits for a
+    restart, and no request looks at the disk to find out, QUAL-015."""
 
     def __init__(self, folder: Path) -> None:
         self.folder = folder
@@ -101,8 +102,6 @@ class Keys:
         self.private: dict[str, ed25519.Ed25519PrivateKey] = {}
         self.current = ''
         self.retired: dict[str, float] = {}
-        self.stamp: tuple[float, ...] = ()
-        self.looked = 0.0
         self.load()
         if not self.current:
             self.rotate()
@@ -110,13 +109,6 @@ class Keys:
     @property
     def index(self) -> Path:
         return self.folder / 'keys.json'
-
-    def _stamp(self) -> tuple[float, ...]:
-        """What changes on disk when the keys do: the index and every key file, by modification time."""
-        try:
-            return tuple(sorted(path.stat().st_mtime_ns for path in [self.index, *self.folder.glob('*.pem')]))
-        except OSError:
-            return ()
 
     def load(self) -> None:
         with self.lock:
@@ -134,17 +126,6 @@ class Keys:
             self.current = current if current in self.private else ''
             retired = cast(dict[str, Any], kept.get('retired') or {})
             self.retired = {kid: float(when) for kid, when in retired.items() if kid in self.private}
-            self.stamp = self._stamp()
-            self.looked = time.monotonic()
-
-    def fresh(self) -> None:
-        """Read the keys again when another process changed them, looking at most every `RELOAD_SECONDS`."""
-        if time.monotonic() - self.looked < RELOAD_SECONDS:
-            return
-        with self.lock:
-            self.looked = time.monotonic()
-            if self._stamp() != self.stamp:
-                self.load()
 
     def _save(self) -> None:
         written = self.index.with_suffix('.tmp')
@@ -152,7 +133,6 @@ class Keys:
         with os.fdopen(descriptor, 'w', encoding='utf-8') as handle:
             json.dump({'current': self.current, 'retired': self.retired}, handle)
         os.replace(written, self.index)
-        self.stamp = self._stamp()
 
     def rotate(self, revoke_old: bool = False) -> str:
         """A new signing key. The one it replaces is kept for checking until its tokens have all expired, or, with
@@ -195,12 +175,10 @@ class Keys:
                 self._drop(kid)
 
     def signing(self) -> tuple[str, ed25519.Ed25519PrivateKey]:
-        self.fresh()
         with self.lock:
             return self.current, self.private[self.current]
 
     def public(self, kid: str) -> ed25519.Ed25519PublicKey | None:
-        self.fresh()
         with self.lock:
             key = self.private.get(kid)
         return key.public_key() if key is not None else None
@@ -208,7 +186,6 @@ class Keys:
     def derive(self, kid: str, label: str) -> str | None:
         """A secret only this server can make again, from key `kid` and `label`: a dynamically registered client's
         secret, so it is never stored. None once that key is gone, which ends the secret with it."""
-        self.fresh()
         with self.lock:
             key = self.private.get(kid)
         if key is None:
@@ -219,7 +196,6 @@ class Keys:
 
     def jwks(self) -> dict[str, Any]:
         """The key set, RFC 7517: every key that may still have signed a live token."""
-        self.fresh()
         with self.lock:
             listed = [{**OKPAlgorithm.to_jwk(key.public_key(), as_dict=True), 'kid': kid,
                        'alg': ALGORITHM, 'use': 'sig'} for kid, key in self.private.items()]
@@ -270,26 +246,25 @@ class AccountState(Protocol):
 
 class Generations:
     """Each account's current generation and whether it is disabled, read from the store once per account and kept
-    for `ttl` seconds; a bump made here is seen here at once, and `listeners` hear it (the broker closes tunnels)."""
+    until `forget`: a bump made here forgets it at once and `listeners` hear it (the broker closes tunnels); one made
+    by another process is forgotten when its announcement is heard."""
 
-    def __init__(self, store: AccountState, ttl: float = GENERATION_SECONDS) -> None:
+    def __init__(self, store: AccountState) -> None:
         self.store = store
-        self.ttl = ttl
         self.lock = threading.Lock()
-        self.held: dict[str, tuple[int, bool, float]] = {}
+        self.held: dict[str, tuple[int, bool]] = {}
         self.listeners: list[Callable[[str], None]] = []
 
     def current(self, account_id: str) -> tuple[int, bool] | None:
-        now = time.monotonic()
         with self.lock:
             kept = self.held.get(account_id)
-        if kept is not None and kept[2] > now:
-            return kept[0], kept[1]
+        if kept is not None:
+            return kept
         found = self.store.generation(account_id)
         if found is None:
             return None
         with self.lock:
-            self.held[account_id] = (found[0], found[1], now + self.ttl)
+            self.held[account_id] = found
         return found
 
     def valid(self, account_id: str, generation: Any) -> bool:
@@ -304,9 +279,13 @@ class Generations:
                 listener(account_id)
         return made
 
-    def forget(self, account_id: str) -> None:
+    def forget(self, account_id: str | None = None) -> None:
+        """Read the account's generation again at its next check; every account's with None."""
         with self.lock:
-            self.held.pop(account_id, None)
+            if account_id is None:
+                self.held.clear()
+            else:
+                self.held.pop(account_id, None)
 
 
 class FamilyStore(Protocol):

@@ -290,6 +290,41 @@ def test_three_processes_opening_a_layout_10_store_at_once_all_read_it_upgraded_
     assert len(list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))) == 1
 
 
+@pytest.mark.req('STORE-006')
+def test_an_upgrade_beside_a_read_on_an_earlier_snapshot_keeps_every_commit_without_waiting_for_it(
+        home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """A read in another connection that holds the write-ahead log back never holds the upgrade up: the backup and
+    the new store both hold the commit the reader has not seen, and nothing waits for the reader to finish."""
+    import time
+    path = tmp_path / 'main.metaform.sqlite3'
+    layout_10_store(path)
+    setup = sqlite3.connect(path)
+    setup.execute('PRAGMA journal_mode=WAL')
+    setup.close()
+    reader = sqlite3.connect(path, isolation_level=None)
+    reader.execute('BEGIN')
+    reader.execute('SELECT COUNT(*) FROM meta').fetchone()  # its snapshot is from before the commit below
+    writer = sqlite3.connect(path)
+    writer.execute("INSERT INTO meta(key, value) VALUES ('late', 'kept')")
+    writer.commit()
+    writer.close()
+    monkeypatch.setattr('metaform.data.upgrade.BUSY_SECONDS', 2, raising=False)  # a wait for the reader ends in 2 s
+    began = time.monotonic()
+    try:
+        with open_store(path, write=False) as db:
+            late = db.execute("SELECT value FROM meta WHERE key='late'").fetchone()[0]
+            version = db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
+    finally:
+        reader.execute('COMMIT')
+        reader.close()
+    assert time.monotonic() - began < 2
+    assert (version, late) == (SCHEMA_VERSION, 'kept')
+    backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))
+    kept = sqlite3.connect(backups[0])
+    assert kept.execute("SELECT value FROM meta WHERE key='late'").fetchone() == ('kept',)
+    kept.close()
+
+
 def _locker(home: str, path: str, holder: bool, held, answers) -> None:
     """One process taking the file lock: the holder keeps it 12 s, the waiter records what it met and when."""
     import os
@@ -328,6 +363,82 @@ def test_a_process_waiting_on_a_file_lock_held_past_ten_seconds_gets_it_when_the
         locker.join(timeout=30)
     assert met == 'acquired'
     assert waited >= 11
+
+
+@pytest.mark.req('STORE-006')
+def test_a_windows_file_lock_waits_in_the_system_call_and_never_sleeps_to_try_again(tmp_path: Path,
+                                                                                  monkeypatch: pytest.MonkeyPatch):
+    """On Windows a waiter waits inside LockFileEx until the holder lets go, as flock does on unix, rather than trying
+    again after a sleep. Forced on any system: kernel32 and msvcrt are stand-ins built on flock, whose blocking call
+    is what LockFileEx without LOCKFILE_FAIL_IMMEDIATELY does."""
+    import ctypes
+    import fcntl
+    import sys
+    import threading
+    import time
+    import types
+
+    from metaform import sqlite
+
+    errors = threading.local()
+
+    def lock_file_ex(handle, flags, reserved, low, high, overlapped) -> int:
+        try:
+            fcntl.flock(int(handle.value), fcntl.LOCK_EX | (fcntl.LOCK_NB if flags & 0x1 else 0))
+        except BlockingIOError:
+            errors.last = 33
+            return 0
+        return 1
+
+    def unlock_file_ex(handle, reserved, low, high, overlapped) -> int:
+        fcntl.flock(int(handle.value), fcntl.LOCK_UN)
+        return 1
+
+    def locking(descriptor: int, mode: int, size: int) -> None:  # msvcrt's own, which the old code tried and slept on
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_UN if mode == 0 else fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise OSError(36, 'Resource deadlock avoided') from None
+
+    kernel32 = types.SimpleNamespace(LockFileEx=lock_file_ex, UnlockFileEx=unlock_file_ex)
+    msvcrt = types.SimpleNamespace(get_osfhandle=lambda descriptor: descriptor, locking=locking, LK_NBLCK=2, LK_UNLCK=0)
+    monkeypatch.setitem(sys.modules, 'msvcrt', msvcrt)
+    monkeypatch.setattr(ctypes, 'WinDLL', lambda name, use_last_error=False: kernel32, raising=False)
+    monkeypatch.setattr(ctypes, 'get_last_error', lambda: getattr(errors, 'last', 0), raising=False)
+    monkeypatch.setattr(ctypes, 'WinError', lambda code=0: OSError(code, 'a Windows error'), raising=False)
+    monkeypatch.setattr(sys, 'platform', 'win32')
+    slept: list[float] = []
+    real_sleep = time.sleep
+
+    def sleep(seconds: float) -> None:
+        if threading.current_thread().name == 'waiter':
+            slept.append(seconds)
+        real_sleep(seconds)
+    monkeypatch.setattr(time, 'sleep', sleep)
+    path = tmp_path / 'store.upgrade.lock'
+    held, release, acquired = threading.Event(), threading.Event(), threading.Event()
+
+    def holder() -> None:
+        with sqlite.file_lock(path):
+            held.set()
+            release.wait(10)
+
+    def waiter() -> None:
+        with sqlite.file_lock(path):
+            acquired.set()
+    first = threading.Thread(target=holder)
+    first.start()
+    assert held.wait(5)
+    with pytest.raises(sqlite.Held), sqlite.file_lock(path, wait=False):
+        pass
+    second = threading.Thread(target=waiter, name='waiter')
+    second.start()
+    assert not acquired.wait(0.5)  # it waits while the holder holds the lock
+    release.set()
+    assert acquired.wait(5)
+    first.join(5)
+    second.join(5)
+    assert slept == []
 
 
 LAYOUT_11 =(Path(__file__).parent / 'fixtures' / 'store-v11.sql').read_text(encoding='utf-8')

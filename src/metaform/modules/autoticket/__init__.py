@@ -8,6 +8,7 @@ before at once, both as signals, BASE-057. A group becomes a ticket only when pr
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import re
@@ -20,7 +21,6 @@ from metaform.data import Column, Index, Node, Table, Tables, WorkRecord
 from metaform.module import Context, Module, Noun, Status, Stop, Verb, held_role
 
 from . import sources
-from .sources import POLL_SECONDS
 from .watch import Watch, first_line, make_list, ranked, send_list, shown, state
 
 SUPPORTED_OS = ('linux', 'macos')  # it follows logs as tail -F does and reaches hosts through ssh and a POSIX shell
@@ -171,16 +171,22 @@ def remove_rule(ctx: Context) -> dict[str, Any]:
 
 
 async def watch_logs(ctx: Context) -> dict[str, Any]:
-    """Read every watched log this process can take the lease of, until stopped or for `seconds`."""
+    """Read every watched log this process can take the lease of, until stopped or for `seconds`. The watch runs in a
+    thread of its own, woken by its events and deadlines; it hears a log added or removed in another process through
+    the base's listener, BASE-053."""
     store = ctx.require_store()
     seconds = ctx.nouns.get('seconds')
-    ends = None if not seconds else time.monotonic() + float(seconds)
     watching = Watch(ctx, store)
+    ends = None if not seconds else watching.monotonic() + float(seconds)
+    listener = ctx.listen(watching.heard)
+    running = asyncio.ensure_future(asyncio.to_thread(watching.run, ends))
     try:
-        while ends is None or time.monotonic() < ends:
-            await asyncio.to_thread(watching.tick)
-            await asyncio.sleep(POLL_SECONDS)
+        await asyncio.shield(running)
     finally:
+        watching.stop()
+        with contextlib.suppress(BaseException):
+            await running
+        listener.close()
         watching.release()
     totals = watching.totals
     return {'lines': totals.lines, 'captured': totals.captured, 'groups_made': totals.made,

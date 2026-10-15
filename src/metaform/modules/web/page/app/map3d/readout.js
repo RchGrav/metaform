@@ -86,12 +86,13 @@ function showReadout(which, box, parts, key) {
 }
 /* The 3D map's readout decided again once the camera rests, a wheel's zoom or a flight done, for the node or edge the
  * pointer is still on: its sign may now be read, or no longer. */
-export function rehover3d() {
+function rested3d() {
+  if (TIP.out) return;
+  if (hovered) readout('3d', readoutOf(hovered));
+}
+export function rehover3d() {  // on every camera change: one timer re-armed, no new function made each time
   clearTimeout(READOUT.rest3d);
-  READOUT.rest3d = setTimeout(() => {
-    if (TIP.out) return;
-    if (hovered) readout('3d', readoutOf(hovered));
-  }, 250);
+  READOUT.rest3d = setTimeout(rested3d, 250);
 }
 /* What the readout says, the name alone, and only where the map shows no name that can be read: for an edge, which
  * has no label of its own, the names it joins, receiver → provider; for a node, only while its own label is drawn

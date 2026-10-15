@@ -420,7 +420,10 @@ async def note(ctx: Context) -> dict[str, Any]:
     heard = asyncio.Event()
 
     def changed(payload: dict[str, Any]) -> None:
-        if payload.get('project') == store.project_id:
+        # only a change that can hold a reply: one for a receiver's ticket or this one, or one that does not say
+        named: Any = payload.get('work_ids')
+        if payload.get('project') == store.project_id and (
+                not isinstance(named, list) or not (receivers | {work}).isdisjoint(cast(list[Any], named))):
             loop.call_soon_threadsafe(heard.set)
     deadline = loop.time() + wait
     got: list[dict[str, Any]] = []

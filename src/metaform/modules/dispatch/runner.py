@@ -126,7 +126,7 @@ from . import (
     workflow_skill,
 )
 from .merge import checkpoint
-from .signals import add_line, mark_peer
+from .signals import add_line, concerning, mark_peer
 
 START_LIMIT = 300.0  # the one wait for the agent to start and make its session; npx may download it first
 END_LIMIT = 10.0  # the one wait for a cancelled turn to end, and for the agent to end once its input is closed
@@ -720,7 +720,10 @@ async def dispatch(ctx: Context) -> dict[str, Any]:
             await asyncio.to_thread(finished, ctx, store, record, folder)
             active = await asyncio.to_thread(store.active_base)
             await ctx.publish_async('map.changed', {'project': store.project_id, 'tables': 'dispatch',
-                                                    'base_id': active.id if active else None})
+                                                    'dispatch_tables': ['dispatch.merges'],
+                                                    'base_id': active.id if active else None,
+                                                    **concerning(record.id, ended.get('session_id'),
+                                                                 ['dispatch.merges'])})
         glyph = await asyncio.to_thread(glyph_of, ctx, record)  # read again, so a glyph given while it ran counts
         if glyph is not None and await asyncio.to_thread(over_budget, ctx, store, run=run_id) is not None:
             glyph = None  # past this run's or today's token budget, the glyph's next ticket waits, M01
@@ -778,6 +781,27 @@ def worked_in(store: Store, work_id: str, session_id: str) -> str | None:
     held = session_state(intake_store(store, work_id) or store if intake_id(work_id) else store, session_id)
     cwd = held.get('cwd') if held else None
     return str(cwd) if cwd else None
+
+
+# the thread lines that change what a session is, its state and its subagents, announced with kind session
+STATE_LINES = frozenset({'state', 'subagent'})
+# the map's tables a change to a ticket, its questions or its workflow runs writes, for a change that does not say
+# which ticket it concerns
+TICKET_TABLES = frozenset({'work', 'work_steps', 'work_links', 'messages', 'map.question_work'})
+
+
+def concerns(payload: dict[str, Any], work_id: str, session_id: str | None, tables: list[str] | None) -> bool:
+    """Whether a `map.changed` from another process can concern this session, BASE-053: it names its ticket or its
+    session; or it does not say which tickets it wrote, and wrote tickets, questions or workflow runs, or did not say
+    what it wrote. One that names only other tickets and sessions does not."""
+    named: Any = payload.get('work_ids')
+    sessions: Any = payload.get('session_ids')
+    if isinstance(named, list) and work_id in named or \
+            session_id is not None and isinstance(sessions, list) and session_id in sessions:
+        return True
+    if isinstance(named, list) or isinstance(sessions, list):
+        return False
+    return tables is None or any(table in TICKET_TABLES or table.startswith('workflow.') for table in tables)
 
 
 def choose(options: list[PermissionOption], answer: str | None) -> str | None:
@@ -1138,6 +1162,12 @@ class Session:
         self.drifting = False  # a drift check is in flight
         self.paused_runs: set[str] = set()  # the workflow runs this worker's ticket paused on the person, H03
         self.workflow_reading = False
+        self.workflow_again = False  # a change to its runs came while they were read: read once more after
+        self.checking = False  # a check runs; a change for it meanwhile asks for one more, `checks`
+        self.check_again = False
+        self.spinning = False  # spinning-time is raised, until the ticket next advances
+        self.auth_heard = asyncio.Event()  # the agent pushed its login state, `_auth/status_update`
+        self.state_noted = False  # a state or subagent line written since the lines were last announced
 
     def option(self, key: str, default: Any) -> Any:
         """A setting of the session's context, or `default` when it cannot be read, so a setting that is not there
@@ -1163,14 +1193,16 @@ class Session:
             await self.ctx.publish_async('signal.raised' if active else 'signal.cleared', value)
             self.lines_covered()
             await self.ctx.publish_async('map.changed', {'project': self.store.project_id, 'tables': 'dispatch',
-                                                       'dispatch_tables': ['dispatch.lines'], 'signal': value})
+                                                       'dispatch_tables': ['dispatch.lines'], 'signal': value,
+                                                       **concerning(self.work_id, self.session_id, ['dispatch.lines'],
+                                                                    True)})
 
-    async def progress(self) -> None:
-        """Observe progress on an incoming event, never with a timer or a repeated wait."""
+    async def progress(self, record: WorkRecord | None = None) -> None:
+        """Observe progress on an incoming event, never with a timer or a repeated wait. The ticket is the one a change
+        to it was read for, `check`; an update of the agent's own reads nothing and only looks at the clock."""
         if self.prep or self.ending:
             return
-        record = await asyncio.to_thread(ticket, self.store, self.work_id)
-        if record.steps_done != self.progress_steps or record.done:
+        if record is not None and (record.steps_done != self.progress_steps or record.done):
             if record.steps_done > self.progress_steps and self.folder != self.root:  # a worktree's step, P009
                 said = record.said[-1].said if record.said else ''
                 await asyncio.to_thread(checkpoint, self.folder, self.work_id,
@@ -1179,9 +1211,12 @@ class Session:
             self.progress_at = time.monotonic()
             self.progress_calls = self.failed_count = self.drift_at = 0
             self.failed_input = None
+            self.spinning = False
             for signal in ('spinning-calls', 'spinning-time', 'repeated-failure'):
                 await self.raise_signal(signal, active=False)
-        elif self.turns and not self.waiting and time.monotonic() - self.progress_at >= 60 * self.ctx.setting('dispatch_spin_minutes'):
+        elif self.turns and not self.waiting and not self.spinning \
+                and time.monotonic() - self.progress_at >= 60 * self.ctx.setting('dispatch_spin_minutes'):
+            self.spinning = True
             await self.raise_signal('spinning-time', minutes=self.ctx.setting('dispatch_spin_minutes'))
 
     @property
@@ -1259,7 +1294,10 @@ class Session:
             self.lines_due = None
         self.lines_at = time.monotonic()
 
-    async def changed(self, tables: str | None = None, *, dispatch_tables: list[str] | None = None) -> None:
+    async def changed(self, tables: str | None = None, *, dispatch_tables: list[str] | None = None,
+                      kinds: list[str] | None = None) -> None:
+        """Announce this session's writes on `map.changed`. `kinds` names a change no table holds, such as the session
+        now working or idle, `session`, so a reader of other kinds reads nothing for it."""
         if self.base_id is None:
             active = await asyncio.to_thread(self.store.active_base)
             self.base_id = active.id if active is not None else None
@@ -1272,8 +1310,17 @@ class Session:
             payload['dispatch_tables'] = dispatch_tables
         if self.flowing:  # where the agent's tool calls reached since the last event, `flowed`
             payload['flow'], self.flowing = self.flowing, []
+        stated = False
         if tables != 'dispatch' or dispatch_tables is None or 'dispatch.lines' in dispatch_tables:
             self.lines_covered()  # no detail, or the map's tables, reads the agents too
+            stated, self.state_noted = self.state_noted, False
+        if tables == 'dispatch':  # this session's own tables: its ticket and session, so no other runner reads for it
+            about = concerning(self.work_id, self.session_id, dispatch_tables)
+            if kinds and (dispatch_tables is None or 'kinds' in about):
+                about['kinds'] = sorted({*about.get('kinds', []), *kinds})
+            if stated and 'kinds' in about:  # its state or a subagent's line: the session changed, not its thread only
+                about['kinds'] = sorted({*about['kinds'], 'session'})
+            payload.update(about)
         await self.ctx.publish_async('map.changed', payload)
 
     def extra(self, state: str) -> dict[str, Any]:
@@ -1290,6 +1337,8 @@ class Session:
         if self.session_id is None or self.probe:
             return
         session_id, known = self.session_id, self.lines
+        if kind in STATE_LINES:
+            self.state_noted = True  # announced as a change to the session, `changed`
         written = await self.table(lambda tx: add_line(tx, session_id, self.work_id, key, kind, text, known),
                                    fatal=False)
         if written is not None:
@@ -1699,6 +1748,8 @@ class Session:
             return
         status = params.get('authStatus')
         self.acp['auth'] = status if isinstance(status, dict) else None
+        if self.acp['auth'] is not None:
+            self.auth_heard.set()
         self.reported('auth')
         logged_out = isinstance(status, dict) and cast(dict[str, Any], status).get('kind') == 'none'
         async with self.lock:
@@ -2293,7 +2344,7 @@ class Session:
         if changed:  # under the session's lock already, as every update is
             self.acp['intake'] = dict(self.intake)
             await self.save_state()
-            await self.changed(tables='dispatch')
+            await self.changed(tables='dispatch', kinds=['session'])
 
     # ------------------------------------------------------------------ Jev's drift check, H23
 
@@ -2435,7 +2486,7 @@ class Session:
             await self.bind(rpc, 'permit', await self.ask(waiting, options, title, '', call, detail))
         chosen = await waiting
         self.incoming.pop(rpc, None)
-        await self.changed(tables='dispatch')
+        self.spawn(self.changed(tables='dispatch', kinds=['session']))  # beside the answer, never before it
         if rpc is not None and rpc in self.withdrawn:
             self.withdrawn.discard(rpc)
             raise acp.RequestError(REQUEST_CANCELLED, 'Request cancelled')
@@ -2474,17 +2525,44 @@ class Session:
         return request
 
     async def check(self) -> None:
-        """Resolve permission requests the person answered on the page, and end the session once its ticket is done
-        while no prompt of its own runs, whatever turn closed it, VIEW-035."""
-        if not self.ending and self.turns == 0 and not self.prep:
+        """On a change to this session's own ticket or session, `changed_elsewhere`: resolve permission requests the
+        person answered, and end the session once its ticket is done while no prompt of its own runs, whatever turn
+        closed it, VIEW-035. The answers come first, since the agent waits on them; the ticket is read once, after."""
+        if self.waiting and self.node is not None and not self.ending:  # with no node, nothing is asked as a question
+            async with self.lock:
+                await self.answered()
+        record = None
+        if not self.ending and not self.prep:
             record = await asyncio.to_thread(ticket, self.store, self.work_id)
             if record.done and not self.ending and self.turns == 0:
                 self.spawn(self.ticket_done())
                 return
         async with self.lock:
-            await self.progress()
-            if not self.waiting or self.node is None:  # with no node, nothing is asked as a question
-                return
+            await self.progress(record)
+
+    def checks(self) -> None:
+        """Check for a change of its own: at once, or, while a check runs, once more after it, so a burst of changes
+        costs one pass more and never one each."""
+        if self.checking:
+            self.check_again = True
+            return
+        self.checking = True
+        self.spawn(self.checked_all())
+
+    async def checked_all(self) -> None:
+        try:
+            while True:
+                self.check_again = False
+                await self.check()
+                if not self.check_again or self.ending:
+                    return
+        finally:
+            self.checking = False
+
+    async def answered(self) -> None:
+        """The questions at its node the person answered: the agent's own, and its permission requests, each answer
+        handed to the agent before it is recorded."""
+        if self.node is not None:
             found = await asyncio.to_thread(self.store.messages, self.node, 'question', None, limit=0)
             for message in found.results:
                 if message.id in self.elicited and message.closed is not None:  # the agent's own question, answered
@@ -2494,16 +2572,16 @@ class Session:
                 if held is None or message.closed is None:
                     continue
                 del self.asked[message.id]
+                waiting, options, title = held
+                chosen = choose(options, message.answer)
+                if chosen is not None and not waiting.done():
+                    waiting.set_result(chosen)  # to the agent first; its thread line is written under this lock
                 await self.raise_signal('permission-waiting', key=message.id, active=False,
                                         message_id=message.id, request=message.id, tool=held[2])
                 self.progress_at = time.monotonic()  # waiting for a person is not agent spinning
                 self.answers[message.id] = (message.closed, message.answer)
-                waiting, options, title = held
-                chosen = choose(options, message.answer)
                 if chosen is not None:
                     await self.permission(message.id, state='answered', chosen=chosen, answer=message.answer)
-                    if not waiting.done():
-                        waiting.set_result(chosen)
                     self.arm()
                     continue
                 await self.permission(message.id, state='unmatched', answer=message.answer)
@@ -2563,7 +2641,7 @@ class Session:
                 await self.elicit_closed(request, 'completed', ('accept', {}))
         action, content = await waiting
         self.incoming.pop(rpc, None)
-        await self.changed(tables='dispatch')
+        await self.changed(tables='dispatch', kinds=['session'])
         if action == 'withdrawn':
             self.withdrawn.discard(rpc)
             raise acp.RequestError(REQUEST_CANCELLED, 'Request cancelled')
@@ -3002,7 +3080,7 @@ class Session:
                           report=json.dumps(report, ensure_ascii=False, indent=1))
             if text and not self.ending:
                 self.turn(text)
-        await self.changed(tables='dispatch')
+        await self.changed(tables='dispatch', kinds=['session'])
 
     def handed(self) -> str:
         """The hand-off this worker is sent as its first turn, BASE-050, its links attached to that turn as ACP
@@ -3283,7 +3361,7 @@ class Session:
                 self.heard = stamp()  # a tool call of this turn began no earlier than its prompt
                 began_ns: int | None = None
                 try:
-                    await self.changed(tables='dispatch')
+                    await self.changed(tables='dispatch', kinds=['session'])
                     if self.ending:
                         break  # stop may arrive while the turn-start event is published
                     if current.cancel_requested:
@@ -3330,7 +3408,7 @@ class Session:
             self.turns -= 1
             if self.turns == 0:
                 self.idle.set()
-        await self.changed(tables='dispatch')  # readers now see idle after the queue drained
+        await self.changed(tables='dispatch', kinds=['session'])  # readers now see idle after the queue drained
         if self.turns == 0 and not self.ending and not self.prep:
             record = await asyncio.to_thread(ticket, self.store, self.work_id)
             if self.turns or self.ending:  # a message can arrive while the ticket is read
@@ -3464,7 +3542,7 @@ class Session:
                 await self.elicitations_cancelled()
                 await self.flush()
                 await self.note(None, 'interrupt', 'Cancellation of the current turn requested.')
-            await self.changed(tables='dispatch')
+            await self.changed(tables='dispatch', kinds=['session'])
             return True
 
     async def watch(self, process: asyncio.subprocess.Process) -> None:
@@ -3475,54 +3553,75 @@ class Session:
             await self.end(f'the agent ended with exit code {code}' + (f'; its last stderr: {said}' if said else ''))
 
     def changed_elsewhere(self, payload: dict[str, Any]) -> None:
-        """map.changed from another process, handed over by the base's listener, BASE-053: a change to this project
-        may be the person's answer to a permission prompt, so they are checked, or to a workflow run this worker paused
-        on them. A change to the map itself may move the refs that place a file on it, so they are read again when next
-        needed."""
-        if payload.get('project') == self.store.project_id and not self.ending:
-            if payload.get('tables') != 'dispatch':
-                self.sources = None
+        """map.changed from another process, handed over by the base's listener, BASE-053, acted on only when it can
+        concern this session: one naming its ticket or its session, as the person's answer to its permission request
+        or a step on its ticket, is checked; one naming only other tickets and sessions, such as another agent's thread
+        lines and steps, does nothing here. A change that does not say what it concerns is checked only when it wrote
+        tickets, questions or workflow runs, or did not say what it wrote. A change to its ticket's workflow runs reads
+        those runs. A change to the map itself may move the refs that place a file on it, so they are read again when
+        next needed. This process's own writes never come back here."""
+        if payload.get('project') != self.store.project_id or self.ending:
+            return
+        given: Any = payload.get('tables')
+        tables = None if given is None else [given] if isinstance(given, str) else \
+            [str(one) for one in cast(list[Any], given)] if isinstance(given, list) else []
+        if tables is None or any(not table.startswith('dispatch') for table in tables):
+            self.sources = None
+        if concerns(payload, self.work_id, self.session_id, tables):
+            self.checks()
+            if tables is None or any(table.startswith('workflow.') for table in tables):
                 self.spawn(self.workflow_answers())
-            self.spawn(self.check())
-            raised: Any = payload.get('signal')
-            if isinstance(raised, dict) and cast(dict[str, Any], raised).get('signal') == 'setup-not-working' \
-                    and cast(dict[str, Any], raised).get('active') and self.session_id is not None:
-                self.spawn(self.troubles())  # a feature the person set up is not working: the system agent says so
+        raised: Any = payload.get('signal')
+        if isinstance(raised, dict) and cast(dict[str, Any], raised).get('signal') == 'setup-not-working' \
+                and cast(dict[str, Any], raised).get('active') and self.session_id is not None:
+            self.spawn(self.troubles())  # a feature the person set up is not working: the system agent says so
 
     async def workflow_answers(self) -> None:
         """A workflow run this worker's ticket paused on the person, MAP-050, that the person has answered since: the
         agent is told to resume it, the workflow_answered prompt as its next turn, so the person's answer reaches it
-        without a message of their own, H03. Runs are read through workflow's own runs verb, never its tables."""
-        if self.node is None or self.system or self.prep or self.probe or self.ending or self.workflow_reading:
+        without a message of their own, H03. Read on a change to its ticket's runs only, and then only the runs paused
+        on the person, and the running ones once one it knew paused is no longer paused; through workflow's own runs
+        verb, never its tables. A change that comes during a read is read once more after it."""
+        if self.node is None or self.system or self.prep or self.probe or self.ending:
+            return
+        if self.workflow_reading:
+            self.workflow_again = True
             return
         self.workflow_reading = True
         try:
-            found = await asyncio.to_thread(module_read, Path(self.root), self.store.project_id, 'workflow', 'runs',
-                                            limit=0)
+            while True:
+                self.workflow_again = False
+                await self.workflow_read()
+                if not self.workflow_again or self.ending:
+                    return
+        finally:
+            self.workflow_reading = False
+
+    async def workflow_read(self) -> None:
+        def runs(state: str) -> list[dict[str, Any]]:
+            found = module_read(Path(self.root), self.store.project_id, 'workflow', 'runs', state=state, limit=0)
+            listed: Any = cast(dict[str, Any], found).get('runs') if isinstance(found, dict) else None
+            return [run for run in cast(list[dict[str, Any]], listed or []) if run.get('ticket') == self.work_id]
+        try:
+            paused = {str(run.get('run')) for run in await asyncio.to_thread(runs, 'input_required')}
+            left = self.paused_runs - paused
+            running: set[str] = {str(run.get('run')) for run in await asyncio.to_thread(runs, 'running')} \
+                if left else set()
         except Exception as error:  # noqa: BLE001  a read that fails delivers nothing; the ticket's note still says it
             sys.stderr.write(f'Could not read the workflow runs: {error}\n')
             return
-        finally:
-            self.workflow_reading = False
-        listed: Any = cast(dict[str, Any], found).get('runs') if isinstance(found, dict) else None
-        for run in cast(list[dict[str, Any]], listed or []):
-            word = str(run.get('run'))
-            if run.get('ticket') != self.work_id:
-                continue
-            if run.get('state') == 'input_required':
-                self.paused_runs.add(word)
-            elif word in self.paused_runs and run.get('state') == 'running':
-                self.paused_runs.discard(word)
-                text = prompt('workflow_answered', run=word)
-                if text and not self.ending:
-                    current = self.active_turn  # into the turn in flight where the agent steers, else its next turn
-                    steered = (await self.steer(text) if self.turns and not self.pending and current is not None
-                               and current.sent and not current.cancel_requested else False)
-                    async with self.lock:
-                        await self.note(None, 'notice', f'Workflow run {word} was answered; its agent is told to '
-                                                        'resume it.')
-                    if not steered:
-                        self.turn(text)
+        self.paused_runs = (self.paused_runs | paused) - left  # one no longer paused is answered, or ended
+        for word in sorted(left & running):
+            text = prompt('workflow_answered', run=word)
+            if text and not self.ending:
+                current = self.active_turn  # into the turn in flight where the agent steers, else its next turn
+                steered = (await self.steer(text) if self.turns and not self.pending and current is not None
+                           and current.sent and not current.cancel_requested else False)
+                async with self.lock:
+                    await self.note(None, 'notice', f'Workflow run {word} was answered; its agent is told to '
+                                                    'resume it.')
+                if not steered:
+                    self.turn(text)
 
     async def control(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         """One request on the control port, with this session's token: `status`, `message`, `interrupt`, `stop`,
@@ -3835,8 +3934,8 @@ async def logged_in(ctx: Context, store: Store, agent: str) -> bool | None:
 
 
 async def probe_status(probe: Session) -> None:
-    while probe.acp['auth'] is None:
-        await asyncio.sleep(0.05)
+    """Until the agent pushes its login state, `ext_notification`; its caller bounds the wait."""
+    await probe.auth_heard.wait()
 
 
 async def login(ctx: Context, agent: str, method: str | None) -> dict[str, Any]:

@@ -2,7 +2,7 @@
 import '/page/app/core/health.js';  // the part before runs first, so the parts run in the page's order
 import {$} from '/page/app/core/dom.js';
 import {readBack} from '/page/app/core/errors.js';
-import {askHealth} from '/page/app/core/health.js';
+import {askHealth, healthMayBeBack, SLOW} from '/page/app/core/health.js';
 
 /* ---------- reads ---------- */
 /* The page in an AI tool's frame, the MCP Apps map view, MCP-037: it shows the maps and the panel only, so the agents,
@@ -45,17 +45,21 @@ export async function reach(url, options, again = 10) {
   }
 }
 /* A read's failure carries the read's name and the server's {error, next}, for the error surface, core/errors.js, to
- * say; a read that answers takes away the problem a failure of it showed. */
+ * say; a read that answers takes away the problem a failure of it showed. A read still waiting at its SLOW deadline has
+ * the server's banner say what it waits on. */
 export async function read(name, params = {}) {
   const query = new URLSearchParams({project: S.project, ...(S.base ? {base: S.base} : {}), ...params});
+  const slow = setTimeout(askHealth, SLOW);
   const response = await reach(`/api/${name}?${query}`, {headers: {Accept: 'application/json'}})
-    .catch(error => { throw Object.assign(error, {read: name}); });
+    .catch(error => { throw Object.assign(error, {read: name}); })
+    .finally(() => clearTimeout(slow));
   const body = await response.json().catch(() => ({error: `The server answered ${response.status} without JSON.`}));
   if (!response.ok) {
     if (response.status === 503) askHealth();  // the read ran out of time: the banner says what the server waits on
     throw Object.assign(new Error(body.error || `${name} failed`), {status: response.status, body, read: name});
   }
   readBack(name);
+  healthMayBeBack();  // it answered: a banner saying it did not, or was slow, is asked again
   return body;
 }
 export const viewLayers = () => S.view === null ? {} : {layers: [...S.view].join(',')};

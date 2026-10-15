@@ -28,6 +28,7 @@ import socket
 import time
 import urllib.parse
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
@@ -251,29 +252,36 @@ def finish(started: Started, client: httpx.Client, sleep: Callable[[float], None
     guessed it, or who sent it) would connect this machine to theirs. Declined, the sign-in is revoked and nothing is
     kept."""
     endpoint = str(started.meta['token_endpoint'])
-    interval = started.interval
-    while True:
-        if time.time() > started.expires:
-            raise Stop('The code expired before it was approved.', 'metaform cloud login')
-        answer = client.post(endpoint, data={'grant_type': DEVICE_GRANT, 'device_code': started.device_code,
-                                             'client_id': CLIENT},
-                             headers={'DPoP': proof(started.key, 'POST', endpoint, skew=started.skew)})
-        started.skew = _skew(answer, started.skew)
-        found = _json(answer)
-        error = found.get('error')
-        if answer.status_code == 200 and found.get('refresh_token'):
-            break
-        if error == 'authorization_pending':
-            sleep(interval)
-            continue
-        if error == 'slow_down':
-            interval += 5
-            sleep(interval)
-            continue
-        if error == 'access_denied':
-            raise Stop('The sign-in was denied on the page.', 'metaform cloud login, and approve it')
-        raise Stop(f'The sign-in did not finish: {found.get("error_description") or error or answer.status_code}.',
-                   'metaform cloud login')
+
+    def approved() -> dict[str, Any]:
+        """RFC 8628 has the device ask the token endpoint, at the interval the server sets, until the person approves
+        or denies; the broker cannot push the approval to a machine with no address. So this one wait on a timer
+        runs in a worker thread of its own, cloud-device-grant, bounded by the code's expiry."""
+        interval = started.interval
+        while True:
+            if time.time() > started.expires:
+                raise Stop('The code expired before it was approved.', 'metaform cloud login')
+            answer = client.post(endpoint, data={'grant_type': DEVICE_GRANT, 'device_code': started.device_code,
+                                                 'client_id': CLIENT},
+                                 headers={'DPoP': proof(started.key, 'POST', endpoint, skew=started.skew)})
+            started.skew = _skew(answer, started.skew)
+            found = _json(answer)
+            error = found.get('error')
+            if answer.status_code == 200 and found.get('refresh_token'):
+                return found
+            if error == 'authorization_pending':
+                sleep(interval)
+                continue
+            if error == 'slow_down':
+                interval += 5
+                sleep(interval)
+                continue
+            if error == 'access_denied':
+                raise Stop('The sign-in was denied on the page.', 'metaform cloud login, and approve it')
+            raise Stop(f'The sign-in did not finish: {found.get("error_description") or error or answer.status_code}.',
+                       'metaform cloud login')
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix='cloud-device-grant') as worker:
+        found = worker.submit(approved).result()
     jwks_uri = str(started.meta['jwks_uri'])
     keys = _json(client.get(jwks_uri))
     issuer = str(started.meta['issuer'])

@@ -22,6 +22,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable, Generator
 from dataclasses import dataclass
@@ -208,6 +209,56 @@ def tend(lane: Lane, folder: Path, store: Store, working: list[Lane]) -> None:
         start(lane, folder)
 
 
+def overdue(lane: Lane, now: float) -> bool:
+    """A lane's deadline has come: its rest is over, or its ticket has been worked long enough to count as stalled."""
+    return now - lane.closed >= REST if lane.closed is not None else now - lane.started >= STALLED
+
+
+def due(working: list[Lane], now: float) -> float:
+    """Seconds until the first lane's deadline, the only time the demo wakes without an event."""
+    times = [lane.closed + REST if lane.closed is not None else lane.started + STALLED for lane in working]
+    return max(0.0, min(times, default=now + STALLED) - now)
+
+
+class Changes:
+    """The lanes' tickets that `map.changed` from the processes working them names, BASE-053, gathered until the demo
+    wakes. A change that names tickets counts only when it names a lane's; one that names none counts when it wrote
+    the tickets' table or says nothing of what it wrote. Every other change is dropped without a read."""
+
+    def __init__(self, project: str, working: list[Lane]) -> None:
+        self.project, self.working = project, working
+        self.lock = threading.Lock()
+        self.wake = threading.Event()
+        self.named: set[str] = set()
+        self.every = False
+
+    def heard(self, payload: dict[str, Any]) -> None:
+        if payload.get('project') != self.project:
+            return
+        given: Any = payload.get('work_ids')
+        tables: Any = payload.get('tables')
+        with self.lock:
+            if isinstance(given, list):
+                named = {str(one) for one in cast(list[Any], given)} & {lane.ticket for lane in self.working if lane.ticket}
+                if not named:
+                    return
+                self.named |= named
+            elif tables is None or isinstance(tables, list) and \
+                    any(table in ('work', 'op:work') for table in cast(list[Any], tables)):
+                self.every = True
+            else:
+                return
+        self.wake.set()
+
+    def take(self) -> tuple[set[str], bool]:
+        """What was heard since the last take, once; the next wait sleeps until something more comes."""
+        with self.lock:
+            named, every = self.named, self.every
+            self.named, self.every = set(), False
+            self.wake.clear()
+        return named, every
+
+
 def stop(folder: Path, working: list[Lane]) -> None:
     """Stop every demo agent and the demo's web GUI, and put the tickets they held back on the board: a stopped
     agent's ticket otherwise stays taken, and the next run could not start it."""
@@ -282,17 +333,23 @@ def show(root: Path, out: Callable[[str], None]) -> None:
         out(f'Ready in {time.monotonic() - began:.1f} s. ' + ('Opened in your browser. ' if opened else
                                                               'Open that address in your browser. ')
             + 'Ctrl+C stops it; metaform demo --reset starts it fresh.')
-        working = lanes(folder)
-        for at, lane in enumerate(working):
-            if at:
-                time.sleep(STAGGER)
-            start(lane, folder)
-        metaform('dispatch', 'system', 'agent=claude', folder=folder)  # the mascot
+        from .. import events
         store = Store(str(script()['project']))
-        while True:
-            time.sleep(1)
-            for lane in working:
-                tend(lane, folder, store, working)
+        changes = Changes(store.project_id, working)
+        with events.listen('demo', changes.heard):  # before the first start, so no ticket closes unheard
+            working.extend(lanes(folder))
+            for at, lane in enumerate(working):
+                if at:
+                    time.sleep(STAGGER)
+                start(lane, folder)
+            metaform('dispatch', 'system', 'agent=claude', folder=folder)  # the mascot
+            while True:
+                changes.wake.wait(due(working, time.monotonic()))
+                named, every = changes.take()
+                now = time.monotonic()
+                for lane in working:
+                    if every or lane.ticket is None or lane.ticket in named or overdue(lane, now):
+                        tend(lane, folder, store, working)
     except KeyboardInterrupt:
         pass
     finally:

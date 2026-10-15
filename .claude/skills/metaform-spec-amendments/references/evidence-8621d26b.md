@@ -1,0 +1,1 @@
+Spec text: "Every 5 s the watchdog asks `/api/health`. ... The page (`page/app/core/health.js`) asks `/api/health` every 2 s, and at once when a read fails or gets a 503." Agent: "The VIEW-002 amendment still says the watchdog asks `/api/health` every 5 s and the page every 2 s. Loading the project's spec-amendment skill before writing the new one."

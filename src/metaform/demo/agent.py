@@ -150,18 +150,36 @@ def worker_turn(prompt_id: int, text: str) -> None:
 
 
 def mascot() -> None:
-    """The person's mascot: once a page shows it with a body it greets the person and waves, then every little while
-    says the next line about the map, until the process is stopped."""
-    lines = cast(list[str], json.loads(SCRIPT.read_text(encoding='utf-8'))['mascot'])
+    """The person's mascot: once a page shows it with a body it greets the person and waves, then every 40 s, its
+    pace, says the next line about the map, until the process is stopped. While no page shows it, it waits for the
+    web GUI to say one may: a page of the project opening (map.changed naming kinds pages, with a page count), or a
+    page drawing this session, which gives the mascot its body (kinds session, naming it). Nothing tries on a timer."""
+    from metaform import events
+    held = cast(dict[str, Any], json.loads(SCRIPT.read_text(encoding='utf-8')))
+    lines, project = cast(list[str], held['mascot']), str(held['project'])
+    session = os.environ.get('METAFORM_SESSION') or ''
+    shown = threading.Event()  # a page may show the mascot now
+
+    def heard(payload: dict[str, Any]) -> None:
+        if payload.get('project') != project:
+            return
+        kinds: Any = payload.get('kinds')
+        named: Any = payload.get('session_ids')
+        kinds = cast(list[Any], kinds) if isinstance(kinds, list) else []
+        if 'pages' in kinds and int(payload.get('pages') or 0) > 0 or \
+                'session' in kinds and isinstance(named, list) and session in cast(list[Any], named):
+            shown.set()
     at = 0
-    while True:
-        if metaform('web', 'say', lines[at % len(lines)]).returncode == 0:
-            if at == 0:
-                metaform('web', 'emote', 'wave')
-            at += 1
-            threading.Event().wait(40)
-        else:  # no page open yet, or no body given yet
-            threading.Event().wait(3)
+    with events.listen('demo', heard):
+        while True:
+            shown.clear()  # before the try, so a page that opens during it is heard
+            if metaform('web', 'say', lines[at % len(lines)]).returncode == 0:
+                if at == 0:
+                    metaform('web', 'emote', 'wave')
+                at += 1
+                threading.Event().wait(40)  # pacing: a line every 40 s
+            else:  # no page open yet, or no body given yet
+                shown.wait()
 
 
 def main() -> None:

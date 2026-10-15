@@ -7,7 +7,6 @@ API reference: https://www.vultr.com/api/ ; CLI: https://github.com/vultr/vultr-
 from __future__ import annotations
 
 import json
-import time
 from collections.abc import Callable
 from typing import Any
 
@@ -16,7 +15,7 @@ import httpx
 from metaform.module import Stop
 
 from .config import NodeSpec
-from .plans import Step, b64, cloud_init, environment_key
+from .plans import Step, b64, cloud_init, environment_key, upstream
 
 BASE = 'https://api.vultr.com'
 KEY = 'VULTR_API_KEY'
@@ -112,15 +111,16 @@ def provision_steps(spec: NodeSpec, *, region: str, plan: str, os_id: int, publi
                           f'{method} {BASE}{path}\nAuthorization: Bearer ${KEY}\n{shown_body}'.rstrip(), run))
 
     def wait(state: dict[str, Any]) -> dict[str, Any]:
-        deadline = time.monotonic() + wait_seconds
-        while True:
+        """Vultr's API has no webhook or event stream for an instance's state, only its email notices, so the instance
+        is asked for, in node's one upstream worker thread, until it is ready or `wait_seconds` pass."""
+        def ready() -> dict[str, Any] | None:
             instance = api().call('GET', f'/v2/instances/{state["instance_id"]}')['instance']
             if instance.get('status') == 'active' and instance.get('server_status') == 'ok' \
                     and instance.get('main_ip') not in (None, '', '0.0.0.0'):
                 return {'main_ip': instance['main_ip'], 'v6_main_ip': instance.get('v6_main_ip', '')}
-            if time.monotonic() > deadline:
-                raise Stop('The Vultr instance did not become active in time.', 'metaform node status')
-            time.sleep(10)
+            return None
+        return upstream(ready, 10, wait_seconds, lambda: Stop('The Vultr instance did not become active in time.',
+                                                              'metaform node status'))
     steps.append(Step('Vultr: wait until the instance is active and has its address',
                       f'GET {BASE}/v2/instances/{{instance_id}}  (until status=active, server_status=ok)', wait))
     return steps

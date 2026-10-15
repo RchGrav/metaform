@@ -68,8 +68,8 @@ from .records import (
     Where,
     WorkLink,
     WorkRecord,
-    plain,
     is_work,
+    plain,
     shown_open,
 )
 from .session import BASE_VARIABLE, on_base
@@ -137,8 +137,6 @@ __all__ = [
     'ROLES',
     'SCHEMA_VERSION',
     'STAGES',
-    'is_work',
-    'shown_open',
     'Answer',
     'ChallengeState',
     'Citation',
@@ -196,6 +194,7 @@ __all__ = [
     'export_document',
     'history',
     'import_document',
+    'is_work',
     'new_id',
     'now',
     'on_base',
@@ -211,5 +210,6 @@ __all__ = [
     'roots',
     'short_name',
     'shown_number',
+    'shown_open',
     'sliced',
 ]

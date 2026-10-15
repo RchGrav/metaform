@@ -1,0 +1,2 @@
+before: 10 runners (10 alive), 75 events in 60s (1.25/s); idle runner CPU mean 16.12% max 16.32% of a core; each 16.08 16.05 16.15 16.10 16.15 15.90 16.15 16.15 16.13 16.32
+after: 10 runners (10 alive), 75 events in 60s (1.25/s); idle runner CPU mean 0.03% max 0.05% of a core; each 0.03 0.03 0.03 0.03 0.03 0.03 0.03 0.02 0.03 0.05

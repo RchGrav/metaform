@@ -1,6 +1,8 @@
 """Readers: a watched log read line by line as it grows, from a local file or over the system's own ssh. Each runs
 in a thread of its own and hands what it reads to the watch as events, in order. Nothing read is kept: a line lives
-only until the watch has grouped it.
+only until the watch has grouped it. Nothing looks on a timer, QUAL-015: a local reader at its file's end sleeps until
+the system says the file or its folder changed (inotify on Linux, kqueue on macOS and BSD, the module's
+SUPPORTED_OS), and an ssh reader waits on the stream `tail -F` sends.
 
 Every line carries the byte offsets it starts and ends at, so the watch records exactly where it is, and a reader
 started again, by this process after a drop or by another that takes the log over, resumes there: nothing still
@@ -11,14 +13,16 @@ from __future__ import annotations
 import os
 import queue
 import re
+import select
 import shlex
 import shutil
+import struct
 import subprocess
+import sys
 import threading
 from dataclasses import dataclass
 from typing import Any
 
-POLL_SECONDS = 0.25  # how often a local file at its end is looked at again, as tail -F does each second
 READ_BYTES = 64 * 1024
 BACKOFF_FIRST = 1.0  # seconds before the first reconnect of a dropped ssh stream
 BACKOFF_MOST = 60.0  # the longest wait between reconnects
@@ -82,7 +86,7 @@ class Reader(threading.Thread):
     """Reads one log into the events queue: ('file', identity, offset) when it starts on a file, ('line', text, start,
     end) for each complete line, ('drop', reason) and ('reconnect',) for an ssh stream. `stop()` ends it."""
 
-    def __init__(self, source: Source, identity: str, offset: int, events: queue.Queue[tuple[Source, Event]]):
+    def __init__(self, source: Source, identity: str, offset: int, events: queue.Queue[tuple[Source | None, Event]]):
         super().__init__(name=f'autoticket {source.name}', daemon=True)
         self.source, self.identity, self.offset, self.events = source, identity, offset, events
         self.stopping = threading.Event()
@@ -105,11 +109,219 @@ class Reader(threading.Thread):
             position += len(raw)
 
 
+# ------------------------------------------------------------------------------------------------ change wakers
+
+class Waker:
+    """Wakes a reader at the end of a local file when the file, or its name in its folder, changes, or when the reader
+    is stopped. While the file's folder is missing, its nearest existing folder above is watched instead."""
+
+    def __init__(self, path: str) -> None:
+        self.path = path
+        self.folder = ''
+
+    def watched(self) -> str:
+        """The folder to watch now: the file's own, else the nearest existing one above it."""
+        folder = os.path.dirname(self.path)
+        while not os.path.isdir(folder) and os.path.dirname(folder) != folder:
+            folder = os.path.dirname(folder)
+        return folder
+
+    def follow(self, descriptor: int) -> None:
+        """The file the reader has open, so a write to it wakes the reader whatever its name is now."""
+
+    def wait(self) -> None:
+        """Until a change that concerns the file, or `wake`."""
+        raise NotImplementedError
+
+    def wake(self) -> None:
+        raise NotImplementedError
+
+    def close(self) -> None:
+        raise NotImplementedError
+
+
+class Inotify(Waker):
+    """Linux: an inotify watch on the open file, which follows it through a rename, and one on its folder, of which
+    only the events naming the file count."""
+
+    FOLDER = 0x2 | 0x4 | 0x8 | 0x40 | 0x80 | 0x100 | 0x200 | 0x400 | 0x800  # modify, attrib, close-write, moves,
+    # create, delete, and the folder itself deleted or moved
+    FILE = 0x2 | 0x4  # IN_MODIFY, IN_ATTRIB
+    HEADER = struct.Struct('iIII')  # struct inotify_event: wd, mask, cookie, len, then the name
+
+    def __init__(self, path: str) -> None:
+        super().__init__(path)
+        import ctypes
+        self.libc: Any = ctypes.CDLL(None, use_errno=True)
+        self.name = os.fsencode(os.path.basename(path))
+        self.fd = self.folder_wd = self.file_wd = self.stop_read = self.stop_write = -1
+        if sys.platform != 'linux':
+            raise OSError('inotify is a call of Linux.')
+        self.libc.inotify_add_watch.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_uint32)
+        self.fd = int(self.libc.inotify_init1(os.O_NONBLOCK | os.O_CLOEXEC))
+        if self.fd < 0:
+            error = ctypes.get_errno()
+            raise OSError(error, f'inotify: {os.strerror(error)}')
+        self.stop_read, self.stop_write = os.pipe()
+        self.arm()
+
+    def _add(self, path: str, mask: int) -> int:
+        import ctypes
+        wd = int(self.libc.inotify_add_watch(self.fd, os.fsencode(path), mask))
+        if wd < 0:
+            error = ctypes.get_errno()
+            raise OSError(error, f'inotify: {os.strerror(error)}', path)
+        return wd
+
+    def arm(self) -> None:
+        folder = self.watched()
+        if folder != self.folder:
+            if self.folder_wd >= 0:
+                self.libc.inotify_rm_watch(self.fd, self.folder_wd)
+            self.folder_wd, self.folder = self._add(folder, self.FOLDER), folder
+
+    def follow(self, descriptor: int) -> None:
+        if self.file_wd >= 0 and self.file_wd != self.folder_wd:
+            self.libc.inotify_rm_watch(self.fd, self.file_wd)  # refused once the old file is gone, which is the same
+        self.file_wd = self._add(f'/proc/self/fd/{descriptor}', self.FILE)
+
+    def concerns(self, data: bytes) -> bool:
+        """Whether the events read name the file: a change to the open file, the file's name in its folder, any
+        change in a folder above while its own is missing, or a lost or removed watch."""
+        at, end = 0, len(data)
+        size, unpack = self.HEADER.size, self.HEADER.unpack_from
+        file_wd, folder_wd, own_name = self.file_wd, self.folder_wd, self.name
+        own = self.folder == os.path.dirname(self.path)
+        while at + size <= end:
+            wd, mask, _, length = unpack(data, at)
+            name = data[at + size:at + size + length].rstrip(b'\0')
+            at += size + length
+            if wd == file_wd or wd < 0 or mask & 0x8000 or (wd == folder_wd and (not own or name == own_name
+                                                                                 or not name)):
+                return True  # 0x8000 IN_IGNORED: a watch went with its file or folder
+        return False
+
+    def wait(self) -> None:
+        while True:
+            ready, _, _ = select.select([self.fd, self.stop_read], [], [])
+            if self.stop_read in ready:
+                os.read(self.stop_read, 4096)
+                return
+            data = b''
+            try:
+                while chunk := os.read(self.fd, 65536):
+                    data += chunk
+            except BlockingIOError:
+                pass
+            if self.concerns(data):
+                self.arm()
+                return
+
+    def wake(self) -> None:
+        os.write(self.stop_write, b'.')
+
+    def close(self) -> None:
+        for descriptor in (self.fd, self.stop_read, self.stop_write):
+            os.close(descriptor)
+
+
+class Kqueue(Waker):
+    """macOS and BSD: kqueue's vnode events on the open file and on its folder, whose entries changing may be the file
+    replaced; the folder's events name no entry, so any change of its entries wakes the reader."""
+
+    def __init__(self, path: str) -> None:
+        super().__init__(path)
+        if sys.platform == 'linux' or sys.platform == 'win32':
+            raise OSError('kqueue is a call of macOS and BSD.')
+        self.queue = select.kqueue()
+        self.stop_read, self.stop_write = os.pipe()
+        self.queue.control([select.kevent(self.stop_read, select.KQ_FILTER_READ, select.KQ_EV_ADD)], 0)
+        self.folder_fd = -1
+        self.arm()
+
+    def _watch(self, descriptor: int, notes: int) -> None:
+        if sys.platform == 'linux' or sys.platform == 'win32':
+            return
+        self.queue.control([select.kevent(descriptor, select.KQ_FILTER_VNODE, select.KQ_EV_ADD | select.KQ_EV_CLEAR,
+                                          notes)], 0)
+
+    def arm(self) -> None:
+        if sys.platform == 'linux' or sys.platform == 'win32':
+            return
+        folder = self.watched()
+        if folder != self.folder:
+            if self.folder_fd >= 0:
+                os.close(self.folder_fd)  # its events go with it
+            self.folder_fd = os.open(folder, os.O_RDONLY | getattr(os, 'O_EVTONLY', 0))
+            self.folder = folder
+            self._watch(self.folder_fd, select.KQ_NOTE_WRITE | select.KQ_NOTE_DELETE | select.KQ_NOTE_RENAME)
+
+    def follow(self, descriptor: int) -> None:
+        if sys.platform == 'linux' or sys.platform == 'win32':
+            return
+        self._watch(descriptor, select.KQ_NOTE_WRITE | select.KQ_NOTE_EXTEND | select.KQ_NOTE_ATTRIB
+                    | select.KQ_NOTE_DELETE | select.KQ_NOTE_RENAME)  # gone with the descriptor when it closes
+
+    def wait(self) -> None:
+        if sys.platform == 'linux' or sys.platform == 'win32':
+            return
+        fired = self.queue.control(None, 16, None)
+        if any(event.ident == self.stop_read for event in fired):
+            os.read(self.stop_read, 4096)
+        self.arm()
+
+    def wake(self) -> None:
+        if sys.platform == 'linux' or sys.platform == 'win32':
+            return
+        os.write(self.stop_write, b'.')
+
+    def close(self) -> None:
+        if sys.platform == 'linux' or sys.platform == 'win32':
+            return
+        self.queue.close()
+        for descriptor in (self.stop_read, self.stop_write, self.folder_fd):
+            if descriptor >= 0:
+                os.close(descriptor)
+
+
+def waker(path: str) -> Waker:
+    """This system's way of telling a reader that a file changed; OSError when it has none it can give."""
+    if sys.platform.startswith('linux'):
+        return Inotify(path)
+    if hasattr(select, 'kqueue'):
+        return Kqueue(path)
+    raise OSError(f'{sys.platform} tells no reader that a file changed.')
+
+
 class LocalReader(Reader):
     """A local file followed by name, as tail -F follows it: reopened from its start when it is replaced, after its
-    old file is read to the end, and read from the start when it is truncated."""
+    old file is read to the end, and read from the start when it is truncated. At the file's end, or while it is not
+    there, the reader sleeps until its waker says something changed."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.waker: Waker | None = None
+        self.unfollowed = ''
+        try:
+            self.waker = waker(self.source.name)
+        except OSError as error:
+            self.unfollowed = str(error)
+
+    def stop(self) -> None:
+        super().stop()
+        if self.waker is not None:
+            self.waker.wake()
 
     def run(self) -> None:
+        if self.waker is None:  # said on the log as a drop, so a log no one reads is never taken for a quiet one
+            self.emit('drop', f'the file cannot be followed: {self.unfollowed}')
+            return
+        try:
+            self.follow(self.waker)
+        finally:
+            self.waker.close()
+
+    def follow(self, waker: Waker) -> None:
         handle = None
         buffer = bytearray()
         position = 0
@@ -120,8 +332,9 @@ class LocalReader(Reader):
                     try:
                         handle = open(self.source.name, 'rb')  # noqa: SIM115  held open across reads
                     except OSError:
-                        self.stopping.wait(POLL_SECONDS)
+                        waker.wait()  # until its name changes in its folder
                         continue
+                    waker.follow(handle.fileno())
                     found = os.fstat(handle.fileno())
                     now = f'{found.st_dev}:{found.st_ino}'
                     position = found.st_size if offset < 0 else offset if now == identity and offset <= found.st_size \
@@ -154,7 +367,7 @@ class LocalReader(Reader):
                     position = 0
                     self.emit('file', identity, 0)
                     continue
-                self.stopping.wait(POLL_SECONDS)
+                waker.wait()
         finally:
             if handle is not None:
                 handle.close()
@@ -249,5 +462,5 @@ def _said(process: subprocess.Popen[bytes]) -> str:
     return f'exit {process.returncode}' + (f', {last[0][:200]}' if last[0] else '')
 
 
-def reader(source: Source, identity: str, offset: int, events: queue.Queue[tuple[Source, Event]]) -> Reader:
+def reader(source: Source, identity: str, offset: int, events: queue.Queue[tuple[Source | None, Event]]) -> Reader:
     return (SshReader if source.remote else LocalReader)(source, identity, offset, events)

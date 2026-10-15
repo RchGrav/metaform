@@ -2,35 +2,44 @@
 keeps each group's counter; it tells the orchestrator a ranked list every interval and a group never seen before at
 once, once the first list has set the baseline.
 
-Each log is read by one process at a time, the holder of its lease in the logs table. The holder writes its counts,
-its position in the log and its lease's beat together, at most once a second, so another process that takes the log
-over when the holder dies resumes from the last position written: an entry is counted by the process that wrote the
+Each log is read by one process at a time, the holder of its lease: a lock on a file of its own in the home, which the
+system lets go when the holder ends, by a crash too. A process that wants the log waits on that lock and takes the log
+over the moment it is let go. The holder's name is kept in the logs table for `autoticket logs`. The holder writes its
+counts and its position in the log together, at most once a second and only after reading something, so a process
+that takes the log over resumes from the last position written: an entry is counted by the process that wrote the
 position past it, and by no other.
+
+Nothing here wakes on a timer to look for a change, QUAL-015. The watch sleeps on its events queue until a reader hands
+it a line, a lease is handed over, a `map.changed` from another process names its tables (a log added or removed, a
+rule, the list sent elsewhere), or a real deadline comes: an open entry's quiet time, the one-second write batch, the
+interval's list, or the end of a `seconds` run.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import queue
 import re
 import secrets
 import socket
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, cast
 
-from metaform import settings
+from metaform import home, settings
 from metaform.data import Store, TableTx
 from metaform.module import Context, call, surface
 from metaform.module import context as call_context
 
 from . import entries, grouping, sources
 
-BEAT_SECONDS = 1.0  # counts, positions and the lease's beat are written at most once a second
-LEASE_SECONDS = 15.0  # a lease not beaten for this long is free: its holder is dead, hung or on another machine
-CLAIM_SECONDS = 2.0  # how often logs not held here are looked at, to take one whose holder has died
+BEAT_SECONDS = 1.0  # counts and positions are written at most once a second, after something was read
+CONCERNS = {'autoticket.logs', 'autoticket.rules', 'autoticket.state'}  # the tables whose change the watch reads again
 LIST_LIMIT = 20  # groups in the list the orchestrator is sent; the rest are read with autoticket list
 EXAMPLE_LINE = 300  # characters of an example's first line in a list or a report
 
@@ -44,21 +53,38 @@ def holder_id() -> str:
     return f'{socket.gethostname()}:{os.getpid()}:{secrets.token_hex(4)}'
 
 
-def holder_dead(holder: str, beat: float, at: float) -> bool:
-    """Whether a lease's holder is gone: a process of this host that no longer runs, or a beat older than
-    LEASE_SECONDS."""
-    if not holder:
-        return True
-    host, _, rest = holder.partition(':')
-    pid = rest.partition(':')[0]
-    if host == socket.gethostname() and pid.isdigit():
+def lease_path(project: str, source: str) -> Path:
+    """The file whose lock is a watched log's lease, in the home."""
+    digest = hashlib.sha256(f'{project}\n{source}'.encode()).hexdigest()[:24]
+    return home.home() / 'run' / 'autoticket' / f'{digest}.lock'
+
+
+class Lease(threading.Thread):
+    """A watched log's lease, taken in a thread of its own: at once when no process holds it, else the moment its
+    holder lets go or ends. Its taking is an event on the watch's queue; it is held until `let_go`."""
+
+    def __init__(self, project: str, source: str, events: queue.Queue[tuple[sources.Source | None, sources.Event]]):
+        super().__init__(name=f'autoticket lease {source}', daemon=True)
+        self.project, self.source, self.events = project, source, events
+        self.letting = threading.Event()
+        self.held = False
+
+    def run(self) -> None:
+        path = lease_path(self.project, self.source)
         try:
-            os.kill(int(pid), 0)
-        except ProcessLookupError:
-            return True
-        except PermissionError:
-            pass
-    return at - beat > LEASE_SECONDS
+            home.mkdir_private(path.parent)
+            with home.file_lock(path):  # waits in the system on the holder, flock or LockFileEx
+                if self.letting.is_set():
+                    return
+                self.held = True
+                self.events.put((None, ('lease', self.source)))
+                self.letting.wait()
+                self.held = False
+        except OSError as error:
+            self.events.put((None, ('lease-failed', self.source, str(error))))
+
+    def let_go(self) -> None:
+        self.letting.set()
 
 
 def similarity(folder: Any) -> float:
@@ -267,8 +293,9 @@ class Watch:
                  monotonic: Callable[[], float] = time.monotonic) -> None:
         self.ctx, self.store, self.clock, self.monotonic = ctx, store, clock, monotonic
         self.me = holder_id()
-        self.events: queue.Queue[tuple[sources.Source, sources.Event]] = queue.Queue()
+        self.events: queue.Queue[tuple[sources.Source | None, sources.Event]] = queue.Queue()
         self.held: dict[str, Held] = {}
+        self.leases: dict[str, Lease] = {}  # every watched log's lease, taken here or waited on
         self.known: list[tuple[int, tuple[int, ...]]] = []  # every group written, in the order made
         self.threshold = similarity(ctx.folder)
         self.mode = str(settings.value('autoticket_capture', ctx.folder) or 'errors')
@@ -276,31 +303,57 @@ class Watch:
         self.secrets = secret_values(ctx.folder)
         self.rules: list[re.Pattern[str]] = []
         self.written_at = 0.0
-        self.claimed_at = -CLAIM_SECONDS
+        self.dirty = False  # read since the last write: counts or a position to write
+        self.claim_due = True  # the logs, rules and state to read again, at the first turn and after a change
+        self.listed_at = 0.0  # when the last list was sent, by any process, as last read
+        self.stopping = False
         self.totals = Totals()
 
     # -------------------------------------------------------------- leases
 
     def claim(self) -> None:
-        """Take the lease of each watched log that no live process holds, and start reading it where it was left."""
+        """Read the watched logs, the rules and when the last list went; wait on the lease of each log new here, and
+        let go of each log no longer watched."""
+        self.claim_due = False
         at = self.clock()
-        started: list[tuple[sources.Source, str, int]] = []
         with self.store.tables() as tx:
             self.rules = rules(tx)
             if not state(tx, 'listed_at'):  # the first interval starts with the first watch
                 put_state(tx, 'listed_at', str(at))
-            for row in tx.rows('logs', limit=0).results:
-                name = str(row['source'])
-                if name in self.held:
-                    continue
-                if row['holder'] != self.me and not holder_dead(str(row['holder']), float(row['beat'] or 0), at):
-                    continue
-                tx.update('logs', {'source': name}, {'holder': self.me, 'beat': at})
-                started.append((sources.Source(name), str(row['identity'] or ''), int(row['offset'])))
-        for source, identity, offset in started:
-            reader = sources.reader(source, identity, offset, self.events)
-            self.held[source.name] = Held(source, reader, identity=identity, offset=offset)
-            reader.start()
+            self.listed_at = float(state(tx, 'listed_at') or at)
+            names = {str(row['source']) for row in tx.rows('logs', limit=0).results}
+        for name in sorted(names - set(self.leases)):
+            lease = Lease(self.store.project_id, name, self.events)
+            self.leases[name] = lease
+            lease.start()
+        for name in sorted(set(self.leases) - names):
+            self.drop(name)
+
+    def taken(self, name: str) -> None:
+        """A lease handed over: the log is read from where its last holder wrote it had reached."""
+        lease = self.leases.get(name)
+        if lease is None or name in self.held:
+            return
+        with self.store.tables() as tx:
+            row = tx.get('logs', {'source': name})
+            if row is not None:
+                tx.update('logs', {'source': name}, {'holder': self.me, 'beat': self.clock()})
+        if row is None:
+            self.drop(name)
+            return
+        source, identity, offset = sources.Source(name), str(row['identity'] or ''), int(row['offset'])
+        reader = sources.reader(source, identity, offset, self.events)
+        self.held[name] = Held(source, reader, identity=identity, offset=offset)
+        reader.start()
+
+    def drop(self, name: str) -> None:
+        """Stop reading a log and let its lease go, what was read since the last write dropped."""
+        held = self.held.pop(name, None)
+        if held is not None:
+            held.reader.stop()
+        lease = self.leases.pop(name, None)
+        if lease is not None:
+            lease.let_go()
 
     def release(self) -> None:
         """Stop every reader and give back each lease, its position written."""
@@ -312,21 +365,54 @@ class Watch:
             for held in self.held.values():
                 held.reader.join(timeout=5)
             self.held.clear()
+            for lease in self.leases.values():
+                lease.let_go()
+            self.leases.clear()
+
+    def heard(self, payload: dict[str, Any]) -> None:
+        """A `map.changed` from another process, in the listener's thread: the watch reads its logs, rules and state
+        again only when it names one of their tables, or names none, which may have changed anything."""
+        if payload.get('project') not in (None, self.store.project_id):
+            return
+        tables = payload.get('tables')
+        if tables is None or (isinstance(tables, list) and CONCERNS & set(cast(list[Any], tables))):
+            self.events.put((None, ('changed',)))
+
+    def stop(self) -> None:
+        """End `run`, from any thread."""
+        self.stopping = True
+        self.events.put((None, ('stop',)))
 
     # -------------------------------------------------------------- reading
 
-    def drain(self) -> None:
-        """Take what the readers have read: join lines into entries and group each entry captured."""
+    def drain(self, first: tuple[sources.Source | None, sources.Event] | None = None) -> None:
+        """Take what the readers and leases have handed over: join lines into entries and group each entry captured.
+        `first` is an event already taken from the queue."""
         now = self.monotonic()
         while True:
-            try:
-                source, event = self.events.get_nowait()
-            except queue.Empty:
-                break
+            if first is not None:
+                source, event = first
+                first = None
+            else:
+                try:
+                    source, event = self.events.get_nowait()
+                except queue.Empty:
+                    break
+            if source is None:  # the watch's own events
+                if event[0] == 'lease':
+                    self.taken(str(event[1]))
+                    self.dirty = True
+                elif event[0] == 'changed':
+                    self.claim_due = True
+                elif event[0] == 'lease-failed':
+                    self.ctx.say(f'autoticket: the lease of {event[1]} could not be taken: {event[2]}')
+                continue
             held = self.held.get(source.name)
             if held is None:
                 continue
             kind = event[0]
+            # something to write: a line read, a drop or a reconnect, or a file started at another place than written
+            self.dirty = self.dirty or kind != 'file' or (event[1], event[2]) != (held.identity, held.offset)
             if kind == 'line':
                 self.totals.lines += 1
                 for entry in held.assembler.feed(event[1], event[2], now):
@@ -345,7 +431,8 @@ class Watch:
             elif kind == 'reconnect':
                 held.reconnects += 1
         for held in self.held.values():
-            for entry in held.assembler.idle(now):
+            for entry in held.assembler.idle(now):  # closed by its quiet time: a count to write
+                self.dirty = True
                 self.take(held, entry)
 
     def take(self, held: Held, entry: entries.Entry) -> None:
@@ -399,9 +486,9 @@ class Watch:
                     **({'last_drop': held.last_drop} if held.last_drop else {})})
                 held.drops, held.reconnects, held.last_drop = 0, 0, ''
         for name in lost:
-            held = self.held.pop(name)
-            held.reader.stop()
+            self.drop(name)
         self.written_at = at
+        self.dirty = False
         self.totals.made += len(made)
         return made
 
@@ -454,22 +541,52 @@ class Watch:
     def report(self) -> dict[str, Any] | None:
         """The ranked list, when its interval has passed since the last one, claimed so only one process sends it."""
         at = self.clock()
+        if at - self.listed_at < self.interval:
+            return None
         with self.store.tables() as tx:
             last = state(tx, 'listed_at')
             if last and at - float(last) < self.interval:
+                self.listed_at = float(last)  # another process sent it
                 return None
             listed = make_list(tx, at)
+        self.listed_at = at
         send_list(self.ctx, listed)
         self.totals.lists += 1
         return listed
 
     # -------------------------------------------------------------- one turn
 
-    def tick(self) -> None:
-        if self.monotonic() - self.claimed_at >= CLAIM_SECONDS:
-            self.claimed_at = self.monotonic()
+    def tick(self, first: tuple[sources.Source | None, sources.Event] | None = None) -> None:
+        """One turn: the logs read again when a change asked for it, what was handed over taken, what was read written
+        once its batch is due, and the list sent when its interval has passed."""
+        self.drain(first)
+        if self.claim_due:  # once for a burst of changes, in the turn they arrived in
             self.claim()
-        self.drain()
-        if self.clock() - self.written_at >= BEAT_SECONDS:
+        if self.dirty and self.clock() - self.written_at >= BEAT_SECONDS:
             self.settle(self.write())
-            self.report()
+        self.report()
+
+    def wait(self) -> float:
+        """Seconds until the next deadline: an open entry's quiet time, the write batch, or the list."""
+        now, at = self.monotonic(), self.clock()
+        due = [held.assembler.closes_at - now for held in self.held.values() if held.assembler.closes_at is not None]
+        if self.dirty:
+            due.append(self.written_at + BEAT_SECONDS - at)
+        due.append(self.listed_at + self.interval - at)
+        return max(0.0, min(due))
+
+    def run(self, ends: float | None = None) -> None:
+        """Turn on each event and at each deadline until `stop`, or until the monotonic time `ends`."""
+        while not self.stopping:
+            left = self.wait()
+            if ends is not None:
+                left = max(0.0, min(ends - self.monotonic(), left))
+            try:
+                first = self.events.get(timeout=left)
+            except queue.Empty:
+                first = None
+            if first is not None and first[0] is None and first[1][0] == 'stop':
+                return
+            self.tick(first)
+            if ends is not None and self.monotonic() >= ends:
+                return

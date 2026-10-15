@@ -121,11 +121,15 @@ def refresh(ctx: Context, store: Store, record: WorkRecord) -> None:
 
 
 def changed(payload: dict[str, Any], ctx: Context) -> None:
-    """Ticket writes clear stale streaks through the existing event bus, without a timer or polling."""
+    """Ticket writes clear stale streaks through the existing event bus, without a timer or polling. A change that names
+    its tickets, `work_ids`, reconciles those alone; a change to the settings, every tracked one."""
     from . import ticket
     tables = payload.get('tables')
     settings_changed = tables is not None and 'dispatch.settings' in tables
     if tables is not None and 'work' not in tables and not settings_changed:
+        return
+    named: Any = None if settings_changed else payload.get('work_ids')
+    if isinstance(named, list) and not named:
         return
     project = ctx.require_store().project_id
     bases = ([base.id for base in ctx.require_store().bases(limit=0).results]
@@ -133,8 +137,10 @@ def changed(payload: dict[str, Any], ctx: Context) -> None:
     for base in bases:
         store = Store(project, base=base, module='dispatch')
         with store.tables(write=False) as tx:
-            tracked = tx.rows('lines', {'session_id': SOURCE}, limit=0).results
-        for row in tracked:
+            tracked = [tx.get('lines', {'session_id': SOURCE, 'name': str(one)})
+                       for one in cast(list[Any], named)] if isinstance(named, list) else \
+                tx.rows('lines', {'session_id': SOURCE}, limit=0).results
+        for row in (one for one in tracked if one is not None):
             try:
                 record = ticket(store, row['work_id'])
             except StoreError:  # a ticket removed with its base has no progress left to reconcile

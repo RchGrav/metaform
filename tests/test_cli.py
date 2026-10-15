@@ -1319,3 +1319,115 @@ def test_a_demo_stopped_or_killed_leaves_no_ticket_taken_for_the_next_run(home, 
         monkeypatch.setattr(demo, 'serve', interrupted)
         demo.show(root, lambda text: None)
         assert not json.loads(demo.must('map', 'work', f'id={added["id"]}', '--json', folder=folder))['taken_by']
+
+
+@pytest.mark.req('QUAL-015')
+def test_the_demo_tends_a_lane_only_when_its_ticket_changes_or_its_deadline_comes(home, tmp_path, monkeypatch):
+    """While its agents work, the demo reads no lane's ticket on a timer, nor for a burst of changes to other
+    projects, tickets or tables; a change naming a lane's ticket has that lane, and only it, tended at once."""
+    import threading
+    import types
+
+    from metaform import demo, events
+    working = [demo.Lane(f'code.part{n}', 'claude', 'A title', 'A task', 'none', ticket=f'W{n}',
+                         started=time.monotonic()) for n in range(3)]
+    tended, handlers, seen = [], [], {}
+
+    def tend(lane, folder, store, lanes):
+        tended.append(lane.ticket)
+        if lane.ticket == 'W1':
+            raise KeyboardInterrupt  # Ctrl+C, once the lane is tended: the demo stops as it does for the person
+
+    class Heard:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return None
+
+        def close(self):
+            return None
+
+    def listen(module, handler):
+        handlers.append(handler)
+        return Heard()
+    for name, stand_in in (('prepare', lambda root: None), ('must', lambda *words, folder: ''),
+                           ('serve', lambda folder: 'http://127.0.0.1:1/'), ('write_card', lambda root, address: None),
+                           ('lanes', lambda folder: working), ('start', lambda lane, folder: None),
+                           ('metaform', lambda *words, folder: None),
+                           ('script', lambda: {'project': 'demo-proj', 'tickets': []}),
+                           ('Store', lambda project: types.SimpleNamespace(project_id=project)),
+                           ('tend', tend), ('STAGGER', 0)):
+        monkeypatch.setattr(demo, name, stand_in)
+    monkeypatch.setattr('metaform.start.open_browser', lambda address: False)
+    monkeypatch.setattr(events, 'listen', listen)
+
+    def drive():
+        threading.Event().wait(1.5)
+        seen['quiet'] = len(tended)
+        for _ in range(50):
+            for payload in ({'project': 'other', 'work_ids': ['W1']}, {'project': 'demo-proj', 'work_ids': ['W9']},
+                            {'project': 'demo-proj', 'tables': ['dispatch.lines']}):
+                for handler in handlers:
+                    handler(payload)
+        threading.Event().wait(0.5)
+        seen['burst'] = len(tended) - seen['quiet']
+        for handler in handlers:
+            handler({'project': 'demo-proj', 'tables': ['op:work', 'ops'], 'work_ids': ['W1']})
+    threading.Thread(target=drive, daemon=True).start()
+    demo.show(tmp_path, lambda line: None)
+    assert tended == ['W1']  # nothing tended on a timer or for the burst
+    assert (seen.get('quiet'), seen.get('burst')) == (0, 0)
+
+
+@pytest.mark.req('QUAL-015')
+def test_the_demo_mascot_tries_again_only_when_a_page_of_its_project_opens(monkeypatch):
+    """With no page showing it, the mascot does not try `web say` on a timer, nor for changes to other projects, to
+    no page, or to other sessions; a page of its project opening has it try once more, at once."""
+    import threading
+    import types
+
+    from metaform import events
+    from metaform.demo import agent
+    tries, handlers = [], []
+    opened = threading.Event()
+
+    class Heard:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return None
+
+    def listen(module, handler):
+        handlers.append(handler)
+        return Heard()
+
+    shown = threading.Event()
+
+    def metaform(*words):
+        tries.append(time.monotonic())
+        if opened.is_set():
+            shown.set()
+        return types.SimpleNamespace(returncode=0 if opened.is_set() else 1)
+    monkeypatch.setattr(events, 'listen', listen)
+    monkeypatch.setattr(agent, 'metaform', metaform)
+    monkeypatch.setenv('METAFORM_SESSION', 'S-mascot')
+    threading.Thread(target=agent.mascot, daemon=True).start()
+    threading.Event().wait(3.5)  # longer than the 3 s the mascot used to wait before trying again
+    quiet = len(tries)
+    for _ in range(50):
+        for payload in ({'project': 'other', 'kinds': ['pages'], 'pages': 1},
+                        {'project': 'pocket-ledger', 'kinds': ['pages'], 'pages': 0},
+                        {'project': 'pocket-ledger', 'kinds': ['session'], 'session_ids': ['S-other']}):
+            for handler in handlers:
+                handler(payload)
+    threading.Event().wait(0.5)
+    burst = len(tries) - quiet
+    opened.set()
+    began = time.monotonic()
+    for handler in handlers:
+        handler({'project': 'pocket-ledger', 'base_id': None, 'tables': ['web.pages'], 'kinds': ['pages'], 'pages': 1})
+    shown.wait(5)
+    assert (quiet, burst) == (1, 0)
+    assert len(tries) >= 2 and tries[1] - began < 1

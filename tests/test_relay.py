@@ -85,6 +85,36 @@ def test_a_listener_hears_map_changed_from_a_command_run_in_another_process(run,
 
 
 @pytest.mark.req('BASE-053')
+@pytest.mark.req('BASE-053')
+def test_a_change_names_the_tickets_and_kinds_it_wrote_and_names_none_when_one_write_did_not_say(home, folder,
+                                                                                                 monkeypatch):
+    """code.dispatcher.agent#38: a step on a ticket is announced with `work_ids` and `kinds`, so a runner of another
+    ticket reads nothing for it; one write in the same command that says nothing leaves them out."""
+    from metaform import changes, events
+    from metaform.data import Node, Store
+    from metaform.module import Surface
+    store = Store('proj')
+    store.layer('parts', 'test', 'The parts.', mutable=True, hideable=True, ready=True)
+    store.add_element('parts', 'code.engine')
+    work_id = store.add_work(Node('element', 'code.engine'), 'unbuilt', task='Write it').id
+    fired: list[dict[str, object]] = []
+    monkeypatch.setattr(events, 'publish', lambda topic, payload, source: fired.append(payload) or [])
+    surface: Surface = 'cli'
+    changes.announce(folder, surface)  # what the setup wrote
+    fired.clear()
+    store.take_work(work_id, 2, 'claude')
+    store.step_work(work_id, 'one')
+    changes.announce(folder, surface)
+    [stepped] = [one for one in fired if one.get('base_id')]
+    assert stepped['work_ids'] == [work_id] and stepped['kinds'] == ['ticket'] and stepped['session_ids'] == []
+    fired.clear()
+    store.step_work(work_id, 'two')
+    store.add_element('parts', 'code.store')  # a write that says nothing of what it concerns
+    changes.announce(folder, surface)
+    [mixed] = [one for one in fired if one.get('base_id')]
+    assert 'work' in mixed['tables'] and not {'work_ids', 'session_ids', 'kinds'} & set(mixed)
+
+
 def test_a_listener_never_hears_its_own_process_through_the_relay(home):
     from metaform import events, relay
     from metaform.module import Context

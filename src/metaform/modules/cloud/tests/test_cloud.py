@@ -647,11 +647,10 @@ def test_a_revoked_signing_key_stops_the_machine_and_its_key_set_is_replaced_fro
     from metaform.modules.cloud import login as signing
     from metaform.modules.cloud.tunnel import Connection, Stopped
     from metaform.modules.node import tokens
-    monkeypatch.setattr(tokens, 'RELOAD_SECONDS', 0.0)
     work = tmp_path / 'work'
     work.mkdir()
     monkeypatch.chdir(work)
-    made = Broker(tmp_path / 'broker', watch=0.2)
+    made = Broker(tmp_path / 'broker')
     try:
         _, browser = made.person('alice')
         creds = login(made, browser)
@@ -659,7 +658,9 @@ def test_a_revoked_signing_key_stops_the_machine_and_its_key_set_is_replaced_fro
         local = Local(work, creds)
         try:
             issued = host_sign_in(made, browser)
-            tokens.Keys(tmp_path / 'broker' / 'keys').rotate(revoke_old=True)  # the operator, in another process
+            tokens.Keys(tmp_path / 'broker' / 'keys').rotate(revoke_old=True)  # the operator, in another process,
+            made.carrier.changed({'project': None, 'base_id': None, 'tables': ['node.keys'],  # which says so
+                                  'kinds': ['revoke-key']})
             local.thread.join(15)
             assert isinstance(local.error, Stopped) and local.error.next_step == 'metaform cloud login'
             assert Host(made, issued['access_token']).post('tools/list')[0].status_code == 401
@@ -725,3 +726,49 @@ def test_a_login_approved_by_an_account_the_person_does_not_confirm_is_revoked_a
         login(broker, browser, confirm=lambda account: shown.append(account) or False)
     assert shown == ['mallory'] and signing.load() is None
     assert not broker.carrier.tunnels
+
+
+@pytest.mark.req('QUAL-015')
+def test_an_open_tunnel_costs_no_read_until_a_sign_out_elsewhere_names_its_account(broker, tmp_path, monkeypatch):
+    """With a machine connected the broker reads no generation and no key while nothing happens, nor for a burst of
+    changes naming other tables or accounts; `metaform node signout` in another process, announced as map.changed
+    naming the account, closes its tunnel at once."""
+    from metaform.modules.cloud.tunnel import Stopped
+    account, browser = broker.person('alice')
+    local = Local(tmp_path / 'work', login(broker, browser))
+    reads = []
+    generation, public = broker.store.generation, broker.node.keys.public
+    monkeypatch.setattr(broker.store, 'generation', lambda named: (reads.append(named), generation(named))[1])
+    monkeypatch.setattr(broker.node.keys, 'public', lambda kid: (reads.append(kid), public(kid))[1])
+    try:
+        assert local.connected.wait(10)
+        threading.Event().wait(1.0)
+        assert reads == []  # idle: nothing looked at
+        for _ in range(50):
+            for payload in ({'project': 'proj', 'tables': ['ops', 'work']},
+                            {'project': None, 'base_id': None, 'tables': ['autoticket.logs']},
+                            {'project': None, 'base_id': None, 'tables': ['node.accounts'], 'account_ids': ['other']}):
+                broker.carrier.changed(payload)
+        threading.Event().wait(0.5)
+        assert reads == []  # changes for other tables and other accounts read nothing
+        broker.store.bump_generation(account.id)  # `metaform node signout alice`, in another process
+        broker.carrier.changed({'project': None, 'base_id': None, 'tables': ['node.accounts'],
+                                'account_ids': [account.id], 'kinds': ['signout']})
+        local.thread.join(10)
+        assert isinstance(local.error, Stopped) and local.error.next_step == 'metaform cloud login'
+    finally:
+        local.stop()
+
+
+@pytest.mark.req('QUAL-015')
+def test_status_says_a_connection_runs_only_while_its_process_holds_the_lock(home, tmp_path, monkeypatch):
+    """A connection whose process ended, by a crash too, is not running at once, however fresh its last record; one
+    whose process runs is shown as it last said. Nothing is read from a beat."""
+    from metaform import home as homes
+    from metaform.modules import cloud
+    from metaform.modules.cloud import tunnel
+    tunnel.write_state({'state': 'connected', 'pid': 4242, 'instance': 'default', 'beat': time.time()})
+    assert cloud._connection()['state'] == 'not running'  # crashed a moment ago: no process holds the lock
+    homes.mkdir_private(tunnel.state_file().parent)
+    with homes.file_lock(tunnel.state_file().with_suffix('.lock'), wait=False):
+        assert cloud._connection()['state'] == 'connected'

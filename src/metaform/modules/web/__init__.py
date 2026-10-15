@@ -23,7 +23,6 @@ import socket
 import subprocess
 import sys
 import threading
-import time
 from contextlib import ExitStack
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -33,7 +32,7 @@ from typing import Any, cast
 
 from metaform import home, settings
 from metaform.data import BASE_VARIABLE
-from metaform.module import Context, Module, Noun, Pane, Stop, ToolbarItem, Verb, child_environment
+from metaform.module import Context, Module, Noun, Pane, Stop, Subscription, ToolbarItem, Verb, child_environment
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -241,6 +240,72 @@ def alive(pid: int) -> bool:
     except PermissionError:
         return True
     return True
+
+
+def ended(pid: int, limit: float | None = None) -> bool | None:
+    """Wait for process `pid`, which need not be this one's child, to end, woken by the system's own event of its exit,
+    QUAL-015: a pidfd on Linux, kqueue's NOTE_EXIT on macOS, the process's handle on Windows. True once it has ended,
+    False when `limit` seconds passed first, None when this system gives no such event."""
+    if os.name == 'nt':
+        import ctypes
+        windows: Any = ctypes  # windll is Windows's alone
+        kernel32 = windows.windll.kernel32
+        handle = kernel32.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
+        if not handle:
+            return True
+        try:
+            return kernel32.WaitForSingleObject(handle, 0xFFFFFFFF if limit is None else int(limit * 1000)) == 0
+        finally:
+            kernel32.CloseHandle(handle)
+    import select
+    if hasattr(select, 'kqueue'):
+        bsd: Any = select  # kqueue is macOS's and the BSDs'
+        queue = bsd.kqueue()
+        try:
+            change = bsd.kevent(pid, filter=bsd.KQ_FILTER_PROC, flags=bsd.KQ_EV_ADD | bsd.KQ_EV_ONESHOT,
+                                fflags=bsd.KQ_NOTE_EXIT)
+            return bool(queue.control([change], 1, limit))
+        except ProcessLookupError:
+            return True
+        finally:
+            queue.close()
+    try:
+        fd = pidfd(pid)
+    except ProcessLookupError:
+        return True
+    if fd is None:
+        return None
+    try:
+        return bool(select.select([fd], [], [], limit)[0])
+    finally:
+        os.close(fd)
+
+
+def pidfd(pid: int) -> int | None:
+    """A Linux pidfd of `pid`, readable once it ends; by the system call where this Python build has no
+    os.pidfd_open, as the standalone builds do; None where neither is to be had."""
+    if hasattr(os, 'pidfd_open'):
+        try:
+            return os.pidfd_open(pid)
+        except ProcessLookupError:
+            raise
+        except OSError:
+            return None
+    import ctypes
+    import platform
+    if not sys.platform.startswith('linux') or platform.machine().lower() not in ('x86_64', 'aarch64'):
+        return None  # 434 is pidfd_open on these two 64-bit ABIs
+    try:
+        call: Any = ctypes.CDLL(None, use_errno=True).syscall
+    except (OSError, AttributeError):
+        return None
+    call.restype, call.argtypes = ctypes.c_long, [ctypes.c_long, ctypes.c_int, ctypes.c_uint]
+    found = int(call(434, pid, 0))
+    if found >= 0:
+        return found
+    if ctypes.get_errno() == errno.ESRCH:
+        raise ProcessLookupError(pid)
+    return None
 
 
 def watchdog() -> dict[str, Any] | None:
@@ -585,9 +650,7 @@ def stop(ctx: Context) -> dict[str, Any]:
             os.kill(int(record['pid']), signal.SIGTERM)
     held = hold_tool()
     if kept is not None and held is not None:  # its hold call, once it has ended, leaves no past call in the ledger
-        deadline = time.monotonic() + WAIT / 3
-        while alive(int(kept['pid'])) and time.monotonic() < deadline:
-            time.sleep(0.1)
+        ended(int(kept['pid']), WAIT / 3)  # its exit, the system's own event, waited for at most WAIT / 3
         subprocess.run([held, 'purge', hold_name(int(kept['port']))], capture_output=True, timeout=WAIT, check=False)
     run_file().unlink(missing_ok=True)
     watchdog_file().unlink(missing_ok=True)
@@ -894,6 +957,23 @@ def gui_running(folder: Path) -> bool:
     return record is not None and alive(int(record.get('pid') or 0))
 
 
+# The page server this process runs, server.py's serve: the loader may run this module's subscriptions from a copy of
+# its own, so they reach the server's open pages through the package the server imported, `served`.
+SERVING: list[Any] = []
+
+
+def served() -> list[Any]:
+    package = sys.modules.get('metaform.modules.web')
+    return list(cast(list[Any], getattr(package, 'SERVING', None) or []))
+
+
+def voice_download(payload: dict[str, Any], ctx: Context) -> None:
+    """What a model download has fetched, the voice module's `voice.download`, pushed to every open page, where its
+    bar is drawn; only the page server has pages, so in any other process this does nothing."""
+    for server in served():
+        server.push({'topic': 'voice.download', 'payload': payload})
+
+
 def carry_view(ctx: Context | None = None) -> list[str]:
     """The web module's start: the page's view, stored as global settings before the settings cleanup of 2026-10-15,
     carried into the person's view once per home, view.py."""
@@ -910,6 +990,7 @@ MODULE = Module(
             'that start prints. metaform web runs start.',
     default='start',
     start=carry_view,
+    subscriptions=(Subscription('voice.download', voice_download),),
     verbs=(
         # Starting the GUI writes the server's record under the home and starts its process; it reaches no agent and
         # nothing past this machine on its own, and stop ends that process. Neither changes the map.

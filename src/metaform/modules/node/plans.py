@@ -15,13 +15,15 @@ import socket
 import ssl
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypeVar, cast
 
 from metaform.module import Stop
 
@@ -243,22 +245,85 @@ def push_step(target: Target) -> Step:
                 shlex.join(target.ssh(target.user, remote)), run)
 
 
+Found = TypeVar('Found')
+_UPSTREAM: list[ThreadPoolExecutor] = []
+_UPSTREAM_LOCK = threading.Lock()
+
+
+def upstream(look: Callable[[], Found | None], every: float, seconds: float, late: Callable[[], Stop]) -> Found:
+    """A wait on a system that has no way to say it is ready, asked again every `every` seconds until it answers or
+    `seconds` pass, then `late()` is raised. Such waits run one at a time in the one worker thread kept for them,
+    named node-upstream, never on a caller's loop, QUAL-015: DNS, which no resolver pushes, and Vultr's API, which has
+    no webhook for an instance's state."""
+    with _UPSTREAM_LOCK:
+        if not _UPSTREAM:
+            _UPSTREAM.append(ThreadPoolExecutor(max_workers=1, thread_name_prefix='node-upstream'))
+        worker = _UPSTREAM[0]
+
+    def asking() -> Found:
+        deadline = time.monotonic() + seconds
+        pause = threading.Event()  # never set: each wait is the bounded interval between two questions
+        while True:
+            found = look()
+            if found is not None:
+                return found
+            if time.monotonic() > deadline:
+                raise late()
+            pause.wait(every)
+    return worker.submit(asking).result()
+
+
+HEALTH_ACTIONS = frozenset({'create', 'start', 'restart', 'die', 'stop', 'kill', 'oom', 'destroy', 'health_status'})
+# the container events that change what `docker compose ps` says; a health check's own command (exec_create,
+# exec_start, exec_die), which runs every interval, does not
+
+
+def changed(lines: Iterable[bytes]) -> bool:
+    """Read the project's events until one changes a service's state or health; False when the stream ends."""
+    for line in lines:
+        try:
+            found: Any = json.loads(line)
+        except ValueError:
+            continue
+        action = str(cast(dict[str, Any], found).get('action') or '') if isinstance(found, dict) else ''
+        if action.partition(':')[0].strip() in HEALTH_ACTIONS:
+            return True
+    return False
+
+
 def health_step(target: Target, seconds: float = 300) -> Step:
+    """Docker says each change of a container's state and health as it happens, in `docker compose events`: the
+    services are read again only when one comes, never on a timer, QUAL-015. The stream starts before the first read,
+    so no change between the two is missed; the step's one deadline ends it after `seconds`."""
     command = f'cd {REMOTE_DIR} && docker compose ps --format json'
+    follow = f'cd {REMOTE_DIR} && docker compose events --json'
 
     def run(_: dict[str, Any]) -> list[dict[str, Any]]:
-        deadline = time.monotonic() + seconds
-        while True:
-            services = parse_ps(run_command(target.ssh(target.user, command)))
-            waiting = [one['Service'] for one in services if one.get('Health') not in ('healthy', '')
-                       or one.get('State') != 'running']
-            if services and not waiting:
-                return services
-            if time.monotonic() > deadline:
-                raise Stop(f'Not healthy after {seconds:.0f} seconds: {", ".join(waiting) or "no services"}.',
-                           'metaform node logs')
-            time.sleep(5)
-    return Step('Wait until every service is running and healthy', _shown(target.ssh(target.user, command)), run)
+        events = subprocess.Popen(target.ssh(target.user, follow), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                  stderr=subprocess.DEVNULL)
+        assert events.stdout is not None
+        late = threading.Timer(seconds, events.kill)
+        late.start()
+        try:
+            while True:
+                services = parse_ps(run_command(target.ssh(target.user, command)))
+                waiting = [one['Service'] for one in services if one.get('Health') not in ('healthy', '')
+                           or one.get('State') != 'running']
+                if services and not waiting:
+                    return services
+                if not changed(events.stdout):
+                    if late.is_alive():
+                        raise Stop('The host stopped sending its services\' events before they were healthy.',
+                                   'metaform node logs')
+                    raise Stop(f'Not healthy after {seconds:.0f} seconds: {", ".join(waiting) or "no services"}.',
+                               'metaform node logs')
+        finally:
+            late.cancel()
+            events.kill()
+            events.wait()
+    return Step('Wait until every service is running and healthy',
+                _shown(target.ssh(target.user, follow)) + '\n' + _shown(target.ssh(target.user, command)) +
+                '  (again at each change of a service)', run)
 
 
 def parse_ps(text: str) -> list[dict[str, Any]]:
@@ -327,19 +392,17 @@ def dns_step(spec: NodeSpec, target: Target, seconds: float = 1800) -> Step:
     """The certificate authority reaches the name, so the name must point here before Caddy asks for it; asking
     early only spends Let's Encrypt's rate limit."""
     def run(state: dict[str, Any]) -> str:
-        wanted = state.get('main_ip') or target.host
-        deadline = time.monotonic() + seconds
-        while True:
+        wanted = str(state.get('main_ip') or target.host)
+
+        def resolved() -> str | None:
             try:
                 addresses: set[str] = {str(info[4][0]) for info in socket.getaddrinfo(spec.domain, 443)}
             except OSError:
                 addresses = set()
-            if wanted in addresses:
-                return wanted
-            if time.monotonic() > deadline:
-                raise Stop(f'{spec.domain} does not resolve to {wanted} yet.',
-                           f'Add an A record {spec.domain} -> {wanted} at your DNS provider, then deploy again.')
-            time.sleep(15)
+            return wanted if wanted in addresses else None
+        return upstream(resolved, 15, seconds, lambda: Stop(
+            f'{spec.domain} does not resolve to {wanted} yet.',
+            f'Add an A record {spec.domain} -> {wanted} at your DNS provider, then deploy again.'))
     return Step('Wait until the domain points at the host', f'resolve {spec.domain}; expect the host\'s address '
                 '({main_ip} when the VM was made here)', run)
 

@@ -1,0 +1,1 @@
+Runner idle CPU came from per-event full reads. Idle runner CPU: 16.1% → 0.03% of a core (10 runners, 75 events in 60 s, same mix). The web server read a dispatch change as 'anything' and ran a merges subprocess for each (a full core at 2 events/s in its scratch run).

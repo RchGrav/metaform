@@ -1,0 +1,1 @@
+Grep result: "voice.js:776:  for (;;) {\napp/live/ops.js:194:  for (;;) {" and agent: "That loop is a stream reader and stays." Earlier the page's health check: "setTimeout 2000 askHealth (/page/app/core/health.js:31:15)" at 30 per minute, replaced by asking on stream error/open and read failure.

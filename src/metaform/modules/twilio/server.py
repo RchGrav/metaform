@@ -43,6 +43,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
+import uvicorn
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse, Response
@@ -207,6 +208,7 @@ class Phone:
         self.texted: dict[str, deque[float]] = {}
         self.active: Call | None = None
         self.calls: list[Call] = []             # every call bridged, for the simulated call to read back
+        self.ended: list[Callable[[], Any]] = []  # told, in the server's loop, each time a bridged call ends
         self.last_placed = float('-inf')
         self.texting = asyncio.Lock()
         self.tasks: set[asyncio.Task[Any]] = set()
@@ -445,6 +447,9 @@ class Phone:
             await call.run(messages)
         finally:
             self.active = None
+            for hook in list(self.ended):
+                with contextlib.suppress(Exception):
+                    hook()
 
     # ------------------------------------------------------------------------------------------- texts
 
@@ -512,6 +517,11 @@ class Phone:
         return answer
 
     # ------------------------------------------------------------------------------------------- calls placed
+
+    def free_at(self) -> float | None:
+        """When, by the bridge's clock, twilio_call_gap_minutes lets a call Metaform places on its own go; None while a
+        call is in progress, which `ended` tells of when it ends."""
+        return None if self.active is not None else self.last_placed + self.config.call_gap
 
     def reserve(self, own: bool = False) -> str | None:
         """Why a call cannot be placed now, or None when it can, its place then taken: no call in progress, and for a
@@ -593,3 +603,47 @@ class Phone:
 
 def _xml(twiml: str) -> Response:
     return Response(twiml, media_type='application/xml')
+
+
+class Serving(uvicorn.Server):
+    """uvicorn's server, with two events in place of its looks once a tenth of a second, QUAL-015: `ready` is set once
+    it listens, and its main loop waits for the exit it is told of, by a signal or by `stop`, rather than waking ten
+    times a second to see whether it should exit."""
+
+    def __init__(self, config: uvicorn.Config) -> None:
+        self.loop: asyncio.AbstractEventLoop | None = None
+        self.ready = asyncio.Event()
+        self.exiting = asyncio.Event()
+        self.exit = False
+        super().__init__(config)
+
+    @property
+    def should_exit(self) -> bool:  # pyright: ignore[reportIncompatibleVariableOverride]
+        """uvicorn's flag, which anything may set, as uvicorn's own signal handler does: setting it wakes the loop."""
+        return self.exit
+
+    @should_exit.setter
+    def should_exit(self, value: bool) -> None:
+        self.exit = value
+        if value:
+            self._wake()
+
+    async def startup(self, sockets: list[Any] | None = None) -> None:
+        self.loop = asyncio.get_running_loop()
+        await super().startup(sockets=sockets)
+        if self.started:
+            self.ready.set()
+
+    async def main_loop(self) -> None:
+        await self.on_tick(0)  # the default headers, as uvicorn's own first tick sets them
+        if not self.should_exit:
+            await self.exiting.wait()
+
+    def stop(self) -> None:
+        """End serving, from the server's own loop or any other thread."""
+        self.should_exit = True
+
+    def _wake(self) -> None:
+        if self.loop is not None:
+            with contextlib.suppress(RuntimeError):  # its loop has closed: it is not serving
+                self.loop.call_soon_threadsafe(self.exiting.set)

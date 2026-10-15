@@ -360,14 +360,14 @@ def test_a_broker_runs_caddy_and_one_process_and_routes_hosts_and_machines_to_it
 
 def test_a_revoked_key_ends_every_token_it_signed_forged_ones_too_in_the_running_server(tmp_path, monkeypatch):
     from metaform.modules.node import tokens
-    monkeypatch.setattr(tokens, 'RELOAD_SECONDS', 0.0)
     made, store = broker(tmp_path)
     client = web(made)
     account = sign_in(store, client)
     issued = host_tokens(client)
     import jwt
     stolen_kid, stolen_key = made.signed.signer.keys.signing()  # a copy of the key, as a thief would hold it
-    tokens.Keys(tmp_path / 'keys').rotate(revoke_old=True)  # `metaform node rotate-key revoke_old=true`, elsewhere
+    tokens.Keys(tmp_path / 'keys').rotate(revoke_old=True)  # `metaform node rotate-key revoke_old=true`, elsewhere,
+    made.changed({'project': None, 'base_id': None, 'tables': ['node.keys'], 'kinds': ['revoke-key']})  # and its word
     made.signed.generations.bump(account.id)
     now = int(time.time())
     forged = jwt.encode({'iss': ISSUER, 'iat': now, 'exp': now + 600, 'jti': 'j', 'sub': account.id,
@@ -570,3 +570,38 @@ def test_a_streamed_answer_gives_its_slot_back_even_when_the_host_left_before_it
                 'spec_version': '2.4'}}, receive, send)
     asyncio.run(run())
     assert ended == [True]
+
+
+@pytest.mark.req('QUAL-015')
+def test_a_host_that_leaves_while_its_answer_is_awaited_is_heard_at_once(tmp_path):
+    """The broker hears a host's connection close as the event uvicorn hands it, http.disconnect, so the machine is
+    told to cancel at once; nothing asks whether the host is still there on a timer."""
+    import asyncio
+
+    from starlette.requests import Request
+
+    from metaform.modules.node.broker import Tunnel
+    made, _ = broker(tmp_path)
+    sent = []
+
+    class Socket:
+        async def send_bytes(self, data):
+            sent.append(data)
+
+    async def run():
+        began = time.monotonic()
+
+        async def receive():
+            left = 0.3 - (time.monotonic() - began)  # the host leaves 0.3 s after asking
+            if left > 0:
+                await asyncio.sleep(left)
+            return {'type': 'http.disconnect'}
+        request = Request({'type': 'http', 'method': 'POST', 'path': '/mcp', 'headers': [], 'query_string': b'',
+                           'scheme': 'http', 'server': ('127.0.0.1', 80), 'root_path': ''}, receive)
+        tunnel = Tunnel(Socket(), 'account', 'alice', 'default', ('mcp:read',), 'jkt', 1, time.time() + 600)
+        answer = await made._forward(request, tunnel, {'client_id': 'c'}, ['mcp:read'], b'{}', 'default',
+                                     lambda: None, 60.0)
+        return answer.status_code, time.monotonic() - began
+    status, waited = asyncio.run(run())
+    assert status == 499 and waited < 2
+    assert any(b'"cancel"' in frame for frame in sent)

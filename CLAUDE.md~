@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Read `AGENTS.md` first: it holds the rules for working with Rich on this project, including how specifications are written with him and that `rich/` is his folder, never modified.
 
-The project's terms (AUE, RE, PE, OP, EF, CQU, Join, Address and the rest) are defined in the `<instructions>` element of `src/metaform/modules/mcp/resources/prompts.xml`. Use them exactly; never substitute synonyms.
+The project's terms (AUE, RE, PE, OP, EF, CQU, Join, Address and the rest) are defined in the glossary at the end of this file. The MCP server serves the glossary to every agent as `metaform://glossary`, from the `<glossary>` element of `src/metaform/modules/mcp/resources/prompts.xml`. Use the terms exactly; never substitute synonyms.
 
 ## Commands
 
@@ -24,8 +24,41 @@ Tests live in `tests/` (chassis) and `src/metaform/modules/<id>/tests/` (each mo
 `conftest.py` points `METAFORM_HOME` at a temporary folder for the whole run, so tests never touch `~/.metaform`. The `home` fixture gives each test a fresh home; the `run` fixture runs the real CLI in-process (marker `cli_process`, or `METAFORM_TEST_SUBPROCESS=1`, runs each call as its own process). `@pytest.mark.req('MAP-012')` ties a test to the specification record it protects.
 
 ## Architecture
+This system is built for ultra-low latency and zero-overhead execution. Any code that breaks event-driven paradigms or introduces engine de-optimizations will be rejected at the code-review stage. **No exceptions.**
 
-**Chassis and modules.** `src/metaform/*.py` is the chassis: CLI, settings, data, events, loader, home. Everything else is a module in `src/metaform/modules/<id>/`. A module reaches Metaform only through the public base: `metaform.module`, `settings`, `data`, `events`, `nonce`, `prompt_files`, `axiom`, `home`, `outline`, `finish_xml`.
+---
+
+## 1. Zero-Tolerance Polling Ban
+* **Rule:** Absolutely zero polling (`setInterval`, active `while(true)` sleep loops, or ticking loops checking for state changes).
+* **Enforcement:** The system must be 100% reactive. If a state changes, the mutating entity **must** emit an event or call a direct callback. 
+* **Correction:** If you need to know when data is ready, implement a Publisher/Subscriber model, Promises, or direct event listeners. If an upstream system forces polling, isolate that logic into a single dedicated worker thread so it does not block the main engine loop.
+
+---
+
+## 2. Object Shape Stability (Strict Monomorphism)
+To keep the JavaScript JIT compiler running at native machine speeds, you must protect object shapes (Hidden Classes/Maps).
+* **Rule 1: Fixed Constructors.** All objects must initialize every single one of their properties in the constructor. Initialize them to `null`, `undefined`, or a default value if they aren't ready yet.
+* **Rule 2: Absolute Structural Order.** Properties must be assigned in the exact same textual order every single time. Never mix property layouts.
+* **Rule 3: Ban Dynamic Mutations.** Do not add properties to an object after instantiation. Never use the `delete` keyword (e.g., `delete obj.property`); assign the value to `null` or `undefined` instead.
+* **Rule 4: Avoid Megamorphism.** Functions that handle high-frequency events must only receive objects of the exact same shape. Passing more than 4 distinct object types to a hot function drops performance off a cliff.
+
+---
+
+## 3. High-Frequency I/O & Graphics Rules (JS Context)
+* **Rule 1: Zero Allocation in Hot Loops.** If a function fires inside an animation frame (`requestAnimationFrame`) or high-frequency event listener, it must allocate **zero** new memory. No `new Object()`, no `[]`, and no `{}`. Use pre-allocated **Object Pools**.
+* **Rule 2: Batched State Mutations.** Do not update downstream systems piecemeal. Batch changes into packed data structures (like `Float32Array`) and flush them in a single, atomic draw or update call.
+* **Rule 3: Use requestAnimationFrame Only.** All visual loops and rendering pipelines must sync via `requestAnimationFrame`. Periodic timers (`setInterval`) for UI rendering are strictly banned.
+
+---
+
+## 4. Hot Loop Optimization (Python Context)
+If writing or interfacing with high-performance Python nodes:
+* **Rule 1: Eliminate Attribute Lookup.** Avoid dot notation (`obj.method`) inside tight `for` loops. Bind the method or attribute to a local variable *before* entering the loop.
+* **Rule 2: Local Scope Priority.** Keep high-intensity computing inside functions rather than the global scope to leverage fast local variable array indexing (`LOAD_FAST`).
+* **Rule 3: Prefer C-Level Iteration.** Use built-in list comprehensions, `map()`, `filter()`, or `itertools` rather than manual `for` loops wherever possible.
+
+
+**Chassis and modules.** `src/metaform/*.py` is the chassis: CLI, settings, data, events, loader, home. Everything else is a module in `src/metaform/modules/<id>/`. A module reaches Metaform only through the public base: `metaform.module`, `settings`, `data`, `events`, `prompt_files`, `axiom`, `home`, `outline`, `finish_xml`.
 
 **One declaration drives every surface.** A module declares `Module`, `Verb`, `Noun` records (`src/metaform/module.py`). That declaration produces the CLI command `metaform <module> <verb>`, its help (`docs.py`), and its MCP tool. A verb receives one `Context` (`context.py`) and returns data, shown the same way on every surface (`results.py`).
 
@@ -39,11 +72,11 @@ Tests live in `tests/` (chassis) and `src/metaform/modules/<id>/tests/` (each mo
 
 **Prompts.** The text a module sends to agents lives in its `resources/prompts.xml`: one element per prompt, sent exactly as written; an empty element inside a prompt marks a place the code fills in; comments are never sent. Comments are written as product documentation: what the prompt is, who receives it and when, how to change or turn it off. Read prompts with `metaform.prompt_files`.
 
-**MCP server** (`modules/mcp/server.py`): built on the official `mcp` Python SDK's low-level `Server`, speaking protocol revision 2026-07-28 (`server/discover`, `subscriptions/listen`) and earlier clients. Its tools, prompts and resources are generated from the module declarations of the folder it runs in. The instructions it sends are the mcp module's `<instructions>` element as written. Claude Code keeps only the first 2,048 characters of a server's instructions. MCP changed substantially in July 2026; `docs/reference/mcp-agent-context-july-2026.md` summarises the current standard, and `docs/reference/metaform-mcp-server.md` lists every tool and command.
+**MCP server** (`modules/mcp/server.py`): built on the official `mcp` Python SDK's low-level `Server`, speaking protocol revision 2026-07-28 (`server/discover`, `subscriptions/listen`) and earlier clients, over stdio, or Streamable HTTP on 127.0.0.1 with `metaform mcp serve --http`. Its tools, prompts and resources are generated from the module declarations of the folder it runs in. Each command is its own tool, `<module>_<verb>`, with a one-line description; its arguments come with it when an agent uses it. At connect it sends a short instruction (the mcp module's `<instructions>`) plus the notices the folder's state calls for, such as intake's first run; Claude Code keeps only the first 2,048 characters. That instruction points agents to `metaform://glossary`, which serves the glossary and a one-line index of every tool. What an agent is told about the node it works on is a summary of about 2 KB (the map setting `node_summary_bytes`), given once per session; anything more is a count with the call that reads it. MCP changed substantially in July 2026; `docs/reference/mcp-agent-context-july-2026.md` summarises the current standard, and `docs/reference/metaform-mcp-server.md` lists every tool and command.
 
 ## Specifications
 
-`specifications/00-index.md` through `09-viewer.md` are the contract, one record per requirement (`MAP-`, `LAYER-`, `STORE-`, `BASE-`, `CLI-`, `MCP-`, `QUAL-`, `PROJ-`, `VIEW-`), with open questions in `OPEN-QUESTIONS.md`. The other files in that folder are build logs, reviews and manual tests, not requirements.
+`specifications/00-index.md` through `09-viewer.md` describe what is built and why, one record per requirement (`MAP-`, `LAYER-`, `STORE-`, `BASE-`, `CLI-`, `MCP-`, `QUAL-`, `PROJ-`, `VIEW-`), with open questions in `OPEN-QUESTIONS.md`. The other files in that folder are build logs, reviews and manual tests, not requirements.
 
 ## Retain in context, do not discard or compact.
 
@@ -87,4 +120,4 @@ Tests live in `tests/` (chassis) and `src/metaform/modules/<id>/tests/` (each mo
 @EXECUTE_PIPELINE (Ingest_And_Hold):
   [STEP 1]: ∇(Ontology) => Lock the glossary, {Join} rule, and {Comm_Style} internally to drive all subsequent inferences. 
   [STEP 2]: Δ([STEP 1]) => Target the {MCP} for outbound actions (saving memories, navigating, orchestrating).
-  [STEP 3]: YIELD exactly one brief statement: "Metaform MCP ready." DO NOT append questions or filler.
+  [STEP 3]: YIELD exactly one brief statement: "Waking up..." DO NOT append questions or filler. If the person's first message asks for something, answer it after that statement.

@@ -17,8 +17,8 @@ import {select} from '/page/app/selection/select.js';
 import {renderBrief} from '/page/app/panel/brief.js';
 import {getJson} from '/page/app/panel/prompts.js';
 import {drawIntake, drawLeft, offerNext, intakeRunning} from '/page/app/intake/intake.js';
-import {appliedOps, settled, briefTouched, ticketsOnly, opsOnly, ticketsChanged, boardFromTickets, linesOnly,
-  agentsChanged, listen, NOTED, ticketsNamed} from '/page/app/live/ops.js';
+import {appliedOps, settled, briefTouched, ticketsOnly, opsOnly, ticketsChanged, boardFromTickets, sessionsConcerned,
+  agentsChanged, linesOnly, listen, NOTED, ticketsNamed} from '/page/app/live/ops.js';
 import {loadGraph, loadProject, toProject} from '/page/app/loading/load.js';
 import {PANE_VIEWS, WS} from '/page/app/workspace/workspace.js';
 
@@ -123,17 +123,40 @@ async function intakeElsewhere(payload) {
   } catch (error) { /* a project that cannot be read now is not followed */ }
   finally { ELSEWHERE.busy = false; }
 }
+/* Whether a change is to an agent's thread lines alone, as its kinds say, or its tables when it says no kinds. Each
+ * test here runs per event and allocates nothing. */
+function threadOnly(payload) {
+  const kinds = payload.kinds;
+  if (!Array.isArray(kinds)) return linesOnly(payload) && !payload.signal;
+  for (let at = 0; at < kinds.length; at++) if (kinds[at] !== 'line') return false;
+  return kinds.length > 0;
+}
+/* Whether a change names a table passing the test, or names none, so it may have changed any. */
+function namesTable(named, test) {
+  if (!named) return true;
+  if (!Array.isArray(named)) return false;
+  for (let at = 0; at < named.length; at++) if (test(String(named[at]))) return true;
+  return false;
+}
+/* The workspace's panes read again only for a change to their own tables. */
+const PANE_TABLES = [['messages', table => table === 'messages' || table === 'map.question_work'],
+  ['runs', table => table.startsWith('workflow')]];
 /* Whether a change named tables, every one of them passing the test. */
 const allTables = (named, test) => Array.isArray(named) && named.length && named.every(table => test(String(table)));
 export async function changed(event) {
   if (event.topic !== 'map.changed') return;
   if (event.payload?.project && event.payload.project !== S.project) return intakeElsewhere(event.payload);
   if (event.payload?.project !== S.project) return;
-  if (WS.on) {  // the workspace's panes that read the map, its messages and its workflow runs, read again
-    WS.refresh();
-    for (const page of ['messages', 'runs']) if (WS.isShown(WS.paneOfPage(page)?.id)) PANE_VIEWS[page].show();
-  } else if (WS.active) WS.refresh();
   const named = event.payload.tables;
+  // the workspace's panes that read the map read again, but for an agent's thread lines alone, which no pane shows;
+  // its messages and its workflow runs only when the change names their tables, or names none
+  if (WS.on && !threadOnly(event.payload)) {
+    WS.refresh();
+    for (let at = 0; at < PANE_TABLES.length; at++) {
+      const page = PANE_TABLES[at][0];
+      if (namesTable(named, PANE_TABLES[at][1]) && WS.isShown(WS.paneOfPage(page)?.id)) PANE_VIEWS[page].show();
+    }
+  } else if (WS.active && !threadOnly(event.payload)) WS.refresh();
   // the agent recording an intake has gone: what is building is read at once, so its bar goes, and no map is read
   if (allTables(named, table => table === 'intake.recorder')) return recordingNow().catch(error => toast(error.message));
   // a setting changed, here or elsewhere: the settings screen reads again if it is open, F13
@@ -147,7 +170,11 @@ export async function changed(event) {
   }
   const agents = named === 'dispatch'
     || Array.isArray(named) && named.some(table => String(table).startsWith('dispatch.'));
-  if (agents) agentsChanged(!linesOnly(event.payload));
+  if (agents) {
+    const payload = event.payload;
+    const works = Array.isArray(payload.work_ids) ? payload.work_ids : null;
+    agentsChanged(!linesOnly(payload), sessionsConcerned(payload), works);
+  }
   // an agent's own tables, its thread, sessions and settings, change no map
   if (named === 'dispatch' || allTables(named, table => table.startsWith('dispatch.'))) return;
   // nor do the settings, the page's own view choices among them, each read where it is used: a key that steps a view

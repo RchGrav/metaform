@@ -29,7 +29,6 @@ CHOICES = [*GROUPS, *dict.fromkeys(signal for signals in GROUPS.values() for sig
 SIGNAL = re.compile(r'^[a-z][a-z0-9-]{1,40}$')
 TEXT_GAP = 60.0      # seconds between texts the bridge sends on its own
 SAME_GAP = 3600.0    # seconds before the same signal on the same ticket is told again
-RETRY_SECONDS = 30.0  # how often a call or text held back is tried again
 
 WORDS = {
     'permission-waiting': 'an agent is waiting for your permission{what}',
@@ -68,14 +67,17 @@ class Notifier:
     `send`, which the bridge supplies. Calls and texts the same signal on the same ticket once per SAME_GAP.
 
     `place(reason)` answers whether the call is being placed: False when twilio_call_gap_minutes or a call in progress
-    holds it back. A call or text held back is not counted as told; it waits, and `retry`, which the bridge runs every
-    RETRY_SECONDS, places or sends it once nothing holds it back, unless its signal is cleared first."""
+    holds it back. A call or text held back is not counted as told; it waits, and `retry` places or sends it once
+    nothing holds it back, unless its signal is cleared first. The bridge runs `retry` when the call in progress ends,
+    and at `due`, when the gap that holds the first of them back ends; never on a timer of its own, QUAL-015.
+    `call_free` is when the gap between calls lets the next one go, None while a call is in progress."""
 
     def __init__(self, *, calls: list[str], texts: list[str], place: Callable[[str], bool],
                  send: Callable[[str], Any], clock: Callable[[], float],
-                 task_of: Callable[[str], str | None] = lambda work_id: None) -> None:
+                 task_of: Callable[[str], str | None] = lambda work_id: None,
+                 call_free: Callable[[], float | None] = lambda: None) -> None:
         self.calls, self.texts = signals_of(calls), signals_of(texts)
-        self.place, self.send, self.clock, self.task_of = place, send, clock, task_of
+        self.place, self.send, self.clock, self.task_of, self.call_free = place, send, clock, task_of, call_free
         self.told: dict[tuple[str, str, str, str], float] = {}   # (act, signal, ticket, session) -> when told
         self.waiting: dict[tuple[str, str, str, str], str] = {}  # the same, held back -> what to say
         self.last_text = float('-inf')
@@ -116,6 +118,15 @@ class Notifier:
                 del self.waiting[told]
                 done.append(f'{told[0]} for {told[1]}')
         return done
+
+    def due(self) -> float | None:
+        """When, by the clock, the first act held back may go: a text once TEXT_GAP has passed since the last, a call
+        once the gap between calls has; None when nothing waits, or only calls held back by a call in progress, which
+        go when it ends."""
+        acts = {told[0] for told in self.waiting}
+        times = [self.last_text + TEXT_GAP] if 'text' in acts else []
+        free = self.call_free() if 'call' in acts else None
+        return min([*times, *([free] if free is not None else [])], default=None)
 
     def _act(self, act: str, reason: str, now: float) -> bool:
         if act == 'call':

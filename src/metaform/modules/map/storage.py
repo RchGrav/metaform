@@ -122,6 +122,9 @@ def _building(tx: Tx, work_id: str) -> None:
     marks the part built."""
     row = _work_row(tx, work_id)
     if row["task"]:
+        _ticket_changed(tx, *(str(found["work_id"]) for found in tx.execute(
+            "SELECT work_id FROM work WHERE target_kind=? AND target_id=? AND done IS NULL AND condition='unbuilt' "
+            "AND (task IS NULL OR task='')", (row["target_kind"], row["target_id"]))))
         tx.execute(
             "UPDATE work SET condition='under-construction' WHERE target_kind=? AND target_id=? AND done IS NULL "
             "AND condition='unbuilt' AND (task IS NULL OR task='')",
@@ -134,6 +137,19 @@ def _work_row(tx: Tx, work_id: str) -> Any:
     if row is None:
         raise StoreError(f"No work record has the id {work_id}.", "metaform map work")
     return row
+
+
+def _ticket_changed(tx: Tx, *work_ids: str) -> None:
+    """The tickets this write changes, said on its `map.changed`, so a dispatch runner reads only its own, BASE-053."""
+    for work_id in work_ids:
+        tx.concern(work_id=work_id, kind="ticket")
+
+
+def _message_changed(tx: Tx, message_id: str) -> None:
+    """A question or message this write changes, said on its `map.changed` with the ticket a question is linked to,
+    the one whose agent waits on its answer, BASE-053."""
+    linked = tx.tables().get("question_work", {"message_id": message_id})
+    tx.concern(work_id=str(linked["work_id"]) if linked else None, kind="message")
 
 
 def add_work(
@@ -177,6 +193,7 @@ def add_work(
     )
     _link(tx, work_id, links, notices)
     _number(tx, "work", work_id, target_kind, thing, _titled(title, task, note))
+    _ticket_changed(tx, work_id)
     return work_record(tx, _work_row(tx, work_id), tuple(notices))
 
 
@@ -195,6 +212,7 @@ def edit_work(tx: Tx, work_id: str, changes: Any) -> WorkRecord:
     """Change a work record's fields, attachment or reference links in place, preserving its identity and progress."""
     notices: list[Notice] = []
     before = _work_row(tx, work_id)
+    _ticket_changed(tx, work_id)
     given = as_object(changes)
     if given is None:
         raise StoreError("The changes to a work record are an object of its fields.", "metaform help map work")
@@ -281,6 +299,7 @@ def add_message(tx: Tx, node: Any, kind: str, text: Any, *, suggestions: Any = N
         ),
     )
     _number(tx, "message", message_id, target_kind, thing, _titled(title, text), why)
+    tx.concern(kind="message")  # a question asked for a ticket names it, in `ask`
     return message(tx, _message_row(tx, message_id), tuple(notices))
 
 
@@ -301,6 +320,7 @@ def close_message(tx: Tx, message_id: str, answer: Any = None, *, agent: bool = 
             f'the person answers it on the page, or with metaform map reply {message_id} answer="..." on the command '
             "line",
         )
+    _message_changed(tx, message_id)
     tx.execute(
         "UPDATE messages SET closed=?, answer=? WHERE message_id=?",
         (now(), _work_text(answer, "answer", notices), message_id),
@@ -313,6 +333,7 @@ def move_message(tx: Tx, message_id: str, node: Node) -> Message:
     row = _message_row(tx, message_id)
     notices: list[Notice] = []
     kind, thing = work_target(tx, node, notices)
+    _message_changed(tx, message_id)
     tx.execute("UPDATE messages SET target_kind=?, target_id=? WHERE message_id=?", (kind, thing, message_id))
     if (kind, thing) != (str(row["target_kind"]), str(row["target_id"])):
         _number(tx, "message", message_id, kind, thing)  # the next number at its new address, MCP-037
@@ -327,6 +348,7 @@ def reopen_message(tx: Tx, message_id: str) -> Message:
         raise StoreError("Only a question is reopened; this is a message.", "metaform map messages kind=question")
     if row["closed"] is None:
         return message(tx, row, (Notice("id", "This question is open; it was left as it is."),))
+    _message_changed(tx, message_id)
     tx.execute("UPDATE messages SET closed=NULL, answer=NULL WHERE message_id=?", (message_id,))
     return message(tx, _message_row(tx, message_id))
 
@@ -354,6 +376,7 @@ def plan_work(tx: Tx, work_id: str, steps: Any) -> WorkRecord:
     if count is not None and count < done:
         notices.append(Notice("steps", f"{done} steps are done already; the count was set to {done}."))
         count = done
+    _ticket_changed(tx, work_id)
     tx.execute("UPDATE work SET steps=? WHERE work_id=?", (count, work_id))
     return work_record(tx, _work_row(tx, work_id), tuple(notices))
 
@@ -378,6 +401,7 @@ def step_work(tx: Tx, work_id: str, said: Any = None) -> WorkRecord:
     if planned is not None and done > int(planned):
         notices.append(Notice("steps", f"Step {done} is beyond the {planned} planned; the count was raised to {done}."))
         planned = done
+    _ticket_changed(tx, work_id)
     tx.execute("UPDATE work SET steps=?, steps_done=? WHERE work_id=?", (planned, done, work_id))
     tx.execute(
         "INSERT INTO work_steps(work_id, number, said, at) VALUES (?, ?, ?, ?)",
@@ -402,6 +426,7 @@ def take_work(tx: Tx, work_id: str, steps: Any = None, by: Any = None) -> WorkRe
             f"metaform map work op=plan id={work_id} steps=<n>",
         )
     notices: list[Notice] = []
+    _ticket_changed(tx, work_id)
     tx.execute(
         "UPDATE work SET taken=?, taken_by=?, held=0, steps=COALESCE(?, steps) WHERE work_id=?",
         (now(), _work_text(by, "by", notices), _count(steps, notices), work_id),
@@ -417,6 +442,7 @@ def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any =
     if column not in COLUMNS:
         raise StoreError(f"{column!r} is not a column: backlog, todo, doing or done.", "metaform help map work")
     notices: list[Notice] = []
+    _ticket_changed(tx, work_id)
     if work_record(tx, row).column == column:
         pass  # Within a column only the order changes.
     elif column == "done":
@@ -451,6 +477,7 @@ def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any =
         )
     ]
     at = len(others) if position is None else max(0, min(len(others), int(position)))
+    _ticket_changed(tx, *others)  # their places in the column
     for place, ident in enumerate([*others[:at], work_id, *others[at:]]):
         tx.execute("UPDATE work SET position=? WHERE work_id=?", (place, ident))
     return work_record(tx, _work_row(tx, work_id), tuple(notices))
@@ -469,6 +496,7 @@ def finish_work(tx: Tx, work_id: str, resolution: Any = None, why: Any = None, o
     if row["done"] is not None:
         notices.append(Notice("id", f"This work record was done at {row['done']}; its resolution was kept."))
         return work_record(tx, row, tuple(notices))
+    _ticket_changed(tx, work_id)
     tx.execute(
         "UPDATE work SET done=?, resolution=?, outcome=? WHERE work_id=?",
         (now(), _work_text(resolution, "resolution", notices), ended, work_id),
@@ -1035,6 +1063,7 @@ def ask(tx: Tx, node: Node, text: Any, *, suggestions: Any = None, by: Any = Non
     asked = add_message(tx, node, "question", text, suggestions=suggestions, by=by, title=title, why=why)
     if work is not None:
         tx.tables().insert('question_work', {'message_id': asked.id, 'work_id': work})
+        tx.concern(work_id=work, kind="message")
         asked = dataclasses.replace(asked, work_id=work)
     return asked
 

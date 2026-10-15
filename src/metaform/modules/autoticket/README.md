@@ -61,20 +61,20 @@ It publishes `map.changed` after it makes groups, so an open page shows them. It
 
 ## Sync and async
 
-`watch` is a coroutine: each turn runs in a worker thread, so in the MCP server it never blocks other calls, and a cancel stops it at its next turn, giving its leases back. Each log is read by a thread of its own. Every other verb is synchronous.
+`watch` is a coroutine: the watch runs in a worker thread, so in the MCP server it never blocks other calls, and a cancel stops it at once, giving its leases back. Each log is read by a thread of its own, and each lease is waited on by a thread of its own. Nothing wakes on a timer to look for a change, QUAL-015: the watch sleeps on its queue until a reader hands it a line, a lease is handed over, a `map.changed` from another process names `autoticket.logs`, `autoticket.rules` or `autoticket.state` (heard through the base's listener, BASE-053), or a real deadline comes: an open entry's 2 s of quiet, the one-second write batch, the interval's list, or the end of `seconds`. A local reader at its file's end sleeps until the system says the file changed: inotify on Linux, on the open file and on its name in its folder; kqueue on macOS, on the open file and its folder. Every other verb is synchronous.
 
 ## Layers
 
 It writes no layer. Its tables, version 1, are all in the project's store, `place='project'`, so a clear of the project's metaforms keeps the error history:
 
 - `groups`, keyed by `group_id`: `fingerprint`, `example` (masked), `count`, `first_seen`, `last_seen`, `active` (JSON, agents and tickets at first-seen), `address` and `number` (its item at its Address), `listed` (its count at the last list), `known` (1 once in a list or reported), `work_id` (the ticket it was promoted to). Indexes on `(address, number)` for `item_read` and `items_at`, and on `work_id` for `work_read`. Written by `watch`, `reset` and `promote`.
-- `logs`, keyed by `source`: `holder` and `beat` (the lease), `identity` and `offset` (where its reader has reached), `drops`, `reconnects`, `last_drop`, `added`. Written by `add`, `remove` and `watch`.
+- `logs`, keyed by `source`: `holder` (who holds the lease, shown by `autoticket logs`) and `beat` (when it last wrote), `identity` and `offset` (where its reader has reached), `drops`, `reconnects`, `last_drop`, `added`. Written by `add`, `remove` and `watch`.
 - `rules`, keyed by `pattern`, with `added`. Written by `add-rule` and `remove-rule`.
 - `state`, keyed by `name`: `baseline`, `listed_at`, `no_logs`. Written by `watch`, `reset`, `no-logs` and `add`.
 
 ## Lifecycle and cleanup
 
-No `start` or `stop`. A watch gives back its leases when it ends, its position written, and stops its reader threads and any `ssh` it started. A watch that dies holding a lease leaves it to the next watch: a holder of this host whose process is gone is taken over at once, any other after 15 s without a beat.
+No `start` or `stop`. A log's lease is a lock on a file of its own under the home's `run/autoticket`, held by the watch reading it. A watch gives back its leases when it ends, its position written, and stops its reader threads and any `ssh` it started. A watch that dies holding a lease, by a crash too, has its lock let go by the system, and a watch waiting on that lock takes the log over at that moment, from the last position written. A holder that hangs keeps its logs, since its process still holds the locks.
 
 ## Modules relied on
 
@@ -86,7 +86,7 @@ Linux and macOS.
 
 ## Resources owned
 
-A reader thread for each log the watch holds, an open file for a local log, and an `ssh` process for a remote one, released when the watch ends.
+A reader thread for each log the watch holds, an open file and an inotify or kqueue handle for a local log, and an `ssh` process for a remote one; a lease thread and its lock file's handle for each watched log. All released when the watch ends; the lock files stay, empty, so a lock is never taken on a file another holder has removed.
 
 ## Installed and direct wheel
 

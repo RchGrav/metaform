@@ -1,0 +1,3 @@
+runner-0.log: Claude Code failed on work 27d8c6f792044a62b49fce887ee2d708: The write does not fit dispatch's tables: UNIQUE constraint failed: dispatch.sessions.session_id.
+SESSION = f'fake-session-{os.getpid()}-{count}'
+Recorded: code.dispatcher.agent#39 ... answered() sets the waiting future first and request_permission spawns its map.changed; doing the ticket read and two writes first took 484 ms.

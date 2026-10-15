@@ -24,6 +24,15 @@ pytestmark = [pytest.mark.kind('fixture'), pytest.mark.req('VIEW-042')]
     ({'tables': 'dispatch', 'dispatch_tables': ['dispatch.questions']}, True),
     ({'tables': 'dispatch'}, True),
     ({}, True),
+    # what the change concerns, when every write said it: only the kinds that can start work
+    ({'tables': 'dispatch', 'kinds': ['line'], 'session_ids': ['s']}, False),
+    ({'tables': ['dispatch.sessions', 'dispatch.spending'], 'kinds': ['spend']}, False),
+    ({'tables': ['work'], 'kinds': ['ticket'], 'work_ids': ['w']}, True),
+    ({'tables': ['work_steps'], 'kinds': ['ticket'], 'work_ids': ['w']}, False),
+    ({'tables': 'dispatch', 'kinds': ['session'], 'session_ids': ['s']}, False),  # a runner's working or idle
+    ({'tables': ['dispatch.sessions', 'work']}, True),  # a session's end releases its ticket, with no kinds
+    ({'tables': ['map.glyphs'], 'kinds': []}, True),
+    ({'tables': ['elements', 'joins'], 'kinds': []}, False),
 ])
 def test_change_triggers_only_relevant_dispatch_checks(payload, starts, monkeypatch):
     server = object.__new__(module.Server)
@@ -32,7 +41,8 @@ def test_change_triggers_only_relevant_dispatch_checks(payload, starts, monkeypa
     server.listening = threading.Lock()
     scheduled = []
     monkeypatch.setattr(module.home, 'project', lambda project: SimpleNamespace(project_id=project))
-    monkeypatch.setattr(server, 'schedule_dispatch', scheduled.append)
+    monkeypatch.setattr(server, 'schedule_dispatch',
+                        lambda project, starts=True, merges=True: scheduled.append(project) if starts else None)
     event = {'project': 'proj', 'base_id': 'main', **payload}
     assert server.changed(event) == 1
     assert scheduled == (['proj'] if starts else [])
@@ -59,6 +69,7 @@ def test_repeated_changes_queue_one_followup_without_concurrent_batches(monkeypa
     server = object.__new__(module.Server)
     server.dispatch_lock = threading.Lock()
     server.dispatch_pending = set()
+    server.merges_pending = set()
     server.dispatch_busy = False
     server.dispatch_errors = {}
     threads = []
@@ -84,6 +95,52 @@ def test_repeated_changes_queue_one_followup_without_concurrent_batches(monkeypa
     assert not server.dispatch_busy and not server.dispatch_pending
 
 
+@pytest.mark.req('VIEW-044')
+@pytest.mark.parametrize(('payload', 'starts', 'merges'), [
+    ({'tables': 'dispatch', 'dispatch_tables': ['dispatch.lines'], 'kinds': ['line']}, False, False),
+    ({'tables': 'dispatch', 'kinds': ['line'], 'session_ids': ['s']}, False, False),
+    ({'tables': 'dispatch', 'kinds': ['merge'], 'work_ids': ['w']}, False, True),
+    ({'tables': 'dispatch', 'dispatch_tables': ['dispatch.merges']}, False, True),
+    ({'tables': 'dispatch'}, True, True),
+    ({'tables': ['work'], 'kinds': ['ticket']}, True, False),
+])
+def test_a_change_runs_the_agent_starter_and_the_merges_read_only_when_it_can_need_them(payload, starts, merges,
+                                                                                         monkeypatch):
+    server = object.__new__(module.Server)
+    server.listeners, server.listening = set(), threading.Lock()
+    server.dispatch_lock, server.dispatch_busy, server.dispatch_errors = threading.Lock(), False, {}
+    server.dispatch_pending, server.merges_pending = set(), set()
+    monkeypatch.setattr(module.threading, 'Thread', lambda target, **kwargs: SimpleNamespace(start=target))
+    monkeypatch.setattr(module.chassis, 'refresh_modules', lambda: None)
+    monkeypatch.setattr(module.home, 'project', lambda project: SimpleNamespace(path='/tmp', project_id=project))
+    monkeypatch.setattr(module.events, 'announce', lambda *args: [])
+    ran = []
+    monkeypatch.setattr(server, 'schedule_merges', lambda project: ran.append('merges'))
+    monkeypatch.setattr(module, 'module_verb', lambda *args, **kwargs: ran.append('autostart') or {})
+    server.changed({'project': 'proj', 'base_id': 'main', **payload})
+    assert ran == ['merges'] * merges + ['autostart'] * starts
+
+
+@pytest.mark.req('VIEW-042')
+def test_the_agent_starters_own_writes_reach_the_pages_and_start_no_second_pass(monkeypatch):
+    server = object.__new__(module.Server)
+    page = queue.SimpleQueue()
+    server.listeners, server.listening = {page}, threading.Lock()
+    server.dispatch_lock, server.dispatch_busy, server.dispatch_errors = threading.Lock(), False, {}
+    server.dispatch_pending, server.merges_pending = set(), set()
+    monkeypatch.setattr(module.threading, 'Thread', lambda target, **kwargs: SimpleNamespace(start=target))
+    monkeypatch.setattr(module.chassis, 'refresh_modules', lambda: None)
+    monkeypatch.setattr(module.home, 'project', lambda project: SimpleNamespace(path='/tmp', project_id=project))
+    monkeypatch.setattr(server, 'schedule_merges', lambda project: None)
+    taken = {'project': 'proj', 'base_id': 'main', 'tables': ['work'], 'work_ids': ['w'], 'kinds': ['ticket']}
+    monkeypatch.setattr(module.events, 'announce', lambda *args: [taken])  # the starter took a ticket
+    passes = []
+    monkeypatch.setattr(module, 'module_verb', lambda *args, **kwargs: passes.append(args) or {})
+    server.schedule_dispatch('proj')
+    assert len(passes) == 1, 'the starter ran again for its own write'
+    assert page.get_nowait() == {'topic': 'map.changed', 'payload': taken}
+
+
 @pytest.mark.req('BASE-053')
 @pytest.mark.cli_process
 def test_cli_setting_changes_reach_the_server_without_an_open_page(run, home, tmp_path, monkeypatch):
@@ -95,7 +152,8 @@ def test_cli_setting_changes_reach_the_server_without_an_open_page(run, home, tm
     server.listeners = set()
     server.listening = threading.Lock()
     scheduled = queue.Queue()
-    monkeypatch.setattr(server, 'schedule_dispatch', scheduled.put)
+    monkeypatch.setattr(server, 'schedule_dispatch',
+                        lambda project, starts=True, merges=True: scheduled.put(project) if starts else None)
     with module.events.listen('web', server.changed):
         run('set', '--dispatch-autostart', cwd=folder)
         assert scheduled.get(timeout=5) == 'proj'

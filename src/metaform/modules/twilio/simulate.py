@@ -22,7 +22,7 @@ from typing import Any
 from . import api, mulaw
 from .agent import ScriptedAgent
 from .engines import PAUSE, ScriptedVoice
-from .server import Config, Lines, Phone
+from .server import Config, Lines, Phone, Serving
 
 OWNER = '+15550100001'
 NUMBER = '+15550100002'
@@ -132,11 +132,14 @@ async def run(*, pause: float = PAUSE, agent_delay: float = 0.0, speech: bytes |
     phone = Phone(config, agent=lambda: agent, voice=lambda: voice,
                   client=api.Client(post=recorded, creds=lambda: ('AC' + '0' * 32, ('AC' + '0' * 32, 'simulated'))),
                   log=log.append)
-    server = uvicorn.Server(uvicorn.Config(phone.app(), host='127.0.0.1', port=0, ws='websockets-sansio',
-                                           log_level='warning', lifespan='off'))
+    server = Serving(uvicorn.Config(phone.app(), host='127.0.0.1', port=0, ws='websockets-sansio',
+                                    log_level='warning', lifespan='off'))
     serving = asyncio.ensure_future(server.serve())
-    while not server.started:
-        await asyncio.sleep(0.01)
+    ready = asyncio.ensure_future(server.ready.wait())
+    await asyncio.wait({serving, ready}, return_when=asyncio.FIRST_COMPLETED)
+    if not ready.done():  # it ended without listening: its error is the simulation's
+        ready.cancel()
+        await serving
     port = server.servers[0].sockets[0].getsockname()[1]
     base = f'http://127.0.0.1:{port}'
     checks: dict[str, Any] = {}
@@ -216,6 +219,6 @@ async def run(*, pause: float = PAUSE, agent_delay: float = 0.0, speech: bytes |
             'rest_requests': recorded.requests}
         return result
     finally:
-        server.should_exit = True
+        server.stop()
         with contextlib.suppress(Exception):
             await asyncio.wait_for(serving, 5)

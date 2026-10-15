@@ -48,7 +48,7 @@ from metaform.module import context as module_context
 
 from . import api, engines, notify, selfcheck, simulate
 from .agent import SystemAgent, verb_runner
-from .server import PIN_NAME, PROOFS, Config, Lines, Phone, Seen
+from .server import PIN_NAME, PROOFS, Config, Lines, Phone, Seen, Serving
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 # The ASGI server, its websocket protocol (uvicorn's websockets-sansio is in 0.35 and later), and the simulated
@@ -538,7 +538,7 @@ def serve(ctx: Context) -> dict[str, Any]:
     if token is None or voice_found is None:
         raise Stop('The phone bridge needs the auth token and the voice module.', 'metaform twilio status')
     owners = tuple(listed(ctx.setting('twilio_owner_numbers')))
-    agent = SystemAgent(verb_runner(ctx.folder, project))
+    agent = SystemAgent(verb_runner(ctx.folder, project), project=project, listening=False)  # hears the bridge's listener
     character = mascot(ctx) or None
     config = Config(public_url=public(ctx), twilio_number=str(ctx.setting('twilio_number')), owners=owners,
                     auth_token=token, control_token=secrets.token_urlsafe(32), lines=lines(ctx),
@@ -551,10 +551,10 @@ def serve(ctx: Context) -> dict[str, Any]:
                                                    voice=str(ctx.setting('twilio_voice') or '') or None),
                   client=api.Client(), log=write_log, seen=Seen(run_dir() / 'seen.txt'))
     import uvicorn
-    server = uvicorn.Server(uvicorn.Config(phone.app(), host=bind, port=port, ws='websockets-sansio',
-                                           ws_max_size=65_536, log_level='warning', lifespan='off',
-                                           proxy_headers=False, server_header=False, date_header=False,
-                                           ssl_certfile=certificate))
+    server = Serving(uvicorn.Config(phone.app(), host=bind, port=port, ws='websockets-sansio',
+                                    ws_max_size=65_536, log_level='warning', lifespan='off',
+                                    proxy_headers=False, server_header=False, date_header=False,
+                                    ssl_certfile=certificate))
     loop_held: list[asyncio.AbstractEventLoop] = []
 
     def later(work: Any) -> bool:
@@ -577,13 +577,22 @@ def serve(ctx: Context) -> dict[str, Any]:
                                texts=listed(ctx.setting('twilio_text_when')),
                                place=place,
                                send=lambda why: later(_logged(phone.text(owners[0], texting(why)))),
-                               clock=time.monotonic, task_of=lambda work_id: _task(project, work_id))
+                               clock=time.monotonic, task_of=lambda work_id: _task(project, work_id),
+                               call_free=phone.free_at)
     had_intake = [_has_intake(project)]
     lock = threading.Lock()
+    held_back: list[asyncio.Event] = []  # set when what holds a call or text back may have changed
+
+    def stir() -> None:
+        if loop_held and held_back:
+            with contextlib.suppress(RuntimeError):  # the loop has closed: the bridge is stopping
+                loop_held[0].call_soon_threadsafe(held_back[0].set)
+    phone.ended.append(stir)  # a call in progress held the others back
 
     def heard(payload: dict[str, Any]) -> None:
         if project is None or payload.get('project') != project:
             return
+        agent.heard(payload)
         with lock:
             signal = notify.signal_in(payload)
             if signal is not None:
@@ -593,10 +602,19 @@ def serve(ctx: Context) -> dict[str, Any]:
             if not had_intake[0] and 'intake-finished' in notifier.calls | notifier.texts and _has_intake(project):
                 had_intake[0] = True
                 notifier.heard({'signal': 'intake-finished', 'active': True})
+            if notifier.waiting:
+                stir()
 
     async def retrying() -> None:
+        """What was held back goes once it may: when the gap that held it ends, by the clock, or when the call in
+        progress ends, by the phone's own event; a signal held back since wakes it to read the new time."""
+        held_back.append(asyncio.Event())
         while True:
-            await asyncio.sleep(notify.RETRY_SECONDS)
+            with lock:
+                due = notifier.due()
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(held_back[0].wait(), None if due is None else max(0.0, due - time.monotonic()))
+            held_back[0].clear()
             with lock:
                 done = notifier.retry()
             if done:
@@ -605,8 +623,7 @@ def serve(ctx: Context) -> dict[str, Any]:
     async def checking() -> None:
         """Once the bridge listens, check that Twilio sends the number's calls and texts to it and that it answers
         there; the report goes to the log and to the page's notice. Its failure is the log's, never the bridge's."""
-        while not server.started:
-            await asyncio.sleep(0.1)
+        await server.ready.wait()
         try:
             await asyncio.to_thread(checked, ctx)
         except Exception as error:  # noqa: BLE001

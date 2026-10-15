@@ -795,6 +795,29 @@ def _safe_next(target: str | None) -> str:
     return target
 
 
+ACCOUNTS_TABLE, KEYS_TABLE = 'node.accounts', 'node.keys'  # what a node command's map.changed names as it changed
+
+
+@dataclass(frozen=True)
+class Announced:
+    """What an announced change asks of a running server: the tunnels of `accounts`, or of every account, checked
+    again for their generation, and every tunnel's signing key when `keys`."""
+    accounts: tuple[str, ...]
+    every: bool
+    keys: bool
+
+
+def announce(ctx: Any, table: str, account_ids: list[str] | None = None, kind: str = '') -> None:
+    """Tell the running server of this home that a command changed its accounts or keys: `map.changed` with no project,
+    naming the table, the accounts and the kind of change, which only a node server acts on."""
+    payload: dict[str, Any] = {'project': None, 'base_id': None, 'tables': [table]}
+    if account_ids is not None:
+        payload['account_ids'] = sorted(account_ids)
+    if kind:
+        payload['kinds'] = [kind]
+    ctx.publish('map.changed', payload)
+
+
 class Node:
     """The authorization server's routes, as one Starlette app."""
 
@@ -815,6 +838,25 @@ class Node:
         # On a broker, whether a request to the token or revocation endpoint may go ahead, by what it names: a grant
         # the server signed (`key`), or nothing valid (None, charged to the address it came from). The broker sets it.
         self.token_gate: Callable[[Request, str | None], bool] = lambda request, key: True
+
+    def changed(self, payload: dict[str, Any]) -> Announced | None:
+        """A `map.changed` another process of this home announced, heard through the base's listener, BASE-053: one
+        naming `node.accounts` forgets the generations of the accounts in `account_ids`, every account's when it names
+        none; one naming `node.keys` reads the keys again. None, with nothing read, for any other change."""
+        tables: Any = payload.get('tables')
+        named = {str(one) for one in cast(list[Any], tables)} if isinstance(tables, list) else set[str]()
+        if payload.get('project') is not None or not named & {ACCOUNTS_TABLE, KEYS_TABLE}:
+            return None
+        given: Any = payload.get('account_ids')
+        ids = tuple(str(one) for one in cast(list[Any], given)) if isinstance(given, list) else None
+        accounts = ACCOUNTS_TABLE in named
+        if accounts and isinstance(self.provider, SignedProvider):
+            for account in ids if ids is not None else (None,):
+                self.provider.generations.forget(account)
+        keys = KEYS_TABLE in named and self.keys is not None
+        if keys and self.keys is not None:
+            self.keys.load()
+        return Announced(accounts=(ids or ()) if accounts else (), every=accounts and ids is None, keys=keys)
 
     @property
     def signed(self) -> SignedProvider:
@@ -1132,6 +1174,7 @@ def serve(policy: Policy, port: int, bootstrap_folder: Path, *, replay: str = 'm
     import uvicorn
 
     from .authstore import open_store
+    from .serving import Serving
     store = open_store(store_path(), policy.broker, (replay == 'durable') if policy.broker else None)
     owner = bootstrap(store, bootstrap_folder)
     if owner:
@@ -1140,14 +1183,18 @@ def serve(policy: Policy, port: int, bootstrap_folder: Path, *, replay: str = 'm
     def config(app: Any) -> Any:
         return uvicorn.Config(app, host='127.0.0.1', port=port, log_level='warning', proxy_headers=False,
                               access_log=False, ws_max_size=2 * 1024 * 1024, ws_ping_interval=20, ws_ping_timeout=20)
+    from metaform import events
     if policy.broker:
         carrier = make_broker(policy, store, replay=replay)
         print(f'Metaform broker for {policy.issuer} on 127.0.0.1:{port}', flush=True)
-        carrier.server(config(carrier.app())).run()
+        with events.listen('node', carrier.changed):  # signout, revoke and rotate-key from the host, at once
+            carrier.server(config(carrier.app())).run()
         return
     introspection_secret(create=True)
     print(f'Metaform Node authorization server for {policy.issuer} on 127.0.0.1:{port}', flush=True)
-    uvicorn.Server(config(Node(store, policy).app())).run()
+    node = Node(store, policy)
+    with events.listen('node', node.changed):
+        Serving(config(node.app())).run()
 
 
 # The page helpers, for device.py's pages.

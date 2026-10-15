@@ -53,6 +53,8 @@ Automatic resume and spend caps are the two places dispatch can start paid agent
 - A session's own answer mode (ask each time, approve reads only, approve all) lives in its state line `acp['prompts']`, not in a table. `Session.answering()` resolves session over launch over the project's `dispatch_prompts` setting. `set_prompts` writes a `setting` line and approves each waiting request the mode allows; `continue_thread` restores it on resume.
 - The mode is set from the CLI only (`metaform dispatch prompts <id> <mode> [session=] [confirm=true]`, persons_own). Approve all is refused without `confirm=true`.
 - Multi-agent tests: fake agents given separate `FAKE_ACP_LOG` files all get session id `fake-session-1`, so a shared log merges their lines. Give each agent its own log and read them apart. `FAKE_ACP_ASK_AGAIN=<file>` makes the fake ask a second request once that file exists.
+- The same shared id makes a second runner fail on its sessions row with `UNIQUE constraint failed: dispatch.sessions.session_id`. For many runners at once (load or idle-CPU runs), run them from a `/tmp` copy of the fake that names its session with `os.getpid()`; leave the test fake unchanged.
+- A permission answer reaches the agent before it is recorded. `answered()` sets the waiting future first, and `request_permission` spawns its `map.changed` instead of awaiting it. Reading the ticket and writing two rows first took 484 ms; the path now answers in under 100 ms (`test_the_persons_answer_to_its_own_permission_request_reaches_the_runner_within_100_ms`). Keep that order when adding writes to the answer path.
 
 ## Tests that change a session row or find its runner
 

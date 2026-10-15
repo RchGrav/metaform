@@ -12,7 +12,7 @@ import {PULL, TOWARD, SPOT, facingOf} from '/page/app/figures/walk.js';
 import {MASCOT, mascotGlyph} from '/page/app/figures/mascot.js';
 import {faceToward, TURNED} from '/page/app/figures/attention.js';
 import {INUSE, shownNode} from '/page/app/map3d/light.js';
-import {G, FRAMES, wake3d} from '/page/app/map3d/graph3d.js';
+import {G, FRAMES, afterFrames, noMoreFrames, wake3d} from '/page/app/map3d/graph3d.js';
 import {AT, signsFor} from '/page/app/map3d/labels.js';
 import {flowModeNow} from '/page/app/flow/flow.js';
 import {tintOf, fxDot, fxLine} from '/page/app/flow/fx3d.js';
@@ -226,20 +226,23 @@ export function sight(payload, node, answer) {
   }
   seen(null);
 }
-/* Once a figure faces a node, within TURNED degrees, or after `most` milliseconds: then(turned or time). */
+/* Once a figure faces a node, within TURNED degrees, or after `most` milliseconds, its deadline: then(turned or time).
+ * It is looked at once each frame that turns the figure, `afterFrames`, never between. */
 function facingThen(mesh, node, most, then) {
-  const began = performance.now(), facing = new THREE.Vector3(), toward = new THREE.Vector3();
+  const facing = new THREE.Vector3(), toward = new THREE.Vector3();
   wake3d(most + 500);
+  const said = why => { noMoreFrames(check); clearTimeout(limit); then(why); };
   const check = () => {
-    const there = G.graphData().nodes.find(one => one.id === node);
-    if (!there || there.x === undefined) return then('its target left the map');
+    const nodes = G.graphData().nodes;
+    let there = null;
+    for (let at = 0; at < nodes.length && there === null; at++) if (nodes[at].id === node) there = nodes[at];
+    if (!there || there.x === undefined) return said('its target left the map');
     toward.set(there.x, there.y, there.z).sub(mesh.position).setY(0);
     const off = toward.lengthSq() < 1e-8 ? 0 : facingOf(mesh, facing).angleTo(toward.normalize()) * 180 / Math.PI;
-    if (off <= TURNED) return then('turned');
-    if (performance.now() - began > most) return then('time');
-    setTimeout(check, 50);
+    if (off <= TURNED) said('turned');
   };
-  setTimeout(check, 50);
+  const limit = setTimeout(() => said('time'), most);
+  afterFrames(check);
 }
 /* What a figure sees, from where and which way, and with `picture` a picture of it. */
 function seenBy(who, picture) {

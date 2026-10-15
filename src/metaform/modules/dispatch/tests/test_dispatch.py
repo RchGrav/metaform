@@ -373,8 +373,9 @@ def test_the_answer_reaches_the_agent_when_map_changed_is_fired_and_not_before(d
     from metaform import events
     from metaform.module import Context
     from metaform.modules import dispatch as module
-    assert all(one.topic != 'map.changed' for one in module.MODULE.subscriptions), \
-        'the base relays map.changed to the runner; dispatch has no module relay'
+    from metaform.modules.dispatch.progress import changed as progress_changed
+    assert [one.handler for one in module.MODULE.subscriptions if one.topic == 'map.changed'] == [progress_changed], \
+        'the base relays map.changed to the runner; dispatch\'s one map.changed subscriber is progress, no relay'
     dispatch.start('ask')
     [question] = eventually(dispatch.questions)
     dispatch.store.reply(question.id, 'Reject')  # written here, and announced by no command
@@ -386,11 +387,92 @@ def test_the_answer_reaches_the_agent_when_map_changed_is_fired_and_not_before(d
     assert not dispatch.logged('permission')
     deliveries = events.publish('map.changed', {'project': 'proj', 'base_id': None},
                                 Context(module='chassis', folder=dispatch.folder, project='proj'))
-    assert [delivery['status'] for delivery in deliveries if delivery['module'] == 'dispatch'] == ['completed'], \
-        'published in this process, handed by the base to the runner\'s listener'
+    assert [delivery['status'] for delivery in deliveries if delivery['module'] == 'dispatch'] == ['completed'] * 2, \
+        'published in this process: once to dispatch\'s progress subscriber, once handed by the base to the runner\'s listener'
     [outcome] = eventually(lambda: dispatch.logged('permission'))
     assert outcome == {'outcome': {'outcome': 'selected', 'optionId': 'reject'}}
     dispatch.stop()
+
+
+@pytest.mark.req('QUAL-015')
+@pytest.mark.req('BASE-053')
+def test_a_burst_of_changes_for_other_sessions_makes_the_runner_read_nothing(dispatch, monkeypatch):
+    """code.dispatcher.agent#38: 200 map.changed for other tickets and sessions, their thread lines and steps, read
+    nothing in this runner; a step on its own ticket is read."""
+    from metaform.data import Store
+    from metaform.data import store as stores
+    from metaform.module import context
+    from metaform.modules.dispatch import runner
+    reads = []
+    for name in ('_read', '_write', 'tables'):
+        held = getattr(stores.Store, name)
+        monkeypatch.setattr(stores.Store, name, lambda self, *given, _held=held, _name=name, **more:
+                            reads.append(_name) or _held(self, *given, **more))
+    monkeypatch.setattr(runner, 'module_read', lambda *given, **more: reads.append('module_read') or {'runs': []})
+
+    async def burst():
+        session = runner.Session(context('dispatch', dispatch.folder, project='proj'), Store('proj', module='dispatch'),
+                                 dispatch.ticket(), 'claude', ['true'])
+        session.session_id = 'this-session'
+        reads.clear()
+        for number in range(100):
+            other = {'work_ids': [f'other-{number % 7}'], 'session_ids': [f'session-{number % 7}']}
+            session.changed_elsewhere({'project': 'proj', 'base_id': None, 'tables': 'dispatch',
+                                       'dispatch_tables': ['dispatch.lines'], 'kinds': ['line'], **other})
+            session.changed_elsewhere({'project': 'proj', 'base_id': None, 'tables': ['work', 'work_steps'],
+                                       'kinds': ['ticket'], **other, 'session_ids': []})
+        await asyncio.gather(*list(session.tasks))
+        heard = list(reads)
+        mine = {'project': 'proj', 'base_id': None, 'tables': ['work', 'work_steps'], 'work_ids': [dispatch.id],
+                'session_ids': [], 'kinds': ['ticket']}
+        session.changed_elsewhere(mine)
+        await asyncio.gather(*list(session.tasks))
+        once = list(reads)
+        reads.clear()
+        for _ in range(50):  # a burst of its own: one check, and one more for those that came during it
+            session.changed_elsewhere(mine)
+        while session.tasks:
+            await asyncio.gather(*list(session.tasks))
+        return heard, once, list(reads)
+    others, own, burst_of_own = asyncio.run(burst())
+    assert others == [], f'{len(others)} store reads for 200 changes that were not this session\'s'
+    assert own, 'a step on its own ticket is read'
+    assert len(burst_of_own) <= 2 * len(own), f'{len(burst_of_own)} reads for 50 changes, {len(own)} for one'
+
+
+@pytest.mark.req('QUAL-015')
+@pytest.mark.req('BASE-053')
+def test_the_persons_answer_to_its_own_permission_request_reaches_the_runner_within_100_ms(dispatch, run):
+    """code.dispatcher.agent#38: with changes filtered by ticket and session, the answer still arrives at once."""
+    dispatch.start('ask')
+    [question] = eventually(dispatch.questions)
+    run('map', 'reply', question.id, 'answer=Allow once', cwd=dispatch.folder)
+    answered = time.monotonic()
+    while not dispatch.logged('permission') and time.monotonic() - answered < 5:
+        time.sleep(0.002)
+    took = time.monotonic() - answered
+    assert dispatch.logged('permission'), 'the answer reached the agent'
+    assert took < 0.1, f'the answer took {took * 1000:.0f} ms'
+    dispatch.stop()
+
+
+@pytest.mark.req('QUAL-015')
+@pytest.mark.req('BASE-053')
+def test_a_launch_waited_on_answers_from_the_runners_own_change_or_its_exit(dispatch, run, dispatch_runners):
+    """code.dispatcher.agent#38: `dispatch intake wait=true` reads the session rows when the runner says it wrote one
+    for its launch, or when it exits, never on a timer: running with its session, or failed at once."""
+    started = json.loads(run('dispatch', 'intake', 'agent=claude', 'wait=true', '--json', cwd=dispatch.folder,
+                             env=dispatch.env('hold', FAKE_ACP_INTAKE='1')).stdout)
+    dispatch_runners.append((started, dispatch.folder, dispatch.log))
+    assert started['state'] == 'running' and started['session_id'], started
+    run('dispatch', 'stop', started['work_id'], cwd=dispatch.folder)
+    eventually(lambda: not alive(started['pid']))
+    run('set', '--dispatch-claude', f'"{sys.executable}" -c "raise SystemExit(3)"', cwd=dispatch.folder)
+    began = time.monotonic()
+    failed = json.loads(run('dispatch', 'intake', 'agent=claude', 'wait=true', '--json', cwd=dispatch.folder,
+                            ok=False).stdout)
+    dispatch_runners.append((failed, dispatch.folder, dispatch.log))
+    assert failed['state'] == 'failed' and time.monotonic() - began < 30, failed
 
 
 @pytest.mark.req('BASE-052')
@@ -1069,7 +1151,11 @@ def test_the_sessions_read_leaves_the_threads_out_when_asked(dispatch, run):
     assert whole['sessions'] and whole['lines']
     bare = json.loads(run('dispatch', 'sessions', 'thread=false', '--json', cwd=dispatch.folder).stdout)
     assert bare['sessions'] == whole['sessions'][:len(bare['sessions'])] and bare['lines'] == []
+    [session] = [one['session_id'] for one in bare['sessions'] if one['state'] == 'running']
+    assert bare['states'][session] == whole['states'][session] and len(bare['states'][session]) > 2
     dispatch.stop()
+    ended = json.loads(run('dispatch', 'sessions', 'thread=false', '--json', cwd=dispatch.folder).stdout)['states']
+    assert set(ended.get(session, {})) <= {'about', 'intake'}, 'an ended session keeps only what names it'
 
 
 # ------------------------------------------------------------------ one agent per glyph, VIEW-040

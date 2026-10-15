@@ -48,7 +48,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 from metaform import frames
 
 from . import tokens
-from .authserver import DEFAULT_INSTANCE, Node
+from .authserver import DEFAULT_INSTANCE, Announced, Node
 from .config import LABEL
 from .device import source
 
@@ -76,7 +76,6 @@ class Limits:
     connect_every: float = 2.0  # seconds between tunnel connections per account
     keepalive: float = 25.0  # an idle SSE stream gets a comment this often, so proxies keep it
     hello_wait: float = 10.0
-    watch: float = 20.0  # how often a tunnel's token, its signing key and the generation are checked again
     per_address: float = 20.0  # sign-in pages and device requests per minute per source
     other_per_address: float = 600.0  # any other unauthenticated request per minute per source
     grant_rate: float = 1.0  # token and revocation requests per second per grant the server signed, after a burst
@@ -128,6 +127,7 @@ class Tunnel:
     generation: int
     expires: float
     kid: str = ''  # the key that signed its token: revoked, and the tunnel closes
+    expiry: asyncio.TimerHandle | None = None  # closes it when its token expires, unless renewed before
     streams: dict[int, Stream] = field(default_factory=dict[int, Stream])
     next_stream: int = 1
     slots: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(32))
@@ -340,27 +340,48 @@ class Broker:
                          'limits': {'request': self.limits.request, 'response': self.limits.response,
                                     'frame': self.limits.frame, 'credit': self.limits.credit,
                                     'streams': self.limits.streams}})
-        watcher = asyncio.ensure_future(self._watch(made))
+        self._expire(made)
         try:
             await self._read(made)
         finally:
-            watcher.cancel()
+            if made.expiry is not None:
+                made.expiry.cancel()
             if self.tunnels.get((account, instance)) is made:
                 self.tunnels.pop((account, instance), None)
             made.closed = True
             for stream in list(made.streams.values()):
                 stream.queue.put_nowait(('end', 'offline'))
 
-    async def _watch(self, tunnel: Tunnel) -> None:
-        """Every so often: the account still at its generation, the token renewed in time, its key not revoked."""
-        while not tunnel.closed:
-            await asyncio.sleep(self.limits.watch)
-            if not self.signed.generations.valid(tunnel.account, tunnel.generation):
-                await tunnel.close(frames.REVOKED, 'signed out everywhere')
-            elif tunnel.expires + tokens.CLOCK_LEEWAY < time.time():
-                await tunnel.close(frames.INVALID_TOKEN, 'the token expired')
-            elif self.signed.signer.keys.public(tunnel.kid) is None:
-                await tunnel.close(frames.INVALID_TOKEN, 'the key that signed the token was revoked')
+    def _expire(self, tunnel: Tunnel) -> None:
+        """The tunnel's one deadline: it closes when its token expires, unless a renewal sets a later one first."""
+        if tunnel.expiry is not None:
+            tunnel.expiry.cancel()
+        delay = max(0.0, tunnel.expires + tokens.CLOCK_LEEWAY - time.time())
+        tunnel.expiry = asyncio.get_running_loop().call_later(delay, lambda: None if tunnel.closed else asyncio.ensure_future(
+            tunnel.close(frames.INVALID_TOKEN, 'the token expired')))
+
+    def changed(self, payload: dict[str, Any]) -> None:
+        """A change announced by a command on this home, in the listener's thread, BASE-053: the node's caches follow
+        it, and the tunnels it can concern are checked again on the loop. Nothing is read for any other change."""
+        announced = self.node.changed(payload)
+        if announced is None or self.loop is None:
+            return
+        with contextlib.suppress(RuntimeError):  # the loop has closed: no tunnel is open
+            self.loop.call_soon_threadsafe(self.recheck, announced)
+
+    def recheck(self, announced: Announced) -> None:
+        """Close each tunnel the announced change ends: its account's generation moved or the account was shut out,
+        or the key that signed its token was revoked. Only the named accounts' tunnels are read, unless the keys
+        changed or no account was named."""
+        every = announced.every or announced.keys
+        for (account, _), tunnel in list(self.tunnels.items()):
+            if tunnel.closed or not every and account not in announced.accounts:
+                continue
+            if (announced.every or account in announced.accounts) and \
+                    not self.signed.generations.valid(tunnel.account, tunnel.generation):
+                asyncio.ensure_future(tunnel.close(frames.REVOKED, 'signed out everywhere'))
+            elif announced.keys and self.signed.signer.keys.public(tunnel.kid) is None:
+                asyncio.ensure_future(tunnel.close(frames.INVALID_TOKEN, 'the key that signed the token was revoked'))
 
     async def _read(self, tunnel: Tunnel) -> None:
         while not tunnel.closed:
@@ -411,6 +432,7 @@ class Broker:
         tunnel.expires = float(claims['exp'])
         tunnel.generation = int(claims['gen'])
         tunnel.kid = self._kid(token)
+        self._expire(tunnel)
 
     # ------------------------------------------------------------------------------------------------ hosts
 
@@ -561,81 +583,94 @@ class Broker:
         except Exception:  # noqa: BLE001  the socket went as the request came: the instance is away
             done()
             return offline_answer(request.method, body, instance)
-        first = await self._next(stream, request)
-        if first is None:
-            await cancel('host went away')
-            done()
-            return Response(status_code=499)
-        if first[0] != 'head':
-            done()
-            return offline_answer(request.method, body, instance)
-        head = cast(dict[str, Any], first[1])
-        given: Any = head.get('headers')
-        out = {str(name): str(value) for name, value in cast(dict[str, Any], given).items()
-               if frames.response_header(str(name))} if isinstance(given, dict) else {}
-        status: Any = head.get('status')
-        if not isinstance(status, int) or not 100 <= status <= 599:
-            await cancel('a head with no valid status')
-            done()
-            return JSONResponse({'error': 'bad_gateway'}, status_code=502)
-        if 'text/event-stream' in out.get('content-type', ''):
-            async def events() -> AsyncGenerator[bytes]:
-                nonlocal ended
-                started = time.monotonic()
-                boundary = True
-                while time.monotonic() - started < lifetime:
-                    try:
-                        kind, value = await asyncio.wait_for(stream.queue.get(), self.limits.keepalive)
-                    except TimeoutError:
-                        if boundary:
-                            yield b': keep-alive\n\n'
-                        continue
+        gone = asyncio.ensure_future(self._gone(request))  # the host leaving, heard as it happens
+        try:
+            first = await self._next(stream, gone)
+            if first is None:
+                await cancel('host went away')
+                done()
+                return Response(status_code=499)
+            if first[0] != 'head':
+                done()
+                return offline_answer(request.method, body, instance)
+            head = cast(dict[str, Any], first[1])
+            given: Any = head.get('headers')
+            out = {str(name): str(value) for name, value in cast(dict[str, Any], given).items()
+                   if frames.response_header(str(name))} if isinstance(given, dict) else {}
+            status: Any = head.get('status')
+            if not isinstance(status, int) or not 100 <= status <= 599:
+                await cancel('a head with no valid status')
+                done()
+                return JSONResponse({'error': 'bad_gateway'}, status_code=502)
+            if 'text/event-stream' in out.get('content-type', ''):
+                async def events() -> AsyncGenerator[bytes]:
+                    nonlocal ended
+                    started = time.monotonic()
+                    boundary = True
+                    while time.monotonic() - started < lifetime:
+                        try:
+                            kind, value = await asyncio.wait_for(stream.queue.get(), self.limits.keepalive)
+                        except TimeoutError:
+                            if boundary:
+                                yield b': keep-alive\n\n'
+                            continue
+                        if kind != 'data':
+                            ended = True
+                            return
+                        chunk = cast(bytes, value)
+                        yield chunk
+                        stream.holding -= len(chunk)
+                        tunnel.buffered -= len(chunk)
+                        boundary = chunk.endswith((b'\n\n', b'\r\n\r\n'))
+                        await grant(len(chunk))
+
+                async def closed() -> None:
+                    done()
+                    await cancel('stream closed')
+                return Held(events(), status_code=status, headers=out, ended=closed)
+            kept = b''
+            try:
+                while True:
+                    got = await self._next(stream, gone)
+                    if got is None:
+                        await cancel('host went away')
+                        return Response(status_code=499)
+                    kind, value = got
                     if kind != 'data':
                         ended = True
-                        return
+                        break
                     chunk = cast(bytes, value)
-                    yield chunk
-                    stream.holding -= len(chunk)
-                    tunnel.buffered -= len(chunk)
-                    boundary = chunk.endswith((b'\n\n', b'\r\n\r\n'))
+                    kept += chunk
+                    if len(kept) > self.limits.response or tunnel.buffered > self.limits.buffered:
+                        await cancel('response too large')
+                        largest = self.limits.response if len(kept) > self.limits.response else self.limits.buffered
+                        return JSONResponse({'jsonrpc': '2.0', 'id': None, 'error': {
+                            'code': -32603, 'message': f'The answer was larger than {largest} bytes.'}},
+                            status_code=502)
                     await grant(len(chunk))
-
-            async def closed() -> None:
+            finally:
                 done()
-                await cancel('stream closed')
-            return Held(events(), status_code=status, headers=out, ended=closed)
-        kept = b''
-        try:
-            while True:
-                got = await self._next(stream, request)
-                if got is None:
-                    await cancel('host went away')
-                    return Response(status_code=499)
-                kind, value = got
-                if kind != 'data':
-                    ended = True
-                    break
-                chunk = cast(bytes, value)
-                kept += chunk
-                if len(kept) > self.limits.response or tunnel.buffered > self.limits.buffered:
-                    await cancel('response too large')
-                    largest = self.limits.response if len(kept) > self.limits.response else self.limits.buffered
-                    return JSONResponse({'jsonrpc': '2.0', 'id': None, 'error': {
-                        'code': -32603, 'message': f'The answer was larger than {largest} bytes.'}},
-                        status_code=502)
-                await grant(len(chunk))
-        finally:
-            done()
-        return Response(kept, status_code=status, headers=out)
+            return Response(kept, status_code=status, headers=out)
+        finally:  # before an event stream is handed to Starlette, which listens for the host leaving itself
+            gone.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await gone
 
-    async def _next(self, stream: Stream, request: Request) -> tuple[str, Any] | None:
-        """The stream's next event, or None when the host went away while waiting."""
-        while True:
-            try:
-                return await asyncio.wait_for(stream.queue.get(), 5.0)
-            except TimeoutError:
-                if await request.is_disconnected():
-                    return None
+    @staticmethod
+    async def _gone(request: Request) -> None:
+        """Until the host's connection closes, which uvicorn tells the app as http.disconnect once the request's body
+        is read: an event, never looked for on a timer, QUAL-015."""
+        while (await request.receive()).get('type') != 'http.disconnect':
+            pass
+
+    async def _next(self, stream: Stream, gone: asyncio.Future[None]) -> tuple[str, Any] | None:
+        """The stream's next event, or None when the host goes away first."""
+        getting = asyncio.ensure_future(stream.queue.get())
+        await asyncio.wait({getting, gone}, return_when=asyncio.FIRST_COMPLETED)
+        if getting.done():
+            return getting.result()
+        getting.cancel()
+        return None
 
     # ------------------------------------------------------------------------------------------------ the app
 
@@ -680,10 +715,10 @@ class Broker:
         """A uvicorn server that sends goaway before it closes any connection: uvicorn closes WebSockets with 1012
         as its shutdown begins, before the app's lifespan hears of it, so a goaway sent from the lifespan would
         reach no one."""
-        import uvicorn
+        from .serving import Serving
         carrier = self
 
-        class Server(uvicorn.Server):
+        class Server(Serving):
             async def shutdown(self, sockets: Any = None) -> None:
                 with contextlib.suppress(Exception):
                     await carrier.goaway()

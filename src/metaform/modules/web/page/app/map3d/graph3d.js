@@ -99,6 +99,16 @@ const DAMPING = 0.12;
 // the share of a turn of the camera a hand gave that it loses each 60th of a second: it coasts
 // (DAMPING, above); and the share of its speed a node loses each tick while one is dragged, 0.4 otherwise
 export const DRAG_FRICTION = 0.65;
+/* What waits on the figures as they move, each told at the end of every frame that moved them, `settle`: frames run
+ * while one waits, and nothing checks between them. A dense array walked by index, so a frame allocates nothing. */
+export const AFTER = [];
+export function afterFrames(told) { AFTER.push(told); wake3d(); }
+export function noMoreFrames(told) {
+  const at = AFTER.indexOf(told);
+  if (at < 0) return;
+  AFTER[at] = AFTER[AFTER.length - 1];
+  AFTER.pop();
+}
 export function wake3d(ms = FRAMES.grace) {
   const now = performance.now();
   FRAMES.until = Math.max(FRAMES.until, now + ms);
@@ -120,6 +130,10 @@ function frame3d(now) {
   try { G._animationCycle(); }  // the layout's tick, the dots, the controls, the picture and what the pointer is over
   finally { G.pauseAnimation(); FRAMES.id = 0; releaseChain(); keepPrograms(); }  // the page asks for its own frame
   FRAMES.drawn++;
+  for (let at = AFTER.length - 1; at >= 0; at--) {  // from the end, so one that lets go of itself skips none
+    const told = AFTER[at];
+    try { told(now); } catch (error) { noMoreFrames(told); reportError(error); }  // the frames go on whatever it does
+  }
   const still = now - FRAMES.active;
   if (moving3d(now, still)) FRAMES.id = requestAnimationFrame(frame3d);
 }
@@ -129,6 +143,7 @@ function frame3d(now) {
  * drawing, and the next act, or the tab coming back into view, wakes it. It is never drawn at a lower rate. */
 function moving3d(now, still) {
   if (now < FRAMES.until || FRAMES.engine || FRAMES.moved || FLIGHT.on) return true;
+  if (AFTER.length > 0 || WARM.waiting !== null) return true;  // a wait on the figures, or shaders linking
   return (FRAMES.busy || FRAMES.flowing) && (FRAMES.rest === null || still < FRAMES.idle);
 }
 // A tab the person comes back to is drawn at once: a hidden tab gets no frames, and nothing else would wake it.
@@ -201,10 +216,11 @@ function freeing(library) {
  * map read again or a theme switched back links nothing: three.js frees a shader once no material uses it, and every
  * whole reload made each again. Shader errors are read only at a developer level, as reading them waits for the link
  * too, `applyView`. Without parallel linking in the browser, a frame waits as before. */
-export const WARM = {added: 0, seen: '', waiting: null, done: null, since: 0, most: 5000, held: [], kept: new WeakSet(),
+export const WARM = {added: 0, seen: '', waiting: null, done: null, linked: null, since: 0, most: 5000, held: [],
+  kept: new WeakSet(),
   programs: 0, quad: new THREE.Mesh(new THREE.PlaneGeometry(2, 2))};
 function warm3d(renderer, read) {
-  if (WARM.waiting) return true;
+  if (WARM.waiting) return linking3d();
   const scene = G.scene(), composer = G.postProcessingComposer();
   const mark = `${WARM.added} ${FIBERS.version} ${composer.passes.map(pass => pass.enabled ? 1 : 0).join('')}`;
   if (mark === WARM.seen) return false;
@@ -232,19 +248,26 @@ function warm3d(renderer, read) {
   const linking = [...materials].map(material => renderer.properties.get(material).currentProgram)
     .filter(program => program && !program.isReady());
   if (!linking.length) return false;
-  WARM.waiting = new Set(linking);
+  WARM.waiting = linking;
   WARM.since = performance.now();
-  WARM.done = new Promise(go => {
-    const check = () => {
-      for (const program of WARM.waiting) if (program.isReady()) WARM.waiting.delete(program);
-      if (WARM.waiting.size && performance.now() - WARM.since < WARM.most) return setTimeout(check, 10);
-      WARM.waiting = null;
-      go();
-      wake3d();
-    };
-    setTimeout(check, 10);
-  });
+  WARM.done = new Promise(go => { WARM.linked = go; });
   return true;
+}
+/* At each frame while shaders link, the frame that would draw with them, `moving3d` keeping the frames coming: those
+ * linked are let go, and once none is left, or `most` ms have passed, this frame is drawn. The browser's parallel
+ * linking, KHR_parallel_shader_compile, has no event of its own: it says a link is done only when asked,
+ * COMPLETION_STATUS_KHR (program.isReady), so it is asked by the frames being drawn, and never between them. */
+function linking3d() {
+  const waiting = WARM.waiting;
+  for (let at = waiting.length - 1; at >= 0; at--) {
+    if (!waiting[at].isReady()) continue;
+    waiting[at] = waiting[waiting.length - 1];
+    waiting.pop();
+  }
+  if (waiting.length > 0 && performance.now() - WARM.since < WARM.most) return true;
+  WARM.waiting = null;
+  WARM.linked();
+  return false;
 }
 /* The glass nodes of the scene each with its far wall on, as `drawBehind` draws them, for three.js's compile, which
  * reads only `traverse` of a scene it is given beside the scene drawn. */

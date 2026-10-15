@@ -90,6 +90,11 @@ class Assembler:
             return [self._close()]
         return []
 
+    @property
+    def closes_at(self) -> float | None:
+        """When the open entry is closed if no line comes before, or None when none is open: the watch wakes then."""
+        return None if self.open is None else self.open.last + QUIET_SECONDS
+
     def flush(self) -> list[Entry]:
         return [self._close()] if self.open is not None else []
 

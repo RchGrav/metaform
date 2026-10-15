@@ -536,3 +536,51 @@ def test_mcp_accepts_only_a_live_token_issued_for_itself_by_its_own_issuer():
     assert accepted is not None and accepted.resource == ISSUER + '/mcp' and accepted.scopes == ['mcp:read']
     for refused in ('tok-a2a', 'tok-other', 'revoked'):
         assert asyncio.run(verifier.verify_token(refused)) is None, refused
+
+
+@pytest.mark.req('QUAL-015')
+@pytest.mark.skipif(os.name == 'nt', reason='a FIFO stands in for the stream ssh carries; the step runs ssh to a Linux host')
+def test_the_health_step_reads_the_services_again_only_when_docker_says_one_changed(tmp_path):
+    """The step follows `docker compose events`: a quiet second and a burst of health-check exec events read the
+    services no more, and a service turning healthy ends the step at once."""
+    import sys
+    import threading
+    import time
+
+    from metaform.modules.node import plans
+    fifo, state, reads = tmp_path / 'events', tmp_path / 'ps.json', tmp_path / 'reads'
+    os.mkfifo(fifo)
+    state.write_text(json.dumps({'Service': 'auth', 'State': 'running', 'Health': 'starting'}) + '\n')
+    stand_in = tmp_path / 'ssh.py'  # ssh to the host, as this machine: events from the fifo, ps from the file
+    stand_in.write_text('import sys\n'
+                        'command = sys.argv[-1]\n'
+                        'if "events" in command:\n'
+                        f'    for line in open({str(fifo)!r}, "rb"):\n'
+                        '        sys.stdout.buffer.write(line)\n'
+                        '        sys.stdout.buffer.flush()\n'
+                        'else:\n'
+                        f'    open({str(reads)!r}, "a").write("read\\n")\n'
+                        f'    sys.stdout.write(open({str(state)!r}).read())\n')
+
+    class Host(plans.Target):
+        def ssh(self, user, command):
+            return [sys.executable, str(stand_in), command]
+    step = plans.health_step(Host('host.example', tmp_path), seconds=30)
+    done: list = []
+    running = threading.Thread(target=lambda: done.append(step.run({})), daemon=True)
+    running.start()
+    with os.fdopen(os.open(fifo, os.O_RDWR), 'w') as events:  # read-write, so a write never waits for a reader
+        threading.Event().wait(1.0)
+        quiet = reads.read_text().count('read')
+        for _ in range(50):  # a health check's own command, every interval
+            events.write(json.dumps({'action': 'exec_start: curl -f localhost', 'service': 'auth'}) + '\n')
+        events.flush()
+        threading.Event().wait(0.5)
+        burst = reads.read_text().count('read')
+        state.write_text(json.dumps({'Service': 'auth', 'State': 'running', 'Health': 'healthy'}) + '\n')
+        healthy = time.monotonic()
+        events.write(json.dumps({'action': 'health_status: healthy', 'service': 'auth'}) + '\n')
+        events.flush()
+        running.join(10)
+    assert (quiet, burst) == (1, 1)
+    assert done and done[0][0]['Health'] == 'healthy' and time.monotonic() - healthy < 2

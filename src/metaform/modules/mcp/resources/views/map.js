@@ -23,13 +23,15 @@
 
   /* Turn to an Address: its node selected on both maps, as a selection of the person's would, but quietly, so the
    * agent is not told it as the person's. The page's script, a module, runs after this one: its `window.metaform` is
-   * waited for, then its `ready`, kept once the first map is drawn, so an Address named while the map loads is turned
-   * to as soon as it can be, and no sooner. */
+   * waited for, said by its event `metaform:api`, then its `ready`, kept once the first map is drawn, so an Address
+   * named while the map loads is turned to as soon as it can be, and no sooner. */
+  const page = new Promise(done => {
+    if (window.metaform?.ready) done(window.metaform);
+    else window.addEventListener('metaform:api', () => done(window.metaform), {once: true});
+  });
   view.turner(async address => {
     const wanted = String(address).replace(/^metaform:\/\//, '').split('#')[0];
-    for (let tries = 0; tries < 100 && !window.metaform?.ready; tries += 1) await new Promise(done => setTimeout(done, 100));
-    if (!window.metaform?.ready) return false;
-    await window.metaform.ready;
+    await (await page).ready;
     const id = window.metaform.find(wanted);
     if (id) view.quietly(() => window.metaform.select(id));
     return Boolean(id);
@@ -60,7 +62,6 @@
   view.on('hostcontextchanged', draw);
   const place = () => { document.body.append(bar); setTimeout(draw, 0); };
   if (document.body) place(); else document.addEventListener('DOMContentLoaded', place);
-  /* The handshake is frame.js's; the bar is drawn once the host has answered it. */
-  const waited = setInterval(() => { if (view.app()?.getHostCapabilities()) { clearInterval(waited); draw(); } }, 200);
-  setTimeout(() => clearInterval(waited), 20_000);
+  /* The handshake is frame.js's; the bar is drawn once the host has answered it, or it has failed. */
+  view.connected().then(draw);
 })();

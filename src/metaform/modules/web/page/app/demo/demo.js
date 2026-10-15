@@ -9,7 +9,7 @@ import {copyField} from '/page/app/core/controls.js';
 import {S, reach} from '/page/app/core/reads.js';
 import {ROAM, bodyOf, embody, isSystemTalk} from '/page/app/figures/agents.js';
 import {mascotGlyph, preferredGlyph} from '/page/app/figures/mascot.js';
-import {D, glyphFor} from '/page/app/agents/dispatch.js';
+import {D, SESSIONS_DRAWN, glyphFor} from '/page/app/agents/dispatch.js';
 
 const HIDDEN = 'metaform.demo-card-hidden';  // the person closed the card: kept for this tab
 export const DEMO = {card: null, given: false};
@@ -34,7 +34,8 @@ function showCard(demo) {
   document.body.append(DEMO.card);
 }
 /* The person's mascot: the demo's system agent, given a body once its conversation runs, the person's own character
- * when they chose one and it is free, else the first no agent at work has. */
+ * when they chose one and it is free, else the first no agent at work has. Looked at each time the agents' sessions
+ * are read and drawn, `SESSIONS_DRAWN`, the event that says the conversation runs. */
 function giveMascot() {
   const ticket = (S.tickets || []).find(isSystemTalk);
   if (!ticket || mascotGlyph() || bodyOf(ticket.id)) return;
@@ -48,5 +49,6 @@ function giveMascot() {
 demoCard().then(demo => {
   if (!demo) return;
   showCard(demo);
-  setInterval(giveMascot, 1500);
+  SESSIONS_DRAWN.push(giveMascot);
+  giveMascot();
 });

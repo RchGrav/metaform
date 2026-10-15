@@ -1,0 +1,1 @@
+{"type":"text","text":"ride around the map, im looking through your eyes"} ... {"type":"text","text":"dance"} ... {"type":"text","text":"you can see?"}

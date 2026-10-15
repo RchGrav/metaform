@@ -1,0 +1,1 @@
+{"type":"text","text":"you can see?"} ... {"type":"text","text":"Only when I ask for a picture. On this ride I've been steering by address and reading the replies, so I haven't been looking at what you see. Here's a look now:"}

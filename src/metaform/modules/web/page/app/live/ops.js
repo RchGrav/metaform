@@ -5,6 +5,7 @@ import {$, h} from '/page/app/core/dom.js';
 import {toast} from '/page/app/core/controls.js';
 import {S, MEM, FRAMED, read} from '/page/app/core/reads.js';
 import {moduleNotices, readFailed} from '/page/app/core/errors.js';
+import {askHealth, healthMayBeBack} from '/page/app/core/health.js';
 import {withProviders, joinOf} from '/page/app/graph/data.js';
 import {figures} from '/page/app/figures/agents.js';
 import {mascotEvent} from '/page/app/figures/attention.js';
@@ -266,16 +267,30 @@ function workInPanel() {
   }
   renderWork(join ? `join:${join.id}` : `element:${id}`, id);
 }
-/* A line an agent wrote, or its session begun or ended: the agents key, the open agent window and the open chat are
- * read again, at most once every BATCH and never under the person's hands, once for however many lines came
- * meanwhile. An agent streams about five lines a second, and drawing each one kept the page always reading and its
- * windows always redrawn. Only a change beyond the threads, `whole`, reads the merges and the advice again. */
+/* A line an agent wrote, or its session begun or ended: what it concerns is read again, at most once every BATCH and
+ * never under the person's hands, once for however many lines came meanwhile. The agents key, the sessions read whole,
+ * only for a change to a session, a signal, a permission or a question (`sessions`); the open chat only for a change
+ * to its own ticket, or one that does not say whose (`works`, map.changed's work_ids). An agent streams about five
+ * lines a second, and reading every session for each one kept the page, and the server, always reading. Only a change
+ * beyond the threads, `whole`, reads the merges and the advice again. */
 const BATCH = 500;
-const AGENTS = {busy: false, again: false, whole: false, at: -Infinity};
+const AGENTS = {busy: false, again: false, whole: false, sessions: false, chat: false, at: -Infinity};
 export const linesOnly = payload => payload.tables === 'dispatch' && Array.isArray(payload.dispatch_tables)
   && payload.dispatch_tables.length > 0 && payload.dispatch_tables.every(table => table === 'dispatch.lines');
-export async function agentsChanged(whole = false) {
+const SESSION_KINDS = ['session', 'signal', 'permission', 'question'];
+/* Whether `kinds` holds one of `wanted`, walked by index, so an event allocates nothing. */
+export function holdsAny(kinds, wanted) {
+  for (let at = 0; at < kinds.length; at++) if (wanted.includes(kinds[at])) return true;
+  return false;
+}
+/* Whether a change concerns the agents' sessions, from its kinds when it names them; one that does not, as a runner
+ * older than map.changed's kinds says, may concern anything. */
+export const sessionsConcerned = payload => !Array.isArray(payload.kinds) || holdsAny(payload.kinds, SESSION_KINDS);
+export async function agentsChanged(whole = false, sessions = true, works = null) {
   if (whole) AGENTS.whole = true;
+  if (sessions) AGENTS.sessions = true;
+  if (works === null || (MERGE.chat && works.includes(MERGE.chat))) AGENTS.chat = true;
+  if (!AGENTS.sessions && !AGENTS.chat && !AGENTS.whole) return;
   if (AGENTS.busy) { AGENTS.again = true; return; }
   AGENTS.busy = true;
   try {
@@ -284,7 +299,10 @@ export async function agentsChanged(whole = false) {
       AGENTS.again = false;
       AGENTS.at = performance.now();
       if (AGENTS.whole) { AGENTS.whole = false; renderMerges(); }
-      await Promise.all([renderAgents(), MERGE.chat ? drawHelpdesk() : null]);
+      const agents = AGENTS.sessions, chat = AGENTS.chat;
+      AGENTS.sessions = false;
+      AGENTS.chat = false;
+      await Promise.all([agents ? renderAgents() : null, chat && MERGE.chat ? drawHelpdesk() : null]);
     } while (AGENTS.again);
   } catch (error) { toast(error.message); } finally { AGENTS.busy = false; }
 }
@@ -298,7 +316,9 @@ export function listen() {
   const source = STREAM = new EventSource(`/api/events?project=${encodeURIComponent(S.project || '')}`);
   let opens = 0;
   source.onmessage = heard;
+  source.onerror = () => askHealth();  // the stream lost the server: the banner says whether it answers, and why not
   source.onopen = () => {
+    healthMayBeBack();  // the first open, and the browser's own reconnect after the server was gone
     // with no project there is nothing being recorded here to read; an intake elsewhere is heard as it starts
     if (S.project) recordingNow().catch(error => toast(error.message));
     // what modules say needs the person, such as a phone number Twilio sends where nothing answers, core/errors.js
@@ -315,6 +335,8 @@ const TOPICS = {
   'map.flow': payload => flowEvent(payload),  // where agents' tool calls reached, `FLOW`
   mascot: payload => mascotEvent(payload),  // the system agent moves the mascot, `MASCOT`
   workspace: () => loadWorkspace(),  // arranged on another page, or in the settings
+  // what a voice model's download has fetched, for its bar, page/voice.js
+  'voice.download': payload => document.dispatchEvent(new CustomEvent('metaform:voice-download', {detail: payload})),
 };
 function heard(message) {
   const event = JSON.parse(message.data);

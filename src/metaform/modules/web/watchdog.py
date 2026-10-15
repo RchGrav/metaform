@@ -1,10 +1,11 @@
 """The web GUI's watchdog, VIEW-002: the process `metaform web start` runs, which starts the page server and starts it
 again when it ends or hangs.
 
-Every CHECK seconds it asks the server's /api/health. It starts the server again when the server's process ends, when
-nothing listens on its port any more, when /api/health answers that a page read is stuck (server.py's STUCK), or when
-/api/health has given no healthy answer for SILENT seconds. Each restart is written to run/web.log with its cause,
-and the new server is told it, so the page can say what happened. A server that ends again soon after it started
+It asks the server nothing and wakes on no clock, QUAL-015: it starts the server again when the server's process ends,
+which it hears as the server's pipe closing, or as the system's own event of that process's exit, `ended`, for a
+server it did not start. A server that hangs ends itself: a page read still running at its deadline (server.py's
+STUCK) is said on the pipe, and the server exits. Each restart is written to run/web.log with its cause, and the new
+server is told it, so the page can say what happened. A server that ends again soon after it started
 waits a little longer before each new start, so one that cannot start does not spin. A server that hands over to newer
 code, STORE-029, is followed to its successor, which is no restart.
 
@@ -17,7 +18,6 @@ its server.
 from __future__ import annotations
 
 import argparse
-import http.client
 import json
 import os
 import secrets
@@ -37,20 +37,15 @@ from . import (
     PYTHON,
     WAIT,
     answering,
-    host_port,
-    reach,
+    ended,
     ready_line,
     recorded,
     run_dir,
     spawn,
-    token,
     watchdog_file,
     write_run,
 )
 
-CHECK = 5.0  # seconds between two asks of /api/health
-SILENT = 20.0  # seconds with no healthy answer before the server is started again
-ASK = 4.0  # the limit on one answer of /api/health
 QUICK = 30.0  # a server that ends sooner than this after its start waits before the next one
 PAUSE_MOST = 30.0  # the longest wait before a start, for a server that keeps ending at once
 
@@ -93,9 +88,7 @@ class Watchdog:
         process = spawn(self.bind, self.port, nonce, supervisor=str(os.getpid()),
                         restarted=json.dumps(restarted) if restarted else None)
         self.process, self.pid = process, process.pid  # a stop signal from here on ends it too
-        line = ready_line(process)
-        if process.stdout is not None:
-            process.stdout.close()
+        line = ready_line(process)  # the pipe stays open: the server says on it why it ends, and it closes as it ends
         if line:
             self.began = time.monotonic()
             self.record()
@@ -103,31 +96,10 @@ class Watchdog:
         if line is None:
             process.kill()
         process.wait()
+        if process.stdout is not None:
+            process.stdout.close()
         self.process = self.pid = None
         return line
-
-    def health(self) -> tuple[str, dict[str, Any] | None]:
-        """One ask of /api/health: `ok`, `stuck` (a page read is wedged), `refused` (nothing listens) or `silent`
-        (no answer, or not a healthy one), with what it answered."""
-        address = reach(self.bind)
-        connection = http.client.HTTPConnection(address, self.port, timeout=ASK)
-        try:
-            connection.request('GET', '/api/health', headers={'Host': host_port(address, self.port),
-                                                              'X-Metaform-Token': token() or ''})
-            response = connection.getresponse()
-            found: Any = json.loads(response.read())
-        except ConnectionRefusedError:
-            return 'refused', None
-        except (OSError, ValueError):
-            return 'silent', None
-        finally:
-            connection.close()
-        said = cast(dict[str, Any], found) if isinstance(found, dict) else None
-        if response.status == 200 and said is not None:
-            return 'ok', said
-        if response.status == 503 and said is not None and said.get('stuck'):
-            return 'stuck', said
-        return 'silent', said
 
     def successor(self) -> int | None:
         """The server this one handed over to, when the run record names another that answers."""
@@ -137,39 +109,32 @@ class Watchdog:
         return int(record['pid'])
 
     def watch(self) -> str:
-        """Wait until the server must be started again, and say why."""
-        healthy, last = time.monotonic(), ''
+        """Wait until the server must be started again, and say why. Its own process is followed by its pipe: a line
+        when a read of it was stuck, then the pipe's close as it ends. A server it handed over to is followed by that
+        process's exit event; where the system gives none, the watchdog takes the server over, ending it and starting
+        its own."""
         while True:
             if self.process is not None:
-                try:
-                    code = self.process.wait(CHECK)
-                except subprocess.TimeoutExpired:
-                    pass
-                else:
-                    successor = self.successor()
-                    if successor is None:
-                        return f'its process {self.pid} ended with code {code}'
-                    log(f'the server handed over from process {self.pid} to process {successor}')
-                    self.process, self.pid, healthy = None, successor, time.monotonic()
-                    self.record()
-                    continue
-            else:
-                time.sleep(CHECK)
-            state, found = self.health()
-            slowest = cast(dict[str, Any], (found or {}).get('slowest') or {})
-            last = str(slowest.get('said') or last)
-            if state == 'ok':
-                healthy = time.monotonic()
+                said = told(self.process)
+                code = self.process.wait()
+                if said:
+                    return said
+                successor = self.successor()
+                if successor is None:
+                    return f'its process {self.pid} ended with code {code}'
+                log(f'the server handed over from process {self.pid} to process {successor}')
+                self.process, self.pid = None, successor
+                self.record()
                 continue
-            if state == 'stuck' and found is not None:
-                slow = cast(dict[str, Any], found.get('slow') or slowest)
-                return f'{slow.get("route")} was stuck, {slow.get("said")}'
-            if state == 'refused' and self.process is None:
-                return f'nothing listens on port {self.port} where process {self.pid} served'
-            silent = time.monotonic() - healthy
-            if silent >= SILENT:
-                return f'/api/health gave no healthy answer for {silent:.0f} s' + (
-                    f'; it last said it was {last}' if last else '')
+            pid = self.pid
+            if pid is None or ended(pid) is None:
+                return f'process {pid}, which the server handed over to, has no exit this system can wait for'
+            successor = self.successor()
+            if successor is None:
+                return f'its process {pid} ended'
+            log(f'the server handed over from process {pid} to process {successor}')
+            self.pid = successor
+            self.record()
 
     def end(self) -> None:
         """End the server: the stop signal, then, if it is still there after a while, killed."""
@@ -180,16 +145,15 @@ class Watchdog:
             except subprocess.TimeoutExpired:
                 self.process.kill()
                 self.process.wait()
+            if self.process.stdout is not None:
+                self.process.stdout.close()
         elif self.pid is not None:
             try:
                 os.kill(self.pid, signal.SIGTERM)
             except OSError:
                 pass
             else:
-                deadline = time.monotonic() + WAIT / 3
-                while self.health()[0] != 'refused' and time.monotonic() < deadline:
-                    time.sleep(0.2)
-                if self.health()[0] != 'refused' and hasattr(signal, 'SIGKILL'):
+                if ended(self.pid, WAIT / 3) is not True and hasattr(signal, 'SIGKILL'):
                     try:
                         os.kill(self.pid, getattr(signal, 'SIGKILL'))  # noqa: B009  POSIX systems only
                     except OSError:
@@ -218,6 +182,24 @@ class Watchdog:
                 self.quick += 1
                 log(f'the server did not start again; trying in {min(PAUSE_MOST, 2.0 ** self.quick):.0f} s')
             log(f'started the server again, process {self.pid}')
+
+
+def told(process: subprocess.Popen[bytes]) -> str | None:
+    """What the server says on its pipe before it ends, `{"stuck": cause}` when a read of it was stuck, read until the
+    pipe closes as it ends; None when it said nothing."""
+    pipe = process.stdout
+    if pipe is None:
+        return None
+    said: str | None = None
+    for line in pipe:
+        try:
+            found: Any = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(found, dict) and isinstance(cast(dict[str, Any], found).get('stuck'), str):
+            said = str(cast(dict[str, Any], found)['stuck'])
+    pipe.close()
+    return said
 
 
 def tell(line: bytes, ready: Path | None) -> None:

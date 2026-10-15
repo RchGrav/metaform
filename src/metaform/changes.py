@@ -20,6 +20,10 @@ if TYPE_CHECKING:
 # each project's changed bases, each with the tables written, or None when what was written is not known
 _NOTED: dict[str, dict[str, set[str] | None]] = {}
 _SEQS: dict[tuple[str, str], int] = {}  # the sequence each noted base reached, STORE-046
+# what each noted base's writes concern, `work_ids`, `session_ids` and `kinds`; None once one write said nothing
+_ABOUT: dict[tuple[str, str], dict[str, set[str]] | None] = {}
+_TAKEN: dict[tuple[str, str], dict[str, set[str]] | None] = {}  # what the last take took of it, for `concerns`
+ABOUT = ('work_ids', 'session_ids', 'kinds')
 _LOCK = threading.Lock()
 _WRITES = (sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE)
 
@@ -39,10 +43,12 @@ def watch(db: sqlite3.Connection) -> set[str]:
 
 
 def note(project_id: str, base_id: str | None = None, tables: set[str] | None = None,
-         seq: int | None = None) -> None:
+         seq: int | None = None, about: dict[str, set[str]] | None = None) -> None:
     """A change to a project's map: one base's store, or, with no base, the project's bases themselves; with the
     tables it wrote when they are known, and the sequence the base's log reached, so a page applies the ops past the
-    one it drew, STORE-046. One change whose tables are not known makes the base's unknown."""
+    one it drew, STORE-046. One change whose tables are not known makes the base's unknown. `about` is what the write
+    said it concerns, `Tx.concern`: the tickets, sessions and kinds of change, so a listener reads again only for a
+    change of its own, BASE-053. One change that said nothing makes the base's unknown."""
     with _LOCK:
         noted = _NOTED.setdefault(project_id, {})
         key = base_id or ''
@@ -50,6 +56,9 @@ def note(project_id: str, base_id: str | None = None, tables: set[str] | None = 
         noted[key] = None if known is None or not tables else known | tables
         if seq is not None:
             _SEQS[(project_id, key)] = max(seq, _SEQS.get((project_id, key), 0))
+        held = _ABOUT.get((project_id, key), {})
+        _ABOUT[(project_id, key)] = None if held is None or not about else \
+            {name: held.get(name, set()) | about.get(name, set()) for name in ABOUT}
 
 
 def take() -> dict[str, dict[str, set[str] | None]]:
@@ -57,6 +66,9 @@ def take() -> dict[str, dict[str, set[str] | None]]:
     with _LOCK:
         found = {project: dict(metaforms) for project, metaforms in _NOTED.items()}
         _NOTED.clear()
+        _TAKEN.clear()
+        _TAKEN.update(_ABOUT)
+        _ABOUT.clear()
     return found
 
 
@@ -66,11 +78,21 @@ def sequence(project_id: str, base_id: str | None) -> int | None:
         return _SEQS.pop((project_id, base_id or ''), None)
 
 
+def concerns(project_id: str, base_id: str | None) -> dict[str, list[str]]:
+    """What a base's writes the last `take` took concern, read once: `work_ids`, `session_ids` and `kinds`, each a
+    sorted list, or nothing when one write said nothing of what it concerns."""
+    with _LOCK:
+        held = _TAKEN.pop((project_id, base_id or ''), None)
+    return {} if held is None else {name: sorted(held[name]) for name in ABOUT}
+
+
 def announce(folder: Path, surface: Surface) -> list[dict[str, Any]]:
     """Fire `map.changed` for each metaform the command changed; a metaform id of None means the project's metaforms
     changed, such as one added, removed or made active. `tables` names the tables written, as the store names them,
-    when they are known; a payload without it may have changed anything. A subscriber's failure never reaches the
-    command, BASE-032. Returns the payloads fired, so a long-running process can follow its own changes, BASE-053."""
+    when they are known; a payload without it may have changed anything. `work_ids`, `session_ids` and `kinds` say what
+    the writes concern when every one of them said so, `concerns`; without them that is not known. A subscriber's
+    failure never reaches the command, BASE-032. Returns the payloads fired, so a long-running process can follow its
+    own changes, BASE-053."""
     from . import events
     from .module import Context
     fired: list[dict[str, Any]] = []
@@ -83,6 +105,7 @@ def announce(folder: Path, surface: Surface) -> list[dict[str, Any]]:
             seq = sequence(project, metaform)
             if seq is not None:
                 payload['seq'] = seq
+            payload.update(concerns(project, metaform))
             events.publish('map.changed', dict(payload), source)
             fired.append(payload)
     return fired

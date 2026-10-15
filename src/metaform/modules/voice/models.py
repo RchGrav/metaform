@@ -13,6 +13,7 @@ import shutil
 import threading
 import time
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -129,8 +130,10 @@ PROGRESS: dict[str, dict[str, Any]] = {}
 _LOCK = threading.Lock()
 
 
-def _fetch(url: str, target: Path, size: int, key: str, sha256: str | None = None) -> None:
-    """One file, streamed to `<target>.part` and renamed once it is whole, so a cut download is never read."""
+def _fetch(url: str, target: Path, size: int, key: str, sha256: str | None = None,
+           progressed: Callable[[dict[str, Any]], None] | None = None) -> None:
+    """One file, streamed to `<target>.part` and renamed once it is whole, so a cut download is never read;
+    `progressed` is told what has arrived as each chunk lands."""
     if target.is_file() and target.stat().st_size == size:
         PROGRESS[key]['done'] += size
         return
@@ -149,6 +152,8 @@ def _fetch(url: str, target: Path, size: int, key: str, sha256: str | None = Non
             out.write(chunk)
             digest.update(chunk)
             PROGRESS[key]['done'] += len(chunk)
+            if progressed is not None:
+                progressed(status_of(key))
     arrived = part.stat().st_size
     if arrived != size:
         part.unlink(missing_ok=True)
@@ -159,9 +164,10 @@ def _fetch(url: str, target: Path, size: int, key: str, sha256: str | None = Non
     part.replace(target)
 
 
-def download(key: str, jobs: list[tuple[str, Path, int, str | None]]) -> dict[str, Any]:
+def download(key: str, jobs: list[tuple[str, Path, int, str | None]],
+             progressed: Callable[[dict[str, Any]], None] | None = None) -> dict[str, Any]:
     """Fetch every job, `(url, target, size, sha256)`, once at a time per key; a second call while one runs waits for
-    it rather than fetching the same files twice."""
+    it rather than fetching the same files twice. `progressed` is told what has arrived as it arrives."""
     with _LOCK:
         running = PROGRESS.get(key)
         if running is not None and running.get('state') == 'running':
@@ -175,7 +181,7 @@ def download(key: str, jobs: list[tuple[str, Path, int, str | None]]) -> dict[st
         return status_of(key)
     try:
         for url, target, size, sha256 in jobs:
-            _fetch(url, target, size, key, sha256)
+            _fetch(url, target, size, key, sha256, progressed)
         PROGRESS[key]['state'] = 'done'
     except Exception as error:  # noqa: BLE001  a failed download is reported, never half-kept
         PROGRESS[key].update(state='failed', error=str(error))

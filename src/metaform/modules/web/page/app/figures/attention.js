@@ -12,7 +12,7 @@ import {BUBBLE, say} from '/page/app/figures/cut.js';
 import {sight, viewing, approachPoint, capture} from '/page/app/figures/eyes.js';
 import {mayAnnounce, speakReply} from '/page/voice.js';
 import {ASKING, flushAsk} from '/page/app/figures/ask.js';
-import {G, wake3d} from '/page/app/map3d/graph3d.js';
+import {G, afterFrames, noMoreFrames, wake3d} from '/page/app/map3d/graph3d.js';
 import {flowMode} from '/page/app/flow/flow.js';
 import {swap} from '/page/app/camera/flight.js';
 import {fly3d} from '/page/app/camera/fly3d.js';
@@ -43,7 +43,8 @@ function pumpAttention() {
   clearTimeout(ATTN.timer);
   const wait = ATTN.last + ATTN.gap - Date.now();
   if (!ATTN.queue.length) return;
-  if (wait > 0 || ATTN.card) { ATTN.timer = setTimeout(pumpAttention, Math.max(500, wait)); return; }
+  if (ATTN.card) return;  // the shown card's done() calls this again when it closes
+  if (wait > 0) { ATTN.timer = setTimeout(pumpAttention, wait); return; }  // the gap's deadline, once
   const call = ATTN.queue.shift();
   ATTN.last = Date.now();
   // while its agent drives it the card still comes, but the mascot goes nowhere on its own
@@ -286,7 +287,7 @@ function stateOf(body) {
 const restSpeed = () => Math.max(0.05, drawnSize() * 0.2);
 /* How far a body is turned from the way its drive asks it to face, in degrees, flat; 0 when it is asked to face the
  * way it goes. */
-const FACE = new THREE.Vector3(), FACING = new THREE.Vector3();
+const FACE = new THREE.Vector3(), FACING = new THREE.Vector3(), THERE = new THREE.Vector3();  // scratch, reused
 function turnLeft(drive, mesh, data) {
   if (!drive || !mesh) return 0;
   const face = driveFace(drive, mesh.position, data, FACE);
@@ -297,7 +298,8 @@ function turnLeft(drive, mesh, data) {
 }
 /* The wait for an act on a body, VIEW-005: it is done once the body is at rest where it was sent, within a tenth of
  * its size, and turned within TURNED degrees of the way asked; or stopped, by a later act, its target leaving the map,
- * its conversation ending or the mascot let go, or after `most` milliseconds still on its way. Its answer says where
+ * its conversation ending or the mascot let go, or after `most` milliseconds still on its way, its deadline. It is
+ * looked at once each frame that moves the body, `afterFrames`, never between. Its answer says where
  * the body is and faces, whether it is at rest, what stopped it, how far it was asked to go and went, how far it is
  * from where it was sent, and how far it is from the surface of the element it went to. */
 export const ACT_MOST = 6000, TURNED = 3;
@@ -308,16 +310,18 @@ export function settle(body, {address = null, most = ACT_MOST} = {}) {
   const asked = goal ? from.distanceTo(goal) : 0, turn = turnLeft(drive, mesh, data);
   wake3d(most + 1000);
   return new Promise(done => {
-    const check = () => {
+    const check = late => {
       const now = body.drive(), at = body.mesh(), size = drawnSize(), data = G.graphData();
-      const there = now && driveGoal(now, data, new THREE.Vector3());
+      const there = now && driveGoal(now, data, THERE);
       const off = there && at ? at.position.distanceTo(there) : 0;
       const arrived = at && body.vel.length() < restSpeed() && off <= Math.max(0.1, size * 0.1)
         && turnLeft(now, at, data) <= TURNED;
       const why = body.acts() !== mine ? 'a later act' : body.ended() || (!now || !at ? 'its agent let it go'
         : now.node && !there ? 'its target left the map' : arrived ? (asked > size * 0.1 ? 'arrived' : 'turned')
-        : performance.now() - began > most ? 'time' : null);
-      if (!why) { setTimeout(check, 50); return; }
+        : late || performance.now() - began > most ? 'time' : null);
+      if (!why) return;
+      noMoreFrames(framed);
+      clearTimeout(limit);
       const answer = {...stateOf(body), stopped_by: why};
       if (asked > size * 0.1) Object.assign(answer, {asked: tenth(asked), moved: tenth(from.distanceTo(at.position))});
       if (turn >= 1 && at) {
@@ -332,7 +336,8 @@ export function settle(body, {address = null, most = ACT_MOST} = {}) {
       }
       done(answer);
     };
-    setTimeout(check, 50);
+    const framed = () => check(false), limit = setTimeout(() => check(true), most);
+    afterFrames(framed);
   });
 }
 /* see and look with an address: the body turns to face it, and what it sees is read once it has. */

@@ -27,6 +27,7 @@ const TAP = 350;                  // ms: a shorter press of the key starts hands
 const FIELDS = '#helpdesk .say, .mascot-bubble input.reply, textarea[data-voice], input[data-voice]';
 const WAKE_HEAD = 2.5;            // seconds of each stretch of speech heard for the wake phrase; the rest is never heard
 const WAKE_WAIT = 8000;           // ms after a bare wake phrase in which the next words are the message
+const JOIN_MOST = 90000;          // ms the wake phrase waits for the chat to join its system agent before it sends
 const WAKE_LONGEST = 12;          // seconds: a stretch longer than this is let go without being heard
 const MIC = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>';
 const MAC = /Mac|iPhone|iPad/.test(navigator.userAgentData?.platform || navigator.platform || '');
@@ -142,20 +143,24 @@ function ask(button, missing) {
     box.querySelector('.voice-yes').onclick = async () => {
       const yes = box.querySelector('.voice-yes'), bar = box.querySelector('.voice-bar');
       yes.disabled = true; yes.textContent = 'Downloading…'; bar.hidden = false;
-      const watch = setInterval(async () => {
-        const st = await readStatus();
-        const progress = st && (missing.engine === 'server' ? st.server.downloading : st.browser[missing.variant]?.downloading);
-        if (progress?.total) bar.firstElementChild.style.width = `${Math.round(100 * progress.done / progress.total)}%`;
-      }, 600);
+      // what has arrived, pushed by the server as the bytes come, page/app/live/ops.js
+      const arrived = ({detail: progress}) => {
+        if (progress?.key === missing.key && progress.total)
+          bar.firstElementChild.style.width = `${Math.round(100 * progress.done / progress.total)}%`;
+      };
+      document.addEventListener('metaform:voice-download', arrived);
       try {
         const answer = await fetch('/api/voice/download', {method: 'POST', headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({engine: missing.engine, model: missing.model, variant: missing.variant})});
         const said = await answer.json().catch(() => ({}));
-        clearInterval(watch);
+        document.removeEventListener('metaform:voice-download', arrived);
         if (!answer.ok) { note(said.error || 'The model did not download.'); return finish(false); }
         await readStatus();
         finish(true);
-      } catch (error) { clearInterval(watch); note(String(error.message || error)); finish(false); }
+      } catch (error) {
+        document.removeEventListener('metaform:voice-download', arrived);
+        note(String(error.message || error)); finish(false);
+      }
     };
     box.querySelector('.voice-yes').focus();
   });
@@ -624,7 +629,15 @@ async function tellSystem(text) {
   if (!joined()) {
     const call = document.querySelector('#helpdesk .call');
     if (call && call.textContent.trim() === 'Call') call.click();
-    for (let i = 0; i < 900 && !joined(); i++) await new Promise(done => setTimeout(done, 100));
+    // the dock says it joined by its own words changing: waited on as they change, for at most JOIN_MOST
+    await new Promise(done => {
+      const over = () => { watcher.disconnect(); clearTimeout(limit); done(); };
+      const watcher = new MutationObserver(() => { if (joined()) over(); });
+      const limit = setTimeout(over, JOIN_MOST);
+      watcher.observe(document.querySelector('#helpdesk') || document.body,
+        {subtree: true, childList: true, characterData: true});
+      if (joined()) over();
+    });
   }
   const say = document.querySelector('#helpdesk .say');
   if (!say) return;

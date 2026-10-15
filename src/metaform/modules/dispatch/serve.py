@@ -59,7 +59,7 @@ from metaform.module import (
 
 from . import AGENTS, REPLY_LIMIT, SERVED, anchor, argv, end_group, group_options, origin, prompt, runner_of, sessions
 from . import proxy as layers
-from .signals import add_line
+from .signals import add_line, concerning
 
 settings.choice('dispatch_serve_agent', ['default', 'none', *AGENTS], 'default', person_only=True,
                 label='Editor agent',
@@ -1307,9 +1307,10 @@ class Record:
             self.lines_due.cancel()
             self.lines_due = None
         self.lines_at = time.monotonic()
-        named = sorted({*(tables or []), 'dispatch.lines'})
+        named: list[str] = sorted({*(tables or []), 'dispatch.lines'})
         await self.ctx.publish_async('map.changed', {'project': self.store.project_id, 'base_id': self.base_id,
-                                                     'tables': 'dispatch', 'dispatch_tables': named})
+                                                     'tables': 'dispatch', 'dispatch_tables': named,
+                                                     **concerning(self.work_id, self.session.session_id, named)})
 
     async def lines_changed(self) -> None:
         wait = self.lines_at + LINES_EVERY - time.monotonic()

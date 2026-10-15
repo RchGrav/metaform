@@ -4,6 +4,7 @@ from __future__ import annotations
 import http.client
 import json
 import math
+import os
 import re
 import socket
 import subprocess
@@ -248,6 +249,195 @@ def test_a_read_that_hangs_is_answered_in_time_while_health_names_it_until_it_is
         assert api(web, '/api/roots?project=proj')[0] == 200
     finally:
         let_go.set()
+        served.shutdown()
+        serving.join(10)
+
+
+@pytest.mark.req('VIEW-002')
+def test_a_read_stuck_past_its_deadline_ends_a_server_under_the_watchdog_saying_why_on_its_pipe(
+        run, web, mapped, monkeypatch):
+    """No one asks the server on a clock: its stuck read's own deadline ends it, and the watchdog hears why."""
+    import select
+    import threading
+
+    from metaform.modules.web import server as web_server
+    monkeypatch.setattr(web_server, 'READ_LIMIT', 0.3)
+    monkeypatch.setattr(web_server, 'STUCK', 1.0)
+    let_go, real, exited = threading.Event(), web_server.query_read, []
+
+    def hung(store, name, given):
+        if name == 'roots':
+            let_go.wait(20)
+        return real(store, name, given)
+
+    monkeypatch.setattr(web_server, 'query_read', hung)
+    monkeypatch.setattr(web_server.os, '_exit', exited.append)
+    served = web_server.Server('127.0.0.1', web, 'n')
+    reading, served.told = os.pipe()
+    serving = threading.Thread(target=served.run, daemon=True)
+    serving.start()
+    try:
+        assert api(web, '/api/roots?project=proj')[0] == 503
+        assert select.select([reading], [], [], 10)[0], 'the server said nothing on its pipe at the deadline'
+        with os.fdopen(reading, 'rb') as pipe:
+            said = json.loads(pipe.readline())
+        assert exited == [web_server.STUCK_EXIT]
+        assert said['stuck'].startswith('GET /api/roots was stuck, waiting 1 s on the roots read of proj')
+    finally:
+        let_go.set()
+        os.close(served.told)
+        served.shutdown()
+        serving.join(10)
+
+
+@pytest.mark.req('VIEW-002')
+def test_the_watchdog_wakes_on_its_servers_pipe_and_on_a_handed_over_servers_exit_never_on_a_clock(home):
+    import importlib
+    import threading
+
+    module = importlib.import_module('metaform.modules.web.watchdog')  # the package's watchdog() hides the module
+    keeper = module.Watchdog('127.0.0.1', free_port())
+    cause = 'GET /api/roots was stuck, waiting 20 s on the roots read of proj'
+    keeper.process = subprocess.Popen([sys.executable, '-c', f'import json; print(json.dumps({{"stuck": {cause!r}}}))'],
+                                      stdout=subprocess.PIPE)
+    keeper.pid = keeper.process.pid
+    assert keeper.watch() == cause
+    handed = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+    keeper.process, keeper.pid = None, handed.pid
+    threading.Timer(0.5, handed.kill).start()
+    begun = time.monotonic()
+    assert keeper.watch() == f'its process {handed.pid} ended'
+    assert time.monotonic() - begun < 3
+    handed.wait()
+
+
+COUNT_HEALTH = """() => { window.healthAsked = 0; const real = window.fetch;
+  window.fetch = (url, ...rest) => { if (String(url).startsWith('/api/health')) window.healthAsked++;
+    return real(url, ...rest); }; }"""
+
+
+@pytest.mark.req('VIEW-002')
+def test_the_page_asks_the_servers_health_only_when_its_stream_says_the_server_went_and_came_back(
+        run, web, mapped, browser):
+    started(run)
+    page = opened(browser, web)[0]
+    time.sleep(1)  # the load's own asks have answered
+    page.evaluate(COUNT_HEALTH)
+    time.sleep(5)
+    assert page.evaluate('window.healthAsked') == 0, 'the page asked the server its health on a clock'
+    run('web', 'stop')
+    page.wait_for_function("() => document.querySelector('#banners').textContent.includes('has not answered since')",
+                           timeout=15000)
+    assert page.evaluate('window.healthAsked') >= 1
+    started(run)
+    page.wait_for_function("() => document.querySelector('#banners').textContent.includes('server is back')",
+                           timeout=20000)
+
+
+@pytest.mark.req('VIEW-002')
+def test_a_voice_model_download_pushes_what_has_arrived_to_the_open_pages_as_it_arrives(run, home, monkeypatch):
+    """The page's download bar is drawn from what the server pushes as the bytes land, never by asking for status."""
+    import io
+    import urllib.request
+    from types import SimpleNamespace
+
+    import metaform.modules.web as package
+
+    class Answer(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    pushed = []
+    monkeypatch.setattr(package, 'SERVING', [SimpleNamespace(push=pushed.append)], raising=False)
+    monkeypatch.setattr(urllib.request, 'urlopen', lambda request, timeout=None: Answer(b'x' * 10))
+    run('voice', 'download', 'engine=browser', '--confirm', ok=False)  # 10 bytes is never a whole file: it stops there
+    assert pushed, 'nothing was pushed to the open pages as the download ran'
+    assert {event['topic'] for event in pushed} == {'voice.download'}
+    assert pushed[0]['payload']['key'].startswith('browser:') and pushed[0]['payload']['done'] == 10
+
+
+# Nothing in the web server, its watchdog, the page or the MCP views polls, VIEW-002 and VIEW-018: no interval, no check
+# that sets its own timer again, no loop that sleeps, no sleep in the server's code. What waits on a clock is one of
+# these, each with why it stays.
+TIMED = re.compile(r'setInterval\(|setTimeout\((?:check|tick|poll)\b|for \(.*await new Promise\(\w+ => setTimeout')
+TIMED_KEPT = {
+    # the MCP views' reads on a host with no push, bridge.js poll(), only while on screen; a view's worker is refused
+    # under MCP Apps' default content policy, so it cannot move off the view's main thread (its comment says why)
+    ('mcp/resources/views/bridge.js', 'setTimeout(tick'),
+    ('web/watchdog.py', 'time.sleep('),  # the pause before a server that keeps ending is started again, a backoff
+}
+
+
+@pytest.mark.req('VIEW-002')
+def test_nothing_in_the_web_server_its_watchdog_the_page_or_the_views_waits_on_a_clock_to_see_a_change():
+    modules = Path(__file__).resolve().parents[2]
+    found = set()
+    for folder in (modules / 'web' / 'page', modules / 'mcp' / 'resources' / 'views'):
+        for path in sorted(folder.rglob('*')):
+            if path.suffix not in ('.js', '.html') or 'vendor' in path.parts or path.name in ('ext-apps.js', 'map.html'):
+                continue
+            for hit in TIMED.finditer(path.read_text(encoding='utf-8')):
+                said = 'a loop that sleeps' if hit.group(0).startswith('for') else hit.group(0)
+                found.add((path.relative_to(modules).as_posix(), said))
+    for path in sorted((modules / 'web').glob('*.py')):
+        if 'time.sleep(' in path.read_text(encoding='utf-8'):
+            found.add((path.relative_to(modules).as_posix(), 'time.sleep('))
+    assert found == TIMED_KEPT
+
+
+COUNT_READS = """() => { window.readsOf = {}; const real = window.fetch;
+  window.fetch = (url, ...rest) => { const path = String(url).split('?')[0];
+    window.readsOf[path] = (window.readsOf[path] || 0) + 1; return real(url, ...rest); }; }"""
+
+
+@pytest.mark.req('VIEW-018')
+def test_an_agents_thread_lines_read_no_session_again_and_a_change_to_its_session_reads_them(run, web, mapped, browser):
+    """A handler acts on the events that concern it: a line of a thread no open chat shows reads nothing, a session's
+    change reads the agents again."""
+    from metaform import relay
+    started(run)
+    page = opened(browser, web)[0]
+    time.sleep(2)  # the load's own reads have answered
+    page.evaluate(COUNT_READS)
+    line = {'project': 'proj', 'base_id': None, 'tables': 'dispatch', 'dispatch_tables': ['dispatch.lines'],
+            'work_ids': ['w1'], 'session_ids': ['s1'], 'kinds': ['line']}
+    for _ in range(6):
+        relay.deliver('map.changed', line)
+        time.sleep(0.25)
+    time.sleep(2)
+    assert page.evaluate("window.readsOf['/api/dispatch-sessions'] || 0") == 0, 'a thread line read every session'
+    relay.deliver('map.changed', {**line, 'dispatch_tables': ['dispatch.lines', 'dispatch.sessions'],
+                                  'kinds': ['line', 'session']})
+    page.wait_for_function("() => (window.readsOf['/api/dispatch-sessions'] || 0) >= 1")
+
+
+@pytest.mark.req('BASE-053')
+def test_a_page_opening_and_closing_its_stream_is_said_to_the_homes_other_processes_as_it_happens(
+        run, web, mapped, monkeypatch):
+    """A process waiting for a page, as the demo's agent does, hears it open and close, never asks."""
+    import queue
+    import threading
+
+    from metaform.modules.web import server as web_server
+    said = queue.Queue()
+    monkeypatch.setattr(web_server.events, 'publish', lambda topic, payload, source: said.put((topic, payload)))
+    served = web_server.Server('127.0.0.1', web, 'n')
+    monkeypatch.setattr(served, 'schedule_dispatch', lambda *args, **kwargs: None)
+    serving = threading.Thread(target=served.run, daemon=True)
+    serving.start()
+    try:
+        connection = http.client.HTTPConnection('127.0.0.1', web, timeout=5)
+        connection.request('GET', '/api/events?project=proj', headers={'Host': f'127.0.0.1:{web}'})
+        assert connection.getresponse().status == 200
+        topic, payload = said.get(timeout=5)
+        assert topic == 'map.changed' and payload['kinds'] == ['pages'] and payload['pages'] == 1
+        assert payload['tables'] == ['web.pages'] and payload['project'] == 'proj'
+        connection.close()
+        assert said.get(timeout=5)[1]['pages'] == 0, 'the closed page was not said as it closed'
+    finally:
         served.shutdown()
         serving.join(10)
 

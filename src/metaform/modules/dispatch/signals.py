@@ -4,10 +4,33 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from collections.abc import Sequence
 from typing import Any, cast
 
 from metaform.data import Store
 from metaform.module import Context
+
+# the kind of change each of dispatch's tables carries on `map.changed`, `concerning`
+KINDS = {'dispatch.lines': 'line', 'dispatch.permissions': 'permission', 'dispatch.sessions': 'session',
+         'dispatch.spending': 'spend', 'dispatch.settings': 'session', 'dispatch.merges': 'merge'}
+
+
+def concerning(work_id: str | None, session_id: str | None, dispatch_tables: Sequence[str] | None = None,
+               signal: bool = False) -> dict[str, list[str]]:
+    """What a dispatch write concerns, carried on its `map.changed` as the chassis carries a map write's, BASE-053:
+    `work_ids` and `session_ids` the ticket and session it was for, and `kinds` when every table it names has one, so
+    a runner of another session reads nothing for it. A ticket or session not given is left unknown."""
+    about: dict[str, list[str]] = {}
+    if work_id:
+        about['work_ids'] = [work_id]
+    if session_id:
+        about['session_ids'] = [session_id]
+    kinds: set[str | None] = {KINDS.get(table) for table in dispatch_tables or ()}
+    if signal:
+        kinds.add('signal')
+    if (dispatch_tables or signal) and None not in kinds:
+        about['kinds'] = sorted(kind for kind in kinds if kind is not None)
+    return about
 
 
 def own_store(store: Store) -> Store:
@@ -112,7 +135,8 @@ def announce(ctx: Context, value: dict[str, Any]) -> None:
     ctx.publish('signal.raised' if value['active'] else 'signal.cleared', value)
     bound = ctx.require_store().bound_base()
     ctx.publish('map.changed', {'project': value['project'], 'base_id': bound.id if bound else None, 'tables': 'dispatch',
-                               'dispatch_tables': ['dispatch.lines'], 'signal': value})
+                               'dispatch_tables': ['dispatch.lines'], 'signal': value,
+                               **concerning(value.get('work_id'), value.get('session_id'), ['dispatch.lines'], True)})
 
 
 def rows(store: Store, work_id: str | None = None, active: bool = True) -> list[dict[str, Any]]:
@@ -194,7 +218,9 @@ def collect(payload: dict[str, Any], ctx: Context) -> None:
                    **({'signal_key': named} if named else {}), **details)
     if value is not None:
         ctx.publish('map.changed', {'project': value['project'], 'tables': 'dispatch',
-                                   'dispatch_tables': ['dispatch.lines'], 'signal': value})
+                                   'dispatch_tables': ['dispatch.lines'], 'signal': value,
+                                   **concerning(value.get('work_id'), value.get('session_id'), ['dispatch.lines'],
+                                                True)})
 
 
 # A feature the person set up is not working, raised by the module that serves it with what the person set up,

@@ -15,7 +15,6 @@ import os
 import sqlite3
 import sys
 import threading
-import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
@@ -73,28 +72,20 @@ def file_lock(path: Path, *, wait: bool = True) -> Generator[BinaryIO, None, Non
     exist is created, in the home readable and writable by its owner alone. The file is never replaced or removed,
     which would let another opener lock a different file under the same name. A process that ends, by a crash too,
     lets go of its lock. With wait=False a lock another holds raises Held at once; with wait=True the caller waits
-    until the holder lets go, however long that takes, on Windows too, where msvcrt's own LK_LOCK would give up with
-    OSError after ten tries a second apart."""
+    until the holder lets go, however long that takes, in the system's own wait on the lock: flock on unix, and on
+    Windows LockFileEx, since msvcrt's LK_LOCK retries once a second and gives up with OSError after ten tries."""
     from . import home
     flags = os.O_RDWR | os.O_CREAT | os.O_APPEND | getattr(os, 'O_BINARY', 0)
     with os.fdopen(os.open(path, flags, 0o600 if home.is_home_path(path) else 0o666), 'a+b') as stream:
         if sys.platform == 'win32':
-            import msvcrt
-            stream.seek(0)
-            while True:
-                try:
-                    msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
-                    break
-                except OSError:
-                    if not wait:
-                        raise Held(str(path)) from None
-                    time.sleep(0.05)
+            locked = _WindowsLock(stream.fileno())
+            if not locked.take(wait):
+                raise Held(str(path))
             try:
                 yield stream
             finally:
                 stream.flush()
-                stream.seek(0)
-                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+                locked.give()
         else:
             import fcntl
             try:
@@ -106,6 +97,42 @@ def file_lock(path: Path, *, wait: bool = True) -> Generator[BinaryIO, None, Non
             finally:
                 stream.flush()
                 fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+
+
+class _WindowsLock:
+    """The first byte of a file locked between processes with LockFileEx: with wait, the system holds the call until
+    the holder lets go, as flock does on unix; without it, the call fails at once when another holds the lock."""
+
+    def __init__(self, descriptor: int) -> None:
+        self.descriptor = descriptor
+
+    def take(self, wait: bool) -> bool:
+        """True once the lock is held; False when another holds it and the caller asked not to wait."""
+        flags = 0x2 | (0 if wait else 0x1)  # LOCKFILE_EXCLUSIVE_LOCK, and LOCKFILE_FAIL_IMMEDIATELY when not waiting
+        return self._call('LockFileEx', flags, 0, 1, 0, refused=() if wait else (33,))  # ERROR_LOCK_VIOLATION
+
+    def give(self) -> None:
+        self._call('UnlockFileEx', 0, 1, 0)
+
+    def _call(self, name: str, *args: int, refused: tuple[int, ...] = ()) -> bool:
+        """One of kernel32's file lock calls on the first byte; False for an error in `refused`, OSError for any
+        other."""
+        if sys.platform != 'win32':
+            raise OSError(f'{name} is a call of Windows.')
+        import ctypes
+        import msvcrt
+        from ctypes import wintypes
+
+        class Overlapped(ctypes.Structure):  # the byte range's offset, 0
+            _fields_ = [('Internal', ctypes.c_size_t), ('InternalHigh', ctypes.c_size_t),
+                        ('Offset', wintypes.DWORD), ('OffsetHigh', wintypes.DWORD), ('hEvent', wintypes.HANDLE)]
+        call = getattr(ctypes.WinDLL('kernel32', use_last_error=True), name)
+        if call(wintypes.HANDLE(msvcrt.get_osfhandle(self.descriptor)), *args, ctypes.byref(Overlapped())):
+            return True
+        error = ctypes.get_last_error()
+        if error in refused:
+            return False
+        raise ctypes.WinError(error)
 
 
 def connect(path: Path | str) -> sqlite3.Connection:

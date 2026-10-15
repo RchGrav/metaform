@@ -414,11 +414,16 @@ def state_file() -> Path:
     return cloud_folder() / 'connect.json'
 
 
+def lock_file() -> Path:
+    """The file a running `cloud connect` holds locked; the system lets go of it when the process ends."""
+    return state_file().with_suffix('.lock')
+
+
 def write_state(record: dict[str, Any]) -> None:
-    """What `cloud status` shows: the connection's state and a heartbeat, so a stopped one is seen as stopped."""
+    """What `cloud status` shows: the connection's state, written as it changes; whether it still runs is its lock."""
     with contextlib.suppress(OSError):
         target = state_file()
         home.mkdir_private(target.parent)
         temporary = target.with_suffix('.tmp')
-        home.write_private(temporary, json.dumps({**record, 'beat': time.time()}))
+        home.write_private(temporary, json.dumps(record))
         temporary.replace(target)

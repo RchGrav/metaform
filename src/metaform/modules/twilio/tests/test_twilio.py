@@ -236,7 +236,7 @@ def test_the_system_agent_answers_through_dispatch_with_the_fake_agent(run, home
     monkeypatch.setenv('FAKE_ACP_LOG', str(log))
     monkeypatch.setenv('FAKE_ACP_MODE', 'plain')
     monkeypatch.setenv('FAKE_ACP_MASCOT', '1')
-    agent = SystemAgent(verb_runner(project_folder, 'proj'), poll=0.1, start_limit=60, turn_limit=60)
+    agent = SystemAgent(verb_runner(project_folder, 'proj'), start_limit=60, turn_limit=60)
 
     async def answer():
         said = []
@@ -249,6 +249,115 @@ def test_the_system_agent_answers_through_dispatch_with_the_fake_agent(run, home
         if agent.started.get('pid'):
             dispatch_runners.append((agent.started, project_folder, log))
     assert said and said[-1] == 'The fake answers: What is on my board?'
+
+
+@pytest.mark.req('QUAL-015')
+def test_the_system_agent_reads_the_thread_again_only_when_the_runner_announces_a_change(monkeypatch):
+    """While the agent works and says nothing, its thread is not read again on a timer, nor for a burst of changes that
+    concern other tickets or tables; the runner's map.changed naming its lines has the answer read at once."""
+    import threading
+    import time
+
+    from metaform import events
+    state = {'activity': 'working', 'lines': []}
+    reads: list[float] = []
+
+    def run(name, nouns):
+        if name == 'system':
+            return {'work_id': 'W'}
+        if name == 'message':
+            state['lines'].append({'session_id': 'S', 'seq': 2, 'kind': 'person', 'text': nouns['text'][0]})
+            return {'sent': True}
+        reads.append(time.monotonic())
+        return {'sessions': [{'session_id': 'S', 'state': 'running', 'activity': state['activity']}],
+                'lines': list(state['lines'])}
+    handlers = []
+
+    class Heard:
+        def close(self):
+            pass
+
+    def listen(module, handler):
+        handlers.append(handler)
+        return Heard()
+    monkeypatch.setattr(events, 'listen', listen)
+    agent = SystemAgent(run, start_limit=5, turn_limit=5)
+
+    async def answer():
+        said = []
+        async for so_far in agent.reply('Hello.'):
+            said.append(so_far)
+        return said
+
+    def runner_answers():
+        time.sleep(1.0)
+        read_while_quiet.append(len(reads))
+        state['lines'].append({'session_id': 'S', 'seq': 3, 'kind': 'agent_message_chunk', 'text': 'Hi there.'})
+        state['activity'] = 'idle'
+        for handler in handlers:  # the runner's map.changed, naming its lines, from another process
+            handler({'project': 'proj', 'tables': 'dispatch', 'dispatch_tables': ['dispatch.lines']})
+    read_while_quiet: list[int] = []
+    unconcerned = [{'project': 'proj', 'tables': ['ops', 'work']},  # the map, not the agents
+                   {'project': 'proj', 'tables': 'dispatch', 'dispatch_tables': ['dispatch.timers']},
+                   {'project': 'proj', 'tables': 'dispatch', 'work_ids': ['other'], 'session_ids': ['T']}]
+
+    def burst():
+        time.sleep(0.5)
+        for _ in range(50):  # a burst that concerns another ticket or other tables
+            for payload in unconcerned:
+                for handler in handlers:
+                    handler(payload)
+    threading.Thread(target=burst, daemon=True).start()
+    threading.Thread(target=runner_answers, daemon=True).start()
+    began = time.monotonic()
+    said = asyncio.run(answer())
+    assert read_while_quiet == [3]  # the session at start, the thread before the message, the thread after it
+    assert said == ['Hi there.'] and time.monotonic() - began < 2
+
+
+@pytest.mark.req('QUAL-015')
+def test_the_bridge_server_says_when_it_listens_and_does_not_wake_while_nothing_happens():
+    """uvicorn's own main loop wakes ten times a second to see whether it should exit; the bridge's waits for the exit
+    it is told of, and says when it listens with an event rather than a flag read in a loop."""
+    import uvicorn
+
+    from metaform.modules.twilio.server import Serving
+    phone, _ = bridge()
+    server = Serving(uvicorn.Config(phone.app(), host='127.0.0.1', port=0, log_level='warning', lifespan='off'))
+    ticks = []
+    real = server.on_tick
+
+    async def counted(counter):
+        ticks.append(counter)
+        return await real(counter)
+    server.on_tick = counted
+
+    async def serve():
+        serving = asyncio.ensure_future(server.serve())
+        await asyncio.wait_for(server.ready.wait(), 10)
+        await asyncio.sleep(1.0)
+        server.stop()
+        await asyncio.wait_for(serving, 10)
+    asyncio.run(serve())
+    assert len(ticks) <= 1
+
+
+def test_a_held_back_text_or_call_is_due_when_its_gap_ends_and_a_call_in_progress_holds_calls_with_no_time():
+    """The bridge tries again only at `due`, or when the call in progress ends: a text when TEXT_GAP has passed since
+    the last, a call when the gap between calls allows it, and no time at all while a call is in progress."""
+    now, free = [0.0], [None]
+    sent = []
+    told = notify.Notifier(calls=['waiting-for-you'], texts=['budget'], place=lambda why: False, send=sent.append,
+                           clock=lambda: now[0], call_free=lambda: free[0])
+    assert told.due() is None  # nothing waits
+    assert told.heard({'signal': 'budget', 'work_id': 'w1', 'active': True}) == ['text']
+    now[0] = 10.0
+    assert told.heard({'signal': 'budget', 'work_id': 'w2', 'active': True}) == []
+    assert told.due() == notify.TEXT_GAP  # the last text went at 0
+    assert told.heard({'signal': 'permission-waiting', 'work_id': 'w3', 'active': True}) == []
+    assert told.due() == notify.TEXT_GAP  # the call waits on a call in progress: no time of its own
+    free[0] = 30.0  # the call in progress ended, and the gap since the last call ends at 30
+    assert told.due() == 30.0
 
 
 def test_a_call_held_back_by_the_gap_waits_and_is_placed_once_the_gap_allows():
@@ -620,7 +729,7 @@ def test_a_raised_problem_is_the_system_agents_turn_once_it_starts(run, home, pr
     monkeypatch.setenv('FAKE_ACP_LOG', str(log))
     monkeypatch.setenv('FAKE_ACP_MODE', 'plain')
     monkeypatch.setenv('FAKE_ACP_MASCOT', '1')  # every turn after the first is answered
-    agent = SystemAgent(verb_runner(project_folder, 'proj'), poll=0.1, start_limit=60, turn_limit=60)
+    agent = SystemAgent(verb_runner(project_folder, 'proj'), start_limit=60, turn_limit=60)
 
     async def answer():
         return [so_far async for so_far in agent.reply('Hello.')]

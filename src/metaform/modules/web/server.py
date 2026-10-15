@@ -77,6 +77,7 @@ from metaform.outline import mermaid_limits
 from . import (
     GATE_SECRET,
     RESTARTED,
+    SERVING,
     SUPERVISOR,
     WAIT,
     WILDCARDS,
@@ -141,16 +142,51 @@ DISPATCH_CHANGES = frozenset({'work', 'messages', 'map.glyphs', 'map.ticket_sett
                               'dispatch.claims', 'dispatch.claim_work', 'dispatch.raised'})
 
 
-def dispatch_change(payload: dict[str, Any]) -> bool:
-    """Only selection inputs trigger autostart. Older events without table detail may have changed any input."""
-    tables = payload.get('tables')
+# What a change concerns, map.changed's `kinds`, when every write said it, changes.concerns: the kinds that can start
+# work, a ticket made ready, released or freed, a message or question answered; and the inputs no kind names, read from
+# the tables. A session that ended says no kinds (dispatch's release), so the tables decide; `session` alone is a
+# runner's own state, working or idle, which starts nothing.
+STARTS = frozenset({'ticket', 'message', 'question'})
+UNKINDED = frozenset({'map.glyphs', 'map.ticket_settings', 'map.eligible', 'dispatch.settings', 'dispatch.claims',
+                      'dispatch.claim_work', 'dispatch.raised'})
+MERGES = 'dispatch.merges'
+
+
+def named_tables(payload: dict[str, Any]) -> list[str] | None:
+    """The tables a change names, the dispatch tables in its detail among them; None when it names none, or names
+    `dispatch` with no detail, so it may have changed any."""
+    tables: Any = payload.get('tables')
     if tables == 'dispatch':
         tables = payload.get('dispatch_tables')
-    if not isinstance(tables, list) or not tables:
+    if not isinstance(tables, list) or not tables or any(not isinstance(one, str) for one in cast(list[Any], tables)):
+        return None
+    return cast(list[str], tables)
+
+
+def given_kinds(payload: dict[str, Any]) -> list[str] | None:
+    kinds: Any = payload.get('kinds')
+    if not isinstance(kinds, list) or any(not isinstance(one, str) for one in cast(list[Any], kinds)):
+        return None
+    return cast(list[str], kinds)
+
+
+def merge_change(payload: dict[str, Any]) -> bool:
+    """Whether a change may have put a merge up for review, VIEW-044: it names the merges table, or its `kinds` name a
+    merge, or it says neither what it concerns nor which tables it wrote."""
+    tables, kinds = named_tables(payload), given_kinds(payload)
+    if tables is not None and MERGES in tables or kinds is not None and 'merge' in kinds:
         return True
-    if any(not isinstance(table, str) for table in cast(list[Any], tables)):
-        return True
-    return bool(DISPATCH_CHANGES.intersection(cast(list[str], tables)))
+    return tables is None and kinds is None
+
+
+def dispatch_change(payload: dict[str, Any]) -> bool:
+    """Only selection inputs trigger autostart: a change whose `kinds` say it concerns none that can start work
+    does not, and else the tables it names decide. Older events without table detail may have changed any input."""
+    kinds = given_kinds(payload)
+    if kinds is not None and not STARTS.intersection(kinds):
+        return bool(UNKINDED.intersection(named_tables(payload) or ()))
+    tables = named_tables(payload)
+    return tables is None or bool(DISPATCH_CHANGES.intersection(tables))
 
 
 # Behind a Metaform Node's gate, the page server trusts who is calling only from requests carrying the per-deploy
@@ -213,6 +249,7 @@ def verb_class(module_id: str, verb: chassis.Verb, arguments: dict[str, Any]) ->
 
 
 COALESCE = 0.3  # seconds a page's stream holds dispatch-only events to merge them, VIEW-018
+GONE: dict[str, Any] = {'topic': 'gone'}  # put on a page's stream by its socket closing, `events`
 # The acts of the person's mascot a page takes, VIEW-005; those that ask the page something, and the body's acts, which
 # answer once the body is done, at most six seconds on the page, wait this long for it
 MASCOT_ACTS = {'say', 'go', 'turn', 'point', 'emote', 'look', 'see', 'select', 'camera', 'tab', 'open', 'swap',
@@ -273,12 +310,14 @@ def log(text: str) -> None:
 # the server's busy table with what it waits on and since when; /api/health, answered before any module refresh or
 # store, names the slowest. A page read runs in a worker thread and is answered within READ_LIMIT whatever its work
 # does, since a browser opens only a few connections to one server and a read that never answers soon stops every
-# other. Its work still running at STUCK is wedged: /api/health then answers 503, and the watchdog restarts the server.
+# other. Its work still running at STUCK, its own deadline, is wedged: /api/health then answers 503, and under the
+# watchdog the server says so on its pipe and ends, so the watchdog starts it again; nothing asks it on a clock.
 HEALTH = '/api/health'
 NOTICED: dict[str, str] = {}  # each module's notice last written to the log, so a notice is logged once, not per read
 READ_LIMIT = 15.0  # seconds a page read may run before it is answered 503 with what it waits on
 SLOW = 3.0  # a read running this long is what /api/health says the server is slow on, logged once
-STUCK = 20.0  # a read's work running this long has /api/health answer 503
+STUCK = 20.0  # a read's work running this long has /api/health answer 503, and ends a server under the watchdog
+STUCK_EXIT = 75  # the exit code of a server that ended itself for a stuck read
 BACKLOG = 128  # connections the listener holds before it refuses one; the standard library's 5 fills at a page load
 STREAMS = ('/api/events', '/api/voice/', '/api/build')  # GET routes that write their answer as it comes, never bounded
 
@@ -335,6 +374,7 @@ class Server(ThreadingHTTPServer):
         self.listening = threading.Lock()
         self.dispatch_lock = threading.Lock()
         self.dispatch_pending: set[tuple[str, str | None]] = set()  # each project, with the page's base or None
+        self.merges_pending: set[str] = set()  # each project whose merges' timers are set again
         self.dispatch_busy = False
         self.dispatch_errors: dict[str, str] = {}  # each project's last automatic-dispatch error, logged once
         self.said: dict[str, None] = {}  # the refusals and faults already logged, oldest first, `first_time`
@@ -346,6 +386,7 @@ class Server(ThreadingHTTPServer):
         # environment so no agent this server starts inherits them.
         self.supervisor = os.environ.pop(SUPERVISOR, '') or None
         self.restarted = restart_said(os.environ.pop(RESTARTED, ''))
+        self.told: int | None = None  # the pipe to the watchdog, kept past the ready line, `ready`
         self.merge_timers: dict[tuple[str, str], threading.Timer] = {}  # VIEW-044: one per merge waiting for review
         self.retry_timers: dict[str, tuple[float, threading.Timer]] = {}  # P012: each project's next retry, when due
         # the mascot's questions to the open pages waiting for their answer, by id: what it sees, VIEW-005
@@ -419,6 +460,24 @@ class Server(ThreadingHTTPServer):
             'slowest': running[0].shown(now) if running else None, 'slow': slow, 'stuck': stuck, 'stuck_after': STUCK,
             'supervised': self.supervisor is not None, 'restarted': self.restarted}
 
+    def overran(self, entry: Busy, done: threading.Event) -> None:
+        """A page read past READ_LIMIT: one wait on its work's end, with its deadline, STUCK after it began, as the
+        limit. Its work still running then is wedged and logged; under the watchdog the server says why on its pipe
+        and ends, so the watchdog starts it again, VIEW-002."""
+        if done.wait(max(0.0, entry.since + STUCK - time.monotonic())):
+            return
+        said = entry.shown(time.monotonic())['said']
+        if self.first_time(f'stuck {entry.route} {entry.since}'):
+            log(f'Stuck: {entry.route} has run {time.monotonic() - entry.since:.0f} s, waiting on {entry.what}'
+                + ('; ending, so the watchdog starts the server again' if self.told is not None else ''))
+        if self.told is None:
+            return
+        try:
+            os.write(self.told, json.dumps({'stuck': f'{entry.route} was stuck, {said}'}).encode() + b'\n')
+        except OSError:
+            pass
+        os._exit(STUCK_EXIT)
+
     def own_host(self, host: str | None) -> bool:
         """The Host header names this server. On a wildcard bind every name of the machine is its own, so only the
         port is checked there, and the token guards every request. Behind a Node's gate it is the public origin's."""
@@ -431,27 +490,48 @@ class Server(ThreadingHTTPServer):
             return host.rsplit(':', 1)[-1] == str(self.port) and ':' in host
         return host in self.hosts
 
-    def changed(self, payload: dict[str, Any]) -> int:
+    def changed(self, payload: dict[str, Any], own: bool = False) -> int:
         """Push one `map.changed` to every open page, VIEW-018 and BASE-053; a change to a project no longer registered,
-        such as the removal of one, is not pushed, since a page has nothing of it to read."""
+        such as the removal of one, is not pushed, since a page has nothing of it to read. `own`, the agent starter's
+        and the merges' own writes, schedules no dispatch check: a process never reacts to its own writes."""
         if home.project(str(payload.get('project', ''))) is None:
             return 0
         if payload.get('flow'):  # where an agent's tool calls reached, drawn on the map as they happen, VIEW-005
             payload = dict(payload)
             self.push({'topic': 'map.flow', 'payload': {'project': payload['project'], 'flows': payload.pop('flow')}})
-        if dispatch_change(payload):
-            self.schedule_dispatch(str(payload['project']))
+        starts, merges = (False, False) if own else (dispatch_change(payload), merge_change(payload))
+        if starts or merges:
+            self.schedule_dispatch(str(payload['project']), starts=starts, merges=merges)
         return self.push({'topic': 'map.changed', 'payload': payload})
+
+    def pages_changed(self, project_id: str) -> None:
+        """Say in this home's other processes how many pages show a project, as a page's stream opens or closes:
+        `map.changed` naming the table `web.pages` and the kind `pages`, BASE-053, for a process that waits for a page,
+        such as the demo's agent. Off the request's thread, since it reaches every listener."""
+        found = home.project(project_id)
+        if found is None:
+            return
+        with self.listening:
+            pages = sum(1 for shown in self.watching.values() if shown == project_id)
+        source = chassis.context('web', Path(found.path), project=project_id, surface='web')
+        payload = {'project': project_id, 'base_id': None, 'tables': ['web.pages'], 'work_ids': [], 'session_ids': [],
+                   'kinds': ['pages'], 'pages': pages}
+        threading.Thread(target=events.publish, args=('map.changed', payload, source), daemon=True).start()
 
     def open_projects(self) -> set[str]:
         with self.listening:
             return set(self.watching.values())
 
-    def schedule_dispatch(self, project: str, base: str | None = None) -> None:
+    def schedule_dispatch(self, project: str, base: str | None = None, *, starts: bool = True,
+                          merges: bool = True) -> None:
         """Queue a dispatch check on a change, without blocking page reads or starting concurrent batches; on the active
-        base, or on `base`, a base the page shows that is not the active one."""
+        base, or on `base`, a base the page shows that is not the active one: the agent starter when the change can
+        start work, and the merges' timers when it can put a merge up for review."""
         with self.dispatch_lock:
-            self.dispatch_pending.add((project, base))
+            if starts:
+                self.dispatch_pending.add((project, base))
+            if merges:
+                self.merges_pending.add(project)
             if self.dispatch_busy:
                 return
             self.dispatch_busy = True
@@ -476,7 +556,7 @@ class Server(ThreadingHTTPServer):
         found = home.project(project)
         if found is not None:
             for payload in events.announce(Path(found.path), 'web'):
-                self.changed(dict(payload))
+                self.changed(dict(payload), own=True)
 
     def schedule_retry(self, project: str, due: Any) -> None:
         """The supervisor's next retry, P012, when one waits: one timer per project, at the earliest time due, runs the
@@ -490,7 +570,8 @@ class Server(ThreadingHTTPServer):
                 return
             if held is not None:
                 held[1].cancel()
-            timer = threading.Timer(max(0.0, float(due) - time.time()) + 0.5, self.schedule_dispatch, (project,))
+            timer = threading.Timer(max(0.0, float(due) - time.time()) + 0.5, self.schedule_dispatch, (project,),
+                                    {'merges': False})
             timer.daemon = True
             self.retry_timers[project] = (float(due), timer)
             timer.start()
@@ -501,19 +582,28 @@ class Server(ThreadingHTTPServer):
             timer.cancel()
 
     def dispatch_waiting(self) -> None:
-        """Check changed projects in one worker; new changes are coalesced while a batch starts."""
+        """Check changed projects in one worker, each for what its changes can need, the agent starter or the merges'
+        timers; new changes are coalesced while a batch starts."""
         while True:
             with self.dispatch_lock:
-                if not self.dispatch_pending:
+                if self.dispatch_pending:
+                    (project_id, base), starts = self.dispatch_pending.pop(), True
+                elif self.merges_pending:
+                    project_id, base, starts = next(iter(self.merges_pending)), None, False
+                else:
                     self.dispatch_busy = False
                     return
-                project_id, base = self.dispatch_pending.pop()
+                merges = project_id in self.merges_pending
+                self.merges_pending.discard(project_id)
+            if merges:
+                self.schedule_merges(project_id)
+            if not starts:
+                continue
             with chassis.request_scope(fresh=True):
                 chassis.refresh_modules()
                 project = home.project(project_id)
                 if project is None:
                     continue
-                self.schedule_merges(project_id)
                 try:
                     started = module_verb({'project': project_id, 'base': base or ''}, 'dispatch', 'autostart', {},
                                           chosen=bool(base))
@@ -528,7 +618,7 @@ class Server(ThreadingHTTPServer):
                     continue
                 self.dispatch_errors.pop(project_id, None)
                 for payload in events.announce(Path(project.path), 'web'):
-                    self.changed(dict(payload))
+                    self.changed(dict(payload), own=True)
 
     def push(self, event: dict[str, Any]) -> int:
         """Hand one event to every open page's stream, VIEW-018."""
@@ -654,6 +744,7 @@ class Handler(BaseHTTPRequestHandler):
                          name=f'read {path}').start()
         if not done.wait(READ_LIMIT):
             self.close_connection = True  # the worker still holds this handler; the page asks again on a new one
+            threading.Thread(target=self.gui.overran, args=(entry, done), daemon=True, name=f'deadline {path}').start()
             restarts = (' The watchdog restarts a server whose read is stuck for '
                         f'{STUCK:.0f} s.') if self.gui.supervisor else ''
             return self.send(503, {
@@ -1001,7 +1092,7 @@ class Handler(BaseHTTPRequestHandler):
         """One open page's stream of what modules publish, held open, and the project the page shows. Its thread sleeps until an event comes and writes it;
         nothing polls, QUAL-015. Events naming only dispatch tables are held up to `COALESCE` seconds and merged into
         one, so a burst of agent lines wakes the page once; any other event writes what is held and then itself at
-        once. A page that has gone is dropped at the next event."""
+        once. A page that has gone is dropped as its socket closes."""
         waiting: queue.SimpleQueue[dict[str, Any]] = queue.SimpleQueue()
         with self.gui.listening:
             self.gui.listeners.add(waiting)
@@ -1009,6 +1100,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.gui.watching[waiting] = project
         if project:
             self.gui.schedule_dispatch(project)  # the page opened the project: its agent starter runs now
+            self.gui.pages_changed(project)
         self.close_connection = True
         try:
             self.send_response(200)
@@ -1023,6 +1115,16 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(b'data: ' + json.dumps(event).encode('utf-8') + b'\n\n')
                 self.wfile.flush()
 
+            def gone() -> None:
+                """The page sends nothing after its request: its socket readable again is the page closing it."""
+                try:
+                    while self.connection.recv(1024):
+                        pass
+                except OSError:
+                    pass
+                waiting.put(GONE)
+
+            threading.Thread(target=gone, daemon=True, name='stream closing').start()
             held: dict[str, Any] | None = None
             due = 0.0
             while True:
@@ -1032,6 +1134,8 @@ class Handler(BaseHTTPRequestHandler):
                     send(cast(dict[str, Any], held))
                     held = None
                     continue
+                if event is GONE:
+                    break
                 if dispatch_only(event):
                     merged = coalesce(held, event) if held is not None else None
                     if merged is not None:
@@ -1050,7 +1154,9 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             with self.gui.listening:
                 self.gui.listeners.discard(waiting)
-                self.gui.watching.pop(waiting, None)
+                shown = self.gui.watching.pop(waiting, None)
+            if shown:
+                self.gui.pages_changed(shown)
 
     def write(self, path: str) -> None:
         """One of the eighteen writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body."""
@@ -3043,6 +3149,7 @@ def serve(given: argparse.Namespace) -> int:
     except OSError as error:
         log(f'cannot listen at {host_port(given.bind, given.port)}: {error}')
         return 1
+    SERVING.append(server)
     server.record()
     # Each map.changed published in another process, a command, the MCP server or a runner, reaches every open page.
     listener = events.listen('web', server.changed)
@@ -3065,9 +3172,12 @@ def stopped(number: int, frame: Any) -> None:
 
 def ready(server: Server) -> None:
     """Tell `metaform web` the server listens: one line on the pipe it inherited as standard output, which is then
-    pointed at the log so nothing else is ever written to the pipe, VIEW-002."""
+    pointed at the log so nothing else is ever written to the pipe by chance, VIEW-002. Under the watchdog the pipe
+    is kept, never inherited, for the server to say why it ends, `overran`; it closes as the server ends."""
     sys.stdout.write(json.dumps({'pid': os.getpid(), 'port': server.port}) + '\n')
     sys.stdout.flush()
+    if server.supervisor is not None:
+        server.told = os.dup(sys.stdout.fileno())
     os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
 
 

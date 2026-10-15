@@ -23,7 +23,6 @@ import os
 import re
 import subprocess
 import sys
-import time
 import webbrowser
 from pathlib import Path
 from typing import Any, cast
@@ -158,23 +157,21 @@ def connect(ctx: Context) -> dict[str, Any]:
         tunnel.write_state(held)
 
     async def run() -> None:
-        async def beat() -> None:
-            while True:
-                tunnel.write_state(held)
-                await anyio.sleep(20)
-        async with anyio.create_task_group() as group:
-            group.start_soon(beat)
-            try:
-                await tunnel.serve(Path(ctx.folder), made, _allows(ctx),
-                                   full_audit=str(ctx.setting('cloud_audit')) == 'full', say=ctx.say, state=state)
-            except tunnel.Stopped as stopped:  # kept, so it leaves the task group as itself
-                ended.append(stopped)
-            finally:
-                group.cancel_scope.cancel()
+        try:
+            await tunnel.serve(Path(ctx.folder), made, _allows(ctx),
+                               full_audit=str(ctx.setting('cloud_audit')) == 'full', say=ctx.say, state=state)
+        except tunnel.Stopped as stopped:
+            ended.append(stopped)
     ended: list[tunnel.Stopped] = []
-    state({'state': 'connecting'})
-    with contextlib.suppress(KeyboardInterrupt):
-        anyio.run(run)
+    with contextlib.ExitStack() as holding:
+        # The lock says this connection runs for as long as its process does, a crash included; `status` reads it,
+        # never a beat, QUAL-015. A second connect finds it held and leaves it to the first.
+        home.mkdir_private(tunnel.lock_file().parent)
+        with contextlib.suppress(home.Held):
+            holding.enter_context(home.file_lock(tunnel.lock_file(), wait=False))
+        state({'state': 'connecting'})
+        with contextlib.suppress(KeyboardInterrupt):
+            anyio.run(run)
     if ended:
         state({'state': 'stopped', 'reason': str(ended[0]), 'next': ended[0].next_step})
         raise Stop(str(ended[0]), ended[0].next_step)
@@ -183,15 +180,26 @@ def connect(ctx: Context) -> dict[str, Any]:
 
 
 def _connection() -> dict[str, Any]:
-    from .tunnel import state_file
+    from . import tunnel
     try:
-        found: Any = json.loads(state_file().read_text(encoding='utf-8'))
+        found: Any = json.loads(tunnel.state_file().read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return {'state': 'not running'}
     record: dict[str, Any] = cast(dict[str, Any], found) if isinstance(found, dict) else {}
-    if record.get('state') != 'stopped' and time.time() - float(record.get('beat') or 0) > 60:
-        record['state'] = 'not running'
+    if record.get('state') != 'stopped' and not _held(tunnel.lock_file()):
+        record['state'] = 'not running'  # its process ended without saying so: nothing holds its lock
     return record
+
+
+def _held(path: Path) -> bool:
+    """Whether a running process holds the lock on the file."""
+    if not path.exists():
+        return False
+    try:
+        with home.file_lock(path, wait=False):
+            return False
+    except home.Held:
+        return True
 
 
 def status(ctx: Context) -> dict[str, Any]:

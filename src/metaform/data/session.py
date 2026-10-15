@@ -48,6 +48,16 @@ class Tx:
     path: Path = field(default_factory=Path)
     pending: list[Op] = field(default_factory=list[Op])
     kinds: set[str] = field(default_factory=set[str])  # the kinds of op this transaction wrote, VIEW-018
+    about: dict[str, set[str]] = field(default_factory=dict[str, set[str]])  # what its writes concern, `concern`
+
+    def concern(self, *, work_id: str | None = None, session_id: str | None = None, kind: str | None = None) -> None:
+        """Say what this write concerns: the ticket, the dispatch session and the kind of change, carried on its
+        `map.changed` so a listener acts only on the changes that are its own, BASE-053. A write that says nothing
+        leaves them unknown."""
+        for key, value in (('work_ids', work_id), ('session_ids', session_id), ('kinds', kind)):
+            held = self.about.setdefault(key, set())
+            if value:
+                held.add(value)
 
     def execute(self, statement: str, values: Any = ()) -> sqlite3.Cursor:
         """Issue SQL through the DAO inside this operation's transaction: a module's own tables."""
@@ -217,7 +227,8 @@ class Session:
                     raise
                 db.execute('COMMIT')
             if db.total_changes:  # the chassis announces it when the command ends, VIEW-018
-                changes.note(self.project_id, metaform.id, written | {f'op:{kind}' for kind in tx.kinds}, held.seq)
+                changes.note(self.project_id, metaform.id, written | {f'op:{kind}' for kind in tx.kinds}, held.seq,
+                             about=tx.about)
 
     @contextmanager
     def read(self, *, required: tuple[str, Tables] | None = None) -> Generator[Tx, None, None]:

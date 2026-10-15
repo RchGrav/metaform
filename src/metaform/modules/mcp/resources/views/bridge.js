@@ -150,7 +150,11 @@
 
   /* `work` run now and every `ms` while the view is on screen, and never after the host tears it down: an
    * IntersectionObserver sees the frame scrolled out of the conversation, and the page's visibility a hidden tab.
-   * Returns what stops it. */
+   * Returns what stops it. This is the bounded wait on a system that cannot push: an MCP Apps host gives a view no
+   * push from the server (ext-apps 2.0.3's App events are toolinput, toolinputpartial, toolresult, toolcancelled and
+   * hostcontextchanged). It cannot move to a worker thread: under the specification's default content policy
+   * (script-src 'self' 'unsafe-inline', no worker-src) a view's worker is refused, and the policy fields a view may
+   * ask for (connectDomains, resourceDomains, frameDomains, baseUriDomains) cannot allow one. */
   function poll(work, ms) {
     let timer = null, seen = true, busy = false;
     const tick = async () => {
@@ -240,6 +244,7 @@
   }
 
   window.MetaformView = {framed, config, connect, on, call, can, selected, quietly, poll, display, modes, web, copy,
+    connected: () => ready,
     host: () => host, app: () => app, shows: () => current,
     turner: handler => { turner = handler; if (app) follow(); },
     fullscreen: mode => display(mode || 'fullscreen')};

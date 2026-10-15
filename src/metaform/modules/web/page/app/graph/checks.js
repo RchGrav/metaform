@@ -132,6 +132,8 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   figureAt: (x, y) => figureAt(x, y),
   at3d,
   ground: () => G ? G.backgroundColor() : null};
+// said once it is there, for a script that ran before the page's modules, such as the MCP map view's map.js
+window.dispatchEvent(new Event('metaform:api'));
 
 /* Select the node at an Address once the first map is drawn; says whether there is one. */
 async function selectAddress(address) {

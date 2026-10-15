@@ -3,11 +3,12 @@ server answers the calls client.py makes as Paperclip's REST API answers them, a
 through the module's OPENER, the opener every Client the module makes is given."""
 from __future__ import annotations
 
+import contextlib
 import io
 import json
+import queue
 import subprocess
 import sys
-import time
 import urllib.error
 import urllib.parse
 from datetime import UTC, datetime, timedelta
@@ -40,6 +41,13 @@ class Paperclip:
         self.me = AGENT
         self.made = 0
         self.watchers: list[tuple[list[str], Any]] = []  # each watcher started: its argv and folder
+        self.live: queue.Queue[str | None] = queue.Queue()  # the live events stream's messages; None closes it
+        self.streams: list[tuple[str, dict[str, str]]] = []  # each live events stream opened: its URL and headers
+
+    def stream(self, url: str, headers: Any) -> Any:
+        """The company's live events WebSocket, open until None is put on `live`."""
+        self.streams.append((url, dict(headers)))
+        return iter(self.live.get, None)
 
     def __call__(self, request: urllib.request.Request, timeout: float | None = None) -> io.BytesIO:
         url = urllib.parse.urlsplit(request.full_url)
@@ -157,12 +165,13 @@ class Paperclip:
 
 
 @pytest.fixture
-def server(monkeypatch) -> Paperclip:
+def server(monkeypatch) -> Any:
     for name in ('PAPERCLIP_API_URL', 'PAPERCLIP_API_KEY', 'PAPERCLIP_COMPANY_ID', 'PAPERCLIP_AGENT_ID',
                  'PAPERCLIP_RUN_ID', 'PAPERCLIP_TASK_ID'):
         monkeypatch.delenv(name, raising=False)
     found = Paperclip()
     monkeypatch.setattr(paperclip, 'OPENER', found)
+    monkeypatch.setattr(paperclip, 'STREAM', found.stream)
     started = subprocess.Popen
 
     def spawn(argv: list[str], *args: Any, **options: Any) -> Any:
@@ -172,7 +181,8 @@ def server(monkeypatch) -> Paperclip:
         found.watchers.append((list(argv), options.get('cwd')))
         return SimpleNamespace(pid=4242)
     monkeypatch.setattr(paperclip.subprocess, 'Popen', spawn)
-    return found
+    yield found
+    found.live.put(None)  # a stream a watcher left open closes
 
 
 @pytest.fixture
@@ -192,6 +202,17 @@ def folder(run, tmp_path, server):
     run('enable', 'paperclip', cwd=made)
     run('set', '--paperclip-company', COMPANY, cwd=made)
     return made
+
+
+@contextlib.contextmanager
+def running_watcher() -> Any:
+    """A watcher of the project running in another process, as its lock and record show it."""
+    from metaform import home
+    home.mkdir_private(paperclip.run_file('proj').parent)
+    paperclip.run_file('proj').write_text(json.dumps({'pid': 4242}), encoding='utf-8')
+    with home.file_lock(paperclip.lock_file('proj'), wait=False):
+        yield
+    paperclip.run_file('proj').unlink(missing_ok=True)
 
 
 def verb(folder, name: str, **nouns: Any) -> Any:
@@ -415,8 +436,8 @@ def test_web_started_starts_one_watcher_while_issues_are_followed(folder, server
     assert [(argv[-2:], cwd) for argv, cwd in server.watchers] == [(['paperclip', 'watch'], folder)]
 
     server.watchers.clear()
-    paperclip.run_file('proj').write_text(json.dumps({'pid': 4242, 'beat': time.time()}), encoding='utf-8')
-    assert web_started() is None and server.watchers == []  # one watcher beats already
+    with running_watcher():
+        assert web_started() is None and server.watchers == []  # one watcher runs already
 
 
 def test_watch_syncs_closes_and_removes_its_record(folder, server, monkeypatch):
@@ -429,10 +450,10 @@ def test_watch_syncs_closes_and_removes_its_record(folder, server, monkeypatch):
     record = paperclip.run_file('proj')
     running: list[tuple[bool, bool]] = []
 
-    def sleep(seconds: float) -> None:  # the first wait after the first sync stops it, as Ctrl-C or SIGTERM does
+    def waiting(*given: Any) -> Any:  # the first wait after the first sync stops it, as Ctrl-C or SIGTERM does
         running.append((record.exists(), sys.stdout.line_buffering))  # each line reaches its log as said
         raise KeyboardInterrupt
-    monkeypatch.setattr(paperclip.time, 'sleep', sleep)
+    monkeypatch.setattr(paperclip, '_next', waiting)
     said: list[str] = []
     assert paperclip.watch(context('paperclip', folder, sink=said.append)) == {'state': 'stopped', 'syncs': 1}
     closed = store.ticket(shown['ticket']).work
@@ -448,12 +469,11 @@ def test_send_starts_one_watcher_and_web_start_anywhere_starts_one_for_each_proj
     shown = sent_out(folder, 'Wire the beeper')
     assert server.watchers == [(server.watchers[0][0], folder)] and server.watchers[0][0][-2:] == ['paperclip', 'watch']
     assert 'process 4242' in shown['next']  # the watcher just started, before it has written its record
-    paperclip.run_file('proj').write_text(json.dumps({'pid': 4242, 'beat': time.time()}), encoding='utf-8')
-    verb(folder, 'send', id=shown['ticket'])
-    sent_out(folder, 'Wire the bell')
+    with running_watcher():
+        verb(folder, 'send', id=shown['ticket'])
+        sent_out(folder, 'Wire the bell')
     assert len(server.watchers) == 1  # one runs, so neither a repeat nor another send starts a second
 
-    paperclip.run_file('proj').unlink()
     assert paperclip.web_started({}, context('paperclip', tmp_path)) == {'paperclip': 'watching',
                                                                           'started': {'proj': 4242}}
     assert [cwd for _, cwd in server.watchers] == [folder, folder]
@@ -464,9 +484,53 @@ def test_the_watcher_ends_once_nothing_is_left_to_follow_with_its_lines_written_
     server.comment(shown['issue_id'], 'Fixed in src/beep.c.', authorAgentId=WORKER)
     server.issues[shown['issue_id']]['status'] = 'done'
 
-    def sleep(seconds: float) -> None:
+    def waiting(*given: Any) -> Any:
         raise AssertionError('the watcher waited with nothing left to follow')
-    monkeypatch.setattr(paperclip.time, 'sleep', sleep)
+    monkeypatch.setattr(paperclip, '_next', waiting)
     assert verb(folder, 'watch') == {'state': 'idle', 'syncs': 1}
     assert Store('proj').ticket(shown['ticket']).work.resolution == 'Fixed in src/beep.c.'
     assert not paperclip.run_file('proj').exists() and getattr(sys.stdout, 'line_buffering', True)
+
+
+@pytest.mark.req('QUAL-015')
+def test_the_watcher_syncs_a_link_when_paperclip_says_its_issue_changed_and_reads_nothing_for_other_events(
+        folder, server, monkeypatch):
+    """The watcher follows Paperclip's live events: a burst of events on other issues, other entities and of other
+    kinds, and map.changed naming other tickets, reads nothing; an activity on its own issue syncs it at once, and the
+    watcher, with nothing left to follow, ends."""
+    import threading
+
+    from metaform.module import Context
+    shown = sent_out(folder, 'Wire the beeper')
+    handlers = []
+
+    class Heard:
+        def close(self):
+            return None
+    monkeypatch.setattr(Context, 'listen', lambda self, handler: (handlers.append(handler), Heard())[1])
+    ended: list[Any] = []
+    running = threading.Thread(target=lambda: ended.append(verb(folder, 'watch')), daemon=True)
+    running.start()
+    threading.Event().wait(1.0)  # the stream open and the first sync done
+
+    def reads() -> int:
+        return sum(1 for method, path, _ in server.calls if method == 'GET' and path.startswith('/issues/'))
+    before = reads()
+    for _ in range(50):
+        for event in ({'type': 'activity.logged', 'payload': {'entityType': 'issue', 'entityId': 'another-issue'}},
+                      {'type': 'heartbeat.run.log', 'payload': {'entityType': 'issue', 'entityId': shown['issue_id']}},
+                      {'type': 'activity.logged', 'payload': {'entityType': 'agent', 'entityId': shown['issue_id']}}):
+            server.live.put(json.dumps(event))
+        for handler in handlers:
+            handler({'project': 'proj', 'tables': ['op:work', 'ops'], 'work_ids': ['another-ticket']})
+    threading.Event().wait(0.5)
+    burst = reads() - before
+    server.comment(shown['issue_id'], 'Fixed in src/beep.c.', authorAgentId=WORKER)
+    server.issues[shown['issue_id']]['status'] = 'done'
+    server.live.put(json.dumps({'type': 'activity.logged', 'payload': {
+        'entityType': 'issue', 'entityId': shown['issue_id'], 'action': 'issue_updated'}}))
+    running.join(5)
+    assert burst == 0
+    assert ended == [{'state': 'idle', 'syncs': 2}]
+    assert Store('proj').ticket(shown['ticket']).work.resolution == 'Fixed in src/beep.c.'
+    assert server.streams[0][0] == f'ws://localhost:3100/api/companies/{COMPANY}/events/ws'

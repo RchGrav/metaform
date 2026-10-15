@@ -112,7 +112,7 @@ task per request the broker opens, and the MCP app's lifespan.
 ## Layers
 
 None. What it keeps is in the home, not in any project: `cloud/credentials.json`, `cloud/audit.jsonl` (rotated at 10
-MiB, five older files kept) and `cloud/connect.json`, the tunnel's state and heartbeat for `status`.
+MiB, five older files kept) and `cloud/connect.json`, the tunnel's state for `status`, beside `cloud/connect.lock`, which a running `connect` holds locked, so `status` reads a connection whose process ended as not running.
 
 ## Lifecycle and cleanup
 

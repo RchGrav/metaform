@@ -31,13 +31,15 @@ import contextlib
 import json
 import math
 import os
+import queue
 import re
 import signal
 import subprocess
 import sys
+import threading
 import time
 import uuid
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from datetime import UTC, datetime, timedelta
 from importlib import resources
 from pathlib import Path
@@ -66,7 +68,7 @@ from metaform.module import (
 from .client import Client, Opener, PaperclipError
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
-DEPENDENCIES = ()
+DEPENDENCIES = ('websockets>=13',)  # Paperclip's live events, read from its WebSocket
 SHIPS_DISABLED = True  # it needs a Paperclip server, which most projects do not run
 REMOTE_AGENT = False  # it reaches a Paperclip server on the person's own machine or network
 
@@ -87,10 +89,12 @@ UUID = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-
 BRIDGE = uuid.UUID('6f1c1d2e-8a51-4c41-9a44-7d7f3c0b8e10')  # names each bridged message's clientRequestId, uuid5
 CANDIDATES = 12  # the Addresses Jev chooses among when an issue names none, the best matches of its words
 RESOLVED = 2000  # the most of an assignee's last comment kept as the resolution of a ticket whose issue is done
-BEAT = 20  # seconds between the watcher's beats in its run file; one older than three beats is a watcher gone
+BACKOFF_FIRST, BACKOFF_MOST = 1.0, 60.0  # seconds before reconnecting a dropped live events stream, doubling
+Stream = Callable[[str, Mapping[str, str]], Iterator[str]]  # opens a live events stream: its text messages
 WORD = re.compile(r'[a-z0-9]{3,}')
 PROMPTS = resources.files(__name__)
 OPENER: Opener | None = None  # what opens each request to Paperclip; urlopen when None, an in-memory server in tests
+STREAM: Stream | None = None  # what opens Paperclip's live events; a WebSocket when None, a fake in tests
 
 # Where Metaform calls out to and which agents it hands work to are the person's to decide, never an agent's over MCP,
 # CLI-011, so every setting here is person_only; the token itself is never a setting.
@@ -116,7 +120,8 @@ settings.number('paperclip_check_minutes', 10, min=1, max=1440, person_only=True
                 details='Each issue heartbeat takes carries an issue monitor of kind external_service, so Paperclip '
                         'reads it as held by an outside service rather than as a stuck run, and wakes the agent this '
                         'many minutes on to sync it. Each heartbeat sets the next check while the ticket is open. '
-                        'paperclip watch syncs this often too.')
+                        'paperclip watch follows Paperclip\'s live events instead, and syncs this often only for a '
+                        'server that has no live events stream.')
 # Jev's choice of an Address for an issue that names none is the decision point paperclip.route, named in the chassis's
 # jev_decisions like every other: settings cleanup 2026-10-15 folded the separate switch paperclip_jev_route into it.
 ROUTE_DECISION = 'paperclip.route'
@@ -498,10 +503,10 @@ def _follows(ctx: Context, started: int | None = None) -> str:
     `started` before it has written its record."""
     found = {'pid': started} if started is not None else _watcher(str(ctx.project)) if ctx.project else None
     if found is not None:
-        return (f"the ticket follows the issue: the Paperclip watcher, process {found.get('pid')}, runs metaform "
-                'paperclip sync every paperclip_check_minutes')
-    return ('the ticket follows the issue each time metaform paperclip sync runs; metaform paperclip watch runs it '
-            'every paperclip_check_minutes, and send and web start start the watcher while issues are open')
+        return (f"the ticket follows the issue: the Paperclip watcher, process {found.get('pid')}, syncs it as "
+                'Paperclip says the issue changed')
+    return ('the ticket follows the issue each time metaform paperclip sync runs; metaform paperclip watch syncs it '
+            'as Paperclip says the issue changed, and send and web start start the watcher while issues are open')
 
 
 def _record(store: Store, work_id: str) -> WorkRecord | None:
@@ -843,11 +848,16 @@ def sync(ctx: Context) -> dict[str, Any]:
     agent's session on it; for a ticket a Metaform agent works, comments come in as messages at the Address, its
     questions go out as question cards and their answers come back as replies; a ticket a Metaform agent ended, or
     the person cancelled, is reported on its issue."""
-    store = ctx.require_store()
-    client = _client(ctx)
+    return _synced(ctx, ctx.require_store(), _client(ctx))
+
+
+def _synced(ctx: Context, store: Store, client: Client, only: set[str] | None = None) -> dict[str, Any]:
+    """`sync` of every link, or only of the links of the issues in `only`."""
     changed: list[dict[str, Any]] = []
     failed: list[str] = []
     for row in list(_links(store)):
+        if only is not None and row['issue_id'] not in only:
+            continue
         try:
             one = _sync_one(ctx, store, client, row)
         except (PaperclipError, Stop, StoreError) as error:  # one link's fault is reported, never the heartbeat's
@@ -861,18 +871,31 @@ def sync(ctx: Context) -> dict[str, Any]:
 # ------------------------------------------------------------------------------------------------------ the watcher
 
 def run_file(project: str) -> Path:
-    """The running watcher's record for a project, its pid and its last beat."""
+    """The running watcher's record for a project: its pid, folder and start."""
     return home.home() / 'run' / 'paperclip' / f'{project}.json'
 
 
+def lock_file(project: str) -> Path:
+    """The file a project's watcher holds locked while it runs; the system lets go of it when the watcher ends, by a
+    crash too, so whether one runs is never read from a time."""
+    return run_file(project).with_suffix('.lock')
+
+
 def _watcher(project: str) -> dict[str, Any] | None:
-    """The watcher running for a project: its record, while it beats; None when there is none or it has gone."""
+    """The watcher running for a project: its record, while it holds its lock; None when none holds it."""
+    path = lock_file(project)
+    if not path.exists():
+        return None
+    try:
+        with home.file_lock(path, wait=False):
+            return None
+    except home.Held:
+        pass
     try:
         found: Any = json.loads(run_file(project).read_text(encoding='utf-8'))
     except (OSError, ValueError):
-        return None
-    record = cast(dict[str, Any], found) if isinstance(found, dict) else {}
-    return record if time.time() - float(record.get('beat') or 0) <= 3 * BEAT else None
+        found = {}
+    return cast(dict[str, Any], found) if isinstance(found, dict) else {}
 
 
 def _followed(store: Store, row: dict[str, Any]) -> bool:
@@ -890,32 +913,145 @@ def _left(ctx: Context, store: Store) -> bool:
     return _on_surface(ctx, 'paperclip') and any(_followed(store, row) for row in _links(store))
 
 
-def _idle(ctx: Context, store: Store, project: str) -> bool:
-    """Whether the watcher ends: nothing is left to follow. Its record goes before the links are read again, so a
-    ticket sent in between, whose send saw this watcher live and started none, keeps this one going; another watcher
-    started meanwhile follows it instead."""
+def _idle(ctx: Context, store: Store, project: str, holding: contextlib.ExitStack, record: dict[str, Any]) -> bool:
+    """Whether the watcher ends: nothing is left to follow. Its lock and record go before the links are read again, so
+    a ticket sent in between, whose send saw this watcher live and started none, keeps this one going, its lock taken
+    again; another watcher started meanwhile follows it instead."""
     if _left(ctx, store):
         return False
     with contextlib.suppress(OSError, ValueError):
         if json.loads(run_file(project).read_text(encoding='utf-8')).get('pid') == os.getpid():
             run_file(project).unlink(missing_ok=True)
-    return not _left(ctx, store) or _watcher(project) is not None
+    holding.close()
+    if not _left(ctx, store):
+        return True
+    try:
+        holding.enter_context(home.file_lock(lock_file(project), wait=False))
+    except home.Held:
+        return True
+    home.write_private(run_file(project), json.dumps(record))
+    return False
+
+
+def _websocket(url: str, headers: Mapping[str, str]) -> Iterator[str]:
+    """The live events WebSocket, opened now; its text messages until it closes. NoStream for a server that answers
+    the upgrade 404, which has no such stream."""
+    from websockets.exceptions import InvalidStatus
+    from websockets.sync.client import connect
+    try:
+        socket = connect(url, additional_headers=dict(headers), open_timeout=15)
+    except InvalidStatus as error:
+        if error.response.status_code == 404:
+            raise NoStream(f'{url} answered 404') from None
+        raise
+
+    def messages() -> Iterator[str]:
+        with socket:
+            yield from (message for message in socket if isinstance(message, str))
+    return messages()
+
+
+class NoStream(Exception):
+    """A Paperclip server with no live events stream."""
+
+
+class Live(threading.Thread):
+    """Paperclip's live events for the company, `/api/companies/<id>/events/ws`, the stream its own pages follow
+    (server/src/realtime/live-events-ws.ts): an `activity.logged` on an issue the watcher follows is handed to it as
+    ('issue', id); every other event is dropped unread. Each connection, the first too, is handed over as
+    ('connected', when), since what happened while none was open was never heard. A drop reconnects with backoff. A
+    server with no such stream cannot push: ('due',) is then handed over every paperclip_check_minutes, from this one
+    thread, the one place the watcher waits on a timer for a change."""
+
+    def __init__(self, client: Client, company: str, minutes: int,
+                 events: queue.Queue[tuple[Any, ...]]) -> None:
+        super().__init__(name='paperclip live events', daemon=True)
+        origin = client.url.replace('https://', 'wss://', 1).replace('http://', 'ws://', 1)
+        self.url = f'{origin}/api/companies/{company}/events/ws'
+        self.headers = {'Authorization': f'Bearer {client.token}'} if client.token else {}
+        self.minutes, self.events = minutes, events
+        self.followed: frozenset[str] = frozenset()  # the issues the watcher follows, set by it after each sync
+        self.stopping = threading.Event()
+
+    def run(self) -> None:
+        wait = BACKOFF_FIRST
+        while not self.stopping.is_set():
+            try:
+                messages = (STREAM or _websocket)(self.url, self.headers)
+                self.events.put(('connected', time.monotonic()))
+                wait = BACKOFF_FIRST
+                for text in messages:
+                    self.heard(text)
+            except NoStream as missing:
+                self.events.put(('said', f'{missing}: no live events, so it syncs every {self.minutes} minutes'))
+                while not self.stopping.wait(60 * self.minutes):
+                    self.events.put(('due',))
+                return
+            except Exception as error:  # noqa: BLE001  a drop or a refusal: said, and tried again after the backoff
+                self.events.put(('said', f'live events dropped: {type(error).__name__}: {error}'))
+            if self.stopping.wait(wait):  # the backoff after a failure
+                return
+            wait = min(BACKOFF_MOST, wait * 2)
+
+    def heard(self, text: str) -> None:
+        try:
+            event: Any = json.loads(text)
+        except ValueError:
+            return
+        if not isinstance(event, dict) or cast(dict[str, Any], event).get('type') != 'activity.logged':
+            return
+        payload = _object(cast(dict[str, Any], event).get('payload'))
+        issue = str(payload.get('entityId') or '') if payload.get('entityType') == 'issue' else ''
+        if issue and issue in self.followed:
+            self.events.put(('issue', issue))
+
+    def stop(self) -> None:
+        self.stopping.set()
+
+
+def _next(events: queue.Queue[tuple[Any, ...]], began: float,
+          issues_of: Callable[[set[str]], set[str]]) -> tuple[set[str] | None, list[str]]:
+    """Wait for what the watcher syncs next, then take everything else already handed over with it, so a burst costs
+    one sync: the issues named, or None for every link; and what to say."""
+    taken = [events.get()]
+    with contextlib.suppress(queue.Empty):
+        while True:
+            taken.append(events.get_nowait())
+    only: set[str] | None = set()
+    said: list[str] = []
+    for item in taken:
+        kind = item[0]
+        if kind == 'said':
+            said.append(str(item[1]))
+        elif kind == 'issue' and only is not None:
+            only.add(str(item[1]))
+        elif kind == 'work' and only is not None:
+            only |= issues_of(cast(set[str], item[1]))
+        elif kind == 'connected' and float(item[1]) <= began:
+            continue  # connected before the last whole sync began, which covered it
+        elif kind in ('connected', 'due', 'local'):
+            only = None
+    return only, said
 
 
 def watch(ctx: Context) -> dict[str, Any]:
-    """Run sync every paperclip_check_minutes, so each ticket follows its issue with no one running it, until stopped
-    or nothing is left to follow."""
+    """Follow every link while there is something to follow: a whole sync at the start and after each (re)connection
+    of Paperclip's live events, and a sync of one link when Paperclip says its issue changed, or when a map.changed
+    from another process names its ticket, BASE-053. Nothing syncs on a timer, QUAL-015, but for a server with no live
+    events stream. Until stopped, or until nothing is left to follow."""
     store = ctx.require_store()
     project = str(store.project_id)
-    live = _watcher(project)
-    if live is not None:
-        raise Stop(f"The Paperclip watcher already runs here, process {live.get('pid')}.", 'metaform paperclip links')
-    _client(ctx)  # no server set is said now, not at the first sync
+    client, company = _client(ctx), _company(ctx)  # no server or company set is said now, not at the first sync
     home.mkdir_private(run_file(project).parent)
+    holding = contextlib.ExitStack()
+    try:
+        holding.enter_context(home.file_lock(lock_file(project), wait=False))
+    except home.Held:
+        live = _watcher(project) or {}
+        raise Stop(f"The Paperclip watcher already runs here, process {live.get('pid')}.",
+                   'metaform paperclip links') from None
     record = {'pid': os.getpid(), 'project': project, 'folder': str(ctx.folder), 'started': now()}
-
-    def beat() -> None:
-        home.write_private(run_file(project), json.dumps({**record, 'beat': time.time()}))
+    home.write_private(run_file(project), json.dumps(record))
 
     def stopped(number: int, frame: Any) -> None:
         raise KeyboardInterrupt  # SIGTERM, from a process manager, stops it as Ctrl-C does, so the record goes too
@@ -926,29 +1062,64 @@ def watch(ctx: Context) -> dict[str, Any]:
     reconfigure = getattr(sys.stdout, 'reconfigure', None)
     if callable(reconfigure):  # its log is a file, so each line is written as it is said, not at exit
         reconfigure(line_buffering=True)
+    events: queue.Queue[tuple[Any, ...]] = queue.Queue()
+    stream = Live(client, company, int(ctx.setting('paperclip_check_minutes') or 10), events)
+    tickets: dict[str, str] = {}  # each followed ticket's issue, for map.changed naming tickets
+
+    def heard(payload: dict[str, Any]) -> None:
+        """A map.changed from another process, in the listener's thread: one naming tickets counts only for those
+        this watcher follows; one naming none counts when it wrote tickets or messages, or says nothing."""
+        if payload.get('project') != project:
+            return
+        given: Any = payload.get('work_ids')
+        if isinstance(given, list):
+            named = {str(one) for one in cast(list[Any], given)} & set(tickets)
+            if named:
+                events.put(('work', named))
+            return
+        tables: Any = payload.get('tables')
+        if tables is None or isinstance(tables, list) and \
+                any(table in ('work', 'messages', 'op:work', 'op:message') for table in cast(list[Any], tables)):
+            events.put(('local',))
+
+    def follow() -> None:
+        rows = [row for row in _links(store) if _followed(store, row) or row['works'] == 'metaform']
+        tickets.clear()
+        tickets.update({str(row['work_id']): str(row['issue_id']) for row in rows})
+        stream.followed = frozenset(tickets.values())
+
     syncs = 0
+    listener = ctx.listen(heard)
     try:
+        follow()
+        stream.start()
+        only: set[str] | None = None
         while True:
-            beat()
-            done = sync(ctx)
+            began = time.monotonic()
+            done = _synced(ctx, store, client, only)
             syncs += 1
             for one in done['changed']:
                 ctx.say(f"{now()} {one['issue']}, ticket {one['ticket']}: " + ', '.join(
                     f'{key} {value}' for key, value in one.items() if key not in ('issue', 'ticket')))
             for one in done['failed']:
                 ctx.say(f'{now()} failed {one}')
-            if _idle(ctx, store, project):
+            if _idle(ctx, store, project, holding, record):
                 return {'state': 'idle', 'syncs': syncs}
-            due = time.monotonic() + 60 * int(ctx.setting('paperclip_check_minutes') or 10)
-            while (left := due - time.monotonic()) > 0:
-                beat()
-                time.sleep(min(BEAT, left))
+            follow()
+            only = set[str]()
+            while only is not None and not only:  # what concerns no link is taken and nothing is synced for it
+                only, said = _next(events, began, lambda named: {tickets[one] for one in named if one in tickets})
+                for line in said:
+                    ctx.say(f'{now()} {line}')
     except KeyboardInterrupt:
         pass
     finally:
+        stream.stop()
+        listener.close()
         with contextlib.suppress(OSError, ValueError):
             if json.loads(run_file(project).read_text(encoding='utf-8')).get('pid') == os.getpid():
                 run_file(project).unlink(missing_ok=True)
+        holding.close()
         if previous is not None:
             with contextlib.suppress(ValueError):
                 signal.signal(signal.SIGTERM, previous)

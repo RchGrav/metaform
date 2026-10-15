@@ -373,14 +373,18 @@ def revoke(ctx: Context) -> Any:
     remote = _on_host(ctx, 'revoke', name, '--confirm')
     if remote is not None:
         return remote
-    if not _store().disable(name):
+    store = _store()
+    account = store.account(name)
+    if account is None or not store.disable(name):
         raise Stop(f'No account {name}.', 'metaform node accounts')
+    from .authserver import ACCOUNTS_TABLE, announce
+    announce(ctx, ACCOUNTS_TABLE, [account.id], 'revoke')  # the running server closes its tunnels now
     return {'revoked': name, 'note': 'Its sessions, invitations and tokens no longer work.'}
 
 
 def signout(ctx: Context) -> Any:
     """Sign an account out everywhere: its generation moves, so every token, session and tunnel it holds stops
-    working; a running broker sees it within half a minute. It signs in again with its passkey."""
+    working; a running broker hears it at once and closes its tunnels. It signs in again with its passkey."""
     name = str(ctx.nouns['name']).lower()
     remote = _on_host(ctx, 'signout', name)
     if remote is not None:
@@ -389,7 +393,10 @@ def signout(ctx: Context) -> Any:
     account = store.account(name)
     if account is None:
         raise Stop(f'No account {name}.', 'metaform node accounts')
-    return {'signed_out': name, 'generation': store.bump_generation(account.id),
+    generation = store.bump_generation(account.id)
+    from .authserver import ACCOUNTS_TABLE, announce
+    announce(ctx, ACCOUNTS_TABLE, [account.id], 'signout')
+    return {'signed_out': name, 'generation': generation,
             'note': 'Every AI tool and machine signed in to it must sign in again.'}
 
 
@@ -402,16 +409,17 @@ def rotate_key(ctx: Context) -> Any:
     remote = _on_host(ctx, 'rotate-key', *(['revoke_old=true'] if revoke_old else []))
     if remote is not None:
         return remote
-    from .authserver import keys_folder
-    from .tokens import RELOAD_SECONDS, Keys
+    from .authserver import KEYS_TABLE, announce, keys_folder
+    from .tokens import Keys
     kid = Keys(keys_folder()).rotate(revoke_old=revoke_old)
+    announce(ctx, KEYS_TABLE, kind='revoke-key' if revoke_old else 'rotate-key')  # the running broker reads its keys
     if revoke_old:
         return {'signing_key': kid, 'revoked': 'every older key',
-                'note': f'Within {int(RELOAD_SECONDS)} seconds the broker signs with the new key and refuses every '
-                        'token signed before: each machine runs metaform cloud login again, each AI tool reconnects.'}
-    return {'signing_key': kid, 'note': f'The broker signs with it within {int(RELOAD_SECONDS)} seconds; tokens signed '
-                                        'before keep working until they expire. For a key that may have been '
-                                        'copied: metaform node rotate-key revoke_old=true'}
+                'note': 'The running broker signs with the new key now and refuses every token signed before: each '
+                        'machine runs metaform cloud login again, each AI tool reconnects.'}
+    return {'signing_key': kid, 'note': 'The running broker signs with it now; tokens signed before keep working until '
+                                        'they expire. For a key that may have been copied: metaform node rotate-key '
+                                        'revoke_old=true'}
 
 
 def auth(ctx: Context) -> None:
@@ -523,9 +531,10 @@ def relay_enrol(ctx: Context) -> dict[str, Any]:
 def relay_gate(ctx: Context) -> None:
     import uvicorn
 
+    from .serving import Serving
     from .tunnel import gate_app
     print(f'Metaform relay gate on 127.0.0.1:{config.GATE_PORT}', file=sys.stderr, flush=True)
-    uvicorn.Server(uvicorn.Config(gate_app(_enrolments()), host='127.0.0.1', port=config.GATE_PORT,
+    Serving(uvicorn.Config(gate_app(_enrolments()), host='127.0.0.1', port=config.GATE_PORT,
                                   log_level='warning')).run()
 
 

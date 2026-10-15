@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import inspect
 import re
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlsplit
@@ -253,19 +254,35 @@ def list_models(ctx: Context) -> dict[str, Any]:
             'folder': str(models.root()), 'browser_folder': str(models.browser_folder())}
 
 
+def progress(ctx: Context, key: str) -> Callable[[dict[str, Any]], None]:
+    """What a download has fetched, published as `voice.download` each time a whole percent more has arrived, so a
+    page shows its bar as the bytes come, never by asking."""
+    shown = [-1]
+
+    def said(status: dict[str, Any]) -> None:
+        total = int(status.get('total') or 0)
+        percent = 100 * int(status.get('done') or 0) // total if total else 0
+        if percent != shown[0]:
+            shown[0] = percent
+            ctx.publish('voice.download', {'key': key, **status})
+    return said
+
+
 def download(ctx: Context) -> dict[str, Any]:
     """Fetch a model into the Metaform home once; the page asks the person, showing the size, before it calls this."""
     which = str(ctx.nouns.get('engine') or 'server')
     if which == 'server':
         model = _server_model(ctx)
-        done = models.download(f'server:{model.name}', models.server_jobs(model))
+        key = f'server:{model.name}'
+        done = models.download(key, models.server_jobs(model), progress(ctx, key))
         present = models.present(models.server_folder(model), model)
         name, size = model.name, model.size
     elif which == 'browser':
         name, variant = _browser_model(ctx), str(ctx.nouns.get('variant') or 'wasm')
         if (name, variant) not in models.BROWSER:
             raise Stop(f'No browser model {name} for {variant}.', 'metaform voice models')
-        done = models.download(f'browser:{name}:{variant}', models.browser_jobs(name, variant))
+        key = f'browser:{name}:{variant}'
+        done = models.download(key, models.browser_jobs(name, variant), progress(ctx, key))
         present = models.browser_present(name, variant)['present']
         size = models.browser_present(name, variant)['size']
     else:

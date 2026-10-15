@@ -24,6 +24,58 @@ Tests live in `tests/` (chassis) and `src/metaform/modules/<id>/tests/` (each mo
 `conftest.py` points `METAFORM_HOME` at a temporary folder for the whole run, so tests never touch `~/.metaform`. The `home` fixture gives each test a fresh home; the `run` fixture runs the real CLI in-process (marker `cli_process`, or `METAFORM_TEST_SUBPROCESS=1`, runs each call as its own process). `@pytest.mark.req('MAP-012')` ties a test to the specification record it protects.
 
 ## Architecture
+This system is built for ultra-low latency and zero-overhead execution. Any code that breaks event-driven paradigms or introduces engine de-optimizations will be rejected at the code-review stage. **No exceptions.**
+
+---
+
+## 1. Zero-Tolerance Polling Ban
+* **Rule:** Absolutely zero polling (`setInterval`, active `while(true)` sleep loops, or ticking loops checking for state changes).
+* **Enforcement:** The system must be 100% reactive. If a state changes, the mutating entity **must** emit an event or call a direct callback. 
+* **Correction:** If you need to know when data is ready, implement a Publisher/Subscriber model, Promises, or direct event listeners. If an upstream system forces polling, isolate that logic into a single dedicated worker thread so it does not block the main engine loop.
+* **Use what exists.** The chassis already has the event system: the bus (`events.publish`, `publish_async`, `Subscription`), the cross-process relay of `map.changed` (`ctx.listen`, `events.listen`), `changes.note`/`announce` after writes, and `ctx.spawn` for owned tasks. A new kind of change becomes a topic on that bus or a field on `map.changed`, never a second mechanism. On the page, the live stream is the server's voice: its closing is how the page knows the server is gone.
+* **Not polling:** a real deadline (a time limit on one request, a silence clock, a timer an agent set), a retry backoff after a failure, and pacing (audio playback, a demo's deliberate stagger). Each fires once for a reason; none wakes up to look for a change.
+
+---
+
+## 2. Event Handlers Do Only What the Event Requires
+Removing timers is not enough: a handler that re-reads or recomputes everything on every event is polling triggered by events, and it costs more the busier the system gets (2026-10-15: ten idle runners at about 80% of a core each, and the page server spawning a subprocess per change).
+* **Rule 1: Events Say What Changed.** Every event carries enough to decide who it concerns: the table or topic, and the ids it touches (project, ticket, session) and the kind of change. `map.changed` carries `work_ids`, `session_ids` and `kinds`.
+* **Rule 2: Handlers Filter First.** A handler acts only on events that concern it, decided from the event alone, and then does only the work that change requires: read the one record, not the collection.
+* **Rule 3: Never React to Your Own Writes.** A process ignores the events its own writes caused.
+* **Rule 4: Coalesce Bursts.** Events that arrive while work for an earlier one is pending merge into that work; a burst costs one pass, not one per event.
+* **Rule 5: Prove It.** A change to an event path shows, before and after: the process's CPU at idle over 60 s, and a test where a burst of events that do not concern the handler causes zero reads.
+
+---
+
+## 3. Object Shape Stability (Strict Monomorphism)
+To keep the JavaScript JIT compiler running at native machine speeds, you must protect object shapes (Hidden Classes/Maps). Sections 3 and 4 bind hot paths: anything that runs per frame, per event, or per item of a large collection (nodes, joins, fibers, flow dots, figures). New code follows them everywhere; existing cold code (setup, menus, one-off settings) is not rewritten for them.
+* **Rule 1: Fixed Constructors.** All objects must initialize every single one of their properties in the constructor. Initialize them to `null`, `undefined`, or a default value if they aren't ready yet.
+* **Rule 2: Absolute Structural Order.** Properties must be assigned in the exact same textual order every single time. Never mix property layouts.
+* **Rule 3: Ban Dynamic Mutations.** Do not add properties to an object after instantiation. Never use the `delete` keyword (e.g., `delete obj.property`); assign the value to `null` or `undefined` instead.
+* **Rule 4: Avoid Megamorphism.** Functions that handle high-frequency events must only receive objects of the exact same shape. Passing more than 4 distinct object types to a hot function drops performance off a cliff.
+* **Rule 5: Contiguous Arrays.** Arrays stay dense and hold one kind of element: no gaps (`arr[100] = x` on a short array), no mixing numbers with objects. A gap turns the array into a hash table. Numeric data in a hot path goes in a typed array (`Float32Array`, `Uint32Array`), sized once.
+* **Rule 6: Structure of Arrays, not Array of Structures.** Hot data that is iterated by field is laid out one array per field, indexed by item: `x[i]`, `y[i]`, `z[i]`, `speed[i]` in typed arrays, not `items[i] = {x, y, z, speed}`. A loop then walks contiguous memory and touches only the fields it uses, there are no per-item objects to keep in one shape or to collect, and the arrays go to the GPU as buffer attributes as they are. An array of objects is fine for cold data looked up by id.
+
+---
+
+## 4. High-Frequency I/O & Graphics Rules (JS Context)
+* **Rule 1: Zero Allocation in Hot Loops.** If a function fires inside an animation frame (`requestAnimationFrame`) or high-frequency event listener, it must allocate **zero** new memory. No `new Object()`, no `[]`, and no `{}`. Use pre-allocated **Object Pools**: made at start or when the map's size changes, each slot reused by flipping an active flag, never by creating and dropping objects. Temporary vectors and matrices (three.js) are module-level scratch objects, reused.
+* **Rule 2: Batched State Mutations.** Do not update downstream systems piecemeal. Batch changes into packed data structures (like `Float32Array`) and flush them in a single, atomic draw or update call. In the 3D map that is the GPU buffers (instanced meshes, buffer attributes). The 2D map stays in SVG: there the batch is one set of DOM writes per frame, all reads before all writes.
+* **Rule 3: Use requestAnimationFrame Only.** All visual loops and rendering pipelines must sync via `requestAnimationFrame`. Periodic timers (`setInterval`) for UI rendering are strictly banned.
+* **Rule 4: Few Draw Calls, Few State Changes.** The cost in graphics is the traffic between the CPU and the GPU. Draw many alike things in one call (instancing, merged geometry). Put textures that are drawn together, such as labels, glyphs and bubbles, in one atlas. Sort what is drawn by material and shader, so the GPU changes state as rarely as possible. Count draw calls and program switches per frame (`renderer.info`) before and after.
+* **Rule 5: Cheaper Frames, Never Fewer.** Performance work lowers the cost of each frame. It never throttles, caps or pauses the frame rate, and the map never idles to save work; lower graphics modes are the person's choice, not a fix. Measure frame time (median, p95, p99) on the real GPU, headless, before and after.
+
+---
+
+## 5. Hot Loop Optimization (Python Context)
+If writing or interfacing with high-performance Python nodes. First remove work that need not happen (section 2); these rules then apply inside genuine hot loops, where a profile shows the time goes. Python 3.11 and later already speed up attribute and global lookups, so measure before and after rather than rewriting cold code for them.
+* **Rule 1: Eliminate Attribute Lookup.** Avoid dot notation (`obj.method`) inside tight `for` loops. Bind the method or attribute to a local variable *before* entering the loop.
+* **Rule 2: Local Scope Priority.** Keep high-intensity computing inside functions rather than the global scope to leverage fast local variable array indexing (`LOAD_FAST`).
+* **Rule 3: Prefer C-Level Iteration.** Use built-in list comprehensions, `map()`, `filter()`, or `itertools` rather than manual `for` loops wherever possible.
+
+---
+
+## Structure
 
 **Chassis and modules.** `src/metaform/*.py` is the chassis: CLI, settings, data, events, loader, home. Everything else is a module in `src/metaform/modules/<id>/`. A module reaches Metaform only through the public base: `metaform.module`, `settings`, `data`, `events`, `prompt_files`, `axiom`, `home`, `outline`, `finish_xml`.
 

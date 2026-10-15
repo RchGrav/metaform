@@ -205,14 +205,14 @@ function markUnread() { DOCK.unread = true; drawDockTab(); }
  * it eases away and leaves no gap, and its threads are kept, so opening it again shows the conversation. The count
  * waits while the person types in it, has the focus in it or the pointer over it; a line arriving or the agent back,
  * a resume, stops it. The close × in its head, Escape inside it and C put it away at any time. In a workspace pane it stays open until explicitly closed. */
-const CHAT_AWAY = {timer: 0, for: null, had: false, wait: 15000};
+const CHAT_AWAY = {timer: 0, for: null, had: false, held: false, wait: 15000};
 function chatAway(session, changed = false) {
   const open = $('#dock').className.startsWith('open') && !chatDocked();
   if (session?.state === 'running') CHAT_AWAY.had = true;
   const gone = open && CHAT_AWAY.had && (session ? session.state !== 'running' : !DOCK.target);
   if (!gone || changed) {
     clearTimeout(CHAT_AWAY.timer);
-    CHAT_AWAY.timer = 0; CHAT_AWAY.for = null;
+    CHAT_AWAY.timer = 0; CHAT_AWAY.for = null; CHAT_AWAY.held = false;
     if (!gone) return;
   }
   const key = session?.session_id || 'none';
@@ -221,16 +221,24 @@ function chatAway(session, changed = false) {
   clearTimeout(CHAT_AWAY.timer);
   CHAT_AWAY.timer = setTimeout(awayNow, CHAT_AWAY.wait);
 }
+const chatHeld = box => box.contains(document.activeElement) || box.matches(':hover') ||
+  Boolean($('#helpdesk .say')?.value.trim());
 function awayNow() {
-  const box = $('#helpdesk');
-  if (box.contains(document.activeElement) || box.matches(':hover') || $('#helpdesk .say')?.value.trim()) {
-    CHAT_AWAY.timer = setTimeout(awayNow, CHAT_AWAY.wait);
-    return;
-  }
   CHAT_AWAY.timer = 0;
+  if (chatHeld($('#helpdesk'))) { CHAT_AWAY.held = true; return; }  // the count starts again when the person leaves it
   CHAT_AWAY.had = false;
   putChatAway();
 }
+/* The person leaving the chat, by focus, pointer or emptying what they typed, starts the put-away count again, once. */
+function chatLeft() {
+  if (!CHAT_AWAY.held) return;
+  requestAnimationFrame(() => {  // after the focus has moved on
+    if (!CHAT_AWAY.held || chatHeld($('#helpdesk'))) return;
+    CHAT_AWAY.held = false;
+    CHAT_AWAY.timer = setTimeout(awayNow, CHAT_AWAY.wait);
+  });
+}
+for (const type of ['focusout', 'mouseleave', 'input']) $('#helpdesk').addEventListener(type, chatLeft);
 /* Put away and opened again, the chat shrinks and fades into its tab and grows back out of it along the same path:
  * only a transform, a translation and a scale about the tab's middle, and its opacity, so its own size and place,
  * as moved and sized, are exactly what they were. Away leaves on the leaving curve, back arrives on the arriving one,

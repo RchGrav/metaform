@@ -281,3 +281,88 @@ def test_after_the_first_list_a_new_error_is_reported_at_once_and_a_known_one_is
         assert [kind for kind, _ in told] == ['autoticket-list', 'autoticket-new']  # the next list is not due yet
     finally:
         driver.close()
+
+
+@pytest.mark.req('QUAL-015')
+def test_a_local_reader_at_its_files_end_sleeps_until_the_file_changes(tmp_path, monkeypatch):
+    """At the end of its file the reader looks again only when the system says the file changed: not on a timer, and
+    not for writes to other files in its folder; a line written to its own file is read at once."""
+    import queue
+    import threading
+
+    from metaform.modules.autoticket import sources
+    log = tmp_path / 'app.log'
+    log.touch()
+    looks = []
+    real = sources.local_identity
+    monkeypatch.setattr(sources, 'local_identity', lambda path: (looks.append(path), real(path))[1])
+    events = queue.Queue()
+    reader = sources.reader(sources.Source(str(log)), '', 0, events)
+    reader.start()
+    try:
+        assert events.get(timeout=5)[1][0] == 'file'
+        threading.Event().wait(0.5)
+        before = len(looks)
+        for at in range(50):  # a burst in the same folder that does not concern it
+            write(tmp_path / 'other.log', [f'2026-10-15 10:00:00 ERROR elsewhere {at}'])
+        threading.Event().wait(1.0)
+        quiet = len(looks) - before
+        write(log, ['2026-10-15 10:00:01 ERROR here'])
+        line = events.get(timeout=2)[1]
+    finally:
+        reader.stop()
+        reader.join(5)
+    assert quiet == 0
+    assert line[:2] == ('line', '2026-10-15 10:00:01 ERROR here')
+
+
+@pytest.mark.req('QUAL-015')
+def test_the_watch_reads_nothing_while_nothing_happens_nor_for_changes_that_do_not_concern_it(run, project,
+                                                                                            monkeypatch):
+    """A watch with its log read to the end touches the store only for an event or a deadline: a quiet second and a
+    burst of map.changed naming other tables or projects cost no read."""
+    import asyncio
+    import threading
+    log = project / 'app.log'
+    log.touch()
+    run('autoticket', 'add', str(log), cwd=project)
+    from metaform.data import Store
+    from metaform.module import Context, context
+    from metaform.modules.autoticket import watch_logs
+    touched = []
+    settled = threading.Event()  # the logs claimed, the lease taken and its first position written
+    real = Store.tables
+
+    def tables(self, *args, **kwargs):
+        touched.append(time.monotonic())
+        if len(touched) >= 3:
+            settled.set()
+        return real(self, *args, **kwargs)
+    monkeypatch.setattr(Store, 'tables', tables)
+    handlers = []
+
+    class Heard:
+        def close(self):
+            pass
+
+    def listen(self, handler):
+        handlers.append(handler)
+        return Heard()
+    monkeypatch.setattr(Context, 'listen', listen)
+    window = []
+
+    def burst():
+        settled.wait(10)
+        threading.Event().wait(0.2)  # the last of those writes ended
+        window.append(time.monotonic())
+        for _ in range(50):
+            for payload in ({'project': 'proj', 'tables': ['ops', 'work']}, {'project': 'other', 'base_id': None},
+                            {'project': 'proj', 'tables': 'dispatch', 'dispatch_tables': ['dispatch.lines']}):
+                for handler in handlers:
+                    handler(payload)
+        threading.Event().wait(1.5)
+        window.append(time.monotonic())
+    threading.Thread(target=burst, daemon=True).start()
+    asyncio.run(watch_logs(context('autoticket', project, nouns={'seconds': 5})))
+    assert len(window) == 2
+    assert [at for at in touched if window[0] <= at <= window[1]] == []

@@ -32,6 +32,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 from collections.abc import Callable, Sequence
@@ -39,7 +40,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, cast
 
-from metaform import home, prompt_files, settings
+from metaform import events, home, prompt_files, settings
 from metaform.data import Column, Index, Store, StoreError, Table, Tables, WorkRecord, status
 from metaform.module import (
     Context,
@@ -2891,9 +2892,12 @@ async def wait(ctx: Context) -> dict[str, Any]:
     heard = asyncio.Event()
 
     def told(payload: dict[str, Any]) -> None:
-        # the thread lines a runner streams change no ticket and no signal, so they wake nothing
+        # the thread lines a runner streams change no ticket and no signal, so they wake nothing; a wait on one ticket
+        # wakes only for a change that names it, or does not say which tickets it concerns
+        named: Any = payload.get('work_ids')
         if payload.get('project') != store.project_id or payload.get('tables') == 'dispatch' \
-                and payload.get('dispatch_tables') == ['dispatch.lines'] and 'signal' not in payload:
+                and payload.get('dispatch_tables') == ['dispatch.lines'] and 'signal' not in payload \
+                or work_id and isinstance(named, list) and work_id not in named:
             return
         loop.call_soon_threadsafe(heard.set)
     limit = float(ctx.setting('dispatch_wait_seconds'))
@@ -3031,6 +3035,7 @@ def threaded(lines: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[st
 
 
 SUBAGENTS_READ = 50  # the most of a running session's subagents the agents key reads, for their figures
+ENDED_STATE = ('about', 'intake')  # what the agents key keeps of an ended session's state: its conversation, intake
 
 
 def read_sessions(ctx: Context) -> dict[str, Any]:
@@ -3074,6 +3079,12 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
     except StoreError:
         pass
     lines, states = threaded(lines)
+    if ctx.nouns.get('thread') is False and not work_id:
+        # The agents key's read of every ticket, done on each change it hears: an ended session keeps only what names
+        # it in the Agents menu, not its commands, capabilities and options, which made this read megabytes.
+        running = {session['session_id'] for session in found if session.get('state') == 'running'}
+        states = {key: state if key in running else {name: state[name] for name in ENDED_STATE if name in state}
+                  for key, state in states.items()}
     # A subagent the agent started, when it advertises them, is a child session of its own, P016: its line in the
     # parent's thread names it, and its own thread is kept under its session id, read here with it.
     children: list[dict[str, Any]] = []
@@ -3292,8 +3303,9 @@ def session_prompts(ctx: Context) -> dict[str, Any]:
     return result
 
 
-def spawn(store: Store, work_id: str, agent: str, extra: list[str], name: str) -> dict[str, Any]:
-    """A runner started detached from the terminal in the project's folder, its output in the log named for it."""
+def spawn(store: Store, work_id: str, agent: str, extra: list[str], name: str, *, kept: bool = False) -> dict[str, Any]:
+    """A runner started detached from the terminal in the project's folder, its output in the log named for it;
+    `kept` for a launch whose caller waits on it, `launched`, which hears the runner exit."""
     log = os.path.join(tempfile.gettempdir(), f'metaform-dispatch-{name}-{work_id}.log')
     with (os.fdopen(os.open(log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), 'ab')
           if home.is_home_path(Path(log)) else open(log, 'ab')) as written:
@@ -3301,7 +3313,12 @@ def spawn(store: Store, work_id: str, agent: str, extra: list[str], name: str) -
                                     '--project', store.project_id],
                                    cwd=store.project().path, stdin=subprocess.DEVNULL, stdout=written, stderr=written,
                                    env=child_environment(), **group_options())
+    if kept:
+        RUNNERS[process.pid] = process
     return {'pid': process.pid, 'log': log}
+
+
+RUNNERS: dict[int, subprocess.Popen[Any]] = {}  # the runners started for a wait, `launched`, by pid
 
 
 def resume(ctx: Context) -> dict[str, Any]:
@@ -3387,7 +3404,7 @@ def intake(ctx: Context) -> dict[str, Any]:
             raise Stop('An intake agent is starting in this project.', 'metaform dispatch sessions thread=false')
         tx.insert('raised', {'work_id': work_id, 'node': '', 'agent': agent, 'started': time.time(),
                              'seq': time.time_ns(), 'asked': words.strip() or None})
-    started = spawn(store, work_id, agent, ['system=true', 'intake=true'], 'intake')
+    started = spawn(store, work_id, agent, ['system=true', 'intake=true'], 'intake', kept=bool(ctx.nouns.get('wait')))
     said = {'state': 'starting', 'work_id': work_id, 'agent': agent, **started, 'session_id': None,
             'conversation': True, 'intake': True}
     return {**said, **launched(store, work_id, started['pid'])} if ctx.nouns.get('wait') else said
@@ -3395,23 +3412,35 @@ def intake(ctx: Context) -> dict[str, Any]:
 
 def launched(store: Store, work_id: str, pid: int) -> dict[str, Any]:
     """How a launch came out: running with its session once the agent made one, or failed with why, read from the
-    session row its runner writes either way. The runner's own start limit bounds the wait; a runner that ends without
-    a row failed too."""
-    while True:
-        held = intake_store(store, work_id) if intake_id(work_id) else store
-        rows = sessions(held, work_id, verify=False) if held is not None else []
-        if not rows and runner_of(pid) != work_id:  # it ended, or is ending: read once more for the row it wrote
-            time.sleep(0.2)
+    session row its runner writes either way. The rows are read again only when the runner says it wrote one for this
+    ticket, its `map.changed` heard through the base's listener, BASE-053, or when it exits; nothing polls. The
+    runner's own start limit bounds the wait; a runner that ends without a row failed too."""
+    from .runner import START_LIMIT
+    heard = threading.Event()
+
+    def told(payload: dict[str, Any]) -> None:
+        named: Any = payload.get('work_ids')
+        if not isinstance(named, list) or work_id in named:
+            heard.set()
+    process = RUNNERS.pop(pid, None)
+    if process is not None:
+        threading.Thread(target=lambda: (process.wait(), heard.set()), name='metaform-launch', daemon=True).start()
+    deadline = time.monotonic() + START_LIMIT
+    with events.listen('dispatch', told):
+        while True:
+            heard.clear()  # before the read, so a change during it wakes the wait again
+            ended = process.poll() is not None if process is not None else runner_of(pid) != work_id
             held = intake_store(store, work_id) if intake_id(work_id) else store
             rows = sessions(held, work_id, verify=False) if held is not None else []
-            if not rows:
+            if rows:
+                row = rows[-1]
+                if row['state'] == 'running':
+                    return {'state': 'running', 'session_id': row['session_id']}
+                return {'state': 'failed', 'reason': str(row.get('how') or 'the runner ended')}
+            if ended:  # read after it ended, so a row it wrote on its way out is in this read
                 return {'state': 'failed', 'reason': 'its runner ended before the agent started; its log says why'}
-        if rows:
-            row = rows[-1]
-            if row['state'] == 'running':
-                return {'state': 'running', 'session_id': row['session_id']}
-            return {'state': 'failed', 'reason': str(row.get('how') or 'the runner ended')}
-        time.sleep(0.25)
+            if not heard.wait(max(deadline - time.monotonic(), 0)):
+                return {'state': 'failed', 'reason': 'its runner did not start the agent in time; its log says why'}
 
 
 async def options(ctx: Context) -> dict[str, Any]:

@@ -3,6 +3,42 @@
 ## You **must** employ the process known broadly known as First-Principles Thinking mixed with Architectural Foresight and User-Centric Engineering.
 In professional software engineering and systems design, this mindset specifically encompasses several established paradigms:
 
+# Performance Enforcement & Event-Driven Architecture Rules
+
+This system is built for ultra-low latency and zero-overhead execution. Any code that breaks event-driven paradigms or introduces engine de-optimizations will be rejected at the code-review stage. **No exceptions.**
+
+---
+
+## 1. Zero-Tolerance Polling Ban
+* **Rule:** Absolutely zero polling (`setInterval`, active `while(true)` sleep loops, or ticking loops checking for state changes).
+* **Enforcement:** The system must be 100% reactive. If a state changes, the mutating entity **must** emit an event or call a direct callback. 
+* **Correction:** If you need to know when data is ready, implement a Publisher/Subscriber model, Promises, or direct event listeners. If an upstream system forces polling, isolate that logic into a single dedicated worker thread so it does not block the main engine loop.
+
+---
+
+## 2. Object Shape Stability (Strict Monomorphism)
+To keep the JavaScript JIT compiler running at native machine speeds, you must protect object shapes (Hidden Classes/Maps).
+* **Rule 1: Fixed Constructors.** All objects must initialize every single one of their properties in the constructor. Initialize them to `null`, `undefined`, or a default value if they aren't ready yet.
+* **Rule 2: Absolute Structural Order.** Properties must be assigned in the exact same textual order every single time. Never mix property layouts.
+* **Rule 3: Ban Dynamic Mutations.** Do not add properties to an object after instantiation. Never use the `delete` keyword (e.g., `delete obj.property`); assign the value to `null` or `undefined` instead.
+* **Rule 4: Avoid Megamorphism.** Functions that handle high-frequency events must only receive objects of the exact same shape. Passing more than 4 distinct object types to a hot function drops performance off a cliff.
+
+---
+
+## 3. High-Frequency I/O & Graphics Rules (JS Context)
+* **Rule 1: Zero Allocation in Hot Loops.** If a function fires inside an animation frame (`requestAnimationFrame`) or high-frequency event listener, it must allocate **zero** new memory. No `new Object()`, no `[]`, and no `{}`. Use pre-allocated **Object Pools**.
+* **Rule 2: Batched State Mutations.** Do not update downstream systems piecemeal. Batch changes into packed data structures (like `Float32Array`) and flush them in a single, atomic draw or update call.
+* **Rule 3: Use requestAnimationFrame Only.** All visual loops and rendering pipelines must sync via `requestAnimationFrame`. Periodic timers (`setInterval`) for UI rendering are strictly banned.
+
+---
+
+## 4. Hot Loop Optimization (Python Context)
+If writing or interfacing with high-performance Python nodes:
+* **Rule 1: Eliminate Attribute Lookup.** Avoid dot notation (`obj.method`) inside tight `for` loops. Bind the method or attribute to a local variable *before* entering the loop.
+* **Rule 2: Local Scope Priority.** Keep high-intensity computing inside functions rather than the global scope to leverage fast local variable array indexing (`LOAD_FAST`).
+* **Rule 3: Prefer C-Level Iteration.** Use built-in list comprehensions, `map()`, `filter()`, or `itertools` rather than manual `for` loops wherever possible.
+
+
 ⚙️ Core Methodologies
 • Defensive Design (or Defensive Engineering): Anticipating edge cases, future system changes, and human error before they happen to build a resilient product.
 • Configurability / Extensibility First: Ensuring that architectural forks in the road are handled by flexible configuration rather than hardcoded assumptions.

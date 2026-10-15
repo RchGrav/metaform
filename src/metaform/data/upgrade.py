@@ -65,7 +65,6 @@ import os
 import re
 import shutil
 import sqlite3
-import time
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -74,7 +73,7 @@ from typing import Any
 
 from .. import home
 from ..errors import StoreError
-from ..sqlite import BUSY_SECONDS, COMPATIBLE_FROM, SCHEMA_VERSION, connect, file_lock, private, stamp
+from ..sqlite import COMPATIBLE_FROM, SCHEMA_VERSION, connect, file_lock, private, stamp
 from . import tables
 from .schema import LAYOUT_20, STORE_SCHEMA
 
@@ -148,13 +147,19 @@ def _upgraded(db: sqlite3.Connection, path: Path, found: str) -> bool:
     # connection cannot hold it: SQLite refuses to back up from a connection inside its own write transaction.
     guard = connect(path)
     guard.execute('BEGIN IMMEDIATE')
+    kept = _kept_folder(path) / path.name
     try:
-        private(work)
-        copy = sqlite3.connect(work)
+        # The backup is SQLite's own copy of the file with every commit in its write-ahead log, taken under the guard,
+        # so it is whole however far a reader in another process holds the log back: nothing waits for that reader.
+        home.mkdir_private(kept.parent)
+        private(kept)
+        copy = sqlite3.connect(kept)
         try:
             db.backup(copy)
         finally:
             copy.close()
+        private(work)
+        shutil.copyfile(kept, work)
         old = sqlite3.connect(work, isolation_level=None)
         try:
             if found in LEGACY:
@@ -162,9 +167,6 @@ def _upgraded(db: sqlite3.Connection, path: Path, found: str) -> bool:
             _to_log(old, fresh, found)
         finally:
             old.close()
-        kept = _kept_folder(path)
-        home.mkdir_private(kept)
-        _backfilled(db, path)
     except BaseException:
         work.unlink(missing_ok=True)
         raise
@@ -172,29 +174,14 @@ def _upgraded(db: sqlite3.Connection, path: Path, found: str) -> bool:
         guard.execute('ROLLBACK')
         guard.close()
     # The caller's connection reads the old file and is reconnected after this returns; it is closed before the file
-    # moves, since Windows refuses to move or delete a file a connection holds open.
+    # is replaced, since Windows refuses to replace or delete a file a connection holds open. The old file's log goes
+    # first, so the new file never opens beside it.
     db.close()
-    shutil.move(str(path), str(kept / path.name))
     for suffix in ('-wal', '-shm'):
         path.with_name(path.name + suffix).unlink(missing_ok=True)
     work.unlink(missing_ok=True)
     fresh.replace(path)
     return True
-
-
-def _backfilled(db: sqlite3.Connection, path: Path) -> None:
-    """Every commit in the old file's write-ahead log copied into the file, so the file kept in backups is whole once
-    its log is removed. Passive, since the full checkpoint waits for the write lock this upgrade holds; a reader in
-    another process on an earlier snapshot is waited for, as a write waits, STORE-006."""
-    deadline = time.monotonic() + BUSY_SECONDS
-    while True:
-        _, logged, copied = db.execute('PRAGMA wal_checkpoint(PASSIVE)').fetchone()
-        if logged == copied:  # both -1 when the file is not in WAL mode
-            return
-        if time.monotonic() > deadline:
-            raise StoreError(f'{path}: a read in another process kept its last commits from the backup for '
-                             f'{BUSY_SECONDS} seconds, so it was not upgraded.', 'run metaform again')
-        time.sleep(0.05)
 
 
 def _kept_folder(path: Path) -> Path:
