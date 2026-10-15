@@ -184,7 +184,7 @@ export function wake2d() {
   clearTimeout(AMBIENT2D.timer);
   if (AMBIENT2D.at) for (const one of ambients2d()) if (one.playState === 'paused') one.play();
   AMBIENT2D.at = 0;
-  AMBIENT2D.timer = setTimeout(rest2d, FRAMES.idle);
+  if (FRAMES.rest !== null) AMBIENT2D.timer = setTimeout(rest2d, FRAMES.idle);  // the map keeps running: no rest due
 }
 /* The 2D map's ambient animations, the flash of a part's record and the pulse of one under construction, VIEW-029,
  * are the page's CSS and run at the screen's rate for as long as the page is open. Only with web_idle_flow off may they

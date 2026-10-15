@@ -1259,8 +1259,10 @@ button.toolhead:hover{border-color:var(--control)}
 .linkish{background:none;border:0;padding:var(--s1);color:var(--muted);font:var(--t-sm) var(--sans);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 .linkish:hover{color:var(--text)}
 
-/* A first-time person's welcome, onboard/hints.js: a small plain window, the page usable around it. */
-.window.dialog.welcomebox{width:min(400px,calc(100vw - 2 * var(--s3)))}
+/* A first-time person's welcome, onboard/hints.js: a small plain window, the page usable around it. It stands at the
+ * bottom left, clear of the agents list (top right of the map), the intake bar (top centre) and the demo card (bottom
+ * right). */
+.window.dialog.welcomebox{left:var(--s4);top:auto;bottom:var(--s4);transform:none;width:min(400px,calc(100vw - 2 * var(--s3)))}
 .welcomebox .body p{margin:0;color:var(--text)}
 .welcomebox .helpkey{padding:0;border:0;background:none;cursor:pointer;vertical-align:baseline}
 .welcomebox .helpkey kbd{display:inline-grid;place-items:center;min-width:22px;height:22px;padding:0 6px;border:1px solid var(--line-2);

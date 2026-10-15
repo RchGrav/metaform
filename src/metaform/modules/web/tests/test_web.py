@@ -8049,8 +8049,8 @@ def help_opens(page, opener):
 def test_a_first_time_person_gets_one_plain_welcome_once_and_a_returning_person_none(run, home, web, browser, tmp_path):
     """A person opening the page for the first time, on the one project their AI tool mapped, gets one small plain
     welcome over a page that stays usable: what Metaform is, and that help is a ? away, which opens the help, as the
-    header's Help does. OK closes it for good, so a reload never brings it back. Someone who has used Metaform before
-    gets none."""
+    header's Help does. It stands clear of the agents list and the intake bar. OK closes it for good, so a reload never
+    brings it back; Help › Getting started shows it again. Someone who has used Metaform before gets none."""
     started(run)
     folder = tmp_path / 'live'
     folder.mkdir()
@@ -8067,6 +8067,12 @@ def test_a_first_time_person_gets_one_plain_welcome_once_and_a_returning_person_
     assert 'Help can be found by pressing ?' in said
     assert page.locator('#welcome button').count() == 2                 # the ? and OK, and nothing else
     assert page.is_hidden('#scrim') and not page.evaluate('document.querySelector(".app").inert')
+    page.evaluate('''() => { for (const id of ['agents', 'intakeBar']) document.getElementById(id).hidden = false;
+        document.getElementById('intakeBar').textContent = 'Intake · Claude Code — Waiting for the first record'; }''')
+    assert page.evaluate('''() => ['#agents', '#intakeBar'].filter(s => {
+        const a = document.querySelector('#welcome').getBoundingClientRect(), b = document.querySelector(s).getBoundingClientRect();
+        return b.width && b.height && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom; })''') == []
+    page.evaluate('''() => { for (const id of ['agents', 'intakeBar']) document.getElementById(id).hidden = true; }''')
     page.wait_for_selector('#map2d svg g.node')
     node = page.locator('#map2d svg g.node').first.bounding_box()      # the map beside the welcome takes a click
     page.mouse.click(node['x'] + node['width'] / 2, node['y'] + node['height'] / 2)
@@ -8081,6 +8087,12 @@ def test_a_first_time_person_gets_one_plain_welcome_once_and_a_returning_person_
     page.wait_for_function('() => window.metaform && window.metaform.loaded()', timeout=90000)
     page.wait_for_timeout(2500)                                         # time for a welcome that should not come
     assert not welcome_shown(page)
+    page.click('#helpBtn')                                              # Help › Getting started shows it again
+    page.click('#help .getstarted')
+    page.wait_for_selector('#welcome', state='visible')
+    assert page.is_hidden('#help')
+    page.click('#welcome .ok')
+    page.wait_for_selector('#welcome', state='hidden')
     assert problems == [], problems
     context.close()
     (home / 'web' / 'hints.json').unlink()                              # someone new to this home, who has used
