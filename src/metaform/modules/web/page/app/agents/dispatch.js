@@ -34,7 +34,7 @@ import {readIntake, openIntakeChat} from '/page/app/intake/intake.js';
 /* ---------- agents dispatched on tickets, VIEW-039 ----------
  * The dispatch module starts, messages and stops an agent on a ticket, BASE-052; the page asks it to through three
  * writes, VIEW-011. What an agent does is read from the dispatch layer at its ticket's node with each map change. */
-export const D = {sessions: [], starting: false};
+export const D = {sessions: [], starting: false, readFor: null};
 export const SESSIONS_DRAWN = [];  // what a later part draws again with the sessions, such as the broadcast window
 /* The signals of an agent waiting on the person: a permission request, or a question of its own, ACP's elicitation. */
 export const WAITS_ON_PERSON = ['permission-waiting', 'question-waiting'];
@@ -235,31 +235,39 @@ overlay($('#dispatch'), {kind: 'dialog', focus: () => $('#dispatch .choice > .bt
 /* The agents key: each agent working in the project now, with its flat icon and in words what it is; a click opens its
  * session's thread. An ended session leaves the key and the map; its log stays in the node's work history, VIEW-036.
  * Sessions are the dispatch module's own tables, never the map. */
-export async function renderAgents() {
+export async function renderAgents(only = null) {
   if (FRAMED) return;
-  const project = S.project, metaform = S.base;
-  const {found, claimed} = await readDispatch();
+  const project = S.project, metaform = S.base, shown = `${project}/${metaform}`;
+  // a change that names its tickets reads those tickets alone and merges them in, once the whole has been read here
+  const some = Array.isArray(only) && only.length > 0 && D.readFor === shown;
+  const {found, claimed} = some ? await readTickets(only) : await readDispatch();
   if (S.project !== project || S.base !== metaform) return;  // the answer for a project the person has left
-  D.sessions = found.sessions || [];
+  if (some) mergeTickets(only, found);
+  else {
+    D.sessions = found.sessions || [];
+    // a login needed is read from the signals, `sessionStatus`, and a spinning or stuck agent's figure circles
+    // restlessly, `moodOf`
+    D.signals = found.signals || [];
+    D.states = found.states || {};  // each session's state, the intake guard's phase among it, `drawIntake`
+    D.readFor = shown;
+  }
   followStart(D.sessions);
-  // a login needed is read from the signals, `sessionStatus`, and a spinning or stuck agent's figure circles
-  // restlessly, `moodOf`
-  D.signals = found.signals || [];
-  D.states = found.states || {};  // each session's state, the intake guard's phase among it, `drawIntake`
   setupNotice();
   drawAgentSessions();
   for (const draw of SESSIONS_DRAWN) draw();
-  D.subagents = found.subagents || [];  // the running sessions' own subagents, each a figure, `childFigures`
-  D.claims = claimed.claims || [];
-  D.proposals = claimed.proposals || {};
+  if (!some) D.subagents = found.subagents || [];  // the running sessions' own subagents, each a figure, `childFigures`
+  if (claimed) {
+    D.claims = claimed.claims || [];
+    D.proposals = claimed.proposals || {};
+  }
   noticeAttention();  // and the mascot calls the person to what needs them, `ATTN`
   // the permission requests and the agents' questions waiting for the person, counted on the chat's tab
-  const asking = (found.signals || []).filter(one => WAITS_ON_PERSON.includes(one.signal) && one.active !== false);
+  const asking = D.signals.filter(one => WAITS_ON_PERSON.includes(one.signal) && one.active !== false);
   D.asking = asking.map(one => ({...one, agent: D.sessions.find(row => row.session_id === one.session_id)?.agent}))
     .filter(one => D.sessions.some(row => row.session_id === one.session_id && row.state === 'running'));
   drawDockTab();
   D.onAsking?.();  // and the pop-up for a request whose thread is not on screen, agents/asking.js
-  readIntake(found.signals || []);
+  readIntake(D.signals);
   if (!$('#board').hidden) drawBoard();
   // at work: a session whose runner says a turn is executing, the same ones the map's figures follow
   const working = D.sessions.filter(one => one.activity === 'working');
@@ -309,6 +317,32 @@ function followStart(sessions) {
   const node = ticketNode(ticketOf(newest.work_id));
   if (G?.graphData().nodes.some(item => item.id === node)) follow3d(node);
   autoZoom2d(node);
+}
+/* The sessions of the tickets a change named, each ticket read on its own; the claims are not read again, as no
+ * session change moves them. A failed read keeps what was drawn. */
+async function readTickets(works) {
+  const reads = works.map(id => read('dispatch-sessions', {id, thread: 'false'})
+    .catch(error => { readFailed(error); return null; }));
+  const found = {sessions: [], signals: [], states: {}, subagents: [], failed: []};
+  const answers = await Promise.all(reads);
+  for (let at = 0; at < works.length; at++) {
+    const one = answers[at];
+    if (one === null) { found.failed.push(works[at]); continue; }
+    found.sessions.push(...(one.sessions || []));
+    found.signals.push(...(one.signals || []));
+    Object.assign(found.states, one.states || {});
+    found.subagents.push(...(one.subagents || []));
+  }
+  return {found, claimed: null};
+}
+/* The named tickets' sessions, signals, states and subagents in place of what was read for them before. */
+function mergeTickets(works, found) {
+  const read = new Set(works.filter(id => !found.failed.includes(id)));
+  const theirs = new Set(D.sessions.filter(one => read.has(one.work_id)).map(one => one.session_id));
+  D.sessions = D.sessions.filter(one => !read.has(one.work_id)).concat(found.sessions);
+  D.signals = (D.signals || []).filter(one => !read.has(one.work_id)).concat(found.signals);
+  D.states = Object.assign(D.states || {}, found.states);
+  D.subagents = (D.subagents || []).filter(one => !theirs.has(one.parent)).concat(found.subagents);
 }
 /* The sessions and the claims dispatch holds for the project; the threads are read for the open window only. A failed
  * read keeps the agents drawn as last read. */

@@ -274,7 +274,8 @@ function workInPanel() {
  * lines a second, and reading every session for each one kept the page, and the server, always reading. Only a change
  * beyond the threads, `whole`, reads the merges and the advice again. */
 const BATCH = 500;
-const AGENTS = {busy: false, again: false, whole: false, sessions: false, chat: false, at: -Infinity};
+const AGENTS = {busy: false, again: false, whole: false, sessions: false, everyone: false, works: new Set(), chat: false,
+  at: -Infinity};
 export const linesOnly = payload => payload.tables === 'dispatch' && Array.isArray(payload.dispatch_tables)
   && payload.dispatch_tables.length > 0 && payload.dispatch_tables.every(table => table === 'dispatch.lines');
 const SESSION_KINDS = ['session', 'signal', 'permission', 'question'];
@@ -288,7 +289,11 @@ export function holdsAny(kinds, wanted) {
 export const sessionsConcerned = payload => !Array.isArray(payload.kinds) || holdsAny(payload.kinds, SESSION_KINDS);
 export async function agentsChanged(whole = false, sessions = true, works = null) {
   if (whole) AGENTS.whole = true;
-  if (sessions) AGENTS.sessions = true;
+  if (sessions) {  // the tickets the changes named, gathered over the batch; one that names none reads every one
+    AGENTS.sessions = true;
+    if (works === null || !works.length) AGENTS.everyone = true;
+    else for (let at = 0; at < works.length; at++) AGENTS.works.add(works[at]);
+  }
   if (works === null || (MERGE.chat && works.includes(MERGE.chat))) AGENTS.chat = true;
   if (!AGENTS.sessions && !AGENTS.chat && !AGENTS.whole) return;
   if (AGENTS.busy) { AGENTS.again = true; return; }
@@ -299,10 +304,12 @@ export async function agentsChanged(whole = false, sessions = true, works = null
       AGENTS.again = false;
       AGENTS.at = performance.now();
       if (AGENTS.whole) { AGENTS.whole = false; renderMerges(); }
-      const agents = AGENTS.sessions, chat = AGENTS.chat;
+      const agents = AGENTS.sessions, chat = AGENTS.chat, only = AGENTS.everyone ? null : [...AGENTS.works];
       AGENTS.sessions = false;
+      AGENTS.everyone = false;
+      AGENTS.works.clear();
       AGENTS.chat = false;
-      await Promise.all([agents ? renderAgents() : null, chat && MERGE.chat ? drawHelpdesk() : null]);
+      await Promise.all([agents ? renderAgents(only) : null, chat && MERGE.chat ? drawHelpdesk() : null]);
     } while (AGENTS.again);
   } catch (error) { toast(error.message); } finally { AGENTS.busy = false; }
 }
