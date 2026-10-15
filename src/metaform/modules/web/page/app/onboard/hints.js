@@ -71,12 +71,14 @@ for (const {name, region} of QUIET) {
   document.addEventListener('keydown', used, true);
 }
 
-/* The next hint not yet dismissed, on a map shown with the welcome gone; one at a time, never two, and none while the
- * card that offers the next step after an intake is up: the hint follows once that card goes. */
+/* The cards that speak to the person first: the next step after an intake, and the demo's card; no hint shows while
+ * one is up, and the hint follows once it goes. */
+const HOLDS = '#nextStep, #demo-card';
+/* The next hint not yet dismissed, on a map shown with the welcome gone; one at a time, never two. */
 function nextHint() {
   const card = $('#hint');
   const tip = TIPS.find(one => !HINT.dismissed.has(one.name));
-  if (!HINT.ready || FRAMED || WELCOME.shown || !S.elements.size || !tip || $('#nextStep')) {
+  if (!HINT.ready || FRAMED || WELCOME.shown || !S.elements.size || !tip || $(HOLDS)) {
     card.hidden = true;
     HINT.at = null;
     return;
@@ -111,11 +113,11 @@ $('#hint .skiptips').onclick = () => {
 const welcomed = FIRST.drawn;
 FIRST.drawn = (empty, settled) => {
   const shown = welcomed(empty, settled);
-  if (settled) readDismissed().then(() => { drawQuiet(); if (!HINT.at || shown || !S.elements.size) nextHint(); });
+  if (settled && !FRAMED) readDismissed().then(() => { drawQuiet(); if (!HINT.at || shown || !S.elements.size) nextHint(); });
   return shown;
 };
 new MutationObserver(() => {
-  if ($('#nextStep')) { if (HINT.at) nextHint(); } else if (!HINT.at && S.elements.size) nextHint();
+  if ($(HOLDS)) { if (HINT.at) nextHint(); } else if (!HINT.at && S.elements.size) nextHint();
 }).observe(document.body, {childList: true});
-readDismissed();
+if (!FRAMED) readDismissed();  // the map in an AI tool's frame shows no hints, and asks nothing for them
 drawQuiet();

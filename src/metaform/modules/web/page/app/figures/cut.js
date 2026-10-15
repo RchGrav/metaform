@@ -59,10 +59,11 @@ export function placeBubble() {  // over the mascot as it is drawn: the large ma
   BUBBLE.el.style.left = `${Math.round(x)}px`;
   BUBBLE.el.style.top = `${Math.round(y)}px`;
 }
-/* Over the figure that speaks in the 3D map, an embodied agent or else the mascot, when it is in front of the eye. */
+/* Over the figure that speaks in the 3D map, an embodied agent or else the mascot, when it is in front of the eye and
+ * drawn: a body the view sees from inside, its own eyes', `eyesOf`, is hidden and carries no bubble at the eye. */
 function speakerAt3d() {
   const speaker = (BUBBLE.who && ROAM.figures.get(BUBBLE.who)?.mesh) || MASCOT.mesh;
-  if (!G || !speaker) return null;
+  if (!G || !speaker?.visible) return null;
   const area = G.renderer().domElement.getBoundingClientRect(), at = SPOT.copy(speaker.position).project(G.camera());
   if (!area.width || Math.abs(at.z) >= 1) return null;
   return {x: area.left + (at.x + 1) / 2 * area.width,

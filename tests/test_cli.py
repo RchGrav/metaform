@@ -491,6 +491,7 @@ def test_help_is_the_brief_overview_with_its_tips(run):
         f'Metaform {__version__}: gives agents a project\'s purpose before they work on it.\n\n'
         'Common commands\n'
         '  metaform                          Show status: home, folder, project.\n'
+        '  metaform start                    Map the project in this folder and open it.\n'
         '  metaform add project <id> <path>  Register a project.\n'
         '  metaform config                   Open the settings screen.\n'
         '  metaform set --<setting> <value>  Save a setting.\n\n'
@@ -585,6 +586,36 @@ def test_a_setting_declared_by_a_module_reaches_every_surface(run, toggles):
     assert (row['default'], row['help'], row['kind'], row['switch']) == (4, 'How many panes.', 'int', '--panes')
     assert '--panes' in run('help', 'switches').stdout
     run('set', '--panes', '5')
+
+
+@pytest.mark.req('CLI-010')
+def test_a_setting_is_on_the_settings_page_it_names_or_its_modules_with_its_unit(run, user_module):
+    """The settings screens' category: the setting's own, else its module's settings_category, else advanced; its
+    place on Essentials; its unit, read from the key's end when it declares none; its label less the module's name."""
+    user_module('pages', f'''
+        from metaform import settings
+        from metaform.module import Module
+        {OS}
+        settings.number('pages_wait_minutes', 5, help='How long.')
+        settings.boolean('pages_first', False, category='agents', heading='Starting', essential=5, help='First.')
+        settings.number('pages_cost', 0, unit='cents', help='How much.')
+        MODULE = Module(id='pages', summary='Pages.', purpose='Pages. Details: metaform help pages.',
+                        settings_category='voice')
+    ''')
+    rows = shown(run)
+    assert [(rows[key]['category'], rows[key]['essential'], rows[key]['unit'], rows[key]['label'])
+            for key in ('pages_wait_minutes', 'pages_first', 'pages_cost')] == [
+        ('voice', 0, 'minutes', 'Wait minutes'), ('agents', 5, None, 'First'), ('voice', 0, 'cents', 'Cost')]
+    assert rows['pages_first']['heading'] == 'Starting' and rows['pages_cost']['heading'] is None
+    assert rows['debug']['category'] == 'advanced' and rows['project']['category'] == 'general'
+    user_module('astray', f'''
+        from metaform import settings
+        from metaform.module import Module
+        {OS}
+        settings.boolean('astray_on', False, category='elsewhere', help='Nowhere.')
+        MODULE = Module(id='astray', summary='Astray.', purpose='Astray. Details: metaform help astray.')
+    ''')
+    assert 'category must be one of general, agents' in run('list', 'modules', isolated=True).stdout
 
 
 @pytest.mark.req('CLI-025')
@@ -1176,3 +1207,47 @@ def test_a_per_call_switch_is_given_on_its_verb_and_never_stored(run, tmp_path):
     metaform_home.save(metaform_home.path_key(tmp_path), 'mcp', 'mcp_http', [True], folder=tmp_path.resolve())
     assert settings.value('mcp_http', tmp_path) is False
     assert lines(run('unset', '--http')) == ['Reset one setting: mcp_http']
+
+
+@pytest.mark.req('CLI-042')
+def test_the_demo_runs_in_a_home_of_its_own_without_an_agents_identity_and_puts_both_back(home, monkeypatch):
+    from metaform import demo
+    from metaform import home as metaform_home
+    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    with demo.own_home() as root:
+        assert root == home / 'demo' and metaform_home.home() == root
+        assert 'METAFORM_ROLE' not in os.environ
+    assert metaform_home.home() == home and os.environ['METAFORM_ROLE'] == 'worker'
+
+
+@pytest.mark.req('CLI-042')
+def test_the_demo_project_comes_from_the_package_mapped_with_the_demo_agent_and_is_reused(home, monkeypatch):
+    from metaform import demo
+    from metaform import home as metaform_home
+    with demo.own_home() as root:
+        folder = demo.prepare(root)
+        assert 'int(float(text) * 100)' in (folder / 'ledger' / 'amounts.py').read_text(encoding='utf-8')
+        assert 'has an intake' in demo.must('intake', 'status', folder=folder)
+        assert 'amount parser' in demo.must('map', 'where', 'code.parser.amount', folder=folder)
+        configured = {row['key']: row['value'] for row in json.loads(demo.must('config', '--show', '--json',
+                                                                                 folder=folder))}
+        assert all('metaform.demo.agent' in configured[f'dispatch_{agent}'] for agent in demo.AGENTS)
+
+        def never(*words, folder):
+            raise AssertionError(f'a second run made it again: {words}')
+        monkeypatch.setattr(demo, 'must', never)
+        assert demo.prepare(root) == folder
+    assert not metaform_home.projects()  # the person's own home holds no project of the demo's
+
+
+@pytest.mark.req('CLI-042')
+def test_a_second_demo_names_the_running_one_and_the_demo_takes_reset_alone(home):
+    from metaform import demo
+    from metaform.errors import Stop
+    from metaform.sqlite import file_lock
+    with demo.own_home() as root:
+        with pytest.raises(Stop, match='--reset alone, not --fast'):
+            demo.run(['--fast'], root, print)
+        (root / 'demo.json').write_text(json.dumps({'address': 'http://127.0.0.1:5/'}), encoding='utf-8')
+        with file_lock(root / 'demo.lock', wait=False), pytest.raises(Stop, match='running at http://127.0.0.1:5/'):
+            demo.run([], root, print)

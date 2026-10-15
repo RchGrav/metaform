@@ -2,8 +2,8 @@
  "project": "pocket-ledger",
  "card": {
   "lines": [
-   "This is the map of Pocket Ledger, a tiny expense app: each sphere is one of its parts, each line what one part does for another.",
-   "Three scripted demo agents, with no AI and no network, are working tickets on it: they walk to their parts, say what they find, and one finds a bug."
+   "The map of Pocket Ledger, a tiny expense app: each part, and what each part does for another.",
+   "Three scripted demo agents, no AI and no network, work tickets on it. One is hunting a bug."
   ],
   "next": [
    ["Connect Claude Code", "metaform install claude"],
@@ -37,6 +37,7 @@
     {"read": "ledger/report.py", "line": 12},
     {"say": "The report only adds the cents it is given, so every total inherits the lost cent. The fix belongs in parse_amount."},
     {"step": "The report is correct; the cent is lost where the typed amount becomes cents."},
+    {"remember": {"name": "parse_amount truncates cents", "observations": ["ledger/amounts.py parse_amount computes int(float(text) * 100), which truncates: 19.99 becomes 1998 cents. Parse with decimal.Decimal and round to the cent."]}},
     {"say": "Found it. Parse with Decimal and round to the cent instead of truncating. Closing the ticket."},
     {"done": {"resolution": "parse_amount in ledger/amounts.py truncates float(text) * 100, so 19.99 becomes 1998 cents. Parse the text with decimal.Decimal and round to the cent instead.", "why": "The cent is lost where the typed amount becomes cents, and every total inherits it."}}
    ]

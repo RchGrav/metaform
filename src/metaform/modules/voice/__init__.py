@@ -76,28 +76,28 @@ settings.choice('voice_engine', _listeners, 'auto', scope='global', person_only=
                         'browser-speech uses the '
                         "browser's own speech service, which SENDS YOUR AUDIO to the browser's vendor (Google for "
                         'Chrome, Apple for Safari). off hides the mic.',
-                label='Hears you with', section='Listening')
+                label='Hears you with', heading='Listening')
 settings.choice('voice_model', list(SERVER_MODELS), 'auto', scope='global',
                 help='The server engine\'s Whisper model: auto, ' + ', '.join(models.SERVER) + '.',
                 details='auto is large-v3-turbo on an NVIDIA GPU and small on a CPU. Each downloads once into the '
                         'Metaform home\'s models folder, after you agree to its size.',
-                label='Whisper model on this machine', section='Listening')
+                label='Whisper model on this machine', heading='Listening')
 settings.choice('voice_browser_model', list(BROWSER_MODELS), 'auto', scope='global',
                 help="The browser engine's Whisper model: auto, " + ', '.join(models.BROWSER_NAMES) + '.',
                 details='auto is base. It downloads once, after you agree to its size, into the Metaform home, and '
                         'the browser keeps a copy; the audio never leaves the device.',
-                label='Whisper model in the browser', section='Listening')
+                label='Whisper model in the browser', heading='Listening')
 settings.text('voice_language', 'auto', scope='global', check=_check_language,
               help='The language you speak, as a code such as en, or auto to let Whisper tell.',
-              label='Language you speak', section='Listening')
+              label='Language you speak', heading='Listening')
 settings.choice('voice_send', ['review', 'auto'], 'review', scope='global',
                 help='After you speak: review leaves the text in the box for Enter; auto sends it after a pause.',
-                label='Send what you said', section='Listening')
+                label='Send what you said', heading='Listening')
 settings.choice('voice_send_audio', ['never', 'accepted'], 'never', scope='global', person_only=True,
                 help='Send your recorded voice itself to a chat agent too: never, or when the agent accepts audio.',
                 details='accepted sends the recording beside its transcript as an ACP audio block, only to an agent '
                         'whose session declares that it takes audio. The transcript is in the thread either way.',
-                label='Send your audio to agents', section='Listening')
+                label='Send your audio to agents', heading='Listening')
 settings.choice('voice_device', ['auto', 'cuda', 'cpu'], 'auto', scope='global',
                 help='Where the server engine runs Whisper: auto (an NVIDIA GPU when there is one), cuda or cpu.',
                 label='Whisper runs on', category='advanced')
@@ -111,15 +111,15 @@ settings.text('voice_endpoint_url', '', scope='global', person_only=True, check=
               help='Your own OpenAI-compatible transcription URL, for voice_engine endpoint. It receives your audio.',
               details='Such as http://127.0.0.1:8000/v1/audio/transcriptions for a Whisper server of your own, or '
                       'https://api.openai.com/v1/audio/transcriptions for a service, which then receives your audio.',
-              label='Transcription endpoint', category='advanced', section='Your endpoint')
+              label='Transcription endpoint', category='advanced', heading='Your endpoint')
 settings.text('voice_endpoint_model', 'whisper-1', scope='global', person_only=True,
               help='The model name sent to your transcription endpoint.',
-              label='Endpoint model', category='advanced', section='Your endpoint')
+              label='Endpoint model', category='advanced', heading='Your endpoint')
 settings.text('voice_endpoint_key_env', '', scope='global', person_only=True,
               help='The environment variable that holds your endpoint\'s key, such as OPENAI_API_KEY; empty sends none.',
               details='The key is read from the environment of the process that serves the page and sent only to '
                       'voice_endpoint_url; it is never stored by Metaform or shown to the page.',
-              label='Endpoint key variable', category='advanced', section='Your endpoint')
+              label='Endpoint key variable', category='advanced', heading='Your endpoint')
 
 
 def _check_voices(value: Any, folder: Path) -> list[str] | None:
@@ -137,25 +137,25 @@ settings.choice('voice_tts', _speakers, 'browser', scope='global', person_only=T
                      'or off.',
                 details='browser speaks with the voices your system has, on the device. An engine a module brings, '
                         'such as elevenlabs, SENDS THE TEXT SPOKEN to its service and streams the audio back.',
-                label='Speaks with', section='Speaking', essential=70)
+                label='Speaks with', heading='Speaking', essential=70)
 settings.choice('voice_speak', ['minimized', 'always', 'never'], 'minimized', scope='global',
                 help="When replies are spoken: minimized (while the chat is put away), always, or never.",
-                label='When it speaks', section='Speaking', essential=80)
+                label='When it speaks', heading='Speaking', essential=80)
 settings.items('voice_voices', [], scope='global', exclusive='=', check=_check_voices,
                help="A browser voice for a mascot character, as character=voice name; each has its own by default.",
                details='The voice is the name of one of your browser\'s voices. A character not named speaks with a '
                        'voice chosen for it, at its own pitch and pace. An engine a module brings has its own voices.',
-               label='Browser voice for each character', section='Speaking')
+               label='Browser voice for each character', heading='Speaking')
 settings.boolean('voice_wake', False, scope='global', person_only=True,
                  help="Listen hands-free for the wake phrase; what follows it goes to your system agent.",
                  details='On, the page keeps the microphone open and shows that it listens. Each pause-bounded stretch '
                          'of speech has only its first seconds heard, on this device, for the phrase; nothing else is '
                          'kept or sent. Only what follows the phrase is transcribed and sent to your system agent. '
                          'It needs a local engine: server or browser. Ctrl+Shift+Space turns it on and off.',
-                 label='Listen for the wake phrase', section='Listening')
+                 label='Listen for the wake phrase', heading='Listening')
 settings.text('voice_wake_phrase', '', scope='global',
               help="The wake phrase; empty is your mascot's name.",
-              label='Wake phrase', section='Listening')
+              label='Wake phrase', heading='Listening')
 
 
 def language(ctx: Context) -> str | None:

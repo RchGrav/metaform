@@ -183,12 +183,17 @@ function meetBegins(reach, clear = reach) {
   const own = MEET.own ?? G.camera().near;
   easeNear(Math.max(own, Math.min(reach - Math.max(0.05, reach * 0.004), clear)));
 }
-export function meetEnds() {
+/* `now`: the near plane back at once, not eased, for a camera that leaves the meeting's place in the same frame, as
+ * when the view goes to an agent's eyes, `eyesOf`. */
+export function meetEnds(now = false) {
   if (MEET.own === null || (!MEET.on && G.camera().near === MEET.own && MEET.to === MEET.own)) return;
   MEET.on = false;
   if (MET.box) MET.box.hidden = true;
   $('#big3d').classList.remove('met');
-  easeNear(MEET.own);
+  if (!now) return easeNear(MEET.own);
+  Object.assign(MEET, {from: MEET.own, to: MEET.own});
+  G.camera().near = MEET.own;
+  G.camera().updateProjectionMatrix();
 }
 /* While a map opens and its layout first spreads out, the camera keeps it framed, easing after it four times a second,
  * so the map unfolds in view rather than off the edge of it or as a speck in the middle; the page's first fit then has

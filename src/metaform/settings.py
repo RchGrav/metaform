@@ -93,6 +93,9 @@ class Setting:
     risky: Callable[..., Iterable[str]] | tuple[str, ...] = field(default=(), compare=False)
     # The settings screen's category, one of CATEGORY_NAMES; None takes the module's `settings_category`.
     category: str | None = None
+    # The small heading it sits under on its category's page, such as Starting work; None: its section, else its
+    # module's name. Unlike a section it opens no menu of its own.
+    heading: str | None = None
     # A place on the settings screen's Essentials page, the one it opens on, lower first; 0 keeps it off that page.
     # Only what a person needs to set Metaform up and run it day to day is marked.
     essential: int = 0
@@ -560,7 +563,8 @@ def describe(folder: Path) -> list[dict[str, Any]]:
         entry = {'key': key, 'switch': setting.switch, 'owner': setting.owner, 'kind': setting.kind,
                  'scope': setting.scope, 'value': value(key, folder), 'default': default(setting, folder),
                  'state': state(key, folder), 'help': setting.help, 'label': setting.label,
-                 'category': category_of(setting), 'essential': setting.essential, 'unit': setting.unit}
+                 'category': category_of(setting), 'heading': setting.heading, 'essential': setting.essential,
+                 'unit': setting.unit}
         if entry['state'] == 'inherited':
             entry['from'] = inherited_from(key, folder)
         if setting.kind in ('select', 'list') and setting.choices is not None:
@@ -641,7 +645,7 @@ install_server = text('install_server', scope='global',
 layers = items('layers', check=_check_layers,
                help='The layers toggled on in this folder, by name or tag. Empty means every finished layer that '
                     'is not hidden.',
-               label='Layers shown', category='map', section='Layers')
+               label='Layers shown', category='map', heading='Layers')
 
 write_layer = text('write_layer', '',
                    help='The layer a write that names no layer goes to. Empty means a new building layer '
@@ -649,7 +653,7 @@ write_layer = text('write_layer', '',
                    details='A project wheel\'s first run sets it to the working layer it opens, so what a remote '
                            'agent writes travels back in one layer, BASE-060. A write that names its layer still goes '
                            'to the layer it names.',
-                   label='Layer for unnamed writes', category='map', section='Layers')
+                   label='Layer for unnamed writes', category='map', heading='Layers')
 
 debug = boolean('debug', False, help='Ask agents doing Metaform work for feedback and trouble reports on the Metaform '
                                      'process.',
@@ -674,7 +678,7 @@ agents_may_set_control = boolean(
             'needs in its ticket. On: an agent may set them, through the person\'s own permission policy like any '
             'other call. Only the person turns this on or off, on the command line or the page; it is a permission '
             'the person holds and can change, never a rule the person cannot get past, CLI-011.',
-                                 label='Agents may change agent control', category='agents', section='Permissions')
+                                 label='Agents may change agent control', category='agents', heading='Permissions')
 
 # The roles a dispatch runner gives the agent it starts, BASE-052: the intake, the agents the person summons, a merge
 # preparation and a worker on its ticket. A session with no role is one the person runs outside dispatch.
@@ -701,7 +705,7 @@ roles_without_authority = items(
             'and a session the person runs outside dispatch keep it. The page is the person\'s and is never held. '
             'Set to none, no role is held back. Only the person changes this, on the command line or the page; it is a '
             'permission the person holds, never a rule they cannot get past, MAP-050 and CLI-011.',
-                                label='Roles without authority', category='agents', section='Permissions')
+                                label='Roles without authority', category='agents', heading='Permissions')
 
 gemini_reminder = choice('gemini_reminder', ['after-tool', 'off'], 'after-tool', scope='global',
                          help='Gemini setup installs a passive reminder after delegation and questioning, or none.',
@@ -734,11 +738,11 @@ jev = boolean(
             'sent. A decision that is acted on is kept at the Address it concerns, with its question, choices, answer, '
             'reason, model and cost. No decision hides anything from the person. Only the person turns this on, since '
             'it sends project text to a third party.',
-              label='Ask Jev for decisions', category='integrations', section='Jev')
+              label='Ask Jev for decisions', category='integrations', heading='Jev')
 
 jev_endpoint = choice('jev_endpoint', ['openrouter', 'typesafe'], 'openrouter', person_only=True,
                       help='Where Jev is asked: OpenRouter with OPENROUTER_API_KEY, or TypeSafe with TYPESAFE_API_KEY.',
-                      label='Jev endpoint', category='integrations', section='Jev')
+                      label='Jev endpoint', category='integrations', heading='Jev')
 
 # The model, the decision points and the confidence decide which agent runs a ticket, how agents are watched and what
 # reaches the person first, and what project text is sent, so only the person sets them, CLI-011.
@@ -748,7 +752,7 @@ jev_model = text('jev_model', '', person_only=True,
                  details='An answer is cached under the model asked and the model that answered; when a name such as '
                          'typesafe/jev-1.13 starts answering as a newer snapshot, the answers of the older one are '
                          'asked again.',
-                 label='Jev model', category='integrations', section='Jev')
+                 label='Jev model', category='integrations', heading='Jev')
 
 jev_max_context = number('jev_max_context', 8000, min=1000, max=32000,
                          help='The tokens of state, plus its longest question, one Jev request may carry.',
@@ -756,16 +760,16 @@ jev_max_context = number('jev_max_context', 8000, min=1000, max=32000,
                                  'default is well below its limit of 32,000 tokens of state plus the longest question, '
                                  '64,000 in a whole request. A pile of items larger than this is split across requests; '
                                  'a state that cannot fit is not sent, and the caller keeps its fallback.',
-                         label='Jev request size', category='integrations', section='Jev', unit='tokens')
+                         label='Jev request size', category='integrations', heading='Jev', unit='tokens')
 
 jev_decisions = items('jev_decisions', choices=list(JEV_DECISIONS), check=_check_jev_decisions, person_only=True,
                       help='Narrows which decision points ask Jev. Empty means every one.',
                       details="A module's own decision point is named <module>.<point>, as the module's README says.",
-                      label='Decisions asked of Jev', category='integrations', section='Jev')
+                      label='Decisions asked of Jev', category='integrations', heading='Jev')
 
 jev_confidence = number('jev_confidence', 50, min=0, max=100, person_only=True,
                         help='The confidence, in percent, below which a Jev answer is not acted on.',
                         details="A choice's confidence is Jev's own; a yes or no is as confident as its probability "
                                 'is far from even, so 50 leaves out answers between 0.25 and 0.75. Below it the '
                                 'caller keeps its fallback; a kept decision is marked unsure.',
-                        label='Jev confidence needed', category='integrations', section='Jev', unit='%')
+                        label='Jev confidence needed', category='integrations', heading='Jev', unit='%')

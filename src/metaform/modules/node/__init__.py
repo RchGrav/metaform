@@ -40,17 +40,17 @@ settings.text('node_domain', '', scope=G, person_only=True, label='Node domain',
               help='The public name the Node is reached at, such as metaform.example.com.',
               details='Set by metaform node init and read by the authorization server, whose issuer is https://<it>. '
                       'Passkeys belong to this name: moving the Node to another name means enrolling them again.',
-              section='Node')
+              heading='Node')
 settings.choice('node_mode', list(config.MODES), 'acme', scope=G, person_only=True, label='Node TLS mode',
                 help='How the Node gets its certificate and is reached: acme, dns, relay or internal.',
                 details='acme: a public host, Let\'s Encrypt over HTTP-01 or TLS-ALPN-01. dns: DNS-01 through the DNS '
                         'provider\'s API (node_dns_provider), for a wildcard or a host port 80 cannot reach. relay: '
                         'no open port, through a relay that passes TLS through (metaform node relay). internal: '
                         'Caddy\'s local CA, for a stand-in on a test machine only.',
-                section='Node')
+                heading='Node')
 settings.text('node_email', '', scope=G, label='Certificate contact',
               help='The email address the certificate authority warns before a certificate lapses.',
-              section='Node')
+              heading='Node')
 settings.choice('node_capability', list(config.CAPABILITIES), 'write', scope=G, person_only=True,
                 label='Node capability',
                 help='What the Node lets an agent do: read, write (memories, tickets, terms), or dispatch (start '
@@ -58,7 +58,7 @@ settings.choice('node_capability', list(config.CAPABILITIES), 'write', scope=G, 
                 details='It caps what the authorization server grants: read grants mcp:read; write adds mcp:write and '
                         'a2a:tickets; dispatch adds mcp:dispatch. Below dispatch the dispatch module is off in the '
                         'Node. A Node at dispatch runs agents on its host, so it belongs on a VM of its own.',
-                section='Node')
+                heading='Node')
 settings.choice('node_relay_capability', list(config.CAPABILITIES), 'read', scope=G, person_only=True,
                 label='Capability through a relay',
                 help='The capability a Node reached through a relay has: read unless you raise it.',
@@ -69,7 +69,7 @@ settings.choice('node_relay_capability', list(config.CAPABILITIES), 'read', scop
 # which folders the Node exposes, which host deploy reaches and which key a created VM trusts for root.
 settings.items('node_projects', (), scope=G, person_only=True, label='Node project folders',
                help='Folders on the host mounted into the Node, each at /srv/projects/<its name>.',
-               section='Node')
+               heading='Node')
 settings.text('node_dns_provider', '', scope=G, label='DNS provider',
               help='The caddy-dns module for DNS-01, such as cloudflare, vultr or route53; its token goes in '
                    'secrets.env on the host as DNS_API_TOKEN.',
@@ -84,7 +84,7 @@ settings.choice('node_role', list(config.ROLES), 'node', scope=G, person_only=Tr
                         'signed with the Node\'s key, the people\'s machines dial in over a tunnel (metaform cloud '
                         'connect), and the record of who called what is kept on each person\'s machine. It mounts no '
                         'project and runs no MCP server or page of its own.',
-                section='Node')
+                heading='Node')
 settings.choice('node_refresh_replay', ['memory', 'durable'], 'memory', scope=G, person_only=True,
                 label='Refresh reuse detection',
                 help='Where a broker keeps the newest refresh token number of each sign-in: memory, or durable on disk '
@@ -100,7 +100,7 @@ settings.boolean('node_member_dispatch', False, scope=G, person_only=True, label
                  help='On a broker, let an account that is not the owner approve an AI tool to start agents '
                       '(mcp:dispatch) on its own machine.',
                  details='Each machine still caps what it allows with its own cloud_capability.',
-                 section='Node')
+                 heading='Node')
 settings.boolean('node_dcr', False, scope=G, person_only=True, label='Dynamic client registration',
                  help='Let older AI tools register themselves (RFC 7591), which the MCP specification of 2026-07-28 '
                       'deprecates in favour of Client ID Metadata Documents.',

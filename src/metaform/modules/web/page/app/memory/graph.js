@@ -7,6 +7,7 @@ import {joinOf} from '/page/app/graph/data.js';
 import {G, nodeSize} from '/page/app/map3d/graph3d.js';
 import {draw3D} from '/page/app/map3d/draw3d.js';
 import {V3, away3d} from '/page/app/camera/flight.js';
+import {meetEnds} from '/page/app/camera/fly3d.js';
 import {renderLegend} from '/page/app/views/lens.js';
 import {M} from '/page/app/map2d/build.js';
 import {mountSvg, placeIn, boundsOf, showBase} from '/page/app/map2d/fit.js';
@@ -96,6 +97,8 @@ function into3d(key) {
   if (!G || reduced()) return Promise.resolve();
   const node = G.graphData().nodes.find(item => item.id === key);
   if (node && node.x !== undefined) {
+    // the camera leaves a sign it met, whose name is drawn over the map only while it is met square on
+    meetEnds();
     const eye = G.camera().position, away = Math.hypot(eye.x - node.x, eye.y - node.y, eye.z - node.z) || 1;
     // near enough that the node fills the view
     const share = Math.min(1, Math.cbrt(nodeSize(node)) * 3 * 2.5 / away);

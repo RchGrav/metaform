@@ -1,0 +1,1 @@
+- Edit: "A `metaform demo` step appears once a `demo` command is declared." -> "Each of `metaform demo`, `metaform start` and `metaform report` appears, with its own help text, only while that command is declared."

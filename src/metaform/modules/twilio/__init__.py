@@ -98,23 +98,23 @@ settings.boolean('twilio_enabled', False, scope='global', person_only=True, labe
                          'Twilio\'s credentials come from TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN (or TWILIO_API_KEY '
                          'and TWILIO_API_SECRET for the calls Metaform makes) in the environment of the process that '
                          'runs the bridge; they are never stored or shown. metaform twilio status says what is missing.',
-                 section='Your phone', essential=90)
+                 heading='Your phone', essential=90)
 settings.text('twilio_number', '', scope='global', person_only=True, check=_check_number,
               help='Your Twilio phone number, in E.164 form, such as +15551234567: it answers you and calls you.',
-              label='Twilio number', section='Your phone', essential=100)
+              label='Twilio number', heading='Your phone', essential=100)
 settings.items('twilio_owner_numbers', [], scope='global', person_only=True, check=_check_numbers,
                help='Your own phone numbers, in E.164 form: the only callers answered and the only numbers called or '
                     'texted.',
                details='A call from any other number hears a short refusal and is hung up; a text from one is ignored. '
                        'Calls and texts Metaform starts go to the first number.',
-               label='Your own numbers', section='Your phone')
+               label='Your own numbers', heading='Your phone')
 settings.text('twilio_public_url', '', scope='global', person_only=True, check=_check_public,
               help='The public https address Twilio reaches the bridge at: your Metaform Node, your relay name, or a '
                    'tunnel of your own.',
               details='Such as https://alice.metaform.ing. Twilio posts to <address>/phone/voice and /phone/sms and opens '
                       'the call audio at wss://<address>/phone/stream. The bridge itself listens on 127.0.0.1 only; '
                       'the Node\'s Caddy routes /phone/* to it. It must be https: the bridge refuses to start otherwise.',
-              label='Public address', section='Your phone')
+              label='Public address', heading='Your phone')
 settings.choice('twilio_caller_proof', list(PROOFS), 'attested-or-pin', scope='global', person_only=True,
                 label='Caller proof',
                 help='What a call or text from your number must show beyond its caller ID, which can be faked: '
@@ -125,7 +125,7 @@ settings.choice('twilio_caller_proof', list(PROOFS), 'attested-or-pin', scope='g
                         f'{PIN_NAME} in the environment of the process that runs the bridge, 4 to 12 digits. A text '
                         'has no attestation, so under any choice but caller-id it starts with the PIN, which is taken '
                         'off before your agent reads it; without a PIN, texts are ignored.',
-                section='Your phone')
+                heading='Your phone')
 settings.items('twilio_call_when', [], scope='global', person_only=True,
                check=lambda value, folder: notify.check(listed(value), 'twilio_call_when'),  # pyright: ignore[reportUnknownLambdaType]
                help='What calls you: waiting-for-you, stuck, budget, intake-finished, or a dispatch signal name. None '
@@ -133,15 +133,15 @@ settings.items('twilio_call_when', [], scope='global', person_only=True,
                details='waiting-for-you: an agent waits for your permission, an answer or a login, or stopped with its '
                        'ticket open. stuck: an agent spins, falls silent or fails the same way. Calls are at least '
                        'twilio_call_gap_minutes apart, and the same signal on the same ticket calls once an hour.',
-               label='Call you when', section='Calls and texts')
+               label='Call you when', heading='Calls and texts')
 settings.items('twilio_text_when', [], scope='global', person_only=True,
                check=lambda value, folder: notify.check(listed(value), 'twilio_text_when'),  # pyright: ignore[reportUnknownLambdaType]
                help='What texts you, from the same list as twilio_call_when. None by default.',
-               label='Text you when', section='Calls and texts')
+               label='Text you when', heading='Calls and texts')
 settings.number('twilio_call_gap_minutes', 15, min=0, max=1440, scope='global', person_only=True,
                 help='The least time between calls Metaform places on its own, in minutes; your own phone call never '
                      'waits.',
-                label='Least time between calls', section='Calls and texts')
+                label='Least time between calls', heading='Calls and texts')
 settings.text('twilio_voice', '', scope='global',
               help="An ElevenLabs voice id, or a voice's name on your account, for the phone; empty speaks with your "
                    "mascot character's voice.",
@@ -149,15 +149,15 @@ settings.text('twilio_voice', '', scope='global',
                       'in the environment of the process that runs the bridge, and the text spoken goes to ElevenLabs. '
                       'Empty, the phone speaks in the voice elevenlabs_voices gives your mascot character; metaform '
                       'elevenlabs voices lists your account\'s voices.',
-              label='Voice on the phone', section='On the line')
+              label='Voice on the phone', heading='On the line')
 settings.text('twilio_language', 'auto', scope='global', check=_check_language,
               help='The language you speak on the phone, as a code such as en, or auto.',
-              label='Language on the phone', section='On the line')
+              label='Language on the phone', heading='On the line')
 settings.choice('twilio_hearing', ['server', 'elevenlabs'], 'server', scope='global', person_only=True,
                 help='Who hears you on the phone: server (Whisper on this machine) or elevenlabs (Scribe).',
                 details='server needs the voice extra and a downloaded Whisper model; elevenlabs SENDS THE CALL AUDIO to '
                         'ElevenLabs. Twilio carries the call either way.',
-                label='Hears you on the phone with', section='On the line')
+                label='Hears you on the phone with', heading='On the line')
 settings.number('twilio_port', PORT, min=1024, max=65535, scope='global',
                 help='The loopback port the bridge listens on; the Node routes /phone/* to 7441.',
                 label='Bridge port', category='advanced')

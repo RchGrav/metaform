@@ -395,6 +395,36 @@ def test_reading_changes_nothing_and_applying_layers_is_a_write_only_from_the_gu
     assert request(web, '/api/other', method='POST', body=body, headers={**as_json, 'Origin': own})[0] == 404
 
 
+@pytest.mark.req('VIEW-002')
+def test_the_first_screen_registers_a_chosen_folder_once_and_keeps_each_persons_dismissed_hints(
+        run, home, web, tmp_path):
+    """The welcome's folder picker lists a folder's folders with the project each is; Map my project registers the one
+    chosen under its own name, once, and never Metaform's own folder; a dismissed hint is kept in the home."""
+    started(run)
+    own = {'Content-Type': 'application/json', 'Origin': f'http://127.0.0.1:{web}'}
+    code = tmp_path / 'code'  # beside the test's home, which is in tmp_path too
+    (code / 'My App').mkdir(parents=True)
+    (code / '.hidden').mkdir()
+    status, listed = api(web, f'/api/first-run/folders?path={code}')
+    assert status == 200 and listed['path'] == str(code.resolve())
+    assert [(one['name'], one['project']) for one in listed['folders']] == [('My App', None)]
+    chosen = json.dumps({'path': str(code / 'My App')})
+    assert request(web, '/api/first-run/map', method='POST', body=chosen, headers=own)[0] == 200
+    status, again = api(web, '/api/first-run/map', method='POST', body=chosen, headers=own)
+    assert status == 200 and again == {'project': 'my-app', 'added': False}
+    assert [one['project'] for one in api(web, f'/api/first-run/folders?path={code}')[1]['folders']] == ['my-app']
+    status, refused = api(web, '/api/first-run/map', method='POST', body=json.dumps({'path': str(home)}), headers=own)
+    assert status == 400 and 'own folder' in refused['error'] and refused['next']
+    assert request(web, '/api/first-run/map', method='POST', body=chosen,
+                   headers={'Content-Type': 'application/json'})[0] == 403  # only from the page itself
+    assert api(web, '/api/hints')[1] == {'dismissed': []}
+    for name in ('map', 'map', 'chat'):
+        assert request(web, '/api/hints', method='POST', body=json.dumps({'hint': name}), headers=own)[0] == 200
+    assert request(web, '/api/hints', method='POST', body=json.dumps({'hint': '../x'}), headers=own)[0] == 400
+    assert api(web, '/api/hints')[1] == {'dismissed': ['chat', 'map']}
+    assert json.loads((home / 'web' / 'hints.json').read_text()) == {'': ['chat', 'map']}
+
+
 NAMESPACES = ('http://www.w3.org/2000/svg',)  # a namespace name the script uses to make SVG nodes, never fetched
 
 
@@ -468,6 +498,11 @@ def test_voice_status_always_answers_and_the_voice_endpoints_take_only_the_pages
     assert status == 200 and json.loads(body)['available'] is False and 'metaform enable voice' in body
 
 
+RETURNING = ("try { if (localStorage.getItem('metaform.hints') === null) localStorage.setItem('metaform.hints', "
+             "'[\"map\",\"agents\",\"chat\",\"header\",\"tabs\"]'); if (sessionStorage.getItem('metaform.workbench') "
+             "=== null) sessionStorage.setItem('metaform.workbench', '1') } catch (error) {}")
+
+
 @pytest.fixture
 def browser():
     """Headless Chromium through Playwright, a dev dependency; WebGL runs in software, VIEW-012."""
@@ -480,6 +515,9 @@ def browser():
         def quick(*args, **kwargs):  # a wait that is not met fails in 10 seconds, not Playwright's 30
             page = new_page(*args, **kwargs)
             page.set_default_timeout(10_000)
+            # a person who has been here before: the first-run hints dismissed and the workbench chosen over the
+            # welcome; the first-run checks open a page of their own without this, `newcomer`
+            page.add_init_script(RETURNING)
             return page
         launched.new_page = quick
         yield launched
@@ -6551,9 +6589,7 @@ def test_the_admin_sets_how_agent_prompts_are_answered_and_the_choice_is_kept_in
     again.click('#agentsMenuBtn')
     again.wait_for_function('() => document.querySelector("#promptsPick").value === "approve-reads"')
     # the settings screen changes it once the person confirms approving every prompt, and the menu says so
-    again.click('#allSettingsBtn')
-    again.click('#settings [data-focus="page-picker"]')  # one page at a time: dispatch's
-    again.click('#settings [data-focus="page:dispatch"]')
+    again.click('#allSettingsBtn')  # it opens on Essentials, where the permission prompts are
     pick = '#settings .setrow[data-key="dispatch_prompts"] select'
     again.select_option(pick, 'approve-all')
     again.click('#confirm .btn.keep')  # kept as it is: nothing saved, and the select shows the one in force
@@ -7473,7 +7509,7 @@ def test_a_page_opened_with_no_project_follows_the_first_run_intake_without_a_re
     problems = []
     page.on('pageerror', lambda error: problems.append(str(error)))
     page.goto(f'http://127.0.0.1:{web}/')
-    page.wait_for_function('() => document.querySelector("#p-object").innerText.includes("No project is registered")')
+    page.wait_for_selector('#welcome:not([hidden])')  # the first screen, with no project registered
     folder = tmp_path / 'fresh'
     folder.mkdir()
     run('add', 'project', 'fresh', str(folder))
@@ -7481,7 +7517,120 @@ def test_a_page_opened_with_no_project_follows_the_first_run_intake_without_a_re
     run('intake', 'element', 'code.timer.kitchen', 'role=DE', cwd=folder)
     page.wait_for_function('() => location.hash === "#p=fresh" && window.metaform.live() !== null', timeout=20000)
     page.wait_for_function('() => window.metaform.drawn() && window.metaform.drawn().nodes === 1', timeout=15000)
+    assert page.is_hidden('#welcome') and problems == []
+
+
+def newcomer(browser):
+    """A page in a browser of its own, as a person opening the web GUI for the first time has: no hint dismissed in it
+    and no workbench chosen."""
+    context = browser.new_context(viewport={'width': 1280, 'height': 800})
+    page = context.new_page()
+    page.set_default_timeout(10_000)
+    problems = []
+    page.on('console', lambda message: problems.append(message.text) if message.type == 'error' else None)
+    page.on('pageerror', lambda error: problems.append(str(error)))
+    return context, page, problems
+
+
+# The controls on the first screen a person can click, as `count_controls` counts them: shown, not covered.
+CONTROLS = """() => [...document.querySelectorAll(
+  'button, a[href], input:not([type=hidden]), select, textarea, [role=button], [role=tab], [role=switch]')].filter(el => {
+  const box = el.getBoundingClientRect();
+  if (box.width < 2 || box.height < 2 || box.bottom < 0 || box.top > innerHeight) return false;
+  const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+  return Boolean(top) && (top === el || el.contains(top) || top.contains(el));
+}).length"""
+
+
+@pytest.mark.req('VIEW-002')
+def test_the_first_screen_with_no_project_is_a_welcome_with_two_choices_and_its_failures_are_said_plainly(
+        run, home, web, browser, tmp_path):
+    """With no project the page shows what Metaform is in one sentence and two choices, the demo and a project of one's
+    own, and nothing else: no header, panel or chat. A choice that fails says what happened and the one thing to do,
+    never a stack. Map my project picks a folder, registers it and opens its intake."""
+    started(run)
+    context, page, problems = newcomer(browser)
+    page.goto(f'http://127.0.0.1:{web}/')
+    page.wait_for_selector('#welcome:not([hidden])')
+    page.wait_for_function('() => !document.documentElement.classList.contains("booting")')
+    assert page.inner_text('#welcome h1').count('.') == 1
+    assert page.evaluate(CONTROLS) == 2 and page.is_hidden('#welcome .workbench')
+    assert page.evaluate('document.querySelector(".app").inert')
+    page.route('**/api/first-run/demo', lambda route: route.fulfill(status=502, content_type='application/json',
+               body=json.dumps({'error': 'This version of Metaform has no demo yet.\nTraceback (most recent call)',
+                                'next': 'metaform demo'})))
+    page.click('#welcome .choice.demo')
+    page.wait_for_selector('#welcome .failed:not([hidden])')
+    said = page.inner_text('#welcome .failed')
+    assert 'no demo yet' in said and 'Traceback' not in said and 'metaform demo' in said, said
+    assert page.is_enabled('#welcome .choice.demo')
+    mine = tmp_path / 'My App'
+    (mine / 'src').mkdir(parents=True)
+    page.click('#welcome .choice.map')
+    page.wait_for_selector('#welcome .picker:not([hidden])')
+    page.fill('#welcome .typed', str(tmp_path))
+    page.press('#welcome .typed', 'Enter')
+    page.wait_for_selector('#welcome .folders button:has-text("My App")')
+    page.click('#welcome .folders button:has-text("My App")')
+    page.wait_for_function('() => document.querySelector("#welcome .pick").textContent === "Map My App"')
+    page.click('#welcome .pick')
+    page.wait_for_selector('#intake:not([hidden])')                    # the start flow: the intake, its agent chosen
+    assert [found['id'] for found in api(web, '/api/projects')[1]['projects']] == ['my-app']
+    assert page.locator('#proj').input_value() == 'my-app' and page.is_visible('#welcome')
+    page.click('#intake .cancel')                                       # not started: the welcome stays, for my-app
+    assert 'my-app, at' in page.inner_text('#welcome .choice.map') and page.is_visible('#welcome .workbench')
+    page.click('#welcome .workbench')
+    page.wait_for_selector('#emptyStage:not([hidden])')
+    assert page.is_hidden('#welcome') and not page.evaluate('document.querySelector(".app").inert')
+    assert problems == [
+        'Failed to load resource: the server responded with a status of 502 (Bad Gateway)'], problems
+    context.close()
+
+
+def hint_shown(page):
+    """The hints on view: the text of each card shown, which is never more than one."""
+    return page.evaluate('() => [...document.querySelectorAll(".hintcard")].filter(card => !card.hidden)'
+                         '.map(card => card.querySelector(".text").textContent)')
+
+
+@pytest.mark.req('VIEW-002')
+def test_first_run_hints_come_one_at_a_time_and_once_dismissed_never_come_back_in_any_browser(
+        run, home, web, mapped, browser):
+    """On a person's first map the page points at the map, the agents and the chat, one hint at a time; one dismissed
+    stays dismissed after a reload, and in another browser, since the home keeps it for that person. The header is
+    quiet until the person first uses it, and stays as used."""
+    started(run)
+    context, page, problems = newcomer(browser)
+    page.goto(f'http://127.0.0.1:{web}/#p=proj')
+    page.wait_for_selector('#hint:not([hidden])', timeout=90000)
+    assert len(hint_shown(page)) == 1 and 'map' in hint_shown(page)[0]
+    assert page.is_hidden('#welcome') and page.evaluate('document.documentElement.classList.contains("quiet-header")')
+    page.click('#hint .ok')
+    page.wait_for_function('() => document.querySelector("#hint .text").textContent.includes("Agents")')
+    assert len(hint_shown(page)) == 1
+    page.reload()
+    page.wait_for_selector('#hint:not([hidden])', timeout=90000)
+    assert len(hint_shown(page)) == 1 and 'Agents' in hint_shown(page)[0]  # the map's hint did not come back
+    page.click('#boardBtn')                                                # the header used: no longer quiet
+    page.wait_for_function('() => !document.documentElement.classList.contains("quiet-header")')
+    page.keyboard.press('Escape')
+    page.click('#hint .ok')
+    page.wait_for_function('() => document.querySelector("#hint .text").textContent.includes("Chat")')
+    page.click('#hint .ok')
+    page.wait_for_selector('#hint', state='hidden')
+    assert set(api(web, '/api/hints')[1]['dismissed']) == {'map', 'agents', 'chat', 'header'}
     assert problems == []
+    context.close()
+    context, page, problems = newcomer(browser)                           # another browser, the same person
+    page.goto(f'http://127.0.0.1:{web}/#p=proj')
+    page.wait_for_function('() => window.metaform && document.querySelectorAll("#map2d svg g.node").length > 0',
+                           timeout=90000)
+    page.wait_for_timeout(1500)                                            # time for a hint that should not come
+    assert hint_shown(page) == [] and problems == []
+    assert not page.evaluate('document.documentElement.classList.contains("quiet-header")')
+    assert page.evaluate('document.documentElement.classList.contains("quiet-tabs")')  # the tabs were never used
+    context.close()
+
 
 
 @pytest.mark.req('VIEW-018')
@@ -8921,13 +9070,30 @@ def test_the_settings_screen_opens_from_the_agents_menu_and_saves_each_change_as
     started(run)
     page, problems, remote = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
-    page.click('#agentsMenuBtn')
-    page.click('#allSettingsBtn')
+    page.click('#settingsGearBtn')                                      # the gear opens it, on Essentials
     row = '#settings .setrow[data-key="{}"]'.format
-    def to(name):  # the window opens on its Modules page; each other page is chosen from its picker
-        page.click('#settings .setpicker > button')
-        page.click(f'#settings button[data-focus="page:{name}"]')
-    to('chassis')
+    page.wait_for_selector(row('dispatch_agent'))
+    side = page.eval_on_selector_all('#settings .setside button', 'all => all.map(one => one.dataset.page)')
+    assert side[0] == 'essentials' and side[-2:] == ['advanced', 'modules'], side  # Modules last, under Advanced
+    assert page.get_attribute('#settings .setside button[aria-current="page"]', 'data-page') == 'essentials'
+    page.select_option(f'{row("dispatch_agent")} select', 'claude')     # the default agent: the gear and a pick
+    page.wait_for_selector(f'{row("dispatch_agent")} .state.ok')
+    assert settings.value('dispatch_agent', mapped) == 'claude'
+    run('set', '--dispatch-agents', '3', cwd=mapped)                    # changed elsewhere, the screen follows, F13
+    page.wait_for_function(f'''() => document.querySelector('{row("dispatch_agents")} input')?.value === "3"''',
+                           timeout=10000)
+    page.fill('#settings .search', 'agent questions')                   # found in its category, and gone to
+    page.wait_for_selector(f'#settings .setmain .setgroup[data-group="Agents"] {row("dispatch_elicitation")[10:]}')
+    page.press('#settings .search', 'Enter')
+    page.wait_for_selector('#settings .setside button[data-page="agents"][aria-current="page"]')
+    focused = f'''() => document.activeElement === document.querySelector('{row("dispatch_elicitation")} select')'''
+    page.wait_for_function(focused)
+    def to(name):  # a category, from the side
+        page.click(f'#settings .setside button[data-page="{name}"]')
+    def unfold(group):  # Advanced folds each module's settings until one is opened
+        page.click(f'#settings details.setgroup[data-group="{group}"]:not([open]) > summary')
+    to('advanced')
+    unfold('Metaform')
     page.focus(f'{row("debug")} input[role=switch]')
     page.keyboard.press('ArrowRight')                                   # Left and Right change a switch
     page.wait_for_selector(f'{row("debug")} .state.ok')
@@ -8940,24 +9106,25 @@ def test_the_settings_screen_opens_from_the_agents_menu_and_saves_each_change_as
     page.uncheck(f'{row("modules")} input[value="hello"]')              # the modules this folder shows
     page.wait_for_selector(f'{row("modules")} .state.ok')
     assert 'hello' not in settings.value('modules', mapped) and 'chassis' in settings.value('modules', mapped)
-    to('chassis')
+    to('agents')
     page.fill(f'{row("roles_without_authority")} textarea', 'worker\nnobody')
     page.keyboard.press('Tab')
     page.wait_for_selector(f'{row("roles_without_authority")} .setfail')  # refused in place, with its next step
     assert 'nobody' in page.inner_text(f'{row("roles_without_authority")} .setfail')
     assert settings.state('roles_without_authority', mapped) == 'default'
+    to('advanced')                                                      # the module opened stays open
     page.click(f'{row("debug")} button.reset')
     page.wait_for_selector(f'{row("debug")} .state.off')
     assert settings.value('debug', mapped) is False
-    page.click('#settings .setpicker > button')                         # an agent's options, under its own heading
-    page.click('#settings button[data-focus="page:dispatch"]')
-    page.wait_for_selector('#settings .setgroup .setgroup:has(h3:text-is("Agent options · Claude Code")) '
-                           '.setrow[data-key="dispatch_claude_mode"]')
+    to('agent_options')                                                 # an agent's options, under its own heading
+    page.wait_for_selector('#settings .setgroup[data-group="Claude Code"] .setrow[data-key="dispatch_claude_mode"]')
     page.select_option(f'{row("dispatch_claude_mode")} select', 'acceptEdits')
     page.wait_for_selector(f'{row("dispatch_claude_mode")} .state.ok')
     assert settings.value('dispatch_claude_mode', mapped) == 'acceptEdits'
     assert settings.state('dispatch_claude_model', mapped) == 'default', 'one option set leaves the others'
     assert 'Accept edits' in page.inner_text(f'{row("dispatch_claude_mode")} .hint')
+    to('advanced')
+    unfold('Dispatch')
     strengths = f'{row("dispatch_agent_strengths")} textarea'  # one item per line, each kept with its commas
     page.fill(strengths, page.input_value(strengths).replace('large reads', 'big reads'))
     page.keyboard.press('Tab')
@@ -10039,3 +10206,12 @@ def test_report_a_problem_saves_one_zip_with_the_browser_the_console_errors_and_
     assert 'PLANTEDKEY' not in every and 'PLANTEDTOKEN' not in every and '****ef' in every
     assert 'PROJECT-OWN-TEXT' not in every and not any(name.startswith('project/') for name in texts)
     assert [problem for problem in problems if 'PLANTED-PAGE-ERROR' not in problem] == []
+
+
+@pytest.mark.req('CLI-042')
+def test_the_demo_card_is_served_only_from_the_home_the_demo_wrote_it_in(home):
+    from metaform.modules.web.server import demo_card
+    assert demo_card() == {'demo': None}
+    home.mkdir(parents=True, exist_ok=True)
+    (home / 'demo.json').write_text(json.dumps({'lines': ['one', 'two']}), encoding='utf-8')
+    assert demo_card() == {'demo': {'lines': ['one', 'two']}}

@@ -26,6 +26,7 @@ from . import context, home, loader, prompt_files, settings
 from .data import Store
 from .errors import Stop, StoreError
 from .module import call
+from .wording import counted
 
 Say = Callable[[str], None]
 
@@ -290,10 +291,10 @@ def _readme(folder: Path) -> tuple[str, str]:
 def summary(found: Read) -> str:
     """One line of what was read."""
     if found.greenfield:
-        return f'no code yet ({found.files} files), so the map records intent only.'
+        return f'no code yet ({counted(found.files, "file", "files")}), so the map records intent only.'
     languages = ' and '.join(name for name, _ in found.languages[:2])
     said = f'; {found.described_by} says what it is' if found.description else ''
-    return f'{languages}, {found.code_files} code files{said}.'
+    return f'{languages}, {counted(found.code_files, "code file", "code files")}{said}.'
 
 
 def ask(found: Read, say: Say) -> None:
@@ -327,13 +328,17 @@ def brief(folder: Path, project: str, found: Read) -> str:
         lines.append(f'- What it is, from {found.described_by}: {found.description}')
     lines += [f'- {label}: {answer}' for label, answer in found.answers]
     if found.languages:
-        lines.append('- Languages: ' + ', '.join(f'{name} ({count} files)' for name, count in found.languages))
+        lines.append('- Languages: ' + ', '.join(f'{name} ({_files_of(number)})' for name, number in found.languages))
     if found.structure:
-        lines.append('- Structure: ' + ', '.join(f'{name} ({count} files)' for name, count in found.structure))
+        lines.append('- Structure: ' + ', '.join(f'{name} ({_files_of(number)})' for name, number in found.structure))
     if found.manifests:
         lines.append('- Manifests: ' + ', '.join(found.manifests))
     name = 'start_intent' if found.greenfield else 'start_intake'
     return prompt_files.chassis(name, project=project, path=str(folder), found='\n'.join(lines))
+
+
+def _files_of(number: int) -> str:
+    return counted(number, 'file', 'files')
 
 
 # The page and the intake -------------------------------------------------------------------------

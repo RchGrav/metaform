@@ -23,7 +23,7 @@ import subprocess
 import sys
 import time
 import webbrowser
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -38,7 +38,7 @@ FOLDER = 'demo'  # the demo's home, inside the Metaform home
 CARD = 'demo.json'  # what the page's demo card says, read by the web GUI from the home it serves
 REST = 10.0  # seconds a lane rests after its ticket is closed before a fresh one is worked there
 STALLED = 240.0  # a ticket worked this long without being closed is started again
-STAGGER = 3.0  # seconds between the agents' first starts, so they set off one after another
+STAGGER = 1.0  # seconds between the agents' first starts, so they set off one after another
 IDENTITY = ('METAFORM_ROLE', 'METAFORM_SESSION', 'METAFORM_WORK', 'METAFORM_NODE', BASE_VARIABLE)
 AGENTS = ('claude', 'codex', 'gemini')
 
@@ -49,7 +49,7 @@ def script() -> dict[str, Any]:
 
 
 @contextlib.contextmanager
-def own_home() -> Iterator[Path]:
+def own_home() -> Generator[Path, None, None]:
     """Run inside the demo's own home, `demo` in the Metaform home, without any agent session's identity, and put both
     back afterwards."""
     root = home.home() / FOLDER
@@ -101,8 +101,14 @@ def prepare(root: Path) -> Path:
     ready = root / 'ready'
     if ready.exists() and folder.is_dir():
         return folder
-    shutil.rmtree(folder, ignore_errors=True)
+    if folder.exists():  # an earlier first run was interrupted halfway: start again from nothing
+        reset(root)
     shutil.copytree(HERE / 'sample', folder, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+    if os.name != 'nt':  # in the home, the owner's alone, as every folder and file there is
+        for where, _, files in os.walk(folder):
+            os.chmod(where, 0o700)
+            for name in files:
+                os.chmod(os.path.join(where, name), 0o600)
     project = str(script()['project'])
     must('add', 'project', project, '.', folder=folder)
     must('import', str(HERE / 'map.json'), project, folder=folder)
@@ -167,7 +173,8 @@ def start(lane: Lane, folder: Path) -> None:
             'map', 'work', 'op=add', f'node={lane.address}', f'title={lane.title}', f'task={lane.task}',
             f'kind={lane.kind}', f'agent={lane.agent}', '--json', folder=folder)))
         lane.ticket = str(added['id'])
-    metaform('dispatch', 'stop', lane.ticket, folder=folder)  # a session an interrupted run left, if any
+    else:  # a ticket an earlier run left open, or one that stalled: its session, if any, ends first
+        metaform('dispatch', 'stop', lane.ticket, folder=folder)
     must('dispatch', 'start', lane.ticket, lane.agent, folder=folder)
     lane.started, lane.closed = time.monotonic(), None
 
@@ -216,11 +223,15 @@ def run(args: list[str], folder: Path, out: Callable[[str], None]) -> None:
     if unknown:
         raise Stop(f'demo takes --reset alone, not {unknown[0]}.', 'metaform demo')
     root = home.home()
+
+    def say(text: str) -> None:  # each line as it is said, also when the output is a pipe rather than a terminal
+        out(text)
+        sys.stdout.flush()
     try:
         with file_lock(root / 'demo.lock', wait=False):
             if '--reset' in args:
                 reset(root)
-            show(root, out)
+            show(root, say)
     except Held:
         address = running_address(root)
         raise Stop(f'The demo is already running{f" at {address}" if address else ""}; stop it with Ctrl+C there.',
@@ -241,27 +252,31 @@ def reset(root: Path) -> None:
 
 
 def show(root: Path, out: Callable[[str], None]) -> None:
+    """Prepare the demo, serve it, open the browser, and keep its agents at work until Ctrl+C, which stops the agents
+    and the web GUI whenever it comes."""
     began = time.monotonic()
     out(f'Metaform demo, in a home of its own at {root}; your projects and settings are not touched.')
-    folder = prepare(root)
-    address = serve(folder)
-    write_card(root, address)
-    out(f'The map of Pocket Ledger, with three demo agents at work: {address}')
+    folder = project_folder(root)
+    working: list[Lane] = []
     try:
-        opened = webbrowser.open(address)
-    except webbrowser.Error:
-        opened = False
-    out(f'Ready in {time.monotonic() - began:.1f} s. ' + ('Opened in your browser. ' if opened else
-                                                          'Open that address in your browser. ')
-        + 'Ctrl+C stops it; metaform demo --reset starts it fresh.')
-    working = lanes(folder)
-    try:
-        metaform('dispatch', 'system', 'agent=claude', folder=folder)  # the mascot
-        store = Store(str(script()['project']))
+        prepare(root)
+        address = serve(folder)
+        write_card(root, address)
+        out(f'The map of Pocket Ledger, with three demo agents at work: {address}')
+        try:
+            opened = webbrowser.open(address)
+        except webbrowser.Error:
+            opened = False
+        out(f'Ready in {time.monotonic() - began:.1f} s. ' + ('Opened in your browser. ' if opened else
+                                                              'Open that address in your browser. ')
+            + 'Ctrl+C stops it; metaform demo --reset starts it fresh.')
+        working = lanes(folder)
         for at, lane in enumerate(working):
             if at:
                 time.sleep(STAGGER)
             start(lane, folder)
+        metaform('dispatch', 'system', 'agent=claude', folder=folder)  # the mascot
+        store = Store(str(script()['project']))
         while True:
             time.sleep(1)
             for lane in working:
@@ -269,7 +284,8 @@ def show(root: Path, out: Callable[[str], None]) -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        out('Stopping the demo agents and the web GUI...')
-        with contextlib.suppress(KeyboardInterrupt):
-            stop(folder, working)
+        if (root / 'ready').exists():
+            out('Stopping the demo agents and the web GUI...')
+            with contextlib.suppress(KeyboardInterrupt):
+                stop(folder, working)
     out('Stopped. Run metaform demo to watch again, or metaform demo --reset to start fresh.')

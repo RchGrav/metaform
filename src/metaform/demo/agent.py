@@ -6,7 +6,8 @@ Started by dispatch on one of the demo map's tickets, its first turn plays that 
 real agent works: it says what it is doing a sentence at a time, which the map shows in its figure's speech bubble;
 it reads the sample project's files as tool calls that name them, which the map draws as its requests flowing to the
 parts those files belong to; and it records its steps, a memory and the ticket's close with the real metaform command
-line. Started as the person's system agent, it is the mascot: once the page has given it a body it greets the person
+line. A later turn, such as dispatch's turn to record what it learned once the ticket is done, is answered in a
+line, since its script recorded that already. Started as the person's system agent, it is the mascot: once the page has given it a body it greets the person
 and waves, and every little while says a line about what is on the map, until it is stopped."""
 from __future__ import annotations
 
@@ -24,6 +25,7 @@ OUT = sys.stdout.buffer
 WRITING = threading.Lock()
 CANCELLED = threading.Event()
 GREETING = threading.Event()  # the mascot's greetings have begun
+PLAYED = threading.Event()  # a worker's script has been played; it is played once
 SESSION = ['demo-session']
 WORD = 0.09  # seconds between the words of a sentence, as a model writes it
 CALLS = [0]  # the tool calls made, for each one's id
@@ -185,7 +187,12 @@ def main() -> None:
                 "Hello. I'm the demo's mascot, scripted, with no AI behind me. Connect your own AI tool to talk for "
                 'real: metaform install claude.')}})
             send({'jsonrpc': '2.0', 'id': ident, 'result': {'stopReason': 'end_turn'}})
-        elif method == 'session/prompt':
+        elif method == 'session/prompt' and PLAYED.is_set():  # dispatch's turn to record what it learned, once done
+            update({'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': (
+                'What I learned is recorded at this node already.')}})
+            send({'jsonrpc': '2.0', 'id': ident, 'result': {'stopReason': 'end_turn'}})
+        elif method == 'session/prompt':  # its first turn plays the ticket's script, once
+            PLAYED.set()
             CANCELLED.clear()
             text = ' '.join(str(block.get('text', '')) for block in cast(list[dict[str, Any]], params.get('prompt', [])))
             threading.Thread(target=worker_turn, args=(ident, text), daemon=True).start()

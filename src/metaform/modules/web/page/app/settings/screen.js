@@ -244,15 +244,16 @@ function sidebar(pages, searching) {
   };
   return h('nav', {class: 'setside', 'aria-label': 'Settings categories', onkeydown: keys},
     pages.map(page => {
-      const count = searching ? matchesOf(page, words).length : null;
+      // while searching, each category says how many it holds; Essentials' are counted in their categories
+      const count = searching && page.name !== 'essentials' ? matchesOf(page, words).length : null;
       return h('button', {type: 'button', class: page.under ? 'under' : null, 'data-page': page.name,
         'data-focus': `page:${page.name}`, 'aria-current': !searching && page.name === CONFIG.page ? 'page' : null,
-        disabled: searching && !count, onclick: () => go(page)},
-      h('span', {}, page.title), searching ? h('span', {class: 'setcount'}, String(count)) : null);
+        disabled: count === 0, onclick: () => go(page)},
+      h('span', {}, page.title), count !== null ? h('span', {class: 'setcount'}, String(count)) : null);
     }));
 }
 function pageHead(page) {
-  return h('header', {class: 'sethead'}, h('h2', {}, page.title), page.about ? h('p', {}, page.about) : null);
+  return h('div', {class: 'sethead'}, h('h2', {}, page.title), page.about ? h('p', {}, page.about) : null);
 }
 function pageOf(data, page) {
   if (page.name === 'essentials') return essentialsPage(data, page);
@@ -262,10 +263,10 @@ function pageOf(data, page) {
   parts.push(...headed(page, page.rows, {folded: page.name === 'advanced'}));
   return parts;
 }
-/* A page's settings under their headings: a setting's section, less a first heading that is the page's own name, or
- * else its module's name. Headings holding an essential setting come first, then the modules' in their order, then
- * the chassis's. On Advanced each heading is folded until opened; on a long page the first is open and the rest
- * folded; the person's own opening and folding is kept while the page is open. */
+/* A page's settings under their headings: a setting's heading, else its section less a first heading that is the
+ * page's own name, else its module's name. Headings holding an essential setting come first, then the modules' in
+ * their order, then the chassis's. On Advanced each heading is folded until opened; on a long page the first is
+ * open and the rest folded; the person's own opening and folding is kept while the page is open. */
 function headed(page, rows, {folded = false} = {}) {
   const groups = new Map();
   rows.forEach((row, index) => {
@@ -282,7 +283,10 @@ function headed(page, rows, {folded = false} = {}) {
   return ordered.map((group, index) => {
     const id = `${page.name}/${group.title}`;
     const open = CONFIG.folded.has(id) ? CONFIG.folded.get(id) : !(folded || (long && index > 0));
-    const list = h('div', {class: 'setlist'}, group.rows.map(row => settingRow(row)));
+    // an essential setting first, in its place, then the modules' in their declared order, then the chassis's
+    const sorted = group.rows.map((row, at) => ({row, at})).sort((one, two) => rank(one.row) - rank(two.row)
+      || Number(one.row.owner === 'chassis') - Number(two.row.owner === 'chassis') || one.at - two.at);
+    const list = h('div', {class: 'setlist'}, sorted.map(one => settingRow(one.row)));
     if (!folded && !long) return setGroup(group.title, list);
     const box = h('details', {class: 'setgroup fold', open, 'data-group': group.title},
       h('summary', {}, h('h3', {}, group.title), h('span', {class: 'setcount'}, String(group.rows.length))), list);
@@ -290,10 +294,11 @@ function headed(page, rows, {folded = false} = {}) {
     return box;
   });
 }
+const rank = row => row.essential > 0 ? row.essential : Infinity;
 const OWNER_WORDS = {chassis: 'Metaform', mcp: 'MCP', elevenlabs: 'ElevenLabs', source_placement: 'Source placement'};
 const ownerWords = owner => OWNER_WORDS[owner] || owner.charAt(0).toUpperCase() + owner.slice(1).replaceAll('_', ' ');
 function headingOf(row, page) {
-  const parts = String(row.section || '').split('/').filter(Boolean);
+  const parts = String(row.heading || row.section || '').split('/').filter(Boolean);
   if (parts[0] === page.title) parts.shift();
   if (page.name === 'advanced') parts.unshift(ownerWords(row.owner));
   return parts.length ? parts.join(' · ') : ownerWords(row.owner);
@@ -434,7 +439,8 @@ function matchesOf(page, words) {
     return [...page.rows.filter(row => has(row.key, row.help, 'modules shown in this folder')),
       ...CONFIG.data.modules.filter(module => has(module.id, module.summary, module.problem))];
   }
-  return page.rows.filter(row => has(row.key, row.label, row.help, row.details, row.section, page.title));
+  return page.rows.filter(row => has(row.key, row.label, row.help, row.details, row.heading, row.section,
+    page.title));
 }
 function searchPage(data, pages) {
   const words = CONFIG.filter.trim().toLowerCase();
@@ -584,7 +590,7 @@ function settingRow(row, {label = row.label, link = false, go = null} = {}) {
         String(row.help || '').length > 90 ? h('p', {}, row.help) : null,
         row.details ? h('p', {}, row.details) : null) : null),
     h('div', {class: 'control'}, control.main, resetButton(row)),
-    control.wide || null,
+    link && control.wide?.matches('.hint') ? null : control.wide || null,  // Essentials stays one line a setting
     error ? refusalBox(error) : null);
 }
 /* Glue, for a value set and not glued yet, as metaform set --glue keeps it. */
@@ -614,6 +620,14 @@ function unitOf(row, value) {
     : row.unit === 'cents' && amount === 0 ? 'cents (no limit)' : row.unit;
   return h('span', {class: 'unit'}, said);
 }
+/* A choice as a person reads it: of a setting that says its choices in words, ask_all reads Ask all; any other, such
+ * as a project or a model, is its own name. The value saved is the choice itself. */
+function choiceWords(choice, worded) {
+  if (choice === '' || choice === null || choice === undefined) return '(none)';
+  if (!worded) return String(choice);
+  const words = String(choice).replace(/[_-]+/g, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
 /* The control a setting's kind takes; `wide` goes under the row, as a checklist does. */
 function settingControl(row, id, label) {
   const save = value => saveSetting(row, value);
@@ -631,7 +645,7 @@ function settingControl(row, id, label) {
   if (row.kind === 'select' && choices) {
     const listed = choices.includes(row.value) ? choices : [row.value ?? '', ...choices];
     const said = row.choice_help || {};  // each choice in plain words, the one in force said under the row
-    const risky = row.risky || [];
+    const risky = row.risky || [], worded = Object.keys(said).length > 0;
     const chosen = async () => {
       const choice = select.value;
       if (!risky.includes(choice)) return save(choice);
@@ -641,7 +655,7 @@ function settingControl(row, id, label) {
     const select = h('select', {'aria-label': label, 'data-focus': id, onchange: chosen,
       onkeydown: event => arrowSelect(event, select, risky)},
       listed.map(choice => h('option', {value: choice, selected: choice === row.value, title: said[choice] || null,
-        disabled: !choices.includes(choice)}, (choice === '' ? '(none)' : choice)
+        disabled: !choices.includes(choice)}, choiceWords(choice, worded)
         + (risky.includes(choice) ? ' (risky: asks first)' : ''))));
     return {main: select, wide: said[row.value] ? h('p', {class: 'hint'}, said[row.value]) : null};
   }

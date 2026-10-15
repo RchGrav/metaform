@@ -126,3 +126,83 @@ def test_working_figures_hold_separate_places_face_the_label_and_resume_after_an
     assert found['waiting'] == 'waiting' and found['restless'] == 'restless' and found['restlessMoved'] > 1, found
     assert found['samples'] > 20 and found['travel'] < 20, found
     assert problems == []
+
+
+@pytest.mark.req('VIEW-005')
+def test_the_agent_view_ends_a_met_sign_and_sees_from_the_eyes_near_plane(
+        run, web, mapped, browser):  # noqa: F811 -- imported fixtures keep their names for discovery
+    """Stretched label, code.interface.graphical#63: a sign met before V was drawn over the map at the rectangle its
+    corners project to from the agent's eyes, a stretched strip of its name, and the meeting's near plane hid all that
+    stood before the eyes. The agent view ends the meeting, takes the eyes' near plane, and gives the person's back."""
+    import time
+
+    from metaform.data import Node, Store
+
+    run('enable', 'dispatch')
+    store = Store('proj')
+    ticket = store.add_work(Node('element', 'code.alarm.audible'), 'broken', task='Check the label')
+    store.take_work(ticket.id, by='claude')
+    live_session(ticket.id, 'claude')
+    started(run)
+    page, problems, _ = opened(browser, web, plain=True)
+    page.wait_for_function('() => window.metaform.figures().length === 1', timeout=30000)
+    state = """async () => {
+        const THREE = await import('three');
+        const {G} = await import('/page/app/map3d/graph3d.js');
+        const {tags, MET} = await import('/page/app/map3d/labels.js');
+        const {MEET} = await import('/page/app/camera/fly3d.js');
+        const {EYE} = await import('/page/app/figures/eyes.js');
+        const {ROAM} = await import('/page/app/figures/agents.js');
+        const camera = G.camera(), tag = tags.get(MEET.back?.id), figure = [...ROAM.figures.values()][0];
+        const shown = Boolean(MET.box && !MET.box.hidden && tag);
+        let stretch = null;
+        if (shown) {  // the met name's box on the screen against the name as painted: 1 when seen square on
+            tag.sprite.updateMatrixWorld();
+            const xs = [], ys = [];
+            for (const [x, y] of [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]]) {
+                const at = tag.sprite.localToWorld(new THREE.Vector3(x, y, 0));
+                const seen = G.graph2ScreenCoords(at.x, at.y, at.z);
+                xs.push(seen.x); ys.push(seen.y);
+            }
+            stretch = (Math.max(...xs) - Math.min(...xs)) / (Math.max(...ys) - Math.min(...ys))
+                / (tag.width / tag.height);
+        }
+        return {meet: MEET.on, shown, stretch, near: camera.near, own: MEET.own, eyeNear: EYE.camera.near,
+            view: EYE.view, settled: EYE.k >= 1, saved: Boolean(EYE.saved), body: figure.mesh.visible,
+            walking: ['arriving', 'going'].includes(figure.stage)};
+    }"""
+
+    def until(check, seconds=30):
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            now = page.evaluate(state)
+            if check(now):
+                return now
+            time.sleep(0.1)
+        pytest.fail(f'never came: {page.evaluate(state)}')
+
+    until(lambda now: not now['walking'])
+    page.evaluate("""async () => {
+        const {S} = await import('/page/app/core/reads.js');
+        const {select} = await import('/page/app/selection/select.js');
+        select([...S.elements.values()].find(one => one.element.address === 'code.alarm.audible').element.id, true);
+    }""")
+    # met: its name drawn over the map square on, and the near plane eased out to just short of the sign
+    met = until(lambda now: now['meet'] and now['shown'] and now['near'] > now['own'])
+    assert abs(met['stretch'] - 1) < 0.05, met
+    page.evaluate("""async () => {
+        const {ROAM} = await import('/page/app/figures/agents.js');
+        const {followFigure, agentView} = await import('/page/app/figures/eyes.js');
+        followFigure([...ROAM.figures.values()][0]);
+        agentView();
+    }""")
+    seen = until(lambda now: now['view'] and now['settled'])
+    time.sleep(0.5)
+    seen = page.evaluate(state)
+    # no met name drawn over the map from the eyes, stretched or not, and nothing before the eyes cut away
+    assert not seen['meet'] and not seen['shown'], seen
+    assert seen['near'] == pytest.approx(seen['eyeNear']) and not seen['body'], seen
+    page.evaluate("async () => (await import('/page/app/figures/eyes.js')).agentView()")
+    back = until(lambda now: not now['view'] and not now['saved'])
+    assert back['near'] == pytest.approx(back['own']) and back['body'] and not back['shown'], back
+    assert problems == []

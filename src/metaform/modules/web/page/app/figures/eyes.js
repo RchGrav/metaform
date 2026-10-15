@@ -16,8 +16,8 @@ import {G, FRAMES, wake3d} from '/page/app/map3d/graph3d.js';
 import {AT, signsFor} from '/page/app/map3d/labels.js';
 import {flowModeNow} from '/page/app/flow/flow.js';
 import {tintOf, fxDot, fxLine} from '/page/app/flow/fx3d.js';
-import {MODE, V3} from '/page/app/camera/flight.js';
-import {small3d} from '/page/app/camera/fly3d.js';
+import {MODE, V3, FLIGHT} from '/page/app/camera/flight.js';
+import {small3d, meetEnds} from '/page/app/camera/fly3d.js';
 import {PHYS} from '/page/app/views/bar.js';
 import {labelOf} from '/page/app/map2d/inside.js';
 import {FOLLOW, autoZoom2d, fullFit2d} from '/page/app/map2d/camera.js';
@@ -440,13 +440,24 @@ function selectedNow() {
   return join ? {join: join.purpose, receiver: join.receiver_address} : null;
 }
 /* A figure's eyes, for the person: the large 3D view eases to where the figure sees from, its own eye camera,
- * `eyeCamera`, and goes with it, never orbiting, and back to where the camera was. The mascot's, E; a followed agent's,
- * V. `mesh` is the body seen from; a new one while the view is on takes the view over to it. */
+ * `eyeCamera`, with its near plane, and goes with it, never orbiting, and back to where the camera was, with the
+ * person's near plane. The mascot's, E; a followed agent's, V. `mesh` is the body seen from; a new one while the view
+ * is on takes the view over to it. A sign the camera met, and a flight still on its way, end as the view goes: the met
+ * sign is drawn over the map at the rectangle its corners project to, which only matches the sign seen square on, so
+ * from the eyes it was a stretched strip of its name, and the meeting's near plane hid everything before the eyes
+ * (stretched label, code.interface.graphical#63, 2026-10-15). */
 export function eyesOf(mesh, on = !EYE.view) {
   if (!G || (on && !mesh)) return false;
   const camera = G.camera(), controls = G.controls();
+  if (on) {
+    meetEnds(true);
+    FLIGHT.on = false;
+    V3.focus = V3.hold = null;
+  }
   // still easing back to the person's view, the place it eases to is the one kept
-  if (on && !EYE.view && !EYE.saved) EYE.saved ={at: camera.position.clone(), turn: camera.quaternion.clone(), fov: camera.fov};
+  if (on && !EYE.view && !EYE.saved) {
+    EYE.saved = {at: camera.position.clone(), turn: camera.quaternion.clone(), fov: camera.fov, near: camera.near};
+  }
   if (on && EYE.mesh && EYE.mesh !== mesh) EYE.mesh.visible = true;
   if (on) EYE.mesh = mesh;
   EYE.view = V3.eyes = Boolean(on);
@@ -476,11 +487,13 @@ export function eyes3d(passed) {  // each frame: the large camera toward the fig
     camera.position.lerp(eye.position, Math.max(k, 0.25));
     camera.quaternion.slerp(EYEQ.copy(eye.quaternion), Math.max(k, 0.25));
     camera.fov += (eye.fov - camera.fov) * Math.max(k, 0.25);
+    camera.near = eye.near;  // what stands just before the eyes is drawn, as its own look draws it
   } else if (EYE.saved) {
     camera.position.lerp(EYE.saved.at, k);
     camera.quaternion.slerp(EYE.saved.turn, k);
     camera.fov += (EYE.saved.fov - camera.fov) * k;
     if (EYE.k >= 1) {
+      camera.near = EYE.saved.near;
       EYE.saved = null;
       G.controls().enabled = true;
       if (mesh) mesh.visible = true;
@@ -488,6 +501,8 @@ export function eyes3d(passed) {  // each frame: the large camera toward the fig
     }
   }
   camera.updateProjectionMatrix();
+  // the labels, bubbles and readout placed after this in the frame read the camera as it is drawn, not as it was
+  camera.updateMatrixWorld();
   FRAMES.moved = true;
 }
 /* The agents the person can follow, A: each agent's figure on the 3D map still at work, the oldest first. */
@@ -526,11 +541,13 @@ export function agentView() {
   note2d(`View: the ${figure.glyph}'s`);
 }
 /* Each frame: a followed agent that has left is replaced by the newest still on the map, or none; one that moves on
- * to another node takes the 2D map with it. */
+ * to another node takes the 2D map with it; one drawn again in another character, `reglyph`, keeps the view at its
+ * new body's eyes, and the old body, gone from the scene, is seen from no longer. */
 function followWatch() {
   if (!FOLLOW.work) return;
   const figure = ROAM.figures.get(FOLLOW.work);
   if (!figure || figure.done) return followFigure(onScreen().at(-1) || null);
+  if (EYE.agent && figure.mesh && figure.mesh !== EYE.mesh) eyesOf(figure.mesh, true);
   if (figure.target !== FOLLOW.node) { FOLLOW.node = figure.target; autoZoom2d(figure.target); }
 }
 /* A project left: nothing followed, and the person's own view. */

@@ -3,8 +3,8 @@
 `GET /api/first-run/folders?path=` lists the folders in one folder of this machine, starting at the person's own home
 folder, each with the project it is registered as, for the welcome's folder picker. `POST /api/first-run/map` registers
 the folder chosen as a project, named for the folder as `metaform add project` would be given it, or answers with the
-project it already is; the page then opens the intake on it. `POST /api/first-run/demo` starts `metaform demo` in a
-process of its own and answers with the address it prints, which the page goes to. All three are the owner's (admin
+project it already is; the page then opens the intake on it. `POST /api/first-run/demo` starts `metaform demo --reset`
+in a process of its own and answers with the address it prints, which the page goes to. All three are the owner's (admin
 behind a Node's gate), since they read this machine's folders and start processes.
 
 `GET /api/hints` and `POST /api/hints` keep the page's first-run hints each person has dismissed, in the Metaform home,
@@ -15,9 +15,11 @@ from __future__ import annotations
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -33,6 +35,7 @@ HINT_NAME = re.compile(r'[a-z][a-z0-9-]{0,31}')
 ADDRESS = re.compile(r'https?://[\w.:\[\]-]+/\S*')
 DEMO_WAIT = 45.0  # seconds the demo may take to print its address; its own target is 30
 FOLDERS_SHOWN = 400
+NEW_PROCESS_GROUP = 0x00000200  # Windows' CREATE_NEW_PROCESS_GROUP, which subprocess has only on Windows
 _demo_lock = threading.Lock()
 _demo: dict[str, Any] = {}  # the demo this server started: its process and the address it printed
 _hints_lock = threading.Lock()
@@ -131,8 +134,11 @@ def _free_id(wanted: str) -> str:
 
 def start_demo(handler: Handler, given: dict[str, Any]) -> None:
     """`metaform demo` started in a process of its own, answered with the address it prints. A demo this server started
-    that still runs is answered again rather than started twice. It is told not to open a browser, since the page that
-    asked goes to it."""
+    that still runs is answered again rather than started twice; one already running elsewhere is answered with the
+    address its refusal names. It starts fresh, `--reset`, so what an earlier demo stopped uncleanly left behind,
+    such as a ticket still claimed, never stops this one; the demo takes its lock before it resets. What it prints
+    goes to `run/demo.log` in the home, not a pipe, so it lives on whatever becomes of this server, and what went wrong
+    can be read there."""
     del given
     with _demo_lock:
         running = _demo.get('process')
@@ -140,46 +146,65 @@ def start_demo(handler: Handler, given: dict[str, Any]) -> None:
             return handler.send(200, {'address': _demo['address']})
         env = {key: value for key, value in os.environ.items()
                if key not in ('METAFORM_ROLE', 'METAFORM_SESSION', 'METAFORM_WORK', 'METAFORM_NODE')}
-        env['METAFORM_NO_BROWSER'] = '1'
+        # webbrowser.open runs the BROWSER command first and stops at the first that succeeds: a command that does
+        # nothing and succeeds keeps the demo from opening a second window, since the page that asked goes there
+        env['BROWSER'] = 'cmd /c rem %s' if sys.platform == 'win32' else 'true %s'
+        env['PYTHONUNBUFFERED'] = '1'  # each line it prints reaches the log as it is printed, its address first
+        log = home.home() / 'run' / 'demo.log'
+        home.mkdir_private(log.parent)
+        # a group of its own, so an interrupt reaches it and it stops its agents and web GUI as Ctrl+C does
+        windows = sys.platform == 'win32'
         try:
-            process = subprocess.Popen([sys.executable, '-m', 'metaform', 'demo'], stdin=subprocess.DEVNULL,
-                                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
-                                       cwd=str(home.home()), start_new_session=os.name != 'nt')
+            descriptor = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(descriptor, 'wb') as output:
+                process = subprocess.Popen([sys.executable, '-m', 'metaform', 'demo', '--reset'],
+                                           stdin=subprocess.DEVNULL,
+                                           stdout=output, stderr=subprocess.STDOUT, env=env,
+                                           cwd=str(home.home()), start_new_session=not windows,
+                                           creationflags=NEW_PROCESS_GROUP if windows else 0)
         except OSError as error:
             return handler.send(500, {'error': f'The demo could not start: {error.strerror or error}.',
                                       'next': 'Run metaform demo in a terminal.'})
-        address, said = _address_of(process)
+        address, said = _address_of(process, log)
         if address is None:
             return handler.send(502, _demo_failed(process, said))
         _demo.update(process=process, address=address)
     handler.send(200, {'address': address})
 
 
-def _address_of(process: subprocess.Popen[bytes]) -> tuple[str | None, list[str]]:
-    """The first address the demo prints, read within DEMO_WAIT seconds, and the lines it printed meanwhile; what it
-    prints after is read and dropped, so its output never fills the pipe and stops it."""
-    found: dict[str, Any] = {'address': None}
+def _address_of(process: subprocess.Popen[bytes], log: Path) -> tuple[str | None, list[str]]:
+    """The first address the demo prints, read from its log within DEMO_WAIT seconds, and the lines it printed by
+    then; a demo that gives none in time is interrupted, so it stops what it started."""
+    deadline = time.monotonic() + DEMO_WAIT
     said: list[str] = []
-    ready = threading.Event()
-
-    def drain() -> None:
-        assert process.stdout is not None
-        for raw in process.stdout:
-            if ready.is_set():
-                continue
-            line = raw.decode('utf-8', errors='replace').strip()
-            said.append(line)
+    while True:
+        ended = process.poll() is not None  # read once more after it ends, for what it said last
+        try:
+            said = log.read_text(encoding='utf-8', errors='replace').splitlines()
+        except OSError:
+            said = []
+        for line in said:
             hit = ADDRESS.search(line)
             if hit:
-                found['address'] = hit.group(0).rstrip('",')
-                ready.set()
-        ready.set()
+                return hit.group(0).rstrip('",;.'), said
+        if ended:
+            return None, said
+        if time.monotonic() > deadline:
+            _interrupt(process)
+            return None, said
+        time.sleep(0.2)
 
-    threading.Thread(target=drain, name='demo-output', daemon=True).start()
-    ready.wait(DEMO_WAIT)
-    if found['address'] is None and process.poll() is None:
-        process.terminate()
-    return found['address'], said
+
+def _interrupt(process: subprocess.Popen[bytes]) -> None:
+    """Ctrl+C for a demo that gave no address in time: it stops what it started itself, its agents and its web GUI,
+    which a plain terminate would leave running."""
+    try:
+        if sys.platform == 'win32':
+            process.send_signal(signal.CTRL_BREAK_EVENT)
+        else:
+            os.killpg(process.pid, signal.SIGINT)
+    except OSError:
+        return
 
 
 def _demo_failed(process: subprocess.Popen[bytes], said: list[str]) -> dict[str, str]:

@@ -81,7 +81,7 @@ settings.choice('elevenlabs_model', _models, 'eleven_flash_v2_5', scope='global'
                 details='eleven_flash_v2_5 starts speaking soonest and costs least; eleven_turbo_v2_5 is a little '
                         'richer; eleven_multilingual_v2 is the most natural across languages and slower to start; '
                         'eleven_v3 is the most expressive and the slowest.',
-                label='ElevenLabs model', section='ElevenLabs')
+                label='ElevenLabs model', heading='ElevenLabs')
 settings.number('elevenlabs_stability', 50, min=0, max=100, scope='global',
                 help='How steady the voice is, 0 to 100: low is livelier and less predictable.',
                 details='Low values let the voice vary its tone from line to line, more emotional and sometimes '
@@ -123,7 +123,7 @@ settings.items('elevenlabs_voices', [], scope='global', exclusive='=', check=_ch
                help='A voice for a mascot character, as character=voice id or name, such as owl=Daniel.',
                details='The voice is an id or a name of a voice on your ElevenLabs account; metaform elevenlabs '
                        'voices lists them. A character not named speaks with its own default voice.',
-               label='ElevenLabs voice for each character', section='ElevenLabs')
+               label='ElevenLabs voice for each character', heading='ElevenLabs')
 settings.choice('elevenlabs_scribe_model', list(api.SCRIBE_MODELS), 'scribe_v1', scope='global',
                 help="Scribe's model, when voice_engine is elevenlabs.",
                 details='scribe_v1 is the released model; scribe_v1_experimental has ElevenLabs\'s latest changes, '

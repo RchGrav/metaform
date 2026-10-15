@@ -1184,3 +1184,83 @@ def test_a_wheel_that_leaves_modules_out_hands_the_setup_to_the_metaform_it_inst
         ['install', 'claude'], None, str(machine['wheel']),
         __version__ if transition.startswith('newer') else None]
     assert calls(machine['bin'], 'claude') == []  # the wheel's own run registered nothing
+
+
+# metaform start, CLI-041 ------------------------------------------------------------------------------------------
+
+@pytest.fixture
+def chained(monkeypatch):
+    """The module verbs `metaform start` chains, recorded instead of run: the web GUI's start, and dispatch's sessions
+    read and intake agent, whose intake is running once started. No server or agent starts, and no window opens."""
+    from metaform import start
+    made: list[tuple[str, str, str, dict]] = []
+    running: list[dict] = []
+
+    def verb(identifier, name, folder, project, nouns=None):
+        made.append((identifier, name, project, dict(nouns or {})))
+        if (identifier, name) == ('web', 'start'):
+            return {'state': 'started', 'address': 'http://127.0.0.1:7491/'}
+        if (identifier, name) == ('dispatch', 'sessions'):
+            return {'sessions': list(running)}
+        running.append({'work_id': 'intake-1', 'state': 'running'})
+        return {'state': 'starting', 'work_id': 'intake-1', 'agent': (nouns or {}).get('agent', 'codex')}
+    monkeypatch.setattr(start, 'run_verb', verb)
+    monkeypatch.delenv('DISPLAY', raising=False)
+    monkeypatch.delenv('WAYLAND_DISPLAY', raising=False)
+    return made
+
+
+def intakes(made):
+    return [nouns for identifier, name, _, nouns in made if (identifier, name) == ('dispatch', 'intake')]
+
+
+@pytest.mark.req('CLI-041')
+def test_start_registers_the_folder_connects_claude_code_and_starts_the_intake_asking_nothing(run, machine, chained):
+    folder = machine['folder'] / 'My Notes'
+    (folder / 'notes').mkdir(parents=True)
+    (folder / 'notes' / 'app.py').write_text('print(1)\n', encoding='utf-8')
+    (folder / 'README.md').write_text('# Notes\n\n![badge](b.svg)\n\nA small [note](x) keeper.\n', encoding='utf-8')
+    (folder / '.mcp.json').write_text(json.dumps({'mcpServers': {'other': {'command': 'x'}}}), encoding='utf-8')
+    out = run('start', cwd=folder, env=machine['env']).stdout.splitlines()
+    assert out == [f'Project: my-notes, registered for {folder}.', 'Modules: turned on dispatch.',
+                   (f'Claude Code: wrote the metaform MCP server into {folder / ".mcp.json"}; Claude Code asks once '
+                    'to use it.'),
+                   'Read: Python, one code file; README.md says what it is.',
+                   'Intake: claude is mapping the project; the page shows each part as it is recorded.',
+                   'Map: http://127.0.0.1:7491/#p=my-notes  (open it in your browser)']
+    assert json.loads((folder / '.mcp.json').read_text(encoding='utf-8'))['mcpServers'] == {
+        'other': {'command': 'x'},
+        'metaform': {'type': 'stdio', 'command': 'uvx', 'args': entry(machine['wheel'])[1:], 'env': {}}}
+    [given] = intakes(chained)
+    assert given['agent'] == 'claude'  # the AI tool found, while the person has chosen no dispatch_agent
+    assert given['text'].startswith(f'Map this project, my-notes, in the folder {folder}.')
+    assert '- What it is, from README.md: A small note keeper.\n- Languages: Python (one file)' in given['text']
+    assert calls(machine['bin'], 'claude') == []  # Claude Code itself is never run
+    again = run('start', cwd=folder, env=machine['env']).stdout.splitlines()
+    assert again == ['Project: my-notes, already registered.',
+                     f'Claude Code: already connected through {folder / ".mcp.json"}.',
+                     ('Intake: being recorded; the page follows it. If no agent is recording it any more: '
+                      'metaform dispatch intake resume=true'),
+                     'Map: http://127.0.0.1:7491/#p=my-notes  (open it in your browser)']
+    assert len(intakes(chained)) == 1
+
+
+@pytest.mark.req('CLI-041')
+def test_start_in_a_folder_with_no_code_asks_two_questions_and_records_intent_only(run, machine, chained,
+                                                                                   monkeypatch):
+    from metaform import start
+    monkeypatch.setattr(start, '_interactive', lambda: True)
+    other = machine['folder'] / 'elsewhere'
+    other.mkdir()
+    run('add', 'project', 'idea', str(other), env=machine['env'])
+    folder = machine['folder'] / 'idea'
+    folder.mkdir()
+    (folder / 'notes.txt').write_text('maybe\n', encoding='utf-8')
+    out = run('start', cwd=folder, env=machine['env'], input='A recipe planner.\nHome cooks.\n').stdout
+    assert f'Project: idea-2, registered for {folder}.' in out  # the folder's name, held elsewhere, takes a number
+    assert 'Read: no code yet (one file), so the map records intent only.\n' in out
+    assert 'What will this project be, in a sentence? Who is it for? ' in out
+    [given] = intakes(chained)
+    assert 'It holds no code yet, so the map records intent only' in given['text']
+    assert "- What it is for, in the person's words: A recipe planner.\n" in given['text']
+    assert "- Who it is for, in the person's words: Home cooks." in given['text']

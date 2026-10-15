@@ -10,7 +10,7 @@ import {listen} from '/page/app/live/ops.js';
 import {loadProject, toProject} from '/page/app/loading/load.js';
 
 /* shown: whether the welcome is up; path: the folder the picker is in; picked: the project that folder already is. */
-export const WELCOME = {shown: false, path: null, parent: null, picked: null, workbench: false};
+export const WELCOME = {shown: false, path: null, parent: null, picked: null, workbench: false, asked: 0};
 const WORKBENCH = 'metaform.workbench';  // this tab chose the workbench over the welcome; kept for the tab's session
 function chosenWorkbench() {
   try { return WELCOME.workbench || sessionStorage.getItem(WORKBENCH) === '1'; } catch { return WELCOME.workbench; }
@@ -91,16 +91,21 @@ async function openPicker(path) {
   $('#welcome .picker').hidden = false;
   await listFolders(path);
 }
+/* The folders in one folder, drawn in the picker; only the last one asked for is drawn, so a slow listing that comes
+ * back late never replaces the folder the person went to since. */
 async function listFolders(path) {
   clearFailed();
+  const asked = WELCOME.asked = (WELCOME.asked || 0) + 1;
   let response, body;
   try {
     response = await reach(`/api/first-run/folders?path=${encodeURIComponent(path)}`,
       {headers: {Accept: 'application/json'}}, 2);
     body = await response.json().catch(() => ({}));
-  } catch (error) { return sayFailed({error: error.message}, 0); }
+  } catch (error) { return asked === WELCOME.asked && sayFailed({error: error.message}, 0); }
+  if (asked !== WELCOME.asked) return;
   if (!response.ok) return sayFailed(body, response.status);
   Object.assign(WELCOME, {path: body.path, parent: body.parent, picked: body.project});
+  $('#welcome .typed').value = '';
   fill($('#welcome .pickhead .at'), body.path);
   const rows = body.folders.map(folder => h('button', {type: 'button', role: 'option', 'data-path': folder.path,
     title: `Open ${folder.path}`, onclick: () => listFolders(folder.path)},
@@ -141,6 +146,11 @@ $('#welcome .other').onclick = () => { clearFailed(); openPicker(''); };
 $('#welcome .back').onclick = () => { clearFailed(); showChoices(); };
 $('#welcome .up').onclick = () => { if (WELCOME.parent) listFolders(WELCOME.parent); };
 $('#welcome .pick').onclick = pickFolder;
+$('#welcome .typed').onkeydown = event => {
+  if (event.key !== 'Enter' || !event.target.value.trim()) return;
+  event.preventDefault();
+  listFolders(event.target.value.trim());
+};
 $('#welcome .workbench').onclick = () => {
   WELCOME.workbench = true;
   try { sessionStorage.setItem(WORKBENCH, '1'); } catch { /* storage can be blocked; this load keeps it */ }

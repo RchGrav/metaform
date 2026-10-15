@@ -100,7 +100,7 @@ SPEND = (Column('session_id', required=True), Column('seq', 'int', required=True
          Column('tokens', 'int', required=True), Column('cost', 'real'), Column('currency'),
          Column('input', 'int'), Column('output', 'int'), Column('cache_read', 'int'),
          Column('cache_write', 'int'), Column('thought', 'int'), Column('metered', 'bool', default=True))
-TABLES = Tables(version=14, compatible_from=5, tables=(  # 5: agents do not ask; 6, 7, 10 to 14 only add
+TABLES = Tables(version=15, compatible_from=5, tables=(  # 5: agents do not ask; 6, 7, 10 to 15 only add
     Table('sessions', key=('session_id',),
           columns=(Column('session_id', required=True), Column('work_id', required=True), Column('agent', required=True),
                    Column('state', required=True), Column('nonce'), Column('pid', 'int'), Column('port', 'int'),
@@ -182,7 +182,7 @@ settings.boolean('dispatch_autostart', False, label='Start agents on their own',
                  help='Start agents on tickets that have not been tried, and resume a worker\'s session that ended '
                       'without your stop, up to dispatch_retries; a ticket whose agent stopped with it open waits for '
                       'you.',
-                 category='agents', section='Starting work', essential=20)
+                 category='agents', heading='Starting work', essential=20)
 settings.items('dispatch_registry_agents', [], scope='global', person_only=True, label='Agents from the ACP Registry',
                check=agent_registry.check_pins,
                help='Agents of the ACP Registry dispatch may start beside its own, each pinned as <id>@<version>, '
@@ -239,16 +239,16 @@ settings.choice('dispatch_agent', agent_choices, 'codex', person_only=True,
                 help='The default agent: the one started when none is chosen, for a chat, an issue or an intake.',
                 details='Starting an agent of another kind on a ticket leaves it as it is; the person sets it here or '
                         'from the page.',
-                label='Default agent', category='agents', section='Starting work', essential=10)
+                label='Default agent', category='agents', heading='Starting work', essential=10)
 settings.choice('dispatch_recovery', ['manual', 'automatic'], 'manual', label='Dead runner recovery', person_only=True,
                 help='manual leaves a dead runner ticket taken; automatic verifies death and cleans up before returning it.',
                 details='Applies before Autostart selection or with dispatch recover. Older sessions or uncertain cleanup '
                         'still require manual recovery. Session reads never change ownership.',
-                category='agents', section='Starting work')
+                category='agents', heading='Starting work')
 settings.number('dispatch_agents', 5, min=1, person_only=True,
                 help='How many agents may work at once. The person can always summon one '
                 'more; agents the person summons beyond that use the slots the agents at work leave free.',
-                label='Agents at once', category='agents', section='Starting work', unit='agents', essential=30)
+                label='Agents at once', category='agents', heading='Starting work', unit='agents', essential=30)
 settings.number('dispatch_spin_calls', 40, min=1, person_only=True,
                 help='Tool calls without a completed ticket step before raising a spinning signal.')
 settings.number('dispatch_spin_minutes', 10, min=1, person_only=True,
@@ -409,29 +409,29 @@ settings.number('dispatch_budget_ticket', 0, min=0, person_only=True, label='Tok
                         'it, nothing starts or retries on the ticket and its agent gets no further turn of '
                         'Metaform\'s own; a budget signal says so, and your own message still reaches it. An agent '
                         'that reports no usage is shown as unmetered by dispatch spend.',
-                category='budgets', section='Tokens', unit='tokens')
+                category='budgets', heading='Tokens', unit='tokens')
 settings.number('dispatch_budget_run', 0, min=0, person_only=True, label='Tokens per run',
                 help='Billable tokens one run may spend over the tickets it works in turn; 0 sets no limit.',
                 details='A run is one `dispatch run`, the ticket it was started on and the tickets of the same agent '
                         'glyph it goes on to, with every retry the supervisor makes of its sessions. Past it, the '
                         'runner takes no further ticket.',
-                category='budgets', section='Tokens', unit='tokens')
+                category='budgets', heading='Tokens', unit='tokens')
 settings.number('dispatch_budget_day', 0, min=0, person_only=True, label='Tokens per day',
                 help='Billable tokens every agent of the project may spend in one UTC day; 0 sets no limit.',
                 details='Checked before autostart starts or retries anything and before a worker is started; past it, '
                         'a budget signal waits for you, and nothing starts until the next day or a higher budget.',
-                category='budgets', section='Tokens', unit='tokens')
+                category='budgets', heading='Tokens', unit='tokens')
 settings.number('dispatch_budget_cost_ticket', 0, min=0, person_only=True, label='Spending limit per ticket',
                 help='Hundredths of the currency the agent reports (cents of USD) one ticket may cost; 0 sets no '
                      'limit.',
                 details='Cost is what the agent reports in its usage updates, ACP\'s session usage: Claude Code '
                         'reports it as each turn ends, Codex not at all, which dispatch spend says. A cost budget is '
                         'held against each currency on its own, and acts when a turn ends.',
-                category='budgets', section='Spending', unit='cents')
+                category='budgets', heading='Spending', unit='cents')
 settings.number('dispatch_budget_cost_day', 0, min=0, person_only=True, label='Daily spending limit',
                 help='Hundredths of the currency the agent reports (cents of USD) the project\'s agents may cost in '
                      'one UTC day; 0 sets no limit.',
-                category='budgets', section='Spending', unit='cents', essential=40)
+                category='budgets', heading='Spending', unit='cents', essential=40)
 settings.choice('dispatch_budget_action', ['signal', 'interrupt'], 'signal', person_only=True,
                 label='When a budget is reached',
                 help='signal raises the budget signal and lets the turn in flight finish; interrupt also cancels it.',
@@ -439,7 +439,7 @@ settings.choice('dispatch_budget_action', ['signal', 'interrupt'], 'signal', per
                         'turn\'s end, when the agents report what a turn used, and the token budgets also during a '
                         'turn, against an estimate from the context the agent reports in use after each model call; '
                         'so interrupt can stop a runaway turn part way on tokens, and on cost only once it ends.',
-                category='budgets', section='Spending')
+                category='budgets', heading='Spending')
 
 REPLY_LIMIT = 30.0  # the one wait for a running session to answer `message`, `stop` or a change
 CREATE_NEW_PROCESS_GROUP = 0x00000200
@@ -635,7 +635,7 @@ settings.choice('dispatch_prompts', PROMPTS, 'ask_all', person_only=True, risky=
                         'search and asks for anything else; ask_all asks every prompt as a question at the ticket\'s '
                         'node. It is read at each prompt, so a change reaches agents already running. A question the '
                         'agent asks you is not a prompt: dispatch_elicitation decides it.',
-                label='Permission prompts', category='agents', section='Permissions', essential=50)
+                label='Permission prompts', category='agents', heading='Permissions', essential=50)
 # An agent's own question to the person, ACP's elicitation: Claude Code's AskUserQuestion, Codex's request for input,
 # or an MCP server's form or sign-in page. Asked at the ticket's node and on the page, as a permission prompt is, or
 # declined at once, the agent going on without the answer.
@@ -646,7 +646,7 @@ settings.choice('dispatch_elicitation', ['ask', 'decline'], 'ask', person_only=T
                         'it asks for; a page to open, such as an MCP server\'s sign-in, is never opened by Metaform: '
                         'you open it, and answering accept is your consent. dispatch_prompts never answers a '
                         'question. Read at each question, so a change reaches agents already running.',
-                category='agents', section='Permissions')
+                category='agents', heading='Permissions')
 
 
 def prompt(name: str, **fills: str) -> str:

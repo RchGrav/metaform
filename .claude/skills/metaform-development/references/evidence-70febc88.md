@@ -1,0 +1,1 @@
+"results": [{"id":"7055645b9e37434f94633c6ba16ea113", ... "taken_by":"claude demo-478965", ... "map":{"agent":"claude",...}},{... "address":"code.report.monthly", ... "taken_by":"codex demo-479041", ... "map":{"agent":"codex",...}},{... "address":"code.store.ledger", ... "taken_by":"gemini demo-479326", ... "map":{"agent":"gemini",...}}]

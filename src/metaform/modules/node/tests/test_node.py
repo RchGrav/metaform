@@ -324,7 +324,9 @@ def test_a_second_non_owner_account_is_refused_every_owner_route(tmp_path, home)
             connection.close()
     try:
         owner_routes = [('POST', path) for path in sorted(page_server.ADMIN_ROUTES)]
-        owner_routes += [('GET', '/api/build/options'), ('GET', '/api/debug/prompts'), ('POST', '/api/not-classed')]
+        owner_routes += [('GET', '/api/build/options'), ('GET', '/api/debug/prompts'), ('POST', '/api/not-classed'),
+                         ('GET', '/api/first-run/folders'), ('POST', '/api/first-run/map'),
+                         ('POST', '/api/first-run/demo')]  # this machine's folders and processes: the owner's
         for method, path in owner_routes:
             assert page_server.route_class(method, path) == 'admin', path
             status, body = call(path, 'bob', method)
@@ -332,6 +334,7 @@ def test_a_second_non_owner_account_is_refused_every_owner_route(tmp_path, home)
         assert 'may not use' not in call('/api/settings', 'rich')[1]  # the owner passes; the body is then judged
         assert 'may not use' not in call('/api/note', 'bob')[1]  # a write is a member's too
         assert 'may not use' not in call('/api/settings', 'bob', 'GET')[1]  # reading the settings is a read
+        assert 'may not use' not in call('/api/hints', 'bob')[1]  # each person dismisses their own hints
         for account in ('rich', 'bob'):  # dispatch is not this Node's at write, for anyone
             assert f'needs dispatch, which {account} may not use' in call('/api/dispatch-start', account)[1]
         before = settings.value('web_workspaces', homes.home())
