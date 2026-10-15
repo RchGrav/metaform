@@ -276,6 +276,8 @@ function workInPanel() {
 const BATCH = 500;
 const AGENTS = {busy: false, again: false, whole: false, sessions: false, everyone: false, works: new Set(), chat: false,
   at: -Infinity};
+/* Whether no agents read is pending or running, for a check that must count reads a change of its own causes. */
+export const agentsIdle = () => !AGENTS.busy && !AGENTS.sessions && !AGENTS.chat && !AGENTS.whole;
 export const linesOnly = payload => payload.tables === 'dispatch' && Array.isArray(payload.dispatch_tables)
   && payload.dispatch_tables.length > 0 && payload.dispatch_tables.every(table => table === 'dispatch.lines');
 const SESSION_KINDS = ['session', 'signal', 'permission', 'question'];
@@ -345,7 +347,10 @@ const TOPICS = {
   // what a voice model's download has fetched, for its bar, page/voice.js
   'voice.download': payload => document.dispatchEvent(new CustomEvent('metaform:voice-download', {detail: payload})),
 };
+const HEARD = {count: 0};  // the stream's messages so far, for a check that waits for one it caused
+export const heardCount = () => HEARD.count;
 function heard(message) {
+  HEARD.count++;
   const event = JSON.parse(message.data);
   if (Object.hasOwn(TOPICS, event.topic)) return TOPICS[event.topic](event.payload);
   if (debugAt('verbose')) {

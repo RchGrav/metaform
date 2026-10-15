@@ -1073,8 +1073,19 @@ class TableTx:
         self._db: sqlite3.Connection | None = None
         self._path: Path | None = None
         self._present = False
+        # What the writes say they concern, `concern`, carried to the change the store notes, BASE-053.
+        self.about: dict[str, set[str]] = {}
         if bound is not None:
             self._bind(bound)
+
+    def concern(self, *, work_id: str | None = None, session_id: str | None = None, kind: str | None = None) -> None:
+        """Say what this transaction's writes concern, as `Tx.concern` does for the map's: the ticket, the dispatch
+        session and the kind of change, carried on its `map.changed`. A write that says nothing leaves them unknown, so
+        every reader of the change reads as if anything changed."""
+        for key, value in (('work_ids', work_id), ('session_ids', session_id), ('kinds', kind)):
+            held = self.about.setdefault(key, set())
+            if value:
+                held.add(value)
 
     @property
     def place(self) -> Place | None:

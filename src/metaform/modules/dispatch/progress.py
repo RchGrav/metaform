@@ -25,6 +25,7 @@ def _read(store: Store, work_id: str) -> dict[str, Any] | None:
 def _write(store: Store, work_id: str, value: dict[str, Any]) -> None:
     key = {'session_id': SOURCE, 'name': work_id}
     with own_store(store).tables() as tx:
+        tx.concern(work_id=work_id, kind='progress')  # a ticket's progress: no page or runner reads for it
         text = json.dumps(value)
         if tx.get('lines', key) is None:
             tx.insert('lines', {**key, 'work_id': work_id, 'kind': 'progress', 'text': text, 'seq': time.time_ns()})

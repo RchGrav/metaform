@@ -330,16 +330,23 @@ class Store:
         declared = tables.declared(self.module)
         module = cast(str, self.module)
         with ExitStack() as stack:
+            held: list[TableTx] = []  # the transaction, whose `about` the write's change carries
+
             def opener(place: Place) -> tuple[sqlite3.Connection, Path, bool]:
                 if place == 'metaform':
-                    return self._metaform_tables(stack, module, declared, write)
-                return self._project_tables(stack, module, declared, write)
-            yield TableTx(module, declared, write=write, opener=opener)
+                    return self._metaform_tables(stack, module, declared, write, held)
+                return self._project_tables(stack, module, declared, write, held)
+            given = TableTx(module, declared, write=write, opener=opener)
+            held.append(given)
+            yield given
 
-    def _metaform_tables(self, stack: ExitStack, module: str, declared: Tables,
-                         write: bool) -> tuple[sqlite3.Connection, Path, bool]:
+    def _metaform_tables(self, stack: ExitStack, module: str, declared: Tables, write: bool,
+                         held: Sequence[TableTx] = ()) -> tuple[sqlite3.Connection, Path, bool]:
         if write:
             tx = stack.enter_context(self._write())
+            if held:  # before the write commits and notes its change: what the module's writes said they concern
+                stack.callback(lambda: [tx.about.setdefault(key, set()).update(value)
+                                        for key, value in held[0].about.items()])
             tables.ensure(tx.db, tx.path, module, declared, 'metaform')
             return tx.db, tx.path, True
         reading = ExitStack()
@@ -359,7 +366,7 @@ class Store:
         return tx.db, tx.path, found == 'ready'
 
     @contextmanager
-    def _project_write(self, path: Path) -> Generator[sqlite3.Connection, None, None]:
+    def _project_write(self, path: Path, held: Sequence[TableTx] = ()) -> Generator[sqlite3.Connection, None, None]:
         """A write transaction on a project-level module store, noted after its commit when it changed rows, as a
         metaform store's write is, so the chassis announces it when the command ends, VIEW-018. The project's map
         presents what a module keeps for the project, such as the memories at its nodes, so the change is noted for
@@ -370,13 +377,14 @@ class Store:
             changed = db.total_changes
         if changed:
             active = home.active_base(self.project_id)
-            changes.note(self.project_id, active.id if active is not None else None, written)
+            changes.note(self.project_id, active.id if active is not None else None, written,
+                         about=held[0].about or None if held else None)
 
-    def _project_tables(self, stack: ExitStack, module: str, declared: Tables,
-                        write: bool) -> tuple[sqlite3.Connection, Path, bool]:
+    def _project_tables(self, stack: ExitStack, module: str, declared: Tables, write: bool,
+                        held: Sequence[TableTx] = ()) -> tuple[sqlite3.Connection, Path, bool]:
         path = tables.project_store(self.project_id, module)
         if write:
-            db = stack.enter_context(self._project_write(path))
+            db = stack.enter_context(self._project_write(path, held))
             tables.ensure(db, path, module, declared, 'project')
             return db, path, True
         reading = ExitStack()

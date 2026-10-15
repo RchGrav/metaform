@@ -114,6 +114,7 @@ def record(store: Store, signal: str, *, work_id: str = '', session_id: str = ''
                  'work_id': work_id, 'session_id': session_id or None, 'active': active,
                  'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), **details}
         text = json.dumps(value, ensure_ascii=False)
+        tx.concern(work_id=work_id or None, session_id=session_id or None, kind='signal')
         if previous:
             tx.update('lines', {'session_id': source, 'name': name}, {'text': text})
         else:

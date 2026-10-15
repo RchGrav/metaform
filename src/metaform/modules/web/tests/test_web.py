@@ -7445,6 +7445,7 @@ def test_a_line_of_an_agents_thread_reads_the_agents_again_and_never_the_map(run
     with Store('proj', module='dispatch').tables() as tx:
         tx.insert('lines', {'session_id': f's-{worked.id}', 'name': 'said-2', 'work_id': worked.id,
                             'kind': 'agent_message_chunk', 'text': 'and a second line', 'seq': 2})
+    heard = page.evaluate('window.metaform.heard()')
     relay.deliver('map.changed', payload)  # as the runner's process announces it
     page.wait_for_function('() => document.querySelector("#helpdesk .log").innerText.includes("a second line")',
                            timeout=10000)
@@ -7452,6 +7453,8 @@ def test_a_line_of_an_agents_thread_reads_the_agents_again_and_never_the_map(run
     sessions = [url for url in reads if '/api/dispatch-sessions' in url]
     assert sessions and all('thread=false' in url or f'id={worked.id}' in url for url in sessions), sessions
     # A ticket closed changes only tickets: the page reads work and the open messages, at most three reads, never the map.
+    # the second line heard and the agents read it caused done, so only the close's own reads are counted below
+    page.wait_for_function(f'() => window.metaform.heard() > {heard} && window.metaform.agentsIdle()', timeout=10000)
     handled, mark = page.evaluate('window.metaform.changes()'), len(reads)
     run('map', 'work', 'op=done', f'id={worked.id}', 'resolution=quieter', 'why=the test closes it', cwd=mapped)
     page.wait_for_function(f'() => window.metaform.changes() > {handled}', timeout=15000)

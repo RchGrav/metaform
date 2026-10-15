@@ -43,7 +43,7 @@ import {HARNESS, agentName} from '/page/app/agents/pickers.js';
 import {isIntake, workPart} from '/page/app/session/tools.js';
 import {INTAKE, openIntakeChat, openIntake} from '/page/app/intake/intake.js';
 import {BUILD} from '/page/app/build/build.js';
-import {listen} from '/page/app/live/ops.js';
+import {listen, agentsIdle, heardCount} from '/page/app/live/ops.js';
 import {loadProject} from '/page/app/loading/load.js';
 
 /* ---------- the developer level: browser-console detail and traces, only with metaform web start --web-debug
@@ -286,7 +286,8 @@ function readoutShown(which) {
   const box = readoutBox(which);
   return box && !box.hidden && box.classList.contains('on') ? box.textContent : null;
 }
-Object.assign(window.metaform, {renderAgents: () => renderAgents(), figureOnScreen, readout: readoutShown});
+Object.assign(window.metaform, {renderAgents: () => renderAgents(), agentsIdle, heard: heardCount, figureOnScreen,
+  readout: readoutShown});
 // What a browser check reads of the workspace: whether it is on, the layout drawn, and where a pane stands.
 window.metaform.workspace = {on: () => WS.on, layout: () => WS.layout(), toolbar: () => WS.toolbar(),
   where: id => WS.where(id), shown: id => WS.isShown(id), activate: id => WS.activate(id),
