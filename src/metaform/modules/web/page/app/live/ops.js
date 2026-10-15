@@ -25,6 +25,7 @@ import {buildEvent} from '/page/app/build/build.js';
 import {LIVE, following, recordingNow, changed} from '/page/app/live/stream.js';
 import {progressOf} from '/page/app/loading/load.js';
 import {debugAt, dlog, traced, loadWorkspace} from '/page/app/workspace/workspace.js';
+import {banner} from '/page/app/core/banner.js';
 
 /* The ops since the drawn sequence, applied to what is drawn, STORE-046 and VIEW-018: an element or a join added,
  * changed or removed, an item or a property of a layer in view. The map, the panel and the board are drawn from what
@@ -339,7 +340,23 @@ export function listen() {
   };
 }
 /* The topics the page takes apart from the map's changes. */
+/* The code the server runs, said first on every stream, VIEW-002: the first is the code this page opened with. A later
+ * one that differs means the server was updated while the page stayed open on the old code: the page says so, with
+ * Reload, and reloads itself only when it is out of view, so nothing the person is doing is taken from them. */
+const CODE = {opened: null, told: false};
+function codeHeard(code) {
+  if (!code) return;
+  if (CODE.opened === null) { CODE.opened = code; return; }
+  if (code === CODE.opened || CODE.told) return;
+  CODE.told = true;
+  if (document.hidden) { location.reload(); return; }
+  banner('updated', {tone: 'info', title: 'Metaform was updated', closable: true,
+    text: 'This page still runs the version it opened with. Reload to use the new one.',
+    actions: [{label: 'Reload', primary: true, run: () => location.reload()}]});
+  document.addEventListener('visibilitychange', () => { if (document.hidden) location.reload(); }, {once: true});
+}
 const TOPICS = {
+  hello: payload => codeHeard(payload.code),  // the server's code, first on each stream, `CODE`
   build: payload => buildEvent(payload),  // the build panel's progress, BASE-060
   'map.flow': payload => flowEvent(payload),  // where agents' tool calls reached, `FLOW`
   mascot: payload => mascotEvent(payload),  // the system agent moves the mascot, `MASCOT`

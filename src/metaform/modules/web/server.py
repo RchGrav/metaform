@@ -1118,6 +1118,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('X-Content-Type-Options', 'nosniff')
             self.end_headers()
             self.wfile.write(b': open\n\n')
+            # first, the code this server runs, so a page opened on older code knows it once the server it reconnects
+            # to was updated, VIEW-002, and never runs stale code unknowing
+            self.wfile.write(b'data: ' + json.dumps({'topic': 'hello', 'payload': {'code': self.gui.code[:12]}})
+                             .encode('utf-8') + b'\n\n')
             self.wfile.flush()
             def send(event: dict[str, Any]) -> None:
                 self.wfile.write(b'data: ' + json.dumps(event).encode('utf-8') + b'\n\n')
