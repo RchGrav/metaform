@@ -845,6 +845,32 @@ def test_start_refuses_a_ticket_already_taken(dispatch, run):
     assert not dispatch.log.exists()
 
 
+@pytest.mark.req('VIEW-039')
+def test_start_refuses_a_ticket_when_every_agent_slot_is_in_use(dispatch, run):
+    """Found 2026-10-16: Start all started 46 agents with six slots, since only autostart counted them."""
+    run('set', '--dispatch-agents', '1', cwd=dispatch.folder)
+    other = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Another change').id
+    dispatch.store.take_work(other, by='dispatch starting 0')
+    assert json.loads(run('dispatch', 'agents', '--json', cwd=dispatch.folder).stdout)['free'] == 0
+    refused = run('dispatch', 'start', dispatch.id, 'claude', cwd=dispatch.folder, ok=False)
+    assert refused.returncode != 0 and 'Every agent slot is in use' in refused.stdout + refused.stderr
+    assert not dispatch.ticket().taken and not dispatch.log.exists()
+
+
+@pytest.mark.req('VIEW-039')
+def test_a_runner_reserved_past_the_agent_slots_gives_its_ticket_back(dispatch, run):
+    """Found 2026-10-16: an MCP server on code from before the slot check went on starting tickets past the limit; the
+    runner it launches, on the code on disk, refuses to begin."""
+    run('set', '--dispatch-agents', '1', cwd=dispatch.folder)
+    other = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Another change').id
+    dispatch.store.take_work(other, by='dispatch starting 0')
+    dispatch.store.take_work(dispatch.id, by='dispatch starting 1')
+    refused = run('dispatch', 'run', dispatch.id, 'claude', 'reservation=dispatch starting 1', cwd=dispatch.folder,
+                  ok=False, env=dispatch.env('hold'))
+    assert refused.returncode != 0 and 'Every agent slot is in use' in refused.stdout + refused.stderr
+    assert not dispatch.ticket().taken and not dispatch.received('session/new')
+
+
 @pytest.mark.req('BASE-052')
 def test_a_second_start_on_one_ticket_is_refused_at_once(dispatch, run, dispatch_runners):
     """Found 2026-10-03 with the ghost agents: f566b181 had two sessions from two starts, since start checked the

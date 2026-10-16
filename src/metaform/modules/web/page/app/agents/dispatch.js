@@ -185,18 +185,23 @@ function startable(candidates, agent) {
     return true;
   });
 }
-/* Start all: the agent chosen started on each ticket offered that is not started yet, one after another; a start
- * that fails can be retried on its own ticket. */
+/* Start all: the agent chosen started on each ticket offered that is not started yet, one after another, up to the
+ * agent slots free now; the rest wait in To do, and autostart starts them as slots free. A start that fails can be
+ * retried on its own ticket. */
 async function startAllTickets(tickets, pick, startAll) {
   if (D.starting) return;
   D.starting = true;
   const agent = pick.value();
   const buttons = [...$('#dispatch .tickets').querySelectorAll('button.start')];
-  const pending = tickets.filter((ticket, i) => !buttons[i].disabled);
+  const offered = tickets.filter((ticket, i) => !buttons[i].disabled);
   startAll.disabled = true;
   pick.hold(true);
   for (const button of buttons) button.disabled = true;
   drawBoard();
+  const {free} = await readHarnesses();
+  const pending = free === null ? offered : offered.slice(0, free);
+  const waiting = offered.length - pending.length;
+  for (const ticket of offered.slice(pending.length)) buttons[tickets.indexOf(ticket)].textContent = 'Waiting';
   let started = 0;
   for (const ticket of pending) {
     const button = buttons[tickets.indexOf(ticket)];
@@ -210,7 +215,9 @@ async function startAllTickets(tickets, pick, startAll) {
   startAll.disabled = !buttons.some(button => !button.disabled);
   if (started === pending.length) $('#dispatch').hidden = true;
   toast(`${started} ${agentName(agent)} agent${started === 1 ? '' : 's'} starting.`
-    + (started < pending.length ? ` ${pending.length - started} could not start; retry their tickets.` : ''));
+    + (started < pending.length ? ` ${pending.length - started} could not start; retry their tickets.` : '')
+    + (waiting ? ` ${waiting} wait in To do for a free agent slot; with Autostart agents checked they start as agents`
+      + ' finish.' : ''));
   await renderBoard();
 }
 /* One ticket's Start, for the agent chosen above, unless the ticket's eligible agents leave it out. */

@@ -2203,6 +2203,10 @@ def start(ctx: Context) -> dict[str, Any]:
     with store.atomic():
         record = ticket(store, work_id)
         startable(ctx, store, record, agent)
+        if free_slots(ctx, store) <= 0:
+            raise Stop(f'Every agent slot is in use: {ctx.setting("dispatch_agents")} agents at once. Work {work_id} '
+                       'stays in To do; with Autostart agents checked it starts when a slot is free.',
+                       'metaform dispatch sessions')
         store.take_work(work_id, by=reservation)
     started = run_reserved(ctx, reservation, given)
     return {**started, **{field: value for field, value in given.items() if value},
@@ -2441,6 +2445,27 @@ def summon_room(ctx: Context, store: Store) -> int:
         row['work_id'] for row in active if not summoned(row) and not editor(row)}
     free = max(0, int(ctx.setting('dispatch_agents')) - len(working))
     return max(0, 1 + free - len(called) - len(launching))
+
+
+def free_slots(ctx: Context, store: Store) -> int:
+    """How many more tickets may start now, counted as autostart counts: `dispatch_agents` less the slots in use.
+    Found 2026-10-16: Start all on the board started every ticket it offered, 46 with six slots, since only autostart
+    counted."""
+    return max(0, int(ctx.setting('dispatch_agents')) - slots_used(ctx, store))
+
+
+def slots_used(ctx: Context, store: Store) -> int:
+    """The agent slots in use: the tickets in motion, the workers' sessions and the summoned agents beyond the one that
+    is always the person's, as autostart counts them."""
+    opened = store.work(open=True, limit=0).results
+    rows = sessions(store, open_work=opened)
+    active = [row for row in rows if row['state'] == 'running']
+    editing = {row['work_id'] for row in active if editor(row)}
+    chatting = {row['work_id'] for row in active if summoned(row)}
+    in_motion = {record.id for record in opened if record.taken and not record.done} - chatting - editing
+    workers = {row['work_id'] for row in active if not summoned(row) and not editor(row)}
+    extra = max(0, sum(1 for row in active if summoned(row)) - 1)
+    return extra + len(in_motion | workers)
 
 
 def start_raised(ctx: Context, store: Store) -> list[str]:
@@ -3244,6 +3269,7 @@ def harnesses(ctx: Context) -> dict[str, Any]:
     result: dict[str, Any] = {'agents': found, 'default': default, 'frontend': sorted(FRONTEND)}
     if ctx.store is not None:
         result['room'] = summon_room(ctx, ctx.store)
+        result['free'] = free_slots(ctx, ctx.store)  # how many tickets may start now, for Start all
     return result
 
 
@@ -3807,9 +3833,9 @@ MODULE = Module(
                                'reuse the running one.',
              nouns=(Noun('agent', 'claude, codex or gemini; the default agent, dispatch_agent, when none is given.',
                          required=False),), open_world=True),
-        Verb('agents', harnesses, 'List the agents dispatch can start, the default among them, and how many more may '
-                                  'be summoned now. Each comes with its name, its start command, and whether that '
-                                  'command is found on this system.',
+        Verb('agents', harnesses, 'List the agents dispatch can start, the default among them, how many more may '
+                                  'be summoned and how many tickets may start now. Each comes with its name, its start '
+                                  'command, and whether that command is found on this system.',
              switches=('dispatch_agent', 'dispatch_claude', 'dispatch_codex', 'dispatch_gemini'),
              examples=(('metaform dispatch agents', 'Lists Claude Code, Codex and Gemini CLI with what each needs.'),
                        ('metaform set --dispatch-agent claude', 'Makes Claude Code the default agent.')), effect='read',

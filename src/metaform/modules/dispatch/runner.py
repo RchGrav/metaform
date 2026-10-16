@@ -119,6 +119,7 @@ from . import (
     runner_of,
     session_cost,
     session_state,
+    slots_used,
     start_command,
     start_environment,
     startable,
@@ -770,6 +771,21 @@ async def dispatch(ctx: Context) -> dict[str, Any]:
             ctx.nouns['reservation'] = reservation
             return record
 
+    def over_limit() -> bool:
+        """Whether this start's reservation finds the agent slots already full, and then gives its ticket back."""
+        with store.atomic():
+            record = ticket(store, work_id)
+            if not ctx.nouns.get('reservation') or record.taken_by != ctx.nouns['reservation'] or \
+                    slots_used(ctx, store) <= int(ctx.setting('dispatch_agents')):
+                return False
+            store.move_work(record.id, 'backlog' if record.held else 'todo', record.position)
+            return True
+
+    # A start the agent slots have no room for, from a process on older code, gives its ticket back before any agent
+    # runs, VIEW-039. Found 2026-10-16: an MCP server started before the slot check went on starting tickets past it.
+    if not resume and await asyncio.to_thread(over_limit):
+        raise Stop(f'Every agent slot is in use: {ctx.setting("dispatch_agents")} agents at once. Work {work_id} is '
+                   'back in To do.', 'metaform dispatch sessions')
     # A worker resumed in place holds its ticket already, taken by its own session, so nothing is reserved for it.
     record = await asyncio.to_thread(ticket, store, work_id) if resume else \
         await asyncio.to_thread(reserve, ticket(store, work_id))
