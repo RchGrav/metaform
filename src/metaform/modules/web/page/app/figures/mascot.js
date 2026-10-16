@@ -10,7 +10,7 @@ import {ROAM, nodeById, primaryOf, ballOf, BODIES, bodyKey, isSystemTalk} from '
 import {AHEAD, TOWARD, easeBoth, nudgeNode, markTrail, SPOT, steer, driveGoal, driveFace}
   from '/page/app/figures/walk.js';
 import {CUT, mascotForCut} from '/page/app/figures/cut.js';
-import {EYE} from '/page/app/figures/eyes.js';
+import {EYE, sampleMascot} from '/page/app/figures/eyes.js';
 import {G, FRAMES, DRAG_FRICTION, wake3d} from '/page/app/map3d/graph3d.js';
 import {AT} from '/page/app/map3d/labels.js';
 import {PHYS} from '/page/app/views/bar.js';
@@ -290,6 +290,7 @@ export function mascot3d(data, size, passed) {
     mesh.position.copy(MASCOT.pos);
     if (aim.face) orientAgent(mesh, AHEAD.subVectors(aim.face, MASCOT.pos), 1);
     mesh.userData.update(0, {move: {speed: 0, stride: 0, state: 'idle'}});
+    sampleMascot(mesh, aim.want, passed, aim.state, driven, leaving);
     return;
   }
   // a pointer that chases it: it hops aside
@@ -311,6 +312,7 @@ export function mascot3d(data, size, passed) {
   markTrail(MASCOT, size);
   mesh.userData.update(passed, {move: {speed: Math.min(1, speed / Math.max(1, top)), stride: MASCOT.stride,
     state: aim.state}});
+  sampleMascot(mesh, aim.want, passed, aim.state, driven, leaving);  // how it moved, for web_viewing
 }
 /* Where it goes and how this frame: walking home as its conversation ends, a job, where its agent sent it, mending
  * a cut edge, calling the person's attention, asleep while the page rests, greeting an agent the person chats with,

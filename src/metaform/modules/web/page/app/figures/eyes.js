@@ -269,7 +269,91 @@ export function viewing() {
     zoom2d: MODE.free ? 'free' : 'full fit', tab: tabNow(), flow: flowModeNow(), physics: PHYS.name,
     board: !$('#board').hidden, chat: !$('#helpdesk').hidden, panes: WS.on ? WS.layout() : null, in_view_3d: inView,
     view_3d: view3d(), pointer: pointerNow(), mascot_eyes: EYE.view && !EYE.agent, following: FOLLOW.work,
-    agent_eyes: EYE.agent, sharing: sharing() ? shareSaid() : null};
+    agent_eyes: EYE.agent, sharing: sharing() ? shareSaid() : null, mascot_motion: mascotMotion()};
+}
+/* How the mascot moved on this page over its last seconds, for an agent reading what the person sees, VIEW-005: each
+ * frame's body on the screen, its facing and size, its own animation, the point it steers to, the camera and the
+ * frame's time, written into typed arrays sized once, one per channel, so a frame allocates nothing. `mascotMotion`
+ * reads them back as a summary per channel: its range, its usual step and how often its steps turn back a second,
+ * which tells a shake from a deliberate move. */
+const MOTION_SLOTS = 1024, MOTION_SPAN = 4000;  // frames kept, at 240 a second over 4 s; the ms a summary reads
+// each channel, and the step under which a turn back is not counted
+const MOTION_CHANNELS = [['screen_x', 0.5], ['screen_y', 0.5], ['yaw', 0.2], ['pitch', 0.2], ['scale', 1e-3],
+  ['gait_y', 1e-3], ['gait_pitch', 1e-3], ['body_y', 1e-3], ['body_lean', 1e-3], ['want_x', 1e-2], ['want_y', 1e-2],
+  ['want_z', 1e-2], ['camera_x', 1e-2], ['camera_y', 1e-2], ['camera_z', 1e-2]];
+const MOTION_STATES = ['idle', 'sleep', 'attend', 'cross'];
+const MOTION = {next: 0, at: new Float64Array(MOTION_SLOTS), frame: new Float32Array(MOTION_SLOTS),
+  flags: new Uint8Array(MOTION_SLOTS), state: new Uint8Array(MOTION_SLOTS),
+  channels: MOTION_CHANNELS.map(() => new Float32Array(MOTION_SLOTS))};
+const ON_SCREEN = new THREE.Vector3(), FACING = new THREE.Vector3();
+const PAGE = {id: Math.random().toString(36).slice(2, 10), loaded: new Date(performance.timeOrigin).toISOString()};
+/* One frame of the mascot, from `mascot3d` once its body is placed: `want` is where it steers, or null. */
+export function sampleMascot(mesh, want, passed, state, driven, leaving) {
+  const slot = MOTION.next % MOTION_SLOTS, c = MOTION.channels, camera = G.camera(), canvas = G.renderer().domElement;
+  MOTION.next++;
+  MOTION.at[slot] = performance.now();
+  MOTION.frame[slot] = passed * 1000;
+  MOTION.flags[slot] = (MASCOT.speaking ? 1 : 0) | (driven ? 2 : 0) | (MASCOT.sleeping ? 4 : 0) | (leaving ? 8 : 0);
+  const known = MOTION_STATES.indexOf(state);
+  MOTION.state[slot] = known < 0 ? 255 : known;
+  ON_SCREEN.copy(mesh.position).project(camera);
+  c[0][slot] = (ON_SCREEN.x + 1) / 2 * canvas.width;
+  c[1][slot] = (1 - ON_SCREEN.y) / 2 * canvas.height;
+  mesh.getWorldDirection(FACING);
+  c[2][slot] = Math.atan2(FACING.x, FACING.z) * 180 / Math.PI;
+  c[3][slot] = Math.asin(Math.max(-1, Math.min(1, FACING.y))) * 180 / Math.PI;
+  c[4][slot] = mesh.scale.x;
+  const gait = mesh.children[0], body = gait?.children[0]?.children[0]?.children[0];
+  c[5][slot] = gait ? gait.position.y : 0;
+  c[6][slot] = gait ? gait.rotation.x : 0;
+  c[7][slot] = body ? body.position.y : 0;
+  c[8][slot] = body ? body.rotation.z : 0;
+  c[9][slot] = want ? want.x : NaN;
+  c[10][slot] = want ? want.y : NaN;
+  c[11][slot] = want ? want.z : NaN;
+  c[12][slot] = camera.position.x;
+  c[13][slot] = camera.position.y;
+  c[14][slot] = camera.position.z;
+}
+const median = values => {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+};
+const fixed = value => value === null || !Number.isFinite(value) ? null : Math.round(value * 1000) / 1000;
+/* The last seconds of the mascot's motion on this page, or null while no mascot is drawn: which page answers and when
+ * it loaded, whether it is shown, whether the browser is speaking, the frame times, the share of frames and the
+ * switches of each state, and per channel [least, most, median step, turns back a second]. */
+function mascotMotion() {
+  if (!MASCOT.mesh) return null;
+  const now = performance.now(), slots = [];
+  for (let back = 1; back <= Math.min(MOTION.next, MOTION_SLOTS); back++) {
+    const slot = (MOTION.next - back) % MOTION_SLOTS;
+    if (now - MOTION.at[slot] > MOTION_SPAN) break;
+    slots.unshift(slot);
+  }
+  const seconds = slots.length > 1 ? (MOTION.at[slots.at(-1)] - MOTION.at[slots[0]]) / 1000 : 0;
+  const frames = slots.map(slot => MOTION.frame[slot]).sort((a, b) => a - b);
+  const share = bit => slots.length ? fixed(slots.filter(slot => MOTION.flags[slot] & bit).length / slots.length) : null;
+  const switches = read => slots.slice(1).filter((slot, at) => read(slot) !== read(slots[at])).length;
+  const channels = {};
+  MOTION_CHANNELS.forEach(([name, least], index) => {
+    const values = slots.map(slot => MOTION.channels[index][slot]).filter(Number.isFinite);
+    const steps = values.slice(1).map((value, at) => value - values[at]);
+    const back = steps.slice(1).filter((step, at) => Math.abs(step) > least && Math.abs(steps[at]) > least
+      && step * steps[at] < 0).length;
+    channels[name] = values.length ? [fixed(Math.min(...values)), fixed(Math.max(...values)),
+      fixed(median(steps.map(Math.abs))), seconds ? fixed(back / seconds) : null] : null;
+  });
+  return {page: PAGE.id, loaded: PAGE.loaded, shown: document.visibilityState, focused: document.hasFocus(),
+    glyph: MASCOT.glyph, seconds: fixed(seconds), frames: slots.length,
+    frame_ms: frames.length ? [fixed(median(frames)), fixed(frames[Math.floor(frames.length * 0.95)]),
+      fixed(frames.at(-1))] : null,
+    speech: {mascot: Boolean(MASCOT.speaking), browser: Boolean(window.speechSynthesis?.speaking),
+      queued: Boolean(window.speechSynthesis?.pending)},
+    speaking: share(1), driven: share(2), sleeping: share(4), leaving: share(8),
+    state_switches: switches(slot => MOTION.state[slot]), driven_switches: switches(slot => MOTION.flags[slot] & 2),
+    columns: ['least', 'most', 'median step', 'turns back a second'], channels};
 }
 const rounded = (v, by = 10) => v.toArray().map(one => Math.round(one * by) / by);
 /* Where the person's 3D view is and which way it looks, in the units see measures. */

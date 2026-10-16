@@ -11242,3 +11242,39 @@ def test_the_demo_card_is_served_only_from_the_home_the_demo_wrote_it_in(home):
     home.mkdir(parents=True, exist_ok=True)
     (home / 'demo.json').write_text(json.dumps({'lines': ['one', 'two']}), encoding='utf-8')
     assert demo_card() == {'demo': {'lines': ['one', 'two']}}
+
+
+@pytest.mark.req('VIEW-005')
+def test_web_viewing_reads_how_the_mascot_moved_on_the_page_so_a_shake_can_be_named(run, web, mapped, browser):
+    """web_viewing answers with the mascot's last seconds of motion on the page that answered: per channel its range,
+    its usual step and how often its steps turn back a second, with the frame times, the page and whether it speaks.
+    A body that shakes shows as a channel turning back many times a second; speaking, its size pulses. Before,
+    nothing read how the body moved on the person's own page, 2026-10-16, code.assistant.navigation#6."""
+    from metaform.data import Node, Store
+    run('enable', 'dispatch')
+    run('set', '--web-mascot=seahorse')
+    system = Store('proj').add_work(Node('element', 'code.alarm.audible'), None,
+                                    task='Conversation with the system agent', held=True)
+    live_session(system.id)
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
+    page.evaluate(f'window.metaform.embody("{system.id}", "seahorse")')  # the person gives it its body
+    page.wait_for_function('() => window.metaform.mascot().shown', timeout=15000)
+    page.wait_for_timeout(2500)
+
+    def motion():
+        return json.loads(run('web', 'viewing', '--json', cwd=mapped).stdout)['mascot_motion']
+
+    still = motion()
+    assert still['glyph'] == 'seahorse' and still['frames'] > 10 and still['speaking'] == 0, still
+    assert {'screen_x', 'yaw', 'scale', 'body_lean', 'want_x', 'camera_z'} <= set(still['channels']), still
+    assert len(still['frame_ms']) == 3 and still['loaded'] and still['page'], still
+    assert still['channels']['scale'][3] < 1, still                    # at rest its size holds
+    page.evaluate('window.metaform.mascotSpeaking(true)')
+    page.wait_for_timeout(2500)
+    talking = motion()
+    assert talking['speech']['mascot'] is True and talking['speaking'] > 0.3, talking
+    assert talking['channels']['scale'][3] > 2, talking                # the speaking pulse turns back, about 5.7 a second
+    page.evaluate('window.metaform.mascotSpeaking(false)')
+    assert problems == []
