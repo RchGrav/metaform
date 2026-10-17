@@ -1861,17 +1861,36 @@ class Handler(BaseHTTPRequestHandler):
         chosen or the default one, what the person asked for after `--`, and resume to take up an intake left being
         recorded. The page follows the intake as it is recorded."""
         agent, text, resume = given.get('agent'), given.get('text'), given.get('resume')
+        chosen, name = given.get('map'), given.get('name')
         if agent is not None and (not isinstance(agent, str) or not agent):
             return self.send(400, {'error': 'The agent is claude, codex or gemini.'})
         if text is not None and not isinstance(text, str):
             return self.send(400, {'error': 'What the intake is for is text.'})
         if resume is not None and not isinstance(resume, bool):
             return self.send(400, {'error': 'resume is true or false.'})
-        nouns = [*([f'agent={agent}'] if agent else []), *(['resume=true'] if resume else [])]
+        # the map the person chose the intake makes, VIEW-045 as amended 2026-10-17: the map in use checked and
+        # extended, or a new one beside it with its name; dispatch checks the name
+        if chosen is not None and chosen not in ('extend', 'new'):
+            return self.send(400, {'error': 'map is extend or new.'})
+        if name is not None and (not isinstance(name, str) or chosen != 'new'):
+            return self.send(400, {'error': 'A name is text, for a new map.'})
+        nouns = [*([f'agent={agent}'] if agent else []), *(['resume=true'] if resume else []),
+                 *([f'map={chosen}'] if chosen else []), *([f'name={name.strip()}'] if name and name.strip() else [])]
         self.dispatched(given, 'intake', nouns, text.strip() if text and text.strip() else None)
 
     def intake_finish(self, given: dict[str, Any]) -> None:
-        """Finish the intake left unfinished with what it recorded, as `metaform intake finish` does, BASE-039."""
+        """Finish the intake left unfinished with what it recorded, as `metaform intake finish` does, BASE-039. One an
+        agent records now is its agent's to finish: the page's Finish never takes it from under it."""
+        project = home.project(str(given.get('project', '')))
+        if project is not None:
+            try:
+                held = Store(project.project_id).intake_recording().results
+            except StoreError:
+                held = ()
+            if held:
+                return self.send(400, {'error': f'An agent is recording the intake in layer {held[0].layer.name} of '
+                                                f'base {held[0].base} now; it finishes the intake itself.',
+                                       'next': 'metaform intake status'})
         self.dispatched(given, 'finish', [], module_id='intake')
 
     def intake_discard(self, given: dict[str, Any]) -> None:

@@ -652,9 +652,12 @@ class Store:
     def intake_building(self) -> Page[Recording]:
         """Every intake building for this project, in whichever of its metaforms, BASE-039: a page of none or one,
         and of every one when more than one was opened, so none is hidden. Each says whether an agent records it now,
-        how many parts it holds and when it last recorded anything; one no agent records was left unfinished."""
+        how many parts it holds and when it last recorded anything; one no agent records was left unfinished. While an
+        intake agent Metaform started lives, its runner holding `intake.agent`, the intake its records go into, the
+        first, is being recorded, whatever surface it records through: its MCP server, or the command line."""
         found: list[Recording] = []
         now = recorder.held(self.project_id)
+        agent = recorder.agent_held(self.project_id) is not None
         for metaform in home.bases(self.project_id):
             building = Store(self.project_id, base=metaform.id)
             for layer in building.layers(kind='base', limit=0).results:
@@ -662,9 +665,31 @@ class Store:
                     with building._read() as tx:
                         parts = len(reads.layer_graph(tx, layer.id).elements)
                         last = tx.db.execute('SELECT max(at) FROM ops WHERE layer_id=?', (layer.id,)).fetchone()[0]
-                    found.append(Recording(metaform.id, metaform.name, metaform.active, layer, layer.id == now, parts,
-                                           last))
+                    found.append(Recording(metaform.id, metaform.name, metaform.active, layer,
+                                           layer.id == now or agent and not found, parts, last))
         return Page(tuple(found), None)
+
+    def intake_agent(self) -> dict[str, Any] | None:
+        """The intake agent Metaform started that lives now for this project, held by its runner for as long as it
+        lives: its launch record (work, agent, pid, since, map), or None, BASE-039."""
+        return recorder.agent_held(self.project_id)
+
+    def intake_launch(self) -> dict[str, Any] | None:
+        """The intake launch last noted for this project, live or not: the caller checks its runner."""
+        return recorder.launch_noted(self.project_id)
+
+    def note_intake_launch(self, record: dict[str, Any]) -> None:
+        """Note an intake agent launched now, under the intake lock, before its runner holds `intake.agent`."""
+        recorder.note_launch(self.project_id, record)
+
+    def forget_intake_launch(self, work_id: str) -> None:
+        """Forget this work's intake launch, stopped before its runner held `intake.agent`."""
+        recorder.forget_launch(self.project_id, work_id)
+
+    def hold_intake_agent(self, work_id: str) -> dict[str, Any] | None:
+        """Hold `intake.agent` for this process, the intake agent's runner, while it lives: None once held, or the
+        launch record of the live runner that holds it already."""
+        return recorder.hold_agent(self.project_id, work_id)
 
     def intake_recording(self) -> Page[Recording]:
         """The intake an agent records now for this project, BASE-039: building, with the process of the agent

@@ -373,6 +373,11 @@
   <div class="body">
     <p class="lead"></p>
     <p class="resume warnline" hidden>An intake is being recorded that no agent of this page started. Take it over only when no agent is still recording it: the agent you start goes on with it.</p>
+    <fieldset class="field mapchoice" hidden><legend>What the intake makes</legend>
+      <label class="option"><input type="radio" name="intakeMap" value="extend" checked> <span>Check and extend the map in use <small>· what it finds is written onto this map, which stays active</small></span></label>
+      <label class="option"><input type="radio" name="intakeMap" value="new"> <span>Start a new map beside it <small>· the map in use is kept and stays active; you make the new one active when you choose</small></span></label>
+      <label class="newname" hidden><span>Name of the new map <small>· optional, letters, digits, . _ and -</small></span><input class="mapname" type="text" maxlength="64" placeholder="named by its date when left empty"></label>
+    </fieldset>
     <div class="field"><span>Agent</span><div class="pickhost"></div></div>
     <div class="field intakesettings" hidden><span>Model and thinking</span><div class="controls"></div><p class="hint"></p></div>
     <label class="field"><span>A note for the agent <small>· optional</small></span>

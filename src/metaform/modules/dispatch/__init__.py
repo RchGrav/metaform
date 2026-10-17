@@ -1802,6 +1802,13 @@ def agents_at_work(project_id: str, base_id: str | None, stop: bool) -> tuple[st
             except (Stop, OSError) as error:
                 line += f' (not stopped: {error})'
         said.append(line)
+    # an intake agent still starting is at work too, on the metaform active when it was launched, VIEW-045
+    starting = intake_under_way(store, rows)
+    if starting is not None and starting['state'] == 'starting' and \
+            (base_id is None or active is not None and base_id == active.id):
+        said.append(f'{agent_label(str(starting["agent"])) if starting["agent"] else "An agent"} starting on an intake')
+        if stop:
+            ended_launch(store, starting)
     return tuple(said)
 
 
@@ -2572,7 +2579,9 @@ def _running_or_stop(store: Store, work_id: str, session_id: str | None = None) 
     if session is None:
         session = next((row for row in reversed(found) if runner_of(row.get('pid')) == work_id), None)
     if session is None:
-        raise Stop(f'No agent is running on work {work_id}.', f'metaform dispatch start {work_id} <agent>')
+        # an intake is no ticket: what starts one again is `dispatch intake`, never a start on its work id
+        raise Stop(f'No agent is running on work {work_id}.', 'metaform dispatch intake' if intake_id(work_id)
+                   else f'metaform dispatch start {work_id} <agent>')
     return session
 
 
@@ -2965,6 +2974,15 @@ def summon_room(ctx: Context, store: Store) -> int:
     return int(slots(ctx, store)['room'])
 
 
+def launch_holds(store: Store, row: dict[str, Any]) -> bool:
+    """Whether a launch whose session is not made yet still holds its slot: an intake's for as long as its runner lives,
+    `intake_under_way`, however long its agent takes to start; a sentinel's for STALE_START."""
+    if intake_id(row['work_id']):
+        busy = intake_under_way(store)
+        return busy is not None and busy['work_id'] == row['work_id']
+    return time.time() - row['started'] < STALE_START
+
+
 def free_slots(ctx: Context, store: Store) -> int:
     """How many more tickets may start now, as the gate counts, `slots`. Found 2026-10-16: Start all on the board
     started every ticket it offered, 46 with six slots, since only autostart counted."""
@@ -3125,7 +3143,7 @@ def start_raised(ctx: Context, store: Store) -> list[str]:
         return []
     made = {row['work_id'] for row in sessions(store)}
     done = [row['work_id'] for row in held if row['started'] is not None
-            and (row['work_id'] in made or time.time() - row['started'] >= STALE_START)]
+            and (row['work_id'] in made or not launch_holds(store, row))]
     if done:  # a launch whose session is made, or that never made one, is done waiting
         with own.tables() as tx:
             for work_id in done:
@@ -3589,6 +3607,10 @@ def stop(ctx: Context) -> dict[str, Any]:
     agents is checked turns that off, `paused`, so no waiting ticket starts in its place, and the result says so."""
     may_steer(ctx)
     store = ctx.require_store()
+    if intake_id(ctx.nouns['id']) and not ctx.nouns.get('session'):
+        starting = intake_under_way(store)
+        if starting is not None and starting['state'] == 'starting' and starting['work_id'] == ctx.nouns['id']:
+            return ended_launch(store, starting)
     row = _running_or_stop(store, ctx.nouns['id'], ctx.nouns.get('session'))
     off = disconnect(ctx, store, row)
     held = paused(ctx, store, row)
@@ -3691,6 +3713,23 @@ def stop_all(ctx: Context) -> dict[str, Any]:
     return {'stopped': stopped, 'failed': failed, 'turned_off': turned_off,
             **({'notice': 'Autostart agents is off, so nothing starts again until you check it.'}
                if turned_off else {})}
+
+
+def ended_launch(store: Store, starting: dict[str, Any]) -> dict[str, Any]:
+    """The person's stop of an intake agent still starting, before its session is made, VIEW-045: its runner's process
+    group ends, which lets go of `intake.agent`, and its launch's row and record go, so no session is ever made."""
+    work_id = str(starting['work_id'])
+    pid = starting.get('pid')
+    held = store.intake_agent()
+    if held is not None and held.get('work') == work_id:
+        pid = held.get('pid', pid)
+    if isinstance(pid, int) and runner_of(pid) == work_id:
+        end_group(pid)
+    with Store(store.project_id, module='dispatch').tables() as tx:
+        tx.delete('raised', {'work_id': work_id})
+        tx.concern(work_id=work_id, kind='session')
+    store.forget_intake_launch(work_id)
+    return {'work_id': work_id, 'session_id': None, 'stopped': True, 'pid': pid, 'how': 'stopped while starting'}
 
 
 def ended_held(store: Store, row: dict[str, Any]) -> dict[str, Any]:
@@ -4177,10 +4216,18 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
         children.append({**child, 'parent': line['session_id'], 'lines': threaded(own_lines)[0]})
     if ctx.nouns.get('thread') is False:
         lines = []
-    return {'sessions': [{**{key: value for key, value in session.items() if key not in PRIVATE},
-                          **session_work_status(session, [one for one in raised
-                                                          if one.get('work_id') == session['work_id']])}
-                         for session in found],
+    # An intake agent launched and not yet in session is listed as starting, from the one record of an intake under
+    # way, so every surface that lists the sessions sees it, whichever surface launched it, VIEW-045.
+    starting: list[dict[str, Any]] = []
+    if not work_id or intake_id(work_id):
+        busy = intake_under_way(store, found)
+        if busy is not None and busy['state'] == 'starting' and (not work_id or busy['work_id'] == work_id):
+            starting = [{**{key: value for key, value in busy.items() if key not in PRIVATE}, 'how': None,
+                         'status': 'submitted', 'reason': 'starting'}]
+    return {'sessions': [*({**{key: value for key, value in session.items() if key not in PRIVATE},
+                            **session_work_status(session, [one for one in raised
+                                                            if one.get('work_id') == session['work_id']])}
+                           for session in found), *starting],
             'lines': lines, 'signals': raised, 'states': states, 'subagents': children}
 
 
@@ -4410,6 +4457,8 @@ def resume(ctx: Context) -> dict[str, Any]:
     said = {'work_id': work_id, 'agent': agent, 'session_id': session_id}
     if row['state'] == 'running':  # it is there already: talked to as it is
         return {**said, 'state': 'running'}
+    if intake_id(work_id):  # one intake agent at a time, BASE-039: not beside another starting or at work
+        refuse_second_intake(store, work_id)
     fresh = f'metaform dispatch talk session={work_id}:{session_id}'
     kept = session_state(held, session_id) or {}
     caps = cast(dict[str, Any], kept.get('capabilities') or {})
@@ -4443,47 +4492,140 @@ def intake(ctx: Context) -> dict[str, Any]:
     runnable(ctx, agent)
     if not any(module.id == 'intake' for module in surface(ctx.folder)):
         raise Stop('The intake module is not active; it serves the intake the agent follows.', 'metaform enable intake')
-    for row in sessions(store):  # the project's, whichever metaform each began in
-        if intake_id(row['work_id']) and row['state'] == 'running':
-            raise Stop(f'An intake agent is already at work in this project: {row["agent"]}, session '
-                       f'{row["session_id"]}.', f'metaform dispatch stop {row["work_id"]}')
-    building = store.intake_building().results
-    if building and building[0].recording:
-        held = building[0]
-        raise Stop(f'An agent Metaform did not start is recording the intake in layer {held.layer.name} of metaform '
-                   f'{held.base} now; two agents would interleave their records in it.', 'metaform intake status')
-    if building and not ctx.nouns.get('resume'):
-        held = building[0]
-        raise Stop(f'An intake was left unfinished in layer {held.layer.name} of metaform {held.base}, with '
-                   f'{held.parts} parts; no agent is recording it. Start the intake agent with resume=true and it '
-                   'resumes that intake.', 'metaform dispatch intake resume=true')
-    if summon_room(ctx, store) <= 0:
-        raise Stop(f'Every agent slot is in use: {ctx.setting("dispatch_agents")} besides the one you can always '
-                   'summon. An intake starts when an agent finishes or one is stopped.', 'metaform dispatch sessions')
+    chosen = intake_map_choice(ctx)
     given: Any = ctx.nouns.get('text') or []
     words = ' '.join(str(word) for word in cast(list[Any], given)) if isinstance(given, (list, tuple)) else str(given)
     work_id = INTAKE + secrets.token_hex(16)
-    # The launch holds its slot until its session is made, as a sentinel's does. The check for another intake
-    # starting and the reservation are one write, so two starts at once cannot both pass. The person's words reach the
-    # runner in the launch's own row, never in an argument; the runner takes them before its session is made, while
-    # the row still holds its slot.
-    made = {row['work_id'] for row in sessions(store)}
-    with Store(store.project_id, module='dispatch').tables() as tx:
-        if any(intake_id(row['work_id']) and row['started'] is not None and row['work_id'] not in made
-               and time.time() - row['started'] < STALE_START for row in tx.rows('raised', limit=0).results):
-            raise Stop('An intake agent is starting in this project.', 'metaform dispatch sessions thread=false')
-        tx.insert('raised', {'work_id': work_id, 'node': '', 'agent': agent, 'started': time.time(),
-                             'seq': time.time_ns(), 'asked': words.strip() or None})
-    try:
-        started = spawn(store, work_id, agent, ['system=true', 'intake=true'], 'intake', kept=bool(ctx.nouns.get('wait')),
-                        ctx=ctx)
-    except (Stop, OSError):  # refused by the gate or not started: its launch holds nothing
+    # One intake at a time, BASE-039 and VIEW-045: every check and the launch are one step under the project's intake
+    # lock, the one intake's own verbs take, and the launch is noted there before the lock is let go. Its runner then
+    # holds `intake.agent` for as long as it lives, so a second start is refused for the whole life of the first,
+    # however long its agent takes to start, never for a window of time. The person's words reach the runner in the
+    # launch's row, never in an argument; the runner takes them before its session is made.
+    with home.file_lock(intake_folder(store) / 'intake.lock'):
+        refuse_second_intake(store)
+        building = store.intake_building().results
+        if building and building[0].recording:
+            held = building[0]
+            raise Stop(f'An agent Metaform did not start is recording the intake in layer {held.layer.name} of '
+                       f'metaform {held.base} now; two agents would interleave their records in it.',
+                       'metaform intake status')
+        if building and not ctx.nouns.get('resume'):
+            held = building[0]
+            raise Stop(f'An intake was left unfinished in layer {held.layer.name} of metaform {held.base}, with '
+                       f'{held.parts} parts; no agent is recording it. Start the intake agent with resume=true and it '
+                       'resumes that intake.', 'metaform dispatch intake resume=true')
+        if summon_room(ctx, store) <= 0:
+            raise Stop(f'Every agent slot is in use: {ctx.setting("dispatch_agents")} besides the one you can always '
+                       'summon. An intake starts when an agent finishes or one is stopped.',
+                       'metaform dispatch sessions')
         with Store(store.project_id, module='dispatch').tables() as tx:
-            tx.delete('raised', {'work_id': work_id})
-        raise
+            tx.insert('raised', {'work_id': work_id, 'node': '', 'agent': agent, 'started': time.time(),
+                                 'seq': time.time_ns(), 'asked': words.strip() or None})
+        try:
+            started = spawn(store, work_id, agent, ['system=true', 'intake=true'], 'intake',
+                            kept=bool(ctx.nouns.get('wait')), ctx=ctx)
+        except (Stop, OSError):  # refused by the gate or not started: its launch holds nothing
+            with Store(store.project_id, module='dispatch').tables() as tx:
+                tx.delete('raised', {'work_id': work_id})
+            raise
+        store.note_intake_launch({'work': work_id, 'agent': agent, 'pid': started['pid'], 'since': home.now(),
+                                  **chosen})
     said = {'state': 'starting', 'work_id': work_id, 'agent': agent, **started, 'session_id': None,
-            'conversation': True, 'intake': True}
-    return {**said, **launched(store, work_id, started['pid'])} if ctx.nouns.get('wait') else said
+            'conversation': True, 'intake': True, **chosen}
+    if not ctx.nouns.get('wait'):
+        return said
+    # said once the launch is noted, before the wait for its session: every surface reads it as starting from here, so
+    # `metaform start` opens the page at this line and the page shows it starting, never an intake still to start
+    ctx.say(f'The intake agent is launched, work {work_id}; waiting for it to make its session.')
+    return {**said, **launched(store, work_id, started['pid'])}
+
+
+MAP_NAME = re.compile(r'[A-Za-z0-9._-]{1,64}')  # a base's name, as `intake start name=` takes it
+
+
+def intake_map_choice(ctx: Context) -> dict[str, Any]:
+    """The map the person chose an intake makes on a project mapped already, VIEW-045 as amended 2026-10-17: `map=extend`
+    checks and extends the map in use, `map=new` starts a separate map beside it, named `name` or by its date. The
+    intake agent's `intake start` follows it, whatever the agent reads in the person's words; none chosen leaves it to
+    the agent, as before."""
+    chosen, name = ctx.nouns.get('map'), str(ctx.nouns.get('name') or '').strip()
+    if chosen in (None, ''):
+        if name:
+            raise Stop('A name is for a new map: give map=new with it.', f'metaform dispatch intake map=new name={name}')
+        return {}
+    if chosen not in ('extend', 'new'):
+        raise Stop('map is extend, to check and extend the map in use, or new, to start a separate map beside it.',
+                   'metaform help dispatch intake')
+    if chosen == 'extend':
+        if name:
+            raise Stop('A name is for a new map; map=extend writes onto the map in use.', 'metaform dispatch intake '
+                                                                                         'map=extend')
+        return {'map': 'extend'}
+    if name and not MAP_NAME.fullmatch(name):
+        raise Stop(f'{name!r} is not a name for a map: use 1 to 64 letters, digits, ., _ and -.',
+                   'metaform dispatch intake map=new name=web-interface-refactor')
+    return {'map': 'new', 'name': name or 'intake-' + time.strftime('%Y-%m-%d-%H%M%S', time.gmtime())}
+
+
+def intake_folder(store: Store) -> Path:
+    """The project's folder in the Metaform home, where its intake lock and the record of its intake agent are kept."""
+    folder = home.project_folder(store.project_id)
+    if folder is None:
+        raise Stop(f'No project {store.project_id} is registered.', 'metaform list projects')
+    home.mkdir_private(folder)
+    return folder
+
+
+def intake_under_way(store: Store, rows: Sequence[dict[str, Any]] | None = None) -> dict[str, Any] | None:
+    """The one record of an intake agent at work in this project, BASE-039 and VIEW-045, that every surface reads: the
+    page, `dispatch sessions`, `intake status` and the connect notice, `metaform start`, and a second start refused.
+    It is `starting` from its launch until its agent's session is made, then `running`, for as long as its runner lives
+    and holds `intake.agent`; a launch whose runner has not taken it yet is known by the pid its launcher noted. None
+    when no intake agent is at work. `rows`, the project's sessions when the caller has read them."""
+    held = store.intake_agent()
+    if held is None:
+        noted = store.intake_launch()
+        if noted is not None and runner_of(noted.get('pid')) == noted.get('work'):
+            held = noted
+    found = [row for row in (rows if rows is not None else sessions(store)) if intake_id(row['work_id'])]
+    running = [row for row in found if row['state'] == 'running']
+    work = str(held['work']) if held is not None and held.get('work') else None
+    if work is None:
+        if running:  # a runner from before the record, or one whose record is lost: its session says it
+            row = running[-1]
+            return {'work_id': row['work_id'], 'agent': row['agent'], 'state': 'running',
+                    'session_id': row['session_id'], 'started': row.get('started'), 'activity': row.get('activity')}
+        return None if held is None else {'work_id': None, 'agent': None, 'state': 'running', 'session_id': None,
+                                          'started': None, 'activity': None}
+    assert held is not None  # it names the work
+    own = [row for row in found if row['work_id'] == work]
+    live = [row for row in own if row['state'] == 'running']
+    choice: dict[str, Any] = {key: held[key] for key in ('map', 'name') if held.get(key)}
+    if live:
+        row = live[-1]
+        return {'work_id': work, 'agent': row['agent'], 'state': 'running', 'session_id': row['session_id'],
+                'started': row.get('started'), 'activity': row.get('activity'), **choice}
+    if own:  # its session has ended, and its runner is on its way out
+        return None
+    return {'work_id': work, 'agent': held.get('agent'), 'state': 'starting', 'session_id': None,
+            'started': held.get('since'), 'activity': None, 'pid': held.get('pid'), **choice}
+
+
+def refuse_second_intake(store: Store, work_id: str | None = None) -> None:
+    """Refuse an intake agent while another is at work in the project, whatever surface asks: the record every surface
+    reads, `intake_under_way`, and the runner's hold itself, which a resumed session holds too. `work_id`: the intake
+    asking, which is not refused for itself."""
+    busy = intake_under_way(store)
+    if busy is None:
+        raw = store.intake_agent()
+        busy = {'work_id': raw.get('work'), 'agent': raw.get('agent'), 'state': 'running'} if raw is not None else None
+    if busy is None or work_id is not None and busy['work_id'] == work_id:
+        return
+    who = agent_label(str(busy['agent'])) if busy.get('agent') else 'An agent'
+    since = f' since {busy["started"]}' if busy.get('started') else ''
+    doing = 'is starting on' if busy['state'] == 'starting' else 'is at work on'
+    raise Stop(f'{who} {doing} the intake of this project{since}; one intake runs at a time.',
+               f'metaform dispatch stop {busy["work_id"]}' if busy.get('work_id') else 'metaform dispatch sessions')
 
 
 def launch_concerns(payload: dict[str, Any], project_id: str, work_id: str) -> bool:
@@ -4714,8 +4856,9 @@ def session_live(folder: Path) -> bool:
     """Whether an agent session runs in the folder's project, so the verbs that steer or stop one are listed over
     MCP, MCP-004."""
     project = project_for(folder)
-    return project is not None and any(row['state'] == 'running'
-                                       for row in sessions(Store(project), verify=False))
+    # an intake agent still starting is stopped by the same verb, VIEW-045
+    return project is not None and (any(row['state'] == 'running' for row in sessions(Store(project), verify=False))
+                                    or Store(project).intake_agent() is not None)
 
 
 def in_session(folder: Path) -> bool:
@@ -4839,6 +4982,12 @@ MODULE = Module(
                     Noun('resume', 'true: start it although an intake is being recorded that no agent of Metaform\'s '
                                    'started, to resume that intake once no agent is still recording it.',
                          kind='bool', required=False),
+                    Noun('map', 'On a project mapped already: extend checks and extends the map in use; new starts a '
+                                'separate map beside it, which stays apart until the person makes it active. None '
+                                'leaves it to the agent.', required=False,
+                         schema={'type': 'string', 'enum': ['extend', 'new']}),
+                    Noun('name', 'With map=new, the new map\'s name: 1 to 64 letters, digits, ., _ and -; its date '
+                                 'when none is given.', required=False),
                     Noun('wait', 'true: answer once the agent has made its session, state running, or with why it '
                                  'did not start, state failed; the agent\'s own start limit bounds the wait.',
                          kind='bool', required=False),

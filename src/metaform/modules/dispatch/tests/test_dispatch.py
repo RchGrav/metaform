@@ -1900,6 +1900,47 @@ def test_an_intake_agent_follows_the_served_intake_holds_no_ticket_and_one_runs_
     run('dispatch', 'stop', work_id, cwd=dispatch.folder)
 
 
+@pytest.mark.req('VIEW-045')
+@pytest.mark.req('BASE-039')
+@pytest.mark.skipif(os.name == 'nt', reason='the slow start is a POSIX shell script')
+def test_an_intake_starting_is_listed_held_against_a_second_for_its_whole_launch_and_stopped(dispatch, run, tmp_path):
+    """UX review round 1, 2026-10-17 (cross-surface F1, F2, F5): an intake launched from the command line, its agent
+    slow to start, is listed as starting by `dispatch sessions` for every surface; a second start is refused for as
+    long as its runner lives, its launch row made 200 s old as well, naming the stop that works; a second runner on
+    another intake work id ends before its agent starts; and stop ends it while starting, no session ever made."""
+    from metaform.data import Store
+    from metaform.modules.dispatch import end_group
+    slow = tmp_path / 'slow-agent.sh'
+    slow.write_text(f'#!/bin/sh\nsleep 60\nexec "{sys.executable}" "{FAKE}" "$@"\n', encoding='utf-8')
+    slow.chmod(0o755)
+    run('set', '--dispatch-claude', str(slow), cwd=dispatch.folder)
+    started = json.loads(run('dispatch', 'intake', 'agent=claude', '--json', cwd=dispatch.folder,
+                             env=dispatch.env('hold')).stdout)
+    work_id, runner = started['work_id'], started['pid']
+    try:
+        listed = json.loads(run('dispatch', 'sessions', 'thread=false', '--json', cwd=dispatch.folder).stdout)
+        [row] = [one for one in listed['sessions'] if one['work_id'] == work_id]
+        assert (row['state'], row['session_id'], row['agent']) == ('starting', None, 'claude'), row
+        assert eventually(lambda: Store('proj').intake_agent()) and Store('proj').intake_agent()['work'] == work_id
+        with Store('proj', module='dispatch').tables() as tx:  # older than any window of time a check could keep
+            tx.update('raised', {'work_id': work_id}, {'started': time.time() - 200})
+        refused = run('dispatch', 'intake', 'agent=claude', cwd=dispatch.folder, ok=False)
+        assert refused.returncode != 0 and f'dispatch stop {work_id}' in refused.stdout + refused.stderr
+        assert 'is starting on the intake' in refused.stdout + refused.stderr
+        other = subprocess.run([sys.executable, '-m', 'metaform', 'dispatch', 'run', 'intake-' + '0' * 32, 'claude',
+                                'system=true', 'intake=true'], cwd=dispatch.folder, env=dispatch.env('hold'),
+                               capture_output=True, text=True, timeout=60, check=False)
+        assert other.returncode != 0 and 'already at work' in other.stdout + other.stderr
+        stopped = json.loads(run('dispatch', 'stop', work_id, '--json', cwd=dispatch.folder).stdout)
+        assert stopped['stopped'] is True and stopped['how'] == 'stopped while starting', stopped
+        assert gone([runner], limit=10), 'its runner and the slow start it ran are ended'
+    finally:
+        end_group(runner)
+    listed = json.loads(run('dispatch', 'sessions', 'thread=false', '--json', cwd=dispatch.folder).stdout)
+    assert [one for one in listed['sessions'] if one['work_id'].startswith('intake-')] == []
+    assert dispatch.items('session') == [], 'no session was ever made'
+
+
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('MAP-050')
 def test_an_agent_over_mcp_cannot_answer_a_permission_question_at_its_node(dispatch):

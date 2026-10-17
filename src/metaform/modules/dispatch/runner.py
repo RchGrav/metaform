@@ -881,6 +881,19 @@ async def sessions_run(ctx: Context) -> dict[str, Any]:
         raise
     resumed = await asyncio.to_thread(worked_in, store, work_id, resume) if resume else None
     if intake_id(work_id):  # an intake agent, VIEW-045: no ticket; its session lives in the metaform it began in
+        # This runner holds `intake.agent` for as long as it lives, and so as long as its agent does, BASE-039: the
+        # record every surface reads of the intake under way, and what refuses a second one. Another live intake
+        # agent's runner holding it ends this one before its agent starts.
+        other = await asyncio.to_thread(store.hold_intake_agent, work_id)
+        if other is not None:
+            def withdrawn() -> None:
+                with Store(store.project_id, module='dispatch').tables() as tx:
+                    tx.delete('raised', {'work_id': work_id})
+                    tx.concern(work_id=work_id, kind='session')
+            await asyncio.to_thread(withdrawn)
+            raise Stop('An intake agent is already at work in this project'
+                       + (f': work {other["work"]}.' if other.get('work') else '.'),
+                       f'metaform dispatch stop {other["work"]}' if other.get('work') else 'metaform dispatch sessions')
         held_in = await asyncio.to_thread(intake_store, store, work_id) or store
         return await moved_on(store, await Session(ctx, held_in, None, agent, command, resumed, prep=True, system=True,
                                                    work_id=work_id, resume=resume).run())

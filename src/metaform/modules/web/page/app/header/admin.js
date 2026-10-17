@@ -11,7 +11,7 @@ import {toggler} from '/page/app/header/menus.js';
 import {M} from '/page/app/map2d/build.js';
 import {wrote} from '/page/app/board/history.js';
 import {getJson} from '/page/app/panel/prompts.js';
-import {intakeRunning, openIntakeChat, openIntake} from '/page/app/intake/intake.js';
+import {intakeRunning, openIntake} from '/page/app/intake/intake.js';
 import {loadProject, toProject} from '/page/app/loading/load.js';
 
 /* ---------- clearing the project: what goes and what stays, asked on the page, VIEW-019 ----------
@@ -225,12 +225,11 @@ export function emptyPanel() {
   emptyActs(box);
   return box;
 }
-/* Its act: Start the intake, or while one runs, its chat. */
+/* Its act: Start the intake, or while one starts or runs, that one: its chat once its session is made. */
 export function emptyActs(box) {
   const running = intakeRunning();
   fill(box.querySelector('.acts'), S.elements.size ? null : running
-    ? h('button', {class: 'btn', type: 'button', onclick: () => openIntakeChat()},
-      'The intake is running · open its chat')
+    ? h('button', {class: 'btn', type: 'button', onclick: () => openIntake()}, 'An intake is under way · show it')
     : h('button', {class: 'btn primary', type: 'button', onclick: () => openIntake()},
       h('i', {class: 'i i-spark', 'aria-hidden': 'true'}), 'Start the intake'));
 }
