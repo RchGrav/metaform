@@ -2746,6 +2746,10 @@ def test_pointing_at_a_node_shows_its_name_above_the_node_clear_of_the_pointer(r
     page.wait_for_function('() => window.metaform.loaded()')
     page.wait_for_timeout(2500)
     map_key(page, 'p')  # hold the layout still so the node stays where the pointer goes
+    # the kitchen timer's outward sign may stand at a slant too steep to read; facing, it reads from here
+    page.evaluate('(() => { const pick = document.querySelector("#signsat"); pick.value = "facing";'
+                  ' pick.dispatchEvent(new Event("change")); })()')
+    page.wait_for_timeout(300)
     stage = page.locator('#stage').bounding_box()
     kitchen = page.evaluate('(() => { const tag = window.metaform.labels3d().find(label => label.text === "dish timer");'
                             ' return window.metaform.screen3d(tag.id); })()')
@@ -11269,25 +11273,21 @@ def test_a_stored_view_survives_its_move_out_of_the_settings_and_each_account_ke
         assert refused.answers[-1][0] == 400
 
 
-@pytest.mark.req('VIEW-011')
-def test_the_maps_names_face_every_viewer_by_default_and_kept_outward_signs_move_to_facing_once(home):
-    """2026-10-15: facing is the signs' default, and the web module's start moves each account's kept outward back to
-    it once; a choice of outward made after that is kept."""
+@pytest.mark.req('VIEW-038')
+def test_the_maps_names_stand_outward_by_default_and_no_carry_moves_a_kept_choice(home):
+    """2026-10-17: outward is the signs' default again, and the web module's start moves nobody's kept choice; the
+    one-time move of 2026-10-15 from outward to facing is gone."""
     from metaform import home as homes
     from metaform import settings
     from metaform.modules.web import view
-    assert view.value('web_signs') == 'facing'
+    assert view.value('web_signs') == 'outward'
     view.keep('', 'web_signs', 'outward')
-    view.keep('bob', 'web_signs', 'outward')
-    view.keep('ann', 'web_lens', 'wide')
-    with homes.chassis(write=True) as db:  # the test home's own start found nothing to move and marked it; undo that
-        db.execute("DELETE FROM meta WHERE key='carried:web-signs-facing'")
+    view.keep('bob', 'web_signs', 'facing')
+    with homes.chassis(write=True) as db:  # the test home's own start marked its carries; undo the marks
+        db.execute("DELETE FROM meta WHERE key LIKE 'carried:web-%'")
     settings._carried.clear()
-    assert sorted(view.carry()) == ['web_signs of bob: outward to facing', 'web_signs of the owner: outward to facing']
-    assert view.value('web_signs') == 'facing' and view.values('bob')['web_signs'] == 'facing'
-    assert view.values('ann')['web_lens'] == 'wide'
-    view.keep('', 'web_signs', 'outward')
-    assert view.carry() == [] and view.value('web_signs') == 'outward'
+    assert view.carry() == []
+    assert view.value('web_signs') == 'outward' and view.values('bob')['web_signs'] == 'facing'
 
 
 @pytest.mark.req('VIEW-011')

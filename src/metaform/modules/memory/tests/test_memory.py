@@ -1076,13 +1076,7 @@ def test_the_memory_prompt_is_the_owners_word_for_word_and_filled_for_the_agents
     from metaform.data import prompts
     from metaform.modules.memory import PACKAGE, memory_prompt
     assert prompt_files.text(PACKAGE, 'instructions') == owner_prompt()
-    filled = memory_prompt('proj', 'code.manager.route')
-    assert '   - You should assume that you are working on proj\n' in filled
-    assert '   - This is code.manager.route or any other address you work on for this session.\n' in filled
-    assert '{' not in filled and filled.count('\n') == owner_prompt().count('\n')
-    for unassigned in (memory_prompt('proj'), memory_prompt('proj', 'code.ghost')):
-        assert '2. Element Identification:\n   - This is the address of the element you are working on at any given '\
-               'time.\n\n3. Memory Retrieval:' in unassigned and '{' not in unassigned
+    assert memory_prompt('proj', 'code.manager.route') == owner_prompt() == memory_prompt('proj')  # no places
     edited = prompts.save_prompt('memory:instructions', 'Work on {project} at {element}.')
     assert memory_prompt('proj', 'code.manager.route') == 'Work on proj at code.manager.route.'
     later = prompts.save_prompt('memory:instructions', '{element}, linked to {this.address}.')

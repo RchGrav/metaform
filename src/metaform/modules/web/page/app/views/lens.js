@@ -99,7 +99,8 @@ export function resize() {
   const camera = G.camera();
   // Keep the lens's pixels per world unit independent of panel height. A shorter panel crops vertically without
   // changing a name's width or moving the camera. Width changes reframe the name at the selected share below.
-  V3.lensFirst ??= Math.tan(camera.fov * Math.PI / 360) / box.height;  // the lens the 3D map opened with
+  // the lens the 3D map opened with: the chosen lens's widest at the pane it opened in, `FOV3D`
+  V3.lensFirst ??= Math.tan(FOV3D.most * Math.PI / 360) / box.height;
   V3.lens ??= V3.lensFirst;
   G.width(box.width).height(box.height);
   // The library applies its size asynchronously; framing must use the new projection immediately.

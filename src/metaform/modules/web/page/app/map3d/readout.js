@@ -96,7 +96,8 @@ export function rehover3d() {  // on every camera change: one timer re-armed, no
 }
 /* What the readout says, the name alone, and only where the map shows no name that can be read: for an edge, which
  * has no label of its own, the names it joins, receiver → provider; for a node, only while its own label is drawn
- * smaller than READABLE CSS pixels on the screen or not drawn at all, as when labels are decluttered; for an agent's
+ * smaller than READABLE CSS pixels on the screen, as a far one is, perspective alone sizing it, or not drawn at all,
+ * as when the labels are hidden; for an agent's
  * figure, its agent's name. A node whose name can be read gets the finger and its highlight, and no readout. */
 const READABLE = 11;
 function labelReadable(id, which) {

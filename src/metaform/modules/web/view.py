@@ -47,7 +47,7 @@ def _text(value: Any) -> bool:
 # Each key, its default and what it takes. The toolbar, the layout and the workspaces are the JSON text workspace.py
 # checks against its shapes; web_workspace is the name of the one in use.
 KEYS: dict[str, tuple[Any, Callable[[Any], bool]]] = {
-    'web_signs': ('facing', _choice('outward', 'facing')),
+    'web_signs': ('outward', _choice('outward', 'facing')),
     'web_lens': ('natural', _choice('natural', 'wide', 'fisheye')),
     'web_flow_mode': ('selected', _choice('off', 'hover', 'selected', 'all', 'live')),
     'web_map_depth': ('all', _depth),
@@ -103,22 +103,7 @@ def carry(ctx: Any = None) -> list[str]:
     view, over nothing the owner already keeps, and its row is removed; a value the key no longer takes is left out, so
     the page opens at that key's default. Marked `carried:web-view-state` in the home's meta."""
     del ctx
-    return settings.carry_once('web-view-state', _carry) + settings.carry_once('web-signs-facing', _facing)
-
-
-def _facing() -> list[str]:
-    """Once per home, 2026-10-15: the map's names face every viewer's eye, the person's and the agents', so each
-    account's kept outward signs go back to the default, facing; outward stays a choice in the View menu."""
-    said: list[str] = []
-    with home.file_lock(_lock()):
-        kept = _read()
-        for who, mine in kept.items():
-            if mine.get('web_signs') == 'outward':
-                del mine['web_signs']
-                said.append(f'web_signs of {who or "the owner"}: outward to facing')
-        if said:
-            _write(kept)
-    return said
+    return settings.carry_once('web-view-state', _carry)
 
 
 def _carry() -> list[str]:
