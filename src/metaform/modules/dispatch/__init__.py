@@ -1692,6 +1692,7 @@ def release(store: Store, work_id: str, by: str, took: bool, session_id: str | N
                                              or runner and previous.get('runner') != runner):
                     return  # a late release must never end or clear permissions on the session's latest resume
                 if previous is not None and previous['state'] == 'running':
+                    tx.concern(work_id=work_id, session_id=session_id, kind='session')
                     tx.update('agent_sessions', {'session_id': session_id}, {'state': 'ended', 'how': how})
             if took and runner and previous is not None and previous['state'] == 'running':
                 from .progress import finish

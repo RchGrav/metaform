@@ -12163,3 +12163,119 @@ def test_an_intake_agent_killed_leaves_the_page_at_once_with_nothing_read_by_han
     os.killpg(started['pid'], signal.SIGKILL)
     page.wait_for_selector('#intakeBar', state='hidden', timeout=5000)
     assert gone([agent]), 'its agent, in a group of its own, is ended by the server that heard the death'
+
+
+@pytest.mark.req('VIEW-018')
+@pytest.mark.req('VIEW-042')
+def test_an_agent_started_and_recalled_from_the_page_moves_no_part_drawn_on_a_large_collapsed_map(
+        run, home, tmp_path, web, browser, dispatch_runners):
+    """UX recheck 2026-10-17, Findings 1 and 2: on a map of about a thousand parts, opened collapsed, starting an agent
+    on a ticket and recalling it from the board each sent a change that named nothing, so the page read the whole map
+    again, gave the 3D graph three datasets and every part drawn moved, by up to 519 units. Each now names its tables
+    and its ticket: no change without tables reaches the page, the 3D graph is given at most one dataset, and the parts
+    drawn before stay within a unit of where they stood. The board offers Recall agent only on the ticket an agent
+    runs on, and says when the recall is done."""
+    from metaform.data import Node, Store
+    from metaform.modules.dispatch.tests.test_dispatch import eventually
+    folder = tmp_path / 'proj'
+    folder.mkdir()
+    run('add', 'project', 'proj', str(folder))
+    store = Store('proj')
+    with store.atomic():
+        intake = store.layer('intake-1', 'intake', 'The functional map.', kind='intake', mutable=False,
+                             hideable=False, provenance=PROVENANCE, ready=True)
+        store.add_element(intake.name, 'stakeholder.person', name_length=1, role='CQU')
+        store.add_element(intake.name, 'code.engine', name_length=1, role='DE')
+        store.add_join(intake.name, 'stakeholder.person', 'code.engine', purpose='Get the job done.', ef='Runs it.')
+        for branch in range(40):
+            part = f'code.engine.part{branch}'
+            store.add_element(intake.name, part, name_length=1, role='SE')
+            store.add_join(intake.name, 'code.engine', part, purpose=f'Need part {branch}.', ef=f'Gives {branch}.')
+            for leaf in range(24):
+                store.add_element(intake.name, f'{part}.unit{leaf}', name_length=1, role='SE')
+                store.add_join(intake.name, part, f'{part}.unit{leaf}', purpose=f'Need unit {leaf}.',
+                               ef=f'Does unit {leaf}.')
+    ticket = store.add_work(Node('element', 'code.engine.part7.unit3'), 'unbuilt', task='Make unit 3 faster.',
+                            title='Faster unit').id
+    log = tmp_path / 'fake.jsonl'
+    run('enable', 'dispatch')
+    run('set', '--dispatch-claude', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=folder)
+    fake = {'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'hold'}
+    # a project agents have worked in before: one start and stop made the tables they keep, whose making is a change
+    # to the store's own schema, which a page reads whole
+    before = store.add_work(Node('element', 'code.engine.part2.unit1'), 'unbuilt', task='Warm up.').id
+    dispatch_runners.append((json.loads(run('dispatch', 'start', before, 'claude', '--json', cwd=folder,
+                                            env=fake).stdout), folder, log))
+    eventually(lambda: (Store('proj').ticket(before).work.taken_by or '').startswith('claude '), limit=30)
+    run('dispatch', 'stop', before, cwd=folder)
+    run('web', '--json', env=fake)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()', timeout=60000)
+    assert page.evaluate('window.metaform.drawn().nodes') < 400, 'the large map opens collapsed'
+    # what reaches the page on its stream, and each dataset the 3D graph is given
+    page.evaluate("""async () => {
+        window.heard = []; window.given = [];
+        const stream = new EventSource('/api/events?project=proj');
+        stream.onmessage = message => { const event = JSON.parse(message.data);
+            if (event.topic === 'map.changed') window.heard.push(event.payload); };
+        const {G} = await import('/page/app/map3d/graph3d.js');
+        const graphData = G.graphData.bind(G);
+        G.graphData = (...given) => { if (given.length) window.given.push(given[0].nodes.length);
+            return graphData(...given); };
+    }""")
+    places = """async () => { const {G} = await import('/page/app/map3d/graph3d.js');
+        return Object.fromEntries(G.graphData().nodes.filter(node => node.x !== undefined)
+            .map(node => [node.id, [node.x, node.y, node.z]])); }"""
+    frames = "async () => { const {FRAMES} = await import('/page/app/map3d/graph3d.js'); return FRAMES.drawn; }"
+
+    def at_rest():
+        """The 3D layout still over ten frames drawn."""
+        deadline, before, since = time.monotonic() + 60, None, None
+        while True:
+            now, count = page.evaluate(places), page.evaluate(frames)
+            if before is not None and before == now and count - since >= 10:
+                return now
+            if before != now:
+                before, since = now, count
+            assert time.monotonic() < deadline, 'the 3D layout never came to rest'
+            page.wait_for_timeout(300)
+
+    def most_moved(before):
+        now = page.evaluate(places)
+        return max(math.dist(spot, now[key]) for key, spot in before.items() if key in now)
+
+    def watched(act):
+        """What an act of the person's sends the page over five seconds, and how far the parts drawn before it move."""
+        before = at_rest()
+        page.evaluate('window.heard.length = 0; window.given.length = 0')
+        act()
+        page.wait_for_timeout(5000)
+        return page.evaluate('window.heard'), page.evaluate('window.given'), most_moved(before)
+
+    def start():
+        page.evaluate(f"async () => (await import('/page/app/agents/dispatch.js')).startAgent('{ticket}', 'claude')")
+        eventually(lambda: [one for one in store_sessions() if one['state'] == 'running' and one['work_id'] == ticket],
+                   limit=30)
+
+    def store_sessions():
+        with Store('proj', module='dispatch').tables(write=False) as tx:
+            return [dict(row) for row in tx.rows('agent_sessions', limit=0).results]
+
+    heard, given, moved = watched(start)
+    dispatch_runners.extend((dict(one), folder, log) for one in store_sessions() if one['work_id'] == ticket)
+    assert [one for one in heard if 'tables' not in one] == [], heard
+    assert any(one.get('work_ids') == [ticket] and 'ticket' in one.get('kinds', []) for one in heard), heard
+    assert len(given) <= 1 and moved <= 1, (given, moved, heard)
+    page.click('#boardBtn')
+    page.wait_for_selector('#board:not([hidden]) .card')
+    page.wait_for_function('() => document.querySelectorAll("#board button.recall").length === 1')
+    page.evaluate("""() => { window.toasts = [];
+        new MutationObserver(() => window.toasts.push(document.querySelector('#toast').textContent))
+            .observe(document.querySelector('#toast'), {childList: true, characterData: true, subtree: true}); }""")
+    heard, given, moved = watched(lambda: page.evaluate('document.querySelector("#board button.recall").click()'))
+    assert not [one for one in store_sessions() if one['state'] == 'running']
+    assert [one for one in heard if 'tables' not in one] == [], heard
+    assert len(given) <= 1 and moved <= 1, (given, moved)
+    assert any('recalled' in toast for toast in page.evaluate('window.toasts')), page.evaluate('window.toasts')
+    assert page.evaluate('document.querySelectorAll("#board button.recall").length') == 0
+    assert not problems

@@ -1001,8 +1001,9 @@ async def sessions_run(ctx: Context) -> dict[str, Any]:
             return record
 
     # A worker resumed in place holds its ticket already, taken by its own session, so nothing is reserved for it.
+    from metaform import events
     record = await asyncio.to_thread(ticket, store, work_id) if resume else \
-        await asyncio.to_thread(reserve, ticket(store, work_id))
+        (await asyncio.to_thread(events.announced, ctx.folder, ctx.surface, reserve, ticket(store, work_id)))[0]
     worked: list[str] = []
     while True:
         folder: Path | None = None
@@ -1036,8 +1037,8 @@ async def sessions_run(ctx: Context) -> dict[str, Any]:
                 found = next_ticket(ctx, store, glyph, agent=agent, exclude=tuple(worked))
                 return reserve(found) if found is not None else None
         try:
-            found = (await asyncio.to_thread(following, glyph)
-                     if record.done or ended.get('ended') == 'cannot continue without an answer' else None)
+            found = (await asyncio.to_thread(events.announced, ctx.folder, ctx.surface, following, glyph))[0] \
+                if record.done or ended.get('ended') == 'cannot continue without an answer' else None
         except Stop:  # another runner now occupies the glyph
             found = None
         if found is None:
@@ -1610,10 +1611,12 @@ class Session:
     # ------------------------------------------------------------------ the map
 
     async def write(self, function: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
-        """One write through the store, off the loop, then `map.changed`, so an open web GUI shows it at once."""
+        """One write through the store, off the loop, then `map.changed` for what it wrote, `announce`, so an open web
+        GUI shows it at once and reads only what it touched."""
+        from metaform import events
         try:
-            result = await asyncio.to_thread(function, *args, **kwargs)
-            await self.changed()
+            result, _ = await asyncio.to_thread(events.announced, self.ctx.folder, self.ctx.surface, function, *args,
+                                                **kwargs)
         except Exception as error:
             self.fail(error)
             raise
@@ -1627,8 +1630,9 @@ class Session:
         def done() -> Any:
             with self.store.tables() as tx:
                 return change(tx)
-        try:
-            result = await asyncio.to_thread(done)
+        from metaform import events
+        try:  # announced here, on this session's own event, and never again with the map's writes
+            result = await asyncio.to_thread(events.quietly, done)
             if name == 'session_lines':
                 await self.lines_changed()
             else:
@@ -1972,6 +1976,7 @@ class Session:
 
         def kept() -> None:
             with Store(self.store.project_id, module='dispatch').tables() as tx:
+                tx.concern(work_id=self.work_id, session_id=self.session_id, kind='session')  # BASE-053
                 held = tx.get('catalog', {'agent': row['agent'], 'version': row['version']})
                 if not self.offered and held is not None:  # an answer naming no settings leaves those known as kept
                     row['settings'] = held['settings']
@@ -3854,6 +3859,8 @@ class Session:
                             self.store.move_work(self.work_id, 'todo', record.position)
                         self.store.take_work(self.work_id, None, self.by)
                 with self.store.tables() as tx:
+                    # its event names the ticket and the session, so an open page reads those alone, BASE-053
+                    tx.concern(work_id=self.work_id, session_id=self.session_id, kind='session')
                     if self.resume:  # the ended session's own row runs again
                         # Two resumes at once, a second click on Resume, would run one ACP session twice: the first
                         # to get here holds it, and a row another live runner of this work holds is not taken over.
@@ -4267,7 +4274,9 @@ class Session:
                    'runner': self.runner, 'role': self.role, 'agent': self.agent, 'at': stamp(),
                    'prompts': [{'name': one.name, 'number': one.number, 'origin': one.origin,
                                 'version_id': one.version_id} for one in taken]}
-        self.spawn(self.ctx.publish_async('prompt.sent', payload))
+        # what a subscriber keeps of it, the agents module's record, changes no map and is announced by no event
+        from metaform import events
+        self.spawn(asyncio.to_thread(events.quietly, events.publish, 'prompt.sent', payload, self.ctx))
 
     def turn(self, text: str, audio: Any = None, image: Any = None, peers: list[tuple[str, str]] | None = None,
              word: dict[str, Any] | None = None) -> None:
@@ -4837,8 +4846,11 @@ class Session:
         given: dict[str, Any] = {'work_id': self.work_id, 'by': owner, 'took': self.took,
                                  'session_id': self.session_id if self.recorded else None, 'how': how,
                                  'runner': self.runner}
-        try:
-            await asyncio.to_thread(release, self.store, **given)
+        from metaform import events
+        fired: list[dict[str, Any]] = []
+        try:  # announced with what it wrote: the session's row and its ticket's progress, BASE-053
+            _, fired = await asyncio.to_thread(events.announced, self.ctx.folder, self.ctx.surface, release,
+                                               self.store, **given)
         except Exception as error:  # noqa: BLE001  the code on disk may reach what this code cannot
             command = [sys.executable, '-c', RELEASE, json.dumps({'project': self.store.project_id, **given})]
             try:
@@ -4856,8 +4868,9 @@ class Session:
                                      f'{f"{BASE_VARIABLE}={on} " if on else ""}'
                                      f'metaform map work op=move id={self.work_id} column=todo\n')
                 return
-        with contextlib.suppress(Exception):  # the release stands whether or not an open page hears of it
-            await self.changed()
+        if not fired:  # released by the code on disk, or by nothing here: its row is said to have ended all the same
+            with contextlib.suppress(Exception):  # the release stands whether or not an open page hears of it
+                await self.changed(tables='dispatch', dispatch_tables=['dispatch.agent_sessions'])
 
 
     async def hand_over(self) -> bool:

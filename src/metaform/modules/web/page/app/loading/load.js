@@ -128,15 +128,18 @@ async function readGraph(agents) {
   window.metaform.onLoaded?.();  // the map view in an AI tool then turns to the address its call named, MCP-037
   READY.done?.();  // `window.metaform.ready`, once, the first map drawn
 }
-/* The map, page by page, drawn as each comes; false once the read is stale. */
+/* The map, page by page; false once the read is stale. A first load draws each page as it comes. A map already shown
+ * is drawn once, by readGraph after the last page, so the 3D graph is given one dataset, not one per page, and parts
+ * drawn stay where they stand (UX recheck 2026-10-17). */
 async function readPages(stale) {
+  const shown = !!S.whole;
   let after = null;
   do {
     const page = await read('graph', {limit: 500, ...(after ? {after} : {}), ...viewLayers()});
     if (stale()) return false;
     for (const entry of page.elements) S.elements.set(entry.element.id, entry);
     S.joins.push(...page.joins.map(withProviders));
-    draw3D(); renderLegend();
+    if (!shown) { draw3D(); renderLegend(); }
     after = page.next;
   } while (after);
   return true;

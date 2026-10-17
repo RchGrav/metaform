@@ -86,3 +86,19 @@ def announce(folder: Path, surface: Surface) -> list[dict[str, Any]]:
     `map.changed` for each metaform the call changed, VIEW-018. Returns the payloads fired, BASE-053."""
     loader.follow_enabled()
     return changes.announce(folder, surface)
+
+
+def announced(folder: Path, surface: Surface, function: Callable[..., Any], *args: Any,
+              **kwargs: Any) -> tuple[Any, list[dict[str, Any]]]:
+    """For a long-running process: one write, `function`, then `map.changed` for what that write alone changed, with
+    its tables and what it said it concerns; other writes of the process are left for their own announcement, so a
+    write's event never names another's, BASE-053. Returns the function's result and the payloads fired."""
+    loader.follow_enabled()
+    return changes.announced(folder, surface, function, *args, **kwargs)
+
+
+def quietly(function: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    """For a long-running process: one write whose change the caller announces itself, on its own `map.changed`; what
+    it noted is never announced again, by `announce` or at the command's end, BASE-053. Returns the function's result."""
+    return changes.quietly(function, *args, **kwargs)
+
