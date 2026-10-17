@@ -3674,6 +3674,30 @@ def test_a_runner_that_outlived_its_server_is_reused_by_a_summon_and_its_session
 
 
 @pytest.mark.req('VIEW-005')
+def test_an_edit_of_the_system_prompt_reaches_the_running_system_agent_at_its_next_turn(dispatch, run, tmp_path):
+    """UX review round 2, prompt-authoring F4: an edit saved while the person's system agent's conversation runs is
+    sent once, ahead of its next turn, as the system_changed prompt with the prompt as it now reads; the turn after
+    carries the person's message alone."""
+    from metaform import prompt_files
+    gates = tmp_path / 'turns'
+    gates.mkdir()
+    dispatch.start('replace', 'system=true', FAKE_ACP_TURN_GATES=str(gates))
+    [opening] = eventually(lambda: dispatch.received('session/prompt'))
+    assert opening['params']['prompt'][0]['text'].startswith('# Engineering Orchestrator')
+    (gates / '1').touch()
+    prompt_files.save_edit('dispatch:system', 'Edited orchestrator: plans & tickets. <mascot/>')
+    run('dispatch', 'message', dispatch.id, 'what', 'next', cwd=dispatch.folder)
+    (gates / '2').touch()
+    [renewed] = eventually(lambda: told(dispatch))
+    shipped = prompt_files.plain(prompt_files.shipped('dispatch', 'system_changed') or '').split('<system />')[0]
+    assert renewed.startswith(shipped.rstrip()) and 'Edited orchestrator: plans & tickets.' in renewed
+    assert renewed.endswith('\n\nwhat next')
+    run('dispatch', 'message', dispatch.id, 'and', 'then', cwd=dispatch.folder)
+    (gates / '3').touch()
+    assert eventually(lambda: told(dispatch)[1:]) == ['and then']
+    dispatch.stop()
+
+
 def test_the_system_agent_is_told_it_speaks_as_the_mascot_and_where_its_persona_and_tools_are(dispatch, run):
     """The mascot binding: one sentence naming the character, where its persona is written, read on demand, and the
     mascot's tools that are on the surface; nothing while no mascot is chosen."""

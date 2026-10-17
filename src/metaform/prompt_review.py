@@ -24,7 +24,7 @@ from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from . import home, loader, skills
+from . import home, loader, prompt_files, skills
 from .data import prompts as store
 from .errors import Stop
 
@@ -45,6 +45,9 @@ class Entry:
     purpose: str        # the comment above it, if any
     used_at: list[str] = field(default_factory=list[str])   # file:line of the code that loads it
     saved: int | None = None                           # the newest stored version number, when an edit was saved
+    # an element of a prompts.xml: its text as the file holds it, `text` being the plain text the person reads and
+    # edits; empty for any other prompt, whose text is its file's
+    stored: str = ''
 
     @property
     def key(self) -> str:
@@ -61,7 +64,8 @@ def _entries(owner: str, source: Path, code: Path) -> list[Entry]:
     for match in _ELEMENT.finditer(inner):
         name, text = match.group('name'), match.group('body').strip()
         purpose = ' '.join((match.group('comment') or '').split())
-        found.append(Entry(owner, name, source, text, purpose, _uses(code, name)))
+        # shown and edited as plain text, the characters the agent is sent, F3
+        found.append(Entry(owner, name, source, prompt_files.plain(text), purpose, _uses(code, name), stored=text))
     return found
 
 
@@ -175,11 +179,19 @@ def save_edit(entry: Entry, new_text: str, folder: Path | None = None) -> Path:
     if entry.owner == 'store':  # a stored prompt is its own source: the new version is the edit
         store.save_prompt(entry.name, new_text)
         return Path('(prompt store)')
-    store.save_prompt(entry.key, new_text, format='xml')
-    if update_source(entry, new_text):
-        entry.text = new_text
+    if entry.stored:  # an element of a prompts.xml, edited as plain text: through the gate every surface saves through
+        try:
+            version, _ = prompt_files.save_edit(entry.key, new_text, format='xml', shipped_text=entry.stored)
+        except ValueError as error:
+            raise Stop(f'{error}.', f'metaform prompt {entry.key}') from None
+        written = version.text  # the file's form of it, written where the prompt lives
+    else:
+        store.save_prompt(entry.key, new_text, format='xml')
+        written = new_text
+    if update_source(entry, written):
+        entry.text, entry.stored = new_text, written if entry.stored else ''
         return entry.source
-    return packet(entry, new_text, folder)
+    return packet(entry, written, folder)
 
 
 def update_source(entry: Entry, new_text: str) -> bool:
@@ -225,7 +237,7 @@ def packet(entry: Entry, new_text: str, folder: Path | None = None) -> Path:
         f'- Used at: {", ".join(entry.used_at) or "no code line found"}\n'
         f'- Purpose, from the comment above it: {entry.purpose or "none written"}\n\n'
         f'## Apply\n\n{_apply_of(entry)}\n\n'
-        f'## Old text\n\n```\n{entry.text}\n```\n\n## New text\n\n```\n{new_text}\n```\n')
+        f'## Old text\n\n```\n{entry.stored or entry.text}\n```\n\n## New text\n\n```\n{new_text}\n```\n')
     if home.is_home_path(packet):
         home.write_private(packet, text)
     else:

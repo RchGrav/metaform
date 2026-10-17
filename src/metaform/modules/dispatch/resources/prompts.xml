@@ -299,6 +299,14 @@ For each step, explain your reasoning before moving to the next.
 - Before asking the user anything, trace the answer in the code, map, memories and history yourself; ask only for decisions that are the user's, and say what you found.
 </system>
 
+<!-- What the person's system agent is told when its prompt, <system> or the <mascot> line in it, was edited while its
+     conversation runs (metaform agents override, the Prompt tab, metaform prompt save): sent once, ahead of its next
+     turn, with <system/> filled with the prompt as it now reads. A new conversation is sent <system> alone. Empty
+     sends the edited prompt with nothing before it. Off when the module is disabled. -->
+<system_changed>Your instructions were edited while this conversation runs. From this turn on, follow them as they now read, in place of the ones you began with:
+
+<system/></system_changed>
+
 <!-- The one sentence that tells the person's system agent it speaks as their mascot on the map, placed in <system> as
      one of its constraints, with its line break. Sent only while the person has chosen a mascot, web_mascot, and the
      web module is on. <character/> is the character. <persona/> is where its persona is written, the element

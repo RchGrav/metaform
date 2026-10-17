@@ -20,35 +20,48 @@ export async function renderPrompt(name = P.name, number = P.number) {
   // only the last one asked for is shown: opening a layer's prompt asks twice, and an earlier read coming back after
   // the person has typed would put the stored text back
   const asked = ++P.asked;
-  const listed = (await getJson('/api/prompts')).prompts;
+  // every prompt the agents of each role are sent, by role, whether or not it was sent yet, then the other stored ones
+  const catalog = await getJson(`/api/prompt-catalog?project=${encodeURIComponent(S.project || '')}`);
   if (asked !== P.asked) return;
-  // With no stored prompt there is nothing to choose or edit, so only that is said.
+  const listed = [...catalog.roles.flatMap(role => role.prompts), ...catalog.stored.map(item => item.name)];
+  // With no prompt to open there is nothing to choose or edit, so only that is said.
   $('#p-prompt .toolbar').hidden = !listed.length;
   if (!P.editor) $('#editor').hidden = !listed.length;
   if (!listed.length) {
-    $('#promptNote').textContent = 'No stored prompts yet. The intake stores its prompt the first time it is served.';
+    $('#promptNote').textContent = 'No prompts to open: the agents module, which lists the prompts each agent is '
+      + 'sent, is off for this project, and the prompt store holds none yet.';
     return;
   }
-  const chosen = listed.some(item => item.name === name) ? name : listed[0].name;
-  const versions = (await getJson(`/api/prompt-versions?name=${encodeURIComponent(chosen)}`)).versions;
+  const chosen = listed.includes(name) ? name : listed.includes('dispatch:system') ? 'dispatch:system' : listed[0];
+  const read = await getJson(`/api/prompt-versions?name=${encodeURIComponent(chosen)}`);
   if (asked !== P.asked) return;
   P.name = chosen;
-  P.versions = versions;
+  P.versions = read.versions;
   P.number = P.versions.some(item => item.number === number) ? number : P.versions[0].number;
-  fill($('#promptSel'), listed.map(item => h('option', {value: item.name, selected: item.name === P.name}, item.name)));
+  const option = item => h('option', {value: item, selected: item === P.name}, item);
+  fill($('#promptSel'), [
+    ...catalog.roles.map(role => h('optgroup', {label: `${role.role} agent`, title: role.purpose},
+      role.prompts.map(option))),
+    catalog.stored.length ? h('optgroup', {label: 'Other stored prompts'}, catalog.stored.map(item => option(item.name)))
+      : null]);
   fill($('#verSel'), P.versions.map(item => h('option',
     {value: String(item.number), selected: item.number === P.number},
-    `version ${item.number} · ${item.origin} · ${item.created}`)));
+    item.number ? `version ${item.number} · ${item.origin} · ${item.created}` : 'shipped text · not sent yet')));
   const version = P.versions.find(item => item.number === P.number);
   if (!P.editor) P.editor = CodeMirror.fromTextArea($('#editor'), {lineNumbers: true, lineWrapping: true});
-  P.editor.setOption('mode', version.format === 'markdown' ? 'markdown' : version.format === 'xml' ? 'xml' : null);
-  P.editor.setValue(version.text);
+  // a prompt a module ships is written as plain text, as the agent reads it, and the server encodes it for the file's
+  // form when it is saved; any other is shown and saved as stored
+  P.editor.setOption('mode', read.written === 'plain' || version.format === 'markdown' ? 'markdown'
+    : version.format === 'xml' ? 'xml' : null);
+  P.editor.setValue(version.plain ?? version.text);
   P.editor.clearHistory();
   $('#diffOut').hidden = true;
   const names = new Map(S.layers.map(layer => [layer.id, layer.name]));
   const made = version.layers.map(use => names.get(use.layer_id) || `a layer of ${use.project_id}`);
-  $('#promptNote').textContent = made.length ? `Version ${version.number} made: ${made.join(', ')}.`
+  const said = !version.number ? 'Its shipped text; saving an edit makes it version 1 of the store.'
+    : made.length ? `Version ${version.number} made: ${made.join(', ')}.`
     : `No layer was made with version ${version.number}.`;
+  $('#promptNote').textContent = read.problem ? `${read.problem}. ${said}` : said;
   setTimeout(() => P.editor.refresh(), 0);
 }
 $('#promptSel').onchange = () => renderPrompt($('#promptSel').value, null);
@@ -95,7 +108,8 @@ function foldSame(out) {
 }
 const DIFF_MARK = {add: '+ ', del: '- '};
 function showDiff() {
-  const base = P.versions.find(item => item.number === P.number).text;
+  const found = P.versions.find(item => item.number === P.number);
+  const base = found.plain ?? found.text;
   const rows = lineDiff(base, P.editor.getValue());
   const changed = rows.some(row => row.t === 'add' || row.t === 'del');
   fill($('#diffOut'), changed
@@ -107,14 +121,15 @@ function showDiff() {
 $('#diffBtn').onclick = showDiff;
 /* Save: the text as a new version of the prompt, after its changes are shown. */
 async function savePrompt() {
-  if (!showDiff()) return toast(`Nothing to save. The text matches version ${P.number}.`);
+  if (!showDiff()) return toast(P.number ? `Nothing to save. The text matches version ${P.number}.`
+    : 'Nothing to save. The text matches the shipped text.');
   const response = await fetch('/api/save-prompt', {method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({name: P.name, text: P.editor.getValue(), parent: P.number})});
   const saved = await response.json().catch(() => ({}));
   if (!response.ok) return toast(saved.error || 'The prompt was not saved.');
   await renderPrompt(P.name, saved.number);
-  toast(`Saved as version ${saved.number}. Layers made with earlier versions still show the version that made `
-    + 'them.');
+  // what the save left out or keeps as written, said with it, so the person knows what the agent is sent
+  toast([`Saved as version ${saved.number}.`, ...(saved.said || [])].join(' '));
 }
 $('#saveBtn').onclick = savePrompt;
 

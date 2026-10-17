@@ -157,6 +157,8 @@ END_LIMIT = 10.0  # the one wait for a cancelled turn to end, and for the agent 
 LINE_LIMIT = 64 * 1024 * 1024  # the longest line read from the agent
 CHUNKS = ('agent_message_chunk', 'agent_thought_chunk', 'user_message_chunk')
 WRITES = ('edit', 'delete', 'move')  # the tool kinds of ACP that change files, each file under `locked`
+# The prompts the person's system agent's conversation opens with that an edit reaches while it runs, `reopened`.
+REOPENED = ('dispatch:system', 'dispatch:mascot')
 # Rich, 2026-10-15, code#1e: no permission on files is locked until the rules and prompts are in place. Off, nothing
 # below locks a file: no link is required, the ignore list is not read-only, Claude Code gets no ask rules or
 # sandbox, Codex keeps the person's mode, the runner's terminal is unconfined and no sandbox request is refused. True
@@ -1360,7 +1362,10 @@ class Session:
                                     # person's own agent (UX review round 2, 2026-10-17, combined F3)
                                     'about': str(ctx.nouns.get('talk') or 'system')
                                     if system and self.role != 'intake' else None,
-                                    'role': self.role}
+                                    'role': self.role,
+                                    # the prompt versions the system agent's conversation was last sent its prompt
+                                    # in, by name, so an edit saved while it runs reaches its next turn, `reopened`
+                                    'opening': None}
         self.modes: dict[str, Any] | None = None  # the agent's session modes: current and available
         self.config: list[dict[str, Any]] = []  # the agent's config options, as it sent them
         self.offered = False  # the last session/new, load or resume answer named its modes or config options
@@ -3613,8 +3618,8 @@ class Session:
             about, read = await asyncio.to_thread(subject, self.store, self.work_id, str(self.ctx.nouns['talk']))
             text = prompt('talk', about=about, read=read, eyes=await asyncio.to_thread(eyes_line, Path(self.root)))
         elif self.system:  # the person's own, and their mascot's voice when they have one
-            text = prompt('system', project=self.store.project_id,
-                          mascot=await asyncio.to_thread(mascot_line, Path(self.root)))
+            text = await asyncio.to_thread(self.system_prompt)
+            await self.save_state()  # with the versions it carries, so a conversation resumed later knows them
         elif self.prep:
             from .merge import branch_of, dev_branch
             text = prompt('prep', work_id=self.work_id, branch=branch_of(self.work_id),
@@ -3627,6 +3632,32 @@ class Session:
             self.opening = self.system
             self.turn(text)
             await self.troubles()
+
+    def system_prompt(self) -> str:
+        """The person's system agent's prompt as the prompt store serves it now, its mascot's line filled in, with the
+        versions it carries kept as the conversation's `opening`."""
+        text = prompt('system', project=self.store.project_id, mascot=mascot_line(Path(self.root)))
+        self.acp['opening'] = {one.name: one.version_id for one in self.sent
+                               if one.name in REOPENED and one.version_id is not None}
+        return text
+
+    def reopened(self) -> str | None:
+        """The system prompt again, as the turn after an edit of it was saved carries it ahead of what the turn says,
+        so a conversation that goes on takes the edit from its next turn, as the edit's result says (UX review round
+        2, prompt-authoring F4); None while the versions its conversation was sent are still the newest. Read once at
+        each turn of the person's system agent, never otherwise. A conversation whose versions were not kept, begun
+        on older code, is not sent it again."""
+        held = cast(dict[str, str] | None, self.acp.get('opening'))
+        if not held:
+            return None
+        newest: dict[str, str] = {}
+        for name in held:
+            with contextlib.suppress(StoreError):
+                newest[name] = prompt_files.newest_id(name)
+        if all(newest.get(name, version_id) == version_id for name, version_id in held.items()):
+            return None
+        fresh = self.system_prompt()
+        return prompt('system_changed', system=fresh) or fresh
 
     async def taken_over(self) -> None:
         """A session a runner on older code handed over, `hand_over`: one line in its thread says it was restarted on
@@ -3801,6 +3832,8 @@ class Session:
             self.acp['touched'] = list(held.get('touched') or [])
             if held.get('prompts') in PROMPTS:  # the person's choice for this session holds when it goes on
                 self.acp['prompts'] = held['prompts']
+            if isinstance(held.get('opening'), dict):  # the system prompt the conversation holds, `reopened`
+                self.acp['opening'] = held['opening']
             carried =[key for key in CARRIED if held.get(key) not in (None, [], '')]
             self.acp.update({key: held[key] for key in carried})
             self.acp['before_resume'] = carried
@@ -3996,6 +4029,13 @@ class Session:
                             rule = prompt('work_link')
                             text = f'{text}\n\n{rule}' if rule else text
                             self.ruled = True
+                        # the person's system agent takes an edit of its prompt from its next turn, F4
+                        if self.role == 'system' and not self.opening and not self.probe:
+                            renewed = await asyncio.to_thread(self.reopened)
+                            if renewed:
+                                text = f'{renewed}\n\n{text}'
+                                self.carried()  # the versions this turn carries, told with it
+                                await self.save_state()
                         await self.peer_marked(marks, 'delivered')
                         self.cost_open, self.provisional = False, 0
                         self.arm()  # the turn's silence clock, P040

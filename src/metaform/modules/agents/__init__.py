@@ -30,9 +30,11 @@ VARIABLE = 'Which role and which prompt versions each agent session in this proj
 
 @dataclass(frozen=True)
 class Sends:
-    """One prompt a role is sent: its name in the prompt store and when it is sent."""
+    """One prompt a role is sent: its name in the prompt store and when it is sent; `opens` when it is sent only as a
+    conversation begins, so an edit of it reaches the conversations begun after it and not one already running."""
     name: str
     when: str
+    opens: bool = False
 
 
 @dataclass(frozen=True)
@@ -65,27 +67,30 @@ ROLES = (
     )),
     Role('system', "The person's own agent in the project's folder: talks with them and acts for them, speaking as "
                    'their mascot when they chose one.', True, (
-        Sends('dispatch:system', 'first turn'),
-        Sends('dispatch:mascot', 'filled into the first turn while the person has a mascot and the web module is on'),
+        Sends('dispatch:system', 'first turn, and again ahead of the next turn once an edit of it is saved'),
+        Sends('dispatch:mascot', 'filled into the first turn while the person has a mascot and the web module is on, '
+                                 'and again with dispatch:system once an edit of either is saved'),
+        Sends('dispatch:system_changed', 'ahead of the next turn after an edit of dispatch:system or dispatch:mascot '
+                                         'is saved while its conversation runs, with the prompt as it now reads'),
         Sends('dispatch:setup_trouble', 'as its next turn, for each feature a module says is not working'),
     )),
     Role('sentinel', 'Takes up an issue the person raised on a node, following the sentinel skill.', True, (
-        Sends('skills:served', 'first turn: the skill whole, its libraries first'),
-        Sends('skill:sentinel', 'filled into the first turn: the skill\'s procedure'),
+        Sends('skills:served', 'first turn: the skill whole, its libraries first', True),
+        Sends('skill:sentinel', 'filled into the first turn: the skill\'s procedure', True),
         Sends('skills:assignment_input', 'filled into the first turn: the node, the ticket and the report, bound as '
-                                         'data'),
+                                         'data', True),
     )),
     Role('talk', 'Talks with the person about something they clicked on the map; it works no ticket.', True, (
-        Sends('dispatch:talk', 'first turn'),
-        Sends('dispatch:eyes', 'filled into the first turn while the web module offers a body and eyes'),
+        Sends('dispatch:talk', 'first turn', True),
+        Sends('dispatch:eyes', 'filled into the first turn while the web module offers a body and eyes', True),
     )),
     Role('prep', 'Prepares a merge under review for the person, in its worktree.', False, (
-        Sends('dispatch:prep', 'first turn'),
+        Sends('dispatch:prep', 'first turn', True),
         Sends('dispatch:decide', 'as the answer to a question it puts, since it may not ask the person'),
     )),
     Role('worker', 'Works one ticket at its node, handed to it by dispatch.', False, (
-        Sends('dispatch:work', 'first turn, after the brief of its node'),
-        Sends('dispatch:work_record', 'filled into the first turn while the memory module is on'),
+        Sends('dispatch:work', 'first turn, after the brief of its node', True),
+        Sends('dispatch:work_record', 'filled into the first turn while the memory module is on', True),
         Sends('dispatch:retry', 'first turn of a session resumed to retry the ticket'),
         Sends('dispatch:on_ticket_done', 'as a turn when its ticket is done, as dispatch_record_on_finish says'),
         Sends('dispatch:on_stopped_open', 'as a turn when it stopped with its ticket open, as dispatch_record_on_stop '
@@ -150,12 +155,9 @@ def _shipped(ctx: Context, name: str) -> tuple[str | None, str | None]:
     return text, None
 
 
-# Served as shipped and never kept in the prompt store or edited: the Canonical Intake, STORE-044 (03-storage.md),
-# and the line that tells an intake agent where its schema is, served with it as part of it, BASE-039.
-FIXED = {'intake:intake.axiom': 'the Canonical Intake, served as shipped and never kept in the prompt store or edited, '
-                                'STORE-044',
-         'intake:schema_pointer': 'served with the Canonical Intake as part of it, as shipped and never kept in the '
-                                  'prompt store, BASE-039 and STORE-044'}
+# Served as shipped and never kept in the prompt store or edited, STORE-044 and BASE-039: the chassis's list, which
+# the gate every edit goes through refuses.
+FIXED = prompt_files.FIXED
 
 
 def _format(name: str) -> str:
@@ -171,12 +173,12 @@ def _held(name: str, shipped: str) -> dict[str, Any]:
     try:
         versions = prompts.prompt_versions(name)
     except StoreError:
-        return {'revision': None, 'origin': 'shipped', 'text': shipped,
+        return {'revision': None, 'origin': 'shipped', 'text': _readable(name, shipped),
                 'note': 'Not in the prompt store yet: its shipped text becomes version 1 when it is next sent.'}
     newest = versions[0]
     held: dict[str, Any] = {'revision': newest.number, 'origin': newest.origin}
     if newest.origin == 'edited':
-        held['text'] = newest.text
+        held['text'] = prompt_files.readable(newest)
         if _format(name) == 'xml':
             try:
                 prompt_files.rendered(newest.text)
@@ -193,11 +195,16 @@ def _held(name: str, shipped: str) -> dict[str, Any]:
                             f'two with metaform agents override name={name}, or go back to the shipped text with '
                             f'metaform agents drop name={name}.')
         return held
-    held['text'] = shipped
+    held['text'] = _readable(name, shipped)
     if newest.text != shipped:
         held['note'] = (f'The shipped text changed after version {newest.number}; it becomes version '
                         f'{newest.number + 1} when it is next sent.')
     return held
+
+
+def _readable(name: str, text: str) -> str:
+    """A prompt's text as the person reads and edits it, its fill places written <name />."""
+    return prompt_files.plain(text) if _format(name) == 'xml' else text
 
 
 def _prompt(ctx: Context, sends: Sends) -> dict[str, Any]:
@@ -211,7 +218,10 @@ def _prompt(ctx: Context, sends: Sends) -> dict[str, Any]:
         return {**one, 'resolves': None, 'problem': str(unread), **stored}
     if shipped is None:
         return {**one, 'resolves': False, 'problem': problem}
-    return {**one, 'resolves': True, **_held(sends.name, shipped)}
+    owner, _, element = sends.name.partition(':')
+    written = prompt_files.problem_of(owner, element) if _format(sends.name) == 'xml' else None
+    # a prompt written wrong in its file: still sent as it last read, and named until it is corrected
+    return {**one, 'resolves': True, **_held(sends.name, shipped), **({'file_problem': written} if written else {})}
 
 
 def _stored(name: str) -> dict[str, Any]:
@@ -368,51 +378,63 @@ def _known(ctx: Context, name: str) -> str:
     return shipped
 
 
+def _reach(ctx: Context, name: str) -> tuple[list[str], list[str]]:
+    """Who takes a change of the prompt `name` and when, one phrase for each role sent it, and the sessions running
+    now that keep the text they began with: a prompt sent only as a conversation begins reaches the conversations
+    begun after the change (UX review round 2, prompt-authoring F4)."""
+    running = _running(ctx)
+    said: list[str] = []
+    kept: list[str] = []
+    for role in ROLES:
+        found = next((sends for sends in _sends(role) if sends.name == name), None)
+        if found is None:
+            continue
+        ids = [str(one['session_id']) for one in running if one['role'] == role.name]
+        if not found.opens:
+            said.append(f'the {role.name} role from its next turn' + (f', the {len(ids)} running now included'
+                                                                        if ids else ''))
+            continue
+        said.append(f'the {role.name} role from its next new conversation' + (
+            f'; the {len(ids)} running now keep the text they began with' if ids else ''))
+        kept += ids
+    return said, kept
+
+
 def _sent_caution(ctx: Context) -> str:
-    """override's and drop's caution for this call: the prompt, the roles sent it and the sessions running as them
-    now, which take the change from their next turn (UX review, person-consent F3)."""
+    """override's and drop's caution for this call: the prompt, the roles sent it and when each takes the change, with
+    the sessions running as them now (UX review, person-consent F3, and prompt-authoring F4)."""
     name = str(ctx.nouns.get('name') or '')
-    named = [role.name for role in ROLES if any(sends.name == name for sends in _sends(role))]
-    if not named:
+    said, _ = _reach(ctx, name)
+    if not said:
         return ''
-    running = sum(1 for one in _running(ctx) if one['role'] in named)
-    now = f'{running} {"session runs" if running == 1 else "sessions run"} as {"it" if len(named) == 1 else "them"} now'
-    return (f'{name} is sent to the {", ".join(named)} {"role" if len(named) == 1 else "roles"}; {now}, and every '
-            f'one takes the change from its next turn. metaform agents drop {name} goes back to the shipped text.')
+    return f'{name} is sent to {"; ".join(said)}. metaform agents drop {name} goes back to the shipped text.'
 
 
 def override(ctx: Context) -> dict[str, Any]:
-    """Save an edit of a role's prompt in the prompt store, sent in place of the shipped text from the next turn of
-    every role that names it, STORE-044."""
+    """Save an edit of a role's prompt in the prompt store, sent in place of the shipped text, STORE-044: written as
+    plain text and encoded by `prompt_files.save_edit`, so what is saved is what is sent; each role that names it
+    takes it from its next turn, or from its next conversation for a prompt sent only as one begins."""
     _refused(ctx)
     name, text = str(ctx.nouns['name']), str(ctx.nouns['text']).strip()
     shipped = _known(ctx, name)
-    notices: list[str] = []
-    if _format(name) == 'xml':
-        try:
-            prompt_files.rendered(text)
-        except ValueError as error:
-            raise Stop(f'The edit is {error}. Write fill places as empty elements, such as <work_id/>, and & as '
-                       '&amp;.', f'metaform prompt {name}') from None
-        places = _places(shipped)
-        lost = sorted(places - _places(text))
-        if lost:
-            notices.append(f"The edit leaves out the fill place(s) {', '.join(f'<{one}/>' for one in lost)}, which "
-                           'the module fills; what it fills there is no longer sent.')
-    prompts.shipped(name, _format(name), shipped)  # the shipped text is the version the edit is made from
     parent = ctx.nouns.get('parent')
-    version = prompts.save_prompt(name, text, parent=int(parent) if parent is not None else None)
+    xml = _format(name) == 'xml'
+    if not xml:
+        prompts.shipped(name, _format(name), shipped)  # the shipped text is the version the edit is made from
+    try:  # the one gate every surface saves through: plain text in, sent as written
+        version, notices = prompt_files.save_edit(name, text, parent=int(parent) if parent is not None else None,
+                                                  format=_format(name), shipped_text=shipped if xml else None)
+    except ValueError as error:
+        raise Stop(f'{error}.', f'metaform prompt {name}') from None
+    reached, kept = _reach(ctx, name)
     result: dict[str, Any] = {'name': name, 'revision': version.number, 'origin': version.origin,
-                              'sent': 'from the next turn of every role that names it'}
+                              'sent': f'to {"; ".join(reached)}'}
+    if kept:
+        result['running_not_reached'] = kept
     said = [notice.message for notice in version.notices] + notices
     if said:  # in the result contract's shape, where and message, so every surface shows them (prompt-authoring F6)
         result['notices'] = [{'where': name, 'message': message} for message in said]
     return result
-
-
-def _places(text: str) -> set[str]:
-    import xml.etree.ElementTree as ET
-    return {child.tag for child in ET.fromstring(f'<prompt>{text}</prompt>')}
 
 
 def drop(ctx: Context) -> dict[str, Any]:
@@ -429,8 +451,9 @@ def drop(ctx: Context) -> dict[str, Any]:
         raise Stop(f'{name} has no edit: version {newest.number}, its shipped text, is sent.',
                    f'metaform prompt {name}')
     version = prompts.add_prompt_version(name, shipped, newest.number, origin='shipped')
+    reached, kept = _reach(ctx, name)
     return {'name': name, 'revision': version.number, 'origin': version.origin, 'dropped': newest.number,
-            'sent': 'the shipped text, from the next turn of every role that names it'}
+            'sent': f'the shipped text, to {"; ".join(reached)}', **({'running_not_reached': kept} if kept else {})}
 
 
 # ------------------------------------------------------------------------------------------------ what was sent
@@ -483,15 +506,17 @@ MODULE = Module(
              nouns=(Noun('name', 'The role: intake, system, sentinel, talk, prep or worker.'),), effect='read'),
         Verb('sent', sent, 'Read which role a session ran as and which prompt versions each of its turns carried.',
              nouns=(SESSION,), effect='read'),
-        Verb('override', override, "Save an edit of a role's prompt, sent in place of the shipped text from the next "
-                                   'turn.',
-             nouns=(NAME, Noun('text', 'The edited prompt, its fill places kept as empty elements such as <work_id/>.'),
+        Verb('override', override, "Save an edit of a role's prompt, sent in place of the shipped text; the result "
+                                   'says which roles take it and when.',
+             nouns=(NAME, Noun('text', 'The edited prompt as plain text, as the agent reads it: & and < are written '
+                                       'as they are, and each fill place as <name/>, such as <work_id/>.'),
                     Noun('parent', 'The version this edit came from; the newest by default.', kind='int',
                          required=False)),
-             caution='Every agent of the roles that name this prompt is sent the edit from its next turn.',
+             caution='Every agent of the roles that name this prompt is sent the edit, each as its role takes it.',
              person_says=True, cautioned=_sent_caution, page='the Prompt tab'),
         Verb('drop', drop, "Go back to a prompt's shipped text, so its edit is no longer sent.", nouns=(NAME,),
-             caution='Every agent of the roles that name this prompt is sent the shipped text from its next turn.',
+             caution='Every agent of the roles that name this prompt is sent the shipped text, each as its role takes '
+                     'it.',
              person_says=True, cautioned=_sent_caution, page='the Prompt tab'),
     ),
     subscriptions=(Subscription('prompt.sent', record),),
