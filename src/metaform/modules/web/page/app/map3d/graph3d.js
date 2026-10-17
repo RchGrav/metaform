@@ -59,8 +59,11 @@ export let G = null;
 /* The size of a node and the width of a link, in the map's units, so the eye's perspective alone sizes them: a node or
  * an edge near the eye is large and thick, one far away small and fine, and scale reads from them as it does from the
  * names. Nothing is held to a size on the screen. Raised 2026-10-17 at Rich's request, the edges and nodes having read
- * as too thin and small: a node's value doubled (its ball a quarter wider), each link twice as wide. */
-export const nodeSize = node => node.t === 'el' ? (node.role === 'DE' ? 18 : node.role === 'CQU' ? 14 : 8)
+ * as too thin and small: each link twice as wide, and an element's ball half as wide again on the screen as before from the
+ * same camera. A ball's radius is the cube root of its value, times 3, and the 60-degree lens shows a map unit at 0.81
+ * of the old 50-degree lens's size, so the old values (DE 9, CQU 7, others 4) are raised by (1.5 / 0.81) cubed, about
+ * 6.4. Purposes, items and the rest keep their size. */
+export const nodeSize = node => node.t === 'el' ? (node.role === 'DE' ? 58 : node.role === 'CQU' ? 45 : 26)
   : node.t === 'purpose' ? 1.8 : node.t === 'item' ? 0.6 : 0.7;
 export const linkWidthOf = link => link.k === 'tree' ? 0.8 : link.k === 'layer' || link.k === 'item' ? 0.5
   : link.k === 'relation' ? 1 : 1.8;
