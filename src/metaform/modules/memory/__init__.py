@@ -49,6 +49,7 @@ from metaform.module import (
     Subscription,
     ToolbarItem,
     Verb,
+    agent_caller,
     first_line,
     titled,
 )
@@ -774,6 +775,30 @@ def _locked_said(locked: list[str]) -> str:
     return f' Locked: {", ".join(locked)}' if locked else ''
 
 
+# Deleting memories is the person's decision: what an agent recorded is how the next agent learns, and nothing keeps a
+# copy, so a delete is never undone. CLI-011.
+FORGET = 'Deleting memories removes them from the memory graph for every agent; no copy is kept and it is not undone.'
+
+
+def _forget_caution(ctx: Context) -> str:
+    """What one delete call would remove, named and counted, said before it does."""
+    given = _Given(ctx)
+    if 'entityNames' in ctx.nouns:
+        names = list(dict.fromkeys(given.texts(ctx.nouns.get('entityNames'), 'entityNames')))
+        what = f'{len(names)} {"memory" if len(names) == 1 else "memories"}, {", ".join(names)}, with every ' \
+               'observation and relation they hold'
+    elif 'deletions' in ctx.nouns:
+        deletions = [(given.text(one['entityName'], 'entityName'), given.texts(one['observations'], 'observations'))
+                     for one in given.objects('deletions', ('entityName', 'observations'))]
+        count = sum(len(contents) for _, contents in deletions)
+        what = (f'{count} {"observation" if count == 1 else "observations"} of '
+                f'{", ".join(dict.fromkeys(name for name, _ in deletions))}')
+    else:
+        count = len(_relations(given))
+        what = f'{count} {"relation" if count == 1 else "relations"} between memories'
+    return f'Deleting {what} removes them from the memory graph for every agent; no copy is kept and it is not undone.'
+
+
 def delete_entities(ctx: Context) -> Any:
     """Delete memories anywhere in the graph, whoever wrote them, CTX-022; a locked one is kept and named, CTX-023,
     in the reference's form for a partial delete. A relation goes with its deleted end."""
@@ -1062,11 +1087,10 @@ def _lock_said(row: Row) -> dict[str, Any]:
 
 
 def _set_lock(ctx: Context, locked: bool) -> Any:
-    """Lock or unlock one memory, CTX-023. Only the person does, from the page or a command line no agent runs: an
-    agent's session carries METAFORM_ROLE, which the runner sets, so this is a guard against an agent's mistake, as
-    held_role is, not a boundary. Over MCP the verbs are not offered at all."""
-    role = os.environ.get('METAFORM_ROLE')
-    if ctx.surface == 'mcp' or (ctx.surface == 'cli' and role and role != 'none'):
+    """Lock or unlock one memory, CTX-023. Only the person does, from the page or a command line no agent runs: a
+    command an agent runs is known by the identity its runner sets and by the processes that started it,
+    `metaform.caller`. Over MCP the verbs are not offered at all."""
+    if ctx.surface == 'mcp' or (ctx.surface == 'cli' and agent_caller()):
         raise Stop('Only the person locks and unlocks a memory, from the page or the command line.',
                    'ask the person to do it')
     given = _Given(ctx)
@@ -1364,14 +1388,17 @@ MODULE = Module(
              nouns=_at(Noun('observations', 'The observations to add, by entity.', kind='json', schema=OBSERVATIONS))),
         Verb('delete_entities', delete_entities,
              'Delete memory entities and their relations, at a node or in the whole memory graph.',
-             nouns=_at(Noun('entityNames', 'An array of entity names to delete', kind='json', schema=NAMES)), effect='remove'),
+             nouns=_at(Noun('entityNames', 'An array of entity names to delete', kind='json', schema=NAMES)), effect='remove',
+             caution=FORGET, person_says=True, cautioned=_forget_caution),
         Verb('delete_observations', delete_observations,
              'Delete observations from memory entities, at a node or in the whole memory graph.',
-             nouns=_at(Noun('deletions', 'The observations to delete, by entity.', kind='json', schema=DELETIONS)), effect='remove'),
+             nouns=_at(Noun('deletions', 'The observations to delete, by entity.', kind='json', schema=DELETIONS)), effect='remove',
+             caution=FORGET, person_says=True, cautioned=_forget_caution),
         Verb('delete_relations', delete_relations, 'Delete relations between memory entities, at a node or in the '
                                                    'whole memory graph.',
              nouns=_at(Noun('relations', 'An array of relations to delete', kind='json',
-                            schema={'type': 'array', 'items': RELATION})), effect='remove'),
+                            schema={'type': 'array', 'items': RELATION})), effect='remove',
+             caution=FORGET, person_says=True, cautioned=_forget_caution),
         Verb('read_graph', read_graph, 'Read the memories at a node of the map, or the whole memory graph without one.',
              nouns=_at(), effect='read'),
         Verb('search_nodes', search_nodes, 'Search memory entities by name, type and observation text, at a node or in '

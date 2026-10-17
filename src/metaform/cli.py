@@ -26,6 +26,7 @@ from typing import Any, cast
 from . import (
     __version__,
     aliases,
+    caller,
     changes,
     context,
     docs,
@@ -43,7 +44,7 @@ from . import (
 from .data import Store, export_document, history, import_document, prompts
 from .docs import Command, Switch
 from .errors import Stop, StoreError
-from .module import Verb, call, on_this_system
+from .module import Verb, call, caution_of, on_this_system
 from .wording import count, counted
 
 EMPTY_IS_ALL = settings.EMPTY_IS_ALL
@@ -164,6 +165,8 @@ def add(args: list[str], folder: Path) -> None:
         return
     if args[:1] == ['base'] and len(args) in (2, 3):
         project_id = _project_arg(folder, args[2] if len(args) == 3 else None)
+        if caller.agent():  # switching the map is the person's decision, CLI-011
+            raise caller.persons_decision(home.switch_caution(project_id), 'metaform ' + ' '.join(['add', *args]))
         previous = home.active_base(project_id)
         created = home.add_base(project_id, args[1])
         kept = previous.name if previous else 'main'
@@ -356,6 +359,9 @@ def activate(args: list[str], folder: Path) -> None:
     known = {form.name for form in home.bases(project_id)}
     if args[1] not in known:
         raise Stop(f'No base {args[1]} in {project_id}.', 'metaform list bases')
+    if caller.agent():  # switching the map is the person's decision, CLI-011
+        raise caller.persons_decision(home.switch_caution(project_id), 'metaform ' + ' '.join(['activate', *args]),
+                                      'the base picker')
     left = home.active_base(project_id)
     made = home.activate_base(project_id, args[1])
     out(f'Active base for {project_id}: {args[1]}')
@@ -375,6 +381,9 @@ def clear(args: list[str], folder: Path) -> None:
     if home.project(project_id) is None:
         raise Stop(f'No project {project_id} is registered.', 'metaform list projects')
     found = home.to_clear(project_id)
+    if caller.agent():  # clearing the map is the person's decision: an agent's --confirm never runs it, CLI-011
+        raise caller.persons_decision(found.caution, f'metaform clear project {project_id} --confirm',
+                                      'Clear project')
     if not confirm:
         raise Stop(found.caution, f'If you are sure: metaform clear project {project_id} --confirm')
     cleared = home.clear_project(project_id)
@@ -414,6 +423,11 @@ def restore(args: list[str], folder: Path) -> None:
     project_id = _project_arg(folder, args[1] if len(args) >= 2 else None)
     if home.project(project_id) is None:
         raise Stop(f'No project {project_id} is registered.', 'metaform list projects')
+    if caller.agent():  # a restore replaces the map the person and every agent sees, CLI-011
+        found = home.to_clear(project_id)
+        raise caller.persons_decision(
+            f'Restoring a backup of {project_id} replaces what it holds now: {found.held}. What it holds is backed '
+            'up first.', 'metaform ' + ' '.join(['restore', *args]))
     restored = home.restore_project(project_id, args[2] if len(args) == 3 else None)
     out(restored.said)
     if restored.held_before:
@@ -505,7 +519,7 @@ def set_(args: list[str], folder: Path) -> None:
         raise Stop('--confirm is not a setting.', 'metaform help --confirm')
     if not pairs:
         raise Stop('set needs at least one setting switch.', 'metaform set --help')
-    if os.environ.get('METAFORM_ROLE') not in (None, '', 'none'):
+    if caller.agent():
         # Check the whole call before validation, confirmation or writes: --confirm cannot grant control.
         settings.refuse_held_control((setting.key for setting, _ in pairs), folder)
     for setting, raw in pairs:
@@ -598,7 +612,7 @@ def unset(args: list[str], folder: Path) -> None:
         # Only the settings stored at this folder, D36, of the modules loaded now, D53.
         keys = [key for key, setting in settings.SCHEMA.items()
                 if settings.scope_of(setting, folder) == settings.own_scope_of(setting, folder)]
-    if os.environ.get('METAFORM_ROLE') not in (None, '', 'none'):
+    if caller.agent():
         settings.refuse_held_control(keys, folder)
     for key in keys:  # every one is checked before any is reset
         try:
@@ -1087,17 +1101,22 @@ def run_module(identifier: str, rest: list[str], folder: Path) -> None:
     if parsed.help:
         out(docs.verb_syntax(module, verb))
         return
-    if os.environ.get('METAFORM_ROLE') not in (None, '', 'none'):
-        settings.refuse_held_control((key for key in parsed.switches if key in verb.switches), folder)
-    if verb.caution and not parsed.confirm:
-        confirm = ' '.join(['metaform', identifier, verb.name, *rest[1:], '--confirm'])
-        raise Stop(verb.caution, f'If you are sure: {confirm}')
+    given = [key for key in parsed.switches if key in verb.switches]
+    acting = caller.agent() if given or verb.person_says else None  # read only when the call needs to know
+    if acting:
+        settings.refuse_held_control(given, folder)
     messages = sys.stderr if parsed.json else sys.stdout
     project = parsed.switches.pop('project', None)
 
     def sink(text: str) -> None:
         messages.write(text + '\n')
     ctx = context.build(identifier, folder, project=project, nouns=parsed.nouns, switches=parsed.switches, sink=sink)
+    if verb.caution and (not parsed.confirm or verb.person_says and acting):
+        confirm = ' '.join(['metaform', identifier, verb.name, *(arg for arg in rest[1:] if arg != '--confirm'),
+                            '--confirm'])
+        if verb.person_says and acting:  # the person's decision: an agent's --confirm never runs it, CLI-011
+            raise caller.persons_decision(caution_of(verb, ctx), confirm)
+        raise Stop(caution_of(verb, ctx), f'If you are sure: {confirm}')
     if inspect.iscoroutinefunction(verb.run):
         result = _run_async(verb.run, ctx, f'{identifier} {verb.name}')
     else:

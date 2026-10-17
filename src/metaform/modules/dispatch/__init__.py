@@ -62,11 +62,13 @@ from metaform.module import (
     Module,
     Noun,
     Pane,
+    Provides,
     Stop,
     Subscription,
     Surface,
     ToolbarItem,
     Verb,
+    agent_caller,
     call,
     child_environment,
     context,
@@ -1184,6 +1186,16 @@ def sessions(store: Store, work_id: str | None = None, *, verify: bool = True,
     return verified(store, rows, open_work) if verify else rows
 
 
+def base_holds(store: Store) -> dict[str, int]:
+    """What a base holds of dispatch's that a clear or a switch takes from the person: the agents at work on it now,
+    pinned to it, each checked with its runner, as `agents_at_work` names them. The conversations with agents are the
+    project's, kept through a clear or a switch of bases, PROJ-026, so none is counted as the base's."""
+    bound = store.bound_base()
+    if bound is None:
+        return {}
+    return {'agents': len(agents_at_work(store.project_id, bound.id, False))}
+
+
 def verified(store: Store, rows: Sequence[dict[str, Any]],
              open_work: Sequence[WorkRecord] | None = None) -> list[dict[str, Any]]:
     """Stored session rows as session_status reads them, in order: a running row is checked with its runner."""
@@ -1824,7 +1836,7 @@ def over_budget(ctx: Context, store: Store, *, work_id: str | None = None, run: 
             used = round(costs[currency] * 100) if currency is not None else 0
         if used >= limit:
             next_step = f'metaform set --{key.replace("_", "-")}=<{"tokens" if measure == "tokens" else "cents"}>'
-            if os.environ.get('METAFORM_ROLE') not in (None, '', 'none'):
+            if agent_caller():
                 next_step = 'metaform map work op=edit id=<your work id> note="..."'
             return {'budget': name, 'measure': measure, 'setting': key, 'limit': limit, 'spent': used,
                     **({'currency': currency} if measure == 'cost' else {}),
@@ -4169,7 +4181,7 @@ def persons_own(ctx: Context, what: str) -> None:
     to a ticket's intended outcome or to what it costs, spec 04 D119. The person lets agents do it by turning
     agents_may_set_control on."""
     may_steer(ctx)
-    if (ctx.surface == 'mcp' or os.environ.get('METAFORM_ROLE') not in (None, '', 'none')) \
+    if (ctx.surface == 'mcp' or ctx.surface == 'cli' and agent_caller()) \
             and not settings.value('agents_may_set_control', ctx.folder):
         raise Stop(f'{what} is the person\'s decision, made on the command line or the page, never an agent\'s. Say '
                    'what you need in your ticket\'s note.', 'metaform map work op=edit id=<your work id> note="..."')
@@ -4726,6 +4738,7 @@ MODULE = Module(
     subscriptions=(Subscription('work.requeued', requeued), Subscription('dispatch.rework-limit', rework_limit),
                    Subscription('signal.raised', collect), Subscription('map.changed', progress_changed)),
     work_read=work_read,
+    provides=(Provides('base.holds', base_holds),),
     start=started,
     stop=None,
     status=None,

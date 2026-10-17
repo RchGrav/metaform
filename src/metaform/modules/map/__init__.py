@@ -42,6 +42,7 @@ from metaform.module import (
     Noun,
     NounKind,
     Pane,
+    Provides,
     Status,
     Stop,
     ToolbarItem,
@@ -126,6 +127,24 @@ def _said(result: dict[str, Any], done: Any) -> dict[str, Any]:
 
 BASE_SWITCH = ('This changes the active map for every agent and the page of the project. The previous base is kept; '
                'map activate <its name> switches back.')
+
+
+def _switch_caution(ctx: Context) -> str:
+    """BASE_SWITCH for this call: what the active base holds that leaves view, and the command that switches back."""
+    return home.switch_caution(_other_project(ctx).project_id)
+
+
+def _remove_caution(ctx: Context) -> str:
+    """remove-base's caution for this call: the base named, with what it holds, and the copy kept."""
+    return home.remove_caution(_other_project(ctx).project_id, str(ctx.nouns.get('name') or ''))
+
+
+def base_holds(store: Store) -> dict[str, int]:
+    """What a base holds of the map's own that a clear or a switch takes from the person: its open tickets, the held
+    ones that anchor conversations left out, and its knowledge layers, the base layer left out."""
+    tickets = sum(1 for record in store.work(open=True, limit=0).results if not record.held)
+    layers = sum(1 for layer in store.layers(limit=0).results if layer.kind == 'layer' and layer.name != 'base')
+    return {'tickets': tickets, 'layers': layers}
 
 
 def _other_project(ctx: Context) -> Store:
@@ -1664,6 +1683,7 @@ MODULE = Module(
     item_read=map_item_read,
     items_at=map_items_at,
     item_kinds=('work', 'question', 'message', 'term'),
+    provides=(Provides('base.holds', base_holds),),
     summary="Read and write this project's functional map and its layers.",
     purpose="Reads and writes this project's functional map. Handed an address, start with where: one read of "
             'the address returns the element, what relies on it, every join it provides with its receiver and '
@@ -1746,18 +1766,18 @@ MODULE = Module(
              nouns=(_noun('project', 'A project id.'), *PAGING), effect='read'),
         Verb('add-base', add_base, 'Start a new, empty base for the project and make it the active map.',
              nouns=(Noun('name', 'The base name.'), _noun('project', 'A project id.')),
-             caution=BASE_SWITCH),
+             caution=BASE_SWITCH, person_says=True, cautioned=_switch_caution),
         Verb('activate', activate, "Make one of the project's bases the active map.",
              nouns=(Noun('name', 'The base name.'), _noun('project', 'A project id.')),
-             caution=BASE_SWITCH),
+             caution=BASE_SWITCH, person_says=True, cautioned=_switch_caution),
         Verb('remove-base', remove_base, 'Take one base out of the project; a copy of its store is kept.',
              nouns=(Noun('name', 'The base name.'), _noun('project', 'A project id.')),
              caution='Removes the base and its store; a copy is kept under backups/remove-base. The active base '
-                     'is refused.', effect='remove'),
+                     'is refused.', effect='remove', person_says=True, cautioned=_remove_caution),
         Verb('collapse', collapse, 'Rewrite the current map as a new base of one base layer and make it active; the '
                                    'old one is kept whole. Each element and join is written once, with the same ids.',
              nouns=(Noun('name', 'The new base name.'), _noun('project', 'A project id.')),
-             caution=BASE_SWITCH),
+             caution=BASE_SWITCH, person_says=True, cautioned=_switch_caution),
         Verb('promote', promote, 'Give a join an element of its own at an address, keeping the join and its history, '
                                  'memories and work.',
              nouns=(_noun('receiver', 'The address of the element that holds the join.'),

@@ -403,6 +403,8 @@ class Server(ThreadingHTTPServer):
         # the mascot's questions to the open pages waiting for their answer, by id: what it sees, VIEW-005
         self.mascot_waiting: dict[str, dict[str, Any]] = {}
         self.code = code_print()
+        # The secret the commands this server runs for the person carry, so they act as the person, CLI-011.
+        self.vouch = chassis.page_vouch()
         self.handing = threading.Lock()
         self.stopping, self.handed = threading.Event(), threading.Event()
         self.replacing = self.successor = False
@@ -908,6 +910,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.clear_preview(query.get('project', [''])[-1])
         if url.path == '/api/remove-preview':
             return self.remove_preview(query.get('project', [''])[-1])
+        if url.path == '/api/base-preview':
+            return self.base_preview(query.get('project', [''])[-1], query.get('name', [''])[-1])
         if url.path == '/api/backups':
             return self.backups(query.get('project', [''])[-1])
         if url.path == '/api/ignore':
@@ -1174,9 +1178,26 @@ class Handler(BaseHTTPRequestHandler):
                 self.gui.pages_changed(shown)
 
     def write(self, path: str) -> None:
-        """One of the eighteen writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body."""
+        """One of the eighteen writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body. A
+        write that is the person's alone, PERSONS_WRITES, is also refused when the process that sent it is an agent's,
+        whatever headers it sent, CLI-011; the commands it runs carry this server's vouch."""
         if not self.same_origin():
             return self.send(403, {'error': "A write is taken only from the web GUI's own page."})
+        if path in PERSONS_WRITES:
+            sent_by = chassis.page_caller(self.client_address[:2], self.connection.getsockname()[:2], home.home())
+            if sent_by is not None:
+                return self.send(403, {'error': f"{path} is the person's to do on the page, and this request came "
+                                                f'from an agent: {sent_by}.',
+                                       'next': 'tell the person what you propose and why; they do it on the page'})
+            VOUCHED.server = self.gui
+            try:
+                return self.writing(path)
+            finally:
+                VOUCHED.server = None
+        return self.writing(path)
+
+    def writing(self, path: str) -> None:
+        """The write itself, once it is known to come from the page, and from the person where it must."""
         if (self.headers.get('Content-Type') or '').split(';')[0].strip().lower() != 'application/json':
             return self.send(415, {'error': 'A write takes a JSON body.'})
         writes = {'/api/apply-layers': self.apply_layers,
@@ -1303,11 +1324,15 @@ class Handler(BaseHTTPRequestHandler):
                         'notices': [{'where': 'layers', 'message': notice} for notice in assigned.notices]})
 
     def activate_base(self, given: dict[str, Any]) -> None:
-        """Make a base the project's active one, as `metaform activate base <name>` does, STORE-041."""
+        """Make a base the project's active one, as `metaform activate base <name>` does, STORE-041, only with
+        `confirm` true: without it the answer is the caution, naming what leaves view, UX review round 1."""
         project = home.project(str(given.get('project', '')))
         name = given.get('name')
         if project is None or not isinstance(name, str) or not name:
             return self.send(400, {'error': 'Activate takes a registered project and a base name.'})
+        if given.get('confirm') is not True:
+            return self.send(400, {'error': home.switch_caution(project.project_id),
+                                   'next': 'If you are sure: send confirm true'})
         try:
             left = home.active_base(project.project_id)
             made = home.activate_base(project.project_id, name)
@@ -1324,8 +1349,7 @@ class Handler(BaseHTTPRequestHandler):
         if project is None or not isinstance(name, str) or not name:
             return self.send(400, {'error': 'Remove takes a registered project and a base name.'})
         if given.get('confirm') is not True:
-            return self.send(400, {'error': f'Removing {name} removes its store; a copy is kept under '
-                                            'backups/remove-base. The active base is refused.',
+            return self.send(400, {'error': home.remove_caution(project.project_id, name),
                                    'next': 'If you are sure: send confirm true'})
         try:
             made = home.remove_base(project.project_id, name)
@@ -1339,6 +1363,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(404, {'error': f'No project {project} is registered.', 'next': 'metaform list projects'})
         found = home.to_clear(project)
         self.send(200, {**found.to_dict(), 'caution': found.caution})
+
+    def base_preview(self, project: str, name: str) -> None:
+        """What activating or removing the base `name` would take, in the commands' own cautions, said before the
+        person decides; it changes nothing, STORE-041 and UX review round 1."""
+        if home.project(project) is None:
+            return self.send(404, {'error': f'No project {project} is registered.', 'next': 'metaform list projects'})
+        self.send(200, {'project': project, 'name': name, 'activate': home.switch_caution(project),
+                        'remove': home.remove_caution(project, name)})
 
     def remove_preview(self, project: str) -> None:
         """What removing the project does, in the command's own words, or why it cannot be removed yet: it holds what
@@ -2127,7 +2159,7 @@ class Handler(BaseHTTPRequestHandler):
         done = subprocess.run([sys.executable, '-m', 'metaform', 'set', *confirmed, f'--dispatch-prompts={value}'],
                               cwd=project.path,
                               capture_output=True, text=True, encoding='utf-8', stdin=subprocess.DEVNULL,
-                              timeout=DISPATCH_LIMIT, check=False)
+                              timeout=DISPATCH_LIMIT, check=False, env=vouched(None))
         if done.returncode == 0:
             return self.send(200, {'value': value})
         said = (done.stderr + done.stdout).strip().splitlines()
@@ -2913,8 +2945,37 @@ def chosen_base(given: dict[str, Any]) -> str | None:
 
 
 def based(base: str | None) -> dict[str, str] | None:
-    """The environment of a command run on `base`, METAFORM_BASE set to it; None, this process's own, with none."""
-    return {**os.environ, BASE_VARIABLE: base} if base else None
+    """The environment of a command run on `base`, METAFORM_BASE set to it; None, this process's own, with none. A
+    command run for a write of the person's alone carries this server's vouch too, `vouched`."""
+    return vouched({**os.environ, BASE_VARIABLE: base} if base else None)
+
+
+# The writes only the person makes: clearing, switching or removing the map, discarding an intake, deleting memories,
+# the settings and modules, among them the person-only ones, and what dispatch keeps the person's own (an agent's
+# permissions at its start, a ticket's model and effort, cancelling a ticket, `persons_own`). One sent by an agent's
+# process is refused, CLI-011.
+PERSONS_WRITES = frozenset({
+    '/api/clear-project', '/api/remove-project', '/api/activate-base', '/api/remove-base', '/api/restore',
+    '/api/intake-discard', '/api/memory', '/api/settings', '/api/settings/reset', '/api/dispatch-prompts',
+    '/api/dispatch-autostart', '/api/dispatch-agents', '/api/modules', '/api/dispatch-session-prompts',
+    '/api/dispatch-start', '/api/dispatch-configure', '/api/dispatch-cancel'})
+
+
+class _Vouched(threading.local):
+    """The server whose person's write this thread is serving, so the commands it runs carry its vouch."""
+    server: Any = None
+
+
+VOUCHED = _Vouched()
+
+
+def vouched(env: dict[str, str] | None) -> dict[str, str] | None:
+    """`env`, None for this process's own, with this server's vouch while the thread serves a write of the person's
+    alone: the command it runs then acts as the person, since its parent is this server, CLI-011."""
+    server = VOUCHED.server
+    if server is None:
+        return env
+    return {**(env if env is not None else os.environ), **server.vouch.environment()}
 
 
 MODULE_ID = re.compile(r'^[A-Za-z0-9_][A-Za-z0-9_-]*$')  # a module's id as `enable` and `disable` take it
@@ -2928,7 +2989,8 @@ def metaform_cli(folder: Path, *args: str) -> subprocess.CompletedProcess[str]:
     doing(f'metaform {args[0]}')
     try:
         return subprocess.run([sys.executable, '-m', 'metaform', *args], cwd=folder, capture_output=True, text=True,
-                              encoding='utf-8', stdin=subprocess.DEVNULL, timeout=DISPATCH_LIMIT, check=False)
+                              encoding='utf-8', stdin=subprocess.DEVNULL, timeout=DISPATCH_LIMIT, check=False,
+                              env=vouched(None))
     except (OSError, subprocess.TimeoutExpired) as error:
         raise Stop(f'metaform {args[0]} did not finish: {error}', f'metaform {args[0]}, in {folder}') from None
 
@@ -2955,7 +3017,7 @@ def stored_list_there(folder: Path, key: str, members: list[str], *, glue: bool)
     Stop when it cannot be run or does not answer."""
     program = 'from metaform.modules.web.server import store_list_here; store_list_here()'
     try:
-        done = subprocess.run([sys.executable, '-c', program], cwd=folder,
+        done = subprocess.run([sys.executable, '-c', program], cwd=folder, env=vouched(None),
                               input=json.dumps({'key': key, 'members': members, 'glue': glue}), capture_output=True, text=True, encoding='utf-8', timeout=DISPATCH_LIMIT, check=False)
     except (OSError, subprocess.TimeoutExpired) as error:
         raise Stop(f'saving {key} did not finish: {error}', f'metaform config --show, in {folder}') from None
@@ -3199,6 +3261,7 @@ def serve(given: argparse.Namespace) -> int:
         server.schedule_dispatch(project.project_id)
     with listener:
         server.run()  # the stop signal ends the process; a hand-over to newer code ends `run`
+    server.vouch.close()
     log(f'Process {os.getpid()} stopped')
     return 0
 
@@ -3207,6 +3270,8 @@ def stopped(number: int, frame: Any) -> None:
     """The stop signal, `metaform web stop`'s: write it to the log and end the process at once, as the signal's own
     default would. On Windows the signal ends the process before any handler runs, so no line is written there."""
     log(f'Process {os.getpid()} stopped by {signal.Signals(number).name}')
+    for server in SERVING:  # its vouch goes with it
+        server.vouch.close()
     os._exit(0)
 
 

@@ -1555,7 +1555,8 @@ def remember(run, folder, command, value, node=None):
     address carries, MCP-037; its title is its first observation."""
     if command == 'create_entities':
         value = [{'why': f'Kept for the test of {one["name"]}.', **one} for one in value]
-    return run('memory', command, json.dumps(value), *([f'node={node}'] if node else []), cwd=folder)
+    confirmed = ('--confirm',) if command.startswith('delete_') else ()  # the person's decision, CLI-011
+    return run('memory', command, json.dumps(value), *([f'node={node}'] if node else []), *confirmed, cwd=folder)
 
 
 def entity(name, *observations, kind='behavior'):
@@ -9290,6 +9291,9 @@ def test_a_base_is_activated_and_removed_from_the_header_and_the_active_one_is_r
     page.select_option('#mf', main_id)
     assert page.is_enabled('#activateBase') and page.is_enabled('#removeBase')
     page.click('#activateBase')
+    page.wait_for_selector('#confirm button.confirm')  # it asks first, naming what leaves view, UX review round 1
+    assert 'This changes the active map for every agent' in page.inner_text('#confirm')
+    page.click('#confirm button.confirm')
     page.wait_for_function(f'() => [...{options}].some(o => o.selected && o.textContent === "main · active")', timeout=5000)
     assert [line.split()[0] for line in run('list', 'bases', cwd=mapped).stdout.splitlines() if '(active)' in line] == ['main']
     assert page.is_disabled('#activateBase') and page.is_disabled('#removeBase')
@@ -9436,8 +9440,12 @@ def test_the_server_refuses_to_remove_the_active_base_and_activates_another(run,
     status, said = api(threaded, '/api/remove-base', method='POST', headers=own_write(threaded),
                        body=json.dumps({'project': 'proj', 'name': 'fresh', 'confirm': True}))
     assert status == 400 and 'active' in said['error']
+    status, said = api(threaded, '/api/activate-base', method='POST', headers=own_write(threaded),
+                       body=json.dumps({'project': 'proj', 'name': 'main'}))
+    assert status == 400 and said['error'].startswith('This changes the active map')  # asked first, UX review round 1
+    assert said['next'] == 'If you are sure: send confirm true'
     status, _ = api(threaded, '/api/activate-base', method='POST', headers=own_write(threaded),
-                    body=json.dumps({'project': 'proj', 'name': 'main'}))
+                    body=json.dumps({'project': 'proj', 'name': 'main', 'confirm': True}))
     assert status == 200
     active = [line.split()[0] for line in run('list', 'bases', cwd=mapped).stdout.splitlines() if '(active)' in line]
     assert active == ['main']
@@ -9972,6 +9980,67 @@ def test_essentials_names_a_ready_unused_speaker_fits_the_screen_and_keeps_modul
 
 def setting_write(port, path, **given):
     return api(port, path, method='POST', headers=own_write(port), body=json.dumps({'project': 'proj', **given}))
+
+
+# A process an AI tool started: it runs as `claude` and starts the program it is given by its interpreter's own path,
+# never sys.executable, which under the name claude would be found on the PATH.
+UNDER_CLAUDE = """import os, subprocess, sys
+sys.exit(subprocess.run([os.environ['AGENT_PYTHON'], *sys.argv[1:]]).returncode)
+"""
+FORGED = """import http.client, json, sys
+port = int(sys.argv[1])
+connection = http.client.HTTPConnection('127.0.0.1', port, timeout=10)
+body = json.dumps({'project': 'proj', 'key': 'jev', 'value': True})
+connection.request('POST', '/api/settings', body, {'Content-Type': 'application/json',
+                                                   'Origin': f'http://127.0.0.1:{port}'})
+answer = connection.getresponse()
+print(answer.status, answer.read().decode())
+"""
+
+
+def under_claude(home, *args, **extra):
+    """`args` run by a parent that runs as `claude` in the same home, with METAFORM_ROLE cleared. It is named by a
+    path beside the base interpreter, so a Python before 3.14, which finds its library from that name, finds it there
+    rather than looking up `claude` on the PATH."""
+    env = {**os.environ, 'METAFORM_HOME': str(home), 'METAFORM_ROLE': '', 'METAFORM_HOLD': '',
+           'AGENT_PYTHON': sys.executable, 'AGENT_NAME': os.path.join(sys.base_prefix, 'bin', 'claude'), **extra}
+    return subprocess.Popen(['bash', '-c', 'exec -a "$AGENT_NAME" "$0" -c "$1" "${@:2}"', sys.executable, UNDER_CLAUDE,
+                             *args], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+
+@pytest.mark.req('CLI-011')
+@pytest.mark.req('VIEW-011')
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='the process behind a connection is read on Linux')
+def test_a_persons_write_from_an_agents_process_is_refused_whatever_origin_it_sends(run, mapped, home):
+    """UX review round 1, settings-govern-behavior F2: a write of the person's alone sent with the page's own Origin
+    by an agent's process is refused, whether METAFORM_ROLE is set or cleared, since the server reads the process at
+    the other end of the connection; the person's own write runs even when the server itself was started by an agent,
+    since the command it runs carries the server's vouch."""
+    from metaform import settings
+    port = free_port()
+    server = under_claude(home, '-m', 'metaform.modules.web.server', '--bind', '127.0.0.1', '--port', str(port),
+                          '--nonce', 'test')
+    assert server.stdout is not None
+    ready = json.loads(server.stdout.readline())
+    try:
+        assert ready['port'] == port
+        for extra in ({'METAFORM_ROLE': 'worker'}, {}):
+            if extra:
+                sent = subprocess.run([sys.executable, '-c', FORGED, str(port)], capture_output=True, text=True,
+                                      timeout=60, env={**os.environ, 'METAFORM_HOME': str(home), **extra}, check=False)
+                said = sent.stdout
+            else:
+                sender = under_claude(home, '-c', FORGED, str(port))
+                said = sender.communicate(timeout=60)[0]
+            assert said.startswith('403 ') and "is the person's to do on the page" in said, said
+            assert settings.value('jev', mapped) is False
+        status, saved = setting_write(port, '/api/settings', key='jev', value=True)  # the person, from this process
+        assert status == 200, saved
+        assert settings.value('jev', mapped) is True
+    finally:
+        os.kill(int(ready['pid']), 15)  # the stop signal, as metaform web stop sends it; its parent then ends
+        server.communicate(timeout=30)
+    assert not list((home / 'run' / 'vouch').iterdir())  # its vouch went with it
 
 
 def test_the_phone_checks_problem_is_never_a_notice_on_the_page(run, web, mapped, home, monkeypatch):

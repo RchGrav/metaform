@@ -73,6 +73,7 @@ It also defines the first working test, which exercises all three end to end.
 - Acceptance: For each error path of the hello module's tools, the text has exactly one `Next:` line, and it matches the CLI's next step for the same failure.
 - Relates to: CLI-009, CLI-018, BASE-013, BASE-044.
 - Status: confirmed.
+- Amendment, 2026-10-17, UX review round 1, fix group person-consent (fresh-start-intake F1, web-gui-controls F1, forensic F5): a tool that is the person's decision (a verb declared `person_says`, and `metaform_clear_project`) takes no `confirm`; it runs only on the person's yes to the form their AI tool shows. Otherwise, and for a dispatched agent always, the call ends with its caution, `This is the person's decision, not an agent's`, and `Next: the person runs: <command> --confirm`, which the server does not turn into a tool call (`PersonsDecision`). Every other caution tool keeps `If you are sure: call <tool> with confirm true`. These tools are `destructiveHint` true whatever their effect.
 
 ### MCP-007 Server instructions are composed live from the base text and each module's instructions
 

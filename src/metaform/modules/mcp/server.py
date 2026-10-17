@@ -24,6 +24,7 @@ import hashlib
 import inspect
 import json
 import re
+import shlex
 import subprocess
 import sys
 from collections import OrderedDict
@@ -50,9 +51,11 @@ from metaform.module import (
     Effect,
     Module,
     Noun,
+    PersonsDecision,
     Stop,
     Verb,
     call,
+    caution_of,
     chassis_version,
     command_summary,
     context,
@@ -68,6 +71,7 @@ from metaform.module import (
     node_view,
     on_surface,
     on_this_system,
+    persons_decision,
     project_for,
     provisioning_notice,
     read_report,
@@ -150,7 +154,7 @@ def verb_schema(verb: Verb, folder: Path) -> dict[str, Any]:
         setting = settings.SCHEMA.get(key)
         if setting is not None and not setting.person_only:  # an agent is not offered what only the person sets
             properties[key] = setting_schema(setting, folder)
-    if verb.caution:
+    if verb.caution and not verb.person_says:  # the person's decision is asked of them, never confirmed by the agent
         properties['confirm'] = {'type': 'boolean', 'description': 'Run it. Without it the tool only explains.'}
     if verb.needs_project:
         properties['project'] = PROJECT
@@ -286,10 +290,11 @@ SURFACED: dict[str, tuple[str, dict[str, Any]]] = {
                                                    'newest. Omit this when creating a prompt.'}}}),
     'clear_project': (("Clear the project's map, as metaform clear project does: remove its bases and reports. A "
                        'backup is made first, and metaform restore project brings it back; its registration, folder, '
-                       'settings, origins, variants and conversations with agents stay. Without confirm it only says '
-                       'what it would remove.'),
+                       "settings, origins, variants and conversations with agents stay. It is the person's decision: "
+                       'it runs only when they say yes in the form their AI tool shows them, and otherwise says what '
+                       'it would remove.'),
                       {'type': 'object', 'additionalProperties': False,
-                       'properties': {'confirm': CONFIRM, 'project': PROJECT}}),
+                       'properties': {'project': PROJECT}}),
     'extract': (('Write variants out to folders as files you can read or run, with Python alone, as metaform '
                  'extract does.'),
                 {'type': 'object', 'required': ['variants', 'folder'], 'additionalProperties': False,
@@ -307,6 +312,8 @@ CHASSIS_EFFECTS: dict[str, Effect] = {
     'register': 'write', 'skills': 'read', 'add_origin': 'write', 'list_origins': 'read', 'add_variant': 'remove',
     'list_variants': 'read', 'prompts': 'read', 'prompt': 'read', 'save_prompt': 'write', 'clear_project': 'remove',
     'extract': 'write'}
+# The chassis's own tools that are the person's decision, run only on their answer to the form, CLI-011 and MCP-006.
+PERSON_SAYS = ('clear_project',)
 # The chassis's own tools of SURFACED that act on a project's records, so they are listed once the folder has one.
 ON_PROJECT = ('add_origin', 'list_origins', 'add_variant', 'list_variants', 'clear_project', 'extract')
 # The chassis tools whose result is text, not data, so it has no structured form.
@@ -361,7 +368,9 @@ def mcp_next(text: str, folder: Path) -> str:
 
 
 def _error(stop: Stop, folder: Path) -> Outcome:
-    return True, [f'Error: {stop}\nNext: {mcp_next(str(stop.next_step), folder)}']
+    # what the person does is said as it is: a command the agent would be refused is never turned into a call for it
+    step = str(stop.next_step) if isinstance(stop, PersonsDecision) else mcp_next(str(stop.next_step), folder)
+    return True, [f'Error: {stop}\nNext: {step}']
 
 
 def _checked(name: str, arguments: dict[str, Any], schema: dict[str, Any],
@@ -578,6 +587,8 @@ def run_history(folder: Path, name: str, arguments: dict[str, Any], consented: b
     """The history, prompt and clear commands as tools, on the surface while the chassis is, PROJ-024, STORE-044,
     PROJ-025 and MCP-004. `consented`: the person said yes to the call's caution in their AI tool."""
     notices: list[str] = []
+    if name in PERSON_SAYS:
+        arguments.pop('confirm', None)  # the person's yes is their answer to the form; an agent's confirm is not it
     try:
         error, blocks = _history(folder, name, _checked(name, arguments, SURFACED[name][1], notices), consented)
     except (Stop, StoreError) as stop:
@@ -595,9 +606,10 @@ def _history(folder: Path, name: str, given: dict[str, Any], consented: bool = F
         return False, [result_json(prompts.save_prompt(**given))]
     if name == 'clear_project':
         project = project_for(folder, given.pop('project', None)) or _no_project()
-        again = f'call {OWN}_clear_project with confirm true'
-        if not (given.get('confirm', False) or consented):  # the person's yes, as confirm or through the form
-            raise Stop(home.to_clear(project).caution, f'If you are sure: {again}')
+        again = f'ask the person to clear {project} again'
+        if not consented:  # only the person's yes to the form clears it, CLI-011
+            raise persons_decision(home.to_clear(project).caution, f'metaform clear project {project} --confirm',
+                                   'Clear project')
         cleared = home.clear_project(project)
         result = cleared.to_dict()
         if cleared.not_removed:  # still on disk, and what to do, as a notice and never an error, BASE-044
@@ -652,16 +664,31 @@ def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dic
         raise Stop(f'{name} takes no project: it works without one.', schema_step(name))
     if layers is not None and not verb.reads_layers:
         raise Stop(f"{name} takes no layers: it does not read the map's layers.", schema_step(name))
-    if verb.caution and not (confirmed or consented):
-        raise Stop(verb.caution, f'If you are sure: call {name} with confirm true')
     if not consented:
         refuse_held_control((key for key in arguments if key in verb.switches), folder)
     nouns, switches, notices = tool_arguments(module.id, verb, arguments, ignore=PER_CALL, folder=folder)
-    lines.extend(f'Notice: {key}: {message}' for key, message in notices)
     if layers is not None:
         switches['layers'] = [str(item) for item in cast(list[Any], layers)]
-    return context(module.id, folder, project=project, nouns=nouns, switches=switches, sink=lines.append,
+    made = context(module.id, folder, project=project, nouns=nouns, switches=switches, sink=lines.append,
                    surface='mcp', client=client, session=session, identity=identity)
+    if verb.person_says and not consented:  # the person's decision: only their answer to the form runs it, CLI-011
+        raise persons_decision(caution_of(verb, made), person_command(module.id, verb, arguments))
+    if verb.caution and not (confirmed or consented):
+        raise Stop(caution_of(verb, made), f'If you are sure: call {name} with confirm true')
+    lines.extend(f'Notice: {key}: {message}' for key, message in notices)
+    return made
+
+
+def person_command(module: str, verb: Verb, arguments: dict[str, Any]) -> str:
+    """The command line the person runs to make a call an agent asked for, its nouns given by name."""
+    words = ['metaform', module, verb.name]
+    for noun in verb.nouns:
+        if noun.name in arguments:
+            given = arguments[noun.name]
+            words.append(shlex.quote(f'{noun.name}={given if isinstance(given, str) else json.dumps(given)}'))
+    if isinstance(arguments.get('project'), str) and not any(noun.name == 'project' for noun in verb.nouns):
+        words += ['--project', shlex.quote(str(arguments['project']))]
+    return ' '.join([*words, '--confirm'])
 
 
 # The headers Paperclip's tool gateway forwards with each call, its connection's forwardContextHeaders, ticket T3 of
@@ -717,11 +744,13 @@ class Listed:
     task: bool | Literal['run'] = False  # the verb can take long, so a client declaring tasks gets a task; 'run': its run
     guide: Callable[[], str] = lambda: ''  # what comes with its first use in a session, MCP-039: what the list cut
     module: str = 'metaform'  # the module that serves it, whose rules come with the first use of any of its tools
+    persons: bool = False  # the person's decision, Verb.person_says: destructive whatever its effect
 
     def annotations(self) -> dict[str, bool]:
         """The four hints, each set from the declared effect. None is left out, since an absent hint falls back on
-        the protocol's defaults, which take a tool to be a destructive write that reaches the open world."""
-        return {'read_only_hint': self.effect == 'read', 'destructive_hint': self.effect == 'remove',
+        the protocol's defaults, which take a tool to be a destructive write that reaches the open world. A tool that
+        is the person's decision, such as one that switches the map every agent sees, is destructive too."""
+        return {'read_only_hint': self.effect == 'read', 'destructive_hint': self.effect == 'remove' or self.persons,
                 'idempotent_hint': self.effect == 'read', 'open_world_hint': self.open_world}
 
 
@@ -821,7 +850,7 @@ def listing(folder: Path, client: str | None = None) -> dict[str, Listed]:
         built = functools.partial(verb_schema, verb, folder)
         found[name] = Listed(name, tool_named(said, folder), functools.partial(briefed, built), verb.effect,
                              verb.open_world, verb.task, functools.partial(verb_guide, verb, more, built, folder),
-                             module.id)
+                             module.id, verb.person_says)
     own: dict[str, tuple[str, Callable[[], dict[str, Any]]]] = {
         'set': (('Save settings for this folder, each given as name=value. Called with none, it lists the settings '
                  'an agent may change, each with its help, choices and current value.'),
@@ -835,7 +864,8 @@ def listing(folder: Path, client: str | None = None) -> dict[str, Listed]:
     for name, (said, build) in own.items():
         head, more = headed(said)
         found[f'{OWN}_{name}'] = Listed(f'{OWN}_{name}', tool_named(head, folder), functools.partial(briefed, build),
-                                        CHASSIS_EFFECTS[name], guide=functools.partial(own_guide, more, build, folder))
+                                        CHASSIS_EFFECTS[name], guide=functools.partial(own_guide, more, build, folder),
+                                        persons=name in PERSON_SAYS)
     return dict(sorted(found.items()))
 
 
@@ -969,9 +999,23 @@ def needs(folder: Path, name: str, arguments: dict[str, Any]) -> consent.Ask | N
     found = None if own else tools(folder).get(name)
     if found is None:
         return None
-    verb = found[1]
-    return consent.form(name, verb.caution or None, consent.held(
+    module, verb = found
+    return consent.form(name, _asked_caution(folder, module, verb, arguments) or None, consent.held(
         {key: value for key, value in arguments.items() if key in verb.switches}, folder), folder)
+
+
+def _asked_caution(folder: Path, module: Module, verb: Verb, arguments: dict[str, Any]) -> str:
+    """The caution the person's form says for this call, naming what it would take, as the call itself would."""
+    if not verb.caution:
+        return ''
+    try:
+        nouns, switches, _ = tool_arguments(module.id, verb, dict(arguments), ignore=PER_CALL, folder=folder)
+        project = arguments.get('project')
+        made = context(module.id, folder, project=project if isinstance(project, str) else None, nouns=nouns,
+                       switches=switches, surface='mcp')
+    except (Stop, StoreError):
+        return verb.caution
+    return caution_of(verb, made)
 
 
 async def run_tool(folder: Path, name: str, arguments: dict[str, Any], *, client: str | None = None) -> Outcome:

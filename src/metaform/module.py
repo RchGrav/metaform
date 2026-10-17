@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-from .errors import Stop
+from .errors import PersonsDecision, Stop
 
 if TYPE_CHECKING:
     from .data import Node, Store, WorkRecord
@@ -172,6 +172,14 @@ class Verb:
     the verb act, such as a web GUI running for `web say`: over MCP the verb is listed only while it says so, and the
     call that changes the state announces the list's change, MCP-004. It is read on every listing, so it reads only
     what is at hand, a file or a row, and never the network; a call to a verb not listed still runs and says why.
+
+    `person_says` marks a verb that is the person's decision, never an agent's, such as one that clears, switches or
+    removes the map or deletes what agents recorded: it runs only on the person's own yes, given on their command line
+    with `--confirm`, on the page, or in the form their AI tool shows them, CLI-011 and MCP-006. An agent's `confirm`
+    never runs it: its call is refused with the caution and the command the person runs, and its tool is marked
+    destructive. It needs a `caution`. `cautioned`, given the call's context, says the caution with what the call
+    would actually take: the tickets, layers, conversations and agents at work it removes or puts out of view, and
+    the backup it makes; `caution` is the fixed text of the tool's description and the fallback when it fails.
     """
     name: str
     run: VerbFunction
@@ -193,8 +201,12 @@ class Verb:
     needs_project: bool = True
     reads_layers: bool = False
     listed: Callable[[Path], bool] | None = None
+    person_says: bool = False
+    cautioned: Callable[[Context], str] | None = None
 
     def __post_init__(self) -> None:
+        if self.person_says and not self.caution:
+            raise ValueError(f'Verb {self.name}: a verb the person decides declares the caution it is asked with.')
         if self.effect not in EFFECTS:
             raise ValueError(f'Verb {self.name}: effect must be one of {", ".join(EFFECTS)}.')
         if not VERB_NAME.fullmatch(self.name):
@@ -788,6 +800,69 @@ def child_environment(**own: str) -> dict[str, str]:
     """The environment for a process a module starts: this one's without any session identity, then `own`, BASE-052."""
     from . import harness
     return harness.child_environment(**own)
+
+
+def caution_of(verb: Verb, ctx: Context) -> str:
+    """The caution a call of `verb` is asked with: what its `cautioned` says of this call, naming what it would take,
+    else the verb's fixed caution."""
+    if verb.cautioned is not None:
+        try:
+            said = verb.cautioned(ctx)
+        except Exception:  # noqa: BLE001  the fixed caution still asks, and the call still says what fails
+            said = ''
+        if said:
+            return said
+    return verb.caution
+
+
+def agent_caller() -> str | None:
+    """Why this process acts for an agent, None when it acts for the person, from facts the agent's own process does
+    not control: the identity a runner sets, the processes that started it, and the web server's vouch. See
+    `metaform.caller`."""
+    from . import caller
+    return caller.agent()
+
+
+def persons_decision(caution: str, command: str, page: str | None = None) -> PersonsDecision:
+    """The refusal an agent gets for what is the person's decision: the caution, that it is theirs, and the command
+    the person runs, `command`, with the page's control `page` when there is one."""
+    from . import caller
+    return caller.persons_decision(caution, command, page)
+
+
+def page_vouch() -> Any:
+    """A new secret for a web server, `metaform.caller.Vouch`: the commands it runs for a person it judged carry its
+    `environment()`, so they act as the person whoever started the server; `close()` when the server ends."""
+    from . import caller
+    return caller.Vouch()
+
+
+def page_caller(client: tuple[str, int], local: tuple[str, int], served: Path) -> str | None:
+    """Why the process at the other end of a connection to the web server acts for an agent of the home `served`, None
+    when it does not or cannot be found, such as a browser on another system. `client` is the connection's far end,
+    `local` the server's. See `metaform.caller.peer_agent`."""
+    from . import caller
+    return caller.peer_agent(caller.peer_pid(client, local), served)
+
+
+def base_holds(project_id: str, base_id: str) -> dict[str, int]:
+    """What one base of the project holds that a clear or a switch of the active map takes from the person, counted by
+    kind: each enabled module's `Provides('base.holds', count)`, `count(store)` giving its counts by kind, such as
+    `tickets`, `layers`, `conversations` and `agents`; a module whose count fails adds nothing."""
+    from . import home
+    from .data import Store
+    project = home.project(project_id)
+    if project is None:
+        return {}
+    found: dict[str, int] = {}
+    for _, count in provided(Path(project.path), 'base.holds'):
+        try:
+            got = cast(dict[str, int], count(Store(project_id, base=base_id)))
+        except Exception:  # noqa: BLE001  a count is a caution's detail; the caution is still given
+            got = {}
+        for kind, number in got.items():
+            found[kind] = found.get(kind, 0) + int(number)
+    return found
 
 
 def held_role(ctx: Context) -> str | None:

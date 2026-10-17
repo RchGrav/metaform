@@ -106,5 +106,5 @@ def test_a_write_to_a_modules_project_level_tables_is_announced_as_a_change_to_t
     assert heard(log) == []
     run('memory', 'add_observations', '[{"entityName":"tone","contents":["Too quiet."]}]', cwd=folder)
     assert heard(log) == []  # an observation the entity holds is skipped, and a write that changed nothing is silent
-    run('memory', 'delete_entities', '["tone"]', cwd=folder)
+    run('memory', 'delete_entities', '["tone"]', '--confirm', cwd=folder)
     assert heard(log) == [{'project': 'proj', 'base_id': active.id}]
