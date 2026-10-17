@@ -3213,6 +3213,8 @@ def test_every_element_and_join_of_every_page_is_drawn(run, home, web, mapped, b
             big.add_join(layer.name, f'code.g{n % 20}.e{n}', held, purpose='p', ef='f')
         # e0 receives from e1 above; e1 also receives from e0: two joins, two paths, no loop, MAP-002.
         big.add_join(layer.name, 'code.g1.e1', 'code.g0.e0', purpose='q', ef='g')
+    from metaform.modules.web import view
+    view.keep(view.OWNER, 'web_map_depth', 'all')  # every level: a map past 200 parts opens collapsed at auto
     page, problems, _ = opened(browser, web)
     page.goto(f'http://127.0.0.1:{web}/#p=big')
     page.reload()
