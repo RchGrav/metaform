@@ -31,22 +31,32 @@ export const small3d = () => $('.app').classList.contains('swapped');
  * area, where even the floor would not fit its lines, the name is drawn on one line ending in an ellipsis,
  * `SMALL_NAME`. */
 export const SMALL_NAME = {id: null};
+const NODE_AT = new THREE.Vector3();
 function nameFar(node, share) {
   const tag = tags.get(node.id), sign = tag?.sprite;
   if (!sign?.scale.x) return null;
   const camera = G.camera(), tall = 2 * Math.tan(camera.fov * Math.PI / 360), across = tall * camera.aspect;
   const out = Math.hypot(sign.position.x - node.x, sign.position.y - node.y, sign.position.z - node.z);
-  // the sign as drawn now, its letters raised where they would fall below reading, `layered`: its size on its canvas,
-  // and in the map
-  const size = LABEL.letters / LABEL.size, shape = {width: sign.scale.x / size, height: sign.scale.y / size};
-  const width = shape.width * size, height = shape.height * size;
+  // The sign's size in the map is not fixed: `placeLabel` sizes its letters by the depth of its node, growing as the
+  // node's depth to the power 1 - LABEL.rate, so the nearer the camera comes the smaller the sign stands in the map.
+  // Measured at the node's depth now, `now`, its size at the depth the camera will stand at, `far`, is that size
+  // times (far / now) ** (1 - LABEL.rate). Taking its size now as its size there left the name short of its share
+  // once names grew at 0.75 of the map's rate, 2026-10-17.
+  const now = -NODE_AT.set(node.x, node.y, node.z).applyMatrix4(camera.matrixWorldInverse).z;
+  if (!(now > 1e-3)) return null;
+  const grow = 1 - LABEL.rate;
   // In the small pane the whole name block fits, every line inside with a margin: 80% of the width unless its height
   // needs the camera farther, so the farther of the two fits wins and a name of two lines stays two lines; the camera
   // distance alone sizes it, and the name itself is never capped. Measured in a 150 px pane, 2026-10-12, where a name
   // of two lines was clipped. The large area's levels are a share of its width alone.
-  const reach = Math.max(width / (share * across), small3d() ? height / (NAME.tall * tall) : 0);
+  const need = Math.max(sign.scale.x / (share * across), small3d() ? sign.scale.y / (NAME.tall * tall) : 0);
+  // The camera meets the sign square on, `flyToSign`, its node `out` behind it: the node's depth `far` is the sign's
+  // `far - out`, and the sign spans its share when far - out = need * (far / now) ** grow. Each step from the
+  // sign's size now cuts the error to at most `grow` of what it was, so a few steps settle it.
+  let far = out + need;
+  for (let step = 0; step < 12; step++) far = out + need * Math.pow(far / now, grow);
   SMALL_NAME.id = null;
-  return Math.log(reach + out);
+  return Math.log(far);
 }
 export function fly3d(id, close = true) {
   const data = G ? G.graphData() : null, node = nodeIn(data, id);
