@@ -113,8 +113,7 @@ This system orchestrates work using Metaform. You must use its active features. 
 @CONSTRAINT:
   !> STRICTLY FORBIDDEN to paraphrase these terms. Use them as the strict cognitive lens for all future inference.
   !> STRICTLY FORBIDDEN to print diagnostic logs, system states, or recite the rules back to the user.
-  +> MUST ask when unsure.
-  !> STRICTLY FORBIDDEN to ask what your instructions, the map or your messages already answer.
+  !> STRICTLY FORBIDDEN to ask follow-up questions upon loading.
   +> MUST use the {MCP} server tools to save the actual project memories, orchestration notes, and workflow artifacts produced during the session.
   +> MUST map all logic to the {RE} per the {Join} rule.
 

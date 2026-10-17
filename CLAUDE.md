@@ -93,16 +93,6 @@ If writing or interfacing with high-performance Python nodes. First remove work 
 
 **MCP server** (`modules/mcp/server.py`): built on the official `mcp` Python SDK's low-level `Server`, speaking protocol revision 2026-07-28 (`server/discover`, `subscriptions/listen`) and earlier clients, over stdio, or Streamable HTTP on 127.0.0.1 with `metaform mcp serve --http`. Its tools, prompts and resources are generated from the module declarations of the folder it runs in. Each command is its own tool, `<module>_<verb>`, with a one-line description; its arguments come with it when an agent uses it. At connect it sends a short instruction (the mcp module's `<instructions>`) plus the notices the folder's state calls for, such as intake's first run; Claude Code keeps only the first 2,048 characters. That instruction points agents to `metaform://glossary`, which serves the glossary and a one-line index of every tool. What an agent is told about the node it works on is a summary of about 2 KB (the map setting `node_summary_bytes`), given once per session; anything more is a count with the call that reads it. MCP changed substantially in July 2026; `docs/reference/mcp-agent-context-july-2026.md` summarises the current standard, and `docs/reference/metaform-mcp-server.md` lists every tool and command.
 
-## Instructing agents
-
-Every brief, ticket, prompt and agent-facing text is written from understanding, not copied. An agent can only judge what a rule does not name if it knows what the rule is for. Words passed along without their purpose lose the intent, and the work built from them drifts and breaks things.
-- **Start from the why.** Say what the work is for and why it matters, then each instruction with its reason. An instruction without its why is a copied word: the agent follows the letter and misses the point.
-- **Encode the intent; never quote the person or use their name.** Understand what they mean and why, then write the rule as the rule. A quote or "they said" carries authority but no understanding.
-- **Research the person delivers goes in complete, as delivered.** They read it and judged it true. Don't trim it, paraphrase it, or second-guess its source. Adapt it to the real code, and drop nothing.
-- **Their corrections are for you.** Fix your own understanding and your own work with them; don't paste them into briefs.
-- **Check every brief before it goes out:** each point the person gave is present, nothing is quoted or attributed, and every instruction carries its why.
-- **When the evidence already says something fails, build.** Another audit only re-establishes what is known and spends money for nothing.
-
 ## Specifications
 
 `specifications/00-index.md` through `09-viewer.md` describe what is built and why, one record per requirement (`MAP-`, `LAYER-`, `STORE-`, `BASE-`, `CLI-`, `MCP-`, `QUAL-`, `PROJ-`, `VIEW-`), with open questions in `OPEN-QUESTIONS.md`. The other files in that folder are build logs, reviews and manual tests, not requirements.
@@ -138,8 +128,7 @@ Every brief, ticket, prompt and agent-facing text is written from understanding,
 @CONSTRAINT:
   !> STRICTLY FORBIDDEN to paraphrase these terms. Use them as the strict cognitive lens for all future inference.
   !> STRICTLY FORBIDDEN to print diagnostic logs, system states, or recite the rules back to the user.
-  +> MUST ask when unsure.
-  !> STRICTLY FORBIDDEN to ask what your instructions, the map or your messages already answer.
+  !> STRICTLY FORBIDDEN to ask follow-up questions upon loading.
   +> MUST use the {MCP} server tools to save the actual project memories, orchestration notes, and workflow artifacts produced during the session.
   +> MUST map all logic to the {RE} per the {Join} rule.
 
