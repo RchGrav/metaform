@@ -310,7 +310,7 @@ Metaform's own commands: settings, feedback and reports, and the project's histo
 |---|---|---|
 | `metaform_add_origin` | Establish an origin from the project's current state: the baseline that variants of work are stored against. As metaform add origin does. | write |
 | `metaform_add_variant` | Collect a folder, such as a worker's worktree, as a variant of an origin: the work's changes against it. As metaform add variant does. | remove |
-| `metaform_clear_project` | Clear the project's map, as metaform clear project does: remove its bases and reports. A backup is made first, and metaform restore project brings it back; its registration, folder, settings, origins and variants stay. Without confirm it only says what it would remove. | remove |
+| `metaform_clear_project` | Clear the project's map, as metaform clear project does: remove its bases and reports. A backup is made first, and metaform restore project brings it back; its registration, folder, settings, origins, variants and conversations with agents stay. Without confirm it only says what it would remove. | remove |
 | `metaform_extract` | Write variants out to folders as files you can read or run, with Python alone, as metaform extract does. | write |
 | `metaform_feedback` | Save feedback on the Metaform process: a problem, bad semantics, or a trouble report when you cannot continue. Attach your report and the shape you could not submit when you have them. Always available. | write |
 | `metaform_instructions` | Read how to use Metaform here: the guide to this folder's modules and state, or one module's instructions. As metaform instructions prints it; with module, that module's full instructions. Always available. | read |

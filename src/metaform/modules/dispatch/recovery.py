@@ -167,7 +167,7 @@ def stop_adapter(held: dict[str, Any]) -> None:
 
 def recover(ctx: Context) -> dict[str, Any]:
     """Apply the configured recovery policy on demand or before Autostart selection, without rewriting reads."""
-    from . import foreign, intake_id, sessions, ticket
+    from . import foreign, held_ticket, sessions, ticket
 
     policy = str(ctx.setting('dispatch_recovery'))
     result: dict[str, Any] = {'policy': policy, 'released': [], 'deferred': []}
@@ -189,10 +189,11 @@ def recover(ctx: Context) -> dict[str, Any]:
         if row['state'] != 'running':
             continue
         work_id = str(row['work_id'])
-        if intake_id(work_id):  # an intake agent holds no ticket, so it has none to return
+        # an intake agent or a conversation on no map holds no ticket, and one a cleared map took has none to return
+        record = held_ticket(own, work_id)
+        if record is None:
             continue
         owner = f'{row["agent"]} {row["session_id"]}'
-        record = ticket(own, work_id)
         if record.done or not record.taken or record.taken_by != owner:
             continue
         try:
@@ -220,7 +221,7 @@ def recover(ctx: Context) -> dict[str, Any]:
             with own.atomic():
                 fresh = ticket(own, work_id)
                 with own.tables(write=False) as tx:
-                    latest = tx.rows('sessions', {'session_id': row['session_id']}, limit=1).results
+                    latest = tx.rows('agent_sessions', {'session_id': row['session_id']}, limit=1).results
                 if (fresh.done or not fresh.taken or fresh.taken_by != owner or not latest
                         or dict(latest[0]) != row):
                     continue
@@ -228,7 +229,7 @@ def recover(ctx: Context) -> dict[str, Any]:
                 finish(own, work_id, str(row.get('runner') or ''), 'its verified dead runner was recovered automatically')
                 own.move_work(work_id, 'todo', fresh.position, 'dispatch recovery')
                 with own.tables() as tx:
-                    tx.update('sessions', {'session_id': row['session_id']},
+                    tx.update('agent_sessions', {'session_id': row['session_id']},
                               {'state': 'ended', 'how': 'its verified dead runner was recovered automatically'})
             result['released'].append(work_id)
             from .progress import refresh

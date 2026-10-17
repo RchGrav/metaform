@@ -21,7 +21,7 @@ def test_close_and_escape_preserve_a_working_system_session_and_stop_can_resume_
     from metaform.data import Store
     with Store('proj', module='dispatch').tables() as tx:  # ended sessions the person never stopped
         for index, how in enumerate(('it failed: x', 'cancelled by the person')):
-            tx.insert('sessions', {'session_id': f'other-ended-{index}', 'work_id': f'other-work-{index}',
+            tx.insert('agent_sessions', {'session_id': f'other-ended-{index}', 'work_id': f'other-work-{index}',
                                    'agent': 'claude', 'state': 'ended', 'how': how,
                                    'started': '2026-10-01T00:00:00Z', 'seq': index + 1})
     try:
@@ -177,7 +177,7 @@ def test_stopping_an_older_chat_cannot_stop_the_running_session_of_its_ticket(
     session = agent.session().extra['session_id']
     try:
         with Store('proj', module='dispatch').tables() as tx:
-            tx.insert('sessions', {'session_id': 'older-ended-session', 'work_id': agent.id, 'agent': 'claude',
+            tx.insert('agent_sessions', {'session_id': 'older-ended-session', 'work_id': agent.id, 'agent': 'claude',
                                    'state': 'ended', 'how': 'stopped by the person',
                                    'started': '2026-10-01T00:00:00Z', 'seq': 1})
         started(run)

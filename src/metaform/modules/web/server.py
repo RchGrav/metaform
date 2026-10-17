@@ -139,8 +139,9 @@ _VENDOR: list[str] = []  # the vendor version, worked out again on each load of 
 # stamp of every module file read.
 _PRELOADS: list[tuple[tuple[str, tuple[str, ...]], tuple[tuple[str, tuple[int, int]], ...], bytes]] = []
 DISPATCH_CHANGES = frozenset({'work', 'messages', 'map.glyphs', 'map.ticket_settings', 'map.eligible',
-                              'map.question_work', 'dispatch.sessions', 'dispatch.questions', 'dispatch.settings',
-                              'dispatch.claims', 'dispatch.claim_work', 'dispatch.raised'})
+                              'map.question_work', 'dispatch.sessions', 'dispatch.agent_sessions',
+                              'dispatch.questions', 'dispatch.settings', 'dispatch.claims', 'dispatch.claim_work',
+                              'dispatch.raised'})
 
 
 # What a change concerns, map.changed's `kinds`, when every write said it, changes.concerns: the kinds that can start
@@ -2668,7 +2669,7 @@ def said(given: dict[str, str], sessions: list[dict[str, Any]]) -> None:
             for session in running:
                 key = str(session['session_id'])
                 seq, text = SAID.get(key, (0, ''))
-                for row in tx.rows('lines', {'session_id': key}, by=('session_id', 'seq'), limit=0,
+                for row in tx.rows('session_lines', {'session_id': key}, by=('session_id', 'seq'), limit=0,
                                    after=json.dumps([seq - 1, ''])).results:
                     if row['kind'] == 'agent_message_chunk' and int(row['seq']) >= seq and str(row['text']).strip():
                         seq, text = int(row['seq']), str(row['text'])

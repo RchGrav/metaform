@@ -3692,8 +3692,8 @@ def test_text_typed_into_a_prompt_just_opened_is_not_put_back_by_a_slower_read_o
 
 # ---------- clearing the project from the page, VIEW-019 and PROJ-025 ----------
 
-CLEARED = ('Cleared proj: one base, main, and one report file. Its registration, folder, settings, origins and '
-           'variants stay.')
+CLEARED = ('Cleared proj: one base, main, and one report file. Its registration, folder, settings, origins, '
+           'variants and conversations with agents stay.')
 NO_METAFORM = 'proj has no metaform yet. The next intake creates one.'
 LEFT = ('It could not be removed and is still on disk. Close any program that has it open, such as a running web GUI, '
         'or fix its permissions, then use Clear project again.')
@@ -3807,7 +3807,7 @@ def test_clearing_from_the_page_clears_what_the_command_clears_and_every_open_pa
     assert status == 200 and answer == {
         'project': 'proj', 'bases': ['main', 'fresh'], 'reports': 1,
         'said': ('Cleared proj: two bases, main and fresh, and one report file. Its registration, folder, '
-                 'settings, origins and variants stay.')}
+                 'settings, origins, variants and conversations with agents stay.')}
     assert run('list', 'bases', cwd=mapped).stdout == ''
     assert not list(own('proj').glob('*.metaform.sqlite3'))
     assert not (own('proj') / 'reports').exists()
@@ -3850,8 +3850,8 @@ def test_a_clear_from_the_page_names_a_file_it_could_not_remove_with_its_reason_
     assert again.pop('backup') and again.pop('restore') == 'metaform restore project proj'  # PROJ-030
     assert (status, again) == (200, {
         'project': 'proj', 'bases': [], 'reports': 1,
-        'said': ('Cleared proj: no bases and one report file. Its registration, folder, settings, origins and '
-                 'variants stay.')})
+        'said': ('Cleared proj: no bases and one report file. Its registration, folder, settings, origins, '
+                 'variants and conversations with agents stay.')})
     assert not reports.exists()
 
 
@@ -5960,16 +5960,16 @@ def live_session(work_id, agent='claude', state='running', project='proj'):
     import metaform.modules.dispatch  # noqa: F401  declares its tables
     from metaform.data import Store
     with Store(project, module='dispatch').tables() as tx:
-        held = tx.get('sessions', {'session_id': f's-{work_id}'})
+        held = tx.get('agent_sessions', {'session_id': f's-{work_id}'})
         if held is None:
             # a reader takes a session's pid for its runner only when the command line runs that ticket's runner
             runner = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)', 'dispatch', 'run', work_id])
             RUNNERS.append(runner)
-            tx.insert('sessions', {'session_id': f's-{work_id}', 'work_id': work_id, 'agent': agent, 'state': state,
+            tx.insert('agent_sessions', {'session_id': f's-{work_id}', 'work_id': work_id, 'agent': agent, 'state': state,
                                    'pid': runner.pid, 'port': dispatch_control_port(), 'token': f's-{work_id}',
                                    'started': '2026-10-03T00:00:00Z', 'seq': len(work_id) + int(work_id[:6], 16) % 1000})
         else:
-            tx.update('sessions', {'session_id': f's-{work_id}'}, {'state': state})
+            tx.update('agent_sessions', {'session_id': f's-{work_id}'}, {'state': state})
 
 
 @pytest.mark.req('BASE-052')
@@ -6100,7 +6100,7 @@ def test_a_session_whose_runner_is_not_verified_is_neither_in_the_agents_key_nor
     store.take_work(older, by='claude')
     live_session(older)
     with Store('proj', module='dispatch').tables() as tx:  # its runner answers for another session, so this one is unproven
-        tx.update('sessions', {'session_id': f's-{older}'}, {'token': f'older-{older}'})
+        tx.update('agent_sessions', {'session_id': f's-{older}'}, {'token': f'older-{older}'})
     working = store.add_work(Node('element', 'exterior.cook'), 'broken', task='Work for the cook').id
     store.take_work(working, by='codex')
     live_session(working, 'codex')
@@ -6230,10 +6230,10 @@ def test_each_native_subagent_a_running_agent_reports_is_a_figure_of_its_own_tha
             line = {'session_id': parent, 'name': f'subagent:{kid}', 'work_id': worked.id, 'kind': 'subagent',
                     'text': json.dumps({'session_id': kid, 'name': f'Reader {kid}', 'task': 'read', 'state': state,
                                         'started': '2026-10-13T16:00:00Z', 'fork': False}), 'seq': seq}
-            if tx.get('lines', {'session_id': parent, 'name': f'subagent:{kid}'}) is None:
-                tx.insert('lines', line)
+            if tx.get('session_lines', {'session_id': parent, 'name': f'subagent:{kid}'}) is None:
+                tx.insert('session_lines', line)
             else:
-                tx.update('lines', {'session_id': parent, 'name': f'subagent:{kid}'}, {'text': line['text']})
+                tx.update('session_lines', {'session_id': parent, 'name': f'subagent:{kid}'}, {'text': line['text']})
         relay.deliver('map.changed', {'project': 'proj', 'tables': 'dispatch'})  # the runner announces it
 
     child('kid-a', 'running', 1)
@@ -6269,7 +6269,7 @@ def test_an_intake_agent_between_turns_on_a_mapped_project_reads_idle_not_starti
     runner = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)', 'dispatch', 'run', intake])
     RUNNERS.append(runner)
     with Store('proj', module='dispatch').tables() as tx:
-        tx.insert('sessions', {'session_id': f's-{intake}', 'work_id': intake, 'agent': 'claude', 'state': 'running',
+        tx.insert('agent_sessions', {'session_id': f's-{intake}', 'work_id': intake, 'agent': 'claude', 'state': 'running',
                                'pid': runner.pid, 'port': dispatch_control_port(), 'token': f's-{intake}',
                                'started': '2026-10-03T00:00:00Z', 'seq': 1})
     ACTIVITY[f's-{intake}'] = 'idle'
@@ -6370,7 +6370,7 @@ def test_an_agent_brings_its_own_figure_to_what_the_pointer_takes_for_as_long_as
                                'system=true', f'talk=ticket:{worked.id}'])
     RUNNERS.append(runner)
     with Store('proj', module='dispatch').tables() as tx:
-        tx.insert('sessions', {'session_id': f's-{worked.id}', 'work_id': worked.id, 'agent': 'claude',
+        tx.insert('agent_sessions', {'session_id': f's-{worked.id}', 'work_id': worked.id, 'agent': 'claude',
                                'state': 'running', 'pid': runner.pid, 'port': dispatch_control_port(),
                                'token': f's-{worked.id}', 'seq': 1,
                                'started': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() + 2))})
@@ -6473,7 +6473,7 @@ def test_an_agent_talking_about_a_done_ticket_is_drawn_so_it_has_eyes(run, web, 
                                'system=true', f'talk=ticket:{worked.id}'])
     RUNNERS.append(runner)
     with Store('proj', module='dispatch').tables() as tx:
-        tx.insert('sessions', {'session_id': f's-{worked.id}', 'work_id': worked.id, 'agent': 'claude',
+        tx.insert('agent_sessions', {'session_id': f's-{worked.id}', 'work_id': worked.id, 'agent': 'claude',
                                'state': 'running', 'pid': runner.pid, 'port': dispatch_control_port(),
                                'token': f's-{worked.id}', 'seq': 1,
                                'started': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() + 2))})
@@ -7088,7 +7088,7 @@ def test_an_agent_is_started_on_a_ticket_followed_messaged_and_stopped_from_the_
     # the agents key lists only agents at work, so a stopped one leaves it; its log is in the node's work history
     page.wait_for_function('() => document.querySelector("#agents").hidden', timeout=30000)
     with Store('proj', module='dispatch').tables(write=False) as tx:
-        assert [row['state'] for row in tx.rows('sessions', limit=0).results] == ['ended']
+        assert [row['state'] for row in tx.rows('agent_sessions', limit=0).results] == ['ended']
     assert 'dispatch' not in [layer.name for layer in Store('proj').layers(limit=0).results]  # nothing on the map
     # the node's work history: why an agent was sent here, each dispatch of its tickets, and its thread
     page.click('#helpdesk .min')
@@ -7506,7 +7506,7 @@ def test_a_line_of_an_agents_thread_reads_the_agents_again_and_never_the_map(run
     page.on('request', lambda sent: reads.append(sent.url))
     live_session(worked.id)
     with Store('proj', module='dispatch').tables() as tx:
-        tx.insert('lines', {'session_id': f's-{worked.id}', 'name': 'said-1', 'work_id': worked.id,
+        tx.insert('session_lines', {'session_id': f's-{worked.id}', 'name': 'said-1', 'work_id': worked.id,
                             'kind': 'agent_message_chunk', 'text': 'Hello from the line', 'seq': 1})
     payload = {'project': 'proj', 'base_id': store.active_base().id, 'tables': 'dispatch'}
     relay.deliver('map.changed', payload)  # as the runner's process announces it
@@ -7515,7 +7515,7 @@ def test_a_line_of_an_agents_thread_reads_the_agents_again_and_never_the_map(run
     page.wait_for_function('() => document.querySelector("#helpdesk .log").innerText.includes("Hello from the line")',
                            timeout=10000)
     with Store('proj', module='dispatch').tables() as tx:
-        tx.insert('lines', {'session_id': f's-{worked.id}', 'name': 'said-2', 'work_id': worked.id,
+        tx.insert('session_lines', {'session_id': f's-{worked.id}', 'name': 'said-2', 'work_id': worked.id,
                             'kind': 'agent_message_chunk', 'text': 'and a second line', 'seq': 2})
     heard = page.evaluate('window.metaform.heard()')
     relay.deliver('map.changed', payload)  # as the runner's process announces it
@@ -7559,7 +7559,7 @@ def test_a_line_written_while_the_server_restarts_shows_in_the_open_agent_window
     page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
     live_session(worked.id, agent='codex')
     with Store('proj', module='dispatch').tables() as tx:
-        tx.insert('lines', {'session_id': f's-{worked.id}', 'name': 'said-1', 'work_id': worked.id,
+        tx.insert('session_lines', {'session_id': f's-{worked.id}', 'name': 'said-1', 'work_id': worked.id,
                             'kind': 'person', 'text': 'Just checking in how is it going?', 'seq': 1})
     payload = {'project': 'proj', 'base_id': store.active_base().id, 'tables': 'dispatch'}
     relay.deliver('map.changed', payload)
@@ -7569,7 +7569,7 @@ def test_a_line_written_while_the_server_restarts_shows_in_the_open_agent_window
                            timeout=10000)
     run('web', 'stop')
     with Store('proj', module='dispatch').tables() as tx:
-        tx.insert('lines', {'session_id': f's-{worked.id}', 'name': 'said-2', 'work_id': worked.id,
+        tx.insert('session_lines', {'session_id': f's-{worked.id}', 'name': 'said-2', 'work_id': worked.id,
                             'kind': 'agent_message_chunk', 'text': 'The routes are in place.', 'seq': 2})
     relay.deliver('map.changed', payload)  # announced while no server listens
     started(run)
@@ -7582,7 +7582,7 @@ def thread_line(work_id, seq, text, kind='agent_message_chunk', session=None):
     """One line of a session's thread, as the runner writes it."""
     from metaform.data import Store
     with Store('proj', module='dispatch').tables() as tx:
-        tx.insert('lines', {'session_id': session or f's-{work_id}', 'name': f'line:{seq}', 'work_id': work_id,
+        tx.insert('session_lines', {'session_id': session or f's-{work_id}', 'name': f'line:{seq}', 'work_id': work_id,
                             'kind': kind, 'text': text, 'seq': seq})
 
 
@@ -7601,7 +7601,7 @@ def published(work_id, seq, ident, name, data, project='proj'):
     (kept / 'meta.json').write_text(json.dumps(meta))
     from metaform.data import Store
     with Store(project, module='dispatch').tables() as tx:
-        tx.insert('lines', {'session_id': session, 'name': f'attachment:{ident}', 'work_id': work_id,
+        tx.insert('session_lines', {'session_id': session, 'name': f'attachment:{ident}', 'work_id': work_id,
                             'kind': 'attachment', 'text': json.dumps(meta), 'seq': seq})
     return kept / name
 
@@ -7653,7 +7653,7 @@ def test_an_agents_attachments_download_their_own_bytes_and_its_diagrams_are_dra
     page.keyboard.press('Escape')
     page.wait_for_selector('.window.diagramwin', state='detached')
     with Store('proj', module='dispatch').tables() as tx:                  # the block being written is finished
-        tx.update('lines', {'session_id': f's-{worked.id}', 'name': 'line:3'},
+        tx.update('session_lines', {'session_id': f's-{worked.id}', 'name': 'line:3'},
                   {'text': 'Being written:\n\n```mermaid\nflowchart TD\n  X --> Y\n```'})
     relay.deliver('map.changed', payload)
     page.wait_for_function(f'() => document.querySelectorAll("{log} .diagram[data-state=drawn] svg").length === 2',
@@ -7702,9 +7702,9 @@ def test_a_metaform_calls_view_runs_in_the_chat_as_its_sessions_and_goes_with_it
               'diffs': [], 'locations': [], 'terminals': [], 'nodes': [], 'call': call}
     session = f's-{worked.id}'
     with Store('proj', module='dispatch').tables() as tx:
-        tx.insert('lines', {'session_id': session, 'name': 'tool:t1', 'work_id': worked.id, 'kind': 'tool_call',
+        tx.insert('session_lines', {'session_id': session, 'name': 'tool:t1', 'work_id': worked.id, 'kind': 'tool_call',
                             'text': 'mcp__metaform__map_item (completed)', 'seq': 1})
-        tx.insert('lines', {'session_id': session, 'name': 'detail:t1', 'work_id': worked.id, 'kind': 'tool_detail',
+        tx.insert('session_lines', {'session_id': session, 'name': 'detail:t1', 'work_id': worked.id, 'kind': 'tool_detail',
                             'text': json.dumps(detail), 'seq': 2})
     other = tmp_path / 'other'
     other.mkdir()
@@ -7823,7 +7823,7 @@ def test_the_chat_dock_stays_with_its_session_when_a_newer_session_of_the_ticket
     runner = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)', 'dispatch', 'run', worked.id])
     RUNNERS.append(runner)
     with Store('proj', module='dispatch').tables() as tx:  # a newer session of the same ticket
-        tx.insert('sessions', {'session_id': 'newer', 'work_id': worked.id, 'agent': 'claude', 'state': 'running',
+        tx.insert('agent_sessions', {'session_id': 'newer', 'work_id': worked.id, 'agent': 'claude', 'state': 'running',
                                'pid': runner.pid, 'port': dispatch_control_port(), 'token': 'newer',
                                'started': '2026-10-03T00:01:00Z', 'seq': 100000})
     thread_line(worked.id, 1, 'Another conversation', session='newer')
@@ -7958,10 +7958,10 @@ def test_the_system_agent_started_elsewhere_opens_as_the_system_agent_and_closin
                             held=True)
     live_session(system.id)
     with Store('proj', module='dispatch').tables() as tx:  # a node's conversation, run by the same kind of runner
-        row = dict(tx.get('sessions', {'session_id': f's-{system.id}'}) or {})
-        tx.insert('sessions', {**row, 'session_id': 's-node', 'seq': int(row['seq']) + 1})
+        row = dict(tx.get('agent_sessions', {'session_id': f's-{system.id}'}) or {})
+        tx.insert('agent_sessions', {**row, 'session_id': 's-node', 'seq': int(row['seq']) + 1})
         for session, about in ((f's-{system.id}', 'system'), ('s-node', 'node:code.alarm.audible')):
-            tx.insert('lines', {'session_id': session, 'name': 'state', 'work_id': system.id, 'kind': 'state',
+            tx.insert('session_lines', {'session_id': session, 'name': 'state', 'work_id': system.id, 'kind': 'state',
                                 'seq': 1, 'text': json.dumps({'about': about})})
     alarm = store.element('code.alarm.audible').id
     started(run)

@@ -167,7 +167,7 @@ metaform clear project example
 metaform clear project example --confirm
 ```
 
-Without `--confirm` the command changes nothing and prints what it would remove. With it, it removes every Metaform of the project with its store, and the project's report, feedback and shape files. The registration, the folder and every file in it, the folder settings, and the origins and variants stay. A file it cannot remove, such as a store a running program holds open, is named with the reason and what to do. Over MCP the same operation is the `clear_project` tool, and the web GUI has **Clear project** in its header.
+Without `--confirm` the command changes nothing and prints what it would remove. With it, it removes every Metaform of the project with its store, and the project's report, feedback and shape files. The registration, the folder and every file in it, the folder settings, the origins and variants, and the conversations with agents stay. A file it cannot remove, such as a store a running program holds open, is named with the reason and what to do. Over MCP the same operation is the `clear_project` tool, and the web GUI has **Clear project** in its header.
 
 ## 5. Inspect the first useful result
 

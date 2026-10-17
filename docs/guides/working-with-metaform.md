@@ -311,7 +311,7 @@ The page follows the map without polling. After any command that changes a proje
 
 The Prompt tab exposes existing prompt versions, comparisons, and **Save as new version**. It does not generate a lexicalized prompt merely because it displays prompt records.
 
-**Clear project** in the header does what `metaform clear project <project> --confirm` does for the selected project: it removes the project's metaforms and report files and keeps its registration, folder, settings, origins and variants. It first shows the command's own caution and asks on the page. Afterwards every open page shows the project with no metaform until the next intake.
+**Clear project** in the header does what `metaform clear project <project> --confirm` does for the selected project: it removes the project's metaforms and report files and keeps its registration, folder, settings, origins, variants and the conversations with its agents. It first shows the command's own caution and asks on the page. Afterwards every open page shows the project with no metaform until the next intake.
 
 ## Retain and exchange the work
 

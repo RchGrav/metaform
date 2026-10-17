@@ -94,7 +94,7 @@ def _prefixed(tx: Any, session_id: str, prefix: str) -> list[dict[str, Any]]:
     found: list[dict[str, Any]] = []
     after: str | None = json.dumps([prefix])
     while after is not None:
-        page = tx.rows('lines', {'session_id': session_id}, after=after, limit=100)
+        page = tx.rows('session_lines', {'session_id': session_id}, after=after, limit=100)
         rows = [dict(row) for row in page.results if str(row['name']).startswith(prefix)]
         found += rows
         after = page.next if len(rows) == len(page.results) else None
@@ -128,7 +128,7 @@ def touched(tx: Any, session_id: str) -> list[dict[str, Any]]:
             line = place.get('line')
             named.append((seq, str(place.get('path') or ''), 'edit' if detail.get('diffs') else
                           str(detail.get('kind') or 'read'), int(line) if isinstance(line, int) else None, 0))
-    state = tx.get('lines', {'session_id': session_id, 'name': 'state'})
+    state = tx.get('session_lines', {'session_id': session_id, 'name': 'state'})
     held = _parsed(state['text']) if state is not None else None
     for place, one in enumerate(cast(list[dict[str, Any]], (held or {}).get('files') or [])):
         named.append((-place, str(one.get('path') or ''), str(one.get('action') or 'read'), None, 0))
@@ -378,7 +378,8 @@ def send(ctx: Context, store: Store, text: str, wait: float) -> dict[str, Any]:
             sender = cast(dict[str, Any], answered.get('from') or {})
             for session_id in {str(answered['_session']), str(sender.get('session_id') or '')} - {''}:
                 mark_peer(tx, session_id, str(answered['id']), record.id, 'replied')
-    ctx.publish('map.changed', {'project': store.project_id, 'tables': 'dispatch', 'dispatch_tables': ['dispatch.lines']})
+    ctx.publish('map.changed', {'project': store.project_id, 'tables': 'dispatch',
+                                'dispatch_tables': ['dispatch.session_lines']})
     if not taken:
         raise Stop('No agent took the note: ' + '; '.join(f'{one["item"]}: {one["error"]}' for one in failed) + '.',
                    'metaform dispatch peers')

@@ -9,7 +9,6 @@ import {toast} from '/page/app/core/controls.js';
 import {FRAMED, S, read} from '/page/app/core/reads.js';
 import {readFailed} from '/page/app/core/errors.js';
 import {banner, bannered, unbanner} from '/page/app/core/banner.js';
-import {noMetaform} from '/page/app/header/admin.js';
 import {ticketNode, figures, bodyOf, isSystemTalk} from '/page/app/figures/agents.js';
 import {typeGlyph} from '/page/app/figures/walk.js';
 import {noticeAttention} from '/page/app/figures/attention.js';
@@ -346,11 +345,11 @@ function mergeTickets(works, found) {
   D.subagents = (D.subagents || []).filter(one => !theirs.has(one.parent)).concat(found.subagents);
 }
 /* The sessions and the claims dispatch holds for the project; the threads are read for the open window only. A failed
- * read keeps the agents drawn as last read. */
+ * read keeps the agents drawn as last read. The conversations are the project's whatever its map holds, so they are
+ * read with no metaform too, after a clear or before the first intake, PROJ-026. */
 async function readDispatch() {
   let found = {sessions: []};
   let claimed = {claims: D.claims || [], proposals: D.proposals || {}};
-  if (noMetaform()) return {found, claimed};
   try { found = await read('dispatch-sessions', {thread: 'false'}); }
   catch (error) { readFailed(error); found = {sessions: D.sessions}; }
   try { claimed = await read('dispatch-claims'); } catch (error) { readFailed(error); }

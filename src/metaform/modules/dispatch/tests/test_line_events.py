@@ -1,4 +1,5 @@
-"""A runner writes every line at once and announces a burst of them as a few `dispatch.lines` events, BASE-052."""
+"""A runner writes every line at once and announces a burst of them as a few `dispatch.session_lines` events,
+BASE-052."""
 import asyncio
 import time
 from types import SimpleNamespace
@@ -19,7 +20,7 @@ def test_a_burst_of_lines_is_written_row_by_row_and_announced_a_few_times(dispat
         published.append(payload)
 
     def announced():
-        return [payload for payload in published if 'dispatch.lines' in (payload.get('dispatch_tables') or [])]
+        return [payload for payload in published if 'dispatch.session_lines' in (payload.get('dispatch_tables') or [])]
 
     async def exercise():
         store = Store('proj', module='dispatch')
@@ -30,7 +31,7 @@ def test_a_burst_of_lines_is_written_row_by_row_and_announced_a_few_times(dispat
             await held.note(None, 'agent_message_chunk', f'chunk {index}')
         took = time.monotonic() - began
         with store.tables() as tx:
-            assert len(tx.rows('lines', {'session_id': 'burst'}, limit=0).results) == 20  # every row is there at once
+            assert len(tx.rows('session_lines', {'session_id': 'burst'}, limit=0).results) == 20  # every row is there at once
         burst = len(announced())
         assert 1 <= burst <= 1 + took / LINES_EVERY  # the first at once, then one per LINES_EVERY at most
         await asyncio.sleep(LINES_EVERY + 0.1)
