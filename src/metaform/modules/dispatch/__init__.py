@@ -4827,6 +4827,10 @@ def stop_all(ctx: Context) -> dict[str, Any]:
     may_steer(ctx)
     word = on_persons_word(ctx, 'Stopping every agent')
     person = person_asks(ctx)
+    if not person and word is None and not os.environ.get('METAFORM_SESSION'):
+        # neither the person nor an agent that could have started a runner: refused whole, never half run
+        raise PersonsDecision("Stopping every agent of this project is the person's decision; this call carries neither "
+                              "the person's consent nor an agent's session.", 'metaform dispatch stop-all')
     if ctx.nouns.get('home') and not person and word is None:
         raise PersonsDecision("Stopping every agent on this machine is the person's decision; an agent stops only the "
                               'agents it started.', 'metaform dispatch stop-all home=true')
@@ -4857,6 +4861,7 @@ def stopped_all(ctx: Context, found: Sequence[Any], person: bool, by: str | None
     itself and turns Autostart agents off, as their own Stop all does."""
     acting = person or word is not None
     me = os.environ.get('METAFORM_SESSION') if not person else None
+    own_work = os.environ.get('METAFORM_WORK') if not person else None
     stopped: list[dict[str, Any]] = []
     failed: list[dict[str, Any]] = []
     turned_off: list[str] = []
@@ -4893,11 +4898,13 @@ def stopped_all(ctx: Context, found: Sequence[Any], person: bool, by: str | None
                 stopped.append({'project': project.project_id, 'work_id': row['work_id'],
                                 'session_id': row['session_id']})
         made = {row.get('pid') for row in rows}
+        ended_starting: list[int] = []
         for entry in launches():  # a runner the gate started that has not made its session yet
             if entry.get('project') != project.project_id or entry['pid'] in made or entry['pid'] == os.getpid():
                 continue
-            if me is not None and (entry.get('work_id') == os.environ.get('METAFORM_WORK')
-                                   or (not acting and entry.get('by') != me)):
+            if own_work and entry.get('work_id') == own_work:  # the caller's own runner, never ended by its own call
+                continue
+            if not acting and (me is None or entry.get('by') != me):  # neither the person nor its starter
                 continue
             # its reservation first, so the start the stop ends is not counted as a start that failed, `start_failed`
             with contextlib.suppress(StoreError, Stop):
@@ -4907,7 +4914,17 @@ def stopped_all(ctx: Context, found: Sequence[Any], person: bool, by: str | None
             # then the runner and its agent's own group: a runner still waiting on its agent's first answer cannot end
             # it, so a stop while starting left the agent running (intake-single-flight F3)
             ended_launch_group(int(entry['pid']))
+            ended_starting.append(int(entry['pid']))
             stopped.append({'project': project.project_id, 'work_id': entry.get('work_id'), 'starting': True})
+        if ended_starting:
+            # a runner that made its session after the sessions were read: that session ends as this stop, by the
+            # person or the agent `by` names, never as a runner that died, so its card tells the truth and it stays
+            # resumable (UX combined replay, 2026-10-17)
+            with contextlib.suppress(StoreError, Stop, OSError):
+                for row in sessions(held, verify=False):
+                    if row.get('pid') in ended_starting and (row['state'] == 'running'
+                                                             or str(row.get('how') or '') in DIED):
+                        ended_gone(held, row, by)
     return {'stopped': stopped, 'failed': failed, 'turned_off': turned_off,
             **({'notice': 'Autostart agents is off, so nothing starts again until you check it.'}
                if turned_off else {}),
