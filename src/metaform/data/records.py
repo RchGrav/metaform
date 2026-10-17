@@ -279,6 +279,7 @@ class Version(Record):
     fields: dict[str, Any] = field(default_factory=dict[str, Any])
     refs: tuple[Ref, ...] = ()
     notices: tuple[Notice, ...] = ()
+    by: str | None = None  # who wrote it: a work and session, or the surface, LAYER-025
 
 
 @dataclass(frozen=True)

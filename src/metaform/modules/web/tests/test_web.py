@@ -10277,10 +10277,9 @@ def test_an_intake_launched_from_the_command_line_shows_starting_on_the_page_wit
 
 
 @pytest.mark.req('VIEW-045')
-def test_running_the_intake_again_asks_which_map_it_makes_and_sends_that_choice(run, web, mapped, browser):
-    """UX review round 1, 2026-10-17 (fresh-start F5, web-gui F12): on a mapped project the intake window asks whether
-    the intake checks and extends the map in use or starts a new map beside it, with its name, and sends the choice;
-    the server refuses a name without a new map."""
+def test_running_the_intake_again_refines_the_map_in_use_and_offers_no_new_map(run, web, mapped, browser):
+    """Refinement first (2026-10-17): on a mapped project the intake window never offers a new map beside the one in
+    use; it checks and refines the map in use and sends map=extend. The server refuses a name without a new map."""
     run('enable', 'dispatch')
     run('set', '--dispatch-claude', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
     started(run)
@@ -10288,19 +10287,17 @@ def test_running_the_intake_again_asks_which_map_it_makes_and_sends_that_choice(
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.drawn().nodes > 0', timeout=30000)
     page.click('#adminBtn')
     page.click('#intakeBtn')
-    page.wait_for_selector('#intake .mapchoice:not([hidden])')
-    assert page.inner_text('#intake .start') == 'Check and extend the map'
-    assert page.is_hidden('#intake .newname')
-    page.check('#intake .mapchoice input[value="new"]')
-    assert page.inner_text('#intake .start') == 'Start a new map' and page.is_visible('#intake .newname')
-    page.fill('#intake .mapname', 'v2')
+    page.wait_for_selector('#intake:not([hidden])')
+    assert page.inner_text('#intake .start') == 'Check and refine the map'
+    assert page.locator('#intake input[value="new"], #intake .mapname').count() == 0
+    assert 'beside' not in page.inner_text('#intake .lead')
     choose_agent(page, '#intake', 'claude')
     sent = []
     page.route('**/api/dispatch-intake', lambda route: (sent.append(route.request.post_data_json), route.fulfill(
         status=400, content_type='application/json', body=json.dumps({'error': 'stand-in'}))))
     page.click('#intake .start')
     page.wait_for_selector('#intake .failed:not([hidden])')
-    assert sent and sent[0]['map'] == 'new' and sent[0]['name'] == 'v2', sent
+    assert sent and sent[0]['map'] == 'extend' and 'name' not in sent[0], sent
     page.unroute('**/api/dispatch-intake')
     status, body = page.evaluate('''() => fetch('/api/dispatch-intake', {method: 'POST',
         headers: {'Content-Type': 'application/json'},

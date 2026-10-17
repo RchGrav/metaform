@@ -33,6 +33,7 @@ from metaform.data import (
     Store,
     StoreError,
     WorkRecord,
+    author,
     plain,
 )
 from metaform.finish_xml import xml as map_xml
@@ -882,42 +883,126 @@ def promote(ctx: Context) -> Any:
                               **_optional(ctx, 'name', 'name_length', 'role', 'reason'))
 
 
+ELEMENT_SHAPE = ('name', 'name_length', 'role')  # what an element of the base is besides its address, STORE-009
+JOIN_SHAPE = ('purpose', 'ef', 'ifd')  # what a purpose record of the base is besides its receiver and elements
+
+
+def _grown(ctx: Context, store: Store, made: Any, notices: list[Notice], op: str) -> dict[str, Any]:
+    """What a growth of the base answers: what it named, the op, the layer, and every notice, in the agent's words."""
+    named = {name: ctx.nouns[name] for name in (*NAMING, 'elements', 'to_address') if name in ctx.nouns}
+    told = [*notices, *getattr(made, 'notices', ())]
+    return _in_words(store, {**named, 'op': op if not isinstance(made, Outcome) else None,
+                             'layer': getattr(made, 'layer', None),
+                             'notices': [notice.to_dict() for notice in told]})
+
+
+def _move(ctx: Context, store: Store, element: Any, reason: Any, notices: list[Notice]) -> dict[str, Any]:
+    """Rename an element of the base, or merge it into the one at to_address: the store moves its purpose records and
+    the knowledge at it, this module its tickets and messages, and the memory module its memories, told by
+    `map.moved`, so nothing at the old address is orphaned, LAYER-025."""
+    new = str(ctx.nouns['to_address'])
+    with store.atomic():
+        made = store.move(element.id, new, reason=reason, evidence=ctx.nouns.get('evidence'), by=author(ctx.surface))
+        moved = store.retarget_work(element.id, made.id) if not isinstance(made, Outcome) else None
+    if moved is not None:
+        notices.append(Notice('work', f"{moved['work']} tickets, {moved['messages']} questions and messages and "
+                                      f"{moved['links']} ticket links moved to {new}."))
+        for delivery in ctx.publish('map.moved', {'old': element.address, 'new': new}):
+            result = delivery.get('result')
+            if delivery.get('status') != 'completed':
+                notices.append(Notice(str(delivery.get('module')), f"{delivery.get('module')} did not move what it "
+                                                                   f"keeps at {element.address}: "
+                                                                   f"{delivery.get('error')}"))
+            elif isinstance(result, dict) and cast(dict[str, Any], result).get('said'):
+                notices.append(Notice(str(delivery.get('module')), str(cast(dict[str, Any], result)['said'])))
+    return _grown(ctx, store, made, notices, 'move')
+
+
+def _add_call(address: str) -> str:
+    return (f'metaform map refine address={address} name=<its name> name_length=<n> role=<CQU, DE, SE or NE> '
+            'reason=<why> evidence=<what shows it>')
+
+
+def _join_call(receiver: Any, elements: Any) -> str:
+    return (f'metaform map refine receiver={receiver} elements={json.dumps(elements)} purpose=<the OP> ef=<the EF> '
+            'ifd=<sends, receives or both> reason=<why> evidence=<what shows it>')
+
+
 def refine(ctx: Context) -> Any:
-    """Refine the base: one element or join changed or removed as its newest version in the base's own
-    layer, every earlier version kept, LAYER-025. It names what it changes by address, never by id: an element by its
-    address, a join by its receiver and an element it holds, MAP-005; `elements` gives the elements a join holds. It
-    is a verb of its own, apart from knowledge, because it changes the base and no knowledge layer. Nothing is
-    refused for its content, BASE-044."""
+    """Refine the base: add, change or remove one element or join as its newest version in the base's own layer,
+    every earlier version kept, LAYER-025. It names what it changes by address, never by id: an element by its
+    address, a join by its receiver and an element it holds, MAP-005, or by its receiver and the elements it holds.
+    What the base lacks is added under the intake's rules, by the same store writes the intake's verification pass
+    uses; an element renamed or merged with to_address takes its joins, knowledge, tickets and memories with it; one a
+    knowledge layer holds is taken in with adopt. Each change records its reason, evidence and author. It is a verb of
+    its own, apart from knowledge, because it changes the base and no knowledge layer. Nothing is refused for its
+    content, BASE-044."""
     nouns = ctx.nouns
     if not any(name in nouns for name in NAMING):
-        raise Stop('refine needs address, or receiver and provider, to name what it changes.',
+        raise Stop('refine needs address, or receiver with provider or elements, to name what it adds or changes.',
                    'metaform help map refine')
     store = _store(ctx)
     notices: list[Notice] = []
     (reason,) = _empty(ctx, notices, 'reason')
+    by = author(ctx.surface)
     changes: dict[str, Any] = {name: nouns[name] for name in REFINE_FIELDS if name in nouns}
     thing: str | None = None
     if 'receiver' in nouns or 'provider' in nouns:
-        said = f"the purpose of {nouns.get('receiver')} served by {nouns.get('provider')}"
-        held = _one(_purposes(store, nouns.get('receiver'), nouns.get('provider')), said, notices, purposes=True)
+        receiver = nouns.get('receiver')
+        elements = nouns.get('elements')
+        if 'provider' not in nouns and isinstance(elements, list) and elements and receiver is not None:
+            held_list = cast(list[Any], elements)
+            owner = store.element(str(receiver), raw=True)
+            found = [] if owner is None else [one for one in store.joins(owner.id, raw=True, limit=0).results
+                                              if any(each.address in held_list for each in one.elements)]
+            if not found:  # a purpose record the base lacks is added, as the intake records one, LAYER-025
+                fields = {name: nouns.get(name) for name in JOIN_SHAPE}
+                made = store.grow_join(receiver, held_list, **fields, reason=reason, evidence=nouns.get('evidence'),
+                                       by=by)
+                return _grown(ctx, store, made, [], 'add')
+            changes.pop('elements')
+            holding = [each.address for each in found[0].elements] if len(found) == 1 else []
+            added = [address for address in held_list if address not in holding]
+            if added:
+                changes['elements'] = [*holding, *added]
+            held = _one(found, f'the purpose of {receiver} holding {", ".join(map(str, held_list))}', notices,
+                        purposes=True)
+        else:
+            said = f"the purpose of {receiver} served by {nouns.get('provider')}"
+            purposes = _purposes(store, receiver, nouns.get('provider'))
+            held = _one(purposes, said, notices, purposes=True)
+            if not purposes:
+                notices.append(Notice('next', 'To add it: ' + _join_call(receiver, [nouns.get('provider')])))
         if held is not None:
-            thing = held.id
+            thing = str(held.id)
+            if nouns.get('adopt'):
+                return _grown(ctx, store, store.adopt(thing, reason=reason, evidence=nouns.get('evidence'), by=by),
+                              notices, 'adopt')
             if 'to_receiver' in nouns:
                 changes['receiver'] = nouns['to_receiver']
     else:
-        element = store.element(str(nouns['address']), raw=True)
+        address = str(nouns['address'])
+        element = store.element(address, raw=True)
+        if element is None and any(name in nouns for name in ELEMENT_SHAPE):
+            # an element the base lacks is added, as the intake records one, LAYER-025
+            made = store.grow_element(address, **{name: nouns.get(name) for name in ELEMENT_SHAPE}, reason=reason,
+                                      evidence=nouns.get('evidence'), by=by)
+            return _grown(ctx, store, made, [], 'add')
         if element is None:
-            notices.append(Notice('address', f"{nouns['address']} is not an element of the base; nothing was "
-                                             'changed.'))
+            notices.append(Notice('address', f'{address} is not an element of the base; nothing was changed. To add '
+                                             f'it: {_add_call(address)}'))
+        elif nouns.get('adopt'):
+            return _grown(ctx, store, store.adopt(element.id, reason=reason, evidence=nouns.get('evidence'), by=by),
+                          notices, 'adopt')
+        elif 'to_address' in nouns:
+            return _move(ctx, store, element, reason, notices)
         else:
             thing = element.id
-            if 'to_address' in nouns:
-                changes['address'] = nouns['to_address']
     named = {name: nouns[name] for name in NAMING if name in nouns}
     if thing is None:
         return {**named, 'notices': [notice.to_dict() for notice in notices]}
     made = store.refine(thing, changes, remove=bool(nouns.get('remove')), reason=reason,
-                        evidence=nouns.get('evidence'))
+                        evidence=nouns.get('evidence'), by=by)
     told = [*notices, *getattr(made, 'notices', ())]
     told = [Notice('to_address' if notice.where == 'address' and 'to_address' in nouns else notice.where,
                    notice.message) for notice in told]
@@ -1085,7 +1170,8 @@ REFINE_WORDS = {
     'name_length': 'name_length, as defined in the intake procedure.',
     'role': 'CQU, DE, SE or NE.',
     'receiver': 'Another receiver, which moves the join.',
-    'elements': 'The elements the join holds, a JSON list of addresses; they replace the ones it held.',
+    'elements': 'The elements the join holds, a JSON list of addresses: they replace the ones a join named by receiver '
+                'and provider held; with receiver alone they name the join that holds them, or the new one to add.',
     'purpose': "The receiver's purpose, the OP, as defined in the intake procedure.",
     'ef': 'The encounter function, the EF, as defined in the intake procedure.',
     'ifd': 'sends, receives or both, the information flow direction as defined in the intake procedure.',
@@ -1108,7 +1194,9 @@ REFINE_NOUNS = (
     _noun('evidence', 'What shows it.'),
     _noun('remove', 'Remove it from the base instead of changing it; its versions are kept.', 'bool'),
     _noun('to_receiver', 'A join: its new receiver, by address; it moves and stays the same join.'),
-    _noun('to_address', 'An element cannot be moved: given for an element, it is not applied.'),
+    _noun('to_address', 'An element: its new address. It is renamed, or merged into the element already there, '
+                        'and its joins, knowledge, tickets and memories go with it.'),
+    _noun('adopt', 'Take an element or join a knowledge layer holds into the base, keeping its id.', 'bool'),
     *(_refined_noun(noun) for noun in KNOWLEDGE_NOUNS if noun.name in REFINE_FIELDS),
 )
 
@@ -1372,8 +1460,11 @@ def work(ctx: Context) -> Any:
     # A resolution records a decision, so it carries a short why, kept with the ticket's number, MCP-037.
     titled(ctx, 'The resolution', None, nouns.get('why'), why_needed=True, title_needed=False,
            why_step='add why: one line saying why it was resolved this way')
-    return _written(ctx, store, store.finish_work(work_id, nouns.get('resolution'), nouns.get('why')), 'done',
-                    notices)
+    finished = store.finish_work(work_id, nouns.get('resolution'), nouns.get('why'))
+    # what the work built belongs on the map in use: each gap at the ticket's node, or where its session linked a
+    # file, is said with the refine call that closes it, LAYER-025; the ticket is done either way, BASE-044
+    notices += store.landing(finished.node_kind, finished.node_id, finished.id)
+    return _written(ctx, store, finished, 'done', notices)
 
 
 def _written(ctx: Context, store: Store, record: WorkRecord, op: str, notices: list[Notice]) -> Any:
@@ -2024,18 +2115,32 @@ MODULE = Module(
                                      'and finish it.',
              nouns=KNOWLEDGE_NOUNS,
              details='Every call names its layer with layer=. op=create makes the layer; the add, edit and remove '
-                     'operations change one object each; op=finish marks it ready. The base grows by the add '
-                     'operations with layer=base; it changes by refine.',
+                     'operations change one object each; op=finish marks it ready. Knowledge is genre, medium, '
+                     'practice and the like; what the project does, a feature built included, goes on the map in use '
+                     'by map refine, which records its reason, evidence and author.',
              examples=((('metaform map knowledge op=create layer=practices-cpp variable="C++ practice here." '
                          'mutable=true hideable=true'), 'Start a knowledge layer.'),), effect='remove'),
-        Verb('refine', refine, 'Refine the base: change or remove one of its elements or joins as a new version, '
-                               'keeping every earlier one.',
+        Verb('refine', refine, 'Refine the map in use: add, change, rename or remove one of its elements or joins as a '
+                               'new version, keeping every earlier one. How built features go on the map.',
              nouns=REFINE_NOUNS,
              details='The change is written in the base\'s own layer, never in a new one, LAYER-025; history '
-                     'shows every version.',
+                     'shows every version with its reason, evidence and author. An address the base lacks, given '
+                     'with name, name_length or role, is added as the intake records an element; a receiver with '
+                     'elements no join of it holds, with purpose, ef and ifd, is added as the intake records a '
+                     'purpose record. to_address renames an element, or merges it into the one there, and its '
+                     'joins, knowledge, tickets and memories go with it; adopt takes an element or join a knowledge '
+                     'layer holds into the base. A project with a map is refined, never mapped again in a new intake.',
              examples=((('metaform map refine receiver=code.timer.kitchen provider=code.clock.tick '
                          'purpose="Know when each dish is done." reason="the old purpose named the clock"'),
-                        'Refine one join\'s purpose, the join named by its receiver and an element it holds.'),)),
+                        'Refine one join\'s purpose, the join named by its receiver and an element it holds.'),
+                       (('metaform map refine address=code.alarm.snooze name="snooze" name_length=2 role=SE '
+                         'reason="built in ticket code.timer.kitchen#3" evidence=src/alarm/snooze.py'),
+                        'Add a built feature\'s element to the map.'),
+                       (('metaform map refine receiver=code.timer.kitchen elements=\'["code.alarm.snooze"]\' '
+                         'purpose="Ring again later." ef="Delays the alarm." ifd=sends reason="built"'),
+                        'Add the purpose record the new element serves.'),
+                       ('metaform map refine address=code.timer.egg to_address=code.timer.kitchen reason="one timer"',
+                        'Merge an element into another, carrying everything at it.'))),
         Verb('select', select, 'Turn a layer on at an address and at every address toward the leaves from it.',
              nouns=(Noun('address', 'An address.'), Noun('layer', 'A layer.'))),
         Verb('mask', mask, 'Stop a layer reaching an address and every address toward the leaves from it.',

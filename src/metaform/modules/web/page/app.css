@@ -1318,11 +1318,6 @@ button.toolhead:hover{border-color:var(--control)}
 #intake .lead{margin:0;color:var(--text);font:var(--t-base)/1.5 var(--sans)}
 #intake .warnline{margin:0;padding:var(--s2) var(--s3);border-left:3px solid var(--missing);border-radius:var(--r);background:var(--panel-2);color:var(--text)}
 #intake textarea.note{min-height:76px}
-#intake .mapchoice{margin:0;padding:0;border:0;display:grid;gap:6px}
-#intake .mapchoice legend{padding:0;margin-bottom:4px}
-#intake .mapchoice .option{display:flex;align-items:flex-start;gap:var(--s2);cursor:pointer;color:var(--text)}
-#intake .mapchoice .option small,#intake .mapchoice .newname small{color:var(--muted)}
-#intake .mapchoice .newname{display:grid;gap:4px;padding-left:22px}
 #intake .suggest{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 #intake .suggest .chip{border:1px solid var(--line-2);cursor:pointer;font-family:var(--sans);color:var(--text)}
 #intake .suggest .chip:hover{border-color:var(--signal)}

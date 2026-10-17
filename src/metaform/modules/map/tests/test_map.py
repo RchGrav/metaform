@@ -474,16 +474,104 @@ def test_refining_moves_a_join_by_its_receiver_in_the_intake_layer_and_never_mov
     moved = run('map', 'refine', f'receiver={join.receiver_address}', f'provider={join.elements[0].address}', 'purpose=First fix.',
                 'to_receiver=stakeholder.cook.home', 'reason=r', cwd=mapped)
     assert 'Notice:' not in moved.stdout
-    kept = run('map', 'refine', 'address=code.timer.kitchen', 'to_address=code.timer.egg', 'reason=r', cwd=mapped)
-    assert re.search(r'^Notice: to_address: ', kept.stdout, re.MULTILINE)
     after = {found.id: found for found in Store('proj').joins('stakeholder.cook.home').results}[join.id]
     assert (after.purpose, after.receiver_address, after.layer) == ('First fix.', 'stakeholder.cook.home', 'intake-1')
-    assert Store('proj').element('code.timer.kitchen').id == kitchen
-    assert Store('proj').element('code.timer.egg') is None
+    assert Store('proj').element('code.timer.kitchen').id == kitchen  # an element is renamed by to_address alone
     assert [layer.name for layer in Store('proj').layers(limit=0).results] == layers
     history = j(run, 'history', join.id, cwd=mapped)['results']
     assert [(version['layer'], version['op'], version['fields']['purpose']) for version in history] == [
         ('intake-1', 'add', join.purpose), ('intake-1', 'change', 'First fix.')]
+
+
+@pytest.mark.req('LAYER-025')
+def test_refine_adds_a_built_feature_to_the_map_under_the_intakes_rules_with_its_reason_evidence_and_author(
+        run, mapped):
+    """Refinement first (2026-10-17): an agent that built a feature puts it on the map in use with map refine, under
+    the intake's rules and checks, with no intake: the element and the purpose record it serves land in the base's
+    own layer, each version with its reason, evidence and author, and what does not fit the intake's form is named."""
+    lacking = j(run, 'refine', 'address=code.alarm.snooze', 'reason=built', cwd=mapped)
+    assert 'name_length=<n>' in lacking['notices'][0]['message'] and Store('proj').element('code.alarm.snooze') is None
+    added = json.loads(refined_by(run, mapped, 'address=code.alarm.snooze', 'name_length=2', 'role=SE',
+                                  'reason=built in ticket 1', 'evidence=src/snooze.py').stdout)
+    assert added['op'] == 'add' and added['layer'] == 'intake-1'
+    assert [notice['where'] for notice in added['notices']] == ['name']  # missing, stored empty, as the intake says
+    joined = j(run, 'refine', 'receiver=code.timer.kitchen', 'elements=["code.alarm.snooze"]',
+               'purpose=Ring again later.', 'ef=Delays the alarm.', 'ifd=sends', 'reason=built in ticket 1', cwd=mapped)
+    assert joined['op'] == 'add' and joined['notices'] == []
+    store = Store('proj')
+    snooze = store.element('code.alarm.snooze')
+    assert (snooze.layer, snooze.role) == ('intake-1', 'SE')
+    [first] = store.history(snooze.id).results
+    assert (first.reason, first.evidence, first.by) == ('built in ticket 1', 'src/snooze.py', 'cli')
+    join = next(held for held in store.joins('code.timer.kitchen').results if held.purpose == 'Ring again later.')
+    assert (join.layer, [each.address for each in join.elements]) == ('intake-1', ['code.alarm.snooze'])
+    run('map', 'refine', 'receiver=code.timer.kitchen', 'provider=code.alarm.snooze', 'ifd=both', 'reason=checked',
+        cwd=mapped, env={'METAFORM_WORK': 'w1', 'METAFORM_SESSION': 's1'})
+    assert [(version.op, version.by) for version in store.history(join.id).results] == [
+        ('add', 'cli'), ('change', 'work w1 session s1')]
+    odd = j(run, 'refine', 'address=Code.Bad Address', 'role=XX', 'name=odd', 'reason=r', cwd=mapped)
+    assert {notice['where'] for notice in odd['notices']} >= {'address', 'role'}  # the intake's own checks
+    assert [layer.name for layer in store.layers(limit=0).results] == ['intake-1']  # no layer, no intake made
+
+
+@pytest.mark.req('LAYER-025')
+@pytest.mark.req('MAP-015')
+def test_an_element_renamed_or_merged_by_refine_carries_its_joins_knowledge_tickets_and_memories(run, mapped):
+    """An element renamed with to_address takes its purpose records, the knowledge at it, its tickets and its memories
+    to the new address, so nothing is orphaned; merged into an element already there, the same, with no copies."""
+    store = Store('proj')
+    alarm = store.element('code.alarm.audible').id
+    k(run, mapped, 'op=create', 'layer=sounds', 'variable=How it sounds.', 'mutable=true', 'hideable=true',
+      *PROVENANCE)
+    k(run, mapped, 'op=add-item', 'layer=sounds', 'node=element:code.alarm.audible', 'value="a bell"')
+    ticket = j(run, 'work', 'op=add', 'node=element:code.alarm.audible', 'task=Make it louder.', cwd=mapped)['id']
+    run('memory', 'create_entities', json.dumps([{'name': 'bell tone', 'entityType': 'finding',
+                                                   'observations': ['Cooks hear 880 Hz best.'], 'why': 'Tone.'}]),
+        'node=element:code.alarm.audible', cwd=mapped)
+    moved = j(run, 'refine', 'address=code.alarm.audible', 'to_address=code.alarm.bell', 'reason=named for what it is',
+              cwd=mapped)
+    assert moved['op'] == 'move', moved
+    store = Store('proj')
+    bell = store.element('code.alarm.bell')
+    assert store.element('code.alarm.audible') is None and bell.id != alarm and bell.role == 'SE'
+    assert [each.address for each in store.joins('code.timer.kitchen').results[0].elements] == ['code.alarm.bell']
+    assert [item.value for item in store.layer_items('sounds', Node('element', bell.id)).results] == ['a bell']
+    assert store.work(Node('element', bell.id), limit=0).results[0].id == ticket
+    assert json.loads(run('memory', 'orphaned', '--json', cwd=mapped).stdout)['joins'] == []
+    held = json.loads(run('memory', 'open_nodes', '["bell tone"]', 'node=element:code.alarm.bell', '--json',
+                          cwd=mapped).stdout)
+    assert held['entities'][0]['observations'] == ['Cooks hear 880 Hz best.']
+    merged = j(run, 'refine', 'address=code.alarm.bell', 'to_address=code.timer.kitchen', 'reason=one part',
+               cwd=mapped)
+    assert any(notice['where'] == 'to_address' for notice in merged['notices'])
+    store = Store('proj')
+    assert store.element('code.alarm.bell') is None
+    assert store.work(Node('element', store.element('code.timer.kitchen').id), limit=0).results[0].id == ticket
+    assert json.loads(run('memory', 'orphaned', '--json', cwd=mapped).stdout)['joins'] == []
+
+
+@pytest.mark.req('LAYER-025')
+def test_a_feature_recorded_in_a_knowledge_layer_is_adopted_into_the_base_keeping_its_id(run, mapped):
+    k(run, mapped, 'op=create', 'layer=features', 'variable=Built features.', 'mutable=true', 'hideable=true',
+      *PROVENANCE)
+    made = json.loads(k(run, mapped, 'op=add-element', 'layer=features', 'address=code.alarm.repeat',
+                        'name=repeat', 'name_length=2').stdout)
+    refused = j(run, 'refine', 'address=code.alarm.repeat', 'name=again', 'reason=r', cwd=mapped)
+    assert 'adopt=true' in refused['notices'][-1]['message']
+    adopted = j(run, 'refine', 'address=code.alarm.repeat', 'adopt=true', 'reason=built', cwd=mapped)
+    assert adopted['notices'][-1]['where'] == 'adopted'
+    element = Store('proj').element('code.alarm.repeat')
+    assert (element.id, element.layer) == (made['id'], 'intake-1')
+    assert [version.layer for version in Store('proj').history(made['id']).results] == ['features', 'intake-1']
+
+
+@pytest.mark.req('LAYER-025')
+def test_finishing_a_ticket_says_when_its_work_is_not_on_the_map_with_the_refine_call(run, mapped):
+    away = j(run, 'work', 'op=add', 'node=element:code.alarm.snooze', 'task=Build snooze.', cwd=mapped)['id']
+    done = j(run, 'work', 'op=done', f'id={away}', 'resolution=built', cwd=mapped)
+    assert any('map refine address=code.alarm.snooze' in notice['message'] for notice in done['notices']), done
+    there = j(run, 'work', 'op=add', 'node=element:code.alarm.audible', 'task=Louder.', cwd=mapped)['id']
+    assert j(run, 'work', 'op=done', f'id={there}', 'resolution=louder', cwd=mapped)['notices'] == []
 
 
 @pytest.mark.req('LAYER-025')
@@ -1768,6 +1856,8 @@ def test_where_names_the_nearest_address_and_citing_takes_any_path_form(run, map
         for path in (str(mapped / 'src/timer.py'), './src/timer.py', r'.\src\timer.py'):
             assert j(run, 'citing', 'key=path', f'value={path}', cwd=mapped) == relative
     else:
+        # a separate intake is the person's to start; a record alone writes onto the finished map (2026-10-17)
+        run('intake', 'start', 'name=second', cwd=mapped)
         run('intake', 'element', 'namespace_address=code.timer.digital', 'name_length=2', 'role=SE', cwd=mapped)
         stopped = run('map', 'where', 'code.timer.digital', cwd=mapped, ok=False)
         assert stopped.returncode == 2

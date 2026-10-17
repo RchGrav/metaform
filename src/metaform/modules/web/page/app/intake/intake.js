@@ -23,7 +23,8 @@ import {LIVE, following, recordingNow} from '/page/app/live/stream.js';
  * being recorded, so the map grows here. A project with no map offers it first; Administration offers it again, to map
  * the project anew or to check the map against it. While it runs, a bar over the map says so, with its chat and Stop.
  * Its work id, `intake-…`, is never a ticket. */
-export const INTAKE = {work: null, session: null, agent: null, waiting: 0, closed: new Set()};
+export const INTAKE = {work: null, session: null, agent: null, waiting: 0, closed: new Set(), resume: false,
+  refines: false};
 // closed: the runs whose bar the person closed with its ×
 /* An intake agent under way: starting, launched and its session not made yet, or running. The server's one record of
  * it is read with the sessions, `dispatch sessions` listing a launch as starting, so every tab and every surface agrees
@@ -164,13 +165,13 @@ export async function openIntake({resume = false} = {}) {
   }
   $('#intake .title').textContent = mapped ? `Run the intake again · ${S.project}` : `Map ${S.project}`;
   fill($('#intake .lead'), mapped
-    ? `An agent runs the intake on ${S.project} as it is now. Choose what it makes: `
-      + 'it checks and extends the map in use, or starts a new map beside it.'
+    ? `An agent runs the intake on ${S.project} as it is now: it checks the map in use against the project and `
+      + 'refines it, adding what the map lacks and correcting what has changed. Its memories, tickets and knowledge '
+      + 'stay where they are.'
     : `An agent reads ${S.project} and records its map as it goes. You watch the map grow here, part by part.`);
-  // the choice of map, UX review round 1 (2026-10-17) fresh-start F5 and web-gui F12: made by the person, never read
-  // by the agent from the note
-  $('#intake .mapchoice').hidden = !mapped || resume;
-  $('#intake .mapchoice input[value="extend"]').checked = true;
+  // a mapped project is refined, never mapped again beside the map in use (refinement first, 2026-10-17): the
+  // window sends map=extend, so the agent's intake start opens a verification pass on the map in use
+  INTAKE.refines = mapped && !resume;
   const host = $('#intake .pickhost');
   if (!host.firstChild) {
     host.append(summonPicker('intake', {label: 'Agent for the intake', onchange: () => drawIntakeSettings()}));
@@ -182,7 +183,7 @@ export async function openIntake({resume = false} = {}) {
   $('#intake .failed').hidden = true;
   $('#intake .resume').hidden = !resume;
   INTAKE.resume = resume;
-  drawMapChoice();
+  drawStart();
   box.hidden = false;
   readHarnesses();
   if (!note.value) note.focus();
@@ -192,21 +193,16 @@ async function startIntake() {
   if (!agent) {
     return showIntakeRefusal({error: 'No agent can start here.', next: HARNESS.next || 'metaform dispatch agents'});
   }
-  const choosing = !$('#intake .mapchoice').hidden;
-  const chosen = choosing ? $('#intake .mapchoice input:checked')?.value || 'extend' : undefined;
-  const name = chosen === 'new' ? $('#intake .mapname').value.trim() || undefined : undefined;
   button.disabled = true;
-  const sent = await posted('/api/dispatch-intake',
-    {agent, text: note.value.trim() || undefined, resume: INTAKE.resume || undefined, map: chosen, name});
+  const sent = await posted('/api/dispatch-intake', {agent, text: note.value.trim() || undefined,
+    resume: INTAKE.resume || undefined, map: INTAKE.refines ? 'extend' : undefined});
   button.disabled = false;
   if (!sent.ok) return showIntakeRefusal(sent.body);
   const started = sent.body;
   $('#intake').hidden = true;
   note.value = '';
-  $('#intake .mapname').value = '';
   toast(`${agentName(started.agent)} is starting on the intake`
-    + (started.map === 'new' ? `, making the new map ${started.name} beside the one in use.`
-      : started.map === 'extend' ? ', checking and extending the map in use.' : '.')
+    + (started.map === 'extend' ? ', checking and refining the map in use.' : '.')
     + ' The map grows here as it records.');
   await renderAgents();  // the server's record says it is starting: the bar is drawn from that read
 }
@@ -229,8 +225,8 @@ function showIntakeRefusal(body) {
 function takeOver(box) {
   INTAKE.resume = true;
   $('#intake .resume').hidden = false;
-  $('#intake .mapchoice').hidden = true;
-  drawMapChoice();
+  INTAKE.refines = false;
+  drawStart();
   fill(box); box.hidden = true;
   $('#intake .start').focus();
 }
@@ -240,14 +236,11 @@ function openRunning(work) {
   INTAKE.work = work;
   openIntakeChat(work, null);
 }
-/* The new map's name is asked only when a new map is chosen, and Start says what it starts. */
-function drawMapChoice() {
-  const fresh = $('#intake .mapchoice input[value="new"]').checked;
-  $('#intake .newname').hidden = !fresh;
-  $('#intake .start').textContent = INTAKE.resume ? 'Take over the intake' : $('#intake .mapchoice').hidden
-    ? 'Start the intake' : fresh ? 'Start a new map' : 'Check and extend the map';
+/* Start says what it starts. */
+function drawStart() {
+  $('#intake .start').textContent = INTAKE.resume ? 'Take over the intake'
+    : INTAKE.refines ? 'Check and refine the map' : 'Start the intake';
 }
-for (const input of document.querySelectorAll('#intake .mapchoice input[type="radio"]')) input.onchange = drawMapChoice;
 $('#intake .close').onclick = $('#intake .cancel').onclick = () => { $('#intake').hidden = true; };
 $('#intake .start').onclick = startIntake;
 /* A suggestion pressed is written as the note for the agent. */

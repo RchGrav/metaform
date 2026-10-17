@@ -49,6 +49,9 @@ class Tx:
     pending: list[Op] = field(default_factory=list[Op])
     kinds: set[str] = field(default_factory=set[str])  # the kinds of op this transaction wrote, VIEW-018
     about: dict[str, set[str]] = field(default_factory=dict[str, set[str]])  # what its writes concern, `concern`
+    # The reason, evidence and author every element and join version this write adds carries, while a growth of the
+    # base sets it, LAYER-025: a join's new elements are made with it too. A field the op sets itself is kept.
+    provenance: dict[str, Any] | None = None
 
     def concern(self, *, work_id: str | None = None, session_id: str | None = None, kind: str | None = None) -> None:
         """Say what this write concerns: the ticket, the dispatch session and the kind of change, carried on its
@@ -67,6 +70,8 @@ class Tx:
         """One op: applied to the projection now, appended to the log at commit."""
         if not self.writing:
             raise StoreError('A read transaction writes nothing.', 'metaform help map knowledge')
+        if self.provenance and kind in ('element', 'join'):
+            data = {**self.provenance, **data}
         made = Op(self.base.seq + 1, SESSION_ID, op, kind, ident, layer_id, data)
         self.base.apply(made)
         self.pending.append(made)

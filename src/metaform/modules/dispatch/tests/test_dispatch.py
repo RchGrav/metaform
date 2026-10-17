@@ -4307,6 +4307,9 @@ def test_dispatch_link_adds_the_ref_beside_the_elements_own_and_never_makes_an_e
     refused = run('dispatch', 'link', 'file=docs/new.md', 'node=document.guide.new', '--json', cwd=dispatch.folder,
                   ok=False)
     assert refused.returncode != 0 and 'linking never makes an element' in refused.stdout + refused.stderr
+    # the call it gives puts the element on the map in use, never in a knowledge layer (refinement first, 2026-10-17)
+    assert 'Next: metaform map refine address=document.guide.new' in refused.stdout + refused.stderr
+    assert 'knowledge' not in refused.stdout + refused.stderr
     assert dispatch.store.element('document.guide.new', raw=True) is None
     node = dispatch.store.element(NODE)
     held = dispatch.store.refs(Node('element', node.id))  # each a record of its own, code.graph.knowledge#c

@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, BinaryIO, Literal, cast
 
 from metaform import home, prompt_files, settings
-from metaform.data import Element, GraphPage, Item, Join, Layer, Node, Notice, Store, StoreError, WorkRecord
+from metaform.data import Element, GraphPage, Item, Join, Layer, Node, Notice, Store, StoreError, WorkRecord, author
 from metaform.module import Context, Module, Noun, Resource, Status, Stop, ToolbarItem, Verb, project_for, save_report
 
 from .schema import ELEMENTS, IFD, NAME_LENGTH, REFS, ROLE
@@ -410,6 +410,24 @@ def _verify(store: Store, base: str | None) -> None:
         path.unlink(missing_ok=True)
 
 
+def _onto_map(mapped: Recording | None, notices: Notices) -> None:
+    """A record sent to a project whose map is finished, with no intake being recorded and no pass open, is written
+    onto that map: a verification pass opens for it, as intake start with no name opens one, so a record never starts
+    a separate intake in a new base, which is the person's decision, LAYER-025."""
+    if mapped is None or _verifying(mapped.store):
+        return
+    active = mapped.store.active_base()
+    if active is None:
+        return
+    with _lock(mapped.store):  # records sent at once open one pass, and none resets what another already added
+        if _verifying(mapped.store):
+            return
+        _verify(mapped.store, active.id)
+    notices.append({'where': 'intake', 'message': f'The map {mapped.metaform} is finished, so this was written onto '
+                                                  'it in a verification pass, opened now; intake finish closes it. A '
+                                                  'single change needs no pass: metaform map refine.'})
+
+
 def _verified_add(store: Store, element_ids: Sequence[str]) -> None:
     """Keep the elements a verification pass added to the finished map, so its finish knows the new shape it holds;
     the caller holds the intake lock, so calls at once each keep theirs."""
@@ -426,6 +444,28 @@ def _opened(ctx: Context, store: Store, notices: Notices, named: str = '') -> tu
     with _lock(store):
         found = _building(store)
         return (found, False) if found is not None else (_open(ctx, store, notices, named), True)
+
+
+NEW_MAP = ('This starts a separate intake in a new base beside the map in use. The map in use is not changed; its '
+           'knowledge layers stay with it, and memories at addresses the new map lacks are orphaned until rekeyed. A '
+           'new feature, a correction or a check never needs it: metaform map refine changes the map in use, and '
+           'intake start with no name opens a verification pass on it.')
+
+
+def new_map_decision(ctx: Context) -> str | None:
+    """`intake start name=` on a project that has a map is the person's decision: a new map beside the one in use,
+    never an agent's way to record an update, which refines the map in use. Not when the person chose a new map at
+    the agent's launch, nor when an intake is being recorded, which start resumes."""
+    name = str(ctx.nouns.get('name') or '').strip()
+    if not name:
+        return None
+    store = ctx.require_store()
+    if _building(store) is not None or not store.intake_bases():
+        return None
+    launch = _own_launch(store)
+    if launch is not None and launch.get('map') in ('new', 'extend'):  # the person chose; start follows that choice
+        return None
+    return NEW_MAP
 
 
 def start(ctx: Context) -> Any:
@@ -451,7 +491,8 @@ def start(ctx: Context) -> Any:
         notices.append({'where': 'intake', 'message': f'The active metaform {mapped.metaform} has a finished intake. '
                         'What you record now is written onto it: a changed field is refined, a new element or purpose '
                         'record is added to it, keeping every version, and conditions, notes and refs are kept with '
-                        'it. intake start name=<x> begins a separate intake in a new base.'})
+                        'it. A single change needs no pass: metaform map refine adds or corrects one element or '
+                        'purpose record under the same rules.'})
         return {'layer': mapped.layer.name, 'project': store.project_id, 'base': mapped.metaform, 'notices': notices}
     opened = False
     if found is None:
@@ -539,14 +580,14 @@ def element(ctx: Context) -> Any:
     address = ctx.nouns[ADDRESS]
     mapped = _active_map(ctx.require_store())
     current_map = mapped.store.element(address, raw=True) if mapped is not None else None
+    if current_map is None:
+        _onto_map(mapped, notices)
     if mapped is not None and current_map is None and _verifying(mapped.store):
-        # a new element of a verification pass is added to the finished map, in its own layer, LAYER-025
+        # a new element of a verification pass is added to the finished map, in its own layer, by the growth map
+        # refine uses too, so the base grows under one set of rules, LAYER-025
         shape = {key: _whole(ctx.nouns.get(key)) for key in SHAPE_FIELDS}
-        for field in ('role', 'name'):
-            if shape[field] is None:
-                notices.append({'where': field, 'message': f'{field} is missing; stored empty.'})
         with _lock(mapped.store):
-            made = mapped.store.add_element(mapped.layer.name, address, **shape)
+            made = mapped.store.grow_element(address, **shape, reason=VERIFIED, by=author('intake'))
             _note(notices, made)
             if isinstance(made, Element):
                 _verified_add(mapped.store, [made.id])
@@ -744,6 +785,8 @@ def purpose(ctx: Context) -> Any:
         held_map = _joins_holding(mapped.store, mapped.layer, receiver, elements)
         holding = [each.address for each in held_map[0].elements] if len(held_map) == 1 else []
         added = [address for address in elements if address not in holding]
+        if not held_map or any(mapped.store.element(str(address), raw=True) is None for address in added):
+            _onto_map(mapped, notices)  # new shape is written onto the finished map, never into a new base
         verifying = _verifying(mapped.store)
         # the elements a verification pass adds to the map by naming them in a purpose record, kept for its finish
         lacking = [address for address in dict.fromkeys(str(each) for each in [receiver, *elements])
@@ -757,13 +800,12 @@ def purpose(ctx: Context) -> Any:
             return {'receiver': receiver, 'elements': elements, 'layer': mapped.layer.name, 'base': mapped.metaform,
                     'notices': notices}
         if verifying and not held_map:
-            # a new purpose record of a verification pass is added to the finished map, in its own layer, LAYER-025
-            for field in JOIN_FIELDS:
-                if ctx.nouns.get(field) is None:
-                    notices.append({'where': field, 'message': f'{field} is missing; stored empty.'})
+            # a new purpose record of a verification pass is added to the finished map, in its own layer, by the
+            # growth map refine uses too, LAYER-025
             with _lock(mapped.store):
-                made = mapped.store.add_join(mapped.layer.name, receiver, elements,
-                                             **{field: ctx.nouns.get(field) for field in JOIN_FIELDS})
+                made = mapped.store.grow_join(receiver, elements,
+                                              **{field: ctx.nouns.get(field) for field in JOIN_FIELDS},
+                                              reason=VERIFIED, by=author('intake'))
             _note(notices, made, _words(mapped.store, mapped.layer))
             held_map, holding, added = [made] if isinstance(made, Join) else [], list(elements), []
         # a purpose record of the finished map is refined there, LAYER-025; an element it would hold that the map
@@ -1287,30 +1329,30 @@ MODULE = Module(
             'name_length, name and role; a purpose record is the receiver\'s purpose, the ef and the ifd, holding the elements '
             'that serve it. An element\'s refs go in the sources layer while intake_sources is on. It is read back '
             'with show, whole or one receiver at a time, and corrected by recording again and with remove. No other '
-            'read sees it until finish; after finish the metaform changes by refining, metaform map refine, in the '
-            'same layer, or by another intake, which writes conditions, notes and refs onto it and opens a new base '
-            'only for new shape. Nothing is refused for its content: what does not fit is stored as given and named '
-            'in a notice.',
+            'read sees it until finish; after finish the metaform grows and changes by refining, metaform map refine, '
+            'in the same layer, under the same rules, or by a verification pass, intake start with no name, which '
+            'writes onto it. A new base is opened only when the person asks for a new map. Nothing is refused for its '
+            'content: what does not fit is stored as given and named in a notice.',
     verbs=(
         Verb('prompt', prompt, "Read the intake instructions an agent follows to record this project's map.",
              nouns=(Noun('text', 'path to the target for the intake process; leaving this blank means this project',
                          required=False),), effect='read'),
         Verb('schema', schema, 'Read the shape the intake records: namespace roots, Upstream and Downstream links, '
                                'element and purpose forms.', effect='read', needs_project=False),
-        Verb('start', start, "Start recording this project's intake, or resume the one being recorded. On a project "
-                             'whose intake is finished it opens a verification pass on that map: changed fields are '
-                             'refined, new elements and purpose records are added to it, conditions, notes and refs '
-                             'are written onto it, and intake finish closes the pass. With name it opens a separate '
-                             'intake in a new metaform instead, keeping the earlier one untouched. Returns its name; '
-                             'the existing web GUI follows it live.',
+        Verb('start', start, "Start or resume this project's intake; on a mapped project, a verification pass that "
+                             'refines and extends the map in use. Changed fields are refined, new elements and purpose '
+                             'records are added to it, conditions, notes and refs are written onto it, and intake '
+                             'finish closes the pass. One change to the map needs no pass: metaform map refine. '
+                             'Returns its name; the existing web GUI follows it live.',
              nouns=(Noun('result', 'The result id the intake procedure generates and gives at start, kept with the intake.', required=False),
-                    Noun('name', "On a project that has an intake already, the new intake's metaform is named for what it is "
-                                 "for, from the person's request, such as web-interface-refactor: 1 to 64 letters, digits, "
-                                 "., _ and -. Given, it opens that new intake at once; with none, start opens a "
-                                 'verification pass on the finished map.',
+                    Noun('name', 'Only when the person asks for a new map beside the one in use: its name, 1 to 64 '
+                                 'letters, digits, ., _ and -; on a mapped project it is their decision. A new '
+                                 'feature, a correction or a check is recorded with no name, which refines the map '
+                                 'in use.',
                          required=False),
                     Noun('model', 'The model that performs the intake.', required=False),
-                    Noun('role', 'The role of the agent that performs it.', required=False))),
+                    Noun('role', 'The role of the agent that performs it.', required=False)),
+             person_decides=new_map_decision),
         Verb('element', element, 'Record one element of the intake at its address; recording it again replaces the '
                                  'fields given.',
              nouns=(Noun(ADDRESS, E(ADDRESS, '')),
@@ -1339,7 +1381,8 @@ MODULE = Module(
         Verb('finish', finish, 'Finish the intake. One recorded in a base of its own is finished beside the active '
                                'map, which stays active: metaform map activate <its name> --confirm makes it the '
                                'active one. A verification pass is closed on the map it wrote onto, activating nothing. After finish the metaform '
-                               'changes by refining, metaform map refine, or by another intake.',
+                               'grows and changes by refining, metaform map refine, or by a verification pass, '
+                               'intake start with no name.',
              nouns=(Noun('report', 'Your report on the project you examined: broken code, things that need fixing, '
                                    'anything not working or partially working. On the command line a file is read '
                                    'and - is standard input.', required=False),

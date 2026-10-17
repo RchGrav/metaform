@@ -89,6 +89,15 @@ def now() -> str:
     return home.now()
 
 
+def author(surface: str | None = None) -> str | None:
+    """Who a change to the base is made by, LAYER-025: the ticket and the session a runner names, else the surface the
+    call came through, such as cli or mcp."""
+    import os
+    work, session = os.environ.get('METAFORM_WORK'), os.environ.get('METAFORM_SESSION')
+    named = ' '.join(part for part in (f'work {work}' if work else '', f'session {session}' if session else '') if part)
+    return named or surface
+
+
 def query_reads() -> tuple[str, ...]:
     """The chassis's named DAO reads, STORE-028."""
     from .. import query
@@ -195,6 +204,7 @@ __all__ = [
     'WorkLink',
     'WorkRecord',
     'as_object',
+    'author',
     'export_document',
     'history',
     'import_document',
