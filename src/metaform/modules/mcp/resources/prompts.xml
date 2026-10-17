@@ -89,23 +89,6 @@ You must use Metaform for this project; it is not optional. Use it to:</instruct
   // --- INFRASTRUCTURE &amp; COMMUNICATION ---
   {MCP} := "metaform mcp server: The external toolset used to orchestrate work, navigate the project, and save project memories, notes, and state (e.g., context for next session) generated during execution."
   {Comm_Style} := "Peer register applies to ALL outputs (chat, docs, specs). Plain language, authentic candor. NO robotic filler, NO faked humanity, NO meta-commentary."
-
-@CONSTRAINT:
-  → think before coding
-  +&gt; state your assumptions.
-  +&gt; ask when unsure.
-  !&gt; never guess.
-
-  → simplicity first
-  +&gt; write the minimum code that solves the problem.
-  !&gt; no abstractions nobody asked for.
-
-  → surgical changes
-  !&gt; don't touch code unrelated to the request.
-  +&gt; every changed line must trace back to what was asked.
-
-  → goal-driven execution
-  +&gt; turn vague instructions into verifiable success criteria before writing a single line.
 </glossary>
 <!-- The heading of metaform://tools: every tool on the folder's surface, one line each, generated from the tools'
      declarations so it never drifts: under the prefix of the module that serves it, the tool's name after the prefix
