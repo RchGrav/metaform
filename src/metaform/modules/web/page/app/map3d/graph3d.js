@@ -38,10 +38,24 @@ import {posted} from '/page/app/intake/intake.js';
  * of one tube, its tint and opacity its own, `fiber`. `version` counts the changes to what the links are or how they
  * look, so each link's look is read again only then. */
 export const FIBERS = {version: 0};
+/* The least width an edge is drawn at on the screen, VIEW-005: Rich, 2026-10-17, "enforce a minimal width of the
+ * edges". A fiber is as wide as its link in the map, so a near one widens by perspective; where that would draw it
+ * thinner than `least` CSS pixels across, the vertex shader widens its tube at that end to `least`, from the depth of
+ * the point on its axis, so a far edge never thins to nothing and a near one is as perspective makes it. The tube is
+ * six-sided, so `least` is held across its flats, its narrowest. `uniform.value` is `least` over the stage's height
+ * in CSS pixels, set when the stage is measured, never each frame; every fiber material shares the one uniform. */
+export const EDGE = {least: 1.5, uniform: {value: 0}};
 // a fiber takes the haze of depth as the nodes do, `depth3d`, through three.js's own fog
-export const FIBER_VERTEX = `attribute vec4 fiber; varying vec3 vNormal; varying vec3 vView; varying vec4 vFiber;
+export const FIBER_VERTEX = `attribute vec4 fiber; uniform float edgeLeast;
+      varying vec3 vNormal; varying vec3 vView; varying vec4 vFiber;
       #include <fog_pars_vertex>
-      void main() { vec4 at = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+      void main() { vec4 axis = modelViewMatrix * instanceMatrix * vec4(0.0, 0.0, position.z, 1.0);
+        vec3 side = mat3(modelViewMatrix) * (mat3(instanceMatrix) * vec3(position.xy, 0.0));
+        float radius = length(mat3(modelViewMatrix) * instanceMatrix[0].xyz);
+        // the radius that draws least across the tube's flats at this depth: w over the lens's scale is the map
+        // units the stage's height spans, halved, and the flats are cos 30 degrees of the radius
+        float least = edgeLeast * (projectionMatrix * axis).w / projectionMatrix[1][1] / 0.8660254;
+        vec4 at = axis + vec4(side * max(1.0, least / max(radius, 1e-6)), 0.0);
         vNormal = normalize(normalMatrix * mat3(instanceMatrix) * normal);
         vView = normalize(-at.xyz); vFiber = fiber; gl_Position = projectionMatrix * at;
         vec4 mvPosition = at;
@@ -58,15 +72,19 @@ export const FIBER_FRAGMENT = `varying vec3 vNormal; varying vec3 vView; varying
 export let G = null;
 /* The size of a node and the width of a link, in the map's units, so the eye's perspective alone sizes them: a node or
  * an edge near the eye is large and thick, one far away small and fine, and scale reads from them as it does from the
- * names. Nothing is held to a size on the screen. Raised 2026-10-17 at Rich's request, the edges and nodes having read
- * as too thin and small: each link twice as wide, and an element's ball half as wide again on the screen as before from the
- * same camera. A ball's radius is the cube root of its value, times 3, and the 60-degree lens shows a map unit at 0.81
- * of the old 50-degree lens's size, so the old values (DE 9, CQU 7, others 4) are raised by (1.5 / 0.81) cubed, about
- * 6.4. Purposes, items and the rest keep their size. */
-export const nodeSize = node => node.t === 'el' ? (node.role === 'DE' ? 58 : node.role === 'CQU' ? 45 : 26)
+ * names. No node or name is held to a size on the screen; an edge is held only to a least width, `EDGE`. Raised
+ * 2026-10-17 at Rich's request, the edges and nodes having read as too thin and small: each link twice as wide, and
+ * an element's ball half as wide again on the screen as before from the same camera. A ball's radius is the cube root
+ * of its value, times 3, and the 60-degree lens shows a map unit at 0.81 of the old 50-degree lens's size, so the old
+ * values (DE 9, CQU 7, others 4) are raised by (1.5 / 0.81) cubed, about
+ * 6.4. Purposes, items and the rest keep their size. Raised again the same day at his request, "increasing the width
+ * of the edges and node sizes": each link half as wide again, and an element's ball 1.3 times as wide on the screen,
+ * its value times 1.3 cubed (DE 58 to 127, CQU 45 to 99, others 26 to 57). A fiber is never drawn thinner than
+ * `EDGE.least` on the screen. */
+export const nodeSize = node => node.t === 'el' ? (node.role === 'DE' ? 127 : node.role === 'CQU' ? 99 : 57)
   : node.t === 'purpose' ? 1.8 : node.t === 'item' ? 0.6 : 0.7;
-export const linkWidthOf = link => link.k === 'tree' ? 0.8 : link.k === 'layer' || link.k === 'item' ? 0.5
-  : link.k === 'relation' ? 1 : 1.8;
+export const linkWidthOf = link => link.k === 'tree' ? 1.2 : link.k === 'layer' || link.k === 'item' ? 0.75
+  : link.k === 'relation' ? 1.5 : 2.7;
 /* The haze of depth, VIEW-038: what is far from the eye is dimmed toward the background, the theme's ground, as the
  * air dims a far hill, so the nodes, the edges and the figures say their depth as the names do. Its span is the names'
  * own fade, from the front of the names in view, where nothing is hazed, to past their back, where a thing keeps
@@ -370,6 +388,7 @@ function create3D() {
   const stage = $('#stage'), measure = () => {
     const box = stage.getBoundingClientRect();
     STAGE.width = box.width; STAGE.height = box.height;
+    EDGE.uniform.value = EDGE.least / (box.height || 1);  // the edges' least width, `EDGE`
   };
   measure();
   new ResizeObserver(measure).observe(stage);

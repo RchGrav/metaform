@@ -6,7 +6,7 @@ import * as THREE from 'three';
 // The Space theme, web_theme space: the 3D map in outer space, drawn by its own module through the hooks marked ULTRA.
 import * as ULTRA from '/page/ultra.js';
 import {css} from '/page/app/core/dom.js';
-import {G, FIBERS, FIBER_VERTEX, FIBER_FRAGMENT, linkWidthOf} from '/page/app/map3d/graph3d.js';
+import {G, FIBERS, FIBER_VERTEX, FIBER_FRAGMENT, EDGE, linkWidthOf} from '/page/app/map3d/graph3d.js';
 import {linkColor} from '/page/app/map3d/ghosts.js';
 import {EDGE_PICK} from '/page/app/map2d/hover.js';
 
@@ -41,7 +41,7 @@ function made(name, room) {
   // in the scene's haze of depth, `depth3d`, as the nodes are
   const material = new THREE.ShaderMaterial({transparent: true, depthWrite: look.depthWrite,
     blending: look.blending, vertexShader: FIBER_VERTEX, fragmentShader: look.fragment, fog: true,
-    uniforms: THREE.UniformsUtils.clone(THREE.UniformsLib.fog)});
+    uniforms: {...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), edgeLeast: EDGE.uniform}});
   const mesh = new THREE.InstancedMesh(geometry, material, room);
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   Object.assign(mesh, {frustumCulled: false, renderOrder: 9, count: 0});
