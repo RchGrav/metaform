@@ -85,6 +85,7 @@ from acp.schema import (
 from metaform import home, jev, prompt_files
 from metaform.data import BASE_VARIABLE, NewerStore, Node, Store, StoreError, WorkRecord
 from metaform.module import (
+    COMPACTED_KEY,
     WITHHELD,
     Context,
     Stop,
@@ -93,6 +94,8 @@ from metaform.module import (
     context,
     forget_shown,
     mcp_server,
+    record_shown,
+    shown_before,
     surface,
 )
 
@@ -2035,10 +2038,14 @@ class Session:
     async def compacted(self) -> None:
         """The agent's context was compacted, ACP's `compaction_update` completed, CTX-045: what Metaform gave this
         session once, each tool's guide and each node's summary, is forgotten, so each comes again at its next use;
-        what its AI tool itself holds, the tools it lists, stays. Nothing is pushed now: the next turn opens with the
-        `compacted` line, and the rest waits for the call that needs it. `session.compacted` says it on the bus, for a
-        module that keeps more per session, and the thread keeps a line of it."""
+        what its AI tool itself holds, the tools it lists, stays. Nothing is pushed now: the `compacted` line is left
+        for the session, so its next Metaform tool call gives it first when that comes before the next turn, as it does
+        when the compaction falls inside a long turn; else the next turn opens with it, and the rest waits for the call
+        that needs it. `session.compacted` says it on the bus, for a module that keeps more per session, and the thread
+        keeps a line of it."""
         gone = await asyncio.to_thread(forget_shown, self.runner)
+        if self.recompacted:  # not said yet by a turn sent since
+            await asyncio.to_thread(record_shown, self.runner, COMPACTED_KEY, self.compaction_line())
         await self.ctx.publish_async('session.compacted', {
             'project': self.store.project_id, 'work_id': self.work_id, 'session': self.runner,
             'session_id': self.session_id, 'role': self.role, 'forgotten': gone, 'by': 'acp'})
@@ -4021,10 +4028,13 @@ class Session:
                             rule = prompt('work_link')
                             text = f'{text}\n\n{rule}' if rule else text
                             self.ruled = True
-                        if self.recompacted:  # the first turn after a compaction says what the agent works on
-                            self.recompacted = False
+                        if self.recompacted:  # the first turn after a compaction says what the agent works on,
+                            self.recompacted = False  # unless a tool call in between gave it already
                             line = self.compaction_line()
-                            text = f'{line}\n\n{text}' if line else text
+                            # '' once a tool call gave it; not yet left for one, or left and not given: said here
+                            if line and await asyncio.to_thread(shown_before, self.runner, COMPACTED_KEY) != '':
+                                await asyncio.to_thread(record_shown, self.runner, COMPACTED_KEY, '')
+                                text = f'{line}\n\n{text}'  # said once, by whichever comes first
                         await self.peer_marked(marks, 'delivered')
                         self.cost_open, self.provisional = False, 0
                         self.arm()  # the turn's silence clock, P040

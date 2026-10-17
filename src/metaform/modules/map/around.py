@@ -164,7 +164,8 @@ class Around:
             lines.append(f'{label.ljust(width)}  {number.rjust(digits)} {rest}' +
                          ''.join(f' · {part}' for part in parts[1:]))
         everyone = (self.address, *self.above, *self.below)
-        legends = [count.legend for count in self.counts.values()
+        legends = [legend(count.legend, [one for one in everyone if count.at.get(one, (0, 0, 0))[0]])
+                   for count in self.counts.values()
                    if count.legend and any(count.at.get(one, (0, 0, 0))[0] for one in everyone)]
         reads = ' · '.join(f'{name}: {read}' for _, name, read in self.own)
         closing = _prompt('around_read', reads=reads) if reads else ''
@@ -190,6 +191,12 @@ class Around:
                 if line:
                     said.append(line)
         return said
+
+
+def legend(said: str, held: list[str]) -> str:
+    """A count's legend with its <address> filled in when one address alone holds what it counts, so the call reads as
+    it is made; with several the agent fills in the one it reads."""
+    return said.replace('<address>', held[0]) if len(held) == 1 else said
 
 
 def told(ctx: Context, found: Where, fits: Callable[[dict[str, Any]], bool] | None = None) -> dict[str, Any]:

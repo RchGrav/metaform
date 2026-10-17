@@ -522,6 +522,7 @@ def peers(ctx: Context) -> dict[str, Any]:
         else:
             result['said'] = f'No other agent is at work with {kind}={named} now.'
         return result
+    call = 'dispatch_note' if ctx.surface == 'mcp' else 'dispatch note'
     return {'peers': [{**shown(entry), **({'yours': True} if entry['work_id'] == mine else {})} for entry in found],
-            'said': f'{len(found)} agents are at work on open tickets; send one a note with dispatch note to=, at=, '
+            'said': f'{len(found)} agents are at work on open tickets; send one a note with {call} to=, at=, '
                     'file= or topic=.'}

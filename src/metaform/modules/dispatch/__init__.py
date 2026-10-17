@@ -812,7 +812,11 @@ def work_line(work_id: str, folder: Path, node: str) -> str:
     the node it is recorded at, so no agent is told to use a tool it does not have. The rule on writing files is not
     here: the runner sends it with each session's first prompt, whatever the prompt, code.dispatcher.agent#47."""
     memory = any(module.id == 'memory' for module in surface(folder))
-    return prompt('work', work_id=work_id, record=prompt('work_record', node=node) if memory and node else '')
+    if not memory or not node:
+        return prompt('work', work_id=work_id, record='')
+    named = node.replace(' and ', ' ') if node.startswith('receiver=') else f'node={node}'
+    return prompt('work', work_id=work_id, record=prompt('work_record', node=node,
+                                                         call=f'memory_create_entities {named}'))
 
 
 # The mascot's body: the web module's verbs that move it and let it see, each the MCP tool web_<verb>.
@@ -4894,6 +4898,26 @@ def peers_line(ctx: Context, store: Store, work_id: str, session: str | None) ->
     return prompt('peers_at_work', n=str(len(others)))
 
 
+def overlap(ctx: Context, work_id: str) -> str:
+    """The line a ticket's take or plan answers with over MCP, `peers_overlap`, once a session for its part: the other
+    agents at work at that part, inside it or around it, since the moment an agent starts or plans its work is the
+    moment it can collide with theirs, and the hand-off's line came before they may have started. Empty when none is,
+    when it was said for that part already, or when who is at work cannot be read."""
+    from .peering import addresses, working
+    store = ctx.require_store()
+    try:
+        mine = addresses(store.ticket(work_id).work)
+        others = [entry for entry in working(ctx, store) if entry['work_id'] != work_id and any(
+            one == theirs or one.startswith(theirs + '.') or theirs.startswith(one + '.')
+            for one in mine for theirs in addresses(entry['_record']))]
+    except Exception:  # noqa: BLE001  who is at work is a pointer; the write is answered without it
+        return ''
+    at = ' and '.join(mine)
+    if not others or record_shown(ctx.session, f'announce:overlap:{at}', len(others)) is not None:
+        return ''
+    return prompt('peers_overlap', at=at, who=', '.join(f'{entry["agent"]} on {entry["item"]}' for entry in others))
+
+
 def handoff(ctx: Context) -> str:
     """The hand-off of a ticket: what an agent the work is handed to by its id reads, BASE-050, the same text an agent
     dispatch starts over ACP is sent as its first turn, with its reads named for the caller's surface; with full=true,
@@ -6159,7 +6183,7 @@ MODULE = Module(
     work_read=work_read,
     # person.consent: ask_consent, the consent card in a dispatched agent's chat its MCP server asks the person through
     provides=(Provides('base.holds', base_holds), Provides('dispatch.deaths', watch_deaths),
-              Provides('person.consent', ask_consent)),
+              Provides('person.consent', ask_consent), Provides('work.overlap', overlap)),
     start=started,
     stop=None,
     status=None,

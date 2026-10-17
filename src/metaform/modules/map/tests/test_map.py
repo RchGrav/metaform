@@ -1846,7 +1846,7 @@ def test_orientation_recovery_reaches_working_next_steps_over_mcp(run, home, kit
         assert not recovered.is_error
         uncited = await called(client, 'map_citing', {'key': 'path', 'value': './src/uncited.py'})
         assert not uncited.is_error
-        assert json.loads(text(uncited)[-1])['results'] == []
+        assert text(uncited)[-1] == 'results:\n(none)'  # a list with nothing in it says so, MCP-039
 
     session(home, kitchen, check)
 

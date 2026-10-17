@@ -128,23 +128,24 @@
 <!-- One more message to a worker after it closes its ticket, asking it to record what happened in the work at <node/>
      as memory and what is true of the project as knowledge. A draft, CTX-029, awaiting the owner's approval of its wording; it replaced the 2026-10-11 sentence on storing what is learned.
      Sent when the setting dispatch_record_on_finish asks for it and the memory module is on; <node/> is the element's
-     address, or join:<id> for a ticket on a join.
-     Empty sends nothing, whatever the setting. Turned off with dispatch_record_on_finish set to off. -->
-<on_ticket_done>Record what happened in the work at <node/> as memory, and what is now known to be true of the project in the map's knowledge layers, as steps 5 and 6 of the memory prompt say.</on_ticket_done>
+     address, or join:<id> for a ticket on a join. It names the memory tool with its node, so the turn says how to
+     record by itself. Empty sends nothing, whatever the setting. Turned off with dispatch_record_on_finish set
+     to off. -->
+<on_ticket_done>Record what happened in the work at <node/> as memory with memory_create_entities node=<node/>, so the next agent at this part reads it, and what is now known to be true of the project in the map's knowledge layers.</on_ticket_done>
 
 <!-- One more message to a worker whose turn ended with its ticket still open, asking it to record what it learned at
      <node/> before it waits for the person; once per session. <node/> is as in on_ticket_done.
      Sent when the setting dispatch_record_on_stop asks for it and the memory module is on. The wording is
      on_ticket_done's, a draft (CTX-029) awaiting the owner's approval. Empty sends nothing, whatever the setting. Turned off with
      dispatch_record_on_stop set to off. -->
-<on_stopped_open>Record what happened in the work at <node/> as memory, and what is now known to be true of the project in the map's knowledge layers, as steps 5 and 6 of the memory prompt say.</on_stopped_open>
+<on_stopped_open>Record what happened in the work at <node/> as memory with memory_create_entities node=<node/>, so the next agent at this part reads it, and what is now known to be true of the project in the map's knowledge layers.</on_stopped_open>
 
 <!-- One more message to a worker whose turn ended in an error while its agent still runs, asking it to record what it
      learned at <node/> before the session is left for the person; once per session. <node/> is as in on_ticket_done.
      The wording is on_ticket_done's, a draft (CTX-029) awaiting the owner's approval.
      Sent when the setting dispatch_record_on_failure asks for it and the memory module is on. Empty sends nothing,
      whatever the setting. Turned off with dispatch_record_on_failure set to off. -->
-<on_failure>Record what happened in the work at <node/> as memory, and what is now known to be true of the project in the map's knowledge layers, as steps 5 and 6 of the memory prompt say.</on_failure>
+<on_failure>Record what happened in the work at <node/> as memory with memory_create_entities node=<node/>, so the next agent at this part reads it, and what is now known to be true of the project in the map's knowledge layers.</on_failure>
 
 <!-- The turn a worker is given once the person has answered a workflow run its ticket paused on them, so their
      answer reaches it without a message of their own. <run/> is the run. The wording is workflow's own line for this,
@@ -177,10 +178,11 @@
 <!-- What to record and where, after the work sentence, with the node filled in and the command left out, since the
      agent calls the memory tool over MCP: memory and knowledge as the memory prompt splits them, CTX-029. A draft
      awaiting the owner's approval of its wording; it replaced his 2026-10-11 sentence on storing what is learned.
-     <node/> is the element's address, or the join's receiver and provider for a ticket on a join.
+     <node/> is the element's address, or the join's receiver and provider for a ticket on a join; <call/> the memory
+     tool's call that records there, its arguments filled. Names the tool, so the line says how to record by itself.
      Follows the work sentence only while the memory module is on in the folder. Empty leaves the work sentence
      alone. -->
-<work_record>Record what happened in the work at <node/> as memory, and what is now known to be true of the project in the map's knowledge layers, as the memory prompt says.</work_record>
+<work_record>Record what happened in the work at <node/> as memory with <call/>, so the next agent at this part reads it, and what is now known to be true of the project in the map's knowledge layers.</work_record>
 
 <!-- The rule on writing files, code.dispatcher.agent#3d: a file no element's ref names is locked for writing until
      it is linked, and the paths .metaform/ignore.txt holds are read-only; code.dispatcher.agent#43 and #47, the
@@ -246,6 +248,13 @@
      collide with them. <n/> is how many others are at work. Sent once a session, with the first message of a worker,
      and with dispatch handoff; never when the agent works alone. A DRAFT of 2026-10-17, awaiting the owner's approval of
      its wording. Empty sends nothing. -->
+<!-- The line a worker's map_work op=take or op=plan answers with over MCP when other agents are at work at its ticket's
+     part, inside it or around it, once a session for that part: the moment it starts or plans its work is the moment
+     it can collide with theirs, and they may have started after its hand-off. <at/> is the part, <who/> each agent
+     with the ticket it works. A DRAFT of 2026-10-17, awaiting the owner's approval of its wording. Empty
+     sends nothing. -->
+<peers_overlap>Other agents are at work at or around <at/>: <who/>. dispatch_note reaches one before you change what it is in, so your changes and theirs do not collide; dispatch_peers shows where each is.</peers_overlap>
+
 <peers_at_work><n/> other agents are at work in this project: dispatch_peers shows who is where, and dispatch_note reaches one before you change a part or a file they are in, so your changes and theirs do not collide.</peers_at_work>
 
 <!-- The turn the person's system agent is given when a module says a feature the person set up is not working, the

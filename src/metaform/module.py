@@ -191,6 +191,11 @@ class Verb:
     `orient` or `remember`, each said in the mcp module's catalog: an agent opens the category its task
     needs and is listed only its tools, MCP-003. None takes the category the mcp module gives the tool, or else the
     one it gives the module; a name no category holds stops the module loading.
+
+    `person_details` is what the details say only to the person and the agents that act for them: the person, in the
+    command line's help after `details`, and over MCP the person's own sessions, the system agent and a sentinel, with
+    the tool's guide. An agent at work on a ticket, an intake or a conversation does not act for the person that way,
+    so it is not handed what is said to them.
     """
     name: str
     run: VerbFunction
@@ -216,6 +221,7 @@ class Verb:
     cautioned: Callable[[Context], str] | None = None
     page: str | None = None
     category: str | None = None
+    person_details: str = ''
 
     def __post_init__(self) -> None:
         if self.category is not None and self.category not in CATEGORY_NAMES:
@@ -746,18 +752,11 @@ def instructions(folder: Path, project: str | None = None, *, surface: str = 'cl
     return composed.compose(folder, project, surface=surface)
 
 
-def startup_instructions(folder: Path, project: str | None = None) -> str:
-    """What the MCP server sends when an agent connects: the order to read metaform://metaform and the project's own
-    glossary, then the notices the folder's state calls for, such as running the intake, MCP-007."""
+def startup_notices(folder: Path, project: str | None = None) -> list[str]:
+    """The notices the folder's state calls for at connect, each from the module that owns that state, such as running
+    the intake, for the MCP server's connect message, MCP-007 and MCP-029."""
     from . import instructions as composed
-    return composed.startup(folder, project)
-
-
-def startup_parts(folder: Path, project: str | None = None) -> tuple[str, list[str]]:
-    """The connect message's order, the mcp module's instructions and each module's `connect` line, and the notices
-    the folder's state calls for, for a server that composes the rest of it itself, MCP-029."""
-    from . import instructions as composed
-    return composed.startup_parts(folder, project)
+    return composed.startup_notices(folder, project)
 
 
 def module_instructions(folder: Path, identifier: str, project: str | None = None) -> str | None:
@@ -817,6 +816,11 @@ def record_shown(session: str | None, key: str, value: Any) -> Any:
     Context.seen does for a session no Context names, MCP-039."""
     from . import shown
     return shown.swap(session, key, value)
+
+
+# Where a session's runner leaves the line its agent is told after a compaction, CTX-045, for the agent's next Metaform
+# tool call to give first when that call comes before its next turn; emptied by whichever gives it, so it is said once.
+COMPACTED_KEY = 'pending:compacted'
 
 
 def forget_shown(session: str | None) -> int:

@@ -13,6 +13,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.types import Implementation
 
+from metaform import prompt_files
 from metaform.modules.mcp import server
 
 pytestmark = [pytest.mark.kind('fixture'), pytest.mark.req('BASE-059')]
@@ -77,7 +78,9 @@ def test_connect_message_and_index_fit_what_the_host_keeps(folder, run):
     """The startup text and the fallback index together stay within the 2,048 characters Claude Code keeps, with
     every shipped module on and the first-run notice; the names alone when the descriptions do not fit."""
     sent = server.connect_instructions(folder, 'unknown-host')
-    assert len(sent) <= 2048 and 'write-workflow' in sent and 'FIRST RUN' in sent
+    skills = server.listing(folder, 'unknown-host')['metaform_skills']
+    assert len(sent) <= 2048 and 'FIRST RUN' in sent
+    assert 'write-workflow' in sent or 'write-workflow' in skills.description + skills.guide()  # else with the tool
     for module in SHIPPED:
         run('enable', module)
     for registered in (False, True):
@@ -85,7 +88,7 @@ def test_connect_message_and_index_fit_what_the_host_keeps(folder, run):
             run('add', 'project', 'skills', str(folder))
         sent = server.connect_instructions(folder, 'unknown-host')
         assert len(sent) <= 2048 and 'FIRST RUN' in sent, len(sent)
-        assert sent.startswith(server.startup_instructions(folder))
+        assert sent.startswith(prompt_files.module('mcp', 'connect_use'))
         skills = server.listing(folder, 'unknown-host')['metaform_skills']
         listed = skills.description + skills.guide()  # the names come with the tool's first use, MCP-039
         assert 'write-workflow' in sent or 'write-workflow' in listed
@@ -104,10 +107,12 @@ def test_a_stdio_connect_from_an_unrecorded_harness_carries_the_provisioning_not
     notice = f'Notice: {harness.NOTICE}'
     assert notice not in server.connect_instructions(folder, 'unknown-host')  # HTTP: no session of the harness
     sent = server.connect_instructions(folder, 'unknown-host', 'one')
-    assert notice in sent and len(sent) <= 2048 and sent.startswith(server.startup_instructions(folder))
+    assert notice in sent and len(sent) <= 2048 and sent.startswith(prompt_files.module('mcp', 'connect_use'))
     assert server.provisioning('one') is None  # told once
     for module in SHIPPED:  # no room left at connect: the first tool result carries it instead
         run('enable', module)
+    server.TOLD.add('measured')  # the message without the notice is all the host keeps here
+    monkeypatch.setattr(server, 'HOST_KEEPS', len(server.connect_instructions(folder, 'unknown-host', 'measured')))
     sent = server.connect_instructions(folder, 'unknown-host', 'two')
     assert notice not in sent and len(sent) <= 2048
     assert server.provisioning('two') == notice

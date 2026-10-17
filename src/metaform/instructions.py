@@ -83,35 +83,15 @@ def module_text(folder: Path, identifier: str, project: str | None = None) -> st
     return _listed(found, folder, chosen)
 
 
-def startup(folder: Path, project: str | None = None) -> str:
-    """What the MCP server sends when an agent connects, MCP-029: an order, not a notice. The mcp module's instructions
-    prompt as written, which says Metaform must be used, then one line per module on the folder's surface, in module
-    id order, from that module's `connect` prompt, saying what an agent uses it for; a module whose `connect` is empty
-    or absent adds nothing. Then mcp's `instructions_end`, which says to read metaform://metaform before beginning
-    work and then metaform://<project>, the project's own terms, when the folder is a registered one; mcp's
-    `instructions_tools`, one sentence pointing at metaform://tools; and last what the folder's state calls for, each
-    line from the module that owns that state, such as intake's first-run notice while the project has no intake."""
+def startup_notices(folder: Path, project: str | None = None) -> list[str]:
+    """What the folder's state calls for at connect, MCP-029: each line from the module that owns that state, such as
+    intake's first-run notice while the project has no intake, or the chassis's `no_project` when there is no project
+    and none."""
     chosen = project if project is not None else context.project_for(folder)
-    order, states = startup_parts(folder, chosen)
-    own = (prompt_files.module('mcp', 'instructions_terms', project=chosen) or ''
-           if chosen is not None and chosen != 'metaform' else '')
-    end = '\n'.join(part for part in (prompt_files.module('mcp', 'instructions_end', terms=own),
-                                       prompt_files.module('mcp', 'instructions_tools')) if part)
-    parts = [part for part in (order, end, *states) if part]
-    return '\n\n'.join(parts) + '\n' if parts else ''
-
-
-def startup_parts(folder: Path, project: str | None = None) -> tuple[str, list[str]]:
-    """The two parts of the connect message that every way of composing it shares, MCP-029: the order, the mcp
-    module's instructions prompt and each surfaced module's `connect` line, and the notices the folder's state calls
-    for, each from the module that owns that state, or the chassis's `no_project` when there is no project and none."""
-    chosen = project if project is not None else context.project_for(folder)
-    uses = [line for line in (prompt_files.module(module.id, 'connect') for module in surfaced(folder)) if line]
-    order = '\n'.join(part for part in (prompt_files.module('mcp', 'instructions'), *uses) if part)
     states = [line for line in (_added(module, folder, chosen, full=False) for module in surfaced(folder)) if line]
     if chosen is None and not states:
         states.append(prompt_files.chassis('no_project'))
-    return order, states
+    return states
 
 
 def compose(folder: Path, project: str | None = None, *, surface: str = 'cli') -> str:

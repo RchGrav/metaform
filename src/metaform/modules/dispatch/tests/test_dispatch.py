@@ -622,9 +622,11 @@ def test_a_person_message_reaches_the_agent_as_session_prompt(dispatch, run, tmp
 @pytest.mark.parametrize('statuses', ['in_progress,completed', 'in_progress,failed'])
 def test_a_compacted_context_is_given_again_what_metaform_gave_once(dispatch, run, tmp_path, statuses):
     """ACP's session compaction, CTX-045: the runner advertises it; on completed, what the session was shown once is
-    forgotten, all but the category its AI tool still lists, and the next turn opens with the compacted line naming
-    the ticket and its node; in_progress and failed change nothing, and nothing is sent on the signal itself."""
+    forgotten, all but the category its AI tool still lists, and the compacted line naming the ticket and its node is
+    left for the agent's next tool call, else the next turn opens with it, said once; in_progress and failed change
+    nothing, and nothing is sent on the signal itself."""
     from metaform import shown
+    from metaform.module import COMPACTED_KEY
     gates = tmp_path / 'turns'
     gates.mkdir()
     dispatch.start('replace', FAKE_ACP_TURN_GATES=str(gates), FAKE_ACP_COMPACT=statuses)
@@ -638,6 +640,8 @@ def test_a_compacted_context_is_given_again_what_metaform_gave_once(dispatch, ru
     completed = statuses.endswith('completed')
     if completed:
         eventually(lambda: shown.peek(runner, 'guide:tool:map_work') is None)
+        left = eventually(lambda: shown.peek(runner, COMPACTED_KEY))
+        assert left.startswith('Your context was compacted') and f'ticket {dispatch.id} at ' in left
     assert len(dispatch.received('session/prompt')) == 1, 'the signal itself sends nothing'
     run('dispatch', 'message', dispatch.id, 'go', 'on', cwd=dispatch.folder)
     said = eventually(lambda: dispatch.received('session/prompt')[1:])[0]['params']['prompt'][0]['text']
@@ -645,6 +649,7 @@ def test_a_compacted_context_is_given_again_what_metaform_gave_once(dispatch, ru
     assert said.endswith('go on') and (f'ticket {dispatch.id} at ' in said) is completed
     assert shown.peek(runner, 'catalog:open') == 'remember'
     assert (shown.peek(runner, 'guide:tool:map_work') is None) is completed
+    assert shown.peek(runner, COMPACTED_KEY) == ('' if completed else None)  # said by the turn, so no call says it
     (gates / '2').touch()
     dispatch.stop()
 
@@ -2269,6 +2274,14 @@ def test_workers_send_each_other_peer_notes_kept_on_both_tickets_and_still_steer
         assert b_seen['files'][0] == {'path': 'src/shared.js', 'action': 'edit', 'lines': [42], 'changed': 3}
         assert b_seen['address'] == LINKED
         assert [one['work_id'] for one in present if one.get('yours')] == [dispatch.id]
+        # a worker taking or planning a ticket at a part where another is at work is told so over MCP, once
+        from metaform.module import context as module_context
+        from metaform.modules.dispatch import overlap
+        third = dispatch.store.add_work(Node('element', NODE), 'unbuilt', task='Tune it.', title='Tune').id
+        told = module_context('dispatch', dispatch.folder, project='proj', surface='mcp', session='overlap-test')
+        said = overlap(told, third)
+        assert said.startswith(f'Other agents are at work at or around {NODE}: ') and 'dispatch_note' in said
+        assert other.id not in said and overlap(told, third) == ''  # B is elsewhere; said once for the part
         here = json.loads(run('dispatch', 'peers', 'file=src/shared.js', '--json', cwd=dispatch.folder, env=a).stdout)
         assert [one['work_id'] for one in here['peers']] == [other.id]
         assert here['ready'].startswith('metaform dispatch note file=src/shared.js wait=60 -- ')
@@ -2418,8 +2431,8 @@ def test_the_handoff_is_the_brief_the_ticket_its_node_and_counts_under_three_kil
     assert memory.startswith('Follow these steps for each interaction:'), 'the memory prompt ahead of it, CTX-028'
     first, _, rest = text.partition('\n\n')
     assert first == (f'Work ticket {dispatch.id} with the map_work tool. Record what happened in the work at {NODE} as '
-                     "memory, and what is now known to be true of the project in the map's knowledge layers, as the "
-                     'memory prompt says.')
+                     f'memory with memory_create_entities node={NODE}, so the next agent at this part reads it, and '
+                     "what is now known to be true of the project in the map's knowledge layers.")
     assert text.endswith(f'\n\n{prompt("work_link")}') is LINK_LOCK, \
         'the rule on writing files ends the first prompt, and is left out while the lock is off, #47 and code#1e'
     assert f'ticket: {dispatch.id}' in rest and f'linked: {LINKED}' in rest

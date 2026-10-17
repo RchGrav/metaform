@@ -451,7 +451,8 @@ def start(ctx: Context) -> Any:
         notices.append({'where': 'intake', 'message': f'The active metaform {mapped.metaform} has a finished intake. '
                         'What you record now is written onto it: a changed field is refined, a new element or purpose '
                         'record is added to it, keeping every version, and conditions, notes and refs are kept with '
-                        'it. intake start name=<x> begins a separate intake in a new base.'})
+                        f'it. {"intake_start" if ctx.surface == "mcp" else "intake start"} name=<x> begins a separate '
+                        'intake in a new base.'})
         return {'layer': mapped.layer.name, 'project': store.project_id, 'base': mapped.metaform, 'notices': notices}
     opened = False
     if found is None:
@@ -1297,8 +1298,7 @@ MODULE = Module(
                              'that adds new elements and purpose records to the map. In that pass changed fields are '
                              'refined, new elements and purpose records are added, conditions, notes and refs are '
                              'written onto the map, and intake finish closes the pass. With name it opens a separate '
-                             'intake in a new metaform instead, keeping the earlier one untouched. Returns its name; '
-                             'the existing web GUI follows it live.',
+                             'intake in a new metaform instead, keeping the earlier one untouched. Returns its name.',
              nouns=(Noun('result', 'The result id the intake procedure generates and gives at start, kept with the intake.', required=False),
                     Noun('name', "On a project that has an intake already, the new intake's metaform is named for what it is "
                                  "for, from the person's request, such as web-interface-refactor: 1 to 64 letters, digits, "
@@ -1306,7 +1306,8 @@ MODULE = Module(
                                  'verification pass on the finished map.',
                          required=False),
                     Noun('model', 'The model that performs the intake.', required=False),
-                    Noun('role', 'The role of the agent that performs it.', required=False))),
+                    Noun('role', 'The role of the agent that performs it.', required=False)),
+             person_details='A web GUI that runs follows the intake live.'),
         Verb('element', element, 'Record one element of the intake at its address; recording it again replaces the '
                                  'fields given.',
              nouns=(Noun(ADDRESS, E(ADDRESS, '')),

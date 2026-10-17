@@ -52,6 +52,7 @@ from metaform.module import (
     latest_item,
     node_reads,
     project_for,
+    provided,
     titled,
     work_reads,
 )
@@ -1298,8 +1299,10 @@ def work(ctx: Context) -> Any:
             found = found._replace(results=tuple(record for record in found.results
                                                  if not kept.get(record.id, {}).get('hold')))
         listed = plain(_glyphed(store, found))
-        listed['results'] = [{name: value for name, value in row.items() if name not in UNLISTED}
-                             for row in listed['results']]
+        # Each says whether it is open or done, so a list asked for done and open records alike can be read and
+        # filtered by it, where `done` is a time.
+        listed['results'] = [{**{name: value for name, value in row.items() if name not in UNLISTED},
+                              'status': 'done' if row.get('done') else 'open'} for row in listed['results']]
         return _with_notices(listed, notices)
     if op == 'add':
         node = _named(store, nouns, notices)
@@ -1373,8 +1376,11 @@ def _written(ctx: Context, store: Store, record: WorkRecord, op: str, notices: l
              'id': record.id, 'by': str(record.taken_by or ''), 'column': record.column,
              'done': str(record.steps_done), 'steps': str(record.steps or record.steps_done)}
     line = ' '.join(_prompt(f'work_{op}', **fills).split())
+    # Who else is at work at the part, from the module that runs agents, when the agent starts or plans its work.
+    told = [said for _, made in provided(ctx.folder, 'work.overlap') if (said := made(ctx, record.id))] \
+        if op in ('take', 'plan') else []
     return '\n'.join([line, *(_prompt('work_notice', where=one.where, message=one.message)
-                              for one in (*notices, *record.notices))])
+                              for one in (*notices, *record.notices)), *told])
 
 
 def _glyph(value: Any, notices: list[Notice]) -> str | None:
@@ -1651,7 +1657,8 @@ WORK_NOUNS = (
                        'ticket. missing is intended functionality that is absent, a finding. A stage, unbuilt, under-construction or built, says where the part is on its way to '
                        'existing; built is the normal state and marks nothing. broken is a built part that does not '
                        'do its job. A task on a part that exists and works carries none. The intake and the person '
-                       'set it; an agent at work leaves it alone. condition=none on edit clears it.',
+                       'set it, since they judge the state of the part; an agent at work says what it found in its '
+                       'note instead. condition=none on edit clears it.',
           schema={'type': 'string', 'enum': [*CONDITIONS, 'none']}),
     _noun('kind', 'add, edit, and list as a filter: what sort of work the ticket is, never the state of the part: '
                   'broken, a fix for a part that does not do its job; flawed, a part that works but is not right; '
@@ -1887,19 +1894,18 @@ MODULE = Module(
                      'condition is the state of that part, never the kind of ticket: most tasks carry none. A '
                      'stage, unbuilt, under-construction or built, says where the part is on its way to existing; '
                      'built marks nothing. broken is a built part that does not do its job. The intake and the '
-                     'person set it; an agent at work leaves it alone. Its note says what and where, its task what '
-                     'it needs. '
-                     'exclude records material outside the intake scope or code conflicting with a superseding '
-                     'specification. The note links the affected material and the specification or scope reason '
-                     'for review. Unrelated folders are excluded from functional capture; a proposed gitignore '
-                     'change is recorded for review. Documents, specifications, notes and working files are '
-                     'preserved. Marking a record does not remove files or change gitignore. Unneeded legacy '
-                     'migration code is marked for review. A store at an earlier layout is updated by Metaform '
-                     'when it opens it. It is '
-                     'open until op=done records its resolution, which is kept beside it. The person writes one, or '
-                     'the sentinel and the system agent for them on the command line, held=true until agents take '
-                     'it; over the agents\' tool op=add is refused, and an agent at work says what it found in its '
-                     'own ticket\'s note.',
+                     'person set it, since they judge the state of the part; an agent at work says what it found '
+                     'in its own ticket\'s note instead. Its note says what and where, its task what it needs. It '
+                     'is open until op=done records its resolution, which is kept beside it.',
+             person_details='exclude records material outside the intake scope or code conflicting with a '
+                            'superseding specification. The note links the affected material and the specification or '
+                            'scope reason for review. Unrelated folders are excluded from functional capture; a '
+                            'proposed gitignore change is recorded for review. Documents, specifications, notes and '
+                            'working files are preserved. Marking a record does not remove files or change gitignore. '
+                            'Unneeded legacy migration code is marked for review. A store at an earlier layout is '
+                            'updated by Metaform when it opens it. The person writes a ticket, or the sentinel and '
+                            'the system agent for them, held=true until agents take it; a role the person holds back, '
+                            'roles_without_authority, writes none, since work is planned before a ticket exists.',
              examples=((('metaform map work op=add node=element:code.alarm.audible condition=unbuilt '
                          'title="Build the alarm" task="build it"'),
                         'Record that the alarm is not built yet, with the task that builds it.'),

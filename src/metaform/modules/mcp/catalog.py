@@ -2,17 +2,20 @@
 
 An agent knows what it is trying to do before it knows which tool does it, and every tool it is listed it reads and
 carries, so the server lists by purpose. Each tool belongs to a category, the purpose it serves: its verb's own
-`category`, else the one given it here, else its module's. With `mcp_context` tight, the default, a connection is listed
+`category`, else the one given it here, else its module's. A connection whose listing follows its session is listed
 one tool, metaform_catalog, and the tools of the one category it has open: called with nothing, it says each category's
-purpose; with a category, it opens it, so its tools are listed in place of the last one's, and says each tool in one
-line with the arguments it takes; with search, it finds tools from words for what the agent wants to do, in any
-category; with tool and arguments, it runs one, for an AI tool that keeps the list it was first given.
+purpose; with a category, it opens it, so its tools are listed in place of the last one's; with search, it finds tools
+from words for what the agent wants to do, in any category; with tool and arguments, it runs one, for an AI tool that
+keeps the list it was first given. A connection whose listing names no session, such as an HTTP client on the July
+2026 wire, which has no session header, is listed every tool its role is given, since no category it opens could
+change what it is listed.
 
 The role of the agent, the one its runner names in METAFORM_ROLE, decides which categories it may open at all, so a
 tool its role is refused is never listed to it and never runs for it: a worker on a ticket opens no category that
 starts or steers agents unless the person lifts roles_without_authority, and only the person's own agent and a session
 the person runs outside dispatch open every category. A role starts with the category its first task needs open, so the
-tool its first message names is listed at once: a worker's ticket category, an intake's intake category.
+tool its first message names is listed at once: a worker's ticket category, an intake's intake category; a role whose
+first task needs one tool alone, a talk or a sentinel reading its node, starts with that tool and no category open.
 """
 from __future__ import annotations
 
@@ -34,8 +37,8 @@ OPEN_KEY = 'catalog:open'  # the ledger key of the category a session has open; 
 CATEGORY_TOOLS: dict[str, tuple[str, ...]] = {
     'orient': ('map_where', 'map_find', 'map_search', 'map_roots', 'map_element', 'map_node', 'map_children',
                'map_joins', 'map_identity', 'map_context', 'map_links', 'map_citing', 'map_item', 'map_history',
-               'map_layers', 'map_layer', 'map_knowledge', 'map_bases', 'map_glossary', 'map_cypher',
-               'map_challenges', 'dispatch_handoff'),
+               'map_layers', 'map_layer', 'map_bases', 'map_glossary', 'map_cypher',
+               'map_challenges'),
     'ticket': ('map_work', 'map_where', 'dispatch_handoff', 'dispatch_link', 'map_messages', 'map_reply',
                'map_answer', 'dispatch_attach', 'dispatch_timer'),
     'remember': ('memory_read_graph', 'memory_search_nodes', 'memory_open_nodes', 'memory_create_entities',
@@ -81,8 +84,19 @@ ROLE_CATEGORIES: dict[str, tuple[str, ...]] = {
     'sentinel': ('orient', 'ticket', 'remember', 'coordinate', 'change-map', 'steer', 'workflow', 'report'),
     'talk': ('orient', 'ticket', 'remember', 'coordinate', 'steer', 'show', 'report'),
 }
-ROLE_OPENS: dict[str, str] = {'worker': 'ticket', 'prep': 'ticket', 'intake': 'intake', 'sentinel': 'orient',
-                              'talk': 'orient'}
+ROLE_OPENS: dict[str, str] = {'worker': 'ticket', 'prep': 'ticket', 'intake': 'intake'}
+# The tools listed beside the catalog to a role that starts with no category open, the one its first message names:
+# a talk and a sentinel read the node they were given before anything else, and the 20 other orient tools would come
+# with a category opened for it.
+ROLE_FIRST: dict[str, tuple[str, ...]] = {'talk': ('map_where',), 'sentinel': ('map_where',)}
+# What a role the person holds back, roles_without_authority, never writes over a tool: the ops of a tool it is refused,
+# and the arguments only those ops and the board read, left out of the tool's schema and its guide for that role, so
+# its agent is not handed the board's controls. A tool not named keeps its schema whole.
+HELD_OPS: dict[str, tuple[str, ...]] = {'map_work': ('add', 'move', 'distribute', 'glyphs')}
+HELD_ARGUMENTS: dict[str, tuple[str, ...]] = {
+    'map_work': ('column', 'position', 'held', 'reviewed', 'agent', 'hold', 'glyph', 'eligible', 'after_work', 'agents',
+                 'links', 'by', 'title', 'task'),
+    'dispatch_handoff': ('full',)}  # the full brief, no longer sent to agents, is the person's to read
 STEER = 'steer'  # what a role the person holds back, roles_without_authority, never opens
 ALWAYS = ('metaform_feedback',)  # runs for every role, so a fault can always be reported, MCP-006
 
@@ -122,6 +136,30 @@ def allowed(folder: Path, named: str | None = None) -> tuple[str, ...]:
 def opens(named: str | None = None) -> str | None:
     """The category open when the role's session starts, None for a role that starts with the categories alone."""
     return ROLE_OPENS.get((role() if named is None else named) or '')
+
+
+def first(named: str | None = None) -> tuple[str, ...]:
+    """The tools listed beside the catalog while no category is open, the ones the role's first message names."""
+    return ROLE_FIRST.get((role() if named is None else named) or '', ())
+
+
+# The roles that act for the person, beside the person's own sessions: they are given what a verb says only to the
+# person, Verb.person_details, such as how the person writes a ticket.
+FOR_PERSON = ('system', 'sentinel')
+
+
+def for_person(named: str | None = None) -> bool:
+    """Whether the agent this server serves acts for the person: the person's own sessions and FOR_PERSON."""
+    named = role() if named is None else named
+    return named is None or named in FOR_PERSON
+
+
+def held_back(folder: Path, name: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """The ops and the arguments of a tool left out for the role this server serves, HELD_OPS and HELD_ARGUMENTS: both
+    empty unless the person holds the role back."""
+    if not held(folder, role()):
+        return (), ()
+    return HELD_OPS.get(name, ()), HELD_ARGUMENTS.get(name, ())
 
 
 def categories_of(name: str, verb: Verb | None, module: Module | None) -> tuple[str, ...]:

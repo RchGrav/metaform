@@ -11176,8 +11176,7 @@ def test_the_page_reads_a_nodes_brief_and_items_exactly_as_an_agent_reads_them(r
 @pytest.mark.req('MCP-037')
 def test_the_page_shows_what_an_agent_connecting_here_receives_from_the_folders_own_mcp_server(run, web, mapped,
                                                                                                 monkeypatch):
-    from metaform import loader, settings
-    from metaform import module as chassis
+    from metaform import loader, prompt_files, settings
     from metaform.modules.mcp import server as mcp
     loaded = {'chassis', *(module.id for module in loader.enabled())}
     for key in [key for key, setting in settings.SCHEMA.items() if setting.owner not in loaded]:
@@ -11185,13 +11184,12 @@ def test_the_page_shows_what_an_agent_connecting_here_receives_from_the_folders_
     started(run)
     status, body = api(web, '/api/agent-view?project=proj&address=code.timer.kitchen')
     assert status == 200, body
-    assert body['connect']['text'].startswith(chassis.startup_instructions(mapped))  # then the skills, BASE-059
+    assert body['connect']['text'].startswith(prompt_files.module('mcp', 'connect_use'))  # the person's own session
     assert body['connect']['chars'] == len(body['connect']['text']) and body['host_limit'] == 2048
     assert body['glossary']['text'] == mcp.glossary(mapped)
     assert body['glossary']['index']['text'] == mcp.tools_text(mapped)
-    listed = mcp.listing(mapped)
-    assert sorted(tool['name'] for tool in body['tools']) == sorted(listed)  # every tool, as the Inspector lists them
-    assert all(tool['entry']['inputSchema'] == listed[tool['name']].schema() for tool in body['tools'])
+    # what a connecting agent is listed, as the Inspector lists it: the catalog that finds the rest by purpose, MCP-003
+    assert [tool['name'] for tool in body['tools']] == ['metaform_catalog']
     costs = [tool['model_bytes'] for tool in body['tools']]
     assert costs == sorted(costs, reverse=True)  # the costliest first, by what the model receives
     assert {one['entry']['uri'] for one in body['resources']} >= {one['uri'] for one in mcp.resource_list(mapped)}
@@ -11201,10 +11199,10 @@ def test_the_page_shows_what_an_agent_connecting_here_receives_from_the_folders_
     assert body['tool_bytes'] == sum(tool['bytes'] for tool in body['tools'])
     # what is paid, as Claude Code sends tools to the model: mcp__<server>__<tool>, description and input schema only
     sent = [json.dumps({'name': f'mcp__metaform__{tool["name"]}', 'description': tool['entry'].get('description', ''),
-                        'input_schema': listed[tool['name']].schema()}, ensure_ascii=False).encode('utf-8')
+                        'input_schema': tool['entry']['inputSchema']}, ensure_ascii=False).encode('utf-8')
             for tool in body['tools']]
     connect = len(body['connect']['text'].encode('utf-8'))
-    named = sum(len(f'mcp__metaform__{name}'.encode()) for name in listed)
+    named = sum(len(f'mcp__metaform__{tool["name"]}'.encode()) for tool in body['tools'])
     always = sum(tool['model_bytes'] for tool in body['tools'] if tool['always'])
     assert body['paid']['upfront'] == connect + sum(len(one) for one in sent)
     assert body['paid']['deferred'] == connect + named + always            # tool search hands the names first
