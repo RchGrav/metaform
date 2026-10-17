@@ -38,8 +38,10 @@ function made(name, room) {
   const look = LOOKS[name](), geometry = TUBE.clone();
   geometry.setAttribute('fiber', new THREE.InstancedBufferAttribute(new Float32Array(room * 4), 4)
     .setUsage(THREE.DynamicDrawUsage));
+  // in the scene's haze of depth, `depth3d`, as the nodes are
   const material = new THREE.ShaderMaterial({transparent: true, depthWrite: look.depthWrite,
-    blending: look.blending, vertexShader: FIBER_VERTEX, fragmentShader: look.fragment});
+    blending: look.blending, vertexShader: FIBER_VERTEX, fragmentShader: look.fragment, fog: true,
+    uniforms: THREE.UniformsUtils.clone(THREE.UniformsLib.fog)});
   const mesh = new THREE.InstancedMesh(geometry, material, room);
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   Object.assign(mesh, {frustumCulled: false, renderOrder: 9, count: 0});

@@ -228,7 +228,7 @@ export function choosePhysics(name) {
 // and U still step through them
 LENS.pick = barPick({id: 'lensmenu', label: 'Lens', key: 'L',
   title: "The 3D map's lens: how far its view opens as its pane grows tall",
-  list: [['natural', 'Natural', 'The view opens no wider than the eye sees, 55°'],
+  list: [['natural', 'Natural', 'The view opens to 60°, near things large and far things small'],
     ['wide', 'Wide', 'The view opens to 80° as the pane grows tall'],
     ['fisheye', 'Fisheye', 'The view opens to 120°, the whole map close around you']],
   choose: name => chooseLens(name)});

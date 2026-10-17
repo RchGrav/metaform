@@ -12,10 +12,10 @@ import {roam3d} from '/page/app/figures/roam3d.js';
 import {bubbles3d} from '/page/app/figures/bubble3d.js';
 import {mascotAwake} from '/page/app/figures/mascot.js';
 import {has, colorOf, dim, dimmed, colored, DRIFT, isGlass} from '/page/app/map3d/light.js';
-import {R, endOf, wave3d} from '/page/app/map3d/waves.js';
+import {R, wave3d} from '/page/app/map3d/waves.js';
 import {BLOOM} from '/page/app/map3d/bloom.js';
 import {GHOSTS, ghost3d, ghostSign, SIGNALS, paint3d} from '/page/app/map3d/ghosts.js';
-import {G, nodeSize, FRAMES, wake3d, STAGE} from '/page/app/map3d/graph3d.js';
+import {G, nodeSize, FRAMES, wake3d, STAGE, depth3d} from '/page/app/map3d/graph3d.js';
 import {picked, hovered} from '/page/app/map3d/pick3d.js';
 import {placeTip} from '/page/app/map3d/readout.js';
 import {FLOW} from '/page/app/flow/flow.js';
@@ -27,10 +27,11 @@ import {joinTitle} from '/page/app/map2d/inside.js';
 
 /* The labels of the 3D map, VIEW-038, are drawn inside the scene, each its element's whole name, wrapped at word
  * breaks, painted on a canvas and shown as a sign in the scene, standing out from the map's middle and facing the eye.
- * Its size and its opacity say how near it is: a label grows and shrinks with the map as it is zoomed, and from the
- * front of the map in view to its back it goes from its full size to a fifth of it; the nearest label is solid and the
+ * Its size and its opacity say how near it is: its letters are a size in the map, so perspective alone sizes them, a
+ * near name large and a far one small, as small as perspective makes it, with no least or most size on the screen: a
+ * name too far to read is left small, and a click brings its node into focus. The nearest label is solid and the
  * farthest two thirds clear, so the near names stand out where the map is dense and the depth of the map reads from its
- * names as well as its nodes. Each stands a set distance out from its node on the side away from the map's middle, and
+ * names as well as its nodes and edges, which the haze of depth dims alike, `depth3d`. Each stands a set distance out from its node on the side away from the map's middle, and
  * is drawn with the depth test as the nodes are, so the depth buffer orders labels and nodes together: a node nearer
  * the eye hides the part of a label behind it, a label behind a glass node is seen through the glass as the material
  * lets it through, VIEW-025, since what is behind the glass is drawn with the labels in it, and a nearer label is drawn
@@ -40,30 +41,28 @@ import {joinTitle} from '/page/app/map2d/inside.js';
  * each letter outlined in the background's color, `stroke`, in place of a box behind the name, so the name reads over
  * what is behind it without a bar hiding the map; the outline fades with the label by its depth. A label is painted
  * again only when what it shows changes. */
-/* How each physics preset treats the names, so a name can be read in every shape the map takes: `place`, where it
- * stands from its node, away from the map's middle ('out'), above it ('above'), or beside it, to the side of the way
- * service flows ('beside'); `least` and `most`, the screen pixels its letters are held between, so a map seen whole
- * never shrinks them to specks nor a near one blows them up; `declutter`, whether a name that would overlap one ranked
- * above it, the selection, its neighbours, then the hubs, then the rest, is left out until there is room; `farthest`,
- * how faint the farthest name is drawn, lower in a tight preset so the near ones stand out. Organic keeps the names as
- * they have always been drawn, held only from shrinking past reading. Every name faces the eye, never edge on or
- * mirrored. */
+/* How each physics preset treats the names: `place`, where a name stands from its node, away from the map's middle
+ * ('out'), above it ('above'), or beside it, to the side of the way service flows ('beside'); `farthest`, how faint
+ * the farthest name is drawn, lower in a tight preset so the near ones stand out. Every name is sized by perspective
+ * alone and every one is drawn: no preset holds the letters between a least and a most size on the screen, and none
+ * leaves a name out where names crowd. Restored 2026-10-17 at Rich's request: the clamps of 2026-10-12 held every far
+ * name at one size and flattened the map; scale and depth come before legibility at a distance, and a selection brings
+ * a node into focus. Every name faces the eye, never edge on or mirrored. */
 const LABEL_PRESETS = {
-  organic: {place: 'out', least: 9, most: Infinity, declutter: false, farthest: 0.34},
-  clusters: {place: 'above', least: 11, most: 22, declutter: true, farthest: 0.18},
-  spread: {place: 'out', least: 12, most: 24, declutter: true, farthest: 0.4},
-  calm: {place: 'out', least: 10, most: 22, declutter: true, farthest: 0.3},
-  down: {place: 'beside', least: 11, most: 22, declutter: true, farthest: 0.4},
-  across: {place: 'above', least: 11, most: 22, declutter: true, farthest: 0.4},
-  radial: {place: 'out', least: 11, most: 22, declutter: true, farthest: 0.4},
-  depth: {place: 'beside', least: 11, most: 22, declutter: true, farthest: 0.25},
-  flat: {place: 'above', least: 11, most: 22, declutter: true, farthest: 0.6},
+  organic: {place: 'out', farthest: 0.34},
+  clusters: {place: 'above', farthest: 0.18},
+  spread: {place: 'out', farthest: 0.4},
+  calm: {place: 'out', farthest: 0.3},
+  down: {place: 'beside', farthest: 0.4},
+  across: {place: 'above', farthest: 0.4},
+  radial: {place: 'out', farthest: 0.4},
+  depth: {place: 'beside', farthest: 0.25},
+  flat: {place: 'above', farthest: 0.6},
 };
 const RIGHT = new THREE.Vector3();
-/* Outward signs, as they have always been drawn: away from the map's middle, sized by perspective, the far ones fading
- * to LABEL.farthest, none left out; their letters raised only where they would fall below `least` screen pixels, so a
- * map seen whole, as Spread leaves it, never shrinks them past reading. */
-const OUTWARD_SIGNS = {place: 'out', least: 7, most: Infinity, declutter: false, farthest: 0.25};
+/* Outward signs, as they have always been drawn: away from the map's middle, sized by perspective alone, the far ones
+ * fading to `farthest`, none left out. */
+const OUTWARD_SIGNS = {place: 'out', farthest: 0.25};
 // whether the signs stand out from the map's middle, so they turn round their nodes as the layout moves, `holdMet`
 export const signsOut = () => (signsFacing() ? LABEL_PRESETS[PHYS.name] || LABEL_PRESETS.organic : OUTWARD_SIGNS).place
   === 'out';
@@ -150,7 +149,8 @@ function labelFor(node) {
   // drawn after the map, so it never cuts out an edge or a node behind it: written into the depth, each letter and
   // its outline hid every edge drawn after it, however far behind.
   const sprite = new THREE.Mesh(LABELS.plane, new THREE.MeshBasicMaterial({map: texture, side: THREE.DoubleSide,
-    depthTest: true, depthWrite: false, transparent: true, alphaTest: 0.02, toneMapped: false}));
+    depthTest: true, depthWrite: false, transparent: true, alphaTest: 0.02, toneMapped: false, fog: false}));
+  // its own fade by depth, `layerLabel`, is its haze: the scene's, `depth3d`, would fade it twice
   sprite.renderOrder = LABEL.after;
   sprite.raycast = () => {};                // a label is never picked in place of the node
   LABELS.group.add(sprite);
@@ -188,15 +188,12 @@ export function layered() {
   UP.set(0, 1, 0).applyQuaternion(frame.camera.quaternion);
   RIGHT.set(1, 0, 0).applyQuaternion(frame.camera.quaternion);
   const {spheres, nearest, deepest} = measureSpheres(frame);
+  depth3d(nearest, deepest);  // the haze of depth spans the front and back the names fade over
   const shown = [];
   for (const node of G.graphData().nodes) {
     const label = placeLabel(node, frame, nearest, deepest);
     if (label) shown.push(label);
   }
-  // A preset that declutters leaves out a name that would overlap one ranked above it: the selection first, then its
-  // neighbours, then the hubs by their joins, then the rest, nearest first; the selection and its neighbours always
-  // keep theirs.
-  if (frame.how.declutter) declutter(shown);
   shown.sort((one, two) => one.far - two.far);
   const grid = screenGrid(frame.area, spheres);
   shown.forEach((label, index) => layerLabel(label, index, shown.length, grid, frame));
@@ -244,7 +241,7 @@ function unchanged() {
   return same;
 }
 /* What every label of this frame is measured by: the camera, the screen, the world units a pixel spans at a depth,
- * the palette, read once a frame and not once a label, the treatment of the names, and each node's joins. */
+ * the palette, read once a frame and not once a label, and the treatment of the names. */
 function labelFrame() {
   const now = performance.now(), camera = G.camera(), area = STAGE;
   const height = area.height || 1, spread = camera.projectionMatrix.elements[5], ratio = G.renderer().getPixelRatio();
@@ -252,14 +249,9 @@ function labelFrame() {
   const depthOf = node => -AT.set(node.x, node.y, node.z).applyMatrix4(camera.matrixWorldInverse).z;
   const palette = {text: css('--text'), muted: css('--muted'), signal: css('--signal'), broken: css('--broken'),
     exclude: css('--exclude'), ground: css('--ground'), sans: css('--sans')};
-  // outward signs, web_signs' default, are drawn as they always were, held only from dropping below a readable floor;
-  // facing signs take their physics preset's treatment, `LABEL_PRESETS`
+  // facing signs take their physics preset's place and fade, `LABEL_PRESETS`; outward ones are drawn as they always were
   const how = signsFacing() ? LABEL_PRESETS[PHYS.name] || LABEL_PRESETS.organic : OUTWARD_SIGNS;
-  const degree = new Map();  // a hub is a node with many joins: its name ranks after the selection and its neighbours
-  if (how.declutter) for (const link of G.graphData().links) {
-    for (const end of [endOf(link.source), endOf(link.target)]) degree.set(end, (degree.get(end) || 0) + 1);
-  }
-  return {now, camera, area, height, ratio, perPixel, depthOf, palette, how, degree};
+  return {now, camera, area, height, ratio, perPixel, depthOf, palette, how};
 }
 /* Every node's sphere on the screen, the depths of the front and back of the names in view, and the map's middle,
  * its nodes' mean place, which the names stand away from. */
@@ -300,17 +292,15 @@ function placeLabel(node, frame, nearest, deepest) {
   const look = lookOf(tag.classes, frame.palette), how = frame.how;
   const depth = frame.depthOf(node), unit = frame.perPixel(Math.max(depth, 1e-3));
   const radius = Math.cbrt(nodeSize(node)) * 3;
-  // Its letters are a set size in the map, in a set ratio to the balls, so the eye's own perspective makes it larger
-  // near and smaller far as it does the nodes; `grown` is the size it is seen at, the pixels on the screen for one of
-  // its canvas. From the front of the map in view to its back it fades, `back`.
+  // Its letters are a set size in the map, in a set ratio to the balls, so the eye's own perspective alone makes it
+  // larger near and smaller far as it does the nodes, with no least or most on the screen; `seen` is the size it is
+  // seen at, the pixels on the screen for one of its canvas. From the front of the map in view to its back it fades,
+  // `back`.
   const back = deepest > nearest ? Math.min(1, Math.max(0, (depth - nearest) / (deepest - nearest))) : 0;
-  const grown = LABEL.letters / LABEL.size / unit;
+  const seen = LABEL.letters / LABEL.size / unit, size = LABEL.letters / LABEL.size;
   const shape = wrapped(tag.text, look, tag.id === SMALL_NAME.id && small3d());
   tag.lookNow = look;
   tag.shape = shape;
-  // its letters held between the preset's least and most screen pixels, `how`, so they are read at any zoom
-  const onScreen = grown * LABEL.size, held = Math.min(how.most, Math.max(how.least, onScreen)) / onScreen;
-  const seen = grown * held, size = LABEL.letters / LABEL.size * held;
   const wide = shape.width * size, tall = shape.height * size;
   placeSign(tag.sprite, node, how.place, radius, wide, tall);
   tag.sprite.scale.set(wide, tall, 1);
@@ -319,8 +309,7 @@ function placeLabel(node, frame, nearest, deepest) {
     top: anchor.y - shape.height * seen / 2, bottom: anchor.y + shape.height * seen / 2};
   tag.grown = seen;
   tag.ghost = titled ? 1 : ghostSign(node, seen, frame.now);  // a part not built has a faint name, VIEW-027
-  const rank = node.id === S.selected ? 0 : S.neighbors.has(node.id) ? 1 : 2;
-  return {tag, far: depth, look, back, rank, hub: frame.degree.get(node.id) || 0};
+  return {tag, far: depth, look, back};
 }
 /* Pinned in the map a set distance from its node, so it is a thing of the scene: it swings round its node as the map
  * turns and goes behind the node as anything behind it does. Over the node, as a cluster's names sit over its knot;
@@ -369,15 +358,6 @@ function outward(node) {
 }
 const overlaps = (one, two) => !(one.right <= two.left || two.right <= one.left || one.bottom <= two.top
   || two.bottom <= one.top);
-function declutter(shown) {
-  const kept = [];
-  for (const label of [...shown].sort((one, two) => one.rank - two.rank || two.hub - one.hub || one.far - two.far)) {
-    const box = label.tag.rect;
-    const clash = kept.some(other => overlaps(box, other));
-    if (clash && label.rank > 1) { label.tag.sprite.visible = false; label.out = true; continue; }
-    kept.push(box);
-  }
-}
 /* The screen cut into cells, each holding the spheres whose bounds reach into it and the labels already layered there,
  * so a label is tested only against what shares a cell with it, not against every sphere and every nearer label. A
  * place off the screen counts in the nearest edge cell, which keeps every overlap in some shared cell. Kept from frame
@@ -430,7 +410,7 @@ function layerLabel(label, index, count, grid, {how, palette, ratio}) {
   for (const cell of cells) {
     if (grid.labels[cell].some(other => overlaps(box, other))) { covered = true; break; }
   }
-  if (!label.out) for (const cell of cells) grid.labels[cell].push(box);  // a nearer label for those after it
+  for (const cell of cells) grid.labels[cell].push(box);  // a nearer label for those after it
   const tag = label.tag;
   tag.under = (behind || covered) && !(MEET.on && tag === tags.get(MEET.back?.id));
   tag.z = count - index;

@@ -33,8 +33,12 @@ const LENS_NEXT = {natural: 'wide', wide: 'fisheye', fisheye: 'natural'};
 /* The signs, web_signs: facing, the default, each of the map's names turned to the eye that sees it, the person's and
  * every agent's; or outward, standing out from the map's middle as signs in the scene. The View menu switches them. */
 export const SIGNS = {button: null, words: {outward: 'Outward', facing: 'Facing'}};
-export const FOV3D = {least: 30, most: 55};  // the 3D map's field of view in degrees, top to bottom, `resize`
-export const LENSES = {natural: 55, wide: 80, fisheye: 120};  // web_lens: the widest the view opens
+/* The 3D map's field of view in degrees, top to bottom, `resize`: it opens at the lens's widest, and a shorter pane
+ * narrows it no further than `least`, so near things stay large and far things small, a view with depth, and never a
+ * long lens that flattens the map. Widened 2026-10-17 at Rich's request (from 30 to 55, opening at three.js's 50),
+ * for scale and depth. */
+export const FOV3D = {least: 45, most: 60};
+export const LENSES = {natural: 60, wide: 80, fisheye: 120};  // web_lens: the widest the view opens
 export const LENS_WORDS = {natural: 'Natural', wide: 'Wide', fisheye: 'Fisheye'};
 export function readView() {
   const project = S.project;

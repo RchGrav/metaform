@@ -468,13 +468,19 @@ const LIGHT = `
     vec3 key = normalize(vec3(-0.45, 0.6, 0.65));
     return sunOn > 0.5 ? normalize(normalize(sun - at) * 1.1 + key) : key;
   }`;
+// a body and its halo take the page's haze of depth, `depth3d`, through three.js's fog, `FOGGED`
 const BODY_VERTEX = `varying vec3 vNormal; varying vec3 vView; varying vec3 vAt; varying vec3 vLocal;
+  #include <fog_pars_vertex>
   void main() {
     vec4 at = modelViewMatrix * vec4(position, 1.0);
     vAt = at.xyz; vView = normalize(-at.xyz); vLocal = position;
     vNormal = normalize(normalMatrix * normal);
     gl_Position = projectionMatrix * at;
+    vec4 mvPosition = at;
+    #include <fog_vertex>
   }`;
+// the uniforms a material in the haze (`fog: true`) carries: three.js fills them from the scene's fog as it draws
+const FOGGED = () => THREE.UniformsUtils.clone(THREE.UniformsLib.fog);
 /* One shader for every body, compiled once for each kind. Its surface is in the node's color, lit by the star; its
  * rim is its atmosphere, which rises over full brightness as the node is selected, so the bloom rings it; the light
  * the page gives a node that signals, `emissive`, is added over it all as it is to the glass. */
@@ -482,6 +488,7 @@ const BODY_FRAGMENT = `${NOISE}${LIGHT}
   uniform vec3 color; uniform vec3 emissive; uniform float emissiveIntensity; uniform float opacity;
   uniform float seed; uniform float select; uniform float dim; uniform float time; uniform float radius;
   varying vec3 vNormal; varying vec3 vView; varying vec3 vAt; varying vec3 vLocal;
+  #include <fog_pars_fragment>
   void main() {
     vec3 N = normalize(vNormal), V = normalize(vView);
   #if KIND == 4 || KIND == 1
@@ -550,16 +557,17 @@ const BODY_FRAGMENT = `${NOISE}${LIGHT}
     float signal = emissiveIntensity * (0.1 + 0.55 * pow(fres, 0.8));
     c = c * (1.0 - 0.08 * min(emissiveIntensity, 1.0)) + emissive * signal;
     gl_FragColor = vec4(c, opacity);
+    #include <fog_fragment>
   }`;
 /* The material of a body. It answers to what the page sets on a node's material, color, emissive,
  * emissiveIntensity and opacity, so the page dims, flashes, pulses and fades it as it does the glass, and it clones
  * as the page clones a node's material before it lights one node alone. */
 class BodyMaterial extends THREE.ShaderMaterial {
   constructor(kind = 'plain') {
-    super({vertexShader: BODY_VERTEX, fragmentShader: BODY_FRAGMENT, defines: {KIND: KIND[kind]},
+    super({vertexShader: BODY_VERTEX, fragmentShader: BODY_FRAGMENT, defines: {KIND: KIND[kind]}, fog: true,
       uniforms: {color: {value: new THREE.Color()}, emissive: {value: new THREE.Color(0, 0, 0)},
         emissiveIntensity: {value: 0}, opacity: {value: 1}, seed: {value: 0}, select: {value: 0}, dim: {value: 0},
-        radius: {value: 1}}});
+        radius: {value: 1}, ...FOGGED()}});
     this.kind = kind;
     this.share();
   }
@@ -577,6 +585,7 @@ const HALO_FRAGMENT = `${LIGHT}
   uniform vec3 color; uniform vec3 emissive; uniform float emissiveIntensity; uniform float opacity;
   uniform float select; uniform float dim; uniform float edge; uniform float strength;
   varying vec3 vNormal; varying vec3 vView; varying vec3 vAt; varying vec3 vLocal;
+  #include <fog_pars_fragment>
   void main() {
     vec3 N = normalize(vNormal), V = normalize(vView);
     float inner = clamp(-dot(N, V) / edge, 0.0, 1.0), a = pow(inner, 3.2);
@@ -584,13 +593,14 @@ const HALO_FRAGMENT = `${LIGHT}
     vec3 c = mix(color, vec3(1.0), 0.22) * side * strength * (0.6 + 1.6 * select) * (1.0 - 0.85 * dim)
       + emissive * emissiveIntensity * 0.75;
     gl_FragColor = vec4(c * a * opacity, 1.0);
+    #include <fog_fragment>
   }`;
 function halo(host, radius, scale = 1.24, strength = 1) {
   const material = new THREE.ShaderMaterial({vertexShader: BODY_VERTEX, fragmentShader: HALO_FRAGMENT,
-    side: THREE.BackSide, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    side: THREE.BackSide, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: true,
     uniforms: {color: {value: new THREE.Color()}, emissive: {value: new THREE.Color()}, emissiveIntensity: {value: 0},
       opacity: {value: 1}, select: {value: 0}, dim: {value: 0}, strength: {value: strength},
-      edge: {value: Math.sqrt(1 - 1 / (scale * scale))}, ...U.shared}});
+      edge: {value: Math.sqrt(1 - 1 / (scale * scale))}, ...U.shared, ...FOGGED()}});
   const shell = new THREE.Mesh(sphere(radius * scale, 32, 20), material);
   follows(shell, host, uniforms => {
     const from = host.material;
@@ -611,6 +621,7 @@ const BATCH_VERTEX = `attribute vec4 lookA; attribute vec4 lookB; attribute vec4
   varying vec3 vNormal; varying vec3 vView; varying vec3 vAt; varying vec3 vLocal;
   varying vec3 color; varying float opacity; varying vec3 emissive; varying float emissiveIntensity;
   varying float seed; varying float select; varying float dim;
+  #include <fog_pars_vertex>
   void main() {
     vec4 at = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
     vAt = at.xyz; vView = normalize(-at.xyz); vLocal = position;
@@ -618,6 +629,8 @@ const BATCH_VERTEX = `attribute vec4 lookA; attribute vec4 lookB; attribute vec4
     color = lookA.rgb; opacity = lookA.a; emissive = lookB.rgb; emissiveIntensity = lookB.a;
     seed = lookC.x; select = lookC.y; dim = lookC.z;
     gl_Position = projectionMatrix * at;
+    vec4 mvPosition = at;
+    #include <fog_vertex>
   }`;
 const OWN = `uniform vec3 color; uniform vec3 emissive; uniform float emissiveIntensity; uniform float opacity;`;
 const GIVEN = `varying vec3 color; varying vec3 emissive; varying float emissiveIntensity; varying float opacity;`;
@@ -633,16 +646,17 @@ export function batch(object) {
   const material = object.material;
   if (material instanceof BodyMaterial && !material.transparent && material.visible && !object.userData.host) {
     return {key: `body:${material.kind}:${material.uniforms.radius.value}`, look: material, make: () =>
-      new THREE.ShaderMaterial({vertexShader: BATCH_VERTEX, fragmentShader: BATCH_BODY,
-        defines: {KIND: KIND[material.kind]}, uniforms: {radius: {value: material.uniforms.radius.value}, ...U.shared}})};
+      new THREE.ShaderMaterial({vertexShader: BATCH_VERTEX, fragmentShader: BATCH_BODY, fog: true,
+        defines: {KIND: KIND[material.kind]},
+        uniforms: {radius: {value: material.uniforms.radius.value}, ...U.shared, ...FOGGED()}})};
   }
   const host = object.userData.host?.material;
   if (material?.fragmentShader === HALO_FRAGMENT && host instanceof BodyMaterial) {
     const {edge, strength} = material.uniforms;
     return {key: `halo:${edge.value}:${strength.value}`, look: host, make: () =>
       new THREE.ShaderMaterial({vertexShader: BATCH_VERTEX, fragmentShader: BATCH_HALO, side: THREE.BackSide,
-        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-        uniforms: {edge: {value: edge.value}, strength: {value: strength.value}, ...U.shared}})};
+        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: true,
+        uniforms: {edge: {value: edge.value}, strength: {value: strength.value}, ...U.shared, ...FOGGED()}})};
   }
   return null;
 }
@@ -968,11 +982,14 @@ function hashOf(text) {
  * is added to what is behind it and writes no depth. The page draws every filament in one draw, `fibers3d`, whose
  * shader gives each its tint and strength, `vFiber`. */
 export const FILAMENT = `varying vec3 vNormal; varying vec3 vView; varying vec4 vFiber;
+      #include <fog_pars_fragment>
       void main() { vec3 tint = vFiber.rgb; float strength = vFiber.a;
         float facing = abs(dot(normalize(vNormal), normalize(vView)));
         float core = pow(facing, 2.4), thread = pow(facing, 16.0);
         vec3 c = (tint * (0.16 + 0.74 * core) + vec3(0.95) * thread * 0.45) * strength;
-        gl_FragColor = vec4(min(c, vec3(0.98)), 1.0); }`;
+        gl_FragColor = vec4(min(c, vec3(0.98)), 1.0);
+        #include <fog_fragment>
+      }`;
 
 /* ---------- the flow ---------- */
 

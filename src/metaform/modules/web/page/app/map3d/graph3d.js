@@ -38,25 +38,60 @@ import {posted} from '/page/app/intake/intake.js';
  * of one tube, its tint and opacity its own, `fiber`. `version` counts the changes to what the links are or how they
  * look, so each link's look is read again only then. */
 export const FIBERS = {version: 0};
+// a fiber takes the haze of depth as the nodes do, `depth3d`, through three.js's own fog
 export const FIBER_VERTEX = `attribute vec4 fiber; varying vec3 vNormal; varying vec3 vView; varying vec4 vFiber;
+      #include <fog_pars_vertex>
       void main() { vec4 at = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
         vNormal = normalize(normalMatrix * mat3(instanceMatrix) * normal);
-        vView = normalize(-at.xyz); vFiber = fiber; gl_Position = projectionMatrix * at; }`;
+        vView = normalize(-at.xyz); vFiber = fiber; gl_Position = projectionMatrix * at;
+        vec4 mvPosition = at;
+        #include <fog_vertex>
+      }`;
 export const FIBER_FRAGMENT = `varying vec3 vNormal; varying vec3 vView; varying vec4 vFiber;
+      #include <fog_pars_fragment>
       void main() { vec3 tint = vFiber.rgb; float opacity = vFiber.a;
         float facing = abs(dot(normalize(vNormal), normalize(vView)));
         float core = pow(facing, 1.6), spark = pow(facing, 12.0);
-        gl_FragColor = vec4(tint * min(1.0, 0.4 + 0.5 * core + 0.3 * spark), opacity * (0.25 + 0.75 * core)); }`;
+        gl_FragColor = vec4(tint * min(1.0, 0.4 + 0.5 * core + 0.3 * spark), opacity * (0.25 + 0.75 * core));
+        #include <fog_fragment>
+      }`;
 export let G = null;
-export const nodeSize = node => node.t === 'el' ? (node.role === 'DE' ? 9 : node.role === 'CQU' ? 7 : 4)
-  : node.t === 'purpose' ? 0.9 : node.t === 'item' ? 0.3 : 0.35;
-export const linkWidthOf = link => link.k === 'tree' ? 0.4 : link.k === 'layer' || link.k === 'item' ? 0.25
-  : link.k === 'relation' ? 0.5 : 0.9;
+/* The size of a node and the width of a link, in the map's units, so the eye's perspective alone sizes them: a node or
+ * an edge near the eye is large and thick, one far away small and fine, and scale reads from them as it does from the
+ * names. Nothing is held to a size on the screen. Raised 2026-10-17 at Rich's request, the edges and nodes having read
+ * as too thin and small: a node's value doubled (its ball a quarter wider), each link twice as wide. */
+export const nodeSize = node => node.t === 'el' ? (node.role === 'DE' ? 18 : node.role === 'CQU' ? 14 : 8)
+  : node.t === 'purpose' ? 1.8 : node.t === 'item' ? 0.6 : 0.7;
+export const linkWidthOf = link => link.k === 'tree' ? 0.8 : link.k === 'layer' || link.k === 'item' ? 0.5
+  : link.k === 'relation' ? 1 : 1.8;
+/* The haze of depth, VIEW-038: what is far from the eye is dimmed toward the background, the theme's ground, as the
+ * air dims a far hill, so the nodes, the edges and the figures say their depth as the names do. Its span is the names'
+ * own fade, from the front of the names in view, where nothing is hazed, to past their back, where a thing keeps
+ * `HAZE.back`'s complement of its own colour; it is set each time the names are placed, `layered`, so a still frame
+ * changes nothing. One three.js fog, the scene's, kept for the page's life: the materials three.js draws take it as
+ * they are, and the page's own shaders, the fibers and outer space's bodies, take it through three.js's fog chunks.
+ * The labels fade by their own depth and take none. */
+export const HAZE = {fog: new THREE.Fog(0x000000, 1e9, 2e9), back: 0.6, span: 0};
+// the share of the fog's span at which three.js's linear fog, a smoothstep, reaches `back`: the smoothstep's inverse
+HAZE.span = 0.5 - Math.sin(Math.asin(1 - 2 * HAZE.back) / 3);
+export function depth3d(nearest, deepest) {
+  const fog = HAZE.fog;
+  if (!(deepest > nearest) || !Number.isFinite(nearest) || !Number.isFinite(deepest)) {
+    fog.near = 1e9; fog.far = 2e9;
+    return;
+  }
+  fog.near = nearest;
+  fog.far = nearest + (deepest - nearest) / HAZE.span;
+}
 /* The background is part of the scene as well as the graph's clear color. The render chain clears its buffer before
  * three.js draws into it, with the clear color last converted for the screen; three.js clears a scene's background
  * itself in the color space of whatever it draws into, so with the bloom on the background is the one drawn without
  * it, VIEW-022. */
-export function grounded() { G.scene().background = new THREE.Color(css('--ground')); }
+export function grounded() {
+  G.scene().background = new THREE.Color(css('--ground'));
+  HAZE.fog.color.set(css('--ground'));  // the haze of depth is the ground's colour
+  G.scene().fog = HAZE.fog;
+}
 /* The dots that travel a join are drawn solid, VIEW-005, as the approved prototype draws them. The graph library gives
  * a dot three times the opacity of the links, which a picture drawn on the screen holds at 1. The pictures this page
  * draws for the glass, and for the bloom while it is on, keep light over full brightness and hold no such limit: with
