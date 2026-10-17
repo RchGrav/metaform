@@ -12,7 +12,7 @@ runner's identity, or a Metaform runner, a Metaform MCP server or an AI tool wor
 server finds that process from the connection (Linux, `/proc/net/tcp`), so an agent that forges Origin or clears
 METAFORM_ROLE is still refused. What it cannot see: a sender outside Linux's process table, such as a browser or a
 program on the Windows side of WSL or another machine, which is taken as the person, as before. The commands such a
-write runs carry the server's vouch (`METAFORM_PAGE_VOUCH`, a secret held in memory and kept on disk only as its
+write runs, and every other write the page sends with its key and no agent sent, carry the server's vouch (`METAFORM_PAGE_VOUCH`, a secret held in memory and kept on disk only as its
 hash beside the server's pid), so the person's write still runs when an agent started the server. The home token on
 loopback (H13 part 2, VIEW-002) remains the stronger fix and is tracked separately from SEC-F2.
 

@@ -1248,37 +1248,33 @@ class Handler(BaseHTTPRequestHandler):
                 self.gui.pages_changed(shown)
 
     def write(self, path: str) -> None:
-        """One of the eighteen writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body. A
-        write that is the person's alone, PERSONS_WRITES, is also refused when the process that sent it is an agent's,
-        whatever headers it sent, CLI-011; the commands it runs carry this server's vouch."""
+        """One of the writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body. Whether a
+        write is the person's is decided once, for every route: the page's key is held and no agent's process sent it.
+        Every write that is the person's carries this server's vouch, so the commands it runs act as the person and a
+        message carries their word, CLI-011, whatever the route; no route loses it by being left off a list. A write
+        that is the person's alone, PERSONS_WRITES, is refused when it is not the person's; any other is taken as
+        before, carrying no vouch."""
         if not self.same_origin():
             return self.send(403, {'error': "A write is taken only from the web GUI's own page."})
+        keyed = self.gui.page_key_held(self.page_key_given())
+        sent_by = chassis.page_caller(self.client_address[:2], self.connection.getsockname()[:2],
+                                      home.home()) if keyed else None
         if path in PERSONS_WRITES:
-            if not self.gui.page_key_held(self.page_key_given()):
+            if not keyed:
                 return self.send(403, {'error': f"{path} is the person's to do on the page itself, and this request "
                                                 'carries no key this server gave a page it served.',
                                        'next': 'ask the person in chat; they do it on the page'})
-            sent_by = chassis.page_caller(self.client_address[:2], self.connection.getsockname()[:2], home.home())
             if sent_by is not None:
                 return self.send(403, {'error': f"{path} is the person's to do on the page, and this request came "
                                                 f'from an agent: {sent_by}.',
                                        'next': 'ask the person in chat; they do it on the page'})
-            VOUCHED.server = self.gui
-            try:
-                return self.writing(path)
-            finally:
-                VOUCHED.server = None
-        if path in WORDED_WRITES and self.gui.page_key_held(self.page_key_given()) and chassis.page_caller(
-                self.client_address[:2], self.connection.getsockname()[:2], home.home()) is None:
-            # the person's own message in their system agent's chat, from the page with its key: the command that
-            # carries it has this server's vouch, so the turn it starts carries their word; a message without the key
-            # is still sent, with no word
-            VOUCHED.server = self.gui
-            try:
-                return self.writing(path)
-            finally:
-                VOUCHED.server = None
-        return self.writing(path)
+        if not keyed or sent_by is not None:
+            return self.writing(path)
+        VOUCHED.server = self.gui
+        try:
+            return self.writing(path)
+        finally:
+            VOUCHED.server = None
 
     def writing(self, path: str) -> None:
         """The write itself, once it is known to come from the page, and from the person where it must."""
@@ -3160,7 +3156,7 @@ def chosen_base(given: dict[str, Any]) -> str | None:
 
 def based(base: str | None) -> dict[str, str] | None:
     """The environment of a command run on `base`, METAFORM_BASE set to it; None, this process's own, with none. A
-    command run for a write of the person's alone carries this server's vouch too, `vouched`."""
+    command run for a write that is the person's carries this server's vouch too, `vouched`."""
     return vouched({**os.environ, BASE_VARIABLE: base} if base else None)
 
 
@@ -3179,12 +3175,6 @@ PERSONS_WRITES = frozenset({
     '/api/move', '/api/ticket', '/api/distribute'})
 
 
-# The writes that carry the person's word when the page sends them with its key: a message in an agent's chat, whose
-# turn of the person's system agent may then do the reversible work of orchestration they asked for
-# (`metaform.module.persons_word`). Without the key they are taken as before, carrying no word.
-WORDED_WRITES = frozenset({'/api/dispatch-message'})
-
-
 class _Vouched(threading.local):
     """The server whose person's write this thread is serving, so the commands it runs carry its vouch."""
     server: Any = None
@@ -3194,8 +3184,8 @@ VOUCHED = _Vouched()
 
 
 def vouched(env: dict[str, str] | None) -> dict[str, str] | None:
-    """`env`, None for this process's own, with this server's vouch while the thread serves a write of the person's
-    alone: the command it runs then acts as the person, since its parent is this server, CLI-011."""
+    """`env`, None for this process's own, with this server's vouch while the thread serves a write that is the
+    person's: the command it runs then acts as the person, since its parent is this server, CLI-011."""
     server = VOUCHED.server
     if server is None:
         return env

@@ -182,3 +182,53 @@ def test_autostart_checkbox_reads_each_project_and_only_changes_on_a_click(run, 
     page.wait_for_function('() => window.metaform.loaded()')
     assert not control.is_checked() and len(writes) == 2
 
+
+def test_stop_all_from_the_page_turns_autostart_off_and_every_stop_reads_as_the_persons(
+        run, web, mapped, browser, tmp_path, dispatch_runners):  # noqa: F811  imported fixtures keep their names for pytest discovery
+    """UX combined replay, 2026-10-17: the page's Stop all, run by a server with no terminal as `metaform web start`
+    runs it, carried no consent of the person's, so Autostart stayed on, agents started again seconds later, and every
+    stop read as a runner that died. Stop all from the page is the person's: Autostart turns off, nothing runs after
+    it, and each session reads stopped by the person, with no hand-over raised."""
+    import time
+
+    from metaform.data import Node, Store
+    from metaform.modules.dispatch.tests.test_dispatch import alive, eventually
+
+    run('enable', 'dispatch')
+    fake = Path(__file__).parents[2] / 'dispatch' / 'tests' / 'fake_agent.py'
+    log = tmp_path / 'fake.jsonl'
+    run('set', '--dispatch-claude', f'"{sys.executable}" "{fake}"', '--dispatch-agents=2', cwd=mapped)
+    store = Store('proj')
+    for ticket in store.work(open=True, limit=0).results:
+        store.finish_work(ticket.id, 'Existing fixture work completed.')
+    node = Node('element', store.element('code.alarm.audible').id)
+    for n in range(4):
+        store.add_work(node, 'unbuilt', task=f'Held change {n}')
+    run('web', '--json', env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'hold'})
+
+    def sessions():
+        with Store('proj', module='dispatch').tables(write=False) as tx:
+            return [dict(row) for row in tx.rows('agent_sessions', limit=0).results]
+    try:
+        page, problems, _ = opened(browser, web)
+        page.wait_for_function('() => window.metaform.loaded()')
+        page.wait_for_function('() => !document.querySelector("#autostartAgents").disabled')
+        page.get_by_role('switch', name='Autostart').check()
+        eventually(lambda: len([one for one in sessions() if one['state'] == 'running']) == 2, limit=60)
+        page.click('#agentsMenuBtn')
+        page.click('#stopAllBtn')
+        page.wait_for_selector('#confirm:not([hidden])')
+        page.click('#confirm button.confirm')
+        page.wait_for_function('() => !document.querySelector("#stopAllBtn").disabled')
+        status, autostart = api(web, '/api/dispatch-autostart?project=proj')
+        assert status == 200 and autostart['value'] is False, autostart
+        time.sleep(10)  # a deadline: what an Autostart left on would have started by now
+        ended = sessions()
+        assert ended and all(one['state'] == 'ended' for one in ended), ended
+        assert not [one['pid'] for one in ended if isinstance(one.get('pid'), int) and alive(one['pid'])]
+        assert {one['how'] for one in ended} == {'stopped by the person'}, [one['how'] for one in ended]
+        assert 'handed-over' not in run('dispatch', 'signals', '--json', cwd=mapped, ok=False).stdout
+        assert problems == []
+    finally:
+        dispatch_runners.extend((one, mapped, log) for one in sessions() if isinstance(one.get('pid'), int))
+

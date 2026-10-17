@@ -279,7 +279,9 @@ export function elicitationCard(line, work, tag, agent) {
     h('p', {class: 'why'}, ...linked(data.message || '')),
     data.problem && waiting ? h('p', {class: 'hint'}, `The last answer could not be read: ${data.problem}.`) : null,
     data.deadline && waiting
-      ? h('p', {class: 'hint'}, `It goes on without your answer at ${dated(data.deadline)}.`) : null,
+      ? h('p', {class: 'hint'}, data.consent  // unanswered, a consent card is closed and its call refused
+        ? `Unanswered by ${dated(data.deadline)}, it is closed and nothing runs.`
+        : `It goes on without your answer at ${dated(data.deadline)}.`) : null,
     data.secret && waiting
       ? h('p', {class: 'hint'}, 'It asks for a secret: the answer is kept out of the thread.') : null,
     waiting ? acts
