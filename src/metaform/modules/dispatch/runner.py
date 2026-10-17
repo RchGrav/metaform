@@ -143,6 +143,7 @@ from . import (
     ticket,
     ticket_label,
     today,
+    waiting_in,
     wanted_options,
     work_line,
     workflow_skill,
@@ -3154,6 +3155,22 @@ class Session:
             return {**cast(dict[str, Any], cover['word']), 'covered': True}
         return None
 
+    async def joined(self, word: str, tickets: Sequence[str], plan: Sequence[str]) -> dict[str, Any] | None:
+        """`tickets`, set to wait on `plan`, join the work the person's word `word` covers, in any turn in flight of
+        their system agent, when every one of `plan` (the open tickets they wait on) is held by that cover: the next
+        wave the agent planned of that work. Kept in the project's store. None, and nothing joins, when `plan` is
+        empty or any of it is outside that cover, or stopped."""
+        cover = self.covers.get(word)
+        if cover is None or not plan:
+            return None
+        held = cast(set[str], cover['tickets'])
+        if not set(plan) <= held or await self.covering(plan) is None:
+            return None  # covering also ends a cover whose work is done
+        held.update(tickets)
+        cast(set[str], cover['stopped']).difference_update(tickets)
+        await asyncio.to_thread(self.keep_cover, word)
+        return {**cast(dict[str, Any], cover['word']), 'covered': True}
+
     def stopped_work(self, tickets: Sequence[str]) -> bool:
         """Whether the person stopped the work every one of `tickets` was in, so a refusal says that and not that no
         word of theirs started it."""
@@ -3170,17 +3187,20 @@ class Session:
                 continue
         return False
 
-    async def uncover(self, tickets: Sequence[str] | None, keep: str = '') -> int:
-        """The person stopped work: each cover holding one of `tickets` ends, every cover with None (Stop all), so
-        their word for it starts nothing more, and a later refusal says the person stopped it. The cover of `keep`, the
-        word the stop itself was made on, only lets go of the tickets stopped: the rest of the work that same message
-        started goes on."""
+    async def uncover(self, tickets: Sequence[str] | None) -> int:
+        """The person stopped work: each cover holding one of `tickets` lets go of those tickets and the tickets of it
+        that wait on them, in turn, so their word starts nothing more of that part, and a later refusal says the
+        person stopped it; the rest of the work that word started goes on. With None (Stop all) every cover ends."""
         ended = 0
         for key, cover in list(self.covers.items()):
             held, stopped = cast(set[str], cover['tickets']), cast(set[str], cover['stopped'])
             if tickets is not None and not held & set(tickets):
                 continue
-            let_go = held & set(tickets) if key == keep and tickets is not None else set(held)
+            if tickets is None:
+                let_go = set(held)
+            else:
+                let_go = held & set(tickets)
+                let_go |= await asyncio.to_thread(waiting_in, self.store, let_go, held - let_go)
             held -= let_go
             stopped |= let_go
             ended += not held
@@ -3304,7 +3324,8 @@ class Session:
         holds every one of `tickets`, so no other turn's call writes a record of a word it never had. On the word the
         turn carries, with `widen` (a start, a release, an order, a ticket added to wait on others), `tickets` and
         `plan`, the tickets that wait on them and the open tickets they wait on, become the work it covers in later
-        turns, kept in the project's store; a later turn never widens it."""
+        turns, kept in the project's store. In a later turn, a ticket set to wait only on tickets of one work the word
+        covers, `plan` (the open tickets it waits on), joins that work, `joined`: the next wave the agent planned."""
         current = self.word_now()
         if current is not None and current.get('id') == word and said.strip():
             if tickets and widen:
@@ -3314,6 +3335,8 @@ class Session:
                 await asyncio.to_thread(self.keep_cover, word)
         else:
             current = await self.covering(tickets)
+            if current is None and widen and tickets and said.strip():
+                current = await self.joined(word, tickets, plan)
             if current is None or current.get('id') != word or not said.strip():
                 return False
         quoted = ' '.join(str(current.get('text') or '').split())
@@ -4490,7 +4513,7 @@ class Session:
             elif op == 'uncover':  # the person stopped work, so their word for it starts nothing more
                 given = asked.get('tickets')
                 await self.reply(writer, {**said, 'ended': await self.uncover(
-                    None if given is None else listed(asked, 'tickets'), str(asked.get('keep') or ''))})
+                    None if given is None else listed(asked, 'tickets'))})
             elif op == 'timer':  # the agent's own timers, `dispatch timer`
                 await self.reply(writer, {**said, **self.timer(asked)})
             elif op == 'note':  # a peer note, `dispatch note`: kept in the thread, and the receiver's next turn

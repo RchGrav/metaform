@@ -2865,9 +2865,10 @@ def test_the_persons_word_covers_the_work_it_started_in_later_turns_until_they_s
     waiting on A, and P, which waits on X, done long ago; in that turn the agent adds S2 to wait on A. When A is done,
     the change that marks it wakes the system agent once, naming B and S2 as free; in that turn, which no message of
     the person's started, it starts both with no ask, each recorded with that message. Y, which also waits on X, and a
-    ticket outside the plan are refused. The cover is kept in the project's store, so a runner restarted on the
-    session holds it; once the person stops B, the refusal says the person stopped that work. Every agent here is the
-    fake agent."""
+    ticket outside the plan are refused. In that turn the agent adds S3 to wait on B, which joins the work, and a
+    ticket waiting on B and Y, which joins nothing. The cover is kept in the project's store, so a runner restarted on
+    the session holds it. When B is done, S3 is woken and started with no ask. Once the person stops S2, the refusal
+    says the person stopped that work, and A, B and S3 stay covered. Every agent here is the fake agent."""
     from metaform.data import Store
     from metaform.module import context
     from metaform.modules.dispatch import plan_of, runner
@@ -2905,7 +2906,7 @@ def test_the_persons_word_covers_the_work_it_started_in_later_turns_until_they_s
     def waves():
         return [one for one in prompts() if 'now free to start' in one['params']['prompt'][0]['text']]
 
-    added = None
+    added = third = None
     try:
         run('dispatch', 'message', dispatch.id, '--', 'Run the plan: A, then B; and profile it', cwd=dispatch.folder)
         eventually(lambda: len(prompts()) == 2)
@@ -2941,26 +2942,60 @@ def test_the_persons_word_covers_the_work_it_started_in_later_turns_until_they_s
         assert all('"Run the plan: A, then B; and profile it"' in note for note in notes), notes
         assert f'started Claude Code on ticket {second}' in notes[3], notes
 
+        # in that later turn the agent plans the next wave: S3 waits on B alone, so it joins the work; a ticket that
+        # waits on anything outside it joins nothing
+        planned = json.loads(run('map', 'work', 'op=add', 'title=Wave S3', 'task=Follow wave B', f'node={NODE}',
+                                 'condition=unbuilt', f'after_work=["{second}"]', '--json', cwd=dispatch.folder,
+                                 env=agent).stdout)
+        third = planned['id']
+        assert planned['on_word']['did'] == f'added ticket {third} to wait on {second}', planned
+        mixed = json.loads(run('map', 'work', 'op=add', 'title=Mixed', 'task=Follow B and Y', f'node={NODE}',
+                               'condition=unbuilt', f'after_work=["{second}", "{other}"]', '--json',
+                               cwd=dispatch.folder, env=agent).stdout)
+        assert 'on_word' not in mixed and dispatch.store.ticket(mixed['id']).work.held, mixed
+        refused = run('dispatch', 'start', mixed['id'], 'claude', cwd=dispatch.folder, env=agent, ok=False)
+        assert refused.returncode == 2 and 'is in no work their word started' in refused.stderr, refused.stderr
+        assert len(on_word()) == 6
+
         # a runner restarted on the session reads the cover its runner kept in the project's store
         restarted = runner.Session(context('dispatch', dispatch.folder, project='proj', nouns={'system': True}),
                                    Store('proj', module='dispatch'), dispatch.ticket(), 'claude', [], system=True,
                                    resume=session['session_id'])
         restarted.covers_kept()
         [kept] = restarted.covers.values()
-        assert {second, added, profile} <= kept['tickets'] and not {other, outside} & kept['tickets'], kept
+        assert {second, added, profile, third} <= kept['tickets'], kept
+        assert not {other, outside, mixed['id']} & kept['tickets'], kept
         for _ in range(100):  # a burst that does not concern the cover reads nothing and wakes nothing
             restarted.waves_due({'work_ids': [other, outside], 'kinds': ['ticket']}, ['work'])
             restarted.waves_due({'work_ids': [second], 'kinds': ['note', 'session']}, ['work'])
             restarted.waves_due({'tables': ['dispatch.session_lines']}, ['dispatch.session_lines'])
         assert not restarted.waves_named and not restarted.waves_reading
 
-        run('dispatch', 'stop', second, cwd=dispatch.folder)  # the person stops it: the cover ends
-        again = run('dispatch', 'start', second, 'claude', cwd=dispatch.folder, env=agent, ok=False)
+        # B is done: the wave the agent planned in a later turn is woken and started with no ask
+        run('map', 'work', 'op=done', 'why=Wave B landed.', f'id={second}', 'resolution=landed', cwd=dispatch.folder)
+        (gates / '3').touch()
+        wave = eventually(lambda: found[1] if len(found := waves()) == 2 else None)
+        told = wave['params']['prompt'][0]['text']
+        assert third in told and second in told and mixed['id'] not in told, told
+        started = json.loads(run('dispatch', 'start', third, 'claude', '--json', cwd=dispatch.folder,
+                                 env=agent).stdout)
+        assert started['on_word']['text'] == 'Run the plan: A, then B; and profile it', started
+
+        # the person stops S2 alone: only S2 and what waits on it leave the work; the rest goes on
+        run('dispatch', 'stop', added, cwd=dispatch.folder)
+        again = run('dispatch', 'start', added, 'claude', cwd=dispatch.folder, env=agent, ok=False)
         assert again.returncode == 2 and 'the person stopped the work ticket' in again.stderr and \
             'only their own word starts it again' in again.stderr, again.stderr
-        assert not running(second) and len(on_word()) == 5 and len(waves()) == 1
+        restarted.covers.clear()
+        restarted.covers_kept()
+        [kept] = restarted.covers.values()
+        assert {first, second, third, profile} <= kept['tickets'] and kept['stopped'] == {added}, kept
+        ordered = json.loads(run('map', 'work', 'op=edit', f'id={third}', f'after_work=["{second}"]', '--json',
+                                 cwd=dispatch.folder, env=agent).stdout)
+        assert ordered['on_word']['text'] == 'Run the plan: A, then B; and profile it', ordered
+        assert not running(added) and len(on_word()) == 8 and len(waves()) == 2
     finally:
-        for work in (first, second, outside, profile, other, *([added] if added else [])):
+        for work in (first, second, outside, profile, other, *([added] if added else []), *([third] if third else [])):
             run('dispatch', 'stop', work, cwd=dispatch.folder, ok=False)
         dispatch.stop()
 

@@ -1314,7 +1314,7 @@ def work(ctx: Context) -> Any:
                                    links=[_link(store, link) for link in nouns.get('links') or ()],
                                    **_optional(ctx, 'kind', 'note', 'task', 'held', 'reviewed', 'title'))
             _keep(store, added.id, nouns, notices)
-        return _on_word(ctx, _added_on_word(ctx, added.id, nouns.get('after_work')),
+        return _on_word(ctx, _added_on_word(ctx, store, added.id, nouns.get('after_work')),
                         _written(ctx, store, added, 'add', notices))
     if op == 'distribute':
         return _with_notices(_glyphed(store, _distribute(store, nouns['agents'])), notices)
@@ -1460,21 +1460,48 @@ def _orchestrating(ctx: Context, store: Store, op: str, work_id: str,
     if not did:
         return None
     said = f'{" and ".join(did)} on ticket {work_id}'
+    joined = _joining(ctx, store, f'Setting ticket {work_id} to wait on the work', nouns.get('after_work')) \
+        if op == 'edit' else None
+    if joined is not None:  # set to wait only on tickets of the work the person's word covers: it joins that work
+        return joined, said, [work_id]
     word = on_persons_word(ctx, f'Releasing or ordering tickets ({said})', tickets)
     return None if word is None else (word, said, [work_id])
 
 
-def _added_on_word(ctx: Context, work_id: str, waits: Any) -> tuple[dict[str, Any], str, list[str]] | None:
-    """A ticket the person's system agent adds to wait on others, `after_work`, in a turn the person's own message
-    started: the next wave of the work that message started, so it joins the work that word covers and is recorded in
-    the chat with it. Any other turn's word, a word covering earlier work, never grows it; the ticket an agent writes
-    stays held all the same, and the cover lets the system agent release or start it in a later turn."""
+def _added_on_word(ctx: Context, store: Store, work_id: str,
+                   waits: Any) -> tuple[dict[str, Any], str, list[str]] | None:
+    """A ticket the person's system agent adds to wait on others, `after_work`: in a turn the person's own message
+    started, the next wave of the work that message started; in any later turn, when every open ticket it waits on is
+    in one work their word covers that the person has not stopped, the wave the agent plans next of that work
+    (`_joining`). Either way it joins the work that word covers and is recorded in the chat with it. A ticket that
+    waits on anything outside that work joins none; the ticket an agent writes stays held all the same, and the cover
+    lets the system agent release or start it in a later turn."""
     if ctx.surface not in ('mcp', 'cli') or not isinstance(waits, list) or not waits:
         return None
     word = persons_word(ctx.folder, f'Adding ticket {work_id} to the work', ctx.project)
     if word is None or word.get('covered'):
+        word = _joining(ctx, store, f'Adding ticket {work_id} to the work', waits)
+    if word is None:
         return None
     return word, f'added ticket {work_id} to wait on {", ".join(str(one) for one in cast(list[Any], waits))}', [work_id]
+
+
+def _joining(ctx: Context, store: Store, what: str, waits: Any) -> dict[str, Any] | None:
+    """The person's word whose work holds every open ticket of `waits`, the tickets a ticket is set to wait on, so that
+    ticket joins the work as its next wave: asked of the system agent's runner with those tickets, which answers only
+    when all of them are held by one cover the person has not stopped (dispatch's `covering`). None when it waits on
+    no open ticket, on any outside that work, or the caller has no such word."""
+    if ctx.surface not in ('mcp', 'cli') or not isinstance(waits, list) or not waits:
+        return None
+    opened: list[str] = []
+    for one in cast(list[Any], waits):
+        try:
+            record = store.ticket(_work_id(store, str(one))).work
+        except (Stop, StoreError):
+            continue  # gone: waited on no more
+        if record.done is None:
+            opened.append(record.id)
+    return persons_word(ctx.folder, what, ctx.project, opened) if opened else None
 
 
 def _on_word(ctx: Context, word: tuple[dict[str, Any], str, list[str]] | None, result: Any) -> Any:

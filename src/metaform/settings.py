@@ -207,7 +207,8 @@ def refuse_held_control(keys: Iterable[str], folder: Path | None = None, command
 WORD_TURN = 'only in a turn the person\'s own message in its chat started (sent on the page, or at their terminal)'
 WORD_COVERS = (f'Their own system agent acts on it {WORD_TURN}, and, in any later turn, on a ticket of the work it '
                'started, released, ordered or added to wait on others on that message, with the tickets that wait on '
-               'it and the open tickets it waits on, until that work is done or the person stops it.')
+               'it and the open tickets it waits on, or added later to wait only on tickets of that work, until that '
+               'work is done or the person stops it.')
 
 
 # The module the current thread is loading. It is per thread, not a process global: while one thread loads a module,

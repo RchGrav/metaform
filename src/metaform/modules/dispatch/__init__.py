@@ -3577,12 +3577,19 @@ def persons_word_acted(store: Store, word: dict[str, Any], said: str, tickets: S
     a notice of the thread with the message that authorized it. On the message the turn carries, and with `widen` (a
     start, a release, an order or a ticket added to wait on others; not a stop), the runner keeps `tickets`, with the
     tickets that wait on them and the open tickets the work waits on (`plan_of`), as the work that word covers, so the
-    later waves of that work start in later turns with no second ask."""
+    later waves of that work start in later turns with no second ask. On a word that covers earlier work, `plan` is
+    instead the open tickets `tickets` wait on: the runner adds `tickets` to that work only when every one of those is
+    in it, the next wave the agent planned of it."""
     row = own_session(store, work, runner)
     if row is None:
         return
-    widen = widen and bool(tickets) and not word.get('covered')
-    plan = sorted(plan_of(store, tickets) - set(tickets)) if widen else []
+    widen = widen and bool(tickets)
+    if not widen:
+        plan: list[str] = []
+    elif word.get('covered'):
+        plan = sorted(waited_on(store, tickets) - set(tickets))
+    else:
+        plan = sorted(plan_of(store, tickets) - set(tickets))
     with contextlib.suppress(OSError):
         tell(row, 'acted', word=str(word.get('id') or ''), said=said, tickets=list(tickets), plan=plan, widen=widen)
 
@@ -3617,10 +3624,50 @@ def plan_of(store: Store, tickets: Iterable[str]) -> set[str]:
     return found
 
 
-def persons_stopped(store: Store, tickets: Sequence[str] | None, keep: str = '') -> None:
-    """The person stopped work, Stop on these tickets or Stop all (None): their system agent's runner ends the cover
-    of each work their word started that holds one, op `uncover`, so that word starts nothing more of it. `keep` is
-    the word the stop was itself made on: that message's own work lets go only of the tickets stopped."""
+def waited_on(store: Store, tickets: Iterable[str]) -> set[str]:
+    """The open tickets any of `tickets` waits on directly, `after_work`: one read of the map's `after` table per
+    ticket and one of each ticket waited on."""
+    found: set[str] = set()
+    for work_id in tickets:
+        raw: Any = after_of(store, work_id).get('after_work')
+        for before in ([str(one) for one in cast(list[Any], raw)] if isinstance(raw, list) else []):
+            try:
+                if not ticket(store, before).done:
+                    found.add(before)
+            except (Stop, StoreError):
+                continue
+    return found
+
+
+def waiting_in(store: Store, stopped: Iterable[str], among: Iterable[str]) -> set[str]:
+    """Of `among`, the tickets that wait on one of `stopped`, in turn through `among`: read in one transaction of the
+    map's `after` table. A part the person stopped takes with it only what waits on it."""
+    held, found = set(among), set(stopped)
+    try:
+        with Store(store.project_id, module='map').tables(write=False) as tx:
+            rows = tx.rows('after', limit=0).results
+    except StoreError:
+        return set()
+    followers: dict[str, set[str]] = {}
+    for row in rows:
+        raw: Any = row['works']
+        if str(row['work_id']) in held and isinstance(raw, list):
+            for before in cast(list[Any], raw):
+                followers.setdefault(str(before), set()).add(str(row['work_id']))
+    reach, taken = list(found), set[str]()
+    while reach:
+        for one in followers.get(reach.pop(), ()):
+            if one not in found:
+                found.add(one)
+                taken.add(one)
+                reach.append(one)
+    return taken
+
+
+def persons_stopped(store: Store, tickets: Sequence[str] | None) -> None:
+    """The person stopped work, Stop on these tickets or Stop all (None): their system agent's runner lets go of those
+    tickets, and the tickets of the same work that wait on them, from each work their word started, op `uncover`, so
+    that word starts nothing more of that part; the rest goes on. Stop all ends every such work."""
     try:
         found = system_sessions(store, sessions(store, verify=False))
     except StoreError:
@@ -3628,7 +3675,7 @@ def persons_stopped(store: Store, tickets: Sequence[str] | None, keep: str = '')
     for row in found:
         if row.get('state') == 'running' and row.get('port'):
             with contextlib.suppress(OSError):
-                tell(row, 'uncover', tickets=None if tickets is None else list(tickets), keep=keep)
+                tell(row, 'uncover', tickets=None if tickets is None else list(tickets))
 
 
 def ticket_label(store: Store, work_id: str) -> str:
@@ -3851,7 +3898,7 @@ def stop(ctx: Context) -> dict[str, Any]:
     row = _running_or_stop(store, ctx.nouns['id'], ctx.nouns.get('session'))
     if word is None or not word.get('covered'):  # the person's stop, or one their message asked: the work it is part
         # of starts no more on their earlier word, before this agent's end can wake their system agent
-        persons_stopped(store, [str(row['work_id'])], str((word or {}).get('id') or ''))
+        persons_stopped(store, [str(row['work_id'])])
     off = disconnect(ctx, store, row)
     held = paused(ctx, store, row)
     result = ended_by_person(store, row)
