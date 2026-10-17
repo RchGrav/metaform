@@ -4,10 +4,20 @@ Metaform's one web GUI for the user: one server per Metaform home, serving every
 
 ## Known control limit
 
-On loopback, the write gate checks Origin but does not authenticate the caller. A local agent can forge Origin
-and use the page's write endpoints to change person-only controls. The CLI and MCP refusals do not close this path.
-Closing it requires the home token on loopback (H13 part 2, VIEW-002), tracked separately from SEC-F2. An additional
-caller-supplied header would leave the same hole.
+On loopback, the write gate checks Origin but does not authenticate the caller. Since UX review round 1
+(2026-10-17, CLI-011), a write that is the person's alone (`PERSONS_WRITES`: clearing, switching or removing the map,
+restoring, discarding an intake, memory changes, settings, modules, and dispatch's start permissions, tuning and
+cancelling) is also refused with 403 when the process at the other end of the connection is an agent's: it carries a
+runner's identity, or a Metaform runner, a Metaform MCP server or an AI tool working in this home started it. The
+server finds that process from the connection (Linux, `/proc/net/tcp`), so an agent that forges Origin or clears
+METAFORM_ROLE is still refused. What it cannot see: a sender outside Linux's process table, such as a browser or a
+program on the Windows side of WSL or another machine, which is taken as the person, as before. The commands such a
+write runs carry the server's vouch (`METAFORM_PAGE_VOUCH`, a secret held in memory and kept on disk only as its
+hash beside the server's pid), so the person's write still runs when an agent started the server. The home token on
+loopback (H13 part 2, VIEW-002) remains the stronger fix and is tracked separately from SEC-F2.
+
+Activate and Remove beside the base chooser ask first, in the server's own caution (`/api/base-preview`), which names
+what the base being left or removed holds; `/api/activate-base` runs only with `confirm` true.
 
 ## Purpose
 

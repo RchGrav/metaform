@@ -38,8 +38,10 @@ def mapped(run, tmp_path):
 
 
 def m(run, verb, *args, cwd, ok=True):
-    return run('memory', verb, *(kept(arg) if verb == 'create_entities' else arg for arg in args), '--json', cwd=cwd,
-               ok=ok)
+    # a delete is the person's decision, confirmed on their command line, CLI-011 (UX review round 1)
+    confirmed = ('--confirm',) if verb.startswith('delete_') else ()
+    return run('memory', verb, *(kept(arg) if verb == 'create_entities' else arg for arg in args), *confirmed,
+               '--json', cwd=cwd, ok=ok)
 
 
 def kept(arg):

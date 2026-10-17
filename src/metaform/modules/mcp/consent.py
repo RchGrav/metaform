@@ -7,7 +7,9 @@ call answers with an `input_required` result holding the form, and the client ca
 (multi round-trip requests, SEP-2322); on the 2025 handshake the server sends `elicitation/create` while the call
 waits. The form carries the choices and why each is asked. A dispatched agent is never asked through: no person sits
 at its client. Elsewhere the call keeps the plain rule, `confirm=true` for a caution and a refusal with its next step
-for a person-only setting.
+for a person-only setting, except for what is the person's decision (a verb declared `person_says`, and
+metaform_clear_project): that runs only on the person's answer to the form, and is refused otherwise, for a dispatched
+agent always, with the caution and the command the person runs (UX review round 1, 2026-10-17).
 
 Sources, read 2026-10-12: the 2026-07-28 changelog and the multi round-trip request pattern,
 modelcontextprotocol.io/specification/2026-07-28/basic/patterns/mrtr; elicitation, form mode and its restricted

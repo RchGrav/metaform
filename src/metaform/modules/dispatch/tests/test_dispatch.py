@@ -2796,7 +2796,7 @@ def test_a_dispatched_agents_budget_refusal_points_to_its_ticket(dispatch, run, 
         module.budget_stop(ctx, dispatch.store, dispatch.id)
     assert refused.value.next_step.startswith('metaform map work op=edit')
     assert 'metaform set' not in refused.value.next_step
-    monkeypatch.setenv('METAFORM_ROLE', 'none')
+    monkeypatch.delenv('METAFORM_ROLE')
     with pytest.raises(Stop) as person:
         module.budget_stop(ctx, dispatch.store, dispatch.id)
     assert person.value.next_step.startswith('metaform set --dispatch-budget-ticket')

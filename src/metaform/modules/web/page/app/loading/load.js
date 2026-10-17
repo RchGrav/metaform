@@ -5,6 +5,7 @@ import {releaseGlyph} from '/page/agents3d.js';
 import {$, h, fill} from '/page/app/core/dom.js';
 import {toast, confirmAct} from '/page/app/core/controls.js';
 import {S, MEM, read, viewLayers} from '/page/app/core/reads.js';
+import {getJson} from '/page/app/panel/prompts.js';
 import {readFailed} from '/page/app/core/errors.js';
 import {renderChips} from '/page/app/header/layers.js';
 import {foldHeader} from '/page/app/header/menus.js';
@@ -200,25 +201,36 @@ async function readProject(wanted) {
 }
 /* Activate and Remove beside the base chooser, STORE-041: the chooser only changes what the page shows; Activate makes
  * the chosen base the active one, and Remove takes it out of the project with a copy kept. Neither acts on the active
- * base, as the command refuses to. */
+ * base, as the command refuses to. Each asks first, in the server's own caution, which names what the base being left
+ * or removed holds: its open tickets, layers, conversations and agents at work. */
 function baseButtons() {
   const chosen = S.bases.find(item => item.id === $('#mf').value);
   $('#activateBase').disabled = !chosen || chosen.active;
   $('#removeBase').disabled = !chosen || chosen.active;
 }
+const basePreview = async name =>
+  getJson(`/api/base-preview?project=${encodeURIComponent(S.project)}&name=${encodeURIComponent(name)}`);
 async function activateBase() {
   const chosen = S.bases.find(item => item.id === $('#mf').value);
   if (!chosen) return;
+  let found;
+  try { found = await basePreview(chosen.name); }
+  catch (error) { return toast(error.message); }
+  if (!await confirmAct({title: `Make ${chosen.name} the active map?`, text: found.activate, verb: 'Activate',
+    cancel: 'Keep it'})) return;
   $('#activateBase').disabled = true;
-  if (await wrote('/api/activate-base', {name: chosen.name})) toast(`${chosen.name} is the active base.`);
+  if (await wrote('/api/activate-base', {name: chosen.name, confirm: true})) toast(`${chosen.name} is the active base.`);
   else baseButtons();
 }
 $('#activateBase').onclick = activateBase;
 /* Removing a base cannot be undone from the page, so it is asked first, saying what goes and what is kept. */
 async function removeBase() {
   const chosen = S.bases.find(item => item.id === $('#mf').value);
-  if (!chosen || !await confirmAct({title: `Remove base ${chosen.name}?`,
-    text: `It is taken out of ${S.project}. The page cannot bring it back; a copy of its store is kept.`,
+  if (!chosen) return;
+  let found;
+  try { found = await basePreview(chosen.name); }
+  catch (error) { return toast(error.message); }
+  if (!await confirmAct({title: `Remove base ${chosen.name}?`, text: found.remove,
     lost: [`Base ${chosen.name}, from the bases of ${S.project} and from what agents and the page can read`],
     kept: ['A copy of its store, under backups/remove-base in the Metaform home',
       `The active base and every other base of ${S.project}`],

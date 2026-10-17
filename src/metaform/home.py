@@ -1049,6 +1049,50 @@ def base_owner(base_id: str) -> str | None:
     return None
 
 
+# What a base holds that a clear or a switch of the active map takes from the person, by the kinds
+# `module.base_holds` counts, with how a person reads one and many, in the order a caution names them.
+HOLDS = (('tickets', 'open ticket', 'open tickets'), ('layers', 'knowledge layer', 'knowledge layers'),
+         ('conversations', 'agent conversation', 'agent conversations'), ('agents', 'agent at work', 'agents at work'))
+
+
+def holds_said(counts: dict[str, int]) -> str:
+    """What a base holds, as a caution names it: three open tickets, one knowledge layer and two agents at work;
+    empty when it holds none of them."""
+    parts = tuple(counted(counts[kind], one, many) for kind, one, many in HOLDS if counts.get(kind))
+    return listed(parts) if parts else ''
+
+
+def holds_of(project_id: str, base_id: str) -> dict[str, int]:
+    """What one base holds, counted by the modules that keep it; empty when nothing can be counted."""
+    try:
+        from .module import base_holds
+        return base_holds(project_id, base_id)
+    except Exception:  # noqa: BLE001  a caution's counts never stop the caution
+        return {}
+
+
+def switch_caution(project_id: str) -> str:
+    """What making another base the active map takes out of view, said before it does, STORE-041 and BASE-013: what
+    the active base holds, and the command that switches back."""
+    active = active_base(project_id)
+    if active is None:
+        return 'This changes the active map for every agent and the page of the project.'
+    held = holds_said(holds_of(project_id, active.id))
+    leaving = (f' On {active.name}, the active map now, {held} leave the view of the page and of every agent; '
+               'agents at work there lose sight of their tickets and can fail.') if held else ''
+    return (f'This changes the active map for every agent and the page of the project.{leaving} {active.name} is '
+            f'kept whole: metaform map activate {active.name} --confirm switches back.')
+
+
+def remove_caution(project_id: str, name: str) -> str:
+    """What `map remove-base` takes, said before it does: the base's store with what it holds, and the copy kept."""
+    found = next((form for form in bases(project_id) if form.name == name), None)
+    held = holds_said(holds_of(project_id, found.id)) if found is not None else ''
+    return (f'Removing {name} takes its store out of {project_id}' + (f', with {held}' if held else '') +
+            f'. A copy of its store is kept under {home() / "backups" / "remove-base" / project_id}, but no command '
+            'brings a removed base back. The active base is refused.')
+
+
 @dataclass(frozen=True)
 class Cleared:
     """What clearing a project removed, PROJ-025, and each path it could not remove with the system's reason."""
@@ -1057,6 +1101,7 @@ class Cleared:
     reports: int
     not_removed: tuple[tuple[str, str], ...] = ()
     backup: str | None = None  # the backup made before anything was removed, PROJ-030
+    holds: tuple[str, ...] = ()  # what each base holds, in the order of `bases`, as `holds_said` says it
 
     def to_dict(self) -> dict[str, Any]:
         found: dict[str, Any] = {'project': self.project_id, 'bases': list(self.bases),
@@ -1078,10 +1123,15 @@ class Cleared:
 
     @property
     def caution(self) -> str:
-        """What `clear project` removes, said before it does."""
+        """What `clear project` removes, said before it does: each base with what it holds, the backup made first and
+        how it is brought back, BASE-013 and PROJ-030."""
+        held = [f'{name} holds {said}' for name, said in zip(self.bases, self.holds, strict=False) if said]
+        lost = (f' With them goes what they hold: {"; ".join(held)}. Agents at work on them lose their map and fail.'
+                if held else '')
         return (f'Clearing {self.project_id} removes {self._bases(True)} and '
-                f'{counted(self.reports, "report file", "report files")}. Its registration, folder, settings, origins '
-                'and variants stay.')
+                f'{counted(self.reports, "report file", "report files")}.{lost} Its registration, folder, settings, '
+                'origins, variants and memories stay. A backup is made first; the result names it, and metaform '
+                f'restore project {self.project_id} <backup> brings it back.')
 
     @property
     def said(self) -> str:
@@ -1092,8 +1142,9 @@ class Cleared:
 
     @property
     def restore(self) -> str:
-        """The one command that brings back what the clear removed."""
-        return f'metaform restore project {self.project_id}'
+        """The one command that brings back what the clear removed, naming its backup, so a later backup is never
+        brought back in its place, PROJ-030."""
+        return f'metaform restore project {self.project_id}' + (f' {self.backup}' if self.backup else '')
 
     @property
     def held(self) -> str:
@@ -1119,7 +1170,8 @@ def to_clear(project_id: str) -> Cleared:
     folder = project_folder(project_id)
     reports = folder / 'reports' if folder is not None else None
     count = sum(1 for path in reports.iterdir() if path.is_file()) if reports is not None and reports.is_dir() else 0
-    return Cleared(project_id, names, count)
+    held = tuple(holds_said(holds_of(project_id, form.id)) for form in bases(project_id))
+    return Cleared(project_id, names, count, holds=held)
 
 
 def clear_project(project_id: str) -> Cleared:
@@ -1148,7 +1200,7 @@ def clear_project(project_id: str) -> Cleared:
     _remove_tree(folder / 'reports', failed)
     changes.note(project_id)
     return Cleared(found.project_id, found.bases, found.reports, _innermost(failed),
-                   saved.name if saved is not None else None)
+                   saved.name if saved is not None else None, found.holds)
 
 
 @dataclass(frozen=True)

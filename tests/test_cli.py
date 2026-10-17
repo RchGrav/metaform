@@ -194,7 +194,7 @@ def test_a_dispatched_agent_cannot_give_itself_person_only_switches_on_a_verb(ru
     assert refused.returncode == 2, refused.stdout + refused.stderr
     assert 'dispatch_agents, dispatch_autostart are set only by the person' in refused.stderr
     assert 'Next: metaform map work op=edit' in refused.stderr
-    assert 'retried' in run(*call, cwd=project, env={'METAFORM_ROLE': 'none'}).stdout
+    assert 'retried' in run(*call, cwd=project, env={'METAFORM_ROLE': ''}).stdout
 
 
 @pytest.mark.req('CLI-011')
@@ -213,7 +213,7 @@ def test_a_dispatched_agent_cannot_reset_controls_or_partially_apply_a_call(run,
 def test_the_person_can_allow_cli_control_changes_and_ordinary_settings_stay_available(run):
     run('enable', 'dispatch')
     run('set', '--modules', 'chassis,map,dispatch,mcp,web', env={'METAFORM_ROLE': 'worker'})
-    run('set', '--jev', env={'METAFORM_ROLE': 'none'})
+    run('set', '--jev', env={'METAFORM_ROLE': ''})
     run('unset', '--jev')
     run('set', '--agents-may-set-control')
     agent = {'METAFORM_ROLE': 'worker'}
@@ -743,8 +743,10 @@ def test_clear_project_removes_the_metaforms_and_reports_and_keeps_registration_
     refused = run('clear', 'project', cwd=elsewhere, ok=False)
     assert refused.returncode == 2
     assert refused.stderr.splitlines() == [
-        ('Error: Clearing proj removes two bases, main and fresh, with their stores, and one report file. '
-         'Its registration, folder, settings, origins and variants stay.'),
+        ('Error: Clearing proj removes two bases, main and fresh, with their stores, and one report file. With them '
+         'goes what they hold: main holds one knowledge layer. Agents at work on them lose their map and fail. Its '
+         'registration, folder, settings, origins, variants and memories stay. A backup is made first; the result '
+         'names it, and metaform restore project proj <backup> brings it back.'),
         'Next: If you are sure: metaform clear project proj --confirm']
     assert [line.split()[0] for line in lines(run('list', 'bases', cwd=project))] == ['main', 'fresh']
     assert sorted(path.name for path in (own('proj') / 'reports').iterdir()) == before['reports']
@@ -752,8 +754,9 @@ def test_clear_project_removes_the_metaforms_and_reports_and_keeps_registration_
     said = lines(run('clear', 'project', 'proj', '--confirm', cwd=elsewhere))
     assert said[0] == ('Cleared proj: two bases, main and fresh, and one report file. Its registration, folder, '
                        'settings, origins and variants stay.')
+    backup = said[1].removeprefix('Backed up as ').rstrip('.')
     assert len(said) == 3 and said[1].startswith('Backed up as ') and said[2] == \
-        'To bring it back: metaform restore project proj'  # PROJ-030
+        f'To bring it back: metaform restore project proj {backup}'  # PROJ-030, naming its backup
     assert run('list', 'bases', cwd=project).stdout == ''
     assert not list(own('proj').glob('*.metaform.sqlite3'))
     assert not (own('proj') / 'reports').exists()
@@ -834,7 +837,8 @@ def test_clear_project_names_a_file_it_could_not_remove_with_the_reason_and_what
     said = lines(cleared)
     assert said[0] == ('Cleared proj: one base, main, and one report file. Its registration, folder, settings, '
                        'origins and variants stay.')
-    assert said[1].startswith('Backed up as ') and said[2] == 'To bring it back: metaform restore project proj'
+    assert said[1].startswith('Backed up as ') and said[2] == \
+        f"To bring it back: metaform restore project proj {said[1].removeprefix('Backed up as ').rstrip('.')}"
     assert said[3] == 'Not removed, still on disk:'
     assert said[4].startswith(f'  {stuck}: ') and len(said[4]) > len(f'  {stuck}: ')
     assert said[5:] == [('Next: Close any program that has it open, such as a running web GUI, or fix its '
@@ -847,8 +851,53 @@ def test_clear_project_names_a_file_it_could_not_remove_with_the_reason_and_what
                         'and variants stay.') and again[1].startswith('Backed up as ') and len(again) == 3
     assert not reports.exists()
     assert run('clear', 'project', cwd=project, ok=False).stderr.splitlines()[0] == (
-        'Error: Clearing proj removes no bases and no report files. Its registration, folder, settings, origins '
-        'and variants stay.')
+        'Error: Clearing proj removes no bases and no report files. Its registration, folder, settings, origins, '
+        'variants and memories stay. A backup is made first; the result names it, and metaform restore project proj '
+        '<backup> brings it back.')
+
+
+# The parent runs by its interpreter's own path, never sys.executable, which under the name claude is found on the PATH
+AGENT_PARENT = '''import os, subprocess, sys
+sys.exit(subprocess.run([os.environ['AGENT_PYTHON'], '-m', 'metaform', *sys.argv[1:]]).returncode)
+'''
+
+
+def as_agent(project, home, *args):
+    """A metaform command run by a process an AI tool started, as an agent's shell runs it: its parent runs as
+    `claude`, in the same home, and the command clears METAFORM_ROLE, as an agent can in its own shell."""
+    env = {**os.environ, 'METAFORM_HOME': str(home), 'METAFORM_ROLE': '', 'AGENT_PYTHON': sys.executable}
+    return subprocess.run(['bash', '-c', 'exec -a claude "$0" -c "$1" "${@:2}"', sys.executable, AGENT_PARENT, *args],
+                          cwd=project, env=env, capture_output=True, text=True, timeout=120, check=False)
+
+
+@pytest.mark.req('CLI-011')
+@pytest.mark.req('PROJ-025')
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='the processes that started a command are read on Linux')
+def test_an_agent_that_clears_its_role_still_cannot_clear_switch_or_set_the_persons_controls(run, project, home):
+    """UX review round 1, settings F2 and F5, fresh-start-intake F1 and F4: a command an AI tool's process started is
+    an agent's whatever its environment says. Its --confirm clears nothing and switches nothing, it is told the
+    command the person runs, and a person-only setting is refused; the caution names the open ticket that would go.
+    The same commands from the person's own shell still run."""
+    run('enable', 'dispatch')
+    noted(run, project, 'Counts down.')
+    run('map', 'work', 'op=add', 'address=code.timer', 'task=Ring louder', 'title=Ring louder', cwd=project)
+    for args in (('clear', 'project', 'proj', '--confirm'), ('add', 'base', 'fresh'), ('activate', 'base', 'main'),
+                 ('map', 'add-base', 'fresh', '--confirm'), ('set', '--dispatch-agents', '40'),
+                 ('set', '--jev')):
+        refused = as_agent(project, home, *args)
+        assert refused.returncode == 2, (args, refused.stdout, refused.stderr)
+        said = refused.stderr
+        if args[0] == 'set':
+            assert 'set only by the person' in said, said
+        else:
+            assert "This is the person's decision, not an agent's" in said and '\nNext: the person runs: metaform ' \
+                in said, said
+    assert [line.split()[0] for line in lines(run('list', 'bases', cwd=project))] == ['main']
+    assert shown(run, cwd=project)['jev']['value'] is False
+    asked = as_agent(project, home, 'clear', 'project', 'proj').stderr
+    assert 'main holds one open ticket and one knowledge layer' in asked and 'A backup is made first' in asked
+    run('add', 'base', 'fresh', cwd=project)  # the person's own shell
+    assert [line.split()[0] for line in lines(run('list', 'bases', cwd=project))] == ['main', 'fresh']
 
 
 @pytest.mark.req('STORE-027')

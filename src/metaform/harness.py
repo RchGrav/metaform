@@ -246,7 +246,7 @@ def done(binary: Path | str) -> None:
 # given (server/src/adapters/process/execute.ts and each local adapter): its run token in PAPERCLIP_API_KEY acts as
 # that Paperclip agent for that run, and an agent Metaform starts from it is neither, COOPERATION-DESIGN C8 P-1.
 IDENTITY = ('METAFORM_ROLE', 'METAFORM_SESSION', 'METAFORM_WORK', 'METAFORM_NODE', 'METAFORM_WITHHELD',
-            'PAPERCLIP_API_KEY', 'PAPERCLIP_RUN_ID', 'PAPERCLIP_AGENT_ID', 'PAPERCLIP_COMPANY_ID', 'PAPERCLIP_API_URL',
+            'METAFORM_PAGE_VOUCH', 'PAPERCLIP_API_KEY', 'PAPERCLIP_RUN_ID', 'PAPERCLIP_AGENT_ID', 'PAPERCLIP_COMPANY_ID', 'PAPERCLIP_API_URL',
             'PAPERCLIP_TASK_ID', 'PAPERCLIP_WAKE_REASON', 'PAPERCLIP_WAKE_COMMENT_ID')
 
 

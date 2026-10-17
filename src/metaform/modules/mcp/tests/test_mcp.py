@@ -751,35 +751,96 @@ def test_save_prompt_rejects_invalid_arguments_without_adding_versions(run, home
     assert [prompt.name for prompt in prompts.prompts()] == ['personal']
 
 
+def consenting(home, folder, fn, answers=('accept',), env=None):
+    """A real MCP client on the 2025 handshake that shows forms: each form the server asks is answered with the next
+    of `answers`, as the person answers it in their AI tool."""
+    from mcp import types
+    given = iter(answers)
+
+    async def elicit(context, params):
+        action = next(given)
+        return types.ElicitResult(action=action, content={'go': True} if action == 'accept' else None)
+    params = StdioServerParameters(command=sys.executable, args=['-m', 'metaform', 'mcp', 'serve'], cwd=str(folder),
+                                   env={**os.environ, 'METAFORM_HOME': str(home), **(env or {})})
+
+    async def go():
+        async with stdio_client(params) as (read, write), ClientSession(read, write,
+                                                                        elicitation_callback=elicit) as client:
+            await client.initialize()
+            return await fn(client)
+    return asyncio.run(go())
+
+
 @pytest.mark.req('PROJ-025')
 @pytest.mark.req('MCP-006')
+@pytest.mark.req('CLI-011')
 def test_clear_project_is_a_caution_tool_while_the_chassis_is_on_the_surface(run, home, mapped):
     """metaform_clear_project is declared as every other tool: its description says what it removes, that a backup is
-    made first and that restore brings it back; it takes confirm, as any caution tool, and is destructive."""
+    made first and that restore brings it back, and it is destructive. It is the person's decision: an agent's
+    confirm never clears, its refusal names what goes, the backup and the command the person runs; only the person's
+    yes to the form clears it, and the result names the backup in the restore command, UX review round 1."""
     run('feedback', 'A note.', cwd=mapped)
+    run('map', 'work', 'op=add', 'address=code.timer.kitchen', 'task=Ring louder', 'title=Ring louder', cwd=mapped)
 
     async def check(client, init):
         tools = await listed(client)
         refused = await called(client, 'metaform_clear_project', {})
         still = await called(client, 'map_where', {'address': 'code.timer.kitchen'})
-        cleared = await called(client, 'metaform_clear_project', {'confirm': True})
-        return tools, refused, still, cleared
-    tools, refused, still, cleared = session(home, mapped, check)
+        confirmed = await called(client, 'metaform_clear_project', {'confirm': True})
+        return tools, refused, still, confirmed
+    tools, refused, still, confirmed = session(home, mapped, check)
     declared = tools['metaform_clear_project']
-    assert declared.input_schema['properties'].keys() == {'confirm', 'project'}
+    assert declared.input_schema['properties'].keys() == {'project'}  # no confirm an agent could give
     assert declared.annotations.destructive_hint is True
     guided = refused.content[0].text  # the rest of its description comes with its first use, MCP-039
     assert 'backup is made first' in guided and 'metaform restore project' in guided
     assert refused.is_error is True
     said = '\n'.join(text(refused))
-    assert 'Clearing proj removes' in said and 'Next: If you are sure: call metaform_clear_project with confirm true' in said
+    assert 'Clearing proj removes' in said and 'main holds one open ticket' in said
+    assert 'A backup is made first' in said and "This is the person's decision" in said
+    assert 'Next: the person runs: metaform clear project proj --confirm or use Clear project on the page' in said
+    assert 'with confirm true' not in said
     assert still.is_error is False  # the caution alone changed nothing
+    assert confirmed.is_error is True and "the person's decision" in '\n'.join(text(confirmed))
+    assert run('list', 'bases', cwd=mapped).stdout.split()[:1] == ['main']  # an agent's confirm cleared nothing
+
+    async def clear(client):
+        return await called(client, 'metaform_clear_project', {})
+    cleared = consenting(home, mapped, clear)
     assert cleared.is_error is False
     told = json.loads(text(cleared)[-1])
-    assert told.pop('backup') and told.pop('restore') == 'metaform restore project proj'  # PROJ-030
+    backup = told.pop('backup')
+    assert backup and told.pop('restore') == f'metaform restore project proj {backup}'  # PROJ-030
     assert told == {'project': 'proj', 'bases': ['main'], 'reports': 1}
     assert run('list', 'bases', cwd=mapped).stdout == ''
     assert not (own('proj') / 'reports').exists()
+
+
+@pytest.mark.req('CLI-011')
+@pytest.mark.req('MCP-006')
+@pytest.mark.parametrize('tool, arguments', [('metaform_clear_project', {'confirm': True}),
+                                             ('map_add-base', {'name': 'fresh', 'confirm': True}),
+                                             ('memory_delete_entities', {'entityNames': ['kept'], 'confirm': True})])
+def test_a_dispatched_agent_gets_the_persons_decision_never_its_own_confirm(run, home, mapped, tool, arguments):
+    """UX review round 1, fresh-start-intake F1, settings F5, web F1: a dispatched agent, the system agent among them,
+    whose client shows forms, cannot clear the project, switch the map or delete memories with its own confirm; it is
+    told the decision is the person's and given the command the person runs, never a call for itself, and the tools
+    are marked destructive."""
+    run('enable', 'memory', cwd=mapped)
+    run('memory', 'create_entities',
+        'entities=[{"name": "kept", "entityType": "note", "observations": ["It rings."], "why": "A test."}]',
+        'node=element:code.timer.kitchen', cwd=mapped)
+
+    async def check(client):
+        return await listed(client), await called(client, tool, arguments)
+    tools, refused = consenting(home, mapped, check, answers=(), env={'METAFORM_ROLE': 'system', 'METAFORM_WORK': 'x'})
+    said = '\n'.join(text(refused))
+    assert refused.is_error is True, said
+    assert "This is the person's decision, not an agent's" in said and '\nNext: the person runs: metaform ' in said
+    assert 'with confirm true' not in said and 'call ' not in said.split('\nNext: ')[1]
+    assert tools[tool].annotations.destructive_hint is True
+    assert Store('proj').active_base().name == 'main' and len(Store('proj').bases().results) == 1
+    assert 'It rings.' in run('memory', 'open_nodes', 'names=["kept"]', cwd=mapped).stdout
 
 
 @pytest.mark.req('MCP-006')
@@ -806,17 +867,17 @@ def test_clear_project_returns_what_it_could_not_remove_with_what_to_do_and_no_e
     run('feedback', 'A note.', cwd=mapped)
     (stuck,) = (own('proj') / 'reports').iterdir()
 
-    async def check(client, init):
-        return await called(client, 'metaform_clear_project', {'confirm': True})
+    async def check(client):
+        return await called(client, 'metaform_clear_project', {})
     with unremovable(stuck):
-        cleared = session(home, mapped, check)
+        cleared = consenting(home, mapped, check)  # the person's yes, UX review round 1
         assert stuck.is_file()
     assert cleared.is_error is False
     result = json.loads(text(cleared)[-1])
     assert (result['project'], result['bases'], result['reports']) == ('proj', ['main'], 1)
     assert [entry['path'] for entry in result['not_removed']] == [str(stuck)] and result['not_removed'][0]['reason']
     assert [notice['where'] for notice in result['notices']] == ['not_removed']
-    assert 'call metaform_clear_project with confirm true again' in result['notices'][0]['message']
+    assert 'ask the person to clear proj again' in result['notices'][0]['message']
     assert run('list', 'bases', cwd=mapped).stdout == ''
 
 

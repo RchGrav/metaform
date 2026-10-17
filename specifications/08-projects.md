@@ -365,6 +365,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
   - On the web GUI, VIEW-019's acceptance.
 - Relates to: PROJ-001, PROJ-003, PROJ-024, STORE-041, BASE-013, BASE-014, CLI-001, CLI-018, CLI-031, MCP-006, VIEW-011, VIEW-018, VIEW-019.
 - Status: confirmed, 2026-09-13, for clearing a project's Metaform data, from the command line and from the page, so the intake starts again from nothing, keeping the project's registration, its folder and its files. Recommended, pending the owner: that history and folder settings stay and that report files go with the metaforms; that what could not be removed is named, and that counts are written as words, 2026-09-27; the words for one to nine, the wording of the Next line and exit 0.
+- Amendment, 2026-10-17, UX review round 1, fix group person-consent (fresh-start-intake F1 and F4, forensic F5): over MCP `metaform_clear_project` no longer clears with `confirm: true`; it clears only on the person's yes to the form, and a command an agent runs (`metaform clear project --confirm`) is refused with the command the person runs. The caution now names what each base holds, counted by the modules (`Provides('base.holds', ...)`: open tickets, knowledge layers, agent conversations, agents at work), says memories stay, and that a backup is made first and how it is brought back: `Clearing proj removes one base, main, with its store, and one report file. With them goes what they hold: main holds one open ticket. Agents at work on them lose their map and fail. Its registration, folder, settings, origins, variants and memories stay. A backup is made first; the result names it, and metaform restore project proj <backup> brings it back.`
 
 
 ### PROJ-030 A clear backs the project up first, and a backup is brought back by one command
@@ -377,6 +378,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - Acceptance: After a clear the backup folder holds the stores and the report files the project had. `restore project` brings back the metaforms by name with the same one active, and a read of the map returns what it returned before the clear. Restoring over a project that holds a metaform backs that one up first. A clear of a project with nothing to remove makes no backup. With the backups folder not writable, the clear stops with the reason and the project still has its metaforms.
 - Relates to: PROJ-025, STORE-041, MAP-045, VIEW-019, BASE-044.
 - Status: asked for 2026-09-29: the clear backs it up and allows restoration easily, telling the user. The names, the place and restoring over a project that holds data are recommended.
+- Amendment, 2026-10-17, UX review round 1, fix group person-consent (forensic F6 step 1): the restore command a clear returns names its backup, `metaform restore project <project> <backup>`, so running it later never brings back a newer backup in its place. `restore project` from a command an agent runs is refused as the person's decision.
 
 ### PROJ-031 An empty project is taken off the list by one command, and nothing of it is deleted
 

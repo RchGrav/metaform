@@ -4,6 +4,7 @@ Each change to the module contract, newest first, so a module copied from the te
 
 ## Unreleased
 
+- `base-restore` is declared `person_says=True` (UX review round 1, 2026-10-17), showing a verb that is the person's decision: an agent's confirm never runs it.
 - `noncedemo` is gone with the nonce service, BASE-050: work is handed to an agent over ACP, the hand-off as its first prompt and its identity in `METAFORM_ROLE`, `METAFORM_SESSION`, `METAFORM_WORK` and `METAFORM_NODE`, or by its ticket id, so hello has no nonce to show. `metaform <nonce>` no longer runs anything.
 
 - Public chassis services, BASE-004 and QUAL-016: `basedemo` reads shared home/project, layer, query and record conversion services and shows project backups and the removal preview. `base-restore [name]` restores a backup and `base-remove` removes an empty project's registration, both with the existing `Verb.caution` confirmation. Existing `follow` demonstrates `Context.listen`. These examples keep user modules on the same public services as shipped modules.

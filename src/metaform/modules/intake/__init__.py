@@ -985,6 +985,20 @@ def remove(ctx: Context) -> Any:
     return {**named, 'layer': found.layer.name, 'notices': notices}
 
 
+def _discard_caution(ctx: Context) -> str:
+    """What discarding would remove, counted, said before it does."""
+    store = ctx.require_store()
+    found = _building(store)
+    if found is None:
+        return ''
+    parts = len(found.store.layer_graph(found.layer.id).elements)
+    alone = '' if found.active else (f' The base {found.metaform}, if it was opened for this intake alone, goes too; '
+                                     'a copy of its store is kept under backups/remove-base.')
+    return (f'Discarding the unfinished intake in {found.metaform} removes its layer {found.layer.name} and the '
+            f'{parts} {"element" if parts == 1 else "elements"} it recorded; no copy of them is kept and it is not '
+            f'undone.{alone}')
+
+
 def discard(ctx: Context) -> Any:
     """Drop the intake left unfinished: its building layer and the parts it recorded go, and a base opened for it
     alone goes with them, a copy kept, BASE-039. One an agent records now is refused, since that agent would go on
@@ -1250,7 +1264,7 @@ MODULE = Module(
         Verb('discard', discard, 'Discard the intake left unfinished: its layer and the parts it recorded are removed, '
                                  'and a base opened for it alone goes too, a copy kept.',
              caution='Discarding the unfinished intake removes every part it recorded; it is not undone.',
-             surfaces=('cli',), effect='remove', listed=recording),
+             surfaces=('cli',), effect='remove', listed=recording, person_says=True, cautioned=_discard_caution),
     ),
     status=status,
     resources=(

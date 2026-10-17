@@ -111,6 +111,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - Acceptance: Without `--confirm` the data is unchanged; with it, the data is removed.
 - Relates to: CLI-018, CLI.
 - Status: confirmed.
+- Amendment, 2026-10-17, UX review round 1, fix group person-consent (fresh-start-intake F4, agent-identity-handoff F2): `Verb.person_says` marks a verb that is the person's decision. It runs only on the person's own `--confirm`, the page, or their answer to their AI tool's form; a command an agent runs (`metaform.module.agent_caller`) is refused whatever it confirms, with the caution and `Next: the person runs: <command> --confirm`. `Verb.cautioned(ctx)` gives the caution for one call, naming what it would take; `caution` stays the fixed text of the tool's description. Here the wording does gate: the person's decision is not left to an agent's inference.
 
 ---
 

@@ -26,7 +26,9 @@ What the server sends when an agent connects is the mcp module's `<instructions>
 
 Each command is its own tool. A module's command is `<module>_<command>`, such as `map_where` or `intake_start`; Metaform's own commands are `metaform_<command>`, such as `metaform_set` or `metaform_feedback`. A tool takes its command's arguments directly, as its input schema lists them, each with its type and description; every module's tool also takes `project` and `layers` for that one call. A tool's description is its command's summary, followed by its caution when it has one; a caution tool runs only with `confirm` true.
 
-Each tool's annotations say what it does, from the effect its verb declares: `readOnlyHint` and `idempotentHint` for a read, `destructiveHint` for a removal, `openWorldHint` for a command that starts or steers agents or reaches the network. The Effect column below shows them. A result that is a JSON object comes as text and also as `structuredContent`.
+Each tool's annotations say what it does, from the effect its verb declares: `readOnlyHint` and `idempotentHint` for a read, `destructiveHint` for a removal and for a tool that is the person's decision (marked *person's decision* below), `openWorldHint` for a command that starts or steers agents or reaches the network. The Effect column below shows them. A result that is a JSON object comes as text and also as `structuredContent`.
+
+A tool that is the person's decision (clearing the project, switching, collapsing or removing a base, deleting memories) takes no `confirm` from the agent: it runs only when the person says yes in the form their AI tool shows them. Without that answer, for a dispatched agent always, it is refused with its caution, which names what it would take, and the command the person runs, CLI-011 and MCP-006 (UX review round 1, 2026-10-17).
 
 An error ends with one `Next:` line naming the tool to call or the resource to read.
 
@@ -168,15 +170,15 @@ Read and write this project's functional map and its layers.
 
 | Tool | What it does | Effect |
 |---|---|---|
-| `map_activate` | Make one of the project's bases the active map. Caution: This changes the active map for every agent and the page of the project. The previous base is kept; map activate <its name> switches back. | write |
-| `map_add-base` | Start a new, empty base for the project and make it the active map. Caution: This changes the active map for every agent and the page of the project. The previous base is kept; map activate <its name> switches back. | write |
+| `map_activate` | Make one of the project's bases the active map. Caution: This changes the active map for every agent and the page of the project. The previous base is kept; map activate <its name> switches back. | write, destructive, person's decision |
+| `map_add-base` | Start a new, empty base for the project and make it the active map. Caution: This changes the active map for every agent and the page of the project. The previous base is kept; map activate <its name> switches back. | write, destructive, person's decision |
 | `map_answer` | Answer a blind-spot challenge the critic raised: A, B or C. | write |
 | `map_bases` | List the project's bases, the maps it keeps, and which one is active. | read |
 | `map_challenges` | Read the answer prompt with each challenge of a blind-spot layer and its state. | read |
 | `map_children` | List the artifact types one segment toward the leaves from an address. | read |
 | `map_citing` | Find everything on the map whose refs hold a key and value, such as a file path. | read |
 | `map_clear` | Remove a select or mask set at an address. | write |
-| `map_collapse` | Rewrite the current map as a new base of one base layer and make it active; the old one is kept whole. Each element and join is written once, with the same ids. Caution: This changes the active map for every agent and the page of the project. The previous base is kept; map activate <its name> switches back. | write |
+| `map_collapse` | Rewrite the current map as a new base of one base layer and make it active; the old one is kept whole. Each element and join is written once, with the same ids. Caution: This changes the active map for every agent and the page of the project. The previous base is kept; map activate <its name> switches back. | write, destructive, person's decision |
 | `map_context` | Read the properties that apply at an address, and those attached toward the leaves that are visible there. | read |
 | `map_critic` | Start a blind-spot critic run: a new blind-spot layer, and the critic prompt with the whole base. | write |
 | `map_cypher` | Ask the map a question in Cypher: a read-only query over the graph of the layers in view or named. | read |
@@ -197,7 +199,7 @@ Read and write this project's functional map and its layers.
 | `map_promote` | Give a join an element of its own at an address, keeping the join and its history, memories and work. | write |
 | `map_reexamined` | Clear a layer's re-examination mark once its knowledge has been checked against the changed base. | write |
 | `map_refine` | Refine the base: change or remove one of its elements or joins as a new version, keeping every earlier one. | write |
-| `map_remove-base` | Take one base out of the project; a copy of its store is kept. Caution: Removes the base and its store; a copy is kept under backups/remove-base. The active base is refused. | remove |
+| `map_remove-base` | Take one base out of the project; a copy of its store is kept. Caution: Removes the base and its store; a copy is kept under backups/remove-base. The active base is refused. | remove, person's decision |
 | `map_reply` | Answer a question at a node, or mark a message read. | write |
 | `map_roots` | Read the map's entry: the CQU and the DE with their joins, and every root element. | read |
 | `map_search` | Find the layer items whose value holds every word of the text. | read |
@@ -218,9 +220,9 @@ A memory graph, presented at each node of the map as the MCP reference memory se
 | `memory_add_observations` | Add observations to memory entities that already exist, at a node or in the whole memory graph. | write |
 | `memory_create_entities` | Record what happened in the work at a node of the map: new memory entities with their observations. What is true of the project goes to the knowledge layers. Without node, they go in the memory graph joined to no node. | write |
 | `memory_create_relations` | Relate memory entities to one another, at a node or in the whole memory graph. Relations should be in active voice. | write |
-| `memory_delete_entities` | Delete memory entities and their relations, at a node or in the whole memory graph. | remove |
-| `memory_delete_observations` | Delete observations from memory entities, at a node or in the whole memory graph. | remove |
-| `memory_delete_relations` | Delete relations between memory entities, at a node or in the whole memory graph. | remove |
+| `memory_delete_entities` | Delete memory entities and their relations, at a node or in the whole memory graph. Caution: Deleting memories removes them from the memory graph for every agent; no copy is kept and it is not undone. | remove, person's decision |
+| `memory_delete_observations` | Delete observations from memory entities, at a node or in the whole memory graph. Caution: Deleting memories removes them from the memory graph for every agent; no copy is kept and it is not undone. | remove, person's decision |
+| `memory_delete_relations` | Delete relations between memory entities, at a node or in the whole memory graph. Caution: Deleting memories removes them from the memory graph for every agent; no copy is kept and it is not undone. | remove, person's decision |
 | `memory_graph` | Read the whole memory graph with its joins to the map: who wrote each, and whether each shows at its node. | read |
 | `memory_joins` | List the memory joins that tie entities to map nodes: at a node, of an entity, or all. Each comes with who made it and whether it is orphaned. | read |
 | `memory_note` | Read the person's one note at a node of the map; only the web page writes it. | read |
@@ -310,7 +312,7 @@ Metaform's own commands: settings, feedback and reports, and the project's histo
 |---|---|---|
 | `metaform_add_origin` | Establish an origin from the project's current state: the baseline that variants of work are stored against. As metaform add origin does. | write |
 | `metaform_add_variant` | Collect a folder, such as a worker's worktree, as a variant of an origin: the work's changes against it. As metaform add variant does. | remove |
-| `metaform_clear_project` | Clear the project's map, as metaform clear project does: remove its bases and reports. A backup is made first, and metaform restore project brings it back; its registration, folder, settings, origins and variants stay. Without confirm it only says what it would remove. | remove |
+| `metaform_clear_project` | Clear the project's map, as metaform clear project does: remove its bases and reports. A backup is made first, and metaform restore project brings it back; its registration, folder, settings, origins and variants stay. It is the person's decision: it runs only when they say yes in the form their AI tool shows them, and otherwise says what it would remove. | remove, person's decision |
 | `metaform_extract` | Write variants out to folders as files you can read or run, with Python alone, as metaform extract does. | write |
 | `metaform_feedback` | Save feedback on the Metaform process: a problem, bad semantics, or a trouble report when you cannot continue. Attach your report and the shape you could not submit when you have them. Always available. | write |
 | `metaform_instructions` | Read how to use Metaform here: the guide to this folder's modules and state, or one module's instructions. As metaform instructions prints it; with module, that module's full instructions. Always available. | read |

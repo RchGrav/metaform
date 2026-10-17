@@ -315,6 +315,7 @@ This section specifies the addressed-context design, the system's key innovation
 - Acceptance: A memory written under `METAFORM_SESSION=r1` is given a new observation, has an observation deleted, and is then deleted, all under `METAFORM_SESSION=r2`. Each call succeeds and the graph shows each change.
 - Relates to: LAYER-012 (amends "any agent may read them and add to them": any agent may also change and delete them, unless locked), LAYER-013, STORE-018, STORE-020, BASE-040, VIEW-031, CTX-023.
 - Status: confirmed and built, 2026-10-15, in conversation with the owner. Locking is the exception and is not built, CTX-023.
+- Amendment, 2026-10-17, UX review round 1, fix group person-consent (memory deletes had no caution): `delete_entities`, `delete_observations` and `delete_relations` are the person's decision (`person_says`): no copy is kept, so each runs only with the person's `--confirm` on their command line, their yes to their AI tool's form, or from the page's memory panel. An agent may still create, read and add to any memory; its delete is refused with the caution, naming what would go, and the command the person runs. This narrows the record's 'delete any memory' for agents.
 
 ### CTX-023 Every agent can read a locked memory, and no agent can change or delete it
 

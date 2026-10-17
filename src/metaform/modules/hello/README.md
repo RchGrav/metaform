@@ -51,7 +51,7 @@ Started from template 0.2.0.
 - `note <text>`: keeps a note in hello's own project-level table `notes` and returns its id. Tool `hello_note`.
 - `notes`: returns the notes in time order, read through the table's index on `at`. Tool `hello_notes`.
 - `basedemo`: reads the shared home, project and layer services, runs named map reads, and shows the selected project's backups and removal preview. It demonstrates the public base without clearing, restoring or removing a project. Tool `hello_basedemo`.
-- `base-restore [name] [--confirm]`: restores the selected project's named backup, or its newest backup when no name is supplied. The existing `Verb.caution` confirmation applies, and the project services back up its current contents before replacing them. Tool `hello_base-restore`.
+- `base-restore [name] [--confirm]`: restores the selected project's named backup, or its newest backup when no name is supplied. The existing `Verb.caution` confirmation applies, and the project services back up its current contents before replacing them. It is declared `person_says=True`, the person's decision: a command an agent runs, or an agent's `confirm` over MCP, is refused with the command the person runs, and only the person's `--confirm` or their yes to their AI tool's form runs it. Tool `hello_base-restore`.
 - `base-remove [--confirm]`: removes the selected empty project's registration and folder selections, retaining its source files, history and backups. A nonempty project must be cleared first. The existing `Verb.caution` confirmation applies. Tool `hello_base-remove`.
 
 ## Settings
