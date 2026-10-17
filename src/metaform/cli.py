@@ -45,7 +45,7 @@ from . import (
 from .data import Store, export_document, history, import_document, prompts
 from .docs import Command, Switch
 from .errors import Stop, StoreError
-from .module import Verb, call, caution_of, on_this_system
+from .module import Verb, call, caution_of, decided, on_this_system
 from .wording import count, counted
 
 EMPTY_IS_ALL = settings.EMPTY_IS_ALL
@@ -1138,6 +1138,11 @@ def run_module(identifier: str, rest: list[str], folder: Path) -> None:
         if verb.person_says and acting:  # the person's decision: an agent's --confirm never runs it, CLI-011
             raise caller.persons_decision(caution_of(verb, ctx), confirm, verb.page)
         raise Stop(caution_of(verb, ctx), f'If you are sure: {confirm}')
+    # a call that is the person's decision by what it asks, such as releasing a held ticket: it runs on their consent
+    # alone, from their terminal or the page, and needs no --confirm there (UX review round 2, held-and-signals)
+    deciding = decided(verb, ctx)
+    if deciding and caller.unconsented():
+        raise caller.persons_decision(deciding, shlex.join(['metaform', identifier, *rest]), verb.page)
     if inspect.iscoroutinefunction(verb.run):
         result = _run_async(verb.run, ctx, f'{identifier} {verb.name}')
     else:

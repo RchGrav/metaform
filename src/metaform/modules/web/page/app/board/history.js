@@ -28,11 +28,13 @@ export async function history(id) {
 }
 /* Who has a ticket, in words: an agent starting, the agent at work by its name, or who took it by hand; never the
  * reservation token or the session id it is recorded with, which stay on hover, UX review round 1 (web-gui-controls
- * F11). */
-export function takenWords(ticket) {
+ * F11). `ended`: the session that holds it has ended, so a start's reservation says nothing beside the card's own
+ * state, which then reads Did not start or Ended, never Starting… with it (UX review round 2, held-and-signals F5). */
+export function takenWords(ticket, ended = false) {
   const by = String(ticket?.taken_by || '');
   if (!by) return null;
   const [who, ...rest] = by.split(' ');
+  if (ended && by.startsWith('dispatch starting ')) return null;
   const said = by.startsWith('dispatch starting ') ? 'Starting…'
     : rest.length === 1 && /^[0-9a-f-]{8,}$/i.test(rest[0]) ? agentName(who) : by;
   return h('span', {class: 'by', title: by}, said);

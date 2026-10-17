@@ -59,6 +59,7 @@ from metaform.module import (
     chassis_version,
     command_summary,
     context,
+    decided,
     feedback,
     instructions,
     item_read,
@@ -708,6 +709,9 @@ def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dic
         raise persons_decision(caution_of(verb, made), person_command(module.id, verb, arguments), verb.page)
     if verb.caution and not (confirmed or consented):
         raise Stop(caution_of(verb, made), f'If you are sure: call {name} with confirm true')
+    deciding = None if consented else decided(verb, made)
+    if deciding:  # the person's decision by what this call asks, such as releasing a held ticket: their answer runs it
+        raise persons_decision(deciding, person_command(module.id, verb, arguments), verb.page)
     lines.extend(f'Notice: {key}: {message}' for key, message in notices)
     return made
 
@@ -1061,7 +1065,8 @@ def needs(folder: Path, name: str, arguments: dict[str, Any]) -> consent.Ask | N
     if found is None:
         return None
     module, verb = found
-    return consent.form(name, _asked_caution(folder, module, verb, arguments) or None, consent.held(
+    said = _decided(folder, module, verb, arguments) or _asked_caution(folder, module, verb, arguments)
+    return consent.form(name, said or None, consent.held(
         {key: value for key, value in arguments.items() if key in verb.switches}, folder), folder)
 
 
@@ -1083,9 +1088,9 @@ def persons_call(folder: Path, name: str, arguments: dict[str, Any]) -> bool:
     found = tools(folder).get(name)
     if found is None:
         return False
-    _, verb = found
-    return verb.person_says or bool(consent.held({key: value for key, value in arguments.items()
-                                                  if key in verb.switches}, folder))
+    module, verb = found
+    return verb.person_says or bool(_decided(folder, module, verb, arguments)) or bool(consent.held(
+        {key: value for key, value in arguments.items() if key in verb.switches}, folder))
 
 
 def persons_line(folder: Path, name: str, arguments: dict[str, Any]) -> str:
@@ -1122,6 +1127,21 @@ def ask_in_chat(folder: Path, name: str, arguments: dict[str, Any], ask: consent
     ask_consent = cast(Callable[..., dict[str, Any]], asking[0][1])
     return ask_consent(Store(project), ask.message, tool=name, command=persons_line(folder, name, arguments),
                        caution=ask.message)
+
+
+def _decided(folder: Path, module: Module, verb: Verb, arguments: dict[str, Any]) -> str:
+    """The caution of a call that is the person's decision by what it asks, `Verb.person_decides`, as the call itself
+    would say it; empty when it is not, or when the call cannot be read, which the call then says."""
+    if verb.person_decides is None:
+        return ''
+    try:
+        nouns, switches, _ = tool_arguments(module.id, verb, dict(arguments), ignore=PER_CALL, folder=folder)
+        project = arguments.get('project')
+        made = context(module.id, folder, project=project if isinstance(project, str) else None, nouns=nouns,
+                       switches=switches, surface='mcp')
+    except (Stop, StoreError):
+        return ''
+    return decided(verb, made) or ''
 
 
 def _asked_caution(folder: Path, module: Module, verb: Verb, arguments: dict[str, Any]) -> str:

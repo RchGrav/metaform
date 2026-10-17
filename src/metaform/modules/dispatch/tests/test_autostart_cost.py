@@ -1,5 +1,6 @@
 """Autostart reads selection inputs once and preserves ticket selection rules."""
 import json
+import re
 from collections import Counter
 
 import pytest
@@ -214,7 +215,10 @@ def test_a_ticket_after_another_starts_only_once_that_one_is_done(dispatch, run,
     assert started() == [dispatch.id]
     assert dispatch.store.ticket(second).work.taken is None
     refused = run('dispatch', 'start', second, 'claude', cwd=dispatch.folder, ok=False)
-    assert refused.returncode != 0 and f'waits on {dispatch.id}' in refused.stderr + refused.stdout
+    said = refused.stderr + refused.stdout
+    # both tickets named by their handle and title, never by 32-hex ids (round 2, held-and-signals F6)
+    assert refused.returncode != 0 and '"After the first" waits on code.engine#1 "Write notes.txt"' in said, said
+    assert not re.search('[0-9a-f]{32}', said), said
     dispatch.store.finish_work(dispatch.id, 'Done.', 'It is done.')
     assert started() == [second], 'the next pass starts what the done ticket freed'
 
@@ -229,6 +233,45 @@ def test_a_ticket_an_agent_writes_is_held_so_no_work_starts_its_own_successor(di
     mine = json.loads(run('map', 'work', 'op=add', f'node=element:{dispatch.node.id}', 'task=Mine', 'title=Mine',
                           '--json', cwd=dispatch.folder, env={'METAFORM_ROLE': ''}).stdout)
     assert mine['held'] is False, "the person's own ticket goes to To do"
+
+
+@pytest.mark.req('VIEW-045')
+def test_a_held_ticket_is_released_only_by_the_person_whatever_path_an_agent_takes(dispatch, run):  # noqa: F811
+    """UX review round 2, held-and-signals F3 and F4: a sentinel moved its own held proposal to To do and autostart
+    started it, an intake agent started one with dispatch start, a system agent edited held=false, and an agent with
+    METAFORM_ROLE cleared wrote an unheld ticket. Releasing is the person's decision: their terminal, or the page."""
+    folder = dispatch.folder
+    # every identity name the runner sets says an agent writes, not the role alone
+    cleared = json.loads(run('map', 'work', 'op=add', f'node=element:{dispatch.node.id}', 'task=Proposal',
+                             'title=Proposal', '--json', cwd=folder,
+                             env={'METAFORM_ROLE': '', 'METAFORM_SESSION': 's-1'}).stdout)
+    assert cleared['held'] is True, cleared
+    held = cleared['id']
+    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'hold=true', cwd=folder)  # the person holds this one
+    calls = (('map', 'work', 'op=move', f'id={held}', 'column=todo'),
+             ('map', 'work', 'op=move', f'id={held}', 'column=doing'),
+             ('map', 'work', 'op=edit', f'id={held}', 'held=false'),
+             ('map', 'work', 'op=take', f'id={held}'),
+             ('dispatch', 'start', held, 'claude'),
+             ('map', 'work', 'op=edit', f'id={dispatch.id}', 'hold=false'),
+             ('dispatch', 'start', dispatch.id, 'claude'))
+    for role in ('sentinel', 'talk', 'intake', 'system'):
+        for call in calls:
+            refused = run(*call, cwd=folder, env={'METAFORM_ROLE': role}, ok=False)
+            said = refused.stdout + refused.stderr
+            assert refused.returncode != 0 and "the person's decision" in said, (role, call, said)
+            assert '"Proposal"' in said or '"Write notes.txt"' in said, said  # named as the person reads it
+    record = dispatch.store.ticket(held).work
+    assert record.held and record.taken is None and dispatch.store.ticket(dispatch.id).work.taken is None
+    # the person releases it at their own terminal, with no --confirm; their hold's letting go is theirs too
+    moved = json.loads(run('map', 'work', 'op=move', f'id={held}', 'column=todo', '--json', cwd=folder).stdout)
+    assert moved['held'] is False
+    let_go = json.loads(run('map', 'work', 'op=edit', f'id={dispatch.id}', 'hold=false', '--json', cwd=folder).stdout)
+    assert let_go['map']['hold'] is False
+    # what an agent may still do with a held ticket: read it, note it, and put it back in Backlog
+    again = run('map', 'work', 'op=edit', f'id={held}', 'held=true', 'note=Seen', cwd=folder,
+                env={'METAFORM_ROLE': 'system'})
+    assert again.returncode == 0 and dispatch.store.ticket(held).work.held
 
 
 @pytest.mark.req('BASE-052')

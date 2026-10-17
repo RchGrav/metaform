@@ -2913,7 +2913,8 @@ def with_modules(given: dict[str, str], found: Any) -> Any:
 
 def with_glyphs(given: dict[str, str], found: Any) -> Any:
     """A work read's records, each with what the map module keeps on it under `map`, its glyph, its preferred agent,
-    eligible agents and whether the person holds it, as `map work` shows it, VIEW-040, MAP-058 and BASE-035. Its tables, STORE-045,
+    eligible agents, the tickets it waits on and whether the person holds it, as `map work` shows it, VIEW-040, VIEW-042,
+    MAP-058 and BASE-035. Its tables, STORE-045,
     are read once each: running `map work` over every ticket again only to add these cost more than the work read
     itself, and the page reads work on every ticket change. With map not on the surface the records are returned as they
     are.
@@ -2942,6 +2943,13 @@ def with_glyphs(given: dict[str, str], found: Any) -> Any:
                 held.setdefault(str(row['work_id']), {}).update(agent=row['agent'], hold=bool(row['hold']))
             for row in rows('eligible', 'work_id', {}):
                 held.setdefault(str(row['work_id']), {})['eligible'] = row['agents']
+            # the tickets it waits on, `after_work`, so the card says Waiting on and Start all leaves it out, as every
+            # agent starter does (UX review round 2, held-and-signals F2: the page never received it)
+            try:
+                for row in rows('after', 'work_id', {}):
+                    held.setdefault(str(row['work_id']), {})['after_work'] = row['works']
+            except StoreError:
+                pass  # a map store below version 17 keeps no order between tickets
             # its item at its address, `<address>#<n>`, and its title, MCP-037, as the full-size dock's agent list says
             for row in rows('numbered', 'item_id', {'kind': 'work'}):
                 held.setdefault(str(row['item_id']), {}).update(
@@ -3089,7 +3097,10 @@ PERSONS_WRITES = frozenset({
     '/api/clear-project', '/api/remove-project', '/api/activate-base', '/api/remove-base', '/api/restore',
     '/api/intake-discard', '/api/memory', '/api/settings', '/api/settings/reset', '/api/dispatch-prompts',
     '/api/dispatch-autostart', '/api/dispatch-agents', '/api/modules', '/api/dispatch-session-prompts',
-    '/api/dispatch-start', '/api/dispatch-configure', '/api/dispatch-cancel'})
+    '/api/dispatch-start', '/api/dispatch-configure', '/api/dispatch-cancel',
+    # the board's own moves, a ticket's hold and glyph, and Distribute: a move out of Backlog or a hold let go
+    # releases a ticket held for the person, which an agent posting as the page did (round 2, held-and-signals F4)
+    '/api/move', '/api/ticket', '/api/distribute'})
 
 
 class _Vouched(threading.local):

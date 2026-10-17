@@ -82,8 +82,9 @@ def test_a_burst_of_note_edits_runs_no_agent_starter_pass_and_one_ticket_change_
     monkeypatch.setattr(events, 'publish', lambda topic, payload, source: fired.append(payload) or [])
     changes.announce(dispatch.folder, 'cli')
     fired.clear()
-    for number in range(100):
-        dispatch.store.edit_work(dispatch.id, {'note': f'Note {number}.'})
+    for number in range(100):  # half note edits, half a reviewed mark flipped, which starts nothing either (round 2,
+        # held-and-signals F8: each reviewed edit ran a pass)
+        dispatch.store.edit_work(dispatch.id, {'note': f'Note {number}.'} if number % 2 else {'reviewed': number % 4 == 0})
         changes.announce(dispatch.folder, 'cli')
     server = object.__new__(module.Server)
     page = queue.SimpleQueue()
