@@ -11682,3 +11682,42 @@ def test_web_viewing_reads_how_the_mascot_moved_on_the_page_so_a_shake_can_be_na
     assert talking['channels']['scale'][3] > 2, talking                # the speaking pulse turns back, about 5.7 a second
     page.evaluate('window.metaform.mascotSpeaking(false)')
     assert problems == []
+
+
+@pytest.mark.req('VIEW-045')
+@pytest.mark.req('BASE-039')
+@pytest.mark.skipif(os.name == 'nt', reason='SIGKILL')
+def test_an_intake_agent_killed_leaves_the_page_at_once_with_nothing_read_by_hand(
+        run, home, web, browser, tmp_path, dispatch_runners):
+    """UX review round 2, 2026-10-17 (intake-single-flight F1): a dispatched intake whose runner was killed went on
+    showing as at work on the page for as long as anyone watched, since a death said nothing and the page reads again
+    only when a change is announced. The runner's lease wakes the page server's watch as it dies; the server ends what
+    it left and announces the change, and the bar goes within moments, with no other call made."""
+    import signal
+
+    from metaform.data import Store
+    from metaform.modules.dispatch.tests.test_dispatch import eventually, gone
+    folder, log = tmp_path / 'cli', tmp_path / 'fake.jsonl'
+    folder.mkdir()
+    run('add', 'project', 'cli', str(folder))
+    run('enable', 'dispatch')
+    run('set', '--dispatch-claude', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=folder)
+    run('web', '--json', env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'hold'})
+    page = browser.new_page(viewport={'width': 1280, 'height': 800})
+    page.goto(f'http://127.0.0.1:{web}/#p=cli')
+    page.wait_for_selector('#emptyStage:not([hidden])', timeout=60000)
+    started = json.loads(run('dispatch', 'intake', 'agent=claude', '--json', cwd=folder,
+                             env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'hold'}).stdout)
+    dispatch_runners.append((started, folder, log))
+    page.wait_for_selector('#intakeBar:not([hidden]) .doing:has-text("Waiting for the first record")', timeout=30000)
+    agent = eventually(lambda: next((one['pid'] for one in map(json.loads, log.read_text().splitlines())
+                                     if 'pid' in one), None) if log.exists() else None)
+
+    def launch_kept():
+        with Store('cli', module='dispatch').tables(write=False) as tx:
+            return tx.rows('raised', limit=0).results
+    eventually(lambda: not launch_kept())  # the last change its start makes is heard before the kill, not after it
+    page.wait_for_timeout(1500)
+    os.killpg(started['pid'], signal.SIGKILL)
+    page.wait_for_selector('#intakeBar', state='hidden', timeout=5000)
+    assert gone([agent]), 'its agent, in a group of its own, is ended by the server that heard the death'

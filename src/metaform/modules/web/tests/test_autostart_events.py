@@ -96,16 +96,18 @@ def test_a_burst_of_note_edits_runs_no_agent_starter_pass_and_one_ticket_change_
     monkeypatch.setattr(server, 'schedule_merges', lambda project: None)
     passes = []
     monkeypatch.setattr(module, 'module_verb', lambda *args, **kwargs: passes.append(args) or {})
+    arms = []  # the watch on runners' deaths lists the leases only for a change that can have started one, round 2
+    server.deaths = SimpleNamespace(arm=lambda: arms.append(1))
     burst = [dict(one) for one in fired if one.get('base_id')]
     assert len(burst) == 100
     assert sum(server.changed(payload) for payload in burst) == 100, 'every change still reaches the page'
-    assert passes == []
+    assert passes == [] and arms == []
     fired.clear()
     dispatch.store.add_work(dispatch.node, 'unbuilt', task='Ready to start')
     changes.announce(dispatch.folder, 'cli')
     for payload in [one for one in fired if one.get('base_id')]:
         server.changed(dict(payload))
-    assert len(passes) == 1
+    assert len(passes) == 1 and len(arms) == 1
 
 
 def test_repeated_changes_queue_one_followup_without_concurrent_batches(monkeypatch):

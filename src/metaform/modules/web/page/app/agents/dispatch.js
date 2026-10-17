@@ -213,6 +213,8 @@ async function startAllTickets(tickets, pick, startAll) {
   if (D.starting) { START.cancel = true; return; }  // the button reads Stop starting while it runs
   D.starting = true;
   START.cancel = false;
+  // one token for the run: a Stop all in the middle of it refuses every start of it still on its way, on the server
+  START.batch = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
   const agent = pick.value();
   const buttons = [...$('#dispatch .tickets').querySelectorAll('button.start')];
   const offered = tickets.filter((ticket, i) => !buttons[i].disabled);
@@ -230,7 +232,9 @@ async function startAllTickets(tickets, pick, startAll) {
     const button = buttons[tickets.indexOf(ticket)];
     if (START.cancel) { left++; button.disabled = false; continue; }
     try {
-      if (await startAgent(ticket.id, agent, launchOwn())) { started++; button.textContent = 'Starting'; }
+      if (await startAgent(ticket.id, agent, {...launchOwn(), batch: START.batch})) {
+        started++; button.textContent = 'Starting';
+      }
       else { button.disabled = false; button.textContent = 'Retry'; }
     } catch (error) { toast(error.message); button.disabled = false; button.textContent = 'Retry'; }
   }
@@ -265,7 +269,14 @@ function startButton(ticket, agent, pick, full = false) {
       : 'Start the agent chosen above on this ticket', onclick: start}, 'Start');
 }
 // the start window's tickets, drawn again for the agent chosen, and the permissions chosen for its launches
-const START = {draw: null, own: {prompts: '', mode: ''}, permissionsFor: null, cancel: false};
+const START = {draw: null, own: {prompts: '', mode: ''}, permissionsFor: null, cancel: false, batch: null};
+/* Stop all ends a Start all run between two starts, as its own Stop starting does; true when one was running. UX
+ * review round 2 (ux-verify-combined F1): Stop all left the run going, and three agents started after it. */
+export function cancelStarting() {
+  if (!D.starting) return false;
+  START.cancel = true;
+  return true;
+}
 $('#dispatch .close').onclick = () => { $('#dispatch').hidden = true; START.permissionsFor = null; };
 overlay($('#dispatch'), {kind: 'dialog', focus: () => $('#dispatch .choice > .btn'),
   close: () => { $('#dispatch').hidden = true; START.draw = null; START.permissionsFor = null; }});

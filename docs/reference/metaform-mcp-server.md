@@ -134,7 +134,7 @@ Start an agent on a ticket through ACP, follow it, message it and stop it.
 | `dispatch_spend` | Read what agents have spent today, on a ticket and by run, in billable tokens and reported cost, against the budgets; sessions that report no usage are named. | read |
 | `dispatch_start` | Start an agent on a ticket; it returns at once, and the map shows the agent at work. On a ticket with an agent glyph, the agent then works the glyph's other tickets in turn. | write, open world |
 | `dispatch_stop` | Stop the agent working a ticket. | write, open world |
-| `dispatch_stop-all` | Stop every agent of the project, or of every project with home=true, and turn Autostart agents off, so nothing starts in their place. | write, open world |
+| `dispatch_stop-all` | Stop every agent of the project, or of every project with home=true, and turn Autostart agents off, so nothing starts in their place; an agent stops only the agents it started. | write, open world |
 | `dispatch_system` | Start the person's system agent, who talks with them about anything in the project, or reuse the running one; `fresh=true` resumes no earlier conversation. | write, open world |
 | `dispatch_tune` | Set the model and effort the agent working a ticket uses, over dispatch_<agent>_<option>; the person's own. A running session takes them at once. Refused to an agent while agents_may_set_control is off. | write |
 | `dispatch_talk` | Talk with an agent about a ticket, a node, or an ended agent's session. The ticket may be open or done; an agent at work on it is talked to directly. | write, open world |

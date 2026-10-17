@@ -97,7 +97,7 @@ from metaform.module import (
 
 from . import (
     HANDED,
-    PERSON_ENDS,
+    LEASE_VARIABLE,
     PROMPTS,
     READS,
     REPLY_LIMIT,
@@ -125,6 +125,7 @@ from . import (
     memory_text,
     module_read,
     next_ticket,
+    note_agent,
     option_key,
     origin,
     over_budget,
@@ -137,7 +138,10 @@ from . import (
     session_state,
     start_command,
     start_environment,
+    start_failed,
     startable,
+    started_well,
+    stop_end,
     ticket,
     today,
     wanted_options,
@@ -839,26 +843,69 @@ class Exits(asyncio.subprocess.SubprocessStreamProtocol):
         self.exited.set()
 
 
+LEASE: list[contextlib.ExitStack] = []  # the lease this runner holds where a lock is not inherited, Windows
+LEASE_PATH: list[Path] = []  # this runner's lease file, where its agent's group is noted as it starts
+
+
+def hold_lease() -> Path | None:
+    """The lease this runner holds for as long as it lives, `RunnerWatch`: inherited, locked, from its starter, or
+    on Windows locked here; taken out of the environment, so the agent and its tools do not inherit its name."""
+    raw = os.environ.pop(LEASE_VARIABLE, None)
+    if not raw:
+        return None
+    path = Path(raw)
+    LEASE_PATH[:] = [path]
+    if os.name == 'nt':
+        held = contextlib.ExitStack()
+        with contextlib.suppress(OSError):
+            held.enter_context(home.file_lock(path))
+            LEASE.append(held)
+    return path
+
+
+def let_lease_go(path: Path | None) -> None:
+    """The runner ends on its own: its lease goes first, so the watch that wakes as it ends knows its end was said
+    by its own writes and announces nothing."""
+    if path is None:
+        return
+    with contextlib.suppress(OSError):
+        path.unlink()
+    while LEASE:
+        with contextlib.suppress(OSError):
+            LEASE.pop().close()
+
+
 async def dispatch(ctx: Context) -> dict[str, Any]:
     """`metaform dispatch run <id> <agent>`: the session for one ticket, until it ends. When the ticket is done and has an
     agent glyph, VIEW-040, the glyph's next ticket in board order gets a session of its own, and so on until the glyph
     has none waiting or a session ends with its ticket not done. A runner that fails in any way before its session
     holds the ticket gives the ticket's reservation back at once, with the traceback in its log, so a crashed start
     never holds a ticket (UX review round 1, 2026-10-17, dispatch-concurrency F2, runaway F6): a reservation held a
-    slot for 180 s after a start died, and the log said one line."""
+    slot for 180 s after a start died, and the log said one line. The failure is counted first, on its ticket and its
+    agent, `start_failed`, so the supervisor's backoff holds for it and the person is told why (UX review round 2,
+    held-sweeps F1: given back with no count, the same failing start ran again about once a second). A refusal, the
+    gate's or the ticket's, is no failure and counts nothing."""
+    lease = hold_lease()
+    reservation = ctx.nouns.get('reservation')
     try:
         return await sessions_run(ctx)
     except Stop:
         with contextlib.suppress(Exception):  # given back only while the reservation still holds the ticket
             await asyncio.to_thread(given_back, ctx.require_store(), str(ctx.nouns['id']), ctx.nouns.get('reservation'))
         raise
-    except BaseException:
+    except BaseException as error:
         sys.stderr.write(traceback.format_exc())
         try:
+            if isinstance(error, Exception):
+                await asyncio.to_thread(start_failed, ctx, ctx.require_store(), str(ctx.nouns['id']),
+                                        str(ctx.nouns.get('agent') or ''), f'{type(error).__name__}: {error}',
+                                        reservation=str(reservation) if reservation else None)
             await asyncio.to_thread(given_back, ctx.require_store(), str(ctx.nouns['id']), ctx.nouns.get('reservation'))
         except BaseException:  # noqa: BLE001  the failure itself is what the runner reports
             sys.stderr.write(traceback.format_exc())
         raise
+    finally:
+        let_lease_go(lease)
 
 
 async def sessions_run(ctx: Context) -> dict[str, Any]:
@@ -1000,7 +1047,7 @@ async def moved_on(store: Store, ended: dict[str, Any]) -> dict[str, Any]:
             due = started.get('retry_due')
             wait = max(float(due) - time.time(), 0.0) if due is not None else None
             if wait is not None and wait <= retry_wait_limit(ctx) and \
-                    str(ended.get('ended') or '') not in PERSON_ENDS:
+                    not stop_end(str(ended.get('ended') or '')):
                 await asyncio.sleep(wait)
                 await asyncio.to_thread(autostart, ctx)
         except Exception as error:  # noqa: BLE001  the session's own result stands whatever the next start meets
@@ -3356,6 +3403,18 @@ class Session:
                     await self.note(None, 'failed', text)
             except Exception as note_error:  # noqa: BLE001  a failure note cannot prevent resource cleanup
                 sys.stderr.write(f'Could not record the session failure: {note_error}\n')
+            if not self.recorded and not self.probe:
+                # A start that made no recorded session, before session/new answered or after, is counted on its
+                # ticket and its agent and its reservation given back, before the queue moves on in this runner, so
+                # the supervisor's backoff holds for it, P012 (UX review round 2: ux-verify-combined F2, spawn-gate
+                # F3, the reservation was held 180 s, the reason said nowhere).
+                reservation = self.ctx.nouns.get('reservation')
+                try:
+                    await asyncio.to_thread(start_failed, self.ctx, self.store, self.work_id, self.agent,
+                                            f'{error}' + (f'; its last stderr: {last}' if last else ''),
+                                            reservation=str(reservation) if reservation else None)
+                except Exception as count_error:  # noqa: BLE001  the stale sweep is still the backstop
+                    sys.stderr.write(f'Could not count the failed start: {count_error}\n')
         finally:
             with contextlib.suppress(NotImplementedError):
                 loop.remove_signal_handler(signal.SIGTERM)
@@ -3478,6 +3537,9 @@ class Session:
             self.took = not self.prep
             self.recorded = True
         await self.write(take)
+        # a start that made its session ends the count of failed starts on its ticket and its agent, P012
+        with contextlib.suppress(Exception):
+            await asyncio.to_thread(started_well, self.store, self.work_id, self.agent)
         # every runner stays in the metaform it began in, whichever becomes active later, `dispatch`; one started by
         # an older starter, with none named, is bound here to the one it took its ticket in
         bound = await asyncio.to_thread(self.store.bound_base)
@@ -3598,6 +3660,8 @@ class Session:
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=self.folder,
             env=windowless({**agent_environment(**identity), **start_environment(self.agent)}), **group_options())
         self.process, self.exited = asyncio.subprocess.Process(transport, protocol, loop), protocol.exited
+        with contextlib.suppress(OSError):  # its own process group: a stop while starting, or a death, ends it too
+            await asyncio.to_thread(note_agent, self.process.pid, LEASE_PATH[0] if LEASE_PATH else None)
         if self.process.stderr is not None:
             self.spawn(self.read_stderr(self.process.stderr))
         # The unstable protocol is enabled only so the SDK routes elicitation without a warning; ACP marks it Completed.
@@ -4245,7 +4309,9 @@ class Session:
             elif op == 'tune':  # the ticket's own model and effort, changed while it runs, P015
                 await self.reply(writer, {**said, 'applied': await self.apply_options()})
             elif op in ('stop', 'cancel'):  # session/cancel for a turn in flight, then the session ends, P232
-                await self.end('stopped by the person' if op == 'stop' else 'cancelled by the person', release=False)
+                by = asked.get('by')  # an agent's stop names the agent, so the board never blames the person
+                await self.end((f'stopped by {by}' if isinstance(by, str) and by else 'stopped by the person')
+                               if op == 'stop' else 'cancelled by the person', release=False)
                 try:
                     await self.reply(writer, {**said, 'stopped': True})
                 finally:

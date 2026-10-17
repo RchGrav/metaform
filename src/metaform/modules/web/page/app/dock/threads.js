@@ -501,6 +501,11 @@ export function sessionStatus(session, signals = D.signals || []) {
     return {state: 'failed', reason: 'dead', words: 'Runner gone',
       why: `Its runner stopped: ${how}. The ticket goes back to the board for another agent.`};
   }
+  if (/^it did not start/.test(how) || String(session.session_id || '').startsWith('start-')) {
+    return {state: 'failed', reason: 'unstarted', words: 'Did not start',
+      why: `${agent} did not start: ${how.replace(/^it (did not start|failed):?\s*/, '')}. Start agent tries again; `
+        + 'it is tried again by itself after a wait, until it has failed too often and waits for you.'};
+  }
   if (/ticket is done/.test(how)) {
     return {state: 'completed', reason: 'done', words: 'Ended', why: 'Its ticket is done.'};
   }

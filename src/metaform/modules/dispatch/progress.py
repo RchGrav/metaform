@@ -64,14 +64,14 @@ def executed(store: Store, work_id: str, runner: str) -> None:
 
 def finish(store: Store, work_id: str, runner: str, how: str) -> None:
     """Account once for this runner, in the transaction that ends or recovers it. Late cleanup is ignored."""
-    from . import PERSON_ENDS, ticket
+    from . import stop_end, ticket
     with store.atomic():
         value = _read(store, work_id)
         if value is None or value['runner'] != runner or value['ended']:
             return
         record = ticket(store, work_id)
         _reset(value, record)
-        if value['executed'] and not record.done and record.steps_done <= value['baseline'] and how not in PERSON_ENDS:
+        if value['executed'] and not record.done and record.steps_done <= value['baseline'] and not stop_end(how):
             value['attempts'] += 1
         value['ended'] = True
         _write(store, work_id, value)
