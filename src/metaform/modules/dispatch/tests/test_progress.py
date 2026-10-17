@@ -266,3 +266,48 @@ def test_reset_of_a_dead_intake_needs_no_ticket_or_progress_counter(dispatch, mo
                       'deferred': []}
     with store.tables(write=False) as tx:
         assert tx.get('agent_sessions', {'session_id': 'intake-session'})['state'] == 'ended'
+
+
+@pytest.mark.req('QUAL-015')
+def test_a_burst_of_note_edits_reads_no_progress_and_a_refresh_with_nothing_to_do_takes_no_write_lock(dispatch,
+                                                                                                    monkeypatch):
+    """UX review round 1, runaway F3: a ticket's words change no progress, so the handler reads nothing for them; a
+    step still reconciles; and a reconcile that finds nothing to change writes nothing."""
+    from metaform import changes, events
+    from metaform.modules.dispatch import progress
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    for number in range(3):
+        attempt(dispatch, f'runner-{number}')  # a streak, so the ticket has progress to read
+    fired: list[dict] = []
+    monkeypatch.setattr(events, 'publish', lambda topic, payload, source: fired.append(payload) or [])
+    changes.announce(dispatch.folder, 'cli')
+    fired.clear()
+    for number in range(100):
+        dispatch.store.edit_work(dispatch.id, {'note': f'Note {number}.'})
+        changes.announce(dispatch.folder, 'cli')
+    burst = [one for one in fired if one.get('base_id')]
+    assert len(burst) == 100 and all(one['kinds'] == ['note'] for one in burst), burst[:2]
+    reads = []
+    opened = Store.tables
+
+    def counted(self, *args, **kwargs):
+        reads.append(self.module)
+        return opened(self, *args, **kwargs)
+
+    monkeypatch.setattr(Store, 'tables', counted)
+    for payload in burst:
+        progress.changed(payload, ctx)
+    assert reads == [], 'a note edit reads no progress'
+    fired.clear()
+    monkeypatch.setattr(Store, 'tables', opened)
+    dispatch.store.step_work(dispatch.id, 'A step.')
+    changes.announce(dispatch.folder, 'cli')
+    [stepped] = [one for one in fired if one.get('base_id')]
+    monkeypatch.setattr(Store, 'tables', counted)
+    progress.changed(stepped, ctx)
+    assert reads, 'a step is read and reconciled'
+    locks = []
+    atomic = Store.atomic
+    monkeypatch.setattr(Store, 'atomic', lambda self: locks.append(1) or atomic(self))
+    progress.refresh(ctx, Store('proj', module='dispatch'), dispatch.ticket())  # reconciled already: nothing to do
+    assert locks == [], 'a refresh with nothing to change takes no write lock'

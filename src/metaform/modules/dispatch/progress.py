@@ -86,9 +86,30 @@ def blocked(ctx: Context, store: Store, record: WorkRecord) -> bool:
     return bool(value and not _advanced(value, record) and value['attempts'] >= limit)
 
 
-def refresh(ctx: Context, store: Store, record: WorkRecord) -> None:
-    """Reconcile progress and signal its streak after the accounting transaction commits."""
+def due(ctx: Context, store: Store, record: WorkRecord) -> bool:
+    """Whether `refresh` has anything to write for this ticket, from reads alone: its progress to reset, a streak's
+    signal to clear, or one to raise. UX review round 1 (runaway F3): every refresh took the write lock first."""
     from . import ticket
+    record = ticket(store, record.id)
+    value = _read(store, record.id)
+    if value is None:
+        return False
+    if _advanced(value, record) and (value['attempts'] or record.steps_done > value['steps']):
+        return True
+    limit = int(ctx.setting('dispatch_rework_limit'))
+    reached = bool(limit and not record.done and value['attempts'] >= limit)
+    raised = [signal for signal in rows(store, record.id) if signal['signal'] == 'rework-limit' and signal.get('epoch')]
+    if any(not reached or signal['epoch'] != value['epoch'] for signal in raised):
+        return True
+    return reached and not any(signal['epoch'] == value['epoch'] for signal in raised)
+
+
+def refresh(ctx: Context, store: Store, record: WorkRecord) -> None:
+    """Reconcile progress and signal its streak after the accounting transaction commits; read first, so a ticket with
+    nothing to reconcile takes no write lock."""
+    from . import ticket
+    if not due(ctx, store, record):
+        return
     notices: list[dict[str, Any]] = []
     with store.atomic():
         record = ticket(store, record.id)  # the caller's snapshot may predate a completed step or another runner
@@ -129,6 +150,9 @@ def changed(payload: dict[str, Any], ctx: Context) -> None:
     settings_changed = tables is not None and 'dispatch.settings' in tables
     if tables is not None and 'work' not in tables and not settings_changed:
         return
+    kinds: Any = payload.get('kinds')
+    if not settings_changed and isinstance(kinds, list) and not {'ticket', 'step'} & set(cast(list[Any], kinds)):
+        return  # a ticket's words alone, its note, title or links, move no progress: UX review round 1, runaway F3
     named: Any = None if settings_changed else payload.get('work_ids')
     if isinstance(named, list) and not named:
         return

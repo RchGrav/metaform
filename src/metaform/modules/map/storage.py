@@ -139,10 +139,13 @@ def _work_row(tx: Tx, work_id: str) -> Any:
     return row
 
 
-def _ticket_changed(tx: Tx, *work_ids: str) -> None:
-    """The tickets this write changes, said on its `map.changed`, so a dispatch runner reads only its own, BASE-053."""
+def _ticket_changed(tx: Tx, *work_ids: str, kind: str = "ticket") -> None:
+    """The tickets this write changes, said on its `map.changed`, so a dispatch runner reads only its own, BASE-053.
+    `kind` says what changed: `ticket` for anything that can decide whether it starts or ends, `note` for its words
+    alone, its note, title or links, and `step` for its plan and steps, so the agent starter, which starts nothing for
+    words or steps, reads nothing for them (UX review round 1, runaway F3)."""
     for work_id in work_ids:
-        tx.concern(work_id=work_id, kind="ticket")
+        tx.concern(work_id=work_id, kind=kind)
 
 
 def _message_changed(tx: Tx, message_id: str) -> None:
@@ -208,14 +211,17 @@ def _link(tx: Tx, work_id: str, links: Any, notices: list[Notice]) -> None:
         )
 
 
+WORDS_ONLY = frozenset({"note", "title", "links"})  # an edit of these changes no start, `_ticket_changed`
+
+
 def edit_work(tx: Tx, work_id: str, changes: Any) -> WorkRecord:
     """Change a work record's fields, attachment or reference links in place, preserving its identity and progress."""
     notices: list[Notice] = []
     before = _work_row(tx, work_id)
-    _ticket_changed(tx, work_id)
     given = as_object(changes)
     if given is None:
         raise StoreError("The changes to a work record are an object of its fields.", "metaform help map work")
+    _ticket_changed(tx, work_id, kind="note" if given and set(given) <= WORDS_ONLY else "ticket")
     for key in sorted(given):
         if key == "node":
             kind, thing = work_target(tx, given[key], notices)
@@ -376,7 +382,7 @@ def plan_work(tx: Tx, work_id: str, steps: Any) -> WorkRecord:
     if count is not None and count < done:
         notices.append(Notice("steps", f"{done} steps are done already; the count was set to {done}."))
         count = done
-    _ticket_changed(tx, work_id)
+    _ticket_changed(tx, work_id, kind="step")
     tx.execute("UPDATE work SET steps=? WHERE work_id=?", (count, work_id))
     return work_record(tx, _work_row(tx, work_id), tuple(notices))
 
@@ -401,7 +407,7 @@ def step_work(tx: Tx, work_id: str, said: Any = None) -> WorkRecord:
     if planned is not None and done > int(planned):
         notices.append(Notice("steps", f"Step {done} is beyond the {planned} planned; the count was raised to {done}."))
         planned = done
-    _ticket_changed(tx, work_id)
+    _ticket_changed(tx, work_id, kind="step")
     tx.execute("UPDATE work SET steps=?, steps_done=? WHERE work_id=?", (planned, done, work_id))
     tx.execute(
         "INSERT INTO work_steps(work_id, number, said, at) VALUES (?, ?, ?, ?)",
@@ -1319,8 +1325,10 @@ TABLES = Tables(
     # a file's commit and unresolved names, and the provider a join's link is the code of, P167; 15: the project's
     # glossary terms, in a table of its own, so version 9 still reads and writes the store; 16: the code layer's four
     # tables dropped with map code-import and the other code-* verbs, code.analyzer.refactoring#1a (2026-10-15), and
-    # an earlier version that still declares them makes them again, empty, so version 9 still reads the store
-    version=16,
+    # an earlier version that still declares them makes them again, empty, so version 9 still reads the store; 17: the
+    # tickets each ticket waits on, `after`, in a table of its own, read by dispatch's agent starter (UX review round 1,
+    # 2026-10-17), so version 9 still reads and writes the store
+    version=17,
     compatible_from=9,
     upgrade=upgrade,
     legacy_upgrade=legacy_upgrade,
@@ -1335,6 +1343,10 @@ TABLES = Tables(
     ), Table(
         'eligible', place='metaform', key=('work_id',),
         columns=(Column('work_id', required=True), Column('agents', 'json', required=True)),
+    ), Table(
+        # the tickets a ticket waits on, `after_work`: no agent starts it automatically until each is done
+        'after', place='metaform', key=('work_id',),
+        columns=(Column('work_id', required=True), Column('works', 'json', required=True)),
     ), Table(
         'question_work', place='metaform', key=('message_id',),
         columns=(Column('message_id', required=True), Column('work_id', required=True)),

@@ -106,7 +106,7 @@ def test_a_change_names_the_tickets_and_kinds_it_wrote_and_names_none_when_one_w
     store.step_work(work_id, 'one')
     changes.announce(folder, surface)
     [stepped] = [one for one in fired if one.get('base_id')]
-    assert stepped['work_ids'] == [work_id] and stepped['kinds'] == ['ticket'] and stepped['session_ids'] == []
+    assert stepped['work_ids'] == [work_id] and stepped['kinds'] == ['step', 'ticket'] and stepped['session_ids'] == []
     fired.clear()
     store.step_work(work_id, 'two')
     store.add_element('parts', 'code.store')  # a write that says nothing of what it concerns

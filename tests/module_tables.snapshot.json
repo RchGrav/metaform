@@ -1874,9 +1874,35 @@
  },
  "intake": null,
  "map": {
-  "version": 16,
+  "version": 17,
   "compatible_from": 9,
   "tables": {
+   "after": {
+    "place": "metaform",
+    "key": [
+     "work_id"
+    ],
+    "columns": {
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "works": [
+      "json",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
    "challenge_states": {
     "place": "metaform",
     "key": [

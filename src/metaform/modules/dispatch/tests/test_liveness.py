@@ -987,3 +987,44 @@ def test_the_agent_process_finds_this_install_first_on_path(dispatch, monkeypatc
     asyncio.run(exercise())
     first = os.path.dirname(sys.executable)
     assert given['env']['PATH'] == (os.pathsep.join([first, rest]) if rest else first)
+
+
+
+@pytest.mark.req('BASE-052')
+def test_a_runner_that_fails_before_its_session_gives_its_reservation_back_with_the_traceback(dispatch, monkeypatch,
+                                                                                           capsys):
+    """UX review round 1, runaway F6: a runner that died at startup kept its ticket's reservation for 180 s, so
+    `free` read 0 with fewer agents than the limit, and its log said one line."""
+    from metaform.module import context
+    from metaform.modules.dispatch import runner
+    reservation = 'dispatch starting ' + '0' * 32
+    dispatch.store.take_work(dispatch.id, by=reservation)
+
+    def broken(folder):
+        raise RuntimeError('SQLite objects created in a thread can only be used in that same thread')
+
+    monkeypatch.setattr(runner, 'mcp_server', broken)
+    ctx = context('dispatch', dispatch.folder, project='proj',
+                  nouns={'id': dispatch.id, 'agent': 'claude', 'reservation': reservation})
+    with pytest.raises(RuntimeError):
+        asyncio.run(runner.dispatch(ctx))
+    record = dispatch.ticket()
+    assert record.taken is None and record.column == 'todo', 'the ticket is back in To do at once'
+    assert 'Traceback' in capsys.readouterr().err
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.parametrize(('due_in', 'waits'), [(1000.0, False), (0.05, True)])
+def test_a_runner_waits_for_a_retry_only_as_long_as_the_supervisors_backoff(dispatch, monkeypatch, due_in, waits):
+    """UX review round 1, runaway F8: a runner whose session stopped could sleep up to an hour for a retry due; it
+    waits only within the longest backoff dispatch_retries allows, and leaves a later one to the server's timer."""
+    import time
+
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch import runner
+    passes = []
+    monkeypatch.setattr(module, 'autostart', lambda ctx: passes.append(1) or {'retry_due': time.time() + due_in})
+    begun = time.monotonic()
+    asyncio.run(runner.moved_on(Store('proj'), {'ended': 'the agent ended with exit code 1'}))
+    assert time.monotonic() - begun < 30
+    assert len(passes) == (2 if waits else 1)

@@ -118,7 +118,7 @@ def test_start_window_skips_ineligible_first_ticket_without_losing_its_glyph(run
     assert page.eval_on_selector_all('#dispatch .ticket', 'rows => rows.map(row => row.dataset.id)') == [later, any_agent]
     # what it starts is said before the click, from the slots read as the window opened, UX review round 1
     page.wait_for_function('() => document.querySelector("#dispatch .start-all").textContent === "Start 2 of 2"')
-    assert 'agent slots free of 5' in page.inner_text('#dispatch .slots')
+    assert 'of 5 agent slots free' in page.inner_text('#dispatch .slots')
     page.click('#dispatch .start-all')
     page.wait_for_selector('#dispatch', state='hidden')
     assert [one['work_id'] for one in sent] == [later, any_agent]

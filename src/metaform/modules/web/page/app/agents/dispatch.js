@@ -117,8 +117,10 @@ export function startWindow(title, tickets, all = false) {
     startAll.textContent = counted ? said.label : 'Start all';
     $('#dispatch .slots').textContent = counted ? said.said : 'Reading the agent slots…';
     startAll.disabled = !shown.length || !agent || !counted || !said.count;
-    fill($('#dispatch .tickets'), shown.map(ticket => h('div', {class: 'ticket', 'data-id': ticket.id},
-      conditionLabel(ticket), startButton(ticket, agent, pick),
+    // a ticket's Start past the free slots is off, with why, UX review round 1 (web-gui-controls F10)
+    const free = counted && HARNESS.free !== undefined ? HARNESS.free : null;
+    fill($('#dispatch .tickets'), shown.map((ticket, place) => h('div', {class: 'ticket', 'data-id': ticket.id},
+      conditionLabel(ticket), startButton(ticket, agent, pick, free !== null && place >= free),
       h('div', {class: 'task'}, ...taskWords(ticket.task || ticket.note || '')))));
     drawPermissions(agent);
   };
@@ -200,8 +202,9 @@ export function startAllLabel(offered) {
   const count = Math.min(free, offered);
   const machine = slots && slots.machine_free < Math.max(0, slots.limit - slots.used)
     ? `; this machine runs ${slots.machine_used} of the ${slots.machine_limit} it allows` : '';
-  return {count, label: `Start ${count} of ${offered}`, said: `${free} agent slot${free === 1 ? '' : 's'} free of `
-    + `${slots ? slots.limit : '?'}${machine}. ${offered - count ? `${offered - count} wait in To do.` : ''}`.trim()};
+  return {count, label: `Start ${count} of ${offered}`, said: `${free} of ${slots ? slots.limit : '?'} agent slots `
+    + `free${machine}.${free ? '' : ' A ticket can start once an agent finishes or is stopped.'} `
+    + `${offered - count ? `${offered - count} wait in To do.` : ''}`.trim()};
 }
 /* Start all: the agent chosen started on each ticket offered that is not started yet, one after another, up to the
  * agent slots free now, as its label says before the click; the rest wait in To do, and autostart starts them as
@@ -240,12 +243,13 @@ async function startAllTickets(tickets, pick, startAll) {
     + (left ? ` You stopped the run; ${left} were not started.` : '')
     + (started + left < pending.length ? ` ${pending.length - started - left} could not start; retry their tickets.`
       : '')
-    + (waiting ? ` ${waiting} wait in To do for a free agent slot; with Autostart agents checked they start as agents`
-      + ' finish.' : ''));
+    + (waiting ? ` ${waiting} wait in To do for a free agent slot; ` + (AUTO.value
+      ? 'with Autostart agents checked they start as agents finish.'
+      : 'they wait until you start them or check Autostart agents.') : ''));
   await renderBoard();
 }
 /* One ticket's Start, for the agent chosen above, unless the ticket's eligible agents leave it out. */
-function startButton(ticket, agent, pick) {
+function startButton(ticket, agent, pick, full = false) {
   const start = async event => {
     const chosen = pick.value();
     event.target.disabled = true;
@@ -254,9 +258,11 @@ function startButton(ticket, agent, pick) {
       else event.target.disabled = false;
     } catch (error) { toast(error.message); event.target.disabled = false; }
   };
-  return h('button', {class: 'btn primary start', type: 'button', disabled: !agent || !allowsAgent(ticket, agent),
-    title: allowsAgent(ticket, agent) ? 'Start the agent chosen above on this ticket'
-      : `Eligible agents: ${eligibleAgents(ticket).map(agentName).join(', ')}`, onclick: start}, 'Start');
+  return h('button', {class: 'btn primary start', type: 'button',
+    disabled: !agent || !allowsAgent(ticket, agent) || full,
+    title: !allowsAgent(ticket, agent) ? `Eligible agents: ${eligibleAgents(ticket).map(agentName).join(', ')}`
+      : full ? 'Every free agent slot is taken by the tickets above; it can start once an agent finishes or is stopped'
+      : 'Start the agent chosen above on this ticket', onclick: start}, 'Start');
 }
 // the start window's tickets, drawn again for the agent chosen, and the permissions chosen for its launches
 const START = {draw: null, own: {prompts: '', mode: ''}, permissionsFor: null, cancel: false};
