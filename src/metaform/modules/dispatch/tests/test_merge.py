@@ -110,7 +110,7 @@ def test_autostart_never_starts_the_release_log_a_merge_writes(dispatch, repo, r
     assert merge.merge_due(context('dispatch', repo, project='proj'), dispatch.store, dispatch.id)['merged']
     run('set', '--dispatch-autostart', '--dispatch-agents=5', cwd=repo)
     monkeypatch.setattr(recovery, 'recover', lambda ctx: {'released': []})
-    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation: dict(ctx.nouns))
+    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation, *_, **__: dict(ctx.nouns))
     assert module.autostart(context('dispatch', repo, project='proj'))['started'] == []
 
 

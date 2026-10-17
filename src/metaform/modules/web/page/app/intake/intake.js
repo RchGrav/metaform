@@ -144,9 +144,11 @@ export async function stopIntake() {
   if (stopped) {
     if (session) rememberStop(session, new Date().toISOString());
     if (stopped.autostart === false) $('#autostartAgents').checked = false;  // dispatch's `paused`
-    toast(`The intake agent was stopped.${stopped.autostart === false ? ` ${stopped.notice}` : ''}`);
-    await renderAgents();
+    toast(stopped.gone ? 'The intake agent had ended already; what it recorded is kept.'
+      : `The intake agent was stopped.${stopped.autostart === false ? ` ${stopped.notice}` : ''}`);
   }
+  // redrawn from the server's record after any answer, a refusal too, so the bar never stays on an agent that is gone
+  await renderAgents();
 }
 /* The window an intake starts from: the agent, an optional note for it, and Start; a refusal is said with its next
  * step, and the step offered as a button where the page can take it: taking over an intake left being recorded, or

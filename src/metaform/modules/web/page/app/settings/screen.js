@@ -11,7 +11,7 @@ import {toggler} from '/page/app/header/menus.js';
 import {PLAIN, setTheme} from '/page/app/map3d/draw3d.js';
 import {renderBoard} from '/page/app/board/board.js';
 import {wrote} from '/page/app/board/history.js';
-import {AUTO, PROMPT_WORDS, readAutostart, renderAgents} from '/page/app/agents/dispatch.js';
+import {AUTO, PROMPT_WORDS, readAutostart, renderAgents, cancelStarting} from '/page/app/agents/dispatch.js';
 import {HARNESS, readHarnesses, paintPickers, makeDefault, agentPicker, PICKERS} from '/page/app/agents/pickers.js';
 import {posted} from '/page/app/intake/intake.js';
 import {WS} from '/page/app/workspace/workspace.js';
@@ -156,10 +156,12 @@ async function stopAll(event, every) {
     kept: ['Every ticket stays taken by its agent, with its steps and its thread', 'Each one can be resumed'],
     verb: 'Stop them'})) return;
   control.disabled = true;
+  const run = cancelStarting();  // before the stop, so the run starts nothing more; the server refuses the rest
   try {
     const done = await wrote('/api/dispatch-stop-all', every ? {home: true} : {});
     if (done) {
       toast(`${done.stopped.length} agent${done.stopped.length === 1 ? '' : 's'} stopped.`
+        + (run ? ' The Start all run is stopped too; nothing of it starts now.' : '')
         + (done.failed.length ? ` ${done.failed.length} could not be stopped: ${done.failed[0].error}` : '')
         + (done.notice ? ` ${done.notice}` : ''));
       await readAutostart(); await renderBoard(); await renderAgents();

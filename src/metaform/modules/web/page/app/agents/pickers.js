@@ -144,7 +144,7 @@ function pickerNote(note, off, none, room) {
       h('code', {}, HARNESS.agents[0]?.next || 'metaform dispatch agents'));
   } else if (room && HARNESS.room !== null) {
     fill(note, HARNESS.room > 0 ? `${plural(HARNESS.room, 'more agent')} can start now.`
-      : 'Every agent slot is in use: it starts when one is free.');
+      : 'Every agent slot is in use: summon it again when one is free.');
   } else fill(note);
   note.hidden = !note.textContent;
   note.title = note.textContent;

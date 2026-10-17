@@ -133,7 +133,7 @@ def test_automatic_queue_glyph_and_supervisor_wait_but_explicit_start_can_finish
     store = attempt(dispatch, 'failed')
     ctx = context('dispatch', dispatch.folder, project='proj')
     started = []
-    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation: started.append(ctx.nouns['id']) or {})
+    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation, *_, **__: started.append(ctx.nouns['id']) or {})
     assert module.start_work(ctx, dispatch.store, {})['started'] == []
     assert started == [] and module.next_ticket(ctx, dispatch.store, 'kite', agent='claude') is None
     dispatch.store.take_work(dispatch.id, by='claude same-session')

@@ -39,7 +39,7 @@ def test_autostart_reads_work_once_and_uses_bulk_settings(dispatch, run, monkeyp
         return dict(ctx.nouns)
 
     monkeypatch.setattr(Store, '__getattr__', counted)
-    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation: start(ctx))
+    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation, *_, **__: start(ctx))
     monkeypatch.setattr(recovery, 'recover', lambda ctx: {'released': []})
     result = module.autostart(context('dispatch', dispatch.folder, project='proj'))
     assert result['started'] == [{'id': first, 'agent': 'claude'}, {'id': second, 'agent': 'gemini'}]
@@ -60,7 +60,7 @@ def test_a_pass_with_nothing_to_start_reads_once_and_takes_no_write_lock(dispatc
     for number in range(20):
         dispatch.store.add_work(dispatch.node, 'unbuilt', task=f'Ticket {number}')
     monkeypatch.setattr(recovery, 'recover', lambda ctx: {'released': []})
-    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation: dict(ctx.nouns))
+    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation, *_, **__: dict(ctx.nouns))
     dispatch.store.take_work(dispatch.id, by='claude 0123456789abcdef')  # the one slot is in use
     # held as the admission gate counts it, by a live runner in the ledger (integration wave 2: the gate counts the
     # runners that run, not the tickets taken)
@@ -147,7 +147,7 @@ def test_autostart_without_page_twice_at_once_fills_one_slot_once(dispatch, monk
 
     launched = []
     monkeypatch.setattr(module, 'sessions', sessions)
-    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation: launched.append(ctx.nouns['id']) or {})
+    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation, *_, **__: launched.append(ctx.nouns['id']) or {})
     failed = []
 
     def check():
@@ -183,7 +183,7 @@ def _passes(dispatch, monkeypatch):  # noqa: F811
     from metaform.modules.dispatch import recovery
 
     monkeypatch.setattr(recovery, 'recover', lambda ctx: {'released': []})
-    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation: dict(ctx.nouns))
+    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation, *_, **__: dict(ctx.nouns))
     return lambda: [one['id'] for one in module.autostart(context('dispatch', dispatch.folder, project='proj'))['started']]
 
 

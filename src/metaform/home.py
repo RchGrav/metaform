@@ -990,6 +990,12 @@ def remove_base(project_id: str, name: str) -> Removed:
     on it are stopped first, `AT_WORK`, since what they work on goes with it; the result names them."""
     carry_out(project_id)
     held = next((form for form in bases(project_id) if form.name == name), None)
+    with halted(project_id, 'remove-base', held.id if held is not None else None):
+        return _removed(project_id, name, held)
+
+
+def _removed(project_id: str, name: str, held: Base | None) -> Removed:
+    """`remove_base`, under the halt of every start on the base."""
     stopped = at_work(project_id, held.id, stop=True) if held is not None and not held.active else ()
     with _bases_db(project_id, write=True) as db:
         row = db.execute('SELECT id FROM bases WHERE project_id=? AND name=?', (project_id, name)).fetchone()
@@ -1068,6 +1074,24 @@ CARRIERS: dict[str, Callable[[str], None]] = {}
 # so no agent is left at work on a map that is gone, unseen and unstoppable; a switch of the active metaform names them,
 # since they stay on the one they began on, PROJ-025 and STORE-041. A module registers its own under its id.
 AT_WORK: dict[str, Callable[[str, str | None, bool], tuple[str, ...]]] = {}
+# What a module holds back while a clear or the removal of a metaform runs: each module's context manager, given the
+# project, the metaform removed or None for every one, and what halts it, `clear` or `remove-base`. Dispatch's refuses
+# every agent start on it for the whole of the block, and every start asked for before it after, so the passes of the
+# agent starter that the clear's own stops wake start nothing on a map being deleted (UX review round 2, 2026-10-17,
+# ux-verify-combined F1). A module registers its own under its id.
+HALTS: dict[str, Callable[[str, str, str | None], Any]] = {}
+
+
+@contextmanager
+def halted(project_id: str, by: str, base_id: str | None = None) -> Generator[None, None, None]:
+    """Every module's halt held for the block, `HALTS`; one that cannot be taken holds nothing back."""
+    _hooked()
+    from contextlib import ExitStack
+    with ExitStack() as stack:
+        for hold in list(HALTS.values()):
+            with suppress(Exception):  # a module unloaded since it registered, or one whose halt fails, holds nothing
+                stack.enter_context(hold(project_id, by, base_id))
+        yield
 
 
 def _hooked() -> None:
@@ -1270,7 +1294,14 @@ def clear_project(project_id: str, *, made_by: str = 'clear') -> Cleared:
         raise StoreError(f'{project_id} was not cleared, since the conversations with its agents could not be kept '
                          f'first: {reason}.', 'metaform dispatch sessions thread=false') from error
     # The agents at work on its maps are stopped through the module that runs them before their stores go, so none
-    # is left working, unseen and unstoppable, on a map that is gone; their conversations stay, `AT_WORK`.
+    # is left working, unseen and unstoppable, on a map that is gone; their conversations stay, `AT_WORK`. Every start
+    # is held back from the stops to the end, `HALTS`, so none starts in their place on the map being removed.
+    with halted(project_id, 'clear'):
+        return _cleared(project_id, found, made_by)
+
+
+def _cleared(project_id: str, found: Cleared, made_by: str) -> Cleared:
+    """`clear_project`, once what the stores hold of the conversations is carried out, under the halt of every start."""
     stopped = at_work(project_id, None, stop=True)
     # It is backed up before anything goes, and nothing goes when it cannot be: what a clear removes cannot be made
     # again by an intake, and a clear without its backup is a loss the person learns of when they need it, PROJ-030.

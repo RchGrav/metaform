@@ -621,7 +621,7 @@ def test_autostart_can_select_recovered_ticket_only_after_old_workers_are_stoppe
     dispatch.process.wait()
     selected = []
 
-    def start(ctx, reservation):
+    def start(ctx, reservation, *_, **__):
         assert not any(alive(pid) for pid in dispatch.logged('pid') + dispatch.logged('grandchild'))
         assert dispatch.ticket().taken_by == reservation
         selected.append(ctx.nouns['id'])
@@ -1028,3 +1028,132 @@ def test_a_runner_waits_for_a_retry_only_as_long_as_the_supervisors_backoff(disp
     asyncio.run(runner.moved_on(Store('proj'), {'ended': 'the agent ended with exit code 1'}))
     assert time.monotonic() - begun < 30
     assert len(passes) == (2 if waits else 1)
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.req('VIEW-042')
+def test_a_start_that_keeps_failing_waits_out_its_backoff_then_waits_for_the_person_and_its_agent_is_named(
+        dispatch, run, monkeypatch):
+    """UX review round 2, 2026-10-17 (held-sweeps F1, ux-verify-combined F2): a runner failing before its session
+    gave its reservation back with no count, so the agent starter took the ticket again at once, about one runner a
+    second for as long as it ran, and the person was never told. Each failed start is counted on its ticket: the
+    starter leaves it for RETRY_SECONDS doubled, hands it to the person past dispatch_retries with the reason; the
+    agent failing the same way on a second ticket is not started by itself again, and the person is told."""
+    import secrets
+    import time
+
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch import runner
+    from metaform.modules.dispatch.signals import rows
+
+    def broken(folder):
+        raise RuntimeError('SQLite objects created in a thread can only be used in that same thread')
+    monkeypatch.setattr(runner, 'mcp_server', broken)
+    run('set', '--dispatch-autostart', cwd=dispatch.folder)
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    limit = int(ctx.setting('dispatch_retries'))
+
+    def attempt(work_id):
+        reservation = 'dispatch starting ' + secrets.token_hex(16)
+        dispatch.store.take_work(work_id, by=reservation)
+        with pytest.raises(RuntimeError):
+            asyncio.run(runner.dispatch(context('dispatch', dispatch.folder, project='proj',
+                                                nouns={'id': work_id, 'agent': 'claude', 'reservation': reservation})))
+    attempt(dispatch.id)
+    assert dispatch.ticket().taken is None and dispatch.ticket().column == 'todo', 'its ticket is back at once'
+    counted = module.start_backoff(dispatch.store)[dispatch.id]
+    assert counted['retries'] == 1 and not counted['handed'] and counted['next_at'] > time.time() + 20
+    monkeypatch.setattr(module, 'run_reserved', lambda *_, **__: pytest.fail('started again during its backoff'))
+    passed = module.start_work(ctx, dispatch.store, {})
+    assert passed['started'] == [] and passed['retry_due'] == pytest.approx(counted['next_at'])
+    for _ in range(limit):
+        attempt(dispatch.id)
+    counted = module.start_backoff(dispatch.store)[dispatch.id]
+    assert counted['retries'] == limit + 1 and counted['handed'], 'past dispatch_retries it waits for the person'
+    assert 'retry_due' not in module.start_work(ctx, dispatch.store, {}), 'and no timer waits for it'
+    raised = rows(dispatch.store, dispatch.id)
+    assert any(one['signal'] == 'handed-over' and 'did not start on it' in one['reason']
+               and 'SQLite objects' in one['reason'] for one in raised), raised
+    assert any(one['signal'] == 'not-smooth' and one['reason'].startswith('it did not start: RuntimeError')
+               for one in raised)
+    assert module.failing_agent(ctx, 'proj', 'claude') is None, 'one ticket failing names no agent'
+    other = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Write more notes.').id
+    attempt(other)
+    assert module.failing_agent(ctx, 'proj', 'claude') is not None
+    assert any(one['signal'] == 'setup-not-working' and one['signal_key'] == 'dispatch:claude'
+               and 'SQLite objects' in one['report']['reason'] for one in rows(dispatch.store)), 'the person is told'
+    with pytest.raises(module.Refused, match='did not start on 2 tickets in a row'):
+        module.admit(ctx, dispatch.store, other, 'worker', agent='claude', auto=True)
+    module.admit(ctx, dispatch.store, other, 'worker', agent='claude')  # the person's own start is their retry
+    run('set', '--dispatch-claude', f'"{sys.executable}" -X dev "{runner.__file__}"', cwd=dispatch.folder)
+    assert module.failing_agent(ctx, 'proj', 'claude') is None, 'a changed start command is tried again'
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.req('VIEW-045')
+@pytest.mark.skipif(os.name == 'nt', reason='SIGKILL')
+def test_a_runner_killed_is_heard_at_once_its_agent_ends_and_a_stop_says_it_had_ended(dispatch, run):
+    """UX review round 2, 2026-10-17 (intake-single-flight F1, ux-verify-combined): a runner killed, by SIGKILL or the
+    out-of-memory killer, said nothing, so the page showed its agent at work for as long as anyone watched, its Stop
+    failed, and the agent in a group of its own went on running. The runner's lease wakes a watch the moment it dies:
+    the watch ends the agent's group and announces the change; a stop of the session then says it had ended. A runner
+    that ends on its own said so with its own writes, and the watch announces nothing for it."""
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch.tests.test_dispatch import gone
+    heard = []
+    watch = module.watch_deaths(heard.append)
+    try:
+        started = json.loads(run('dispatch', 'start', dispatch.id, 'claude', '--json', cwd=dispatch.folder,
+                                 env=dispatch.env('hold')).stdout)
+        eventually(lambda: dispatch.ticket().taken_by == 'claude fake-session-1')
+        entry = eventually(lambda: next((one for one in module.launches() if one['pid'] == started['pid']
+                                         and one.get('agent_pgid')), None))
+        watch.arm()
+        assert alive(entry['agent_pgid'])
+        os.kill(started['pid'], signal.SIGKILL)
+        eventually(lambda: heard, limit=5)
+        assert heard == [{'project': 'proj', 'work_ids': [dispatch.id], 'kinds': ['session', 'ticket']}]
+        assert [(row.extra['state'], row.extra['how']) for row in dispatch.items('session')] == \
+            [('ended', 'the runner is no longer running')], 'its row says so before anything reads its status'
+        assert gone([entry['agent_pgid']]), 'its agent, in a group of its own, ended with it'
+        stopped = json.loads(run('dispatch', 'stop', dispatch.id, '--json', cwd=dispatch.folder).stdout)
+        assert stopped['gone'] is True and 'had ended already' in stopped['how']
+        assert dispatch.session().extra['state'] == 'ended'
+        assert dispatch.session().extra['how'] == 'stopped by the person', 'so the supervisor leaves it'
+        other = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Write more notes.').id
+        again = json.loads(run('dispatch', 'start', other, 'claude', '--json', cwd=dispatch.folder,
+                               env=dispatch.env('hold', FAKE_ACP_WORK=other)).stdout)
+        eventually(lambda: (module.ticket(dispatch.store, other).taken_by or '').startswith('claude fake-session'))
+        watch.arm()
+        run('dispatch', 'stop', other, '--json', cwd=dispatch.folder)
+        assert gone([again['pid']], limit=10)
+        assert len(heard) == 1, 'a runner that ends on its own is not announced again'
+    finally:
+        watch.close()
+
+
+@pytest.mark.req('VIEW-045')
+@pytest.mark.skipif(os.name == 'nt', reason='a shell wrapper')
+def test_stopping_an_agent_still_starting_ends_its_agent_group_too(dispatch, run, tmp_path):
+    """UX review round 2, 2026-10-17 (intake-single-flight F3): a stop while an agent was starting ended its runner,
+    but the agent runs in a process group of its own, so it went on, booting, uncounted, after the person stopped it.
+    The runner records its agent's group as it starts it, and the stop ends that group too."""
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch.tests.test_dispatch import gone
+    marker = tmp_path / 'wrapper.pid'
+    slow = tmp_path / 'slow-agent.sh'
+    slow.write_text(f'#!/bin/sh\necho $$ > "{marker}"\nsleep 60\n')
+    slow.chmod(0o755)
+    run('set', '--dispatch-claude', f'"{slow}"', cwd=dispatch.folder)
+    started = json.loads(run('dispatch', 'start', dispatch.id, 'claude', '--json', cwd=dispatch.folder,
+                             env=dispatch.env('hold')).stdout)
+    eventually(lambda: marker.exists() and marker.read_text().strip())
+    wrapper = int(marker.read_text().strip())
+    eventually(lambda: any(one['pid'] == started['pid'] and one.get('agent_pgid') == wrapper
+                           for one in module.launches()))
+    stopped = json.loads(run('dispatch', 'stop-all', '--json', cwd=dispatch.folder).stdout)
+    assert [one.get('starting') for one in stopped['stopped']] == [True]
+    assert gone([started['pid'], wrapper], limit=10), 'the runner and its agent both end'
+    assert dispatch.ticket().taken is None, 'its ticket is back in To do'
+    assert dispatch.id not in module.start_backoff(dispatch.store), 'a stop is no failed start'

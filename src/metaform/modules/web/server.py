@@ -184,6 +184,14 @@ def merge_change(payload: dict[str, Any]) -> bool:
     return tables is None and kinds is None
 
 
+def runner_change(payload: dict[str, Any]) -> bool:
+    """Whether a change may have started a runner, whose lease the watch on deaths then waits on: a session or a
+    ticket changed, or a change that says nothing of what it concerns. A note, a step or an agent's thread lines start
+    none, so a burst of them lists nothing."""
+    kinds = given_kinds(payload)
+    return kinds is None or 'session' in kinds or 'ticket' in kinds
+
+
 def dispatch_change(payload: dict[str, Any]) -> bool:
     """Only selection inputs trigger autostart: a change whose `kinds` say it concerns none that can start work
     does not, and else the tables it names decide. Older events without table detail may have changed any input."""
@@ -403,6 +411,9 @@ class Server(ThreadingHTTPServer):
         self.told: int | None = None  # the pipe to the watchdog, kept past the ready line, `ready`
         self.merge_timers: dict[tuple[str, str], threading.Timer] = {}  # VIEW-044: one per merge waiting for review
         self.retry_timers: dict[str, tuple[float, threading.Timer]] = {}  # P012: each project's next retry, when due
+        # The watch on every runner of the home, dispatch's `dispatch.deaths`: a runner's death, however it comes, is a
+        # change announced at once, never one a page finds on its next read (UX review round 2, intake-single-flight F1)
+        self.deaths: Any = None
         # the mascot's questions to the open pages waiting for their answer, by id: what it sees, VIEW-005
         self.mascot_waiting: dict[str, dict[str, Any]] = {}
         self.code = code_print()
@@ -512,6 +523,9 @@ class Server(ThreadingHTTPServer):
         and the merges' own writes, schedules no dispatch check: a process never reacts to its own writes."""
         if home.project(str(payload.get('project', ''))) is None:
             return 0
+        deaths = getattr(self, 'deaths', None)  # a server made without __init__, as a test's, has none
+        if deaths is not None and runner_change(payload):  # the leases listed, read only when one is new
+            deaths.arm()
         if payload.get('flow'):  # where an agent's tool calls reached, drawn on the map as they happen, VIEW-005
             payload = dict(payload)
             self.push({'topic': 'map.flow', 'payload': {'project': payload['project'], 'flows': payload.pop('flow')}})
@@ -533,6 +547,33 @@ class Server(ThreadingHTTPServer):
         payload = {'project': project_id, 'base_id': None, 'tables': ['web.pages'], 'work_ids': [], 'session_ids': [],
                    'kinds': ['pages'], 'pages': pages}
         threading.Thread(target=events.publish, args=('map.changed', payload, source), daemon=True).start()
+
+    def watch_runners(self, folder: Path) -> None:
+        """Start the watch on the home's runners, once, from the first folder whose modules provide it."""
+        if getattr(self, 'deaths', None) is not None:
+            return
+        for _, watch in chassis.provided(folder, 'dispatch.deaths'):
+            with self.dispatch_lock:
+                if getattr(self, 'deaths', None) is None:
+                    self.deaths = watch(self.runner_died)
+            return
+
+    def runner_died(self, about: dict[str, Any]) -> None:
+        """A runner of the home ended without saying so, killed or crashed: dispatch has ended what it left; the change
+        goes to every open page and every other process of the home, and the agent starter looks again, since a slot
+        is free and a ticket may be back in To do. In the watch's own thread."""
+        project = home.project(str(about.get('project', '')))
+        if project is None:
+            return
+        with chassis.request_scope(fresh=True):
+            for payload in events.announce(Path(project.path), 'web'):  # the signals and rows the cleanup wrote
+                self.changed(dict(payload), own=True)
+        payload = {'project': project.project_id, 'base_id': None, 'tables': 'dispatch',
+                   'dispatch_tables': ['dispatch.agent_sessions'], 'work_ids': list(about.get('work_ids') or []),
+                   'session_ids': [], 'kinds': list(about.get('kinds') or ['session'])}
+        self.changed(payload)
+        source = chassis.context('web', Path(project.path), project=project.project_id, surface='web')
+        events.publish('map.changed', payload, source)
 
     def open_projects(self) -> set[str]:
         with self.listening:
@@ -621,6 +662,7 @@ class Server(ThreadingHTTPServer):
                 if project is None:
                     continue
                 try:
+                    self.watch_runners(Path(project.path))
                     started = module_verb({'project': project_id, 'base': base or ''}, 'dispatch', 'autostart', {},
                                           chosen=bool(base))
                     self.schedule_retry(project_id, cast(dict[str, Any], started).get('retry_due')
@@ -1780,7 +1822,8 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(work_id, str) or not work_id or not isinstance(agent, str) or not agent:
             return self.send(400, {'error': 'An agent is started on a ticket: its work id and the agent.'})
         # the launch's own permissions, when the person chose them; dispatch start checks them
-        own = [f'{key}={given[key]}' for key in ('prompts', 'mode') if isinstance(given.get(key), str) and given[key]]
+        own = [f'{key}={given[key]}' for key in ('prompts', 'mode', 'batch')
+               if isinstance(given.get(key), str) and given[key]]
         self.dispatched(given, 'start', [work_id, agent, *own])
 
     def dispatch_autostart(self, given: dict[str, Any]) -> None:
@@ -2398,6 +2441,9 @@ class Handler(BaseHTTPRequestHandler):
         is found, and the person's environment reaches the agent unchanged, BASE-052. A message's text comes after
         `--`, so no text a person writes is read as a switch. `module_id` runs another module's verb the same way."""
         self.send(*cli_result(given, module_id, verb, nouns, text))
+        deaths = getattr(self.gui, 'deaths', None)
+        if module_id == 'dispatch' and deaths is not None:  # a runner it started is watched at once
+            deaths.arm()
 
     def read_ignore(self, project: str) -> None:
         """The intake's ignore list, `.metaform/ignore.txt` in the project, as the person edits it."""
