@@ -97,6 +97,10 @@ from . import (
 HERE = Path(__file__).parent
 STATIC = {'page': (HERE / 'page').resolve(), 'vendor': (HERE / 'vendor').resolve()}
 COOKIE = 'metaform_token'
+# The cookie each page this server serves gets its own key in, named with the server's port: a write that is the
+# person's alone is taken only with a key this server gave a page, CLI-011 (UX review, person-consent F1).
+PAGE_COOKIE = 'metaform_page'
+PAGE_KEYS = 64  # the newest page keys kept: the pages open now and the reloads before them
 RESERVED = ('project', 'metaform', 'layers')  # what picks the store and its layers; never a read's own argument
 TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
          '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -408,6 +412,10 @@ class Server(ThreadingHTTPServer):
         self.code = code_print()
         # The secret the commands this server runs for the person carry, so they act as the person, CLI-011.
         self.vouch = chassis.page_vouch()
+        # The keys this server put in its pages' cookies, newest last, held in memory alone: never in a file, the
+        # environment or a page's script, where an agent's process would read it (UX review, person-consent F1).
+        self.page_keys: dict[str, None] = {}
+        self.keys_lock = threading.Lock()
         self.handing = threading.Lock()
         self.stopping, self.handed = threading.Event(), threading.Event()
         self.replacing = self.successor = False
@@ -416,6 +424,22 @@ class Server(ThreadingHTTPServer):
         self.port = int(self.server_address[1])
         names = {'127.0.0.1', 'localhost', '::1'} if loopback(bind) else {bind, socket.gethostname()}
         self.hosts = {host_port(name, self.port).lower() for name in names}
+
+    def page_key(self) -> str:
+        """A new key for one page this server serves, kept among the newest PAGE_KEYS."""
+        key = secrets.token_urlsafe(32)
+        with self.keys_lock:
+            self.page_keys[key] = None
+            while len(self.page_keys) > PAGE_KEYS:
+                del self.page_keys[next(iter(self.page_keys))]
+        return key
+
+    def page_key_held(self, key: str | None) -> bool:
+        """Whether `key` is one this server gave a page it served."""
+        if not key:
+            return False
+        with self.keys_lock:
+            return key in self.page_keys
 
     def server_bind(self) -> None:
         """Bind without `HTTPServer`'s own reverse lookup of the address, which can stall for many seconds on macOS
@@ -1187,11 +1211,15 @@ class Handler(BaseHTTPRequestHandler):
         if not self.same_origin():
             return self.send(403, {'error': "A write is taken only from the web GUI's own page."})
         if path in PERSONS_WRITES:
+            if not self.gui.page_key_held(self.page_key_given()):
+                return self.send(403, {'error': f"{path} is the person's to do on the page itself, and this request "
+                                                'carries no key this server gave a page it served.',
+                                       'next': 'ask the person in chat; they do it on the page'})
             sent_by = chassis.page_caller(self.client_address[:2], self.connection.getsockname()[:2], home.home())
             if sent_by is not None:
                 return self.send(403, {'error': f"{path} is the person's to do on the page, and this request came "
                                                 f'from an agent: {sent_by}.',
-                                       'next': 'tell the person what you propose and why; they do it on the page'})
+                                       'next': 'ask the person in chat; they do it on the page'})
             VOUCHED.server = self.gui
             try:
                 return self.writing(path)
@@ -2454,6 +2482,19 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError(length)
         return json.loads(self.rfile.read(length) or b'null')
 
+    def page_key_given(self) -> str | None:
+        """The page key this request's cookie carries, the one this server set when it served the page."""
+        cookie = SimpleCookie(self.headers.get('Cookie') or '')
+        named = f'{PAGE_COOKIE}_{self.gui.port}'
+        return cookie[named].value if named in cookie else None
+
+    def page_cookie(self) -> str | None:
+        """The cookie that gives the page being served its own key, CLI-011; None when the process asking for the
+        page is known as an agent's, which gets the page without one, so its writes of the person's are refused."""
+        if chassis.page_caller(self.client_address[:2], self.connection.getsockname()[:2], home.home()) is not None:
+            return None
+        return f'{PAGE_COOKIE}_{self.gui.port}={self.gui.page_key()}; Path=/; HttpOnly; SameSite=Strict'
+
     def given_token(self, query: dict[str, list[str]]) -> str | None:
         if query.get('t'):
             return query['t'][0]
@@ -2496,8 +2537,13 @@ class Handler(BaseHTTPRequestHandler):
                    'Cache-Control': LASTING if lasting else 'no-cache', 'ETag': tag}
         if packable(kind):
             headers['Vary'] = 'Accept-Encoding'
-        if set_cookie and self.gui.token is not None:
-            headers['Set-Cookie'] = f'{COOKIE}={self.gui.token}; Path=/; HttpOnly; SameSite=Strict'
+        cookies = [f'{COOKIE}={self.gui.token}; Path=/; HttpOnly; SameSite=Strict'] \
+            if set_cookie and self.gui.token is not None else []
+        if page and resolved == base / 'index.html':  # each page served gets a key of its own, CLI-011
+            keyed = self.page_cookie()
+            cookies += [keyed] if keyed is not None else []
+        if cookies:
+            headers['Set-Cookie'] = '\n'.join(cookies)  # each sent as its own header, `sent_headers`
         if current:
             return self.unchanged(headers)
         if not packing:
@@ -2512,9 +2558,14 @@ class Handler(BaseHTTPRequestHandler):
         """A 304: the browser's copy is current. It carries the headers the file is sent with and no body."""
         self.send_response(304)
         self.send_header('X-Content-Type-Options', 'nosniff')
-        for key, value in headers.items():
-            self.send_header(key, value)
+        self.sent_headers(headers)
         self.end_headers()
+
+    def sent_headers(self, headers: dict[str, str]) -> None:
+        """Send each header; a value of several lines is several headers of that name, as two cookies are."""
+        for key, value in headers.items():
+            for line in value.split('\n'):
+                self.send_header(key, line)
 
     def refuse(self, error: Exception, status: int) -> None:
         """Answer with the error and its next step; or, for a store newer than this server's code once the code on
@@ -2541,8 +2592,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Type', kind)
         self.send_header('Content-Length', str(len(body)))
         self.send_header('X-Content-Type-Options', 'nosniff')
-        for key, value in headers.items():
-            self.send_header(key, value)
+        self.sent_headers(headers)
         self.end_headers()
         if self.command != 'HEAD':
             self.wfile.write(body)
@@ -2989,6 +3039,7 @@ def based(base: str | None) -> dict[str, str] | None:
 # permissions at its start, a ticket's model and effort, cancelling a ticket, `persons_own`). One sent by an agent's
 # process is refused, CLI-011.
 PERSONS_WRITES = frozenset({
+    '/api/dispatch-permit', '/api/save-prompt',  # an answer to an agent's request or card; what agents are sent
     '/api/clear-project', '/api/remove-project', '/api/activate-base', '/api/remove-base', '/api/restore',
     '/api/intake-discard', '/api/memory', '/api/settings', '/api/settings/reset', '/api/dispatch-prompts',
     '/api/dispatch-autostart', '/api/dispatch-agents', '/api/modules', '/api/dispatch-session-prompts',

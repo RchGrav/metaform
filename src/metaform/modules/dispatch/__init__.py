@@ -61,6 +61,7 @@ from metaform.module import (
     Module,
     Noun,
     Pane,
+    PersonsDecision,
     Provides,
     Stop,
     Subscription,
@@ -534,6 +535,9 @@ settings.choice('dispatch_budget_action', ['signal', 'interrupt'], 'signal', per
                 category='budgets', heading='Spending')
 
 REPLY_LIMIT = 30.0  # the one wait for a running session to answer `message`, `stop` or a change
+# How long a consent card waits for the person before the call it asks for is answered cancel: a time limit on one
+# request, as an MCP form's sealed state has, never a clock that looks for a change.
+CONSENT_WAIT = 600.0
 CREATE_NEW_PROCESS_GROUP = 0x00000200
 CREATE_NO_WINDOW = 0x08000000
 
@@ -3489,6 +3493,29 @@ def broadcasts(ctx: Context) -> dict[str, Any]:
 TIMER_MOST = 86400  # seconds an agent's timer may run, a day
 
 
+def ask_consent(store: Store, message: str, *, tool: str, command: str, caution: str, wait: float = CONSENT_WAIT,
+                work: str | None = None, runner: str | None = None) -> dict[str, Any]:
+    """Ask the person for their consent to one call of a dispatched agent that is their decision, and wait for it:
+    the agent's runner, found as its timer is, shows a consent card in its chat on the page, op `consent`, and the
+    answer comes back as `action`, accept, decline or cancel; `error` says why it could not be asked (UX review,
+    person-consent F5). The wait ends at the person's answer, or at `wait` seconds. The session is the calling agent's,
+    METAFORM_WORK and METAFORM_SESSION, unless `work` and `runner` name it."""
+    work, runner = work or os.environ.get('METAFORM_WORK'), runner or os.environ.get('METAFORM_SESSION')
+    if not work or not runner:
+        return {'action': 'cancel', 'error': 'This call does not come from a dispatched agent\'s session.'}
+    held = (intake_store(store, work) or store) if intake_id(work) else store
+    row = next((one for one in sessions(held, work, verify=False)
+                if one.get('runner') == runner and one.get('state') == 'running'), None)
+    if row is None:
+        return {'action': 'cancel', 'error': 'Your session is not running here, so no card can be shown in its chat.'}
+    try:
+        answer = tell(row, 'consent', limit=wait + REPLY_LIMIT, message=message, tool=tool, command=command,
+                      caution=caution, wait=wait)
+    except OSError as error:
+        return {'action': 'cancel', 'error': f'Your session\'s runner could not be reached: {error}.'}
+    return answer if answer.get('action') else {'action': 'cancel', 'error': 'Your session\'s runner did not answer.'}
+
+
 def timer(ctx: Context) -> dict[str, Any]:
     """An agent's own timer, VIEW-005: set with seconds and a note, its session's runner wakes that session with the
     note as a turn when it is due; cancel=<id> takes one back; with neither, the timers set. It is the agent's own,
@@ -4450,8 +4477,9 @@ def publication(ctx: Context) -> dict[str, Any]:
 def permit(ctx: Context) -> dict[str, Any]:
     """The person's choice for an agent's waiting permission request, by the option's id or name: it answers the
     agent at once, and closes the request's question at the node with the option's name. Only the person gives it:
-    it is not offered to agents over MCP, and nothing approves beyond dispatch_prompts."""
-    may_steer(ctx)
+    it is not offered to agents over MCP, and nothing approves beyond dispatch_prompts. An agent's own command is
+    refused, so no agent answers its own request or consent card (UX review, person-consent)."""
+    persons_answer(ctx, "An answer to an agent's permission request or question")
     work_id = str(ctx.nouns['id'])
     given: Any = ctx.nouns['option']
     option = ' '.join(str(word) for word in cast(list[Any], given)) if isinstance(given, (list, tuple)) else str(given)
@@ -4465,8 +4493,9 @@ def permit(ctx: Context) -> dict[str, Any]:
 def configure(ctx: Context) -> dict[str, Any]:
     """Set one of a running session's settings, as the agent offers them in the session's state: its mode, its model
     or any other config option, by the setting's id and the value or name of a choice, or on or off. The agent takes
-    it from its next step. Only the person sets it: it is not offered to agents over MCP."""
-    may_steer(ctx)
+    it from its next step. Only the person sets it: it is not offered to agents over MCP, and an agent's own command
+    is refused."""
+    persons_answer(ctx, "A running session's setting")
     work_id = str(ctx.nouns['id'])
     given: Any = ctx.nouns['value']
     value = ' '.join(str(word) for word in cast(list[Any], given)) if isinstance(given, (list, tuple)) else str(given)
@@ -4792,8 +4821,18 @@ def persons_own(ctx: Context, what: str) -> None:
     may_steer(ctx)
     if (ctx.surface == 'mcp' or ctx.surface == 'cli' and agent_caller()) \
             and not settings.value('agents_may_set_control', ctx.folder):
-        raise Stop(f'{what} is the person\'s decision, made on the command line or the page, never an agent\'s. Say '
-                   'what you need in your ticket\'s note.', 'metaform map work op=edit id=<your work id> note="..."')
+        said, step = settings.asking(ctx.folder)
+        raise PersonsDecision(f'{what} is the person\'s decision, made on the page or in their own terminal, never an '
+                              f'agent\'s. {said}', f'{step}do it on the page or in {settings.TERMINAL}')
+
+
+def persons_answer(ctx: Context, what: str) -> None:
+    """Refuse what only the person's own answer gives, an answer to an agent's permission request or consent card:
+    over MCP always, and on the command line unless it carries the person's consent, from their terminal or the
+    page, `metaform.caller`. agents_may_set_control never lets an agent answer itself (UX review, person-consent)."""
+    if ctx.surface == 'mcp' or ctx.surface == 'cli' and agent_caller():
+        raise PersonsDecision(f'{what} is the person\'s own answer, given on the page, never an agent\'s.',
+                              'ask the person in chat; they answer it on the page')
 
 
 def offered_values(store: Store, agent: str, key: str) -> list[str] | None:
@@ -5361,7 +5400,8 @@ MODULE = Module(
     subscriptions=(Subscription('work.requeued', requeued), Subscription('dispatch.rework-limit', rework_limit),
                    Subscription('signal.raised', collect), Subscription('map.changed', progress_changed)),
     work_read=work_read,
-    provides=(Provides('base.holds', base_holds),),
+    # person.consent: ask_consent, the consent card in a dispatched agent's chat its MCP server asks the person through
+    provides=(Provides('base.holds', base_holds), Provides('person.consent', ask_consent)),
     start=started,
     stop=None,
     status=None,

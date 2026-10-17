@@ -781,22 +781,57 @@ FORGET = 'Deleting memories removes them from the memory graph for every agent; 
 
 
 def _forget_caution(ctx: Context) -> str:
-    """What one delete call would remove, named and counted, said before it does."""
+    """What one delete call would remove, read from the memory graph, named and counted, said before it does: only
+    what is there and unlocked counts, and a name the graph lacks or a locked memory is named apart (UX review,
+    person-consent F6)."""
     given = _Given(ctx)
+    with ctx.require_store().tables() as tx:
+        graph = Graph.read(tx)
+    missing: list[str] = []
+    locked: list[str] = []
+    what = ''
     if 'entityNames' in ctx.nouns:
         names = list(dict.fromkeys(given.texts(ctx.nouns.get('entityNames'), 'entityNames')))
-        what = f'{len(names)} {"memory" if len(names) == 1 else "memories"}, {", ".join(names)}, with every ' \
-               'observation and relation they hold'
+        missing = [name for name in names if name not in graph.entities]
+        locked = [name for name in names if name in graph.entities and graph.locked(name)]
+        found = [name for name in names if name in graph.entities and name not in locked]
+        held = sum(len(graph.observations.get(name, [])) for name in found)
+        ties = sum(1 for row in graph.relations if row['source'] in found or row['target'] in found)
+        if found:
+            what = (f'{len(found)} {"memory" if len(found) == 1 else "memories"}, {", ".join(found)}, with {held} '
+                    f'{"observation" if held == 1 else "observations"} and {ties} '
+                    f'{"relation" if ties == 1 else "relations"}')
     elif 'deletions' in ctx.nouns:
         deletions = [(given.text(one['entityName'], 'entityName'), given.texts(one['observations'], 'observations'))
                      for one in given.objects('deletions', ('entityName', 'observations'))]
-        count = sum(len(contents) for _, contents in deletions)
-        what = (f'{count} {"observation" if count == 1 else "observations"} of '
-                f'{", ".join(dict.fromkeys(name for name, _ in deletions))}')
+        missing = list(dict.fromkeys(name for name, _ in deletions if name not in graph.entities))
+        locked = list(dict.fromkeys(name for name, _ in deletions if name in graph.entities and graph.locked(name)))
+        count = 0
+        named: list[str] = []
+        for name, contents in deletions:
+            if name in graph.entities and name not in locked:
+                kept = {row['content'] for row in graph.observations.get(name, [])}
+                hits = sum(1 for content in dict.fromkeys(contents) if content in kept)
+                count += hits
+                if hits and name not in named:
+                    named.append(name)
+        if count:
+            what = f'{count} {"observation" if count == 1 else "observations"} of {", ".join(named)}'
     else:
-        count = len(_relations(given))
-        what = f'{count} {"relation" if count == 1 else "relations"} between memories'
-    return f'Deleting {what} removes them from the memory graph for every agent; no copy is kept and it is not undone.'
+        asked = list(dict.fromkeys(_relations(given)))
+        locked = list(dict.fromkeys(end for source, target, _ in asked for end in (source, target)
+                                    if graph.locked(end)))
+        rows = {(row['source'], row['target'], row['relation_type']) for row in graph.relations}
+        count = sum(1 for one in asked if one in rows and one[0] not in locked and one[1] not in locked)
+        if count:
+            what = f'{count} {"relation" if count == 1 else "relations"} between memories'
+    apart = (f' {", ".join(missing)} {"is" if len(missing) == 1 else "are"} not in the memory graph.' if missing
+             else '') + (f' {", ".join(locked)} {"is" if len(locked) == 1 else "are"} locked and kept.' if locked
+                         else '')
+    if not what:
+        return f'Nothing would be deleted: none of it is in the memory graph, unlocked.{apart}'
+    return (f'Deleting {what} removes them from the memory graph for every agent; no copy is kept and it is not '
+            f'undone.{apart}')
 
 
 def delete_entities(ctx: Context) -> Any:
@@ -1389,16 +1424,16 @@ MODULE = Module(
         Verb('delete_entities', delete_entities,
              'Delete memory entities and their relations, at a node or in the whole memory graph.',
              nouns=_at(Noun('entityNames', 'An array of entity names to delete', kind='json', schema=NAMES)), effect='remove',
-             caution=FORGET, person_says=True, cautioned=_forget_caution),
+             caution=FORGET, person_says=True, cautioned=_forget_caution, page='the memory panel'),
         Verb('delete_observations', delete_observations,
              'Delete observations from memory entities, at a node or in the whole memory graph.',
              nouns=_at(Noun('deletions', 'The observations to delete, by entity.', kind='json', schema=DELETIONS)), effect='remove',
-             caution=FORGET, person_says=True, cautioned=_forget_caution),
+             caution=FORGET, person_says=True, cautioned=_forget_caution, page='the memory panel'),
         Verb('delete_relations', delete_relations, 'Delete relations between memory entities, at a node or in the '
                                                    'whole memory graph.',
              nouns=_at(Noun('relations', 'An array of relations to delete', kind='json',
                             schema={'type': 'array', 'items': RELATION})), effect='remove',
-             caution=FORGET, person_says=True, cautioned=_forget_caution),
+             caution=FORGET, person_says=True, cautioned=_forget_caution, page='the memory panel'),
         Verb('read_graph', read_graph, 'Read the memories at a node of the map, or the whole memory graph without one.',
              nouns=_at(), effect='read'),
         Verb('search_nodes', search_nodes, 'Search memory entities by name, type and observation text, at a node or in '

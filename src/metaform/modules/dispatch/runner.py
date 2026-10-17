@@ -96,6 +96,7 @@ from metaform.module import (
 )
 
 from . import (
+    CONSENT_WAIT,
     HANDED,
     PERSON_ENDS,
     PROMPTS,
@@ -3101,6 +3102,41 @@ class Session:
         return DeclineElicitationResponse(action='decline') if action == 'decline' else \
             CancelElicitationResponse(action='cancel')
 
+    async def consent_asked(self, asked: dict[str, Any], reader: asyncio.StreamReader) -> dict[str, Any]:
+        """A call of this session's agent that is the person's decision, put to the person as a consent card in its
+        chat on the page by the agent's own MCP server, op `consent` (UX review, person-consent F5): the call's
+        caution, the tool and the command it stands for, with Allow and Decline. The server's request waits for the
+        answer: accept, decline, or cancel when the wait's deadline passes, the turn or the session ends, or the
+        server goes, which closes the card. Only the system agent and the sentinel ask the person, as with any
+        question, VIEW-045, and dispatch_elicitation decline declines it at once. The card is single use: one answer
+        closes it, and nothing but the person's answer on the page reaches it, never the map's node."""
+        if not self.system:
+            return {'action': 'decline', 'error': 'A worker does not ask the person; its ticket\'s note says what it '
+                                                  'needs, and the person\'s own agent asks them.'}
+        how = await asyncio.to_thread(self.ctx.setting, 'dispatch_elicitation')
+        if how == 'decline' or self.ending:
+            return {'action': 'decline', 'error': 'The person declines agents\' questions here: dispatch_elicitation '
+                                                  'is decline.' if how == 'decline' else 'The session is ending.'}
+        wait = min(float(asked.get('wait') or 0) or CONSENT_WAIT, CONSENT_WAIT)
+        consent = {'tool': str(asked.get('tool') or ''), 'command': str(asked.get('command') or ''),
+                   'caution': str(asked.get('caution') or '')}
+        waiting: asyncio.Future[tuple[str, dict[str, Any]]] = asyncio.get_running_loop().create_future()
+        async with self.lock:
+            await self.flush()
+            request = await self.elicit(waiting, str(asked.get('message') or consent['caution']), [], None, None,
+                                        deadline=wait, consent=consent)
+        gone = asyncio.ensure_future(reader.read())  # the asking server's end closes: its call is over
+        try:
+            done, _ = await asyncio.wait({waiting, gone}, timeout=wait, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            gone.cancel()
+        if not waiting.done():
+            async with self.lock:
+                await self.elicit_closed(request, 'withdrawn' if gone in done else 'expired', ('cancel', {}))
+        action = waiting.result()[0] if waiting.done() else 'cancel'
+        await self.changed(tables='dispatch', kinds=['session'])
+        return {'request': request, 'action': action}
+
     async def complete_elicitation(self, elicitation_id: str, **kwargs: Any) -> None:
         """ACP's elicitation/complete: the agent says the page it asked the person to open is done with, as when an
         MCP server's sign-in finished in the browser before the person answered. A question still waiting is closed
@@ -3196,17 +3232,19 @@ class Session:
 
     async def elicit(self, waiting: asyncio.Future[tuple[str, dict[str, Any]]], message: str,
                      fields: list[dict[str, Any]], url: str | None, elicitation_id: str | None,
-                     before: str = '', *, scope: dict[str, Any] | None = None, deadline: float | None = None) -> str:
+                     before: str = '', *, scope: dict[str, Any] | None = None, deadline: float | None = None,
+                     consent: dict[str, Any] | None = None) -> str:
         """Put the agent's question to the person, and return its request: at the ticket's node when it has one, with
         a one-question form's choices as suggestions, unless a field is secret, which is never written where agents
         read; on the page always, as a line of the thread and the question-waiting signal. A subagent's question
-        says so, and its own thread notes it was asked."""
+        says so, and its own thread notes it was asked. A consent card, `consent`, is asked on the page alone: an answer
+        at the node, where agents write, would let an agent give itself the person's consent."""
         scope = scope or {}
         text = before + elicit_question(self.name, message, fields, url, deadline)
         suggestions = elicit_suggestions(fields, url)
         secret = any(field['secret'] for field in fields)
         message_id: str | None = None
-        if self.node is not None and not secret:
+        if self.node is not None and not secret and consent is None:
             asked = await self.write(self.store.ask, self.node, text, suggestions=suggestions, by=self.by,
                                      work=self.work_id)
             request = message_id = asked.id
@@ -3224,7 +3262,7 @@ class Session:
                            for field in fields],
                 'suggestions': suggestions, 'state': 'waiting', 'asked': stamp(), 'said': before.strip() or None,
                 'session_id': scope.get('session_id'), 'tool_call_id': scope.get('tool_call_id'),
-                'subagent': child['name'] if child else None, 'secret': secret,
+                'subagent': child['name'] if child else None, 'secret': secret, 'consent': consent,
                 'deadline': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() + deadline))
                 if deadline else None}
         self.elicitations[f'elicitation:{request}'] = line
@@ -4232,6 +4270,8 @@ class Session:
             elif op == 'permit':
                 await self.reply(writer, {**said, **await self.permit(str(asked.get('request', '')),
                                                                       str(asked.get('option', '')))})
+            elif op == 'consent':  # the agent's own MCP server asks the person through a card in this chat
+                await self.reply(writer, {**said, **await self.consent_asked(asked, reader)})
             elif op == 'configure':
                 await self.reply(writer, {**said, **await self.configure(str(asked.get('setting', '')),
                                                                          str(asked.get('value', '')))})

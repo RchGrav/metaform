@@ -10,6 +10,7 @@ a default, CLI-023.
 from __future__ import annotations
 
 import inspect
+import os
 import re
 from collections.abc import Callable, Generator, Iterable, Mapping
 from contextlib import contextmanager, suppress
@@ -19,7 +20,7 @@ from pathlib import Path
 from typing import Any, NamedTuple, cast
 
 from . import home
-from .errors import Stop
+from .errors import PersonsDecision
 
 KINDS = ('str', 'int', 'bool', 'list', 'select')
 
@@ -153,15 +154,35 @@ class Setting:
 SCHEMA: dict[str, Setting] = {}
 
 
-def refuse_held_control(keys: Iterable[str], folder: Path | None = None) -> None:
-    """Refuse person-only settings on an agent surface unless the person has allowed agents to set control."""
+TERMINAL = 'their own terminal window (an AI tool runs commands without the consent a terminal carries)'
+
+
+def asking(folder: Path | None = None) -> tuple[str, str]:
+    """How a refused agent gets the person's decision, and how the next step it is given begins: an agent asks the
+    person in its chat with them; one whose role the person holds back (roles_without_authority, a worker by default)
+    asks no one and says it in its ticket's note, for the person's own agent to ask (UX review, person-consent F2)."""
+    role = os.environ.get('METAFORM_ROLE')
+    if role and role in (value('roles_without_authority', folder or Path.cwd()) or ()):
+        said = f"A {role} agent asks no one: say what you need in your ticket's note, and the person's own agent asks them."
+        return said, 'metaform map work op=edit id=<your work id> note="..."; to do it the person '
+    return ('Ask the person in your chat with them: say what you propose and why, then wait for their answer.',
+            'ask the person in chat; to do it they ')
+
+
+def refuse_held_control(keys: Iterable[str], folder: Path | None = None, command: str | None = None) -> None:
+    """Refuse person-only settings to a call without the person's consent, unless the person lets agents set control.
+    The refusal tells the agent how to ask the person, `asking`, and the person how to set it: the page's settings
+    screen, or `command`, pasted into their own terminal (UX review, person-consent F2)."""
     if value('agents_may_set_control', folder or Path.cwd()):
         return
     held = sorted(key for key in keys if (setting := SCHEMA.get(key)) is not None and setting.person_only)
     if held:
-        raise Stop(f'{", ".join(held)} {"is" if len(held) == 1 else "are"} set only by the person, on the command '
-                   'line or the page, never by an agent. Say what you need in your ticket\'s note.',
-                   'metaform map work op=edit id=<your work id> note="..."')
+        switches = ' '.join(f'{SCHEMA[key].switch} <value>' for key in held)
+        said, step = asking(folder)
+        raise PersonsDecision(
+            f'{", ".join(held)} {"is" if len(held) == 1 else "are"} set only by the person, never by an agent. {said}',
+            f'{step}use the settings screen on the page, or paste into {TERMINAL}: '
+            f'{command or "metaform set " + switches}')
 
 
 # The module the current thread is loading. It is per thread, not a process global: while one thread loads a module,

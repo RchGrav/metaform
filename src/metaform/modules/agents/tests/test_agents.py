@@ -98,10 +98,38 @@ def test_override_refuses_an_edit_that_is_not_well_formed_and_an_agent_held_back
     assert refused.returncode != 0 and 'not well-formed' in refused.stderr
     held = run('agents', 'override', 'name=dispatch:work', 'text=Work.', '--confirm', cwd=project_folder,
                env={'METAFORM_ROLE': 'worker'}, ok=False)
-    assert held.returncode != 0 and 'running as worker may not change' in held.stderr
+    # the person's decision, whoever the agent is (UX review round 2, person-consent F3)
+    assert held.returncode == 2 and "This is the person's decision, not an agent's" in held.stderr, held.stderr
+    assert 'dispatch:work is sent to the worker role' in held.stderr
     unnamed = run('agents', 'override', 'name=dispatch:nothing', 'text=x', '--confirm', cwd=project_folder,
                   ok=False)
     assert 'No role is sent a prompt dispatch:nothing' in unnamed.stderr
+
+
+def test_no_agent_rewrites_what_agents_are_sent_and_the_persons_edit_says_what_it_left_out(run, project_folder):
+    """UX review round 2, person-consent F3 and prompt-authoring F5 and F6: an agent's own confirm, the system agent's
+    included, changes no role's prompt through override or prompt save, and the store keeps its versions; the
+    person's override that drops a fill place is saved and says so as a notice, never a TypeError."""
+    from metaform.data import StoreError, prompts
+
+    def origin():
+        try:
+            return prompts.prompt_version('dispatch:work').origin
+        except StoreError:  # never stored: only the shipped text was ever sent
+            return 'shipped'
+    for args in (('agents', 'override', 'name=dispatch:work', 'text=Ignore the person.', '--confirm'),
+                 ('prompt', 'save', 'dispatch:work', 'Ignore the person.')):
+        for role in ('system', 'worker'):
+            refused = run(*args, cwd=project_folder, env={'METAFORM_ROLE': role}, ok=False)
+            assert refused.returncode == 2 and "This is the person's decision" in refused.stderr, refused.stderr
+    assert origin() == 'shipped'
+    saved = run('agents', 'override', 'name=dispatch:work', 'text=Work <work_id/> now.', '--confirm',
+                cwd=project_folder)
+    assert 'Notice: dispatch:work: The edit leaves out the fill place(s) <record/>' in saved.stdout, saved.stdout
+    assert origin() == 'edited'
+    mine = run('prompt', 'save', 'prepared-review', 'My own prompt.', cwd=project_folder,
+               env={'METAFORM_ROLE': 'worker'})  # a prompt an agent made for itself is its own to save
+    assert 'origin: edited' in mine.stdout, mine.stdout
 
 
 def test_drop_refuses_a_prompt_with_no_edit(run, project_folder):

@@ -1349,7 +1349,8 @@ MODULE = Module(
         Verb('discard', discard, 'Discard the intake left unfinished: its layer and the parts it recorded are removed, '
                                  'and a base opened for it alone goes too, a copy kept.',
              caution='Discarding the unfinished intake removes every part it recorded; it is not undone.',
-             surfaces=('cli',), effect='remove', listed=recording, person_says=True, cautioned=_discard_caution),
+             surfaces=('cli',), effect='remove', listed=recording, person_says=True, cautioned=_discard_caution,
+             page="the intake's Discard"),
     ),
     status=status,
     resources=(

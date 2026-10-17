@@ -233,7 +233,8 @@ export function permissionCard(line, work, tag, agent, {session = null, answered
   return card;
 }
 const ELICITATION_SAID = {declined: 'Declined.', cancelled: 'Not answered: its turn ended first.',
-  withdrawn: 'Withdrawn by the agent before an answer.', completed: 'Completed in the browser.'};
+  withdrawn: 'Withdrawn by the agent before an answer.', completed: 'Completed in the browser.',
+  expired: 'Not answered in time, so nothing ran.'};
 /* A question the agent put to the person, ACP's elicitation: who asks and what; a one-question form's choices as
  * buttons, with its free-text companion, as claude-agent-acp's "Other", as a field beside them; any other form as a
  * field per question; or a page to open, its full address and host shown, a warning on a host in another script, and
@@ -249,22 +250,24 @@ export function elicitationCard(line, work, tag, agent) {
     const done = await wrote('/api/dispatch-permit', {work_id: work, request: data.request, option: answer});
     if (!done) { for (const control of controls) control.disabled = false; return; }
     card.classList.replace('waiting', 'answered');
-    const said = done.action === 'decline' ? 'Declined by you.'
+    const said = done.action === 'decline' ? 'Declined by you.' : data.consent ? 'Allowed once by you.'
       : data.secret ? 'Answered by you.' : `${answer}: answered by you.`;
     fill(acts, h('p', {class: 'said'}, h('i', {class: 'i i-check', 'aria-hidden': 'true'}), said));
   };
   const decline = h('button', {type: 'button', class: 'btn sm danger',
     title: 'Do not answer; the agent goes on without it', onclick: () => send('decline')}, 'Decline');
-  const acts = data.url ? pageActs(data, send, decline)
+  const acts = data.consent ? consentActs(data.consent, send, decline) : data.url ? pageActs(data, send, decline)
     : questions.length === 1 && (questions[0].choices || []).length && !questions[0].many
       ? choiceActs(questions[0], fields, send, decline)
       : formActs(fields, questions, data, send, decline);
-  const said = state === 'answered' ? (data.secret || !data.answer ? 'Answered.' : `${data.answer}: answered.`)
+  const said = state === 'answered' ? (data.consent ? 'Allowed once.'
+    : data.secret || !data.answer ? 'Answered.' : `${data.answer}: answered.`)
     : (Object.hasOwn(ELICITATION_SAID, state) ? ELICITATION_SAID[state] : '') || state;
   const waiting = state === 'waiting', settled = state === 'answered' || state === 'completed';
   const card = h(tag, {class: `permission elicitation ${state}`, 'data-request': data.request},
     h('div', {class: 'ask'}, h('span', {class: 'eyebrow'}, waiting ? 'Waiting for your answer' : 'Question'),
-      h('b', {}, data.url ? `${asker} asks you to open a page` : `${asker} asks`)),
+      h('b', {}, data.consent ? `${asker} asks for your consent`
+        : data.url ? `${asker} asks you to open a page` : `${asker} asks`)),
     h('p', {class: 'why'}, ...linked(data.message || '')),
     data.problem && waiting ? h('p', {class: 'hint'}, `The last answer could not be read: ${data.problem}.`) : null,
     data.deadline && waiting
@@ -274,6 +277,17 @@ export function elicitationCard(line, work, tag, agent) {
     waiting ? acts
       : h('p', {class: 'said'}, h('i', {class: `i ${settled ? 'i-check' : 'i-close'}`, 'aria-hidden': 'true'}), said));
   return card;
+}
+/* A call of the agent's that is the person's decision, a consent card: the command it stands for, and Allow, which
+ * runs it once, and Decline. The caution is the card's message. It is answered here alone, never at the map's node,
+ * where agents write (UX review, person-consent F5). */
+function consentActs(consent, send, decline) {
+  return h('div', {class: 'answers', role: 'group', 'aria-label': 'Give or refuse your consent'},
+    h('div', {class: 'address'}, h('p', {class: 'host'}, 'It runs, as if you ran it yourself:'),
+      h('code', {class: 'url'}, consent.command || consent.tool || '')),
+    h('button', {type: 'button', class: 'btn sm primary', title: 'You consent: it runs this once',
+      onclick: () => send('accept')}, 'Allow once'),
+    decline);
 }
 /* A page to open: its host, a warning when the host is written in another script, its full address, the link, and
  * Accept and Decline. */

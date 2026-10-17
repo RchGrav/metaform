@@ -1023,6 +1023,9 @@ def activate_base(project_id: str, name: str) -> Base:
                          (project_id, name)).fetchone()
         if row is None:
             raise StoreError(f'No base {name} in {project_id}.', 'metaform list bases')
+        held = db.execute('SELECT base_id FROM active_bases WHERE project_id=?', (project_id,)).fetchone()
+        if held is not None and held[0] == row[0]:  # the active base already: nothing is written or announced
+            return Base(row[0], project_id, name, row[1], True)
         db.execute('INSERT INTO active_bases(project_id, base_id) VALUES (?, ?) '
                    'ON CONFLICT(project_id) DO UPDATE SET base_id=excluded.base_id', (project_id, row[0]))
     changes.note(project_id)
@@ -1138,10 +1141,13 @@ def holds_of(project_id: str, base_id: str) -> dict[str, int]:
         return {}
 
 
-def switch_caution(project_id: str) -> str:
+def switch_caution(project_id: str, target: str | None = None) -> str:
     """What making another base the active map takes out of view, said before it does, STORE-041 and BASE-013: what
-    the active base holds, and the command that switches back."""
+    the active base holds, and the command that switches back. A switch to `target` when it is the active base
+    already takes nothing, and says so (UX review, person-consent F6)."""
     active = active_base(project_id)
+    if active is not None and target is not None and active.name == target:
+        return f'{target} is already the active map of {project_id}; nothing changes.'
     if active is None:
         return 'This changes the active map for every agent and the page of the project.'
     held = holds_said(holds_of(project_id, active.id))
@@ -1415,6 +1421,20 @@ class Restored:
     def to_dict(self) -> dict[str, Any]:
         return {**self.backup.to_dict(), 'said': self.said, 'held_before': self.held_before,
                 **({'restore_before': self.back} if self.back else {})}
+
+
+def restore_caution(project_id: str, name: str | None = None) -> str:
+    """What a restore of `name`, or of the newest backup a clear made, would bring back and what it replaces, read
+    from the backups and the bases there are now, said before it runs (UX review, person-consent F2)."""
+    known = backups(project_id)
+    chosen = next((one for one in known if one.name == name or name is None and one.made_by != 'restore'), None)
+    if chosen is None:
+        return f'No backup {name} of {project_id} is kept, so a restore would bring nothing back.' if name else \
+            f'{project_id} has no backup a clear made, so a restore would bring nothing back.'
+    now = to_clear(project_id, agents=False)
+    replaced = f'replaces what it holds now, {now.held}, which is backed up first' if now.bases else \
+        'replaces nothing, since it holds no map now'
+    return f'Restoring {project_id} from backup {chosen.name} brings back {chosen.held}, and {replaced}.'
 
 
 def restore_project(project_id: str, name: str | None = None) -> Restored:

@@ -2738,6 +2738,40 @@ def test_an_agents_question_is_put_to_the_person_and_the_answer_reaches_it_as_ac
     dispatch.stop()
 
 
+@pytest.mark.req('CLI-011')
+@pytest.mark.req('VIEW-045')
+def test_a_system_agents_call_that_is_the_persons_decision_waits_on_a_card_only_the_person_answers(dispatch, run):
+    """UX review round 2, person-consent F5: a dispatched system agent's call that is the person's decision is put to
+    them as a consent card in its chat, never as a question at the node, where agents write. The call waits; an
+    agent's own permit is refused, the person's Allow answers it once, and a second answer finds nothing waiting."""
+    import threading
+
+    from metaform.modules.dispatch import ask_consent
+    dispatch.start('hold', 'system=true')
+    runner = eventually(lambda: next((row['runner'] for row in read(run, dispatch)['sessions']
+                                      if row.get('state') == 'running' and row.get('runner')), None))
+    answers: list[dict] = []
+    asking = threading.Thread(target=lambda: answers.append(ask_consent(
+        dispatch.store, 'Clearing proj removes one base, main.', tool='metaform_clear_project',
+        command='metaform clear project proj --confirm', caution='Clearing proj removes one base, main.', wait=60,
+        work=dispatch.id, runner=runner)))
+    asking.start()
+    [card] = eventually(lambda: [one['data'] for one in read(run, dispatch)['lines'] if one['kind'] == 'elicitation'
+                                 and (one['data'].get('consent') or {}).get('command')])
+    assert card['state'] == 'waiting' and card['consent']['command'] == 'metaform clear project proj --confirm'
+    assert not dispatch.questions() and card['message_id'] is None  # nothing at the node an agent could answer
+    refused = run('dispatch', 'permit', dispatch.id, card['request'], '--', 'accept', cwd=dispatch.folder,
+                  env={'METAFORM_ROLE': 'system'}, ok=False)
+    assert refused.returncode == 2 and "is the person's own answer" in refused.stderr, refused.stderr
+    assert asking.is_alive()  # still waiting on the person
+    run('dispatch', 'permit', dispatch.id, card['request'], '--', 'accept', cwd=dispatch.folder)  # the person
+    asking.join(timeout=30)
+    assert answers and answers[0]['action'] == 'accept', answers
+    again = run('dispatch', 'permit', dispatch.id, card['request'], '--', 'accept', cwd=dispatch.folder, ok=False)
+    assert again.returncode != 0 and 'waits on this session' in again.stdout + again.stderr
+    dispatch.stop()
+
+
 @pytest.mark.req('BASE-052')
 def test_a_page_to_open_is_shown_with_its_host_and_consent_is_the_persons_answer(dispatch, run):
     """URL-mode elicitation, as an MCP server's sign-in asks it: the full address and its host are put to the person,
@@ -2961,7 +2995,7 @@ def test_cancel_and_tune_refuse_an_agent_cli_unless_the_person_allows_control(di
         refused = run('dispatch', verb, dispatch.id, *nouns, cwd=dispatch.folder, env=agent, ok=False)
         assert refused.returncode == 2
         assert "the person's decision" in refused.stderr
-        assert 'Next: metaform map work op=edit' in refused.stderr
+        assert 'Next: ask the person in chat' in refused.stderr  # the system agent asks the person, person-consent F2
     assert not dispatch.ticket().done
     run('set', '--agents-may-set-control', cwd=dispatch.folder)
     run('dispatch', 'cancel', dispatch.id, cwd=dispatch.folder, env=agent)

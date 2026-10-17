@@ -206,6 +206,25 @@ def _edit(db: sqlite3.Connection, record: sqlite3.Row, text: str, parent: int | 
     return _version(db.execute(_VERSION + 'AND v.version_id=?', (record['prompt_id'], version_id)).fetchone())
 
 
+def sent_to_agents(name: str) -> bool:
+    """Whether `name` is a prompt Metaform sends its agents: a module ships it, `<module>:<element>`, or the store
+    holds a version of it a module shipped. An edit of one changes what every agent of its roles is told, so it is the
+    person's decision; a prompt an agent made for itself, such as a lexicalized one, is not (UX review round 2,
+    prompt-authoring F5)."""
+    owner, colon, element = name.partition(':')
+    if colon and owner and element:
+        from metaform import prompt_files
+        try:
+            if prompt_files.shipped(owner, element) is not None:
+                return True
+        except (OSError, ValueError, LookupError):
+            pass
+    with _db() as db:
+        found = db.execute("SELECT 1 FROM prompts JOIN prompt_versions USING (prompt_id) WHERE name=? AND "
+                           "origin='shipped' LIMIT 1", (name,)).fetchone()
+    return found is not None
+
+
 def save_prompt(name: str, text: str, *, format: str = 'text', parent: int | None = None) -> PromptVersion:
     """Create a named prompt or append an edit atomically, using the newest parent when omitted.
 

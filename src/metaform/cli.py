@@ -13,6 +13,7 @@ import inspect
 import io
 import json
 import os
+import shlex
 import signal
 import sys
 import threading
@@ -165,8 +166,9 @@ def add(args: list[str], folder: Path) -> None:
         return
     if args[:1] == ['base'] and len(args) in (2, 3):
         project_id = _project_arg(folder, args[2] if len(args) == 3 else None)
-        if caller.agent():  # switching the map is the person's decision, CLI-011
-            raise caller.persons_decision(home.switch_caution(project_id), 'metaform ' + ' '.join(['add', *args]))
+        if caller.unconsented():  # switching the map is the person's decision, CLI-011
+            raise caller.persons_decision(home.switch_caution(project_id), shlex.join(['metaform', 'add', *args]),
+                                          'the base picker')
         previous = home.active_base(project_id)
         created = home.add_base(project_id, args[1])
         kept = previous.name if previous else 'main'
@@ -359,8 +361,9 @@ def activate(args: list[str], folder: Path) -> None:
     known = {form.name for form in home.bases(project_id)}
     if args[1] not in known:
         raise Stop(f'No base {args[1]} in {project_id}.', 'metaform list bases')
-    if caller.agent():  # switching the map is the person's decision, CLI-011
-        raise caller.persons_decision(home.switch_caution(project_id), 'metaform ' + ' '.join(['activate', *args]),
+    if caller.unconsented():  # switching the map is the person's decision, CLI-011
+        raise caller.persons_decision(home.switch_caution(project_id, args[1]),
+                                      shlex.join(['metaform', 'activate', *args]),
                                       'the base picker')
     left = home.active_base(project_id)
     made = home.activate_base(project_id, args[1])
@@ -381,8 +384,9 @@ def clear(args: list[str], folder: Path) -> None:
     if home.project(project_id) is None:
         raise Stop(f'No project {project_id} is registered.', 'metaform list projects')
     found = home.to_clear(project_id)
-    if caller.agent():  # clearing the map is the person's decision: an agent's --confirm never runs it, CLI-011
-        raise caller.persons_decision(found.caution, f'metaform clear project {project_id} --confirm',
+    if caller.unconsented():  # clearing the map is the person's decision: an agent's --confirm never runs it, CLI-011
+        raise caller.persons_decision(found.caution, shlex.join(['metaform', 'clear', 'project', project_id,
+                                                                 '--confirm']),
                                       'Clear project')
     if not confirm:
         raise Stop(found.caution, f'If you are sure: metaform clear project {project_id} --confirm')
@@ -417,17 +421,17 @@ def remove(args: list[str], folder: Path) -> None:
 
 
 def restore(args: list[str], folder: Path) -> None:
-    """`restore project [<project>] [<backup>]`: a backup is brought back, the newest when none is named, PROJ-030."""
+    """`restore project [<project>] [<backup>]`: a backup is brought back, the newest when none is named, PROJ-030. A
+    `--confirm` the person pastes with it is taken as said: the restore backs up what it replaces first."""
+    args = [arg for arg in args if arg != '--confirm']
     if args[:1] != ['project'] or len(args) > 3:
         raise Stop('restore needs: project [<project>] [<backup>].', 'metaform restore project')
     project_id = _project_arg(folder, args[1] if len(args) >= 2 else None)
     if home.project(project_id) is None:
         raise Stop(f'No project {project_id} is registered.', 'metaform list projects')
-    if caller.agent():  # a restore replaces the map the person and every agent sees, CLI-011
-        found = home.to_clear(project_id)
-        raise caller.persons_decision(
-            f'Restoring a backup of {project_id} replaces what it holds now: {found.held}. What it holds is backed '
-            'up first.', 'metaform ' + ' '.join(['restore', *args]))
+    if caller.unconsented():  # a restore replaces the map the person and every agent sees, CLI-011
+        raise caller.persons_decision(home.restore_caution(project_id, args[2] if len(args) == 3 else None),
+                                      shlex.join(['metaform', 'restore', *args]), 'Restore')
     restored = home.restore_project(project_id, args[2] if len(args) == 3 else None)
     out(restored.said)
     if restored.held_before:
@@ -481,6 +485,16 @@ def _setting_for(switch: str, verb: str) -> tuple[settings.Setting, bool]:
     return found
 
 
+def _set_command(pairs: list[tuple[settings.Setting, Any]]) -> str:
+    """The `metaform set` line the person pastes for the person-only settings among `pairs`, quoted for a shell."""
+    words = ['metaform', 'set']
+    for setting, raw in pairs:
+        if setting.person_only:
+            words += [setting.switch if raw is True else setting.negative or setting.switch] \
+                if setting.kind == 'bool' else [setting.switch, str(raw)]
+    return shlex.join(words)
+
+
 def set_(args: list[str], folder: Path) -> None:
     named = any(arg.startswith('folder=') for arg in args)
     args, folder = _split_folder(args, folder)
@@ -519,9 +533,9 @@ def set_(args: list[str], folder: Path) -> None:
         raise Stop('--confirm is not a setting.', 'metaform help --confirm')
     if not pairs:
         raise Stop('set needs at least one setting switch.', 'metaform set --help')
-    if caller.agent():
+    if caller.unconsented():
         # Check the whole call before validation, confirmation or writes: --confirm cannot grant control.
-        settings.refuse_held_control((setting.key for setting, _ in pairs), folder)
+        settings.refuse_held_control((setting.key for setting, _ in pairs), folder, _set_command(pairs))
     for setting, raw in pairs:
         try:
             settings.checked(setting.key, raw, folder)
@@ -612,8 +626,9 @@ def unset(args: list[str], folder: Path) -> None:
         # Only the settings stored at this folder, D36, of the modules loaded now, D53.
         keys = [key for key, setting in settings.SCHEMA.items()
                 if settings.scope_of(setting, folder) == settings.own_scope_of(setting, folder)]
-    if caller.agent():
-        settings.refuse_held_control(keys, folder)
+    if caller.unconsented():
+        settings.refuse_held_control(keys, folder, shlex.join(
+            ['metaform', 'unset', *(settings.SCHEMA[key].switch for key in keys if settings.SCHEMA[key].person_only)]))
     for key in keys:  # every one is checked before any is reset
         try:
             settings.check_reset(key, folder)
@@ -875,6 +890,10 @@ def prompt_(args: list[str], folder: Path) -> None:
         parent = named.get('parent', [None])[0]
         if parent is not None and (not parent.isdecimal() or int(parent) < 1):
             raise Stop('parent= takes a positive version number.', 'metaform help prompt')
+        if prompts.sent_to_agents(name) and caller.unconsented():  # what every agent of its roles is told, CLI-011
+            raise caller.persons_decision(
+                f'Saving an edit of {name} changes what every agent sent it is told, from its next turn.',
+                shlex.join(['metaform', 'prompt', 'save', *args[1:]]), 'the Prompt tab')
         saved = prompts.save_prompt(name, sys.stdin.read() if text == '-' else text,
                                     format=named.get('format', ['text'])[0],
                                     parent=int(parent) if parent is not None else None)
@@ -1102,9 +1121,10 @@ def run_module(identifier: str, rest: list[str], folder: Path) -> None:
         out(docs.verb_syntax(module, verb))
         return
     given = [key for key in parsed.switches if key in verb.switches]
-    acting = caller.agent() if given or verb.person_says else None  # read only when the call needs to know
+    # read only when the call needs to know: whether the person's consent is with it, from their terminal or the page
+    acting = caller.unconsented() if given or verb.person_says else None
     if acting:
-        settings.refuse_held_control(given, folder)
+        settings.refuse_held_control(given, folder, shlex.join(['metaform', identifier, *rest]))
     messages = sys.stderr if parsed.json else sys.stdout
     project = parsed.switches.pop('project', None)
 
@@ -1112,10 +1132,11 @@ def run_module(identifier: str, rest: list[str], folder: Path) -> None:
         messages.write(text + '\n')
     ctx = context.build(identifier, folder, project=project, nouns=parsed.nouns, switches=parsed.switches, sink=sink)
     if verb.caution and (not parsed.confirm or verb.person_says and acting):
-        confirm = ' '.join(['metaform', identifier, verb.name, *(arg for arg in rest[1:] if arg != '--confirm'),
-                            '--confirm'])
+        # quoted for a shell, so a JSON argument such as ["k3"] pastes as it was given (person-consent F4)
+        confirm = shlex.join(['metaform', identifier, verb.name, *(arg for arg in rest[1:] if arg != '--confirm'),
+                              '--confirm'])
         if verb.person_says and acting:  # the person's decision: an agent's --confirm never runs it, CLI-011
-            raise caller.persons_decision(caution_of(verb, ctx), confirm)
+            raise caller.persons_decision(caution_of(verb, ctx), confirm, verb.page)
         raise Stop(caution_of(verb, ctx), f'If you are sure: {confirm}')
     if inspect.iscoroutinefunction(verb.run):
         result = _run_async(verb.run, ctx, f'{identifier} {verb.name}')
@@ -1461,6 +1482,7 @@ VERSION = f'metaform {__version__}'  # what metaform --version prints; the build
 
 def main(argv: list[str] | None = None) -> int:
     _utf8_streams()
+    caller.claim()  # the web server's vouch, kept for this command alone and never passed to what it starts
     args = list(sys.argv[1:] if argv is None else argv)
     folder = Path.cwd()
     if argv is None and 'COMP_LINE' in os.environ and 'COMP_POINT' in os.environ:  # the shell's tab, complete -C

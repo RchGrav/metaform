@@ -368,6 +368,19 @@ def _known(ctx: Context, name: str) -> str:
     return shipped
 
 
+def _sent_caution(ctx: Context) -> str:
+    """override's and drop's caution for this call: the prompt, the roles sent it and the sessions running as them
+    now, which take the change from their next turn (UX review, person-consent F3)."""
+    name = str(ctx.nouns.get('name') or '')
+    named = [role.name for role in ROLES if any(sends.name == name for sends in _sends(role))]
+    if not named:
+        return ''
+    running = sum(1 for one in _running(ctx) if one['role'] in named)
+    now = f'{running} {"session runs" if running == 1 else "sessions run"} as {"it" if len(named) == 1 else "them"} now'
+    return (f'{name} is sent to the {", ".join(named)} {"role" if len(named) == 1 else "roles"}; {now}, and every '
+            f'one takes the change from its next turn. metaform agents drop {name} goes back to the shipped text.')
+
+
 def override(ctx: Context) -> dict[str, Any]:
     """Save an edit of a role's prompt in the prompt store, sent in place of the shipped text from the next turn of
     every role that names it, STORE-044."""
@@ -392,8 +405,8 @@ def override(ctx: Context) -> dict[str, Any]:
     result: dict[str, Any] = {'name': name, 'revision': version.number, 'origin': version.origin,
                               'sent': 'from the next turn of every role that names it'}
     said = [notice.message for notice in version.notices] + notices
-    if said:
-        result['notices'] = said
+    if said:  # in the result contract's shape, where and message, so every surface shows them (prompt-authoring F6)
+        result['notices'] = [{'where': name, 'message': message} for message in said]
     return result
 
 
@@ -475,9 +488,11 @@ MODULE = Module(
              nouns=(NAME, Noun('text', 'The edited prompt, its fill places kept as empty elements such as <work_id/>.'),
                     Noun('parent', 'The version this edit came from; the newest by default.', kind='int',
                          required=False)),
-             caution='Every agent of the roles that name this prompt is sent the edit from its next turn.'),
+             caution='Every agent of the roles that name this prompt is sent the edit from its next turn.',
+             person_says=True, cautioned=_sent_caution, page='the Prompt tab'),
         Verb('drop', drop, "Go back to a prompt's shipped text, so its edit is no longer sent.", nouns=(NAME,),
-             caution='Every agent of the roles that name this prompt is sent the shipped text from its next turn.'),
+             caution='Every agent of the roles that name this prompt is sent the shipped text from its next turn.',
+             person_says=True, cautioned=_sent_caution, page='the Prompt tab'),
     ),
     subscriptions=(Subscription('prompt.sent', record),),
     tables=TABLES,

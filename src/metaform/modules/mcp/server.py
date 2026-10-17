@@ -73,6 +73,7 @@ from metaform.module import (
     on_this_system,
     persons_decision,
     project_for,
+    provided,
     provisioning_notice,
     read_report,
     refresh_modules,
@@ -289,12 +290,22 @@ SURFACED: dict[str, tuple[str, dict[str, Any]]] = {
                                     'description': 'The existing version this edit came from; without it, the '
                                                    'newest. Omit this when creating a prompt.'}}}),
     'clear_project': (("Clear the project's map, as metaform clear project does: remove its bases and reports. A "
-                       'backup is made first, and metaform restore project brings it back; its registration, folder, '
-                       "settings, origins, variants and conversations with agents stay. It is the person's decision: "
-                       'it runs only when they say yes in the form their AI tool shows them, and otherwise says what '
-                       'it would remove.'),
+                       'backup is made first, and metaform restore project (metaform_restore_project) brings it back; its '
+                       'registration, folder, '
+                       "settings, origins, variants, memories and conversations with agents stay. It is the person's "
+                       'decision: it runs only when they say yes in the form their AI tool shows them, or on the card '
+                       "in a dispatched agent's chat, and otherwise says what it would remove."),
                       {'type': 'object', 'additionalProperties': False,
                        'properties': {'project': PROJECT}}),
+    'restore_project': (("Bring back a backup of the project's map, as metaform restore project does: the newest a "
+                         'clear made, or the one named. What the project holds now is backed up first, so nothing is '
+                         "lost. It is the person's decision: it runs only when they say yes in the form their AI tool "
+                         "shows them, or on the card in a dispatched agent's chat, and otherwise says what it would "
+                         'bring back and replace.'),
+                        {'type': 'object', 'additionalProperties': False,
+                         'properties': {'project': PROJECT,
+                                        'backup': _text('The backup, by the name a clear or a restore gave it; the '
+                                                        'newest a clear made when omitted.')}}),
     'extract': (('Write variants out to folders as files you can read or run, with Python alone, as metaform '
                  'extract does.'),
                 {'type': 'object', 'required': ['variants', 'folder'], 'additionalProperties': False,
@@ -311,11 +322,13 @@ CHASSIS_EFFECTS: dict[str, Effect] = {
     'set': 'write', 'feedback': 'write', 'list_reports': 'read', 'read_report': 'read', 'instructions': 'read',
     'register': 'write', 'skills': 'read', 'add_origin': 'write', 'list_origins': 'read', 'add_variant': 'remove',
     'list_variants': 'read', 'prompts': 'read', 'prompt': 'read', 'save_prompt': 'write', 'clear_project': 'remove',
-    'extract': 'write'}
+    'restore_project': 'remove', 'extract': 'write'}
 # The chassis's own tools that are the person's decision, run only on their answer to the form, CLI-011 and MCP-006.
-PERSON_SAYS = ('clear_project',)
+PERSON_SAYS = ('clear_project', 'restore_project')
+# Saving a prompt Metaform sends its agents is the person's decision too, prompts.sent_to_agents; an agent's own is not.
 # The chassis's own tools of SURFACED that act on a project's records, so they are listed once the folder has one.
-ON_PROJECT = ('add_origin', 'list_origins', 'add_variant', 'list_variants', 'clear_project', 'extract')
+ON_PROJECT = ('add_origin', 'list_origins', 'add_variant', 'list_variants', 'clear_project', 'restore_project',
+              'extract')
 # The chassis tools whose result is text, not data, so it has no structured form.
 CHASSIS_TEXT = ('instructions', 'read_report')
 JSON_TYPES: dict[str, type] = {'string': str, 'integer': int, 'boolean': bool, 'array': list}
@@ -411,7 +424,7 @@ def run_set(folder: Path, arguments: dict[str, Any], consented: bool = False) ->
         if not arguments:  # none given: the settings it takes, as the list is not in its schema
             return False, [result_json({'settings': settable(folder)})]
         if not consented:
-            refuse_held_control(arguments, folder)
+            refuse_held_control(arguments, folder, set_command(arguments))
         read: list[tuple[str, str]] = []
         typed = {key: setting_value(key, value, folder, read) for key, value in arguments.items()}
         notices += [{'where': key, 'message': message} for key, message in read]
@@ -603,13 +616,26 @@ def _history(folder: Path, name: str, given: dict[str, Any], consented: bool = F
     if name == 'prompt':
         return False, [result_json(prompts.prompt_version(given['name'], given.get('number')))]
     if name == 'save_prompt':
+        if prompts.sent_to_agents(str(given['name'])) and not consented:  # what its roles are told, CLI-011
+            raise persons_decision(saving_caution(str(given['name'])), shlex.join(
+                ['metaform', 'prompt', 'save', str(given['name']), str(given['text']),
+                 *(f'{key}={given[key]}' for key in ('format', 'parent') if key in given)]), 'the Prompt tab')
         return False, [result_json(prompts.save_prompt(**given))]
+    if name == 'restore_project':
+        project = project_for(folder, given.pop('project', None)) or _no_project()
+        backup = cast(str | None, given.get('backup'))
+        if not consented:  # only the person's yes brings a backup back over what the map holds, CLI-011
+            raise persons_decision(home.restore_caution(project, backup), shlex.join(
+                ['metaform', 'restore', 'project', project, *([backup] if backup else [])]), 'Restore')
+        restored = home.restore_project(project, backup)
+        return False, [result_json({'project': project, 'said': restored.said, 'backup': restored.backup.name,
+                                    'held_before': restored.held_before, 'back': restored.back})]
     if name == 'clear_project':
         project = project_for(folder, given.pop('project', None)) or _no_project()
         again = f'ask the person to clear {project} again'
         if not consented:  # only the person's yes to the form clears it, CLI-011
-            raise persons_decision(home.to_clear(project).caution, f'metaform clear project {project} --confirm',
-                                   'Clear project')
+            raise persons_decision(home.to_clear(project).caution,
+                                   shlex.join(['metaform', 'clear', 'project', project, '--confirm']), 'Clear project')
         cleared = home.clear_project(project)
         result = cleared.to_dict()
         if cleared.not_removed:  # still on disk, and what to do, as a notice and never an error, BASE-044
@@ -636,6 +662,12 @@ def _history(folder: Path, name: str, given: dict[str, Any], consented: bool = F
     written = store.extract([str(item) for item in given['variants']], _within(folder, given['folder']),
                             given.get('origin'))
     return False, [result_json([str(path) for path in written])]
+
+
+def saving_caution(name: str) -> str:
+    """What saving an edit of a prompt Metaform sends its agents does, said before it does."""
+    return (f'Saving an edit of {name} changes what every agent sent it is told, from its next turn; metaform agents '
+            f'drop {name} goes back to the shipped text.')
 
 
 def _within(folder: Path, given: Any) -> Path:
@@ -665,18 +697,34 @@ def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dic
     if layers is not None and not verb.reads_layers:
         raise Stop(f"{name} takes no layers: it does not read the map's layers.", schema_step(name))
     if not consented:
-        refuse_held_control((key for key in arguments if key in verb.switches), folder)
+        refuse_held_control((key for key in arguments if key in verb.switches), folder,
+                            person_command(module.id, verb, arguments))
     nouns, switches, notices = tool_arguments(module.id, verb, arguments, ignore=PER_CALL, folder=folder)
     if layers is not None:
         switches['layers'] = [str(item) for item in cast(list[Any], layers)]
     made = context(module.id, folder, project=project, nouns=nouns, switches=switches, sink=lines.append,
                    surface='mcp', client=client, session=session, identity=identity)
     if verb.person_says and not consented:  # the person's decision: only their answer to the form runs it, CLI-011
-        raise persons_decision(caution_of(verb, made), person_command(module.id, verb, arguments))
+        raise persons_decision(caution_of(verb, made), person_command(module.id, verb, arguments), verb.page)
     if verb.caution and not (confirmed or consented):
         raise Stop(caution_of(verb, made), f'If you are sure: call {name} with confirm true')
     lines.extend(f'Notice: {key}: {message}' for key, message in notices)
     return made
+
+
+def set_command(arguments: dict[str, Any]) -> str:
+    """The `metaform set` line the person pastes for the person-only settings a metaform_set call names."""
+    words = ['metaform', 'set']
+    for key, given in arguments.items():
+        setting = settings.SCHEMA.get(key)
+        if setting is None or not setting.person_only:
+            continue
+        if setting.kind == 'bool':
+            words.append(setting.switch if given is True else setting.negative or setting.switch)
+        else:
+            words += [setting.switch, ','.join(str(one) for one in cast(list[Any], given)) if isinstance(given, list)
+                      else str(given)]
+    return shlex.join(words)
 
 
 def person_command(module: str, verb: Verb, arguments: dict[str, Any]) -> str:
@@ -688,7 +736,10 @@ def person_command(module: str, verb: Verb, arguments: dict[str, Any]) -> str:
             words.append(shlex.quote(f'{noun.name}={given if isinstance(given, str) else json.dumps(given)}'))
     if isinstance(arguments.get('project'), str) and not any(noun.name == 'project' for noun in verb.nouns):
         words += ['--project', shlex.quote(str(arguments['project']))]
-    return ' '.join([*words, '--confirm'])
+    held = {key: given for key, given in arguments.items() if key in verb.switches}
+    if held:  # the person-only settings it asked for, as the switches `metaform set` takes on any verb
+        words += [shlex.quote(word) for word in shlex.split(set_command(held))[2:]]
+    return ' '.join([*words, *(['--confirm'] if verb.caution else [])])
 
 
 # The headers Paperclip's tool gateway forwards with each call, its connection's forwardContextHeaders, ticket T3 of
@@ -988,20 +1039,89 @@ def needs(folder: Path, name: str, arguments: dict[str, Any]) -> consent.Ask | N
     if own == 'set':
         return consent.form(name, None, consent.held({key: value for key, value in arguments.items()
                                                       if key != 'glue'}, folder), folder)
-    if own == 'clear_project':
+    if own in ('clear_project', 'restore_project'):
         named = arguments.get('project')
         try:
             project = project_for(folder, named if isinstance(named, str) else None) \
                 if on_surface('chassis', folder) else None
         except (Stop, StoreError):
             return None  # the call says what is wrong with the project it names
-        return None if project is None else consent.form(name, home.to_clear(project).caution, {}, folder)
+        if project is None:
+            return None
+        backup = arguments.get('backup')
+        said = home.to_clear(project).caution if own == 'clear_project' else \
+            home.restore_caution(project, backup if isinstance(backup, str) else None)
+        return consent.form(name, said, {}, folder)
+    if own == 'save_prompt':
+        named = arguments.get('name')
+        if not isinstance(named, str) or not prompts.sent_to_agents(named):
+            return None
+        return consent.form(name, saving_caution(named), {}, folder)
     found = None if own else tools(folder).get(name)
     if found is None:
         return None
     module, verb = found
     return consent.form(name, _asked_caution(folder, module, verb, arguments) or None, consent.held(
         {key: value for key, value in arguments.items() if key in verb.switches}, folder), folder)
+
+
+def persons_call(folder: Path, name: str, arguments: dict[str, Any]) -> bool:
+    """Whether a call is the person's decision, which no confirm of an agent's runs: a tool that is theirs
+    (PERSON_SAYS, a verb declared person_says, a save of a prompt Metaform sends its agents) or person-only settings
+    it asks to change, unless the person lets agents set them."""
+    own = name[len(OWN) + 1:] if name.startswith(OWN + '_') else ''
+    if own == 'set':
+        return bool(consent.held({key: value for key, value in arguments.items() if key not in ('glue', 'confirm')},
+                                 folder))
+    if own in PERSON_SAYS:
+        return True
+    if own == 'save_prompt':
+        named = arguments.get('name')
+        return isinstance(named, str) and prompts.sent_to_agents(named)
+    if own:
+        return False
+    found = tools(folder).get(name)
+    if found is None:
+        return False
+    _, verb = found
+    return verb.person_says or bool(consent.held({key: value for key, value in arguments.items()
+                                                  if key in verb.switches}, folder))
+
+
+def persons_line(folder: Path, name: str, arguments: dict[str, Any]) -> str:
+    """The command line that does what a call asks, as the person pastes it into their own terminal."""
+    own = name[len(OWN) + 1:] if name.startswith(OWN + '_') else ''
+    named = arguments.get('project')
+    if own in ('clear_project', 'restore_project'):
+        project = project_for(folder, named if isinstance(named, str) else None) or '<project>'
+        backup = arguments.get('backup')
+        return shlex.join(['metaform', 'clear', 'project', project, '--confirm'] if own == 'clear_project' else
+                          ['metaform', 'restore', 'project', project, *([backup] if isinstance(backup, str) else [])])
+    if own == 'set':
+        return set_command(arguments)
+    if own == 'save_prompt':
+        return shlex.join(['metaform', 'prompt', 'save', str(arguments.get('name')), str(arguments.get('text'))])
+    found = tools(folder).get(name)
+    return person_command(found[0].id, found[1], arguments) if found is not None else name
+
+
+def ask_in_chat(folder: Path, name: str, arguments: dict[str, Any], ask: consent.Ask) -> dict[str, Any]:
+    """A dispatched agent's call that is the person's decision, put to the person as a consent card in the agent's
+    chat on the page, its runner's `consent`, and waited on: `action` accept, decline or cancel, and `error` when it
+    could not be asked (UX review, person-consent F5)."""
+    asking = provided(folder, 'person.consent')  # dispatch's, which runs the agent's chat
+    if not asking:
+        return {'action': 'cancel', 'error': 'No module here shows an agent\'s chat to ask the person in.'}
+    named = arguments.get('project')
+    try:
+        project = project_for(folder, named if isinstance(named, str) else None)
+    except (Stop, StoreError) as error:
+        return {'action': 'cancel', 'error': str(error)}
+    if project is None:
+        return {'action': 'cancel', 'error': 'No project for this folder, so there is no chat to ask in.'}
+    ask_consent = cast(Callable[..., dict[str, Any]], asking[0][1])
+    return ask_consent(Store(project), ask.message, tool=name, command=persons_line(folder, name, arguments),
+                       caution=ask.message)
 
 
 def _asked_caution(folder: Path, module: Module, verb: Verb, arguments: dict[str, Any]) -> str:
@@ -1796,6 +1916,8 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
         result the call answers with now: the form to fill on the July wire, or the refusal when they declined.
         `(arguments, None)` unchanged when the call needs no form or none can be shown."""
         if not await anyio.to_thread.run_sync(consent.can_ask, capabilities(ctx), folder):
+            if consent.dispatched() and await anyio.to_thread.run_sync(persons_call, folder, name, arguments):
+                return await carded(name, arguments)
             return arguments, None
         ask = await anyio.to_thread.run_sync(needs, folder, name, arguments)
         if ask is None:
@@ -1820,6 +1942,27 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
         if values is None:
             return None, declined(name)
         return {**arguments, **values}, True
+
+    async def carded(name: str, arguments: dict[str, Any]) -> tuple[dict[str, Any] | None, Any]:
+        """A dispatched agent's call that is the person's decision, asked of the person on a consent card in its
+        chat, and waited on: the call runs with the person's yes, the agent's own values for the settings it named,
+        once; a no, a wait that ran out or a card that could not be shown is said as the call's error."""
+        ask = await anyio.to_thread.run_sync(needs, folder, name, arguments)
+        if ask is None:
+            return arguments, None
+        answer = await anyio.to_thread.run_sync(ask_in_chat, folder, name, arguments, ask)
+        if answer.get('action') == 'accept':
+            values = ask.accepted('accept', {consent.GO: True, **{key: arguments[key] for key in ask.kinds}})
+            return {**arguments, **(values or {})}, True
+        if not answer.get('request'):  # no card was shown, a worker's among them: the call is refused as it says
+            return arguments, None
+        if answer.get('action') == 'decline':
+            return None, declined(name)
+        line = await anyio.to_thread.run_sync(persons_line, folder, name, arguments)
+        said = 'The person did not answer the card in your chat in time, so it was closed and nothing ran.'
+        step = f'ask the person in chat if they still want it; to do it they paste into {settings.TERMINAL}: {line}'
+        return None, types.CallToolResult(content=[types.TextContent(type='text', text=f'Error: {said}\nNext: {step}')],
+                                          is_error=True)
 
     def outcome(error: bool, blocks: list[str], structured: dict[str, Any] | None) -> Any:
         # A result that carries a picture, `image` with its base64 `data` and `mimeType`, as web look does: the picture

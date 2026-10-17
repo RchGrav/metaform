@@ -186,8 +186,10 @@ def discard(tx: Tx, layer: str) -> Outcome:
         return Outcome((Notice('layer', f'{found.name} is the base layer and is never discarded; the base '
                                         f'changes by refining: {rows.refine_step()}. Nothing changed.'),))
     if found.kind == 'memory':
-        return Outcome((Notice('layer', f'{found.name} is memory and is never discarded; remove memories with '
-                                        'metaform memory delete_entities <entityNames>. Nothing changed.'),))
+        return Outcome((Notice('layer', f'{found.name} is memory and is never discarded. An agent records a '
+                                        'correction with metaform memory add_observations; memories are deleted by '
+                                        'the person, on the page\'s memory panel or with metaform memory '
+                                        'delete_entities in their own terminal. Nothing changed.'),))
     notices: list[Notice] = []
     for owner in versions.ORDER:
         for ident in of_layer(owner):
