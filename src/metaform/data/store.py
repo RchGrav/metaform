@@ -337,11 +337,45 @@ class Store:
     # ------------------------------------------------------------ refining
 
     def refine(self, thing: str, changes: dict[str, Any] | None = None, *, remove: bool = False, reason: Any,
-               evidence: Any = None) -> Version | Outcome:
+               evidence: Any = None, by: str | None = None) -> Version | Outcome:
         """Write a change or removal of a thing of the metaform as its newest version in the metaform's own layer,
         keeping every earlier version, LAYER-025."""
         with self._write() as tx:
-            return layering.refine(tx, thing, changes, remove=remove, reason=reason, evidence=evidence)
+            return layering.refine(tx, thing, changes, remove=remove, reason=reason, evidence=evidence, by=by)
+
+    def grow_element(self, address: Any, *, name_length: Any = None, name: Any = None, role: Any = None,
+                     reason: Any = None, evidence: Any = None, by: str | None = None) -> Element | Outcome:
+        """Add an element to the finished base under the intake's rules, with its reason, evidence and author,
+        LAYER-025."""
+        with self._write() as tx:
+            return layering.grow_element(tx, address, name_length=name_length, name=name, role=role, reason=reason,
+                                         evidence=evidence, by=by)
+
+    def grow_join(self, receiver: Any, elements: Any, *, purpose: Any = None, ef: Any = None, ifd: Any = None,
+                  reason: Any = None, evidence: Any = None, by: str | None = None) -> Join | Outcome:
+        """Add a purpose record to the finished base under the intake's rules, with its reason, evidence and author,
+        LAYER-025."""
+        with self._write() as tx:
+            return layering.grow_join(tx, receiver, elements, purpose=purpose, ef=ef, ifd=ifd, reason=reason,
+                                      evidence=evidence, by=by)
+
+    def adopt(self, thing: str, *, reason: Any = None, evidence: Any = None, by: str | None = None) -> Outcome:
+        """Take an element or purpose record of a knowledge layer into the finished base, keeping its id, LAYER-025."""
+        with self._write() as tx:
+            return layering.adopt(tx, thing, reason=reason, evidence=evidence, by=by)
+
+    def landing(self, kind: str, ident: str, work_id: str | None = None) -> tuple[Notice, ...]:
+        """What of a finished ticket's work is not on the map in use, each with the refine call that puts it there,
+        LAYER-025."""
+        with self._read() as tx:
+            return layering.landing(tx, kind, ident, work_id)
+
+    def move(self, thing: str, address: Any, *, reason: Any = None, evidence: Any = None,
+             by: str | None = None) -> Element | Outcome:
+        """Rename an element of the base, or merge it into the element at `address`, carrying its purpose records and
+        the knowledge at it, LAYER-025 and MAP-015."""
+        with self._write() as tx:
+            return layering.move(tx, thing, address, reason=reason, evidence=evidence, by=by)
 
 
     # ------------------------------------------------------- item numbers

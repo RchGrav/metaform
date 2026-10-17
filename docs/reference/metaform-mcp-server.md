@@ -156,13 +156,13 @@ Serve the intake and record its result as it is reasoned.
 | Tool | What it does | Effect |
 |---|---|---|
 | `intake_element` | Record one element of the intake at its address; recording it again replaces the fields given. | write |
-| `intake_finish` | Finish the intake. One recorded in a base of its own is finished beside the active map, which stays active: metaform map activate <its name> --confirm makes it the active one. A verification pass is closed on the map it wrote onto, activating nothing. After finish the metaform changes by refining, metaform map refine, or by another intake. | write |
+| `intake_finish` | Finish the intake. One recorded in a base of its own is finished beside the active map, which stays active: metaform map activate <its name> --confirm makes it the active one. A verification pass is closed on the map it wrote onto, activating nothing. After finish the metaform grows and changes by refining, metaform map refine, or by a verification pass, intake start with no name. | write |
 | `intake_prompt` | Read the intake instructions an agent follows to record this project's map. | read |
 | `intake_purpose` | Record one purpose record: a receiver's OP and the elements that serve it, with its EF. Recorded again with an element it holds, the fields given replace its own and new elements are added. | write |
 | `intake_remove` | Remove one element, one purpose record, or one element from a purpose record, from the intake being recorded. Each is named by addresses. | remove |
 | `intake_schema` | Read the shape the intake records: namespace roots, Upstream and Downstream links, element and purpose record forms. | read |
 | `intake_show` | Read the intake being recorded, whole or one receiver at a time. | read |
-| `intake_start` | Start recording this project's intake, or resume the one being recorded. On a project whose intake is finished it stays on that map: conditions, notes and refs are written onto it, and recording a new element or purpose record opens a separate intake-<UTC timestamp> metaform, keeping the earlier one untouched. Returns its name; the existing web GUI follows it live. | write |
+| `intake_start` | Start or resume this project's intake; on a mapped project, a verification pass that refines and extends the map in use. Changed fields are refined, new elements and purpose records are added to it, conditions, notes and refs are written onto it, and intake finish closes the pass. One change to the map needs no pass: metaform map refine. Returns its name; the existing web GUI follows it live. | write |
 | `intake_status` | Say whether this project has an intake, and whether one is being recorded. | read |
 
 ### map
@@ -199,7 +199,7 @@ Read and write this project's functional map and its layers.
 | `map_node` | Read every layer's items at one node, grouped by layer. | read |
 | `map_promote` | Give a join an element of its own at an address, keeping the join and its history, memories and work. | write |
 | `map_reexamined` | Clear a layer's re-examination mark once its knowledge has been checked against the changed base. | write |
-| `map_refine` | Refine the base: change or remove one of its elements or joins as a new version, keeping every earlier one. | write |
+| `map_refine` | Refine the map in use: add, change, rename or remove one of its elements or joins as a new version, keeping every earlier one. How built features go on the map. | write |
 | `map_remove-base` | Take one base out of the project; a copy of its store is kept. Caution: Removes the base and its store; a copy is kept under backups/remove-base. The active base is refused. | remove, person's decision |
 | `map_reply` | Answer a question at a node, or mark a message read. | write |
 | `map_roots` | Read the map's entry: the CQU and the DE with their joins, and every root element. | read |

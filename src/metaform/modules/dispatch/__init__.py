@@ -4386,7 +4386,8 @@ def link(ctx: Context) -> dict[str, Any]:
     named `ref`, a proper noun for what the file is, or from its path, and records who linked it and why. A file
     linked already at another place is a second ref here, with a name of its own; no ref moves. A ref is not an
     element and linking never makes one: an Address no element has is refused, with the call that adds the element
-    to a knowledge layer first, never to the base, which is the intake's alone (CTX-001, code.dispatcher.agent#4d).
+    to the map in use first, map refine, which grows the base under the intake's rules (LAYER-025); one a building,
+    hidden or masked layer holds is named with the call that takes it into the base.
     The sources layer is made when the project has none. Linking it again where it is changes nothing."""
     from metaform.data import Node, Outcome
     store = ctx.require_store()
@@ -4409,10 +4410,17 @@ def link(ctx: Context) -> dict[str, Any]:
         raise Stop(f'{given} names no file of the project.', 'metaform dispatch link file=<path> node=<Address>')
     element = store.element(address)
     if element is None:
+        held = store.element(address, raw=True)
+        if held is not None:
+            raise Stop(f'{address} is held by layer {held.layer}, which is building, hidden or masked, so {named} '
+                       'cannot be linked there. When it is part of what the project does, take it into the map in use '
+                       'first.', f'metaform map refine address={address} adopt=true reason=<why>')
         raise Stop(f'No element is at {address}, so {named} cannot be linked there; linking never makes an element. '
-                   'Link the file to the element whose functionality it realizes, or add that element to a knowledge '
-                   'layer first.',
-                   f'metaform map knowledge op=add-element layer=<your layer> address={address} name=<its name>')
+                   'Link the file to the element whose functionality it realizes, or add that element to the map in '
+                   'use first, with the purpose record it serves.',
+                   f'metaform map refine address={address} name=<its name> name_length=<n> role=<CQU, DE, SE or NE> '
+                   'reason=<why>; then metaform map refine receiver=<its RE> elements=["' + address + '"] '
+                   'purpose=<the OP> ef=<the EF> ifd=<sends, receives or both> reason=<why>')
     work, session = os.environ.get('METAFORM_WORK'), os.environ.get('METAFORM_SESSION')
     by = ' '.join(part for part in (f'work {work}' if work else '', f'session {session}' if session else '') if part)
     written = store.link_ref('path', named, Node('element', element.id), name=ctx.nouns.get('ref') or None,
@@ -5551,16 +5559,27 @@ def intake(ctx: Context) -> dict[str, Any]:
 MAP_NAME = re.compile(r'[A-Za-z0-9._-]{1,64}')  # a base's name, as `intake start name=` takes it
 
 
+def new_map_asked(ctx: Context) -> str | None:
+    """`dispatch intake map=new` on a project with a map is the person's decision: a new map beside the one in use is
+    never how an update is recorded; the map in use is refined."""
+    if ctx.nouns.get('map') != 'new' or not ctx.require_store().intake_bases():
+        return None
+    return ('This starts an intake agent on a separate map beside the one in use; the map in use is not changed, its '
+            'knowledge layers stay with it, and memories at addresses the new map lacks are orphaned until rekeyed. '
+            'An update to the map in use never needs it: map=extend refines it.')
+
+
 def intake_map_choice(ctx: Context) -> dict[str, Any]:
     """The map the person chose an intake makes on a project mapped already, VIEW-045 as amended 2026-10-17: `map=extend`
     checks and extends the map in use, `map=new` starts a separate map beside it, named `name` or by its date. The
-    intake agent's `intake start` follows it, whatever the agent reads in the person's words; none chosen leaves it to
-    the agent, as before."""
+    intake agent's `intake start` follows it, whatever the agent reads in the person's words; none chosen on a mapped
+    project is extend, since a project with a map is refined unless the person asks for a new one."""
     chosen, name = ctx.nouns.get('map'), str(ctx.nouns.get('name') or '').strip()
     if chosen in (None, ''):
         if name:
             raise Stop('A name is for a new map: give map=new with it.', f'metaform dispatch intake map=new name={name}')
-        return {}
+        # a project with a map is refined unless the person asks for a new one (refinement first, 2026-10-17)
+        return {'map': 'extend'} if ctx.require_store().intake_bases() else {}
     if chosen not in ('extend', 'new'):
         raise Stop('map is extend, to check and extend the map in use, or new, to start a separate map beside it.',
                    'metaform help dispatch intake')
@@ -6002,9 +6021,9 @@ MODULE = Module(
                     Noun('resume', 'true: start it although an intake is being recorded that no agent of Metaform\'s '
                                    'started, to resume that intake once no agent is still recording it.',
                          kind='bool', required=False),
-                    Noun('map', 'On a project mapped already: extend checks and extends the map in use; new starts a '
-                                'separate map beside it, which stays apart until the person makes it active. None '
-                                'leaves it to the agent.', required=False,
+                    Noun('map', 'On a project mapped already: extend, the default, checks and refines the map in use; '
+                                'new, only when the person asks for it, starts a separate map beside it, which stays '
+                                'apart until the person makes it active.', required=False,
                          schema={'type': 'string', 'enum': ['extend', 'new']}),
                     Noun('name', 'With map=new, the new map\'s name: 1 to 64 letters, digits, ., _ and -; its date '
                                  'when none is given.', required=False),
@@ -6016,7 +6035,8 @@ MODULE = Module(
              switches=('dispatch_agent', 'dispatch_claude', 'dispatch_codex', 'dispatch_gemini'),
              examples=(('metaform dispatch intake agent=claude', 'Starts Claude Code on the intake of this project.'),
                        ('metaform dispatch intake -- "src/engine only"',
-                        'Starts the default agent on an intake of what is asked.')), open_world=True),
+                        'Starts the default agent on an intake of what is asked.')), open_world=True,
+             person_decides=new_map_asked),
         Verb('resume', resume, 'Resume an ended agent session in place, so the agent keeps its memory and its thread '
                                'goes on. It works where the agent can load or resume a session, and waits for your '
                                'next message.',

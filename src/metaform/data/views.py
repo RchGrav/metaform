@@ -154,7 +154,7 @@ def version(tx: Tx, kind: str, ident: str, row: Row) -> VersionRecord:
                               for element_id in held_elements(tx.base, row.seq)]
     return VersionRecord(ident, kind, row.layer_id, layer_name(tx, row.layer_id),
                          cast(Op, row.op), row.reason, row.evidence, fields,
-                         read_refs(tx.base, kind, row.seq) if kind in ('item', 'property') else ())
+                         read_refs(tx.base, kind, row.seq) if kind in ('item', 'property') else (), by=row.by)
 
 
 def join_ends(tx: Tx, join_id: str) -> tuple[str | None, str | None]:

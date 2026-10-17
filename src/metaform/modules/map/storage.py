@@ -255,6 +255,25 @@ def edit_work(tx: Tx, work_id: str, changes: Any) -> WorkRecord:
     return work_record(tx, after, tuple(notices))
 
 
+def retarget_work(tx: Tx, old: str, new: str) -> dict[str, int]:
+    """Move every work record, question and message at element `old` to element `new`, and every ticket's reference
+    link to it, when the base renames or merges `old` into `new`, LAYER-025: each keeps its id, progress and text, and
+    takes the next number at its new address, MCP-037. Done records move too, so the part's history moves with it."""
+    moved = {"work": 0, "messages": 0, "links": 0}
+    for table, key, kind in (("work", "work_id", "work"), ("messages", "message_id", "message")):
+        found = [str(row[key]) for row in tx.execute(
+            f"SELECT {key} FROM {table} WHERE target_kind='element' AND target_id=?", (old,))]
+        tx.execute(f"UPDATE {table} SET target_id=? WHERE target_kind='element' AND target_id=?", (new, old))
+        for ident in found:
+            _number(tx, kind, ident, "element", new)
+        if table == "work":
+            _ticket_changed(tx, *found)
+        moved[table] = len(found)
+    moved["links"] = tx.execute(
+        "UPDATE work_links SET target_id=? WHERE target_kind='element' AND target_id=?", (new, old)).rowcount
+    return moved
+
+
 def _message_row(tx: Tx, message_id: str) -> Any:
     row = tx.execute("SELECT * FROM messages WHERE message_id=?", (message_id,)).fetchone()
     if row is None:
@@ -1381,6 +1400,7 @@ DATA = Data(
             for fn in (
                 add_work,
                 edit_work,
+                retarget_work,
                 move_message,
                 move_work,
                 take_work,

@@ -42,6 +42,7 @@ class Version:
     evidence: str | None
     fields: dict[str, Any]
     refs: list[tuple[str, str]] = field(default_factory=list[tuple[str, str]])
+    by: str | None = None  # who wrote the version: a work and session, or the surface; kept on base growth, LAYER-025
 
     def __getitem__(self, key: str) -> Any:
         """Read as a row was: `row['row']`, `row['layer_id']`, `row['op']` and the object's own fields."""
@@ -193,6 +194,7 @@ class Projection:
         mode = data.pop('mode', 'add')
         reason = data.pop('reason', None)
         evidence = data.pop('evidence', None)
+        by = data.pop('by', None)
         refs = [(str(pair[0]), str(pair[1])) for pair in data.pop('refs', ())]
         self.kinds.setdefault(op.id, op.kind)
         held = self.versions.setdefault(op.id, [])
@@ -217,7 +219,7 @@ class Projection:
             address = str(data.get('address'))
             self.address_last[address] = op.id
             self.add_type(address)
-        version = Version(op.seq, op.layer_id, op.op, reason, evidence, data, refs)
+        version = Version(op.seq, op.layer_id, op.op, reason, evidence, data, refs, by)
         held.append(version)
         self.by_seq[op.seq] = (op.id, version)
 
@@ -403,7 +405,8 @@ class Projection:
                 'layers': {ident: layer.to_data() | {'seq': layer.seq} for ident, layer in self.layers.items()},
                 'kinds': dict(self.kinds),
                 'versions': {ident: [{'seq': v.seq, 'layer_id': v.layer_id, 'op': v.op, 'reason': v.reason,
-                                      'evidence': v.evidence, 'fields': v.fields, 'refs': [list(r) for r in v.refs]}
+                                      'evidence': v.evidence, 'fields': v.fields, 'refs': [list(r) for r in v.refs],
+                                      'by': v.by}
                                      for v in held] for ident, held in self.versions.items()},
                 'address_last': dict(self.address_last), 'types': dict(self.types),
                 'selections': [list(key) for key in sorted(self.selections)]}
@@ -422,7 +425,8 @@ class Projection:
                                           layer.get('provenance'), [list(p) for p in layer.get('reexamine', ())])
         made.kinds = dict(data['kinds'])
         made.versions = {ident: [Version(int(v['seq']), v['layer_id'], v['op'], v.get('reason'), v.get('evidence'),
-                                         dict(v['fields']), [(str(r[0]), str(r[1])) for r in v.get('refs', ())])
+                                         dict(v['fields']), [(str(r[0]), str(r[1])) for r in v.get('refs', ())],
+                                         v.get('by'))
                                  for v in held] for ident, held in data['versions'].items()}
         made.address_last = dict(data['address_last'])
         made.types = dict(data['types'])

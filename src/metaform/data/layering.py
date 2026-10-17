@@ -320,7 +320,7 @@ def clear(tx: Tx, address: str, layer: str, kind: str) -> Outcome:
 # Refining the base ---------------------------------------------------------------------------------------
 
 def refine(tx: Tx, thing: str, changes: dict[str, Any] | None = None, *, remove: bool = False, reason: Any,
-           evidence: Any = None) -> Version | Outcome:
+           evidence: Any = None, by: str | None = None) -> Version | Outcome:
     """Write a change or removal of a thing of the base as its newest version, in the base's own layer,
     LAYER-025. Every earlier version is kept.
 
@@ -341,7 +341,9 @@ def refine(tx: Tx, thing: str, changes: dict[str, Any] | None = None, *, remove:
     if found.kind not in BASE_KINDS:
         return Outcome((Notice('id', f'{thing} belongs to the knowledge layer {found.name}, not to the base; a '
                                      'knowledge layer is edited in place: metaform map knowledge '
-                                     f'op=edit layer={found.name} id={thing} <field>=<value>. Nothing was '
+                                     f'op=edit layer={found.name} id={thing} <field>=<value>. When it is part of '
+                                     'what the project does, take it into the base, keeping its id: metaform map '
+                                     f'refine {_naming(tx, kind, thing)} adopt=true reason=<why>. Nothing was '
                                      'written.'),))
     allowed = writes.base_only(kind, found, writes.split_changes(kind, given, notices), notices)
     if not remove and given and not allowed:
@@ -355,7 +357,7 @@ def refine(tx: Tx, thing: str, changes: dict[str, Any] | None = None, *, remove:
         if kind == 'join':
             columns['held'] = held if held is not None else list(current.fields.get('held', ()))
     data: dict[str, Any] = {'mode': 'version', 'reason': rows.text(reason, 'reason', notices),
-                            'evidence': rows.text(evidence, 'evidence', notices), **columns}
+                            'evidence': rows.text(evidence, 'evidence', notices), 'by': by, **columns}
     if kind in ('item', 'property'):
         data['refs'] = [list(pair) for pair in current.refs]
     made = tx.emit('remove' if remove else 'change', kind, thing, found.id, data)
@@ -368,3 +370,279 @@ def refine(tx: Tx, thing: str, changes: dict[str, Any] | None = None, *, remove:
     written = next(version for version in tx.base.versions[thing] if version.seq == made.seq)
     record = views.version(tx, kind, thing, written)
     return dataclasses.replace(record, notices=tuple(notices))
+
+
+# Growing the base -----------------------------------------------------------------------------------------
+#
+# The base grows and is corrected after the intake under the intake's own rules, LAYER-025: what is added is an
+# element (address, name_length, name and role) or a purpose record (receiver, the elements that serve its purpose,
+# purpose, ef and ifd), written by the same writes the intake's records go through, so the same notices hold it to the
+# intake's form. The base holds RE, PE, OP and EF only, so nothing else is a field of what is added here. Every version
+# written carries its reason, evidence and who wrote it. The intake's verification pass and `map refine` both grow the
+# base through these functions.
+
+ELEMENT_SHAPE = ('role', 'name')  # the element fields named when missing, as the intake names them
+PURPOSE_SHAPE = ('purpose', 'ef', 'ifd')  # the purpose record fields named when missing, as the intake names them
+
+
+def finished_base(tx: Tx) -> LayerRow | None:
+    """The base's own layer once its intake is finished: the layer the base grows in. None while it has none."""
+    return next((layer for layer in tx.base.layers.values() if layer.kind in BASE_KINDS and layer.ready is not None),
+                None)
+
+
+def _unfinished() -> Outcome:
+    return Outcome((Notice('base', 'This map has no finished intake, so there is no base to grow; the intake records '
+                                   'it first: metaform intake start. Nothing was written.'),))
+
+
+def _missing(given: dict[str, Any], names: Sequence[str], notices: list[Notice]) -> None:
+    for name in names:
+        if given.get(name) is None:
+            notices.append(Notice(name, f'{name} is missing; stored empty.'))
+
+
+def _said(reason: Any, evidence: Any, by: str | None, notices: list[Notice]) -> dict[str, Any]:
+    """The provenance every version of a growth carries; a missing reason is stored empty and named, BASE-044."""
+    if reason is None or (isinstance(reason, str) and not reason.strip()):
+        notices.append(Notice('reason', 'reason is missing; stored empty. Say why the base changes, so it can be '
+                                        'explained later.'))
+    return {'reason': rows.text(reason, 'reason', notices), 'evidence': rows.text(evidence, 'evidence', notices),
+            'by': by}
+
+
+def grow_element(tx: Tx, address: Any, *, name_length: Any = None, name: Any = None, role: Any = None,
+                 reason: Any = None, evidence: Any = None, by: str | None = None) -> Any:
+    """Add an element to the finished base, in its own layer, LAYER-025: written as the intake writes one, with the
+    same notices, and with its reason, evidence and author. An address the base already holds is returned as it is,
+    with the notices `writes.add_element` gives for the fields it did not apply."""
+    found = finished_base(tx)
+    if found is None:
+        return _unfinished()
+    notices: list[Notice] = []
+    if isinstance(address, str) and rows.current_element(tx, address) is None:
+        _missing({'role': role, 'name': name}, ELEMENT_SHAPE, notices)
+    tx.provenance = _said(reason, evidence, by, notices)
+    try:
+        made = writes.add_element(tx, found.name, address, name_length=name_length, role=role, name=name)
+    finally:
+        tx.provenance = None
+    if isinstance(made, Outcome):
+        return Outcome((*notices, *made.notices))
+    versions.mark(tx, found.id, made.id)
+    return dataclasses.replace(made, notices=(*notices, *made.notices))
+
+
+def grow_join(tx: Tx, receiver: Any, elements: Any, *, purpose: Any = None, ef: Any = None, ifd: Any = None,
+              reason: Any = None, evidence: Any = None, by: str | None = None) -> Any:
+    """Add a purpose record to the finished base, in its own layer, LAYER-025, as the intake writes one: an element
+    it names that the map lacks is made there with it, named in a notice. Every version carries its reason, evidence
+    and author."""
+    found = finished_base(tx)
+    if found is None:
+        return _unfinished()
+    notices: list[Notice] = []
+    _missing({'purpose': purpose, 'ef': ef, 'ifd': ifd}, PURPOSE_SHAPE, notices)
+    tx.provenance = _said(reason, evidence, by, notices)
+    try:
+        made = writes.add_join(tx, found.name, receiver, elements, purpose=purpose, ef=ef, ifd=ifd)
+    finally:
+        tx.provenance = None
+    if isinstance(made, Outcome):
+        return Outcome((*notices, *made.notices))
+    versions.mark(tx, found.id, made.id)
+    return dataclasses.replace(made, notices=(*notices, *made.notices))
+
+
+def _naming(tx: Tx, kind: str, thing: str) -> str:
+    """How `map refine` names a thing: an element by its address, a join by its receiver and an element it holds."""
+    current = versions.current_version(tx.base, kind, thing)
+    if current is None or kind not in ('element', 'join'):
+        return f'id={thing}'
+    if kind == 'element':
+        return f'address={current.fields.get("address")}'
+    held = list(current.fields.get('held') or ())
+    receiver = tx.base.address_of(str(current.fields.get('receiver')))
+    provider = tx.base.address_of(str(held[0])) if held else None
+    return f'receiver={receiver} provider={provider}'
+
+
+def _carry(tx: Tx, kind: str, thing: str, changes: dict[str, Any], said: dict[str, Any],
+           layer_id: str | None = None) -> None:
+    """A new version of a thing with these fields changed and every other field kept, in its own layer or in
+    `layer_id`; every earlier version is kept, LAYER-025."""
+    current = versions.current_version(tx.base, kind, thing)
+    if current is None:
+        return
+    target = layer_id or current.layer_id
+    data: dict[str, Any] = {'mode': 'version', **said, **current.fields, **changes}
+    if kind in ('item', 'property'):
+        data['refs'] = [list(pair) for pair in current.refs]
+    tx.emit('change', kind, thing, target, data)
+    versions.mark(tx, target, thing)
+
+
+def adopt(tx: Tx, thing: str, *, reason: Any = None, evidence: Any = None, by: str | None = None) -> Outcome:
+    """Take an element or purpose record a knowledge layer holds into the finished base, as its newest version there,
+    keeping its id, so the tickets, knowledge and memories at it stay: a feature recorded in a knowledge layer reaches
+    the base without a copy, LAYER-025. A purpose record's receiver and elements that live in knowledge layers come
+    with it, so the base never depends on a layer that can be hidden."""
+    found = finished_base(tx)
+    if found is None:
+        return _unfinished()
+    kind = rows.kind_of(tx, thing)
+    if kind not in ('element', 'join'):
+        raise StoreError(f'{thing} is a {kind}; only an element or a purpose record is part of the base.',
+                         'metaform map refine address=<address> adopt=true reason=<why>')
+    current = versions.current_version(tx.base, kind, thing)
+    if current is None:
+        return Outcome((Notice('id', f'{thing} is not current; nothing was written. See metaform map history '
+                                     f'{thing}'),))
+    notices: list[Notice] = []
+    said = _said(reason, evidence, by, notices)
+    things = [thing]
+    if kind == 'join':
+        things += [str(current.fields.get('receiver')), *(str(each) for each in current.fields.get('held') or ())]
+    taken = 0
+    for ident in dict.fromkeys(things):
+        held = versions.current_version(tx.base, rows.kind_of(tx, ident), ident)
+        if held is None or rows.layer(tx, held.layer_id).kind in BASE_KINDS:
+            continue
+        _carry(tx, rows.kind_of(tx, ident), ident, {}, said, found.id)
+        taken += 1
+    if not taken:
+        notices.append(Notice('id', f'{_naming(tx, kind, thing)} is in the base already; nothing was written.'))
+    else:
+        notices.append(Notice('adopted', f'{taken} taken into the base {found.name}, each keeping its id and every '
+                                         'earlier version.'))
+    return Outcome(tuple(notices))
+
+
+def move(tx: Tx, thing: str, address: Any, *, reason: Any = None, evidence: Any = None,
+         by: str | None = None) -> Any:
+    """Rename an element of the base, or merge it into the element at `address`. An address is an element's identity,
+    MAP-015, so the element at the new address takes the old one's place: it is made in the base with the old one's
+    name_length, name and role when the base holds none there. Every purpose record that receives or holds the old
+    element moves to it, as does every item and property of a knowledge layer at it, each as a new version that keeps
+    every earlier one, and the old element is removed. Refs of the sources layer never move: each stays where it was
+    linked and is named, with the call that links its file at the new place. Tickets and memories are moved by the
+    modules that keep them. Returns the element at the new address, with what moved in its notices."""
+    found = finished_base(tx)
+    if found is None:
+        return _unfinished()
+    old = versions.current_version(tx.base, 'element', thing)
+    if old is None or rows.layer(tx, old.layer_id).kind not in BASE_KINDS:
+        return Outcome((Notice('address', f'{thing} is not an element of the base; nothing was moved.'),))
+    if not isinstance(address, str) or not address:
+        raise StoreError(f'{address!r} is not an address.', 'metaform map refine address=<old> to_address=<new>')
+    old_address = str(old.fields.get('address'))
+    if address == old_address:
+        return Outcome((Notice('to_address', f'{address} is where the element is; nothing was moved.'),))
+    notices: list[Notice] = []
+    said = _said(reason, evidence, by, notices)
+    target = rows.current_element(tx, address)
+    if target is None:
+        tx.provenance = said
+        try:
+            made = writes.add_element(tx, found.name, address, name_length=old.fields.get('name_length'),
+                                      role=old.fields.get('role'), name=old.fields.get('name'))
+        finally:
+            tx.provenance = None
+        assert not isinstance(made, Outcome)
+        notices += made.notices
+        target_id = made.id
+    else:
+        target_id = str(target['element_id'])
+        notices.append(Notice('to_address', f'{old_address} was merged into the element at {address}, which keeps '
+                                            'its own name, name_length and role.'))
+    joins = sorted(set(tx.base.joins_received(thing)) | set(tx.base.joins_holding(thing)))
+    for join_id in joins:
+        current = versions.current_version(tx.base, 'join', join_id)
+        if current is None:
+            continue
+        receiver = target_id if current.fields.get('receiver') == thing else current.fields.get('receiver')
+        held = list(dict.fromkeys(target_id if each == thing else each for each in current.fields.get('held') or ()))
+        if receiver in held:
+            notices.append(Notice('elements', f'A purpose record now holds its own receiver, {address}; it was moved '
+                                              'as given, D82.'))
+        _carry(tx, 'join', join_id, {'receiver': receiver, 'held': held}, said)
+    carried = 0
+    sources = tx.base.layer_by_name('sources')
+    for item_id in tx.base.items_at('element', thing):
+        current = versions.current_version(tx.base, 'item', item_id)
+        if current is None:
+            continue
+        if sources is not None and current.layer_id == sources.id:
+            notices.append(Notice('refs', f'A ref stays where it was linked, at {old_address}: refs never move. Link '
+                                          f'its file at the new place: metaform dispatch link file=<path> '
+                                          f'node={address}'))
+            continue
+        _carry(tx, 'item', item_id, {'target_id': target_id}, said)
+        carried += 1
+    for item_id in tx.base.items_linking('element', thing):
+        _carry(tx, 'item', item_id, {'link_id': target_id}, said)
+        carried += 1
+    for property_id in tx.base.properties_of(thing):
+        _carry(tx, 'property', property_id, {'element_id': target_id}, said)
+        carried += 1
+    tx.emit('remove', 'element', thing, old.layer_id, {'mode': 'version', **said, **old.fields})
+    versions.mark(tx, old.layer_id, thing)
+    notices.append(Notice('moved', f'{old_address} -> {address}: {len(joins)} purpose records and {carried} items and '
+                                   'properties of knowledge layers moved with it.'))
+    record = views.element(tx, target_id, None)
+    assert record is not None
+    return dataclasses.replace(record, notices=tuple(notices))
+
+
+ADD_ELEMENT = ('metaform map refine address={address} name=<its name> name_length=<n> role=<CQU, DE, SE or NE> '
+               'reason=<why> evidence=<what shows it>')
+ADD_PURPOSE = ('metaform map refine receiver=<its RE> elements=["{address}"] purpose=<the OP> ef=<the EF> '
+               'ifd=<sends, receives or both> reason=<why>')
+
+
+def _in_base(tx: Tx, kind: str, ident: str) -> bool | None:
+    """Whether a thing's current version is in the base: None when it is not current at all."""
+    current = versions.current_version(tx.base, kind, ident)
+    if current is None:
+        return None
+    return rows.layer(tx, current.layer_id).kind in BASE_KINDS
+
+
+def landing(tx: Tx, kind: str, ident: str, work_id: str | None = None) -> tuple[Notice, ...]:
+    """Whether a finished ticket's work is on the map in use, LAYER-025: its node, and every place its session linked
+    a file at, each an element of the base that serves a purpose record of the base, or a purpose record of the base.
+    Each gap is a notice with the refine call that closes it; nothing is refused, BASE-044. Reads the ticket's node and
+    its own refs alone."""
+    if finished_base(tx) is None:
+        return ()
+    places: list[tuple[str, str]] = [(kind, ident)]
+    if work_id:
+        from . import refs as ref_records
+        places += [(ref.node.kind, ref.node.id) for ref in ref_records.current(tx)
+                   if ref.by and f'work {work_id}' in ref.by]
+    notices: list[Notice] = []
+    for place_kind, place in dict.fromkeys(places):
+        if place_kind == 'join':
+            if not _in_base(tx, 'join', place):
+                notices.append(Notice('map', f'The purpose record this work is at is not on the map in use. Put it '
+                                             f'there: metaform map refine {_naming(tx, "join", place)} adopt=true '
+                                             'reason=<why>, or add it: ' + ADD_PURPOSE.format(address='<element>')))
+            continue
+        in_base = _in_base(tx, 'element', place)
+        address = tx.base.address_of(place) or (place if not is_id(place) else None)
+        if address is None:
+            continue
+        if in_base is None:
+            notices.append(Notice('map', f'{address} is not on the map in use, so what this work built there is not '
+                                         'either. Add it, then the purpose record it serves: '
+                                         f'{ADD_ELEMENT.format(address=address)}; then '
+                                         f'{ADD_PURPOSE.format(address=address)}'))
+        elif not in_base:
+            notices.append(Notice('map', f'{address} is held by a knowledge layer, not the map in use. Take it in, '
+                                         f'keeping its id: metaform map refine address={address} adopt=true '
+                                         'reason=<why>'))
+        elif not any(_in_base(tx, 'join', join_id) for join_id in
+                     (*tx.base.joins_received(place), *tx.base.joins_holding(place))):
+            notices.append(Notice('map', f'{address} is on the map in use but serves no purpose record there. Add the '
+                                         f'one it serves: {ADD_PURPOSE.format(address=address)}'))
+    return tuple(notices)

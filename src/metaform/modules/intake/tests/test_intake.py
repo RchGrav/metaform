@@ -359,6 +359,25 @@ def test_a_new_intake_is_named_for_what_it_is_for(run, project, tmp_path, home):
     assert any(base.name == 'web-interface-refactor' for base in metaform_home.bases('timer'))
 
 
+@pytest.mark.req('LAYER-025')
+def test_an_agent_never_starts_a_new_map_on_a_mapped_project_and_its_update_refines_the_map_in_use(
+        run, project, tmp_path):
+    """Refinement first (2026-10-17): on a project with a map, intake start name= is the person's decision, so an
+    agent's is refused with the refine call; with no name its update is a verification pass on the map in use, which
+    grows it under the same rules as map refine, each version carrying its reason and author."""
+    submit(run, project, FIXTURE, tmp_path)
+    agent = {'METAFORM_ROLE': 'worker', 'METAFORM_WORK': 'w9'}
+    refused = run('intake', 'start', 'name=feature-x', cwd=project, env=agent, ok=False)
+    assert refused.returncode != 0 and 'map refine' in refused.stdout + refused.stderr
+    assert [base.name for base in metaform_home.bases('timer')] == ['main']
+    run('intake', 'start', cwd=project, env=agent)
+    run('intake', 'element', 'code.alarm.snooze', 'role=SE', 'name=snooze', 'name_length=2', cwd=project, env=agent)
+    snooze = Store('timer').element('code.alarm.snooze')
+    [added] = Store('timer').history(snooze.id).results
+    assert (snooze.layer, added.reason, added.by) == ('base', 'intake verification pass', 'work w9')
+    assert [base.name for base in metaform_home.bases('timer')] == ['main']
+
+
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('MAP-045')
 @pytest.mark.req('STORE-041')
@@ -542,8 +561,10 @@ def test_an_intake_started_and_not_finished_is_named_in_the_instructions(run, pr
     run('intake', 'element', 'code.display.digit', 'role=SE', 'name=digit', cwd=project)  # added to the map itself
     assert line not in agents()
     run('intake', 'finish', cwd=project)
-    run('intake', 'element', 'code.display.dot', 'role=SE', 'name=dot', cwd=project)  # no pass open: a new intake
-    assert line in agents()
+    # no pass open: the record is still written onto the finished map, in a pass it opens, never a new intake
+    # (refinement first, 2026-10-17)
+    run('intake', 'element', 'code.display.dot', 'role=SE', 'name=dot', cwd=project)
+    assert line not in agents() and [base.name for base in metaform_home.bases('timer')] == ['main']
 
 
 @pytest.mark.req('MCP-009')
@@ -1340,9 +1361,10 @@ def _element_at_once(home: str, folder: str, address: str, ready: Any, failures:
 
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('QUAL-001')
-def test_processes_recording_new_shape_on_a_finished_map_at_once_open_one_base(run, home, project):
-    """Intake element calls at once, each with a new element for a finished map, open one new base that holds them
-    all; none is stranded in a base of its own. Four calls, as the verifier ran: with two the window is often missed."""
+def test_processes_recording_new_shape_on_a_finished_map_at_once_write_onto_it_in_one_pass(run, home, project):
+    """Intake element calls at once, each with a new element for a finished map, write onto that map in one
+    verification pass that keeps every element added; none opens a new base (refinement first, 2026-10-17). Four
+    calls, as the verifier ran: with two the window is often missed."""
     recorded(run, project, 'start')
     recorded(run, project, 'element', 'stakeholder.cook.home', 'role=CQU', 'name_length=1')
     recorded(run, project, 'finish')
@@ -1358,12 +1380,12 @@ def test_processes_recording_new_shape_on_a_finished_map_at_once_open_one_base(r
     assert [worker.exitcode for worker in workers] == [0] * len(addresses)
     assert failures.empty(), failures.get()
     bases = [base['name'] for base in json.loads(run('map', 'bases', '--json', cwd=project).stdout)['results']]
-    building = Store('timer').intake_building().results
-    assert len(bases) == 2 and len(building) == 1, (bases, [held.base for held in building])
-    held = Store('timer', base=building[0].base_id)
+    assert bases == ['main'] and Store('timer').intake_building().results == ()
+    passing = json.loads((metaform_home.project_folder('timer') / 'intake.verifying').read_text(encoding='utf-8'))
+    held = Store('timer')
     for address in addresses:
         element = held.element(address, raw=True)
-        assert element is not None and element.layer_id == building[0].layer.id, address
+        assert element is not None and element.layer == 'base' and element.id in passing['added'], address
 
 
 # An agent's own process, as a host's MCP server over stdio is: it records one element, says so, and lives until its

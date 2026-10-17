@@ -318,9 +318,10 @@ def unchangeable(tx: Tx, found: LayerRow, thing: str) -> Notice | None:
     return None
 
 
-MOVED = ("An element cannot be moved: its address is its identity, and another address is a different element, "
-         "MAP-015. address was not applied; record the element at the new address and move its joins to it with "
-         "receiver or elements.")
+MOVED = ("An element cannot be moved by changing its address: its address is its identity, and another address is a "
+         "different element, MAP-015. address was not applied. To rename it, or merge it into another, carrying its "
+         "purpose records, knowledge, tickets and memories: metaform map refine address=<old> to_address=<new> "
+         "reason=<why>.")
 HELD = '_held'  # the key changed_columns gives a join's new elements under, written as the version's held list
 
 

@@ -1013,8 +1013,13 @@ def rekey(ctx: Context) -> Any:
     address may already be absent from the map; existing unique keys make a collision roll the whole transfer back. A
     memory whose address changes takes the next number at the new one, MCP-037; its old number is not reused. A locked
     memory's joins stay where they are and are named, CTX-023."""
-    store = ctx.require_store()
-    old, new = ctx.nouns['old'], ctx.nouns['new']
+    return _rekey(ctx.require_store(), str(ctx.nouns['old']), str(ctx.nouns['new']))
+
+
+def _rekey(store: Store, old: str, new: str, *, merge: bool = False) -> dict[str, Any]:
+    """Move the memory joins and notes at `old` to `new`. A collision rolls the whole transfer back, unless `merge`:
+    an element of the map merged into another keeps one join of a memory already joined at both, and the two notes
+    joined as paragraphs, so a merge orphans nothing and copies nothing."""
     counts = {'joins': 0, 'notes': 0}
     locked: list[str] = []
     if old != new:
@@ -1028,20 +1033,45 @@ def rekey(ctx: Context) -> Any:
                     if table == 'joins' and row['entity'] in held:
                         locked.append(row['entity'])
                         continue
+                    where = {name: row[name] for name in key}
+                    moved = {end: changes.get(end, row[end]) for end in ('receiver', 'provider')}
+                    if merge and table == 'joins' and tx.rows('joins', {'entity': row['entity'], **moved},
+                                                              limit=1).results:
+                        tx.delete('joins', where)  # the memory is joined at the element it was merged into already
+                        counts[table] += 1
+                        continue
+                    if merge and table == 'notes' and (kept := tx.get('notes', moved)) is not None:
+                        tx.update('notes', moved, {'text': f"{kept['text']}\n\n{row['text']}"})
+                        tx.delete('notes', where)
+                        counts[table] += 1
+                        continue
                     if table == 'joins' and 'receiver' in changes:  # moved to a new address, it takes its next number
                         changes['number'] = tx.number(new)
                     try:
-                        tx.update(table, {name: row[name] for name in key}, changes)
+                        tx.update(table, where, changes)
                     except StoreError as error:  # the destination already holds this key; the transaction rolls back
-                        held = f'join of {row["entity"]}' if table == 'joins' else 'note'
+                        said = f'join of {row["entity"]}' if table == 'joins' else 'note'
                         first = (f'unjoin one of the two joins metaform memory joins entity={row["entity"]} lists'
                                  if table == 'joins' else f'clear the note at {new} on the web page once what it '
                                                           'holds is kept')
-                        raise Stop(f'{new} already holds a memory {held} that this one would replace: {error} '
+                        raise Stop(f'{new} already holds a memory {said} that this one would replace: {error} '
                                    'Nothing was changed.', f'{first}, then run metaform memory rekey {old} {new} '
                                                            'again') from None
                     counts[table] += 1
     return {'old': old, 'new': new, **counts, **({'locked': list(dict.fromkeys(locked))} if locked else {})}
+
+
+def map_moved(payload: dict[str, Any], ctx: Context) -> dict[str, Any]:
+    """An element of the map renamed or merged into another, `map.moved` from `map refine to_address=`: its memories
+    go with it, so none is orphaned at the address the map no longer holds and none is copied, LAYER-025."""
+    old, new = str(payload.get('old') or ''), str(payload.get('new') or '')
+    if not old or not new:
+        return {'said': ''}
+    moved = _rekey(ctx.require_store(), old, new, merge=True)
+    said = f"{moved['joins']} memory joins and {moved['notes']} notes moved to {new}."
+    if moved.get('locked'):
+        said += f" Locked memories stay at {old}: {', '.join(moved['locked'])}; the person moves them."
+    return {**moved, 'said': said}
 
 
 def graph(ctx: Context) -> Any:
@@ -1481,7 +1511,7 @@ MODULE = Module(
                      'a read works out the citations whose files changed itself.',
              surfaces=('cli',), supported_os=WATCH_OS),
     ),
-    subscriptions=(Subscription('web.started', web_started),),
+    subscriptions=(Subscription('web.started', web_started), Subscription('map.moved', map_moved)),
     node_read=node_read,
     node_count=node_count,
     provides=(Provides('memory.note', person_note), Provides('memory.prompt', memory_prompt)),
