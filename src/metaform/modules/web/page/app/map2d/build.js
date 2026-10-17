@@ -66,7 +66,9 @@ export function setMermaidReady(value) { mermaidReady = value; }
  * downstream. */
 const SHAPES2D = {code: 'rect', document: 'doc', media: 'curv-trap', data: 'cyl', collection: 'st-rect',
   upstream: 'lean-r', downstream: 'lean-l'};
-export async function build2D(keep = true) {
+/* `branch`: what changed is a branch opened or closed, keys/walk.js FOCUS and a click breaking out a node's next level,
+ * so the map is laid out at once in the way it is drawn now, without choosing among the ways again, `fitPick2d`. */
+export async function build2D(keep = true, branch = false) {
   const generation = ++M.generation;
   const host = $('#viewport');
   if (!window.mermaid) return emptyIn(host, 'The 2D map could not load.');
@@ -91,7 +93,7 @@ export async function build2D(keep = true) {
       + 'The 3D view shows them all.');
   }
   let picked = null, layout = 'elk';
-  try { picked = await choosing(() => fitPick2d(lines.join('\n'), shape, generation)); }
+  try { picked = await choosing(() => fitPick2d(lines.join('\n'), shape, generation, branch)); }
   catch (error) {
     // ELK failing never leaves the pane empty: the same map is drawn with Mermaid's other layout, dagre, P043
     layout = 'dagre';

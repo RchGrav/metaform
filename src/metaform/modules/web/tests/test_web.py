@@ -11007,10 +11007,18 @@ def test_a_collapsed_map_opens_the_branch_of_the_work_in_hand_and_of_the_selecti
 
     map_key(page, '4')  # depth 2: the alarm is held inside the timer
     shows(False)
-    deadline, before = time.monotonic() + 30, None
-    while before is None or before['at'] != (now := drawn())['at']:  # the layout at rest before the branch opens
+    # the layout at rest before the branch opens: still over ten frames drawn, or with no frame to come; a pause of
+    # wall time alone passed while a slow frame was late and the layout was still settling (2026-10-17)
+    frames = ("async () => { const {FRAMES} = await import('/page/app/map3d/graph3d.js');"
+              " return [FRAMES.drawn, FRAMES.id]; }")
+    deadline, before, since = time.monotonic() + 30, None, None
+    while True:
+        now, (count, pending) = drawn(), page.evaluate(frames)
+        if before is not None and before['at'] == now['at'] and (count - since >= 10 or not pending):
+            break
+        if before is None or before['at'] != now['at']:
+            before, since = now, count
         assert time.monotonic() < deadline, 'the 3D layout never came to rest'
-        before = drawn() if before is None else now
         page.wait_for_timeout(300)
     ticket = json.loads(run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'task=Make it louder.',
                             'title=Louder', '--json', cwd=mapped).stdout)['id']

@@ -171,13 +171,20 @@ const idle2d = () => new Promise(go => window.requestIdleCallback
  * same text, `kept2d`, which is the whole search's choice and so the last drawing; else in the way last chosen in this
  * pane, or the likelier direction, and the search goes on once it is shown, `hurried`. While a map is shown each
  * layout waits for an idle moment, `idle2d`. */
-export async function fitPick2d(body, shape, generation) {
+export async function fitPick2d(body, shape, generation, branch = false) {
   if (S.project && VIEW.read === S.project) await VIEW.reading;
   if (generation !== M.generation) return null;
   const area = area2d(), step = M.bucket = fitStep2d(area, M.bucket ?? null), pane = Math.exp(step * FIT2D.step);
   const pin = fitPin2d(), text = fitHash2d(body), mark = `${pin} ${step} ${text}`, aim = Number(pane.toPrecision(3));
   const kept = kept2d().chosen[mark], held = FIT2D.chosen.get(mark) || (isWay2d(kept) ? kept : null);
-  const ways = held ? [held] : waysFor(shape, pin, aim), shown = Boolean(M.base);
+  const shown = Boolean(M.base);
+  // A branch opened or closed on a map shown, `build2D`, is laid out once, in the way the map is drawn now and at once,
+  // not after an idle moment: the page never idles while the 3D map draws, so each wait cost `wait` ms, and the
+  // search over the ways cost up to `budget` before the branch showed (6.5 s at 1,000 elements, 2026-10-17). The way
+  // is kept for this text in this page, so the map stays drawn that way; the search runs again on any other change.
+  const same = branch && shown && !held && isWay2d(M.way)
+    && (pin === 'auto' || M.way.vertical === (pin === 'down')) ? {...M.way, aim} : null;
+  const ways = held ? [held] : same ? [same] : waysFor(shape, pin, aim), quick = branch && shown;
   const last = kept2d().last[pane2d()], first = !held && !shown && ways.length > 1;
   if (first && isWay2d(last) && pin === 'auto') ways.unshift({...last, aim});  // drawn first, then the rest searched
   const since = FIT2D.since ??= performance.now(), tried = new Set();
@@ -196,7 +203,7 @@ export async function fitPick2d(body, shape, generation) {
     let drawing = FIT2D.drawn.get(key);
     FIT2D.drawn.delete(key);
     if (!drawing) {
-      await (shown ? idle2d() : new Promise(go => setTimeout(go)));  // the page takes its input, as one layout holds it
+      await (shown && !quick ? idle2d() : new Promise(go => setTimeout(go)));  // the page takes its input first
       if (generation !== M.generation) return null;
       // a map drawn one way is laid out the other ways by ELK alone, in its worker, and only the way chosen is drawn
       const laid = FIT2D.laid.get(text);
@@ -214,7 +221,7 @@ export async function fitPick2d(body, shape, generation) {
     if (!best || score > best.score) best = {...drawing, way, score, key};
   }
   if (best && !best.result) {  // the way chosen was laid out and not drawn: it is drawn now, the one Mermaid drawing
-    await (shown ? idle2d() : new Promise(go => setTimeout(go)));
+    await (shown && !quick ? idle2d() : new Promise(go => setTimeout(go)));
     if (generation !== M.generation) return null;
     const drawn = await drawWay(best.way, body, `map2d${generation}c`, shape.nodes);
     if (generation !== M.generation) return null;
@@ -222,8 +229,9 @@ export async function fitPick2d(body, shape, generation) {
     best = drawn ? {...drawn, way: best.way, score: best.score, key: best.key} : null;
   }
   if (!best) { FIT2D.since = null; throw new Error('ELK laid out none of the ways.'); }
-  if (fitPin2d() !== pin) return fitPick2d(body, shape, generation);  // its direction was changed meanwhile
-  if (!hurried) { FIT2D.chosen.set(mark, best.way); keepWay2d(mark, best.way); }
+  if (fitPin2d() !== pin) return fitPick2d(body, shape, generation, branch);  // its direction was changed meanwhile
+  if (same) FIT2D.chosen.set(mark, best.way);  // this page's alone: this browser keeps only the search's choices
+  else if (!hurried) { FIT2D.chosen.set(mark, best.way); keepWay2d(mark, best.way); }
   while (FIT2D.chosen.size > FIT2D.most) FIT2D.chosen.delete(FIT2D.chosen.keys().next().value);
   FIT2D.since = null;
   return {result: best.result, way: best.way, hurried};
