@@ -52,6 +52,7 @@ from metaform.module import (
     latest_item,
     node_reads,
     on_persons_word,
+    persons_word,
     persons_word_acted,
     project_for,
     titled,
@@ -1313,7 +1314,8 @@ def work(ctx: Context) -> Any:
                                    links=[_link(store, link) for link in nouns.get('links') or ()],
                                    **_optional(ctx, 'kind', 'note', 'task', 'held', 'reviewed', 'title'))
             _keep(store, added.id, nouns, notices)
-        return _written(ctx, store, added, 'add', notices)
+        return _on_word(ctx, _added_on_word(ctx, added.id, nouns.get('after_work')),
+                        _written(ctx, store, added, 'add', notices))
     if op == 'distribute':
         return _with_notices(_glyphed(store, _distribute(store, nouns['agents'])), notices)
     work_id = _work_id(store, str(nouns['id']))
@@ -1427,7 +1429,9 @@ def _orchestrating(ctx: Context, store: Store, op: str, work_id: str,
     a Backlog ticket to To do), or setting an order between tickets (after_work, or a move to a place in To do or
     Backlog). A dispatched agent makes one only in a turn of the person's system agent their own message started, or
     in a later turn when the ticket and every ticket it is set to wait on are in work that word started,
-    `on_persons_word`; the page, the person's terminal and an AI tool outside dispatch as before."""
+    `on_persons_word`; the page, the person's terminal and an AI tool outside dispatch as before. The word's work
+    grows by the ticket written alone, with what waits on it and the open tickets it waits on (dispatch's `plan_of`),
+    never by the other tickets that wait on what it waits on."""
     if ctx.surface not in ('mcp', 'cli'):
         return None
     if not (op == 'edit' and (nouns.get('held') is False or nouns.get('hold') is False or 'after_work' in nouns)
@@ -1436,7 +1440,7 @@ def _orchestrating(ctx: Context, store: Store, op: str, work_id: str,
     record = store.ticket(work_id).work
     kept = _settings(store, [work_id]).get(work_id, {})
     did: list[str] = []
-    tickets = [work_id]
+    tickets = [work_id]  # checked: the ticket and each it is set to wait on; the word's work grows by the ticket alone
     if op == 'edit':
         if nouns.get('held') is False and record.held:
             did.append('released it from Backlog')
@@ -1446,7 +1450,7 @@ def _orchestrating(ctx: Context, store: Store, op: str, work_id: str,
             waits = nouns['after_work']
             did.append(f'set it to wait on {", ".join(str(one) for one in cast(list[Any], waits))}'
                        if isinstance(waits, list) and waits else 'set it to wait on no other ticket')
-            if isinstance(waits, list):  # ordered on the word: what it waits on is part of the same work
+            if isinstance(waits, list):  # a later turn orders a ticket of the work only after one in it
                 tickets += [str(one) for one in cast(list[Any], waits) if str(one) not in tickets]
     else:
         if record.held and nouns.get('column') == 'todo':
@@ -1457,7 +1461,20 @@ def _orchestrating(ctx: Context, store: Store, op: str, work_id: str,
         return None
     said = f'{" and ".join(did)} on ticket {work_id}'
     word = on_persons_word(ctx, f'Releasing or ordering tickets ({said})', tickets)
-    return None if word is None else (word, said, tickets)
+    return None if word is None else (word, said, [work_id])
+
+
+def _added_on_word(ctx: Context, work_id: str, waits: Any) -> tuple[dict[str, Any], str, list[str]] | None:
+    """A ticket the person's system agent adds to wait on others, `after_work`, in a turn the person's own message
+    started: the next wave of the work that message started, so it joins the work that word covers and is recorded in
+    the chat with it. Any other turn's word, a word covering earlier work, never grows it; the ticket an agent writes
+    stays held all the same, and the cover lets the system agent release or start it in a later turn."""
+    if ctx.surface not in ('mcp', 'cli') or not isinstance(waits, list) or not waits:
+        return None
+    word = persons_word(ctx.folder, f'Adding ticket {work_id} to the work', ctx.project)
+    if word is None or word.get('covered'):
+        return None
+    return word, f'added ticket {work_id} to wait on {", ".join(str(one) for one in cast(list[Any], waits))}', [work_id]
 
 
 def _on_word(ctx: Context, word: tuple[dict[str, Any], str, list[str]] | None, result: Any) -> Any:

@@ -131,6 +131,9 @@ REMOTE_AGENT = False  # it launches agents on this machine, which a hosted sandb
 # also says the metaform its runner is pinned to, `base`, the one active when it started, so it is stopped, resumed and
 # read with its ticket there whichever metaform is made active since; a row with none is a conversation on no map or
 # one written before.
+# Version 18 only adds a table, `word_covers`: the work the person's word started, kept by their system agent's
+# runner for its session, so a runner restarted or a session resumed carries that work on without asking the person
+# again. Version 5's code still reads and writes the tables.
 SESSION = (Column('session_id', required=True), Column('work_id', required=True), Column('agent', required=True),
            Column('state', required=True), Column('nonce'), Column('pid', 'int'), Column('port', 'int'),
            Column('token'), Column('how'), Column('started', required=True), Column('seq', 'int', required=True),
@@ -145,7 +148,7 @@ SPEND = (Column('session_id', required=True), Column('seq', 'int', required=True
          Column('tokens', 'int', required=True), Column('cost', 'real'), Column('currency'),
          Column('input', 'int'), Column('output', 'int'), Column('cache_read', 'int'),
          Column('cache_write', 'int'), Column('thought', 'int'), Column('metered', 'bool', default=True))
-TABLES = Tables(version=17, compatible_from=5, tables=(  # 5: agents do not ask; 6, 7, 10 to 17 only add
+TABLES = Tables(version=18, compatible_from=5, tables=(  # 5: agents do not ask; 6, 7, 10 to 18 only add
     # The conversations with agents, the project's whatever its maps: each session and the lines of its thread.
     Table('agent_sessions', place='project', key=('session_id',), columns=SESSION,
           indexes=(Index(('work_id', 'seq')), Index(('seq',)))),
@@ -211,6 +214,13 @@ TABLES = Tables(version=17, compatible_from=5, tables=(  # 5: agents do not ask;
     Table('session_attempts', place='project', key=('work_id',), columns=ATTEMPT),
     # Retries as versions before 16 kept them, beside each metaform's map; carry_conversations() moves their rows.
     Table('attempts', key=('work_id',), columns=ATTEMPT),
+    # The work the person's word started, one row per word of a system agent's session: the word itself (`id`, `text`,
+    # `at`), the tickets it covers and those of it the person stopped, `Session.covers` in runner.py. Written only by
+    # that session's runner, and taken out when that work is done or the person stops the session.
+    Table('word_covers', place='project', key=('session_id', 'word_id'),
+          columns=(Column('session_id', required=True), Column('word_id', required=True),
+                   Column('word', 'json', required=True), Column('tickets', 'json', required=True),
+                   Column('stopped', 'json'), Column('seq', 'int', required=True))),
 ))
 PRIVATE = ('port', 'token', 'pid', 'nonce', 'recovery', 'origin')  # what only this module uses to reach a session
 # Dispatch's own agents, each started by default at the version the ACP Registry lists for it, claude-acp, codex-acp
@@ -3546,7 +3556,8 @@ def persons_word(store: Store, what: str, tickets: Sequence[str] = (), *, work: 
     own terminal) started the turn or was steered into it, or, in any of its turns, when every one of `tickets` is in
     the work it started, released or ordered on an earlier such message (`'covered': True`), until that work is done
     or the person stops it. None for any other turn, any other agent, or a runner that cannot be reached. `what` is
-    the action asked, which the runner does not act on."""
+    the action asked, which the runner does not act on. When no word holds them and the person stopped the work every
+    one of `tickets` was in, `{'stopped': True}`, so the refusal gives that reason."""
     row = own_session(store, work, runner)
     if row is None:
         return None
@@ -3555,16 +3566,18 @@ def persons_word(store: Store, what: str, tickets: Sequence[str] = (), *, work: 
     except OSError:
         return None
     word = answer.get('word')
-    return cast(dict[str, Any], word) if isinstance(word, dict) else None
+    if isinstance(word, dict):
+        return cast(dict[str, Any], word)
+    return {'stopped': True} if answer.get('stopped') is True else None  # the person stopped that work
 
 
 def persons_word_acted(store: Store, word: dict[str, Any], said: str, tickets: Sequence[str] = (),
                        widen: bool = True, *, work: str | None = None, runner: str | None = None) -> None:
     """Record in the calling system agent's chat what it did on the person's word, op `acted`: the runner writes it as
     a notice of the thread with the message that authorized it. On the message the turn carries, and with `widen` (a
-    start, a release, an order; not a stop), the runner keeps `tickets`, with the tickets they wait on and that wait
-    on them (`plan_of`), as the work that word covers, so the later waves of that work start in later turns with no
-    second ask."""
+    start, a release, an order or a ticket added to wait on others; not a stop), the runner keeps `tickets`, with the
+    tickets that wait on them and the open tickets the work waits on (`plan_of`), as the work that word covers, so the
+    later waves of that work start in later turns with no second ask."""
     row = own_session(store, work, runner)
     if row is None:
         return
@@ -3575,27 +3588,32 @@ def persons_word_acted(store: Store, word: dict[str, Any], said: str, tickets: S
 
 
 def plan_of(store: Store, tickets: Iterable[str]) -> set[str]:
-    """`tickets` and every ticket the plan's order (`after_work`) joins to them, either way: those they wait on and
-    those that wait on them, in turn, read in one transaction of the map's `after` table."""
+    """The work the person's word covers for the tickets it acted on: `tickets`; every open ticket that waits on them
+    (`after_work`), in turn, the later waves; and every open ticket any of those waits on, in turn, an earlier wave
+    that must run first. It never walks from a ticket waited on to its other followers, and never through a ticket
+    done or gone, so two plans that once waited on the same ticket stay two. Read in one transaction of the map's
+    `after` table and one read of the open tickets."""
     found = {str(one) for one in tickets}
     try:
         with Store(store.project_id, module='map').tables(write=False) as tx:
             rows = tx.rows('after', limit=0).results
+        opened = {record.id for record in store.work(open=True, limit=0).results}
     except StoreError:
         return found
     waits: dict[str, set[str]] = {}
+    followers: dict[str, set[str]] = {}
     for row in rows:
         raw: Any = row['works']
-        before = [str(one) for one in cast(list[Any], raw)] if isinstance(raw, list) else []
-        for one in before:  # joined both ways: a wave waits on the one before, and is part of the same work
-            waits.setdefault(str(row['work_id']), set()).add(one)
-            waits.setdefault(one, set()).add(str(row['work_id']))
-    reach = list(found)
-    while reach:
-        for one in waits.get(reach.pop(), ()):
-            if one not in found:
-                found.add(one)
-                reach.append(one)
+        for before in ([str(one) for one in cast(list[Any], raw)] if isinstance(raw, list) else []):
+            waits.setdefault(str(row['work_id']), set()).add(before)
+            followers.setdefault(before, set()).add(str(row['work_id']))
+    for edges in (followers, waits):  # the later waves first, then what any of the work waits on
+        reach = [one for one in found if one in opened]
+        while reach:
+            for one in edges.get(reach.pop(), ()):
+                if one in opened and one not in found:
+                    found.add(one)
+                    reach.append(one)
     return found
 
 

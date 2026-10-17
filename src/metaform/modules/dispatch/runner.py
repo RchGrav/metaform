@@ -103,6 +103,7 @@ from . import (
     READS,
     REPLY_LIMIT,
     admit_self,
+    after_of,
     agent_label,
     agent_named,
     argv,
@@ -140,6 +141,7 @@ from . import (
     start_environment,
     startable,
     ticket,
+    ticket_label,
     today,
     wanted_options,
     work_line,
@@ -1354,9 +1356,13 @@ class Session:
         self.peered: deque[list[tuple[str, str]]] = deque()  # each waiting prompt's peer notes, beside `pending`
         # beside each, the person's own message it is, when it is one to the person's system agent, `ActiveTurn.word`
         self.worded: deque[dict[str, Any] | None] = deque()
-        # The work the person's word started, by the word's id: `{'word', 'tickets'}`, the tickets started, released
-        # or ordered on it and those its plan sets waiting on them, `covering`; kept in memory, where no agent writes
+        # The work the person's word started, by the word's id: `{'word', 'tickets', 'stopped'}`, the tickets started,
+        # released, ordered or added on it, with those that wait on them and the open tickets they wait on, and those
+        # of them the person stopped, `covering`; kept in the project's store too, `keep_cover`, which only this writes
         self.covers: dict[str, dict[str, Any]] = {}
+        self.waves_told: set[str] = set()  # the covered tickets the system agent was told are free to start, `waves`
+        self.waves_named: set[str] = set()  # the covered tickets changes named since `waves` last read them
+        self.waves_reading = False
         self.awaiting: dict[str, dict[str, Any]] = {}  # this session's questions waiting for replies, by note id
         self.timers: dict[str, dict[str, Any]] = {}  # the agent's own timers, `dispatch timer`, by id
         self.idle = asyncio.Event()
@@ -3137,13 +3143,22 @@ class Session:
         wanted = set(tickets)
         for key, cover in list(self.covers.items()):
             held = cast(set[str], cover['tickets'])
-            if not wanted <= held:
+            if not held or not wanted <= held:
                 continue
             if not await asyncio.to_thread(self.work_open, sorted(held)):
-                self.covers.pop(key, None)  # that work is done: the person's word for it is spent
+                held.clear()  # that work is done: the person's word for it is spent
+                if not cover['stopped']:
+                    self.covers.pop(key, None)
+                await asyncio.to_thread(self.keep_cover, key)
                 continue
             return {**cast(dict[str, Any], cover['word']), 'covered': True}
         return None
+
+    def stopped_work(self, tickets: Sequence[str]) -> bool:
+        """Whether the person stopped the work every one of `tickets` was in, so a refusal says that and not that no
+        word of theirs started it."""
+        stopped = set[str]().union(*(cast(set[str], cover['stopped']) for cover in self.covers.values()))
+        return bool(tickets) and set(tickets) <= stopped
 
     def work_open(self, tickets: Sequence[str]) -> bool:
         """Whether any of these tickets is still open: one done, or gone from the map, is not."""
@@ -3155,34 +3170,148 @@ class Session:
                 continue
         return False
 
-    def uncover(self, tickets: Sequence[str] | None, keep: str = '') -> int:
+    async def uncover(self, tickets: Sequence[str] | None, keep: str = '') -> int:
         """The person stopped work: each cover holding one of `tickets` ends, every cover with None (Stop all), so
-        their word for it starts nothing more. The cover of `keep`, the word the stop itself was made on, only lets go
-        of the tickets stopped: the rest of the work that same message started goes on."""
+        their word for it starts nothing more, and a later refusal says the person stopped it. The cover of `keep`, the
+        word the stop itself was made on, only lets go of the tickets stopped: the rest of the work that same message
+        started goes on."""
         ended = 0
         for key, cover in list(self.covers.items()):
-            held = cast(set[str], cover['tickets'])
+            held, stopped = cast(set[str], cover['tickets']), cast(set[str], cover['stopped'])
             if tickets is not None and not held & set(tickets):
                 continue
-            if key == keep and tickets is not None:
-                held -= set(tickets)
-                continue
-            self.covers.pop(key, None)
-            ended += 1
+            let_go = held & set(tickets) if key == keep and tickets is not None else set(held)
+            held -= let_go
+            stopped |= let_go
+            ended += not held
+            await asyncio.to_thread(self.keep_cover, key)
         return ended
+
+    def keep_cover(self, key: str) -> None:
+        """Write one cover of the person's word to the project's store, `word_covers`, as it stands in memory, or take
+        it out once it holds nothing, so a runner restarted or the session resumed carries that work on without asking
+        the person again. Only this runner writes it; written without an announcement, since no reader shows it. One
+        that cannot be written is said in the runner's log, and the cover in memory holds for this runner's life."""
+        if self.session_id is None:
+            return
+        cover = self.covers.get(key)
+        where = {'session_id': self.session_id, 'word_id': key}
+        try:
+            with self.store.tables() as tx:
+                if cover is None:
+                    tx.delete('word_covers', where)
+                    return
+                row = {'word': cover['word'], 'tickets': sorted(cast(set[str], cover['tickets'])),
+                       'stopped': sorted(cast(set[str], cover['stopped'])), 'seq': time.time_ns() // 1_000_000}
+                if tx.update('word_covers', where, row) is None:
+                    tx.insert('word_covers', {**where, **row})
+        except Exception as error:  # noqa: BLE001  the cover in memory holds; only a restart would forget it
+            sys.stderr.write(f'The person\'s word {key} of session {self.session_id} was not kept: {error}\n')
+
+    def covers_kept(self) -> None:
+        """The covers of the person's word this session's runner kept before it restarted, read once when the session
+        is resumed, so the work that word started goes on without a second ask."""
+        if self.role != 'system' or self.session_id is None:
+            return
+        try:
+            with self.store.tables(write=False) as tx:
+                rows = tx.rows('word_covers', {'session_id': self.session_id}, limit=0).results
+        except Exception as error:  # noqa: BLE001  none read: the person is asked again, never the reverse
+            sys.stderr.write(f'The person\'s word of session {self.session_id} was not read: {error}\n')
+            return
+        for row in rows:
+            word: Any = row['word']
+            if isinstance(word, dict):
+                self.covers[str(row['word_id'])] = {
+                    'word': cast(dict[str, Any], word), 'tickets': set(listed(dict(row), 'tickets')),
+                    'stopped': set(listed(dict(row), 'stopped'))}
+
+    def covers_dropped(self) -> None:
+        """The person stopped this session: no word of theirs it kept goes on, in a resume or after it."""
+        if self.role != 'system' or self.session_id is None:
+            return
+        # a row left over names a session no runner resumes on the person's word
+        with contextlib.suppress(Exception), self.store.tables() as tx:
+            tx.delete('word_covers', {'session_id': self.session_id})
+
+    def waves_due(self, payload: dict[str, Any], tables: list[str] | None) -> None:
+        """A change that may have marked done a ticket of the work the person's word covers: the tickets now free to
+        start are told to the system agent, `waves`. Decided from the event alone: one that names tickets concerns it
+        only when it names a covered one with a change that can end it; one that names none, only when it wrote
+        tickets or did not say what it wrote. Events that come while that is read merge into it."""
+        if self.role != 'system' or not self.covers:
+            return
+        covered = set[str]().union(*(cast(set[str], cover['tickets']) for cover in self.covers.values()))
+        if not covered:
+            return
+        named: Any = payload.get('work_ids')
+        kinds: Any = payload.get('kinds')
+        if isinstance(named, list):
+            if isinstance(kinds, list) and 'ticket' not in kinds:
+                return
+            touched = covered & {str(one) for one in cast(list[Any], named)}
+        elif tables is None or 'work' in tables:
+            touched = covered
+        else:
+            return
+        if not touched:
+            return
+        self.waves_named |= touched
+        if not self.waves_reading:
+            self.waves_reading = True
+            self.spawn(self.waves())
+
+    async def waves(self) -> None:
+        """The system agent's turn when a ticket of the work the person's word covers is done and the tickets of that
+        work waiting on it are free to start: the wave_ready prompt, naming them, after any turn in flight. Each ticket
+        is named once. It reads the tickets the event named, and the order of those waiting on them alone."""
+        try:
+            while self.waves_named and not self.ending:
+                named, self.waves_named = self.waves_named, set()
+                covered = set[str]().union(*(cast(set[str], cover['tickets']) for cover in self.covers.values()))
+                free, labels, done = await asyncio.to_thread(self.freed, named, covered - self.waves_told)
+                if not free or self.ending:
+                    continue
+                self.waves_told |= set(free)
+                text = prompt('wave_ready', done=', '.join(done), ready=', '.join(labels))
+                if text:
+                    self.turn(text)
+        finally:
+            self.waves_reading = False
+
+    def freed(self, named: set[str], untold: set[str]) -> tuple[list[str], list[str], list[str]]:
+        """Of `untold`, the tickets the person's word covers that the system agent was not told of yet, those now free
+        to start because one of `named` is done: each waits on a done one, waits on no ticket still open, is not done
+        itself and has no agent on it. Their ids, their labels and the labels of the done tickets they waited on."""
+        done = [one for one in sorted(named) if not self.work_open([one])]
+        if not done:
+            return [], [], []
+        free: list[str] = []
+        for work_id in sorted(untold - set(done)):
+            waits = listed(after_of(self.store, work_id), 'after_work')
+            if not set(waits) & set(done) or self.work_open(waits) or not self.work_open([work_id]):
+                continue
+            with self.store.tables(write=False) as tx:
+                rows = tx.rows('agent_sessions', {'work_id': work_id}, limit=0).results
+            if not any(row['state'] == 'running' for row in rows):
+                free.append(work_id)
+        return free, [ticket_label(self.store, one) for one in free], [ticket_label(self.store, one) for one in done]
 
     async def acted(self, word: str, said: str, tickets: Sequence[str] = (), plan: Sequence[str] = (),
                     widen: bool = False) -> bool:
         """Write in the chat what the person's system agent did on their word, beside the message that authorized it,
         so the person sees what it did and why; only for the word the turn in flight carries, or the word whose work
         holds every one of `tickets`, so no other turn's call writes a record of a word it never had. On the word the
-        turn carries, with `widen` (a start, a release, an order), `tickets` and `plan`, the tickets its plan joins to
-        them, become the work it covers in later turns; a later turn never widens it."""
+        turn carries, with `widen` (a start, a release, an order, a ticket added to wait on others), `tickets` and
+        `plan`, the tickets that wait on them and the open tickets they wait on, become the work it covers in later
+        turns, kept in the project's store; a later turn never widens it."""
         current = self.word_now()
         if current is not None and current.get('id') == word and said.strip():
             if tickets and widen:
-                cover = self.covers.setdefault(word, {'word': current, 'tickets': set()})
+                cover = self.covers.setdefault(word, {'word': current, 'tickets': set(), 'stopped': set()})
                 cast(set[str], cover['tickets']).update([*tickets, *plan])
+                cast(set[str], cover['stopped']).difference_update([*tickets, *plan])
+                await asyncio.to_thread(self.keep_cover, word)
         else:
             current = await self.covering(tickets)
             if current is None or current.get('id') != word or not said.strip():
@@ -3512,6 +3641,7 @@ class Session:
             self.request = await asyncio.to_thread(self.asked_for)
         if self.resume:  # the thread goes on where it ended: its lines keep their names and their order
             await asyncio.to_thread(self.continue_thread)
+            await asyncio.to_thread(self.covers_kept)  # and the work the person's word started goes on
         # The server the agent is asked to start is the one AI tools are registered with, chosen at the project's root
         # and not in a worktree, run by this interpreter; none is asked for when no module provides one, MCP-010.
         server = await asyncio.to_thread(mcp_server, Path(self.root))
@@ -4226,6 +4356,7 @@ class Session:
         if isinstance(raised, dict) and cast(dict[str, Any], raised).get('signal') == 'setup-not-working' \
                 and cast(dict[str, Any], raised).get('active') and self.session_id is not None:
             self.spawn(self.troubles())  # a feature the person set up is not working: the system agent says so
+        self.waves_due(payload, tables)  # a ticket of the person's work done: the next wave is free to start
 
     async def workflow_answers(self) -> None:
         """A workflow run this worker's ticket paused on the person, MAP-050, that the person has answered since: the
@@ -4349,7 +4480,8 @@ class Session:
             elif op == 'word':  # the person's word the turn in flight carries, or the word whose work holds the
                 # tickets named, `metaform.module.persons_word`
                 word = self.word_now() or await self.covering(listed(asked, 'tickets'))
-                await self.reply(writer, {**said, 'word': word})
+                stopped = word is None and self.stopped_work(listed(asked, 'tickets'))
+                await self.reply(writer, {**said, 'word': word, **({'stopped': True} if stopped else {})})
             elif op == 'acted':  # what the system agent did on that word, written in its chat with the word
                 recorded = await self.acted(str(asked.get('word') or ''), str(asked.get('said') or ''),
                                             listed(asked, 'tickets'), listed(asked, 'plan'),
@@ -4357,7 +4489,7 @@ class Session:
                 await self.reply(writer, {**said, 'recorded': recorded})
             elif op == 'uncover':  # the person stopped work, so their word for it starts nothing more
                 given = asked.get('tickets')
-                await self.reply(writer, {**said, 'ended': self.uncover(
+                await self.reply(writer, {**said, 'ended': await self.uncover(
                     None if given is None else listed(asked, 'tickets'), str(asked.get('keep') or ''))})
             elif op == 'timer':  # the agent's own timers, `dispatch timer`
                 await self.reply(writer, {**said, **self.timer(asked)})
@@ -4400,6 +4532,7 @@ class Session:
             elif op == 'tune':  # the ticket's own model and effort, changed while it runs, P015
                 await self.reply(writer, {**said, 'applied': await self.apply_options()})
             elif op in ('stop', 'cancel'):  # session/cancel for a turn in flight, then the session ends, P232
+                await asyncio.to_thread(self.covers_dropped)  # the person's stop: their word it kept ends with it
                 await self.end('stopped by the person' if op == 'stop' else 'cancelled by the person', release=False)
                 try:
                     await self.reply(writer, {**said, 'stopped': True})
@@ -4431,7 +4564,9 @@ class Session:
         self.voiced.clear()
         self.peered.clear()
         self.worded.clear()
-        self.covers.clear()
+        self.covers.clear()  # what the project's store keeps of it goes on when this session is resumed
+        self.waves_told.clear()
+        self.waves_named.clear()
         for held in self.timers.values():  # a timer never outlives the session it wakes
             held['handle'].cancel()
         self.timers.clear()

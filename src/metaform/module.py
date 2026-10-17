@@ -839,30 +839,39 @@ def persons_word(folder: Path, what: str, project: str | None = None,
     """The person's own message this call acts on, when the caller is the person's own system agent, dispatched, and
     its runner says either the turn in flight came from a message the person typed in its chat on the page (with the
     key the server gave that page) or at their own terminal, or every one of `tickets` is in the work it started,
-    released or ordered on such a message earlier (`'covered': True`), until that work is done or the person stops
-    it: `{'id', 'text', 'at'}`. None otherwise: any other turn and tickets, any other agent, or a caller no runner
-    started. The runner keeps it in its own memory, where the agent cannot write it; each enabled module's
-    `Provides('person.word', ask)`, `ask(store, what, tickets)`, asks it (dispatch's). What the person's word lets the
-    agent do is the reversible work of orchestration (`on_persons_word`); what cannot be undone still waits on a
-    card."""
+    released, ordered or added to wait on others on such a message earlier (`'covered': True`), until that work is
+    done or the person stops it: `{'id', 'text', 'at'}`. None otherwise: any other turn and tickets, any other agent,
+    or a caller no runner started. The runner keeps it, in its memory and in the project's store, where only it writes
+    it; each enabled module's `Provides('person.word', ask)`, `ask(store, what, tickets)`, asks it (dispatch's). What
+    the person's word lets the agent do is the reversible work of orchestration (`on_persons_word`); what cannot be
+    undone still waits on a card."""
+    return _word(folder, what, project, tickets)[0]
+
+
+def _word(folder: Path, what: str, project: str | None, tickets: Sequence[str]) -> tuple[dict[str, Any] | None, bool]:
+    """`persons_word`, with whether the person stopped the work every one of `tickets` was in: a provider answers
+    `{'stopped': True}` for that, which is no word."""
     from . import caller
     if caller.dispatched() is None:
-        return None
+        return None, False
     from .data import Store
     try:
         named = project_for(folder, project)
     except Exception:  # noqa: BLE001  no project here: no runner to ask, so no word
-        return None
+        return None, False
     if named is None:
-        return None
+        return None, False
+    stopped = False
     for _, ask in provided(folder, 'person.word'):
         try:
             found = ask(Store(named), what, tuple(tickets))
         except Exception:  # noqa: BLE001  a runner that cannot be asked gives no word
             found = None
-        if isinstance(found, dict):
-            return cast(dict[str, Any], found)
-    return None
+        if isinstance(found, dict) and set(cast(dict[str, Any], found)) == {'stopped'}:
+            stopped = stopped or cast(dict[str, Any], found)['stopped'] is True
+        elif isinstance(found, dict):
+            return cast(dict[str, Any], found), False
+    return None, stopped
 
 
 def persons_word_acted(folder: Path, word: dict[str, Any], said: str, project: str | None = None,
@@ -900,12 +909,16 @@ def on_persons_word(ctx: Context, what: str, tickets: Sequence[str] = ()) -> dic
     from . import caller, settings
     if caller.dispatched() is None:
         return None  # the person's own AI tool, run outside dispatch
-    word = persons_word(ctx.folder, what, ctx.project, tickets)
+    word, stopped = _word(ctx.folder, what, ctx.project, tickets)
     if word is not None:
         return word
     said, step = settings.asking(ctx.folder)
-    if tickets:
-        many = len(tickets) > 1
+    many = len(tickets) > 1
+    if tickets and stopped:
+        why = (f'This turn was not started by their message, and the person stopped the work ticket'
+               f'{"s" if many else ""} {", ".join(tickets)} {"are" if many else "is"} in: their earlier word no '
+               'longer covers it, and only their own word starts it again.')
+    elif tickets:
         why = (f'This turn was not started by their message, and ticket{"s" if many else ""} {", ".join(tickets)} '
                f'{"are" if many else "is"} in no work their word started.')
     else:

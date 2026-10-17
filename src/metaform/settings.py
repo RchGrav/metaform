@@ -206,8 +206,8 @@ def refuse_held_control(keys: Iterable[str], folder: Path | None = None, command
 # (`metaform.module.on_persons_word`), so the agent, and the person, know what would allow it.
 WORD_TURN = 'only in a turn the person\'s own message in its chat started (sent on the page, or at their terminal)'
 WORD_COVERS = (f'Their own system agent acts on it {WORD_TURN}, and, in any later turn, on a ticket of the work it '
-               'started, released or ordered on that message, with the tickets that work waits on or that wait on it, '
-               'until that work is done or the person stops it.')
+               'started, released, ordered or added to wait on others on that message, with the tickets that wait on '
+               'it and the open tickets it waits on, until that work is done or the person stops it.')
 
 
 # The module the current thread is loading. It is per thread, not a process global: while one thread loads a module,

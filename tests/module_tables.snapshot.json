@@ -342,7 +342,7 @@
  },
  "cloud": null,
  "dispatch": {
-  "version": 17,
+  "version": 18,
   "compatible_from": 5,
   "tables": {
    "agent_sessions": {
@@ -1748,6 +1748,57 @@
       null
      ],
      "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "word_covers": {
+    "place": "project",
+    "key": [
+     "session_id",
+     "word_id"
+    ],
+    "columns": {
+     "seq": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "session_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "stopped": [
+      "json",
+      "TEXT",
+      false,
+      null
+     ],
+     "tickets": [
+      "json",
+      "TEXT",
+      true,
+      null
+     ],
+     "word": [
+      "json",
+      "TEXT",
+      true,
+      null
+     ],
+     "word_id": [
       "text",
       "TEXT",
       true,
