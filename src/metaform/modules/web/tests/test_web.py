@@ -10977,6 +10977,58 @@ def test_4_sets_the_depth_and_a_click_breaks_out_a_nodes_next_level_in_place_on_
 
 
 @pytest.mark.req('VIEW-051')
+def test_a_collapsed_map_opens_the_branch_of_the_work_in_hand_and_of_the_selection_and_closes_it_after(
+        run, web, mapped, browser):
+    """Collapsed, the map opens the branch down to a part whose ticket is taken, and closes it when the ticket is done;
+    it opens the branch down to the part selected, by a jump as search, a link or the board makes it, and closes it
+    when the selection goes (Rich, 2026-10-17). Both maps draw the same parts each time, and the parts drawn before
+    the branch opened keep their places in 3D."""
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    _, at = keys_of(web)
+    kitchen, alarm = at['code.timer.kitchen'], at['code.alarm.audible']
+    drawn = lambda: page.evaluate("""async () => {
+        const [{G}, {M}] = await Promise.all([import('/page/app/map3d/graph3d.js'), import('/page/app/map2d/build.js')]);
+        const nodes = G.graphData().nodes.filter(node => node.t === 'el');
+        return {d3: nodes.map(node => node.id).sort(), d2: [...M.nodes.keys()].sort(),
+                at: Object.fromEntries(nodes.map(node => [node.id, [node.x, node.y, node.z]]))};
+    }""")
+
+    def shows(alarm_drawn):
+        deadline, now = time.monotonic() + 20, drawn()
+        while not (now['d3'] == now['d2'] and (alarm in now['d3']) == alarm_drawn):
+            assert time.monotonic() < deadline, (alarm_drawn, now)
+            page.wait_for_timeout(100)
+            now = drawn()
+        return now
+
+    map_key(page, '4')  # depth 2: the alarm is held inside the timer
+    shows(False)
+    deadline, before = time.monotonic() + 30, None
+    while before is None or before['at'] != (now := drawn())['at']:  # the layout at rest before the branch opens
+        assert time.monotonic() < deadline, 'the 3D layout never came to rest'
+        before = drawn() if before is None else now
+        page.wait_for_timeout(300)
+    ticket = json.loads(run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'task=Make it louder.',
+                            'title=Louder', '--json', cwd=mapped).stdout)['id']
+    run('map', 'work', 'op=take', f'id={ticket}', 'by=claude', cwd=mapped)
+    opened_now = shows(True)  # taken: its branch opens
+    assert all(opened_now['at'][key] == spot for key, spot in before['at'].items()), 'what was drawn stays put'
+    run('map', 'work', 'op=done', f'id={ticket}', 'resolution=Louder.', 'why=It rings louder.', cwd=mapped)
+    shows(False)  # done: the branch closes
+    page.evaluate(f'window.metaform.select("{alarm}")')  # a jump to a held part opens its way down
+    shows(True)
+    page.evaluate(f'window.metaform.select("{kitchen}")')  # the selection moves on: closed again
+    shows(False)
+    page.evaluate(f'window.metaform.select("{alarm}")')
+    shows(True)
+    map_key(page, 'Escape')  # the selection let go of: closed
+    shows(False)
+    assert not problems
+
+
+@pytest.mark.req('VIEW-051')
 def test_depth_counts_its_levels_in_what_the_viewer_sees_with_an_edge_of_the_project_hidden(run, web, mapped, browser):
     """The levels are counted among the parts drawn, and the least depth draws a join: with the edge holding the top
     hidden, what the top receives from are the tops, so the least depth draws them with what serves them, never an
@@ -11322,7 +11374,7 @@ def test_a_stored_view_survives_its_move_out_of_the_settings_and_each_account_ke
     homes.save('global', 'web', 'web_signs', ['facing'])
     homes.save('global', 'web', 'web_map_depth', ['2'])
     homes.save('global', 'web', 'web_lens', ['not-a-lens'])
-    assert view.value('web_map_depth') == 'all', 'a read carries nothing'
+    assert view.value('web_map_depth') == 'auto', 'a read carries nothing'
     with homes.chassis(write=True) as db:  # the test home's own start carried nothing and marked it; undo the mark
         db.execute("DELETE FROM meta WHERE key='carried:web-view-state'")
     settings._carried.clear()

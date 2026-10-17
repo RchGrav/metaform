@@ -78,7 +78,8 @@ function followView(rows, view) {
   const physics = value('web_physics', 'organic');
   if (physics !== PHYS.name) applyPhysics(physics);
   showFlow(String(value('web_flow_mode', flowNow())));
-  if (String(value('web_map_depth', 'all')) !== DEPTH.level) setDepth(String(value('web_map_depth', 'all')), false);
+  // no depth kept: auto, the map collapsed when it is large, walk.js `AUTO_WHOLE`
+  if (String(value('web_map_depth', 'auto')) !== DEPTH.level) setDepth(String(value('web_map_depth', 'auto')), false);
   showEdges(value('web_flow_edges', true) !== false);
   VIEW.nodeZoom = value('web_node_zoom', true) !== false;
   showNodeZoom();

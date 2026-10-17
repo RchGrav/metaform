@@ -15,7 +15,7 @@ import {AT} from '/page/app/map3d/labels.js';
 import {flowLive, flowTickets} from '/page/app/flow/flow.js';
 import {wake2d} from '/page/app/map2d/flow2d.js';
 import {D, ticketOf, glyphFor} from '/page/app/agents/dispatch.js';
-import {holderOf, depthView} from '/page/app/keys/walk.js';
+import {holderOf, depthView, setFocus} from '/page/app/keys/walk.js';
 import {nodeIn} from '/page/app/graph/data.js';
 import {keepMascot} from '/page/app/views/settings.js';
 
@@ -100,12 +100,16 @@ export function pathThrough(near, from, to) {
 export const liveWork = () => new Set(D.sessions.filter(one => one.state === 'running'
   && (one.activity === 'working' || one.activity === 'waiting')).map(one => one.work_id));
 export function figures(tickets) {
+  // the branches of the work in hand open on both maps, and close when it is done or its agent stops, walk.js FOCUS
+  const live = liveWork();
+  setFocus('work', tickets.filter(ticket => !ticket.done && !conversing(ticket)
+    && (ticket.taken || live.has(ticket.id))).map(ticketNode));
   figures2d(tickets);
   flowTickets(tickets);  // a work record written lands on its node as a record, `FLOW`
   if (!G) return;
   const data = G.graphData(), home = primaryOf(data);
   if (!home) return;
-  const live = liveWork(), view = depthView();  // what the depth shows, worked out once for every ticket
+  const view = depthView();  // what the depth shows with the branches just opened, worked out once for every ticket
   for (const ticket of tickets) {
     // a part held deeper than the depth is worked at the node that holds it, VIEW-051
     const figure = ROAM.figures.get(ticket.id);

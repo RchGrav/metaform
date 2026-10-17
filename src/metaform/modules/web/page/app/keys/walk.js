@@ -10,7 +10,7 @@ import {IN, enter, goTo} from '/page/app/map2d/inside.js';
 import {leaveMemories} from '/page/app/memory/graph.js';
 import {note2d} from '/page/app/map2d/hover.js';
 import {fullFit2d} from '/page/app/map2d/camera.js';
-import {draw3D} from '/page/app/map3d/draw3d.js';
+import {GROW, draw3D} from '/page/app/map3d/draw3d.js';
 import {G} from '/page/app/map3d/graph3d.js';
 import {V3, fit3d} from '/page/app/camera/flight.js';
 import {renderLegend} from '/page/app/views/lens.js';
@@ -158,7 +158,18 @@ export function zoomKey() {
  * of depth clears them. Both maps draw the same parts, `depthView`; the inside view, VIEW-016, is not depth's.
  * The depths are the map's own, Rich, 2026-10-16: the least shows joins, never a lone element or elements joined to
  * nothing, `least`, and the most is one level short of the map's deepest, past which the depth is all of it. */
-export const DEPTH = {level: 'all', open: new Set()};
+export const DEPTH = {level: 'auto', open: new Set()};
+/* auto, the depth until the person chooses one with 4: a map of up to AUTO_WHOLE parts shows whole, a larger one
+ * collapsed to one level past the least, so a large map opens readable and every collapsed node says how many parts
+ * it holds. Rich, 2026-10-17: collapsed by default, opened around the work. */
+const AUTO_WHOLE = 200;
+/* The branches opened for what is going on, beside the person's own clicks in `DEPTH.open`, VIEW-051: `work`, the
+ * parts of the open tickets taken and of the agents at work, given by the figures from the board and the sessions;
+ * `selected`, the node the person selected, or jumped to by search, a link or the board. Each opens the receivers on
+ * its way down from a top, so it is drawn with its siblings, and a work part opens its own next level too. Nothing is
+ * stored: the branches close when the ticket is done, the session stops or the selection moves or goes, since the
+ * set is said again on each of those events, and the maps are drawn again only when what is opened changes, `sig`. */
+export const FOCUS = {work: [], selected: null, sig: ''};
 /* The levels of the parts the viewer sees: `level` and `via`, the receiver each part is first reached through;
  * `below`, what each receiver drawn receives from; `least`, the first depth that draws a join, Infinity for a map with
  * none; `deepest`, the deepest level. An element under an edge of the project the viewer hid, upstream or downstream,
@@ -196,7 +207,8 @@ function levels() {
 }
 /* The depth drawn: the one chosen held to the map's own, `least` at the fewest, and all at the map's deepest or past
  * it, where every level shows; 'all' too for a map with no join. */
-function depthOf(chosen, {least, deepest}) {
+function depthOf(chosen, {least, deepest, level}) {
+  if (chosen === 'auto') chosen = level.size <= AUTO_WHOLE ? 'all' : String(least + 1);
   if (chosen === 'all' || !Number.isFinite(least) || least >= deepest) return 'all';
   const most = Math.max(least, Number(chosen) || least);
   return most >= deepest ? 'all' : String(most);
@@ -207,12 +219,13 @@ export function depthView() {
   if (DEPTH.level === 'all' || !S.elements.size) return {shown: null, held: new Map(), via: new Map()};
   const found = levels(), {level, via, below} = found, depth = depthOf(DEPTH.level, found);
   if (depth === 'all') return {shown: null, held: new Map(), via: new Map()};
-  const most = Number(depth);
+  const most = Number(depth), open = focusOpen(via, below);
+  for (const key of DEPTH.open) open.add(key);
   const shown = new Set([...level].filter(([, at]) => at <= most).map(([key]) => key));
-  const opened = [...shown].filter(key => DEPTH.open.has(key));
+  const opened = [...shown].filter(key => open.has(key));
   while (opened.length) {  // a node broken out shows its next level, and so on for what it shows that is open too
     for (const next of below.get(opened.shift()) || []) {
-      if (!shown.has(next)) { shown.add(next); if (DEPTH.open.has(next)) opened.push(next); }
+      if (!shown.has(next)) { shown.add(next); if (open.has(next)) opened.push(next); }
     }
   }
   const held = new Map();
@@ -246,7 +259,7 @@ export function stepDepth() {
   saveView('web_map_depth', next);
 }
 export function setDepth(level, said = true) {
-  if (level !== 'all' && !/^[1-9][0-9]*$/.test(level)) level = 'all';
+  if (level !== 'all' && level !== 'auto' && !/^[1-9][0-9]*$/.test(level)) level = 'all';
   DEPTH.level = level;
   DEPTH.open.clear();
   if (said) {
@@ -270,24 +283,49 @@ export function toggleDepth(key) {
   redrawDepth();
   return true;
 }
-/* A part chosen while it is held, from the search, a link, the keys or an agent, is shown: every receiver on its way
- * down is broken out, as clicks would. A join shows with its receiver broken out. */
-export function revealDepth(key) {
-  if (DEPTH.level === 'all' || IN.length || MEM.key) return;
-  const join = key.startsWith('p:') ? joinOf(key) : null, view = depthView();
-  const part = join ? join.receiver : key;
-  if (!view.shown || !S.elements.has(part)) return;
-  const opening = join && !join.providers.some(id => view.shown.has(id)) ? [part] : [];
-  for (let at = view.shown.has(part) ? null : view.via.get(part); at; at = view.via.get(at)) {
-    opening.push(at);
-    if (view.shown.has(at)) break;  // the receiver drawn that held it, broken out
-  }
-  if (!opening.length) return;
-  for (const one of opening) DEPTH.open.add(one);
-  redrawDepth();
+/* A part chosen, by a click, the search, a link, the keys, the board or an agent, is shown: every receiver on its way
+ * down is opened, as clicks would, until the selection moves or goes, `FOCUS.selected`. A join shows with its
+ * receiver opened. */
+export function revealDepth(key) { setFocus('selected', key || null); }
+/* The receivers the branches of `FOCUS` open: those on the way down to each part, and a work part itself, so the
+ * parts it works with show. */
+function focusOpen(via, below) {
+  const open = new Set();
+  const up = (key, own) => {
+    const join = key.startsWith('p:') ? joinOf(key) : null, part = join ? join.receiver : key;
+    if (!S.elements.has(part)) return;
+    if ((own || join) && below.has(part)) open.add(part);
+    for (let at = via.get(part); at; at = via.get(at)) open.add(at);
+  };
+  if (FOCUS.selected) up(FOCUS.selected, false);
+  for (const key of FOCUS.work) up(key, true);
+  return open;
+}
+/* One kind of branch said again, `work` with the parts at work or `selected` with the node selected; the maps are drawn
+ * again, in place and unfitted, only when the parts drawn change, so a branch opens or closes once and an event that
+ * changes nothing drawn draws nothing. */
+export function setFocus(kind, value) {
+  FOCUS[kind] = value;
+  if (IN.length || MEM.key) return false;
+  const sig = focusSig();
+  if (sig === FOCUS.sig) return false;
+  FOCUS.sig = sig;
+  if (S.loading) return false;  // the load draws both maps once it has read the rest
+  GROW.beside = true;  // the parts a branch opens grow out of their receiver; what is drawn stays where it is
+  try { draw3D(); } finally { GROW.beside = false; }
+  renderLegend();
+  build2D();
+  return true;
+}
+/* The parts drawn now, as text to compare, so a branch said again that opens nothing new draws nothing: empty while
+ * every level shows. */
+function focusSig() {
+  const {shown} = depthView();
+  return shown ? [...shown].sort().join(' ') : '';
 }
 /* Both maps drawn again with what the depth shows, and fitted whole. */
 function redrawDepth() {
+  FOCUS.sig = focusSig();  // what is drawn now opens these, so the next branch said is compared with them
   draw3D(); renderLegend();
   if (G && !small3d()) { V3.auto = true; fit3d(); }
   build2D().then(fullFit2d);

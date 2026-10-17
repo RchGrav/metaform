@@ -14,6 +14,7 @@ import {setCam, stopCam, area2d, labelSize, scaleFor, focus2d, place2d, aim2d, h
 import {EDGE_PICK, edgeAt2d, nodeAt2d, pickNode2d, pickEdge2d, unmark2D} from '/page/app/map2d/hover.js';
 import {clicked2d, modified2d} from '/page/app/map2d/flow2d.js';
 import {select} from '/page/app/selection/select.js';
+import {revealDepth} from '/page/app/keys/walk.js';
 
 /* Letting go of the selection, by a click on the map's empty space or Escape, VIEW-008: its marks go from both maps,
  * the panel says nothing is selected, and nothing is selected again until the person selects, even as the map is read
@@ -25,6 +26,7 @@ export function deselect() {
   unmark2D();
   if (G) { G.nodeColor(G.nodeColor()); meetEnds(); wake3d(); }
   noneSelected();  // the 2D view stays where it is, VIEW-041
+  revealDepth(null);  // the branch the selection opened closes, walk.js FOCUS
 }
 export function noneSelected() {
   fill($('#p-object'), h('p', {class: 'empty'},
