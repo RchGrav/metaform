@@ -280,7 +280,7 @@ export function toggleDepth(key) {
     }
   } else if (depthView().held.has(key)) DEPTH.open.add(key);
   else return false;
-  redrawDepth();
+  redrawDepth(true);
   return true;
 }
 /* A part chosen, by a click, the search, a link, the keys, the board or an agent, is shown: every receiver on its way
@@ -311,11 +311,16 @@ export function setFocus(kind, value) {
   if (sig === FOCUS.sig) return false;
   FOCUS.sig = sig;
   if (S.loading) return false;  // the load draws both maps once it has read the rest
-  GROW.beside = true;  // the parts a branch opens grow out of their receiver; what is drawn stays where it is
+  drawBranch();
+  build2D(true, true);
+  return true;
+}
+/* A branch opened or closed in the 3D map at once: the parts it opens grow out of their receiver, and what is drawn
+ * stays where it is, draw3d.js GROW. The 2D map follows in the way it is drawn now, `build2D`'s `branch`. */
+function drawBranch() {
+  GROW.beside = true;
   try { draw3D(); } finally { GROW.beside = false; }
   renderLegend();
-  build2D();
-  return true;
 }
 /* The parts drawn now, as text to compare, so a branch said again that opens nothing new draws nothing: empty while
  * every level shows. */
@@ -323,10 +328,11 @@ function focusSig() {
   const {shown} = depthView();
   return shown ? [...shown].sort().join(' ') : '';
 }
-/* Both maps drawn again with what the depth shows, and fitted whole. */
-function redrawDepth() {
+/* Both maps drawn again with what the depth shows, and fitted whole. A node's next level broken out or folded by a
+ * click, `branch`, is a branch: it opens in place as the branches of `FOCUS` do, `drawBranch`. */
+function redrawDepth(branch = false) {
   FOCUS.sig = focusSig();  // what is drawn now opens these, so the next branch said is compared with them
-  draw3D(); renderLegend();
+  if (branch) drawBranch(); else { draw3D(); renderLegend(); }
   if (G && !small3d()) { V3.auto = true; fit3d(); }
-  build2D().then(fullFit2d);
+  build2D(true, branch).then(fullFit2d);
 }

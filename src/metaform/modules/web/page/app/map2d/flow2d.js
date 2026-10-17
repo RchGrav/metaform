@@ -199,16 +199,119 @@ function rest2d() {
  * frame: measuring a curve for every dot on every frame was the page's own heaviest work. */
 function sampled(edge) {
   let samples = SAMPLED.get(edge);
-  if (!samples) {
+  if (!samples) samples = flatSampled(edge.path.getAttribute('d') || '');
+  if (!samples) {  // a path `flatSampled` does not read: measured by the browser
     const length = edge.path.getTotalLength(), count = Math.max(16, Math.ceil(length / 3));
     const xs = new Float32Array(count + 1), ys = new Float32Array(count + 1);
     for (let i = 0; i <= count; i++) {
       const point = edge.path.getPointAtLength(length * i / count);
       xs[i] = point.x; ys[i] = point.y;
     }
-    SAMPLED.set(edge, samples = new Samples2d(length, xs, ys));
+    samples = new Samples2d(length, xs, ys);
   }
+  SAMPLED.set(edge, samples);
   return samples;
+}
+/* The same samples read from the path's own `d`, its lines and Bézier curves laid flat in short straight pieces and
+ * walked at even steps, without asking the browser: the browser walks the whole path again for each point it is asked
+ * for, so an edge of a large map, thousands of units long, cost a second for the flow of one selection, and a branch
+ * opened on a map of 1,000 elements waited seven seconds on it (2026-10-17). Null for a path of more than one move,
+ * which the browser measures. */
+const FLAT = {xs: new Float64Array(1024), ys: new Float64Array(1024), at: new Float64Array(1024), size: 0};
+const COMMAND2D = /([MmLlHhVvCcSsQqTtAaZz])([^MmLlHhVvCcSsQqTtAaZz]*)/g;
+function flatSampled(d) {
+  if (!d || (d.match(/[Mm]/g) || []).length !== 1) return null;
+  FLAT.size = 0;
+  let x = 0, y = 0, startX = 0, startY = 0, lastX = 0, lastY = 0, last = '';  // lastX, lastY: the control point
+  for (const [, command, rest] of d.matchAll(COMMAND2D)) {
+    const n = rest.match(/-?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g)?.map(Number) || [];
+    const relative = command === command.toLowerCase(), kind = command.toUpperCase();
+    const ox = () => (relative ? x : 0), oy = () => (relative ? y : 0);
+    if (kind === 'Z') { flatPoint(startX, startY); x = startX; y = startY; last = kind; continue; }
+    const size = {M: 2, L: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, T: 2, A: 7}[kind];
+    if (n.length % size) return null;  // a path written in a way not read here, as arc flags run together
+    for (let i = 0; i + size <= n.length; i += size) {
+      if (kind === 'M' && i === 0) {
+        x = n[0] + ox(); y = n[1] + oy(); startX = x; startY = y;
+        flatPoint(x, y);
+      } else if (kind === 'M' || kind === 'L') { x = n[i] + ox(); y = n[i + 1] + oy(); flatPoint(x, y); }
+      else if (kind === 'H') { x = n[i] + (relative ? x : 0); flatPoint(x, y); }
+      else if (kind === 'V') { y = n[i] + (relative ? y : 0); flatPoint(x, y); }
+      else if (kind === 'A') {
+        const ex = n[i + 5] + ox(), ey = n[i + 6] + oy();
+        flatArc(x, y, n[i], n[i + 1], n[i + 2], n[i + 3], n[i + 4], ex, ey);
+        x = ex; y = ey;
+      }
+      else {
+        const quad = kind === 'Q' || kind === 'T', smooth = kind === 'S' || kind === 'T';
+        const mirrored = smooth && last !== '' && (quad ? 'QT' : 'CS').includes(last);
+        const c1x = smooth ? (mirrored ? 2 * x - lastX : x) : n[i] + ox();
+        const c1y = smooth ? (mirrored ? 2 * y - lastY : y) : n[i + 1] + oy();
+        const at = smooth ? i : i + 2;
+        const c2x = quad ? c1x : n[at] + ox(), c2y = quad ? c1y : n[at + 1] + oy();
+        const endAt = quad ? (smooth ? i : i + 2) : at + 2, ex = n[endAt] + ox(), ey = n[endAt + 1] + oy();
+        if (quad) flatCurve(x, y, x + 2 / 3 * (c1x - x), y + 2 / 3 * (c1y - y), ex + 2 / 3 * (c1x - ex),
+          ey + 2 / 3 * (c1y - ey), ex, ey);
+        else flatCurve(x, y, c1x, c1y, c2x, c2y, ex, ey);
+        lastX = quad ? c1x : c2x; lastY = quad ? c1y : c2y;
+        x = ex; y = ey;
+      }
+      last = kind;
+    }
+  }
+  if (FLAT.size < 2) return null;
+  const length = FLAT.at[FLAT.size - 1], count = Math.max(16, Math.ceil(length / 3));
+  const xs = new Float32Array(count + 1), ys = new Float32Array(count + 1);
+  for (let i = 0, piece = 1; i <= count; i++) {
+    const want = length * i / count;
+    while (piece < FLAT.size - 1 && FLAT.at[piece] < want) piece++;
+    const from = FLAT.at[piece - 1], span = FLAT.at[piece] - from, u = span > 0 ? (want - from) / span : 0;
+    xs[i] = FLAT.xs[piece - 1] + (FLAT.xs[piece] - FLAT.xs[piece - 1]) * u;
+    ys[i] = FLAT.ys[piece - 1] + (FLAT.ys[piece] - FLAT.ys[piece - 1]) * u;
+  }
+  return new Samples2d(length, xs, ys);
+}
+function flatPoint(x, y) {
+  if (FLAT.size === FLAT.xs.length) {  // grown once to a longer path, and kept that size
+    const grow = array => { const more = new Float64Array(array.length * 2); more.set(array); return more; };
+    FLAT.xs = grow(FLAT.xs); FLAT.ys = grow(FLAT.ys); FLAT.at = grow(FLAT.at);
+  }
+  const at = FLAT.size;
+  FLAT.xs[at] = x; FLAT.ys[at] = y;
+  FLAT.at[at] = at ? FLAT.at[at - 1] + Math.hypot(x - FLAT.xs[at - 1], y - FLAT.ys[at - 1]) : 0;
+  FLAT.size++;
+}
+/* An elliptical arc as SVG draws it, from its end points to its centre, SVG 1.1 F.6.5, in straight pieces of about
+ * half a unit; a line where a radius is nought. */
+function flatArc(x0, y0, rx, ry, degrees, large, sweep, x, y) {
+  rx = Math.abs(rx); ry = Math.abs(ry);
+  if (!rx || !ry || (x0 === x && y0 === y)) { flatPoint(x, y); return; }
+  const phi = degrees * Math.PI / 180, cos = Math.cos(phi), sin = Math.sin(phi);
+  const hx = (x0 - x) / 2, hy = (y0 - y) / 2, px = cos * hx + sin * hy, py = -sin * hx + cos * hy;
+  const grow = px * px / (rx * rx) + py * py / (ry * ry);
+  if (grow > 1) { rx *= Math.sqrt(grow); ry *= Math.sqrt(grow); }
+  const top = rx * rx * ry * ry - rx * rx * py * py - ry * ry * px * px;
+  const root = Math.sqrt(Math.max(0, top / (rx * rx * py * py + ry * ry * px * px))) * (large === sweep ? -1 : 1);
+  const cx1 = root * rx * py / ry, cy1 = -root * ry * px / rx;
+  const cx = cos * cx1 - sin * cy1 + (x0 + x) / 2, cy = sin * cx1 + cos * cy1 + (y0 + y) / 2;
+  const angle = (ux, uy, vx, vy) => Math.atan2(ux * vy - uy * vx, ux * vx + uy * vy);
+  const start = angle(1, 0, (px - cx1) / rx, (py - cy1) / ry);
+  let turn = angle((px - cx1) / rx, (py - cy1) / ry, (-px - cx1) / rx, (-py - cy1) / ry);
+  if (!sweep && turn > 0) turn -= 2 * Math.PI; else if (sweep && turn < 0) turn += 2 * Math.PI;
+  const pieces = Math.min(512, Math.max(4, Math.ceil(Math.abs(turn) * Math.max(rx, ry) * 2)));
+  for (let k = 1; k <= pieces; k++) {
+    const a = start + turn * k / pieces, ax = rx * Math.cos(a), ay = ry * Math.sin(a);
+    if (k === pieces) flatPoint(x, y); else flatPoint(cos * ax - sin * ay + cx, sin * ax + cos * ay + cy);
+  }
+}
+/* A cubic Bézier curve in straight pieces of about half a unit along its control polygon, at most 512. */
+function flatCurve(x0, y0, x1, y1, x2, y2, x3, y3) {
+  const hull = Math.hypot(x1 - x0, y1 - y0) + Math.hypot(x2 - x1, y2 - y1) + Math.hypot(x3 - x2, y3 - y2);
+  const pieces = Math.min(512, Math.max(4, Math.ceil(hull * 2)));
+  for (let k = 1; k <= pieces; k++) {
+    const t = k / pieces, s = 1 - t, a = s * s * s, b = 3 * s * s * t, c = 3 * s * t * t, e = t * t * t;
+    flatPoint(a * x0 + b * x1 + c * x2 + e * x3, a * y0 + b * y1 + c * y2 + e * y3);
+  }
 }
 // the point at a distance along the edge, into `POINT`
 function place(one, distance) {
